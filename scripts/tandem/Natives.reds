@@ -60,6 +60,8 @@ public native class TandemNative extends IScriptable {
   public static native func RemotePosition(player: Uint32) -> Vector4
   public static native func RemoteYaw(player: Uint32) -> Float
   public static native func RemoteStance(player: Uint32) -> Int32
+  public static native func TakeSnap(player: Uint32) -> Bool
+  public static native func RemotePlacement(player: Uint32) -> Int32
   public static native func PuppetRecord(body: Int32) -> String
   public static native func IsProbe() -> Bool
   public static native func ClipLengths(entity: ref<Entity>) -> String

@@ -233,7 +233,22 @@ Two games must agree on which NPC, car or object a message is about.
   the two samples around that time: 65 ms behind at 30 Hz, widened per
   player by measured jitter and transit, capped at 400 ms (numbers measured
   on 2.5 by NCO, see the research file). Short gaps are extrapolated (250 ms
-  for players, 500 ms for vehicles), then held; recovery blends back.
+  for players, falling when the V is in the air; 500 ms for vehicles), then
+  held; recovery blends back.
+- **How a V moves** (`core/include/tandem/movement.hpp`,
+  `scripts/tandem/Movement.reds`): beyond walking, a V's game packs its
+  player state machine into `PlayerState::flags`, a field that was always
+  sent as 0 (no wire change): `LocomotionDetailed` (bits 0–4), `Swimming`
+  (5–6), in a moving elevator (7), in a workspot (8), felled (9), filled
+  (15; NPC states and older senders leave it clear: placed as walking).
+  The puppet's controller turns it into a placement (ground, air, climb,
+  ladder, swim, platform, down) and asks `movement::Placer` each frame how
+  far to move the body: everywhere but on the ground exactly where the
+  stream says; on landing the height left is eased back; a body left
+  behind (≥ 0.75 m for 0.2 s off the ground, a ledge ≥ 0.6 m above for
+  0.3 s, ≥ 2.5 m for 0.5 s, ≥ 8 m at once; one per second) is teleported
+  by the game thread (`TandemNative.TakeSnap`, the teleportation
+  facility).
 - Rates: players and vehicles 30 Hz; NPC proxies 10–30 Hz by distance and
   relevance (budgeted per frame).
 
@@ -511,6 +526,16 @@ game thread stop). Each feature verified in game gets a scenario.
   without anyone driving. `--radio STATION` (0–13, a station name, or
   `off`) plays that station on its radio: sent at the wheel and again when
   your V gets in (`tools/game.sh cmd vehicle ride`).
+- **course** — runs a scripted course ahead of your V with every way a V
+  moves, each with the state machine's own values: jumps, a double jump, a
+  1.5 m ledge climb, a drop, a 4 m ladder, swimming and diving, an
+  elevator, a sprint, slide and dodge, then back to the start (a teleport).
+  Heights are relative to where your V stood, so the puppet floats where
+  the ground differs: it tests placement, not looks.
+- **path** — `--save-path FILE` (any mode) saves the states it hears, your
+  V's moves; `--mode path --path FILE [--offset X,Y,Z]` replays them in a
+  loop: your own jumps, ladders and swims on the puppet, over the same
+  ground.
 - **idle** — connects and reports.
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
@@ -744,6 +769,23 @@ in-game tests still owed; none of it tested in a session yet):
   "swim" placement). Each case gets a recorded-pose test and a scripted
   mock-player path (stairs, ladder, water). Facts:
   `research/coop-player-vehicles.md` §5 (locomotion specials).
+  **State (2026-11-18, built and unit-tested, not yet tried in game):** our
+  V sends how it moves (`PlayerState::flags`, see "How a V moves" above);
+  the controller follows the stream freely in the air, climbing, on a
+  ladder, swimming, in an elevator or a workspot and when knocked down,
+  eases the height back on landing, and has the game thread teleport a
+  body left behind (a ledge, a refused move); a body in the air keeps
+  falling while its states are late; no walk cycle under the pose on a
+  ladder, in the water or climbing; puppets are spared the NPC rule that
+  kills a body with its head under water (`NPCPuppet.KillIfUnderwater`).
+  What the engine does with the controller's delta (kinematic, or a
+  character controller with gravity and collisions) is not known: the
+  health line (`puppet N: … m from target, …, <placement>, K teleports`)
+  and the `teleport #` lines tell. To check in game: `tandem-peer join
+<game> --mode course` (scenario `movement-course`), then `--save-path`
+  a real jump/ladder/swim session and replay it with `--mode path`.
+  Open: elevators (the cab is each game's own device), being carried
+  (scenes), landing and splash effects, the collision capsule.
 - **Getting in and out of a car, every way.** Today a puppet is mounted
   and unmounted instantly, so it pops in and out of the seat. It must look
   like the game: the enter and exit animations, and every way out:

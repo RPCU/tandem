@@ -6,6 +6,7 @@ add_library(tandem_core STATIC
   src/session.cpp
   src/endpoint.cpp
   src/interpolation.cpp
+  src/movement.cpp
   src/pose.cpp
   src/vehicle.cpp)
 target_include_directories(tandem_core PUBLIC include)

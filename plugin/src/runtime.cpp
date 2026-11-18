@@ -519,4 +519,14 @@ bool Runtime::TakeControllerRequest(proto::PlayerId player) {
   }
   return false;
 }
+
+void Runtime::RequestSnap(proto::PlayerId player) {
+  std::lock_guard _(m_snapsLock);
+  m_snaps.insert(player);
+}
+
+bool Runtime::TakeSnap(proto::PlayerId player) {
+  std::lock_guard _(m_snapsLock);
+  return m_snaps.erase(player) != 0;
+}
 } // namespace tandem::plugin

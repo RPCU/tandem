@@ -107,7 +107,7 @@ struct PlayerState {
   Quat orientation;
   Vec3 velocity;
   std::uint8_t stance{}; // locomotion state, see the plugin
-  std::uint16_t flags{}; // weapon drawn, aiming, in vehicle...
+  std::uint16_t flags{}; // how it moves: tandem/movement.hpp (bits 10-14 free)
   friend bool operator==(const PlayerState &, const PlayerState &) = default;
 };
 

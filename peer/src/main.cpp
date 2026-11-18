@@ -15,6 +15,14 @@
 //           the copy of a remote player's car, its driver and its motion;
 //           --radio STATION plays that station on the car's radio, for
 //           whoever rides in it
+//   course  runs a scripted course ahead of your V, every way a V moves:
+//           jumps, a double jump, a ledge climb, a drop, a ladder, swimming
+//           and diving, an elevator, a slide and a dodge, then back to the
+//           start (a teleport); heights relative to where your V stood, so
+//           the puppet floats where the ground differs: placement, not looks
+//   path    replays a path saved with --save-path (--path FILE) in a loop,
+//           moved by --offset: your own jumps, ladders and swims, on the
+//           puppet, over the same ground
 //   idle    only connects and reports
 //
 // Looks, held weapons, shots, seats and cars: mirror and front echo yours
@@ -28,6 +36,7 @@
 
 #include "tandem/endpoint.hpp"
 #include "tandem/interpolation.hpp"
+#include "tandem/movement.hpp"
 #include "tandem/pose.hpp"
 
 #include <algorithm>
@@ -54,7 +63,7 @@ using tandem::proto::Vec3;
 
 volatile std::sig_atomic_t g_stop = 0;
 
-enum class Mode { Mirror, Ghost, Front, Drive, Idle };
+enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Idle };
 
 struct Options {
   bool host{};
@@ -75,11 +84,13 @@ struct Options {
   // host: the world the game follows (time of day, weather name); unset: none sent
   std::optional<int> timeOfDayMinutes;
   std::string weather;
-  std::string recordFile; // join: save the host's NPC messages here
-  std::string replayFile; // host: send a recording's NPC messages again
-  int pauseAtSeconds{-1}; // open the pause menu this long into the session (-1: never)
-  int pauseForSeconds{3}; // ...for this long
-  bool check{};           // parse the options, then exit
+  std::string recordFile;   // join: save the host's NPC messages here
+  std::string replayFile;   // host: send a recording's NPC messages again
+  int pauseAtSeconds{-1};   // open the pause menu this long into the session (-1: never)
+  int pauseForSeconds{3};   // ...for this long
+  std::string pathFile;     // path: the path to replay
+  std::string savePathFile; // save the states heard (your V's path) here
+  bool check{};             // parse the options, then exit
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -127,7 +138,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
   std::cerr << "usage: tandem-peer host [options]\n"
                "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
                "  --port N           UDP port (default 27450)\n"
-               "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
+               "  --mode M           mirror | ghost | front | drive | course | path | idle\n"
+               "                     (default mirror)\n"
                "  --name NAME        player name (default tandem-peer)\n"
                "  --body B           female | male: the puppet rig others see (default female)\n"
                "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
@@ -148,7 +160,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
                "                     --offset)\n"
                "  --pause-at N       open the pause menu N seconds after another player is in the\n"
                "                     session: every game pauses\n"
-               "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n";
+               "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n"
+               "  --save-path FILE   save the states heard (your V's moves) to FILE, for --path\n"
+               "  --path FILE        path: the saved path to replay in a loop\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -247,6 +261,10 @@ Options Parse(int argc, char **argv) {
         options.mode = Mode::Idle;
       else if (value == "drive")
         options.mode = Mode::Drive;
+      else if (value == "course")
+        options.mode = Mode::Course;
+      else if (value == "path")
+        options.mode = Mode::Path;
       else
         Usage(std::format("unknown mode {}", value));
     } else if (flag == "--offset") {
@@ -264,9 +282,15 @@ Options Parse(int argc, char **argv) {
       options.recordFile = value;
     } else if (flag == "--replay") {
       options.replayFile = value;
+    } else if (flag == "--path") {
+      options.pathFile = value;
+    } else if (flag == "--save-path") {
+      options.savePathFile = value;
     } else
       Usage(std::format("unknown option {}", flag));
   }
+  if (options.mode == Mode::Path && options.pathFile.empty() && !options.check)
+    Usage("--mode path needs --path FILE");
   return options;
 }
 
@@ -322,9 +346,10 @@ private:
   float m_referenceHips{1.f};
 };
 
-// NPC messages with their time, for --record / --replay: per message
-// u64 microseconds since the first, u32 length, the encoded message.
-class NpcRecording {
+// Messages with their time, for --record / --replay (NPC messages) and
+// --save-path / --path (player states): per message u64 microseconds since
+// the first, u32 length, the encoded message.
+class Recording {
 public:
   bool Open(const std::string &path) {
     m_out.open(path, std::ios::binary);
@@ -373,6 +398,184 @@ private:
   std::size_t m_count{};
 };
 
+// The course mode's script: where a V is `t` seconds in, in metres along
+// the course (x ahead, z up) and how it moves, as its game would say it.
+struct CoursePoint {
+  float ahead{}, up{};
+  tandem::movement::Movement movement{.known = true};
+  std::uint8_t stance{}; // gamePSMLocomotionStates
+  const char *what{};
+};
+
+class Course {
+public:
+  static constexpr float kGravity = 9.81f;
+
+  // One lap, then it starts again from the start.
+  float Seconds() const { return m_end; }
+
+  CoursePoint At(float t) const {
+    using D = tandem::movement::Detailed;
+    using S = tandem::movement::Swim;
+    t = std::fmod(t, m_end);
+    float x = 0.f; // where the segment starts
+    CoursePoint p;
+    const auto segment = [&](float length, const char *what) {
+      if (t < length) {
+        p.what = what;
+        return true;
+      }
+      t -= length;
+      return false;
+    };
+    const auto ground = [&](D d) { p.movement.detailed = d; };
+    // Walking 3 s at 1.6 m/s.
+    if (segment(3.f, "walk")) {
+      ground(D::Stand);
+      p.ahead = x + 1.6f * t;
+      return p;
+    }
+    x += 4.8f;
+    // A jump, 1 m high, 0.9 s, 3 m/s ahead; then landing.
+    if (segment(0.9f, "jump")) {
+      const float v0 = 4.43f;
+      p.movement.detailed = t < v0 / kGravity ? D::Jump : D::Fall;
+      p.ahead = x + 3.f * t;
+      p.up = std::max(0.f, v0 * t - 0.5f * kGravity * t * t);
+      return p;
+    }
+    x += 2.7f;
+    if (segment(0.3f, "land")) {
+      ground(D::RegularLand);
+      p.ahead = x;
+      return p;
+    }
+    // A double jump: up, a second push at the top, down.
+    if (segment(1.6f, "double jump")) {
+      const float v0 = 4.43f, t1 = v0 / kGravity, h1 = 0.5f * v0 * t1;
+      p.ahead = x + 2.f * t;
+      if (t < t1) {
+        p.movement.detailed = D::Jump;
+        p.up = v0 * t - 0.5f * kGravity * t * t;
+      } else {
+        const float u = t - t1;
+        const float v1 = 4.f;
+        p.movement.detailed = u < v1 / kGravity ? D::DoubleJump : D::Fall;
+        p.up = std::max(0.f, h1 + v1 * u - 0.5f * kGravity * u * u);
+      }
+      return p;
+    }
+    x += 3.2f;
+    if (segment(0.3f, "land")) {
+      ground(D::HardLand);
+      p.ahead = x;
+      return p;
+    }
+    // Mantling a 1.5 m ledge, then walking on top of it.
+    if (segment(0.8f, "climb")) {
+      p.movement.detailed = D::Climb;
+      p.ahead = x + 0.6f * t / 0.8f;
+      p.up = 1.5f * std::min(1.f, t / 0.6f);
+      return p;
+    }
+    x += 0.6f;
+    if (segment(2.f, "on the ledge")) {
+      ground(D::Stand);
+      p.ahead = x + 1.5f * t;
+      p.up = 1.5f;
+      return p;
+    }
+    x += 3.f;
+    // Off the ledge: a fall and a hard landing.
+    if (segment(0.55f, "drop")) {
+      p.movement.detailed = D::Fall;
+      p.ahead = x + 1.f * t;
+      p.up = std::max(0.f, 1.5f - 0.5f * kGravity * t * t);
+      return p;
+    }
+    x += 0.55f;
+    if (segment(0.4f, "land")) {
+      ground(D::HardLand);
+      p.ahead = x;
+      return p;
+    }
+    // A 4 m ladder: up at 1 m/s, a slide down.
+    if (segment(4.f, "ladder up")) {
+      p.movement.detailed = D::Ladder;
+      p.ahead = x;
+      p.up = 1.f * t;
+      return p;
+    }
+    if (segment(1.5f, "ladder slide")) {
+      p.movement.detailed = D::LadderSlide;
+      p.ahead = x;
+      p.up = 4.f - 4.f * t / 1.5f;
+      return p;
+    }
+    // Swimming on the surface, diving 2.5 m, climbing out.
+    if (segment(4.f, "swim")) {
+      p.movement.swim = S::Surface;
+      p.ahead = x + 1.2f * t;
+      return p;
+    }
+    x += 4.8f;
+    if (segment(5.f, "dive")) {
+      p.movement.swim = S::Diving;
+      p.ahead = x + 1.f * t;
+      p.up = -2.5f * std::sin(std::numbers::pi_v<float> * t / 5.f);
+      return p;
+    }
+    x += 5.f;
+    if (segment(1.f, "out of the water")) {
+      p.movement.swim = S::Climbing;
+      p.ahead = x + 0.5f * t;
+      p.up = 0.5f * std::sin(std::numbers::pi_v<float> * t);
+      return p;
+    }
+    x += 0.5f;
+    // An elevator: 6 m up, 6 m down, standing.
+    if (segment(8.f, "elevator")) {
+      ground(D::Stand);
+      p.movement.elevator = t > 0.5f && t < 7.5f;
+      p.ahead = x;
+      p.up = t < 4.f ? 6.f * std::clamp((t - 0.5f) / 3.f, 0.f, 1.f)
+                     : 6.f * std::clamp((7.5f - t) / 3.f, 0.f, 1.f);
+      return p;
+    }
+    // A sprint into a slide, then a dodge.
+    if (segment(1.5f, "sprint")) {
+      ground(D::Sprint);
+      p.stance = 2;
+      p.ahead = x + 6.f * t;
+      return p;
+    }
+    x += 9.f;
+    if (segment(1.f, "slide")) {
+      ground(D::Slide);
+      p.stance = 9;
+      p.ahead = x + 6.f * t - 2.5f * t * t;
+      return p;
+    }
+    x += 3.5f;
+    if (segment(0.3f, "dodge")) {
+      ground(D::Dodge);
+      p.stance = 6;
+      p.ahead = x + 8.f * t;
+      return p;
+    }
+    x += 2.4f;
+    // Standing a moment at the end, then (next lap) back at the start.
+    segment(m_end, "rest");
+    ground(D::Stand);
+    p.ahead = x;
+    return p;
+  }
+
+private:
+  float m_end{3.f + 0.9f + 0.3f + 1.6f + 0.3f + 0.8f + 2.f + 0.55f + 0.4f + 4.f + 1.5f + 4.f + 5.f +
+              1.f + 8.f + 1.5f + 1.f + 0.3f + 2.f};
+};
+
 // What the mock player does with the states it hears.
 class Puppeteer {
 public:
@@ -408,10 +611,17 @@ public:
     return *pick;
   }
 
+  // --path: the saved states to replay.
+  void SetPath(std::vector<PlayerState> path) { m_path = std::move(path); }
+
   std::optional<PlayerState> Next(std::uint64_t nowUs) {
     switch (m_options.mode) {
     case Mode::Idle:
       return std::nullopt;
+    case Mode::Course:
+      return CourseState(nowUs);
+    case Mode::Path:
+      return PathState(nowUs);
     case Mode::Mirror:
       return Mirror(nowUs);
     case Mode::Ghost:
@@ -498,6 +708,68 @@ private:
     return out;
   }
 
+  // The course, laid out ahead of where your V first stood, facing the way it faced.
+  std::optional<PlayerState> CourseState(std::uint64_t nowUs) {
+    if (m_heard.empty())
+      return std::nullopt;
+    if (!m_courseStartUs) {
+      const auto &them = m_heard.back().second;
+      m_courseStartUs = nowUs;
+      m_courseYaw = tandem::sync::YawOf(them.orientation);
+      m_courseOrigin = {them.position.x + m_options.offset.x, them.position.y + m_options.offset.y,
+                        them.position.z + m_options.offset.z};
+    }
+    const float t = static_cast<float>(nowUs - *m_courseStartUs) / 1e6f;
+    // The game's forward is +Y turned by yaw: (-sin, cos). 3 m ahead of your V.
+    const float fx = -std::sin(m_courseYaw), fy = std::cos(m_courseYaw);
+    const auto place = [&](const CoursePoint &p) {
+      const float ahead = 3.f + p.ahead;
+      return Vec3{m_courseOrigin.x + fx * ahead, m_courseOrigin.y + fy * ahead,
+                  m_courseOrigin.z + p.up};
+    };
+    const auto point = m_course.At(t);
+    const auto at = place(point);
+    const auto next = place(m_course.At(t + 0.02f));
+    if (point.what != m_courseWhat) {
+      m_courseWhat = point.what;
+      Log("course: {} ({})", point.what,
+          tandem::movement::NameOf(tandem::movement::PlacementOf(point.movement)));
+    }
+    PlayerState out;
+    out.position = at;
+    // (the lap's end jumps back to the start: no velocity across it)
+    if (std::hypot(next.x - at.x, next.y - at.y, next.z - at.z) < 1.f)
+      out.velocity = {(next.x - at.x) / 0.02f, (next.y - at.y) / 0.02f, (next.z - at.z) / 0.02f};
+    out.orientation = tandem::sync::FromYaw(m_courseYaw);
+    out.stance = point.stance;
+    out.flags = tandem::movement::Pack(point.movement);
+    return out;
+  }
+
+  // A saved path at its own pace, in a loop, moved by --offset.
+  std::optional<PlayerState> PathState(std::uint64_t nowUs) {
+    if (m_path.size() < 2)
+      return std::nullopt;
+    if (!m_pathStartUs)
+      m_pathStartUs = nowUs;
+    const auto first = m_path.front().timeUs, span = m_path.back().timeUs - first;
+    const auto at = first + (nowUs - *m_pathStartUs) % std::max<std::uint64_t>(span, 1);
+    while (m_pathNext + 1 < m_path.size() && m_path[m_pathNext + 1].timeUs <= at)
+      ++m_pathNext;
+    if (m_path[m_pathNext].timeUs > at)
+      m_pathNext = 0; // a new lap
+    auto out = m_path[m_pathNext];
+    out.position.x += m_options.offset.x;
+    out.position.y += m_options.offset.y;
+    out.position.z += m_options.offset.z;
+    if (const auto placement = tandem::movement::PlacementOf(out.flags);
+        placement != m_pathPlacement) {
+      m_pathPlacement = placement;
+      Log("path: {}", tandem::movement::NameOf(placement));
+    }
+    return out;
+  }
+
   std::optional<PlayerState> Front(std::uint64_t nowUs) {
     if (m_heard.empty())
       return std::nullopt;
@@ -522,6 +794,15 @@ private:
   }
 
   const Options &m_options;
+  Course m_course;
+  std::optional<std::uint64_t> m_courseStartUs;
+  float m_courseYaw{};
+  Vec3 m_courseOrigin;
+  const char *m_courseWhat{};
+  std::vector<PlayerState> m_path;
+  std::optional<std::uint64_t> m_pathStartUs;
+  std::size_t m_pathNext{};
+  tandem::movement::Placement m_pathPlacement{};
   std::deque<std::pair<std::uint64_t, PlayerState>> m_heard;
   std::deque<std::pair<std::uint64_t, tandem::proto::PoseState>> m_poses;
 };
@@ -560,7 +841,7 @@ int main(int argc, char **argv) {
   }
   const PoseClip *poseClip = options.poseFile.empty() ? nullptr : &clip;
 
-  NpcRecording recording;
+  Recording recording;
   if (!options.recordFile.empty() && !recording.Open(options.recordFile)) {
     std::cerr << "tandem-peer: cannot write " << options.recordFile << '\n';
     return 1;
@@ -572,15 +853,33 @@ int main(int argc, char **argv) {
   std::set<tandem::proto::NpcId> burnt;
   std::map<tandem::proto::NpcId, std::uint8_t> detection;
   auto nextHit = std::chrono::steady_clock::now();
-  std::vector<NpcRecording::Entry> replay;
+  std::vector<Recording::Entry> replay;
   std::size_t replayNext = 0;
   std::optional<std::uint64_t> replayStartUs;
   if (!options.replayFile.empty()) {
-    replay = NpcRecording::Load(options.replayFile);
+    replay = Recording::Load(options.replayFile);
     Log("replay: {} NPC messages from {}", replay.size(), options.replayFile);
   }
 
   Puppeteer puppeteer(options);
+  if (options.mode == Mode::Path) {
+    std::vector<PlayerState> path;
+    for (auto &entry : Recording::Load(options.pathFile))
+      if (const auto *state = std::get_if<PlayerState>(&entry.message))
+        path.push_back(*state);
+    if (path.size() < 2) {
+      std::cerr << "tandem-peer: " << options.pathFile << ": no saved path\n";
+      return 1;
+    }
+    Log("path: {} states, {:.1f} s, in a loop", path.size(),
+        static_cast<double>(path.back().timeUs - path.front().timeUs) / 1e6);
+    puppeteer.SetPath(std::move(path));
+  }
+  Recording savedPath;
+  if (!options.savePathFile.empty() && !savedPath.Open(options.savePathFile)) {
+    std::cerr << "tandem-peer: cannot write " << options.savePathFile << '\n';
+    return 1;
+  }
   const auto startUs = tandem::net::NowUs();
   auto nextWorld = std::chrono::steady_clock::now();
   bool seated = false, parked = false;
@@ -617,6 +916,8 @@ int main(int argc, char **argv) {
             else if constexpr (std::is_same_v<E, tandem::events::RemoteState>) {
               ++heard;
               puppeteer.Heard(e.state);
+              if (!options.savePathFile.empty())
+                savedPath.Add(e.state);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteAppearance>) {
               Log("look from player {}: {} keys, {} items", e.appearance.player,
                   e.appearance.look.size(), e.appearance.items.size());
@@ -827,6 +1128,8 @@ int main(int argc, char **argv) {
       nextReport = now + 5s;
       if (!options.recordFile.empty())
         Log("recorded {} NPC messages", recording.Count());
+      if (!options.savePathFile.empty())
+        Log("saved {} states of the path", savedPath.Count());
       const auto stats = endpoint->HostLinkStats();
       Log("{} player(s), {} states, {} poses, {} shots, {} car states heard{}",
           endpoint->Players().size(), heard, heardPoses, heardShots, heardVehicles,

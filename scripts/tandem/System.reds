@@ -33,6 +33,8 @@ public class TandemPuppet {
   // Its attitude group (Attitudes.reds), as read back once set.
   public let grouped: Bool;
   public let group: CName;
+  // Teleports the movement controller asked for (SnapPuppet).
+  public let snaps: Int32;
 }
 
 // A puppet on its way out, removed over several frames: deleting a vehicle
@@ -833,7 +835,8 @@ public class TandemSystem extends ScriptableSystem {
     let psm = GameInstance.GetBlackboardSystem(game).GetLocalInstanced(player.GetEntityID(), GetAllBlackboardDefs().PlayerStateMachine);
     let locomotion = IsDefined(psm) ? psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Locomotion) : 0;
 
-    TandemNative.SendLocalState(position, player.GetWorldOrientation(), velocity, locomotion, 0);
+    // How we move beyond walking (Movement.reds): the puppet's placement.
+    TandemNative.SendLocalState(position, player.GetWorldOrientation(), velocity, locomotion, TandemMovement.Flags(psm));
 
     // Driving our own car: its transform, for the copies on the other games.
     let car: wref<VehicleObject>;
@@ -975,9 +978,30 @@ public class TandemSystem extends ScriptableSystem {
           puppet.controlled = TandemNative.AttachController(puppet.player, entity);
         }
       }
+      if puppet.controlled && TandemNative.TakeSnap(puppet.player) {
+        this.SnapPuppet(puppet);
+      }
       if !puppet.grouped {
         this.Group(puppet);
       }
+    }
+  }
+
+  // The movement controller could not bring the body where its player is
+  // (a ledge an NPC body does not climb, a move the engine refused): put it
+  // there. The controller faces it the right way; keep its heading.
+  private func SnapPuppet(puppet: ref<TandemPuppet>) -> Void {
+    let game = this.GetGameInstance();
+    let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
+    let position = TandemNative.RemotePosition(puppet.player);
+    if !IsDefined(body) || position.W == 0.0 || GameInstance.GetMountingFacility(game).IsMountedToAnything(puppet.id) {
+      return;
+    }
+    let angles = Quaternion.ToEulerAngles(body.GetWorldOrientation());
+    GameInstance.GetTeleportationFacility(game).Teleport(body, position, angles);
+    puppet.snaps += 1;
+    if puppet.snaps <= 10 {
+      TandemNative.Log(s"player \(puppet.player): body teleported to its player (placement \(TandemNative.RemotePlacement(puppet.player)), \(puppet.snaps) so far)");
     }
   }
 

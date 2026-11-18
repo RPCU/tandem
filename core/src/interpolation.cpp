@@ -1,5 +1,7 @@
 #include "tandem/interpolation.hpp"
 
+#include "tandem/movement.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -11,6 +13,9 @@ constexpr double kAlpha = 1.0 / 16.0;
 constexpr std::uint64_t kIgnoreGapUs = 500'000;
 // The speed shown follows the measured one this fast (per second).
 constexpr float kSpeedFollowPerSecond = 10.f;
+// A V in the air keeps falling while its states are late (m/s², assumed: the
+// game's own value for V was not measured).
+constexpr float kAirGravity = 9.81f;
 
 float WrapAngle(float a) {
   constexpr float pi = std::numbers::pi_v<float>;
@@ -137,8 +142,11 @@ View Track::At(std::uint64_t nowHostUs) {
     // Past the newest state: carry on along its velocity for a moment, then hold.
     const float ahead = std::min(Seconds(last.timeUs, render), kExtrapolateUs / 1e6f);
     const auto &v = last.state.velocity;
+    const float fall = movement::PlacementOf(last.state.flags) == movement::Placement::Air
+                           ? 0.5f * kAirGravity * ahead * ahead
+                           : 0.f;
     view.position = {last.state.position.x + v.x * ahead, last.state.position.y + v.y * ahead,
-                     last.state.position.z + v.z * ahead};
+                     last.state.position.z + v.z * ahead - fall};
     view.yaw = YawOf(last.state.orientation);
     view.stance = last.state.stance;
     view.flags = last.state.flags;

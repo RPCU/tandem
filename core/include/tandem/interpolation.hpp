@@ -6,7 +6,8 @@
 // that moment, so they move smoothly whatever the network does. The delay
 // adapts per player: a base of 1.5 send intervals plus margin, widened by the
 // measured jitter and transit, capped. Short gaps are extrapolated along the
-// last velocity, then the body holds; when states come back it blends home.
+// last velocity (falling too, when the V is in the air: tandem/movement.hpp),
+// then the body holds; when states come back it blends home.
 // Numbers from NCO's measurements on 2.5 (docs/research/engine-knowledge.md §1).
 //
 // Times are uint64 microseconds on the host clock. Never put one in a float.

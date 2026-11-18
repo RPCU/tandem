@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -189,6 +190,10 @@ public:
   // The animation thread saw a puppet whose movement needs our controller.
   void RequestController(std::uint64_t entityHash);
   bool TakeControllerRequest(proto::PlayerId player);
+  // Animation thread -> game thread: the controller could not bring this
+  // puppet's body to its target (a ledge, a refused move): teleport it there.
+  void RequestSnap(proto::PlayerId player);
+  bool TakeSnap(proto::PlayerId player);
 
 private:
   struct PuppetSlot {
@@ -236,6 +241,8 @@ private:
   std::vector<proto::PlayerId> m_remotePaused;        // m_lock
   std::uint32_t m_remotePausedChanges{};              // m_lock
   std::map<proto::PlayerId, std::string> m_names;     // m_lock
+  std::mutex m_snapsLock;
+  std::set<proto::PlayerId> m_snaps; // m_snapsLock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin

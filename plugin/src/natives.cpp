@@ -15,6 +15,8 @@
 #include "log.hpp"
 #include "runtime.hpp"
 
+#include "tandem/movement.hpp"
+
 #include <RedLib.hpp>
 
 #include <windows.h>
@@ -115,6 +117,16 @@ struct TandemNative : Red::IScriptable {
 
   static bool AttachController(std::uint32_t player, Red::Handle<Red::ent::Entity> entity) {
     return engine::AttachController(player, entity);
+  }
+
+  // The controller asked for this puppet's body to be teleported to where
+  // the player is drawn (it could not take it there): once per request.
+  static bool TakeSnap(std::uint32_t player) { return Runtime::Get().TakeSnap(player); }
+
+  // How the remote player moves as of the drawn moment (tandem/movement.hpp
+  // Placement: 0 ground, 1 air, 2 climb, 3 ladder, 4 swim, 5 platform, 6 down).
+  static std::int32_t RemotePlacement(std::uint32_t player) {
+    return static_cast<std::int32_t>(movement::PlacementOf(Runtime::Get().ViewOf(player).flags));
   }
 
   // Where a remote player is drawn now (spawn position, debug).
@@ -618,6 +630,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RemotePosition);
   RTTI_METHOD(RemoteYaw);
   RTTI_METHOD(RemoteStance);
+  RTTI_METHOD(TakeSnap);
+  RTTI_METHOD(RemotePlacement);
   RTTI_METHOD(PuppetRecord);
   RTTI_METHOD(IsProbe);
   RTTI_METHOD(ClipLengths);

@@ -1896,3 +1896,58 @@ hostile)` (`TryChangingAttitudeToHostile` 169933, companions 152568);
   entering combat could draw her Grad), her bounty draw table (a scan may
   show her bounty; a null foreign key's `.tweak` syntax is unchecked),
   `VeryHighHealth` (wanted: our game must not kill a remote V).
+
+### 13.14 Every way a V moves: the signals, and NPC bodies in water (2026-11-18, scripts and exe read)
+
+Read from the 2.50 scripts (`final.reds` line numbers) and the exe on
+disk; none of it run in game yet. Used by `core/include/tandem/movement.hpp`
+and `scripts/tandem/Movement.reds`.
+
+- **`LocomotionDetailed` is the placement signal.** Every locomotion state
+  writes it on entry through `LocomotionTransition.SetDetailedState`
+  (281168: Stand 280901, Fall 285568, Crouch 289647, Climb 529545, Ladder
+  530440, Slide 553244, Vault 556464, Jump 557425, DoubleJump 557518,
+  Knockdown 558466); values are `gamePSMDetailedLocomotionStates`
+  (6855, 0..31: fits 5 bits). `Fall` (282014–282037) and `Landing`
+  (558037–558115) are written too. [2.5-untested]
+- **Swimming** runs a separate high-level state (`gamePSMHighLevel.Swimming
+= 6`), with `Swimming` = `gamePSMSwimming` (6965: Surface 1, Diving 2,
+  Climbing 3 = getting out); vanilla treats `Swimming <= 1` as at the
+  surface (21410). `LocomotionDetailed` is then stale: the swim value wins.
+  [2.5-untested]
+- **Elevators**: the elevator device sets `IsPlayerInsideElevator` and
+  `IsPlayerInsideMovingElevator` on the player's PSM blackboard (198537,
+  198545). `IsInWorkspot` is an Int set to 1/0 on workspot enter/exit
+  (549017, 549035); `Felled` a Bool set from the felled status (44692).
+  [2.5-untested]
+- **`IsOnGround` has no script writer** (only listeners, 313710): if the
+  engine fills it is unknown, so it is not sent; the PSM scripts ask
+  `StateGameScriptInterface.IsOnGround()` instead (247352, with
+  `IsOnMovingPlatform()`, only inside a state). [2.5-untested]
+- **NPC bodies in water.** No NPC swimming exists in the scripts: an NPC
+  in water is a ragdoll or a corpse. `NPCPuppet.KillIfUnderwater` (128196)
+  force-kills an NPC whose head slot is below
+  `AIGeneralSettings.underwaterDepthKillThreshold` under the water level
+  (`AIScriptUtils.GetWaterLevel`, 158907); it runs from the AI ragdoll
+  behaviour (`AIRagdollDelegate.DoCheckWaterLevel`, 471005). Puppets are
+  spared it (wrapped in Movement.reds). With the pose stream on, a puppet
+  gets V's own swim and dive pose (every body bone and the hips' height),
+  so placement is the whole job; without it, no swim animation exists for
+  the body (the controller plays idle). Whether the engine lets an
+  NPC-record body sit below the water surface (buoyancy, a character
+  controller) is what the `movement-course` scenario will show. [2.5-untested]
+- **What the engine does with `GetDeltaTransform`** is not traced yet. The
+  engine's idle controller (vtable `0x1430333b0`, 19 slots; slot 18 =
+  `0x14053c970`, hash 2268141838, the `SetAnimation` NCO hooks) has slots
+  2 and 3 (PreTick, Tick) as a bare `ret` (`0x1401ff2b0`); its slot 4 is
+  `0x141956030` (hash 1662787369); slot 5 (`Unknown05(bool&)`) only writes
+  false (`0x14020b000`), as ours does; slot 11 returns its CName
+  (`0x14053c91c`). The move component (`moveComponent`,
+  vtable `0x143033168`, constructor `0x14022f2fc`) keeps the controller
+  stack at +0xA8 with the default controller inline at +0xB0
+  (`AttachController` 0x14022ed40 compares types at +0x8, pushes with
+  `0x14022edc4`). If the delta goes through a character controller
+  (gravity, collisions, step height), a puppet in the air or on a ladder
+  would be held back: the controller then teleports the body
+  (`TeleportationFacility.Teleport`, 192802) and logs `teleport #N`.
+  [2.5-untested]
