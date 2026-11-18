@@ -824,8 +824,16 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               out.push_back(events::RemoteTimeEffect{safe});
           },
           [&](const proto::Digest &digest) {
-            if (digest.epoch != m_hostEpoch)
-              return; // in flight across an epoch: the next one counts
+            // On the same ordered channel as the host's Epoch, a digest of
+            // another epoch means that Epoch never came (lost): it says
+            // which one the host is in, and the host hears we have seen it.
+            if (digest.epoch != m_hostEpoch) {
+              m_hostEpoch = digest.epoch;
+              Send(m_hostPeer, proto::Epoch{.player = m_you,
+                                            .epoch = m_epoch,
+                                            .seenHost = m_hostEpoch,
+                                            .reason = proto::kEpochJoin});
+            }
             const auto ask = m_checker.Compare(digest, DigestFor(m_you), net::NowUs());
             if (ask == 0)
               return;

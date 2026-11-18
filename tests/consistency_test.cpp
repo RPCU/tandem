@@ -375,3 +375,35 @@ TEST_CASE("NPC states never bring back an NPC the guest does not know") {
   REQUIRE(states->npcs.size() == 1);
   CHECK(states->npcs[0].npc == 1);
 }
+
+TEST_CASE("a guest that missed everything after its Welcome is healed by the digests") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kQuick);
+  REQUIRE_MESSAGE(host, error);
+  host->SetLocalAppearance({.look = {{1, 2}}});
+  // Only the Welcome gets through: the roster, the host's epoch and its
+  // look are lost.
+  host->SetFaults({.drop = 1.0});
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error, kQuick);
+  REQUIRE_MESSAGE(guest, error);
+  REQUIRE(Pump({host.get(), guest.get()},
+               [&](std::size_t, const auto &) { return guest->IsJoined(); }));
+  Pump({host.get(), guest.get()}, [&](std::size_t, const auto &) { return false; }, 200ms);
+  CHECK(guest->HostEpoch() == 0);
+  host->SetFaults({});
+  bool sawHost = false, gotLook = false;
+  CHECK(Pump(
+      {host.get(), guest.get()},
+      [&](std::size_t i, const auto &events) {
+        for (const auto &event : events)
+          if (i == 1) {
+            if (const auto *joined = std::get_if<events::PlayerJoined>(&event))
+              sawHost |= joined->player.id == 1;
+            gotLook |= std::holds_alternative<events::RemoteAppearance>(event);
+          }
+        return sawHost && gotLook;
+      },
+      3s));
+  CHECK(guest->HostEpoch() == host->WorldEpoch());
+}
