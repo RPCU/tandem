@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 
@@ -46,8 +47,11 @@ bool ResolveIpv4(const std::string &name, ENetAddress &address) {
   return true;
 }
 
-constexpr std::uint32_t kTimeoutMinMs = 5'000;
-constexpr std::uint32_t kTimeoutMaxMs = 15'000;
+// ENet's millisecond clock wraps; its differences do not.
+enet_uint32 Since(enet_uint32 now, enet_uint32 then) { return now - then; }
+bool Reached(enet_uint32 now, enet_uint32 when) {
+  return static_cast<std::int32_t>(now - when) >= 0;
+}
 } // namespace
 
 std::uint64_t NowUs() {
@@ -57,6 +61,14 @@ std::uint64_t NowUs() {
 
 struct Session::Impl {
   ENetHost *host{};
+  enet_uint32 timeoutMs{};
+  // Guest: the host while the connection is being set up, and since when.
+  ENetPeer *connecting{};
+  enet_uint32 connectStartMs{};
+  // Our own stalls (a Poll() long after the last) make every peer look
+  // silent: it is judged again only after a moment to hear from it.
+  enet_uint32 lastPollMs{};
+  std::optional<enet_uint32> judgeFromMs;
 
   ~Impl() {
     if (host)
@@ -73,6 +85,19 @@ struct Session::Impl {
     return peer->state == ENET_PEER_STATE_CONNECTED ? peer : nullptr;
   }
 
+  // ENet's own timeout only fires when a reliable resend is due, and resends
+  // back off exponentially: a dead peer took 5 to 30 s to go. Poll() drops a
+  // silent one at `timeoutMs`; ENet's stays as a backstop.
+  void Watch(ENetPeer *peer) const {
+    enet_peer_ping_interval(peer, std::max<enet_uint32>(timeoutMs / 10, 1));
+    enet_peer_timeout(peer, 0, timeoutMs, 2 * timeoutMs);
+  }
+
+  static enet_uint32 QuietMs(const ENetPeer *peer) {
+    // lastReceiveTime is when the peer last acknowledged something.
+    return peer->lastReceiveTime == 0 ? 0 : Since(enet_time_get(), peer->lastReceiveTime);
+  }
+
   static ENetPacket *PacketOf(const proto::Message &message) {
     const auto bytes = proto::Encode(message);
     if (bytes.empty())
@@ -87,18 +112,19 @@ Session::Session(std::unique_ptr<Impl> impl, bool isHost)
 
 Session::~Session() = default;
 
-std::unique_ptr<Session> Session::Listen(std::uint16_t port, std::size_t maxGuests,
-                                         std::string &error) {
+std::unique_ptr<Session> Session::Listen(std::uint16_t port, std::size_t maxConnections,
+                                         std::string &error, std::chrono::milliseconds timeout) {
   if (!AcquireEnet()) {
     error = "enet_initialize failed";
     return nullptr;
   }
   auto impl = std::make_unique<Impl>();
+  impl->timeoutMs = static_cast<enet_uint32>(timeout.count());
 
   ENetAddress address{};
   address.host = ENET_HOST_ANY;
   address.port = port;
-  impl->host = enet_host_create(&address, maxGuests, proto::kChannelCount, 0, 0);
+  impl->host = enet_host_create(&address, maxConnections, proto::kChannelCount, 0, 0);
   if (!impl->host) {
     error = "could not listen on UDP port " + std::to_string(port);
     return nullptr;
@@ -107,12 +133,13 @@ std::unique_ptr<Session> Session::Listen(std::uint16_t port, std::size_t maxGues
 }
 
 std::unique_ptr<Session> Session::Connect(const std::string &hostName, std::uint16_t port,
-                                          std::string &error) {
+                                          std::string &error, std::chrono::milliseconds timeout) {
   if (!AcquireEnet()) {
     error = "enet_initialize failed";
     return nullptr;
   }
   auto impl = std::make_unique<Impl>();
+  impl->timeoutMs = static_cast<enet_uint32>(timeout.count());
 
   impl->host = enet_host_create(nullptr, 1, proto::kChannelCount, 0, 0);
   if (!impl->host) {
@@ -126,10 +153,13 @@ std::unique_ptr<Session> Session::Connect(const std::string &hostName, std::uint
     return nullptr;
   }
   address.port = port;
-  if (!enet_host_connect(impl->host, &address, proto::kChannelCount, proto::kMagic)) {
+  impl->connecting = enet_host_connect(impl->host, &address, proto::kChannelCount, proto::kMagic);
+  if (!impl->connecting) {
     error = "enet_host_connect failed";
     return nullptr;
   }
+  impl->Watch(impl->connecting);
+  impl->connectStartMs = enet_time_get();
   return std::unique_ptr<Session>(new Session(std::move(impl), false));
 }
 
@@ -142,10 +172,14 @@ std::vector<Event> Session::Poll(std::chrono::milliseconds timeout) {
     wait = 0;
     switch (event.type) {
     case ENET_EVENT_TYPE_CONNECT:
-      enet_peer_timeout(event.peer, 0, kTimeoutMinMs, kTimeoutMaxMs);
+      if (event.peer == m_impl->connecting)
+        m_impl->connecting = nullptr;
+      m_impl->Watch(event.peer);
       events.push_back({Event::Kind::Connected, m_impl->IdOf(event.peer), std::nullopt});
       break;
     case ENET_EVENT_TYPE_DISCONNECT:
+      if (event.peer == m_impl->connecting)
+        m_impl->connecting = nullptr;
       events.push_back({Event::Kind::Disconnected, m_impl->IdOf(event.peer), std::nullopt});
       break;
     case ENET_EVENT_TYPE_RECEIVE: {
@@ -160,6 +194,31 @@ std::vector<Event> Session::Poll(std::chrono::milliseconds timeout) {
     default:
       break;
     }
+  }
+
+  // Silent peers, and a host that never answered.
+  auto *host = m_impl->host;
+  const auto now = enet_time_get();
+  if (m_impl->lastPollMs && Since(now, m_impl->lastPollMs) > m_impl->timeoutMs / 4)
+    m_impl->judgeFromMs = now + m_impl->timeoutMs / 4;
+  else if (m_impl->judgeFromMs && Reached(now, *m_impl->judgeFromMs))
+    m_impl->judgeFromMs.reset();
+  m_impl->lastPollMs = now;
+  for (std::size_t i = 0; i < host->peerCount && !m_impl->judgeFromMs; ++i) {
+    auto *peer = &host->peers[i];
+    const bool open = peer->state == ENET_PEER_STATE_CONNECTED ||
+                      peer->state == ENET_PEER_STATE_DISCONNECT_LATER ||
+                      peer->state == ENET_PEER_STATE_DISCONNECTING;
+    if (open && Impl::QuietMs(peer) >= m_impl->timeoutMs) {
+      events.push_back({Event::Kind::Disconnected, m_impl->IdOf(peer), std::nullopt});
+      enet_peer_disconnect_now(peer, 0);
+    }
+  }
+  if (auto *peer = m_impl->connecting;
+      peer && Since(now, m_impl->connectStartMs) >= m_impl->timeoutMs) {
+    m_impl->connecting = nullptr;
+    events.push_back({Event::Kind::Disconnected, m_impl->IdOf(peer), std::nullopt});
+    enet_peer_reset(peer);
   }
   return events;
 }
@@ -184,8 +243,15 @@ void Session::Broadcast(const proto::Message &message, PeerId except) {
 }
 
 void Session::Disconnect(PeerId id) {
+  // Later: a goodbye sent together with what came before it is reset away
+  // on arrival, with the packets still queued (a Refused, a Bye).
   if (auto *peer = m_impl->PeerOf(id))
-    enet_peer_disconnect(peer, 0);
+    enet_peer_disconnect_later(peer, 0);
+}
+
+void Session::Drop(PeerId id) {
+  if (auto *peer = m_impl->PeerOf(id))
+    enet_peer_disconnect_now(peer, 0);
 }
 
 void Session::Flush() { enet_host_flush(m_impl->host); }
@@ -199,6 +265,7 @@ std::optional<Stats> Session::StatsOf(PeerId id) const {
       .rttVarianceMs = peer->roundTripTimeVariance,
       .packetLoss =
           static_cast<float>(peer->packetLoss) / static_cast<float>(ENET_PEER_PACKET_LOSS_SCALE),
+      .quietMs = Impl::QuietMs(peer),
   };
 }
 

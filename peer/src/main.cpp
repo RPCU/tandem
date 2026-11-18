@@ -573,6 +573,8 @@ int main(int argc, char **argv) {
               Log("+ player {} ({})", e.player.id, e.player.name);
             else if constexpr (std::is_same_v<E, tandem::events::PlayerLeft>)
               Log("- player {}", e.player);
+            else if constexpr (std::is_same_v<E, tandem::events::PlayerReturned>)
+              Log("= player {} ({}) is back", e.player.id, e.player.name);
             else if constexpr (std::is_same_v<E, tandem::events::RemoteState>) {
               ++heard;
               puppeteer.Heard(e.state);
