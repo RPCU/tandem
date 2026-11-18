@@ -5,6 +5,7 @@ add_library(tandem_core STATIC
   src/protocol.cpp
   src/session.cpp
   src/endpoint.cpp
+  src/story.cpp
   src/interpolation.cpp
   src/movement.cpp
   src/pose.cpp

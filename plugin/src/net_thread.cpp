@@ -1,6 +1,7 @@
 #include "net_thread.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
+#include "story.hpp"
 
 #include "tandem/endpoint.hpp"
 
@@ -104,16 +105,21 @@ struct NetThread::Impl {
                 log::Info("in the session as player {} (host {})", e.you, e.host);
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
+                Story::Get().PushInbound(
+                    {.kind = StoryInbound::Kind::InSession, .player = e.you, .host = e.host});
               } else if constexpr (std::is_same_v<E, events::PlayerJoined>) {
                 log::Info("{} joined (player {}, body {})", e.player.name, e.player.id,
                           static_cast<int>(e.player.body));
                 runtime.NotePlayerName(e.player.id, e.player.name);
                 runtime.PushEvent(
                     {ScriptEvent::Kind::PlayerJoined, e.player.id, e.player.name, e.player.body});
+                Story::Get().PushInbound(
+                    {.kind = StoryInbound::Kind::Joined, .player = e.player.id});
               } else if constexpr (std::is_same_v<E, events::PlayerLeft>) {
                 log::Info("player {} left", e.player);
                 runtime.ForgetRemote(e.player);
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
+                Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
               } else if constexpr (std::is_same_v<E, events::PlayerReturned>) {
                 // Its puppet and seat stay; its new game sends its look again.
                 log::Info("{} is back on a new connection (player {})", e.player.name, e.player.id);
@@ -217,7 +223,11 @@ struct NetThread::Impl {
                 log::Info("player {} {} (pause menu)", e.pause.player,
                           e.pause.paused ? "paused" : "resumed");
                 PublishPaused(*endpoint);
+              } else if constexpr (std::is_same_v<E, events::Story>) {
+                Story::Get().PushInbound(
+                    {.kind = StoryInbound::Kind::Message, .message = e.message});
               } else if constexpr (std::is_same_v<E, events::Ended>) {
+                Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
                 runtime.SetRemotePaused({});
                 // The next session's players start afresh (a restarted host
@@ -302,6 +312,8 @@ struct NetThread::Impl {
       }
       for (const auto &noise : runtime.TakeLocalNoises())
         endpoint->SendNoise(noise);
+      for (auto &[message, to] : Story::Get().TakeOutbound())
+        endpoint->SendStory(std::move(message), to);
 
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {
         nextReport = now + 10s;
