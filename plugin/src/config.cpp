@@ -97,17 +97,31 @@ Config LoadConfig(const std::filesystem::path &path) {
         flag = false;
       else
         log::Warn("tandem.ini:{}: {} is on or off", number, key);
-    } else if (key == "quest_freeze_allow") {
+    } else if (key == "quest_freeze_allow" || key == "private_actors" || key == "private_scenes" ||
+               key == "public_scenes") {
+      auto &list = key == "quest_freeze_allow" ? config.questFreezeAllow
+                   : key == "private_actors"   ? config.privateActors
+                   : key == "private_scenes"   ? config.privateScenes
+                                               : config.publicScenes;
+      if (key == "private_actors")
+        list.clear(); // the file's list replaces the defaults
       for (std::size_t start = 0; start <= value.size();) {
         const auto comma = value.find(',', start);
         const auto path = Trim(
             value.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
         if (!path.empty())
-          config.questFreezeAllow.push_back(path);
+          list.push_back(path);
         if (comma == std::string::npos)
           break;
         start = comma + 1;
       }
+    } else if (key == "scene_privacy") {
+      if (value == "on" || value == "true")
+        config.scenePrivacy = true;
+      else if (value == "off" || value == "false")
+        config.scenePrivacy = false;
+      else
+        log::Warn("tandem.ini:{}: scene_privacy is on or off", number);
     } else if (key == "time_host") {
       if (value == "bubble")
         config.timeHostFull = false;

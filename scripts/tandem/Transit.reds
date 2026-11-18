@@ -1,5 +1,5 @@
 // Scripted transit and quest vehicles (docs/ARCHITECTURE.md, "Scripted
-// transit and quest vehicles"; engine-knowledge.md §13.18).
+// transit and quest vehicles"; engine-knowledge.md §13.27).
 //
 // Our V's ride, sent as proto::Transit when it changes:
 // - Metro: V is mounted on an NCART train (ncartMetroObject, an AVObject
@@ -222,7 +222,7 @@ public class TandemTransit {
       let at = TandemNative.RemotePosition(puppet.player);
       if at.W != 0.0 {
         at.W = 1.0;
-        GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, at, new EulerAngles(0.0, 0.0, Rad2Deg(TandemNative.RemoteYaw(puppet.player))));
+        GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, at, TandemYawAngles(Rad2Deg(TandemNative.RemoteYaw(puppet.player))));
       }
     }
   }
@@ -271,7 +271,7 @@ public class TandemTransit {
       let at = TandemNative.RemotePosition(puppet.player);
       if at.W != 0.0 {
         at.W = 1.0;
-        GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, at, new EulerAngles(0.0, 0.0, Rad2Deg(TandemNative.RemoteYaw(puppet.player))));
+        GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, at, TandemYawAngles(Rad2Deg(TandemNative.RemoteYaw(puppet.player))));
       }
       if puppet.hidden {
         TandemTransit.Hide(body, false);
@@ -449,7 +449,7 @@ public class TandemTransit {
       TandemNative.Log(s"ride: its seats:\(names)");
     }
     for puppet in puppets {
-      TandemNative.Log(s"ride: player \(puppet.player) kind \(TandemNative.RemoteTransitKind(puppet.player)) flags \(TandemNative.RemoteTransitFlags(puppet.player)) station \(TandemNative.RemoteTransitAt(puppet.player)) next \(TandemNative.RemoteTransitNext(puppet.player)) seat \(NameToString(TandemNative.RemoteTransitSeat(puppet.player))); here mode \(puppet.transitMode), hidden \(puppet.hidden), seated \(EntityID.IsDefined(puppet.seatedIn)), jumps \(TandemNative.RemoteJumps(puppet.player))");
+      TandemNative.Log(s"ride: player \(puppet.player) kind \(TandemNative.RemoteTransitKind(puppet.player)) flags \(TandemNative.RemoteTransitFlags(puppet.player)) station \(TandemNative.RemoteTransitAt(puppet.player)) next \(TandemNative.RemoteTransitNext(puppet.player)) seat \(NameToString(TandemNative.RemoteTransitSeat(puppet.player))); here mode \(puppet.transitMode), hidden \(puppet.hidden), seated \(EntityID.IsDefined(puppet.seatedIn))");
     }
     TandemNative.Log(s"ride: seated by player \(this.m_seatedBy)");
   }

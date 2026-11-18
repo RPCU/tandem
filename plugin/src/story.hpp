@@ -7,8 +7,11 @@
 #include "tandem/protocol.hpp"
 #include "tandem/story.hpp"
 
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -46,8 +49,24 @@ public:
   void QuestMoved(std::uint32_t quest, const proto::Vec3 &host);
   story::Participation::Award Reward(const proto::Vec3 &host);
 
+  // Private scenes (design §2.12). Game thread: our V is in one. Net thread:
+  // while it is, our V is sent standing where the scene began and its pose
+  // is not sent (FilterLocal: false drops the message).
+  void SetPrivate(bool on);
+  bool Private() const { return m_private.load(); }
+  void FilterLocal(proto::PlayerState &state);
+  // Game thread writes, animation threads read: a busy player's puppet
+  // shows its own idle, not that player's pose.
+  void PausePose(proto::PlayerId player, bool paused);
+  bool PosePaused(proto::PlayerId player) const;
+
 private:
   std::vector<proto::PlayerId> GuestsNear(const proto::Vec3 &host) const;
+
+  std::atomic_bool m_private{false};
+  std::optional<proto::PlayerState> m_held; // net thread
+  std::atomic_bool m_releaseHeld{false};
+  std::array<std::atomic<proto::PlayerId>, 8> m_posePaused{};
 
   std::mutex m_lock; // the two queues
   std::vector<StoryInbound> m_inbound;
