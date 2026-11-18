@@ -338,8 +338,18 @@ public class TandemSystem extends ScriptableSystem {
   // game killed there reloads from before the fight, like any death
   // (ScriptableSystem.IsSavingLocked, final.reds:48411; the save locks ask
   // every scriptable system).
+  // A guest never saves in a session, whatever tandem.ini's `story` says:
+  // its world is the host's and it plays at the host's difficulty
+  // (Outcomes.reds), and a game killed there must load its own save as it
+  // was. Nor while the host's difficulty is still on after a session.
   private func IsSavingLocked() -> Bool {
-    return this.m_leftDown || (IsDefined(this.m_revive) && this.m_revive.IsDown());
+    if this.m_leftDown || (IsDefined(this.m_revive) && this.m_revive.IsDown()) {
+      return true;
+    }
+    if this.m_inGame && this.m_you != 0u && !TandemNative.IsHost() {
+      return true;
+    }
+    return IsDefined(this.m_outcomes) && this.m_outcomes.FollowsHost();
   }
 
   // ---- the co-op menu, in game (Coop.reds) ----

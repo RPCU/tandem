@@ -281,7 +281,10 @@ public class TandemStorySystem extends ScriptableSystem {
           this.m_you = 0u;
           break;
         case 4:
+          // Gone (it may have vanished mid-scene): no longer busy, nothing
+          // of ours held for it.
           ArrayRemove(this.m_others, event.player);
+          ArrayRemove(this.m_hiddenPuppets, event.player);
           this.SetBusy(event.player, false);
           break;
         case 3:
