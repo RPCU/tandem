@@ -11,6 +11,8 @@ expect 'ride: asked to ride with player 1 or follow' 30
 shot scene-ride-asked
 expect "ride: no free seat in player 1's scene ride: riding along" 15
 expect 'our ride: kind 4' 5
+# Carried by the engine (a mount to the copy's trunk body slot), or the 5 Hz fallback.
+expect 'ride: (carried by the copy|the copy has no trunk body slot)' 5
 cmd ride
 expect 'ride: .*carried by player 1' 5
 shot scene-ride-along

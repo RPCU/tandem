@@ -37,10 +37,10 @@
 //   driving the host): carried along. The scene and its car stay the
 //   host's and nobody is moved: our V is hidden (TemporaryHide), kept still
 //   (the game's own restrictions: no movement, no jump, no weapons, no
-//   world or vehicle interaction, crouched, invulnerable) and put in the
-//   copy's cabin every frame, behind the seats, turning with the car while
-//   the camera stays free. We send Transit Along, so every other game hides
-//   our puppet. The game has no camera to lend a V without a seat: a
+//   world or vehicle interaction, crouched, invulnerable), put once in the
+//   copy's cabin behind the seats and mounted there (StartCarry): the
+//   engine carries it with the car, turning with it, while the camera stays
+//   free. We send Transit Along, so every other game hides our puppet. The game has no camera to lend a V without a seat: a
 //   vehicle's cameras (and its scene camera mode) are the seated V's
 //   (the player state machine's vehicle states), and only photo mode has a
 //   free camera; V's own eyes, carried, are the passenger's view.
@@ -84,6 +84,13 @@ public class TandemTransit {
   private let m_carriedBy: Uint32;
   private let m_carriedCar: EntityID;
   private let m_carYaw: Float;
+  // How: mounted to the copy (and when to mount, and to check it held), or
+  // the fallback's placing five times a second.
+  private let m_carryMounted: Bool;
+  private let m_carryFallback: Bool;
+  private let m_carryMountAt: Float;
+  private let m_carryCheckAt: Float;
+  private let m_carryPlacedAt: Float;
   private let m_now: Float;
   // Our last ride was the host's scene ride with seats: its end offers the
   // far ones to join us.
@@ -583,31 +590,73 @@ public class TandemTransit {
 
   // ---- riding along with no seat ----
 
+  // The engine carries V: put once in the copy's cabin (behind the seats,
+  // a passenger's eye height, crouched), then mounted to the copy's trunk
+  // body slot with its position kept (preservePositionAfterMounting, as
+  // vanilla mounts a body in a trunk) and silently (silentUnmount: no
+  // vehicle state machine, as vanilla's own seat switches do), so the
+  // mounting facility moves V with the car every frame, turning with it,
+  // and the world streams around V as it moves. No seat is taken: the
+  // trunk body slot is not a seat, and on our copy only. A copy that has no
+  // such slot (the mount did not hold after half a second): put back in
+  // the cabin five times a second instead (Carry), never every frame.
   private func StartCarry(asker: Uint32, carId: EntityID, car: ref<VehicleObject>) -> Void {
     let player = GetPlayer(this.m_game);
     TandemTransit.Restrict(player, true);
     TandemTransit.Hide(player, true);
     this.m_carriedBy = asker;
     this.m_carriedCar = carId;
-    this.m_carYaw = Quaternion.ToEulerAngles(car.GetWorldOrientation()).Yaw;
-    this.Carry();
+    this.m_carryMounted = false;
+    this.m_carryFallback = false;
+    this.Place(player, car);
+    // Mounted on the next tick, once the teleport has put V there.
+    this.m_carryMountAt = this.m_now + 0.05;
+    this.m_carryCheckAt = 0.0;
     let name = this.NameOf(asker);
     TandemTransit.Notice(this.m_game, s"Riding along with \(name)");
     TandemNative.Log(s"ride: no free seat in player \(asker)'s scene ride: riding along, carried with its copy");
   }
 
-  // Every frame: in the copy's cabin, behind the seats, at a passenger's
-  // eye height (crouched), turned with the car; the camera stays ours.
+  // Every tick while carried: the mount once, its check, or the fallback.
   private func Carry() -> Void {
     let player = GetPlayer(this.m_game);
     let car = GameInstance.GetDynamicEntitySystem().GetEntity(this.m_carriedCar) as VehicleObject;
     if !IsDefined(player) || !IsDefined(car) {
       return; // Invites ends it (the copy went)
     }
+    if !this.m_carryMounted && !this.m_carryFallback && this.m_now >= this.m_carryMountAt {
+      TandemVehicles.Carry(this.m_game, player, car, TandemTransit.CarrySlot());
+      this.m_carryMounted = true;
+      this.m_carryCheckAt = this.m_now + 0.5;
+      return;
+    }
+    if this.m_carryMounted && this.m_carryCheckAt > 0.0 && this.m_now >= this.m_carryCheckAt {
+      this.m_carryCheckAt = 0.0;
+      if GameInstance.GetMountingFacility(this.m_game).IsMountedToAnything(player.GetEntityID()) {
+        TandemNative.Log("ride: carried by the copy (mounted, trunk body slot)");
+      } else {
+        this.m_carryMounted = false;
+        this.m_carryFallback = true;
+        TandemNative.Log("ride: the copy has no trunk body slot to carry us: placed in it 5 times a second");
+      }
+    }
+    if this.m_carryFallback && this.m_now - this.m_carryPlacedAt >= 0.2 {
+      this.Place(player, car);
+    }
+  }
+
+  // The slot that carries a V riding along (not a seat).
+  public static func CarrySlot() -> CName {
+    return n"trunk_body";
+  }
+
+  // In the copy's cabin, behind the seats; turned with the car since last.
+  private func Place(player: ref<PlayerPuppet>, car: ref<VehicleObject>) -> Void {
+    this.m_carryPlacedAt = this.m_now;
     let carYaw = Quaternion.ToEulerAngles(car.GetWorldOrientation()).Yaw;
-    let turn = carYaw - this.m_carYaw;
+    let turn = this.m_carryFallback ? carYaw - this.m_carYaw : 0.0;
     this.m_carYaw = carYaw;
-    let yaw = Quaternion.ToEulerAngles(player.GetWorldOrientation()).Yaw + turn;
+    let yaw = this.m_carryFallback ? Quaternion.ToEulerAngles(player.GetWorldOrientation()).Yaw + turn : carYaw;
     let forward = car.GetWorldForward();
     let at = car.GetWorldPosition();
     at.X -= forward.X * 0.45;
@@ -617,8 +666,8 @@ public class TandemTransit {
     GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, at, TandemYawAngles(yaw));
   }
 
-  // Out of the ride along: every restriction off, seen again, put down
-  // beside the car (its right side), facing the way it faces.
+  // Out of the ride along: off the copy, every restriction off, seen again,
+  // put down beside the car (its right side), facing the way it faces.
   private func StopCarry(placeOut: Bool, why: String) -> Void {
     if this.m_carriedBy == 0u {
       return;
@@ -626,6 +675,9 @@ public class TandemTransit {
     let player = GetPlayer(this.m_game);
     let car = GameInstance.GetDynamicEntitySystem().GetEntity(this.m_carriedCar) as VehicleObject;
     if IsDefined(player) {
+      if this.m_carryMounted {
+        TandemVehicles.Uncarry(this.m_game, player, this.m_carriedCar, TandemTransit.CarrySlot());
+      }
       TandemTransit.Restrict(player, false);
       TandemTransit.Hide(player, false);
       if placeOut && IsDefined(car) {
@@ -642,6 +694,8 @@ public class TandemTransit {
     TandemNative.Log(s"ride: out of player \(this.m_carriedBy)'s ride along (\(why))");
     this.m_carriedBy = 0u;
     this.m_carriedCar = none;
+    this.m_carryMounted = false;
+    this.m_carryFallback = false;
   }
 
   // The game's own restrictions for a V that only rides (status effects,
