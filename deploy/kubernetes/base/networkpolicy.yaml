@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tandem-relay
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Players, from anywhere.
+    - ports:
+        - port: 27460
+          protocol: UDP
+    # Probes come from the kubelet (not filtered by NetworkPolicy); metrics
+    # only from the monitoring namespace. An overlay can change the label.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8080
+          protocol: TCP
+  # No egress at all: everything the relay sends is a reply on a flow a
+  # player opened (conntrack lets those through), and it needs no DNS.
+  egress: []

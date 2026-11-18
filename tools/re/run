@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Run a reverse-engineering script (or Python arguments) with capstone and
+# pefile available:  tools/re/run tools/re/rtti_dump.py
+set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+export PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}"
+exec nix-shell -p 'python3.withPackages (ps: [ ps.capstone ps.pefile ps.numpy ])' --run "python3 $(printf '%q ' "$@")"

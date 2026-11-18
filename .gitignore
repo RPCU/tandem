@@ -1,0 +1,11 @@
+/build/
+/.devenv/
+/.direnv/
+/.cache/
+/recordings/
+.devenv.flake.nix
+devenv.local.nix
+.pre-commit-config.yaml
+/result*
+/.task/
+__pycache__/

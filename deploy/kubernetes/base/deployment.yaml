@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tandem-relay
+spec:
+  # Sessions live in the relay's memory and a client is known by its
+  # address: one replica, replaced (not rolled) so two never split a session.
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    spec:
+      serviceAccountName: tandem-relay
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: relay
+          image: tandem-relay
+          args:
+            - serve
+            - --udp=:27460
+            - --http=:8080
+            - --host-tokens=/etc/tandem-relay/host-tokens
+          ports:
+            - name: game
+              containerPort: 27460
+              protocol: UDP
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: "1"
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: host-tokens
+              mountPath: /etc/tandem-relay
+              readOnly: true
+      volumes:
+        - name: host-tokens
+          secret:
+            # One hex token per line, key `host-tokens`. Not in this base:
+            # provide it from your secret store.
+            secretName: tandem-relay-host-tokens
+            defaultMode: 0400

@@ -1,0 +1,31 @@
+{
+  "pins": {
+    "nixbook": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "didactiklabs",
+        "repo": "nixbook"
+      },
+      "branch": "main",
+      "submodules": false,
+      "revision": "b2ef15829340ae03a57fc70cc7c99db09e257d54",
+      "url": "https://github.com/didactiklabs/nixbook/archive/b2ef15829340ae03a57fc70cc7c99db09e257d54.tar.gz",
+      "hash": "sha256-p3WPHzHrJuEnlsq6vwCsa7prNbkCgxPjSMoxeIxmOCw="
+    },
+    "nixpkgs": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "nixos",
+        "repo": "nixpkgs"
+      },
+      "branch": "nixos-unstable",
+      "submodules": false,
+      "revision": "d5cc6833999746cffdfe0598f7bc801a57b887a9",
+      "url": "https://github.com/nixos/nixpkgs/archive/d5cc6833999746cffdfe0598f7bc801a57b887a9.tar.gz",
+      "hash": "sha256-Wpz/7x/YWnDIBu7yj6ixe8j6fIMsidd9Y+o1PqPF3iM="
+    }
+  },
+  "version": 8
+}

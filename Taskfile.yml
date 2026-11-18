@@ -1,0 +1,159 @@
+version: "3"
+
+# Run inside the devenv shell (direnv does it on cd). `task --list` for help.
+
+vars:
+  GAME_HOST: '{{.GAME_HOST | default "anya"}}'
+  GAME_DIR: '{{.GAME_DIR | default "/data/Steam/steamapps/common/Cyberpunk 2077"}}'
+  PLUGIN_DIR: "{{.GAME_DIR}}/red4ext/plugins/tandem"
+  SCRIPTS_DIR: "{{.GAME_DIR}}/r6/scripts/tandem"
+  TWEAKS_DIR: "{{.GAME_DIR}}/r6/tweaks/tandem"
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  sysroot:
+    desc: Download the MSVC CRT and Windows SDK headers the plugin is built against (once)
+    status:
+      - test -d "$TANDEM_XWIN/crt" && test -d "$TANDEM_XWIN/sdk"
+    cmds:
+      # 10.0.26100 has no x86_64 headers in xwin's manifest; 22621 is what the
+      # game's other mods build with.
+      - >-
+        xwin --accept-license --arch x86_64 --sdk-version 10.0.22621
+        --cache-dir "${TANDEM_XWIN%/*}/xwin-cache" splat --output "$TANDEM_XWIN"
+
+  build:
+    desc: Build everything (plugin, mock player, tests)
+    deps: [build:plugin, build:linux]
+
+  build:plugin:
+    desc: Build tandem.dll (Windows x64, cross-compiled)
+    deps: [sysroot]
+    sources: [CMakeLists.txt, CMakePresets.json, cmake/**, core/**, plugin/**]
+    generates: [build/windows/plugin/tandem.dll]
+    cmds:
+      - cmake --preset windows
+      - cmake --build --preset windows
+
+  build:linux:
+    desc: Build the mock player and the tests
+    cmds:
+      - cmake --preset linux
+      - cmake --build --preset linux
+
+  test:
+    desc: Run the tests
+    deps: [build:linux]
+    cmds:
+      - ctest --preset linux
+
+  peer:
+    desc: "Run the mock player (task peer -- host --mode mirror)"
+    deps: [build:linux]
+    cmds:
+      - build/linux/peer/tandem-peer {{.CLI_ARGS | default "host --mode mirror"}}
+
+  natives:check:
+    desc: Check that scripts/tandem/Natives.reds matches plugin/src/natives.cpp
+    cmds:
+      - python3 tools/check-natives.py
+
+  scenario:
+    desc: "In-game scenarios against the mock player (task scenario -- NAME... | all | list)"
+    deps: [build]
+    cmds:
+      - tools/scenario.sh {{.CLI_ARGS}}
+
+  deploy:
+    desc: Install the plugin, scripts and tweaks in the game on GAME_HOST (default anya)
+    deps: [build:plugin, natives:check]
+    cmds:
+      - ssh {{.GAME_HOST}} 'mkdir -p "{{.PLUGIN_DIR}}" "{{.SCRIPTS_DIR}}" "{{.TWEAKS_DIR}}"'
+      - rsync --protect-args -t build/windows/plugin/tandem.dll build/windows/plugin/tandem.pdb "{{.GAME_HOST}}:{{.PLUGIN_DIR}}/"
+      # Never overwrite a tandem.ini already there: it is the player's.
+      - rsync --protect-args -t --ignore-existing dist/tandem.ini "{{.GAME_HOST}}:{{.PLUGIN_DIR}}/"
+      - rsync --protect-args -rt --delete scripts/tandem/ "{{.GAME_HOST}}:{{.SCRIPTS_DIR}}/"
+      - rsync --protect-args -rt --delete tweaks/tandem/ "{{.GAME_HOST}}:{{.TWEAKS_DIR}}/"
+
+  reload:
+    desc: "Send scripts and tweaks to the running game and hot-reload them (RedHotTools); no restart"
+    cmds:
+      - rsync --protect-args -rt --delete scripts/tandem/ "{{.GAME_HOST}}:{{.SCRIPTS_DIR}}/"
+      - rsync --protect-args -rt --delete tweaks/tandem/ "{{.GAME_HOST}}:{{.TWEAKS_DIR}}/"
+      - tools/game.sh reload
+
+  cmd:
+    desc: "Send a command to tandem in the running game (task cmd -- probe)"
+    cmds:
+      - tools/game.sh cmd {{.CLI_ARGS}}
+
+  undeploy:
+    desc: Remove the plugin, scripts and tweaks from the game
+    cmds:
+      - ssh {{.GAME_HOST}} 'rm -rf "{{.PLUGIN_DIR}}" "{{.SCRIPTS_DIR}}" "{{.TWEAKS_DIR}}"'
+
+  game:start:
+    desc: "Start the game on GAME_HOST and load the latest save (tools/game.sh)"
+    cmds:
+      - tools/game.sh start
+
+  game:stop:
+    desc: Kill the game on GAME_HOST
+    cmds:
+      - tools/game.sh stop
+
+  game:shot:
+    desc: "Screenshot the game to .cache/shots/NAME.png (task game:shot -- NAME)"
+    cmds:
+      - tools/game.sh shot {{.CLI_ARGS | default "shot"}}
+
+  logs:
+    desc: Follow tandem's log in the game
+    cmds:
+      - ssh {{.GAME_HOST}} 'tail -n 50 -F "$(ls -t "{{.GAME_DIR}}"/red4ext/logs/tandem-*.log | head -1)"'
+
+  relay:test:
+    desc: Test the relay (Go, race detector)
+    dir: relay
+    cmds:
+      - go vet ./...
+      - go test -race -count=1 ./...
+
+  relay:run:
+    desc: Run the relay locally, open to any host (testing only)
+    dir: relay
+    cmds:
+      - go run ./cmd/tandem-relay serve --allow-any-host {{.CLI_ARGS}}
+
+  relay:image:
+    desc: Build the relay's OCI image with Nix (result-relay-image)
+    cmds:
+      - nix-build -A relayImage -o result-relay-image
+
+  relay:load:
+    desc: Load the relay image into podman
+    deps: [relay:image]
+    cmds:
+      - podman load < result-relay-image
+
+  k8s:check:
+    desc: Render and validate the Kubernetes manifests
+    cmds:
+      - kustomize build deploy/kubernetes/base | kubeconform -strict -summary -
+
+  check:
+    desc: Everything CI would run
+    cmds:
+      - task: test
+      - task: relay:test
+      - task: build:plugin
+      - task: natives:check
+      - task: k8s:check
+
+  fmt:
+    desc: Format everything
+    cmds:
+      - treefmt

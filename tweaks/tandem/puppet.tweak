@@ -1,0 +1,113 @@
+// A remote V's puppet: an NPC record (so the engine gives it a movement
+// component and runs NPC movement controllers on it, which is how tandem
+// drives it) with V's own third-person body, player_{wa,ma}_tpp_cutscene.ent
+// (player_{wa,ma}_tpp.ent draws only a shadow: it is the first-person
+// player's body).
+//
+// That body has no meshes until a look (a customization state) is applied,
+// and no NPC locomotion: scripts/tandem/Body.reds grafts a donor's onto it
+// while the engine builds it. Character.Panam is the base record because a
+// story companion carries a full NPC setup; everything that would make it
+// Panam, or a god, is removed.
+
+Character.TandemPuppetWa : Character.Panam {
+  entityTemplatePath = "base\characters\entities\player\player_wa_tpp_cutscene.ent";
+  appearanceName = "TPP_Body";
+  reactionPreset = "ReactionPresets.NoReaction";
+  // Else every remote V is labelled "Panam": the nameplate reads the record first.
+  displayName = "";
+  fullDisplayName = "";
+  alternativeDisplayName = "";
+  // NPC god mode comes from these record tags.
+  tags -= [ "Invulnerable", "Immortal" ];
+  // The base record's gender entry is Panam's (female, panam.ent): clothing
+  // appearances are chosen by gender, so each body states its own.
+  genders = [
+    {
+      initial = true;
+      gender = "Gender.Female";
+      entity = "base\characters\entities\player\player_wa_tpp_cutscene.ent";
+    }
+  ];
+  // (No attachmentSlots added: the base record already has Head, Chest,
+  // Torso, Legs, Feet and Outfit among its 33; adding them made duplicates.
+  // engine-knowledge.md §13.4.)
+}
+
+Character.TandemPuppetMa : Character.TandemPuppetWa {
+  entityTemplatePath = "base\characters\entities\player\player_ma_tpp_cutscene.ent";
+  genders = [
+    {
+      initial = true;
+      gender = "Gender.Male";
+      entity = "base\characters\entities\player\player_ma_tpp_cutscene.ent";
+    }
+  ];
+}
+
+// V's body with V's own third-person graph, no graft (Body.reds only grafts
+// the two records above): for the anim feature mirror.
+Character.TandemPuppetWaPlain : Character.TandemPuppetWa {
+  reactionPreset = "ReactionPresets.NoReaction";
+}
+
+Character.TandemPuppetMaPlain : Character.TandemPuppetMa {
+  reactionPreset = "ReactionPresets.NoReaction";
+}
+
+// The donors of NPC locomotion, spawned out of sight for a moment at the
+// start of a session: story NPCs with V's skeletons (same root rig hash,
+// measured): Panam for the female body, Kerry for the male one.
+Character.TandemDonorWa : Character.Panam {
+  reactionPreset = "ReactionPresets.NoReaction";
+  tags -= [ "Invulnerable", "Immortal" ];
+}
+
+Character.TandemDonorMa : Character.Kerry {
+  reactionPreset = "ReactionPresets.NoReaction";
+  tags -= [ "Invulnerable", "Immortal" ];
+}
+
+// For tests: Panam herself, no customisation. Proves the movement controller
+// on a rig with the full NPC locomotion set (tandem.ini puppet_female = ...).
+Character.TandemPuppetTest : Character.Panam {
+  reactionPreset = "ReactionPresets.NoReaction";
+  tags -= [ "Invulnerable", "Immortal" ];
+}
+
+// ---- probe (tandem.ini probe = on): bodies spawned in a row to compare their
+// animation setup. Panam (TandemPuppetTest) is the donor of NPC locomotion.
+Character.TandemProbeMaTpp : Character.TandemPuppetWa {
+  entityTemplatePath = "base\characters\entities\player\player_ma_tpp.ent";
+}
+
+Character.TandemProbeWaTpp : Character.TandemPuppetWa {
+  entityTemplatePath = "base\characters\entities\player\player_wa_tpp.ent";
+}
+
+// Grafted (probe): C = the donor's whole animation setup and graph,
+// D = V's sets plus the donor's under a new setup hash, and its graph.
+Character.TandemProbeMaTppC : Character.TandemProbeMaTpp {
+  reactionPreset = "ReactionPresets.NoReaction";
+}
+
+Character.TandemProbeMaTppD : Character.TandemProbeMaTpp {
+  reactionPreset = "ReactionPresets.NoReaction";
+}
+
+Character.TandemProbeWaTppC : Character.TandemProbeWaTpp {
+  reactionPreset = "ReactionPresets.NoReaction";
+}
+
+Character.TandemProbeWaTppD : Character.TandemProbeWaTpp {
+  reactionPreset = "ReactionPresets.NoReaction";
+}
+
+// Grafted (probe) once assembled: E = as C, F = as D.
+Character.TandemProbeMaTppE : Character.TandemProbeMaTpp {
+  reactionPreset = "ReactionPresets.NoReaction";
+}
+
+Character.TandemProbeMaTppF : Character.TandemProbeMaTpp {
+  reactionPreset = "ReactionPresets.NoReaction";
+}

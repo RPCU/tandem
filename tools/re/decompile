@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Decompile functions of the game's exe with Ghidra (headless), by address:
+#
+#   tools/re/decompile 0x1403aaccc 0x14032ac10      C for these functions
+#   tools/re/decompile +1 0x140ca22e4               ... and their callees, one level down
+#
+# The first run imports .cache/re/Cyberpunk2077.exe without analysis (a few
+# minutes) and applies the labels of tools/re/labels.py (address library
+# symbols, RTTI vtables, natives); functions are created on demand.
+set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
+cache=$here/../../.cache/re
+# Not under .cache: Ghidra refuses path elements that start with a dot.
+proj=$(realpath -m "$here/../../build/ghidra")
+run() { nix-shell -p ghidra --run "ghidra-analyzeHeadless $(printf '%q ' "$@")"; }
+if [ ! -e "$proj/cp2077.gpr" ]; then
+  mkdir -p "$proj"
+  "$here/run" "$here/labels.py" >"$cache/labels.tsv"
+  run "$proj" cp2077 -import "$cache/Cyberpunk2077.exe" -noanalysis \
+    -scriptPath "$here/ghidra" -postScript Labels.java "$cache/labels.tsv" >"$cache/ghidra-import.log" 2>&1
+fi
+run "$proj" cp2077 -process Cyberpunk2077.exe -noanalysis -scriptPath "$here/ghidra" \
+  -postScript Decompile.java "$@" 2>&1 |
+  sed -n 's/^INFO  Decompile.java> //p; /^INFO \|^WARN \|^ERROR /!p' |
+  sed 's/ *(GhidraScript) *$//' | sed -n '/^\/\/ /,$p' | grep -v '^ *$'
