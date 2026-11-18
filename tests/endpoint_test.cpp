@@ -1,24 +1,18 @@
 // A real host and real guests over loopback UDP, in one process.
 
+#include "ports.hpp"
 #include "tandem/endpoint.hpp"
 
 #include <doctest/doctest.h>
 
-#include <atomic>
 #include <functional>
 #include <map>
-
-#include <unistd.h>
 
 using namespace std::chrono_literals;
 using namespace tandem;
 
 namespace {
-std::uint16_t NextPort() {
-  // Apart per process: test runs in other checkouts may be going on.
-  static std::atomic<std::uint16_t> port{static_cast<std::uint16_t>(41000 + (getpid() % 400) * 50)};
-  return port++;
-}
+using test::NextPort;
 
 template <class E> bool Has(const std::vector<SessionEvent> &events) {
   for (const auto &event : events)
@@ -1026,4 +1020,196 @@ TEST_CASE(
   CHECK(awareness->entries[0].npc == 7);
   CHECK(awareness->entries[0].level == 200);
   CHECK_FALSE(hostHeardAwareness);
+}
+
+TEST_CASE("a guest's takedown request reaches the host stamped; the answer only the asker") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  a->SendNpcAction({.player = 99, .npc = 7, .kind = proto::NpcActionKind::Grab, .name = 5});
+  std::optional<proto::NpcAction> asked;
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::NpcActionBy>(&event); e && i == 0)
+        asked = e->action;
+    return asked.has_value();
+  }));
+  CHECK(asked->player == a->You()); // a guest acts only in its own name
+  CHECK(asked->kind == proto::NpcActionKind::Grab);
+  CHECK(asked->name == 5);
+
+  host->SendNpcActionReply(asked->player,
+                           {.npc = 7, .kind = proto::NpcActionKind::Grab, .accepted = true});
+  host->SendNpcHold({.npc = 7, .player = a->You(), .how = proto::NpcHoldKind::Grappled});
+  std::optional<proto::NpcActionReply> answered;
+  bool bAnswered = false;
+  std::optional<proto::NpcHold> bHold;
+  Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events) {
+      if (const auto *e = std::get_if<events::NpcActionAnswered>(&event)) {
+        if (i == 1)
+          answered = e->reply;
+        else
+          bAnswered = true;
+      }
+      if (const auto *e = std::get_if<events::HostNpcHold>(&event); e && i == 2)
+        bHold = e->hold;
+    }
+    return false; // the full time: b must hear no answer
+  });
+  REQUIRE(answered);
+  CHECK(answered->accepted);
+  CHECK_FALSE(bAnswered);
+  REQUIRE(bHold);
+  CHECK(bHold->player == a->You());
+  CHECK(host->NpcHolds().size() == 1);
+}
+
+TEST_CASE("holds reach late joiners and end with the NPC or the holder") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto holder = Endpoint::Join({"holder"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(holder, error);
+  REQUIRE(Pump({host.get(), holder.get()},
+               [&](std::size_t, const auto &) { return host->Players().size() == 2; }));
+  host->SendNpcHold({.npc = 7, .player = 2, .how = proto::NpcHoldKind::Carried});
+  host->SendNpcHold({.npc = 8, .player = 1, .how = proto::NpcHoldKind::Grappled});
+  host->SendNpcHold({.npc = 9, .player = 1, .how = proto::NpcHoldKind::Grappled});
+  host->SendNpcGone({.npc = 9, .reason = proto::kGoneDead}); // gone: no longer held
+
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::map<proto::NpcId, proto::NpcHold> lateHeard;
+  REQUIRE(Pump({host.get(), holder.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::HostNpcHold>(&event); e && i == 2)
+        lateHeard[e->hold.npc] = e->hold;
+    return lateHeard.size() == 2;
+  }));
+  CHECK(lateHeard.at(7).how == proto::NpcHoldKind::Carried);
+  CHECK(lateHeard.at(8).player == 1);
+  CHECK_FALSE(lateHeard.contains(9));
+
+  // The holder leaves: what it carried is released for everyone.
+  holder->Leave();
+  bool released = false;
+  REQUIRE(Pump({host.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::HostNpcHold>(&event);
+          e && i == 1 && e->hold.npc == 7 && e->hold.player == proto::kNoPlayer)
+        released = true;
+    return released;
+  }));
+  CHECK(host->NpcHolds().size() == 1);
+  CHECK(late->NpcHolds().size() == 1);
+}
+
+TEST_CASE("an NPC cue reaches only the player it is for") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  host->SendNpcCue({.npc = 7, .player = b->You(), .cue = proto::NpcCueKind::CombatStart});
+  bool aHeard = false;
+  std::optional<proto::NpcCue> bHeard;
+  Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::HostNpcCue>(&event)) {
+        if (i == 2)
+          bHeard = e->cue;
+        else
+          aHeard = true;
+      }
+    return false;
+  });
+  REQUIRE(bHeard);
+  CHECK(bHeard->cue == proto::NpcCueKind::CombatStart);
+  CHECK_FALSE(aHeard);
+  // A guest cannot answer or announce for the host.
+  a->SendNpcActionReply(b->You(), {.npc = 7, .kind = proto::NpcActionKind::Grab});
+  a->SendNpcHold({.npc = 7, .player = 2});
+  CHECK(a->NpcHolds().empty());
+}
+
+namespace {
+void CollectTimes(const std::vector<SessionEvent> &events, std::vector<proto::TimeEffect> &into) {
+  for (const auto &event : events)
+    if (const auto *t = std::get_if<events::RemoteTimeEffect>(&event))
+      into.push_back(t->effect);
+}
+} // namespace
+
+TEST_CASE("time abilities: stamped, made safe, kept for late joiners, ended when a player leaves") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  // Before joining: sent once in. A wild scale is clamped (a bubble never
+  // stops NPCs); the player field is ignored.
+  a->SetLocalTimeEffect({.player = 9, .abilities = proto::kTimeSandevistan, .scale = -3.f});
+  std::vector<proto::TimeEffect> atHost;
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      CollectTimes(events, atHost);
+    return !atHost.empty();
+  }));
+  const proto::TimeEffect sandevistan{
+      .player = a->You(), .abilities = proto::kTimeSandevistan, .scale = 0.05f};
+  CHECK(atHost.front() == sandevistan);
+  CHECK(host->TimeEffects().at(a->You()) == sandevistan);
+
+  // The host's own too: two Vs in a Sandevistan at once.
+  host->SetLocalTimeEffect({.abilities = proto::kTimeSandevistan, .scale = 0.3f});
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::vector<proto::TimeEffect> atLate, atA;
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      CollectTimes(events, atA);
+    if (i == 2)
+      CollectTimes(events, atLate);
+    return atLate.size() == 2 && !atA.empty();
+  }));
+  CHECK(atA.front() == proto::TimeEffect{1, proto::kTimeSandevistan, 0.3f});
+  CHECK(late->TimeEffects().size() == 2);
+  CHECK(late->TimeEffects().at(a->You()) == sandevistan);
+
+  // Scanning alone makes no bubble: its scale is 1 whatever is sent.
+  late->SetLocalTimeEffect({.abilities = proto::kTimeScanning, .scale = 0.1f});
+  atHost.clear();
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      CollectTimes(events, atHost);
+    return !atHost.empty();
+  }));
+  CHECK(atHost.front() == proto::TimeEffect{late->You(), proto::kTimeScanning, 1.f});
+
+  // a leaves in its Sandevistan: its bubble ends on every game.
+  const auto aId = a->You();
+  a->Leave();
+  atHost.clear(), atLate.clear();
+  REQUIRE(Pump({host.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    CollectTimes(events, i == 0 ? atHost : atLate);
+    return !atHost.empty() && !atLate.empty();
+  }));
+  CHECK(atHost.front() == proto::TimeEffect{aId, 0, 1.f});
+  CHECK(atLate.front() == proto::TimeEffect{aId, 0, 1.f});
+  CHECK_FALSE(host->TimeEffects().contains(aId));
+  CHECK_FALSE(late->TimeEffects().contains(aId));
 }

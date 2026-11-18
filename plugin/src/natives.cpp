@@ -102,6 +102,50 @@ struct TandemHackEvent {
   float seconds{};
 };
 static_assert(alignof(TandemHackEvent) <= 8, "the script VM aligns struct locals to 8");
+// An NPC's new speed in the time bubbles (tandem/timebubble.hpp): its
+// factor, 1 when it is out of every bubble.
+struct TandemTimeChange {
+  std::uint32_t npc{};
+  float factor{};
+};
+
+Red::DynArray<TandemTimeChange> ToScript(const std::vector<sync::TimeBubbles::Change> &changes) {
+  Red::DynArray<TandemTimeChange> out;
+  for (const auto &change : changes)
+    out.EmplaceBack(TandemTimeChange{change.npc, change.factor});
+  return out;
+}
+// Fast travel together (scripts/tandem/Travel.reds). Plain fields, as above.
+struct TandemRegroup {
+  std::int32_t kind{}; // 1 an offer to come to `player`, 2 their answer to our offer
+  std::uint32_t player{};
+  std::uint32_t offer{};
+  std::int32_t reason{};  // proto::RegroupReason
+  Red::TweakDBID point;   // the fast travel point `player` is at (invalid: none)
+  std::uint64_t marker{}; // its marker node's hash (NodeRefOf; 0: none)
+  float x{}, y{}, z{};    // where `player` stands
+  float yaw{};            // radians, 0 = facing +Y
+  Red::CString label;     // shown with the prompt; may be empty
+  bool accepted{};        // 2: the answer
+};
+static_assert(alignof(TandemRegroup) <= 8, "the script VM aligns struct locals to 8");
+
+// Grapples, takedowns, finishers and carried bodies (Takedowns.reds). Plain
+// fields only, like TandemNpcEvent.
+struct TandemNpcAction {
+  std::int32_t kind{}; // 1 a guest's request (host), 2 the host's answer, 3 who holds, 4 cue
+  std::uint32_t npc{};
+  std::uint32_t player{}; // 1: who asks; 3: the holder (0: released); 4: us
+  std::int32_t action{};  // 1, 2: proto::NpcActionKind; 3: proto::NpcHoldKind; 4: proto::NpcCueKind
+  Red::CName name;
+  Red::TweakDBID record; // the item, as a TweakDB id (finisher: weapon)
+  Red::EntityID entity;  // the item, as an entity id (dispose: the container)
+  float amount{};
+  float dx{}, dy{}, dz{}; // throw: the impulse
+  bool accepted{};        // 2
+  std::int32_t reason{};  // 2: proto::kRefused*
+};
+static_assert(alignof(TandemNpcAction) <= 8, "the script VM aligns struct locals to 8");
 // Loot (scripts/tandem/Loot.reds): one stack of a shared world item lying
 // in the world (1), or who picked up a stack (2). Plain fields only, as above.
 struct TandemLootEvent {
@@ -545,6 +589,76 @@ struct TandemNative : Red::IScriptable {
     return Red::CString(Runtime::Get().PlayerName(player).c_str());
   }
 
+  // Time abilities (scripts/tandem/Time.reds): ours, when they change
+  // (proto::kTime* bits; scale: the world speed they ask for, 1: none).
+  static void SendTimeEffect(std::int32_t abilities, float scale) {
+    Runtime::Get().SubmitLocalTime(
+        {.abilities = static_cast<std::uint8_t>(abilities), .scale = scale});
+  }
+  // The other players' active ones, and how many times they changed (0: never).
+  static std::int32_t TimeChanges() {
+    std::uint32_t changes = 0;
+    Runtime::Get().RemoteTimes(changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  static Red::DynArray<std::uint32_t> TimePlayers() {
+    std::uint32_t changes = 0;
+    Red::DynArray<std::uint32_t> out;
+    for (const auto &[player, effect] : Runtime::Get().RemoteTimes(changes))
+      out.EmplaceBack(player);
+    return out;
+  }
+  static std::int32_t TimeAbilities(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto times = Runtime::Get().RemoteTimes(changes);
+    const auto it = times.find(player);
+    return it == times.end() ? 0 : it->second.abilities;
+  }
+  static float TimeScale(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto times = Runtime::Get().RemoteTimes(changes);
+    const auto it = times.find(player);
+    return it == times.end() ? 1.f : it->second.scale;
+  }
+  // The time bubbles: the Vs with a bubble ability on (player, world speed,
+  // where), every NPC there is (host: the ones it shares; guest: its
+  // proxies). Answers the NPCs whose speed changed.
+  static Red::DynArray<TandemTimeChange>
+  UpdateTimeBubbles(Red::DynArray<std::uint32_t> owners, Red::DynArray<float> scales,
+                    Red::DynArray<Red::Vector4> ownerPositions, Red::DynArray<std::uint32_t> npcs,
+                    Red::DynArray<Red::Vector4> npcPositions) {
+    std::vector<sync::TimeBubbles::Owner> who;
+    for (std::uint32_t i = 0; i < owners.Size() && i < scales.Size() && i < ownerPositions.Size();
+         ++i)
+      who.push_back({.player = owners[i],
+                     .scale = scales[i],
+                     .position = {ownerPositions[i].X, ownerPositions[i].Y, ownerPositions[i].Z}});
+    std::vector<sync::TimeBubbles::Npc> what;
+    for (std::uint32_t i = 0; i < npcs.Size() && i < npcPositions.Size(); ++i)
+      what.push_back({npcs[i], {npcPositions[i].X, npcPositions[i].Y, npcPositions[i].Z}});
+    return ToScript(Runtime::Get().Bubbles().Update(who, what));
+  }
+  // Every bubble ends (the session is over): the NPCs to give back.
+  static Red::DynArray<TandemTimeChange> ClearTimeBubbles() {
+    return ToScript(Runtime::Get().Bubbles().Clear());
+  }
+  static float TimeFactorOf(std::uint32_t npc) { return Runtime::Get().Bubbles().FactorOf(npc); }
+  static std::int32_t TimeBubbleMembers(std::uint32_t player) {
+    return static_cast<std::int32_t>(Runtime::Get().Bubbles().MembersOf(player));
+  }
+  // tandem.ini time_host = full: the host keeps its own slow motion whole.
+  static bool IsTimeHostFull() { return Runtime::Get().config.timeHostFull; }
+  // Invites through tandem-relay (docs/ARCHITECTURE.md, "Invites"): the
+  // host's join code to show ("K7Q-2M9"; "" until the relay gave one, or
+  // with no relay), what the relay link is doing ("" no relay,
+  // "connecting", "ready", else the problem, in words), and joining the
+  // session a typed code names (false: not a code, or no relay set).
+  static Red::CString RelayCode() { return Red::CString(Runtime::Get().RelayCode().c_str()); }
+
+  static Red::CString RelayStatus() { return Red::CString(Runtime::Get().RelayStatus().c_str()); }
+
+  static bool JoinByCode(Red::CString code) { return Runtime::Get().JoinByCode(code.c_str()); }
+
   // Host: its NPCs.
   static void SendNpcSpawn(std::uint32_t npc, Red::TweakDBID record, Red::CName appearance,
                            Red::Vector4 position, Red::Quaternion orientation) {
@@ -753,6 +867,63 @@ struct TandemNative : Red::IScriptable {
                                       event.flags, event.seconds});
     return out;
   }
+  // Grapples, takedowns, finishers, carried bodies (Takedowns.reds).
+  // Guest: our V acts on the host's NPC; `record` or else `entity` is the item.
+  static void SendNpcAction(std::uint32_t npc, std::int32_t kind, Red::CName name,
+                            Red::TweakDBID record, Red::EntityID entity, float amount,
+                            Red::Vector4 direction) {
+    Runtime::Get().SubmitNpcAction({.npc = npc,
+                                    .kind = static_cast<proto::NpcActionKind>(kind),
+                                    .name = name.hash,
+                                    .item = record.value ? record.value : entity.hash,
+                                    .amount = amount,
+                                    .direction = {direction.X, direction.Y, direction.Z}});
+  }
+  // Host: the answer to a guest's request, to that guest only.
+  static void SendNpcActionReply(std::uint32_t player, std::uint32_t npc, std::int32_t kind,
+                                 bool accepted, std::int32_t reason) {
+    Runtime::Get().SubmitNpcActionReply(player, {.npc = npc,
+                                                 .kind = static_cast<proto::NpcActionKind>(kind),
+                                                 .accepted = accepted,
+                                                 .reason = static_cast<std::uint8_t>(reason)});
+  }
+  // Host: who holds an NPC now (player 0: released).
+  static void SendNpcHold(std::uint32_t npc, std::uint32_t player, std::int32_t how,
+                          Red::CName name) {
+    Runtime::Get().SubmitNpcHold({.npc = npc,
+                                  .player = player,
+                                  .how = static_cast<proto::NpcHoldKind>(how),
+                                  .name = name.hash});
+  }
+  // Host: an NPC's reaction for one player's game.
+  static void SendNpcCue(std::uint32_t npc, std::uint32_t player, std::int32_t cue) {
+    Runtime::Get().SubmitNpcCue(
+        {.npc = npc, .player = player, .cue = static_cast<proto::NpcCueKind>(cue)});
+  }
+  static Red::DynArray<TandemNpcAction> TakeNpcActions() {
+    Red::DynArray<TandemNpcAction> out;
+    for (const auto &e : Runtime::Get().TakeActionEvents()) {
+      TandemNpcAction action{.kind = static_cast<std::int32_t>(e.kind),
+                             .npc = e.npc,
+                             .player = e.player,
+                             .action = e.action,
+                             .name = Red::CName(e.name),
+                             .record = Red::TweakDBID(e.item),
+                             .amount = e.amount,
+                             .dx = e.direction.x,
+                             .dy = e.direction.y,
+                             .dz = e.direction.z,
+                             .accepted = e.accepted,
+                             .reason = e.reason};
+      action.entity.hash = e.item;
+      out.EmplaceBack(action);
+    }
+    return out;
+  }
+  // The controller leaves this puppet (player or NpcPuppetId) where it is.
+  static void HoldPuppet(std::uint32_t player, bool hold) {
+    Runtime::Get().HoldPuppet(player, hold);
+  }
   // Loot: our V dropped a bag of stacks from its inventory (a shared world
   // item: the host numbers it, `token` is ours), or picked up a stack of one
   // (a claim: the first one to reach the host keeps it).
@@ -832,6 +1003,55 @@ struct TandemNative : Red::IScriptable {
   // The puppet id the controller and tracks know an NPC proxy by.
   static std::uint32_t NpcPuppetId(std::uint32_t npc) { return kNpcPuppetBase + npc; }
 
+  // Fast travel together: offer `to` (0: everyone) to come to us, where we
+  // stand (and at which fast travel point, if any). Answers our offer's id.
+  static std::uint32_t SendRegroup(std::uint32_t to, std::int32_t reason, Red::TweakDBID point,
+                                   Red::NodeRef marker, Red::Vector4 position,
+                                   Red::Quaternion orientation, Red::CString label) {
+    return Runtime::Get().SubmitRegroup(
+        {.to = to,
+         .reason = static_cast<proto::RegroupReason>(std::clamp(reason, 0, 3)),
+         .point = point.value,
+         .marker = marker.hash,
+         .position = {position.X, position.Y, position.Z},
+         .yaw = YawOfQuaternion(orientation),
+         .label = label.c_str()});
+  }
+  // Our answer to player `to`'s offer (offer 0: we come on our own).
+  static void SendRegroupAnswer(std::uint32_t to, std::uint32_t offer, bool accepted) {
+    Runtime::Get().SubmitRegroupAnswer({.to = to, .offer = offer, .accepted = accepted});
+  }
+  // The others' offers and answers since the last call.
+  static Red::DynArray<TandemRegroup> TakeRegroups() {
+    Red::DynArray<TandemRegroup> out;
+    for (const auto &event : Runtime::Get().TakeRegroupEvents()) {
+      TandemRegroup item;
+      item.kind = static_cast<std::int32_t>(event.kind);
+      if (event.kind == RegroupEvent::Kind::Offer) {
+        const auto &o = event.offer;
+        item.player = o.from;
+        item.offer = o.offer;
+        item.reason = static_cast<std::int32_t>(o.reason);
+        item.point = Red::TweakDBID(o.point);
+        item.marker = o.marker;
+        item.x = o.position.x;
+        item.y = o.position.y;
+        item.z = o.position.z;
+        item.yaw = o.yaw;
+        item.label = Red::CString(o.label.c_str());
+      } else {
+        item.player = event.answer.from;
+        item.offer = event.answer.offer;
+        item.accepted = event.answer.accepted;
+      }
+      out.EmplaceBack(std::move(item));
+    }
+    return out;
+  }
+  // A node reference as the number that names it in every game, and back.
+  static std::uint64_t NodeRefHash(Red::NodeRef node) { return node.hash; }
+  static Red::NodeRef NodeRefOf(std::uint64_t hash) { return Red::NodeRef(hash); }
+
   static void Log(Red::CString text) { log::Info("[script] {}", text.c_str()); }
 
   RTTI_IMPL_TYPEINFO(TandemNative);
@@ -902,6 +1122,37 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNoise, "TandemNoise", {
   RTTI_PROPERTY(propagation);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcAction, "TandemNpcAction", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(action);
+  RTTI_PROPERTY(name);
+  RTTI_PROPERTY(record);
+  RTTI_PROPERTY(entity);
+  RTTI_PROPERTY(amount);
+  RTTI_PROPERTY(dx);
+  RTTI_PROPERTY(dy);
+  RTTI_PROPERTY(dz);
+  RTTI_PROPERTY(accepted);
+  RTTI_PROPERTY(reason);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemRegroup, "TandemRegroup", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(offer);
+  RTTI_PROPERTY(reason);
+  RTTI_PROPERTY(point);
+  RTTI_PROPERTY(marker);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+  RTTI_PROPERTY(yaw);
+  RTTI_PROPERTY(label);
+  RTTI_PROPERTY(accepted);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemLootEvent, "TandemLootEvent", {
   RTTI_PROPERTY(kind);
   RTTI_PROPERTY(id);
@@ -921,6 +1172,11 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
   RTTI_PROPERTY(player);
   RTTI_PROPERTY(left);
   RTTI_PROPERTY(effect);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemTimeChange, "TandemTimeChange", {
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(factor);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
@@ -982,6 +1238,12 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendVehicleHack);
   RTTI_METHOD(TakeHackEvents);
   RTTI_METHOD(NpcPuppetId);
+  RTTI_METHOD(SendNpcAction);
+  RTTI_METHOD(SendNpcActionReply);
+  RTTI_METHOD(SendNpcHold);
+  RTTI_METHOD(SendNpcCue);
+  RTTI_METHOD(TakeNpcActions);
+  RTTI_METHOD(HoldPuppet);
   RTTI_METHOD(SendWorldItem);
   RTTI_METHOD(TakeWorldItem);
   RTTI_METHOD(TakeLootEvents);
@@ -1002,6 +1264,19 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(PausedPlayers);
   RTTI_METHOD(PausedChanges);
   RTTI_METHOD(PlayerName);
+  RTTI_METHOD(SendTimeEffect);
+  RTTI_METHOD(TimeChanges);
+  RTTI_METHOD(TimePlayers);
+  RTTI_METHOD(TimeAbilities);
+  RTTI_METHOD(TimeScale);
+  RTTI_METHOD(UpdateTimeBubbles);
+  RTTI_METHOD(ClearTimeBubbles);
+  RTTI_METHOD(TimeFactorOf);
+  RTTI_METHOD(TimeBubbleMembers);
+  RTTI_METHOD(IsTimeHostFull);
+  RTTI_METHOD(RelayCode);
+  RTTI_METHOD(RelayStatus);
+  RTTI_METHOD(JoinByCode);
   RTTI_METHOD(SendSeat);
   RTTI_METHOD(SendVehicle);
   RTTI_METHOD(RemoteSeatChanges);
@@ -1023,5 +1298,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(PoseBind);
   RTTI_METHOD(PoseLoop);
   RTTI_METHOD(PoseStreamReport);
+  RTTI_METHOD(SendRegroup);
+  RTTI_METHOD(SendRegroupAnswer);
+  RTTI_METHOD(TakeRegroups);
+  RTTI_METHOD(NodeRefHash);
+  RTTI_METHOD(NodeRefOf);
   RTTI_METHOD(Log);
 });

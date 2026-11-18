@@ -20,7 +20,9 @@ public native struct TandemStoryEvent {
   // 33 a cursor (player, extra: hub, index, state: 0 hover 1 suggest 2 picked);
   // 40 a player's story state (player, state: tier, flags: 1 braindance
   // 2 replacer 4 in a call);
-  // 41 a quest reward for our V (reward, hash: its quest)
+  // 41 a quest reward for our V (reward, hash: its quest);
+  // 42 a story effect on the host's V (reward: the status effect, flags 1:
+  // on, 0: gone)
   native let kind: Int32;
   native let player: Uint32;
   native let hash: Uint32;
@@ -57,8 +59,9 @@ public native class TandemStory extends IScriptable {
   public static native func SendHub(hub: Int32, flags: Int32, title: String, texts: array<String>, types: array<Int32>, timed: Float) -> Void;
   public static native func SendCursor(hub: Int32, index: Int32, kind: Int32) -> Void;
   public static native func SendState(tier: Int32, flags: Int32) -> Void;
-  public static native func QuestMoved(quest: Uint32, x: Float, y: Float, z: Float) -> Void;
+  public static native func QuestMoved(questHash: Uint32, x: Float, y: Float, z: Float) -> Void;
   public static native func Reward(reward: TweakDBID, x: Float, y: Float, z: Float) -> Int32;
+  public static native func SendEffect(effect: TweakDBID, applied: Bool) -> Void;
   public static native func LineId(line: Uint64) -> CRUID;
   public static native func LineValue(id: CRUID) -> Uint64;
 }

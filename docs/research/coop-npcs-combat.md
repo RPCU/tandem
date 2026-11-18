@@ -1425,7 +1425,7 @@ per player; quest and important items (Quest tag, keycards, iconics) go
 to every player's inventory whoever loots them (`SharedItem`, user's rule
 2026-11-18); a removed proxy corpse leaves a loot bag; what a V drops on
 purpose is a shared world item the host arbitrates (`WorldItem`,
-`WorldItemTaken`). Engine facts in engine-knowledge §13.17.
+`WorldItemTaken`). Engine facts in engine-knowledge §13.19.
 
 This falls out of the proxy design with almost no messages `[I]`:
 

@@ -23,6 +23,30 @@ struct NetThread::Impl {
   std::optional<proto::VehicleRadio> lastRadio;
   std::optional<proto::Stealth> lastStealth;
   bool lastPaused{};
+  std::optional<proto::TimeEffect> lastTime;
+  // Guest through a relay: the session's secret, to join again after the
+  // code expired.
+  std::optional<net::RelaySecret> relaySecret;
+
+  // Once in the session, joining again goes by its secret alone: the code
+  // has likely expired, and a host that restarted has a new code anyway (a
+  // stale code would only spend the relay's lookups).
+  std::optional<net::RelayOptions> RelayOf() const {
+    if (config.relay.empty())
+      return std::nullopt;
+    return net::RelayOptions{.address = config.relay,
+                             .port = config.relayPort,
+                             .token = config.relayToken,
+                             .secret = relaySecret,
+                             .code = relaySecret ? std::string() : config.joinCode};
+  }
+
+  // The relay link's state for scripts (Runtime::RelayStatus).
+  static std::string StatusText(const net::RelayStatus &status) {
+    if (status.state == net::RelayStatus::State::Ready)
+      return "ready";
+    return status.error.empty() ? "connecting" : status.error;
+  }
 
   // The other players in their pause menu, for the game thread.
   static void PublishPaused(const Endpoint &endpoint) {
@@ -35,12 +59,19 @@ struct NetThread::Impl {
 
   // A guest whose session ends (host gone, unreachable, timed out) tries
   // again every 5 s for as long as the game runs: a host that crashed or
-  // restarted is joined again without touching the guest's game.
+  // restarted is joined again without touching the guest's game. A join
+  // code that never led into a session (wrong, expired) is tried 3 times:
+  // each try costs one of the relay's limited code lookups.
   void Run(std::stop_token stop) {
-    for (;;) {
+    for (int codeTries = 1;; ++codeTries) {
       Session(stop);
       if (stop.stop_requested() || config.role != Config::Role::Join)
         return;
+      if (!config.joinCode.empty() && !relaySecret && codeTries >= 3) {
+        log::Warn("not joining again: code {} led to no session",
+                  net::DisplayJoinCode(config.joinCode));
+        return;
+      }
       for (int i = 0; i < 50 && !stop.stop_requested(); ++i)
         std::this_thread::sleep_for(100ms);
       if (stop.stop_requested())
@@ -53,9 +84,20 @@ struct NetThread::Impl {
     auto &runtime = Runtime::Get();
     std::string error;
     const Identity identity{config.name, body};
-    auto endpoint = config.role == Config::Role::Host
-                        ? Endpoint::Host(identity, config.port, error)
-                        : Endpoint::Join(identity, config.address, config.port, error);
+    const auto relay = RelayOf();
+    // A guest with a join code goes through the relay, after the address
+    // when tandem.ini gives one; without a code, to the address only.
+    const bool byCode = !config.joinCode.empty();
+    const JoinTarget target{.address = !byCode || config.addressSet ? config.address : "",
+                            .port = config.port,
+                            .relay = byCode ? relay : std::nullopt};
+    std::unique_ptr<Endpoint> endpoint;
+    if (config.role == Config::Role::Host)
+      endpoint = Endpoint::Host(identity, config.port, error, {}, relay);
+    else if (byCode && !relay)
+      error = "a join code needs a relay (relay = host:port in tandem.ini)";
+    else
+      endpoint = Endpoint::Join(identity, target, error);
     if (!endpoint) {
       log::Error("could not start the session: {}", error);
       runtime.PushEvent({ScriptEvent::Kind::SessionEnded, 0, error, {}});
@@ -73,10 +115,19 @@ struct NetThread::Impl {
       endpoint->SetLocalStealth(*lastStealth);
     if (lastPaused)
       endpoint->SetLocalPaused(true);
+    if (lastTime)
+      endpoint->SetLocalTimeEffect(*lastTime);
     if (config.role == Config::Role::Host)
-      log::Info("hosting on UDP {}", config.port);
+      log::Info("hosting on UDP {}{}", config.port,
+                relay ? std::format(", and through relay {}:{}", relay->address, relay->port) : "");
+    else if (target.address.empty())
+      log::Info("joining code {} through relay {}:{}", net::DisplayJoinCode(config.joinCode),
+                config.relay, config.relayPort);
     else
-      log::Info("joining {}:{}", config.address, config.port);
+      log::Info("joining {}:{}{}", config.address, config.port,
+                target.relay ? " (through the relay if it does not answer)" : "");
+    // The relay as last logged and handed to scripts.
+    std::optional<net::RelayStatus> relayShown;
 
     auto nextReport = std::chrono::steady_clock::now() + 10s;
     bool ended = false;
@@ -102,7 +153,10 @@ struct NetThread::Impl {
             [&](const auto &e) {
               using E = std::decay_t<decltype(e)>;
               if constexpr (std::is_same_v<E, events::Joined>) {
-                log::Info("in the session as player {} (host {})", e.you, e.host);
+                log::Info("in the session as player {} (host {}{})", e.you, e.host,
+                          endpoint->ThroughRelay() ? ", through the relay" : "");
+                if (const auto secret = endpoint->RelaySessionSecret())
+                  relaySecret = secret;
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.SetYou(e.you);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
@@ -169,6 +223,35 @@ struct NetThread::Impl {
                                       .amount = e.hit.damage,
                                       .flags = e.hit.flags,
                                       .direction = e.hit.direction});
+              } else if constexpr (std::is_same_v<E, events::NpcActionBy>) {
+                const auto &a = e.action;
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Request,
+                                         .npc = a.npc,
+                                         .player = a.player,
+                                         .action = static_cast<std::uint8_t>(a.kind),
+                                         .name = a.name,
+                                         .item = a.item,
+                                         .amount = a.amount,
+                                         .direction = a.direction});
+              } else if constexpr (std::is_same_v<E, events::NpcActionAnswered>) {
+                const auto &r = e.reply;
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Reply,
+                                         .npc = r.npc,
+                                         .action = static_cast<std::uint8_t>(r.kind),
+                                         .accepted = r.accepted,
+                                         .reason = r.reason});
+              } else if constexpr (std::is_same_v<E, events::HostNpcHold>) {
+                const auto &h = e.hold;
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Hold,
+                                         .npc = h.npc,
+                                         .player = h.player,
+                                         .action = static_cast<std::uint8_t>(h.how),
+                                         .name = h.name});
+              } else if constexpr (std::is_same_v<E, events::HostNpcCue>) {
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Cue,
+                                         .npc = e.cue.npc,
+                                         .player = e.cue.player,
+                                         .action = static_cast<std::uint8_t>(e.cue.cue)});
               } else if constexpr (std::is_same_v<E, events::NpcHackBy>) {
                 runtime.PushHackEvent({.kind = HackEvent::Kind::Upload,
                                        .npc = e.hack.npc,
@@ -224,9 +307,24 @@ struct NetThread::Impl {
                 log::Info("player {} {} (pause menu)", e.pause.player,
                           e.pause.paused ? "paused" : "resumed");
                 PublishPaused(*endpoint);
+              } else if constexpr (std::is_same_v<E, events::RegroupOffered>) {
+                log::Info("player {} offers to join them (offer {}, reason {}, point {:#x}, at "
+                          "({:.1f}, {:.1f}, {:.1f}))",
+                          e.offer.from, e.offer.offer, static_cast<int>(e.offer.reason),
+                          e.offer.point, e.offer.position.x, e.offer.position.y,
+                          e.offer.position.z);
+                runtime.PushRegroupEvent({.kind = RegroupEvent::Kind::Offer, .offer = e.offer});
+              } else if constexpr (std::is_same_v<E, events::RegroupAnswered>) {
+                log::Info("player {} {} our offer {}", e.answer.from,
+                          e.answer.accepted ? "accepted" : "declined", e.answer.offer);
+                runtime.PushRegroupEvent({.kind = RegroupEvent::Kind::Answer, .answer = e.answer});
               } else if constexpr (std::is_same_v<E, events::Story>) {
                 Story::Get().PushInbound(
                     {.kind = StoryInbound::Kind::Message, .message = e.message});
+              } else if constexpr (std::is_same_v<E, events::RemoteTimeEffect>) {
+                log::Info("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
+                          e.effect.abilities, e.effect.scale);
+                runtime.PushRemoteTime(e.effect);
               } else if constexpr (std::is_same_v<E, events::WorldItemAppeared>) {
                 log::Info("loot: world item {} dropped by player {} ({} stacks, token {})",
                           e.item.id, e.item.dropper, e.item.stacks.size(), e.item.token);
@@ -256,6 +354,23 @@ struct NetThread::Impl {
               }
             },
             event);
+      }
+
+      if (auto status = endpoint->Relay()) {
+        status->codeSecondsLeft = 0; // not a change worth a line
+        if (status != relayShown) {
+          if (!status->code.empty() && (!relayShown || relayShown->code != status->code))
+            log::Info("join code {} (relay {}:{})", net::DisplayJoinCode(status->code),
+                      config.relay, config.relayPort);
+          if (!status->error.empty() && (!relayShown || relayShown->error != status->error))
+            log::Warn("relay: {}", status->error);
+          else if (status->state == net::RelayStatus::State::Ready &&
+                   (!relayShown || relayShown->state != status->state))
+            log::Info("relay: registered");
+          runtime.SetRelay(status->code.empty() ? "" : net::DisplayJoinCode(status->code),
+                           StatusText(*status));
+          relayShown = status;
+        }
       }
 
       runtime.SetClockOffset(static_cast<std::int64_t>(endpoint->HostNowUs()) -
@@ -289,6 +404,11 @@ struct NetThread::Impl {
         endpoint->SetLocalPaused(*paused);
         log::Info("our pause menu {}", *paused ? "opened: pausing everyone" : "closed");
       }
+      if (auto time = runtime.TakeLocalTime()) {
+        lastTime = *time;
+        endpoint->SetLocalTimeEffect(*time);
+        log::Info("our time abilities {:#x} (world speed {:.2f})", time->abilities, time->scale);
+      }
       if (auto world = runtime.TakeWorld())
         endpoint->SetWorld(*world);
       for (const auto &message : runtime.TakeNpcOutbox()) {
@@ -302,6 +422,12 @@ struct NetThread::Impl {
           endpoint->SendNpcHit(*hit);
         else if (const auto *effect = std::get_if<proto::NpcEffect>(&message))
           endpoint->SendNpcEffect(*effect);
+        else if (const auto *action = std::get_if<proto::NpcAction>(&message))
+          endpoint->SendNpcAction(*action);
+        else if (const auto *hold = std::get_if<proto::NpcHold>(&message))
+          endpoint->SendNpcHold(*hold);
+        else if (const auto *cue = std::get_if<proto::NpcCue>(&message))
+          endpoint->SendNpcCue(*cue);
         else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
                  hit && !endpoint->SendPlayerHit(*hit))
           log::Info("hit on player {} dropped: not a guest in the session", hit->player);
@@ -318,6 +444,8 @@ struct NetThread::Impl {
         else if (const auto *car = std::get_if<proto::VehicleHack>(&message))
           endpoint->SendVehicleHack(*car);
       }
+      for (const auto &[player, reply] : runtime.TakeNpcReplies())
+        endpoint->SendNpcActionReply(player, reply);
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
       if (auto awareness = runtime.TakeNpcAwareness())
@@ -330,6 +458,12 @@ struct NetThread::Impl {
         endpoint->SendNoise(noise);
       for (auto &[message, to] : Story::Get().TakeOutbound())
         endpoint->SendStory(std::move(message), to);
+      for (auto &message : runtime.TakeRegroupOutbox()) {
+        if (auto *offer = std::get_if<proto::Regroup>(&message))
+          endpoint->SendRegroup(std::move(*offer));
+        else if (const auto *answer = std::get_if<proto::RegroupAnswer>(&message))
+          endpoint->SendRegroupAnswer(*answer);
+      }
       for (auto &message : runtime.TakeLootOutbox()) {
         if (auto *item = std::get_if<proto::WorldItem>(&message))
           endpoint->DropWorldItem(std::move(*item));
@@ -358,9 +492,10 @@ struct NetThread::Impl {
         }
       }
     }
-    // Nobody in this session pauses us any more.
     runtime.SetYou(0);
+    // Nobody in this session pauses us any more; its code is gone.
     runtime.SetRemotePaused({});
+    runtime.SetRelay("", "");
     endpoint->Leave("the game closed");
   }
 };

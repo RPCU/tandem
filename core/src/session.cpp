@@ -1,14 +1,10 @@
 #include "tandem/session.hpp"
+#include "relay_link.hpp"
+#include "resolve.hpp"
+
+#include "enet_util.hpp"
 
 #include <enet/enet.h>
-
-#ifdef _WIN32
-#include <ws2tcpip.h>
-#else
-#include <netdb.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#endif
 
 #include <algorithm>
 #include <atomic>
@@ -18,6 +14,7 @@ namespace tandem::net {
 namespace {
 std::mutex g_enetLock;
 int g_enetUsers = 0;
+} // namespace
 
 bool AcquireEnet() {
   std::lock_guard _(g_enetLock);
@@ -33,20 +30,7 @@ void ReleaseEnet() {
     enet_deinitialize();
 }
 
-// The name's IPv4 address (ENet speaks IPv4 only). ENet's own lookup missed
-// it for a host whose name also resolves to IPv6 addresses (2026-11-17).
-bool ResolveIpv4(const std::string &name, ENetAddress &address) {
-  addrinfo hints{};
-  hints.ai_family = AF_INET;
-  hints.ai_socktype = SOCK_DGRAM;
-  addrinfo *found = nullptr;
-  if (getaddrinfo(name.c_str(), nullptr, &hints, &found) != 0 || !found)
-    return false;
-  address.host = reinterpret_cast<const sockaddr_in *>(found->ai_addr)->sin_addr.s_addr;
-  freeaddrinfo(found);
-  return true;
-}
-
+namespace {
 // ENet's millisecond clock wraps; its differences do not.
 enet_uint32 Since(enet_uint32 now, enet_uint32 then) { return now - then; }
 bool Reached(enet_uint32 now, enet_uint32 when) {
@@ -62,15 +46,20 @@ std::uint64_t NowUs() {
 struct Session::Impl {
   ENetHost *host{};
   enet_uint32 timeoutMs{};
-  // Guest: the host while the connection is being set up, and since when.
+  // Guest: the host while the connection is being set up, since when, and
+  // for how long at most.
   ENetPeer *connecting{};
   enet_uint32 connectStartMs{};
+  enet_uint32 connectTimeoutMs{};
+  // Through a relay: the proxy ENet talks to on 127.0.0.1.
+  std::unique_ptr<RelayLink> relay;
   // Our own stalls (a Poll() long after the last) make every peer look
   // silent: it is judged again only after a moment to hear from it.
   enet_uint32 lastPollMs{};
   std::optional<enet_uint32> judgeFromMs;
 
   ~Impl() {
+    relay.reset();
     if (host)
       enet_host_destroy(host);
     ReleaseEnet();
@@ -98,6 +87,33 @@ struct Session::Impl {
     return peer->lastReceiveTime == 0 ? 0 : Since(enet_time_get(), peer->lastReceiveTime);
   }
 
+  void OnEvent(ENetEvent &event, std::vector<Event> &events) {
+    switch (event.type) {
+    case ENET_EVENT_TYPE_CONNECT:
+      if (event.peer == connecting)
+        connecting = nullptr;
+      Watch(event.peer);
+      events.push_back({Event::Kind::Connected, IdOf(event.peer), std::nullopt});
+      break;
+    case ENET_EVENT_TYPE_DISCONNECT:
+      if (event.peer == connecting)
+        connecting = nullptr;
+      events.push_back({Event::Kind::Disconnected, IdOf(event.peer), std::nullopt});
+      break;
+    case ENET_EVENT_TYPE_RECEIVE: {
+      const std::span bytes(reinterpret_cast<const std::byte *>(event.packet->data),
+                            event.packet->dataLength);
+      auto message = proto::Decode(bytes);
+      const auto kind = message ? Event::Kind::Received : Event::Kind::Malformed;
+      events.push_back({kind, IdOf(event.peer), std::move(message)});
+      enet_packet_destroy(event.packet);
+      break;
+    }
+    default:
+      break;
+    }
+  }
+
   static ENetPacket *PacketOf(const proto::Message &message) {
     const auto bytes = proto::Encode(message);
     if (bytes.empty())
@@ -113,7 +129,8 @@ Session::Session(std::unique_ptr<Impl> impl, bool isHost)
 Session::~Session() = default;
 
 std::unique_ptr<Session> Session::Listen(std::uint16_t port, std::size_t maxConnections,
-                                         std::string &error, std::chrono::milliseconds timeout) {
+                                         std::string &error, std::chrono::milliseconds timeout,
+                                         const RelayOptions *relay) {
   if (!AcquireEnet()) {
     error = "enet_initialize failed";
     return nullptr;
@@ -129,11 +146,15 @@ std::unique_ptr<Session> Session::Listen(std::uint16_t port, std::size_t maxConn
     error = "could not listen on UDP port " + std::to_string(port);
     return nullptr;
   }
+  if (relay)
+    impl->relay = std::make_unique<RelayLink>(RelayLink::Role::Host, *relay, port, ENetAddress{},
+                                              impl->timeoutMs);
   return std::unique_ptr<Session>(new Session(std::move(impl), true));
 }
 
 std::unique_ptr<Session> Session::Connect(const std::string &hostName, std::uint16_t port,
-                                          std::string &error, std::chrono::milliseconds timeout) {
+                                          std::string &error, std::chrono::milliseconds timeout,
+                                          std::chrono::milliseconds connectTimeout) {
   if (!AcquireEnet()) {
     error = "enet_initialize failed";
     return nullptr;
@@ -160,39 +181,72 @@ std::unique_ptr<Session> Session::Connect(const std::string &hostName, std::uint
   }
   impl->Watch(impl->connecting);
   impl->connectStartMs = enet_time_get();
+  impl->connectTimeoutMs = connectTimeout.count() > 0
+                               ? static_cast<enet_uint32>(connectTimeout.count())
+                               : impl->timeoutMs;
+  return std::unique_ptr<Session>(new Session(std::move(impl), false));
+}
+
+std::unique_ptr<Session> Session::ConnectRelay(const RelayOptions &relay, std::string &error,
+                                               std::chrono::milliseconds timeout) {
+  if (!AcquireEnet()) {
+    error = "enet_initialize failed";
+    return nullptr;
+  }
+  auto impl = std::make_unique<Impl>();
+  impl->timeoutMs = static_cast<enet_uint32>(timeout.count());
+
+  // Bound now (not at the first send) so the proxy knows whom to listen to.
+  ENetAddress local{};
+  local.host = ENET_HOST_TO_NET_32(0x7F000001);
+  impl->host = enet_host_create(&local, 1, proto::kChannelCount, 0, 0);
+  if (!impl->host || enet_socket_get_address(impl->host->socket, &local) < 0) {
+    error = "could not create a UDP socket";
+    return nullptr;
+  }
+  local.host = ENET_HOST_TO_NET_32(0x7F000001);
+  impl->relay =
+      std::make_unique<RelayLink>(RelayLink::Role::Guest, relay, 0, local, impl->timeoutMs);
+  if (const auto status = impl->relay->Status(); status.state == RelayStatus::State::Failed) {
+    error = status.error;
+    return nullptr;
+  }
+  const auto target = impl->relay->Target();
+  impl->connecting = enet_host_connect(impl->host, &target, proto::kChannelCount, proto::kMagic);
+  if (!impl->connecting) {
+    error = "enet_host_connect failed";
+    return nullptr;
+  }
+  impl->Watch(impl->connecting);
+  impl->connectStartMs = enet_time_get();
+  // The relay's answer, then the host's.
+  impl->connectTimeoutMs = 2 * impl->timeoutMs;
   return std::unique_ptr<Session>(new Session(std::move(impl), false));
 }
 
 std::vector<Event> Session::Poll(std::chrono::milliseconds timeout) {
   std::vector<Event> events;
   ENetEvent event;
-  auto wait = static_cast<enet_uint32>(timeout.count());
-
-  while (enet_host_service(m_impl->host, &event, wait) > 0) {
-    wait = 0;
-    switch (event.type) {
-    case ENET_EVENT_TYPE_CONNECT:
-      if (event.peer == m_impl->connecting)
-        m_impl->connecting = nullptr;
-      m_impl->Watch(event.peer);
-      events.push_back({Event::Kind::Connected, m_impl->IdOf(event.peer), std::nullopt});
-      break;
-    case ENET_EVENT_TYPE_DISCONNECT:
-      if (event.peer == m_impl->connecting)
-        m_impl->connecting = nullptr;
-      events.push_back({Event::Kind::Disconnected, m_impl->IdOf(event.peer), std::nullopt});
-      break;
-    case ENET_EVENT_TYPE_RECEIVE: {
-      const std::span bytes(reinterpret_cast<const std::byte *>(event.packet->data),
-                            event.packet->dataLength);
-      auto message = proto::Decode(bytes);
-      const auto kind = message ? Event::Kind::Received : Event::Kind::Malformed;
-      events.push_back({kind, m_impl->IdOf(event.peer), std::move(message)});
-      enet_packet_destroy(event.packet);
-      break;
+  const auto service = [&](enet_uint32 wait) {
+    while (enet_host_service(m_impl->host, &event, wait) > 0) {
+      wait = 0;
+      m_impl->OnEvent(event, events);
     }
-    default:
-      break;
+  };
+  const auto wait = static_cast<enet_uint32>(timeout.count());
+  if (auto *relay = m_impl->relay.get(); !relay) {
+    service(wait);
+  } else {
+    // The proxy's sockets and ENet's, waited on together; each service is
+    // followed by a pump that forwards what ENet just sent.
+    relay->Pump();
+    service(0);
+    relay->Pump();
+    if (events.empty() && wait > 0) {
+      relay->Wait(m_impl->host->socket, wait);
+      relay->Pump();
+      service(0);
+      relay->Pump();
     }
   }
 
@@ -214,11 +268,16 @@ std::vector<Event> Session::Poll(std::chrono::milliseconds timeout) {
       enet_peer_disconnect_now(peer, 0);
     }
   }
-  if (auto *peer = m_impl->connecting;
-      peer && Since(now, m_impl->connectStartMs) >= m_impl->timeoutMs) {
-    m_impl->connecting = nullptr;
-    events.push_back({Event::Kind::Disconnected, m_impl->IdOf(peer), std::nullopt});
-    enet_peer_reset(peer);
+  if (auto *peer = m_impl->connecting) {
+    std::string reason;
+    if (m_impl->relay && m_impl->relay->Status().state == RelayStatus::State::Failed)
+      reason = m_impl->relay->Status().error;
+    if (!reason.empty() || Since(now, m_impl->connectStartMs) >= m_impl->connectTimeoutMs) {
+      m_impl->connecting = nullptr;
+      events.push_back(
+          {Event::Kind::Disconnected, m_impl->IdOf(peer), std::nullopt, std::move(reason)});
+      enet_peer_reset(peer);
+    }
   }
   return events;
 }
@@ -267,6 +326,23 @@ std::optional<Stats> Session::StatsOf(PeerId id) const {
           static_cast<float>(peer->packetLoss) / static_cast<float>(ENET_PEER_PACKET_LOSS_SCALE),
       .quietMs = Impl::QuietMs(peer),
   };
+}
+
+std::optional<RelayStatus> Session::Relay() const {
+  if (!m_impl->relay)
+    return std::nullopt;
+  return m_impl->relay->Status();
+}
+
+std::optional<RelaySecret> Session::RelaySessionSecret() const {
+  return m_impl->relay ? m_impl->relay->Secret() : std::nullopt;
+}
+
+std::uint16_t Session::LocalPort() const {
+  ENetAddress address{};
+  if (enet_socket_get_address(m_impl->host->socket, &address) != 0)
+    return 0;
+  return address.port;
 }
 
 std::vector<PeerId> Session::Peers() const {

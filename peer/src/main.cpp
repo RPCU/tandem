@@ -4,6 +4,11 @@
 //
 //   tandem-peer host [options]          the game joins it
 //   tandem-peer join ADDRESS[:PORT]     it joins the game
+//   tandem-peer join --code CODE --relay RELAY   it joins by a join code
+//
+// Relay (--relay HOST[:PORT]): a host is also reachable through tandem-relay
+// and logs its join code; a guest joins by --code through it, after trying
+// ADDRESS directly when one is given.
 //
 // Modes (--mode):
 //   mirror  copies your V back as a second player, offset and delayed: you see
@@ -22,6 +27,11 @@
 // Pause menu: --pause-at opens "its pause menu" that many seconds into the
 // session (once another player is there) for --pause-for seconds; the pause
 // states it hears are logged.
+// Takedowns: --grab-npcs grabs one of the host's NPCs, then takes it down
+// (lethal and non-lethal in turn); --carry-npcs picks up a body (one that
+// died), carries it and throws it; as host, it answers the game's requests
+// (refusing a dead or held NPC) and --hold-npcs shows its own V grabbing and
+// taking down a replayed NPC, with an NPC cue for the game.
 // Fights: --hit-npcs (join) hits the host's NPCs; --hit-you (host) has one of
 // its NPCs hit every guest's V; a guest logs the NPC hits it receives.
 // Stealth: as host, --npc puts an NPC in front of the guest and --detect-at
@@ -31,6 +41,10 @@
 // Quickhacks: --hack-npcs (as a guest) uploads on the host's NPCs and lands
 // the effect; --hack-player (as the host of a replay) has an NPC hack the
 // guest's V; --hack-car brakes the car another player drives.
+// Sandevistan: --sandevistan-at switches "its Sandevistan" on that many
+// seconds into the session for --sandevistan-for seconds, at
+// --sandevistan-scale: the host slows the NPCs around its V (time bubble);
+// the time abilities it hears are logged.
 // Loot: --loot-quest has "its V" loot a quest item (everyone gets it);
 // --drop-item drops a shared world item in front of your V; --take-items
 // picks up what the others drop; as the host of a replay, --remove-corpses
@@ -44,10 +58,18 @@
 // format is in tools/scenarios/story-host.story); as a guest, --answer,
 // --reply and --suggest act on the host's calls, texts and hubs, and every
 // story message heard is logged (and recorded with --record).
+// Fast travel together (milestone 4): --travel-at N "fast travels" the mock
+// player N seconds into the session (it stands at --travel-to from then on,
+// until another V comes to it) and offers the others to join it, as a game
+// does on arriving; --offer-regroup N asks them to come to it; the offers it
+// gets are answered as --regroup-answer says (yes: it goes there).
+// A bad network: --latency, --jitter, --loss and --reorder put a shaped link
+// (tandem/shaping.hpp) between the mock player and the others, both ways.
 
 #include "tandem/endpoint.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/pose.hpp"
+#include "tandem/shaping.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -119,10 +141,28 @@ struct Options {
   int hackPlayerSeconds{0};
   std::string npcHack{"AIQuickHack.HackRevealPosition"};
   int hackCarSeconds{0};
-  std::string storyFile;      // host: a scripted story (tools/scenarios/story-host.story)
-  int answerSeconds{-1};      // join: answer the host's ringing call after this long (-1: never)
-  std::uint32_t replyEntry{}; // join: reply to the text with this choice entry hash
-  int suggestIndex{-1};       // join: suggest this option of every hub (-1: never)
+  std::string storyFile;         // host: a scripted story (tools/scenarios/story-host.story)
+  int answerSeconds{-1};         // join: answer the host's ringing call after this long (-1: never)
+  std::uint32_t replyEntry{};    // join: reply to the text with this choice entry hash
+  int suggestIndex{-1};          // join: suggest this option of every hub (-1: never)
+  int sandevistanAtSeconds{-1};  // switch a Sandevistan on this long into the session (-1: never)
+  int sandevistanForSeconds{5};  // ...for this long
+  float sandevistanScale{0.25f}; // ...asking for this world speed
+  int grabNpcsSeconds{0};        // join: grab and take down one NPC this often (0: never)
+  int carryNpcsSeconds{0};       // join: pick up, carry and throw a body this often
+  int holdNpcsSeconds{0};        // host: our V grabs and takes down a replayed NPC this often
+  // tandem-relay: its address, a host token (host), the session's code (join)
+  std::optional<tandem::net::RelayOptions> relay;
+  std::string code;
+  // Fast travel together: when to travel (-1: never), where to, the fast
+  // travel point arrived at (a record name; empty: none), when to ask the
+  // others to come (-1: never), how to answer their offers.
+  int travelAtSeconds{-1};
+  Vec3 travelTo{-915.f, 1879.5f, 36.3f}; // the game's "teleport home" spot
+  std::string travelPoint;
+  int offerRegroupSeconds{-1};
+  enum class Answer { Yes, No, Ignore } regroupAnswer{Answer::Yes};
+  tandem::net::LinkShape link; // a bad network, both ways (none: direct)
   // Loot: drop one of this record in front of the other V (empty: never);
   // pick up the others' world items this long after they appear (-1: never);
   // host of a replay: dead NPCs' bodies go after this long (-1: never).
@@ -177,8 +217,14 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
     std::cerr << "tandem-peer: " << error << "\n\n";
   std::cerr
       << "usage: tandem-peer host [options]\n"
-         "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
+         "       tandem-peer join ADDRESS[:PORT] [options]\n"
+         "       tandem-peer join --code CODE --relay HOST[:PORT] [options]\n\n"
          "  --port N           UDP port (default 27450)\n"
+         "  --relay HOST[:PORT] tandem-relay (default port 27460): host, also reachable\n"
+         "                     through it (its join code is logged); join, used when\n"
+         "                     ADDRESS does not answer, or with --code only\n"
+         "  --relay-token HEX  host: one of the relay's host tokens (tandem-relay token)\n"
+         "  --code CODE        join: the host's join code (needs --relay)\n"
          "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
@@ -228,6 +274,28 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --answer N         join: answer the host's ringing call after N seconds\n"
          "  --reply HASH       join: reply to a text with this choice entry (journal hash)\n"
          "  --suggest N        join: suggest option N of every choice hub the host shows\n"
+         "  --sandevistan-at N switch a Sandevistan on N seconds after another player is in\n"
+         "                     the session: the host slows the NPCs around this V\n"
+         "  --sandevistan-for N  --sandevistan-at: switch it off after N seconds (default 5)\n"
+         "  --sandevistan-scale S  --sandevistan-at: the world speed it asks for (default 0.25)\n"
+         "  --grab-npcs N      join: every N seconds grab one of the host's NPCs, then take it\n"
+         "                     down (lethal, then non-lethal, in turn)\n"
+         "  --carry-npcs N     join: every N seconds pick up a dead NPC, carry it, throw it\n"
+         "  --hold-npcs N      host: every N seconds our V grabs a replayed NPC and takes it\n"
+         "                     down; the game gets a combat cue for it\n"
+         "  --travel-at N      fast travel N seconds after another player is in the session:\n"
+         "                     stand at --travel-to and offer everyone to join\n"
+         "  --travel-to X,Y,Z  --travel-at: where to (default -915,1879.5,36.3, the game's\n"
+         "                     teleport home spot)\n"
+         "  --travel-point REC --travel-at: the fast travel point record arrived at\n"
+         "  --offer-regroup N  N seconds after another player is in the session, ask them\n"
+         "                     to come to us\n"
+         "  --regroup-answer A yes | no | ignore: how to answer an offer to join (default\n"
+         "                     yes: go there)\n"
+         "  --latency MS       a bad network: MS added each way\n"
+         "  --jitter MS        up to MS more at random, each way (the order kept)\n"
+         "  --loss PERCENT     PERCENT of the datagrams lost, each way\n"
+         "  --reorder PERCENT  PERCENT of the datagrams held back behind later ones\n"
          "  --loot-quest REC   5 s after another player is there, \"our V\" loots one REC (a\n"
          "                     quest item): every other player gets it too\n"
          "  --drop-item RECORD drop one RECORD (Items.FirstAidWhiffV0...) as a shared world\n"
@@ -247,6 +315,26 @@ template <class T> T Number(std::string_view text) {
   return value;
 }
 
+Vec3 Point(std::string_view flag, std::string_view value) {
+  float xyz[3]{};
+  std::size_t start = 0;
+  for (int axis = 0; axis < 3; ++axis) {
+    const auto comma = value.find(',', start);
+    if ((axis < 2) == (comma == std::string_view::npos))
+      Usage(std::format("{} is X,Y,Z", flag));
+    xyz[axis] = Number<float>(value.substr(start, comma - start));
+    start = comma + 1;
+  }
+  return {xyz[0], xyz[1], xyz[2]};
+}
+
+float Percent(std::string_view flag, std::string_view value) {
+  const auto percent = Number<float>(value);
+  if (percent < 0.f || percent > 100.f)
+    Usage(std::format("{} is a percentage, 0 to 100", flag));
+  return percent / 100.f;
+}
+
 Options Parse(int argc, char **argv) {
   std::vector<std::string_view> args(argv + 1, argv + argc);
   if (args.empty() || args[0] == "--help" || args[0] == "-h")
@@ -258,14 +346,18 @@ Options Parse(int argc, char **argv) {
     options.host = true;
   else if (args[0] == "join") {
     if (args.size() < 2)
-      Usage("join needs an address");
-    auto target = args[1];
-    if (auto colon = target.rfind(':'); colon != std::string_view::npos) {
-      options.port = Number<std::uint16_t>(target.substr(colon + 1));
-      target = target.substr(0, colon);
+      Usage("join needs an address or --code");
+    if (args[1].starts_with("--")) {
+      options.address.clear(); // by --code, through the relay only
+    } else {
+      auto target = args[1];
+      if (auto colon = target.rfind(':'); colon != std::string_view::npos) {
+        options.port = Number<std::uint16_t>(target.substr(colon + 1));
+        target = target.substr(0, colon);
+      }
+      options.address = std::string(target);
+      i = 2;
     }
-    options.address = std::string(target);
-    i = 2;
   } else
     Usage(std::format("unknown command {}", args[0]));
 
@@ -315,6 +407,12 @@ Options Parse(int argc, char **argv) {
       options.npcHack = std::string(value);
     else if (flag == "--hack-car")
       options.hackCarSeconds = Number<int>(value);
+    else if (flag == "--sandevistan-at")
+      options.sandevistanAtSeconds = Number<int>(value);
+    else if (flag == "--sandevistan-for")
+      options.sandevistanForSeconds = Number<int>(value);
+    else if (flag == "--sandevistan-scale")
+      options.sandevistanScale = Number<float>(value);
     else if (flag == "--drop-item")
       options.dropItem = std::string(value);
     else if (flag == "--loot-quest")
@@ -325,6 +423,12 @@ Options Parse(int argc, char **argv) {
       options.removeCorpsesSeconds = Number<int>(value);
     else if (flag == "--hit-npcs")
       options.hitNpcsSeconds = Number<int>(value);
+    else if (flag == "--grab-npcs")
+      options.grabNpcsSeconds = Number<int>(value);
+    else if (flag == "--carry-npcs")
+      options.carryNpcsSeconds = Number<int>(value);
+    else if (flag == "--hold-npcs")
+      options.holdNpcsSeconds = Number<int>(value);
     else if (flag == "--hit-you")
       options.hitYouSeconds = Number<int>(value);
     else if (flag == "--npc")
@@ -377,21 +481,54 @@ Options Parse(int argc, char **argv) {
         options.mode = Mode::Drive;
       else
         Usage(std::format("unknown mode {}", value));
-    } else if (flag == "--offset") {
-      float xyz[3]{};
-      std::size_t start = 0;
-      for (int axis = 0; axis < 3; ++axis) {
-        const auto comma = value.find(',', start);
-        if ((axis < 2) == (comma == std::string_view::npos))
-          Usage("--offset is X,Y,Z");
-        xyz[axis] = Number<float>(value.substr(start, comma - start));
-        start = comma + 1;
-      }
-      options.offset = {xyz[0], xyz[1], xyz[2]};
-    } else if (flag == "--record") {
+    } else if (flag == "--offset")
+      options.offset = Point(flag, value);
+    else if (flag == "--travel-at")
+      options.travelAtSeconds = Number<int>(value);
+    else if (flag == "--travel-to")
+      options.travelTo = Point(flag, value);
+    else if (flag == "--travel-point")
+      options.travelPoint = std::string(value);
+    else if (flag == "--offer-regroup")
+      options.offerRegroupSeconds = Number<int>(value);
+    else if (flag == "--regroup-answer") {
+      if (value == "yes")
+        options.regroupAnswer = Options::Answer::Yes;
+      else if (value == "no")
+        options.regroupAnswer = Options::Answer::No;
+      else if (value == "ignore")
+        options.regroupAnswer = Options::Answer::Ignore;
+      else
+        Usage(std::format("--regroup-answer: yes, no or ignore, not {}", value));
+    } else if (flag == "--latency")
+      options.link.latencyMs = Number<std::uint32_t>(value);
+    else if (flag == "--jitter")
+      options.link.jitterMs = Number<std::uint32_t>(value);
+    else if (flag == "--loss")
+      options.link.loss = Percent(flag, value);
+    else if (flag == "--reorder")
+      options.link.reorder = Percent(flag, value);
+    else if (flag == "--record") {
       options.recordFile = value;
     } else if (flag == "--replay") {
       options.replayFile = value;
+    } else if (flag == "--relay") {
+      if (!options.relay)
+        options.relay.emplace();
+      if (!tandem::net::ParseRelayAddress(value, options.relay->address, options.relay->port))
+        Usage(std::format("--relay is HOST[:PORT], not {}", value));
+    } else if (flag == "--relay-token") {
+      const auto token = tandem::net::ParseRelayToken(value);
+      if (!token)
+        Usage("--relay-token is 64 hex digits (tandem-relay token)");
+      if (!options.relay)
+        options.relay.emplace();
+      options.relay->token = *token;
+    } else if (flag == "--code") {
+      const auto code = tandem::net::NormalizeJoinCode(value);
+      if (!code)
+        Usage(std::format("not a join code: {}", value));
+      options.code = *code;
     } else if (flag == "--story") {
       options.storyFile = value;
     } else if (flag == "--answer") {
@@ -403,6 +540,16 @@ Options Parse(int argc, char **argv) {
     } else
       Usage(std::format("unknown option {}", flag));
   }
+  if (!options.host && !options.check) {
+    if (options.address.empty() && options.code.empty())
+      Usage("join needs an address or --code");
+    if (!options.code.empty() && (!options.relay || options.relay->address.empty()))
+      Usage("--code needs --relay");
+  }
+  if (options.relay && options.relay->address.empty() && !options.check)
+    Usage("--relay-token needs --relay");
+  if (options.relay)
+    options.relay->code = options.code;
   return options;
 }
 
@@ -524,6 +671,9 @@ private:
 //   pick ID INDEX                the host picks (every hub closes)
 //   tier N                       the host's scene tier (1..5)
 //   reward RECORD [QUESTHASH]    a quest reward for every guest
+//   effect RECORD on|off         a story status effect on the host's V
+//                                (a relic glitch: BaseStatusEffect.JohnnySicknessLow)
+//   replacer on|off              the host plays as Johnny (StoryState flag)
 // Lines starting with # are comments.
 struct StoryStep {
   double at{};
@@ -625,6 +775,11 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
                                  .kind = proto::kCursorPicked};
     if (step.verb == "tier" && !a.empty())
       return proto::StoryState{.tier = static_cast<std::uint8_t>(std::stoi(a[0]))};
+    if (step.verb == "replacer" && !a.empty())
+      return proto::StoryState{.tier = 1,
+                               .flags = a[0] == "on" ? proto::kStoryReplacer : std::uint8_t{0}};
+    if (step.verb == "effect" && a.size() >= 2)
+      return proto::StoryEffect{.effect = TweakDBID(a[0]), .applied = a[1] == "on"};
     if (step.verb == "reward" && !a.empty())
       return proto::QuestReward{.reward = TweakDBID(a[0]),
                                 .quest = a.size() > 1 ? Hash32(a[1]) : 0};
@@ -668,6 +823,9 @@ std::string Describe(const tandem::proto::Message &message) {
                        state->flags);
   if (const auto *reward = std::get_if<proto::QuestReward>(&message))
     return std::format("reward: {:#x} (quest {})", reward->reward, reward->quest);
+  if (const auto *effect = std::get_if<proto::StoryEffect>(&message))
+    return std::format("story effect: {:#x} {} on player {}", effect->effect,
+                       effect->applied ? "on" : "off", effect->player);
   return "story: ?";
 }
 
@@ -706,7 +864,30 @@ public:
     return *pick;
   }
 
+  // After a fast travel: stand there instead of the mode's motion, until
+  // cleared (another V came to us).
+  void StandAt(std::optional<Vec3> at) { m_station = at; }
+  const std::optional<Vec3> &Station() const { return m_station; }
+  // Where the other player's V was last heard (nullopt: not yet).
+  std::optional<Vec3> HeardAt() const {
+    if (m_heard.empty())
+      return std::nullopt;
+    return m_heard.back().second.position;
+  }
+
   std::optional<PlayerState> Next(std::uint64_t nowUs) {
+    // Standing by an NPC it grabs or carries (--grab-npcs, --carry-npcs).
+    if (m_beside) {
+      PlayerState out;
+      out.position = {m_beside->x + 0.8f, m_beside->y, m_beside->z};
+      out.orientation = tandem::sync::FromYaw(std::numbers::pi_v<float> / 2.f); // facing -X
+      return out;
+    }
+    if (m_station) {
+      PlayerState out;
+      out.position = *m_station;
+      return out;
+    }
     switch (m_options.mode) {
     case Mode::Idle:
       return std::nullopt;
@@ -785,10 +966,13 @@ public:
   }
 
   void Park(const Vec3 &at) { m_parkedAt = at; }
+  void Beside(std::optional<Vec3> at) { m_beside = at; }
 
 private:
   std::optional<Vec3> m_center;
   std::optional<Vec3> m_parkedAt;
+  std::optional<Vec3> m_beside;
+  std::optional<Vec3> m_station;
 
   std::optional<PlayerState> Parked() const {
     PlayerState out;
@@ -872,10 +1056,37 @@ int main(int argc, char **argv) {
   std::signal(SIGTERM, [](int) { g_stop = 1; });
 
   std::string error;
-  auto endpoint = options.host
-                      ? tandem::Endpoint::Host({options.name, options.body}, options.port, error)
-                      : tandem::Endpoint::Join({options.name, options.body}, options.address,
-                                               options.port, error);
+  // A guest with a code but no address goes through the relay only.
+  const tandem::JoinTarget target{.address = options.address,
+                                  .port = options.port,
+                                  .relay = options.code.empty() ? std::nullopt : options.relay};
+  // A bad network: the shaper takes the public side of the direct link
+  // (host: the port the others join; guest: a local port the endpoint joins),
+  // the endpoint sits behind it on loopback. The relay path is not shaped.
+  std::unique_ptr<tandem::net::Shaper> shaper;
+  std::unique_ptr<tandem::Endpoint> endpoint;
+  if (options.link.Active() && (options.host || !target.address.empty())) {
+    if (options.host) {
+      endpoint = tandem::Endpoint::Host({options.name, options.body}, 0, error, {}, options.relay);
+      if (endpoint)
+        shaper = tandem::net::Shaper::Start(options.port, "127.0.0.1", endpoint->LocalPort(),
+                                            options.link, error);
+    } else {
+      shaper = tandem::net::Shaper::Start(0, target.address, target.port, options.link, error);
+      if (shaper) {
+        auto shaped = target;
+        shaped.address = "127.0.0.1";
+        shaped.port = shaper->Port();
+        endpoint = tandem::Endpoint::Join({options.name, options.body}, shaped, error);
+      }
+    }
+    if (!shaper)
+      endpoint.reset();
+  } else {
+    endpoint = options.host ? tandem::Endpoint::Host({options.name, options.body}, options.port,
+                                                     error, {}, options.relay)
+                            : tandem::Endpoint::Join({options.name, options.body}, target, error);
+  }
   if (!endpoint) {
     std::cerr << "tandem-peer: " << error << '\n';
     return 1;
@@ -884,9 +1095,22 @@ int main(int argc, char **argv) {
     endpoint->SetLocalAppearance(
         RandomLook(options.body, options.lookSeed.value_or(std::random_device{}())));
   if (options.host)
-    Log("hosting on UDP {} as {}", options.port, options.name);
+    Log("hosting on UDP {} as {}{}", options.port, options.name,
+        options.relay
+            ? std::format(", and on relay {}:{}", options.relay->address, options.relay->port)
+            : "");
+  else if (options.address.empty())
+    Log("joining code {} through relay {}:{} as {}", tandem::net::DisplayJoinCode(options.code),
+        options.relay->address, options.relay->port, options.name);
   else
-    Log("joining {}:{} as {}", options.address, options.port, options.name);
+    Log("joining {}:{} as {}{}", options.address, options.port, options.name,
+        target.relay ? " (the relay if it does not answer)" : "");
+  if (shaper)
+    Log("bad network, each way: +{} ms, jitter {} ms, {:.0f}% lost, {:.0f}% reordered",
+        options.link.latencyMs, options.link.jitterMs, options.link.loss * 100.f,
+        options.link.reorder * 100.f);
+  // The relay as last logged: its state, the host's code, the last error.
+  std::optional<tandem::net::RelayStatus> relayShown;
 
   PoseClip clip;
   if (!options.poseFile.empty()) {
@@ -906,6 +1130,8 @@ int main(int argc, char **argv) {
   std::set<tandem::proto::NpcId> liveNpcs;
   std::map<tandem::proto::NpcId, float> npcHealth; // host: replayed NPCs hit by guests
   std::set<tandem::proto::NpcId> deadNpcs;
+  std::map<tandem::proto::NpcId, Vec3> npcAt; // join: where the host's NPCs are
+  std::set<tandem::proto::NpcId> bodies;      // join: the host's NPCs that died, still lying there
   std::optional<tandem::proto::NpcId> hitTarget;
   std::set<tandem::proto::NpcId> burnt;
   std::map<tandem::proto::NpcId, std::uint8_t> detection;
@@ -932,6 +1158,19 @@ int main(int argc, char **argv) {
     return bits;
   };
   auto nextHit = std::chrono::steady_clock::now();
+  // Takedowns: what we ask (join), what we answer and hold (host).
+  using tandem::proto::NpcActionKind;
+  using tandem::proto::NpcHoldKind;
+  struct TakedownStep {
+    tandem::proto::NpcId npc{};
+    int step{}; // 0 idle, then the steps of each test
+    std::chrono::steady_clock::time_point at{};
+  } grab, carry, hold;
+  int takedowns = 0;
+  std::map<tandem::proto::NpcId, tandem::proto::PlayerId> held; // host: who holds what
+  auto nextGrab = std::chrono::steady_clock::now() + 5s;
+  auto nextCarry = nextGrab;
+  auto nextHold = nextGrab;
   auto nextHitYou = std::chrono::steady_clock::now() + std::chrono::seconds(options.hitYouSeconds);
   std::set<tandem::proto::NpcId> replayedNpcs; // host: the replay's live NPCs
   // Quickhacks: our upload's effect to land, the host's uploads to finish,
@@ -991,6 +1230,14 @@ int main(int argc, char **argv) {
   // --pause-at: when someone else was first there, and how far the pause got.
   std::optional<std::chrono::steady_clock::time_point> togetherSince;
   enum class PauseStep { Waiting, Paused, Done } pauseStep = PauseStep::Waiting;
+  PauseStep sandevistanStep = PauseStep::Waiting;
+  // Fast travel together: done yet, our offers so far, where we last stood.
+  bool travelled = false, offeredRegroup = false;
+  std::uint32_t offers = 0;
+  std::optional<Vec3> lastSent;
+  const auto distance = [](const Vec3 &a, const Vec3 &b) {
+    return std::hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  };
   // Loot: our drop (--drop-item), the others' world items to pick up
   // (--take-items: when), and dead NPCs' bodies to take away (--remove-corpses).
   bool dropped = false;
@@ -1063,14 +1310,20 @@ int main(int argc, char **argv) {
                 recording.Add(e.states);
               // Who each NPC has detected, when it changes.
               for (const auto &entry : e.states.npcs)
+                npcAt[entry.npc] = entry.position;
+              for (const auto &entry : e.states.npcs)
                 if (auto &seen = detection[entry.npc]; seen != entry.detected) {
                   Log("npc {} has detected players {:#x}", entry.npc, entry.detected);
                   seen = entry.detected;
                 }
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcGone>) {
               liveNpcs.erase(e.gone.npc);
-              if (e.gone.reason == 1)
+              if (e.gone.reason == tandem::proto::kGoneDead) {
                 Log("npc {} died", e.gone.npc);
+                bodies.insert(e.gone.npc);
+              } else {
+                bodies.erase(e.gone.npc);
+              }
               if (!options.recordFile.empty())
                 recording.Add(e.gone);
             } else if constexpr (std::is_same_v<E, tandem::events::NpcEffectBy>) {
@@ -1092,6 +1345,67 @@ int main(int argc, char **argv) {
                 Log("npc {} died", e.hit.npc);
               } else
                 endpoint->SendNpcHealth({.npc = e.hit.npc, .health = health});
+            } else if constexpr (std::is_same_v<E, tandem::events::NpcActionBy>) {
+              // As the host of a replay: the NPC is ours; refuse what cannot be.
+              const auto &a = e.action;
+              const bool alive = replayedNpcs.contains(a.npc) && !deadNpcs.contains(a.npc);
+              const bool body = a.kind == NpcActionKind::PickUp || a.kind == NpcActionKind::Drop ||
+                                a.kind == NpcActionKind::Throw || a.kind == NpcActionKind::Dispose;
+              const auto holder = held.contains(a.npc) ? held[a.npc] : tandem::proto::kNoPlayer;
+              std::uint8_t reason = 0;
+              if (!alive && !body)
+                reason = tandem::proto::kRefusedGone;
+              else if (holder != tandem::proto::kNoPlayer && holder != a.player)
+                reason = tandem::proto::kRefusedHeld;
+              endpoint->SendNpcActionReply(
+                  a.player,
+                  {.npc = a.npc, .kind = a.kind, .accepted = reason == 0, .reason = reason});
+              Log("npc {}: player {} asks action {}: {}", a.npc, a.player, static_cast<int>(a.kind),
+                  reason ? std::format("refused ({})", reason) : std::string("accepted"));
+              if (reason == 0) {
+                if (a.kind == NpcActionKind::Grab || a.kind == NpcActionKind::PickUp) {
+                  held[a.npc] = a.player;
+                  endpoint->SendNpcHold({.npc = a.npc,
+                                         .player = a.player,
+                                         .how = a.kind == NpcActionKind::Grab
+                                                    ? NpcHoldKind::Grappled
+                                                    : NpcHoldKind::Carried,
+                                         .name = a.name});
+                } else {
+                  held.erase(a.npc);
+                  endpoint->SendNpcHold({.npc = a.npc});
+                  const bool kills =
+                      a.kind == NpcActionKind::Takedown || a.kind == NpcActionKind::Knockout ||
+                      a.kind == NpcActionKind::Finisher || a.kind == NpcActionKind::Throw;
+                  if (a.kind == NpcActionKind::Dispose) {
+                    deadNpcs.insert(a.npc);
+                    endpoint->SendNpcGone(
+                        {.npc = a.npc, .reason = tandem::proto::kGoneDisposed, .killer = a.player});
+                    Log("npc {} disposed of", a.npc);
+                  } else if (kills && alive) {
+                    deadNpcs.insert(a.npc);
+                    endpoint->SendNpcGone(
+                        {.npc = a.npc, .reason = tandem::proto::kGoneDead, .killer = a.player});
+                    Log("npc {} died", a.npc);
+                  }
+                }
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::NpcActionAnswered>) {
+              Log("npc {}: action {} {}", e.reply.npc, static_cast<int>(e.reply.kind),
+                  e.reply.accepted ? std::string("accepted")
+                                   : std::format("refused ({})", e.reply.reason));
+              if (!e.reply.accepted) {
+                if (grab.npc == e.reply.npc)
+                  grab.step = 0;
+                if (carry.npc == e.reply.npc)
+                  carry.step = 0;
+                puppeteer.Beside(std::nullopt);
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcHold>) {
+              Log("npc {} held by player {} (how {})", e.hold.npc, e.hold.player,
+                  static_cast<int>(e.hold.how));
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcCue>) {
+              Log("npc {}: cue {} for us", e.cue.npc, static_cast<int>(e.cue.cue));
             } else if constexpr (std::is_same_v<E, tandem::events::HitByNpc>) {
               Log("hit by npc {}: {:.1f} physical, {:.1f} thermal, {:.1f} electric, {:.1f} "
                   "chemical (type {}, flags {}, attack {:#x})",
@@ -1165,6 +1479,30 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::PauseChanged>) {
               Log("player {} {} (pause menu)", e.pause.player,
                   e.pause.paused ? "paused" : "resumed");
+            } else if constexpr (std::is_same_v<E, tandem::events::RegroupOffered>) {
+              const auto &o = e.offer;
+              Log("player {} offers to join them (offer {}, reason {}, point {:#x}{}) at ({:.1f}, "
+                  "{:.1f}, {:.1f})",
+                  o.from, o.offer, static_cast<int>(o.reason), o.point,
+                  o.label.empty() ? "" : ", " + o.label, o.position.x, o.position.y, o.position.z);
+              if (options.regroupAnswer == Options::Answer::Ignore) {
+                Log("offer {} of player {}: not answered", o.offer, o.from);
+              } else {
+                const bool yes = options.regroupAnswer == Options::Answer::Yes;
+                endpoint->SendRegroupAnswer({.to = o.from, .offer = o.offer, .accepted = yes});
+                if (yes) {
+                  // There, beside them, as a game lands next to whom it joins.
+                  puppeteer.StandAt(Vec3{o.position.x + 1.5f, o.position.y, o.position.z});
+                  Log("joining player {} at ({:.1f}, {:.1f}, {:.1f})", o.from, o.position.x,
+                      o.position.y, o.position.z);
+                } else
+                  Log("offer {} of player {}: declined", o.offer, o.from);
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::RegroupAnswered>) {
+              Log("player {} {} (offer {})", e.answer.from,
+                  e.answer.accepted ? (e.answer.offer ? "accepted: on the way" : "is on the way")
+                                    : "declined: stays",
+                  e.answer.offer);
             } else if constexpr (std::is_same_v<E, tandem::events::Story>) {
               Log("{}", Describe(e.message));
               if (!options.recordFile.empty())
@@ -1189,6 +1527,9 @@ int main(int argc, char **argv) {
                 Log("phone: {} by player {}",
                     action->action == proto::kPhoneReject ? "rejected" : "answered",
                     action->player);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteTimeEffect>) {
+              Log("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
+                  e.effect.abilities, e.effect.scale);
             } else if constexpr (std::is_same_v<E, tandem::events::WorldItemAppeared>) {
               const auto &item = e.item;
               Log("world item {} from player {}: {} stack(s), first {:#x} x{} (token {})", item.id,
@@ -1219,14 +1560,30 @@ int main(int argc, char **argv) {
           },
           event);
     }
+    if (auto relay = endpoint->Relay()) {
+      relay->codeSecondsLeft = 0; // not a change worth a line
+      if (relay != relayShown) {
+        using State = tandem::net::RelayStatus::State;
+        if (!relay->code.empty() && (!relayShown || relayShown->code != relay->code))
+          Log("join code {} (relay {}:{})", tandem::net::DisplayJoinCode(relay->code),
+              options.relay->address, options.relay->port);
+        if (relay->state == State::Ready && (!relayShown || relayShown->state != State::Ready))
+          Log("relay: registered{}", endpoint->ThroughRelay() ? ", joining through it" : "");
+        if (!relay->error.empty() && (!relayShown || relayShown->error != relay->error))
+          Log("relay: {}", relay->error);
+        relayShown = relay;
+      }
+    }
 
     const auto now = std::chrono::steady_clock::now();
     if (now >= nextSend) {
       nextSend += interval;
       if (nextSend < now)
         nextSend = now + interval;
-      if (auto state = puppeteer.Next(tandem::net::NowUs()))
+      if (auto state = puppeteer.Next(tandem::net::NowUs())) {
         endpoint->SendLocalState(*state);
+        lastSent = state->position;
+      }
       if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip))
         endpoint->SendLocalPose(*pose);
       if (options.mode == Mode::Drive && !parked) {
@@ -1264,10 +1621,43 @@ int main(int argc, char **argv) {
       world.weather = options.weather.empty() ? 0 : CName(options.weather);
       endpoint->SetWorld(world);
     }
+    if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
+      togetherSince = now;
+    const auto together = [&](int seconds) {
+      return seconds >= 0 && togetherSince && now >= *togetherSince + std::chrono::seconds(seconds);
+    };
+    // --travel-at: arrive somewhere else, as from a fast travel, and offer
+    // the others to join (as a game does once its loading screen is over).
+    if (!travelled && together(options.travelAtSeconds)) {
+      travelled = true;
+      puppeteer.StandAt(options.travelTo);
+      const auto &to = options.travelTo;
+      endpoint->SendRegroup(
+          {.offer = ++offers,
+           .reason = tandem::proto::RegroupReason::FastTravel,
+           .point = options.travelPoint.empty() ? 0 : TweakDBID(options.travelPoint),
+           .position = to});
+      Log("fast travelled to ({:.1f}, {:.1f}, {:.1f}){}: offered everyone to join (offer {})", to.x,
+          to.y, to.z, options.travelPoint.empty() ? "" : " at " + options.travelPoint, offers);
+    }
+    // --offer-regroup: ask the others to come.
+    if (!offeredRegroup && together(options.offerRegroupSeconds)) {
+      offeredRegroup = true;
+      const auto at = lastSent.value_or(Vec3{});
+      endpoint->SendRegroup(
+          {.offer = ++offers, .reason = tandem::proto::RegroupReason::Asked, .position = at});
+      Log("asked the others to come to ({:.1f}, {:.1f}, {:.1f}) (offer {})", at.x, at.y, at.z,
+          offers);
+    }
+    // Someone came to where we stand: back to the mode's motion.
+    if (const auto station = puppeteer.Station()) {
+      if (const auto them = puppeteer.HeardAt(); them && distance(*them, *station) < 10.f) {
+        Log("another V is with us again ({:.1f} m)", distance(*them, *station));
+        puppeteer.StandAt(std::nullopt);
+      }
+    }
     // --pause-at: open the pause menu, then close it.
     if (options.pauseAtSeconds >= 0 && pauseStep != PauseStep::Done) {
-      if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
-        togetherSince = now;
       const auto pauseAt = togetherSince
                                ? *togetherSince + std::chrono::seconds(options.pauseAtSeconds)
                                : std::chrono::steady_clock::time_point::max();
@@ -1280,6 +1670,26 @@ int main(int argc, char **argv) {
         endpoint->SetLocalPaused(false);
         pauseStep = PauseStep::Done;
         Log("pause menu closed");
+      }
+    }
+    // --sandevistan-at: on, then off.
+    if (options.sandevistanAtSeconds >= 0 && sandevistanStep != PauseStep::Done) {
+      if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
+        togetherSince = now;
+      const auto at = togetherSince
+                          ? *togetherSince + std::chrono::seconds(options.sandevistanAtSeconds)
+                          : std::chrono::steady_clock::time_point::max();
+      if (sandevistanStep == PauseStep::Waiting && now >= at) {
+        endpoint->SetLocalTimeEffect(
+            {.abilities = tandem::proto::kTimeSandevistan, .scale = options.sandevistanScale});
+        sandevistanStep = PauseStep::Paused;
+        Log("sandevistan on: world speed {:.2f} around us for {} s", options.sandevistanScale,
+            options.sandevistanForSeconds);
+      } else if (sandevistanStep == PauseStep::Paused &&
+                 now >= at + std::chrono::seconds(options.sandevistanForSeconds)) {
+        endpoint->SetLocalTimeEffect({});
+        sandevistanStep = PauseStep::Done;
+        Log("sandevistan off");
       }
     }
     // --loot-quest: "our V" loots a quest item, once.
@@ -1349,6 +1759,81 @@ int main(int argc, char **argv) {
         endpoint->SendNpcEffect(
             {.npc = *hitTarget, .effects = {TweakDBID("BaseStatusEffect.Burning")}});
         Log("set npc {} on fire", *hitTarget);
+      }
+    }
+    // --grab-npcs: grab one NPC, take it down two seconds later.
+    if (options.grabNpcsSeconds && !options.host && endpoint->IsJoined()) {
+      if (grab.step == 0 && now >= nextGrab && !liveNpcs.empty()) {
+        nextGrab = now + std::chrono::seconds(options.grabNpcsSeconds);
+        grab = {*liveNpcs.begin(), 1, now + 2s};
+        if (npcAt.contains(grab.npc))
+          puppeteer.Beside(npcAt[grab.npc]);
+        endpoint->SendNpcAction(
+            {.npc = grab.npc, .kind = NpcActionKind::Grab, .name = CName("GrappleTarget")});
+        Log("grab npc {}", grab.npc);
+      } else if (grab.step == 1 && now >= grab.at) {
+        const bool lethal = takedowns++ % 2 == 0;
+        endpoint->SendNpcAction({.npc = grab.npc,
+                                 .kind = lethal ? NpcActionKind::Takedown : NpcActionKind::Knockout,
+                                 .name = CName(lethal ? "kill" : "setUnconscious")});
+        Log("take down npc {} ({})", grab.npc, lethal ? "lethal" : "non-lethal");
+        grab.step = 0;
+        puppeteer.Beside(std::nullopt);
+      }
+    }
+    // --carry-npcs: pick up a body, carry it three seconds, throw it.
+    if (options.carryNpcsSeconds && !options.host && endpoint->IsJoined()) {
+      if (carry.step == 0 && now >= nextCarry && !bodies.empty()) {
+        nextCarry = now + std::chrono::seconds(options.carryNpcsSeconds);
+        carry = {*bodies.begin(), 1, now + 3s};
+        if (npcAt.contains(carry.npc))
+          puppeteer.Beside(npcAt[carry.npc]);
+        endpoint->SendNpcAction({.npc = carry.npc, .kind = NpcActionKind::PickUp});
+        Log("pick up npc {}", carry.npc);
+      } else if (carry.step == 1 && now >= carry.at) {
+        endpoint->SendNpcAction(
+            {.npc = carry.npc, .kind = NpcActionKind::Throw, .direction = {0.f, 100.f, 20.f}});
+        Log("throw npc {}", carry.npc);
+        bodies.erase(carry.npc);
+        carry.step = 0;
+        puppeteer.Beside(std::nullopt);
+      }
+    }
+    // --hold-npcs (host): our V grabs a replayed NPC, then takes it down.
+    if (options.holdNpcsSeconds && options.host && endpoint->Players().size() > 1) {
+      if (hold.step == 0 && now >= nextHold) {
+        nextHold = now + std::chrono::seconds(options.holdNpcsSeconds);
+        for (const auto npc : replayedNpcs)
+          if (!deadNpcs.contains(npc) && !held.contains(npc)) {
+            hold = {npc, 1, now + 3s};
+            held[npc] = endpoint->You();
+            endpoint->SendNpcHold({.npc = npc,
+                                   .player = endpoint->You(),
+                                   .how = NpcHoldKind::Grappled,
+                                   .name = CName("GrappleTarget")});
+            for (const auto &[id, info] : endpoint->Players())
+              if (id != endpoint->You())
+                endpoint->SendNpcCue(
+                    {.npc = npc, .player = id, .cue = tandem::proto::NpcCueKind::CombatStart});
+            Log("our V grabs npc {}", npc);
+            break;
+          }
+      } else if (hold.step == 1 && now >= hold.at) {
+        endpoint->SendNpcHold({.npc = hold.npc,
+                               .player = endpoint->You(),
+                               .how = NpcHoldKind::Takedown,
+                               .name = CName("kill")});
+        hold.step = 2;
+        hold.at = now + 3s;
+        Log("our V takes npc {} down", hold.npc);
+      } else if (hold.step == 2 && now >= hold.at) {
+        held.erase(hold.npc);
+        endpoint->SendNpcHold({.npc = hold.npc});
+        deadNpcs.insert(hold.npc);
+        endpoint->SendNpcGone(
+            {.npc = hold.npc, .reason = tandem::proto::kGoneDead, .killer = endpoint->You()});
+        Log("npc {} died", hold.npc);
+        hold.step = 0;
       }
     }
     // --story: the scripted host's steps, once a guest is in the session.
@@ -1569,8 +2054,10 @@ int main(int argc, char **argv) {
           endpoint->SendNpcStates(*states);
         } else if (const auto *gone = std::get_if<tandem::proto::NpcGone>(&message)) {
           replayedNpcs.erase(gone->npc);
-          if (!deadNpcs.contains(gone->npc))
+          if (!deadNpcs.contains(gone->npc)) {
             endpoint->SendNpcGone(*gone);
+            held.erase(gone->npc);
+          }
         } else if (const auto *health = std::get_if<tandem::proto::NpcHealth>(&message))
           endpoint->SendNpcHealth(*health);
       }
@@ -1586,6 +2073,11 @@ int main(int argc, char **argv) {
           endpoint->Players().size(), heard, heardPoses, heardShots, heardVehicles,
           stats ? std::format(", rtt {} ms, loss {:.1f}%", stats->rttMs, stats->packetLoss * 100)
                 : "");
+      if (shaper) {
+        const auto link = shaper->Stats();
+        Log("bad network: {} datagrams through, {} lost, {} held back", link.passed, link.lost,
+            link.reordered);
+      }
     }
   }
 

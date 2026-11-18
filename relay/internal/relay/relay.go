@@ -1,7 +1,9 @@
 package relay
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"errors"
 	"log/slog"
@@ -25,6 +27,21 @@ type Config struct {
 	// Per client, over one-second windows.
 	MaxPacketsPerSecond int
 	MaxBytesPerSecond   int
+
+	// Join codes live this long (and die with their session).
+	CodeTTL time.Duration
+	// A host asking for a new code sooner than this gets its current one.
+	CodeRenewInterval time.Duration
+	// Code lookups per source (an IPv4 address, or an IPv6 /64): a burst,
+	// then one per interval. A source over it is told once, then ignored.
+	CodeLookupBurst    int
+	CodeLookupInterval time.Duration
+	// Failed lookups per minute from all sources together: past it, every
+	// lookup is refused until the minute ends, so many sources together
+	// cannot try codes faster either.
+	MaxCodeFailuresPerMinute int
+	// Sources tracked at once; a new one beyond it is ignored.
+	MaxLookupSources int
 }
 
 // DefaultConfig suits a small group's relay.
@@ -35,6 +52,13 @@ func DefaultConfig() Config {
 		IdleTimeout:         2 * time.Minute,
 		MaxPacketsPerSecond: 2000,
 		MaxBytesPerSecond:   4 << 20,
+
+		CodeTTL:                  10 * time.Minute,
+		CodeRenewInterval:        10 * time.Second,
+		CodeLookupBurst:          5,
+		CodeLookupInterval:       6 * time.Second,
+		MaxCodeFailuresPerMinute: 120,
+		MaxLookupSources:         4096,
 	}
 }
 
@@ -54,6 +78,19 @@ type session struct {
 	host        *client
 	guests      map[uint16]*client
 	nextChannel uint16
+
+	// Its join code ("" none), when it was issued and when it expires.
+	code        string
+	codeIssued  time.Time
+	codeExpires time.Time
+}
+
+// A source's code lookups: tokens left, refilled one per interval since last.
+type lookupBucket struct {
+	tokens int
+	last   time.Time
+	// Told it is over its limit since the last refill: ignored until then.
+	warned bool
 }
 
 // Server is one relay. handle() is the whole protocol and does no I/O, so the
@@ -66,6 +103,11 @@ type Server struct {
 	mu       sync.Mutex
 	clients  map[netip.AddrPort]*client
 	sessions map[[SecretSize]byte]*session
+	codes    map[string]*session
+	lookups  map[netip.Prefix]*lookupBucket
+	// Failed code lookups in the minute that started at failWindow.
+	failWindow time.Time
+	failures   int
 }
 
 func NewServer(cfg Config, log *slog.Logger) *Server {
@@ -74,6 +116,8 @@ func NewServer(cfg Config, log *slog.Logger) *Server {
 		log:      log,
 		clients:  map[netip.AddrPort]*client{},
 		sessions: map[[SecretSize]byte]*session{},
+		codes:    map[string]*session{},
+		lookups:  map[netip.Prefix]*lookupBucket{},
 	}
 }
 
@@ -116,8 +160,134 @@ func (s *Server) handle(from netip.AddrPort, b []byte, now time.Time) (outgoing,
 		return outgoing{}, false
 	case typeData:
 		return s.forward(from, d, len(b), now)
+	case typeRequestCode:
+		return s.requestCode(from, d, len(b), now)
+	case typeResolveCode:
+		return s.resolveCode(from, d, now)
 	}
 	return outgoing{}, false
+}
+
+// overRate counts a datagram against its client's one-second window.
+func (s *Server) overRate(c *client, size int, now time.Time) bool {
+	if now.Sub(c.window) >= time.Second {
+		c.window, c.windowPkts, c.windowBytes = now, 0, 0
+	}
+	c.windowPkts++
+	c.windowBytes += size
+	if c.windowPkts > s.cfg.MaxPacketsPerSecond || c.windowBytes > s.cfg.MaxBytesPerSecond {
+		s.Metrics.dropped(dropRate)
+		return true
+	}
+	return false
+}
+
+// requestCode answers a session's host only (its address and its secret):
+// anyone else gets nothing.
+func (s *Server) requestCode(from netip.AddrPort, d datagram, size int, now time.Time) (outgoing, bool) {
+	c := s.clients[from]
+	if c == nil || c != c.session.host || subtle.ConstantTimeCompare(c.session.secret[:], d.secret[:]) != 1 {
+		s.Metrics.dropped(dropUnknown)
+		return outgoing{}, false
+	}
+	if s.overRate(c, size, now) {
+		return outgoing{}, false
+	}
+	c.lastSeen = now
+	sess := c.session
+	live := sess.code != "" && now.Before(sess.codeExpires)
+	if !live || (d.renew && now.Sub(sess.codeIssued) >= s.cfg.CodeRenewInterval) {
+		s.issueCode(sess, now)
+	}
+	left := min(sess.codeExpires.Sub(now)/time.Second, 0xFFFF)
+	return outgoing{from, codeReply(sess.code, uint16(left))}, true
+}
+
+func (s *Server) issueCode(sess *session, now time.Time) {
+	if sess.code != "" {
+		delete(s.codes, sess.code)
+	}
+	var code string
+	for {
+		var raw [CodeSize]byte
+		_, _ = rand.Read(raw[:])
+		for i := range raw {
+			raw[i] = codeAlphabet[raw[i]&31]
+		}
+		if code = string(raw[:]); s.codes[code] == nil {
+			break
+		}
+	}
+	sess.code, sess.codeIssued, sess.codeExpires = code, now, now.Add(s.cfg.CodeTTL)
+	s.codes[code] = sess
+	s.Metrics.codeIssued()
+	s.log.Info("join code issued", "host", sess.host.addr, "ttl", s.cfg.CodeTTL)
+}
+
+// sourceOf groups addresses one sender can easily hold many of: an IPv6
+// /64 counts as one source.
+func sourceOf(addr netip.AddrPort) netip.Prefix {
+	a := addr.Addr().Unmap()
+	bits := 32
+	if a.Is6() {
+		bits = 64
+	}
+	p, _ := a.Prefix(bits)
+	return p
+}
+
+// allowLookup spends one of the source's lookups. answer: tell it it is
+// over its limit (once per refill; after that it is ignored).
+func (s *Server) allowLookup(from netip.AddrPort, now time.Time) (allowed, answer bool) {
+	key := sourceOf(from)
+	b := s.lookups[key]
+	if b == nil {
+		if len(s.lookups) >= s.cfg.MaxLookupSources {
+			return false, false
+		}
+		b = &lookupBucket{tokens: s.cfg.CodeLookupBurst, last: now}
+		s.lookups[key] = b
+	}
+	if n := int(now.Sub(b.last) / s.cfg.CodeLookupInterval); n > 0 {
+		b.tokens = min(s.cfg.CodeLookupBurst, b.tokens+n)
+		b.last = b.last.Add(time.Duration(n) * s.cfg.CodeLookupInterval)
+		b.warned = false
+	}
+	if now.Sub(s.failWindow) >= time.Minute {
+		s.failWindow, s.failures = now, 0
+	}
+	if b.tokens == 0 || s.failures >= s.cfg.MaxCodeFailuresPerMinute {
+		answer = !b.warned
+		b.warned = true
+		return false, answer
+	}
+	b.tokens--
+	return true, true
+}
+
+// resolveCode trades a live join code for its session's secret. Like the
+// registrations it may answer an unregistered address: its request is
+// padded to 64 bytes, every answer is at most 21.
+func (s *Server) resolveCode(from netip.AddrPort, d datagram, now time.Time) (outgoing, bool) {
+	allowed, answer := s.allowLookup(from, now)
+	if !allowed {
+		s.Metrics.lookup(lookupLimited)
+		if answer {
+			return outgoing{from, errorReply(ErrSlowDown)}, true
+		}
+		return outgoing{}, false
+	}
+	var sess *session
+	if code, ok := NormalizeCode(string(bytes.TrimRight(d.code[:], "\x00"))); ok {
+		sess = s.codes[code]
+	}
+	if sess == nil || !now.Before(sess.codeExpires) {
+		s.failures++
+		s.Metrics.lookup(lookupUnknown)
+		return outgoing{from, errorReply(ErrNoCode)}, true
+	}
+	s.Metrics.lookup(lookupFound)
+	return outgoing{from, secretReply(sess.secret)}, true
 }
 
 func (s *Server) registerHost(from netip.AddrPort, d datagram, now time.Time) outgoing {
@@ -179,13 +349,7 @@ func (s *Server) forward(from netip.AddrPort, d datagram, size int, now time.Tim
 		s.Metrics.dropped(dropUnknown)
 		return outgoing{}, false
 	}
-	if now.Sub(c.window) >= time.Second {
-		c.window, c.windowPkts, c.windowBytes = now, 0, 0
-	}
-	c.windowPkts++
-	c.windowBytes += size
-	if c.windowPkts > s.cfg.MaxPacketsPerSecond || c.windowBytes > s.cfg.MaxBytesPerSecond {
-		s.Metrics.dropped(dropRate)
+	if s.overRate(c, size, now) {
 		return outgoing{}, false
 	}
 	c.lastSeen = now
@@ -216,6 +380,9 @@ func (s *Server) forget(addr netip.AddrPort) {
 		for _, g := range sess.guests {
 			delete(s.clients, g.addr)
 		}
+		if sess.code != "" {
+			delete(s.codes, sess.code)
+		}
 		delete(s.sessions, sess.secret)
 		s.log.Info("session closed", "host", addr, "sessions", len(s.sessions))
 		return
@@ -223,13 +390,26 @@ func (s *Server) forget(addr netip.AddrPort) {
 	delete(sess.guests, c.channel)
 }
 
-// sweep forgets clients silent for longer than the idle timeout.
+// sweep forgets clients silent for longer than the idle timeout, expired
+// codes, and lookup sources back to a full burst.
 func (s *Server) sweep(now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for addr, c := range s.clients {
 		if now.Sub(c.lastSeen) > s.cfg.IdleTimeout {
 			s.forget(addr)
+		}
+	}
+	for code, sess := range s.codes {
+		if !now.Before(sess.codeExpires) {
+			delete(s.codes, code)
+			sess.code = ""
+		}
+	}
+	full := time.Duration(s.cfg.CodeLookupBurst) * s.cfg.CodeLookupInterval
+	for key, b := range s.lookups {
+		if now.Sub(b.last) >= full {
+			delete(s.lookups, key)
 		}
 	}
 }

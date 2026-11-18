@@ -69,6 +69,9 @@ TEST_CASE("every message survives encoding") {
       .revision = 2, .gameTimeSeconds = 86400 + 3600 * 18, .weather = 0x1234, .timePaused = true});
   RoundTrips(Pause{.player = 3, .paused = true});
   RoundTrips(Pause{.player = 2, .paused = false});
+  RoundTrips(TimeEffect{.player = 2, .abilities = kTimeSandevistan, .scale = 0.25f});
+  RoundTrips(TimeEffect{.player = 3, .abilities = kTimeScanning | kTimeSlowMo, .scale = 1.f});
+  CHECK(std::string(NameOf(TimeEffect{})) == "TimeEffect");
   RoundTrips(NpcHack{
       .player = 2, .npc = 7, .action = 0x1122334455, .uploadMs = 1500, .flags = kUploadTraceable});
   RoundTrips(NpcHackState{
@@ -98,6 +101,18 @@ TEST_CASE("every message survives encoding") {
                        .direction = {0, -1, 0},
                        .attack = 0x1234567890ULL,
                        .weapon = 0x0abcdef012ULL});
+  RoundTrips(Regroup{.from = 2,
+                     .to = 0,
+                     .offer = 4,
+                     .reason = RegroupReason::FastTravel,
+                     .point = 0x1b2c3d4e5fULL,
+                     .marker = 0xcbf29ce484222325ULL,
+                     .position = {-915.f, 1879.5f, 36.3f},
+                     .yaw = 1.5f});
+  RoundTrips(Regroup{
+      .from = 1, .to = 3, .offer = 1, .reason = RegroupReason::Story, .label = "The Heist"});
+  RoundTrips(RegroupAnswer{.from = 3, .to = 1, .offer = 1, .accepted = true});
+  RoundTrips(RegroupAnswer{.from = 2, .to = 1, .offer = 0, .accepted = false});
   RoundTrips(WorldItem{.id = 4,
                        .dropper = 2,
                        .token = 9,
@@ -109,6 +124,18 @@ TEST_CASE("every message survives encoding") {
                         .kind = kSharedOnCorpse,
                         .npc = 7,
                         .item = {.record = 0x0a0b0c0d0eULL, .seed = 5, .quantity = 1}});
+}
+
+TEST_CASE("a regroup offer is a reliable event with a bounded label") {
+  CHECK(ChannelOf(Regroup{}) == Channel::Event);
+  CHECK(IsReliable(RegroupAnswer{}));
+  CHECK(std::string_view(NameOf(Regroup{})) == "Regroup");
+  CHECK(std::string_view(NameOf(RegroupAnswer{})) == "RegroupAnswer");
+  Regroup offer{.label = std::string(kMaxRegroupLabel, 'x')};
+  CHECK(Decode(Encode(offer)).has_value());
+  CHECK(Encode(offer).size() < 160);
+  offer.label.push_back('x');
+  CHECK_FALSE(Decode(Encode(offer)).has_value());
 }
 
 TEST_CASE("world items are reliable events, and a bag has a bound") {
@@ -160,6 +187,46 @@ TEST_CASE("stealth travels reliably, awareness and noise as state") {
   CHECK(Encode(Noise{}).size() < 32);
 }
 
+TEST_CASE("takedown messages survive encoding") {
+  RoundTrips(NpcAction{.player = 2,
+                       .npc = 7,
+                       .kind = NpcActionKind::Finisher,
+                       .name = 0xfeedULL,
+                       .item = 0x2a1bULL,
+                       .amount = 0.2f,
+                       .direction = {0, 100, 10}});
+  RoundTrips(NpcAction{.npc = 8, .kind = NpcActionKind::Dispose, .item = 0x123456789ULL});
+  RoundTrips(NpcActionReply{.npc = 7, .kind = NpcActionKind::Grab, .accepted = true});
+  RoundTrips(NpcActionReply{
+      .npc = 7, .kind = NpcActionKind::PickUp, .accepted = false, .reason = kRefusedHeld});
+  RoundTrips(NpcHold{.npc = 7, .player = 2, .how = NpcHoldKind::Grappled, .name = 0xbeef});
+  RoundTrips(NpcHold{.npc = 7});
+  RoundTrips(NpcCue{.npc = 7, .player = 3, .cue = NpcCueKind::PoiseBroken});
+  RoundTrips(NpcGone{.npc = 7, .reason = kGoneDisposed, .killer = 2});
+}
+
+TEST_CASE("NPC actions travel reliably and unknown kinds are refused") {
+  CHECK(ChannelOf(NpcAction{}) == Channel::Event);
+  CHECK(ChannelOf(NpcActionReply{}) == Channel::Event);
+  CHECK(ChannelOf(NpcHold{}) == Channel::Event);
+  CHECK(ChannelOf(NpcCue{}) == Channel::Event);
+  CHECK(IsReliable(NpcAction{.kind = NpcActionKind::Grab}));
+  CHECK(std::string(NameOf(NpcAction{})) == "NpcAction");
+  CHECK(std::string(NameOf(NpcActionReply{})) == "NpcActionReply");
+  CHECK(std::string(NameOf(NpcHold{})) == "NpcHold");
+  CHECK(std::string(NameOf(NpcCue{})) == "NpcCue");
+  CHECK(std::string(NameOf(Pause{})) == "Pause");
+  CHECK_FALSE(Decode(Encode(NpcAction{.kind = NpcActionKind{0}})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcAction{.kind = NpcActionKind{11}})).has_value());
+  CHECK(Decode(Encode(NpcAction{.kind = NpcActionKind::Dispose})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcActionReply{.kind = NpcActionKind{0}})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcHold{.how = NpcHoldKind{5}})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcCue{.cue = NpcCueKind{0}})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcCue{.cue = NpcCueKind{3}})).has_value());
+  // Small: a grapple is one request, not a stream.
+  CHECK(Encode(NpcAction{}).size() < 64);
+}
+
 TEST_CASE("an appearance past its limits is refused") {
   Appearance big;
   big.look.resize(kMaxAppearanceKeys + 1);
@@ -179,6 +246,8 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(ChannelOf(NpcEffect{}) == Channel::Event);
   CHECK(ChannelOf(Pause{}) == Channel::Event);
   CHECK(IsReliable(Pause{}));
+  CHECK(ChannelOf(TimeEffect{}) == Channel::Event);
+  CHECK(IsReliable(TimeEffect{}));
   // Quickhacks change state: never dropped.
   CHECK(ChannelOf(NpcHack{}) == Channel::Event);
   CHECK(ChannelOf(NpcHackState{}) == Channel::Event);
@@ -301,4 +370,11 @@ TEST_CASE("story messages: channels, limits, sizes") {
   Journal typical{.snapshot = true};
   typical.entries.resize(3000);
   CHECK(Encode(typical).size() < 32 * 1024);
+}
+
+TEST_CASE("a story effect survives encoding and is a story message") {
+  RoundTrips(StoryEffect{.player = 1, .effect = 0x15e213846eULL, .applied = true});
+  CHECK(IsStory(StoryEffect{}));
+  CHECK(ChannelOf(StoryEffect{}) == Channel::Event);
+  CHECK(std::string(NameOf(StoryEffect{})) == "StoryEffect");
 }

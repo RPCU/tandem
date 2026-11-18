@@ -100,6 +100,56 @@ public native struct TandemNoise {
   native let propagation: Bool;
 }
 
+// An NPC's new speed in the time bubbles (Time.reds): 1 = normal again.
+public native struct TandemTimeChange {
+  native let npc: Uint32;
+  native let factor: Float;
+}
+
+// Grapples, takedowns, finishers and carried bodies (Takedowns.reds).
+public native struct TandemNpcAction {
+  // 1 a guest's request (host), 2 the host's answer (guest), 3 who holds an NPC, 4 a cue for us
+  native let kind: Int32;
+  native let npc: Uint32;
+  // 1: who asks; 3: the holder (0: released); 4: us
+  native let player: Uint32;
+  // 1, 2: NpcActionKind (1 grab ... 10 dispose); 3: NpcHoldKind; 4: NpcCueKind
+  native let action: Int32;
+  native let name: CName;
+  // the item: a TweakDB id (finisher: weapon) or an entity (dispose: container)
+  native let record: TweakDBID;
+  native let entity: EntityID;
+  native let amount: Float;
+  // throw: the impulse
+  native let dx: Float;
+  native let dy: Float;
+  native let dz: Float;
+  // 2: accepted, else why not (reason)
+  native let accepted: Bool;
+  native let reason: Int32;
+}
+
+public native struct TandemRegroup {
+  // 1 an offer to come to `player`, 2 their answer to our offer
+  native let kind: Int32;
+  native let player: Uint32;
+  native let offer: Uint32;
+  // 0 fast travel, 1 asked, 2 story, 3 teleport
+  native let reason: Int32;
+  // The fast travel point `player` is at (invalid: none), its marker node's
+  // hash (TandemNative.NodeRefOf; 0: none).
+  native let point: TweakDBID;
+  native let marker: Uint64;
+  // Where `player` stands (plain floats: see TandemNpcEvent); yaw in radians.
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let yaw: Float;
+  native let label: String;
+  // 2: the answer
+  native let accepted: Bool;
+}
+
 public native struct TandemLootEvent {
   // 1 a stack of a shared world item, 2 a stack taken, 3 an important item
   // another player got, 4 (guest) one on the host's corpse of NPC `id`
@@ -192,6 +242,12 @@ public native class TandemNative extends IScriptable {
   public static native func RemoteRadioStation(player: Uint32) -> Int32
   public static native func RemoteRadioTrack(player: Uint32) -> CName
   public static native func RemoteRadioTrackAge(player: Uint32) -> Float
+  public static native func SendNpcAction(npc: Uint32, kind: Int32, name: CName, record: TweakDBID, entity: EntityID, amount: Float, direction: Vector4)
+  public static native func SendNpcActionReply(player: Uint32, npc: Uint32, kind: Int32, accepted: Bool, reason: Int32)
+  public static native func SendNpcHold(npc: Uint32, player: Uint32, how: Int32, name: CName)
+  public static native func SendNpcCue(npc: Uint32, player: Uint32, cue: Int32)
+  public static native func TakeNpcActions() -> array<TandemNpcAction>
+  public static native func HoldPuppet(player: Uint32, hold: Bool)
   public static native func IsHost() -> Bool
   public static native func SendWorld(gameTimeSeconds: Int32, weather: CName, paused: Bool)
   public static native func HostWorldChanges() -> Int32
@@ -201,6 +257,16 @@ public native class TandemNative extends IScriptable {
   public static native func PausedPlayers() -> array<Uint32>
   public static native func PausedChanges() -> Int32
   public static native func PlayerName(player: Uint32) -> String
+  public static native func SendTimeEffect(abilities: Int32, scale: Float)
+  public static native func TimeChanges() -> Int32
+  public static native func TimePlayers() -> array<Uint32>
+  public static native func TimeAbilities(player: Uint32) -> Int32
+  public static native func TimeScale(player: Uint32) -> Float
+  public static native func UpdateTimeBubbles(owners: array<Uint32>, scales: array<Float>, ownerPositions: array<Vector4>, npcs: array<Uint32>, npcPositions: array<Vector4>) -> array<TandemTimeChange>
+  public static native func ClearTimeBubbles() -> array<TandemTimeChange>
+  public static native func TimeFactorOf(npc: Uint32) -> Float
+  public static native func TimeBubbleMembers(player: Uint32) -> Int32
+  public static native func IsTimeHostFull() -> Bool
   public static native func SendSeat(vehicle: TweakDBID, seat: CName, owner: Uint32)
   public static native func SendVehicle(position: Vector4, orientation: Quaternion, velocity: Vector4)
   public static native func RemoteSeatChanges(player: Uint32) -> Int32
@@ -222,5 +288,17 @@ public native class TandemNative extends IScriptable {
   public static native func PoseBind(player: Uint32, entity: ref<Entity>)
   public static native func PoseLoop(player: Uint32)
   public static native func PoseStreamReport()
+  public static native func SendRegroup(to: Uint32, reason: Int32, point: TweakDBID, marker: NodeRef, position: Vector4, orientation: Quaternion, label: String) -> Uint32
+  public static native func SendRegroupAnswer(to: Uint32, offer: Uint32, accepted: Bool)
+  public static native func TakeRegroups() -> array<TandemRegroup>
+  public static native func NodeRefHash(node: NodeRef) -> Uint64
+  public static native func NodeRefOf(hash: Uint64) -> NodeRef
   public static native func Log(text: String)
+  // Invites through tandem-relay: the host's join code ("K7Q-2M9", "" none
+  // yet or no relay), the relay link's state ("" no relay, "connecting",
+  // "ready", else the problem), and joining by a typed code (false: not a
+  // code, or no relay in tandem.ini; starts now, or with the next game).
+  public static native func RelayCode() -> String
+  public static native func RelayStatus() -> String
+  public static native func JoinByCode(code: String) -> Bool
 }

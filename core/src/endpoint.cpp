@@ -1,6 +1,7 @@
 #include "tandem/endpoint.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace tandem {
@@ -9,6 +10,16 @@ constexpr std::uint64_t kPingIntervalUs = 500'000;
 // The clock offset follows the lowest-RTT ping, but forgets it slowly so a
 // route change or a drifting clock is picked up.
 constexpr std::uint64_t kRttForgetUsPerPing = 200;
+
+// What a game says of its own time ability, made safe to act on: a speed in
+// 0.05..1 (a bubble never stops NPCs, nor speeds them up), 1 without a
+// bubble ability.
+proto::TimeEffect Sanitized(proto::TimeEffect effect) {
+  if (!std::isfinite(effect.scale) || (effect.abilities & proto::kTimeBubbleAbilities) == 0)
+    effect.scale = 1.f;
+  effect.scale = std::clamp(effect.scale, 0.05f, 1.f);
+  return effect;
+}
 
 template <class... Ts> struct Overloaded : Ts... {
   using Ts::operator()...;
@@ -19,8 +30,9 @@ Endpoint::Endpoint(std::unique_ptr<net::Session> session, Identity identity, Tim
     : m_session(std::move(session)), m_identity(std::move(identity)), m_timing(timing) {}
 
 std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port, std::string &error,
-                                         Timing timing) {
-  auto session = net::Session::Listen(port, kMaxGuests + kSpareConnections, error, timing.timeout);
+                                         Timing timing, std::optional<net::RelayOptions> relay) {
+  auto session = net::Session::Listen(port, kMaxGuests + kSpareConnections, error, timing.timeout,
+                                      relay ? &*relay : nullptr);
   if (!session)
     return nullptr;
   auto endpoint =
@@ -32,10 +44,44 @@ std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port, 
 
 std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const std::string &host,
                                          std::uint16_t port, std::string &error, Timing timing) {
-  auto session = net::Session::Connect(host, port, error, timing.timeout);
-  if (!session)
+  return Join(std::move(identity), JoinTarget{.address = host, .port = port}, error, timing);
+}
+
+std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const JoinTarget &target,
+                                         std::string &error, Timing timing) {
+  std::unique_ptr<net::Session> session;
+  if (!target.address.empty())
+    session =
+        net::Session::Connect(target.address, target.port, error, timing.timeout,
+                              target.relay ? timing.timeout / 2 : std::chrono::milliseconds{});
+  const bool throughRelay = !session && target.relay;
+  if (throughRelay)
+    session = net::Session::ConnectRelay(*target.relay, error, timing.timeout);
+  if (!session) {
+    if (error.empty())
+      error = "no host address and no relay to join through";
     return nullptr;
-  return std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity), timing));
+  }
+  auto endpoint =
+      std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity), timing));
+  endpoint->m_throughRelay = throughRelay;
+  if (!throughRelay)
+    endpoint->m_fallback = target.relay;
+  return endpoint;
+}
+
+template <class M>
+bool Endpoint::Deliver(const M &message, proto::PlayerId to, net::PeerId except) {
+  if (to == proto::kNoPlayer) {
+    m_session->Broadcast(message, except);
+    return true;
+  }
+  if (to == m_you)
+    return true;
+  for (const auto &[peer, player] : m_playerOfPeer)
+    if (player == to && peer != except)
+      m_session->Send(peer, message);
+  return false;
 }
 
 std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
@@ -54,6 +100,26 @@ std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
       OnHostEvent(event, out);
     else
       OnGuestEvent(event, out);
+    if (m_tryRelay)
+      break; // the rest is the direct attempt's
+  }
+
+  // The host did not answer directly: through the relay, as if nothing
+  // happened (the guest's game sees one join that took longer).
+  if (m_tryRelay) {
+    m_tryRelay = false;
+    const auto relay = std::move(*m_fallback);
+    m_fallback.reset();
+    std::string error;
+    if (auto session = net::Session::ConnectRelay(relay, error, m_timing.timeout)) {
+      m_session = std::move(session);
+      m_hostPeer = 0;
+      m_throughRelay = true;
+    } else {
+      m_ended = true;
+      out.push_back(events::Ended{error});
+    }
+    return out;
   }
 
   if (!IsHost() && IsJoined()) {
@@ -193,6 +259,12 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      mine.player = player;
                      out.push_back(events::NoiseBy{mine});
                    },
+                   [&](const proto::NpcAction &action) {
+                     // For the host's game only: it owns the NPC and answers.
+                     auto mine = action;
+                     mine.player = player;
+                     out.push_back(events::NpcActionBy{mine});
+                   },
                    [&](const proto::Pause &pause) {
                      // A guest only pauses in its own name.
                      const proto::Pause relayed{player, pause.paused};
@@ -200,6 +272,29 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                        return;
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::PauseChanged{relayed});
+                   },
+                   [&](const proto::TimeEffect &time) {
+                     // A guest only bends time in its own name.
+                     auto relayed = Sanitized(time);
+                     relayed.player = player;
+                     if (!NoteTime(relayed))
+                       return;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteTimeEffect{relayed});
+                   },
+                   [&](const proto::Regroup &offer) {
+                     // A guest only offers to come to itself.
+                     auto relayed = offer;
+                     relayed.from = player;
+                     if (relayed.to != player && Deliver(relayed, relayed.to, event.peer))
+                       out.push_back(events::RegroupOffered{relayed});
+                   },
+                   [&](const proto::RegroupAnswer &answer) {
+                     auto relayed = answer;
+                     relayed.from = player;
+                     if (relayed.to != player && relayed.to != proto::kNoPlayer &&
+                         Deliver(relayed, relayed.to, event.peer))
+                       out.push_back(events::RegroupAnswered{relayed});
                    },
                    [&](const proto::WorldItem &item) { AddWorldItem(player, item, out); },
                    [&](const proto::SharedItem &shared) {
@@ -237,6 +332,16 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_appearances.erase(player);
   m_held.erase(player);
   m_seats.erase(player);
+  // What it held is free again for the others (the host's game lets go of
+  // the real NPC itself when the puppet goes).
+  for (auto it = m_npcHolds.begin(); it != m_npcHolds.end();) {
+    if (it->second.player == player) {
+      m_session->Broadcast(proto::NpcHold{.npc = it->first});
+      it = m_npcHolds.erase(it);
+    } else {
+      ++it;
+    }
+  }
   m_radios.erase(player);
   m_stealth.erase(player);
   m_story.Forget(player);
@@ -245,6 +350,8 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
     m_session->Broadcast(proto::Pause{player, false});
     out.push_back(events::PauseChanged{{player, false}});
   }
+  // Gone in a Sandevistan: its bubble ends for everyone.
+  EndTimeOf(player, out, true);
   out.push_back(events::PlayerLeft{player});
   BroadcastRoster();
 }
@@ -282,6 +389,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
       m_session->Broadcast(proto::Pause{player, false});
       out.push_back(events::PauseChanged{{player, false}});
     }
+    EndTimeOf(player, out, true);
     BroadcastRoster();
     SendSessionTo(peer);
     return;
@@ -324,6 +432,8 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
   // The story so far: journal, tracked entry, call, choice hub, story states.
   for (const auto &message : m_story.ForJoiner())
     m_session->Send(peer, message);
+  for (const auto &[npc, hold] : m_npcHolds)
+    m_session->Send(peer, hold);
   // What lies in the world (its taken stacks at quantity 0).
   for (const auto &[id, item] : m_worldItems)
     m_session->Send(peer, item);
@@ -332,6 +442,10 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
   for (const auto paused : m_paused)
     if (self == m_playerOfPeer.end() || paused != self->second)
       m_session->Send(peer, proto::Pause{paused, true});
+  // Who is in a Sandevistan (or another time ability) now.
+  for (const auto &[id, time] : m_timeEffects)
+    if (self == m_playerOfPeer.end() || id != self->second)
+      m_session->Send(peer, time);
 }
 
 void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &out) {
@@ -346,8 +460,14 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
   case Kind::Malformed:
     break; // the host may be newer; Refused will say so
   case Kind::Disconnected:
+    if (!IsJoined() && m_fallback) {
+      m_tryRelay = true;
+      break;
+    }
     m_ended = true;
-    out.push_back(events::Ended{IsJoined() ? "the host is gone" : "could not reach the host"});
+    out.push_back(events::Ended{IsJoined()              ? "the host is gone"
+                                : !event.reason.empty() ? event.reason
+                                                        : "could not reach the host"});
     break;
   case Kind::Received:
     if (proto::IsStory(*event.message)) {
@@ -381,6 +501,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               SendLocalRadioNow();
               SendLocalPausedNow();
               SendLocalStealthNow();
+              SendLocalTimeNow();
             },
             [&](const proto::Refused &refused) {
               m_ended = true;
@@ -389,7 +510,11 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::Pong &pong) {
               const auto now = net::NowUs();
               const auto rtt = now - pong.pingSentUs;
-              m_bestRttUs += kRttForgetUsPerPing;
+              // Saturating: from UINT64_MAX (no ping yet) it wrapped to 199 us,
+              // and no pong over a real link (rtt > 0.2 ms) ever counted, so
+              // the offset stayed the Welcome's, off by the one-way latency.
+              if (m_bestRttUs <= UINT64_MAX - kRttForgetUsPerPing)
+                m_bestRttUs += kRttForgetUsPerPing;
               if (rtt <= m_bestRttUs) {
                 m_bestRttUs = rtt;
                 const auto midpoint = pong.pingSentUs + rtt / 2;
@@ -408,6 +533,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
                 if (!next.contains(id)) {
                   if (NotePaused(id, false))
                     out.push_back(events::PauseChanged{{id, false}});
+                  EndTimeOf(id, out, false);
                   out.push_back(events::PlayerLeft{id});
                 }
               m_players = std::move(next);
@@ -447,7 +573,10 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::World &world) { out.push_back(events::HostWorld{world}); },
             [&](const proto::NpcSpawn &spawn) { out.push_back(events::HostNpcSpawn{spawn}); },
             [&](const proto::NpcStates &states) { out.push_back(events::HostNpcStates{states}); },
-            [&](const proto::NpcGone &gone) { out.push_back(events::HostNpcGone{gone}); },
+            [&](const proto::NpcGone &gone) {
+              m_npcHolds.erase(gone.npc);
+              out.push_back(events::HostNpcGone{gone});
+            },
             [&](const proto::NpcHealth &health) { out.push_back(events::HostNpcHealth{health}); },
             [&](const proto::NpcHackState &state) {
               out.push_back(events::HostNpcHackState{state});
@@ -476,9 +605,36 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               if (stealth.player != m_you)
                 out.push_back(events::RemoteStealth{stealth});
             },
+            [&](const proto::NpcActionReply &reply) {
+              out.push_back(events::NpcActionAnswered{reply});
+            },
+            [&](const proto::NpcHold &hold) {
+              if (hold.player == proto::kNoPlayer)
+                m_npcHolds.erase(hold.npc);
+              else
+                m_npcHolds[hold.npc] = hold;
+              out.push_back(events::HostNpcHold{hold});
+            },
+            [&](const proto::NpcCue &cue) {
+              if (cue.player == m_you)
+                out.push_back(events::HostNpcCue{cue});
+            },
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
+            },
+            [&](const proto::TimeEffect &time) {
+              const auto safe = Sanitized(time);
+              if (safe.player != m_you && NoteTime(safe))
+                out.push_back(events::RemoteTimeEffect{safe});
+            },
+            [&](const proto::Regroup &offer) {
+              if (offer.from != m_you && (offer.to == m_you || offer.to == proto::kNoPlayer))
+                out.push_back(events::RegroupOffered{offer});
+            },
+            [&](const proto::RegroupAnswer &answer) {
+              if (answer.from != m_you && answer.to == m_you)
+                out.push_back(events::RegroupAnswered{answer});
             },
             [&](const proto::WorldItem &item) { out.push_back(events::WorldItemAppeared{item}); },
             [&](const proto::WorldItemTaken &taken) {
@@ -638,7 +794,40 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
     return;
   m_npcs.erase(gone.npc);
   m_npcHealth.erase(gone.npc);
+  m_npcHolds.erase(gone.npc);
   m_session->Broadcast(gone);
+}
+
+void Endpoint::SendNpcAction(const proto::NpcAction &action) {
+  if (IsHost() || !IsJoined() || m_ended)
+    return; // the host's own actions are its game's
+  auto mine = action;
+  mine.player = m_you;
+  m_session->Send(m_hostPeer, mine);
+}
+
+void Endpoint::SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply) {
+  if (!IsHost() || m_ended)
+    return;
+  if (const auto peer = PeerOf(player))
+    m_session->Send(*peer, reply);
+}
+
+void Endpoint::SendNpcHold(const proto::NpcHold &hold) {
+  if (!IsHost() || m_ended)
+    return;
+  if (hold.player == proto::kNoPlayer)
+    m_npcHolds.erase(hold.npc);
+  else
+    m_npcHolds[hold.npc] = hold;
+  m_session->Broadcast(hold);
+}
+
+void Endpoint::SendNpcCue(const proto::NpcCue &cue) {
+  if (!IsHost() || m_ended || cue.player == m_you)
+    return;
+  if (const auto peer = PeerOf(cue.player))
+    m_session->Send(*peer, cue);
 }
 
 void Endpoint::SendNpcHealth(const proto::NpcHealth &health) {
@@ -797,6 +986,30 @@ void Endpoint::SendNoise(const proto::Noise &noise) {
   m_session->Send(m_hostPeer, mine);
 }
 
+void Endpoint::SendRegroup(proto::Regroup offer) {
+  if (!IsJoined() || m_ended)
+    return;
+  offer.from = m_you;
+  if (offer.label.size() > proto::kMaxRegroupLabel)
+    offer.label.resize(proto::kMaxRegroupLabel);
+  if (offer.to == m_you)
+    return;
+  if (IsHost())
+    Deliver(offer, offer.to, 0);
+  else
+    m_session->Send(m_hostPeer, offer);
+}
+
+void Endpoint::SendRegroupAnswer(proto::RegroupAnswer answer) {
+  if (!IsJoined() || m_ended || answer.to == proto::kNoPlayer || answer.to == m_you)
+    return;
+  answer.from = m_you;
+  if (IsHost())
+    Deliver(answer, answer.to, 0);
+  else
+    m_session->Send(m_hostPeer, answer);
+}
+
 bool Endpoint::NotePaused(proto::PlayerId player, bool paused) {
   return paused ? m_paused.insert(player).second : m_paused.erase(player) > 0;
 }
@@ -861,6 +1074,8 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
     cursor->player = m_you;
   if (auto *state = std::get_if<proto::StoryState>(&message))
     state->player = m_you;
+  if (auto *effect = std::get_if<proto::StoryEffect>(&message))
+    effect->player = m_you;
   if (const auto *call = std::get_if<proto::PhoneCall>(&message)) {
     m_calls.Update(*call);
     message = *m_calls.Call();
@@ -876,6 +1091,51 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
       !std::holds_alternative<proto::Subtitle>(message))
     m_story.Note(message);
   m_session->Broadcast(message);
+}
+void Endpoint::SetLocalTimeEffect(proto::TimeEffect effect) {
+  effect = Sanitized(effect);
+  effect.player = proto::kNoPlayer;
+  if (effect == m_localTime)
+    return;
+  m_localTime = effect;
+  SendLocalTimeNow();
+}
+
+void Endpoint::SendLocalTimeNow() {
+  if (!IsJoined() || m_ended)
+    return;
+  auto mine = m_localTime;
+  mine.player = m_you;
+  // A guest that just joined has something to say only if one is on.
+  if (!NoteTime(mine))
+    return;
+  if (IsHost())
+    m_session->Broadcast(mine);
+  else
+    m_session->Send(m_hostPeer, mine);
+}
+
+bool Endpoint::NoteTime(const proto::TimeEffect &effect) {
+  const auto it = m_timeEffects.find(effect.player);
+  if (effect.abilities == 0) {
+    if (it == m_timeEffects.end())
+      return false;
+    m_timeEffects.erase(it);
+    return true;
+  }
+  if (it != m_timeEffects.end() && it->second == effect)
+    return false;
+  m_timeEffects[effect.player] = effect;
+  return true;
+}
+
+void Endpoint::EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast) {
+  const proto::TimeEffect none{.player = player};
+  if (!NoteTime(none))
+    return;
+  if (broadcast)
+    m_session->Broadcast(none);
+  out.push_back(events::RemoteTimeEffect{none});
 }
 
 void Endpoint::DropWorldItem(proto::WorldItem item) {

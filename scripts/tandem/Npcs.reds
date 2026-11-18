@@ -148,12 +148,6 @@ public class TandemNpcs {
     }
   }
 
-  // Host: the id we share one of our NPCs under (0: not shared).
-  public func NpcOf(id: EntityID) -> Uint32 {
-    let known = this.Find(id);
-    return IsDefined(known) ? known.npc : 0u;
-  }
-
   // The session is over: the host's NPCs go, our crowd comes back. (Our own
   // NPCs hidden meanwhile stay hidden until they stream out.)
   public func End() -> Void {
@@ -400,6 +394,7 @@ public class TandemNpcs {
             pools.RequestChangingStatPoolValue(Cast<StatsObjectID>(known.id), gamedataStatPoolType.Health, -event.amount, instigator, false, false);
           }
           TandemNpcs.React(body, instigator, event);
+          TandemReactions.OnGuestHit(body, instigator);
           TandemNative.Log(s"npcs: \(event.npc) hit by player \(event.player) for \(event.amount) (flags \(event.flags))");
         }
       }
@@ -556,7 +551,11 @@ public class TandemNpcs {
   // The host's NPC died: so does the proxy, with the game's own death (its
   // animation, ragdoll, sounds), and it stays as a corpse until the host's
   // goes.
-  private func Die(npc: Uint32, killer: Uint32) -> Void {
+  public func Die(npc: Uint32, killer: Uint32) -> Void {
+    // Our own takedown of it still plays: it dies after (Takedowns.reds).
+    if TandemTakedowns.Get(this.m_game).DefersDeath(npc, killer) {
+      return;
+    }
     let proxy = this.FindProxy(npc);
     if !IsDefined(proxy) || proxy.dead {
       return;
@@ -602,6 +601,37 @@ public class TandemNpcs {
       }
     }
     return best;
+  }
+
+  // A shared NPC's session id by its entity, dead or alive (host: ours;
+  // guest: a proxy), 0: none; and back (Takedowns.reds).
+  public func NpcOf(id: EntityID) -> Uint32 {
+    if TandemNative.IsHost() {
+      let known = this.Find(id);
+      return IsDefined(known) ? known.npc : 0u;
+    }
+    for proxy in this.m_proxies {
+      if proxy.id == id {
+        return proxy.npc;
+      }
+    }
+    return 0u;
+  }
+
+  public func EntityOf(npc: Uint32) -> EntityID {
+    if TandemNative.IsHost() {
+      let known = this.FindNpc(npc);
+      if IsDefined(known) {
+        return known.id;
+      }
+    } else {
+      let proxy = this.FindProxy(npc);
+      if IsDefined(proxy) {
+        return proxy.id;
+      }
+    }
+    let none: EntityID;
+    return none;
   }
 
   // The NPC a proxy stands for (0: not a live proxy). Combat.reds sends hits
@@ -653,6 +683,44 @@ public class TandemNpcs {
   // Guest: the host's NPCs as shown here (Stealth.reds: their detection of us).
   public func Proxies() -> array<ref<TandemNpcProxy>> {
     return this.m_proxies;
+  }
+
+  // (Time.reds) The live NPCs this game shares (host: the ones it lists;
+  // guest: its proxies), and their entities in the same order.
+  public func TimeIds() -> array<Uint32> {
+    let out: array<Uint32>;
+    if TandemNative.IsHost() {
+      for known in this.m_known {
+        if !known.dead {
+          ArrayPush(out, known.npc);
+        }
+      }
+    } else {
+      for proxy in this.m_proxies {
+        if !proxy.dead {
+          ArrayPush(out, proxy.npc);
+        }
+      }
+    }
+    return out;
+  }
+
+  public func TimeEntities() -> array<EntityID> {
+    let out: array<EntityID>;
+    if TandemNative.IsHost() {
+      for known in this.m_known {
+        if !known.dead {
+          ArrayPush(out, known.id);
+        }
+      }
+    } else {
+      for proxy in this.m_proxies {
+        if !proxy.dead {
+          ArrayPush(out, proxy.id);
+        }
+      }
+    }
+    return out;
   }
 
   public func Count() -> Int32 {
