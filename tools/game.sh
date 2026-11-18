@@ -34,7 +34,11 @@
 #                              npc count | markers |
 #                              teleport home | teleport X Y Z [YAW] |
 #                              proxy test [record] | proxy clear |
-#                              pose hook | pose report | pose watch [3] | pose copy [off]
+#                              pose hook | pose report | pose watch [3] | pose copy [off] |
+#                              coop status | coop host [PORT] | coop join ADDRESS[:PORT] |
+#                              coop leave | coop menu PAGE | coop pick TEXT
+#                              (the co-op menu: in game any time; menu and pick drive
+#                              an open main or pause menu, pages root coop host join save)
 #
 # The game machine runs Steam in a Sway session (headless output for Sunshine)
 # and ydotoold for input; GAME_HOST and GAME_DIR override the defaults.
@@ -189,7 +193,7 @@ peer() {
     local address
     address=$(getent ahostsv4 "$host" | awk 'NR == 1 { print $1 }')
     [ -n "$address" ] || address=$(remote "ip -4 -o route get 1.1.1.1" | awk '{ for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1) }')
-    args=(join "$address:27450" --mode front --body male)
+    args=(join "$address:27450" --mode front --body female)
   fi
   mkdir -p .cache
   nohup build/linux/peer/tandem-peer "${args[@]}" >.cache/peer.log 2>&1 &

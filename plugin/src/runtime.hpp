@@ -40,6 +40,24 @@ struct NpcEvent {
   proto::Vec3 direction;    // Hit: its way (spawn.position: where it landed)
 };
 
+// Quickhacks for the scripts (scripts/tandem/Hacks.reds), net -> game thread.
+struct HackEvent {
+  enum class Kind : std::int32_t {
+    Upload = 1,     // host: a guest started an upload on one of our NPCs
+    State = 2,      // guest: an upload on a host NPC started or ended
+    Status = 3,     // guest: a quickhack effect came onto (state 1) or left a host NPC
+    PlayerHack = 4, // guest: a host NPC netrunner hacks our V
+    Car = 5,        // the driver: someone hacked the car we drive
+  };
+  Kind kind{};
+  proto::NpcId npc{};
+  proto::PlayerId player{}; // the uploader, the effect's V, the hacker
+  std::uint64_t action{};   // ObjectAction record (Status: the status effect record)
+  std::int32_t state{};     // State: proto::HackStep; Status: applied; Car: proto::CarHack
+  std::int32_t flags{};     // Upload: proto::kUpload*; PlayerHack: proto::kPlayerHack*
+  float seconds{};          // upload time; Car: how long it lasts
+};
+
 // NPC proxies use the player-puppet tracks and controller under these ids.
 inline constexpr proto::PlayerId kNpcPuppetBase = 0x10000;
 
@@ -205,6 +223,11 @@ public:
   void SubmitNpcHealth(const proto::NpcHealth &health); // host
   void SubmitNpcHit(const proto::NpcHit &hit);          // guest
   void SubmitNpcEffect(const proto::NpcEffect &effect); // guest
+  // Host: our NPC hit a guest's puppet, game -> net (queued with the NPCs').
+  // Guest: the host's NPCs hit our V, net -> game (queued).
+  void SubmitPlayerHit(const proto::PlayerHit &hit);
+  void PushPlayerHit(const proto::PlayerHit &hit);
+  std::vector<proto::PlayerHit> TakePlayerHits();
   // Guest: which players the host's NPC has detected (bit player - 1).
   std::uint8_t NpcDetected(proto::NpcId npc);
   void SubmitNpcStates(const proto::NpcStates &states);
@@ -212,7 +235,37 @@ public:
   std::optional<proto::NpcStates> TakeNpcStates();
   void PushNpcEvent(const NpcEvent &event);
   std::vector<NpcEvent> TakeNpcEvents();
-  void PushNpcStates(const proto::NpcStates &states);
+  // Guest: `you` is our player id (whose detection counts for our V).
+  void PushNpcStates(const proto::NpcStates &states, proto::PlayerId you);
+
+  // Each player is detected on their own (docs/ARCHITECTURE.md). Guest: how
+  // many of the host's NPCs have detected our V (0 once the host's states
+  // are 3 s old), and how far an NPC is in noticing it (0..1; 0 once 1 s
+  // old). Host: its NPCs' awareness of the guests, game -> net (newest).
+  std::int32_t NpcsDetectingUs();
+  float NpcAwarenessOfUs(proto::NpcId npc);
+  void PushNpcAwareness(const proto::NpcAwareness &awareness, proto::PlayerId you);
+  void SubmitNpcAwareness(proto::NpcAwareness awareness);
+  std::optional<proto::NpcAwareness> TakeNpcAwareness();
+
+  // How hard our V is to see, game -> net (newest only); the others',
+  // net -> game (latest + count). Our V's noises (queued, guest -> host);
+  // a guest's noises for our NPCs (queued, host).
+  void SubmitLocalStealth(const proto::Stealth &stealth);
+  std::optional<proto::Stealth> TakeLocalStealth();
+  void PushRemoteStealth(const proto::Stealth &stealth);
+  std::optional<proto::Stealth> RemoteStealth(proto::PlayerId player, std::uint32_t &changes);
+  void SubmitLocalNoise(const proto::Noise &noise);
+  std::vector<proto::Noise> TakeLocalNoises();
+  void PushRemoteNoise(const proto::Noise &noise);
+  std::vector<proto::Noise> TakeRemoteNoises();
+
+  // Quickhacks: messages for the session, game -> net (queued); what the
+  // session says about them, net -> game (queued).
+  void SubmitHack(const proto::Message &message);
+  std::vector<proto::Message> TakeHackOutbox();
+  void PushHackEvent(const HackEvent &event);
+  std::vector<HackEvent> TakeHackEvents();
 
   // Net thread writes remote states; the animation thread and scripts read views.
   void PushRemote(const proto::PlayerState &state);
@@ -274,6 +327,9 @@ private:
   std::vector<proto::Message> m_npcOutbox;                                           // m_lock
   std::optional<proto::NpcStates> m_npcStates;                                       // m_lock
   std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
+  std::vector<proto::PlayerHit> m_playerHits;                                        // m_lock
+  std::vector<proto::Message> m_hackOutbox;                                          // m_lock
+  std::vector<HackEvent> m_hackEvents;                                               // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::uint32_t m_loopSeq{};
@@ -285,11 +341,19 @@ private:
 
   std::atomic<std::int64_t> m_clockOffsetUs{0};
   std::atomic<std::uint64_t> m_lastFrameUs{0};
-  std::map<proto::NpcId, std::uint8_t> m_npcDetected; // under m_lock
-  std::optional<bool> m_localPaused;                  // m_lock
-  std::vector<proto::PlayerId> m_remotePaused;        // m_lock
-  std::uint32_t m_remotePausedChanges{};              // m_lock
-  std::map<proto::PlayerId, std::string> m_names;     // m_lock
+  std::map<proto::NpcId, std::uint8_t> m_npcDetected;  // under m_lock
+  std::int32_t m_detectingUs{};                        // m_lock
+  std::uint64_t m_npcStatesAtUs{};                     // m_lock (host clock)
+  std::map<proto::NpcId, float> m_awarenessOfUs;       // m_lock
+  std::uint64_t m_awarenessAtUs{};                     // m_lock (host clock)
+  std::optional<proto::NpcAwareness> m_localAwareness; // m_lock
+  std::optional<proto::Stealth> m_localStealth;        // m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Stealth>> m_stealth; // m_lock
+  std::vector<proto::Noise> m_localNoises, m_remoteNoises;                       // m_lock
+  std::optional<bool> m_localPaused;                                             // m_lock
+  std::vector<proto::PlayerId> m_remotePaused;                                   // m_lock
+  std::uint32_t m_remotePausedChanges{};                                         // m_lock
+  std::map<proto::PlayerId, std::string> m_names;                                // m_lock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin
