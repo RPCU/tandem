@@ -109,8 +109,8 @@ public class TandemElsewhere {
   // - cyberspace: a status effect tagged Cyberspace (GameplayRestriction.
   //   Cyberspace: no radial, no quick slots, :528002) or CyberspacePresence
   //   (no footsteps, no camera bob, :43947), or a cyberspace district (the
-  //   gamedataDistrict *_Cyberspace entries, :4758, as the district manager
-  //   puts them on UI_Map.currentLocationEnumName, :194104);
+  //   gamedataDistrict *Cyberspace entries, :4716, as the district manager
+  //   puts them on UI_Map.currentLocationEnumName, :194095);
   // - Johnny: our V is Character.johnny_replacer (PlayerPuppet.
   //   IsJohnnyReplacer, :39362); someone else: any other replacer record
   //   (IsReplacer, :39344: not Character.Player_Puppet_Base).
@@ -282,8 +282,11 @@ public class TandemElsewhere {
     let moved = (flags & 1) != 0;
     let wasMoved = (known.flags & 1) != 0;
     if place == 0 {
-      // Back: the puppet shows once it has moved to where they really are.
-      known.revealAt = now + 0.75;
+      // Back from away: a hidden puppet shows once it has moved to where
+      // they really are (one shown all along, in place or sitting, stays).
+      if wasMoved && (known.flags & 2) == 0 {
+        known.revealAt = now + 0.75;
+      }
       if wasMoved || known.place == 1 || known.place == 2 {
         TandemElsewhere.Notice(this.m_game, s"\(name) is back.");
       }
