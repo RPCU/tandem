@@ -135,6 +135,14 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::RemoteVehicle{relayed});
                    },
+                   [&](const proto::VehicleRadio &radio) {
+                     // A guest only speaks for the car it drives.
+                     auto relayed = radio;
+                     relayed.player = player;
+                     m_radios[player] = relayed;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteVehicleRadio{relayed});
+                   },
                    [&](const proto::Shot &shot) {
                      auto relayed = shot;
                      relayed.player = player;
@@ -167,6 +175,19 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      else if (const auto peer = PeerOf(mine.driver); peer && mine.driver != player)
                        m_session->Send(*peer, mine);
                    },
+                   [&](const proto::Stealth &stealth) {
+                     auto relayed = stealth;
+                     relayed.player = player;
+                     m_stealth[player] = relayed;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteStealth{relayed});
+                   },
+                   [&](const proto::Noise &noise) {
+                     // For the host's game only: its NPCs hear it.
+                     auto mine = noise;
+                     mine.player = player;
+                     out.push_back(events::NoiseBy{mine});
+                   },
                    [&](const proto::Pause &pause) {
                      // A guest only pauses in its own name.
                      const proto::Pause relayed{player, pause.paused};
@@ -197,6 +218,8 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_appearances.erase(player);
   m_held.erase(player);
   m_seats.erase(player);
+  m_radios.erase(player);
+  m_stealth.erase(player);
   // Gone while in the pause menu: no longer pausing anyone.
   if (NotePaused(player, false)) {
     m_session->Broadcast(proto::Pause{player, false});
@@ -268,6 +291,10 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
     m_session->Send(peer, held);
   for (const auto &[id, seat] : m_seats)
     m_session->Send(peer, seat);
+  for (const auto &[id, radio] : m_radios)
+    m_session->Send(peer, radio);
+  for (const auto &[id, stealth] : m_stealth)
+    m_session->Send(peer, stealth);
   if (m_world)
     m_session->Send(peer, *m_world);
   for (const auto &[npc, spawn] : m_npcs)
@@ -313,7 +340,9 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               SendLocalAppearanceNow();
               SendLocalHeldNow();
               SendLocalSeatNow();
+              SendLocalRadioNow();
               SendLocalPausedNow();
+              SendLocalStealthNow();
             },
             [&](const proto::Refused &refused) {
               m_ended = true;
@@ -373,6 +402,10 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               if (vehicle.player != m_you)
                 out.push_back(events::RemoteVehicle{vehicle});
             },
+            [&](const proto::VehicleRadio &radio) {
+              if (radio.player != m_you)
+                out.push_back(events::RemoteVehicleRadio{radio});
+            },
             [&](const proto::World &world) { out.push_back(events::HostWorld{world}); },
             [&](const proto::NpcSpawn &spawn) { out.push_back(events::HostNpcSpawn{spawn}); },
             [&](const proto::NpcStates &states) { out.push_back(events::HostNpcStates{states}); },
@@ -392,6 +425,18 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::VehicleHack &hack) {
               if (hack.driver == m_you && hack.player != m_you)
                 out.push_back(events::VehicleHackOn{hack});
+            },
+            [&](const proto::PlayerHit &hit) {
+              // Only ever meant for us: anything else is not ours to apply.
+              if (hit.player == m_you)
+                out.push_back(events::HitByNpc{hit});
+            },
+            [&](const proto::NpcAwareness &awareness) {
+              out.push_back(events::HostNpcAwareness{awareness});
+            },
+            [&](const proto::Stealth &stealth) {
+              if (stealth.player != m_you)
+                out.push_back(events::RemoteStealth{stealth});
             },
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
@@ -495,6 +540,24 @@ void Endpoint::SendLocalSeatNow() {
   }
 }
 
+void Endpoint::SetLocalVehicleRadio(proto::VehicleRadio radio) {
+  radio.revision = ++m_radioRevision;
+  m_localRadio = radio;
+  SendLocalRadioNow();
+}
+
+void Endpoint::SendLocalRadioNow() {
+  if (!m_localRadio || !IsJoined() || m_ended)
+    return;
+  m_localRadio->player = m_you;
+  if (IsHost()) {
+    m_radios[m_you] = *m_localRadio;
+    m_session->Broadcast(*m_localRadio);
+  } else {
+    m_session->Send(m_hostPeer, *m_localRadio);
+  }
+}
+
 void Endpoint::SetWorld(proto::World world) {
   if (!IsHost() || m_ended)
     return; // a guest's world is the host's
@@ -545,6 +608,17 @@ void Endpoint::SendNpcEffect(const proto::NpcEffect &effect) {
   auto mine = effect;
   mine.player = m_you;
   m_session->Send(m_hostPeer, mine);
+}
+
+bool Endpoint::SendPlayerHit(const proto::PlayerHit &hit) {
+  if (!IsHost() || m_ended || hit.player == m_you)
+    return false; // our own V's hits are our game's
+  const auto target = std::ranges::find_if(
+      m_playerOfPeer, [&](const auto &entry) { return entry.second == hit.player; });
+  if (target == m_playerOfPeer.end())
+    return false;
+  m_session->Send(target->first, hit); // that player's game only
+  return true;
 }
 
 void Endpoint::SendNpcHit(const proto::NpcHit &hit) {
@@ -639,6 +713,42 @@ void Endpoint::SendLocalPausedNow() {
     m_session->Broadcast(proto::Pause{m_you, m_localPaused});
   else
     m_session->Send(m_hostPeer, proto::Pause{m_you, m_localPaused});
+}
+
+void Endpoint::SetLocalStealth(proto::Stealth stealth) {
+  stealth.revision = ++m_stealthRevision;
+  m_localStealth = stealth;
+  SendLocalStealthNow();
+}
+
+void Endpoint::SendLocalStealthNow() {
+  if (!m_localStealth || !IsJoined() || m_ended)
+    return;
+  m_localStealth->player = m_you;
+  if (IsHost()) {
+    m_stealth[m_you] = *m_localStealth;
+    m_session->Broadcast(*m_localStealth);
+  } else {
+    m_session->Send(m_hostPeer, *m_localStealth);
+  }
+}
+
+void Endpoint::SendNpcAwareness(proto::NpcAwareness awareness) {
+  if (!IsHost() || m_ended)
+    return;
+  awareness.seq = ++m_awarenessSeq;
+  awareness.timeUs = HostNowUs();
+  if (awareness.entries.size() > proto::kMaxNpcAwareness)
+    awareness.entries.resize(proto::kMaxNpcAwareness);
+  m_session->Broadcast(awareness);
+}
+
+void Endpoint::SendNoise(const proto::Noise &noise) {
+  if (IsHost() || !IsJoined() || m_ended)
+    return; // the host's own noises are heard by its NPCs already
+  auto mine = noise;
+  mine.player = m_you;
+  m_session->Send(m_hostPeer, mine);
 }
 
 bool Endpoint::NotePaused(proto::PlayerId player, bool paused) {

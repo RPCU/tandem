@@ -289,6 +289,28 @@ redscript natives (UI, events)              ENet socket
   one that had someone seated in it froze the game): a car someone got out
   of stays parked. Puppets leave in steps over several frames (out of the
   seat, then the body).
+- **Radio** (`scripts/tandem/Radio.reds`, engine-knowledge §13.12): the
+  driver owns the car's radio. While our V drives its own car, our game
+  reads the car's receiver four times a second (on, station as an
+  `ERadioStationList` index, song name) and sends `VehicleRadio`
+  (reliable, kept by the host for late joiners) when it changes and when
+  a remote player gets in; a song that changes on a station we have been
+  on for a while is stamped with its start on the host clock. A passenger
+  riding in a remote player's car (our copy of it) sets the copy to the
+  driver's radio the game's way (a `VehicleRadioEvent` on the car, as the
+  radio popup does), checks a second later and falls back to the
+  receiver natives (twice at most), and asks its own copy of the station
+  for the driver's song when another plays
+  (`AudioSystem.RequestSongOnRadioStation`). The game exposes no playback
+  position, so the target is the same station and, best effort, the same
+  song: it lines up when the driver's song has just begun, otherwise it
+  starts from the top. While riding, the passenger's pocket radio is held
+  off with the game's own `VehicleBlockPocketRadio` restriction; getting
+  out lifts it and the pocket radio comes back with its station after
+  vanilla's short unlock delay. No remote player's radio plays anywhere
+  else: a puppet is an NPC (no pocket radio) and a car copy nobody of
+  ours rides in is switched off. Volumes stay each player's own
+  settings. Not yet verified in game (scenario `radio`).
 - **World** (`scripts/tandem/World.reds`): the host sends `World` (game
   time in seconds, the weather state's name, paused) on a weather change or
   a clock jump and every 10 s; guests set their clock to the host's when it
@@ -353,8 +375,35 @@ redscript natives (UI, events)              ENet socket
   their damage ticks stay the guest's (they reach the host as hits), and
   the host's own ticks for them deal nothing. Stealth bonuses depend on
   the attacker's combat state, so they follow per-player detection
-  (above). Open: aggro (the NPC turning on whoever hit it), quickhacks
-  (uploads, not hits), NPCs hitting guests (milestone 5, next), loot.
+  (above). The guest also queues the skill XP of each hit on a proxy, as
+  the game does when it drains health (`RPGManager.AwardExperienceFromDamage`
+  with the share of the proxy's health pool the hit takes, which mirrors the
+  host's); the queue is paid when the proxy dies, by the game's own
+  neutralize event when the kill is ours (`Kill` with our V), and by a
+  `ProcessQueuedCombatExperience` request when another player landed it
+  (assists pay too).
+  **NPCs hitting guests**: on the host, a hit of one of its NPCs (or a
+  device, a car) on a guest's puppet runs the attacker's side only: the
+  target's stages are skipped for puppets (`ProcessDamageReduction`, dodge,
+  evasion, mitigation, the player incoming multiplier,
+  `CalculateTargetModifiers` with armour, `ProcessBlockAndDeflect`). At
+  `DealDamages` what is left goes as `PlayerHit` (the NPC's session id, the
+  damage per type, attack type, flags, armour penetration, where and which
+  way, the attack and weapon records) to that guest alone; instant kills go
+  the same way. Damage ticks of effects on the puppet are not sent (the
+  guest runs its own copy of the effect). The guest builds a hit on its own
+  V from the NPC's proxy (instigator and source; none when it has no proxy)
+  with the host's numbers and queues it in its damage system, which skips
+  the attacker's stages (`ConvertDPSToHitDamage`, `CalculateSourceModifiers`,
+  `ProcessEffectiveRange`; armour penetration is the host's) and runs the
+  rest by its own rules: armour, resistances, dodge, block and deflect,
+  perks, difficulty, god mode, death, the attack record's status effects,
+  hit reaction, direction indicator and sounds. Not yet verified in game
+  (scenario `npcs-hurt-guest`). Open: aggro (the NPC turning on whoever hit
+  it), loot, the proxy's own weapon (armour
+  needs an attacking weapon object: the proxy's if it holds one, else the
+  guest's own stands in), status effects on the host's puppet (they stay
+  there, unsynced).
 - **Quickhacks** (`scripts/tandem/Hacks.reds`, milestone 5): a guest's
   quickhack on a proxy runs in its own game as in solo (panel, RAM, its
   cooldown and queue, upload bar, the effect on the proxy, whose effects
@@ -429,6 +478,24 @@ redscript natives (UI, events)              ENet socket
   distance text, rewritten after each native update: watch for flicker)
   and on the map tooltip, and that the marker follows a seated player's car
   copy.
+- **How NPCs see a remote V** (`scripts/tandem/Attitudes.reds`,
+  `tweaks/tandem/attitudes.tweak`, `tweaks/tandem/puppet.tweak`): every
+  puppet is in an attitude group of its own, `tandem_player_1` to `_3`
+  (one per puppet at a time; `tandem_player`, the records' own, beyond
+  that), declared as copies of the `Attitudes.Group_Player` record. A
+  group's relations to the others are not in its record: the attitude
+  system holds one per pair of groups, so the script copies V's group's
+  relations into ours for every group seen on an NPC within 60 m of V or a
+  puppet (checked every 2 s), and when V's relation to a group changes (a
+  quest), the puppets' follow. A puppet's relation that changed while V's
+  did not (a security system turned on that puppet's group) stays its own.
+  Vs are friends to each other. The puppet record drops what made it Panam:
+  her group and faction (Aldecaldos: anim wrappers, the scan's faction),
+  her voice, her burning immunity and damage presets, and shows no NPC UI
+  (`hideUIElements`, `hideUIDetection`): no detection indicator from the
+  senses Body.reds grafts. `tools/game.sh cmd puppet attitude` logs each
+  puppet's group and how the NPCs around V see it next to V; scenario
+  `puppet-attitude`. **Not yet verified in game** (engine-knowledge §13.12).
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name, pose).
 
 ## Talking to the engine safely
@@ -508,7 +575,9 @@ game thread stop). Each feature verified in game gets a scenario.
   look, held weapon, shots, pose (with `--pose FILE`, a recorded pose).
 - **drive** — drives a car (`--vehicle RECORD`) in circles around your V:
   tests the copy of a remote player's car, its seated driver and its motion
-  without anyone driving.
+  without anyone driving. `--radio STATION` (0–13, a station name, or
+  `off`) plays that station on its radio: sent at the wheel and again when
+  your V gets in (`tools/game.sh cmd vehicle ride`).
 - **idle** — connects and reports.
 - **quickhacks**: `join --hack-npcs N` uploads `--hack-action` on one of
   the host's NPCs every N s (1.5 s) and then lands `--hack-effect`;
@@ -518,6 +587,15 @@ game thread stop). Each feature verified in game gets a scenario.
 hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
+- **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s;
+  `host --hit-you N` has one of its NPCs (a replayed one if any) hit every
+  guest's V for 10 physical every N s; a guest logs the NPC hits it gets.
+- **Stealth** (any mode): as host, `--npc RECORD` stands an NPC 6 m in
+  front of the guest and `--detect-at N [--detect-for M]` makes the NPCs
+  it sends notice the guests (meter rising over 2 s), detect them for M s
+  (default 10), then lose them; `--camo N` turns "its optical camo" on for
+  5 s; as guest, `--shoot N` fires a gunshot (shot and noise) every N s.
+  Stealth, noises and the host's awareness of it are logged.
 - **NPC record and replay** (first piece of the simulated second game):
   `join --record FILE` saves the host's `NpcSpawn`/`NpcStates`/`NpcGone`
   with their times; `host --replay FILE [--offset X,Y,Z]` sends them again
@@ -572,6 +650,7 @@ in-game tests still owed; none of it tested in a session yet):
 | `research/coop-time.md`            | every time dilation, pause and time skip, and the game clock                    |
 | `research/coop-quests-world.md`    | facts, journal, persistent state, weather, police, crowds, saves, rewards       |
 | `research/coop-perks.md`           | every perk tree, relic, cyberware ability and quickhack, by co-op risk          |
+| `research/coop-regions.md`         | players apart: per-player regions, NPC hand-over, world ledger, staged plan     |
 
 - **Scenes for guests.** Replaying the host's quest-scene nodes in a guest's
   game (the campaign fork's approach) is unproven: nodes run outside their
@@ -580,7 +659,8 @@ in-game tests still owed; none of it tested in a session yet):
   locked to the host.
 - **Suppressing guests' own world simulation** (crowds, traffic, encounters,
   quest phases) without breaking systems that expect them.
-- **Region authority** once players spread out.
+- **Region authority** once players spread out (feasibility and a staged
+  plan: `research/coop-regions.md`).
 - **Co-op from the main menu.** Today a session is set up in `tandem.ini`
   (role, address). The goal: a co-op entry in the game's main menu, where a
   player hosts (with one of their saves) or picks whom to join — friends'
@@ -641,7 +721,15 @@ in-game tests still owed; none of it tested in a session yet):
   sync: the driver's station and the track's start time (host clock), so
   each passenger's game plays the same song at the same point, and changes
   when the driver changes station. Getting out gives each player their own
-  radio back as it was.
+  radio back as it was. Done (2026-11-18, to verify in game with scenario
+  `radio`; see Inside the plugin): the driver's on/off, station and song
+  reach the passengers, who hear them on their copy of the car with their
+  own pocket radio held off, and get it back on the way out; copies and
+  puppets play nothing. Not possible with the game's scripts: the same
+  point of a song (no playback position to read or seek; the song is
+  asked for by name and lines up only when it has just begun on the
+  driver's side) and the driver's volume (a per-player setting, left
+  alone).
 - **The pause menu pauses everyone; nothing else does.** When any player
   opens the pause menu, the game pauses for every player: the world, the
   NPCs and every V stop together, and each player sees who paused it. It
@@ -671,7 +759,14 @@ in-game tests still owed; none of it tested in a session yet):
   `player` group's relations (a TweakXL record), not `player` itself: in
   `player`, hostility to one V spreads to every V (§13.11). What a single
   V does (provoking a gang, crimes) changes that NPC's attitude to that V
-  only, per NPC and per player, by the game's own rules.
+  only, per NPC and per player, by the game's own rules. Done (2026-11-18,
+  to verify in game with scenario `puppet-attitude`): one group per puppet,
+  relations copied from V's at runtime (see Inside the plugin). Known
+  limits: a group seen only on devices (a turret's security system with no
+  NPC of its faction near) keeps the record's default attitude; a group
+  relation V's own deeds change (if a provocation or a security breach by
+  V changes a group relation, not a per-NPC attitude) reaches the puppets
+  too; per-NPC attitudes a quest sets towards V are not copied.
 - **Players linking up (later).** One V can send the other a request to
   connect, in the game's own style (a neural link, like jacking in with a
   partner); once the other accepts, the two share what a linked crew
@@ -709,15 +804,38 @@ in-game tests still owed; none of it tested in a session yet):
   measures each NPC's detection of every V (its own, and each guest's
   puppet: `SenseComponent.GetDetection`, the NPC's threats) and sends it
   per player: `NpcEntry::detected` has a bit per player for "has detected
-  them", and a per-player detection level for the meter is to come. A
-  guest's game drives its own V from that: the stealth meter and the
-  detection indicators over the proxies, its combat state (which decides
-  stealth bonuses, `AttackData.IsPlayerInCombat`, and combat-only perks),
-  and its music. Blocker found (engine-knowledge §13.11): the host's NPCs
-  do not see puppets at all (detection 0, injected threats ignored), so
-  they cannot detect or fight a guest yet. Puppets need the components NPC
-  senses look for; they must keep an attitude group of their own (in
-  `player`, hostility to one V becomes hostility to all).
+  them" (full detection meter, or in combat with them as a hostile threat:
+  `NPCPuppet.IsInCombatWithTarget`), and `NpcAwareness` (5 Hz) the level
+  of each NPC's meter for each guest it is noticing. A guest's game drives
+  its own V from that (`scripts/tandem/Stealth.reds`): while any host NPC
+  has detected it, its V is "tracked as hostile" through the game's own
+  switch (the player combat controller's `OnStartedBeingTrackedAsHostile`,
+  the call a local NPC's target tracker makes), so the PSM combat state
+  and everything on it follow: combat music and HUD, the fast travel lock,
+  stealth bonuses (`AttackData.IsPlayerInCombat`), combat-only perks; it
+  leaves combat the same way when no host NPC has it any more (a local
+  tracker, if any, keeps it in). The awareness levels drive the stealth
+  meter: `UI_Stealth.highestDetectionOnPlayer` (what the detection perks
+  listen to), each proxy's detection percentage, and the proxy's sense
+  mappin (the indicator over an NPC) while it notices us. What host NPCs
+  know of another V never counts. Not yet verified in game (scenario
+  `stealth-guest`; whether the native meter draws a proxy's level is open).
+  The other way, **a guest's stealth reaches the host's NPCs**: every game
+  sends its V's optical camo (the camo status effect, the relic's fully
+  blocking state), its `Visibility` stat and whether it crouches as
+  `Stealth` (reliable, kept for late joiners); the host puts it on the
+  puppet where its NPC senses look (camo: the grafted visible object off,
+  and the camo effect itself, which every game also shows; the visibility
+  as the detection multiplier; crouch height for the visible point; fully
+  blocking: its NPCs drop the puppet as a threat). A guest's noises (every
+  stimulus its V broadcasts: gunshots, silenced shots…) go to the host as
+  `Noise` and are broadcast again from its puppet. Grenade and other
+  projectile explosions are broadcast by the projectile, not the V: still
+  open. Not yet verified in game (scenario `stealth-host`). Puppets keep
+  an attitude group of their own (in `player`, hostility to one V becomes
+  hostility to all): each puppet has one (`tandem_player_N`,
+  Attitudes.reds), so hostility to one guest's V reaches neither the
+  host's V nor another guest's.
 - **Every way a V moves, on the puppet.** Walking on flat ground works; the
   rest must too: stairs and slopes, ladders, climbing and vaulting
   (mantling ledges), jumps and double jumps, falls and landings, sliding,
@@ -772,15 +890,14 @@ in-game tests still owed; none of it tested in a session yet):
   and NPC-side code reacting to "the player" acts for the host's V (second
   chance, gag, finisher offers, Bait, quickhack alerts and reveals, spread
   stats, NPC netrunners hacking only the host); a V's defensive side
-  (blade deflect, armour cyberware, dodge, health floors) runs on the host
-  for NPC hits, so the host must send the attack and the guest run the
-  hit on its own V; camo and visibility must reach the host's senses;
+  (blade deflect, armour cyberware, dodge, health floors) must run on the
+  guest for NPC hits (done: the host sends the attack, the guest runs the
+  hit on its own V; see Fights); camo and visibility must reach the host's senses;
   carrying, throwing, finishers and Breach Protocol daemons change host
   NPCs and devices. Rules to adopt with them: a hit carries its whole
   outcome (poise, non-lethal, cap at 1 HP, reaction, dismemberment); the
   guest predicts kills so on-kill perks fire at the hit, and queues its
-  skill XP itself (today a guest earns none: XP is queued only when
-  damage is applied for real); area and spreading effects run on one game;
+  skill XP itself (done: see Fights); area and spreading effects run on one game;
   the session plays at the host's difficulty.
 
 - **Combat in and around vehicles.** Everything that happens in a car must
@@ -833,6 +950,24 @@ in-game tests still owed; none of it tested in a session yet):
   the quests system; deaths, loot and destroyed objects via their
   persistent states). Until then the host's save is the source.
 
+- **Story decisions** (2026-11-18; design in `research/coop-quests-design.md`):
+  the host's game runs the story; a guest's own story is frozen for the
+  session (not overwritten), its saves locked, and restored as it was when
+  it leaves (one save and reload). Decided by the user: in dialogues with
+  choices **the host picks and guests suggest** (the same native choice hub
+  on every screen, each with its own cursor, the host sees suggestions);
+  **holocalls and texts reach everyone in sync and anyone can answer or
+  reply for all, first wins**; a guest far away when the host starts a
+  story scene **is offered to join** (a native-looking prompt to regroup;
+  declining leaves it the subtitles and journal); a guest earns a quest's
+  rewards when it was near the host (150 m) as the quest completed or
+  advanced, **only once**: a quest it was rewarded for in co-op pays
+  nothing again when it later plays it in its own save. Provisional (the
+  design's proposals, to confirm): romance and intimate scenes are never
+  replayed for guests; leaving reloads the guest's game; subtitles in the
+  host's language for now; shards and the codex stay per player; Johnny's
+  appearances beside the host are shown to guests later; after the first
+  version: scene voice, then quest-only interiors, then solo gigs.
 - **Quests together, gigs apart.** A quest or gig the players finish
   together rewards both: each game gives its own V the rewards (XP,
   street cred, money, items, the fixer's message) by the game's own

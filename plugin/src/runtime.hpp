@@ -138,6 +138,15 @@ public:
   // Where to draw the player's car now (the same delay as their body).
   sync::VehicleView VehicleOf(proto::PlayerId player);
 
+  // The radio of the car we drive, game -> net (each one sent: a repeat is
+  // for a passenger getting in). `trackStarted`: the song just changed on
+  // the same station, so its start is now (else unknown). The others' car
+  // radios, net -> game (latest + count).
+  void SubmitLocalRadio(proto::VehicleRadio radio, bool trackStarted);
+  std::vector<proto::VehicleRadio> TakeLocalRadios();
+  void PushRemoteRadio(const proto::VehicleRadio &radio);
+  std::optional<proto::VehicleRadio> RemoteRadio(proto::PlayerId player, std::uint32_t &changes);
+
   // Host: the world as our game has it, game -> net (newest only).
   // Guest: the host's world, net -> game (latest + count).
   void SubmitWorld(const proto::World &world);
@@ -163,6 +172,11 @@ public:
   void SubmitNpcHealth(const proto::NpcHealth &health); // host
   void SubmitNpcHit(const proto::NpcHit &hit);          // guest
   void SubmitNpcEffect(const proto::NpcEffect &effect); // guest
+  // Host: our NPC hit a guest's puppet, game -> net (queued with the NPCs').
+  // Guest: the host's NPCs hit our V, net -> game (queued).
+  void SubmitPlayerHit(const proto::PlayerHit &hit);
+  void PushPlayerHit(const proto::PlayerHit &hit);
+  std::vector<proto::PlayerHit> TakePlayerHits();
   // Guest: which players the host's NPC has detected (bit player - 1).
   std::uint8_t NpcDetected(proto::NpcId npc);
   void SubmitNpcStates(const proto::NpcStates &states);
@@ -170,7 +184,30 @@ public:
   std::optional<proto::NpcStates> TakeNpcStates();
   void PushNpcEvent(const NpcEvent &event);
   std::vector<NpcEvent> TakeNpcEvents();
-  void PushNpcStates(const proto::NpcStates &states);
+  // Guest: `you` is our player id (whose detection counts for our V).
+  void PushNpcStates(const proto::NpcStates &states, proto::PlayerId you);
+
+  // Each player is detected on their own (docs/ARCHITECTURE.md). Guest: how
+  // many of the host's NPCs have detected our V (0 once the host's states
+  // are 3 s old), and how far an NPC is in noticing it (0..1; 0 once 1 s
+  // old). Host: its NPCs' awareness of the guests, game -> net (newest).
+  std::int32_t NpcsDetectingUs();
+  float NpcAwarenessOfUs(proto::NpcId npc);
+  void PushNpcAwareness(const proto::NpcAwareness &awareness, proto::PlayerId you);
+  void SubmitNpcAwareness(proto::NpcAwareness awareness);
+  std::optional<proto::NpcAwareness> TakeNpcAwareness();
+
+  // How hard our V is to see, game -> net (newest only); the others',
+  // net -> game (latest + count). Our V's noises (queued, guest -> host);
+  // a guest's noises for our NPCs (queued, host).
+  void SubmitLocalStealth(const proto::Stealth &stealth);
+  std::optional<proto::Stealth> TakeLocalStealth();
+  void PushRemoteStealth(const proto::Stealth &stealth);
+  std::optional<proto::Stealth> RemoteStealth(proto::PlayerId player, std::uint32_t &changes);
+  void SubmitLocalNoise(const proto::Noise &noise);
+  std::vector<proto::Noise> TakeLocalNoises();
+  void PushRemoteNoise(const proto::Noise &noise);
+  std::vector<proto::Noise> TakeRemoteNoises();
 
   // Quickhacks: messages for the session, game -> net (queued); what the
   // session says about them, net -> game (queued).
@@ -218,23 +255,27 @@ private:
   std::optional<proto::PlayerState> m_local;
   std::vector<ScriptEvent> m_events;
 
-  std::optional<proto::PoseState> m_localPose;                              // under m_lock
-  std::optional<proto::Appearance> m_localAppearance;                       // under m_lock
-  std::optional<proto::Held> m_localHeld;                                   // under m_lock
-  std::vector<proto::Shot> m_localShots, m_remoteShots;                     // under m_lock
-  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Held>> m_held;  // m_lock
-  std::optional<proto::Seat> m_localSeat;                                   // m_lock
-  std::optional<proto::VehicleState> m_localVehicle;                        // m_lock
-  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Seat>> m_seats; // m_lock
-  std::map<proto::PlayerId, sync::VehicleTrack> m_vehicles;                 // m_tracksLock
-  std::optional<proto::World> m_localWorld;                                 // m_lock
-  std::optional<proto::World> m_hostWorld;                                  // m_lock
-  std::uint32_t m_hostWorldChanges{};                                       // m_lock
-  std::vector<proto::Message> m_npcOutbox;                                  // m_lock
-  std::optional<proto::NpcStates> m_npcStates;                              // m_lock
-  std::vector<NpcEvent> m_npcEvents;                                        // m_lock
-  std::vector<proto::Message> m_hackOutbox;                                 // m_lock
-  std::vector<HackEvent> m_hackEvents;                                      // m_lock
+  std::optional<proto::PoseState> m_localPose;                                       // under m_lock
+  std::optional<proto::Appearance> m_localAppearance;                                // under m_lock
+  std::optional<proto::Held> m_localHeld;                                            // under m_lock
+  std::vector<proto::Shot> m_localShots, m_remoteShots;                              // under m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Held>> m_held;           // m_lock
+  std::optional<proto::Seat> m_localSeat;                                            // m_lock
+  std::optional<proto::VehicleState> m_localVehicle;                                 // m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Seat>> m_seats;          // m_lock
+  std::map<proto::PlayerId, sync::VehicleTrack> m_vehicles;                          // m_tracksLock
+  std::vector<proto::VehicleRadio> m_localRadios;                                    // m_lock
+  std::uint64_t m_localTrack{}, m_localTrackStartUs{};                               // m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::VehicleRadio>> m_radios; // m_lock
+  std::optional<proto::World> m_localWorld;                                          // m_lock
+  std::optional<proto::World> m_hostWorld;                                           // m_lock
+  std::uint32_t m_hostWorldChanges{};                                                // m_lock
+  std::vector<proto::Message> m_npcOutbox;                                           // m_lock
+  std::optional<proto::NpcStates> m_npcStates;                                       // m_lock
+  std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
+  std::vector<proto::PlayerHit> m_playerHits;                                        // m_lock
+  std::vector<proto::Message> m_hackOutbox;                                          // m_lock
+  std::vector<HackEvent> m_hackEvents;                                               // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::uint32_t m_loopSeq{};
@@ -246,11 +287,19 @@ private:
 
   std::atomic<std::int64_t> m_clockOffsetUs{0};
   std::atomic<std::uint64_t> m_lastFrameUs{0};
-  std::map<proto::NpcId, std::uint8_t> m_npcDetected; // under m_lock
-  std::optional<bool> m_localPaused;                  // m_lock
-  std::vector<proto::PlayerId> m_remotePaused;        // m_lock
-  std::uint32_t m_remotePausedChanges{};              // m_lock
-  std::map<proto::PlayerId, std::string> m_names;     // m_lock
+  std::map<proto::NpcId, std::uint8_t> m_npcDetected;  // under m_lock
+  std::int32_t m_detectingUs{};                        // m_lock
+  std::uint64_t m_npcStatesAtUs{};                     // m_lock (host clock)
+  std::map<proto::NpcId, float> m_awarenessOfUs;       // m_lock
+  std::uint64_t m_awarenessAtUs{};                     // m_lock (host clock)
+  std::optional<proto::NpcAwareness> m_localAwareness; // m_lock
+  std::optional<proto::Stealth> m_localStealth;        // m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Stealth>> m_stealth; // m_lock
+  std::vector<proto::Noise> m_localNoises, m_remoteNoises;                       // m_lock
+  std::optional<bool> m_localPaused;                                             // m_lock
+  std::vector<proto::PlayerId> m_remotePaused;                                   // m_lock
+  std::uint32_t m_remotePausedChanges{};                                         // m_lock
+  std::map<proto::PlayerId, std::string> m_names;                                // m_lock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin

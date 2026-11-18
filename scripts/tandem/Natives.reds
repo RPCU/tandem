@@ -64,6 +64,42 @@ public native struct TandemHackEvent {
   native let seconds: Float;
 }
 
+// Guest: one of the host's NPCs hit our V (Combat.reds).
+public native struct TandemPlayerHit {
+  // the attacker as the host shares it (0: not shared)
+  native let npc: Uint32;
+  // damage per type, the attacker's side only
+  native let physical: Float;
+  native let thermal: Float;
+  native let electric: Float;
+  native let chemical: Float;
+  // gamedataAttackType
+  native let attackType: Int32;
+  // 1 weak spot, 2 critical, 4 melee, 8 lethal
+  native let flags: Int32;
+  // the attacker's armour penetration, 0..1
+  native let pierce: Float;
+  // where it landed, and its direction (plain floats, as above)
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let dx: Float;
+  native let dy: Float;
+  native let dz: Float;
+  // the attack record, and the NPC's weapon item record
+  native let attack: TweakDBID;
+  native let weapon: TweakDBID;
+}
+// Host: a guest's V made a noise, for our NPCs to hear (Stealth.reds).
+public native struct TandemNoise {
+  native let player: Uint32;
+  // gamedataStimType
+  native let stim: Int32;
+  // 0: the stimulus's own radius
+  native let radius: Float;
+  native let propagation: Bool;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -102,7 +138,19 @@ public native class TandemNative extends IScriptable {
   public static native func SendNpcHealth(npc: Uint32, health: Float)
   public static native func SendNpcHit(npc: Uint32, damage: Float, flags: Int32, position: Vector4, direction: Vector4)
   public static native func SendNpcEffect(npc: Uint32, effects: array<TweakDBID>)
+  public static native func SendPlayerHit(player: Uint32, npc: Uint32, physical: Float, thermal: Float, electric: Float, chemical: Float, attackType: Int32, flags: Int32, pierce: Float, position: Vector4, direction: Vector4, attack: TweakDBID, weapon: TweakDBID)
+  public static native func TakePlayerHits() -> array<TandemPlayerHit>
   public static native func NpcDetected(npc: Uint32) -> Int32
+  public static native func NpcsDetectingUs() -> Int32
+  public static native func NpcAwareness(npc: Uint32) -> Float
+  public static native func SendNpcAwareness(npcs: array<Uint32>, players: array<Uint32>, levels: array<Float>)
+  public static native func SendStealth(flags: Int32, visibility: Float, camo: TweakDBID)
+  public static native func RemoteStealthChanges(player: Uint32) -> Int32
+  public static native func RemoteStealthFlags(player: Uint32) -> Int32
+  public static native func RemoteStealthVisibility(player: Uint32) -> Float
+  public static native func RemoteStealthCamo(player: Uint32) -> TweakDBID
+  public static native func SendNoise(stim: Int32, radius: Float, propagation: Bool)
+  public static native func TakeNoises() -> array<TandemNoise>
   public static native func TakeNpcEvents() -> array<TandemNpcEvent>
   public static native func SendNpcHack(npc: Uint32, action: TweakDBID, seconds: Float, flags: Int32)
   public static native func SendNpcHackState(npc: Uint32, player: Uint32, action: TweakDBID, step: Int32, seconds: Float)
@@ -111,6 +159,12 @@ public native class TandemNative extends IScriptable {
   public static native func SendVehicleHack(driver: Uint32, hack: Int32, seconds: Float)
   public static native func TakeHackEvents() -> array<TandemHackEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32
+  public static native func SendVehicleRadio(on: Bool, station: Int32, track: CName, trackStarted: Bool)
+  public static native func RemoteRadioChanges(player: Uint32) -> Int32
+  public static native func RemoteRadioOn(player: Uint32) -> Bool
+  public static native func RemoteRadioStation(player: Uint32) -> Int32
+  public static native func RemoteRadioTrack(player: Uint32) -> CName
+  public static native func RemoteRadioTrackAge(player: Uint32) -> Float
   public static native func IsHost() -> Bool
   public static native func SendWorld(gameTimeSeconds: Int32, weather: CName, paused: Bool)
   public static native func HostWorldChanges() -> Int32

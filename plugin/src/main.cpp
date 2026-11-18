@@ -16,6 +16,7 @@
 #include <windows.h>
 
 #include <filesystem>
+#include <format>
 
 namespace {
 const RED4ext::v1::Sdk *g_sdk{};
@@ -33,12 +34,36 @@ std::filesystem::path PluginDirectory(RED4ext::v1::PluginHandle handle) {
 bool OnRunningUpdate(RED4ext::CGameApplication *) {
   if (!tandem::plugin::Runtime::Get().Started())
     return false;
-  static bool reported = false;
+  static std::uint32_t failures = 0;
   Red::ScriptGameInstance game;
-  if (!Red::CallStatic("TandemPause", "Frame", game) && !reported) {
-    reported = true;
-    tandem::plugin::log::Warn("pause: TandemPause.Frame could not be called: no shared pause");
+  // Reported on the first failure and every 1000 after: the scripts may not
+  // be there in the first frames.
+  // A script class keeps its static functions in its member list, which
+  // CallStatic does not search: look in both.
+  // A script class's static functions are neither in its member nor its
+  // static list: they are registered as global functions under a qualified
+  // name. Found once by scanning the globals.
+  static RED4ext::CBaseFunction *frame = nullptr;
+  static bool searched = false;
+  if (!frame && !searched && Red::GetClass("TandemPause")) {
+    searched = true;
+    RED4ext::DynArray<RED4ext::CBaseFunction *> globals;
+    RED4ext::CRTTISystem::Get()->GetGlobalFunctions(globals);
+    std::string seen;
+    for (auto *f : globals) {
+      const std::string_view full = f->fullName.ToString();
+      if (full.find("TandemPause") != std::string_view::npos) {
+        seen += std::format(" {}", full);
+        if (full.find("Frame") != std::string_view::npos)
+          frame = f;
+      }
+    }
+    tandem::plugin::log::Info("pause: TandemPause globals:{}; frame {}", seen, frame != nullptr);
   }
+  if ((!frame || !Red::CallFunction(frame, game)) && failures++ % 1000 == 0)
+    tandem::plugin::log::Warn("pause: TandemPause.Frame could not be called ({} times): "
+                              "no shared pause",
+                              failures);
   return false; // ignored for the running state
 }
 

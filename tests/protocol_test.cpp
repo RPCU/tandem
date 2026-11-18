@@ -78,6 +78,59 @@ TEST_CASE("every message survives encoding") {
   RoundTrips(PlayerHack{
       .player = 2, .npc = 7, .action = 0x99, .flags = kPlayerHackReveal | kPlayerHackDirectional});
   RoundTrips(VehicleHack{.player = 2, .driver = 1, .hack = CarHack::Accelerate, .seconds = 4.5f});
+  RoundTrips(VehicleRadio{.player = 2,
+                          .revision = 5,
+                          .on = true,
+                          .station = 13,
+                          .track = 0xfeedfacecafef00dULL,
+                          .trackStartUs = 123'456'789'012ULL});
+  RoundTrips(VehicleRadio{.player = 3, .revision = 1, .on = false, .station = -1});
+  RoundTrips(PlayerHit{.player = 2,
+                       .npc = 7,
+                       .physical = 29.5f,
+                       .thermal = 3.f,
+                       .electric = 0.5f,
+                       .chemical = 1.f,
+                       .attackType = 10,
+                       .flags = kHitWeakSpot | kHitCritical,
+                       .pierce = 0.25f,
+                       .position = {1, 2, 3},
+                       .direction = {0, -1, 0},
+                       .attack = 0x1234567890ULL,
+                       .weapon = 0x0abcdef012ULL});
+}
+
+TEST_CASE("a car's radio is a small reliable event") {
+  CHECK(ChannelOf(VehicleRadio{}) == Channel::Event);
+  CHECK(IsReliable(VehicleRadio{}));
+  CHECK(std::string_view(NameOf(VehicleRadio{})) == "VehicleRadio");
+  CHECK(Encode(VehicleRadio{}).size() < 64);
+  RoundTrips(NpcAwareness{
+      .seq = 3,
+      .timeUs = 7'000'000,
+      .entries = {{.npc = 7, .player = 2, .level = 128}, {.npc = 9, .player = 3, .level = 255}}});
+  RoundTrips(Stealth{.player = 2,
+                     .revision = 4,
+                     .flags = kStealthCamo | kStealthCrouch,
+                     .visibility = 0.35f,
+                     .camo = 0x1a2b3c4d5eULL});
+  RoundTrips(Noise{.player = 2, .stim = 23, .radius = 25.f, .propagation = true});
+  CHECK(std::string(NameOf(Noise{})) == "Noise");
+  CHECK(std::string(NameOf(NpcAwareness{})) == "NpcAwareness");
+  CHECK(std::string(NameOf(Stealth{})) == "Stealth");
+}
+
+TEST_CASE("stealth travels reliably, awareness and noise as state") {
+  CHECK(ChannelOf(NpcAwareness{}) == Channel::State);
+  CHECK(ChannelOf(Noise{}) == Channel::State);
+  CHECK(ChannelOf(Stealth{}) == Channel::Event);
+  CHECK(IsReliable(Stealth{}));
+  NpcAwareness crowd;
+  crowd.entries.resize(kMaxNpcAwareness);
+  CHECK(Encode(crowd).size() < 1400); // one datagram
+  crowd.entries.resize(kMaxNpcAwareness + 1);
+  CHECK_FALSE(Decode(Encode(crowd)).has_value());
+  CHECK(Encode(Noise{}).size() < 32);
 }
 
 TEST_CASE("an appearance past its limits is refused") {
@@ -108,6 +161,9 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(IsReliable(VehicleHack{}));
   CHECK(std::string_view(NameOf(VehicleHack{})) == "VehicleHack");
   CHECK(std::string_view(NameOf(NpcHack{})) == "NpcHack");
+  CHECK(ChannelOf(PlayerHit{}) == Channel::Event);
+  CHECK(IsReliable(PlayerHit{}));
+  CHECK(std::string_view(NameOf(PlayerHit{})) == "PlayerHit");
   // A guest cannot flood the host with effects.
   NpcEffect many{.npc = 1, .effects = std::vector<std::uint64_t>(kMaxNpcEffects + 1, 5)};
   CHECK_FALSE(Decode(Encode(many)));
