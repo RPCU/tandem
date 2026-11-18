@@ -84,6 +84,7 @@ public class TandemSystem extends ScriptableSystem {
   private let m_pause: ref<TandemPause>;
   private let m_radio: ref<TandemRadio>;
   private let m_time: ref<TandemTime>;
+  private let m_travel: ref<TandemTravel>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
   // Stealth, detection and combat per player, camo, noises (Stealth.reds).
@@ -160,6 +161,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_radio.Start(this.GetGameInstance());
     this.m_time = new TandemTime();
     this.m_time.Start(this.GetGameInstance());
+    this.m_travel = new TandemTravel();
+    this.m_travel.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
     this.m_attitudes = new TandemAttitudes();
@@ -211,6 +214,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_time.Stop();
       this.m_time = null;
     }
+    if IsDefined(this.m_travel) {
+      this.m_travel.Stop();
+      this.m_travel = null;
+    }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
       this.m_bodies = null;
@@ -258,6 +265,11 @@ public class TandemSystem extends ScriptableSystem {
     return out;
   }
 
+  // Fast travel together and regroup (Travel.reds).
+  public func Travel() -> ref<TandemTravel> {
+    return this.m_travel;
+  }
+
   public func Revive() -> ref<TandemRevive> {
     return this.m_revive;
   }
@@ -293,6 +305,8 @@ public class TandemSystem extends ScriptableSystem {
       this.m_stealth.Tick(this.Now(), this.m_you, this.m_npcs);
     }
     TandemHacks.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
+    // Grapples, takedowns, carried bodies (Takedowns.reds); 0: not in a session.
+    TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
     if IsDefined(this.m_revive) && this.m_playing {
       this.m_revive.Tick(this.Now(), this.m_you);
     }
@@ -305,6 +319,9 @@ public class TandemSystem extends ScriptableSystem {
     // The car radio (Radio.reds): the driver's for everyone aboard.
     if IsDefined(this.m_radio) && this.m_playing {
       this.m_radio.Tick(this.Now(), this);
+    }
+    if IsDefined(this.m_travel) && this.m_playing {
+      this.m_travel.Tick(this.Now(), this.m_you);
     }
 
     this.TickAttitudes();
@@ -442,6 +459,8 @@ public class TandemSystem extends ScriptableSystem {
         let at = npc.GetWorldPosition();
         TandemNative.Log(s"npcs: \(EntityID.ToDebugStringDecimal(id)) static \(EntityID.IsStatic(id)) \(TDBID.ToStringDEBUG(npc.GetRecordID())) \(NameToString(npc.GetCurrentAppearanceName())) at (\(at.X), \(at.Y), \(at.Z))");
       }
+    } else if StrBeginsWith(command, "loot") {
+      TandemLoot.Command(this.GetGameInstance(), command);
     } else if Equals(command, "puppet attitude") {
       this.ReportAttitudes();
     } else if StrBeginsWith(command, "puppet group") {
@@ -544,6 +563,8 @@ public class TandemSystem extends ScriptableSystem {
         }
       }
       TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
+    } else if StrBeginsWith(command, "takedown") {
+      TandemTakedowns.Get(this.GetGameInstance()).Command(command);
     } else if Equals(command, "vehicle clear") {
       // (experiment) delete the parked car copies: this froze the game
       // (engine-knowledge §13.6); run tools/game.sh bt if it does again.
@@ -714,6 +735,10 @@ public class TandemSystem extends ScriptableSystem {
         ArrayPush(this.m_joins, join);
       }
       this.RemoveAllPuppets();
+    } else if Equals(command, "travel") || StrBeginsWith(command, "regroup") {
+      if IsDefined(this.m_travel) {
+        this.m_travel.Command(command);
+      }
     } else if Equals(command, "markers") {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {
@@ -814,6 +839,12 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // The host NPC a proxy in our world stands for (0: none; Combat.reds).
+  // The proxy of a host NPC in our world, alive or dead (Loot.reds).
+  public func ProxyOfNpc(npc: Uint32) -> EntityID {
+    let none: EntityID;
+    return IsDefined(this.m_npcs) ? this.m_npcs.ProxyEntity(npc) : none;
+  }
+
   public func NpcOfProxy(id: EntityID) -> Uint32 {
     return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfProxy(id) : 0u;
   }

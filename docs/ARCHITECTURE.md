@@ -170,7 +170,9 @@ The owner simulates; everyone else displays.
 | time of day, weather, police heat       | host                      | applied (wanted level: open, see below)        |
 | a V's time abilities (Sandevistan…)     | that player's game        | shown on the puppet; never slow anyone's world |
 | an NPC's speed in a time bubble         | host                      | proxies animated at the same speed             |
-| loot drops                              | host                      | each player loots their own copy               |
+| loot: corpses and containers            | each player's game        | rolled per player: each loots their own copy   |
+| items a V drops on purpose              | host                      | lie in every game; the first pickup keeps it   |
+| quest and important items, rewards      | every player's own V      | whoever gets one, every V gets it              |
 
 **Enemy level** (decided 2026-11-18): enemies the host spawns and runs are
 scaled to the **mean of the character levels of the players in the
@@ -211,9 +213,13 @@ health, its target and its status effects), the way a region's owner
 changes as players move. What outlives a region (deaths, loot taken,
 destroyed objects, quest facts, heat) goes to the host's record of the
 world (the host's save), so it is still true when anyone comes back. The
-first version keeps players together (proxies of the host's NPCs only
-near the host, a soft tether with regroup on fast travel); per-player
-regions are the step after it.
+first version shares the host's NPCs only near the host and never tethers
+anyone: a player who fast travels offers the others to join (accepted or
+not, each stays free), and anyone can regroup with another player at any
+time (see Fast travel together, Inside the plugin); per-player regions are
+the step after it. Until then a guest far from the host plays in a quiet
+world: its own crowd is off and the host's NPCs are shared only around the
+host.
 
 ## Identity: naming the same thing in every game
 
@@ -240,6 +246,16 @@ Two games must agree on which NPC, car or object a message is about.
   player by measured jitter and transit, capped at 400 ms (numbers measured
   on 2.5 by NCO, see the research file). Short gaps are extrapolated (250 ms
   for players, 500 ms for vehicles), then held; recovery blends back.
+- **Teleports are put, not flown.** Two states further apart than 20 m and
+  faster than 150 m/s (a fast travel, a quest teleport, a regroup) are not
+  interpolated: the body stays until the moment of the jump and is then
+  drawn there, and a velocity that fast (the sender's own jump over one
+  sample) is not extrapolated (`sync::Track`, tested).
+- **The clock offset follows the best ping.** Until 2026-11-18 the
+  best-RTT filter started from `UINT64_MAX`, its slow forgetting wrapped it
+  to 199 µs, and no pong over a real link ever counted: a guest's host
+  clock stayed the `Welcome`'s, off by the one-way latency. Found by the
+  shaped-link test (60 ms off at 40 ms each way; now within 7 ms).
 - Rates: players and vehicles 30 Hz; NPC proxies 10–30 Hz by distance and
   relevance (budgeted per frame).
 
@@ -405,8 +421,10 @@ redscript natives (UI, events)              ENet socket
   rest by its own rules: armour, resistances, dodge, block and deflect,
   perks, difficulty, god mode, death, the attack record's status effects,
   hit reaction, direction indicator and sounds. Not yet verified in game
-  (scenario `npcs-hurt-guest`). Open: aggro (the NPC turning on whoever hit
-  it), loot, the proxy's own weapon (armour
+  (scenario `npcs-hurt-guest`). A hostile NPC a guest hits turns on that
+  guest's puppet (`TargetTrackingExtension.InjectThreat`,
+  `scripts/tandem/Reactions.reds`). Open: aggro of NPCs not yet hostile to
+  them, loot, the proxy's own weapon (armour
   needs an attacking weapon object: the proxy's if it holds one, else the
   guest's own stands in), status effects on the host's puppet (they stay
   there, unsynced).
@@ -450,6 +468,87 @@ redscript natives (UI, events)              ENet socket
   the loot stays the guest's), an upload of the same hack by another
   player shown as locked in the menu while it runs, the host NPC
   netrunner's own AI not told how its forwarded hack ended, take control.
+- **Takedowns, finishers, carried bodies** (`scripts/tandem/Takedowns.reds`,
+  not yet run in game): the actor's game plays its V's side at once on its
+  proxy (the takedown state machine, the finisher, the carry) and sends
+  `NpcAction` (grab, release, takedown, knock-out, other takedown
+  animation, finisher, pick up, drop, throw, dispose) to the host. Its
+  requests are caught where vanilla runs the NPC's side:
+  `TakedownGameEffectHelper.FillTakedownData`, the grapple's break-free and
+  release, `FinisherAttackEvents.PlayFinisherGameEffect`, the body's
+  `CarriedObject` states and `DisposalDevice`. The host validates (the NPC
+  is there, alive for a grab or takedown, a body for a pick up, nobody else
+  holds it, within 6 m, the finisher's health no higher than the guest saw
+  or its guard broken), answers the asker alone (`NpcActionReply`) and plays
+  the NPC's side on the real one with the guest's puppet as activator: the
+  same `takedowns` or `playFinisher` game effect, the mount on the
+  `leftShoulder` slot with the carried pose, the throw's kill, ragdoll and
+  impulse, the disposal's kill and hide; the kill or knock-out is applied
+  4–5 s later if the effect did not do it, credited to the puppet. Who holds
+  what goes to everyone (`NpcHold`, kept for late joiners, released when
+  the holder leaves), so each game puts its proxy in the same grapple or on
+  the same shoulder of that V, holds the proxy's movement controller
+  meanwhile (`TandemNative.HoldPuppet`) and switches its takedown prompts
+  off. A refused grab breaks free on the guest, vanilla's end for a failed
+  grapple; a refused pick up is a forced drop. A disposed body is gone for
+  everyone (`NpcGone` reason 2: proxies deleted). A guest's proxy killed by
+  the host during its own takedown dies once its animation is over.
+- **"The player" reactions on the host** (`scripts/tandem/Reactions.reds`):
+  NPC code that reacts to "the player" uses whoever acted. An NPC entering
+  combat with a guest's puppet gives the host's V no second chance or gag;
+  a guard a guest broke offers the host's V no finisher; both go to that
+  guest's game as `NpcCue`, which runs them on its own V with its proxy (the
+  second chance's memory wipe comes back as an `NpcEffect`; the proxy's
+  missing senses are replaced by the host's detection bit). A guest's
+  Bait/Whistle walks the NPC to that guest's puppet. TODO list in
+  `research/engine-knowledge.md` §13.17.
+- **Loot** (`scripts/tandem/Loot.reds`, decided 2026-11-18): **per-player
+  loot.** Every corpse and container is looted by each player in their own
+  game, rolled from its loot tables by that game's V (its level, its
+  perks): nobody takes from the other, and a body one player emptied is
+  still full for the other. Nothing is sent for it. The host's NPCs roll
+  their loot when they die, as in solo; a guest's proxy, killed by the
+  host's word, dies the game's way and its death rolls the guest's own
+  loot from the real NPC's record (`NPCPuppet.OnIncapacitated` →
+  `ProcessLoot`); a second later tandem checks that it did (and rolls it
+  the save-load way if not). The host's loot never appears on a guest: no
+  item crosses the network for a corpse. **Weapons** an enemy drops at
+  death are part of its loot, so per player too: each game's corpse drops
+  what its copy holds (sharing them would make players race for the
+  enemy's gun). **Quest and important items are every player's**
+  (decided by the user 2026-11-18: no quest may break): an item tagged
+  `Quest` (quest items, their keys and shards), a keycard
+  (`Gen_Keycard`) or an iconic item (the `IsItemIconic` stat) that comes
+  into a V's inventory, not bought at a vendor, goes into every other V's
+  too (`SharedItem`), by the game's own item-add path and its pickup
+  notification, unless that V has one already. A guest's goes through the
+  host, which gives it to its own V first, so the host's quests see it
+  whoever looted it. The important items on a host NPC's corpse are also
+  put on the guests' proxy corpses (a guest finds them where the host
+  would); a second copy of an item co-op already gave is taken back out
+  when it arrives. **Rewards** (quest and gig rewards: items, money, XP,
+  street cred) are the story's `QuestReward`: the host's game pays its own
+  V as in solo and every guest that took part gets the same reward record
+  through `RPGManager.GiveReward`, once (Story.reds). When
+  the host's body goes (streamed out, disposed), a guest's proxy corpse
+  leaves what it still holds as a loot bag, as vanilla does for a disposed
+  body. **Items a V drops on purpose** (the backpack or inventory menu)
+  are shared world items, the host's: the dropper's game drops them in
+  one bag as vanilla does and sends `WorldItem` (records, seeds for a
+  unique item's stats, quantities, where); the host numbers it, keeps it
+  for late joiners and sends it to everyone; every other game spawns a
+  copy of the bag there, from the dropper's puppet. Picking a stack up is
+  immediate and a claim to the host (`WorldItemTaken`): the host grants
+  the first and tells everyone, who take it out of their copy; the loser
+  of a race (two pickups within a ping) gives it back with a notice. When
+  a guest's session ends, its copies of the others' drops go. Mock player
+  `--drop-item`, `--take-items`, `--remove-corpses`, `--loot-quest`;
+  scenarios `loot-drop`, `loot-corpse`, `loot-quest`. **Not yet verified in game**
+  (engine-knowledge §13.19): that a proxy's death rolls its loot and
+  drops its weapon (a proxy whose brain went off before it drew its
+  weapon may drop none), which class the drop bag is, that a copy from a
+  puppet's inventory and a seed has the same stats, and that the bag a
+  removed corpse drops stays.
 - **Down, revive, respawn** (`scripts/tandem/Revive.reds`, milestone 8;
   the rules are under Open problems, "Down and out"). Each game owns its
   own V's life and sends it as `Vitals` (up, down, out, and whether it
@@ -626,6 +725,35 @@ revive down|hold|report`; scenarios `revive-peer`, `revive-game`,
   world runs dilated exempts what the network drives (proxies, puppets) to
   their true speed. The plugin calls `TandemTime.Frame` every frame
   (`plugin/src/main.cpp`). Scenario `time`; not yet run in game.
+- **Fast travel together** (`scripts/tandem/Travel.reds`, milestone 4):
+  no tether. When our V arrives from a fast travel (seen where vanilla
+  performs it, a wrap of `FastTravelSystem.PerformFastTravel`; arrived
+  once V has jumped and the world has run 1.5 s behind the loading
+  screen), the others get `Regroup` (reason fast travel, the point's
+  record and marker node, where we stand; the host stamps the sender and
+  delivers it to whom it is for). An offer shows the game's way: the HUD's
+  on-screen message ("NAME fast travelled to POINT") and an input hint on
+  the phone key, the one that answers a holocall ("Join NAME"); a press
+  joins, it lapses after 15 s, and the sender is told either way
+  (`RegroupAnswer`: "NAME is on the way" / "NAME stays where they are").
+  Not shown to a player already within 60 m. Joining goes the game's way:
+  our own fast travel to the same point when we know it
+  (`PerformFastTravelRequest`: its loading screen and streaming); else
+  vanilla's steps to that point's marker (`TeleportToNode`,
+  `NotifyFastTravelStart`) without adding the point to our map; else, more
+  than 150 m away, our fast travel point nearest to them (within 1.5 km)
+  and then a hop; else the hop alone, 2 m behind them, facing their way.
+  The game's fast travel locks (combat, a vehicle, quests) block joining
+  too. The regroup action: a player's marker on the world map, held like a
+  fast travel point ("Join NAME"), joins them the same way. API for the
+  story work: `TandemTravel.OfferRegroup(game, player, reason, label)`
+  (reason 2: a story scene; `label` its title) and
+  `TandemTravel.RegroupTo(game, player)`. The host's world stays coherent
+  when the host travels away from a guest: the guest keeps playing; the
+  host's NPCs around the old place go (`NpcGone`, out of range) and new
+  ones are shared around the host. Not yet verified in game (scenarios
+  `travel`, `regroup`; `tools/game.sh cmd travel`, `regroup [PLAYER]`,
+  `regroup accept|decline|offer`).
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name,
   pose, story, quest_freeze, quest_freeze_allow, time_host; `relay`,
   `relay_token`, `join` for the relay and join codes).
@@ -771,6 +899,7 @@ hand).
 | ----------- | -------------------------------------------------------------------------- | --------------------------------- |
 | unit        | protocol round trips, strict decoding, sizes                               | `task test`                       |
 | loopback    | real host + guests over UDP in one process: join, relay, clock, leave      | `task test`                       |
+| bad link    | smoothing and reliable channels through a shaped link (loss, jitter)       | `task test`                       |
 | relay       | protocol, codes, limits, amplification, real sockets, race detector        | `task relay:test`                 |
 | via relay   | a real relay process: join by code, fallback from direct, mock players     | `task test` (`relay-loopback`)    |
 | mock player | `tandem-peer` as host or guest against the real game                       | `task peer -- host --mode mirror` |
@@ -831,6 +960,39 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   (default 10), then lose them; `--camo N` turns "its optical camo" on for
   5 s; as guest, `--shoot N` fires a gunshot (shot and noise) every N s.
   Stealth, noises and the host's awareness of it are logged.
+- **Takedowns**: `join --grab-npcs N` grabs one of the host's NPCs every N
+  s (standing by it) and takes it down two seconds later, lethal and
+  non-lethal in turn; `join --carry-npcs N` picks up a body, carries it
+  for three seconds and throws it; as host it answers the game's requests
+  (refusing dead or held NPCs) and `host --hold-npcs N` shows its own V
+  grabbing and taking down a replayed NPC, with a combat cue for the game.
+- **Fast travel together** (any mode): `--travel-at N` "fast travels" N s
+  after another player is in the session: it stands at `--travel-to X,Y,Z`
+  (default the game's `teleport home` spot) until another V comes within
+  10 m, and offers everyone to join (`--travel-point RECORD`: the point
+  arrived at); `--offer-regroup N` asks the others to come to it; offers it
+  gets are answered by `--regroup-answer yes|no|ignore` (yes: it goes
+  there).
+- **A bad network** (any mode): `--latency MS`, `--jitter MS`,
+  `--loss PERCENT`, `--reorder PERCENT`, each way. A UDP relay with a link
+  model on each direction (`net::Shaper`, `core/src/shaping.cpp`) sits
+  between the mock player's endpoint and the others (host: on the port the
+  game joins; guest: a local port its endpoint joins), so ENet itself
+  (acknowledgements, resends, pings) crosses the bad link. Jitter keeps
+  the order; reordering holds a datagram back 30 ms plus the jitter.
+  Tests (`tests/shaping_test.cpp`): at 80 ms each way, 60 ms of jitter,
+  10% lost, 5% reordered, a walking body is drawn 174 ms behind, never
+  backwards, at most 0.06 m a frame (0.05 m is walking), 8 frames of 510
+  extrapolated; a car at 20 m/s stays within 0.02 m of its circle; a
+  pose's bone within 0.0001 rad; over real UDP at 40 ms, 15% lost, 200
+  reliable changes each way all arrive, in order, once. Scenarios
+  `front-badlink`, `drive-badlink`, `npcs-guest-badlink`.
+- Loot (any mode): `--loot-quest RECORD` has "its V" loot a quest item
+  (every other player gets it); `--drop-item RECORD` drops one RECORD as a shared world
+  item 1.5 m in front of the other V; `--take-items N` picks up (claims)
+  every stack the others drop N s after it appears; as the host of a
+  replay, `--remove-corpses N` takes an NPC a guest killed away N s after
+  its death (`NpcGone` reason 0).
 - **NPC record and replay** (first piece of the simulated second game):
   `join --record FILE` saves the host's `NpcSpawn`/`NpcStates`/`NpcGone`
   with their times; `host --replay FILE [--offset X,Y,Z]` sends them again
@@ -847,8 +1009,8 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   - **scripted players**: recordings edited or generated (walk a path, get
     in a car, shoot an NPC, join late, disconnect mid-fight) as repeatable
     regression scenarios, with checks on what the real game reports back;
-  - **network shaping** in the peer (latency, jitter, loss, reordering) to
-    test the smoothing and the reliable channels under bad links.
+  - **network shaping** in the peer (latency, jitter, loss, reordering):
+    done, see above.
 
 ## Roadmap
 
@@ -860,8 +1022,8 @@ Each milestone ends with something visible in game.
 | 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                                                              |
 | 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)                                          |
 | 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test)                                                                |
-| 4   | Shared world basics | time, weather, police heat follow the host; tether and regroup on fast travel (time, weather ✓ 2026-11-18)                                                                 |
-| 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot through the host (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18)                              |
+| 4   | Shared world basics | time, weather, police heat follow the host; fast travel together, no tether (time, weather ✓ 2026-11-18; regroup built, untested)                                          |
+| 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18; loot built)                                   |
 | 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests (step 1 written: freeze, saves, journal, calls, texts, lines, hubs, rewards; to test in game) |
 | 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join (relay and codes ✓ 2026-11-18, loopback)                             |
 | 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join                                                                      |
@@ -983,7 +1145,12 @@ in-game tests still owed; none of it tested in a session yet):
   action at once (its V's animation, sound and effects) so it feels local.
   Physics objects (crates, bodies, cars hit) need an owner and a sync of
   their transform like vehicles; which ones (all props, or only those a
-  player touched) is to decide.
+  player touched) is to decide. Done for takedowns, grapples, finishers
+  and carried, thrown and disposed bodies (see Inside the plugin; to
+  verify in game with scenarios `takedowns-host` and `takedowns-guest`).
+  Still open there: the disposal container's own state (door, light,
+  "used") stays the actor's until devices are synced, and loot from a
+  disposed body.
 - **Radio: each V's own on foot, the driver's in a car.** On foot every
   player listens to their own pocket radio, which nobody else hears. In a
   car everyone aboard hears the car's radio, and the driver owns it: their
@@ -1232,7 +1399,8 @@ in-game tests still owed; none of it tested in a session yet):
   on every screen, each with its own cursor, the host sees suggestions);
   **holocalls and texts reach everyone in sync and anyone can answer or
   reply for all, first wins**; a guest far away when the host starts a
-  story scene **is offered to join** (a native-looking prompt to regroup;
+  story scene **is offered to join** (a native-looking prompt to regroup:
+  `TandemTravel.OfferRegroup(game, guest, 2, title)`, milestone 4's;
   declining leaves it the subtitles and journal); a guest earns a quest's
   rewards when it was near the host (150 m) as the quest completed or
   advanced, **only once**: a quest it was rewarded for in co-op pays

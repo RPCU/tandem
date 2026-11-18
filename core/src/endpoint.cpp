@@ -70,8 +70,22 @@ std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const JoinTarget &ta
   return endpoint;
 }
 
+template <class M>
+bool Endpoint::Deliver(const M &message, proto::PlayerId to, net::PeerId except) {
+  if (to == proto::kNoPlayer) {
+    m_session->Broadcast(message, except);
+    return true;
+  }
+  if (to == m_you)
+    return true;
+  for (const auto &[peer, player] : m_playerOfPeer)
+    if (player == to && peer != except)
+      m_session->Send(peer, message);
+  return false;
+}
+
 std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
-  std::vector<SessionEvent> out = std::exchange(m_deferred, {});
+  std::vector<SessionEvent> out = std::exchange(m_pending, {});
   if (m_ended)
     return out;
 
@@ -245,6 +259,12 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      mine.player = player;
                      out.push_back(events::NoiseBy{mine});
                    },
+                   [&](const proto::NpcAction &action) {
+                     // For the host's game only: it owns the NPC and answers.
+                     auto mine = action;
+                     mine.player = player;
+                     out.push_back(events::NpcActionBy{mine});
+                   },
                    [&](const proto::Pause &pause) {
                      // A guest only pauses in its own name.
                      const proto::Pause relayed{player, pause.paused};
@@ -261,6 +281,34 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                        return;
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::RemoteTimeEffect{relayed});
+                   },
+                   [&](const proto::Regroup &offer) {
+                     // A guest only offers to come to itself.
+                     auto relayed = offer;
+                     relayed.from = player;
+                     if (relayed.to != player && Deliver(relayed, relayed.to, event.peer))
+                       out.push_back(events::RegroupOffered{relayed});
+                   },
+                   [&](const proto::RegroupAnswer &answer) {
+                     auto relayed = answer;
+                     relayed.from = player;
+                     if (relayed.to != player && relayed.to != proto::kNoPlayer &&
+                         Deliver(relayed, relayed.to, event.peer))
+                       out.push_back(events::RegroupAnswered{relayed});
+                   },
+                   [&](const proto::WorldItem &item) { AddWorldItem(player, item, out); },
+                   [&](const proto::SharedItem &shared) {
+                     // A guest speaks for its own V, and only of what it got.
+                     auto relayed = shared;
+                     relayed.player = player;
+                     relayed.kind = proto::kSharedLooted;
+                     relayed.npc = 0;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::SharedItemFrom{relayed});
+                   },
+                   [&](const proto::WorldItemTaken &taken) {
+                     // A claim, in the guest's own name only.
+                     ClaimWorldItem(player, taken.id, taken.stack, event.peer, out);
                    },
                    [&](const proto::Vitals &vitals) {
                      // A guest only speaks for its own V.
@@ -306,6 +354,16 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_appearances.erase(player);
   m_held.erase(player);
   m_seats.erase(player);
+  // What it held is free again for the others (the host's game lets go of
+  // the real NPC itself when the puppet goes).
+  for (auto it = m_npcHolds.begin(); it != m_npcHolds.end();) {
+    if (it->second.player == player) {
+      m_session->Broadcast(proto::NpcHold{.npc = it->first});
+      it = m_npcHolds.erase(it);
+    } else {
+      ++it;
+    }
+  }
   m_radios.erase(player);
   m_stealth.erase(player);
   m_story.Forget(player);
@@ -408,6 +466,11 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
   // The story so far: journal, tracked entry, call, choice hub, story states.
   for (const auto &message : m_story.ForJoiner())
     m_session->Send(peer, message);
+  for (const auto &[npc, hold] : m_npcHolds)
+    m_session->Send(peer, hold);
+  // What lies in the world (its taken stacks at quantity 0).
+  for (const auto &[id, item] : m_worldItems)
+    m_session->Send(peer, item);
   // Who is in their pause menu (the newcomer itself is not).
   const auto self = m_playerOfPeer.find(peer);
   for (const auto paused : m_paused)
@@ -486,7 +549,11 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::Pong &pong) {
               const auto now = net::NowUs();
               const auto rtt = now - pong.pingSentUs;
-              m_bestRttUs += kRttForgetUsPerPing;
+              // Saturating: from UINT64_MAX (no ping yet) it wrapped to 199 us,
+              // and no pong over a real link (rtt > 0.2 ms) ever counted, so
+              // the offset stayed the Welcome's, off by the one-way latency.
+              if (m_bestRttUs <= UINT64_MAX - kRttForgetUsPerPing)
+                m_bestRttUs += kRttForgetUsPerPing;
               if (rtt <= m_bestRttUs) {
                 m_bestRttUs = rtt;
                 const auto midpoint = pong.pingSentUs + rtt / 2;
@@ -546,7 +613,10 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::World &world) { out.push_back(events::HostWorld{world}); },
             [&](const proto::NpcSpawn &spawn) { out.push_back(events::HostNpcSpawn{spawn}); },
             [&](const proto::NpcStates &states) { out.push_back(events::HostNpcStates{states}); },
-            [&](const proto::NpcGone &gone) { out.push_back(events::HostNpcGone{gone}); },
+            [&](const proto::NpcGone &gone) {
+              m_npcHolds.erase(gone.npc);
+              out.push_back(events::HostNpcGone{gone});
+            },
             [&](const proto::NpcHealth &health) { out.push_back(events::HostNpcHealth{health}); },
             [&](const proto::NpcHackState &state) {
               out.push_back(events::HostNpcHackState{state});
@@ -575,6 +645,20 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               if (stealth.player != m_you)
                 out.push_back(events::RemoteStealth{stealth});
             },
+            [&](const proto::NpcActionReply &reply) {
+              out.push_back(events::NpcActionAnswered{reply});
+            },
+            [&](const proto::NpcHold &hold) {
+              if (hold.player == proto::kNoPlayer)
+                m_npcHolds.erase(hold.npc);
+              else
+                m_npcHolds[hold.npc] = hold;
+              out.push_back(events::HostNpcHold{hold});
+            },
+            [&](const proto::NpcCue &cue) {
+              if (cue.player == m_you)
+                out.push_back(events::HostNpcCue{cue});
+            },
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
@@ -583,6 +667,22 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               const auto safe = Sanitized(time);
               if (safe.player != m_you && NoteTime(safe))
                 out.push_back(events::RemoteTimeEffect{safe});
+            },
+            [&](const proto::Regroup &offer) {
+              if (offer.from != m_you && (offer.to == m_you || offer.to == proto::kNoPlayer))
+                out.push_back(events::RegroupOffered{offer});
+            },
+            [&](const proto::RegroupAnswer &answer) {
+              if (answer.from != m_you && answer.to == m_you)
+                out.push_back(events::RegroupAnswered{answer});
+            },
+            [&](const proto::WorldItem &item) { out.push_back(events::WorldItemAppeared{item}); },
+            [&](const proto::WorldItemTaken &taken) {
+              out.push_back(events::WorldItemTakenBy{taken});
+            },
+            [&](const proto::SharedItem &shared) {
+              if (shared.player != m_you)
+                out.push_back(events::SharedItemFrom{shared});
             },
             [&](const proto::Vitals &vitals) {
               // Ours is our game's: never taken from the network.
@@ -746,7 +846,40 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
     return;
   m_npcs.erase(gone.npc);
   m_npcHealth.erase(gone.npc);
+  m_npcHolds.erase(gone.npc);
   m_session->Broadcast(gone);
+}
+
+void Endpoint::SendNpcAction(const proto::NpcAction &action) {
+  if (IsHost() || !IsJoined() || m_ended)
+    return; // the host's own actions are its game's
+  auto mine = action;
+  mine.player = m_you;
+  m_session->Send(m_hostPeer, mine);
+}
+
+void Endpoint::SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply) {
+  if (!IsHost() || m_ended)
+    return;
+  if (const auto peer = PeerOf(player))
+    m_session->Send(*peer, reply);
+}
+
+void Endpoint::SendNpcHold(const proto::NpcHold &hold) {
+  if (!IsHost() || m_ended)
+    return;
+  if (hold.player == proto::kNoPlayer)
+    m_npcHolds.erase(hold.npc);
+  else
+    m_npcHolds[hold.npc] = hold;
+  m_session->Broadcast(hold);
+}
+
+void Endpoint::SendNpcCue(const proto::NpcCue &cue) {
+  if (!IsHost() || m_ended || cue.player == m_you)
+    return;
+  if (const auto peer = PeerOf(cue.player))
+    m_session->Send(*peer, cue);
 }
 
 void Endpoint::SendNpcHealth(const proto::NpcHealth &health) {
@@ -905,6 +1038,30 @@ void Endpoint::SendNoise(const proto::Noise &noise) {
   m_session->Send(m_hostPeer, mine);
 }
 
+void Endpoint::SendRegroup(proto::Regroup offer) {
+  if (!IsJoined() || m_ended)
+    return;
+  offer.from = m_you;
+  if (offer.label.size() > proto::kMaxRegroupLabel)
+    offer.label.resize(proto::kMaxRegroupLabel);
+  if (offer.to == m_you)
+    return;
+  if (IsHost())
+    Deliver(offer, offer.to, 0);
+  else
+    m_session->Send(m_hostPeer, offer);
+}
+
+void Endpoint::SendRegroupAnswer(proto::RegroupAnswer answer) {
+  if (!IsJoined() || m_ended || answer.to == proto::kNoPlayer || answer.to == m_you)
+    return;
+  answer.from = m_you;
+  if (IsHost())
+    Deliver(answer, answer.to, 0);
+  else
+    m_session->Send(m_hostPeer, answer);
+}
+
 void Endpoint::SetLocalVitals(proto::Vitals vitals) {
   vitals.revision = ++m_vitalsRevision;
   m_localVitals = vitals;
@@ -918,7 +1075,7 @@ void Endpoint::SendLocalVitalsNow() {
   m_lives[m_you] = *m_localVitals;
   if (IsHost()) {
     m_session->Broadcast(*m_localVitals);
-    CheckLost(m_deferred);
+    CheckLost(m_pending);
   } else {
     m_session->Send(m_hostPeer, *m_localVitals);
   }
@@ -1084,6 +1241,87 @@ void Endpoint::EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out,
   if (broadcast)
     m_session->Broadcast(none);
   out.push_back(events::RemoteTimeEffect{none});
+}
+
+void Endpoint::DropWorldItem(proto::WorldItem item) {
+  if (!IsJoined() || m_ended)
+    return;
+  item.id = 0;
+  item.dropper = m_you;
+  if (IsHost())
+    AddWorldItem(m_you, std::move(item), m_pending);
+  else
+    m_session->Send(m_hostPeer, item);
+}
+
+void Endpoint::TakeWorldItem(proto::WorldItemId id, std::uint8_t stack) {
+  if (!IsJoined() || m_ended)
+    return;
+  if (IsHost())
+    ClaimWorldItem(m_you, id, stack, std::nullopt, m_pending);
+  else
+    m_session->Send(m_hostPeer, proto::WorldItemTaken{id, stack, m_you});
+}
+
+void Endpoint::SendSharedItem(proto::SharedItem item) {
+  if (!IsJoined() || m_ended || !item.item.record)
+    return;
+  item.player = m_you;
+  if (IsHost()) {
+    m_session->Broadcast(item);
+  } else {
+    // A guest only tells what its own V got; corpses are the host's.
+    item.kind = proto::kSharedLooted;
+    item.npc = 0;
+    m_session->Send(m_hostPeer, item);
+  }
+}
+
+void Endpoint::AddWorldItem(proto::PlayerId dropper, proto::WorldItem item,
+                            std::vector<SessionEvent> &out) {
+  // Bounded: a guest cannot fill the host's memory with bags.
+  constexpr std::size_t kMaxWorldItems = 256;
+  std::erase_if(item.stacks, [](const auto &stack) { return !stack.record || !stack.quantity; });
+  if (item.stacks.empty() || item.stacks.size() > proto::kMaxWorldItemStacks ||
+      m_worldItems.size() >= kMaxWorldItems)
+    return;
+  item.id = m_nextWorldItem++;
+  item.dropper = dropper;
+  m_worldItems[item.id] = item;
+  m_worldTakers[item.id].assign(item.stacks.size(), proto::kNoPlayer);
+  m_session->Broadcast(item); // the dropper too: it learns the id of its bag
+  out.push_back(events::WorldItemAppeared{std::move(item)});
+}
+
+// First come, first served: the host's order of arrival decides.
+void Endpoint::ClaimWorldItem(proto::PlayerId player, proto::WorldItemId id, std::uint8_t stack,
+                              std::optional<net::PeerId> peer, std::vector<SessionEvent> &out) {
+  const auto answer = [&](proto::PlayerId winner) {
+    const proto::WorldItemTaken taken{id, stack, winner};
+    if (peer)
+      m_session->Send(*peer, taken);
+    else
+      out.push_back(events::WorldItemTakenBy{taken});
+  };
+  const auto item = m_worldItems.find(id);
+  if (item == m_worldItems.end() || stack >= item->second.stacks.size()) {
+    answer(proto::kNoPlayer); // gone (every stack taken), or never was
+    return;
+  }
+  auto &takers = m_worldTakers[id];
+  if (takers[stack] != proto::kNoPlayer) {
+    answer(takers[stack]); // someone was first
+    return;
+  }
+  takers[stack] = player;
+  item->second.stacks[stack].quantity = 0;
+  const proto::WorldItemTaken taken{id, stack, player};
+  m_session->Broadcast(taken);
+  out.push_back(events::WorldItemTakenBy{taken});
+  if (std::ranges::all_of(takers, [](auto taker) { return taker != proto::kNoPlayer; })) {
+    m_worldItems.erase(item);
+    m_worldTakers.erase(id);
+  }
 }
 
 std::optional<net::Stats> Endpoint::HostLinkStats() const {

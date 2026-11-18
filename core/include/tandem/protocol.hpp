@@ -256,7 +256,7 @@ struct NpcStates { // State channel, ~10 Hz: every NPC the host shares, in one g
 
 struct NpcGone { // Event channel
   NpcId npc{};
-  std::uint8_t reason{}; // 0 out of range or despawned, 1 dead
+  std::uint8_t reason{}; // kGone*: 0 out of range or despawned, 1 dead, 2 disposed of
   PlayerId killer{};     // dead: the player whose hit killed it (kNoPlayer: none)
   friend bool operator==(const NpcGone &, const NpcGone &) = default;
 };
@@ -626,6 +626,183 @@ struct StoryEffect {
   friend bool operator==(const StoryEffect &, const StoryEffect &) = default;
 };
 
+// NpcGone::reason values. A disposed body (in a container) is gone for good:
+// guests delete its proxy instead of leaving a corpse.
+inline constexpr std::uint8_t kGoneAway = 0, kGoneDead = 1, kGoneDisposed = 2;
+
+// A player's action that moves, animates or kills one of the host's NPCs:
+// grapples, takedowns, finishers, carrying and throwing bodies. The actor's
+// game plays its own side at once (its V's animation, on its proxy); this is
+// the request to the NPC's owner, the host, which validates it and plays the
+// NPC's side on the real one (scripts/tandem/Takedowns.reds).
+enum class NpcActionKind : std::uint8_t {
+  Grab = 1,     // grapple start; name: the takedown action (GrappleTarget...)
+  Release = 2,  // let go alive (break free, failed grapple, shove); name: why
+  Takedown = 3, // lethal takedown; name: the takedown effect tag (kill)
+  Knockout = 4, // non-lethal takedown; name: its effect tag (setUnconscious...)
+  Animate = 5,  // another takedown animation (aerial, boss); name: its tag
+  Finisher = 6, // name: the playFinisher effect; item: weapon record
+  PickUp = 7,   // pick up a body (unconscious or dead)
+  Drop = 8,     // put it down
+  Throw = 9,    // throw it; direction: the ragdoll impulse
+  Dispose = 10, // into a container; item: the device's entity id; name: kill or not
+};
+
+struct NpcAction {   // Event channel; guest to host, never relayed
+  PlayerId player{}; // who: set by the host from the connection
+  NpcId npc{};
+  NpcActionKind kind{};
+  std::uint64_t name{}; // CName hash, see NpcActionKind
+  std::uint64_t item{}; // TweakDB id or entity hash, see NpcActionKind
+  float amount{};       // finisher: the NPC's health (fraction) as the actor saw it
+  Vec3 direction;       // throw
+  friend bool operator==(const NpcAction &, const NpcAction &) = default;
+};
+
+// Why the host refused an NpcAction.
+inline constexpr std::uint8_t kRefusedGone = 1, kRefusedHeld = 2, kRefusedConditions = 3,
+                              kRefusedNotYours = 4, kRefusedTooFar = 5;
+
+struct NpcActionReply { // Event channel; host to the player who asked only
+  NpcId npc{};
+  NpcActionKind kind{};
+  bool accepted{};
+  std::uint8_t reason{}; // kRefused*, when refused
+  friend bool operator==(const NpcActionReply &, const NpcActionReply &) = default;
+};
+
+// Who holds or animates one of the host's NPCs, so every game shows it the
+// same way: its proxy goes into the grapple, onto the shoulder or into the
+// takedown with that player's V (puppet or own). Host to everyone, kept for
+// late joiners until released (player kNoPlayer) or gone.
+enum class NpcHoldKind : std::uint8_t {
+  None = 0,     // free again
+  Grappled = 1, // name: the takedown action that started it
+  Carried = 2,
+  Takedown = 3, // a takedown being played; name: its effect tag
+  Finisher = 4, // a finisher being played; name: the playFinisher effect
+};
+
+struct NpcHold { // Event channel
+  NpcId npc{};
+  PlayerId player{}; // the holder; kNoPlayer when released
+  NpcHoldKind how{};
+  std::uint64_t name{};
+  friend bool operator==(const NpcHold &, const NpcHold &) = default;
+};
+
+// The player's half of an NPC's reaction that single player gives "the
+// player" (on the host: its own V) when another V is the one concerned.
+// Host to that player's game only.
+enum class NpcCueKind : std::uint8_t {
+  CombatStart = 1, // the NPC entered combat with them: second chance, gag
+  PoiseBroken = 2, // their hit broke its guard: a finisher is offered
+};
+
+struct NpcCue { // Event channel
+  NpcId npc{};
+  PlayerId player{}; // whose game it is for
+  NpcCueKind cue{};
+  friend bool operator==(const NpcCue &, const NpcCue &) = default;
+};
+
+// A player offers others to come to them ("regroup", milestone 4): sent by
+// that player's game when it arrives from a fast travel, when a story scene
+// starts while someone is far (the story work), or when the player asks. The
+// others get the game's own style of prompt; accepting brings them there
+// (their own fast travel to the same point when they know it, with its
+// loading screen; else next to the player). Nobody is ever moved without
+// accepting: players stay free to be anywhere.
+// Event channel. The host stamps `from` from the connection and delivers it
+// to `to` only (kNoPlayer: every other player). Not kept: an offer is of the
+// moment; a newer one from the same player replaces the one shown.
+enum class RegroupReason : std::uint8_t {
+  FastTravel = 0, // `from` fast travelled here
+  Asked = 1,      // `from` asks to be joined (a regroup request)
+  Story = 2,      // a story scene starts beside `from` (label: what)
+  Teleport = 3,   // a quest moved `from` far away
+};
+inline constexpr std::size_t kMaxRegroupLabel = 96;
+
+struct Regroup {
+  PlayerId from{};
+  PlayerId to{};
+  std::uint32_t offer{}; // the sender's count of offers: an answer names it
+  RegroupReason reason{};
+  std::uint64_t point{};  // TweakDB id of the fast travel point `from` is at (0: none)
+  std::uint64_t marker{}; // that point's marker node (NodeRef hash; 0: none)
+  Vec3 position;          // where `from` stands
+  float yaw{};
+  std::string label; // shown with the prompt (a quest's title...); may be empty
+  friend bool operator==(const Regroup &, const Regroup &) = default;
+};
+
+// The answer to a Regroup (Event channel; the host stamps `from` and
+// delivers it to `to`, the offer's sender). `offer` 0: not an answer but a
+// player coming on their own (the regroup action).
+struct RegroupAnswer {
+  PlayerId from{};
+  PlayerId to{};
+  std::uint32_t offer{};
+  bool accepted{};
+  friend bool operator==(const RegroupAnswer &, const RegroupAnswer &) = default;
+};
+
+// Loot (docs/ARCHITECTURE.md, "Loot"). Corpses and containers are per
+// player: every game rolls its own loot, nothing is sent. What a V drops
+// from its inventory on purpose is a shared world item, the host's: it lies
+// in every game, and the first player to pick a stack up keeps it.
+using WorldItemId = std::uint32_t;
+inline constexpr std::size_t kMaxWorldItemStacks = 16;
+
+struct ItemStack {
+  std::uint64_t record{};   // TweakDB id of the item's record
+  std::uint32_t seed{};     // its ItemID's random seed: the same stats everywhere (0: stackable)
+  std::uint32_t quantity{}; // 0: taken
+  friend bool operator==(const ItemStack &, const ItemStack &) = default;
+};
+
+// A bag of stacks a V dropped (Event channel). The dropper's game sends it
+// with id 0 and a token of its own; the host numbers it, keeps it for late
+// joiners until every stack is taken, and sends it to everyone, the dropper
+// included (its game matches the token to the bag it already has).
+struct WorldItem {
+  WorldItemId id{};
+  PlayerId dropper{};    // set by the host from the connection
+  std::uint32_t token{}; // the dropper's own number for it
+  Vec3 position;
+  std::vector<ItemStack> stacks;
+  friend bool operator==(const WorldItem &, const WorldItem &) = default;
+};
+
+// A stack of a world item was picked up (Event channel). The picker's game
+// sends it to the host: a claim (the host sets `taker` from the connection).
+// The host grants the first claim and tells everyone who has it; a later
+// claimer hears the winner (kNoPlayer: the item was gone) and gives its own
+// pickup back.
+struct WorldItemTaken {
+  WorldItemId id{};
+  std::uint8_t stack{};
+  PlayerId taker{};
+  friend bool operator==(const WorldItemTaken &, const WorldItemTaken &) = default;
+};
+
+// Quest and important items are every player's (docs/ARCHITECTURE.md,
+// Loot): an item tagged Quest, a keycard or an iconic item that came into a
+// V's inventory (kSharedLooted: every other game gives it to its own V,
+// unless it has one; the host's own quests see it), or one on a host NPC's
+// corpse (kSharedOnCorpse, host only: guests put it on their proxy corpse
+// of `npc`). Event channel; a guest's goes to the host, which stamps it and
+// passes it on to the others.
+inline constexpr std::uint8_t kSharedLooted = 0, kSharedOnCorpse = 1;
+struct SharedItem {
+  PlayerId player{}; // who got it: set by the host from the connection
+  std::uint8_t kind{};
+  NpcId npc{}; // kSharedOnCorpse: whose corpse
+  ItemStack item;
+  friend bool operator==(const SharedItem &, const SharedItem &) = default;
+};
+
 // ---- Down and out (milestone 8, docs/ARCHITECTURE.md "Down, revive, respawn") ----
 
 // A V's life, owned and sent by that player's game when it changes (Event
@@ -670,7 +847,9 @@ using Message =
                  NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
                  Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
                  Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward, TimeEffect, StoryEffect, Vitals, Revive, GameOver>;
+                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
+                 NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
+                 Vitals, Revive, GameOver>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.
