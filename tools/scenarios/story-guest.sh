@@ -1,8 +1,8 @@
 # As a guest of a scripted host story: frozen, saves locked, journal, call, lines, hub, offer, reward; put back when the host leaves
 # shellcheck shell=bash disable=SC2317
-# Needs the test tandem.ini on the game machine to say quest_freeze = on
-# (the freeze is off by default); without it the journal is not mirrored.
-ensure join
+# The freeze is off by default (not yet proven in game): this scenario turns
+# it on; without it the journal is not mirrored.
+ensure join quest_freeze=on
 peer host --mode idle --body male --story tools/scenarios/story-host.story
 expect 'in the session as player' 30
 expect 'save: locked \(tandem\)' 20

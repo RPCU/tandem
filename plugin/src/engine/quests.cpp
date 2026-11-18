@@ -336,7 +336,10 @@ bool InstallQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle h
     g_target = nullptr;
     return false;
   }
-  log::Info("quest: freeze hook in ({} open-world phases keep running)", g_allowed.size());
+  log::Info(
+      "quest: node hook in ({})",
+      freeze ? std::format("freeze available, {} open-world phases keep running", g_allowed.size())
+             : "observing scenes only: tandem.ini quest_freeze = on for the freeze");
   return true;
 }
 

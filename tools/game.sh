@@ -15,7 +15,8 @@
 #                              which tandem.ini the game reads (the player's
 #                              own is kept as tandem.ini.player; player puts
 #                              it back)
-#   tools/game.sh ensure host|join  this build running in this role: deploys,
+#   tools/game.sh ensure host|join [KEY=VALUE...]  this build running in this
+#                              role (with these extra tandem.ini keys): deploys,
 #                              hot-reloads scripts-only changes, restarts only
 #                              when the DLL, tweaks or role changed
 #   tools/game.sh healthy      the game plays and its game thread ticks
@@ -277,6 +278,9 @@ role() {
     exit 1
     ;;
   esac
+  # Extra keys for a test (ensure ROLE KEY=VALUE...): one per line.
+  local extra
+  for extra in ${ini_extra:-}; do text+="${extra%%=*} = ${extra#*=}"$'\n'; done
   printf '%s' "$text" | remote "[ -e '$ini.player' ] || cp '$ini' '$ini.player'; cat > '$ini'"
   echo "role: ${text%%$'\n'*}"
 }
@@ -288,13 +292,21 @@ stamp() { cat build/windows/plugin/tandem.dll scripts/tandem/*.reds tweaks/tande
 #   ensure host|join  deploy if the build changed; reload scripts when only
 #                     scripts did (RedHotTools); restart when the DLL, the
 #                     tweaks or the role changed, or the game is not playing.
+#   ensure ROLE KEY=VALUE...  the same with these keys in tandem.ini (the
+#                     plugin reads it at start: other keys mean a restart).
 ensure() {
-  local want=$1 started now
+  local role_name=$1 want started now
+  shift
+  ini_extra="$*"
+  # The role and its extra keys, as one word.
+  want="$role_name${ini_extra:+,${ini_extra// /,}}"
   now=$(stamp)
   started=$(remote "cat '$dir/red4ext/plugins/tandem/.started' 2>/dev/null" || true)
   local current_role
   current_role=$(remote "sed -n 's/^role *= *//p' '$dir/red4ext/plugins/tandem/tandem.ini'")
-  if [ "$current_role" != "$want" ]; then role "$want" >/dev/null; fi
+  if [ "$current_role" != "$role_name" ] || [ "${started#* }" != "$want" ]; then
+    role "$role_name" >/dev/null
+  fi
   if [ "$started" = "$now $want" ] && running && healthy; then
     echo "game: running this build as $want"
     return
@@ -349,7 +361,10 @@ role)
   shift
   role "$@"
   ;;
-ensure) ensure "${2:?host or join}" ;;
+ensure)
+  shift
+  ensure "${@:?host or join}"
+  ;;
 healthy) healthy && echo healthy ;;
 reload) reload ;;
 peer)
