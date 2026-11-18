@@ -8,8 +8,9 @@ to build in steps. It decides what
 cites them as `QW §n` and `SC §n` and does not repeat them) and plans
 milestone 6 ("Story") of [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
 
-**Status: design, 2026-11-18. Desk research only: nothing here ran in game
-or in a session.**
+**Status: design, 2026-11-18. Step 1 is written (see ARCHITECTURE "Inside
+the plugin", Story) and spike S1 read offline; nothing here ran in game or
+in a session yet.**
 
 Tags, as in [`coop-npcs-combat.md`](coop-npcs-combat.md): `[S]` read in the
 vanilla scripts, `[R]` read in the RTTI dump, `[C]` Codeware's source, `[K]`
@@ -129,13 +130,29 @@ in a session the hook refuses every node except those tandem itself runs
 (a thread-local "tandem is executing" flag, as Codeware's own
 `QuestsSystem.ExecuteNode` call needs, `CW scripts/Quest/QuestsSystem.reds`).
 
-- What a refused node must return so that its phase simply waits (and
-  retries next frame) rather than taking an output socket or ending is
-  **not known** `[I]`: read the callers of the hash in the disassembler
-  (`tools/re/`) before writing it, and verify with spike S1 (§6). If the
-  return value cannot express "not yet", hook one level up
-  (`QuestPhaseInstance_ExecuteGraph` `779107884` [C]) or the quests
-  system's update.
+- What a refused node returns (spike S1, read offline 2026-11-18,
+  `engine-knowledge.md` §13.15): **1**, the engine's own result for a
+  disabled node: nothing is queued, the graph pass goes on, the phase
+  stays active. The engine does not retry the signal, so tandem holds it
+  (phase node path, node id, input socket) and gives it back through the
+  root phase's `ExecutePath` when the freeze ends: the guest's story
+  resumes where it stopped. Whether every kind of node resumes cleanly
+  that way is the in-game part of S1. Implemented in
+  `plugin/src/engine/quests.cpp`, off by default (`quest_freeze = on`).
+- **Per phase, not global** (decided 2026-11-18 with the region study,
+  `coop-regions.md` §1.4 point 5): the open world is quest phases too
+  (communities, vendors, NCPD hustles, city scenes, fixers), and a guest
+  away from the host must run its own surroundings. The filter: a phase
+  keeps running when its resource, or an ancestor's on the context's
+  phase stack, is one of Codeware's open-world phase resources
+  (`CW src/App/Quest/QuestPhaseRegistry.cpp:12-20`) or one added in
+  `tandem.ini` `quest_freeze_allow`, or when its node path extends the
+  path of one (sub-phases: each NCPD hustle is a child of
+  `open_world_minor_activities`); the root graph always runs. Every other
+  phase (main, side, street stories, gigs) waits. Phantom Liberty's own
+  open-world phases are not in Codeware's list: list them with the freeze
+  log (`quest: freezing phase …`) and add them. A solo gig (§5.2) will be
+  one more exception, by claim.
 - Behind a layout check like every native lever (ARCHITECTURE "Talking to
   the engine safely"); on a mismatch the feature is off and **the guest is
   refused story sync** (it can still play with the host, with its own

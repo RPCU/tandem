@@ -6,6 +6,7 @@ add_library(tandem_core STATIC
   src/session.cpp
   src/relay.cpp
   src/endpoint.cpp
+  src/story.cpp
   src/interpolation.cpp
   src/pose.cpp
   src/vehicle.cpp)

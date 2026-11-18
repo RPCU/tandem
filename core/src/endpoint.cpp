@@ -131,6 +131,10 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
     if (known == m_playerOfPeer.end())
       return;
     const auto player = known->second;
+    if (proto::IsStory(message)) {
+      OnGuestStory(event.peer, player, message, out);
+      return;
+    }
 
     std::visit(Overloaded{
                    [&](const proto::Ping &ping) {
@@ -261,6 +265,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_seats.erase(player);
   m_radios.erase(player);
   m_stealth.erase(player);
+  m_story.Forget(player);
   // Gone while in the pause menu: no longer pausing anyone.
   if (NotePaused(player, false)) {
     m_session->Broadcast(proto::Pause{player, false});
@@ -342,6 +347,9 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
     m_session->Send(peer, spawn);
   for (const auto &[npc, health] : m_npcHealth)
     m_session->Send(peer, health);
+  // The story so far: journal, tracked entry, call, choice hub, story states.
+  for (const auto &message : m_story.ForJoiner())
+    m_session->Send(peer, message);
   // Who is in their pause menu (the newcomer itself is not).
   const auto self = m_playerOfPeer.find(peer);
   for (const auto paused : m_paused)
@@ -371,6 +379,18 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
                                                         : "could not reach the host"});
     break;
   case Kind::Received:
+    if (proto::IsStory(*event.message)) {
+      // Only the host speaks for the story; our own relayed states are ours.
+      if (const auto *state = std::get_if<proto::StoryState>(&*event.message);
+          state && state->player == m_you)
+        break;
+      if (const auto *cursor = std::get_if<proto::ChoiceCursor>(&*event.message);
+          cursor && cursor->player == m_you)
+        break;
+      if (IsJoined())
+        out.push_back(events::Story{*event.message});
+      break;
+    }
     std::visit(
         Overloaded{
             [&](const proto::Welcome &welcome) {
@@ -800,6 +820,83 @@ void Endpoint::SendNoise(const proto::Noise &noise) {
 
 bool Endpoint::NotePaused(proto::PlayerId player, bool paused) {
   return paused ? m_paused.insert(player).second : m_paused.erase(player) > 0;
+}
+
+void Endpoint::OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
+                            std::vector<SessionEvent> &out) {
+  if (const auto *action = std::get_if<proto::PhoneAction>(&message)) {
+    auto mine = *action;
+    mine.player = player;
+    if (mine.action == proto::kPhoneDial) {
+      out.push_back(events::Story{mine});
+      return;
+    }
+    // The first answer wins; the call's new state goes to everyone.
+    if (!m_calls.TryAnswer(player, mine.action, mine.contact))
+      return;
+    out.push_back(events::Story{mine});
+    const auto call = *m_calls.Call();
+    m_story.Note(call);
+    m_session->Broadcast(call);
+  } else if (const auto *reply = std::get_if<proto::PhoneReply>(&message)) {
+    auto mine = *reply;
+    mine.player = player;
+    out.push_back(events::Story{mine});
+  } else if (const auto *cursor = std::get_if<proto::ChoiceCursor>(&message)) {
+    auto relayed = *cursor;
+    relayed.player = player;
+    m_session->Broadcast(relayed, peer);
+    out.push_back(events::Story{relayed});
+  } else if (const auto *state = std::get_if<proto::StoryState>(&message)) {
+    auto relayed = *state;
+    relayed.player = player;
+    m_story.Note(relayed);
+    m_session->Broadcast(relayed, peer);
+    out.push_back(events::Story{relayed});
+  }
+  // The rest (journal, calls, lines, hubs, rewards) is the host's to say.
+}
+
+void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
+  if (!IsJoined() || m_ended || !proto::IsStory(message))
+    return;
+  if (!IsHost()) {
+    // A guest speaks for itself, and only about what it may ask.
+    if (auto *action = std::get_if<proto::PhoneAction>(&message))
+      action->player = m_you;
+    else if (auto *reply = std::get_if<proto::PhoneReply>(&message))
+      reply->player = m_you;
+    else if (auto *cursor = std::get_if<proto::ChoiceCursor>(&message))
+      cursor->player = m_you;
+    else if (auto *state = std::get_if<proto::StoryState>(&message))
+      state->player = m_you;
+    else
+      return;
+    m_session->Send(m_hostPeer, message);
+    return;
+  }
+  if (std::holds_alternative<proto::PhoneAction>(message) ||
+      std::holds_alternative<proto::PhoneReply>(message))
+    return; // the host applies its own answers itself
+  if (auto *cursor = std::get_if<proto::ChoiceCursor>(&message))
+    cursor->player = m_you;
+  if (auto *state = std::get_if<proto::StoryState>(&message))
+    state->player = m_you;
+  if (const auto *call = std::get_if<proto::PhoneCall>(&message)) {
+    m_calls.Update(*call);
+    message = *m_calls.Call();
+  }
+  if (to != proto::kNoPlayer) {
+    // One guest (a reward): not part of the story a joiner gets.
+    for (const auto &[peer, player] : m_playerOfPeer)
+      if (player == to)
+        m_session->Send(peer, message);
+    return;
+  }
+  if (!std::holds_alternative<proto::QuestReward>(message) &&
+      !std::holds_alternative<proto::Subtitle>(message))
+    m_story.Note(message);
+  m_session->Broadcast(message);
 }
 
 std::optional<net::Stats> Endpoint::HostLinkStats() const {

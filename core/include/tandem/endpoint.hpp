@@ -10,6 +10,7 @@
 
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
+#include "tandem/story.hpp"
 
 #include <cstdint>
 #include <map>
@@ -130,6 +131,12 @@ struct HostWorld {
 struct PauseChanged {
   proto::Pause pause;
 };
+// A story message (proto::IsStory) for this game. Host: from a guest,
+// stamped with its player (PhoneAction only when it is the answer that
+// counts, story::CallArbiter). Guest: from the host.
+struct Story {
+  proto::Message message;
+};
 // The session is over (refused, host gone, timed out).
 struct Ended {
   std::string reason;
@@ -180,7 +187,7 @@ using SessionEvent =
                  events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
                  events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
                  events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-                 events::HostPlayerHack, events::VehicleHackOn>;
+                 events::HostPlayerHack, events::VehicleHackOn, events::Story>;
 
 class Endpoint {
 public:
@@ -240,6 +247,10 @@ public:
   // Our pause menu is open (paused) or closed. Kept: sent now if we are in
   // the session, else as soon as we are.
   void SetLocalPaused(bool paused);
+  // Story (milestone 6, proto::IsStory). Host: to every guest (to: one
+  // guest), kept for late joiners (story::Record). Guest: to the host, which
+  // relays ChoiceCursor and StoryState. Anything else is dropped.
+  void SendStory(proto::Message message, proto::PlayerId to = proto::kNoPlayer);
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
   // How hard our V is to see (kept: sent now if we are in the session, else
@@ -339,6 +350,11 @@ private:
   std::map<proto::PlayerId, proto::Stealth> m_stealth;
   void SendLocalStealthNow();
   std::uint32_t m_awarenessSeq{};
+  // Host: the story for late joiners, and who answered the call first.
+  story::Record m_story;
+  story::CallArbiter m_calls;
+  void OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
+                    std::vector<SessionEvent> &out);
   bool m_ended{};
   // Guest: the relay to try when the host does not answer directly.
   std::optional<net::RelayOptions> m_fallback;

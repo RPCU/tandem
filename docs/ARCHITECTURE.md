@@ -482,6 +482,58 @@ redscript natives (UI, events)              ENet socket
   distance text, rewritten after each native update: watch for flicker)
   and on the map tooltip, and that the marker follows a seated player's car
   copy.
+- **Story** (`scripts/tandem/Story.reds`, `Phone.reds`, `Dialogue.reds`,
+  `plugin/src/engine/quests.cpp`, `core/src/story.cpp`; milestone 6 step 1
+  of `research/coop-quests-design.md`). The host's game runs the story;
+  everything travels as the story messages (`Journal` … `QuestReward`,
+  one path through `Endpoint::SendStory` / `events::Story`; the host keeps
+  the journal, tracked entry, open call and hub for late joiners).
+  - _A guest's own story waits_: a hook on `QuestPhaseInstance::ExecuteNode`
+    (hash 3227858325, behind an RTTI layout check) refuses the nodes of the
+    guest's story phases while it is in a session, the way the engine
+    skips a disabled node (result 1, read offline: engine-knowledge §13.15),
+    holds each refused signal and gives it back through the root phase's
+    `ExecutePath` when the freeze ends. **Per phase, not global**:
+    open-world phases (communities, vendors, NCPD hustles, city scenes,
+    fixers: Codeware's list, plus `quest_freeze_allow`) and phases under
+    them keep running, so a guest away from the host runs its own
+    surroundings (`research/coop-regions.md`). **Off by default**
+    (`quest_freeze = on` to use it) until checked in game; without it a
+    guest gets calls, lines, hubs and rewards but not the journal or texts.
+  - _Saves_: a guest in a session never saves (`TandemStorySystem` overrides
+    `IsSavingLocked`, plus a `SaveLocksManager` lock and dropped autosaves).
+    Every journal entry the mirror changes keeps its state from before; on
+    leaving (the guest quits or the host is gone) the journal and tracked
+    entry go back, are checked, the freeze ends and saving unlocks. A
+    mismatch keeps saving locked and says "load your last save". The
+    design's final step (write one "back from co-op" save and reload it) is
+    a logged TODO: the guest goes on in place.
+  - _Journal, tracker, markers_: the host's journal (snapshot at join,
+    changes with their notify flag, so the guest gets the same toasts and
+    sounds) and tracked quest; quest pins follow the journal. Shown only on
+    a frozen guest. Entity-bound pins and objective counters: step 2.
+  - _Calls and texts_ (`Phone.reds`): the host's `PhoneSystem` phases go to
+    every phone; a guest presents them through its own `PhoneSystem`
+    (ringtone, incoming widget, audio call with the caller's portrait) with
+    its phone facts held back. Anyone answers: the first answer wins
+    (`story::CallArbiter` on the host's endpoint) and picks up the host's
+    phone. Texts come through the journal; a guest's reply goes to the host,
+    which applies it if the option is still open (first reply wins).
+  - _Dialogue_ (`Dialogue.reds`): the host's subtitles and its active choice
+    hub reach guests within 25 m (holocall lines and phone hubs: everyone),
+    drawn by the guest's own subtitle and hub widgets (a stand-in hub). A
+    guest moves its own cursor and can suggest; the host sees the
+    suggestion; the host's pick closes every hub. No story voice yet.
+  - _Scenes_: each game sends its V's scene tier (`StoryState`). A guest
+    within 30 m of the host in a tier 3+ scene has its weapons lowered, tier
+    4+ also invulnerable; a guest further than 100 m from a tier 4+ scene
+    gets an offer to join (the regroup itself: TODO).
+  - _Rewards_: the host's `OnRewardEvent` goes to the guests that took part
+    (within 150 m of the host as the quest moved or completed;
+    `story::Participation`); each guest gives its own V the reward
+    (`RPGManager.GiveReward`) once, and keeps it in a persistent ledger so
+    its own story pays nothing again for it.
+  - Not yet verified in game: scenarios `story-guest`, `story-host`.
 - **How NPCs see a remote V** (`scripts/tandem/Attitudes.reds`,
   `tweaks/tandem/attitudes.tweak`, `tweaks/tandem/puppet.tweak`): every
   puppet is in an attitude group of its own, `tandem_player_1` to `_3`
@@ -501,7 +553,8 @@ redscript natives (UI, events)              ENet socket
   puppet's group and how the NPCs around V see it next to V; scenario
   `puppet-attitude`. **Not yet verified in game** (engine-knowledge §13.12).
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name,
-  pose; `relay`, `relay_token`, `join` for the relay and join codes).
+  pose, story, quest_freeze, quest_freeze_allow; `relay`, `relay_token`,
+  `join` for the relay and join codes).
 
 ## Talking to the engine safely
 
@@ -640,16 +693,16 @@ hand).
 
 ## Testing without a second player
 
-| Level       | What                                                                   | Command                           |
-| ----------- | ---------------------------------------------------------------------- | --------------------------------- |
-| unit        | protocol round trips, strict decoding, sizes                           | `task test`                       |
-| loopback    | real host + guests over UDP in one process: join, relay, clock, leave  | `task test`                       |
-| relay       | protocol, codes, limits, amplification, real sockets, race detector    | `task relay:test`                 |
-| via relay   | a real relay process: join by code, fallback from direct, mock players | `task test` (`relay-loopback`)    |
-| mock player | `tandem-peer` as host or guest against the real game                   | `task peer -- host --mode mirror` |
-| natives     | `Natives.reds` matches `natives.cpp`: types, struct fields, alignment  | `task natives:check`              |
-| scenarios   | the real game against the mock player, checked on the game's log       | `task scenario -- all`            |
-| in game     | deploy the DLL, read its log                                           | `task deploy`, `task logs`        |
+| Level       | What                                                                       | Command                           |
+| ----------- | -------------------------------------------------------------------------- | --------------------------------- |
+| unit        | protocol round trips, strict decoding, sizes                               | `task test`                       |
+| loopback    | real host + guests over UDP in one process: join, relay, clock, leave      | `task test`                       |
+| relay       | protocol, codes, limits, amplification, real sockets, race detector        | `task relay:test`                 |
+| via relay   | a real relay process: join by code, fallback from direct, mock players     | `task test` (`relay-loopback`)    |
+| mock player | `tandem-peer` as host or guest against the real game                       | `task peer -- host --mode mirror` |
+| natives     | `Natives.reds`/`StoryNatives.reds` match `natives.cpp`/`story_natives.cpp` | `task natives:check`              |
+| scenarios   | the real game against the mock player, checked on the game's log           | `task scenario -- all`            |
+| in game     | deploy the DLL, read its log                                               | `task deploy`, `task logs`        |
 
 **Scenarios** (`tools/scenario.sh`, `tools/scenarios/*.sh`) are the
 in-game regression suite: each one puts the game in a role, drives the
@@ -677,6 +730,11 @@ game thread stop). Each feature verified in game gets a scenario.
   relay (`--relay-token` if it needs one), logging `join code K7Q-2M9`; as
   guest, `join --code K7Q-2M9 --relay …` joins by code, and `join ADDRESS
 --code … --relay …` tries ADDRESS first (`tests/relay_loopback.sh`).
+- **story** (milestone 6): `host --story FILE` plays a scripted host story
+  (journal snapshot and changes, tracked entry, call phases, lines, hubs, a
+  pick, scene tiers, a reward; `tools/scenarios/story-host.story`); as a
+  guest, `--answer N`, `--reply HASH`, `--suggest N` act on the host's
+  calls, texts and hubs, and every story message heard is logged.
 - **quickhacks**: `join --hack-npcs N` uploads `--hack-action` on one of
   the host's NPCs every N s (1.5 s) and then lands `--hack-effect`;
   `host --replay FILE --hack-player N` has a replayed NPC hack the guest's
@@ -717,17 +775,17 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
 
 Each milestone ends with something visible in game.
 
-| #   | Milestone           | Done when                                                                                                                                      |
-| --- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0   | Toolchain           | DLL built on Linux loads in the game and logs; mock player; relay image ✓                                                                      |
-| 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                                  |
-| 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)              |
-| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test)                                    |
-| 4   | Shared world basics | time, weather, police heat follow the host; tether and regroup on fast travel (time, weather ✓ 2026-11-18)                                     |
-| 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot through the host (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18)  |
-| 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests                                                                   |
-| 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join (relay and codes ✓ 2026-11-18, loopback) |
-| 8   | Co-op features      | revive, pings and shared markers, and what we add as we play                                                                                   |
+| #   | Milestone           | Done when                                                                                                                                                                  |
+| --- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Toolchain           | DLL built on Linux loads in the game and logs; mock player; relay image ✓                                                                                                  |
+| 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                                                              |
+| 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)                                          |
+| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test)                                                                |
+| 4   | Shared world basics | time, weather, police heat follow the host; tether and regroup on fast travel (time, weather ✓ 2026-11-18)                                                                 |
+| 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot through the host (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18)                              |
+| 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests (step 1 written: freeze, saves, journal, calls, texts, lines, hubs, rewards; to test in game) |
+| 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join (relay and codes ✓ 2026-11-18, loopback)                             |
+| 8   | Co-op features      | revive, pings and shared markers, and what we add as we play                                                                                                               |
 
 Alongside every milestone from 2 on: the simulated second game (record,
 replay, scripted players, network shaping) covers what that milestone
