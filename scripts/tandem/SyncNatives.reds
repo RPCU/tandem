@@ -23,6 +23,7 @@ public native class TandemSync extends IScriptable {
   // Guest: the NPCs the host shares, as the session's record has them.
   public static native func SharedNpcs() -> array<TandemSyncNpc>
   public static native func IsNpcShared(npc: Uint32) -> Bool
+  public static native func SharedNpcCount() -> Int32
   // The players in the session (us too).
   public static native func Players() -> array<TandemSyncPlayer>
   public static native func InSession(player: Uint32) -> Bool

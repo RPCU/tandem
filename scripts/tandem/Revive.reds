@@ -902,6 +902,11 @@ public class TandemRevive {
       if this.m_holding == 0u {
         TandemNative.Log("revive hold: nobody down");
       }
+    } else if Equals(command, "revive fresh") {
+      // (test) as if our V had never been revived: the next fall is a
+      // revivable down, not out (the 300 s cooldown of an earlier test).
+      this.m_revivedAt = -1000.0;
+      TandemNative.Log("revive fresh: no recent revive");
     } else if Equals(command, "revive report") {
       let health = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
       TandemNative.Log(s"revive report: our V life \(this.m_life), health \(health) %, protected \(this.m_protected), invulnerable \(this.m_invulnerable), released \(this.m_release), lost \(this.m_lost), \(this.UpOthers()) other(s) up, revived \(RoundF(this.m_now - this.m_revivedAt)) s ago");

@@ -9,7 +9,9 @@ expect 'puppet 6[0-9]{4}: clips walk' 30
 cmd npc count
 expect 'npcs shared: [1-9][0-9]*, own hidden'
 pause 10
-reject 'session ended'
+# Timed out under loss (the previous scenario's host saying goodbye, just
+# after the mark, is no failure).
+reject 'session ended: (the host is gone|could not reach the host)'
 pkill -x tandem-peer
 expect 'session ended' 60
 cmd npc count
