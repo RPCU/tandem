@@ -307,9 +307,30 @@ struct Pause {
   friend bool operator==(const Pause &, const Pause &) = default;
 };
 
+// One of the host's NPCs hit a guest's V (its puppet on the host's game).
+// The host's game ran the attacker's side of the hit (the NPC's weapon and
+// stats, range, its attack); the target's side (armour, resistances, dodge,
+// block and deflect, perks, difficulty, god mode, death) belongs to that
+// player's game, which runs the hit on its own V with the NPC's proxy as the
+// attacker. Host to that player only, never relayed to anyone else.
+struct PlayerHit {   // Event channel
+  PlayerId player{}; // whose V was hit
+  NpcId npc{};       // the attacker as the host shares it (0: not shared)
+  // Damage per type as the attacker's side left it, before the target's.
+  float physical{}, thermal{}, electric{}, chemical{};
+  std::uint8_t attackType{}; // gamedataAttackType (Ranged 10, Melee 7...)
+  std::uint8_t flags{};      // kHit*
+  float pierce{};            // the attacker's armour penetration, 0..1
+  Vec3 position;             // where it landed, and the way it went
+  Vec3 direction;
+  std::uint64_t attack{}; // TweakDB id of the attack record (0: unknown)
+  std::uint64_t weapon{}; // TweakDB id of the NPC's weapon item (0: none)
+  friend bool operator==(const PlayerHit &, const PlayerHit &) = default;
+};
+
 using Message = std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye,
                              PoseState, Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn,
-                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause>;
+                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause, PlayerHit>;
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

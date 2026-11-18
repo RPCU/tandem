@@ -49,6 +49,10 @@ public class TandemNpcs {
   // Our player id in the session, and the game time (Tick).
   private let m_you: Uint32;
   private let m_now: Float;
+  // Guest: the host's NPCs' hits on our V queued in our damage system, with
+  // the armour penetration the host sent for each (Combat.reds).
+  private let m_forwarded: array<ref<gameHitEvent>>;
+  private let m_forwardedPierce: array<Float>;
 
   public static func Range() -> Float {
     return 60.0;
@@ -79,7 +83,69 @@ public class TandemNpcs {
         this.HideOwn();
       }
       this.Follow(now);
+      this.TakePlayerHits();
     }
+  }
+
+  // ---- guest: the host's NPCs hitting our V ----
+
+  // Each hit runs on our V through our own damage system (the target's side
+  // of the hit by our game's rules), from the NPC's proxy when we have it.
+  private func TakePlayerHits() -> Void {
+    let damage = GameInstance.GetDamageSystem(this.m_game);
+    for hit in TandemNative.TakePlayerHits() {
+      let proxy: ref<ScriptedPuppet>;
+      let known = hit.npc != 0u ? this.FindProxy(hit.npc) : null;
+      if IsDefined(known) {
+        proxy = GameInstance.GetDynamicEntitySystem().GetEntity(known.id) as ScriptedPuppet;
+      }
+      let event = TandemCombat.PlayerHitEvent(this.m_game, hit, proxy);
+      if IsDefined(event) {
+        // The newest few: an entry leaves when its pipeline ends.
+        while ArraySize(this.m_forwarded) >= 16 {
+          ArrayErase(this.m_forwarded, 0);
+          ArrayErase(this.m_forwardedPierce, 0);
+        }
+        ArrayPush(this.m_forwarded, event);
+        ArrayPush(this.m_forwardedPierce, hit.pierce);
+        damage.QueueHitEvent(event, event.target);
+        TandemNative.Log(s"npcs: hit by npc \(hit.npc)\(IsDefined(proxy) ? "" : " (no proxy)"): \(hit.physical) physical, \(hit.thermal) thermal, \(hit.electric) electric, \(hit.chemical) chemical, type \(hit.attackType), attack \(TDBID.ToStringDEBUG(hit.attack))");
+      }
+    }
+  }
+
+  public func IsForwarded(hit: ref<gameHitEvent>) -> Bool {
+    return ArrayContains(this.m_forwarded, hit);
+  }
+
+  public func ForwardedPierce(hit: ref<gameHitEvent>, out pierce: Float) -> Bool {
+    let i = 0;
+    while i < ArraySize(this.m_forwarded) {
+      if this.m_forwarded[i] == hit {
+        pierce = this.m_forwardedPierce[i];
+        return true;
+      }
+      i += 1;
+    }
+    return false;
+  }
+
+  public func Forget(hit: ref<gameHitEvent>) -> Void {
+    let i = 0;
+    while i < ArraySize(this.m_forwarded) {
+      if this.m_forwarded[i] == hit {
+        ArrayErase(this.m_forwarded, i);
+        ArrayErase(this.m_forwardedPierce, i);
+        return;
+      }
+      i += 1;
+    }
+  }
+
+  // Host: the id we share one of our NPCs under (0: not shared).
+  public func NpcOf(id: EntityID) -> Uint32 {
+    let known = this.Find(id);
+    return IsDefined(known) ? known.npc : 0u;
   }
 
   // The session is over: the host's NPCs go, our crowd comes back. (Our own
@@ -447,10 +513,21 @@ public class TandemNpcs {
     proxy.dead = true;
     TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
     let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
-    // Our kill: the game credits our V (on-kill perks, XP, its own feedback).
+    // Our kill: the game credits our V (on-kill perks, its own feedback) and
+    // pays the skill XP our hits on it queued (Combat.reds): RewardKiller
+    // sends our V TargetNeutraliziedEvent, which processes the queue for this
+    // entity (final.reds 21851-21871, 45336-45346).
     let ours = killer != 0u && killer == this.m_you;
     if IsDefined(body) {
       body.Kill(ours ? GetPlayer(this.m_game) : null, false, false);
+    }
+    // Someone else's kill we helped with: our share is paid too (a co-op
+    // choice, coop-perks.md §2.4), and the queue does not keep it forever.
+    let player = GetPlayer(this.m_game);
+    if !ours && IsDefined(player) {
+      let pay = new ProcessQueuedCombatExperience();
+      pay.Set(player, proxy.id);
+      GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"PlayerDevelopmentSystem").QueueRequest(pay);
     }
     TandemNative.Log(s"npcs: proxy \(npc) died\(ours ? ", our kill" : "")");
   }

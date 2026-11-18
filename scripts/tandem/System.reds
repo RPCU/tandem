@@ -704,6 +704,26 @@ public class TandemSystem extends ScriptableSystem {
     return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfProxy(id) : 0u;
   }
 
+  // Host: the id one of our NPCs is shared under (0: none; Combat.reds).
+  public func SharedNpcOf(id: EntityID) -> Uint32 {
+    return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOf(id) : 0u;
+  }
+
+  // Guest: a hit of the host's NPC on our V, run by our damage system.
+  public func IsForwardedHit(hit: ref<gameHitEvent>) -> Bool {
+    return IsDefined(this.m_npcs) && this.m_npcs.IsForwarded(hit);
+  }
+
+  public func ForwardedPierce(hit: ref<gameHitEvent>, out pierce: Float) -> Bool {
+    return IsDefined(this.m_npcs) && this.m_npcs.ForwardedPierce(hit, pierce);
+  }
+
+  public func ForgetForwardedHit(hit: ref<gameHitEvent>) -> Void {
+    if IsDefined(this.m_npcs) {
+      this.m_npcs.Forget(hit);
+    }
+  }
+
   private func CarOwner(id: EntityID) -> Uint32 {
     for puppet in this.m_puppets {
       if EntityID.IsDefined(puppet.car) && puppet.car == id {

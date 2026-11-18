@@ -145,6 +145,11 @@ public:
   void SubmitNpcHealth(const proto::NpcHealth &health); // host
   void SubmitNpcHit(const proto::NpcHit &hit);          // guest
   void SubmitNpcEffect(const proto::NpcEffect &effect); // guest
+  // Host: our NPC hit a guest's puppet, game -> net (queued with the NPCs').
+  // Guest: the host's NPCs hit our V, net -> game (queued).
+  void SubmitPlayerHit(const proto::PlayerHit &hit);
+  void PushPlayerHit(const proto::PlayerHit &hit);
+  std::vector<proto::PlayerHit> TakePlayerHits();
   // Guest: which players the host's NPC has detected (bit player - 1).
   std::uint8_t NpcDetected(proto::NpcId npc);
   void SubmitNpcStates(const proto::NpcStates &states);
@@ -208,6 +213,7 @@ private:
   std::vector<proto::Message> m_npcOutbox;                                  // m_lock
   std::optional<proto::NpcStates> m_npcStates;                              // m_lock
   std::vector<NpcEvent> m_npcEvents;                                        // m_lock
+  std::vector<proto::PlayerHit> m_playerHits;                               // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::uint32_t m_loopSeq{};

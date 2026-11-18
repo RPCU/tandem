@@ -46,6 +46,33 @@ public native struct TandemNpcEvent {
   native let dz: Float;
 }
 
+// Guest: one of the host's NPCs hit our V (Combat.reds).
+public native struct TandemPlayerHit {
+  // the attacker as the host shares it (0: not shared)
+  native let npc: Uint32;
+  // damage per type, the attacker's side only
+  native let physical: Float;
+  native let thermal: Float;
+  native let electric: Float;
+  native let chemical: Float;
+  // gamedataAttackType
+  native let attackType: Int32;
+  // 1 weak spot, 2 critical, 4 melee, 8 lethal
+  native let flags: Int32;
+  // the attacker's armour penetration, 0..1
+  native let pierce: Float;
+  // where it landed, and its direction (plain floats, as above)
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let dx: Float;
+  native let dy: Float;
+  native let dz: Float;
+  // the attack record, and the NPC's weapon item record
+  native let attack: TweakDBID;
+  native let weapon: TweakDBID;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -84,6 +111,8 @@ public native class TandemNative extends IScriptable {
   public static native func SendNpcHealth(npc: Uint32, health: Float)
   public static native func SendNpcHit(npc: Uint32, damage: Float, flags: Int32, position: Vector4, direction: Vector4)
   public static native func SendNpcEffect(npc: Uint32, effects: array<TweakDBID>)
+  public static native func SendPlayerHit(player: Uint32, npc: Uint32, physical: Float, thermal: Float, electric: Float, chemical: Float, attackType: Int32, flags: Int32, pierce: Float, position: Vector4, direction: Vector4, attack: TweakDBID, weapon: TweakDBID)
+  public static native func TakePlayerHits() -> array<TandemPlayerHit>
   public static native func NpcDetected(npc: Uint32) -> Int32
   public static native func TakeNpcEvents() -> array<TandemNpcEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32

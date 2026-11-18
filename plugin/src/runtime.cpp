@@ -304,6 +304,22 @@ void Runtime::SubmitNpcEffect(const proto::NpcEffect &effect) {
   m_npcOutbox.push_back(effect);
 }
 
+void Runtime::SubmitPlayerHit(const proto::PlayerHit &hit) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(hit);
+}
+
+void Runtime::PushPlayerHit(const proto::PlayerHit &hit) {
+  std::lock_guard _(m_lock);
+  if (m_playerHits.size() < 256)
+    m_playerHits.push_back(hit);
+}
+
+std::vector<proto::PlayerHit> Runtime::TakePlayerHits() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_playerHits, {});
+}
+
 std::uint8_t Runtime::NpcDetected(proto::NpcId npc) {
   std::lock_guard _(m_lock);
   const auto it = m_npcDetected.find(npc);

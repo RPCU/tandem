@@ -2,6 +2,8 @@
 
 #include <doctest/doctest.h>
 
+#include <string_view>
+
 using namespace tandem::proto;
 
 namespace {
@@ -67,6 +69,19 @@ TEST_CASE("every message survives encoding") {
       .revision = 2, .gameTimeSeconds = 86400 + 3600 * 18, .weather = 0x1234, .timePaused = true});
   RoundTrips(Pause{.player = 3, .paused = true});
   RoundTrips(Pause{.player = 2, .paused = false});
+  RoundTrips(PlayerHit{.player = 2,
+                       .npc = 7,
+                       .physical = 29.5f,
+                       .thermal = 3.f,
+                       .electric = 0.5f,
+                       .chemical = 1.f,
+                       .attackType = 10,
+                       .flags = kHitWeakSpot | kHitCritical,
+                       .pierce = 0.25f,
+                       .position = {1, 2, 3},
+                       .direction = {0, -1, 0},
+                       .attack = 0x1234567890ULL,
+                       .weapon = 0x0abcdef012ULL});
 }
 
 TEST_CASE("an appearance past its limits is refused") {
@@ -88,6 +103,9 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(ChannelOf(NpcEffect{}) == Channel::Event);
   CHECK(ChannelOf(Pause{}) == Channel::Event);
   CHECK(IsReliable(Pause{}));
+  CHECK(ChannelOf(PlayerHit{}) == Channel::Event);
+  CHECK(IsReliable(PlayerHit{}));
+  CHECK(std::string_view(NameOf(PlayerHit{})) == "PlayerHit");
   // A guest cannot flood the host with effects.
   NpcEffect many{.npc = 1, .effects = std::vector<std::uint64_t>(kMaxNpcEffects + 1, 5)};
   CHECK_FALSE(Decode(Encode(many)));

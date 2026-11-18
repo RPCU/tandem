@@ -97,6 +97,10 @@ struct NpcHitBy {
 struct NpcEffectBy {
   proto::NpcEffect effect;
 };
+// One of the host's NPCs hit our V (guests only; never another player's hit).
+struct HitByNpc {
+  proto::PlayerHit hit;
+};
 // The host's world changed (guests only).
 struct HostWorld {
   proto::World world;
@@ -124,7 +128,7 @@ using SessionEvent =
                  events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
                  events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
-                 events::Ended, events::PlayerReturned>;
+                 events::Ended, events::PlayerReturned, events::HitByNpc>;
 
 class Endpoint {
 public:
@@ -160,6 +164,9 @@ public:
   // Guest only: we hit one of the host's NPCs.
   void SendNpcHit(const proto::NpcHit &hit);
   void SendNpcEffect(const proto::NpcEffect &effect);
+  // Host only: one of our NPCs hit `hit.player`'s V (its puppet here). Sent
+  // to that player alone; false when it is not a guest in the session.
+  bool SendPlayerHit(const proto::PlayerHit &hit);
   // Our pause menu is open (paused) or closed. Kept: sent now if we are in
   // the session, else as soon as we are.
   void SetLocalPaused(bool paused);

@@ -1753,3 +1753,66 @@ puppets' attitude group. With the mock player in front mode:
   169949). `GetThreats(false)` still read 0 while the NPC fought the
   puppet: not a usable measure of who it fights; its `CombatTarget`
   behaviour argument is. [2.5-verified]
+
+### 13.12 Splitting a hit between the attacker's game and the target's (2026-11-18)
+
+Read in the 2.50 scripts (`final.reds`), for NPC hits on a guest's puppet
+(the host runs the attacker's side, the guest's game the target's) and
+guests' skill XP. None of it run in game yet.
+
+- The pipeline (`ProcessPipeline` 84290): `PreProcess` 84558
+  (`ConvertDPSToHitDamage`, `CalculateDamageVariants`, quick exit,
+  invulnerability, immortality, death check, `ModifyHitData`), then
+  `Process` 84914 (returns at once on `DealNoDamage`, else the modifier
+  stages and `DealDamages` 85771), `ProcessHitReaction`, `PostProcess`
+  85801 (`ProcessStatusEffects` 85883). [2.5-untested]
+- Attacker's side, for an NPC instigator: `ConvertDPSToHitDamage` 84575
+  (divides by the weapon's `ProjectilesPerShot`; needs a weapon),
+  `CalculateSourceModifiers` 86219 (bonus vs. target type, charge, pierce,
+  ricochet, crit, damage multipliers, cyberware, stealth, spreading),
+  `ProcessEffectiveRange` 86554 (weapon range falloff, explosion distance).
+  `CalculateDamageVariants`, `ProcessLocalizedDamage`, `ProcessCriticalHit`
+  and `ProcessQuickHackModifiers` only act for a player instigator.
+  [2.5-untested]
+- Target's side: `ProcessDamageReduction` 84618 (resistances per damage
+  type, explosion/melee/DoT/boss/mech resistances), `ProcessDodge` 84781
+  (`IsDodging` stat → no damage), `ProcessEvasion` 84795, `ProcessMitigation`
+  84808, `ProcessPlayerIncomingDamageMultiplier` 84831 (target a
+  `PlayerPuppet`), `ProcessPlayerFixedPercentageOverride` 85107 and
+  `ProcessGrenadeExplosionDamageToPlayer` 85250 (difficulty),
+  `CalculateTargetModifiers` 86213 (damage reductions, `ProcessArmor` 86621,
+  on-vehicle mitigation), `ProcessBlockAndDeflect` 87114,
+  `ProcessOneShotProtection` 85069 (per-hit cap by difficulty), and in
+  `StatPoolsManager` overshield, armour pool, `CannotKillPlayer`, god-mode
+  immortality and minimum health (`ApplyDamageSingle` 219067,
+  `DrainStatPool` 219283). [2.5-untested]
+- **No flag skips the attacker's side.** `DeterministicDamage` is read only
+  by `ProcessCriticalHit` (86769), which already returns for a player
+  target; `CannotModifyDamage` by `ProcessCriticalHit`,
+  `ProcessOnVehicleMitigation` (86704: a target-side stage, wrongly skipped
+  for a forwarded hit) and the no-op `ClearDamage` (52652). So tandem wraps
+  the stages instead: on the host the target's stages return for a hit on a
+  puppet; on the guest the three attacker stages return for a forwarded
+  hit (`scripts/tandem/Combat.reds`). [2.5-untested]
+- `ProcessArmor`, `ProcessOneShotProtection`, `ConvertDPSToHitDamage` and
+  the melee block all need `attackData.GetWeapon()`; armour penetration
+  comes from `GetArmorPenetrationValue(weapon, hitEvent)` 87006 (protected,
+  wrappable). A forwarded hit carries the host's value. [2.5-untested]
+- `CheckForQuickExit` 86416 drops a hit with no source, and turns a hit
+  from an attacker friendly to the target into no damage unless the hit has
+  `hitFlag.FriendlyFire` (86453; the flag is read nowhere else, and only
+  removed for player instigators, 86413). [2.5-untested]
+- The attack record's status effects are applied by `ProcessStatusEffects`
+  from `GetAttackDefinition().GetRecord().StatusEffects()` (85930), and the
+  target's application-rate rolls (`ProcessStatusEffectApplicationStats` 85983) use the instigator's stats: a hit rebuilt from the same record and
+  the proxy as instigator brings them along. [2.5-untested]
+- Skill XP: `DrainStatPool` (219283-219327) calls
+  `RPGManager.AwardExperienceFromDamage(hitEvent, percentDrained)` 36969;
+  it requires an active, XP-awarding (`AwardsExperience`: not crowd, not
+  police) puppet target, a player instigator, and reads the weapon's item
+  type for the skill. The request is queued per target entity and paid by
+  `ProcessQueuedCombatExperience(entity)` (80726) when the player gets
+  `TargetNeutraliziedEvent` (45336), sent by `ScriptedPuppet.RewardKiller`
+  (21851) only to a `PlayerPuppet` killer; `FindAndRewardKiller` (12550)
+  uses the damage history, else the `Kill` instigator. No other kill XP is
+  given in scripts. [2.5-untested]
