@@ -61,6 +61,11 @@ tasks:
     cmds:
       - python3 tools/check-natives.py
 
+  scripts:check:
+    desc: "Compile scripts/tandem as the game does (its redscript, bundle and other mods' scripts); task scripts:check -- DIR for another copy"
+    cmds:
+      - GAME_HOST="{{.GAME_HOST}}" GAME_DIR="{{.GAME_DIR}}" tools/scripts-check.sh {{.CLI_ARGS}}
+
   scenario:
     desc: "In-game scenarios against the mock player (task scenario -- NAME... | all | list)"
     deps: [build]
@@ -75,7 +80,7 @@ tasks:
 
   deploy:files:
     desc: "deploy without building: the DLL already in build/ (tools/remote.sh brought it)"
-    deps: [natives:check]
+    deps: [natives:check, scripts:check]
     cmds:
       - ssh {{.GAME_HOST}} 'mkdir -p "{{.PLUGIN_DIR}}" "{{.SCRIPTS_DIR}}" "{{.TWEAKS_DIR}}"'
       - rsync --protect-args -t build/windows/plugin/tandem.dll build/windows/plugin/tandem.pdb "{{.GAME_HOST}}:{{.PLUGIN_DIR}}/"
@@ -86,6 +91,7 @@ tasks:
 
   reload:
     desc: "Send scripts and tweaks to the running game and hot-reload them (RedHotTools); no restart"
+    deps: [scripts:check]
     cmds:
       - rsync --protect-args -rt --delete scripts/tandem/ "{{.GAME_HOST}}:{{.SCRIPTS_DIR}}/"
       - rsync --protect-args -rt --delete tweaks/tandem/ "{{.GAME_HOST}}:{{.TWEAKS_DIR}}/"
@@ -157,6 +163,7 @@ tasks:
       - task: relay:test
       - task: build:plugin
       - task: natives:check
+      - task: scripts:check
       - task: k8s:check
 
   fmt:
