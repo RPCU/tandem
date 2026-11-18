@@ -824,17 +824,19 @@ revive down|hold|report`; scenarios `revive-peer`, `revive-game`,
   when a player leaves). Every V with a Sandevistan or Kerenzikov on has a
   **time bubble**: the NPCs within 50 m of it are slowed by its factor, for
   everyone. The host does it to its real NPCs with the per-entity dilation
-  (`SetIndividualTimeDilation`, the local global factor ignored); each
-  guest computes the same bubbles (same core code, same messages) for its
-  proxies, so they animate at the speed they move. Membership is sticky
+  (`SetIndividualTimeDilation`, the local global factor ignored); guests
+  see it through their proxies' motion (the same bubbles are computed
+  there, same core code, but entities tandem's own movement controller
+  drives, proxies and puppets, get no per-entity dilation). Membership is sticky
   until the bubble ends; an NPC in several takes the smallest factor; when
   a bubble ends its NPCs go back together. The owner keeps its own
   single-player slow motion, except the host, whose global factor is taken
   back within the frame (re-set at normal speed under the same reason, so
-  the state machine carries on) unless `time_host = full`. A game whose
-  world runs dilated exempts what the network drives (proxies, puppets) to
-  their true speed. The plugin calls `TandemTime.Frame` every frame
-  (`plugin/src/main.cpp`). Scenario `time`; not yet run in game.
+  the state machine carries on) unless `time_host = full`, where the host
+  exempts the NPCs it shares instead. It runs from `TandemSystem.Tick`
+  once the world plays, never from the plugin's per-frame call: there it
+  crashed the game loading a save and froze it right after "playing"
+  (2026-11-18; suspects in engine-knowledge §13.15). Scenario `time`.
 - **Fast travel together** (`scripts/tandem/Travel.reds`, milestone 4):
   no tether. When our V arrives from a fast travel (seen where vanilla
   performs it, a wrap of `FastTravelSystem.PerformFastTravel`; arrived
@@ -1610,8 +1612,7 @@ in-game tests still owed; none of it tested in a session yet):
     the other's bubble holds them.
   - _Scanner and quickhack panel, Focus, Deadeye's reload, Berserk, melee
     hit stop, deflect_: local only, no bubble. A guest keeps them on its
-    screen (proxies and puppets exempted, so the shared world shows at its
-    true speed); the host drops their world part. Others see the V as it
+    screen; the host drops their world part. Others see the V as it
     is (standing, scanning).
   - _Second chance_ (its dilation is in TweakDB, reason unknown): any
     other dilation left on the host is logged to find it.
