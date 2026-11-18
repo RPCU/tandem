@@ -48,7 +48,9 @@ TEST_CASE("the players digest leaves out what is the viewer's own") {
   std::map<proto::PlayerId, proto::Stealth> stealth;
   std::set<proto::PlayerId> paused;
   std::map<proto::PlayerId, proto::TimeEffect> time;
-  const consistency::PlayersView view{roster, looks, held, seats, radios, stealth, paused, time};
+  std::map<proto::PlayerId, proto::Vitals> lives;
+  const consistency::PlayersView view{roster,  looks,  held, seats, radios,
+                                      stealth, paused, time, lives};
   const auto before = consistency::PlayersDigest(view, 2);
   // The guest's own look and pause are its game's: the host's record of
   // them does not count in the guest's digest.

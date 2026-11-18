@@ -23,18 +23,22 @@ Hasher &Hasher::Add(std::string_view text) {
   return *this;
 }
 
-std::uint32_t WorldDigest(const std::optional<proto::World> &world) {
+std::uint32_t WorldDigest(const std::optional<proto::World> &world,
+                          const std::optional<proto::Difficulty> &difficulty) {
   Hasher hash;
   if (world)
     hash.Add(std::uint64_t{world->revision})
         .Add(static_cast<std::uint64_t>(world->gameTimeSeconds))
         .Add(world->weather)
         .Add(std::uint64_t{world->timePaused});
+  if (difficulty)
+    hash.Add(std::uint64_t{0xD0}).Add(std::uint64_t{difficulty->level});
   return hash.Value();
 }
 
 std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
-                        const std::map<proto::NpcId, proto::NpcHealth> &health) {
+                        const std::map<proto::NpcId, proto::NpcHealth> &health,
+                        const std::map<proto::NpcId, proto::NpcHold> &holds) {
   Hasher hash;
   for (const auto &[id, spawn] : npcs) {
     hash.Add(std::uint64_t{id}).Add(spawn.record).Add(spawn.appearance);
@@ -42,6 +46,10 @@ std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
     // died or went is no one's business.
     if (const auto it = health.find(id); it != health.end())
       hash.Add(it->second.health);
+    if (const auto it = holds.find(id); it != holds.end())
+      hash.Add(std::uint64_t{0xE0})
+          .Add(std::uint64_t{it->second.player})
+          .Add(std::uint64_t{static_cast<std::uint8_t>(it->second.how)});
   }
   return hash.Value();
 }
@@ -97,6 +105,10 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
   for (const auto &[id, t] : players.time)
     if (id != self)
       hash.Add(std::uint64_t{id}).Add(std::uint64_t{t.abilities}).Add(t.scale);
+  hash.Add(std::uint64_t{0xA7});
+  for (const auto &[id, v] : players.lives)
+    if (id != self && v.life != proto::Life::Up)
+      hash.Add(std::uint64_t{id}).Add(std::uint64_t{static_cast<std::uint8_t>(v.life)});
   return hash.Value();
 }
 
@@ -160,7 +172,18 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<PhoneAction>(message) ||
          std::holds_alternative<PhoneReply>(message) || std::holds_alternative<Subtitle>(message) ||
          std::holds_alternative<ChoiceCursor>(message) ||
-         std::holds_alternative<QuestReward>(message);
+         std::holds_alternative<QuestReward>(message) ||
+         // Takedowns, regroup, loot, revive, hit outcomes: each counts.
+         std::holds_alternative<NpcAction>(message) ||
+         std::holds_alternative<NpcActionReply>(message) ||
+         std::holds_alternative<NpcCue>(message) || std::holds_alternative<Regroup>(message) ||
+         std::holds_alternative<RegroupAnswer>(message) ||
+         std::holds_alternative<WorldItem>(message) ||
+         std::holds_alternative<WorldItemTaken>(message) ||
+         std::holds_alternative<SharedItem>(message) || std::holds_alternative<Revive>(message) ||
+         std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
+         std::holds_alternative<NpcStrike>(message) || std::holds_alternative<NpcWound>(message) ||
+         std::holds_alternative<AreaHit>(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

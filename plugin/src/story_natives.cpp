@@ -8,6 +8,7 @@
 
 #include "config.hpp"
 #include "engine/quests.hpp"
+#include "engine/scenes.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
@@ -159,7 +160,8 @@ std::uint8_t Byte(std::int32_t value) { return static_cast<std::uint8_t>(value);
 
 struct TandemStory : Red::IScriptable {
   static bool StoryOn() {
-    return Runtime::Get().config.story && Runtime::Get().config.role != Config::Role::Off;
+    // The chosen session (tandem.ini's or the co-op menu's).
+    return Runtime::Get().config.story && Runtime::Get().ChosenRole() != Config::Role::Off;
   }
 
   // The quest freeze (engine/quests.cpp): there (tandem.ini quest_freeze =
@@ -282,6 +284,25 @@ struct TandemStory : Red::IScriptable {
     Story::Get().Send(proto::StoryEffect{.effect = effect.value, .applied = applied});
   }
 
+  // The scene our game plays now (its node ran in the last 3 s): 0 none or
+  // not known yet, 1 important, 2 private (minor), 3 private (romance).
+  static std::int32_t SceneClass() {
+    std::string why;
+    return static_cast<std::int32_t>(engine::ClassifyRecentScene(3000, why));
+  }
+
+  // Our V is in a private scene: held where it began for the others, its
+  // pose not sent.
+  static void SetPrivate(bool on) {
+    Story::Get().SetPrivate(on);
+    log::Info("story: our private scene {}", on ? "begins: held for the others" : "is over");
+  }
+
+  // Another player is in a private scene: its puppet idles on its own.
+  static void PausePose(std::uint32_t player, bool paused) {
+    Story::Get().PausePose(player, paused);
+  }
+
   // A dialogue line's id as a number and back (the script cannot build one).
   static Red::CRUID LineId(std::uint64_t line) {
     Red::CRUID id{};
@@ -335,6 +356,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(QuestMoved);
   RTTI_METHOD(Reward);
   RTTI_METHOD(SendEffect);
+  RTTI_METHOD(SceneClass);
+  RTTI_METHOD(SetPrivate);
+  RTTI_METHOD(PausePose);
   RTTI_METHOD(LineId);
   RTTI_METHOD(LineValue);
 });

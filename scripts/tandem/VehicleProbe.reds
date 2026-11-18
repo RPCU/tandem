@@ -85,7 +85,7 @@ public class TandemVehicleProbe {
     let angle = t * TandemVehicleProbe.Speed() / TandemVehicleProbe.Radius();
     // Facing along the circle: yaw in degrees, 0 = +Y.
     let heading = Rad2Deg(angle) + 180.0;
-    GameInstance.GetTeleportationFacility(this.m_game).Teleport(vehicle, target, new EulerAngles(0.0, 0.0, heading));
+    GameInstance.GetTeleportationFacility(this.m_game).Teleport(vehicle, target, TandemYawAngles(heading));
     this.m_last = target;
     this.m_haveLast = true;
     this.m_frames += 1;

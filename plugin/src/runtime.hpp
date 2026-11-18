@@ -6,6 +6,7 @@
 #include "config.hpp"
 
 #include "tandem/consistency.hpp"
+#include "tandem/hosts.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
@@ -20,7 +21,9 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tandem::plugin {
@@ -60,6 +63,32 @@ struct HackEvent {
   std::uint64_t atUs{};     // when it arrived (steady clock): a PlayerHack goes stale
 };
 
+// Grapples, takedowns, finishers and carried bodies (Takedowns.reds), for
+// the scripts: a guest's request (host), the host's answer to ours, who holds
+// an NPC, our half of an NPC's reaction (guests).
+struct ActionEvent {
+  enum class Kind : std::int32_t { Request = 1, Reply = 2, Hold = 3, Cue = 4 };
+  Kind kind{};
+  proto::NpcId npc{};
+  proto::PlayerId player{}; // Request: who asks; Hold: the holder; Cue: us
+  std::uint8_t action{};    // Request, Reply: proto::NpcActionKind; Hold: NpcHoldKind; Cue: cue
+  std::uint64_t name{};
+  std::uint64_t item{};
+  float amount{};
+  proto::Vec3 direction;
+  bool accepted{};
+  std::uint8_t reason{};
+};
+
+// Fast travel together (scripts/tandem/Travel.reds): an offer to come to
+// another player, or an answer to ours, for the scripts.
+struct RegroupEvent {
+  enum class Kind : std::int32_t { Offer = 1, Answer = 2 };
+  Kind kind{};
+  proto::Regroup offer;        // Offer
+  proto::RegroupAnswer answer; // Answer
+};
+
 // NPC proxies use the player-puppet tracks and controller under these ids.
 inline constexpr proto::PlayerId kNpcPuppetBase = 0x10000;
 
@@ -79,16 +108,70 @@ struct ScriptEvent {
   proto::Body body{};
 };
 
+// The session the next Start runs: tandem.ini's until the co-op menu picks
+// another (scripts/tandem/Coop.reds).
+struct SessionChoice {
+  Config::Role role{Config::Role::Off};
+  std::string address; // join: the host
+  std::uint16_t port{};
+  // join: the host's join code (through tandem.ini's relay; "" by address),
+  // and whether the address is tried too (Config::addressSet).
+  std::string joinCode;
+  bool addressSet{};
+  bool fromMenu{};
+};
+
+// How the session is doing, for the co-op menu (net thread writes, game
+// thread reads).
+struct SessionStatus {
+  enum class State : std::int32_t {
+    Off = 0,        // no session
+    Starting = 1,   // chosen, the net thread is setting up
+    Connecting = 2, // guest: waiting for the host's welcome
+    InSession = 3,  // hosting, or welcomed by the host
+    Retrying = 4,   // guest: the session ended or the host was not reached; again in 5 s
+    Failed = 5,     // host: could not open the port (the thread gave up)
+  };
+  struct Player {
+    proto::PlayerId id{};
+    std::string name;
+    std::int32_t pingMs{-1}; // -1: unknown, or ourselves
+  };
+  State state{State::Off};
+  std::string detail; // why it ended or failed
+  proto::PlayerId you{}, host{};
+  std::vector<Player> players; // us included
+};
+
 class Runtime {
 public:
   static Runtime &Get();
 
+  // tandem.ini, as loaded (the defaults; the choice below overrides the role).
   Config config;
 
-  // Game thread: the local V exists; start the session once.
+  // Game thread: the local V exists; start the chosen session once.
   void Start(proto::Body body);
   void Stop();
   bool Started() const;
+
+  // Game thread (co-op menu): what the next session is. A running session
+  // stops first; scripts start the new one (Start) when a game is loaded.
+  void Choose(SessionChoice choice);
+  // Back to tandem.ini's choice (the main menu shows: a menu choice was for
+  // the game the player left).
+  void ResetChoice();
+  SessionChoice Choice() const;
+  Config::Role ChosenRole() const;
+
+  // Net thread -> game thread: how the session is doing.
+  void SetStatus(SessionStatus status);
+  SessionStatus Status() const;
+
+  // The hosts this game joined, newest first (config.recentFile). Read on
+  // the game thread, written by the net thread when a host welcomes us.
+  std::vector<hosts::Recent> RecentHosts() const;
+  void RememberHost(const hosts::Target &target, std::string name);
 
   // tandem-relay, net thread -> game thread: the host's join code to show
   // ("K7Q-2M9", "" none yet or no relay) and what the link is doing (""
@@ -191,6 +274,14 @@ public:
   void NotePlayerName(proto::PlayerId player, std::string name);
   std::string PlayerName(proto::PlayerId player);
 
+  // Regroup offers and answers: ours, game -> net (queued; offers numbered
+  // here); the others', net -> game (queued).
+  std::uint32_t SubmitRegroup(proto::Regroup offer);
+  void SubmitRegroupAnswer(const proto::RegroupAnswer &answer);
+  std::vector<proto::Message> TakeRegroupOutbox();
+  void PushRegroupEvent(RegroupEvent event);
+  std::vector<RegroupEvent> TakeRegroupEvents();
+
   // Host: its NPCs, game -> net (spawns and removals queued, states newest).
   // Guest: the host's NPCs, net -> game (events queued; states feed the
   // tracks of kNpcPuppetBase + npc).
@@ -236,12 +327,64 @@ public:
   void PushRemoteNoise(const proto::Noise &noise);
   std::vector<proto::Noise> TakeRemoteNoises();
 
+  // Down and out (scripts/tandem/Revive.reds): our V's life, game -> net
+  // (newest only); every other player in the session with its life (up
+  // unless it said otherwise), net -> game (a snapshot + a count of
+  // changes); revives, ours to send and those for our V (queued); how many
+  // times the session was lost (no V up).
+  void SubmitLocalVitals(const proto::Vitals &vitals);
+  std::optional<proto::Vitals> TakeLocalVitals();
+  void SetOthersLives(std::vector<proto::Vitals> others);
+  std::vector<proto::Vitals> OthersLives(std::uint32_t &changes);
+  void SubmitRevive(const proto::Revive &revive);
+  std::vector<proto::Revive> TakeLocalRevives();
+  void PushRevive(const proto::Revive &revive);
+  std::vector<proto::Revive> TakeRevives();
+  void NoteSessionLost();
+  std::uint32_t SessionLosses();
+
   // Quickhacks: messages for the session, game -> net (queued); what the
   // session says about them, net -> game (queued).
   void SubmitHack(const proto::Message &message);
   std::vector<proto::Message> TakeHackOutbox();
   void PushHackEvent(const HackEvent &event);
   std::vector<HackEvent> TakeHackEvents();
+  // NPC animation (scripts/tandem/NpcAnims.reds). Host, game -> net: states
+  // that changed (batched into NpcAnims in the NPC outbox, in order with the
+  // spawns) and shots. Guest, net -> game: both queued for the scripts.
+  void SubmitNpcAnim(const proto::NpcAnim &anim);
+  void SubmitNpcShot(const proto::NpcShot &shot);
+  void PushNpcAnims(const proto::NpcAnims &anims);
+  std::vector<proto::NpcAnim> TakeNpcAnims();
+  void PushNpcShot(const proto::NpcShot &shot);
+  std::vector<proto::NpcShot> TakeNpcShots();
+
+  // Grapples, takedowns, carried bodies: requests (guest) and holds and
+  // cues (host) go out with the NPC outbox; answers to one player separately.
+  void SubmitNpcAction(const proto::NpcAction &action);                                  // guest
+  void SubmitNpcHold(const proto::NpcHold &hold);                                        // host
+  void SubmitNpcCue(const proto::NpcCue &cue);                                           // host
+  void SubmitNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply); // host
+  std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> TakeNpcReplies();
+  void PushActionEvent(const ActionEvent &event);
+  std::vector<ActionEvent> TakeActionEvents();
+
+  // A puppet (player or NPC proxy) the controller must leave where it is:
+  // something else places it (a grapple workspot, a carrier's shoulder).
+  // Game thread writes, the movement controller reads.
+  void HoldPuppet(proto::PlayerId player, bool hold);
+  bool IsPuppetHeld(proto::PlayerId player) const;
+  // Loot (scripts/tandem/Loot.reds): our drops and pickup claims (WorldItem,
+  // WorldItemTaken), game -> net; world items appearing and stacks taken,
+  // net -> game. Both queued, bounded.
+  void SubmitLoot(proto::Message message);
+  std::vector<proto::Message> TakeLootOutbox();
+  void PushLoot(proto::Message message);
+  std::vector<proto::Message> TakeLoot();
+
+  // Our player id while in a session (0: none), set by the net thread.
+  void SetYou(proto::PlayerId you) { m_you.store(you); }
+  proto::PlayerId You() const { return m_you.load(); }
 
   // Consistency (docs/ARCHITECTURE.md). Net thread -> game thread: the NPCs
   // the host shares as our session's record has them (guest: what our game
@@ -293,6 +436,10 @@ public:
   // The animation thread saw a puppet whose movement needs our controller.
   void RequestController(std::uint64_t entityHash);
   bool TakeControllerRequest(proto::PlayerId player);
+  // Animation thread -> game thread: the controller could not bring this
+  // puppet's body to its target (a ledge, a refused move): teleport it there.
+  void RequestSnap(proto::PlayerId player);
+  bool TakeSnap(proto::PlayerId player);
 
 private:
   struct PuppetSlot {
@@ -303,6 +450,9 @@ private:
 
   mutable std::mutex m_lock; // session lifecycle, local outbox, events
   std::unique_ptr<NetThread> m_net;
+  SessionChoice m_choice; // m_lock
+  SessionStatus m_status; // m_lock
+  mutable std::mutex m_recentLock;
   proto::Body m_body{};                   // m_lock: the last Start's
   std::string m_relayCode, m_relayStatus; // m_lock
   std::optional<proto::PlayerState> m_local;
@@ -330,6 +480,14 @@ private:
   std::vector<consistency::Timed<proto::PlayerHit>> m_playerHits;                    // m_lock
   std::vector<proto::Message> m_hackOutbox;                                          // m_lock
   std::vector<HackEvent> m_hackEvents;                                               // m_lock
+  std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> m_npcReplies;       // m_lock
+  std::vector<ActionEvent> m_actionEvents;                                           // m_lock
+  mutable std::mutex m_heldLock;
+  std::set<proto::PlayerId> m_heldPuppets;               // m_heldLock
+  std::vector<proto::Message> m_lootOutbox, m_lootInbox; // m_lock
+  std::atomic<proto::PlayerId> m_you{0};
+  std::vector<proto::NpcAnim> m_npcAnimsIn;                                             // m_lock
+  std::vector<proto::NpcShot> m_npcShotsIn;                                             // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::uint32_t m_loopSeq{};
@@ -364,6 +522,16 @@ private:
   std::map<proto::PlayerId, proto::TimeEffect> m_remoteTimes; // m_lock
   std::uint32_t m_remoteTimeChanges{};                        // m_lock
   sync::TimeBubbles m_bubbles;                                // game thread
+  std::vector<proto::Message> m_regroupOutbox;                // m_lock
+  std::vector<RegroupEvent> m_regroupEvents;                  // m_lock
+  std::uint32_t m_regroupOffers{};                            // m_lock
+  std::optional<proto::Vitals> m_localVitals;                 // m_lock
+  std::vector<proto::Vitals> m_othersLives;                   // m_lock
+  std::uint32_t m_othersLivesChanges{};                       // m_lock
+  std::vector<proto::Revive> m_localRevives, m_revives;       // m_lock
+  std::uint32_t m_sessionLosses{};                            // m_lock
+  std::mutex m_snapsLock;
+  std::set<proto::PlayerId> m_snaps; // m_snapsLock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin

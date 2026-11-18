@@ -31,10 +31,14 @@
 #                              respawn | inspect | bodies | probe | probe stop | despawn |
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
 #                              vehicle ride | vehicle unride | vehicle clear | where | npcs |
-#                              npc count | markers |
+#                              npc count | npc anims | markers |
 #                              teleport home | teleport X Y Z [YAW] |
 #                              proxy test [record] | proxy clear |
-#                              pose hook | pose report | pose watch [3] | pose copy [off]
+#                              pose hook | pose report | pose watch [3] | pose copy [off] |
+#                              coop status | coop host [PORT] | coop join ADDRESS[:PORT] |
+#                              coop leave | coop menu PAGE | coop pick TEXT
+#                              (the co-op menu: in game any time; menu and pick drive
+#                              an open main or pause menu, pages root coop host join save)
 #
 # The game machine runs Steam in a Sway session (headless output for Sunshine)
 # and ydotoold for input; GAME_HOST and GAME_DIR override the defaults.
@@ -296,16 +300,22 @@ ensure() {
   if running && healthy && [ "${started#* }" = "$want" ] &&
     [ "$(remote "cat '$dir/red4ext/plugins/tandem/.started-dll' 2>/dev/null" || true)" = "$dll" ] &&
     [ "$(remote "cat '$dir/red4ext/plugins/tandem/.started-tweaks' 2>/dev/null" || true)" = "$(cat tweaks/tandem/*.tweak | sha256sum | cut -c1-16)" ]; then
-    task deploy >/dev/null
+    deploy
     if reload 2>/dev/null; then
       remote "echo '$now $want' > '$dir/red4ext/plugins/tandem/.started'"
       return
     fi
   fi
-  task deploy >/dev/null
+  deploy
   start
   remote "cd '$dir/red4ext/plugins/tandem'; echo '$now $want' > .started; echo '$dll' > .started-dll; \
     echo '$(cat tweaks/tandem/*.tweak | sha256sum | cut -c1-16)' > .started-tweaks"
+}
+
+# TANDEM_PREBUILT=1: install the DLL already in build/ (tools/remote.sh
+# built it on the game machine) instead of building it here.
+deploy() {
+  if [ -n "${TANDEM_PREBUILT:-}" ]; then task deploy:files >/dev/null; else task deploy >/dev/null; fi
 }
 
 # The game runs and its game thread ticks (no watchdog line since the last

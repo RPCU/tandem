@@ -37,9 +37,12 @@ private:
 
 // Each domain's hash, the same on the host (its record) and on a guest (what
 // it received). Positions are left out: they are state, newest wins.
-std::uint32_t WorldDigest(const std::optional<proto::World> &world);
+std::uint32_t WorldDigest(const std::optional<proto::World> &world,
+                          const std::optional<proto::Difficulty> &difficulty = std::nullopt);
+// `holds`: who holds which NPC (grapples, carried bodies).
 std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
-                        const std::map<proto::NpcId, proto::NpcHealth> &health);
+                        const std::map<proto::NpcId, proto::NpcHealth> &health,
+                        const std::map<proto::NpcId, proto::NpcHold> &holds = {});
 
 // The players as `self` sees them: everyone's look, held items, seat, radio,
 // stealth, pause menu and time ability but its own (a game is never sent
@@ -53,6 +56,8 @@ struct PlayersView {
   const std::map<proto::PlayerId, proto::Stealth> &stealth;
   const std::set<proto::PlayerId> &paused;
   const std::map<proto::PlayerId, proto::TimeEffect> &time;
+  // Who is down or out (a V that is up counts like one never heard of).
+  const std::map<proto::PlayerId, proto::Vitals> &lives;
 };
 std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self);
 
