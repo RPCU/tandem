@@ -16,6 +16,10 @@ bool Finite(const proto::Vec3 &v) {
 }
 } // namespace
 
+bool LeavesBody(proto::Place place) {
+  return place == proto::Place::Cyberspace || place == proto::Place::Braindance;
+}
+
 proto::Elsewhere Sanitized(proto::Elsewhere state) {
   if (state.place > proto::Place::Other)
     state.place = proto::Place::City;
@@ -58,14 +62,17 @@ Body Tracker::Feed(const Sample &sample) {
   const Kept here{sample.timeUs, sample.position, sample.orientation, sample.settled};
 
   if (!m_moved) {
+    const bool begins = elsewhere && m_place == proto::Place::City;
     if (jump && m_real) {
       m_lastJump = {sample.timeUs, *m_real};
       Leave(*m_real, sample.timeUs, elsewhere, out);
-    } else if (elsewhere && m_place == proto::Place::City && m_lastJump &&
-               sample.timeUs - m_lastJump->first <= kLateWorldUs) {
+    } else if (begins && m_lastJump && sample.timeUs - m_lastJump->first <= kLateWorldUs) {
       // The world began just after a teleport we let go: the body is where
       // V was before it.
       Leave(m_lastJump->second, sample.timeUs, true, out);
+    } else if (begins && LeavesBody(sample.place)) {
+      // V's entity is the world's camera from now on, wherever it goes.
+      Leave(here, sample.timeUs, true, out);
     } else {
       m_real = here;
     }

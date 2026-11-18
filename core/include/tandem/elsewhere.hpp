@@ -11,9 +11,11 @@
 // teleport is the scene's other world when a place other than the city comes
 // with it, or within kLateWorldUs after it; a teleport with none for
 // kTeleportUs was a teleport in the city (fast travel, a quest moving V) and
-// the body goes with V. Back from the world (its place ends), the body follows
-// V again as soon as V is near the anchor or jumps (the teleport back), or
-// kReturnUs after the end at the latest.
+// the body goes with V. In cyberspace and in a braindance V's entity is that
+// world's camera (a braindance flies it, final.reds:515134): the body stays
+// where the world began even with no jump. Back from the world (its place
+// ends), the body follows V again as soon as V is near the anchor or jumps
+// (the teleport back), or kReturnUs after the end at the latest.
 
 #include "tandem/protocol.hpp"
 
@@ -34,6 +36,9 @@ inline constexpr std::uint64_t kPoseHistoryUs = 5'000'000;
 // no flags, settled only with moved, a broken anchor is no place to show a
 // body at (moved, not settled: hidden).
 proto::Elsewhere Sanitized(proto::Elsewhere state);
+
+// Worlds whose start leaves the body behind, teleport or not.
+bool LeavesBody(proto::Place place);
 
 // One sample of our V, every state sent (30 Hz).
 struct Sample {

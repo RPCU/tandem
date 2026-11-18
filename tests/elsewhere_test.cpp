@@ -143,10 +143,34 @@ TEST_CASE("a world in place moves nothing; a teleport in it does") {
 TEST_CASE("a vehicle's jumps are not teleports of V") {
   Walk walk;
   walk.mounted = true;
-  walk.place = Place::Braindance;
+  walk.place = Place::Johnny; // "Johnny drives"
   walk.For(200'000);
   CHECK_FALSE(walk.Jump(kVoid).held);
-  CHECK(walk.tracker.State() == proto::Elsewhere{.place = Place::Braindance});
+  CHECK(walk.tracker.State() == proto::Elsewhere{.place = Place::Johnny});
+}
+
+TEST_CASE("a braindance in place: the body stays where it began, V flies off as its camera") {
+  Walk walk;
+  walk.settled = true; // the braindance chair
+  walk.For(300'000);
+  walk.place = Place::Braindance;
+  auto body = walk.Step(0.f);
+  const auto chair = walk.at;
+  CHECK(body.held);
+  CHECK(body.position == chair);
+  CHECK(body.holdPoseFrom);
+  CHECK(walk.tracker.State().flags == (proto::kElsewhereMoved | proto::kElsewhereSettled));
+  // Flying around the scene (no jump): the body stays.
+  walk.settled = false;
+  for (int i = 0; i < 60; ++i)
+    CHECK(walk.Step(0.2f).position == chair);
+  // Out of it, back in the chair: let go at once.
+  walk.place = Place::City;
+  walk.at = chair;
+  body = walk.Step(0.f);
+  CHECK_FALSE(body.held);
+  CHECK(body.releasePose);
+  CHECK(walk.tracker.State() == proto::Elsewhere{});
 }
 
 TEST_CASE("back from a world far from the body: let go after the grace") {
