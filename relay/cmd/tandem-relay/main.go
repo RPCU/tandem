@@ -58,6 +58,11 @@ func serve(args []string) error {
 	fs.BoolVar(&cfg.AllowAnyHost, "allow-any-host", false, "let any host open a session (local testing only)")
 	fs.IntVar(&cfg.MaxSessions, "max-sessions", cfg.MaxSessions, "sessions open at once")
 	fs.DurationVar(&cfg.IdleTimeout, "idle", cfg.IdleTimeout, "forget a client silent for this long")
+	fs.DurationVar(&cfg.CodeTTL, "code-ttl", cfg.CodeTTL, "how long a join code lives")
+	fs.IntVar(&cfg.CodeLookupBurst, "code-lookup-burst", cfg.CodeLookupBurst,
+		"join code lookups one address may make at once (then one per 6 s)")
+	fs.IntVar(&cfg.MaxCodeFailuresPerMinute, "max-code-failures", cfg.MaxCodeFailuresPerMinute,
+		"failed join code lookups per minute, from everyone together, before every lookup waits")
 	_ = fs.Parse(args)
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))

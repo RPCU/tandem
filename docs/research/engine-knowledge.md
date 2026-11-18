@@ -1709,7 +1709,7 @@ puppets' attitude group. With the mock player in front mode:
   `player` group, hostility to the puppet made the NPC hostile to V as
   well (it shot V although set neutral to it): never put puppets in the
   `player` group. [2.5-verified] Puppets now get groups of their own
-  (§13.12).
+  (§13.17).
 - **The NPC's senses never detect the puppet**
   (`SenseComponent.GetDetection(puppetId)` stays 0 at 3–12 m in plain
   view), and `TargetTrackingExtension.InjectThreat(npc, puppet)` puts it
@@ -1837,7 +1837,7 @@ stationName, songName)` (149608, no script caller) asks a station for a
   `CarRadioVolume`, `RadioportVolume`, read by the popup): not synced.
   [2.5-untested]
 
-### 13.12 Attitude groups and a puppet's record traits (2026-11-18, scripts only)
+### 13.17 Attitude groups and a puppet's record traits (2026-11-18, scripts, then one run)
 
 Read from the 2.50 scripts (`final.reds` line numbers) and the RTTI dump;
 none of it run in game yet.
@@ -1859,10 +1859,18 @@ none of it run in game yet.
   Quests and prevention change V's group relations with the persistent
   setter (141857–141868, police and gangs towards V's current group); a
   security system breached by someone turns its group hostile to the
-  intruder's group (114508–114537). Whether the attitude system knows a
-  group added by TweakXL (it may build its table from TweakDB at start) is
-  what `attitudes: N of 4 puppet groups declared` and the read-back
-  group in `player N: puppet in the G attitude group` will show.
+  intruder's group (114508–114537). [2.5-untested]
+- **A group added by TweakXL is accepted**: `SetAttitudeGroup(n"tandem_player_1")`
+  reads back as `tandem_player_1` (scenario `puppet-attitude`, first run).
+  But 10 s later `GetAttitudeRelation(n"civilian", n"tandem_player_1")`
+  was friendly (0) while `civilian` to `player` was neutral (1): the
+  relation copy had not taken, or not run, and civilians saw the puppet as
+  friendly where they see V as neutral. A fresh group's relations with no
+  copy read friendly. [2.5-verified] Since then every relation copy is read
+  back and logged (`attitudes: OURS / OTHER (...): V's a/b, read back
+c/d`, `(not taken)` when it differs), and each NPC around also gets V's
+  attitudes on the puppet's agent where the groups do not give them
+  (`AttitudeAgent.SetAttitudeTowards`, which reads back: §13.11).
   [2.5-untested]
 - **Why one group per V**: vanilla turns an NPC hostile to its target's
   whole group, `AttitudeAgent.SetAttitudeTowardsAgentGroup(target, owner,
@@ -2164,8 +2172,80 @@ choiceHubs: array<ListChoiceHubData>}`, `:243020`, `:389618`),
   see.
 - The co-op reward ledger is a `persistent` array on `TandemStorySystem`:
   it reaches the guest's save with its next save after the session.
+- Johnny is an NPC of the host's world, `Character.Silverhand`
+  (`PlayerPuppet.IsTargetFriendlyNPC`, `:40624`); playing as Johnny is the
+  `Character.johnny_replacer` puppet (`:39363`), `UI_PlayerStats.isReplacer`
+  (`:83411`) and the fact `isPlayerPossessedByJohnny` (`:50012`). His relic
+  glitches are status effects with the `JohnnySickness` tag
+  (`BaseStatusEffect.JohnnySicknessLow/Medium/Heavy/MediumQuest`, `:44352`).
+  `GetPlayer` is the _controlled_ object (`:39193`): as Johnny, the host's
+  streamed position and pose are the replacer's.
+- Songbird's calls use `questPhoneCallVisuals.Somi` (`:10735`), drawn by
+  `HudPhoneGameController` (extends the native
+  `SongbirdAudioCallGameController`, `:389152`, `:389380`) instead of the
+  regular call widget (`:408912`).
+- `PlayerPuppet.OnStatusEffectApplied` / `OnStatusEffectRemoved`
+  (`:43899`, `:44474`) are where the host sees a story effect come and go;
+  `ApplyStatusEffectEvent.isNewApplication`,
+  `RemoveStatusEffect.isFinalRemoval` (`:203824`, `:203958`).
 
-### 13.17 A hit's whole outcome (2026-11-18, read in final.reds, not run)
+### 13.15 Time dilation in a shared world (2026-11-18, scripts and RTTI only)
+
+Read from the 2.50 RTTI natives (`docs/research/data/rtti-natives-2.50.tsv`)
+and the script dump; used by `scripts/tandem/Time.reds`, **not yet run in
+game**. Research behind it: `coop-time.md` §1-2.
+
+- The time system has exactly three scopes and no render-only one: global
+  (`gameTimeSystem.SetTimeDilation` / `UnsetTimeDilation` /
+  `GetActiveTimeDilation` / `IsTimeDilationActive`), the local player's
+  own (`SetTimeDilationOnLocalPlayerZero`, the exemption flag
+  `SetIgnoreTimeDilationOnLocalPlayerZero`) and per entity
+  (`gameTimeDilatable.SetIndividualTimeDilation(reason, dilation,
+duration, easeIn, easeOut, ignoreGlobalDilation, useRealTime)`,
+  `UnsetIndividualTimeDilation`, `HasIndividualTimeDilation`,
+  `GetTimeDilationValue`, `IsIgnoringGlobalTimeDilation`; final.reds
+  14724-14744). Besides them only attacks
+  (`gameAttack_GameEffect.OverrideTimeDilationDriver(timeDilatable)`,
+  effector drivers `Source`/`Target`, final.reds 299725-299729) follow an
+  entity's time. A host therefore cannot show its own NPCs slowed while
+  simulating them at normal speed. [2.5-untested]
+- A per-entity dilation is a single slot (`UnsetIndividualTimeDilation`
+  takes no reason): setting ours replaces an NPC's own (hit reactions
+  `VeryStrongHit`, `MeleeLegKnockdown`, NPC Sandevistan). Vanilla slows a
+  single NPC with it: `SetTemporaryIndividualTimeDilation`, 0.05 for 2.5 s
+  (final.reds 525198-525204); NPC Sandevistans speed one up (factors above
+  1, `AISubActionApplyTimeDilation`, final.reds 427367-427503).
+  [2.5-untested]
+- `GetActiveTimeDilation()` with no reason is the current global factor
+  (`WeaponTransition.CalcCycleTimeDeltaFactor` reads it that way,
+  final.reds 286960). [2.5-untested]
+- Sandevistan lasts only while `IsTimeDilationActive(n"sandevistan")`
+  (`SandevistanDecisions.ToTimeDilationReady`, final.reds 523705), and the
+  scanner's state re-sets its dilation whenever none is active
+  (`TimeDilationFocusModeEvents.OnUpdate`, final.reds 529164): a dilation
+  that must stop slowing the world is re-set at normal speed under the
+  same reason, never unset. Whether a factor of exactly 1.0 still reads as
+  active is checked once at run time (Time.reds falls back to 0.999 and
+  logs it). [2.5-untested]
+- While any global dilation is active, NPC guns fire projectiles instead
+  of hitscan (`AIWeapon.SetAttackBasedOnTimeDilation`, final.reds 173373):
+  a dilation kept active at normal speed keeps that. [2.5-untested]
+- The implant's world factor is a stat on the player:
+  `gamedataStatType.TimeDilationSandevistanTimeScale` (read by
+  `SandevistanEvents.OnEnter`, final.reds 524119-524126),
+  `TimeDilationKerenzikovTimeScale` and `TimeDilationKerenzikovPlayerTimeScale`
+  (`KerenzikovEvents`, final.reds 527840, 527894). [2.5-untested]
+- Effect names on the Sandevistan boss's entity: `sandevistan_low_00..03`,
+  `sandevistan_medium_00..03`, `sandevistan_high_00..03`
+  (`DisableAllSandyEdgerunnerFxs`, final.reds 296270, 297181).
+  Whether a puppet's entity has any of them is unknown; the NPC
+  Sandevistan's own effect is in TweakDB/entity data not read. Try names
+  with `tools/game.sh cmd time fx NAME`. [unverified]
+- `GameInstance.GetSimTime` is assumed dilated and `GetEngineTime` real
+  (final.reds 14148-14150); `time test` logs the ratio of the two.
+  [2.5-untested]
+
+### 13.18 A hit's whole outcome (2026-11-18, read in final.reds, not run)
 
 Line numbers are the 2.50 `final.reds` dump's. All [2.5-untested].
 

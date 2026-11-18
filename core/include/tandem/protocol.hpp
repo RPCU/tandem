@@ -600,6 +600,37 @@ struct QuestReward {
   friend bool operator==(const QuestReward &, const QuestReward &) = default;
 };
 
+// A V's time ability (docs/ARCHITECTURE.md, slowed and stopped time): what
+// is active now and the world speed it asks for (Event channel, sent by that
+// player's game when it starts, changes or ends). The host stamps the sender
+// from the connection, keeps the latest of each player for late joiners
+// (a player who leaves has none) and relays it. The owner's own game keeps
+// its single-player slow motion; the shared world never slows as a whole:
+// the host slows only the NPCs around that V, its time bubble
+// (tandem/timebubble.hpp), and every game shows the ability on its puppet.
+inline constexpr std::uint8_t kTimeSandevistan = 1, kTimeKerenzikov = 2, kTimeSlowMo = 4,
+                              kTimeScanning = 8;
+// The abilities that make a bubble; the others stay on their owner's screen.
+inline constexpr std::uint8_t kTimeBubbleAbilities = kTimeSandevistan | kTimeKerenzikov;
+struct TimeEffect {
+  PlayerId player{};
+  std::uint8_t abilities{}; // kTime* bits (0: none)
+  float scale{1.f};         // world speed it asks for, 0..1 (1: no bubble)
+  friend bool operator==(const TimeEffect &, const TimeEffect &) = default;
+};
+
+// A story status effect on the host's V: Johnny's relic glitches
+// (JohnnySickness*), Songbird's overlays, other quest glitch effects
+// (Story.reds decides which). Host to guests (Event channel; the host keeps
+// the ones on now for late joiners); a guest near the host puts the same
+// effect on its own V while the host's lasts.
+struct StoryEffect {
+  PlayerId player{};      // whose V has it (the host)
+  std::uint64_t effect{}; // TweakDB id of the status effect record
+  bool applied{};         // false: it went
+  friend bool operator==(const StoryEffect &, const StoryEffect &) = default;
+};
+
 // ---- Hit outcomes (docs/ARCHITECTURE.md, "Game rules hold for every hit") ----
 
 // A guest's hit on one of the host's NPCs (its proxy) with its whole outcome
@@ -688,9 +719,10 @@ using Message =
                  NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
                  Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
                  Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit>;
+                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcStrike, NpcWound, NpcPoise,
+                 Difficulty, AreaHit>;
 
-// A story message (Journal … QuestReward): endpoint.hpp relays these
+// A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit): one path in endpoint.hpp too.

@@ -19,12 +19,29 @@ const (
 
 var dropNames = [dropReasons]string{"malformed", "bad_token", "unknown_client", "rate_limited", "no_channel"}
 
+type lookupResult int
+
+const (
+	lookupFound lookupResult = iota
+	lookupUnknown
+	lookupLimited
+	lookupResults
+)
+
+var lookupNames = [lookupResults]string{"found", "unknown", "limited"}
+
 // Metrics are plain counters, written in the Prometheus text format.
 type Metrics struct {
 	packets atomic.Uint64
 	bytes   atomic.Uint64
 	drops   [dropReasons]atomic.Uint64
+	codes   atomic.Uint64
+	lookups [lookupResults]atomic.Uint64
 }
+
+func (m *Metrics) codeIssued() { m.codes.Add(1) }
+
+func (m *Metrics) lookup(result lookupResult) { m.lookups[result].Add(1) }
 
 func (m *Metrics) forwarded(payload int) {
 	m.packets.Add(1)
@@ -42,5 +59,10 @@ func (m *Metrics) Write(w io.Writer, sessions, clients int) {
 	fmt.Fprintf(w, "# HELP tandem_relay_dropped_total Datagrams dropped, by reason.\n# TYPE tandem_relay_dropped_total counter\n")
 	for i, name := range dropNames {
 		fmt.Fprintf(w, "tandem_relay_dropped_total{reason=%q} %d\n", name, m.drops[i].Load())
+	}
+	fmt.Fprintf(w, "# HELP tandem_relay_codes_issued_total Join codes issued.\n# TYPE tandem_relay_codes_issued_total counter\ntandem_relay_codes_issued_total %d\n", m.codes.Load())
+	fmt.Fprintf(w, "# HELP tandem_relay_code_lookups_total Join code lookups, by result.\n# TYPE tandem_relay_code_lookups_total counter\n")
+	for i, name := range lookupNames {
+		fmt.Fprintf(w, "tandem_relay_code_lookups_total{result=%q} %d\n", name, m.lookups[i].Load())
 	}
 }

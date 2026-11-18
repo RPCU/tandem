@@ -33,6 +33,7 @@ private:
   std::optional<proto::PhoneCall> m_call;
   std::optional<proto::ChoiceHub> m_hub;
   std::map<proto::PlayerId, proto::StoryState> m_states;
+  std::map<std::uint64_t, proto::StoryEffect> m_effects; // on now
 };
 
 // "Taking part" (design §4.3): a guest takes part in a quest when it is

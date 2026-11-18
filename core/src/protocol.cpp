@@ -67,8 +67,9 @@ Channel ChannelOf(const Message &message) {
 }
 
 bool IsStory(const Message &message) {
-  return message.index() >= Message(Journal{}).index() &&
-         message.index() <= Message(QuestReward{}).index();
+  return (message.index() >= Message(Journal{}).index() &&
+          message.index() <= Message(QuestReward{}).index()) ||
+         std::holds_alternative<StoryEffect>(message);
 }
 
 bool IsCombat(const Message &message) {
@@ -87,7 +88,8 @@ const char *NameOf(const Message &message) {
       "NpcAwareness", "Stealth",      "Noise",     "NpcHack",      "NpcHackState", "NpcStatus",
       "PlayerHack",   "VehicleHack",  "Journal",   "Tracked",      "PhoneCall",    "PhoneAction",
       "PhoneReply",   "Subtitle",     "ChoiceHub", "ChoiceCursor", "StoryState",   "QuestReward",
-      "NpcStrike",    "NpcWound",     "NpcPoise",  "Difficulty",   "AreaHit"};
+      "TimeEffect",   "StoryEffect",  "NpcStrike", "NpcWound",     "NpcPoise",     "Difficulty",
+      "AreaHit"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }
