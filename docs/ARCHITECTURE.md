@@ -480,12 +480,29 @@ redscript natives (UI, events)              ENet socket
       beside it, an NPC driving the host): **carried along**. The guest's V
       is hidden (its own meshes and what it holds), held by the game's own
       restrictions (no movement, no jump, no weapons, no world or vehicle
-      interaction, crouched, invulnerable) and put in the copy's cabin
-      every frame, behind the seats, turning with the car while its camera
-      stays free: it sees the ride and hears the scene (the host's lines,
-      Dialogue.reds) from where a passenger would. It sends `Transit`
+      interaction, crouched, invulnerable), put once in the copy's cabin
+      behind the seats, and **carried by the engine**: mounted to the
+      copy's `trunk_body` slot (a slot, not a seat, and on its own copy
+      only) with its position kept (`preservePositionAfterMounting`, as
+      vanilla's trunk body mount) and silently (`silentUnmount`: no vehicle
+      state machine, as vanilla's seat switches mount the player). The
+      mounting facility moves it with the car every frame, turning with
+      it, and the world streams around it as it moves; its camera stays
+      free: it sees the ride and hears the scene (the host's lines,
+      Dialogue.reds) from where a passenger would. A copy with no such
+      slot (the mount did not hold after 0.5 s) falls back to placing V in
+      the cabin five times a second: one teleport every 200 ms, never per
+      frame (a teleport re-runs placement and streaming around V; at 5 Hz
+      and 25 m/s V trails by up to 5 m between placements, which the
+      camera shows as a step). Weighed and not used: a workspot on the
+      copy (`PlayInDevice` plays the player in a vehicle's workspots only
+      for the parked trunk sequences; a component added at runtime needs
+      Codeware's builder at assembly and nothing says a device workspot
+      follows a moving parent), and a transform binding (`entHardTransformBinding`
+      binds components inside one entity, not the player to another). It sends `Transit`
       `Along` (the carrier), so every game hides its puppet (there is no
-      seat to show it in). The game lends no camera to a V without a seat:
+      seat to show it in), and sends no `Seat` (the trunk slot is no
+      one's seat). The game lends no camera to a V without a seat:
       a vehicle's cameras and its scene camera mode belong to the seated
       V's state machine (vehicle states Passenger, Scene), and only photo
       mode has a free camera; V's own eyes, carried, are the passenger's

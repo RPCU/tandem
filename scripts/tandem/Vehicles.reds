@@ -39,6 +39,43 @@ public abstract class TandemVehicles {
     GameInstance.GetMountingFacility(game).Unmount(request);
   }
 
+  // Carries `child` with `parent` from where it stands now (a V riding
+  // along, Transit.reds): a mount to a slot that is not a seat, its world
+  // position kept (preservePositionAfterMounting, as vanilla's trunk body
+  // mount) and silent (no vehicle state machine for the player, as
+  // vanilla's seat switches mount it).
+  public static func Carry(game: GameInstance, child: ref<GameObject>, parent: ref<GameObject>, slot: CName) -> Void {
+    let info: MountingInfo;
+    info.parentId = parent.GetEntityID();
+    info.childId = child.GetEntityID();
+    info.slotId.id = slot;
+    let request = new MountingRequest();
+    request.lowLevelMountingInfo = info;
+    request.preservePositionAfterMounting = true;
+    request.mountData = new MountEventData();
+    request.mountData.isInstant = true;
+    let options = new MountEventOptions();
+    options.alive = true;
+    options.silentUnmount = true;
+    request.mountData.mountEventOptions = options;
+    GameInstance.GetMountingFacility(game).Mount(request);
+  }
+
+  public static func Uncarry(game: GameInstance, child: ref<GameObject>, parentID: EntityID, slot: CName) -> Void {
+    let info: MountingInfo;
+    info.parentId = parentID;
+    info.childId = child.GetEntityID();
+    info.slotId.id = slot;
+    let request = new UnmountingRequest();
+    request.lowLevelMountingInfo = info;
+    request.mountData = new MountEventData();
+    request.mountData.isInstant = true;
+    let options = new MountEventOptions();
+    options.silentUnmount = true;
+    request.mountData.mountEventOptions = options;
+    GameInstance.GetMountingFacility(game).Unmount(request);
+  }
+
   // The seat to put `child` in: `wanted` when the vehicle has it and nobody
   // else sits there, else its first free seat (the driver's only when no
   // other is free), else none. A seat someone sits in is never taken: in

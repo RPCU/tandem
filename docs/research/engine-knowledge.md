@@ -3025,8 +3025,22 @@ ActivateCameraSetting` (247390) switches settings of V's own camera.
   its own eyes.
 - A mount without the vehicle state machine exists: a mounting request
   whose `mountEventOptions.silentUnmount` is set adds no `Vehicle` state
-  machine (`MountFromParent`, 291579), but it still needs a slot of the
-  vehicle; with every seat taken there is none to use. Not used.
+  machine (`MountFromParent`, 291579); vanilla mounts the player that way
+  when it switches seats (`SwitchSeatsDecisions`, 549395-549460). A body
+  is mounted in a trunk on slot `trunk_body` with
+  `preservePositionAfterMounting` (`VehicleComponent.MountEntityToSlot`,
+  92792), the slot not being a seat. tandem carries a V riding along that
+  way (silent, position kept, slot `trunk_body` of its own copy): whether
+  the player's body then follows the car, how its own locomotion and
+  collision behave while mounted, and whether every copy has the slot
+  (bikes, AVs, the tank) are [unverified]; the mount is checked after
+  0.5 s and a 5 Hz placement takes over when it did not hold.
+  `MountEventData.initialTransformLS` (160911) is another way to place a
+  mounted child relative to its slot (not used).
+- `WorkspotGameSystem.PlayInDevice(vehicle, player, n"lockedCamera",
+n"trunkBodyDisposalPlayer", …)` plays the player in a workspot of a
+  vehicle (the trunk body sequences, 92673-92760) while the car stands;
+  `MountToVehicle` (53240) is the moving case, and it takes a seat slot.
 - Restrictions a script can put on V and take off by record:
   `GameplayRestriction.NoMovement`, `NoJump`, `NoWeapons`,
   `NoWorldInteractions`, `VehicleNoInteraction`, `ForceCrouch`,
@@ -3036,6 +3050,7 @@ ActivateCameraSetting` (247390) switches settings of V's own camera.
 - `WorkspotSystem.MountToVehicle(parent, child, slide, delay,
 n"OccupantSlots", slot)` (53240) is the scene's way into a seat's
   workspot: a seat again.
-- Whether a V teleported every frame into a moving copy's cabin
-  (`TeleportationFacility.Teleport`) collides with the car's hull or
-  seats, and whether the per-frame teleport is smooth: [unverified].
+- Codeware's `Entity.AddComponent` only initializes a component added at
+  the entity's assembly (its builder events); `entHardTransformBinding`
+  binds components within one entity. Neither parents the player to a
+  vehicle.
