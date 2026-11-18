@@ -17,7 +17,53 @@ void Runtime::Start(proto::Body body) {
   std::lock_guard _(m_lock);
   if (m_net || config.role == Config::Role::Off)
     return;
+  m_body = body;
   m_net = std::make_unique<NetThread>(config, body);
+}
+
+void Runtime::SetRelay(std::string code, std::string status) {
+  std::lock_guard _(m_lock);
+  m_relayCode = std::move(code);
+  m_relayStatus = std::move(status);
+}
+
+std::string Runtime::RelayCode() const {
+  std::lock_guard _(m_lock);
+  return m_relayCode;
+}
+
+std::string Runtime::RelayStatus() const {
+  std::lock_guard _(m_lock);
+  return m_relayStatus;
+}
+
+bool Runtime::JoinByCode(std::string_view text) {
+  const auto code = net::NormalizeJoinCode(text);
+  if (!code) {
+    log::Warn("join by code: {} is not a join code", text);
+    return false;
+  }
+  if (config.relay.empty()) {
+    log::Warn("join by code: no relay in tandem.ini");
+    return false;
+  }
+  config.role = Config::Role::Join;
+  config.joinCode = *code;
+  config.addressSet = false; // the code's host, not tandem.ini's address
+  log::Info("join by code {} through relay {}:{}", net::DisplayJoinCode(*code), config.relay,
+            config.relayPort);
+  bool running = false;
+  proto::Body body{};
+  {
+    std::lock_guard _(m_lock);
+    running = m_net != nullptr;
+    body = m_body;
+  }
+  if (running) {
+    Stop();
+    Start(body);
+  }
+  return true;
 }
 
 void Runtime::Stop() {
@@ -64,6 +110,12 @@ void Runtime::Stop() {
       ++m_remotePausedChanges;
     }
     m_names.clear();
+    m_localTime.reset();
+    // Nobody bends time around us any more: the count moves so scripts let go.
+    if (!m_remoteTimes.empty()) {
+      m_remoteTimes.clear();
+      ++m_remoteTimeChanges;
+    }
     // Counts keep going (scripts compare them with what they saw).
     m_localVitals.reset();
     if (!m_othersLives.empty()) {
@@ -325,6 +377,31 @@ std::vector<proto::PlayerId> Runtime::RemotePaused(std::uint32_t &changes) {
   std::lock_guard _(m_lock);
   changes = m_remotePausedChanges;
   return m_remotePaused;
+}
+
+void Runtime::SubmitLocalTime(const proto::TimeEffect &effect) {
+  std::lock_guard _(m_lock);
+  m_localTime = effect;
+}
+
+std::optional<proto::TimeEffect> Runtime::TakeLocalTime() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localTime, std::nullopt);
+}
+
+void Runtime::PushRemoteTime(const proto::TimeEffect &effect) {
+  std::lock_guard _(m_lock);
+  if (effect.abilities == 0)
+    m_remoteTimes.erase(effect.player);
+  else
+    m_remoteTimes[effect.player] = effect;
+  ++m_remoteTimeChanges;
+}
+
+std::map<proto::PlayerId, proto::TimeEffect> Runtime::RemoteTimes(std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  changes = m_remoteTimeChanges;
+  return m_remoteTimes;
 }
 
 void Runtime::NotePlayerName(proto::PlayerId player, std::string name) {
@@ -654,6 +731,8 @@ void Runtime::ForgetRemote(proto::PlayerId player) {
     m_seats.erase(player);
     m_radios.erase(player);
     m_stealth.erase(player);
+    if (m_remoteTimes.erase(player) > 0)
+      ++m_remoteTimeChanges;
   }
   {
     std::lock_guard _(m_tracksLock);

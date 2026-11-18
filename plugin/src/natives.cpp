@@ -102,6 +102,19 @@ struct TandemHackEvent {
   float seconds{};
 };
 static_assert(alignof(TandemHackEvent) <= 8, "the script VM aligns struct locals to 8");
+// An NPC's new speed in the time bubbles (tandem/timebubble.hpp): its
+// factor, 1 when it is out of every bubble.
+struct TandemTimeChange {
+  std::uint32_t npc{};
+  float factor{};
+};
+
+Red::DynArray<TandemTimeChange> ToScript(const std::vector<sync::TimeBubbles::Change> &changes) {
+  Red::DynArray<TandemTimeChange> out;
+  for (const auto &change : changes)
+    out.EmplaceBack(TandemTimeChange{change.npc, change.factor});
+  return out;
+}
 
 // Down and out (scripts/tandem/Revive.reds): someone reviving our V.
 struct TandemRevive {
@@ -535,6 +548,76 @@ struct TandemNative : Red::IScriptable {
     return Red::CString(Runtime::Get().PlayerName(player).c_str());
   }
 
+  // Time abilities (scripts/tandem/Time.reds): ours, when they change
+  // (proto::kTime* bits; scale: the world speed they ask for, 1: none).
+  static void SendTimeEffect(std::int32_t abilities, float scale) {
+    Runtime::Get().SubmitLocalTime(
+        {.abilities = static_cast<std::uint8_t>(abilities), .scale = scale});
+  }
+  // The other players' active ones, and how many times they changed (0: never).
+  static std::int32_t TimeChanges() {
+    std::uint32_t changes = 0;
+    Runtime::Get().RemoteTimes(changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  static Red::DynArray<std::uint32_t> TimePlayers() {
+    std::uint32_t changes = 0;
+    Red::DynArray<std::uint32_t> out;
+    for (const auto &[player, effect] : Runtime::Get().RemoteTimes(changes))
+      out.EmplaceBack(player);
+    return out;
+  }
+  static std::int32_t TimeAbilities(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto times = Runtime::Get().RemoteTimes(changes);
+    const auto it = times.find(player);
+    return it == times.end() ? 0 : it->second.abilities;
+  }
+  static float TimeScale(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto times = Runtime::Get().RemoteTimes(changes);
+    const auto it = times.find(player);
+    return it == times.end() ? 1.f : it->second.scale;
+  }
+  // The time bubbles: the Vs with a bubble ability on (player, world speed,
+  // where), every NPC there is (host: the ones it shares; guest: its
+  // proxies). Answers the NPCs whose speed changed.
+  static Red::DynArray<TandemTimeChange>
+  UpdateTimeBubbles(Red::DynArray<std::uint32_t> owners, Red::DynArray<float> scales,
+                    Red::DynArray<Red::Vector4> ownerPositions, Red::DynArray<std::uint32_t> npcs,
+                    Red::DynArray<Red::Vector4> npcPositions) {
+    std::vector<sync::TimeBubbles::Owner> who;
+    for (std::uint32_t i = 0; i < owners.Size() && i < scales.Size() && i < ownerPositions.Size();
+         ++i)
+      who.push_back({.player = owners[i],
+                     .scale = scales[i],
+                     .position = {ownerPositions[i].X, ownerPositions[i].Y, ownerPositions[i].Z}});
+    std::vector<sync::TimeBubbles::Npc> what;
+    for (std::uint32_t i = 0; i < npcs.Size() && i < npcPositions.Size(); ++i)
+      what.push_back({npcs[i], {npcPositions[i].X, npcPositions[i].Y, npcPositions[i].Z}});
+    return ToScript(Runtime::Get().Bubbles().Update(who, what));
+  }
+  // Every bubble ends (the session is over): the NPCs to give back.
+  static Red::DynArray<TandemTimeChange> ClearTimeBubbles() {
+    return ToScript(Runtime::Get().Bubbles().Clear());
+  }
+  static float TimeFactorOf(std::uint32_t npc) { return Runtime::Get().Bubbles().FactorOf(npc); }
+  static std::int32_t TimeBubbleMembers(std::uint32_t player) {
+    return static_cast<std::int32_t>(Runtime::Get().Bubbles().MembersOf(player));
+  }
+  // tandem.ini time_host = full: the host keeps its own slow motion whole.
+  static bool IsTimeHostFull() { return Runtime::Get().config.timeHostFull; }
+  // Invites through tandem-relay (docs/ARCHITECTURE.md, "Invites"): the
+  // host's join code to show ("K7Q-2M9"; "" until the relay gave one, or
+  // with no relay), what the relay link is doing ("" no relay,
+  // "connecting", "ready", else the problem, in words), and joining the
+  // session a typed code names (false: not a code, or no relay set).
+  static Red::CString RelayCode() { return Red::CString(Runtime::Get().RelayCode().c_str()); }
+
+  static Red::CString RelayStatus() { return Red::CString(Runtime::Get().RelayStatus().c_str()); }
+
+  static bool JoinByCode(Red::CString code) { return Runtime::Get().JoinByCode(code.c_str()); }
+
   // Host: its NPCs.
   static void SendNpcSpawn(std::uint32_t npc, Red::TweakDBID record, Red::CName appearance,
                            Red::Vector4 position, Red::Quaternion orientation) {
@@ -883,6 +966,11 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
   RTTI_PROPERTY(effect);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemTimeChange, "TandemTimeChange", {
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(factor);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(IsConfigured);
   RTTI_METHOD(IsStarted);
@@ -965,6 +1053,19 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(PausedPlayers);
   RTTI_METHOD(PausedChanges);
   RTTI_METHOD(PlayerName);
+  RTTI_METHOD(SendTimeEffect);
+  RTTI_METHOD(TimeChanges);
+  RTTI_METHOD(TimePlayers);
+  RTTI_METHOD(TimeAbilities);
+  RTTI_METHOD(TimeScale);
+  RTTI_METHOD(UpdateTimeBubbles);
+  RTTI_METHOD(ClearTimeBubbles);
+  RTTI_METHOD(TimeFactorOf);
+  RTTI_METHOD(TimeBubbleMembers);
+  RTTI_METHOD(IsTimeHostFull);
+  RTTI_METHOD(RelayCode);
+  RTTI_METHOD(RelayStatus);
+  RTTI_METHOD(JoinByCode);
   RTTI_METHOD(SendSeat);
   RTTI_METHOD(SendVehicle);
   RTTI_METHOD(RemoteSeatChanges);

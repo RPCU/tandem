@@ -69,6 +69,9 @@ TEST_CASE("every message survives encoding") {
       .revision = 2, .gameTimeSeconds = 86400 + 3600 * 18, .weather = 0x1234, .timePaused = true});
   RoundTrips(Pause{.player = 3, .paused = true});
   RoundTrips(Pause{.player = 2, .paused = false});
+  RoundTrips(TimeEffect{.player = 2, .abilities = kTimeSandevistan, .scale = 0.25f});
+  RoundTrips(TimeEffect{.player = 3, .abilities = kTimeScanning | kTimeSlowMo, .scale = 1.f});
+  CHECK(std::string(NameOf(TimeEffect{})) == "TimeEffect");
   RoundTrips(NpcHack{
       .player = 2, .npc = 7, .action = 0x1122334455, .uploadMs = 1500, .flags = kUploadTraceable});
   RoundTrips(NpcHackState{
@@ -152,6 +155,8 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(ChannelOf(NpcEffect{}) == Channel::Event);
   CHECK(ChannelOf(Pause{}) == Channel::Event);
   CHECK(IsReliable(Pause{}));
+  CHECK(ChannelOf(TimeEffect{}) == Channel::Event);
+  CHECK(IsReliable(TimeEffect{}));
   // Quickhacks change state: never dropped.
   CHECK(ChannelOf(NpcHack{}) == Channel::Event);
   CHECK(ChannelOf(NpcHackState{}) == Channel::Event);
@@ -274,6 +279,13 @@ TEST_CASE("story messages: channels, limits, sizes") {
   Journal typical{.snapshot = true};
   typical.entries.resize(3000);
   CHECK(Encode(typical).size() < 32 * 1024);
+}
+
+TEST_CASE("a story effect survives encoding and is a story message") {
+  RoundTrips(StoryEffect{.player = 1, .effect = 0x15e213846eULL, .applied = true});
+  CHECK(IsStory(StoryEffect{}));
+  CHECK(ChannelOf(StoryEffect{}) == Channel::Event);
+  CHECK(std::string(NameOf(StoryEffect{})) == "StoryEffect");
 }
 
 TEST_CASE("down-and-out messages survive encoding, reliably, and refuse what is out of range") {

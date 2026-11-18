@@ -100,6 +100,12 @@ public native struct TandemNoise {
   native let propagation: Bool;
 }
 
+// An NPC's new speed in the time bubbles (Time.reds): 1 = normal again.
+public native struct TandemTimeChange {
+  native let npc: Uint32;
+  native let factor: Float;
+}
+
 // Down and out: someone reviving our V (Revive.reds).
 public native struct TandemRevive {
   // the reviver
@@ -190,6 +196,16 @@ public native class TandemNative extends IScriptable {
   public static native func PausedPlayers() -> array<Uint32>
   public static native func PausedChanges() -> Int32
   public static native func PlayerName(player: Uint32) -> String
+  public static native func SendTimeEffect(abilities: Int32, scale: Float)
+  public static native func TimeChanges() -> Int32
+  public static native func TimePlayers() -> array<Uint32>
+  public static native func TimeAbilities(player: Uint32) -> Int32
+  public static native func TimeScale(player: Uint32) -> Float
+  public static native func UpdateTimeBubbles(owners: array<Uint32>, scales: array<Float>, ownerPositions: array<Vector4>, npcs: array<Uint32>, npcPositions: array<Vector4>) -> array<TandemTimeChange>
+  public static native func ClearTimeBubbles() -> array<TandemTimeChange>
+  public static native func TimeFactorOf(npc: Uint32) -> Float
+  public static native func TimeBubbleMembers(player: Uint32) -> Int32
+  public static native func IsTimeHostFull() -> Bool
   public static native func SendSeat(vehicle: TweakDBID, seat: CName, owner: Uint32)
   public static native func SendVehicle(position: Vector4, orientation: Quaternion, velocity: Vector4)
   public static native func RemoteSeatChanges(player: Uint32) -> Int32
@@ -212,4 +228,11 @@ public native class TandemNative extends IScriptable {
   public static native func PoseLoop(player: Uint32)
   public static native func PoseStreamReport()
   public static native func Log(text: String)
+  // Invites through tandem-relay: the host's join code ("K7Q-2M9", "" none
+  // yet or no relay), the relay link's state ("" no relay, "connecting",
+  // "ready", else the problem), and joining by a typed code (false: not a
+  // code, or no relay in tandem.ini; starts now, or with the next game).
+  public static native func RelayCode() -> String
+  public static native func RelayStatus() -> String
+  public static native func JoinByCode(code: String) -> Bool
 }

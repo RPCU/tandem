@@ -634,7 +634,7 @@ section adds what makes each one a co-op problem.
   the rules are decided (ARCHITECTURE "Down and out"); Second Heart is
   checked first by vanilla's own conditions and revives at 20 % in a
   session; co-op down starts only when it does not apply
-  (engine-knowledge §13.17).
+  (engine-knowledge §13.18).
 - **Engine leftovers worth reusing:** `PlayerPuppet.OnIncapacitated`
   (`45050-45058`) enables a `Revive` interaction and sets the sense type
   `Deadbody`; `RefreshCPOVisionAppearance` (`45061-45082`) shows another
