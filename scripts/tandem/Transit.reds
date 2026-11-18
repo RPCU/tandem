@@ -265,8 +265,7 @@ public class TandemTransit {
     if puppet.transitMode == 1 {
       this.OffTrain(puppet, body);
     }
-    TandemTransit.Hide(body, true);
-    puppet.hidden = true;
+    TandemVisibility.Hide(this.m_game, puppet.player, n"along", 0.3);
     puppet.transitMode = 3;
     TandemNative.Log(s"player \(puppet.player): riding along with player \(TandemNative.RemoteTransitCarrier(puppet.player)), hidden");
   }
@@ -280,11 +279,8 @@ public class TandemTransit {
         at.W = 1.0;
         GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, at, TandemYawAngles(Rad2Deg(TandemNative.RemoteYaw(puppet.player))));
       }
-      if puppet.hidden && !puppet.wantsSeat {
-        TandemTransit.Hide(body, false);
-        puppet.hidden = false;
-      }
     }
+    TandemVisibility.Show(this.m_game, puppet.player, n"along", 0.3);
     puppet.transitMode = 0;
     TandemNative.Log(s"player \(puppet.player): off the ride along, seen again");
   }
@@ -301,10 +297,7 @@ public class TandemTransit {
       let slot = TandemVehicles.FreeSlot(this.m_game, train, TandemNative.RemoteTransitSeat(puppet.player), body.GetEntityID());
       if IsNameValid(slot) {
         this.OffTrain(puppet, body);
-        if puppet.hidden {
-          TandemTransit.Hide(body, false);
-          puppet.hidden = false;
-        }
+        TandemVisibility.Show(this.m_game, puppet.player, n"metro", 0.3);
         TandemVehicles.Seat(this.m_game, body, train, slot);
         puppet.transitMode = 1;
         puppet.transitTrain = train.GetEntityID();
@@ -322,9 +315,8 @@ public class TandemTransit {
     if puppet.transitMode == 1 {
       this.OffTrain(puppet, body);
     }
-    if !puppet.hidden {
-      TandemTransit.Hide(body, true);
-      puppet.hidden = true;
+    if puppet.transitMode != 2 {
+      TandemVisibility.Hide(this.m_game, puppet.player, n"metro", 0.3);
       TandemNative.Log(s"player \(puppet.player): on the NCART away from us, hidden");
     }
     puppet.transitMode = 2;
@@ -384,11 +376,8 @@ public class TandemTransit {
         at.W = 1.0;
         GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, at, TandemYawAngles(Rad2Deg(TandemNative.RemoteYaw(puppet.player))));
       }
-      if puppet.hidden {
-        TandemTransit.Hide(body, false);
-        puppet.hidden = false;
-      }
     }
+    TandemVisibility.Show(this.m_game, puppet.player, n"metro", 0.3);
     let station = TandemTransit.StationName(puppet.transitAt);
     TandemTransit.Notice(this.m_game, StrLen(station) > 0 ? s"\(puppet.name) got off the NCART at \(station)" : s"\(puppet.name) got off the NCART");
     TandemNative.Log(s"player \(puppet.player): off the NCART (station \(puppet.transitAt))");
@@ -709,7 +698,9 @@ public class TandemTransit {
   // ---- helpers ----
 
   // A body out of sight and back, reversibly (IVisualComponent.TemporaryHide):
-  // its meshes and clothes, and what it holds.
+  // its meshes and clothes, and what it holds. Only for our own V (riding
+  // along): a puppet is hidden through PuppetVisibility.reds, by reason
+  // (n"metro", n"along", n"noseat"), so no feature shows what another hid.
   public static func Hide(entity: ref<Entity>, hidden: Bool) -> Void {
     if !IsDefined(entity) {
       return;
@@ -790,7 +781,7 @@ public class TandemTransit {
       TandemNative.Log(s"ride: its seats:\(names)");
     }
     for puppet in puppets {
-      TandemNative.Log(s"ride: player \(puppet.player) kind \(TandemNative.RemoteTransitKind(puppet.player)) flags \(TandemNative.RemoteTransitFlags(puppet.player)) station \(TandemNative.RemoteTransitAt(puppet.player)) next \(TandemNative.RemoteTransitNext(puppet.player)) seat \(NameToString(TandemNative.RemoteTransitSeat(puppet.player))); here mode \(puppet.transitMode), hidden \(puppet.hidden), seated \(EntityID.IsDefined(puppet.seatedIn))");
+      TandemNative.Log(s"ride: player \(puppet.player) kind \(TandemNative.RemoteTransitKind(puppet.player)) flags \(TandemNative.RemoteTransitFlags(puppet.player)) station \(TandemNative.RemoteTransitAt(puppet.player)) next \(TandemNative.RemoteTransitNext(puppet.player)) seat \(NameToString(TandemNative.RemoteTransitSeat(puppet.player))); here mode \(puppet.transitMode), hidden \(TandemVisibility.IsHidden(this.m_game, puppet.player)), seated \(EntityID.IsDefined(puppet.seatedIn))");
     }
     TandemNative.Log(s"ride: seated by player \(this.m_seatedBy), carried by player \(this.m_carriedBy), asked by player \(this.m_askedBy)");
   }

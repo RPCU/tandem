@@ -94,6 +94,27 @@ TEST_CASE("a guest that vanishes paused, in a Sandevistan and holding an NPC fre
   CHECK(s.host->NpcHolds().empty());
 }
 
+TEST_CASE("a guest that vanishes in another world is back in the city for everyone") {
+  auto s = Three();
+  const auto gone = s.a->You();
+  s.a->SetLocalElsewhere({.place = proto::Place::Cyberspace,
+                          .flags = proto::kElsewhereMoved,
+                          .anchor = {1.f, 2.f, 3.f}});
+  REQUIRE(Pump(s.All(), [&](std::size_t, const auto &) {
+    return s.b->Elsewheres().contains(gone) && s.host->Elsewheres().contains(gone);
+  }));
+
+  s.a.reset(); // no goodbye: its puppet must not stay hidden anywhere
+  bool back = false;
+  REQUIRE(Pump(s.All(), [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::RemoteElsewhere>(&event); e && i == 1)
+        back |= e->state.player == gone && e->state.place == proto::Place::City;
+    return back && !s.host->Elsewheres().contains(gone);
+  }));
+  CHECK(s.b->Elsewheres().empty());
+}
+
 TEST_CASE("a reviver that vanishes mid-revive: the downed V hears the revive is off") {
   auto s = Three();
   const auto reviver = s.a->You();

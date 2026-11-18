@@ -49,8 +49,9 @@ TEST_CASE("the players digest leaves out what is the viewer's own") {
   std::set<proto::PlayerId> paused;
   std::map<proto::PlayerId, proto::TimeEffect> time;
   std::map<proto::PlayerId, proto::Vitals> lives;
+  std::map<proto::PlayerId, proto::Elsewhere> elsewhere;
   const consistency::PlayersView view{roster,  looks,  held, seats, radios,
-                                      stealth, paused, time, lives};
+                                      stealth, paused, time, lives, elsewhere};
   const auto before = consistency::PlayersDigest(view, 2);
   // The guest's own look and pause are its game's: the host's record of
   // them does not count in the guest's digest.
@@ -61,6 +62,12 @@ TEST_CASE("the players digest leaves out what is the viewer's own") {
   // Someone else's counts.
   seats[1] = {.player = 1, .vehicle = 5};
   CHECK(consistency::PlayersDigest(view, 2) != before);
+  // Another world: the host's dive counts for the guest, the guest's own not.
+  const auto seated = consistency::PlayersDigest(view, 2);
+  elsewhere[2] = {.player = 2, .place = proto::Place::Braindance};
+  CHECK(consistency::PlayersDigest(view, 2) == seated);
+  elsewhere[1] = {.player = 1, .place = proto::Place::Cyberspace, .flags = 1, .anchor = {1, 2, 3}};
+  CHECK(consistency::PlayersDigest(view, 2) != seated);
 }
 
 TEST_CASE("the story record says when a message changes nothing, and hashes what lasts") {

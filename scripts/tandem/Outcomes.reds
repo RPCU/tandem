@@ -122,6 +122,12 @@ public class TandemOutcomes {
     }
   }
 
+  // Guest: the host's difficulty is on (ours waits): no save may carry it
+  // (TandemSystem.IsSavingLocked).
+  public func FollowsHost() -> Bool {
+    return this.m_haveOwn;
+  }
+
   // The session is over: our own difficulty back.
   public func End() -> Void {
     if this.m_haveOwn {

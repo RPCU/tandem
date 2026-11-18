@@ -19,6 +19,7 @@ add_library(tandem SHARED
   src/addresses.cpp
   src/story.cpp
   src/story_natives.cpp
+  src/elsewhere_natives.cpp
   src/combat.cpp
   src/combat_natives.cpp
   src/sync_natives.cpp

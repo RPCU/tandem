@@ -109,6 +109,15 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
   for (const auto &[id, v] : players.lives)
     if (id != self && v.life != proto::Life::Up)
       hash.Add(std::uint64_t{id}).Add(std::uint64_t{static_cast<std::uint8_t>(v.life)});
+  hash.Add(std::uint64_t{0xA8});
+  for (const auto &[id, e] : players.elsewhere)
+    if (id != self && e.place != proto::Place::City)
+      hash.Add(std::uint64_t{id})
+          .Add(std::uint64_t{static_cast<std::uint8_t>(e.place)})
+          .Add(std::uint64_t{e.flags})
+          .Add(e.anchor.x)
+          .Add(e.anchor.y)
+          .Add(e.anchor.z);
   return hash.Value();
 }
 

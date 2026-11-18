@@ -176,6 +176,11 @@ struct RemoteTimeEffect {
 struct Combat {
   proto::Message message;
 };
+// Another player went into another world, changed it or came back (place
+// City), or left while away. Never reported for our own.
+struct RemoteElsewhere {
+  proto::Elsewhere state;
+};
 // The session is over (refused, host gone, timed out).
 struct Ended {
   std::string reason;
@@ -286,7 +291,7 @@ using SessionEvent = std::variant<
     events::RegroupOffered, events::RegroupAnswered, events::WorldItemAppeared,
     events::WorldItemTakenBy, events::SharedItemFrom, events::RemoteVitals, events::ReviveBy,
     events::SessionLost, events::HostNpcAnims, events::HostNpcShot, events::Combat, events::Resync,
-    events::EpochChanged, events::RemoteTransit, events::HostNpcSeat>;
+    events::EpochChanged, events::RemoteElsewhere, events::RemoteTransit, events::HostNpcSeat>;
 
 class Endpoint {
 public:
@@ -377,6 +382,12 @@ public:
   void SetLocalTimeEffect(proto::TimeEffect effect);
   // Every active time ability this game knows of (us included), by player.
   const std::map<proto::PlayerId, proto::TimeEffect> &TimeEffects() const { return m_timeEffects; }
+  // Our V in another world (tandem/elsewhere.hpp). Kept: sent now if we are
+  // in the session, else as soon as we are; the host hands everyone's to
+  // late joiners.
+  void SetLocalElsewhere(proto::Elsewhere state);
+  // Every player not in the city, as this game knows them (us included).
+  const std::map<proto::PlayerId, proto::Elsewhere> &Elsewheres() const { return m_elsewheres; }
   // How hard our V is to see (kept: sent now if we are in the session, else
   // as soon as we are; the host hands everyone's to late joiners).
   void SetLocalStealth(proto::Stealth stealth);
@@ -549,6 +560,14 @@ private:
   bool NoteTime(const proto::TimeEffect &effect);
   // A player is gone (or back from a crash): its ability ends for everyone.
   void EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
+  // Players in another world (host: the session's record, for late joiners).
+  proto::Elsewhere m_localElsewhere;
+  std::map<proto::PlayerId, proto::Elsewhere> m_elsewheres;
+  void SendLocalElsewhereNow();
+  // Records a player's place; false when it did not change.
+  bool NoteElsewhere(const proto::Elsewhere &state);
+  // A player is gone (or back from a crash): back in the city for everyone.
+  void EndElsewhereOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
   // Our stealth, and (host) everyone's latest, for late joiners.
   std::optional<proto::Stealth> m_localStealth;
   std::uint32_t m_stealthRevision{};

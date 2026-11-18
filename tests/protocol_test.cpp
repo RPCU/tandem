@@ -527,3 +527,19 @@ TEST_CASE("consistency messages survive encoding, are small and reliable") {
   big.npcs.resize(kMaxNpcSet);
   CHECK(Decode(Encode(big)).has_value());
 }
+
+TEST_CASE("a V in another world: survives encoding, small, reliable, not a story message") {
+  RoundTrips(Elsewhere{.player = 2,
+                       .place = Place::Cyberspace,
+                       .flags = kElsewhereMoved | kElsewhereSettled,
+                       .anchor = {-1234.5f, 678.25f, 12.f},
+                       .yaw = 1.5f});
+  RoundTrips(Elsewhere{.player = 1, .place = Place::Johnny});
+  CHECK(ChannelOf(Elsewhere{}) == Channel::Event);
+  CHECK(IsReliable(Elsewhere{}));
+  CHECK_FALSE(IsStory(Elsewhere{}));
+  CHECK(std::string(NameOf(Elsewhere{})) == "Elsewhere");
+  CHECK(Encode(Elsewhere{}).size() < 32);
+  // A place this version does not know is refused.
+  CHECK_FALSE(Decode(Encode(Elsewhere{.place = static_cast<Place>(5)})).has_value());
+}

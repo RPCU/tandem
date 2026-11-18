@@ -1029,6 +1029,27 @@ struct Epoch {
   friend bool operator==(const Epoch &, const Epoch &) = default;
 };
 
+// A V in another world (docs/ARCHITECTURE.md, other worlds; core
+// elsewhere.hpp): cyberspace, a braindance, playing as Johnny or someone
+// else. Sent by that player's game when it changes (Event channel); the host
+// stamps the sender, keeps everyone's for late joiners (a player who leaves,
+// or comes back from a crash, is back in the city) and relays it. While the
+// scene has taken the player away from its body (kElsewhereMoved), its game
+// sends the body's place (`anchor`) as its PlayerState and holds the body's
+// pose as it was; the others show the body there when it was sitting or
+// lying (kElsewhereSettled: a chair, a bed, a braindance rig) and hide it
+// otherwise. Part of the players domain of the host's digests.
+enum class Place : std::uint8_t { City = 0, Cyberspace = 1, Braindance = 2, Johnny = 3, Other = 4 };
+inline constexpr std::uint8_t kElsewhereMoved = 1, kElsewhereSettled = 2;
+struct Elsewhere {
+  PlayerId player{};
+  Place place{};
+  std::uint8_t flags{}; // kElsewhere*
+  Vec3 anchor;          // kElsewhereMoved: where the body is, in the city
+  float yaw{};          // its heading (radians, sync::YawOf)
+  friend bool operator==(const Elsewhere &, const Elsewhere &) = default;
+};
+
 // A ride a player's own game runs for its V (docs/ARCHITECTURE.md,
 // "Scripted transit and quest vehicles"), sent by that game when it starts,
 // changes or ends (Event channel; the host stamps the sender, keeps the
@@ -1080,16 +1101,15 @@ struct NpcSeat {
   friend bool operator==(const NpcSeat &, const NpcSeat &) = default;
 };
 
-using Message =
-    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
-                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
-                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
-                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
-                 Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
-                 NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
-                 Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise,
-                 Difficulty, AreaHit, Digest, ResyncRequest, NpcSet, Epoch, Transit, NpcSeat>;
+using Message = std::variant<
+    Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
+    Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
+    Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
+    PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle,
+    ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
+    NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
+    Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
+    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.

@@ -292,6 +292,18 @@ public class TandemLoot extends ScriptableSystem {
       ArrayPush(this.m_items, item);
       TandemNative.Log(s"loot: world item \(event.id) from player \(event.player) lies at (\(event.x), \(event.y), \(event.z)): \(event.stacks) stack(s)");
     }
+    if event.stack < ArraySize(item.stacks) {
+      // A bag we have, as the host has it now (sent again with a refused
+      // claim): a stack gone there is gone here too.
+      let known = item.stacks[event.stack];
+      if event.quantity <= 0 && !known.taken && !known.ours {
+        known.taken = true;
+        let removed = this.RemoveFrom(this.ObjectOf(item), known, known.quantity);
+        TandemNative.Log(s"loot: world item \(item.id) stack \(event.stack) was already taken on the host: \(removed) removed from our copy");
+        this.Forget(item);
+      }
+      return;
+    }
     if event.stack != ArraySize(item.stacks) {
       return; // out of order: not expected on a reliable channel
     }
@@ -331,6 +343,18 @@ public class TandemLoot extends ScriptableSystem {
       let name = this.NameOf(event.player);
       TandemNative.Log(s"loot: world item \(item.id) stack \(event.stack) (\(what)) went to \(event.player == 0u ? "nobody (it was gone)" : name) first: \(back) given back");
       this.Notice(event.player == 0u ? "Someone already took it" : s"\(name) picked it up first");
+      // Nobody: the host has no such bag any more (every stack taken, the
+      // news of it lost). The rest of our copy goes too: no ghost bag.
+      if event.player == 0u {
+        let object = this.ObjectOf(item);
+        for other in item.stacks {
+          if !other.taken && !other.ours {
+            other.taken = true;
+            this.RemoveFrom(object, other, other.quantity);
+          }
+        }
+        TandemNative.Log(s"loot: world item \(item.id) is gone on the host: our copy emptied");
+      }
     } else {
       stack.taken = true;
       let removed = this.RemoveFrom(this.ObjectOf(item), stack, stack.quantity);

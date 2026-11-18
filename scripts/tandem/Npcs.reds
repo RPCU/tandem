@@ -128,9 +128,11 @@ public class TandemNpcs {
         GameInstance.GetCommunitySystem(this.m_game).ChangeDensityModifier(0.0);
         TandemNative.Log("npcs: guest, own crowd off");
       }
+      // Not while our V is in another world (Elsewhere.reds): the NPCs
+      // around it are that world's, and hiding is for good.
       // On the NCART our train is our own (Transit.reds): its passengers
       // stay, as the host's stay on its train.
-      if now - this.m_lastQuiet >= 0.5 && !this.OnMetro() {
+      if now - this.m_lastQuiet >= 0.5 && !TandemElsewhere.Inside(this.m_game) && !this.OnMetro() {
         this.m_lastQuiet = now;
         this.HideOwn();
       }
@@ -316,7 +318,13 @@ public class TandemNpcs {
     // On the NCART none are listed: the ones known go (NpcGone, out of range).
     let riding = this.OnMetro();
     let sampling = this.m_anims.Due(this.m_now);
-    for npc in player.GetNPCsAroundObject(TandemNpcs.Range()) {
+    // Our V away from its body in another world (Elsewhere.reds): the NPCs
+    // around it are that world's, none is shared, and the shared ones go.
+    let around = player.GetNPCsAroundObject(TandemNpcs.Range());
+    if TandemElsewhere.AwayFromBody(this.m_game) {
+      ArrayClear(around);
+    }
+    for npc in around {
       let id = npc.GetEntityID();
       // The remote players' puppets are not the host's world (cars are not
       // listed, the host has no proxies); the dead are handled below.

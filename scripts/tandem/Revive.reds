@@ -572,14 +572,18 @@ public class TandemRevive {
   private func Revivals(player: ref<PlayerPuppet>, others: array<Uint32>) -> Void {
     // Revives of us that came too late to matter.
     TandemNative.TakeRevives();
-    let able = this.m_life == 0 && this.m_you != 0u && !VehicleComponent.IsMountedToVehicle(this.m_game, player);
+    // Not from another world (Elsewhere.reds): our V is not here.
+    let able = this.m_life == 0 && this.m_you != 0u && !VehicleComponent.IsMountedToVehicle(this.m_game, player)
+      && !TandemElsewhere.Inside(this.m_game);
     let here = player.GetWorldPosition();
     let nearest = 0u;
     let best = -1.0;
     if able {
       for p in others {
         let body = this.PuppetOf(p);
-        if TandemNative.RemoteLife(p) == 1 && IsDefined(body) {
+        // A downed V whose body the scene took out of sight is not here
+        // to revive; one left sitting or lying is.
+        if TandemNative.RemoteLife(p) == 1 && IsDefined(body) && !TandemElsewhere.BodyHidden(this.m_game, p) {
           let d = Vector4.Distance(body.GetWorldPosition(), here);
           if d <= 2.0 && (best < 0.0 || d < best) {
             best = d;

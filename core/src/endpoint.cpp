@@ -1,5 +1,7 @@
 #include "tandem/endpoint.hpp"
 
+#include "tandem/elsewhere.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <utility>
@@ -187,9 +189,10 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
       .world = consistency::WorldDigest(m_world, m_difficulty),
       .npcs = consistency::NpcDigest(m_npcs, m_npcHealth, m_npcHolds),
       .story = m_story.Digest(),
-      .players = consistency::PlayersDigest({m_players, m_appearances, m_held, m_seats, m_radios,
-                                             m_stealth, m_paused, m_timeEffects, m_lives},
-                                            self),
+      .players =
+          consistency::PlayersDigest({m_players, m_appearances, m_held, m_seats, m_radios,
+                                      m_stealth, m_paused, m_timeEffects, m_lives, m_elsewheres},
+                                     self),
       .npcCount = static_cast<std::uint16_t>(std::min<std::size_t>(m_npcs.size(), 0xFFFF)),
   };
 }
@@ -408,6 +411,15 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      Broadcast(relayed, event.peer);
                      out.push_back(events::RemoteTimeEffect{relayed});
                    },
+                   [&](const proto::Elsewhere &away) {
+                     // A guest only goes elsewhere in its own name.
+                     auto relayed = elsewhere::Sanitized(away);
+                     relayed.player = player;
+                     if (!NoteElsewhere(relayed))
+                       return;
+                     Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteElsewhere{relayed});
+                   },
                    [&](const proto::Regroup &offer) {
                      // A guest only offers to come to itself.
                      auto relayed = offer;
@@ -551,6 +563,9 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   }
   // Gone in a Sandevistan: its bubble ends for everyone.
   EndTimeOf(player, out, true);
+  // Gone from another world: back in the city for everyone (nothing of it
+  // stays hidden anywhere).
+  EndElsewhereOf(player, out, true);
   m_lives.erase(player);
   // It may have been reviving someone (it cannot say it stopped: a player
   // can vanish at any moment): every downed V hears its revive is off.
@@ -605,6 +620,8 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
       out.push_back(events::PauseChanged{{player, false}});
     }
     EndTimeOf(player, out, true);
+    // ...in its body, in the city, until it says otherwise...
+    EndElsewhereOf(player, out, true);
     // ...and its V is up until it says otherwise.
     if (LifeOf(player) != proto::Life::Up) {
       const proto::Vitals up{.player = player, .revision = m_lives[player].revision + 1};
@@ -677,6 +694,10 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     for (const auto &[id, time] : m_timeEffects)
       if (id != them)
         Send(peer, time);
+    // Who is in another world now; in a resync, who is in the city.
+    for (const auto &[id, away] : m_elsewheres)
+      if (id != them)
+        Send(peer, away);
     if (resync)
       for (const auto &[id, info] : m_players) {
         if (id == them)
@@ -685,6 +706,8 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
           Send(peer, proto::Pause{id, false});
         if (!m_timeEffects.contains(id))
           Send(peer, proto::TimeEffect{.player = id});
+        if (!m_elsewheres.contains(id))
+          Send(peer, proto::Elsewhere{.player = id});
         if (LifeOf(id) == proto::Life::Up)
           Send(peer, proto::Vitals{.player = id});
         if (!m_transits.contains(id))
@@ -841,6 +864,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             SendLocalPausedNow();
             SendLocalStealthNow();
             SendLocalTimeNow();
+            SendLocalElsewhereNow();
             SendLocalVitalsNow();
             SendLocalTransitNow();
             // What overtook the Welcome, in the order it came.
@@ -878,6 +902,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 if (NotePaused(id, false))
                   out.push_back(events::PauseChanged{{id, false}});
                 EndTimeOf(id, out, false);
+                EndElsewhereOf(id, out, false);
                 // Its state goes with it: a namesake joining later starts afresh.
                 m_appearances.erase(id);
                 m_held.erase(id);
@@ -1048,6 +1073,11 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             out.push_back(events::RemoteTransit{transit});
           },
           [&](const proto::NpcSeat &seat) { out.push_back(events::HostNpcSeat{seat}); },
+          [&](const proto::Elsewhere &away) {
+            const auto safe = elsewhere::Sanitized(away);
+            if (safe.player != m_you && NoteElsewhere(safe))
+              out.push_back(events::RemoteElsewhere{safe});
+          },
           [&](const proto::Regroup &offer) {
             if (offer.from != m_you && (offer.to == m_you || offer.to == proto::kNoPlayer))
               out.push_back(events::RegroupOffered{offer});
@@ -1801,6 +1831,10 @@ void Endpoint::ClaimWorldItem(proto::PlayerId player, proto::WorldItemId id, std
   auto &takers = m_worldTakers[id];
   if (takers[stack] != proto::kNoPlayer) {
     answer(takers[stack]); // someone was first
+    // ...and the bag as it really is: the claimer's copy may have missed
+    // more than this stack (a lost WorldItemTaken: a ghost bag).
+    if (peer)
+      Send(*peer, item->second);
     return;
   }
   takers[stack] = player;
@@ -1864,6 +1898,53 @@ bool Endpoint::SendCombat(proto::Message message) {
     m_difficulty = *difficulty;
   Broadcast(message);
   return true;
+}
+
+void Endpoint::SetLocalElsewhere(proto::Elsewhere state) {
+  state = elsewhere::Sanitized(state);
+  state.player = proto::kNoPlayer;
+  if (state == m_localElsewhere)
+    return;
+  m_localElsewhere = state;
+  SendLocalElsewhereNow();
+}
+
+void Endpoint::SendLocalElsewhereNow() {
+  if (!IsJoined() || m_ended)
+    return;
+  auto mine = m_localElsewhere;
+  mine.player = m_you;
+  // A guest that just joined has something to say only if it is away.
+  if (!NoteElsewhere(mine))
+    return;
+  if (IsHost())
+    Broadcast(mine);
+  else
+    Send(m_hostPeer, mine);
+}
+
+bool Endpoint::NoteElsewhere(const proto::Elsewhere &state) {
+  const auto it = m_elsewheres.find(state.player);
+  if (state.place == proto::Place::City) {
+    if (it == m_elsewheres.end())
+      return false;
+    m_elsewheres.erase(it);
+    return true;
+  }
+  if (it != m_elsewheres.end() && it->second == state)
+    return false;
+  m_elsewheres[state.player] = state;
+  return true;
+}
+
+void Endpoint::EndElsewhereOf(proto::PlayerId player, std::vector<SessionEvent> &out,
+                              bool broadcast) {
+  const proto::Elsewhere city{.player = player};
+  if (!NoteElsewhere(city))
+    return;
+  if (broadcast)
+    Broadcast(city);
+  out.push_back(events::RemoteElsewhere{city});
 }
 
 std::optional<net::Stats> Endpoint::HostLinkStats() const {

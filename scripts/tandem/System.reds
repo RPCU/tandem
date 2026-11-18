@@ -31,8 +31,6 @@ public class TandemPuppet {
   // No free seat for it in the vehicle it rides here (a quest NPC sits
   // there): hidden until one frees; tried again at this time.
   public let seatRetryAt: Float;
-  // Its body is out of sight (Transit.TandemTransit.Hide).
-  public let hidden: Bool;
   // Rides (Transit.reds): the rides received we acted on; on the NCART, 1
   // seated in a train of ours, 2 hidden and carried along; that train; when
   // the hidden body was last placed; the notices shown; its last station.
@@ -111,6 +109,10 @@ public class TandemSystem extends ScriptableSystem {
   private let m_time: ref<TandemTime>;
   // The NCART, rides and quest vehicles (Transit.reds).
   private let m_transit: ref<TandemTransit>;
+  // Our V and the others in other worlds (Elsewhere.reds), and why each
+  // puppet is hidden (PuppetVisibility.reds: private scenes, other worlds).
+  private let m_elsewhere: ref<TandemElsewhere>;
+  private let m_visibility: ref<TandemVisibility>;
   private let m_travel: ref<TandemTravel>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
@@ -231,6 +233,10 @@ public class TandemSystem extends ScriptableSystem {
     this.m_time.Start(this.GetGameInstance());
     this.m_transit = new TandemTransit();
     this.m_transit.Start(this.GetGameInstance());
+    this.m_visibility = new TandemVisibility();
+    this.m_visibility.Start(this.GetGameInstance());
+    this.m_elsewhere = new TandemElsewhere();
+    this.m_elsewhere.Start(this.GetGameInstance());
     this.m_travel = new TandemTravel();
     this.m_travel.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
@@ -324,6 +330,11 @@ public class TandemSystem extends ScriptableSystem {
       this.m_transit.End();
     }
     this.m_transit = null;
+    if IsDefined(this.m_elsewhere) {
+      this.m_elsewhere.Stop();
+      this.m_elsewhere = null;
+    }
+    this.m_visibility = null;
     if IsDefined(this.m_travel) {
       this.m_travel.Stop();
       this.m_travel = null;
@@ -352,8 +363,18 @@ public class TandemSystem extends ScriptableSystem {
   // game killed there reloads from before the fight, like any death
   // (ScriptableSystem.IsSavingLocked, final.reds:48411; the save locks ask
   // every scriptable system).
+  // A guest never saves in a session, whatever tandem.ini's `story` says:
+  // its world is the host's and it plays at the host's difficulty
+  // (Outcomes.reds), and a game killed there must load its own save as it
+  // was. Nor while the host's difficulty is still on after a session.
   private func IsSavingLocked() -> Bool {
-    return this.m_leftDown || (IsDefined(this.m_revive) && this.m_revive.IsDown());
+    if this.m_leftDown || (IsDefined(this.m_revive) && this.m_revive.IsDown()) {
+      return true;
+    }
+    if this.m_inGame && this.m_you != 0u && !TandemNative.IsHost() {
+      return true;
+    }
+    return IsDefined(this.m_outcomes) && this.m_outcomes.FollowsHost();
   }
 
   // ---- the co-op menu, in game (Coop.reds) ----
@@ -422,6 +443,15 @@ public class TandemSystem extends ScriptableSystem {
 
   public func Stealth() -> ref<TandemStealth> {
     return this.m_stealth;
+  }
+
+  // Other worlds (Elsewhere.reds), and the puppets hidden for a reason.
+  public func Elsewhere() -> ref<TandemElsewhere> {
+    return this.m_elsewhere;
+  }
+
+  public func Visibility() -> ref<TandemVisibility> {
+    return this.m_visibility;
   }
 
   // Slowed time (Time.reds), driven by Tick.
@@ -514,6 +544,12 @@ public class TandemSystem extends ScriptableSystem {
     // Our ride and the others' (the NCART, rides, quest scene vehicles).
     if IsDefined(this.m_transit) && this.m_playing {
       this.m_transit.Tick(this.Now(), this, this.m_puppets);
+    }
+    if IsDefined(this.m_elsewhere) {
+      this.m_elsewhere.Tick(this.Now(), this, this.m_playing ? this.m_you : 0u);
+    }
+    if IsDefined(this.m_visibility) {
+      this.m_visibility.Tick(this.Now(), this);
     }
     // The car radio (Radio.reds): the driver's for everyone aboard.
     if IsDefined(this.m_radio) && this.m_playing {
@@ -896,11 +932,14 @@ public class TandemSystem extends ScriptableSystem {
         this.m_transit.Choose(Equals(command, "ride along"));
       }
     } else if Equals(command, "ride hide") || Equals(command, "ride show") {
-      // (test) every puppet out of sight and back (TemporaryHide).
+      // (test) every puppet out of sight and back (PuppetVisibility.reds).
       let hide = Equals(command, "ride hide");
       for puppet in this.m_puppets {
-        TandemTransit.Hide(GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id), hide);
-        puppet.hidden = hide;
+        if hide {
+          TandemVisibility.Hide(this.GetGameInstance(), puppet.player, n"test", 0.3);
+        } else {
+          TandemVisibility.Show(this.GetGameInstance(), puppet.player, n"test", 0.3);
+        }
       }
       TandemNative.Log(s"ride: \(ArraySize(this.m_puppets)) puppet(s) \(hide ? "hidden" : "shown")");
     } else if Equals(command, "vehicle probe stop") {
@@ -1040,6 +1079,9 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_revive) {
         this.m_revive.Command(command);
       }
+    } else if StrBeginsWith(command, "elsewhere") && IsDefined(this.m_elsewhere) {
+      // Elsewhere.reds: elsewhere test PLACE|off, elsewhere state.
+      this.m_elsewhere.Command(command);
     } else if StrBeginsWith(command, "story") || StrBeginsWith(command, "quest") {
       // Story.reds: story …, quest freeze on|off, quest report.
       TandemStorySystem.Get(this.GetGameInstance()).Command(command);
@@ -1363,8 +1405,27 @@ public class TandemSystem extends ScriptableSystem {
     let psm = GameInstance.GetBlackboardSystem(game).GetLocalInstanced(player.GetEntityID(), GetAllBlackboardDefs().PlayerStateMachine);
     let locomotion = IsDefined(psm) ? psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Locomotion) : 0;
 
+    // In another world away from its body (Elsewhere.reds): the body, as it
+    // was, is what the others see (standing still where it was left).
+    let orientation = player.GetWorldOrientation();
+    let flags = TandemMovement.Flags(psm);
+    if IsDefined(this.m_elsewhere) {
+      let vehicle: wref<VehicleObject>;
+      let mounted = VehicleComponent.GetVehicle(game, player, vehicle) && IsDefined(vehicle);
+      let body = this.m_elsewhere.Sample(position, orientation, mounted);
+      if body.held {
+        position = new Vector4(body.x, body.y, body.z, 1.0);
+        orientation.i = body.i;
+        orientation.j = body.j;
+        orientation.k = body.k;
+        orientation.r = body.r;
+        velocity = new Vector4(0.0, 0.0, 0.0, 0.0);
+        flags = 0;
+      }
+    }
+
     // How we move beyond walking (Movement.reds): the puppet's placement.
-    TandemNative.SendLocalState(position, player.GetWorldOrientation(), velocity, locomotion, TandemMovement.Flags(psm));
+    TandemNative.SendLocalState(position, orientation, velocity, locomotion, flags);
 
     // Driving our own car, or riding a vehicle our game moves for us (an
     // AI, a scene: Transit.reds): its transform, for the copies elsewhere.
@@ -1394,6 +1455,12 @@ public class TandemSystem extends ScriptableSystem {
         case 2:
           this.NoticeLeft(event.player);
           this.RemovePuppet(event.player);
+          if IsDefined(this.m_elsewhere) {
+            this.m_elsewhere.Forget(event.player);
+          }
+          if IsDefined(this.m_visibility) {
+            this.m_visibility.Forget(event.player);
+          }
           break;
         case 4:
           this.m_you = event.player;
@@ -1425,6 +1492,12 @@ public class TandemSystem extends ScriptableSystem {
           }
           if IsDefined(this.m_revive) {
             this.m_revive.SessionEnded();
+          }
+          if IsDefined(this.m_elsewhere) {
+            this.m_elsewhere.End();
+          }
+          if IsDefined(this.m_visibility) {
+            this.m_visibility.End();
           }
           ArrayClear(this.m_missingPlayers);
           ArrayClear(this.m_missingSince);
@@ -1825,10 +1898,7 @@ public class TandemSystem extends ScriptableSystem {
     puppet.seatRetryAt = 0.0;
     // Hidden for want of a seat: seen again (TrySeat hides it again if the
     // new seat is taken too).
-    if puppet.hidden && puppet.transitMode == 0 && IsDefined(body) {
-      TandemTransit.Hide(body, false);
-      puppet.hidden = false;
-    }
+    TandemVisibility.Show(game, puppet.player, n"noseat", 0.3);
     if EntityID.IsDefined(puppet.car) && (owner != puppet.player || !TDBID.IsValid(record)) {
       // Left parked where it stopped (ProcessLeaving: copies are not deleted).
       let parked = new TandemLeaving();
@@ -1886,18 +1956,14 @@ public class TandemSystem extends ScriptableSystem {
     // seat the scene's own passenger holds is never taken from it.
     let slot = TandemVehicles.FreeSlot(game, vehicle as VehicleObject, puppet.seatedSlot, body.GetEntityID());
     if !IsNameValid(slot) {
-      if !puppet.hidden {
-        TandemTransit.Hide(body, true);
-        puppet.hidden = true;
+      if !TandemVisibility.IsHidden(game, puppet.player) {
         TandemNative.Log(s"player \(puppet.player): no free seat in player \(owner)'s vehicle here, hidden until one frees");
       }
+      TandemVisibility.Hide(game, puppet.player, n"noseat", 0.3);
       puppet.seatRetryAt = this.Now() + 0.5;
       return;
     }
-    if puppet.hidden && puppet.transitMode == 0 {
-      TandemTransit.Hide(body, false);
-      puppet.hidden = false;
-    }
+    TandemVisibility.Show(game, puppet.player, n"noseat", 0.3);
     TandemVehicles.Seat(game, body, vehicle, slot);
     puppet.seatedIn = vehicle.GetEntityID();
     puppet.wantsSeat = false;

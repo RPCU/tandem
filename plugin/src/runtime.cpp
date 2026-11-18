@@ -281,12 +281,42 @@ void Runtime::SubmitLocalPose(const proto::PoseState &pose) {
     m_poses[loop].Push(looped);
   }
   std::lock_guard _(m_lock);
-  m_localPose = pose;
+  m_poseHistory.Push(net::NowUs(), pose);
+  if (!m_poseHold)
+    m_localPose = pose;
 }
 
 std::optional<proto::PoseState> Runtime::TakeLocalPose() {
   std::lock_guard _(m_lock);
+  if (m_poseHold) {
+    // Sent again now and then: a pose is unreliable, and the stream may stop
+    // reading (V's entity changes in a replacer).
+    const auto now = net::NowUs();
+    if (now - m_poseHoldSentUs < 100'000)
+      return std::nullopt;
+    m_poseHoldSentUs = now;
+    return m_poseHold;
+  }
   return std::exchange(m_localPose, std::nullopt);
+}
+
+void Runtime::HoldLocalPose(std::uint64_t timeUs) {
+  std::lock_guard _(m_lock);
+  // No pose yet: nothing to hold, the live one goes on (the others hide
+  // or show the body by the flags alone).
+  m_poseHold = m_poseHistory.At(timeUs);
+  m_poseHoldSentUs = 0;
+  m_localPose.reset();
+}
+
+void Runtime::ReleaseLocalPose() {
+  std::lock_guard _(m_lock);
+  m_poseHold.reset();
+}
+
+bool Runtime::LocalPoseHeld() const {
+  std::lock_guard _(m_lock);
+  return m_poseHold.has_value();
 }
 
 void Runtime::SubmitLocalAppearance(proto::Appearance appearance) {
@@ -558,6 +588,39 @@ std::map<proto::PlayerId, proto::TimeEffect> Runtime::RemoteTimes(std::uint32_t 
   std::lock_guard _(m_lock);
   changes = m_remoteTimeChanges;
   return m_remoteTimes;
+}
+
+void Runtime::SubmitLocalElsewhere(const proto::Elsewhere &state) {
+  std::lock_guard _(m_lock);
+  m_localElsewhere = state;
+}
+
+std::optional<proto::Elsewhere> Runtime::TakeLocalElsewhere() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localElsewhere, std::nullopt);
+}
+
+void Runtime::PushRemoteElsewhere(const proto::Elsewhere &state) {
+  std::lock_guard _(m_lock);
+  if (state.place == proto::Place::City)
+    m_remoteElsewhere.erase(state.player);
+  else
+    m_remoteElsewhere[state.player] = state;
+  ++m_remoteElsewhereChanges;
+}
+
+void Runtime::ClearRemoteElsewhere() {
+  std::lock_guard _(m_lock);
+  if (m_remoteElsewhere.empty())
+    return;
+  m_remoteElsewhere.clear();
+  ++m_remoteElsewhereChanges;
+}
+
+std::map<proto::PlayerId, proto::Elsewhere> Runtime::RemoteElsewhere(std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  changes = m_remoteElsewhereChanges;
+  return m_remoteElsewhere;
 }
 
 void Runtime::NotePlayerName(proto::PlayerId player, std::string name) {
@@ -1084,6 +1147,13 @@ void Runtime::ResetSession() {
     m_sharedNpcs.clear();
     m_roster.clear();
     m_epochRequest.reset();
+    // Bags, claims, revives and offers name the old session's numbers.
+    m_lootOutbox.clear();
+    m_lootInbox.clear();
+    m_localRevives.clear();
+    m_revives.clear();
+    m_regroupOutbox.clear();
+    m_regroupEvents.clear();
   }
   // The NPCs' tracks: the next session's ids are other NPCs.
   std::lock_guard _(m_tracksLock);

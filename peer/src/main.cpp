@@ -1033,6 +1033,11 @@ private:
 //   replacer on|off              the host plays as Johnny (StoryState flag)
 //   private on|off               the host is in a private scene (romance,
 //                                a minor one-to-one chat: StoryState flag)
+//   world PLACE [moved] [settled] the host's V in another world (Elsewhere):
+//                                cyberspace, braindance, johnny, other, or
+//                                city to come back; moved: the scene took it
+//                                away from its body, which stays where the
+//                                mock player was (settled: sitting, lying)
 // Lines starting with # are comments.
 struct StoryStep {
   double at{};
@@ -1071,6 +1076,26 @@ std::vector<StoryStep> LoadStory(const std::string &path, std::string &error) {
 
 std::uint32_t Hash32(const std::string &text) {
   return static_cast<std::uint32_t>(std::stoul(text, nullptr, 0));
+}
+
+tandem::proto::Place PlaceNamed(const std::string &name) {
+  using tandem::proto::Place;
+  if (name == "cyberspace")
+    return Place::Cyberspace;
+  if (name == "braindance")
+    return Place::Braindance;
+  if (name == "johnny")
+    return Place::Johnny;
+  if (name == "other")
+    return Place::Other;
+  return Place::City;
+}
+
+const char *PlaceName(tandem::proto::Place place) {
+  constexpr const char *names[] = {"the city", "cyberspace", "a braindance", "Johnny",
+                                   "another body"};
+  const auto index = static_cast<std::size_t>(place);
+  return index < std::size(names) ? names[index] : "?";
 }
 
 // One story step as the host's game would send it.
@@ -1142,6 +1167,16 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
                                .flags = a[0] == "on" ? proto::kStoryReplacer : std::uint8_t{0}};
     if (step.verb == "effect" && a.size() >= 2)
       return proto::StoryEffect{.effect = TweakDBID(a[0]), .applied = a[1] == "on"};
+    if (step.verb == "world" && !a.empty()) {
+      proto::Elsewhere away{.place = PlaceNamed(a[0])};
+      for (std::size_t i = 1; i < a.size(); ++i) {
+        if (a[i] == "moved")
+          away.flags |= proto::kElsewhereMoved;
+        else if (a[i] == "settled")
+          away.flags |= proto::kElsewhereSettled;
+      }
+      return away;
+    }
     if (step.verb == "reward" && !a.empty())
       return proto::QuestReward{.reward = TweakDBID(a[0]),
                                 .quest = a.size() > 1 ? Hash32(a[1]) : 0};
@@ -1991,6 +2026,8 @@ int main(int argc, char **argv) {
   bool seated = false, parked = false;
   std::uint64_t seatedAtUs = 0;
   std::optional<tandem::proto::VehicleState> lastCar;
+  // The last state sent, and (world ... moved) the body we hold there.
+  std::optional<PlayerState> lastState, heldBody;
   // --radio: the radio of the car we drive, as a driver's game sends it.
   const auto sendRadio = [&](std::string_view why) {
     const int station = *options.radioStation;
@@ -2408,6 +2445,18 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteTimeEffect>) {
               Log("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
                   e.effect.abilities, e.effect.scale);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteElsewhere>) {
+              const auto &away = e.state;
+              if (away.place == tandem::proto::Place::City)
+                Log("player {} is back in the city", away.player);
+              else
+                Log("player {} is in {}{}", away.player, PlaceName(away.place),
+                    away.flags & tandem::proto::kElsewhereMoved
+                        ? std::format(", body {} at ({:.1f}, {:.1f}, {:.1f})",
+                                      away.flags & tandem::proto::kElsewhereSettled ? "settled"
+                                                                                    : "left",
+                                      away.anchor.x, away.anchor.y, away.anchor.z)
+                        : std::string(" (in place)"));
             } else if constexpr (std::is_same_v<E, tandem::events::WorldItemAppeared>) {
               const auto &item = e.item;
               Log("world item {} from player {}: {} stack(s), first {:#x} x{} (token {})", item.id,
@@ -2522,6 +2571,11 @@ int main(int argc, char **argv) {
         beside.velocity = {};
         state = beside;
       }
+      // Our V away from its body (world ... moved): the body stays put.
+      if (heldBody)
+        state = heldBody;
+      else if (state)
+        lastState = *state;
       if (state) {
         endpoint->SendLocalState(*state);
         lastSent = state->position;
@@ -2875,8 +2929,21 @@ int main(int argc, char **argv) {
                                       static_cast<std::int64_t>(story[storyNext].at * 1000))) {
         const auto &step = story[storyNext++];
         if (auto message = StoryMessage(step, storyLine, endpoint->You())) {
-          // A reward goes to every guest, one by one.
-          if (std::holds_alternative<tandem::proto::QuestReward>(*message)) {
+          // Another world is ours, not the story's: our own state.
+          if (auto *away = std::get_if<tandem::proto::Elsewhere>(&*message)) {
+            const bool moved = away->flags & tandem::proto::kElsewhereMoved;
+            if (moved && !heldBody)
+              heldBody = lastState.value_or(PlayerState{});
+            if (!moved || away->place == tandem::proto::Place::City)
+              heldBody.reset();
+            if (heldBody) {
+              heldBody->velocity = {};
+              away->anchor = heldBody->position;
+              away->yaw = tandem::sync::YawOf(heldBody->orientation);
+            }
+            endpoint->SetLocalElsewhere(*away);
+          } else if (std::holds_alternative<tandem::proto::QuestReward>(*message)) {
+            // A reward goes to every guest, one by one.
             for (const auto &[id, info] : endpoint->Players())
               if (id != endpoint->You())
                 endpoint->SendStory(*message, id);

@@ -477,9 +477,9 @@ ride along, or regroup on arrival (`SC §6.6`).
 
 Not in the first version beyond the generic tier rule. Host as Johnny or
 another replacer (`UI_PlayerStats.isReplacer`, `SC §6.1`): the host's
-puppet must become that replacer (player sync work, step 5); flashbacks and
-cyberspace are another place → guests held as spectators or regrouped
-(`SC §6.1`, §6.3). Johnny as an NPC beside the host's V is a host NPC and
+puppet must become that replacer (player sync work, step 5). Flashbacks,
+cyberspace and braindances are another place: §2.13 (built) keeps or hides
+the body, holds nobody, and leaves spectating for later (`SC §6.1`, §6.3). Johnny as an NPC beside the host's V is a host NPC and
 shows on guests' screens as a proxy (decision 10 in §8). Endings and the
 point of no return are host checkpoints; guests keep their own V.
 
@@ -512,7 +512,7 @@ host's track, the way NPC proxies take theirs, then switching back when
 the flag clears. Johnny's materialise and dematerialise glitches on the
 proxy need the effect names his entity plays (RE: his `.ent` effects).
 Songbird's netrunner sequences (Blackwall, cyberspace) are another place:
-the far rule applies (offer, then regroup). Status effects that are a
+§2.13 (their signal is still to find). Status effects that are a
 story's rules rather than its look (`SoMi_Q306_BlackwallMark` on NPCs) are
 not mirrored: only effects on the host's V are.
 
@@ -572,6 +572,32 @@ host's romance. A guest never gets the host's romance in its own save:
 its journal and facts are put back on leave (§1.4). Later in its own
 story, its own romance facts decide. A guest who romanced someone else
 still sees the host's partner as the host's.
+
+### 2.13 Other worlds: cyberspace, braindances, flashbacks (decided and built 2026-11-18)
+
+The user asked for the moments a V leaves the city (Alt's cyberspace,
+Songbird's, Mikoshi, netrunner dives, braindances, Johnny's flashbacks,
+dreams, any quest teleport to a separate place) to be native in co-op: never
+a frozen puppet or one floating in a void. Facts: engine-knowledge §13.18.
+The rule: **a V in another world leaves its body in the city; everyone
+sees the body, nobody sees the other world.** It applies to every player
+(the host's story dives and a guest's own), so it is player state
+(`Elsewhere`, ARCHITECTURE.md "Other worlds"), not a story message.
+
+| Moment                                                                 | The diver's body, for the others                                                                               | The diver                                      | The story                                       |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------- |
+| jacked in from a chair, braindance on a rig                            | stays in the chair as it was (position and pose held), marker on; "… is in cyberspace / a braindance"          | sees no puppet, no marker                      | no holds, no join offer; the guest plays on     |
+| cyberspace or a scene that moves V's body (standing, a flashback jump) | hidden (meshes, clothes, held items), marker off; "… is in cyberspace", "… is living one of Johnny's memories" | the same                                       | the same                                        |
+| Johnny takes over in the city ("Johnny drives", Chippin' In)           | the puppet stays and moves as Johnny; "… is Johnny Silverhand now"                                             | sees the others                                | tier rules as before (§2.11)                    |
+| back                                                                   | shown again where the player really is, 0.75 s after (the puppet moves there first); "… is back"               | the others again                               | holds and offers as the tier says               |
+| the session drops mid-dive, a player leaves                            | its state goes with it; the end of a session clears everyone's                                                 | a new game starts in its body                  | —                                               |
+| fights around the body                                                 | NPCs never hit a player in another world (the host does not send it)                                           | the host away shares no NPCs (the world's own) | a guest in its own world hides none of its NPCs |
+
+What is open: spectating a host's dive (the guest seeing the host's camera
+or the scene), the signals of Phantom Liberty's cyberspace and Blackwall
+sequences (no district of that name; status effects to read in game),
+Johnny's look on the puppet for a takeover, a fade on the puppet instead of
+a cut, a regroup offer when the diver comes back far from where it left.
 
 ---
 

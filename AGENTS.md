@@ -20,7 +20,7 @@ tests/         doctest tests of core/ (Linux)
 relay/         tandem-relay (Go, stdlib only): cmd/tandem-relay, internal/relay
 nix/           relay package and OCI image, redscript (the game's scc, built for Linux); default.nix exposes them
 deploy/        kubernetes/base: kustomize base for the relay
-scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp, StoryNatives.reds story_natives.cpp, CombatNatives.reds combat_natives.cpp, SyncNatives.reds sync_natives.cpp)
+scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp, StoryNatives.reds story_natives.cpp, CombatNatives.reds combat_natives.cpp, SyncNatives.reds sync_natives.cpp, ElsewhereNatives.reds elsewhere_natives.cpp)
 tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet records, their attitude groups, the player marker)
 dist/          files installed next to the DLL (tandem.ini)
 cmake/         clang-cl-msvc.cmake: the Windows cross toolchain
@@ -127,7 +127,8 @@ K7Q-2M9 --relay 127.0.0.1`. `task test` does the same (`relay-loopback`,
   not a constant expression under clang.
 - `scripts/tandem/Natives.reds` must match `plugin/src/natives.cpp` exactly
   (and `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds`
-  `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`; `task
+  `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds`
+  `elsewhere_natives.cpp`; `task
 natives:check` reads every pair).
   A redscript compile error disables **every** script in the game, so run
   `task scripts:check` after every `.reds` change (`task deploy`, `reload`

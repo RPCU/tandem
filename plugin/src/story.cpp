@@ -49,6 +49,11 @@ void Story::Note(const StoryInbound &inbound) {
     m_you = m_host = proto::kNoPlayer;
     m_others.clear();
     m_participation = {};
+    // Nobody's pose stays held for a private scene (the next session's
+    // player 2 is someone else), and ours is no longer held back.
+    for (auto &slot : m_posePaused)
+      slot.store(0);
+    SetPrivate(false);
     break;
   case StoryInbound::Kind::Joined:
     m_others.insert(inbound.player);
@@ -56,6 +61,8 @@ void Story::Note(const StoryInbound &inbound) {
   case StoryInbound::Kind::Left:
     m_others.erase(inbound.player);
     m_participation.Forget(inbound.player);
+    // Gone in its private scene (it may have vanished without a word).
+    PausePose(inbound.player, false);
     break;
   case StoryInbound::Kind::Message:
     break;
