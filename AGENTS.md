@@ -21,7 +21,7 @@ relay/         tandem-relay (Go, stdlib only): cmd/tandem-relay, internal/relay
 nix/           relay package and OCI image; default.nix exposes them
 deploy/        kubernetes/base: kustomize base for the relay
 scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp)
-tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet records, the player marker)
+tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet records, their attitude groups, the player marker)
 dist/          files installed next to the DLL (tandem.ini)
 cmake/         clang-cl-msvc.cmake: the Windows cross toolchain
 docs/          ARCHITECTURE.md, research/ (engine facts, sources; data/: RTTI and skeleton dumps)

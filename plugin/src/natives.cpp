@@ -19,6 +19,8 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -67,6 +69,39 @@ struct TandemNpcEvent {
 };
 static_assert(alignof(TandemNpcEvent) <= 8, "the script VM aligns struct locals to 8");
 
+// Guest: one of the host's NPCs hit our V (proto::PlayerHit). Plain fields,
+// as above.
+struct TandemPlayerHit {
+  std::uint32_t npc{}; // the attacker as the host shares it (0: not shared)
+  float physical{}, thermal{}, electric{}, chemical{};
+  std::int32_t attackType{}; // gamedataAttackType
+  std::int32_t flags{};      // proto::kHit*
+  float pierce{};            // the attacker's armour penetration
+  float x{}, y{}, z{};       // where it landed
+  float dx{}, dy{}, dz{};    // its direction
+  Red::TweakDBID attack;     // attack record
+  Red::TweakDBID weapon;     // the NPC's weapon item record
+};
+static_assert(alignof(TandemPlayerHit) <= 8, "the script VM aligns struct locals to 8");
+// Host: a guest's V made a noise (proto::Noise), for our NPCs to hear.
+struct TandemNoise {
+  std::uint32_t player{};
+  std::int32_t stim{}; // gamedataStimType
+  float radius{};      // 0: the stimulus's own
+  bool propagation{};
+};
+static_assert(alignof(TandemNoise) <= 8, "the script VM aligns struct locals to 8");
+// Quickhacks (scripts/tandem/Hacks.reds); plain fields, as above.
+struct TandemHackEvent {
+  std::int32_t kind{}; // HackEvent::Kind
+  std::uint32_t npc{};
+  std::uint32_t player{};
+  Red::TweakDBID action; // ObjectAction record; 3 status: the status effect record
+  std::int32_t state{};  // 2: proto::HackStep; 3: applied; 5: proto::CarHack
+  std::int32_t flags{};  // 1: proto::kUpload*; 4: proto::kPlayerHack*
+  float seconds{};
+};
+static_assert(alignof(TandemHackEvent) <= 8, "the script VM aligns struct locals to 8");
 // An NPC's new speed in the time bubbles (tandem/timebubble.hpp): its
 // factor, 1 when it is out of every bubble.
 struct TandemTimeChange {
@@ -418,6 +453,47 @@ struct TandemNative : Red::IScriptable {
     return {q.i, q.j, q.k, q.r};
   }
 
+  // The radio of the car our V drives (scripts/tandem/Radio.reds): on, the
+  // station (ERadioStationList index, -1 none), the song; `trackStarted` when
+  // the song just changed on the same station (its start is now).
+  static void SendVehicleRadio(bool on, std::int32_t station, Red::CName track, bool trackStarted) {
+    Runtime::Get().SubmitLocalRadio({.on = on,
+                                     .station = static_cast<std::int8_t>(on ? station : -1),
+                                     .track = on ? track.hash : 0},
+                                    trackStarted);
+  }
+
+  // The radio of the car a remote player drives: how many arrived (0: none).
+  static std::int32_t RemoteRadioChanges(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    Runtime::Get().RemoteRadio(player, changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  static bool RemoteRadioOn(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto radio = Runtime::Get().RemoteRadio(player, changes);
+    return radio && radio->on;
+  }
+  static std::int32_t RemoteRadioStation(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto radio = Runtime::Get().RemoteRadio(player, changes);
+    return radio ? radio->station : -1;
+  }
+  static Red::CName RemoteRadioTrack(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto radio = Runtime::Get().RemoteRadio(player, changes);
+    return radio ? Red::CName(radio->track) : Red::CName();
+  }
+  // Seconds since the driver's song began (host clock); -1: unknown.
+  static float RemoteRadioTrackAge(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto radio = Runtime::Get().RemoteRadio(player, changes);
+    const auto now = Runtime::Get().HostNowUs();
+    if (!radio || radio->trackStartUs == 0 || radio->trackStartUs > now)
+      return -1.f;
+    return static_cast<float>(static_cast<double>(now - radio->trackStartUs) / 1e6);
+  }
+
   static bool IsHost() { return Runtime::Get().config.role == Config::Role::Host; }
 
   // Host: the world as our game has it (sent when it changes, and every few
@@ -570,8 +646,98 @@ struct TandemNative : Red::IScriptable {
     if (!message.effects.empty())
       Runtime::Get().SubmitNpcEffect(message);
   }
+  // Host: our NPC `npc` (0: not shared) hit `player`'s puppet. The damage
+  // is the attacker's side only; that player's game applies the target's.
+  static void SendPlayerHit(std::uint32_t player, std::uint32_t npc, float physical, float thermal,
+                            float electric, float chemical, std::int32_t attackType,
+                            std::int32_t flags, float pierce, Red::Vector4 position,
+                            Red::Vector4 direction, Red::TweakDBID attack, Red::TweakDBID weapon) {
+    Runtime::Get().SubmitPlayerHit({.player = player,
+                                    .npc = npc,
+                                    .physical = physical,
+                                    .thermal = thermal,
+                                    .electric = electric,
+                                    .chemical = chemical,
+                                    .attackType = static_cast<std::uint8_t>(attackType),
+                                    .flags = static_cast<std::uint8_t>(flags),
+                                    .pierce = pierce,
+                                    .position = {position.X, position.Y, position.Z},
+                                    .direction = {direction.X, direction.Y, direction.Z},
+                                    .attack = attack.value,
+                                    .weapon = weapon.value});
+  }
+  // Guest: the host's NPCs' hits on our V since the last call.
+  static Red::DynArray<TandemPlayerHit> TakePlayerHits() {
+    Red::DynArray<TandemPlayerHit> out;
+    for (const auto &hit : Runtime::Get().TakePlayerHits())
+      out.EmplaceBack(TandemPlayerHit{hit.npc, hit.physical, hit.thermal, hit.electric,
+                                      hit.chemical, hit.attackType, hit.flags, hit.pierce,
+                                      hit.position.x, hit.position.y, hit.position.z,
+                                      hit.direction.x, hit.direction.y, hit.direction.z,
+                                      Red::TweakDBID(hit.attack), Red::TweakDBID(hit.weapon)});
+    return out;
+  }
   // Guest: which players the host's NPC has detected (bit player - 1).
   static std::int32_t NpcDetected(std::uint32_t npc) { return Runtime::Get().NpcDetected(npc); }
+  // Guest: how many of the host's NPCs have detected our V (0: none, or the
+  // host's states stopped coming).
+  static std::int32_t NpcsDetectingUs() { return Runtime::Get().NpcsDetectingUs(); }
+  // Guest: how far the host's NPC is in noticing our V, 0..1.
+  static float NpcAwareness(std::uint32_t npc) { return Runtime::Get().NpcAwarenessOfUs(npc); }
+  // Host: how far each of its NPCs is in noticing each guest (levels 0..1).
+  static void SendNpcAwareness(Red::DynArray<std::uint32_t> npcs,
+                               Red::DynArray<std::uint32_t> players, Red::DynArray<float> levels) {
+    proto::NpcAwareness awareness;
+    for (std::uint32_t i = 0; i < npcs.Size() && i < players.Size() && i < levels.Size() &&
+                              awareness.entries.size() < proto::kMaxNpcAwareness;
+         ++i) {
+      const auto level = std::clamp(levels[i], 0.f, 1.f);
+      awareness.entries.push_back({.npc = npcs[i],
+                                   .player = players[i],
+                                   .level = static_cast<std::uint8_t>(std::lround(level * 255.f))});
+    }
+    Runtime::Get().SubmitNpcAwareness(std::move(awareness));
+  }
+
+  // How hard our V is to see (proto::kStealth* flags, its Visibility stat,
+  // the camo status effect on it), when it changes.
+  static void SendStealth(std::int32_t flags, float visibility, Red::TweakDBID camo) {
+    Runtime::Get().SubmitLocalStealth(
+        {.flags = static_cast<std::uint8_t>(flags), .visibility = visibility, .camo = camo.value});
+  }
+  static std::int32_t RemoteStealthChanges(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    Runtime::Get().RemoteStealth(player, changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  static std::int32_t RemoteStealthFlags(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto stealth = Runtime::Get().RemoteStealth(player, changes);
+    return stealth ? stealth->flags : 0;
+  }
+  static float RemoteStealthVisibility(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto stealth = Runtime::Get().RemoteStealth(player, changes);
+    return stealth ? stealth->visibility : 1.f;
+  }
+  static Red::TweakDBID RemoteStealthCamo(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto stealth = Runtime::Get().RemoteStealth(player, changes);
+    return stealth ? Red::TweakDBID(stealth->camo) : Red::TweakDBID();
+  }
+
+  // Guest: a stimulus our V gave out, for the host's NPCs.
+  static void SendNoise(std::int32_t stim, float radius, bool propagation) {
+    Runtime::Get().SubmitLocalNoise(
+        {.stim = static_cast<std::uint8_t>(stim), .radius = radius, .propagation = propagation});
+  }
+  // Host: the guests' noises since the last call.
+  static Red::DynArray<TandemNoise> TakeNoises() {
+    Red::DynArray<TandemNoise> out;
+    for (const auto &noise : Runtime::Get().TakeRemoteNoises())
+      out.EmplaceBack(TandemNoise{noise.player, noise.stim, noise.radius, noise.propagation});
+    return out;
+  }
 
   static void SendNpcGone(std::uint32_t npc, std::int32_t reason, std::uint32_t killer) {
     Runtime::Get().SubmitNpcGone(
@@ -590,6 +756,57 @@ struct TandemNative : Red::IScriptable {
                          turn.j, turn.k, turn.r, event.reason, event.player, event.amount,
                          event.flags, event.direction.x, event.direction.y, event.direction.z});
     }
+    return out;
+  }
+
+  // Quickhacks. Guest: we started uploading `action` on the host's NPC.
+  static void SendNpcHack(std::uint32_t npc, Red::TweakDBID action, float seconds,
+                          std::int32_t flags) {
+    Runtime::Get().SubmitHack(proto::NpcHack{
+        .npc = npc,
+        .action = action.value,
+        .uploadMs = static_cast<std::uint32_t>(std::clamp(seconds, 0.f, 600.f) * 1000.f),
+        .flags = static_cast<std::uint8_t>(flags)});
+  }
+  // Host: an upload on one of our NPCs started (0), was done (1) or failed (2).
+  static void SendNpcHackState(std::uint32_t npc, std::uint32_t player, Red::TweakDBID action,
+                               std::int32_t step, float seconds) {
+    if (step < 0 || step > static_cast<std::int32_t>(proto::HackStep::Failed))
+      return;
+    Runtime::Get().SubmitHack(proto::NpcHackState{
+        .npc = npc,
+        .player = player,
+        .action = action.value,
+        .step = static_cast<proto::HackStep>(step),
+        .uploadMs = static_cast<std::uint32_t>(std::clamp(seconds, 0.f, 600.f) * 1000.f)});
+  }
+  // Host: a quickhack effect came onto (applied) or left one of our NPCs.
+  static void SendNpcStatus(std::uint32_t npc, std::uint32_t player, Red::TweakDBID effect,
+                            bool applied) {
+    Runtime::Get().SubmitHack(
+        proto::NpcStatus{.npc = npc, .player = player, .effect = effect.value, .applied = applied});
+  }
+  // Host: our NPC netrunner `npc` hacks player `player`'s V.
+  static void SendPlayerHack(std::uint32_t player, std::uint32_t npc, Red::TweakDBID action,
+                             std::int32_t flags) {
+    Runtime::Get().SubmitHack(proto::PlayerHack{.player = player,
+                                                .npc = npc,
+                                                .action = action.value,
+                                                .flags = static_cast<std::uint8_t>(flags)});
+  }
+  // We hacked the car player `driver` drives (proto::CarHack).
+  static void SendVehicleHack(std::uint32_t driver, std::int32_t hack, float seconds) {
+    if (hack < 0 || hack > static_cast<std::int32_t>(proto::CarHack::Accelerate))
+      return;
+    Runtime::Get().SubmitHack(proto::VehicleHack{
+        .driver = driver, .hack = static_cast<proto::CarHack>(hack), .seconds = seconds});
+  }
+  static Red::DynArray<TandemHackEvent> TakeHackEvents() {
+    Red::DynArray<TandemHackEvent> out;
+    for (const auto &event : Runtime::Get().TakeHackEvents())
+      out.EmplaceBack(TandemHackEvent{static_cast<std::int32_t>(event.kind), event.npc,
+                                      event.player, Red::TweakDBID(event.action), event.state,
+                                      event.flags, event.seconds});
     return out;
   }
 
@@ -629,6 +846,41 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcEvent, "TandemNpcEvent", {
   RTTI_PROPERTY(dx);
   RTTI_PROPERTY(dy);
   RTTI_PROPERTY(dz);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemHackEvent, "TandemHackEvent", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(action);
+  RTTI_PROPERTY(state);
+  RTTI_PROPERTY(flags);
+  RTTI_PROPERTY(seconds);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemPlayerHit, "TandemPlayerHit", {
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(physical);
+  RTTI_PROPERTY(thermal);
+  RTTI_PROPERTY(electric);
+  RTTI_PROPERTY(chemical);
+  RTTI_PROPERTY(attackType);
+  RTTI_PROPERTY(flags);
+  RTTI_PROPERTY(pierce);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+  RTTI_PROPERTY(dx);
+  RTTI_PROPERTY(dy);
+  RTTI_PROPERTY(dz);
+  RTTI_PROPERTY(attack);
+  RTTI_PROPERTY(weapon);
+});
+RTTI_DEFINE_CLASS(tandem::plugin::TandemNoise, "TandemNoise", {
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(stim);
+  RTTI_PROPERTY(radius);
+  RTTI_PROPERTY(propagation);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
@@ -680,9 +932,33 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendNpcHealth);
   RTTI_METHOD(SendNpcHit);
   RTTI_METHOD(SendNpcEffect);
+  RTTI_METHOD(SendPlayerHit);
+  RTTI_METHOD(TakePlayerHits);
   RTTI_METHOD(NpcDetected);
+  RTTI_METHOD(NpcsDetectingUs);
+  RTTI_METHOD(NpcAwareness);
+  RTTI_METHOD(SendNpcAwareness);
+  RTTI_METHOD(SendStealth);
+  RTTI_METHOD(RemoteStealthChanges);
+  RTTI_METHOD(RemoteStealthFlags);
+  RTTI_METHOD(RemoteStealthVisibility);
+  RTTI_METHOD(RemoteStealthCamo);
+  RTTI_METHOD(SendNoise);
+  RTTI_METHOD(TakeNoises);
   RTTI_METHOD(TakeNpcEvents);
+  RTTI_METHOD(SendNpcHack);
+  RTTI_METHOD(SendNpcHackState);
+  RTTI_METHOD(SendNpcStatus);
+  RTTI_METHOD(SendPlayerHack);
+  RTTI_METHOD(SendVehicleHack);
+  RTTI_METHOD(TakeHackEvents);
   RTTI_METHOD(NpcPuppetId);
+  RTTI_METHOD(SendVehicleRadio);
+  RTTI_METHOD(RemoteRadioChanges);
+  RTTI_METHOD(RemoteRadioOn);
+  RTTI_METHOD(RemoteRadioStation);
+  RTTI_METHOD(RemoteRadioTrack);
+  RTTI_METHOD(RemoteRadioTrackAge);
   RTTI_METHOD(IsHost);
   RTTI_METHOD(SendWorld);
   RTTI_METHOD(HostWorldChanges);

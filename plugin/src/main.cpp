@@ -16,6 +16,7 @@
 #include <windows.h>
 
 #include <filesystem>
+#include <format>
 
 namespace {
 const RED4ext::v1::Sdk *g_sdk{};
@@ -32,19 +33,50 @@ std::filesystem::path PluginDirectory(RED4ext::v1::PluginHandle handle) {
 // can let go of a pause from there; the time script (scripts/tandem/Time.reds)
 // takes back, within the frame, a time dilation that would slow the shared
 // world.
+// A script class's static function, found once: a script class's static
+// functions are neither in its member nor its static list, they are
+// registered as global functions under a qualified name
+// (docs/research/engine-knowledge.md §13.13).
+struct ScriptFrame {
+  const char *script;
+  const char *what; // the log's word for it
+  RED4ext::CBaseFunction *function{};
+  bool searched{};
+  std::uint32_t failures{};
+
+  void Call(Red::ScriptGameInstance &game) {
+    if (!function && !searched && Red::GetClass(script)) {
+      searched = true;
+      RED4ext::DynArray<RED4ext::CBaseFunction *> globals;
+      RED4ext::CRTTISystem::Get()->GetGlobalFunctions(globals);
+      std::string seen;
+      for (auto *f : globals) {
+        const std::string_view full = f->fullName.ToString();
+        if (full.find(script) != std::string_view::npos) {
+          seen += std::format(" {}", full);
+          if (full.find("Frame") != std::string_view::npos)
+            function = f;
+        }
+      }
+      tandem::plugin::log::Info("{}: {} globals:{}; frame {}", what, script, seen,
+                                function != nullptr);
+    }
+    // Reported on the first failure and every 1000 after: the scripts may
+    // not be there in the first frames.
+    if ((!function || !Red::CallFunction(function, game)) && failures++ % 1000 == 0)
+      tandem::plugin::log::Warn("{}: {}.Frame could not be called ({} times)", what, script,
+                                failures);
+  }
+};
+
 bool OnRunningUpdate(RED4ext::CGameApplication *) {
   if (!tandem::plugin::Runtime::Get().Started())
     return false;
-  static bool reported = false, timeReported = false;
   Red::ScriptGameInstance game;
-  if (!Red::CallStatic("TandemPause", "Frame", game) && !reported) {
-    reported = true;
-    tandem::plugin::log::Warn("pause: TandemPause.Frame could not be called: no shared pause");
-  }
-  if (!Red::CallStatic("TandemTime", "Frame", game) && !timeReported) {
-    timeReported = true;
-    tandem::plugin::log::Warn("time: TandemTime.Frame could not be called: no time rules");
-  }
+  static ScriptFrame pause{"TandemPause", "pause"};
+  static ScriptFrame time{"TandemTime", "time"};
+  pause.Call(game);
+  time.Call(game);
   return false; // ignored for the running state
 }
 

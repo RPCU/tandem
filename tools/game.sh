@@ -82,6 +82,18 @@ start() {
     eval "$(tr "\0" "\n" < /proc/$pid/environ | grep -E "^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|SWAYSOCK)=" | sed "s/^/export /")"
     nohup steam steam://rungameid/1091500 >/dev/null 2>&1 &'
   echo "launched, loading the latest save"
+  # Scripts compile within a minute of launch; a compile error disables
+  # every script, so stop at once instead of waiting for lines that will
+  # never come.
+  local launched
+  launched=$(remote 'date +%s')
+  if remote "cd '$dir/r6/logs'; for i in \$(seq 1 90); do \
+      if [ -f redscript_rCURRENT.log ] && [ \$(stat -c %Y redscript_rCURRENT.log) -ge $launched ]; then \
+        sleep 2; grep -q '\[ERROR' redscript_rCURRENT.log && exit 0; exit 1; fi; sleep 1; done; exit 1"; then
+    echo "redscript compile errors (every script is off):" >&2
+    remote "grep -A4 '\[ERROR' '$dir/r6/logs/redscript_rCURRENT.log' | cut -c1-200 | head -30" >&2 || true
+    exit 1
+  fi
 
   # Load Begone (Nexus 8144; Mod Settings' user.ini, section
   # [LoadBegone.LoadBegoneConfig]: enabled, skipRecapVideos) skips the intro,
@@ -177,7 +189,7 @@ peer() {
     local address
     address=$(getent ahostsv4 "$host" | awk 'NR == 1 { print $1 }')
     [ -n "$address" ] || address=$(remote "ip -4 -o route get 1.1.1.1" | awk '{ for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1) }')
-    args=(join "$address:27450" --mode front --body male)
+    args=(join "$address:27450" --mode front --body female)
   fi
   mkdir -p .cache
   nohup build/linux/peer/tandem-peer "${args[@]}" >.cache/peer.log 2>&1 &

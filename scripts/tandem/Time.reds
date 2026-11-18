@@ -104,7 +104,9 @@ public class TandemTime {
   // Every frame, from the plugin (plugin/src/main.cpp): a dilation that
   // would slow the shared world is taken back within the frame it began.
   public static func Frame(game: GameInstance) -> Void {
-    let time = TandemTime.Of(game);
+    // The plugin hands an empty game instance: the game's own global is the
+    // right one (as TandemPause.Frame).
+    let time = TandemTime.Of(GetGameInstance());
     if IsDefined(time) {
       time.Update();
     }

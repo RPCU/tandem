@@ -97,6 +97,30 @@ struct NpcHitBy {
 struct NpcEffectBy {
   proto::NpcEffect effect;
 };
+// One of the host's NPCs hit our V (guests only; never another player's hit).
+struct HitByNpc {
+  proto::PlayerHit hit;
+};
+// Quickhacks. Host: a guest started an upload on one of our NPCs.
+struct NpcHackBy {
+  proto::NpcHack hack;
+};
+// Guests: an upload on a host NPC started or ended (anyone's, ours too).
+struct HostNpcHackState {
+  proto::NpcHackState state;
+};
+// Guests: a quickhack effect came onto or left a host NPC (never our own).
+struct HostNpcStatus {
+  proto::NpcStatus status;
+};
+// Guests: a host NPC netrunner hacks our V.
+struct HostPlayerHack {
+  proto::PlayerHack hack;
+};
+// The driver's game (host or guest): someone hacked the car we drive.
+struct VehicleHackOn {
+  proto::VehicleHack hack;
+};
 // The host's world changed (guests only).
 struct HostWorld {
   proto::World world;
@@ -115,6 +139,23 @@ struct RemoteTimeEffect {
 struct Ended {
   std::string reason;
 };
+// The radio of the car another player drives changed (or was sent again
+// for a passenger getting in). Never reported for our own.
+struct RemoteVehicleRadio {
+  proto::VehicleRadio radio;
+};
+// Another player's stealth changed (camo, visibility, crouch).
+struct RemoteStealth {
+  proto::Stealth stealth;
+};
+// How far the host's NPCs are in noticing each guest (guests only).
+struct HostNpcAwareness {
+  proto::NpcAwareness awareness;
+};
+// A guest's V made a noise for our NPCs to hear (host only).
+struct NoiseBy {
+  proto::Noise noise;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -129,7 +170,10 @@ using SessionEvent =
                  events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
                  events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
-                 events::Ended, events::PlayerReturned, events::RemoteTimeEffect>;
+                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
+                 events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
+                 events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
+                 events::HostPlayerHack, events::VehicleHackOn, events::RemoteTimeEffect>;
 
 class Endpoint {
 public:
@@ -154,6 +198,9 @@ public:
   // Where we sit (kept and handed to late joiners), and the car we drive.
   void SetLocalSeat(proto::Seat seat);
   void SendLocalVehicle(proto::VehicleState vehicle);
+  // The radio of the car we drive: sent now (each call, even unchanged: a
+  // passenger getting in is sent it again), kept and handed to late joiners.
+  void SetLocalVehicleRadio(proto::VehicleRadio radio);
   // Host only: the world every guest follows (kept for late joiners).
   void SetWorld(proto::World world);
   // Host only: its NPCs (spawns kept for late joiners until gone).
@@ -165,6 +212,19 @@ public:
   // Guest only: we hit one of the host's NPCs.
   void SendNpcHit(const proto::NpcHit &hit);
   void SendNpcEffect(const proto::NpcEffect &effect);
+  // Host only: one of our NPCs hit `hit.player`'s V (its puppet here). Sent
+  // to that player alone; false when it is not a guest in the session.
+  bool SendPlayerHit(const proto::PlayerHit &hit);
+  // Quickhacks (docs/ARCHITECTURE.md). Guest only: we started uploading on a
+  // host NPC. Host only: uploads and quickhack effects on our NPCs, to
+  // everyone; an NPC netrunner's hack on a guest's V, to that guest only.
+  void SendNpcHack(const proto::NpcHack &hack);
+  void SendNpcHackState(const proto::NpcHackState &state);
+  void SendNpcStatus(const proto::NpcStatus &status);
+  void SendPlayerHack(const proto::PlayerHack &hack);
+  // We hacked the car `hack.driver` drives: to its driver's game, through
+  // the host (which stamps the hacker).
+  void SendVehicleHack(proto::VehicleHack hack);
   // Our pause menu is open (paused) or closed. Kept: sent now if we are in
   // the session, else as soon as we are.
   void SetLocalPaused(bool paused);
@@ -175,6 +235,13 @@ public:
   void SetLocalTimeEffect(proto::TimeEffect effect);
   // Every active time ability this game knows of (us included), by player.
   const std::map<proto::PlayerId, proto::TimeEffect> &TimeEffects() const { return m_timeEffects; }
+  // How hard our V is to see (kept: sent now if we are in the session, else
+  // as soon as we are; the host hands everyone's to late joiners).
+  void SetLocalStealth(proto::Stealth stealth);
+  // Host only: how far its NPCs are in noticing each guest.
+  void SendNpcAwareness(proto::NpcAwareness awareness);
+  // Guest only: a noise our V made, for the host's NPCs.
+  void SendNoise(const proto::Noise &noise);
 
   // Time on the host's clock (the session's shared timeline).
   std::uint64_t HostNowUs() const { return net::NowUs() + m_clockOffsetUs; }
@@ -196,6 +263,8 @@ private:
   void RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out);
   void SendSessionTo(net::PeerId peer);
   void BroadcastRoster();
+  // Host: the connection of a welcomed player (nullopt: none, or us).
+  std::optional<net::PeerId> PeerOf(proto::PlayerId player) const;
 
   std::unique_ptr<net::Session> m_session;
   Identity m_identity;
@@ -232,6 +301,10 @@ private:
   std::map<proto::PlayerId, proto::Seat> m_seats;
   std::uint32_t m_vehicleSeq{};
   void SendLocalSeatNow();
+  std::optional<proto::VehicleRadio> m_localRadio;
+  std::uint32_t m_radioRevision{};
+  std::map<proto::PlayerId, proto::VehicleRadio> m_radios;
+  void SendLocalRadioNow();
   std::optional<proto::World> m_world;
   std::uint32_t m_worldRevision{};
   std::map<proto::NpcId, proto::NpcSpawn> m_npcs;
@@ -251,6 +324,12 @@ private:
   bool NoteTime(const proto::TimeEffect &effect);
   // A player is gone (or back from a crash): its ability ends for everyone.
   void EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
+  // Our stealth, and (host) everyone's latest, for late joiners.
+  std::optional<proto::Stealth> m_localStealth;
+  std::uint32_t m_stealthRevision{};
+  std::map<proto::PlayerId, proto::Stealth> m_stealth;
+  void SendLocalStealthNow();
+  std::uint32_t m_awarenessSeq{};
   bool m_ended{};
 };
 } // namespace tandem
