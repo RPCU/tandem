@@ -498,6 +498,7 @@ in-game tests still owed; none of it tested in a session yet):
 | `research/coop-scenes.md`          | scene tiers, cutscenes, dialogue choices, braindance, Johnny, restrictions      |
 | `research/coop-time.md`            | every time dilation, pause and time skip, and the game clock                    |
 | `research/coop-quests-world.md`    | facts, journal, persistent state, weather, police, crowds, saves, rewards       |
+| `research/coop-perks.md`           | every perk tree, relic, cyberware ability and quickhack, by co-op risk          |
 
 - **Scenes for guests.** Replaying the host's quest-scene nodes in a guest's
   game (the campaign fork's approach) is unproven: nodes run outside their
@@ -685,6 +686,26 @@ in-game tests still owed; none of it tested in a session yet):
   sounds). Abilities that bend time follow the time rules above. Facts per
   ability: `research/coop-player-vehicles.md` §4, `research/coop-time.md`,
   `research/coop-npcs-combat.md` (quickhacks, finishers).
+
+  Every perk, relic perk, cyberware ability and quickhack has been read for
+  co-op risk (`research/coop-perks.md`, 2026-11-18, scripts only). Most
+  perks are attacker-side modifiers and already work through the guest's
+  hit pipeline. The blockers have a few root causes: on the host a guest's
+  puppet has no perks (`PlayerDevelopmentSystem.GetData` is null for it)
+  and NPC-side code reacting to "the player" acts for the host's V (second
+  chance, gag, finisher offers, Bait, quickhack alerts and reveals, spread
+  stats, NPC netrunners hacking only the host); a V's defensive side
+  (blade deflect, armour cyberware, dodge, health floors) runs on the host
+  for NPC hits, so the host must send the attack and the guest run the
+  hit on its own V; camo and visibility must reach the host's senses;
+  carrying, throwing, finishers and Breach Protocol daemons change host
+  NPCs and devices. Rules to adopt with them: a hit carries its whole
+  outcome (poise, non-lethal, cap at 1 HP, reaction, dismemberment); the
+  guest predicts kills so on-kill perks fire at the hit, and queues its
+  skill XP itself (today a guest earns none: XP is queued only when
+  damage is applied for real); area and spreading effects run on one game;
+  the session plays at the host's difficulty.
+
 - **Combat in and around vehicles.** Everything that happens in a car must
   work with several players, seen and heard by all: shooting from a seat
   (driver combat with a one-handed weapon, passengers leaning out, aiming
