@@ -94,6 +94,10 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
       OnGuestStory(event.peer, player, message, out);
       return;
     }
+    if (proto::IsCombat(message)) {
+      OnGuestCombat(player, message, out);
+      return;
+    }
 
     std::visit(Overloaded{
                    [&](const proto::Ping &ping) {
@@ -306,6 +310,10 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
     m_session->Send(peer, spawn);
   for (const auto &[npc, health] : m_npcHealth)
     m_session->Send(peer, health);
+  for (const auto &[npc, poise] : m_npcPoise)
+    m_session->Send(peer, poise);
+  if (m_difficulty)
+    m_session->Send(peer, *m_difficulty);
   // The story so far: journal, tracked entry, call, choice hub, story states.
   for (const auto &message : m_story.ForJoiner())
     m_session->Send(peer, message);
@@ -342,6 +350,17 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
         break;
       if (IsJoined())
         out.push_back(events::Story{*event.message});
+      break;
+    }
+    if (proto::IsCombat(*event.message)) {
+      // The host's word on its NPCs and rules; an area hit only when on us.
+      if (std::holds_alternative<proto::NpcStrike>(*event.message))
+        break;
+      if (const auto *area = std::get_if<proto::AreaHit>(&*event.message);
+          area && area->player != m_you)
+        break;
+      if (IsJoined())
+        out.push_back(events::Combat{*event.message});
       break;
     }
     std::visit(
@@ -612,6 +631,7 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
     return;
   m_npcs.erase(gone.npc);
   m_npcHealth.erase(gone.npc);
+  m_npcPoise.erase(gone.npc);
   m_session->Broadcast(gone);
 }
 
@@ -850,6 +870,58 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
       !std::holds_alternative<proto::Subtitle>(message))
     m_story.Note(message);
   m_session->Broadcast(message);
+}
+
+void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &message,
+                             std::vector<SessionEvent> &out) {
+  if (const auto *strike = std::get_if<proto::NpcStrike>(&message)) {
+    // For the host's game only: it owns the NPC.
+    auto mine = *strike;
+    mine.player = player;
+    out.push_back(events::Combat{mine});
+  } else if (const auto *area = std::get_if<proto::AreaHit>(&message)) {
+    // To the victim's game: ours, or pass it on (never back to the attacker).
+    auto mine = *area;
+    mine.from = player;
+    if (mine.player == m_you)
+      out.push_back(events::Combat{mine});
+    else if (const auto peer = PeerOf(mine.player); peer && mine.player != player)
+      m_session->Send(*peer, mine);
+  }
+  // Wounds, poise and the difficulty are the host's to say.
+}
+
+bool Endpoint::SendCombat(proto::Message message) {
+  if (!IsJoined() || m_ended || !proto::IsCombat(message))
+    return false;
+  if (auto *area = std::get_if<proto::AreaHit>(&message)) {
+    if (area->player == m_you)
+      return false; // our own V's hits are our game's
+    area->from = m_you;
+    if (!IsHost()) {
+      m_session->Send(m_hostPeer, message);
+      return true;
+    }
+    const auto peer = PeerOf(area->player);
+    if (peer)
+      m_session->Send(*peer, message);
+    return peer.has_value();
+  }
+  if (auto *strike = std::get_if<proto::NpcStrike>(&message)) {
+    if (IsHost())
+      return false; // the host's own hits are its game's
+    strike->player = m_you;
+    m_session->Send(m_hostPeer, message);
+    return true;
+  }
+  if (!IsHost())
+    return false; // the host's NPCs, the host's rules
+  if (const auto *poise = std::get_if<proto::NpcPoise>(&message))
+    m_npcPoise[poise->npc] = *poise;
+  if (const auto *difficulty = std::get_if<proto::Difficulty>(&message))
+    m_difficulty = *difficulty;
+  m_session->Broadcast(message);
+  return true;
 }
 
 std::optional<net::Stats> Endpoint::HostLinkStats() const {

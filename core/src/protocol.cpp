@@ -43,6 +43,12 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *hub = std::get_if<ChoiceHub>(&message);
       hub && hub->options.size() > kMaxChoiceOptions)
     return std::nullopt;
+  if (const auto *wound = std::get_if<NpcWound>(&message);
+      wound && (wound->part > 5 || wound->wound > 2))
+    return std::nullopt;
+  if (const auto *difficulty = std::get_if<Difficulty>(&message);
+      difficulty && difficulty->level > 3)
+    return std::nullopt;
   return message;
 }
 
@@ -65,6 +71,11 @@ bool IsStory(const Message &message) {
          message.index() <= Message(QuestReward{}).index();
 }
 
+bool IsCombat(const Message &message) {
+  return message.index() >= Message(NpcStrike{}).index() &&
+         message.index() <= Message(AreaHit{}).index();
+}
+
 bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::State; }
 
 const char *NameOf(const Message &message) {
@@ -75,7 +86,8 @@ const char *NameOf(const Message &message) {
       "NpcHit",       "NpcHealth",    "NpcEffect", "Pause",        "VehicleRadio", "PlayerHit",
       "NpcAwareness", "Stealth",      "Noise",     "NpcHack",      "NpcHackState", "NpcStatus",
       "PlayerHack",   "VehicleHack",  "Journal",   "Tracked",      "PhoneCall",    "PhoneAction",
-      "PhoneReply",   "Subtitle",     "ChoiceHub", "ChoiceCursor", "StoryState",   "QuestReward"};
+      "PhoneReply",   "Subtitle",     "ChoiceHub", "ChoiceCursor", "StoryState",   "QuestReward",
+      "NpcStrike",    "NpcWound",     "NpcPoise",  "Difficulty",   "AreaHit"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

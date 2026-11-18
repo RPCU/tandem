@@ -1,8 +1,10 @@
 #include "net_thread.hpp"
+#include "combat.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
 
+#include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
 
 #include <optional>
@@ -162,12 +164,10 @@ struct NetThread::Impl {
                                         .spawn = {.npc = e.effect.npc, .record = effect},
                                         .player = e.effect.player});
               } else if constexpr (std::is_same_v<E, events::NpcHitBy>) {
-                runtime.PushNpcEvent({.kind = NpcEvent::Kind::Hit,
-                                      .spawn = {.npc = e.hit.npc, .position = e.hit.position},
-                                      .player = e.hit.player,
-                                      .amount = e.hit.damage,
-                                      .flags = e.hit.flags,
-                                      .direction = e.hit.direction});
+                // An older guest's hit: applied as a strike (Outcomes.reds).
+                Combat::Get().PushInbound(combat::FromHit(e.hit));
+              } else if constexpr (std::is_same_v<E, events::Combat>) {
+                Combat::Get().PushInbound(e.message);
               } else if constexpr (std::is_same_v<E, events::NpcHackBy>) {
                 runtime.PushHackEvent({.kind = HackEvent::Kind::Upload,
                                        .npc = e.hack.npc,
@@ -314,6 +314,10 @@ struct NetThread::Impl {
         endpoint->SendNoise(noise);
       for (auto &[message, to] : Story::Get().TakeOutbound())
         endpoint->SendStory(std::move(message), to);
+      for (auto &message : Combat::Get().TakeOutbound())
+        if (!endpoint->SendCombat(message))
+          if (const auto *area = std::get_if<proto::AreaHit>(&message))
+            log::Info("area hit on player {} dropped: not in the session", area->player);
 
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {
         nextReport = now + 10s;

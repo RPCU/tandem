@@ -382,6 +382,59 @@ redscript natives (UI, events)              ENet socket
   neutralize event when the kill is ours (`Kill` with our V), and by a
   `ProcessQueuedCombatExperience` request when another player landed it
   (assists pay too).
+  **A hit carries its whole outcome** (`scripts/tandem/Outcomes.reds`,
+  `core/src/combat.cpp`): the guest's measured hit on a proxy waits for the
+  end of its pipeline (`DamageSystem.PostProcess` drains the proxy's poise
+  for player attackers) and goes as `NpcStrike` (it supersedes `NpcHit`,
+  which the host still takes): health and poise lost, the attack's
+  minimum health (`GetMinimumHealthPercent`), flags (weak spot, critical,
+  melee, instant kill, non-lethal, "leave 1 HP" when the proxy's game
+  capped it for finisher grace or the bleeding perk, killing blow,
+  headshot, forced dismemberment), the attack type and record, and the hit
+  shape it landed on (reaction zone, dismemberable part, flesh/metal). The
+  host turns it into a hit of the guest's puppet on the real NPC (the
+  puppet holds the guest's weapon) with a hit shape built from those
+  fields, queued in its damage system, where the stages that compute
+  damage are skipped for it (`ConvertDPSToHitDamage`, `ModifyHitData`,
+  `PostProcess`) and `Process` applies the guest's numbers instead
+  (`StrikeLoss`: instant kill, 1 HP left of the host's health, the
+  minimum health, 1 % for an immortal; the poise as vanilla's
+  `PostProcess` does) and sends the game's `gameDamageReceivedEvent`. The
+  host's invulnerability and death checks still run. So the real NPC
+  plays its own hit reaction by body part, weak spot and strength (frame
+  damage from the puppet's weapon's factors), its wounds and
+  dismemberment, its damage history names the guest's puppet (kill
+  credit) and holds the non-lethal flag, so the defeat mechanic knocks it
+  out (`BaseStatusEffect.Unconscious`) instead of killing it. Back to the
+  guests: poise like health (`NpcPoise`, on 5 % steps; the proxy's own
+  poise listener then offers our V a finisher on a broken guard), each
+  dismemberment the host's NPC gets (`DismembermentComponent
+.RequestDismemberment`, wrapped: `NpcWound`, cut the same on every proxy;
+  a proxy's own are suppressed), and a knock-out (`NpcGone` reason 2: the
+  proxy is made unconscious and ragdolls, still a target; its XP queue
+  is paid). **One game computes each hit**: an area effect (explosion,
+  grenade, ground slam, chain lightning) runs on the attacker's game, each
+  proxy's share sent as a strike; on the host, any hit whose instigator is
+  a guest's puppet or a guest's car copy and is not a strike (the guest's
+  effects, explosions, collisions, computed there already) is dropped
+  before its pipeline; on a guest, a proxy's own hit on our V (a death
+  explosion) is dropped (the host's NPC attacks, as `PlayerHit`). Our V's
+  explosion or pressure wave on another V's puppet (on any game) runs the
+  attacker's side only and goes as `AreaHit`, through the host, to that
+  V's game, which runs it on its V from our puppet by its own rules.
+  **Difficulty**: the host sends its `gameDifficulty` (`Difficulty`, kept
+  for late joiners); a guest switches to it
+  (`StatsDataSystem.SetDifficulty`) and back when the session ends. NPC
+  damage is scaled on the host (the attacker's side); the target-side
+  stages that read the difficulty on a guest (one-shot protection,
+  explosions' fixed share, grenades) then read the host's; `PlayerHit`
+  also carries the attack's `IgnoreDifficulty` and `CannotKillPlayer`
+  flags. Not yet verified in game (scenarios `outcomes-knockout`,
+  `outcomes-blade`, `outcomes-poise`, `outcomes-guest`). Open: a guest's
+  own prediction of the kill for on-kill perks (coop-perks.md §2.3), the
+  finisher offered to the host's V for a guard a guest broke
+  (`NPCPoiseListener` reads the local player), NPCs beyond the guest's 60 m
+  out of its area effects, a guest's save made at the host's difficulty.
   **NPCs hitting guests**: on the host, a hit of one of its NPCs (or a
   device, a car) on a guest's puppet runs the attacker's side only: the
   target's stages are skipped for puppets (`ProcessDamageReduction`, dodge,
@@ -645,9 +698,15 @@ game thread stop). Each feature verified in game gets a scenario.
 hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
-- **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s;
-  `host --hit-you N` has one of its NPCs (a replayed one if any) hit every
-  guest's V for 10 physical every N s; a guest logs the NPC hits it gets.
+- **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s
+  as a strike, `--strike KIND` its outcome (`plain`, `nonlethal`, `cap`,
+  `poise`, `head`, `blade`); as the host of a replay it applies strikes by
+  the game's rules (`StrikeLoss`) and answers with health, poise,
+  knock-outs, wounds and deaths; `host --hit-you N` has one of its NPCs (a
+  replayed one if any) hit every guest's V for 10 physical every N s; a
+  guest logs the NPC hits it gets. `host --difficulty D` sets the
+  session's difficulty; `--area-hit N` (either) throws "a grenade" (20
+  physical, `AreaHit`) at every other V every N s.
 - **Stealth** (any mode): as host, `--npc RECORD` stands an NPC 6 m in
   front of the guest and `--detect-at N [--detect-for M]` makes the NPCs
   it sends notice the guests (meter rising over 2 s), detect them for M s

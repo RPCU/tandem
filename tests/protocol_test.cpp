@@ -100,6 +100,50 @@ TEST_CASE("every message survives encoding") {
                        .weapon = 0x0abcdef012ULL});
 }
 
+TEST_CASE("hit outcomes survive encoding, travel reliably and are refused out of range") {
+  RoundTrips(NpcStrike{.player = 2,
+                       .npc = 7,
+                       .damage = 41.5f,
+                       .poise = 12.f,
+                       .minHealth = 10.f,
+                       .flags = kStrikeWeakSpot | kStrikeNonlethal | kStrikeForceDismember,
+                       .attackType = 7,
+                       .zone = 0,
+                       .part = 4,
+                       .shape = 0,
+                       .attack = 0x1234567890ULL,
+                       .position = {1, 2, 3},
+                       .direction = {0, 1, 0}});
+  RoundTrips(NpcWound{.npc = 7, .player = 2, .part = 1, .wound = 0, .position = {1, 2, 3}});
+  RoundTrips(NpcPoise{.npc = 7, .poise = 0.25f});
+  RoundTrips(Difficulty{.level = 2});
+  RoundTrips(AreaHit{.from = 3,
+                     .player = 2,
+                     .physical = 30.f,
+                     .thermal = 5.f,
+                     .attackType = 3,
+                     .flags = kHitCritical,
+                     .position = {1, 2, 3},
+                     .direction = {0, 0, -1},
+                     .attack = 0x99,
+                     .weapon = 0x42});
+  for (const Message message : {Message(NpcStrike{}), Message(NpcWound{}), Message(NpcPoise{}),
+                                Message(Difficulty{}), Message(AreaHit{})}) {
+    CHECK(IsCombat(message));
+    CHECK_FALSE(IsStory(message));
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(Encode(message).size() < 80);
+  }
+  CHECK_FALSE(IsCombat(NpcHit{}));
+  CHECK_FALSE(IsCombat(QuestReward{}));
+  CHECK(std::string_view(NameOf(NpcStrike{})) == "NpcStrike");
+  CHECK(std::string_view(NameOf(AreaHit{})) == "AreaHit");
+  CHECK_FALSE(Decode(Encode(NpcWound{.part = 6})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcWound{.wound = 3})).has_value());
+  CHECK_FALSE(Decode(Encode(Difficulty{.level = 4})).has_value());
+  CHECK(Decode(Encode(Difficulty{.level = 3})).has_value());
+}
+
 TEST_CASE("a car's radio is a small reliable event") {
   CHECK(ChannelOf(VehicleRadio{}) == Channel::Event);
   CHECK(IsReliable(VehicleRadio{}));

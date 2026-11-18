@@ -137,6 +137,12 @@ struct PauseChanged {
 struct Story {
   proto::Message message;
 };
+// A hit outcome message (proto::IsCombat) for this game. Host: a guest's
+// NpcStrike or AreaHit on our V, stamped. Guest: the host's NpcWound,
+// NpcPoise, Difficulty, an AreaHit on our V.
+struct Combat {
+  proto::Message message;
+};
 // The session is over (refused, host gone, timed out).
 struct Ended {
   std::string reason;
@@ -175,7 +181,7 @@ using SessionEvent =
                  events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
                  events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
                  events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-                 events::HostPlayerHack, events::VehicleHackOn, events::Story>;
+                 events::HostPlayerHack, events::VehicleHackOn, events::Story, events::Combat>;
 
 class Endpoint {
 public:
@@ -234,6 +240,11 @@ public:
   // guest), kept for late joiners (story::Record). Guest: to the host, which
   // relays ChoiceCursor and StoryState. Anything else is dropped.
   void SendStory(proto::Message message, proto::PlayerId to = proto::kNoPlayer);
+  // Hit outcomes (proto::IsCombat). Guest: NpcStrike to the host. Host:
+  // NpcWound, NpcPoise, Difficulty to every guest (the last two kept for
+  // late joiners). Either: AreaHit to its victim's game, through the host.
+  // False when nothing was sent (not ours to say, nobody to send to).
+  bool SendCombat(proto::Message message);
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
   // How hard our V is to see (kept: sent now if we are in the session, else
@@ -328,6 +339,11 @@ private:
   story::CallArbiter m_calls;
   void OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
                     std::vector<SessionEvent> &out);
+  // Host: the session's difficulty and its NPCs' poise, for late joiners.
+  std::optional<proto::Difficulty> m_difficulty;
+  std::map<proto::NpcId, proto::NpcPoise> m_npcPoise;
+  void OnGuestCombat(proto::PlayerId player, const proto::Message &message,
+                     std::vector<SessionEvent> &out);
   bool m_ended{};
 };
 } // namespace tandem

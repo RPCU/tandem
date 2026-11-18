@@ -4,9 +4,11 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <map>
+#include <type_traits>
 
 #include <unistd.h>
 
@@ -843,4 +845,96 @@ TEST_CASE(
   CHECK(awareness->entries[0].npc == 7);
   CHECK(awareness->entries[0].level == 200);
   CHECK_FALSE(hostHeardAwareness);
+}
+
+TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits to their V") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  // Before anyone joined: kept for whoever joins.
+  CHECK(host->SendCombat(proto::Difficulty{.level = 2}));
+  CHECK(host->SendCombat(proto::NpcPoise{.npc = 7, .poise = 0.5f}));
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((a && b));
+  std::map<std::size_t, std::vector<proto::Message>> heard;
+  const auto collect = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+    for (const auto &event : events)
+      if (const auto *combat = std::get_if<events::Combat>(&event))
+        heard[i].push_back(combat->message);
+  };
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  PumpFor({host.get(), a.get(), b.get()}, 200ms, collect);
+  for (const std::size_t guest : {1u, 2u}) {
+    REQUIRE(heard[guest].size() == 2); // the difficulty and the poise, late as they were
+    CHECK(std::ranges::count_if(heard[guest], [](const auto &m) {
+            const auto *d = std::get_if<proto::Difficulty>(&m);
+            return d && d->level == 2;
+          }) == 1);
+  }
+  heard.clear();
+
+  // a strikes NPC 7: the host hears it in a's name, nobody else; the host
+  // cannot strike its own NPC over the wire.
+  CHECK(a->SendCombat(proto::NpcStrike{.player = 99, .npc = 7, .damage = 20.f, .poise = 5.f}));
+  CHECK_FALSE(host->SendCombat(proto::NpcStrike{.npc = 7}));
+  // A guest does not speak for the host's NPCs or rules.
+  CHECK_FALSE(b->SendCombat(proto::NpcWound{.npc = 7}));
+  CHECK_FALSE(b->SendCombat(proto::Difficulty{.level = 3}));
+  // a's grenade on b's V: to b only, from a; on the host's V: to the host.
+  CHECK(a->SendCombat(proto::AreaHit{.from = 42, .player = b->You(), .physical = 30.f}));
+  CHECK(a->SendCombat(proto::AreaHit{.player = host->You(), .physical = 10.f}));
+  CHECK_FALSE(a->SendCombat(proto::AreaHit{.player = a->You(), .physical = 10.f}));
+  // The host's grenade on a's V; and its NPC's wound, to everyone.
+  CHECK(host->SendCombat(proto::AreaHit{.player = a->You(), .physical = 15.f}));
+  CHECK_FALSE(host->SendCombat(proto::AreaHit{.player = 42, .physical = 15.f}));
+  CHECK(host->SendCombat(proto::NpcWound{.npc = 7, .player = a->You(), .part = 4}));
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, collect);
+
+  // Each game's messages, by kind (the order across senders is not fixed).
+  const auto find = [&]<class T>(std::size_t i, std::type_identity<T>) -> const T * {
+    for (const auto &message : heard[i])
+      if (const auto *m = std::get_if<T>(&message))
+        return m;
+    return nullptr;
+  };
+  constexpr std::type_identity<proto::NpcStrike> kStrike;
+  constexpr std::type_identity<proto::AreaHit> kArea;
+  constexpr std::type_identity<proto::NpcWound> kWound;
+  REQUIRE(heard[0].size() == 2);
+  const auto *strike = find(0, kStrike);
+  REQUIRE(strike);
+  CHECK(strike->player == a->You());
+  CHECK(strike->poise == 5.f);
+  const auto *onHost = find(0, kArea);
+  REQUIRE(onHost);
+  CHECK(onHost->from == a->You());
+  CHECK(onHost->physical == 10.f);
+  CHECK_FALSE(find(0, kWound)); // the host's own
+
+  // a: the host's grenade and the wound; b: a's grenade and the wound.
+  REQUIRE(heard[1].size() == 2);
+  REQUIRE(find(1, kArea));
+  CHECK(find(1, kArea)->from == host->You());
+  REQUIRE(find(1, kWound));
+  CHECK(find(1, kWound)->part == 4);
+  REQUIRE(heard[2].size() == 2);
+  const auto *onB = find(2, kArea);
+  REQUIRE(onB);
+  CHECK(onB->from == a->You());
+  CHECK(onB->physical == 30.f);
+  CHECK(find(2, kWound));
+
+  // Gone: its poise is not handed to the next joiner.
+  host->SendNpcGone({.npc = 7, .reason = 2});
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  heard.clear();
+  PumpFor({host.get(), a.get(), b.get(), late.get()}, 600ms, collect);
+  REQUIRE(heard[3].size() == 1);
+  CHECK(std::holds_alternative<proto::Difficulty>(heard[3][0]));
 }

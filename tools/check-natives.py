@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check that scripts/tandem/Natives.reds matches plugin/src/natives.cpp, and
-StoryNatives.reds matches story_natives.cpp (checked together: one name space).
+StoryNatives.reds matches story_natives.cpp and CombatNatives.reds combat_natives.cpp
+(checked together: one name space).
 
 redscript compiles a native declaration without seeing the DLL, so a type
 that differs (a Quaternion where the C++ takes a float) builds fine and
@@ -16,8 +17,16 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CPP = [ROOT / "plugin/src/natives.cpp", ROOT / "plugin/src/story_natives.cpp"]
-REDS = [ROOT / "scripts/tandem/Natives.reds", ROOT / "scripts/tandem/StoryNatives.reds"]
+CPP = [
+    ROOT / "plugin/src/natives.cpp",
+    ROOT / "plugin/src/story_natives.cpp",
+    ROOT / "plugin/src/combat_natives.cpp",
+]
+REDS = [
+    ROOT / "scripts/tandem/Natives.reds",
+    ROOT / "scripts/tandem/StoryNatives.reds",
+    ROOT / "scripts/tandem/CombatNatives.reds",
+]
 
 SCALARS = {
     "void": "Void",

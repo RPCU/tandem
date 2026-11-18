@@ -87,6 +87,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_npcs: ref<TandemNpcs>;
   // Stealth, detection and combat per player, camo, noises (Stealth.reds).
   private let m_stealth: ref<TandemStealth>;
+  // Hit outcomes: strikes, wounds, poise, difficulty, area hits (Outcomes.reds).
+  private let m_outcomes: ref<TandemOutcomes>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
   private let m_testNpcs: array<EntityID>;
   private let m_testHostile: array<EntityID>;
@@ -750,6 +752,19 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     return 0u;
+  }
+
+  // Hit outcomes (Outcomes.reds), and the session's NPCs for them.
+  public func Outcomes() -> ref<TandemOutcomes> {
+    if !IsDefined(this.m_outcomes) {
+      this.m_outcomes = new TandemOutcomes();
+      this.m_outcomes.Start(this.GetGameInstance());
+    }
+    return this.m_outcomes;
+  }
+
+  public func Npcs() -> ref<TandemNpcs> {
+    return this.m_you != 0u ? this.m_npcs : null;
   }
 
   // The host NPC a proxy in our world stands for (0: none; Combat.reds).

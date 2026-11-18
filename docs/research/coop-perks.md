@@ -219,6 +219,13 @@ part, wound type). The host applies them as given (`capAtOneHp` → set health
 to max(health − amount, 1)), plays that reaction and that dismemberment on
 the real NPC, and replicates poise like health. Each game still evaluates
 "finisher available" for its own V (§2.1). [I]
+Status (2026-11-18, untested in game): `NpcStrike` carries health, poise,
+non-lethal, leave-1-HP, killing blow, the minimum health and the hit shape;
+the host plays the real reaction and dismemberment from a hit of the
+guest's puppet, poise comes back as `NpcPoise`, wounds as `NpcWound`,
+knock-outs as `NpcGone` reason 2 (ARCHITECTURE "A hit carries its whole
+outcome"). The reaction is the host's own (its rules, from the attack and
+shape), not the one the guest's game picked for the proxy.
 
 ### 2.3 On-kill perks fire at the moment of the hit
 
@@ -357,6 +364,10 @@ propagation effectors from forwarded effects); the guest's propagation,
 computed on its proxies, is the one that counts. NPCs beyond the guest's
 60 m proxy radius are out of reach of the guest's area effects: acceptable
 for the first version, stated. [I]
+Status (2026-11-18, untested in game): on the host every hit instigated
+by a guest's puppet (or car copy) that is not one of its strikes is
+dropped, so a forwarded effect's own explosion or propagation attack never
+deals damage twice; a guest's area effects on another V go as `AreaHit`.
 
 ### 2.8 Each game has its own difficulty
 
@@ -366,6 +377,8 @@ effectors (`ApplyStatusEffectBasedOnDifficultyEffector` `303127-303160`) [R].
 With §2.5's rule, each guest's own difficulty would decide how hard NPCs hit
 it. **Rule:** a session plays at the host's difficulty; guests switch to it
 on join and back on leave (balance). [I]
+Status (2026-11-18, untested in game): done (`Difficulty`,
+`StatsDataSystem.SetDifficulty`, Outcomes.reds).
 
 ### 2.9 A guest's noise does not reach the host's NPCs
 

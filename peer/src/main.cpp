@@ -22,8 +22,13 @@
 // Pause menu: --pause-at opens "its pause menu" that many seconds into the
 // session (once another player is there) for --pause-for seconds; the pause
 // states it hears are logged.
-// Fights: --hit-npcs (join) hits the host's NPCs; --hit-you (host) has one of
-// its NPCs hit every guest's V; a guest logs the NPC hits it receives.
+// Fights: --hit-npcs (join) hits the host's NPCs, with the outcome --strike
+// names (non-lethal, 1 HP cap, poise, headshot, blade); --hit-you (host) has
+// one of its NPCs hit every guest's V; a guest logs the NPC hits it receives.
+// As the host of a replay it applies strikes by the game's rules (core
+// combat.hpp) and answers with health, poise, wounds, knock-outs and deaths.
+// --difficulty (host) sets the session's difficulty; --area-hit throws "a
+// grenade" at every other V (AreaHit).
 // Stealth: as host, --npc puts an NPC in front of the guest and --detect-at
 // makes the NPCs it sends notice, detect and lose the guests (NpcAwareness,
 // NpcEntry::detected); --camo turns "its optical camo" on, --shoot (join)
@@ -40,6 +45,7 @@
 // --reply and --suggest act on the host's calls, texts and hubs, and every
 // story message heard is logged (and recorded with --record).
 
+#include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/pose.hpp"
@@ -93,6 +99,11 @@ struct Options {
   std::optional<int> radioStation;
   int hitNpcsSeconds{0}; // join: hit one of the host's NPCs this often (0: never)
   int hitYouSeconds{0};  // host: one of its NPCs hits each guest's V this often (0: never)
+  // --hit-npcs: what each hit carries besides its damage (plain, nonlethal,
+  // cap, poise, head, blade).
+  std::string strike{"plain"};
+  std::optional<int> difficulty; // host: the session's gameDifficulty
+  int areaHitSeconds{0};         // our "grenade" hits every other V this often (0: never)
   // host: the world the game follows (time of day, weather name); unset: none sent
   std::optional<int> timeOfDayMinutes;
   std::string weather;
@@ -184,8 +195,15 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     radio_station_09_downtempo...; off): sent when seated and\n"
          "                     again when a passenger gets in\n"
          "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
+         "  --strike KIND      --hit-npcs: what each hit carries: plain (35 health), nonlethal\n"
+         "                     (a blunt hit: knocks out), cap (leave 1 HP), poise (10 health,\n"
+         "                     40 poise), head (a headshot), blade (a katana on the left arm)\n"
          "  --hit-you N        host: an NPC (a replayed one if any) hits each guest's V for\n"
          "                     10 physical every N seconds\n"
+         "  --difficulty D     host: the session's difficulty: easy | hard | veryhard | story\n"
+         "                     (or 0-3); guests play at it\n"
+         "  --area-hit N       every N seconds our \"grenade\" hits every other player's V for\n"
+         "                     20 physical (an explosion, applied by their game)\n"
          "  --time HH:MM       host: the time of day the game must follow\n"
          "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
          "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
@@ -299,6 +317,21 @@ Options Parse(int argc, char **argv) {
       options.hitNpcsSeconds = Number<int>(value);
     else if (flag == "--hit-you")
       options.hitYouSeconds = Number<int>(value);
+    else if (flag == "--strike") {
+      constexpr std::string_view kinds[] = {"plain", "nonlethal", "cap", "poise", "head", "blade"};
+      if (std::ranges::find(kinds, value) == std::end(kinds))
+        Usage(std::format("unknown strike {}", value));
+      options.strike = std::string(value);
+    } else if (flag == "--difficulty") {
+      constexpr std::string_view levels[] = {"easy", "hard", "veryhard", "story"};
+      if (const auto *named = std::ranges::find(levels, value); named != std::end(levels))
+        options.difficulty = static_cast<int>(named - std::begin(levels));
+      else if (const auto level = Number<int>(value); level >= 0 && level <= 3)
+        options.difficulty = level;
+      else
+        Usage(std::format("--difficulty: no level {}", value));
+    } else if (flag == "--area-hit")
+      options.areaHitSeconds = Number<int>(value);
     else if (flag == "--npc")
       options.npcRecord = std::string(value);
     else if (flag == "--detect-at")
@@ -834,6 +867,59 @@ tandem::proto::Appearance RandomLook(tandem::proto::Body body, unsigned seed) {
   return look;
 }
 
+// --strike: one hit on the host's NPC, as the game sends it (Outcomes.reds).
+tandem::proto::NpcStrike StrikeOf(std::string_view kind, tandem::proto::NpcId npc) {
+  namespace proto = tandem::proto;
+  proto::NpcStrike strike{.npc = npc,
+                          .damage = 35.f,
+                          .attackType = 10, // Ranged
+                          .zone = 1,        // ChestLeft
+                          .shape = 0,       // Flesh
+                          .direction = {0.f, 1.f, 0.f}};
+  if (kind == "nonlethal") {
+    strike.flags = proto::kStrikeNonlethal | proto::kStrikeMelee;
+    strike.attackType = 7; // Melee
+    strike.zone = 7;       // Abdomen
+  } else if (kind == "cap") {
+    strike.flags = proto::kStrikeLeaveOneHp;
+    strike.damage = 34.f;
+  } else if (kind == "poise") {
+    strike.flags = proto::kStrikeMelee;
+    strike.attackType = 12; // StrongMelee
+    strike.damage = 10.f;
+    strike.poise = 40.f;
+  } else if (kind == "head") {
+    strike.flags = proto::kStrikeWeakSpot | proto::kStrikeHeadshot | proto::kStrikeCritical;
+    strike.zone = 0; // Head
+    strike.part = 4; // HEAD
+  } else if (kind == "blade") {
+    strike.flags = proto::kStrikeMelee | proto::kStrikeForceDismember;
+    strike.attackType = 7;
+    strike.zone = 2; // ArmLeft
+    strike.part = 0; // LEFT_ARM
+  }
+  return strike;
+}
+
+std::string DescribeCombat(const tandem::proto::Message &message) {
+  namespace proto = tandem::proto;
+  if (const auto *s = std::get_if<proto::NpcStrike>(&message))
+    return std::format("npc {} struck by player {}: {:.0f} health, {:.0f} poise, flags {:#x}, "
+                       "zone {}, part {}",
+                       s->npc, s->player, s->damage, s->poise, s->flags, s->zone, s->part);
+  if (const auto *w = std::get_if<proto::NpcWound>(&message))
+    return std::format("npc {} loses part {} (wound {}, player {}'s hit)", w->npc, w->part,
+                       w->wound, w->player);
+  if (const auto *p = std::get_if<proto::NpcPoise>(&message))
+    return std::format("npc {} poise {:.0f}%", p->npc, p->poise * 100.f);
+  if (const auto *d = std::get_if<proto::Difficulty>(&message))
+    return std::format("the session plays at difficulty {}", d->level);
+  if (const auto *a = std::get_if<proto::AreaHit>(&message))
+    return std::format("player {}'s area effect hits us: {:.0f} physical, {:.0f} thermal (type {})",
+                       a->from, a->physical, a->thermal, a->attackType);
+  return proto::NameOf(message);
+}
+
 int main(int argc, char **argv) {
   const auto options = Parse(argc, argv);
   if (options.check) {
@@ -877,6 +963,10 @@ int main(int argc, char **argv) {
   }
   std::set<tandem::proto::NpcId> liveNpcs;
   std::map<tandem::proto::NpcId, float> npcHealth; // host: replayed NPCs hit by guests
+  std::map<tandem::proto::NpcId, float> npcPoise;  // ...and their poise
+  bool difficultySent = false;
+  auto nextAreaHit =
+      std::chrono::steady_clock::now() + std::chrono::seconds(options.areaHitSeconds);
   std::set<tandem::proto::NpcId> deadNpcs;
   std::optional<tandem::proto::NpcId> hitTarget;
   std::set<tandem::proto::NpcId> burnt;
@@ -1031,6 +1121,8 @@ int main(int argc, char **argv) {
               liveNpcs.erase(e.gone.npc);
               if (e.gone.reason == 1)
                 Log("npc {} died", e.gone.npc);
+              else if (e.gone.reason == 2)
+                Log("npc {} knocked out (by player {})", e.gone.npc, e.gone.killer);
               if (!options.recordFile.empty())
                 recording.Add(e.gone);
             } else if constexpr (std::is_same_v<E, tandem::events::NpcEffectBy>) {
@@ -1049,6 +1141,47 @@ int main(int argc, char **argv) {
                 Log("npc {} died", e.hit.npc);
               } else
                 endpoint->SendNpcHealth({.npc = e.hit.npc, .health = health});
+            } else if constexpr (std::is_same_v<E, tandem::events::Combat>) {
+              Log("{}", DescribeCombat(e.message));
+              namespace proto = tandem::proto;
+              // As the host of a replay: the strike by the game's rules
+              // (100 health, 100 poise each), and what the guests see of it.
+              if (const auto *strike = std::get_if<proto::NpcStrike>(&e.message);
+                  strike && options.host && !deadNpcs.contains(strike->npc)) {
+                auto &health = npcHealth.try_emplace(strike->npc, 1.f).first->second;
+                health -= tandem::combat::StrikeLoss(*strike, health * 100.f, 100.f, false) / 100.f;
+                if (strike->poise > 0.f) {
+                  auto &poise = npcPoise.try_emplace(strike->npc, 1.f).first->second;
+                  poise = std::max(poise - strike->poise / 100.f, 0.f);
+                  endpoint->SendCombat(proto::NpcPoise{.npc = strike->npc, .poise = poise});
+                  Log("npc {} poise {:.0f}%{}", strike->npc, poise * 100.f,
+                      poise <= 0.f ? ": guard broken" : "");
+                }
+                if (health > 0.f) {
+                  endpoint->SendNpcHealth({.npc = strike->npc, .health = health});
+                  Log("npc {} health {:.0f}%", strike->npc, health * 100.f);
+                } else if (strike->flags & proto::kStrikeNonlethal) {
+                  endpoint->SendNpcHealth({.npc = strike->npc, .health = 0.001f});
+                  endpoint->SendNpcGone(
+                      {.npc = strike->npc, .reason = 2, .killer = strike->player});
+                  Log("npc {} knocked out by player {}", strike->npc, strike->player);
+                } else {
+                  if (strike->part >= 0) {
+                    const bool clean = strike->flags & proto::kStrikeMelee;
+                    endpoint->SendCombat(
+                        proto::NpcWound{.npc = strike->npc,
+                                        .player = strike->player,
+                                        .part = static_cast<std::uint8_t>(strike->part),
+                                        .wound = std::uint8_t{clean ? 0 : 1},
+                                        .position = strike->position});
+                    Log("npc {} loses part {}", strike->npc, strike->part);
+                  }
+                  deadNpcs.insert(strike->npc);
+                  endpoint->SendNpcGone(
+                      {.npc = strike->npc, .reason = 1, .killer = strike->player});
+                  Log("npc {} died", strike->npc);
+                }
+              }
             } else if constexpr (std::is_same_v<E, tandem::events::HitByNpc>) {
               Log("hit by npc {}: {:.1f} physical, {:.1f} thermal, {:.1f} electric, {:.1f} "
                   "chemical (type {}, flags {}, attack {:#x})",
@@ -1222,8 +1355,10 @@ int main(int argc, char **argv) {
       nextHit = now + std::chrono::seconds(options.hitNpcsSeconds);
       if (!hitTarget || !liveNpcs.contains(*hitTarget))
         hitTarget = *liveNpcs.begin();
-      endpoint->SendNpcHit({.npc = *hitTarget, .damage = 35.f});
-      Log("hit npc {} for 35", *hitTarget);
+      const auto strike = StrikeOf(options.strike, *hitTarget);
+      endpoint->SendCombat(strike);
+      Log("hit npc {} ({}): {:.0f} health, {:.0f} poise, flags {:#x}", *hitTarget, options.strike,
+          strike.damage, strike.poise, strike.flags);
       // The first hit on each NPC also sets it on fire (a status effect our
       // hit applied, for the host to put on the real NPC).
       if (burnt.insert(*hitTarget).second) {
@@ -1231,6 +1366,23 @@ int main(int argc, char **argv) {
             {.npc = *hitTarget, .effects = {TweakDBID("BaseStatusEffect.Burning")}});
         Log("set npc {} on fire", *hitTarget);
       }
+    }
+    // --difficulty: the session's, kept by the endpoint for whoever joins.
+    if (options.difficulty && options.host && !difficultySent && endpoint->IsJoined()) {
+      difficultySent = endpoint->SendCombat(
+          tandem::proto::Difficulty{.level = static_cast<std::uint8_t>(*options.difficulty)});
+      Log("the session plays at difficulty {}", *options.difficulty);
+    }
+    // --area-hit: our "grenade" on every other V, for their game to apply.
+    if (options.areaHitSeconds && endpoint->IsJoined() && now >= nextAreaHit) {
+      nextAreaHit = now + std::chrono::seconds(options.areaHitSeconds);
+      for (const auto &[id, info] : endpoint->Players())
+        if (id != endpoint->You() &&
+            endpoint->SendCombat(tandem::proto::AreaHit{.player = id,
+                                                        .physical = 20.f,
+                                                        .attackType = 3, // Explosion
+                                                        .direction = {0.f, 0.f, -1.f}}))
+          Log("our grenade hit player {} for 20 physical", id);
     }
     // --story: the scripted host's steps, once a guest is in the session.
     if (options.host && storyNext < story.size() && endpoint->Players().size() > 1) {

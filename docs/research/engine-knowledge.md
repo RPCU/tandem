@@ -2164,3 +2164,68 @@ choiceHubs: array<ListChoiceHubData>}`, `:243020`, `:389618`),
   see.
 - The co-op reward ledger is a `persistent` array on `TandemStorySystem`:
   it reaches the guest's save with its next save after the session.
+
+### 13.17 A hit's whole outcome (2026-11-18, read in final.reds, not run)
+
+Line numbers are the 2.50 `final.reds` dump's. All [2.5-untested].
+
+- The pipeline (`DamageSystem.ProcessPipeline` `:84290`): `PreProcess`
+  (`ConvertDPSToHitDamage`, `CheckForQuickExit`, invulnerability,
+  immortality, death checks, `ModifyHitData`: resistances, localized
+  damage, `ProcessInstantKill`, dodge, evasion, mitigation), `Process`
+  (returns at once on `DealNoDamage`; source, target, global modifiers,
+  one-shot protection, then `DealDamages` → `SendDamageEvents`:
+  `gameTargetDamageEvent` to the instigator, `gameDamageReceivedEvent` to
+  the target), `ProcessHitReaction` (`ReactToHitProcess`), `PostProcess`
+  (status effects, returned damage, and **poise**). [2.5-untested]
+- Poise is drained in `PostProcess` (`:85800`) only for a player
+  instigator with a finisher available: the health attack value times
+  `NewPerks.Reflexes_Right_Milestone_3.poise*Multiplier`s, by
+  `RequestChangingStatPoolValue(target, Poise, -x, instigator, false,
+false)`. It is not gated by `forReal`, so a guest's hit drains its
+  proxy's poise. `NPCPoiseListener.OnStatPoolMinValueReached` (`:203306`)
+  applies `FinisherActiveStatusEffect` for the local player.
+  [2.5-untested]
+- `ApplyDamageSingle` (`:219072`) caps a hit at health − 1 for finisher
+  grace (`IsFinisherGrace`, player instigator, melee/throwable) and for
+  bleeding ticks with `Reflexes_Master_Perk_5`, and zeroes a boss's poise
+  then; otherwise a hit taking all health gets `hitFlag.WasKillingBlow`,
+  also with `forReal` false. `DrainStatPool` (`:219283`, real damage only)
+  keeps health above `AttackData.GetMinimumHealthPercent()` and above
+  1 % for god mode `Immortal`. [2.5-untested]
+- Non-lethal: `hitFlag.Nonlethal` (22) comes from native code (blunt
+  weapons, non-lethal mods); scripts only read it. Human NPCs have the
+  defeat mechanic (`SetIsDefeatMechanicActive(Human)`, `:125575`):
+  `NPCDeathListener` puts a 0.1 % custom limit on health; reaching it
+  marks the NPC for defeat and queues `gamePotentialDeathEvent`;
+  `OnPotentialDeath` (`:128692`) applies `BaseStatusEffect.Unconscious`
+  when the damage history (`m_receivedDamageHistory`, filled by
+  `ProcessDamageReceived` from `gameDamageReceivedEvent`, cleared on a new
+  frame's damage) holds a non-lethal hit, then `Defeated`.
+  `HitReactionComponent.CanDieCondition` (`:185838`) refuses the kill on a
+  non-lethal hit. `ScriptedPuppet.IsUnconscious` / `IsDefeated` read the
+  status effects. [2.5-untested]
+- Hit reactions: `HitReactionComponent.EvaluateHit` (`:184600`) returns at
+  once without a hit shape (`GetBodyPart`: `hitRepresentationResult
+.hitShapes[0]`), so a scripted hit with none plays no reaction. The
+  shape's `userData` is a `HitShapeUserDataBase` (`m_hitReactionZone`,
+  `m_dismembermentPart`, `m_hitShapeType`, `m_hitShapeTag`). The strength
+  is the frame damage `NPCPuppet.SetHitEventData` (`:128363`) takes from
+  `attackComputed`'s health total times the attack weapon's
+  `HitReactionFactor` / `HitWoundsFactor` / `HitDismembermentFactor`
+  stats, and zero for a live target with `DealNoDamage`. Dismemberment
+  goes through the static script function
+  `DismembermentComponent.RequestDismemberment` (`:188532`, a
+  `DismembermentEvent` and an audio event; it also buffs the local player
+  with `Reflexes_Master_Perk_5`). [2.5-untested]
+- Difficulty: `StatsDataSystem.GetDifficulty()` / `SetDifficulty`
+  (`:73092`, `gameDifficulty` Easy 0, Hard 1, VeryHard 2, Story 3). On the
+  target's side it scales one-shot protection (`ProcessOneShotProtection`
+  `:85069`), the fixed share of explosions
+  (`ProcessPlayerFixedPercentageOverride` `:85107`) and grenade damage to
+  players (`:85250`); story mode (the `story_mode` fact) cuts damage to a
+  player to 0.1 % unless `hitFlag.IgnoreDifficulty` (`ScalePlayerDamage`
+  `:87494`). NPC damage itself is the attacker's side. [2.5-untested]
+- Friendly fire: `CheckForQuickExit` (`:86416`) marks a hit on a friendly
+  target `DealNoDamage` + `FriendlyFireIgnored` unless the hit has
+  `hitFlag.FriendlyFire`. [2.5-untested]

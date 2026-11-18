@@ -256,8 +256,10 @@ struct NpcStates { // State channel, ~10 Hz: every NPC the host shares, in one g
 
 struct NpcGone { // Event channel
   NpcId npc{};
-  std::uint8_t reason{}; // 0 out of range or despawned, 1 dead
-  PlayerId killer{};     // dead: the player whose hit killed it (kNoPlayer: none)
+  // 0 out of range or despawned, 1 dead, 2 knocked out (a non-lethal hit:
+  // unconscious; the body stays, a later lethal hit sends 1)
+  std::uint8_t reason{};
+  PlayerId killer{}; // dead: the player whose hit killed it (kNoPlayer: none)
   friend bool operator==(const NpcGone &, const NpcGone &) = default;
 };
 
@@ -274,6 +276,9 @@ struct NpcHit {      // Event channel
   friend bool operator==(const NpcHit &, const NpcHit &) = default;
 };
 inline constexpr std::uint8_t kHitWeakSpot = 1, kHitCritical = 2, kHitMelee = 4, kHitLethal = 8;
+// PlayerHit and AreaHit only: the attack's own rules for the V it lands on
+// (hitFlag.IgnoreDifficulty, hitFlag.CannotKillPlayer: a brawl leaves 1 HP).
+inline constexpr std::uint8_t kHitIgnoreDifficulty = 16, kHitCannotKill = 32;
 
 // An NPC's health as the host's game has it, sent when it changes. Death
 // is NpcGone with reason 1.
@@ -595,17 +600,101 @@ struct QuestReward {
   friend bool operator==(const QuestReward &, const QuestReward &) = default;
 };
 
+// ---- Hit outcomes (docs/ARCHITECTURE.md, "Game rules hold for every hit") ----
+
+// A guest's hit on one of the host's NPCs (its proxy) with its whole outcome
+// as the guest's game computed it: health and poise lost, the rules that
+// bound the loss (non-lethal, leave 1 HP, the attack's minimum health), and
+// what the host's NPC needs to react as to a hit of its own (the attack, the
+// body part and kind of hit shape it landed on). The host applies it as
+// given (combat.hpp StrikeLoss) and plays the real reaction, wounds and
+// dismemberment on its NPC. Supersedes NpcHit, which the host still takes.
+// Guest to host, never relayed.
+inline constexpr std::uint16_t kStrikeWeakSpot = 1, kStrikeCritical = 2, kStrikeMelee = 4,
+                               kStrikeInstantKill = 8, // finisher, Kill flag: health to 0
+    kStrikeNonlethal = 16,                             // hitFlag.Nonlethal: knocks out
+    kStrikeLeaveOneHp = 32,                            // finisher grace, bleeding perk
+    kStrikeKillingBlow = 64,                           // hitFlag.WasKillingBlow on the proxy
+    kStrikeHeadshot = 128,                             // hitFlag.Headshot
+    kStrikeForceDismember = 256;                       // hitFlag.ForceDismember
+inline constexpr std::uint8_t kNoZone = 255;
+struct NpcStrike {   // Event channel
+  PlayerId player{}; // who hit: set by the host from the connection
+  NpcId npc{};
+  float damage{};             // health points
+  float poise{};              // poise points
+  float minHealth{};          // AttackData.GetMinimumHealthPercent (0: none)
+  std::uint16_t flags{};      // kStrike*
+  std::uint8_t attackType{};  // gamedataAttackType
+  std::uint8_t zone{kNoZone}; // EHitReactionZone of the hit shape (kNoZone: none)
+  std::int8_t part{-1};       // EAIDismembermentBodyPart (-1 none)
+  std::int8_t shape{-1};      // EHitShapeType (-1 none)
+  std::uint64_t attack{};     // TweakDB id of the attack record (0: unknown)
+  Vec3 position;              // where it landed, and the way it went
+  Vec3 direction;
+  friend bool operator==(const NpcStrike &, const NpcStrike &) = default;
+};
+
+// A host NPC lost a limb or got a wound (its hit reaction decided it, by the
+// game's rules, from a hit by anyone): every guest's proxy gets the same.
+// Host to everyone.
+struct NpcWound { // Event channel
+  NpcId npc{};
+  PlayerId player{};    // whose hit (kNoPlayer: an NPC's, or unknown)
+  std::uint8_t part{};  // gameDismBodyPart 0..5
+  std::uint8_t wound{}; // gameDismWoundType 0..2
+  Vec3 position;
+  friend bool operator==(const NpcWound &, const NpcWound &) = default;
+};
+
+// A host NPC's poise (guard), as its health: guests' proxies follow it, so
+// their own finisher and guard-break checks see the host's. Host to
+// everyone, on change; kept for late joiners until the NPC is gone.
+struct NpcPoise { // Event channel
+  NpcId npc{};
+  float poise{}; // fraction of its maximum, 0..1
+  friend bool operator==(const NpcPoise &, const NpcPoise &) = default;
+};
+
+// The session plays at the host's difficulty (gameDifficulty: Easy 0, Hard 1,
+// VeryHard 2, Story 3). Guests switch to it while in the session and back
+// when they leave. Host to everyone, kept for late joiners.
+struct Difficulty { // Event channel
+  std::uint8_t level{};
+  friend bool operator==(const Difficulty &, const Difficulty &) = default;
+};
+
+// An area effect our game computed (our V's grenade or explosion) reached
+// another player's V (its puppet here). The attacker's game ran the
+// attacker's side; the victim's runs the target's side on its own V, with
+// our puppet as the attacker: never applied twice. To the host, which
+// stamps `from` and passes it to `player` (or applies it to its own V).
+struct AreaHit {     // Event channel
+  PlayerId from{};   // the attacker: set by the host from the connection
+  PlayerId player{}; // whose V was hit
+  float physical{}, thermal{}, electric{}, chemical{};
+  std::uint8_t attackType{}; // gamedataAttackType (Explosion 3, PressureWave...)
+  std::uint8_t flags{};      // kHit*
+  Vec3 position;
+  Vec3 direction;
+  std::uint64_t attack{}; // TweakDB id of the attack record
+  std::uint64_t weapon{}; // TweakDB id of the item (grenade, weapon; 0: none)
+  friend bool operator==(const AreaHit &, const AreaHit &) = default;
+};
+
 using Message =
     std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
                  Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
                  NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
                  Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
                  Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward>;
+                 StoryState, QuestReward, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit>;
 
 // A story message (Journal … QuestReward): endpoint.hpp relays these
 // through one path.
 bool IsStory(const Message &message);
+// A hit outcome message (NpcStrike … AreaHit): one path in endpoint.hpp too.
+bool IsCombat(const Message &message);
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);
