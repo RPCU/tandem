@@ -931,72 +931,72 @@ TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits
   PumpFor({host.get(), a.get(), b.get(), late.get()}, 600ms, collect);
   REQUIRE(heard[3].size() == 1);
   CHECK(std::holds_alternative<proto::Difficulty>(heard[3][0]));
+}
 
-  namespace {
-  void CollectTimes(const std::vector<SessionEvent> &events, std::vector<proto::TimeEffect> &into) {
-    for (const auto &event : events)
-      if (const auto *t = std::get_if<events::RemoteTimeEffect>(&event))
-        into.push_back(t->effect);
-  }
-  } // namespace
+namespace {
+void CollectTimes(const std::vector<SessionEvent> &events, std::vector<proto::TimeEffect> &into) {
+  for (const auto &event : events)
+    if (const auto *t = std::get_if<events::RemoteTimeEffect>(&event))
+      into.push_back(t->effect);
+}
+} // namespace
 
-  TEST_CASE(
-      "time abilities: stamped, made safe, kept for late joiners, ended when a player leaves") {
-    const auto port = NextPort();
-    std::string error;
-    auto host = Endpoint::Host({"host"}, port, error);
-    auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
-    REQUIRE((host && a));
-    // Before joining: sent once in. A wild scale is clamped (a bubble never
-    // stops NPCs); the player field is ignored.
-    a->SetLocalTimeEffect({.player = 9, .abilities = proto::kTimeSandevistan, .scale = -3.f});
-    std::vector<proto::TimeEffect> atHost;
-    REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
-      if (i == 0)
-        CollectTimes(events, atHost);
-      return !atHost.empty();
-    }));
-    const proto::TimeEffect sandevistan{
-        .player = a->You(), .abilities = proto::kTimeSandevistan, .scale = 0.05f};
-    CHECK(atHost.front() == sandevistan);
-    CHECK(host->TimeEffects().at(a->You()) == sandevistan);
+TEST_CASE("time abilities: stamped, made safe, kept for late joiners, ended when a player leaves") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  // Before joining: sent once in. A wild scale is clamped (a bubble never
+  // stops NPCs); the player field is ignored.
+  a->SetLocalTimeEffect({.player = 9, .abilities = proto::kTimeSandevistan, .scale = -3.f});
+  std::vector<proto::TimeEffect> atHost;
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      CollectTimes(events, atHost);
+    return !atHost.empty();
+  }));
+  const proto::TimeEffect sandevistan{
+      .player = a->You(), .abilities = proto::kTimeSandevistan, .scale = 0.05f};
+  CHECK(atHost.front() == sandevistan);
+  CHECK(host->TimeEffects().at(a->You()) == sandevistan);
 
-    // The host's own too: two Vs in a Sandevistan at once.
-    host->SetLocalTimeEffect({.abilities = proto::kTimeSandevistan, .scale = 0.3f});
-    auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
-    REQUIRE_MESSAGE(late, error);
-    std::vector<proto::TimeEffect> atLate, atA;
-    REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
-      if (i == 1)
-        CollectTimes(events, atA);
-      if (i == 2)
-        CollectTimes(events, atLate);
-      return atLate.size() == 2 && !atA.empty();
-    }));
-    CHECK(atA.front() == proto::TimeEffect{1, proto::kTimeSandevistan, 0.3f});
-    CHECK(late->TimeEffects().size() == 2);
-    CHECK(late->TimeEffects().at(a->You()) == sandevistan);
+  // The host's own too: two Vs in a Sandevistan at once.
+  host->SetLocalTimeEffect({.abilities = proto::kTimeSandevistan, .scale = 0.3f});
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::vector<proto::TimeEffect> atLate, atA;
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      CollectTimes(events, atA);
+    if (i == 2)
+      CollectTimes(events, atLate);
+    return atLate.size() == 2 && !atA.empty();
+  }));
+  CHECK(atA.front() == proto::TimeEffect{1, proto::kTimeSandevistan, 0.3f});
+  CHECK(late->TimeEffects().size() == 2);
+  CHECK(late->TimeEffects().at(a->You()) == sandevistan);
 
-    // Scanning alone makes no bubble: its scale is 1 whatever is sent.
-    late->SetLocalTimeEffect({.abilities = proto::kTimeScanning, .scale = 0.1f});
-    atHost.clear();
-    REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
-      if (i == 0)
-        CollectTimes(events, atHost);
-      return !atHost.empty();
-    }));
-    CHECK(atHost.front() == proto::TimeEffect{late->You(), proto::kTimeScanning, 1.f});
+  // Scanning alone makes no bubble: its scale is 1 whatever is sent.
+  late->SetLocalTimeEffect({.abilities = proto::kTimeScanning, .scale = 0.1f});
+  atHost.clear();
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      CollectTimes(events, atHost);
+    return !atHost.empty();
+  }));
+  CHECK(atHost.front() == proto::TimeEffect{late->You(), proto::kTimeScanning, 1.f});
 
-    // a leaves in its Sandevistan: its bubble ends on every game.
-    const auto aId = a->You();
-    a->Leave();
-    atHost.clear(), atLate.clear();
-    REQUIRE(Pump({host.get(), late.get()}, [&](std::size_t i, const auto &events) {
-      CollectTimes(events, i == 0 ? atHost : atLate);
-      return !atHost.empty() && !atLate.empty();
-    }));
-    CHECK(atHost.front() == proto::TimeEffect{aId, 0, 1.f});
-    CHECK(atLate.front() == proto::TimeEffect{aId, 0, 1.f});
-    CHECK_FALSE(host->TimeEffects().contains(aId));
-    CHECK_FALSE(late->TimeEffects().contains(aId));
-  }
+  // a leaves in its Sandevistan: its bubble ends on every game.
+  const auto aId = a->You();
+  a->Leave();
+  atHost.clear(), atLate.clear();
+  REQUIRE(Pump({host.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    CollectTimes(events, i == 0 ? atHost : atLate);
+    return !atHost.empty() && !atLate.empty();
+  }));
+  CHECK(atHost.front() == proto::TimeEffect{aId, 0, 1.f});
+  CHECK(atLate.front() == proto::TimeEffect{aId, 0, 1.f});
+  CHECK_FALSE(host->TimeEffects().contains(aId));
+  CHECK_FALSE(late->TimeEffects().contains(aId));
+}

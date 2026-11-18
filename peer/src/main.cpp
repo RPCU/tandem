@@ -1259,7 +1259,7 @@ int main(int argc, char **argv) {
                         proto::NpcWound{.npc = strike->npc,
                                         .player = strike->player,
                                         .part = static_cast<std::uint8_t>(strike->part),
-                                        .wound = std::uint8_t{clean ? 0 : 1},
+                                        .wound = static_cast<std::uint8_t>(clean ? 0 : 1),
                                         .position = strike->position});
                     Log("npc {} loses part {}", strike->npc, strike->part);
                   }
