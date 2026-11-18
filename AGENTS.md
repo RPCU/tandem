@@ -20,7 +20,7 @@ tests/         doctest tests of core/ (Linux)
 relay/         tandem-relay (Go, stdlib only): cmd/tandem-relay, internal/relay
 nix/           relay package and OCI image; default.nix exposes them
 deploy/        kubernetes/base: kustomize base for the relay
-scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp)
+scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp, StoryNatives.reds story_natives.cpp)
 tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet records, the player marker)
 dist/          files installed next to the DLL (tandem.ini)
 cmake/         clang-cl-msvc.cmake: the Windows cross toolchain
@@ -98,7 +98,8 @@ Run the checks your change can break before saying it works: `task test` for
   sort it below the others inside a shared group.
 - Use `__builtin_offsetof` in `static_assert`s: the MSVC CRT's `offsetof` is
   not a constant expression under clang.
-- `scripts/tandem/Natives.reds` must match `plugin/src/natives.cpp` exactly.
+- `scripts/tandem/Natives.reds` must match `plugin/src/natives.cpp` exactly
+  (and `StoryNatives.reds` `story_natives.cpp`; `task natives:check` reads both).
   A redscript compile error disables **every** script in the game, so check
   vanilla and Codeware names before using them (NCO's working 2.5 scripts and
   Codeware's `scripts/` are good references) and read

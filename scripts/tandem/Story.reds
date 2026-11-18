@@ -629,12 +629,14 @@ public class TandemStorySystem extends ScriptableSystem {
       }
       TandemNative.Log(s"story: weapons \(wantCombat ? "lowered" : "free") (host tier \(this.m_hostTier), \(distance) m)");
     }
+    // A status effect: script god mode does not protect V (engine-knowledge
+    // §13.11).
     if wantGod != this.m_holdGod {
       this.m_holdGod = wantGod;
       if wantGod {
-        GameInstance.GetGodModeSystem(this.GetGameInstance()).AddGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, n"tandem");
+        StatusEffectHelper.ApplyStatusEffect(player, t"BaseStatusEffect.Invulnerable");
       } else {
-        GameInstance.GetGodModeSystem(this.GetGameInstance()).RemoveGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, n"tandem");
+        StatusEffectHelper.RemoveStatusEffect(player, t"BaseStatusEffect.Invulnerable");
       }
     }
     // Far from a cinematic: offered to join (once per scene).
@@ -679,7 +681,7 @@ public class TandemStorySystem extends ScriptableSystem {
       StatusEffectHelper.RemoveStatusEffect(player, t"GameplayRestriction.NoCombat");
     }
     if IsDefined(player) && this.m_holdGod {
-      GameInstance.GetGodModeSystem(this.GetGameInstance()).RemoveGodMode(player.GetEntityID(), gameGodModeType.Invulnerable, n"tandem");
+      StatusEffectHelper.RemoveStatusEffect(player, t"BaseStatusEffect.Invulnerable");
     }
     this.m_holdCombat = false;
     this.m_holdGod = false;
