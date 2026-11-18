@@ -307,9 +307,139 @@ struct Pause {
   friend bool operator==(const Pause &, const Pause &) = default;
 };
 
-using Message = std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye,
-                             PoseState, Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn,
-                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause>;
+// ---- Story (milestone 6, docs/research/coop-quests-design.md §6 step 1) ----
+// Host to guests unless noted; all reliable. The host keeps what a late
+// joiner needs (story.hpp, StoryRecord): the journal, the tracked entry, a
+// call that is up, an open choice hub, each player's StoryState.
+
+// One journal entry's state (gameJournalEntryState) by its path hash
+// (JournalManager.GetEntryHash).
+struct JournalChange {
+  std::uint32_t hash{};
+  std::uint8_t state{};
+  std::uint8_t notify{}; // 1: the host's change notified (toast, sound)
+  friend bool operator==(const JournalChange &, const JournalChange &) = default;
+};
+inline constexpr std::size_t kMaxJournalEntries = 32768;
+
+// A snapshot (Bulk channel: every entry that is not Inactive; on a guest,
+// entries not in it are Inactive) or changes (Event channel).
+struct Journal {
+  bool snapshot{};
+  std::vector<JournalChange> entries;
+  friend bool operator==(const Journal &, const Journal &) = default;
+};
+
+// The host's tracked journal entry (0: none). A guest applies it on join
+// and when the host changes it, and may then track something else.
+struct Tracked {
+  std::uint32_t hash{};
+  friend bool operator==(const Tracked &, const Tracked &) = default;
+};
+
+// The host's phone call, on every phase change (PhoneSystem); kept by the
+// host while it is up. Guests present it on their own HUD.
+inline constexpr std::uint8_t kCallRejectable = 1, kCallShowAvatar = 2, kCallPlayerCalling = 4,
+                              kCallPlayerTriggered = 8, kCallRejected = 16;
+struct PhoneCall {
+  std::uint64_t contact{}; // CName hash of the contact (its journal id)
+  std::uint8_t phase{};    // questPhoneCallPhase: 1 incoming, 2 started, 3 ended
+  std::uint8_t mode{};     // questPhoneCallMode
+  std::uint8_t visuals{};  // questPhoneCallVisuals
+  std::uint8_t flags{};    // kCall*
+  PlayerId answeredBy{};   // kNoPlayer until picked up (or rejected, kCallRejected)
+  friend bool operator==(const PhoneCall &, const PhoneCall &) = default;
+};
+
+// Guest to host: an answer to the ringing call (first one wins), or a
+// call the guest dials. Never relayed.
+inline constexpr std::uint8_t kPhoneAnswer = 1, kPhoneReject = 2, kPhoneDial = 3;
+struct PhoneAction {
+  PlayerId player{}; // set by the host from the connection
+  std::uint8_t action{};
+  std::uint64_t contact{};
+  friend bool operator==(const PhoneAction &, const PhoneAction &) = default;
+};
+
+// Guest to host: a text reply picked (first one wins). Never relayed.
+struct PhoneReply {
+  PlayerId player{};
+  std::uint32_t choiceEntry{}; // journal hash of the gameJournalPhoneChoiceEntry
+  friend bool operator==(const PhoneReply &, const PhoneReply &) = default;
+};
+
+// A dialogue line the host's game shows (UIGameData.ShowDialogLine) or
+// hides (kLineHide). Text in the host's language.
+inline constexpr std::uint8_t kLineHide = 1, kLinePersistent = 2;
+struct Subtitle {
+  std::uint64_t line{}; // scnDialogLineData.id (CRUID)
+  std::uint8_t type{};  // scnDialogLineType
+  std::uint8_t flags{}; // kLine*
+  float duration{};
+  NpcId speaker{};          // the NPC's session id (0: none, unknown or a player)
+  PlayerId speakerPlayer{}; // a V's line: whose
+  std::string speakerName;
+  std::string text;
+  friend bool operator==(const Subtitle &, const Subtitle &) = default;
+};
+
+struct ChoiceOption {
+  std::string text;
+  std::uint16_t types{}; // bit n: gameinteractionsChoiceType n
+  friend bool operator==(const ChoiceOption &, const ChoiceOption &) = default;
+};
+inline constexpr std::size_t kMaxChoiceOptions = 16;
+
+// The host's active dialogue choice hub; no options: closed.
+inline constexpr std::uint8_t kHubPhoneLock = 1;
+struct ChoiceHub {
+  std::int32_t hub{};
+  std::uint8_t flags{}; // kHub*
+  std::string title;
+  std::vector<ChoiceOption> options;
+  float timedSeconds{}; // 0: not timed
+  std::uint64_t timedStartUs{};
+  friend bool operator==(const ChoiceHub &, const ChoiceHub &) = default;
+};
+
+// A player's cursor on the hub: where it is, a guest's suggestion, the
+// host's pick. Either way; the host stamps and relays.
+inline constexpr std::uint8_t kCursorHover = 0, kCursorSuggest = 1, kCursorPicked = 2;
+struct ChoiceCursor {
+  PlayerId player{};
+  std::int32_t hub{};
+  std::int8_t index{};
+  std::uint8_t kind{}; // kCursor*
+  friend bool operator==(const ChoiceCursor &, const ChoiceCursor &) = default;
+};
+
+// A player's story state from its own game (either way; the host stamps,
+// keeps and relays it).
+inline constexpr std::uint8_t kStoryBraindance = 1, kStoryReplacer = 2, kStoryInCall = 4;
+struct StoryState {
+  PlayerId player{};
+  std::uint8_t tier{};  // GameplayTier 1..5
+  std::uint8_t flags{}; // kStory*
+  friend bool operator==(const StoryState &, const StoryState &) = default;
+};
+
+// Host to one guest that took part: a quest reward for its own V
+// (RPGManager.GiveReward on the guest, by its own level and perks).
+struct QuestReward {
+  std::uint64_t reward{}; // TweakDB id of the reward record
+  std::uint32_t quest{};  // journal hash of its quest (0: unknown)
+  friend bool operator==(const QuestReward &, const QuestReward &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, Journal, Tracked, PhoneCall, PhoneAction,
+                 PhoneReply, Subtitle, ChoiceHub, ChoiceCursor, StoryState, QuestReward>;
+
+// A story message (Journal … QuestReward): endpoint.hpp relays these
+// through one path.
+bool IsStory(const Message &message);
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

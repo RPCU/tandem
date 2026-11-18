@@ -10,6 +10,7 @@
 
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
+#include "tandem/story.hpp"
 
 #include <cstdint>
 #include <map>
@@ -106,6 +107,12 @@ struct HostWorld {
 struct PauseChanged {
   proto::Pause pause;
 };
+// A story message (proto::IsStory) for this game. Host: from a guest,
+// stamped with its player (PhoneAction only when it is the answer that
+// counts, story::CallArbiter). Guest: from the host.
+struct Story {
+  proto::Message message;
+};
 // The session is over (refused, host gone, timed out).
 struct Ended {
   std::string reason;
@@ -124,7 +131,7 @@ using SessionEvent =
                  events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
                  events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
-                 events::Ended, events::PlayerReturned>;
+                 events::Ended, events::PlayerReturned, events::Story>;
 
 class Endpoint {
 public:
@@ -163,6 +170,10 @@ public:
   // Our pause menu is open (paused) or closed. Kept: sent now if we are in
   // the session, else as soon as we are.
   void SetLocalPaused(bool paused);
+  // Story (milestone 6, proto::IsStory). Host: to every guest (to: one
+  // guest), kept for late joiners (story::Record). Guest: to the host, which
+  // relays ChoiceCursor and StoryState. Anything else is dropped.
+  void SendStory(proto::Message message, proto::PlayerId to = proto::kNoPlayer);
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
 
@@ -233,6 +244,11 @@ private:
   void SendLocalPausedNow();
   // Records a player's pause state; false when it did not change.
   bool NotePaused(proto::PlayerId player, bool paused);
+  // Host: the story for late joiners, and who answered the call first.
+  story::Record m_story;
+  story::CallArbiter m_calls;
+  void OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
+                    std::vector<SessionEvent> &out);
   bool m_ended{};
 };
 } // namespace tandem
