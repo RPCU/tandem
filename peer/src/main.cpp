@@ -19,7 +19,14 @@
 //   drive   drives a car in circles around your V (--vehicle RECORD): tests
 //           the copy of a remote player's car, its driver and its motion;
 //           --radio STATION plays that station on the car's radio, for
-//           whoever rides in it
+//           whoever rides in it; --seat SLOT rides in it instead while "an
+//           AI" drives (a ride: Delamain, a quest car), --scene makes it a
+//           story scene's (the host's: partners near it get a seat),
+//           --driver-npc RECORD (host) puts an NPC at the wheel
+//   metro   stands beside your V, then rides the NCART (--metro-at,
+//           --metro-for): the train is never shared, so your game shows the
+//           puppet hidden with a notice (or in your train if you ride one
+//           there), skipping halfway, and back where the ride ends
 //   idle    only connects and reports
 //
 // Looks, held weapons, shots, seats and cars: mirror and front echo yours
@@ -79,7 +86,7 @@ using tandem::proto::Vec3;
 
 volatile std::sig_atomic_t g_stop = 0;
 
-enum class Mode { Mirror, Ghost, Front, Drive, Idle };
+enum class Mode { Mirror, Ghost, Front, Drive, Metro, Idle };
 
 struct Options {
   bool host{};
@@ -134,6 +141,15 @@ struct Options {
   // tandem-relay: its address, a host token (host), the session's code (join)
   std::optional<tandem::net::RelayOptions> relay;
   std::string code;
+  // metro: board this long into the session, ride this long.
+  int metroAtSeconds{5};
+  int metroForSeconds{40};
+  // drive: our seat (not the driver's: an AI drives), a story scene, an NPC
+  // driver (host).
+  std::string seat{"seat_front_left"};
+  bool scene{};
+  std::string driverNpc;
+  int jumpAtSeconds{-1}; // jump 1.5 km this long into the session (-1: never)
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -188,7 +204,7 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     ADDRESS does not answer, or with --code only\n"
          "  --relay-token HEX  host: one of the relay's host tokens (tandem-relay token)\n"
          "  --code CODE        join: the host's join code (needs --relay)\n"
-         "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
+         "  --mode M           mirror | ghost | front | drive | metro | idle (default mirror)\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
          "  --look L           random | echo: random clothes of its own (default), or a\n"
@@ -236,11 +252,23 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     rewards; format in tools/scenarios/story-host.story)\n"
          "  --answer N         join: answer the host's ringing call after N seconds\n"
          "  --reply HASH       join: reply to a text with this choice entry (journal hash)\n"
-         "  --suggest N        join: suggest option N of every choice hub the host shows\n";
-  "  --sandevistan-at N switch a Sandevistan on N seconds after another player is in\n"
-  "                     the session: the host slows the NPCs around this V\n"
-  "  --sandevistan-for N  --sandevistan-at: switch it off after N seconds (default 5)\n"
-  "  --sandevistan-scale S  --sandevistan-at: the world speed it asks for (default 0.25)\n";
+         "  --suggest N        join: suggest option N of every choice hub the host shows\n"
+         "  --sandevistan-at N switch a Sandevistan on N seconds after another player is in\n"
+         "                     the session: the host slows the NPCs around this V\n"
+         "  --sandevistan-for N  --sandevistan-at: switch it off after N seconds (default 5)\n"
+         "  --sandevistan-scale S  --sandevistan-at: the world speed it asks for (default "
+         "0.25)\n"
+         "  --metro-at N       metro: board the NCART N seconds after another player is in\n"
+         "                     (default 5): it stands beside your V until then\n"
+         "  --metro-for N      metro: ride for N seconds (default 40), skipping (ten times\n"
+         "                     faster) for 3 s halfway, then get off where the ride ends\n"
+         "  --seat SLOT        drive: sit in SLOT (seat_front_right...) while an AI drives:\n"
+         "                     a ride its game runs (Transit Ride)\n"
+         "  --scene            drive --seat: the ride is a story scene (host: partners near\n"
+         "                     its copy get a free seat)\n"
+         "  --driver-npc REC   host, drive --seat: an NPC of REC at the wheel (NpcSeat)\n"
+         "  --jump-at N        N seconds after another player is in, jump 1.5 km (fast\n"
+         "                     travel): every later state is that far along +X\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -282,6 +310,10 @@ Options Parse(int argc, char **argv) {
     const auto flag = args[i];
     if (flag == "--check") { // parse only (tests/peer_flags.sh)
       options.check = true;
+      continue;
+    }
+    if (flag == "--scene") {
+      options.scene = true;
       continue;
     }
     if (i + 1 >= args.size())
@@ -382,8 +414,20 @@ Options Parse(int argc, char **argv) {
         options.mode = Mode::Idle;
       else if (value == "drive")
         options.mode = Mode::Drive;
+      else if (value == "metro")
+        options.mode = Mode::Metro;
       else
         Usage(std::format("unknown mode {}", value));
+    } else if (flag == "--metro-at") {
+      options.metroAtSeconds = std::max(0, Number<int>(value));
+    } else if (flag == "--metro-for") {
+      options.metroForSeconds = std::max(8, Number<int>(value));
+    } else if (flag == "--seat") {
+      options.seat = std::string(value);
+    } else if (flag == "--driver-npc") {
+      options.driverNpc = std::string(value);
+    } else if (flag == "--jump-at") {
+      options.jumpAtSeconds = Number<int>(value);
     } else if (flag == "--offset") {
       float xyz[3]{};
       std::size_t start = 0;
@@ -765,8 +809,32 @@ public:
       if (m_parkedAt)
         return Parked();
       return Drive(nowUs).first;
+    case Mode::Metro:
+      return Metro(nowUs);
     }
     return std::nullopt;
+  }
+
+  // metro: on the train from now on (once).
+  void Board(std::uint64_t nowUs) {
+    if (!m_boardUs)
+      m_boardUs = nowUs;
+  }
+
+  // metro: 0 waiting on the platform, 1 riding, 2 skipping (ten times
+  // faster), 3 off at the exit station; `secondHalf` past the skip.
+  int MetroStep(std::uint64_t nowUs, bool *secondHalf = nullptr) const {
+    if (!m_boardUs || nowUs < *m_boardUs)
+      return 0;
+    const float t = static_cast<float>(nowUs - *m_boardUs) / 1e6f;
+    const float ride = static_cast<float>(m_options.metroForSeconds), half = ride / 2.f;
+    if (secondHalf)
+      *secondHalf = t >= half + kSkipSeconds;
+    if (t >= ride)
+      return 3;
+    if (t >= half && t < half + kSkipSeconds)
+      return 2;
+    return 1;
   }
 
 private:
@@ -834,6 +902,49 @@ public:
 private:
   std::optional<Vec3> m_center;
   std::optional<Vec3> m_parkedAt;
+
+  // metro: a straight line from the platform (3 m to the right of where
+  // your V was first heard, along its facing), 8 m up while riding, at
+  // 20 m/s, 200 m/s while skipping.
+  static constexpr float kMetroSpeed = 20.f, kSkipSeconds = 3.f, kSkipFactor = 10.f, kMetroUp = 8.f;
+  std::optional<std::uint64_t> m_boardUs;
+  std::optional<Vec3> m_platform;
+  float m_lineYaw{};
+
+  float MetroDistance(float t) const {
+    const float ride = static_cast<float>(m_options.metroForSeconds), half = ride / 2.f;
+    t = std::clamp(t, 0.f, ride);
+    if (t < half)
+      return kMetroSpeed * t;
+    const float skip = std::min(t - half, kSkipSeconds);
+    return kMetroSpeed * half + kMetroSpeed * kSkipFactor * skip +
+           kMetroSpeed * std::max(0.f, t - half - kSkipSeconds);
+  }
+
+  std::optional<PlayerState> Metro(std::uint64_t nowUs) {
+    if (m_heard.empty())
+      return std::nullopt;
+    if (!m_platform) {
+      const auto &them = m_heard.back().second;
+      m_lineYaw = tandem::sync::YawOf(them.orientation);
+      // The game's right is (cos, sin) of the yaw.
+      m_platform = Vec3{them.position.x + 3.f * std::cos(m_lineYaw),
+                        them.position.y + 3.f * std::sin(m_lineYaw), them.position.z};
+    }
+    const int step = MetroStep(nowUs);
+    const float t =
+        m_boardUs && nowUs > *m_boardUs ? static_cast<float>(nowUs - *m_boardUs) / 1e6f : 0.f;
+    const float along = step == 0 ? 0.f : MetroDistance(t);
+    // The game's forward is (-sin, cos) of the yaw.
+    const float fx = -std::sin(m_lineYaw), fy = std::cos(m_lineYaw);
+    const float speed = step == 1 ? kMetroSpeed : step == 2 ? kMetroSpeed * kSkipFactor : 0.f;
+    PlayerState out;
+    out.position = {m_platform->x + fx * along, m_platform->y + fy * along,
+                    m_platform->z + (step == 1 || step == 2 ? kMetroUp : 0.f)};
+    out.velocity = {fx * speed, fy * speed, 0.f};
+    out.orientation = tandem::sync::FromYaw(m_lineYaw);
+    return out;
+  }
 
   std::optional<PlayerState> Parked() const {
     PlayerState out;
@@ -1048,6 +1159,17 @@ int main(int argc, char **argv) {
   std::uint64_t heard = 0, heardPoses = 0, heardShots = 0, heardVehicles = 0;
   // --pause-at: when someone else was first there, and how far the pause got.
   std::optional<std::chrono::steady_clock::time_point> togetherSince;
+  // metro: the ride's step as last sent; --jump-at: jumped yet.
+  int metroStep = 0;
+  bool metroSecondHalf = false;
+  bool jumped = false;
+  // drive --driver-npc: the NPC at the wheel (host), its states every 100 ms.
+  constexpr tandem::proto::NpcId kDriverNpc = 50'001;
+  auto nextDriverState = std::chrono::steady_clock::now();
+  // An NCART train's seat and id, made up: the game only uses them to find
+  // the same train in its own world.
+  const std::uint64_t kTrainSeat = CName("seat_front_right");
+  constexpr std::uint64_t kTrain = 0x4E43415254ULL; // "NCART"
   enum class PauseStep { Waiting, Paused, Done } pauseStep = PauseStep::Waiting;
   PauseStep sandevistanStep = PauseStep::Waiting;
 
@@ -1233,6 +1355,16 @@ int main(int argc, char **argv) {
                 Log("phone: {} by player {}",
                     action->action == proto::kPhoneReject ? "rejected" : "answered",
                     action->player);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteTransit>) {
+              constexpr const char *kKinds[] = {"none", "metro", "ride", "scene"};
+              Log("player {} ride: {} (flags {:#x}, station {}, next {}, seat {:#x})",
+                  e.transit.player, kKinds[static_cast<int>(e.transit.kind) & 3], e.transit.flags,
+                  e.transit.at, e.transit.next, e.transit.seat);
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcSeat>) {
+              Log("npc {} {} (seat {:#x})", e.seat.npc,
+                  e.seat.owner ? std::format("sits in player {}'s vehicle", e.seat.owner)
+                               : std::string("got out"),
+                  e.seat.seat);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteTimeEffect>) {
               Log("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
                   e.effect.abilities, e.effect.scale);
@@ -1263,28 +1395,96 @@ int main(int argc, char **argv) {
       nextSend += interval;
       if (nextSend < now)
         nextSend = now + interval;
-      if (auto state = puppeteer.Next(tandem::net::NowUs()))
+      if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
+        togetherSince = now;
+      // --jump-at: fast travel, 1.5 km along +X from then on.
+      if (options.jumpAtSeconds >= 0 && !jumped && togetherSince &&
+          now >= *togetherSince + std::chrono::seconds(options.jumpAtSeconds)) {
+        jumped = true;
+        Log("fast travel: 1.5 km away");
+      }
+      if (auto state = puppeteer.Next(tandem::net::NowUs())) {
+        if (jumped)
+          state->position.x += 1500.f;
         endpoint->SendLocalState(*state);
+      }
       if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip))
         endpoint->SendLocalPose(*pose);
+      // metro: board, skip halfway, get off; the ride as the game sends it
+      // (no seat: the train is never shared).
+      if (options.mode == Mode::Metro && endpoint->IsJoined()) {
+        const auto nowUs = tandem::net::NowUs();
+        if (togetherSince && now >= *togetherSince + std::chrono::seconds(options.metroAtSeconds))
+          puppeteer.Board(nowUs);
+        bool secondHalf = false;
+        const int step = puppeteer.MetroStep(nowUs, &secondHalf);
+        if (step != metroStep || secondHalf != metroSecondHalf) {
+          namespace proto = tandem::proto;
+          proto::Transit ride{.kind = proto::TransitKind::Metro,
+                              .at = static_cast<std::uint8_t>(secondHalf ? 6 : 5),
+                              .next = static_cast<std::uint8_t>(secondHalf ? 7 : 6),
+                              .vehicle = kTrain,
+                              .seat = kTrainSeat};
+          if (step == 2)
+            ride.flags = proto::kTransitSkipping;
+          if (step == 3)
+            ride = {};
+          endpoint->SetLocalTransit(ride);
+          constexpr const char *kSteps[] = {"on the platform", "riding the NCART", "skipping",
+                                            "off the NCART"};
+          Log("metro: {} (station {}, next {})", kSteps[step], ride.at, ride.next);
+          metroStep = step;
+          metroSecondHalf = secondHalf;
+        }
+      }
       if (options.mode == Mode::Drive && !parked) {
         const auto nowUs = tandem::net::NowUs();
-        if (!seated && endpoint->IsJoined()) {
+        const bool driving = options.seat == "seat_front_left";
+        const auto car = puppeteer.Drive(nowUs).second;
+        if (!seated && endpoint->IsJoined() && car) {
           endpoint->SetLocalSeat(
-              {.vehicle = TweakDBID(options.vehicle), .seat = CName("seat_front_left")});
-          Log("driving {} ({:#x})", options.vehicle, TweakDBID(options.vehicle));
+              {.vehicle = TweakDBID(options.vehicle), .seat = CName(options.seat)});
+          Log("{} {} ({:#x}) in {}", driving ? "driving" : "riding", options.vehicle,
+              TweakDBID(options.vehicle), options.seat);
           seated = true;
           seatedAtUs = nowUs;
           if (options.radioStation)
             sendRadio("at the wheel");
+          // Not at the wheel: a ride our game runs (an AI or a scene drives).
+          if (!driving) {
+            namespace proto = tandem::proto;
+            endpoint->SetLocalTransit(
+                {.kind = options.scene ? proto::TransitKind::Scene : proto::TransitKind::Ride,
+                 .flags = options.scene && options.host ? proto::kTransitSeats : std::uint8_t{0},
+                 .seat = CName(options.seat)});
+            Log("a {} ride{}", options.scene ? "scene" : "plain",
+                options.scene && options.host ? ": partners near it get a seat" : "");
+          }
+          if (!driving && options.host && !options.driverNpc.empty()) {
+            endpoint->SendNpcSpawn({.npc = kDriverNpc,
+                                    .record = TweakDBID(options.driverNpc),
+                                    .position = car->position,
+                                    .yaw = tandem::sync::YawOf(car->orientation)});
+            endpoint->SendNpcSeat(
+                {.npc = kDriverNpc, .owner = endpoint->You(), .seat = CName("seat_front_left")});
+            Log("npc {}: {} at the wheel", kDriverNpc, options.driverNpc);
+          }
         }
-        if (auto car = puppeteer.Drive(nowUs).second) {
+        if (car) {
           endpoint->SendLocalVehicle(*car);
           lastCar = car;
+          // The NPC at the wheel goes where the car goes (10 Hz).
+          if (!driving && options.host && !options.driverNpc.empty() && now >= nextDriverState) {
+            nextDriverState = now + 100ms;
+            endpoint->SendNpcStates({.npcs = {{.npc = kDriverNpc,
+                                               .position = car->position,
+                                               .yaw = tandem::sync::YawOf(car->orientation)}}});
+          }
         }
         if (seated && options.driveSeconds > 0 &&
             nowUs - seatedAtUs > static_cast<std::uint64_t>(options.driveSeconds) * 1'000'000) {
           endpoint->SetLocalSeat({}); // on foot, beside where the car stopped
+          endpoint->SetLocalTransit({});
           parked = true;
           if (lastCar)
             puppeteer.Park(lastCar->position);
