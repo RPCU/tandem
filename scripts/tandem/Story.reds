@@ -371,10 +371,10 @@ public class TandemStorySystem extends ScriptableSystem {
     ArrayPush(this.m_changedNotify, Equals(notifyOption, JournalNotifyOption.Notify));
     // Taking part: the quest this entry belongs to moved, with whoever is
     // near our V now (plugin: 150 m).
-    let quest = this.QuestOf(entry);
-    if IsDefined(quest) {
+    let questEntry = this.QuestOf(entry);
+    if IsDefined(questEntry) {
       let at = GetPlayer(this.GetGameInstance()).GetWorldPosition();
-      TandemStory.QuestMoved(Cast<Uint32>(this.m_journal.GetEntryHash(quest)), at.X, at.Y, at.Z);
+      TandemStory.QuestMoved(Cast<Uint32>(this.m_journal.GetEntryHash(questEntry)), at.X, at.Y, at.Z);
     }
   }
 
@@ -408,8 +408,8 @@ public class TandemStorySystem extends ScriptableSystem {
     context.stateFilter.inactive = false;
     let quests: array<wref<JournalEntry>>;
     this.m_journal.GetQuests(context, quests);
-    for quest in quests {
-      this.WalkEntry(quest, context.stateFilter, hashes, states, 0);
+    for questEntry in quests {
+      this.WalkEntry(questEntry, context.stateFilter, hashes, states, 0);
     }
     let contacts: array<wref<JournalEntry>>;
     this.m_journal.GetContacts(context, contacts);
@@ -903,16 +903,16 @@ public class TandemStorySystem extends ScriptableSystem {
   }
 
   // Guest: a reward of the host's quest for our own V, once.
-  private func OnReward(reward: TweakDBID, quest: Uint32) -> Void {
+  private func OnReward(reward: TweakDBID, questHash: Uint32) -> Void {
     if this.m_isHost {
       return;
     }
-    if this.Rewarded(reward, quest) {
+    if this.Rewarded(reward, questHash) {
       TandemNative.Log(s"reward: \(TDBID.ToStringDEBUG(reward)) already given in co-op");
       return;
     }
     ArrayPush(this.m_rewarded, reward);
-    ArrayPush(this.m_rewardedQuests, quest);
+    ArrayPush(this.m_rewardedQuests, questHash);
     // By our own rules: our level, our perks, our toasts (final.reds:37406).
     RPGManager.GiveReward(this.GetGameInstance(), reward);
     TandemNative.Log(s"reward: given \(TDBID.ToStringDEBUG(reward)) (quest \(quest))");
@@ -928,10 +928,10 @@ public class TandemStorySystem extends ScriptableSystem {
     return this.Rewarded(reward, this.m_lastQuest);
   }
 
-  private func Rewarded(reward: TweakDBID, quest: Uint32) -> Bool {
+  private func Rewarded(reward: TweakDBID, questHash: Uint32) -> Bool {
     let i = 0;
     while i < ArraySize(this.m_rewarded) {
-      if this.m_rewarded[i] == reward && i < ArraySize(this.m_rewardedQuests) && this.m_rewardedQuests[i] == quest {
+      if this.m_rewarded[i] == reward && i < ArraySize(this.m_rewardedQuests) && this.m_rewardedQuests[i] == questHash {
         return true;
       }
       i += 1;
