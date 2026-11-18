@@ -167,11 +167,11 @@ struct TandemLootEvent {
 static_assert(alignof(TandemLootEvent) <= 8, "the script VM aligns struct locals to 8");
 
 // Down and out (scripts/tandem/Revive.reds): someone reviving our V.
-struct TandemRevive {
+struct TandemReviveEvent {
   std::uint32_t player{}; // the reviver
   std::int32_t step{};    // proto::ReviveStep: 0 start, 1 cancel, 2 done
 };
-static_assert(alignof(TandemRevive) <= 8, "the script VM aligns struct locals to 8");
+static_assert(alignof(TandemReviveEvent) <= 8, "the script VM aligns struct locals to 8");
 
 // A host NPC's animation state (proto::NpcAnim), for NpcAnims.reds.
 struct TandemNpcAnim {
@@ -1085,10 +1085,10 @@ struct TandemNative : Red::IScriptable {
     Runtime::Get().SubmitRevive({.target = target, .step = static_cast<proto::ReviveStep>(step)});
   }
   // Revives of our V since the last call.
-  static Red::DynArray<TandemRevive> TakeRevives() {
-    Red::DynArray<TandemRevive> out;
+  static Red::DynArray<TandemReviveEvent> TakeRevives() {
+    Red::DynArray<TandemReviveEvent> out;
     for (const auto &revive : Runtime::Get().TakeRevives())
-      out.EmplaceBack(TandemRevive{revive.player, static_cast<std::int32_t>(revive.step)});
+      out.EmplaceBack(TandemReviveEvent{revive.player, static_cast<std::int32_t>(revive.step)});
     return out;
   }
   // How many times a session was lost (no V up) since the game started.
@@ -1342,7 +1342,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemLootEvent, "TandemLootEvent", {
   RTTI_PROPERTY(z);
 });
 
-RTTI_DEFINE_CLASS(tandem::plugin::TandemRevive, "TandemRevive", {
+RTTI_DEFINE_CLASS(tandem::plugin::TandemReviveEvent, "TandemReviveEvent", {
   RTTI_PROPERTY(player);
   RTTI_PROPERTY(step);
 });

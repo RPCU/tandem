@@ -201,7 +201,7 @@ public native struct TandemLootEvent {
 }
 
 // Down and out: someone reviving our V (Revive.reds).
-public native struct TandemRevive {
+public native struct TandemReviveEvent {
   // the reviver
   native let player: Uint32;
   // 0 start, 1 cancel, 2 done
@@ -280,7 +280,7 @@ public native class TandemNative extends IScriptable {
   public static native func RemoteLife(player: Uint32) -> Int32
   public static native func RemoteVitalsFlags(player: Uint32) -> Int32
   public static native func SendRevive(target: Uint32, step: Int32)
-  public static native func TakeRevives() -> array<TandemRevive>
+  public static native func TakeRevives() -> array<TandemReviveEvent>
   public static native func SessionLosses() -> Int32
   public static native func SendNpcAnim(npc: Uint32, highLevel: Int32, upperBody: Int32, stance: Int32, flags: Int32, weapon: TweakDBID, target: Uint32, workspot: Uint64, workspotEntry: Int32, workspotAnim: CName)
   public static native func SendNpcShot(npc: Uint32, effect: Int32, target: Vector4)

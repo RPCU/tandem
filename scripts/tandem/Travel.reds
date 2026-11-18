@@ -491,7 +491,7 @@ public class TandemTravel {
     let spot = new Vector4(at.X + SinF(yaw) * 2.0, at.Y - CosF(yaw) * 2.0, at.Z, 1.0);
     let gap = Vector4.Distance(local.GetWorldPosition(), spot);
     if gap > 4.0 {
-      GameInstance.GetTeleportationFacility(this.m_game).Teleport(local, spot, new EulerAngles(0.0, 0.0, Rad2Deg(yaw)));
+      GameInstance.GetTeleportationFacility(this.m_game).Teleport(local, spot, TandemYawAngles(Rad2Deg(yaw)));
     }
     TandemNative.Log(s"travel: arrived next to \(this.NameOf(player)) (\(gap) m hop)");
   }
@@ -524,18 +524,17 @@ public class TandemTravel {
     let mappins = GameInstance.GetMappinSystem(this.m_game);
     let best: ref<FastTravelPointData>;
     let bestDistance = TandemTravel.PointMetres();
+    // (redscript 0.5 has no continue)
     for known in travel.GetFastTravelPoints() {
-      if !IsDefined(known) || !known.ShouldShowMappinOnWorldMap() {
-        continue;
-      }
-      let mappin = mappins.GetMappin(known.mappinID);
-      if !IsDefined(mappin) {
-        continue;
-      }
-      let distance = Vector4.Distance(mappin.GetWorldPosition(), at);
-      if distance < bestDistance {
-        best = known;
-        bestDistance = distance;
+      if IsDefined(known) && known.ShouldShowMappinOnWorldMap() {
+        let mappin = mappins.GetMappin(known.mappinID);
+        if IsDefined(mappin) {
+          let distance = Vector4.Distance(mappin.GetWorldPosition(), at);
+          if distance < bestDistance {
+            best = known;
+            bestDistance = distance;
+          }
+        }
       }
     }
     return best;

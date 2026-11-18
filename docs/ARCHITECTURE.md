@@ -762,7 +762,7 @@ revive down|hold|report`; scenarios `revive-peer`, `revive-game`,
   puppet's group and how the NPCs around V see it next to V; scenario
   `puppet-attitude`. Verified in game: the groups are accepted. Failed on
   the first run: civilians friendly to the puppet, neutral to V (fixed
-  since, to run again; engine-knowledge §13.23).
+  since, to run again; engine-knowledge §13.17).
 - **Slowed time** (`scripts/tandem/Time.reds`, `core/src/timebubble.cpp`):
   each game sends its V's time abilities when they change (`TimeEffect`:
   Sandevistan, Kerenzikov, slow-motion perks, scanning, and the world speed

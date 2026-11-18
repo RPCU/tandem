@@ -421,7 +421,7 @@ public class TandemRevive {
     // (-sin, cos), so behind is (sin, -cos).
     let yaw = TandemNative.RemoteYaw(partner);
     let to = new Vector4(at.X + SinF(yaw) * 1.5, at.Y - CosF(yaw) * 1.5, at.Z, 1.0);
-    GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, new EulerAngles(0.0, 0.0, yaw * 57.29578));
+    GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, TandemYawAngles(yaw * 57.29578));
     this.m_lost = false;
     TandemNative.Log(s"revive: respawn beside \(this.NameOf(partner)) (\(why))");
     this.Notice(s"Back beside \(this.NameOf(partner))", SimpleMessageType.Neutral);
@@ -846,7 +846,7 @@ public class TandemRevive {
         if this.m_holding == 0u && TandemNative.RemoteLife(p) == 1 && IsDefined(body) {
           let at = body.GetWorldPosition();
           at.X += 1.0;
-          GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, at, new EulerAngles(0.0, 0.0, player.GetWorldYaw()));
+          GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, at, TandemYawAngles(player.GetWorldYaw()));
           this.StartHold(p, true);
         }
       }

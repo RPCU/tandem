@@ -30,6 +30,8 @@
 #include <RED4ext/ResourceLoader.hpp>
 #include <RED4ext/Scripting/Natives/CResource.hpp>
 
+#include <windows.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cctype>
@@ -141,23 +143,69 @@ const char *Category(Tag tag) {
   return "?";
 }
 
+// ---- guarded reads (no C++ objects with destructors in __try functions) ----
+// The observer runs in the quest system for every node of every game, and
+// the scene resource is read while the engine owns it: a bad pointer is
+// caught here and the scene counts as important (never private by mistake).
+
+constexpr std::uint32_t kMaxActors = 32, kNameBytes = 64;
+
+struct SceneFacts {
+  std::int8_t category = -1;
+  std::uint32_t actors = 0;
+  char names[kMaxActors][kNameBytes] = {};
+};
+
+// The node is a scene node: its scene's resource path (0: not one, or unreadable).
+std::uint64_t ScenePathOf(void *node, RED4ext::CClass *wanted, std::uint32_t offset) {
+  __try {
+    auto *type = static_cast<RED4ext::ISerializable *>(node)->GetType();
+    if (!type || !type->IsA(wanted))
+      return 0;
+    return *reinterpret_cast<const std::uint64_t *>(static_cast<const std::uint8_t *>(node) +
+                                                    offset);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return 0;
+  }
+}
+
+bool ReadScene(const std::uint8_t *scene, SceneFacts &facts) {
+  __try {
+    facts.category = *reinterpret_cast<const std::int8_t *>(scene + g_category);
+    // DynArray's head: entries, capacity, size (the elements are scnActorDef).
+    const auto *head = scene + g_actors;
+    const auto *entries = *reinterpret_cast<const std::uint8_t *const *>(head);
+    facts.actors = *reinterpret_cast<const std::uint32_t *>(head + 12);
+    if (facts.actors > 256)
+      return false;
+    for (std::uint32_t i = 0; i < facts.actors && i < kMaxActors && entries; ++i) {
+      const auto *name =
+          reinterpret_cast<const RED4ext::CString *>(entries + i * g_actorSize + g_actorName)
+              ->c_str();
+      for (std::uint32_t c = 0; name && c + 1 < kNameBytes && name[c]; ++c)
+        facts.names[i][c] = name[c];
+    }
+    return true;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
 // The rules (design §2.12). A scene of the story (main quests, a side
 // quest's scenes with several people, holocalls) is for everyone; chats,
 // open-world and minor one-to-one scenes, and a side or minor quest's scene
 // with a romance partner alone, are private.
-SceneClass Classify(const std::uint8_t *scene, std::string &why) {
+SceneClass Classify(const SceneFacts &facts, std::string &why) {
   using T = Tag;
-  const auto category =
-      static_cast<Tag>(*reinterpret_cast<const std::int8_t *>(scene + g_category));
-  const auto &actors = *reinterpret_cast<const RED4ext::DynArray<std::uint8_t> *>(scene + g_actors);
-  // DynArray's head: entries, capacity, size (the element type is scnActorDef).
-  const auto *entries = *reinterpret_cast<const std::uint8_t *const *>(&actors);
-  const std::uint32_t npcs = reinterpret_cast<const std::uint32_t *>(&actors)[3];
+  if (facts.category < 0 || facts.category > 13) {
+    why = std::format("unknown category {}", facts.category);
+    return SceneClass::Important;
+  }
+  const auto category = static_cast<Tag>(facts.category);
+  const std::uint32_t npcs = facts.actors;
   std::string partner;
-  for (std::uint32_t i = 0; i < npcs && i < 64 && entries; ++i) {
-    const auto &actorName =
-        *reinterpret_cast<const RED4ext::CString *>(entries + i * g_actorSize + g_actorName);
-    const auto name = Lower(actorName.c_str());
+  for (std::uint32_t i = 0; i < npcs && i < kMaxActors; ++i) {
+    const auto name = Lower(facts.names[i]);
     for (const auto &wanted : g_privacy.actors)
       if (!wanted.empty() && name.find(wanted) != std::string::npos)
         partner = name;
@@ -205,12 +253,10 @@ void ObserveSceneNode(void *node) {
   auto *wanted = g_nodeClass.load(std::memory_order_relaxed);
   if (!wanted || !node)
     return;
-  auto *type = static_cast<RED4ext::ISerializable *>(node)->GetType();
-  if (!type || !type->IsA(wanted))
-    return;
   // RaRef<scnSceneResource>: its resource path first.
-  const auto path = *reinterpret_cast<const std::uint64_t *>(
-      static_cast<const std::uint8_t *>(node) + g_sceneFile.load());
+  const auto path = ScenePathOf(node, wanted, g_sceneFile.load());
+  if (path == 0)
+    return;
   g_lastPath.store(path, std::memory_order_relaxed);
   g_lastUs.store(net::NowUs(), std::memory_order_relaxed);
 }
@@ -244,10 +290,15 @@ SceneClass ClassifyRecentScene(std::uint32_t maxAgeMs, std::string &why) {
   if (!token || !token->IsLoaded() || !token->resource)
     return SceneClass::None; // not loaded yet: asked again next time
   auto *resource = token->resource.GetPtr();
-  if (!resource || !resource->GetType() ||
-      resource->GetType()->GetName() != RED4ext::CName("scnSceneResource"))
+  static auto *sceneClass = RED4ext::CRTTISystem::Get()->GetClass("scnSceneResource");
+  if (!resource || !sceneClass || resource->GetType() != sceneClass)
     return SceneClass::None;
-  const auto result = Classify(reinterpret_cast<const std::uint8_t *>(resource), why);
+  SceneFacts facts;
+  SceneClass result = SceneClass::Important;
+  if (ReadScene(reinterpret_cast<const std::uint8_t *>(resource), facts))
+    result = Classify(facts, why);
+  else
+    why = "unreadable";
   g_cache[path] = result;
   log::Info("scenes: {:#x} is {} ({})", path,
             result == SceneClass::Romance ? "private (romance)"
