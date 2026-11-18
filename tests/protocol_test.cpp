@@ -308,3 +308,10 @@ TEST_CASE("story messages: channels, limits, sizes") {
   typical.entries.resize(3000);
   CHECK(Encode(typical).size() < 32 * 1024);
 }
+
+TEST_CASE("a story effect survives encoding and is a story message") {
+  RoundTrips(StoryEffect{.player = 1, .effect = 0x15e213846eULL, .applied = true});
+  CHECK(IsStory(StoryEffect{}));
+  CHECK(ChannelOf(StoryEffect{}) == Channel::Event);
+  CHECK(std::string(NameOf(StoryEffect{})) == "StoryEffect");
+}

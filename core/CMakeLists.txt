@@ -4,6 +4,7 @@
 add_library(tandem_core STATIC
   src/protocol.cpp
   src/session.cpp
+  src/relay.cpp
   src/endpoint.cpp
   src/story.cpp
   src/interpolation.cpp

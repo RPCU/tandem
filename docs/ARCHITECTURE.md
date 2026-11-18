@@ -144,9 +144,13 @@ its states from the host clock's millisecond at its `Welcome`, so what it
 sends after coming back is newer than what it sent before.
 
 **Reaching each other**: direct first (LAN, Tailscale/NetBird — already on
-every nixbook machine), then the relay when NAT blocks UDP. An invite carries
-the host's addresses and a relay session secret; the joining game tries them
-in order.
+every nixbook machine), then the relay when NAT blocks UDP. A host with a
+relay configured is reachable both ways at once: directly on its port, and
+through the relay by its **join code** (see [The relay](#the-relay)). A guest
+joining by code goes through the relay; given the host's address too, it
+tries that first and switches to the relay when the host has not answered
+within half the timeout (2.5 s), without reporting an end in between
+(`JoinTarget` in `endpoint.hpp`).
 
 ## Authority: who decides what
 
@@ -556,12 +560,20 @@ redscript natives (UI, events)              ENet socket
     within 30 m of the host in a tier 3+ scene has its weapons lowered, tier
     4+ also invulnerable; a guest further than 100 m from a tier 4+ scene
     gets an offer to join (the regroup itself: TODO).
+  - _Johnny, Songbird, takeovers_ (`research/coop-quests-design.md` §2.11):
+    Johnny and Songbird are NPCs of the host's world, so a guest near the
+    host sees them as proxies where the host does. Johnny's relic glitches
+    and Songbird's glitch effects on the host's V (`StoryEffect`) go onto a
+    guest's V within 30 m while they last. Songbird's calls keep their own
+    widget. The host playing as Johnny (`isReplacer`) or in a braindance
+    counts as a cinematic for the holds and the offer, with a notice. The
+    host's puppet does not yet take Johnny's look.
   - _Rewards_: the host's `OnRewardEvent` goes to the guests that took part
     (within 150 m of the host as the quest moved or completed;
     `story::Participation`); each guest gives its own V the reward
     (`RPGManager.GiveReward`) once, and keeps it in a persistent ledger so
     its own story pays nothing again for it.
-  - Not yet verified in game: scenarios `story-guest`, `story-host`.
+  - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`.
 - **How NPCs see a remote V** (`scripts/tandem/Attitudes.reds`,
   `tweaks/tandem/attitudes.tweak`, `tweaks/tandem/puppet.tweak`): every
   puppet is in an attitude group of its own, `tandem_player_1` to `_3`
@@ -607,7 +619,8 @@ redscript natives (UI, events)              ENet socket
   their true speed. The plugin calls `TandemTime.Frame` every frame
   (`plugin/src/main.cpp`). Scenario `time`; not yet run in game.
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name,
-  pose, story, quest_freeze, quest_freeze_allow, time_host).
+  pose, story, quest_freeze, quest_freeze_allow, time_host; `relay`,
+  `relay_token`, `join` for the relay and join codes).
 
 ## Talking to the engine safely
 
@@ -633,15 +646,55 @@ in game, `[broken-on-2.5]` must not be used.
 `relay/` — Go, standard library only. It forwards opaque ENet datagrams
 between a session's host and guests; it never parses game traffic.
 
-- **Sessions**: a 16-byte secret the host picks and shares in the invite.
-  Guests register with the secret; the relay gives each a channel number and
-  stamps it on what it forwards to the host.
+- **Sessions**: a 16-byte secret the host's game draws at random for each
+  session. Guests register with the secret; the relay gives each a channel
+  number and stamps it on what it forwards to the host.
 - **Who may host**: only hosts presenting a token from the relay's token
   file (a Kubernetes Secret), so the relay is not an open bandwidth donor.
-- **Abuse limits**: unknown addresses never get an answer (no reflection);
-  registration requests are padded so no answer is larger than its request
-  (no amplification); per-client packet and byte rate limits; at most
-  `max-sessions`; idle clients forgotten after two minutes.
+- **Join codes**: a registered host asks for a code naming its session
+  (`RequestCode`, accepted only from the host's own address with its
+  secret): 6 characters of Crockford's base32 (no I, L, O, U; read in any
+  case, with or without the dash, O as 0, I and L as 1), drawn with
+  `crypto/rand`, shown as `K7Q-2M9`. A code lives 10 minutes (`--code-ttl`)
+  and dies with its session; the host's game asks again every 20 s (its
+  time left, or a new code once it expired or the relay restarted). A guest
+  trades the code for the session's secret (`ResolveCode` → `Secret`),
+  registers with the secret, and keeps it to join again after the code
+  expired (a host that crashed and came back has a new secret: the code it
+  shows then is needed). The plugin tries a code that led to no session 3
+  times, then stops; once in the session it joins again by the secret
+  alone, so a stale code never spends lookups.
+- **Codes cannot be guessed cheaply**: 2^30 codes, at most one live per
+  session (≤ `max-sessions`, 256). Lookups are limited per source (an IPv4
+  address or an IPv6 /64: 5 at once, then one per 6 s; told once that it is
+  over, then ignored) and in total (120 failed lookups a minute from
+  everyone; past that every lookup waits for the next minute, so many
+  sources together are no faster). Even with 256 live sessions and the
+  total cap saturated, one hit takes ~24 days on average, against codes that
+  change every 10 minutes. The cost is that a flood of wrong codes delays
+  honest joins by up to a minute; sources tracked are capped (4096).
+- **Abuse limits**: unknown addresses never get an answer to data (no
+  reflection); only registration-type requests (register, resolve a code),
+  padded to 64 bytes, are answered from an unregistered address, and every
+  answer is smaller than its request (at most 21 bytes: no amplification);
+  per-client packet and byte rate limits; at most `max-sessions`; idle
+  clients forgotten after two minutes.
+
+Wire format (`relay/internal/relay/wire.go`, big-endian, `TNR1` + type):
+
+| Type              | Body                                  | Direction                    |
+| ----------------- | ------------------------------------- | ---------------------------- |
+| 1 `RegisterHost`  | secret 16, host token 32, pad to 64   | host → relay                 |
+| 2 `RegisterGuest` | secret 16, pad to 64                  | guest → relay                |
+| 3 `Registered`    | channel 2                             | relay → client               |
+| 4 `Data`          | channel 2, ENet datagram              | both ways                    |
+| 5 `Keepalive`     | —                                     | client → relay               |
+| 6 `Error`         | code 1 (bad token, no session, full…) | relay → client               |
+| 7 `RequestCode`   | secret 16, renew 1, pad to 64         | host → relay                 |
+| 8 `Code`          | code 6, seconds left 2                | relay → host                 |
+| 9 `ResolveCode`   | code 6, pad to 64                     | guest → relay (unregistered) |
+| 10 `Secret`       | secret 16                             | relay → guest                |
+
 - **Observability**: JSON logs, `/healthz`, Prometheus `/metrics`.
 - **Shipping**: `nix-build -A relayImage` builds an OCI image with only the
   static binary and CA certificates, running as uid 65532.
@@ -653,8 +706,56 @@ between a session's host and guests; it never parses game traffic.
   LoadBalancer with `externalTrafficPolicy: Local` to keep players'
   addresses. The host-token Secret comes from the overlay's secret store.
 
-On the game side, the plugin talks to the relay through a small UDP proxy on
-localhost, so ENet itself never knows the relay exists (planned, milestone 7).
+**On the game side** (`core/src/relay.cpp`, `tandem/relay.hpp`) the session
+talks to the relay through a small UDP proxy on 127.0.0.1, so ENet itself
+never knows the relay exists. A guest's ENet connects to the proxy's local
+socket; the proxy wraps what it sends in `Data` and unwraps what comes back
+(datagrams ENet sends before the relay registered it wait, a few at most).
+A host's ENet keeps listening on its port for direct guests; the proxy opens
+one local socket per relayed guest (relay channel) and sends from it to
+ENet's port, so ENet sees each relayed guest as its own address
+(127.0.0.1:N); a socket silent for a minute closes. The proxy is pumped
+around each ENet service in `Session::Poll`, which waits on ENet's socket
+and the proxy's together, so relayed traffic takes no extra frame. Only the
+relay's address is heard on the outer socket, and only ENet's own socket on
+the local ones. A host whose relay fails (no answer, refused token) keeps
+hosting directly and tries the relay again every 20 s; a guest's failure
+ends its join with the relay's reason ("no session has this join code
+(wrong, or expired)").
+
+### Invites: the in-game flow (for the main menu)
+
+The co-op main menu (another piece of milestone 7) builds on three natives
+(`scripts/tandem/Natives.reds`), all safe to call every frame from the
+game thread:
+
+- `TandemNative.RelayCode() -> String`: the host's join code to show,
+  `"K7Q-2M9"`; `""` while there is none (no relay set, not registered yet,
+  or the code just expired and a new one is on its way).
+- `TandemNative.RelayStatus() -> String`: `""` no relay, `"connecting"`,
+  `"ready"`, or what went wrong in words (`"the relay did not answer"`,
+  `"the relay refused our host token (relay_token)"`, `"no session has this
+join code (wrong, or expired)"`, `"too many join attempts: try again in a
+minute"`…), to show as is.
+- `TandemNative.JoinByCode(code: String) -> Bool`: become the guest of the
+  session the typed code names, through `tandem.ini`'s relay (false: not a
+  code, or no relay). A running session is left for it at once; otherwise it
+  starts when the next game is loaded (`TandemNative.Start`). The outcome
+  arrives as the usual `TandemEvent`s (4 in the session, 3 ended with a
+  reason).
+
+The flow: **host** — the menu's "Host co-op" loads one of the player's saves
+with `role = host` and shows `RelayCode()` (with a copy button and the
+code's state from `RelayStatus()`), refreshing it when it changes; the code
+is what the player sends a friend. **Join** — "Join co-op" asks for the code
+(6 characters, a dash optional), calls `JoinByCode`, loads the guest's own
+save and waits for event 4, showing `RelayStatus()` and the end reason on
+failure. Still missing for that menu: a native to become host at runtime
+(today the role comes from `tandem.ini`), hooks installed when the ini says
+`role = off` (they are installed at load only for a configured role), a
+"new code" request (the wire has `renew`; `RelayLink` does not expose it
+yet), and a relay address shipped by default (today `relay =` is set by
+hand).
 
 ## Testing without a second player
 
@@ -662,7 +763,8 @@ localhost, so ENet itself never knows the relay exists (planned, milestone 7).
 | ----------- | -------------------------------------------------------------------------- | --------------------------------- |
 | unit        | protocol round trips, strict decoding, sizes                               | `task test`                       |
 | loopback    | real host + guests over UDP in one process: join, relay, clock, leave      | `task test`                       |
-| relay       | protocol, limits, amplification, real sockets, race detector               | `task relay:test`                 |
+| relay       | protocol, codes, limits, amplification, real sockets, race detector        | `task relay:test`                 |
+| via relay   | a real relay process: join by code, fallback from direct, mock players     | `task test` (`relay-loopback`)    |
 | mock player | `tandem-peer` as host or guest against the real game                       | `task peer -- host --mode mirror` |
 | natives     | `Natives.reds`/`StoryNatives.reds` match `natives.cpp`/`story_natives.cpp` | `task natives:check`              |
 | scenarios   | the real game against the mock player, checked on the game's log           | `task scenario -- all`            |
@@ -690,6 +792,10 @@ game thread stop). Each feature verified in game gets a scenario.
   `off`) plays that station on its radio: sent at the wheel and again when
   your V gets in (`tools/game.sh cmd vehicle ride`).
 - **idle** — connects and reports.
+- `--relay HOST[:PORT]` (any mode): as host, also reachable through that
+  relay (`--relay-token` if it needs one), logging `join code K7Q-2M9`; as
+  guest, `join --code K7Q-2M9 --relay …` joins by code, and `join ADDRESS
+--code … --relay …` tries ADDRESS first (`tests/relay_loopback.sh`).
 - **story** (milestone 6): `host --story FILE` plays a scripted host story
   (journal snapshot and changes, tracked entry, call phases, lines, hubs, a
   pick, scene tiers, a reward; `tools/scenarios/story-host.story`); as a
@@ -748,7 +854,7 @@ Each milestone ends with something visible in game.
 | 4   | Shared world basics | time, weather, police heat follow the host; tether and regroup on fast travel (time, weather ✓ 2026-11-18)                                                                 |
 | 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot through the host (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18)                              |
 | 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests (step 1 written: freeze, saves, journal, calls, texts, lines, hubs, rewards; to test in game) |
-| 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join                                                                      |
+| 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join (relay and codes ✓ 2026-11-18, loopback)                             |
 | 8   | Co-op features      | revive, pings and shared markers, and what we add as we play                                                                                                               |
 
 Alongside every milestone from 2 on: the simulated second game (record,
@@ -789,7 +895,8 @@ in-game tests still owed; none of it tested in a session yet):
   (name, privacy, max players) live there too; `tandem.ini` stays for tests.
   Part of milestone 7 (invites, relay); needs an ink widget in the main
   menu's controller and a lobby list the relay or a Steam-free directory can
-  answer.
+  answer. Done: the relay and join codes, with the natives the menu needs
+  (see [Invites](#invites-the-in-game-flow-for-the-main-menu)).
 - **Unplanned disconnects, on either side.** A guest's game can crash, lose
   its network or be killed; so can the host's. Every case must end cleanly
   for the ones left: a guest gone (timeout or ENet disconnect) — its puppet,

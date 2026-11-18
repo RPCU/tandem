@@ -10,6 +10,8 @@ declare -A value=(
   ["--record"]=x.rec ["--replay"]=x.rec ["--anims"]=x.anims ["--hit-npcs"]=2 ["--hit-you"]=2 ["--pause-at"]=10 ["--pause-for"]=3
   ["--drive-seconds"]=5 ["--time"]=06:30 ["--weather"]=24h_weather_rain
   ["--record"]=x.rec ["--replay"]=x.rec ["--hit-npcs"]=2 ["--pause-at"]=10 ["--pause-for"]=3
+  ["--relay"]=relay.example.org:27460 ["--code"]=k7q-2m9
+  ["--relay-token"]=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
   ["--hack-npcs"]=4 ["--hack-action"]=QuickHack.BlindHack ["--hack-effect"]=BaseStatusEffect.Blind
   ["--hack-player"]=6 ["--npc-hack"]=AIQuickHack.HackRevealPosition ["--hack-car"]=5
   ["--npc"]=Character.x ["--detect-at"]=15 ["--detect-for"]=10 ["--camo"]=10 ["--shoot"]=3

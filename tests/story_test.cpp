@@ -74,6 +74,11 @@ TEST_CASE("the story record gives a joiner the journal as it is now") {
   CHECK(snapshot.entries[2].notify == 0); // no toasts for a joiner
   CHECK(std::get<proto::Tracked>(joiner[1]).hash == 4);
 
+  // A glitch on the host's V now: a joiner gets it; gone, it does not.
+  record.Note(proto::StoryEffect{.player = 1, .effect = 77, .applied = true});
+  CHECK(std::holds_alternative<proto::StoryEffect>(record.ForJoiner().back()));
+  record.Note(proto::StoryEffect{.player = 1, .effect = 77, .applied = false});
+
   // The call ends and the hub closes: nothing of them for the next joiner.
   record.Note(proto::PhoneCall{.contact = 9, .phase = 3});
   record.Note(proto::ChoiceHub{.hub = 5});
