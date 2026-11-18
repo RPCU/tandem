@@ -406,7 +406,7 @@ public class TandemTakedowns extends ScriptableSystem {
       let at = puppet.GetWorldPosition();
       at.X += forward.X * 0.6;
       at.Y += forward.Y * 0.6;
-      GameInstance.GetTeleportationFacility(this.GetGameInstance()).Teleport(body, at, new EulerAngles(0.0, 0.0, puppet.GetWorldYaw()));
+      GameInstance.GetTeleportationFacility(this.GetGameInstance()).Teleport(body, at, TandemYawAngles(puppet.GetWorldYaw()));
     }
     if held.endAt > 0.0 && this.m_now >= held.endAt {
       this.Outcome(body, held, puppet);

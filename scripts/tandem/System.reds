@@ -242,6 +242,11 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // The remote players who have a puppet here.
+  // The world runs (past the loading screen, see Tick).
+  public func IsPlaying() -> Bool {
+    return this.m_playing;
+  }
+
   public func PuppetPlayers() -> array<Uint32> {
     let out: array<Uint32>;
     for puppet in this.m_puppets {
@@ -562,7 +567,7 @@ public class TandemSystem extends ScriptableSystem {
           yaw = StringToFloat(w);
         }
       }
-      GameInstance.GetTeleportationFacility(this.GetGameInstance()).Teleport(GetPlayer(this.GetGameInstance()), to, new EulerAngles(0.0, 0.0, yaw));
+      GameInstance.GetTeleportationFacility(this.GetGameInstance()).Teleport(GetPlayer(this.GetGameInstance()), to, TandemYawAngles(yaw));
       TandemNative.Log(s"teleport: (\(to.X), \(to.Y), \(to.Z)) yaw \(yaw)");
     } else if Equals(command, "vehicle ride") {
       // (test) our V into the passenger seat of the first remote car copy.
@@ -1601,4 +1606,13 @@ public class TandemSystem extends ScriptableSystem {
     ArrayClear(this.m_puppets);
   }
 
+}
+
+// A rotation about the vertical axis only. EulerAngles is a native struct
+// whose script definition redscript does not trust: constructing it with
+// arguments may be undefined behaviour (its warning), so set the field.
+public func TandemYawAngles(yaw: Float) -> EulerAngles {
+  let angles: EulerAngles;
+  angles.Yaw = yaw;
+  return angles;
 }

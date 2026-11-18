@@ -132,7 +132,10 @@ public class TandemTime {
     }
     let player = GetPlayer(this.m_game);
     let system = this.TandemSys();
-    if !IsDefined(player) || !IsDefined(system) || system.You() == 0u {
+    // Not behind the loading screen: the plugin calls this every frame from
+    // the game's running state, and the world is still being built there
+    // (the game crashed in this frame on a save load, 2026-11-18).
+    if !IsDefined(player) || !IsDefined(system) || system.You() == 0u || !system.IsPlaying() {
       return;
     }
     let times = GameInstance.GetTimeSystem(this.m_game);
