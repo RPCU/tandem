@@ -1,6 +1,7 @@
 #include "net_thread.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
+#include "story.hpp"
 
 #include "tandem/endpoint.hpp"
 
@@ -20,6 +21,7 @@ struct NetThread::Impl {
   std::optional<proto::Held> lastHeld;
   std::optional<proto::Seat> lastSeat;
   std::optional<proto::VehicleRadio> lastRadio;
+  std::optional<proto::Stealth> lastStealth;
   bool lastPaused{};
 
   // The other players in their pause menu, for the game thread.
@@ -67,6 +69,8 @@ struct NetThread::Impl {
       endpoint->SetLocalSeat(*lastSeat);
     if (lastRadio)
       endpoint->SetLocalVehicleRadio(*lastRadio);
+    if (lastStealth)
+      endpoint->SetLocalStealth(*lastStealth);
     if (lastPaused)
       endpoint->SetLocalPaused(true);
     if (config.role == Config::Role::Host)
@@ -101,16 +105,21 @@ struct NetThread::Impl {
                 log::Info("in the session as player {} (host {})", e.you, e.host);
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
+                Story::Get().PushInbound(
+                    {.kind = StoryInbound::Kind::InSession, .player = e.you, .host = e.host});
               } else if constexpr (std::is_same_v<E, events::PlayerJoined>) {
                 log::Info("{} joined (player {}, body {})", e.player.name, e.player.id,
                           static_cast<int>(e.player.body));
                 runtime.NotePlayerName(e.player.id, e.player.name);
                 runtime.PushEvent(
                     {ScriptEvent::Kind::PlayerJoined, e.player.id, e.player.name, e.player.body});
+                Story::Get().PushInbound(
+                    {.kind = StoryInbound::Kind::Joined, .player = e.player.id});
               } else if constexpr (std::is_same_v<E, events::PlayerLeft>) {
                 log::Info("player {} left", e.player);
                 runtime.ForgetRemote(e.player);
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
+                Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
               } else if constexpr (std::is_same_v<E, events::PlayerReturned>) {
                 // Its puppet and seat stay; its new game sends its look again.
                 log::Info("{} is back on a new connection (player {})", e.player.name, e.player.id);
@@ -159,8 +168,52 @@ struct NetThread::Impl {
                                       .amount = e.hit.damage,
                                       .flags = e.hit.flags,
                                       .direction = e.hit.direction});
+              } else if constexpr (std::is_same_v<E, events::NpcHackBy>) {
+                runtime.PushHackEvent({.kind = HackEvent::Kind::Upload,
+                                       .npc = e.hack.npc,
+                                       .player = e.hack.player,
+                                       .action = e.hack.action,
+                                       .flags = e.hack.flags,
+                                       .seconds = static_cast<float>(e.hack.uploadMs) / 1000.f});
+              } else if constexpr (std::is_same_v<E, events::HostNpcHackState>) {
+                runtime.PushHackEvent({.kind = HackEvent::Kind::State,
+                                       .npc = e.state.npc,
+                                       .player = e.state.player,
+                                       .action = e.state.action,
+                                       .state = static_cast<std::int32_t>(e.state.step),
+                                       .seconds = static_cast<float>(e.state.uploadMs) / 1000.f});
+              } else if constexpr (std::is_same_v<E, events::HostNpcStatus>) {
+                runtime.PushHackEvent({.kind = HackEvent::Kind::Status,
+                                       .npc = e.status.npc,
+                                       .player = e.status.player,
+                                       .action = e.status.effect,
+                                       .state = e.status.applied ? 1 : 0});
+              } else if constexpr (std::is_same_v<E, events::HostPlayerHack>) {
+                log::Info("npc {} hacks our V ({:#x})", e.hack.npc, e.hack.action);
+                runtime.PushHackEvent({.kind = HackEvent::Kind::PlayerHack,
+                                       .npc = e.hack.npc,
+                                       .player = e.hack.player,
+                                       .action = e.hack.action,
+                                       .flags = e.hack.flags});
+              } else if constexpr (std::is_same_v<E, events::VehicleHackOn>) {
+                log::Info("player {} hacked the car we drive ({})", e.hack.player,
+                          static_cast<int>(e.hack.hack));
+                runtime.PushHackEvent({.kind = HackEvent::Kind::Car,
+                                       .player = e.hack.player,
+                                       .state = static_cast<std::int32_t>(e.hack.hack),
+                                       .seconds = e.hack.seconds});
+              } else if constexpr (std::is_same_v<E, events::HitByNpc>) {
+                runtime.PushPlayerHit(e.hit);
               } else if constexpr (std::is_same_v<E, events::HostNpcStates>) {
-                runtime.PushNpcStates(e.states);
+                runtime.PushNpcStates(e.states, endpoint->You());
+              } else if constexpr (std::is_same_v<E, events::HostNpcAwareness>) {
+                runtime.PushNpcAwareness(e.awareness, endpoint->You());
+              } else if constexpr (std::is_same_v<E, events::RemoteStealth>) {
+                log::Info("player {}: stealth flags {:#x}, visibility {:.2f}, camo {:#x}",
+                          e.stealth.player, e.stealth.flags, e.stealth.visibility, e.stealth.camo);
+                runtime.PushRemoteStealth(e.stealth);
+              } else if constexpr (std::is_same_v<E, events::NoiseBy>) {
+                runtime.PushRemoteNoise(e.noise);
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
                 log::Info("player {}: look of {} keys and {} items (revision {})",
                           e.appearance.player, e.appearance.look.size(), e.appearance.items.size(),
@@ -181,7 +234,11 @@ struct NetThread::Impl {
                 log::Info("player {} {} our offer {}", e.answer.from,
                           e.answer.accepted ? "accepted" : "declined", e.answer.offer);
                 runtime.PushRegroupEvent({.kind = RegroupEvent::Kind::Answer, .answer = e.answer});
+              } else if constexpr (std::is_same_v<E, events::Story>) {
+                Story::Get().PushInbound(
+                    {.kind = StoryInbound::Kind::Message, .message = e.message});
               } else if constexpr (std::is_same_v<E, events::Ended>) {
+                Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
                 runtime.SetRemotePaused({});
                 // The next session's players start afresh (a restarted host
@@ -240,9 +297,34 @@ struct NetThread::Impl {
           endpoint->SendNpcHit(*hit);
         else if (const auto *effect = std::get_if<proto::NpcEffect>(&message))
           endpoint->SendNpcEffect(*effect);
+        else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
+                 hit && !endpoint->SendPlayerHit(*hit))
+          log::Info("hit on player {} dropped: not a guest in the session", hit->player);
+      }
+      for (const auto &message : runtime.TakeHackOutbox()) {
+        if (const auto *hack = std::get_if<proto::NpcHack>(&message))
+          endpoint->SendNpcHack(*hack);
+        else if (const auto *state = std::get_if<proto::NpcHackState>(&message))
+          endpoint->SendNpcHackState(*state);
+        else if (const auto *status = std::get_if<proto::NpcStatus>(&message))
+          endpoint->SendNpcStatus(*status);
+        else if (const auto *player = std::get_if<proto::PlayerHack>(&message))
+          endpoint->SendPlayerHack(*player);
+        else if (const auto *car = std::get_if<proto::VehicleHack>(&message))
+          endpoint->SendVehicleHack(*car);
       }
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
+      if (auto awareness = runtime.TakeNpcAwareness())
+        endpoint->SendNpcAwareness(std::move(*awareness));
+      if (auto stealth = runtime.TakeLocalStealth()) {
+        lastStealth = *stealth;
+        endpoint->SetLocalStealth(*stealth);
+      }
+      for (const auto &noise : runtime.TakeLocalNoises())
+        endpoint->SendNoise(noise);
+      for (auto &[message, to] : Story::Get().TakeOutbound())
+        endpoint->SendStory(std::move(message), to);
       for (auto &message : runtime.TakeRegroupOutbox()) {
         if (auto *offer = std::get_if<proto::Regroup>(&message))
           endpoint->SendRegroup(std::move(*offer));

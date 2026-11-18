@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Check that scripts/tandem/Natives.reds matches plugin/src/natives.cpp.
+"""Check that scripts/tandem/Natives.reds matches plugin/src/natives.cpp, and
+StoryNatives.reds matches story_natives.cpp (checked together: one name space).
 
 redscript compiles a native declaration without seeing the DLL, so a type
 that differs (a Quaternion where the C++ takes a float) builds fine and
@@ -15,8 +16,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CPP = ROOT / "plugin/src/natives.cpp"
-REDS = ROOT / "scripts/tandem/Natives.reds"
+CPP = [ROOT / "plugin/src/natives.cpp", ROOT / "plugin/src/story_natives.cpp"]
+REDS = [ROOT / "scripts/tandem/Natives.reds", ROOT / "scripts/tandem/StoryNatives.reds"]
 
 SCALARS = {
     "void": "Void",
@@ -34,6 +35,7 @@ SCALARS = {
     "Red::EntityID": "EntityID",
     "Red::Vector4": "Vector4",
     "Red::Quaternion": "Quaternion",
+    "Red::CRUID": "CRUID",
     "Red::NodeRef": "NodeRef",
 }
 # 16-byte aligned types: never fields of a native struct.
@@ -129,7 +131,8 @@ def reds_structs(src: str) -> dict[str, list[tuple[str, str]]]:
 
 
 def main() -> int:
-    cpp, reds = CPP.read_text(), REDS.read_text()
+    cpp = "\n".join(path.read_text() for path in CPP if path.exists())
+    reds = "\n".join(path.read_text() for path in REDS if path.exists())
     errors = []
     a, b = cpp_natives(cpp), reds_natives(reds)
     registered = set(re.findall(r"RTTI_METHOD\((\w+)\)", cpp))

@@ -327,6 +327,274 @@ struct VehicleRadio {
   friend bool operator==(const VehicleRadio &, const VehicleRadio &) = default;
 };
 
+// One of the host's NPCs hit a guest's V (its puppet on the host's game).
+// The host's game ran the attacker's side of the hit (the NPC's weapon and
+// stats, range, its attack); the target's side (armour, resistances, dodge,
+// block and deflect, perks, difficulty, god mode, death) belongs to that
+// player's game, which runs the hit on its own V with the NPC's proxy as the
+// attacker. Host to that player only, never relayed to anyone else.
+struct PlayerHit {   // Event channel
+  PlayerId player{}; // whose V was hit
+  NpcId npc{};       // the attacker as the host shares it (0: not shared)
+  // Damage per type as the attacker's side left it, before the target's.
+  float physical{}, thermal{}, electric{}, chemical{};
+  std::uint8_t attackType{}; // gamedataAttackType (Ranged 10, Melee 7...)
+  std::uint8_t flags{};      // kHit*
+  float pierce{};            // the attacker's armour penetration, 0..1
+  Vec3 position;             // where it landed, and the way it went
+  Vec3 direction;
+  std::uint64_t attack{}; // TweakDB id of the attack record (0: unknown)
+  std::uint64_t weapon{}; // TweakDB id of the NPC's weapon item (0: none)
+  friend bool operator==(const PlayerHit &, const PlayerHit &) = default;
+};
+// How far the host's NPCs are in noticing each guest: the level of the
+// game's detection meter (SenseComponent.GetDetection, 0..100) as 0..255,
+// for the guest's stealth meter. Sent by the host only (State channel,
+// ~5 Hz, empty when nobody is being noticed). Only pairs above 0 are
+// listed, never the host's own V. Who has fully detected whom (and so puts
+// that player in combat) is NpcEntry::detected.
+struct NpcAwarenessEntry {
+  NpcId npc{};
+  PlayerId player{};
+  std::uint8_t level{}; // 255: detection 100 %
+  friend bool operator==(const NpcAwarenessEntry &, const NpcAwarenessEntry &) = default;
+};
+inline constexpr std::size_t kMaxNpcAwareness = 96;
+
+struct NpcAwareness {
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  std::vector<NpcAwarenessEntry> entries;
+  friend bool operator==(const NpcAwareness &, const NpcAwareness &) = default;
+};
+
+// How hard a V is to see, sent by that player's game when it changes (Event
+// channel; the host stamps the player, keeps the latest for late joiners
+// and relays it). The host puts it on the player's puppet, where its NPCs'
+// senses look: camouflaged, the puppet's visible object is off; its
+// detection multiplier is the V's Visibility stat; crouched, it is seen at
+// crouch height. Every game shows the camo effect on the puppet.
+inline constexpr std::uint8_t kStealthCamo = 1;         // optical camo on
+inline constexpr std::uint8_t kStealthCamoBlocking = 2; // fully blocking (relic: NPCs drop the V)
+inline constexpr std::uint8_t kStealthCrouch = 4;       // crouched or sneaking
+struct Stealth {
+  PlayerId player{};
+  std::uint32_t revision{};
+  std::uint8_t flags{};  // kStealth*
+  float visibility{1.f}; // the V's Visibility stat: NPCs' detection multiplier
+  std::uint64_t camo{};  // TweakDB id of the camo status effect on the V (0: none, unknown)
+  friend bool operator==(const Stealth &, const Stealth &) = default;
+};
+
+// A stimulus a guest's V gave out (a gunshot, a silenced shot, a ground
+// slam, a distraction): the host's NPCs hear it from the guest's puppet,
+// which the host broadcasts it from. Guest to host only, never relayed
+// (State channel: a late one is worth nothing).
+struct Noise {
+  PlayerId player{};   // set by the host from the connection
+  std::uint8_t stim{}; // gamedataStimType
+  float radius{};      // metres (0: the stimulus's own)
+  bool propagation{};  // StimBroadcasterComponent's propagationChange
+  friend bool operator==(const Noise &, const Noise &) = default;
+};
+
+// Quickhacks (docs/ARCHITECTURE.md, "Quickhacks from two players on one
+// target"). `action` is always the TweakDB id of an ObjectAction record
+// (QuickHack.*, AIQuickHack.*), `effect` that of a status effect record.
+
+// A guest started uploading a quickhack on one of the host's NPCs (its
+// proxy): its game runs the panel, the RAM cost, its cooldown and queue and
+// the upload bar; the effects it lands come as NpcEffect as for a hit. The
+// host runs the upload on the real NPC (being hacked, trace) and its
+// reaction to the hack. Guest to host, never relayed.
+inline constexpr std::uint8_t kUploadTraceable = 1; // the hack reveals its netrunner
+struct NpcHack {                                    // Event channel
+  PlayerId player{};                                // who: set by the host from the connection
+  NpcId npc{};
+  std::uint64_t action{};
+  std::uint32_t uploadMs{}; // the upload time the guest's game computed (its perks)
+  std::uint8_t flags{};     // kUpload*
+  friend bool operator==(const NpcHack &, const NpcHack &) = default;
+};
+
+// What is being uploaded to a host NPC, by whom (host to everyone, the
+// uploader included: its game learns the host's order). Each game shows the
+// others' uploads on its proxy.
+enum class HackStep : std::uint8_t { Started = 0, Done = 1, Failed = 2 };
+struct NpcHackState { // Event channel
+  NpcId npc{};
+  PlayerId player{}; // the uploader (the host's own V too)
+  std::uint64_t action{};
+  HackStep step{};
+  std::uint32_t uploadMs{};
+  friend bool operator==(const NpcHackState &, const NpcHackState &) = default;
+};
+
+// A quickhack's status effect came onto, or left, a host NPC (host to
+// everyone). Guests put it on their proxy, so its look and the game's own
+// "already affected" lockouts in their quickhack menu are true; the game
+// whose V put it there (`player`) has it already.
+struct NpcStatus { // Event channel
+  NpcId npc{};
+  PlayerId player{}; // whose hack it is (kNoPlayer: an NPC's, or unknown)
+  std::uint64_t effect{};
+  bool applied{}; // false: removed
+  friend bool operator==(const NpcStatus &, const NpcStatus &) = default;
+};
+
+// One of the host's NPC netrunners hacks a guest's V (host to that guest
+// only). On the host the hack would land on the puppet; the guest's game
+// runs it on its own V instead, with its proxy of the netrunner as the
+// hacker: its ICE and cyberdeck defences, the upload bar, the effect.
+inline constexpr std::uint8_t kPlayerHackReveal = 1;      // trace: reveals the V's position
+inline constexpr std::uint8_t kPlayerHackDirectional = 2; // show the attack's direction
+inline constexpr std::uint8_t kPlayerHackSkipBeingHacked = 4;
+struct PlayerHack {  // Event channel
+  PlayerId player{}; // the V hacked
+  NpcId npc{};       // the netrunner
+  std::uint64_t action{};
+  std::uint8_t flags{}; // kPlayerHack*
+  friend bool operator==(const PlayerHack &, const PlayerHack &) = default;
+};
+
+// A V quickhacked the car another V drives (its copy in the hacker's game).
+// The driver's game owns that car and applies the hack to it; the others
+// see the result through the car's usual sync. Sent to the host, which
+// stamps the hacker and passes it to the driver (or applies it, when the
+// host drives).
+enum class CarHack : std::uint8_t { ForceBrakes = 0, Explode = 1, Accelerate = 2 };
+struct VehicleHack { // Event channel
+  PlayerId player{}; // the hacker: set by the host from the connection
+  PlayerId driver{};
+  CarHack hack{};
+  float seconds{}; // how long it lasts (brakes, acceleration), as the hacker's game has it
+  friend bool operator==(const VehicleHack &, const VehicleHack &) = default;
+};
+
+// ---- Story (milestone 6, docs/research/coop-quests-design.md §6 step 1) ----
+// Host to guests unless noted; all reliable. The host keeps what a late
+// joiner needs (story.hpp, StoryRecord): the journal, the tracked entry, a
+// call that is up, an open choice hub, each player's StoryState.
+
+// One journal entry's state (gameJournalEntryState) by its path hash
+// (JournalManager.GetEntryHash).
+struct JournalChange {
+  std::uint32_t hash{};
+  std::uint8_t state{};
+  std::uint8_t notify{}; // 1: the host's change notified (toast, sound)
+  friend bool operator==(const JournalChange &, const JournalChange &) = default;
+};
+inline constexpr std::size_t kMaxJournalEntries = 32768;
+
+// A snapshot (Bulk channel: every entry that is not Inactive; on a guest,
+// entries not in it are Inactive) or changes (Event channel).
+struct Journal {
+  bool snapshot{};
+  std::vector<JournalChange> entries;
+  friend bool operator==(const Journal &, const Journal &) = default;
+};
+
+// The host's tracked journal entry (0: none). A guest applies it on join
+// and when the host changes it, and may then track something else.
+struct Tracked {
+  std::uint32_t hash{};
+  friend bool operator==(const Tracked &, const Tracked &) = default;
+};
+
+// The host's phone call, on every phase change (PhoneSystem); kept by the
+// host while it is up. Guests present it on their own HUD.
+inline constexpr std::uint8_t kCallRejectable = 1, kCallShowAvatar = 2, kCallPlayerCalling = 4,
+                              kCallPlayerTriggered = 8, kCallRejected = 16;
+struct PhoneCall {
+  std::uint64_t contact{}; // CName hash of the contact (its journal id)
+  std::uint8_t phase{};    // questPhoneCallPhase: 1 incoming, 2 started, 3 ended
+  std::uint8_t mode{};     // questPhoneCallMode
+  std::uint8_t visuals{};  // questPhoneCallVisuals
+  std::uint8_t flags{};    // kCall*
+  PlayerId answeredBy{};   // kNoPlayer until picked up (or rejected, kCallRejected)
+  friend bool operator==(const PhoneCall &, const PhoneCall &) = default;
+};
+
+// Guest to host: an answer to the ringing call (first one wins), or a
+// call the guest dials. Never relayed.
+inline constexpr std::uint8_t kPhoneAnswer = 1, kPhoneReject = 2, kPhoneDial = 3;
+struct PhoneAction {
+  PlayerId player{}; // set by the host from the connection
+  std::uint8_t action{};
+  std::uint64_t contact{};
+  friend bool operator==(const PhoneAction &, const PhoneAction &) = default;
+};
+
+// Guest to host: a text reply picked (first one wins). Never relayed.
+struct PhoneReply {
+  PlayerId player{};
+  std::uint32_t choiceEntry{}; // journal hash of the gameJournalPhoneChoiceEntry
+  friend bool operator==(const PhoneReply &, const PhoneReply &) = default;
+};
+
+// A dialogue line the host's game shows (UIGameData.ShowDialogLine) or
+// hides (kLineHide). Text in the host's language.
+inline constexpr std::uint8_t kLineHide = 1, kLinePersistent = 2;
+struct Subtitle {
+  std::uint64_t line{}; // scnDialogLineData.id (CRUID)
+  std::uint8_t type{};  // scnDialogLineType
+  std::uint8_t flags{}; // kLine*
+  float duration{};
+  NpcId speaker{};          // the NPC's session id (0: none, unknown or a player)
+  PlayerId speakerPlayer{}; // a V's line: whose
+  std::string speakerName;
+  std::string text;
+  friend bool operator==(const Subtitle &, const Subtitle &) = default;
+};
+
+struct ChoiceOption {
+  std::string text;
+  std::uint16_t types{}; // bit n: gameinteractionsChoiceType n
+  friend bool operator==(const ChoiceOption &, const ChoiceOption &) = default;
+};
+inline constexpr std::size_t kMaxChoiceOptions = 16;
+
+// The host's active dialogue choice hub; no options: closed.
+inline constexpr std::uint8_t kHubPhoneLock = 1;
+struct ChoiceHub {
+  std::int32_t hub{};
+  std::uint8_t flags{}; // kHub*
+  std::string title;
+  std::vector<ChoiceOption> options;
+  float timedSeconds{}; // 0: not timed
+  std::uint64_t timedStartUs{};
+  friend bool operator==(const ChoiceHub &, const ChoiceHub &) = default;
+};
+
+// A player's cursor on the hub: where it is, a guest's suggestion, the
+// host's pick. Either way; the host stamps and relays.
+inline constexpr std::uint8_t kCursorHover = 0, kCursorSuggest = 1, kCursorPicked = 2;
+struct ChoiceCursor {
+  PlayerId player{};
+  std::int32_t hub{};
+  std::int8_t index{};
+  std::uint8_t kind{}; // kCursor*
+  friend bool operator==(const ChoiceCursor &, const ChoiceCursor &) = default;
+};
+
+// A player's story state from its own game (either way; the host stamps,
+// keeps and relays it).
+inline constexpr std::uint8_t kStoryBraindance = 1, kStoryReplacer = 2, kStoryInCall = 4;
+struct StoryState {
+  PlayerId player{};
+  std::uint8_t tier{};  // GameplayTier 1..5
+  std::uint8_t flags{}; // kStory*
+  friend bool operator==(const StoryState &, const StoryState &) = default;
+};
+
+// Host to one guest that took part: a quest reward for its own V
+// (RPGManager.GiveReward on the guest, by its own level and perks).
+struct QuestReward {
+  std::uint64_t reward{}; // TweakDB id of the reward record
+  std::uint32_t quest{};  // journal hash of its quest (0: unknown)
+  friend bool operator==(const QuestReward &, const QuestReward &) = default;
+};
+
 // A player offers others to come to them ("regroup", milestone 4): sent by
 // that player's game when it arrives from a fast travel, when a story scene
 // starts while someone is far (the story work), or when the player asks. The
@@ -372,7 +640,14 @@ struct RegroupAnswer {
 using Message =
     std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
                  Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
-                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, Regroup, RegroupAnswer>;
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
+                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
+                 Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
+                 StoryState, QuestReward, Regroup, RegroupAnswer>;
+
+// A story message (Journal … QuestReward): endpoint.hpp relays these
+// through one path.
+bool IsStory(const Message &message);
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

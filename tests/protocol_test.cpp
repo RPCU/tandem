@@ -69,6 +69,15 @@ TEST_CASE("every message survives encoding") {
       .revision = 2, .gameTimeSeconds = 86400 + 3600 * 18, .weather = 0x1234, .timePaused = true});
   RoundTrips(Pause{.player = 3, .paused = true});
   RoundTrips(Pause{.player = 2, .paused = false});
+  RoundTrips(NpcHack{
+      .player = 2, .npc = 7, .action = 0x1122334455, .uploadMs = 1500, .flags = kUploadTraceable});
+  RoundTrips(NpcHackState{
+      .npc = 7, .player = 2, .action = 0x1122334455, .step = HackStep::Done, .uploadMs = 1500});
+  RoundTrips(NpcStatus{.npc = 7, .player = 1, .effect = 0xAB, .applied = true});
+  RoundTrips(NpcStatus{.npc = 7, .player = 0, .effect = 0xAB, .applied = false});
+  RoundTrips(PlayerHack{
+      .player = 2, .npc = 7, .action = 0x99, .flags = kPlayerHackReveal | kPlayerHackDirectional});
+  RoundTrips(VehicleHack{.player = 2, .driver = 1, .hack = CarHack::Accelerate, .seconds = 4.5f});
   RoundTrips(VehicleRadio{.player = 2,
                           .revision = 5,
                           .on = true,
@@ -76,6 +85,19 @@ TEST_CASE("every message survives encoding") {
                           .track = 0xfeedfacecafef00dULL,
                           .trackStartUs = 123'456'789'012ULL});
   RoundTrips(VehicleRadio{.player = 3, .revision = 1, .on = false, .station = -1});
+  RoundTrips(PlayerHit{.player = 2,
+                       .npc = 7,
+                       .physical = 29.5f,
+                       .thermal = 3.f,
+                       .electric = 0.5f,
+                       .chemical = 1.f,
+                       .attackType = 10,
+                       .flags = kHitWeakSpot | kHitCritical,
+                       .pierce = 0.25f,
+                       .position = {1, 2, 3},
+                       .direction = {0, -1, 0},
+                       .attack = 0x1234567890ULL,
+                       .weapon = 0x0abcdef012ULL});
   RoundTrips(Regroup{.from = 2,
                      .to = 0,
                      .offer = 4,
@@ -107,6 +129,32 @@ TEST_CASE("a car's radio is a small reliable event") {
   CHECK(IsReliable(VehicleRadio{}));
   CHECK(std::string_view(NameOf(VehicleRadio{})) == "VehicleRadio");
   CHECK(Encode(VehicleRadio{}).size() < 64);
+  RoundTrips(NpcAwareness{
+      .seq = 3,
+      .timeUs = 7'000'000,
+      .entries = {{.npc = 7, .player = 2, .level = 128}, {.npc = 9, .player = 3, .level = 255}}});
+  RoundTrips(Stealth{.player = 2,
+                     .revision = 4,
+                     .flags = kStealthCamo | kStealthCrouch,
+                     .visibility = 0.35f,
+                     .camo = 0x1a2b3c4d5eULL});
+  RoundTrips(Noise{.player = 2, .stim = 23, .radius = 25.f, .propagation = true});
+  CHECK(std::string(NameOf(Noise{})) == "Noise");
+  CHECK(std::string(NameOf(NpcAwareness{})) == "NpcAwareness");
+  CHECK(std::string(NameOf(Stealth{})) == "Stealth");
+}
+
+TEST_CASE("stealth travels reliably, awareness and noise as state") {
+  CHECK(ChannelOf(NpcAwareness{}) == Channel::State);
+  CHECK(ChannelOf(Noise{}) == Channel::State);
+  CHECK(ChannelOf(Stealth{}) == Channel::Event);
+  CHECK(IsReliable(Stealth{}));
+  NpcAwareness crowd;
+  crowd.entries.resize(kMaxNpcAwareness);
+  CHECK(Encode(crowd).size() < 1400); // one datagram
+  crowd.entries.resize(kMaxNpcAwareness + 1);
+  CHECK_FALSE(Decode(Encode(crowd)).has_value());
+  CHECK(Encode(Noise{}).size() < 32);
 }
 
 TEST_CASE("an appearance past its limits is refused") {
@@ -128,6 +176,18 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(ChannelOf(NpcEffect{}) == Channel::Event);
   CHECK(ChannelOf(Pause{}) == Channel::Event);
   CHECK(IsReliable(Pause{}));
+  // Quickhacks change state: never dropped.
+  CHECK(ChannelOf(NpcHack{}) == Channel::Event);
+  CHECK(ChannelOf(NpcHackState{}) == Channel::Event);
+  CHECK(ChannelOf(NpcStatus{}) == Channel::Event);
+  CHECK(ChannelOf(PlayerHack{}) == Channel::Event);
+  CHECK(ChannelOf(VehicleHack{}) == Channel::Event);
+  CHECK(IsReliable(VehicleHack{}));
+  CHECK(std::string_view(NameOf(VehicleHack{})) == "VehicleHack");
+  CHECK(std::string_view(NameOf(NpcHack{})) == "NpcHack");
+  CHECK(ChannelOf(PlayerHit{}) == Channel::Event);
+  CHECK(IsReliable(PlayerHit{}));
+  CHECK(std::string_view(NameOf(PlayerHit{})) == "PlayerHit");
   // A guest cannot flood the host with effects.
   NpcEffect many{.npc = 1, .effects = std::vector<std::uint64_t>(kMaxNpcEffects + 1, 5)};
   CHECK_FALSE(Decode(Encode(many)));
@@ -137,6 +197,17 @@ TEST_CASE("an appearance past its limits is refused") {
   crowd.npcs.resize(kMaxNpcsPerState + 1);
   CHECK_FALSE(Decode(Encode(crowd)).has_value());
   CHECK(Encode(VehicleState{}).size() < 64);
+}
+
+TEST_CASE("quickhack messages out of range are refused") {
+  auto step = Encode(NpcHackState{.step = HackStep::Failed});
+  CHECK(Decode(step).has_value());
+  auto car = Encode(VehicleHack{.hack = CarHack::Accelerate});
+  CHECK(Decode(car).has_value());
+  NpcHackState badStep{.step = static_cast<HackStep>(3)};
+  CHECK_FALSE(Decode(Encode(badStep)).has_value());
+  VehicleHack badCar{.hack = static_cast<CarHack>(7)};
+  CHECK_FALSE(Decode(Encode(badCar)).has_value());
 }
 
 TEST_CASE("broken input is refused, never half-read") {
@@ -164,4 +235,67 @@ TEST_CASE("player state is unreliable, everything else reliable") {
 TEST_CASE("a player state stays small") {
   // Sent 30 times a second per player: keep it well under one MTU.
   CHECK(Encode(PlayerState{}).size() < 64);
+}
+
+TEST_CASE("story messages survive encoding") {
+  RoundTrips(Journal{.snapshot = true, .entries = {{0x1234, 2, 0}, {0xFFFFFFFF, 3, 1}}});
+  RoundTrips(Journal{.snapshot = false, .entries = {{7, 4, 1}}});
+  RoundTrips(Tracked{.hash = 0xCAFE});
+  RoundTrips(PhoneCall{.contact = 0x1122334455667788,
+                       .phase = 1,
+                       .mode = 1,
+                       .visuals = 0,
+                       .flags = kCallRejectable | kCallShowAvatar,
+                       .answeredBy = 2});
+  RoundTrips(PhoneAction{.player = 2, .action = kPhoneAnswer, .contact = 99});
+  RoundTrips(PhoneReply{.player = 3, .choiceEntry = 0xABCD});
+  RoundTrips(Subtitle{.line = 0x0102030405060708,
+                      .type = 2,
+                      .flags = kLinePersistent,
+                      .duration = 3.5f,
+                      .speaker = 12,
+                      .speakerPlayer = 1,
+                      .speakerName = "Judy",
+                      .text = "Hey, V."});
+  RoundTrips(ChoiceHub{.hub = 77,
+                       .flags = kHubPhoneLock,
+                       .title = "Judy",
+                       .options = {{"Sure.", 1 << 0}, {"[Lie] No.", 1 << 8}},
+                       .timedSeconds = 5.f,
+                       .timedStartUs = 123});
+  RoundTrips(ChoiceHub{.hub = 77});
+  RoundTrips(ChoiceCursor{.player = 2, .hub = 77, .index = -1, .kind = kCursorSuggest});
+  RoundTrips(StoryState{.player = 1, .tier = 4, .flags = kStoryInCall});
+  RoundTrips(QuestReward{.reward = 0x15e213846eULL, .quest = 0x77});
+}
+
+TEST_CASE("story messages: channels, limits, sizes") {
+  CHECK(ChannelOf(Journal{.snapshot = true}) == Channel::Bulk);
+  CHECK(ChannelOf(Journal{.snapshot = false}) == Channel::Event);
+  CHECK(IsReliable(Journal{.snapshot = true}));
+  for (const Message message :
+       {Message{Tracked{}}, Message{PhoneCall{}}, Message{PhoneAction{}}, Message{PhoneReply{}},
+        Message{Subtitle{}}, Message{ChoiceHub{}}, Message{ChoiceCursor{}}, Message{StoryState{}},
+        Message{QuestReward{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(IsStory(message));
+  }
+  CHECK(IsStory(Journal{}));
+  CHECK_FALSE(IsStory(Pause{}));
+  CHECK_FALSE(IsStory(Hello{}));
+  CHECK(std::string(NameOf(QuestReward{})) == "QuestReward");
+  CHECK(std::string(NameOf(Journal{})) == "Journal");
+
+  Journal big{.snapshot = true};
+  big.entries.resize(kMaxJournalEntries + 1);
+  CHECK_FALSE(Decode(Encode(big)).has_value());
+  big.entries.resize(kMaxJournalEntries);
+  CHECK(Decode(Encode(big)).has_value());
+  ChoiceHub wide{.hub = 1};
+  wide.options.resize(kMaxChoiceOptions + 1);
+  CHECK_FALSE(Decode(Encode(wide)).has_value());
+  // A typical journal (a few thousand entries) is tens of KB, on Bulk.
+  Journal typical{.snapshot = true};
+  typical.entries.resize(3000);
+  CHECK(Encode(typical).size() < 32 * 1024);
 }
