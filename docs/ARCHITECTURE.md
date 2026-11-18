@@ -585,27 +585,29 @@ redscript natives (UI, events)              ENet socket
   puppet is in an attitude group of its own, `tandem_player_1` to `_3`
   (one per puppet at a time; `tandem_player`, the records' own, beyond
   that), declared as copies of the `Attitudes.Group_Player` record. A
-  group's relations to the others are not in its record: the attitude
-  system holds one per pair of groups, so the script copies V's group's
-  relations into ours for every group seen on an NPC within 60 m of V or a
-  puppet (checked every 2 s), and when V's relation to a group changes (a
-  quest), the puppets' follow. A puppet's relation that changed while V's
-  did not (a security system turned on that puppet's group) stays its own.
-  Each copy is read back and logged. On top of the groups, each NPC around
-  gets, on the puppet's agent, the attitudes it and V have to each other
-  where the groups do not already give them (first run in game: the group
-  copy did not show, civilians saw the puppet as friendly; and a quest can
-  set one NPC's attitude to V alone): once per NPC and puppet, again when
-  the NPC's attitude to V changes, forgotten 30 s after it leaves range.
+  group's relations are not in its record, and the only non-saved way to
+  set them, `SetAttitudeRelation`, sets attitudes between the agents in
+  the two groups at that moment, not the group relation
+  (engine-knowledge §13.17). So a puppet gets V's attitudes agent by
+  agent: once in its group, `SetAttitudeRelation` from it to every group
+  seen on an NPC near V or a puppet; then, every 2 s, each NPC within
+  60 m of V or a puppet gets the attitudes it and V have to each other on
+  the puppet's agent, once per NPC and puppet, again when the NPC's
+  attitude to V changes (a quest), forgotten 30 s after it leaves range.
+  What changed between an NPC and a puppet alone stays its own (that V
+  provoked it). An NPC that appears near a puppet sees it as friendly
+  (our groups' default) for up to 2 s. The persistent setter would set
+  the real group relations but writes the host's save: not used.
   Vs are friends to each other. The puppet record drops what made it Panam:
   her group and faction (Aldecaldos: anim wrappers, the scan's faction),
   her voice, her burning immunity and damage presets, and shows no NPC UI
   (`hideUIElements`, `hideUIDetection`): no detection indicator from the
   senses Body.reds grafts. `tools/game.sh cmd puppet attitude` logs each
   puppet's group and how the NPCs around V see it next to V; scenario
-  `puppet-attitude`. Verified in game: the groups are accepted. Failed on
-  the first run: civilians friendly to the puppet, neutral to V (fixed
-  since, to run again; engine-knowledge §13.17).
+  `puppet-attitude` (it spawns a ganger near V so there is always an NPC
+  to compare). Verified in game: the groups are accepted. Failed twice:
+  civilians friendly to the puppet, neutral to V, and no NPC near V
+  (fixed since, to run again; engine-knowledge §13.17).
 - **Slowed time** (`scripts/tandem/Time.reds`, `core/src/timebubble.cpp`):
   each game sends its V's time abilities when they change (`TimeEffect`:
   Sandevistan, Kerenzikov, slow-motion perks, scanning, and the world speed
