@@ -244,7 +244,7 @@ public class TandemMarkers extends ScriptableSystem {
 
 // In the world: the quest marker widget, with your car's profile.
 @wrapMethod(WorldMappinsContainerController)
-public func CreateMappinUIProfile(mappin: wref<IMappin>, mappinVariant: gamedataMappinVariant, customData: MappinControllerCustomData) -> MappinUIProfile {
+public func CreateMappinUIProfile(mappin: wref<IMappin>, mappinVariant: gamedataMappinVariant, customData: ref<MappinControllerCustomData>) -> MappinUIProfile {
   if TandemMarkers.IsOurs(mappinVariant) {
     return MappinUIProfile.Create(r"base\\gameplay\\gui\\widgets\\mappins\\quest\\default_mappin.inkwidget", t"MappinUISpawnProfile.Always", t"WorldMappinUIProfile.Vehicle");
   }
@@ -253,7 +253,7 @@ public func CreateMappinUIProfile(mappin: wref<IMappin>, mappinVariant: gamedata
 
 // On the minimap: the point-of-interest widget, at any distance.
 @wrapMethod(MinimapContainerController)
-public func CreateMappinUIProfile(mappin: wref<IMappin>, mappinVariant: gamedataMappinVariant, customData: MappinControllerCustomData) -> MappinUIProfile {
+public func CreateMappinUIProfile(mappin: wref<IMappin>, mappinVariant: gamedataMappinVariant, customData: ref<MappinControllerCustomData>) -> MappinUIProfile {
   if TandemMarkers.IsOurs(mappinVariant) {
     return MappinUIProfile.Create(r"base\\gameplay\\gui\\widgets\\minimap\\minimap_poi_mappin.inkwidget", t"MappinUISpawnProfile.Always", t"MinimapMappinUIProfile.Default");
   }
