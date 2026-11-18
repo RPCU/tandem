@@ -7,7 +7,8 @@
 #   tools/scenario.sh all           run every one, host scenarios first
 #
 # A scenario is a bash file of steps:
-#   ensure host|join       the game runs this build in this role (restarts
+#   ensure host|join [KEY=VALUE...]  the game runs this build in this role,
+#                          with these extra tandem.ini keys (restarts
 #                          only when needed: tools/game.sh ensure)
 #   peer ARGS...           (re)start the mock player
 #   cmd TEXT               a tandem command in the game
@@ -65,7 +66,7 @@ stalled() { since | grep -q 'watchdog: game thread silent'; }
 
 ensure() {
   local output status=0
-  output=$($game ensure "$1" 2>&1) || status=$?
+  output=$($game ensure "$@" 2>&1) || status=$?
   while IFS= read -r line; do echo "  $line"; done <<<"$output"
   if grep -q 'redscript compile errors' <<<"$output"; then
     echo "  ABORT: the scripts do not compile, every scenario would fail"

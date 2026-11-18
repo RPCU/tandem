@@ -508,7 +508,8 @@ public class TandemStorySystem extends ScriptableSystem {
       if TandemStory.FreezeAvailable() && TandemStory.Freeze(true) {
         this.m_frozen = true;
         TandemNative.Log("quest: own quests frozen");
-      } else if !this.m_warnedNoFreeze {
+      } else {
+        // Said at every join: it explains a session with no journal.
         this.m_warnedNoFreeze = true;
         TandemNative.Log("story: own quests not frozen (tandem.ini quest_freeze = on, or a layout mismatch): the host's journal and texts are not mirrored; calls, lines, hubs and rewards are");
       }

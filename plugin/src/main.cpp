@@ -32,9 +32,9 @@ std::filesystem::path PluginDirectory(RED4ext::v1::PluginHandle handle) {
 // Every frame of the running game, on the game thread, also while the world
 // is paused (scripts' delayed callbacks then stand still): the pause script
 // follows the other players' pause menus (scripts/tandem/Pause.reds), and
-// can let go of a pause from there; the time script (scripts/tandem/Time.reds)
-// takes back, within the frame, a time dilation that would slow the shared
-// world.
+// can let go of a pause from there. Only that: this runs outside the script
+// tick, also behind the loading screen (slowed time runs from
+// TandemSystem.Tick instead, scripts/tandem/Time.reds).
 // A script class's static function, found once: a script class's static
 // functions are neither in its member nor its static list, they are
 // registered as global functions under a qualified name
@@ -76,9 +76,7 @@ bool OnRunningUpdate(RED4ext::CGameApplication *) {
     return false;
   Red::ScriptGameInstance game;
   static ScriptFrame pause{"TandemPause", "pause"};
-  static ScriptFrame time{"TandemTime", "time"};
   pause.Call(game);
-  time.Call(game);
   return false; // ignored for the running state
 }
 

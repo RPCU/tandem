@@ -248,7 +248,7 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_stealth;
   }
 
-  // Slowed time (Time.reds), also driven every frame by the plugin.
+  // Slowed time (Time.reds), driven by Tick.
   public func TimeSync() -> ref<TandemTime> {
     return this.m_time;
   }
@@ -258,12 +258,12 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_you != 0u ? this.m_npcs : null;
   }
 
-  // The remote players who have a puppet here.
   // The world runs (past the loading screen, see Tick).
   public func IsPlaying() -> Bool {
     return this.m_playing;
   }
 
+  // The remote players who have a puppet here.
   public func PuppetPlayers() -> array<Uint32> {
     let out: array<Uint32>;
     for puppet in this.m_puppets {
@@ -329,6 +329,13 @@ public class TandemSystem extends ScriptableSystem {
     }
     if IsDefined(this.m_travel) && this.m_playing {
       this.m_travel.Tick(this.Now(), this.m_you);
+    }
+    // Slowed time (Time.reds): every frame, in the script tick, once the
+    // world runs and we are in a session. (It ran from the plugin's
+    // per-frame call before: the game crashed there loading a save and froze
+    // right after "playing", 2026-11-18.)
+    if IsDefined(this.m_time) && this.m_playing && this.m_you != 0u {
+      this.m_time.Update();
     }
 
     this.TickAttitudes();
@@ -819,15 +826,6 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // A remote player's puppet in our world (null if none).
-  // The remote players who have a puppet in our world.
-  public func PuppetPlayers() -> array<Uint32> {
-    let out: array<Uint32>;
-    for puppet in this.m_puppets {
-      ArrayPush(out, puppet.player);
-    }
-    return out;
-  }
-
   public func PuppetOf(player: Uint32) -> ref<GameObject> {
     for puppet in this.m_puppets {
       if puppet.player == player {
