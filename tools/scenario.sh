@@ -64,9 +64,14 @@ fail() {
 stalled() { since | grep -q 'watchdog: game thread silent'; }
 
 ensure() {
-  local output
-  output=$($game ensure "$1")
+  local output status=0
+  output=$($game ensure "$1" 2>&1) || status=$?
   while IFS= read -r line; do echo "  $line"; done <<<"$output"
+  if grep -q 'redscript compile errors' <<<"$output"; then
+    echo "  ABORT: the scripts do not compile, every scenario would fail"
+    exit 3
+  fi
+  [ "$status" = 0 ] || fail "the game is not running this build as $1"
   mark
   # A fresh start: everything in the new log belongs to this scenario.
   if grep -q '^launched' <<<"$output"; then mark_line=0; fi
@@ -131,19 +136,23 @@ run() {
   echo "== $name: $(sed -n 's/^# //p;q' "$file")"
   local start=$SECONDS
   # The first failed step ends the scenario (fail exits this subshell; set -e
-  # stops it on any other failing command: not run as an if condition,
-  # where bash would ignore set -e).
-  local status=0
+  # stops it on any other failing command). Not run as an if condition or
+  # on the left of ||: bash ignores set -e there, in the whole subshell.
+  local status
+  set +e
   (
     set -e
     # shellcheck source=/dev/null
     source "$file"
-  ) || status=$?
+  )
+  status=$?
+  set -e
   if [ "$status" = 0 ]; then
     echo "  PASS ($((SECONDS - start)) s)"
     return 0
   fi
   echo "  FAILED ($((SECONDS - start)) s)"
+  [ "$status" = 3 ] && return 3
   return 1
 }
 
@@ -163,7 +172,10 @@ list)
   passed=0 total=0 failures=()
   for name in "${names[@]}"; do
     total=$((total + 1))
-    if run "$name"; then passed=$((passed + 1)); else failures+=("$name"); fi
+    status=0
+    run "$name" || status=$?
+    if [ "$status" = 0 ]; then passed=$((passed + 1)); else failures+=("$name"); fi
+    [ "$status" = 3 ] && break
   done
   pkill -x tandem-peer 2>/dev/null || true
   echo "== $passed/$total passed${failures:+, failed: ${failures[*]}}"
