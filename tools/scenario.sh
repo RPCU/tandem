@@ -61,7 +61,18 @@ fail() {
   exit 1
 }
 
-stalled() { since | grep -q 'watchdog: game thread silent'; }
+# The game thread is stalled when its last watchdog line since the mark is
+# "silent" and has stayed so for 45 s: a loading screen (fast travel, a
+# death and reload, a dive) silences it for a while and "back" follows.
+stall_since=''
+stalled() {
+  if [ "$(since | grep -o 'watchdog: game thread [a-z]*' | tail -1)" != 'watchdog: game thread silent' ]; then
+    stall_since=''
+    return 1
+  fi
+  [ -n "$stall_since" ] || stall_since=$SECONDS
+  ((SECONDS - stall_since >= 45))
+}
 
 ensure() {
   local output status=0
@@ -164,9 +175,12 @@ list)
   names=("$@")
   if [ "$1" = all ]; then
     # Host scenarios first, then guest ones: one role switch, fewer restarts.
+    # A scenario marked "# runs last" (it leaves the game on a death screen)
+    # comes after all the others.
     mapfile -t names < <(
-      grep -l '^ensure host' tools/scenarios/*.sh | xargs -n1 basename | sed 's/\.sh$//'
-      grep -L '^ensure host' tools/scenarios/*.sh | xargs -n1 basename | sed 's/\.sh$//'
+      grep -l '^ensure host' tools/scenarios/*.sh | xargs grep -L '^# runs last' | xargs -n1 basename | sed 's/\.sh$//'
+      grep -L '^ensure host' tools/scenarios/*.sh | xargs grep -L '^# runs last' | xargs -n1 basename | sed 's/\.sh$//'
+      grep -l '^# runs last' tools/scenarios/*.sh | xargs -n1 basename | sed 's/\.sh$//'
     )
   fi
   passed=0 total=0 failures=()

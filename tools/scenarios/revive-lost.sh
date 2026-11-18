@@ -1,4 +1,5 @@
 # As host: the mock player is down and our V goes down too: nobody is up, the session is lost and our game shows the death screen
+# runs last
 # shellcheck shell=bash disable=SC2317
 # Leaves the game on its death screen: run it last, then load a save.
 ensure host
