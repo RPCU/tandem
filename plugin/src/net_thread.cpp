@@ -94,6 +94,9 @@ struct NetThread::Impl {
                 log::Info("player {} left", e.player);
                 runtime.ForgetRemote(e.player);
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
+              } else if constexpr (std::is_same_v<E, events::PlayerReturned>) {
+                // Its puppet and seat stay; its new game sends its look again.
+                log::Info("{} is back on a new connection (player {})", e.player.name, e.player.id);
               } else if constexpr (std::is_same_v<E, events::RemoteState>) {
                 runtime.PushRemote(e.state);
               } else if constexpr (std::is_same_v<E, events::RemotePose>) {
@@ -143,6 +146,11 @@ struct NetThread::Impl {
                 runtime.PushRemoteAppearance(e.appearance);
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 log::Info("session ended: {}", e.reason);
+                // The next session's players start afresh (a restarted host
+                // counts its states from the start again).
+                for (const auto &[id, info] : endpoint->Players())
+                  if (id != endpoint->You())
+                    runtime.ForgetRemote(id);
                 runtime.PushEvent({ScriptEvent::Kind::SessionEnded, 0, e.reason, {}});
                 ended = true;
               }

@@ -119,6 +119,30 @@ broadcasts the `Roster`. A guest's messages count only after its `Welcome`,
 and the host stamps every relayed `PlayerState` with the sender's own id: a
 guest cannot speak for someone else.
 
+**Liveness** (`core/src/session.cpp`, `Timing` in `endpoint.hpp`): a
+connection that acknowledges nothing for **5 s** is dead, on either side:
+ENet pings an idle peer every 0.5 s, so a live one is heard from several
+times a second and a hiccup of 1–2 s passes. `Session::Poll` checks it
+itself (time since the peer's last acknowledgement) because ENet's own
+timeout only fires when a backed-off resend is due (5 to 30 s); ENet's
+stays as a backstop at 10 s. A host that never answers a connect is given
+up after the same 5 s ("could not reach the host"). After a stall of our
+own (`Poll` not called for a while) peers get a moment to be heard before
+they are judged. A goodbye (`Refused`, `Bye`) is delivered before the
+disconnect that follows it, and a guest's `Bye` removes it at once.
+
+**Slots and returning players**: the host takes up to `kMaxGuests` (3)
+welcomed guests and refuses the next ("the session is full"), but keeps
+`kSpareConnections` (2) more ENet connections open, so a player coming back
+can always reach it. A `Hello` under the name of a player whose connection
+has been silent for **2 s** replaces that connection at once: the player
+keeps its id, so the others keep its puppet and seat (no `PlayerLeft`,
+no `PlayerJoined`; the host sees `PlayerReturned`), and the new game sends
+its look, held items and seat again. A live player (heard within 2 s)
+cannot be replaced: a namesake joins as another player. A guest numbers
+its states from the host clock's millisecond at its `Welcome`, so what it
+sends after coming back is newer than what it sent before.
+
 **Reaching each other**: direct first (LAN, Tailscale/NetBird — already on
 every nixbook machine), then the relay when NAT blocks UDP. An invite carries
 the host's addresses and a relay session secret; the joining game tries them
@@ -491,11 +515,22 @@ in-game tests still owed; none of it tested in a session yet):
   scenario `npcs-guest`): when the host goes, a guest removes the proxies
   and puppets, gets its crowd back, and tries to join again every 5 s; on
   its return the guest's look, held items and seat go to the new session.
-  Seen in testing: a
-  mock player killed without a goodbye stays in the host's session until
-  ENet's timeout (~30 s), and enough of them fill the host's guest slots so
-  a new player cannot get in ("could not reach the host"): the host must
-  free a slot for a returning or new player sooner. Each case gets a
+  Done (2026-11-18, loopback tests in `tests/endpoint_test.cpp`, see
+  [Session and transport](#session-and-transport)): a guest or host that
+  dies without a goodbye is noticed in 5 s (it was ~30 s, and dead mock
+  players filled the guest slots: "could not reach the host"); a player
+  back on a new connection while its old one is silent takes its place at
+  once, with its id, puppet and seat, even in a full session; a live
+  player cannot be replaced. Measured on loopback with the timings scaled
+  to 1 s / 0.4 s: crash and hang reported in 1.00 s, a vanished host in
+  1.00 s, back in the session 0.52 s after a crash; with the mock player
+  and the real timings, killed (`kill -9`) guest or host gone after 4.5 s
+  of silence. Still open: a grace time **after** the timeout (a link down
+  for more than 5 s comes back as a new player, its puppet respawned; a
+  crashed game takes longer than that to restart anyway). When a session
+  ends, the plugin now forgets every remote player's tracks, so a
+  restarted host's states (counted from the start again) are not dropped
+  as old. Not yet checked in game. Each case gets a
   scripted test with the mock player (kill it mid-drive, mid-fight, while
   seated in our car; host vanishes while a guest is in a cutscene).
 - **The second player acts on the world too.** A guest is not a spectator:

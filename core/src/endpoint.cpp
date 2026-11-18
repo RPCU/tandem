@@ -1,5 +1,7 @@
 #include "tandem/endpoint.hpp"
 
+#include <algorithm>
+
 namespace tandem {
 namespace {
 constexpr std::uint64_t kPingIntervalUs = 500'000;
@@ -12,26 +14,27 @@ template <class... Ts> struct Overloaded : Ts... {
 };
 } // namespace
 
-Endpoint::Endpoint(std::unique_ptr<net::Session> session, Identity identity)
-    : m_session(std::move(session)), m_identity(std::move(identity)) {}
+Endpoint::Endpoint(std::unique_ptr<net::Session> session, Identity identity, Timing timing)
+    : m_session(std::move(session)), m_identity(std::move(identity)), m_timing(timing) {}
 
-std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port,
-                                         std::string &error) {
-  auto session = net::Session::Listen(port, kMaxGuests, error);
+std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port, std::string &error,
+                                         Timing timing) {
+  auto session = net::Session::Listen(port, kMaxGuests + kSpareConnections, error, timing.timeout);
   if (!session)
     return nullptr;
-  auto endpoint = std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity)));
+  auto endpoint =
+      std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity), timing));
   endpoint->m_you = endpoint->m_host = 1;
   endpoint->m_players[1] = {1, endpoint->m_identity.name, endpoint->m_identity.body};
   return endpoint;
 }
 
 std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const std::string &host,
-                                         std::uint16_t port, std::string &error) {
-  auto session = net::Session::Connect(host, port, error);
+                                         std::uint16_t port, std::string &error, Timing timing) {
+  auto session = net::Session::Connect(host, port, error, timing.timeout);
   if (!session)
     return nullptr;
-  return std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity)));
+  return std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity), timing));
 }
 
 std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
@@ -71,51 +74,15 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
     m_session->Disconnect(event.peer);
     break;
   case Kind::Disconnected:
-    if (auto it = m_playerOfPeer.find(event.peer); it != m_playerOfPeer.end()) {
-      const auto player = it->second;
-      m_playerOfPeer.erase(it);
-      m_players.erase(player);
-      m_appearances.erase(player);
-      m_held.erase(player);
-      m_seats.erase(player);
-      out.push_back(events::PlayerLeft{player});
-      BroadcastRoster();
-    }
+    RemovePlayer(event.peer, out);
     break;
   case Kind::Received: {
     const auto &message = *event.message;
     const auto known = m_playerOfPeer.find(event.peer);
 
     if (const auto *hello = std::get_if<proto::Hello>(&message)) {
-      if (known != m_playerOfPeer.end())
-        return;
-      if (hello->magic != proto::kMagic || hello->version != proto::kProtocolVersion) {
-        m_session->Send(event.peer,
-                        proto::Refused{"protocol version " + std::to_string(hello->version) +
-                                       ", the host runs " +
-                                       std::to_string(proto::kProtocolVersion)});
-        m_session->Disconnect(event.peer);
-        return;
-      }
-      const auto player = m_nextPlayer++;
-      m_playerOfPeer[event.peer] = player;
-      m_players[player] = {player, hello->name, hello->body};
-      m_session->Send(event.peer, proto::Welcome{player, m_host, HostNowUs()});
-      out.push_back(events::PlayerJoined{m_players[player]});
-      BroadcastRoster();
-      // Everyone already here, as they look now.
-      for (const auto &[id, appearance] : m_appearances)
-        m_session->Send(event.peer, appearance);
-      for (const auto &[id, held] : m_held)
-        m_session->Send(event.peer, held);
-      for (const auto &[id, seat] : m_seats)
-        m_session->Send(event.peer, seat);
-      if (m_world)
-        m_session->Send(event.peer, *m_world);
-      for (const auto &[npc, spawn] : m_npcs)
-        m_session->Send(event.peer, spawn);
-      for (const auto &[npc, health] : m_npcHealth)
-        m_session->Send(event.peer, health);
+      if (known == m_playerOfPeer.end())
+        OnHello(event.peer, *hello, out);
       return;
     }
 
@@ -185,13 +152,95 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      mine.player = player;
                      out.push_back(events::NpcEffectBy{mine});
                    },
-                   [&](const proto::Bye &) { m_session->Disconnect(event.peer); },
+                   [&](const proto::Bye &) {
+                     RemovePlayer(event.peer, out); // gone now, not when ENet is done
+                     m_session->Disconnect(event.peer);
+                   },
                    [](const auto &) {},
                },
                message);
     break;
   }
   }
+}
+
+void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
+  const auto it = m_playerOfPeer.find(peer);
+  if (it == m_playerOfPeer.end())
+    return;
+  const auto player = it->second;
+  m_playerOfPeer.erase(it);
+  m_players.erase(player);
+  m_appearances.erase(player);
+  m_held.erase(player);
+  m_seats.erase(player);
+  out.push_back(events::PlayerLeft{player});
+  BroadcastRoster();
+}
+
+void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
+                       std::vector<SessionEvent> &out) {
+  if (hello.magic != proto::kMagic || hello.version != proto::kProtocolVersion) {
+    m_session->Send(peer,
+                    proto::Refused{"protocol version " + std::to_string(hello.version) +
+                                   ", the host runs " + std::to_string(proto::kProtocolVersion)});
+    m_session->Disconnect(peer);
+    return;
+  }
+
+  // A player back on a new connection (its game crashed and restarted, or
+  // its link dropped) while the old one has not timed out yet: if the old one
+  // has gone silent, the new one takes its place, with its id, puppet and
+  // seat. A live player keeps its place: a namesake joins as someone else.
+  const auto silent = std::ranges::find_if(m_playerOfPeer, [&](const auto &entry) {
+    if (m_players[entry.second].name != hello.name)
+      return false;
+    const auto link = m_session->StatsOf(entry.first);
+    return !link || std::chrono::milliseconds{link->quietMs} >= m_timing.takeover;
+  });
+  if (silent != m_playerOfPeer.end()) {
+    const auto [oldPeer, player] = *silent;
+    m_playerOfPeer.erase(silent);
+    m_session->Drop(oldPeer);
+    m_playerOfPeer[peer] = player;
+    m_players[player].body = hello.body;
+    m_session->Send(peer, proto::Welcome{player, m_host, HostNowUs()});
+    out.push_back(events::PlayerReturned{m_players[player]});
+    BroadcastRoster();
+    SendSessionTo(peer);
+    return;
+  }
+
+  if (m_playerOfPeer.size() >= kMaxGuests) {
+    m_session->Send(peer, proto::Refused{"the session is full"});
+    m_session->Disconnect(peer);
+    return;
+  }
+
+  const auto player = m_nextPlayer++;
+  m_playerOfPeer[peer] = player;
+  m_players[player] = {player, hello.name, hello.body};
+  m_session->Send(peer, proto::Welcome{player, m_host, HostNowUs()});
+  out.push_back(events::PlayerJoined{m_players[player]});
+  BroadcastRoster();
+  SendSessionTo(peer);
+}
+
+// Everyone already here, as they look now, and the world: what a player
+// joining (or coming back) needs.
+void Endpoint::SendSessionTo(net::PeerId peer) {
+  for (const auto &[id, appearance] : m_appearances)
+    m_session->Send(peer, appearance);
+  for (const auto &[id, held] : m_held)
+    m_session->Send(peer, held);
+  for (const auto &[id, seat] : m_seats)
+    m_session->Send(peer, seat);
+  if (m_world)
+    m_session->Send(peer, *m_world);
+  for (const auto &[npc, spawn] : m_npcs)
+    m_session->Send(peer, spawn);
+  for (const auto &[npc, health] : m_npcHealth)
+    m_session->Send(peer, health);
 }
 
 void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &out) {
@@ -217,6 +266,11 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               m_host = welcome.host;
               m_clockOffsetUs = static_cast<std::int64_t>(welcome.hostTimeUs) -
                                 static_cast<std::int64_t>(net::NowUs());
+              // Sequences start at the host clock's millisecond: a player
+              // back under its old id (after a crash) is newer than
+              // everything it sent before, which receivers already hold.
+              m_seq = m_poseSeq = m_vehicleSeq = m_shotSeq =
+                  static_cast<std::uint32_t>(welcome.hostTimeUs / 1000);
               out.push_back(events::Joined{m_you, m_host});
               SendLocalAppearanceNow();
               SendLocalHeldNow();

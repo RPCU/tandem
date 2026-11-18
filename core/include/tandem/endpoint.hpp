@@ -21,6 +21,22 @@
 
 namespace tandem {
 inline constexpr std::size_t kMaxGuests = 3;
+// Connections beyond kMaxGuests: a player coming back while its old
+// connection is still open, or one to tell that the session is full.
+inline constexpr std::size_t kSpareConnections = 2;
+
+// How soon a silent connection is given up. The defaults suit play; tests
+// shorten them.
+struct Timing {
+  // Nothing heard for this long: the player, or the host, is gone
+  // (net::kDefaultTimeout). A hiccup of a second or two passes.
+  std::chrono::milliseconds timeout{net::kDefaultTimeout};
+  // Host: a Hello under the name of a player whose connection has been
+  // silent this long replaces that connection at once, keeping the player's
+  // id, puppet and seat (a game back from a crash or a dropped link). A live
+  // player is heard from several times a second, so nobody takes its place.
+  std::chrono::milliseconds takeover{2'000};
+};
 
 namespace events {
 // We are in a session (host: listening; guest: welcomed by the host).
@@ -33,6 +49,11 @@ struct PlayerJoined {
 };
 struct PlayerLeft {
   proto::PlayerId player{};
+};
+// Host only: a player came back on a new connection before its old one timed
+// out; same id, so its puppet and seat stay (no PlayerLeft, no PlayerJoined).
+struct PlayerReturned {
+  proto::PlayerInfo player;
 };
 struct RemoteState {
   proto::PlayerState state;
@@ -96,13 +117,15 @@ using SessionEvent =
                  events::RemotePose, events::RemoteAppearance, events::RemoteHeld,
                  events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
-                 events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::Ended>;
+                 events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::Ended,
+                 events::PlayerReturned>;
 
 class Endpoint {
 public:
-  static std::unique_ptr<Endpoint> Host(Identity identity, std::uint16_t port, std::string &error);
+  static std::unique_ptr<Endpoint> Host(Identity identity, std::uint16_t port, std::string &error,
+                                        Timing timing = {});
   static std::unique_ptr<Endpoint> Join(Identity identity, const std::string &host,
-                                        std::uint16_t port, std::string &error);
+                                        std::uint16_t port, std::string &error, Timing timing = {});
 
   // Services the network; call every frame or tick. Returns what happened.
   std::vector<SessionEvent> Update(std::chrono::milliseconds wait = std::chrono::milliseconds{0});
@@ -144,14 +167,18 @@ public:
   void Leave(const std::string &reason = "left");
 
 private:
-  Endpoint(std::unique_ptr<net::Session> session, Identity identity);
+  Endpoint(std::unique_ptr<net::Session> session, Identity identity, Timing timing);
 
   void OnHostEvent(const net::Event &event, std::vector<SessionEvent> &out);
   void OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &out);
+  void OnHello(net::PeerId peer, const proto::Hello &hello, std::vector<SessionEvent> &out);
+  void RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out);
+  void SendSessionTo(net::PeerId peer);
   void BroadcastRoster();
 
   std::unique_ptr<net::Session> m_session;
   Identity m_identity;
+  Timing m_timing;
 
   proto::PlayerId m_you{proto::kNoPlayer};
   proto::PlayerId m_host{proto::kNoPlayer};

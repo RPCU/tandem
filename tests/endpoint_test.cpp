@@ -8,12 +8,15 @@
 #include <functional>
 #include <map>
 
+#include <unistd.h>
+
 using namespace std::chrono_literals;
 using namespace tandem;
 
 namespace {
 std::uint16_t NextPort() {
-  static std::atomic<std::uint16_t> port{41000};
+  // Apart per process: test runs in other checkouts may be going on.
+  static std::atomic<std::uint16_t> port{static_cast<std::uint16_t>(41000 + (getpid() % 400) * 50)};
   return port++;
 }
 
@@ -24,12 +27,12 @@ template <class E> bool Has(const std::vector<SessionEvent> &events) {
   return false;
 }
 
-// Runs every endpoint until `done` holds or two seconds pass. `wait` is each
+// Runs every endpoint until `done` holds or `limit` passes. `wait` is each
 // endpoint's turn; 0 busy-loops, so no endpoint waits on another's turn.
 bool Pump(std::vector<Endpoint *> endpoints,
           const std::function<bool(std::size_t, const std::vector<SessionEvent> &)> &done,
-          std::chrono::milliseconds wait = 1ms) {
-  const auto deadline = std::chrono::steady_clock::now() + 2s;
+          std::chrono::milliseconds wait = 1ms, std::chrono::milliseconds limit = 2s) {
+  const auto deadline = std::chrono::steady_clock::now() + limit;
   bool finished = false;
   while (!finished && std::chrono::steady_clock::now() < deadline) {
     for (std::size_t i = 0; i < endpoints.size(); ++i)
@@ -37,6 +40,45 @@ bool Pump(std::vector<Endpoint *> endpoints,
   }
   return finished;
 }
+
+using Seen = std::function<void(std::size_t, const std::vector<SessionEvent> &)>;
+
+// Runs the endpoints for `time`, whatever happens.
+void PumpFor(
+    std::vector<Endpoint *> endpoints, std::chrono::milliseconds time,
+    const Seen &seen = [](std::size_t, const auto &) {}) {
+  Pump(
+      std::move(endpoints),
+      [&](std::size_t i, const auto &events) {
+        seen(i, events);
+        return false;
+      },
+      1ms, time);
+}
+
+// Runs the endpoints until endpoint `which` reports the end of its session.
+std::optional<std::string> EndOf(std::vector<Endpoint *> endpoints, std::size_t which,
+                                 std::chrono::milliseconds limit = 3s) {
+  std::optional<std::string> reason;
+  Pump(
+      std::move(endpoints),
+      [&](std::size_t i, const auto &events) {
+        for (const auto &event : events)
+          if (const auto *ended = std::get_if<events::Ended>(&event); ended && i == which)
+            reason = ended->reason;
+        return reason.has_value();
+      },
+      1ms, limit);
+  return reason;
+}
+
+double SecondsSince(std::chrono::steady_clock::time_point start) {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
+// Liveness tests run on a shorter clock than play (5 s, 2 s): the same rules,
+// scaled down so the suite stays fast.
+constexpr Timing kFast{.timeout = 1000ms, .takeover = 400ms};
 } // namespace
 
 TEST_CASE("a guest joins, both see each other's V") {
@@ -245,4 +287,198 @@ TEST_CASE("a guest's hit reaches the host, stamped; health reaches guests, late 
   });
   CHECK(lateJoined);
   CHECK_FALSE(lateGotHealth);
+}
+
+TEST_CASE("a guest that crashes is reported gone within the timeout") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((host && guest));
+  REQUIRE(Pump({host.get(), guest.get()},
+               [&](std::size_t, const auto &) { return host->Players().size() == 2; }));
+
+  // No goodbye: the process is gone, its socket with it.
+  guest.reset();
+  const auto start = std::chrono::steady_clock::now();
+  REQUIRE(Pump(
+      {host.get()},
+      [&](std::size_t, const auto &events) { return Has<events::PlayerLeft>(events); }, 1ms, 3s));
+  const auto took = SecondsSince(start);
+  MESSAGE("crashed guest reported gone after " << took << " s (timeout 1 s)");
+  CHECK(took > 0.8);
+  CHECK(took < 1.4);
+  CHECK(host->Players().size() == 1);
+}
+
+TEST_CASE("a hung guest is reported gone, and finds the session over when it wakes") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((host && guest));
+  REQUIRE(Pump({host.get(), guest.get()},
+               [&](std::size_t, const auto &) { return guest->IsJoined(); }));
+
+  // Its socket stays open, nothing answers.
+  const auto start = std::chrono::steady_clock::now();
+  REQUIRE(Pump(
+      {host.get()},
+      [&](std::size_t, const auto &events) { return Has<events::PlayerLeft>(events); }, 1ms, 3s));
+  const auto took = SecondsSince(start);
+  MESSAGE("hung guest reported gone after " << took << " s (timeout 1 s)");
+  CHECK(took < 1.4);
+  CHECK(EndOf({host.get(), guest.get()}, 1) == "the host is gone");
+}
+
+TEST_CASE("a guest notices a host that vanished within the timeout") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((host && guest));
+  REQUIRE(Pump({host.get(), guest.get()},
+               [&](std::size_t, const auto &) { return guest->IsJoined(); }));
+
+  host.reset(); // the host's game crashed
+  const auto start = std::chrono::steady_clock::now();
+  const auto reason = EndOf({guest.get()}, 0);
+  const auto took = SecondsSince(start);
+  MESSAGE("vanished host noticed after " << took << " s (timeout 1 s)");
+  CHECK(reason == "the host is gone");
+  CHECK(took > 0.8);
+  CHECK(took < 1.4);
+}
+
+TEST_CASE("a host that never answers is given up within the timeout") {
+  std::string error;
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", NextPort(), error, kFast);
+  REQUIRE_MESSAGE(guest, error);
+  const auto start = std::chrono::steady_clock::now();
+  CHECK(EndOf({guest.get()}, 0) == "could not reach the host");
+  CHECK(SecondsSince(start) < 1.4);
+}
+
+TEST_CASE("a hiccup shorter than the timeout disconnects nobody") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((host && guest));
+  REQUIRE(Pump({host.get(), guest.get()},
+               [&](std::size_t, const auto &) { return guest->IsJoined(); }));
+
+  // 0.7 of the timeout without a word from the guest (3.5 s in play), then
+  // both run on.
+  PumpFor({host.get()}, 700ms);
+  bool left = false, ended = false;
+  PumpFor({host.get(), guest.get()}, 1500ms, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      left |= Has<events::PlayerLeft>(events);
+    else
+      ended |= Has<events::Ended>(events);
+  });
+  CHECK_FALSE(left);
+  CHECK_FALSE(ended);
+  CHECK(host->Players().size() == 2);
+  CHECK(guest->IsJoined());
+}
+
+TEST_CASE("a guest back from a crash gets in at once, under its old id, even in a full session") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error, kFast);
+  auto c = Endpoint::Join({"c"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((host && a && b && c));
+  REQUIRE(Pump({host.get(), a.get(), b.get(), c.get()}, [&](std::size_t, const auto &) {
+    return host->Players().size() == 4 && a->IsJoined() && b->IsJoined() && c->IsJoined();
+  }));
+  const auto id = a->You();
+
+  // The session is full: someone new is refused.
+  auto newcomer = Endpoint::Join({"d"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(newcomer);
+  const auto refused = EndOf({host.get(), a.get(), b.get(), c.get(), newcomer.get()}, 4);
+  CHECK(refused.value_or("(still waiting)") == "refused: the session is full");
+
+  // a's latest state reaches b; then a's game crashes.
+  a->SendLocalState(proto::PlayerState{.position = {1.f, 0.f, 0.f}});
+  std::optional<proto::PlayerState> before;
+  REQUIRE(Pump({host.get(), a.get(), b.get(), c.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *remote = std::get_if<events::RemoteState>(&event); remote && i == 2)
+        before = remote->state;
+    return before.has_value();
+  }));
+  a.reset();
+  const auto crashed = std::chrono::steady_clock::now();
+  bool left = false;
+  const Seen watchLeft = [&](std::size_t, const auto &events) {
+    left |= Has<events::PlayerLeft>(events);
+  };
+  PumpFor({host.get(), b.get(), c.get()}, kFast.takeover + 100ms, watchLeft);
+
+  // It comes back before its old connection times out.
+  auto back = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(back);
+  bool returned = false;
+  REQUIRE(Pump({host.get(), b.get(), c.get(), back.get()}, [&](std::size_t i, const auto &events) {
+    watchLeft(i, events);
+    returned |= i == 0 && Has<events::PlayerReturned>(events);
+    return back->IsJoined() && returned;
+  }));
+  const auto took = SecondsSince(crashed);
+  MESSAGE("back in the session " << took << " s after the crash (timeout 1 s)");
+  CHECK(took < 1.0);
+  CHECK(back->You() == id);
+  CHECK(host->Players().size() == 4);
+
+  // Its states drive its puppet again: newer than anything it sent before.
+  back->SendLocalState(proto::PlayerState{.position = {2.f, 0.f, 0.f}});
+  std::optional<proto::PlayerState> after;
+  REQUIRE(Pump({host.get(), b.get(), c.get(), back.get()}, [&](std::size_t i, const auto &events) {
+    watchLeft(i, events);
+    for (const auto &event : events)
+      if (const auto *remote = std::get_if<events::RemoteState>(&event); remote && i == 1)
+        after = remote->state;
+    return after.has_value();
+  }));
+  CHECK(after->player == id);
+  CHECK(static_cast<std::int32_t>(after->seq - before->seq) > 0);
+
+  // Past the old connection's timeout: nobody ever saw it leave.
+  PumpFor({host.get(), b.get(), c.get(), back.get()}, kFast.timeout, watchLeft);
+  CHECK_FALSE(left);
+  CHECK(host->Players().size() == 4);
+  CHECK(back->IsJoined());
+}
+
+TEST_CASE("a live player cannot be replaced by a namesake") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((host && a));
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) { return a->IsJoined(); }));
+  PumpFor({host.get(), a.get()}, kFast.takeover + 100ms); // in for longer than the takeover delay
+
+  auto other = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(other);
+  bool returned = false, aEnded = false;
+  const Seen watch = [&](std::size_t i, const auto &events) {
+    returned |= i == 0 && Has<events::PlayerReturned>(events);
+    aEnded |= i == 1 && Has<events::Ended>(events);
+  };
+  REQUIRE(Pump({host.get(), a.get(), other.get()}, [&](std::size_t i, const auto &events) {
+    watch(i, events);
+    return other->IsJoined();
+  }));
+  CHECK(other->You() != a->You()); // someone else, under the same name
+  PumpFor({host.get(), a.get(), other.get()}, kFast.timeout + 200ms, watch);
+  CHECK_FALSE(returned);
+  CHECK_FALSE(aEnded);
+  CHECK(a->IsJoined());
+  CHECK(host->Players().size() == 3);
 }
