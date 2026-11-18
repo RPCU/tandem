@@ -31,6 +31,11 @@ void Record::Note(const proto::Message &message) {
       m_hub = *hub;
   } else if (const auto *state = std::get_if<proto::StoryState>(&message)) {
     m_states[state->player] = *state;
+  } else if (const auto *effect = std::get_if<proto::StoryEffect>(&message)) {
+    if (effect->applied)
+      m_effects[effect->effect] = *effect;
+    else
+      m_effects.erase(effect->effect);
   }
 }
 
@@ -55,6 +60,8 @@ std::vector<proto::Message> Record::ForJoiner() const {
     out.push_back(*m_call);
   if (m_hub)
     out.push_back(*m_hub);
+  for (const auto &[id, effect] : m_effects)
+    out.push_back(effect);
   return out;
 }
 

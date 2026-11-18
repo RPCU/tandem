@@ -1,5 +1,15 @@
-add_executable(tandem-tests main.cpp protocol_test.cpp endpoint_test.cpp interpolation_test.cpp movement_test.cpp pose_test.cpp vehicle_test.cpp story_test.cpp timebubble_test.cpp)
+add_executable(tandem-tests main.cpp protocol_test.cpp endpoint_test.cpp interpolation_test.cpp movement_test.cpp pose_test.cpp vehicle_test.cpp story_test.cpp timebubble_test.cpp relay_test.cpp)
 target_link_libraries(tandem-tests PRIVATE tandem_core)
 target_include_directories(tandem-tests SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/vendor/doctest")
 add_test(NAME tandem-tests COMMAND tandem-tests)
 add_test(NAME peer-flags COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_flags.sh" $<TARGET_FILE:tandem-peer>)
+
+# Sessions through a real relay process (built from relay/ with Go).
+find_program(GO_EXECUTABLE go)
+if(GO_EXECUTABLE)
+  add_test(NAME relay-loopback
+           COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/relay_loopback.sh" "${GO_EXECUTABLE}"
+                   "${CMAKE_SOURCE_DIR}/relay" $<TARGET_FILE:tandem-tests> $<TARGET_FILE:tandem-peer>)
+else()
+  message(WARNING "go not found: the relay-loopback test is left out")
+endif()

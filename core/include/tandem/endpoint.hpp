@@ -171,6 +171,18 @@ struct Identity {
   proto::Body body{};
 };
 
+// Where a guest finds its host: directly, through a relay, or directly
+// first and through the relay when that fails.
+struct JoinTarget {
+  // The host's address ("": none, through the relay only).
+  std::string address;
+  std::uint16_t port{proto::kDefaultPort};
+  // A relay and the session's join code or secret (tandem/relay.hpp). With
+  // an address too, the relay is tried when the host has not answered
+  // directly (NAT) within half the timeout; the switch is not reported.
+  std::optional<net::RelayOptions> relay;
+};
+
 using SessionEvent = std::variant<
     events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
     events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
@@ -183,8 +195,13 @@ using SessionEvent = std::variant<
 
 class Endpoint {
 public:
+  // With `relay`, guests can also join through it, by the join code the
+  // relay gives (Relay()->code).
   static std::unique_ptr<Endpoint> Host(Identity identity, std::uint16_t port, std::string &error,
-                                        Timing timing = {});
+                                        Timing timing = {},
+                                        std::optional<net::RelayOptions> relay = std::nullopt);
+  static std::unique_ptr<Endpoint> Join(Identity identity, const JoinTarget &target,
+                                        std::string &error, Timing timing = {});
   static std::unique_ptr<Endpoint> Join(Identity identity, const std::string &host,
                                         std::uint16_t port, std::string &error, Timing timing = {});
 
@@ -261,6 +278,16 @@ public:
   proto::PlayerId You() const { return m_you; }
   const std::map<proto::PlayerId, proto::PlayerInfo> &Players() const { return m_players; }
   std::optional<net::Stats> HostLinkStats() const;
+
+  // The relay, when the session uses one: host, its join code; guest, how
+  // far it got (nullopt while still trying directly).
+  std::optional<net::RelayStatus> Relay() const { return m_session->Relay(); }
+  // Guest through a relay: the session's secret, to join again without the
+  // code (JoinTarget::relay->secret).
+  std::optional<net::RelaySecret> RelaySessionSecret() const {
+    return m_session->RelaySessionSecret();
+  }
+  bool ThroughRelay() const { return m_throughRelay; }
 
   void Leave(const std::string &reason = "left");
 
@@ -346,5 +373,9 @@ private:
   void OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
                     std::vector<SessionEvent> &out);
   bool m_ended{};
+  // Guest: the relay to try when the host does not answer directly.
+  std::optional<net::RelayOptions> m_fallback;
+  bool m_tryRelay{};
+  bool m_throughRelay{};
 };
 } // namespace tandem

@@ -17,7 +17,53 @@ void Runtime::Start(proto::Body body) {
   std::lock_guard _(m_lock);
   if (m_net || config.role == Config::Role::Off)
     return;
+  m_body = body;
   m_net = std::make_unique<NetThread>(config, body);
+}
+
+void Runtime::SetRelay(std::string code, std::string status) {
+  std::lock_guard _(m_lock);
+  m_relayCode = std::move(code);
+  m_relayStatus = std::move(status);
+}
+
+std::string Runtime::RelayCode() const {
+  std::lock_guard _(m_lock);
+  return m_relayCode;
+}
+
+std::string Runtime::RelayStatus() const {
+  std::lock_guard _(m_lock);
+  return m_relayStatus;
+}
+
+bool Runtime::JoinByCode(std::string_view text) {
+  const auto code = net::NormalizeJoinCode(text);
+  if (!code) {
+    log::Warn("join by code: {} is not a join code", text);
+    return false;
+  }
+  if (config.relay.empty()) {
+    log::Warn("join by code: no relay in tandem.ini");
+    return false;
+  }
+  config.role = Config::Role::Join;
+  config.joinCode = *code;
+  config.addressSet = false; // the code's host, not tandem.ini's address
+  log::Info("join by code {} through relay {}:{}", net::DisplayJoinCode(*code), config.relay,
+            config.relayPort);
+  bool running = false;
+  proto::Body body{};
+  {
+    std::lock_guard _(m_lock);
+    running = m_net != nullptr;
+    body = m_body;
+  }
+  if (running) {
+    Stop();
+    Start(body);
+  }
+  return true;
 }
 
 void Runtime::Stop() {
