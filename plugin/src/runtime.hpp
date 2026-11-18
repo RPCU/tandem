@@ -19,7 +19,9 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tandem::plugin {
@@ -56,6 +58,23 @@ struct HackEvent {
   std::int32_t state{};     // State: proto::HackStep; Status: applied; Car: proto::CarHack
   std::int32_t flags{};     // Upload: proto::kUpload*; PlayerHack: proto::kPlayerHack*
   float seconds{};          // upload time; Car: how long it lasts
+};
+
+// Grapples, takedowns, finishers and carried bodies (Takedowns.reds), for
+// the scripts: a guest's request (host), the host's answer to ours, who holds
+// an NPC, our half of an NPC's reaction (guests).
+struct ActionEvent {
+  enum class Kind : std::int32_t { Request = 1, Reply = 2, Hold = 3, Cue = 4 };
+  Kind kind{};
+  proto::NpcId npc{};
+  proto::PlayerId player{}; // Request: who asks; Hold: the holder; Cue: us
+  std::uint8_t action{};    // Request, Reply: proto::NpcActionKind; Hold: NpcHoldKind; Cue: cue
+  std::uint64_t name{};
+  std::uint64_t item{};
+  float amount{};
+  proto::Vec3 direction;
+  bool accepted{};
+  std::uint8_t reason{};
 };
 
 // NPC proxies use the player-puppet tracks and controller under these ids.
@@ -238,6 +257,22 @@ public:
   void PushHackEvent(const HackEvent &event);
   std::vector<HackEvent> TakeHackEvents();
 
+  // Grapples, takedowns, carried bodies: requests (guest) and holds and
+  // cues (host) go out with the NPC outbox; answers to one player separately.
+  void SubmitNpcAction(const proto::NpcAction &action);                                  // guest
+  void SubmitNpcHold(const proto::NpcHold &hold);                                        // host
+  void SubmitNpcCue(const proto::NpcCue &cue);                                           // host
+  void SubmitNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply); // host
+  std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> TakeNpcReplies();
+  void PushActionEvent(const ActionEvent &event);
+  std::vector<ActionEvent> TakeActionEvents();
+
+  // A puppet (player or NPC proxy) the controller must leave where it is:
+  // something else places it (a grapple workspot, a carrier's shoulder).
+  // Game thread writes, the movement controller reads.
+  void HoldPuppet(proto::PlayerId player, bool hold);
+  bool IsPuppetHeld(proto::PlayerId player) const;
+
   // Net thread writes remote states; the animation thread and scripts read views.
   void PushRemote(const proto::PlayerState &state);
   void ForgetRemote(proto::PlayerId player);
@@ -300,6 +335,10 @@ private:
   std::vector<proto::PlayerHit> m_playerHits;                                        // m_lock
   std::vector<proto::Message> m_hackOutbox;                                          // m_lock
   std::vector<HackEvent> m_hackEvents;                                               // m_lock
+  std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> m_npcReplies;       // m_lock
+  std::vector<ActionEvent> m_actionEvents;                                           // m_lock
+  mutable std::mutex m_heldLock;
+  std::set<proto::PlayerId> m_heldPuppets; // m_heldLock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::uint32_t m_loopSeq{};

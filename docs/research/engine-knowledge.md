@@ -2244,3 +2244,85 @@ duration, easeIn, easeOut, ignoreGlobalDilation, useRealTime)`,
 - `GameInstance.GetSimTime` is assumed dilated and `GetEngineTime` real
   (final.reds 14148-14150); `time test` logs the ratio of the two.
   [2.5-untested]
+
+### 13.17 Takedowns, finishers, carried bodies and "the player" reactions (2026-11-18, scripts only)
+
+Read in `final.reds` for `scripts/tandem/Takedowns.reds` and
+`Reactions.reds`; none of it run in a session yet.
+
+- **Every takedown's NPC side is one game effect**:
+  `TakedownGameEffectHelper.FillTakedownData(executionOwner, activator,
+target, effectName, effectTag, opt statusEffect)` (252966) runs
+  `GameEffectSystem.CreateEffectStatic(n"takedowns", tag, activator)` with
+  the target as shared `entity`. Tags: the grapple start
+  (`GrappleTarget`, `GrappleTargetCover`, `GrappleTargetPlayerCrouch`,
+  from `TakedownGrapplePreyEvents.OnEnter` 535235), `kill`,
+  `setUnconscious`, `setUnconsciousTakedownNetrunner`,
+  `setUnconsciousTakedownMassiveTarget`, `setUnconsciousAerialTakedown`
+  (`LocomotionTakedownEvents.DefeatTarget` 285348, which also sends
+  `takedown_defeat` for the non-lethal ones), and aerial or boss workspot
+  names (`SelectSyncedAnimationAndExecuteAction` 285240). A static
+  function can be wrapped (`@wrapMethod` on it, as NCO does for
+  `TimeDilationHelper`). [2.5-untested]
+- The grappled NPC is in a workspot tagged `Grappled`
+  (`ScriptedPuppet.OnWorkspotStartedEvent` 22563 applies
+  `BaseStatusEffect.Grappled`); `ScriptedPuppet.IsBeingGrappled` (21171)
+  reads it. Synced animations: `grapple_sync_kill[_02|_03]`,
+  `grapple_sync_nonlethal[_crouch]`, `grapple_sync_recover` (break free),
+  `grapple_sync_shove`, `grapple_sync_death`, played with
+  `WorkspotGameSystem.SendJumpToAnimEnt` (`PlayExitAnimation` 285006). Whether the effect takes
+  with a **puppet** as activator (tandem's host does that) is the first
+  thing to check in game; tandem falls back to `Grappled` plus placing the
+  NPC 0.6 m in front of the puppet each frame. [2.5-untested]
+- **A failed grapple, vanilla's way**: `TakedownGrappleFailedDecisions`
+  (535796) enters when `ShouldInstantlyBreakFree` (530408: a massive target
+  of too high a level); `GrappleBreakFreeDecisions.EnterCondition` (537741)
+  is true after the hold time (4.5 s), on `GrappleFailed`, or in deep
+  water; `GrappleBreakFreeEvents.OnEnter` (537827) clears the NPC's
+  workspot and `Grappled`, `InjectThreat`s V and plays the break-free
+  animation. tandem's refused grab makes that condition true.
+  `TakedownReleasePreyEvents` (538977) ends a grapple without a takedown.
+  [2.5-untested]
+- **Finishers**: `FinisherAttackEvents.ApplyFinisher` (250093) plays
+  `CreateEffectStatic(n"playFinisher", name, instigator)` on the target
+  (`PlayFinisherGameEffect` 250132; the name from the weapon's item type or
+  tags, `GetFinisherNameBasedOnWeapon` 250182), then queues a
+  `Attacks.Finisher_Fake_Attack` hit with `DealNoDamage` and
+  `hitFlag.FinisherTriggered` (250115) and `MarkForDeath`s the NPC. The
+  offer: `NewPerkFinisherCondition` (514031), health below the attacker's
+  `NewPerkFinisher*_TargetHealthMax` stat (`IsInFinisherHealthThreshold` 13152) or `BaseStatusEffect.FinisherActiveStatusEffect` (a broken guard,
+  `NPCPoiseListener` 203306). The blunt "hold" finisher kills at once
+  (`TriggerNewPerkFinisherBluntHold` 22433). [2.5-untested]
+- **Carrying**: the body runs the `CarriedObject` state machine
+  (`scriptInterface.owner` = the body, `executionOwner` = V).
+  `CarriedObjectEvents.OnEnter` (526537) mounts it on V
+  (`MountingRequest`, slot `leftShoulder`) and calls
+  `NPCPuppet.MountingStartDisableComponents` (129544); the pose comes from
+  the `Carry` (`AnimFeature_Carry`, `ECarryState` 10593) and `Mounting`
+  features. States: `PickUpEvents` (531436), `DropEvents` (533304),
+  `ReleaseEvents` (536937), `ThrowEvents` (534389: `Kill(V, true, true)`,
+  `ThrownNPC`, ragdoll, an impulse along the camera, 100 by default),
+  `DisposeEvents` (533904). A forced drop is the PSM parameter
+  `forceDropBody` (`PSMPostponedParameterBool`, 135452). [2.5-untested]
+- **Disposal**: `DisposalDevice.OnDisposeBody` (210049),
+  `OnTakedownAndDisposeBody` (210105), `OnNonlethalTakedownAndDisposeBody`
+  (210112) unmount the body from the **local** player, play the device
+  and NPC workspots, then on `OnWorkspotFinished` (210236) kill it,
+  `SetNPCDisposedFact` and hide it for good. [2.5-untested]
+- **"The player" in host NPC code** (§2.1 of `coop-perks.md`):
+  `NPCStatesComponent.OnCombat` (168307; second chance and gag for
+  `GetPlayer`, 168333-168352), `NPCPoiseListener.OnStatPoolMinValueReached`
+  (203306; finisher offer and sound for the local player; the hit's author
+  is `NPCPuppet.GetLastHitInstigator` 128511),
+  `ForceMoveInCombatWhistleEffector.Initialize/ActionOn` (317768, the local
+  player's position), `UpdateWhistlePosition.Activate` (317836),
+  `PlayerPuppet.OnDodgeToAvoidCombatEvent` (39682, reads the NPC's senses,
+  which a proxy has off). Still "the player" and left as TODO:
+  `ForceMoveInCombatEffector.StartMovement`'s facing target (317559),
+  `ApplyLegendaryWhistleEffector` (317913), `NPCPuppet.OnQuickHackEffectApplied`
+  (126593, quickhack alerts: the quickhack work), `SpreadInitEffector`
+  (316185), `SetFriendlyEffector` (315998),
+  `ScriptedPuppet.ProcessQuickHackQueueOnDefeat` (21698),
+  `SenseComponent.ReevaluateDetectionOverwrite` (156337),
+  `DamageSystem.IsImmune` (86146), `GorillaArmsOnePunchNPCMark` (126464),
+  `DisposalDevice`'s local player (210051). [2.5-untested]
