@@ -100,6 +100,7 @@ struct NetThread::Impl {
               if constexpr (std::is_same_v<E, events::Joined>) {
                 log::Info("in the session as player {} (host {})", e.you, e.host);
                 runtime.NotePlayerName(e.you, config.name);
+                runtime.SetYou(e.you);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
               } else if constexpr (std::is_same_v<E, events::PlayerJoined>) {
                 log::Info("{} joined (player {}, body {})", e.player.name, e.player.id,
@@ -170,8 +171,17 @@ struct NetThread::Impl {
                 log::Info("player {} {} (pause menu)", e.pause.player,
                           e.pause.paused ? "paused" : "resumed");
                 PublishPaused(*endpoint);
+              } else if constexpr (std::is_same_v<E, events::WorldItemAppeared>) {
+                log::Info("loot: world item {} dropped by player {} ({} stacks, token {})",
+                          e.item.id, e.item.dropper, e.item.stacks.size(), e.item.token);
+                runtime.PushLoot(e.item);
+              } else if constexpr (std::is_same_v<E, events::WorldItemTakenBy>) {
+                log::Info("loot: world item {} stack {} taken by player {}", e.taken.id,
+                          e.taken.stack, e.taken.taker);
+                runtime.PushLoot(e.taken);
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 log::Info("session ended: {}", e.reason);
+                runtime.SetYou(0);
                 runtime.SetRemotePaused({});
                 // The next session's players start afresh (a restarted host
                 // counts its states from the start again).
@@ -232,6 +242,12 @@ struct NetThread::Impl {
       }
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
+      for (auto &message : runtime.TakeLootOutbox()) {
+        if (auto *item = std::get_if<proto::WorldItem>(&message))
+          endpoint->DropWorldItem(std::move(*item));
+        else if (const auto *taken = std::get_if<proto::WorldItemTaken>(&message))
+          endpoint->TakeWorldItem(taken->id, taken->stack);
+      }
 
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {
         nextReport = now + 10s;
@@ -253,6 +269,7 @@ struct NetThread::Impl {
       }
     }
     // Nobody in this session pauses us any more.
+    runtime.SetYou(0);
     runtime.SetRemotePaused({});
     endpoint->Leave("the game closed");
   }

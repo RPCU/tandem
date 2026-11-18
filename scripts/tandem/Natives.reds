@@ -46,6 +46,27 @@ public native struct TandemNpcEvent {
   native let dz: Float;
 }
 
+public native struct TandemLootEvent {
+  // 1 a stack of a shared world item, 2 a stack taken
+  native let kind: Int32;
+  native let id: Uint32;
+  // 1: the dropper; 2: who has it (0: nobody, it was gone)
+  native let player: Uint32;
+  // 1: the dropper's own number for it
+  native let token: Uint32;
+  native let stack: Int32;
+  // 1: how many stacks the item has
+  native let stacks: Int32;
+  native let record: TweakDBID;
+  native let seed: Uint32;
+  // 1: 0 when already taken
+  native let quantity: Int32;
+  // 1: where it lies
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -87,6 +108,10 @@ public native class TandemNative extends IScriptable {
   public static native func NpcDetected(npc: Uint32) -> Int32
   public static native func TakeNpcEvents() -> array<TandemNpcEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32
+  public static native func SendWorldItem(token: Uint32, position: Vector4, records: array<TweakDBID>, seeds: array<Uint32>, quantities: array<Int32>)
+  public static native func TakeWorldItem(id: Uint32, stack: Int32)
+  public static native func TakeLootEvents() -> array<TandemLootEvent>
+  public static native func You() -> Uint32
   public static native func SendVehicleRadio(on: Bool, station: Int32, track: CName, trackStarted: Bool)
   public static native func RemoteRadioChanges(player: Uint32) -> Int32
   public static native func RemoteRadioOn(player: Uint32) -> Bool

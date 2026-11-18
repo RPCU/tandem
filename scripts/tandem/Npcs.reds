@@ -451,6 +451,8 @@ public class TandemNpcs {
     let ours = killer != 0u && killer == this.m_you;
     if IsDefined(body) {
       body.Kill(ours ? GetPlayer(this.m_game) : null, false, false);
+      // Its loot is ours to roll, as any corpse's (Loot.reds).
+      TandemLoot.Corpse(this.m_game, proxy.id);
     }
     TandemNative.Log(s"npcs: proxy \(npc) died\(ours ? ", our kill" : "")");
   }
@@ -490,7 +492,10 @@ public class TandemNpcs {
     for proxy in this.m_proxies {
       if proxy.npc == npc {
         TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
-        GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
+        // A corpse leaves what it still holds as a loot bag (Loot.reds).
+        if !proxy.dead || !TandemLoot.LeaveCorpse(this.m_game, proxy.id) {
+          GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
+        }
       } else {
         ArrayPush(kept, proxy);
       }

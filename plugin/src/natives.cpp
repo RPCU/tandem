@@ -67,6 +67,22 @@ struct TandemNpcEvent {
 };
 static_assert(alignof(TandemNpcEvent) <= 8, "the script VM aligns struct locals to 8");
 
+// Loot (scripts/tandem/Loot.reds): one stack of a shared world item lying
+// in the world (1), or who picked up a stack (2). Plain fields only, as above.
+struct TandemLootEvent {
+  std::int32_t kind{}; // 1 a stack of a world item, 2 a stack taken
+  std::uint32_t id{};
+  std::uint32_t player{}; // 1: the dropper; 2: who has it (0: nobody, it was gone)
+  std::uint32_t token{};  // 1: the dropper's own number for it
+  std::int32_t stack{};
+  std::int32_t stacks{}; // 1: how many stacks the item has
+  Red::TweakDBID record;
+  std::uint32_t seed{};
+  std::int32_t quantity{}; // 1: 0 when already taken
+  float x{}, y{}, z{};     // 1: where it lies
+};
+static_assert(alignof(TandemLootEvent) <= 8, "the script VM aligns struct locals to 8");
+
 Red::Quaternion ToQuaternion(const proto::Quat &q) { return {q.i, q.j, q.k, q.r}; }
 float YawOfQuaternion(const Red::Quaternion &q) { return sync::YawOf({q.i, q.j, q.k, q.r}); }
 
@@ -560,6 +576,60 @@ struct TandemNative : Red::IScriptable {
     return out;
   }
 
+  // Loot: our V dropped a bag of stacks from its inventory (a shared world
+  // item: the host numbers it, `token` is ours), or picked up a stack of one
+  // (a claim: the first one to reach the host keeps it).
+  static void SendWorldItem(std::uint32_t token, Red::Vector4 position,
+                            Red::DynArray<Red::TweakDBID> records,
+                            Red::DynArray<std::uint32_t> seeds,
+                            Red::DynArray<std::int32_t> quantities) {
+    proto::WorldItem item{.token = token, .position = {position.X, position.Y, position.Z}};
+    for (std::uint32_t i = 0; i < records.Size() && i < seeds.Size() && i < quantities.Size() &&
+                              item.stacks.size() < proto::kMaxWorldItemStacks;
+         ++i)
+      if (quantities[i] > 0)
+        item.stacks.push_back({.record = records[i].value,
+                               .seed = seeds[i],
+                               .quantity = static_cast<std::uint32_t>(quantities[i])});
+    if (!item.stacks.empty())
+      Runtime::Get().SubmitLoot(std::move(item));
+  }
+  static void TakeWorldItem(std::uint32_t id, std::int32_t stack) {
+    if (stack >= 0 && stack < static_cast<std::int32_t>(proto::kMaxWorldItemStacks))
+      Runtime::Get().SubmitLoot(proto::WorldItemTaken{id, static_cast<std::uint8_t>(stack)});
+  }
+  // World items appearing (one event per stack) and stacks taken.
+  static Red::DynArray<TandemLootEvent> TakeLootEvents() {
+    Red::DynArray<TandemLootEvent> out;
+    for (const auto &message : Runtime::Get().TakeLoot()) {
+      if (const auto *item = std::get_if<proto::WorldItem>(&message)) {
+        for (std::size_t i = 0; i < item->stacks.size(); ++i) {
+          const auto &stack = item->stacks[i];
+          out.EmplaceBack(TandemLootEvent{
+              .kind = 1,
+              .id = item->id,
+              .player = item->dropper,
+              .token = item->token,
+              .stack = static_cast<std::int32_t>(i),
+              .stacks = static_cast<std::int32_t>(item->stacks.size()),
+              .record = Red::TweakDBID(stack.record),
+              .seed = stack.seed,
+              .quantity = static_cast<std::int32_t>(stack.quantity),
+              .x = item->position.x,
+              .y = item->position.y,
+              .z = item->position.z,
+          });
+        }
+      } else if (const auto *taken = std::get_if<proto::WorldItemTaken>(&message)) {
+        out.EmplaceBack(TandemLootEvent{
+            .kind = 2, .id = taken->id, .player = taken->taker, .stack = taken->stack});
+      }
+    }
+    return out;
+  }
+  // Our player id in the session (0: not in one).
+  static std::uint32_t You() { return Runtime::Get().You(); }
+
   // The puppet id the controller and tracks know an NPC proxy by.
   static std::uint32_t NpcPuppetId(std::uint32_t npc) { return kNpcPuppetBase + npc; }
 
@@ -596,6 +666,21 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcEvent, "TandemNpcEvent", {
   RTTI_PROPERTY(dx);
   RTTI_PROPERTY(dy);
   RTTI_PROPERTY(dz);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemLootEvent, "TandemLootEvent", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(id);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(token);
+  RTTI_PROPERTY(stack);
+  RTTI_PROPERTY(stacks);
+  RTTI_PROPERTY(record);
+  RTTI_PROPERTY(seed);
+  RTTI_PROPERTY(quantity);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
@@ -645,6 +730,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(NpcDetected);
   RTTI_METHOD(TakeNpcEvents);
   RTTI_METHOD(NpcPuppetId);
+  RTTI_METHOD(SendWorldItem);
+  RTTI_METHOD(TakeWorldItem);
+  RTTI_METHOD(TakeLootEvents);
+  RTTI_METHOD(You);
   RTTI_METHOD(SendVehicleRadio);
   RTTI_METHOD(RemoteRadioChanges);
   RTTI_METHOD(RemoteRadioOn);

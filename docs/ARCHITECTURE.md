@@ -164,7 +164,8 @@ The owner simulates; everyone else displays.
 | spawns: crowds, traffic, encounters     | host                      | guests' own spawning is suppressed            |
 | quests: facts, journal, phases, scenes  | host                      | followed, never run on their own              |
 | time of day, weather, police heat       | host                      | applied (wanted level: open, see below)       |
-| loot drops                              | host                      | each player loots their own copy              |
+| loot: corpses and containers            | each player's game        | rolled per player: each loots their own copy  |
+| items a V drops on purpose              | host                      | lie in every game; the first pickup keeps it  |
 
 **Enemy level** (decided 2026-11-18): enemies the host spawns and runs are
 scaled to the **mean of the character levels of the players in the
@@ -376,7 +377,42 @@ redscript natives (UI, events)              ENet socket
   the host's own ticks for them deal nothing. Stealth bonuses depend on
   the attacker's combat state, so they follow per-player detection
   (above). Open: aggro (the NPC turning on whoever hit it), quickhacks
-  (uploads, not hits), NPCs hitting guests (milestone 5, next), loot.
+  (uploads, not hits), NPCs hitting guests (milestone 5, next).
+- **Loot** (`scripts/tandem/Loot.reds`, decided 2026-11-18): **per-player
+  loot.** Every corpse and container is looted by each player in their own
+  game, rolled from its loot tables by that game's V (its level, its
+  perks): nobody takes from the other, and a body one player emptied is
+  still full for the other. Nothing is sent for it. The host's NPCs roll
+  their loot when they die, as in solo; a guest's proxy, killed by the
+  host's word, dies the game's way and its death rolls the guest's own
+  loot from the real NPC's record (`NPCPuppet.OnIncapacitated` →
+  `ProcessLoot`); a second later tandem checks that it did (and rolls it
+  the save-load way if not). The host's loot never appears on a guest: no
+  item crosses the network for a corpse. **Weapons** an enemy drops at
+  death are part of its loot, so per player too: each game's corpse drops
+  what its copy holds (sharing them would make players race for the
+  enemy's gun). **Quest items** follow the story, which is the host's:
+  they stay on the host's corpse for the host to pick up (the quest waits
+  in the host's game) and are taken out of a guest's proxy corpse. When
+  the host's body goes (streamed out, disposed), a guest's proxy corpse
+  leaves what it still holds as a loot bag, as vanilla does for a disposed
+  body. **Items a V drops on purpose** (the backpack or inventory menu)
+  are shared world items, the host's: the dropper's game drops them in
+  one bag as vanilla does and sends `WorldItem` (records, seeds for a
+  unique item's stats, quantities, where); the host numbers it, keeps it
+  for late joiners and sends it to everyone; every other game spawns a
+  copy of the bag there, from the dropper's puppet. Picking a stack up is
+  immediate and a claim to the host (`WorldItemTaken`): the host grants
+  the first and tells everyone, who take it out of their copy; the loser
+  of a race (two pickups within a ping) gives it back with a notice. When
+  a guest's session ends, its copies of the others' drops go. Mock player
+  `--drop-item`, `--take-items`, `--remove-corpses`; scenarios
+  `loot-drop`, `loot-corpse`. **Not yet verified in game**
+  (engine-knowledge §13.13): that a proxy's death rolls its loot and
+  drops its weapon (a proxy whose brain went off before it drew its
+  weapon may drop none), which class the drop bag is, that a copy from a
+  puppet's inventory and a seed has the same stats, and that the bag a
+  removed corpse drops stays.
 - **Looks** (`engine/look.cpp`, `scripts/tandem/Outfit.reds`): a V's face
   and body travel as the appearance keys the game's appearance changer takes
   (a resource path hash and a name hash each: the same in every copy of the
@@ -514,6 +550,11 @@ game thread stop). Each feature verified in game gets a scenario.
 - **idle** — connects and reports.
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
+- Loot (any mode): `--drop-item RECORD` drops one RECORD as a shared world
+  item 1.5 m in front of the other V; `--take-items N` picks up (claims)
+  every stack the others drop N s after it appears; as the host of a
+  replay, `--remove-corpses N` takes an NPC a guest killed away N s after
+  its death (`NpcGone` reason 0).
 - **NPC record and replay** (first piece of the simulated second game):
   `join --record FILE` saves the host's `NpcSpawn`/`NpcStates`/`NpcGone`
   with their times; `host --replay FILE [--offset X,Y,Z]` sends them again
@@ -537,17 +578,17 @@ game thread stop). Each feature verified in game gets a scenario.
 
 Each milestone ends with something visible in game.
 
-| #   | Milestone           | Done when                                                                                                                                     |
-| --- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0   | Toolchain           | DLL built on Linux loads in the game and logs; mock player; relay image ✓                                                                     |
-| 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                                 |
-| 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)             |
-| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test)                                   |
-| 4   | Shared world basics | time, weather, police heat follow the host; tether and regroup on fast travel (time, weather ✓ 2026-11-18)                                    |
-| 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot through the host (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18) |
-| 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests                                                                  |
-| 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join                                         |
-| 8   | Co-op features      | revive, pings and shared markers, and what we add as we play                                                                                  |
+| #   | Milestone           | Done when                                                                                                                                |
+| --- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Toolchain           | DLL built on Linux loads in the game and logs; mock player; relay image ✓                                                                |
+| 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                            |
+| 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)        |
+| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test)                              |
+| 4   | Shared world basics | time, weather, police heat follow the host; tether and regroup on fast travel (time, weather ✓ 2026-11-18)                               |
+| 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18; loot built) |
+| 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests                                                             |
+| 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join                                    |
+| 8   | Co-op features      | revive, pings and shared markers, and what we add as we play                                                                             |
 
 Alongside every milestone from 2 on: the simulated second game (record,
 replay, scripted players, network shaping) covers what that milestone

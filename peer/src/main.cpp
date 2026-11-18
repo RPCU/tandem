@@ -22,6 +22,10 @@
 // Pause menu: --pause-at opens "its pause menu" that many seconds into the
 // session (once another player is there) for --pause-for seconds; the pause
 // states it hears are logged.
+// Loot: --drop-item drops a shared world item in front of your V; --take-items
+// picks up what the others drop; as the host of a replay, --remove-corpses
+// takes the bodies of NPCs a guest killed away (their proxies' loot is left
+// as a bag). The world items and pickups it hears are logged.
 // Body pose: mirror and front echo your V's pose; --pose FILE (a .tpose made by
 // tools/re/pose_export.py from a recording) plays a recorded pose instead, in
 // a loop, with any mode.
@@ -79,7 +83,12 @@ struct Options {
   std::string replayFile; // host: send a recording's NPC messages again
   int pauseAtSeconds{-1}; // open the pause menu this long into the session (-1: never)
   int pauseForSeconds{3}; // ...for this long
-  bool check{};           // parse the options, then exit
+  std::string dropItem;   // drop one of this record in front of the other V (empty: never)
+  int takeItemsSeconds{
+      -1}; // pick up the others' world items this long after they appear (-1: never)
+  int removeCorpsesSeconds{
+      -1};      // host of a replay: dead NPCs' bodies go after this long (-1: never)
+  bool check{}; // parse the options, then exit
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -148,7 +157,13 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
                "                     --offset)\n"
                "  --pause-at N       open the pause menu N seconds after another player is in the\n"
                "                     session: every game pauses\n"
-               "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n";
+               "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n"
+               "  --drop-item RECORD drop one RECORD (Items.FirstAidWhiffV0...) as a shared world\n"
+               "                     item in front of the other player, 5 s after they are there\n"
+               "  --take-items N     pick up every world item the others drop, N seconds after it\n"
+               "                     appears (the host gives it to the first)\n"
+               "  --remove-corpses N host of a replay: an NPC a guest killed is taken away N\n"
+               "                     seconds after its death (its body gone: NpcGone reason 0)\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -216,6 +231,12 @@ Options Parse(int argc, char **argv) {
       options.pauseAtSeconds = Number<int>(value);
     else if (flag == "--pause-for")
       options.pauseForSeconds = Number<int>(value);
+    else if (flag == "--drop-item")
+      options.dropItem = std::string(value);
+    else if (flag == "--take-items")
+      options.takeItemsSeconds = Number<int>(value);
+    else if (flag == "--remove-corpses")
+      options.removeCorpsesSeconds = Number<int>(value);
     else if (flag == "--hit-npcs")
       options.hitNpcsSeconds = Number<int>(value);
     else if (flag == "--drive-seconds")
@@ -600,6 +621,15 @@ int main(int argc, char **argv) {
   // --pause-at: when someone else was first there, and how far the pause got.
   std::optional<std::chrono::steady_clock::time_point> togetherSince;
   enum class PauseStep { Waiting, Paused, Done } pauseStep = PauseStep::Waiting;
+  // Loot: our drop (--drop-item), the others' world items to pick up
+  // (--take-items: when), and dead NPCs' bodies to take away (--remove-corpses).
+  bool dropped = false;
+  std::optional<std::chrono::steady_clock::time_point> dropAt;
+  std::map<tandem::proto::WorldItemId,
+           std::pair<std::chrono::steady_clock::time_point, tandem::proto::WorldItem>>
+      toTake;
+  std::map<tandem::proto::NpcId, std::chrono::steady_clock::time_point> corpses;
+  std::optional<PlayerState> otherV; // the last state heard of another player
 
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
@@ -617,6 +647,7 @@ int main(int argc, char **argv) {
             else if constexpr (std::is_same_v<E, tandem::events::RemoteState>) {
               ++heard;
               puppeteer.Heard(e.state);
+              otherV = e.state;
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteAppearance>) {
               Log("look from player {}: {} keys, {} items", e.appearance.player,
                   e.appearance.look.size(), e.appearance.items.size());
@@ -660,6 +691,9 @@ int main(int argc, char **argv) {
                   e.hit.player, e.hit.damage, e.hit.flags, std::max(health, 0.f) * 100.f);
               if (health <= 0.f) {
                 deadNpcs.insert(e.hit.npc);
+                if (options.removeCorpsesSeconds >= 0)
+                  corpses[e.hit.npc] = std::chrono::steady_clock::now() +
+                                       std::chrono::seconds(options.removeCorpsesSeconds);
                 endpoint->SendNpcGone({.npc = e.hit.npc, .reason = 1, .killer = e.hit.player});
                 Log("npc {} died", e.hit.npc);
               } else
@@ -705,6 +739,24 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::PauseChanged>) {
               Log("player {} {} (pause menu)", e.pause.player,
                   e.pause.paused ? "paused" : "resumed");
+            } else if constexpr (std::is_same_v<E, tandem::events::WorldItemAppeared>) {
+              const auto &item = e.item;
+              Log("world item {} from player {}: {} stack(s), first {:#x} x{} (token {})", item.id,
+                  item.dropper, item.stacks.size(), item.stacks.empty() ? 0 : item.stacks[0].record,
+                  item.stacks.empty() ? 0 : item.stacks[0].quantity, item.token);
+              if (options.takeItemsSeconds >= 0 && item.dropper != endpoint->You())
+                toTake[item.id] = {std::chrono::steady_clock::now() +
+                                       std::chrono::seconds(options.takeItemsSeconds),
+                                   item};
+            } else if constexpr (std::is_same_v<E, tandem::events::WorldItemTakenBy>) {
+              Log("world item {} stack {} taken by player {}", e.taken.id, e.taken.stack,
+                  e.taken.taker);
+              // Someone was first: nothing left of it for us to claim.
+              if (auto it = toTake.find(e.taken.id); it != toTake.end()) {
+                auto &stacks = it->second.second.stacks;
+                if (e.taken.stack < stacks.size())
+                  stacks[e.taken.stack].quantity = 0;
+              }
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
               g_stop = 1;
@@ -774,6 +826,47 @@ int main(int argc, char **argv) {
         pauseStep = PauseStep::Done;
         Log("pause menu closed");
       }
+    }
+    // --drop-item: one world item 1.5 m in front of the other V, once.
+    if (!options.dropItem.empty() && !dropped && endpoint->IsJoined() && otherV) {
+      if (!dropAt)
+        dropAt = now + 5s;
+      if (now >= *dropAt) {
+        dropped = true;
+        const float yaw = tandem::sync::YawOf(otherV->orientation);
+        const Vec3 at{otherV->position.x - std::sin(yaw) * 1.5f,
+                      otherV->position.y + std::cos(yaw) * 1.5f, otherV->position.z};
+        endpoint->DropWorldItem(
+            {.token = 1,
+             .position = at,
+             .stacks = {{.record = TweakDBID(options.dropItem), .quantity = 1}}});
+        Log("dropped world item {} x1 at ({:.1f}, {:.1f}, {:.1f})", options.dropItem, at.x, at.y,
+            at.z);
+      }
+    }
+    // --take-items: every stack nobody took yet, once its time comes.
+    for (auto it = toTake.begin(); it != toTake.end();) {
+      if (now < it->second.first) {
+        ++it;
+        continue;
+      }
+      const auto &item = it->second.second;
+      for (std::size_t i = 0; i < item.stacks.size(); ++i)
+        if (item.stacks[i].quantity > 0) {
+          endpoint->TakeWorldItem(item.id, static_cast<std::uint8_t>(i));
+          Log("claimed world item {} stack {}", item.id, i);
+        }
+      it = toTake.erase(it);
+    }
+    // --remove-corpses: the bodies of NPCs a guest killed go.
+    for (auto it = corpses.begin(); it != corpses.end();) {
+      if (now < it->second) {
+        ++it;
+        continue;
+      }
+      endpoint->SendNpcGone({.npc = it->first, .reason = 0});
+      Log("npc {}'s body taken away", it->first);
+      it = corpses.erase(it);
     }
     // --hit-npcs: one NPC at a time until it dies.
     if (options.hitNpcsSeconds && !options.host && endpoint->IsJoined() && !liveNpcs.empty() &&

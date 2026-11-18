@@ -45,6 +45,8 @@ void Runtime::Stop() {
     m_npcOutbox.clear();
     m_npcStates.reset();
     m_npcEvents.clear();
+    m_lootOutbox.clear();
+    m_lootInbox.clear();
     m_localPaused.reset();
     // Nobody pauses us any more: the change count moves so scripts let go.
     if (!m_remotePaused.empty()) {
@@ -54,6 +56,7 @@ void Runtime::Stop() {
     m_names.clear();
   }
   net.reset(); // joins outside the lock: the net thread takes it too
+  m_you.store(0);
   {
     std::lock_guard _(m_tracksLock);
     m_tracks.clear();
@@ -373,6 +376,28 @@ void Runtime::PushNpcEvent(const NpcEvent &event) {
 std::vector<NpcEvent> Runtime::TakeNpcEvents() {
   std::lock_guard _(m_lock);
   return std::exchange(m_npcEvents, {});
+}
+
+void Runtime::SubmitLoot(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_lootOutbox.size() < 256)
+    m_lootOutbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeLootOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_lootOutbox, {});
+}
+
+void Runtime::PushLoot(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_lootInbox.size() < 1024)
+    m_lootInbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeLoot() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_lootInbox, {});
 }
 
 void Runtime::PushNpcStates(const proto::NpcStates &states) {

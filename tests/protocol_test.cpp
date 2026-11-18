@@ -76,6 +76,26 @@ TEST_CASE("every message survives encoding") {
                           .track = 0xfeedfacecafef00dULL,
                           .trackStartUs = 123'456'789'012ULL});
   RoundTrips(VehicleRadio{.player = 3, .revision = 1, .on = false, .station = -1});
+  RoundTrips(WorldItem{.id = 4,
+                       .dropper = 2,
+                       .token = 9,
+                       .position = {1.f, 2.f, 3.f},
+                       .stacks = {{.record = 0x1122334455ULL, .seed = 77, .quantity = 1},
+                                  {.record = 0x66ULL, .seed = 0, .quantity = 0}}});
+  RoundTrips(WorldItemTaken{.id = 4, .stack = 1, .taker = 3});
+}
+
+TEST_CASE("world items are reliable events, and a bag has a bound") {
+  CHECK(ChannelOf(WorldItem{}) == Channel::Event);
+  CHECK(IsReliable(WorldItemTaken{}));
+  CHECK(std::string_view(NameOf(WorldItem{})) == "WorldItem");
+  CHECK(std::string_view(NameOf(WorldItemTaken{})) == "WorldItemTaken");
+  WorldItem bag{.id = 1};
+  bag.stacks.resize(kMaxWorldItemStacks);
+  CHECK(Encode(bag).size() < 1400); // one datagram
+  CHECK(Decode(Encode(bag)).has_value());
+  bag.stacks.resize(kMaxWorldItemStacks + 1);
+  CHECK_FALSE(Decode(Encode(bag)).has_value());
 }
 
 TEST_CASE("a car's radio is a small reliable event") {

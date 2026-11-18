@@ -379,6 +379,8 @@ public class TandemSystem extends ScriptableSystem {
         let at = npc.GetWorldPosition();
         TandemNative.Log(s"npcs: \(EntityID.ToDebugStringDecimal(id)) static \(EntityID.IsStatic(id)) \(TDBID.ToStringDEBUG(npc.GetRecordID())) \(NameToString(npc.GetCurrentAppearanceName())) at (\(at.X), \(at.Y), \(at.Z))");
       }
+    } else if StrBeginsWith(command, "loot") {
+      TandemLoot.Command(this.GetGameInstance(), command);
     } else if Equals(command, "puppet attitude") {
       this.ReportAttitudes();
     } else if StrBeginsWith(command, "puppet group") {

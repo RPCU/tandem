@@ -327,9 +327,49 @@ struct VehicleRadio {
   friend bool operator==(const VehicleRadio &, const VehicleRadio &) = default;
 };
 
-using Message = std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye,
-                             PoseState, Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn,
-                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio>;
+// Loot (docs/ARCHITECTURE.md, "Loot"). Corpses and containers are per
+// player: every game rolls its own loot, nothing is sent. What a V drops
+// from its inventory on purpose is a shared world item, the host's: it lies
+// in every game, and the first player to pick a stack up keeps it.
+using WorldItemId = std::uint32_t;
+inline constexpr std::size_t kMaxWorldItemStacks = 16;
+
+struct ItemStack {
+  std::uint64_t record{};   // TweakDB id of the item's record
+  std::uint32_t seed{};     // its ItemID's random seed: the same stats everywhere (0: stackable)
+  std::uint32_t quantity{}; // 0: taken
+  friend bool operator==(const ItemStack &, const ItemStack &) = default;
+};
+
+// A bag of stacks a V dropped (Event channel). The dropper's game sends it
+// with id 0 and a token of its own; the host numbers it, keeps it for late
+// joiners until every stack is taken, and sends it to everyone, the dropper
+// included (its game matches the token to the bag it already has).
+struct WorldItem {
+  WorldItemId id{};
+  PlayerId dropper{};    // set by the host from the connection
+  std::uint32_t token{}; // the dropper's own number for it
+  Vec3 position;
+  std::vector<ItemStack> stacks;
+  friend bool operator==(const WorldItem &, const WorldItem &) = default;
+};
+
+// A stack of a world item was picked up (Event channel). The picker's game
+// sends it to the host: a claim (the host sets `taker` from the connection).
+// The host grants the first claim and tells everyone who has it; a later
+// claimer hears the winner (kNoPlayer: the item was gone) and gives its own
+// pickup back.
+struct WorldItemTaken {
+  WorldItemId id{};
+  std::uint8_t stack{};
+  PlayerId taker{};
+  friend bool operator==(const WorldItemTaken &, const WorldItemTaken &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, WorldItem, WorldItemTaken>;
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

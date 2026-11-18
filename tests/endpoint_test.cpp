@@ -461,6 +461,144 @@ TEST_CASE("a driver's car radio reaches everyone, stamped, and late joiners") {
   CHECK_FALSE(atLate[1].on);
 }
 
+namespace {
+// The world items and takes an endpoint reported.
+struct LootSeen {
+  std::vector<proto::WorldItem> items;
+  std::vector<proto::WorldItemTaken> taken;
+  void Add(const std::vector<SessionEvent> &events) {
+    for (const auto &event : events) {
+      if (const auto *e = std::get_if<events::WorldItemAppeared>(&event))
+        items.push_back(e->item);
+      if (const auto *e = std::get_if<events::WorldItemTakenBy>(&event))
+        taken.push_back(e->taken);
+    }
+  }
+};
+} // namespace
+
+TEST_CASE("a dropped bag is numbered by the host and lies in every game, late joiners' too") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  // a drops two stacks (one empty one is dropped on the way) in someone
+  // else's name: the host stamps it a's, numbers it, and everyone hears it.
+  a->DropWorldItem({.id = 42,
+                    .dropper = 99,
+                    .token = 7,
+                    .position = {1.f, 2.f, 3.f},
+                    .stacks = {{.record = 0xaa, .seed = 5, .quantity = 1},
+                               {.record = 0xbb, .quantity = 0},
+                               {.record = 0xcc, .quantity = 30}}});
+  LootSeen seen[3];
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return !seen[0].items.empty() && !seen[1].items.empty() && !seen[2].items.empty();
+  }));
+  for (const auto &s : seen) {
+    REQUIRE(s.items.size() == 1);
+    CHECK(s.items[0].id != 42);
+    CHECK(s.items[0].dropper == a->You());
+    CHECK(s.items[0].token == 7); // a knows its bag again by it
+    CHECK(s.items[0].position == proto::Vec3{1.f, 2.f, 3.f});
+    REQUIRE(s.items[0].stacks.size() == 2);
+    CHECK(s.items[0].stacks[1].record == 0xcc);
+  }
+  CHECK(host->WorldItems().size() == 1);
+
+  // The host drops one too: its own game hears it, numbered.
+  host->DropWorldItem({.token = 1, .stacks = {{.record = 0xdd, .quantity = 2}}});
+  LootSeen hostOwn;
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      hostOwn.Add(events);
+    return !hostOwn.items.empty();
+  }));
+  CHECK(hostOwn.items[0].dropper == 1);
+  CHECK(hostOwn.items[0].id != seen[0].items[0].id);
+
+  // A player joining later finds both lying there.
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  LootSeen atLate;
+  REQUIRE(Pump({host.get(), a.get(), b.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 3)
+      atLate.Add(events);
+    return atLate.items.size() == 2;
+  }));
+}
+
+TEST_CASE("the first to pick a stack up keeps it; a later claim hears who has it") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  host->DropWorldItem(
+      {.token = 1,
+       .stacks = {{.record = 0xaa, .seed = 3, .quantity = 1}, {.record = 0xbb, .quantity = 10}}});
+  LootSeen seen[3];
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return !seen[1].items.empty() && !seen[2].items.empty();
+  }));
+  const auto id = seen[1].items[0].id;
+
+  // a and b both pick up stack 0; a's claim reaches the host first.
+  a->TakeWorldItem(id, 0);
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return !seen[0].taken.empty();
+  }));
+  b->TakeWorldItem(id, 0);
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return seen[2].taken.size() == 2 && !seen[1].taken.empty();
+  }));
+  // Everyone hears a has it; b, who claimed second, hears it twice (the
+  // broadcast, then the answer to its own claim), never itself.
+  CHECK(seen[0].taken.size() == 1);
+  CHECK(seen[0].taken[0] == proto::WorldItemTaken{id, 0, a->You()});
+  CHECK(seen[1].taken[0].taker == a->You());
+  for (const auto &taken : seen[2].taken)
+    CHECK(taken.taker == a->You());
+  // A claim in someone else's name is the claimer's.
+  REQUIRE(host->WorldItems().contains(id));
+  CHECK(host->WorldItems().at(id).stacks[0].quantity == 0);
+
+  // The host takes the last stack: the bag is gone from the host's record,
+  // and a later claim on it is told nobody has it for the claimer.
+  host->TakeWorldItem(id, 1);
+  LootSeen hostOwn;
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      hostOwn.Add(events);
+    else
+      seen[i].Add(events);
+    return !hostOwn.taken.empty() && seen[1].taken.size() == 2 && seen[2].taken.size() == 3;
+  }));
+  CHECK(hostOwn.taken[0] == proto::WorldItemTaken{id, 1, 1});
+  CHECK(host->WorldItems().empty());
+  b->TakeWorldItem(id, 1);
+  const auto before = seen[2].taken.size();
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return seen[2].taken.size() == before + 1;
+  }));
+  CHECK(seen[2].taken.back() == proto::WorldItemTaken{id, 1, proto::kNoPlayer});
+}
+
 TEST_CASE("a guest that crashes is reported gone within the timeout") {
   const auto port = NextPort();
   std::string error;

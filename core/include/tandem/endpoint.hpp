@@ -115,6 +115,15 @@ struct Ended {
 struct RemoteVehicleRadio {
   proto::VehicleRadio radio;
 };
+// Loot: a shared world item lies in the world (numbered by the host; ours
+// too, with our token), and who picked up one of its stacks (our own
+// claims included: taker is us when the host granted it).
+struct WorldItemAppeared {
+  proto::WorldItem item;
+};
+struct WorldItemTakenBy {
+  proto::WorldItemTaken taken;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -129,7 +138,8 @@ using SessionEvent =
                  events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
                  events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
-                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio>;
+                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
+                 events::WorldItemAppeared, events::WorldItemTakenBy>;
 
 class Endpoint {
 public:
@@ -173,6 +183,13 @@ public:
   void SetLocalPaused(bool paused);
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
+  // Loot: our V dropped a bag of stacks (id ignored: the host numbers it;
+  // `token` is ours, to know it again), or picked up a stack of a world item
+  // (a claim: the host grants the first one). Each comes back as an event.
+  void DropWorldItem(proto::WorldItem item);
+  void TakeWorldItem(proto::WorldItemId id, std::uint8_t stack);
+  // Host: the world items still lying somewhere (taken stacks at quantity 0).
+  const std::map<proto::WorldItemId, proto::WorldItem> &WorldItems() const { return m_worldItems; }
 
   // Time on the host's clock (the session's shared timeline).
   std::uint64_t HostNowUs() const { return net::NowUs() + m_clockOffsetUs; }
@@ -245,6 +262,15 @@ private:
   void SendLocalPausedNow();
   // Records a player's pause state; false when it did not change.
   bool NotePaused(proto::PlayerId player, bool paused);
+  // Host: the shared world items and who took each stack; events for our
+  // own game from calls made between updates (our drops and claims).
+  std::map<proto::WorldItemId, proto::WorldItem> m_worldItems;
+  std::map<proto::WorldItemId, std::vector<proto::PlayerId>> m_worldTakers;
+  proto::WorldItemId m_nextWorldItem{1};
+  std::vector<SessionEvent> m_pending;
+  void AddWorldItem(proto::PlayerId dropper, proto::WorldItem item, std::vector<SessionEvent> &out);
+  void ClaimWorldItem(proto::PlayerId player, proto::WorldItemId id, std::uint8_t stack,
+                      std::optional<net::PeerId> peer, std::vector<SessionEvent> &out);
   bool m_ended{};
 };
 } // namespace tandem

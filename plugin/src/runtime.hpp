@@ -163,6 +163,18 @@ public:
   std::vector<NpcEvent> TakeNpcEvents();
   void PushNpcStates(const proto::NpcStates &states);
 
+  // Loot (scripts/tandem/Loot.reds): our drops and pickup claims (WorldItem,
+  // WorldItemTaken), game -> net; world items appearing and stacks taken,
+  // net -> game. Both queued, bounded.
+  void SubmitLoot(proto::Message message);
+  std::vector<proto::Message> TakeLootOutbox();
+  void PushLoot(proto::Message message);
+  std::vector<proto::Message> TakeLoot();
+
+  // Our player id while in a session (0: none), set by the net thread.
+  void SetYou(proto::PlayerId you) { m_you.store(you); }
+  proto::PlayerId You() const { return m_you.load(); }
+
   // Net thread writes remote states; the animation thread and scripts read views.
   void PushRemote(const proto::PlayerState &state);
   void ForgetRemote(proto::PlayerId player);
@@ -220,6 +232,8 @@ private:
   std::vector<proto::Message> m_npcOutbox;                                           // m_lock
   std::optional<proto::NpcStates> m_npcStates;                                       // m_lock
   std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
+  std::vector<proto::Message> m_lootOutbox, m_lootInbox;                             // m_lock
+  std::atomic<proto::PlayerId> m_you{0};
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::uint32_t m_loopSeq{};

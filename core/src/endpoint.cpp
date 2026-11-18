@@ -1,6 +1,7 @@
 #include "tandem/endpoint.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace tandem {
 namespace {
@@ -38,7 +39,7 @@ std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const std::string &h
 }
 
 std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
-  std::vector<SessionEvent> out;
+  std::vector<SessionEvent> out = std::exchange(m_pending, {});
   if (m_ended)
     return out;
 
@@ -168,6 +169,11 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::PauseChanged{relayed});
                    },
+                   [&](const proto::WorldItem &item) { AddWorldItem(player, item, out); },
+                   [&](const proto::WorldItemTaken &taken) {
+                     // A claim, in the guest's own name only.
+                     ClaimWorldItem(player, taken.id, taken.stack, event.peer, out);
+                   },
                    [&](const proto::Bye &) {
                      RemovePlayer(event.peer, out); // gone now, not when ENet is done
                      m_session->Disconnect(event.peer);
@@ -270,6 +276,9 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
     m_session->Send(peer, spawn);
   for (const auto &[npc, health] : m_npcHealth)
     m_session->Send(peer, health);
+  // What lies in the world (its taken stacks at quantity 0).
+  for (const auto &[id, item] : m_worldItems)
+    m_session->Send(peer, item);
   // Who is in their pause menu (the newcomer itself is not).
   const auto self = m_playerOfPeer.find(peer);
   for (const auto paused : m_paused)
@@ -382,6 +391,10 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
+            },
+            [&](const proto::WorldItem &item) { out.push_back(events::WorldItemAppeared{item}); },
+            [&](const proto::WorldItemTaken &taken) {
+              out.push_back(events::WorldItemTakenBy{taken});
             },
             [&](const proto::Bye &bye) {
               m_ended = true;
@@ -603,6 +616,73 @@ void Endpoint::SendLocalPausedNow() {
 
 bool Endpoint::NotePaused(proto::PlayerId player, bool paused) {
   return paused ? m_paused.insert(player).second : m_paused.erase(player) > 0;
+}
+
+void Endpoint::DropWorldItem(proto::WorldItem item) {
+  if (!IsJoined() || m_ended)
+    return;
+  item.id = 0;
+  item.dropper = m_you;
+  if (IsHost())
+    AddWorldItem(m_you, std::move(item), m_pending);
+  else
+    m_session->Send(m_hostPeer, item);
+}
+
+void Endpoint::TakeWorldItem(proto::WorldItemId id, std::uint8_t stack) {
+  if (!IsJoined() || m_ended)
+    return;
+  if (IsHost())
+    ClaimWorldItem(m_you, id, stack, std::nullopt, m_pending);
+  else
+    m_session->Send(m_hostPeer, proto::WorldItemTaken{id, stack, m_you});
+}
+
+void Endpoint::AddWorldItem(proto::PlayerId dropper, proto::WorldItem item,
+                            std::vector<SessionEvent> &out) {
+  // Bounded: a guest cannot fill the host's memory with bags.
+  constexpr std::size_t kMaxWorldItems = 256;
+  std::erase_if(item.stacks, [](const auto &stack) { return !stack.record || !stack.quantity; });
+  if (item.stacks.empty() || item.stacks.size() > proto::kMaxWorldItemStacks ||
+      m_worldItems.size() >= kMaxWorldItems)
+    return;
+  item.id = m_nextWorldItem++;
+  item.dropper = dropper;
+  m_worldItems[item.id] = item;
+  m_worldTakers[item.id].assign(item.stacks.size(), proto::kNoPlayer);
+  m_session->Broadcast(item); // the dropper too: it learns the id of its bag
+  out.push_back(events::WorldItemAppeared{std::move(item)});
+}
+
+// First come, first served: the host's order of arrival decides.
+void Endpoint::ClaimWorldItem(proto::PlayerId player, proto::WorldItemId id, std::uint8_t stack,
+                              std::optional<net::PeerId> peer, std::vector<SessionEvent> &out) {
+  const auto answer = [&](proto::PlayerId winner) {
+    const proto::WorldItemTaken taken{id, stack, winner};
+    if (peer)
+      m_session->Send(*peer, taken);
+    else
+      out.push_back(events::WorldItemTakenBy{taken});
+  };
+  const auto item = m_worldItems.find(id);
+  if (item == m_worldItems.end() || stack >= item->second.stacks.size()) {
+    answer(proto::kNoPlayer); // gone (every stack taken), or never was
+    return;
+  }
+  auto &takers = m_worldTakers[id];
+  if (takers[stack] != proto::kNoPlayer) {
+    answer(takers[stack]); // someone was first
+    return;
+  }
+  takers[stack] = player;
+  item->second.stacks[stack].quantity = 0;
+  const proto::WorldItemTaken taken{id, stack, player};
+  m_session->Broadcast(taken);
+  out.push_back(events::WorldItemTakenBy{taken});
+  if (std::ranges::all_of(takers, [](auto taker) { return taker != proto::kNoPlayer; })) {
+    m_worldItems.erase(item);
+    m_worldTakers.erase(id);
+  }
 }
 
 std::optional<net::Stats> Endpoint::HostLinkStats() const {

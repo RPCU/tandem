@@ -1420,6 +1420,13 @@ choiceEvent.activator)` (`22557`); then `OnInventoryEmptyEvent` (`23451`),
 
 ### 8.2 "Each player loots their own copy"
 
+**Decided and built 2026-11-18** (ARCHITECTURE.md, Loot;
+`scripts/tandem/Loot.reds`): per-player loot as below; dropped weapons
+per player; quest items stay with the host's corpse (taken out of
+proxies); a removed proxy corpse leaves a loot bag; what a V drops on
+purpose is a shared world item the host arbitrates (`WorldItem`,
+`WorldItemTaken`). Engine facts in engine-knowledge §13.13.
+
 This falls out of the proxy design with almost no messages `[I]`:
 
 - A proxy on a guest is a real puppet with its own inventory. When the guest
