@@ -2084,7 +2084,88 @@ GetPlayerID()` and the effect lacks the `Stealth` tag:
   194573). Whether `ActivateNetrunnerQuickhack(Accelerate)` acts on a car a
   player drives is not known. [2.5-untested]
 
-### 13.15 Loot: corpses, dropped items, quest items (2026-11-18, 2.50 scripts read)
+### 13.15 Quest phases: making a node wait (2026-11-18, offline, spike S1)
+
+Read in the 2.50 exe with `tools/re/decompile` (offline, no game). Feeds
+`plugin/src/engine/quests.cpp`, the guest's quest freeze
+(`coop-quests-design.md` §1.3).
+
+- `QuestPhaseInstance::ExecuteNode` (hash 3227858325, `0x1402b3aa0`):
+  returns 1 at once when the node is a disableable node in the phase's
+  disabled set (`phase+0xC8`, by `node+0x40` id) or when the node's
+  pre-check vfunc `+0x150(node, ctx+0x110, socket)` returns 1; otherwise
+  notifies the context's listener (`ctx+0x70`, vfuncs `+0x1B8` before,
+  `+0x1C0` after), runs the node (`0x14034fa80`: `ctx+0x110` vfunc `+0xE0`
+  with the node id, clears the outputs, node vfunc `+0x158`), and maps the
+  result through node vfunc `+0x160`; a context state byte `ctx+1 == 7`
+  forces 3. [2.5-verified offline]
+- Its only direct caller, `0x1402b393c`, runs one entry of
+  `ExecuteGraph`'s work list (`0x140352984`, entered through
+  `QuestPhaseInstance_ExecuteGraph` 779107884 = `0x1403528a4`, which
+  pushes the phase on `ctx.phaseStack` at `+0xF8` around the call):
+  result **0**: the node finished; a `questOutputNodeDefinition` (size
+  0x58: socket name `+0x48`, type `+0x50`) ends the pass with its socket,
+  any other node queues its output sockets; **2**: finished, outputs
+  queued; **1 or 3**: nothing queued, the pass goes on with the other
+  queued nodes. [2.5-verified offline]
+- So a hook that returns **1 without calling the original** makes a node
+  do what a disabled node does: nothing, no outputs, the phase stays
+  active. The engine keeps no trace of that signal: tandem holds it
+  (phase `NodePath` `+0x70`, node id, input socket CName) and gives it
+  back at the end of the freeze with the root phase's `ExecutePath`
+  (vfunc `+0x120`, under the quests system's lock `+0x60`, after
+  `QuestsSystem::CreateContext` 3144298192 `(sys, ctx, 1, 0, -1, -1)`:
+  Codeware's `QuestPhaseExecutor::ExecutePath`, used by its
+  `OpenWorldSystem`). [I] — whether every node resumes cleanly that way
+  is the in-game check.
+- Per-phase filter: a phase is open-world when its resource
+  (`phase+0x30` → `CResource.path` `+0x30`) or an ancestor's on
+  `ctx.phaseStack` is one of Codeware's open-world phases
+  (`QuestPhaseRegistry.cpp:12-20`), or its `NodePath` extends one of
+  theirs; the root phase (empty path) always runs. [C][I]
+- To check in game (`quest_freeze = on`, `tools/game.sh cmd quest freeze
+on`, `quest report`, `quest freeze off`): refused-node counts by phase;
+  no pending call rings and the tracker does not move while frozen; on
+  `off`, the held signals resume (a call queued during the freeze rings);
+  vendors, metro, apartment, car summon, NCPD hustles still work; no
+  crash in the 1 s after `off`. [2.5-untested]
+
+### 13.16 Story levers in the scripts (2026-11-18, read in final.reds, not run)
+
+What `scripts/tandem/Story.reds`, `Phone.reds` and `Dialogue.reds` rely
+on; every line is [2.5-untested] until `story-guest.sh` / `story-host.sh`
+pass.
+
+- A guest presents the host's call through its own
+  `PhoneSystem.TriggerCall` (`final.reds:240618`, private: reached from an
+  `@addMethod`), which writes `UI_ComDevice.PhoneCallInformation` and the
+  `phonecall_*` fact; the fact is held back by a wrap of `SetPhoneFact`
+  (`:240841`) while a mirrored call is up. The HUD's answer goes through
+  `PickupPhoneRequest` → `OnPickupPhone` (`:240662`), wrapped to send it to
+  the host. The incoming widget finds the contact by journal id
+  (`GetIncomingContact`, `:409000`): a contact the guest's journal lacks
+  shows no name.
+- Subtitles: `UIGameData.ShowDialogLine` carries `array<scnDialogLineData>`,
+  `HideDialogLine` `array<CRUID>` (`:268284`, `:268327`). Scripts cannot
+  build a `CRUID`: `TandemStory.LineId` / `LineValue` convert it.
+- Choice hubs: `UIInteractions.DialogChoiceHubs` (`DialogChoiceHubs{
+choiceHubs: array<ListChoiceHubData>}`, `:243020`, `:389618`),
+  `ActiveChoiceHubID`, `SelectedIndex`, `LastAttemptedChoice`
+  (`InteractionAttemptedChoice`, `:199455`). The guest's stand-in hub has
+  no native backing: its cursor moves on the input actions
+  `ChoiceScrollUp` / `ChoiceScrollDown` / `ChoiceApply` (names from the
+  input contexts, not seen in the scripts: to confirm).
+- Holds: `GameplayRestriction.NoCombat` and `BaseStatusEffect.Invulnerable`
+  status effects (`:128602`); script god mode does not protect V (§13.11).
+- Saving: a `ScriptableSystem` overriding `IsSavingLocked` (`:48411`) and
+  `SaveLocksManager.RequestSaveLockAdd(game, n"tandem")` (`:195179`, not
+  saved: re-added after a load); `AutoSaveSystem.InvalidateAutoSaveRequests`
+  (`:203134`). Whether the pause menu greys out Save with only these: to
+  see.
+- The co-op reward ledger is a `persistent` array on `TandemStorySystem`:
+  it reaches the guest's save with its next save after the session.
+
+### 13.17 Loot: corpses, dropped items, quest items (2026-11-18, 2.50 scripts read)
 
 Read from the 2.50 scripts (`final.reds` line numbers), used by
 `scripts/tandem/Loot.reds`; none of it has run in a session yet.

@@ -673,6 +673,9 @@ public class TandemSystem extends ScriptableSystem {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {
       this.RemoveAllPuppets();
+    } else if StrBeginsWith(command, "story") || StrBeginsWith(command, "quest") {
+      // Story.reds: story …, quest freeze on|off, quest report.
+      TandemStorySystem.Get(this.GetGameInstance()).Command(command);
     } else {
       TandemNative.Log(s"unknown command: \(command)");
     }

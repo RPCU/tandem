@@ -301,9 +301,8 @@ takedown interactions until they are forwarded (§9).
 
 ### 2.3 `NPCPuppet.SetDisableRagdoll`
 
-At `final.reds:125961`,
-`SetDisableRagdoll(disableRagdoll: Bool, opt force: Bool, opt leaveRagdollEnabled: Bool)`
-toggles `m_npcRagdollComponent` (an `entRagdollComponent`, `isEnabled` at
+At `final.reds:125961`, the function
+`SetDisableRagdoll(disableRagdoll: Bool, opt force: Bool, opt leaveRagdollEnabled: Bool)` toggles `m_npcRagdollComponent` (an `entRagdollComponent`, `isEnabled` at
 +0x8b). `CanEnableRagdollComponent()` (`125938`) refuses while the entity has
 god mode Invulnerable or Immortal, a status effect tagged `DisableRagdoll`,
 or is a boss/MaxTac not yet incapacitated. `NPCPuppet.OnGodModeChanged()`
@@ -1425,7 +1424,7 @@ choiceEvent.activator)` (`22557`); then `OnInventoryEmptyEvent` (`23451`),
 per player; quest items stay with the host's corpse (taken out of
 proxies); a removed proxy corpse leaves a loot bag; what a V drops on
 purpose is a shared world item the host arbitrates (`WorldItem`,
-`WorldItemTaken`). Engine facts in engine-knowledge §13.15.
+`WorldItemTaken`). Engine facts in engine-knowledge §13.17.
 
 This falls out of the proxy design with almost no messages `[I]`:
 
