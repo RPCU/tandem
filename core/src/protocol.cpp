@@ -34,6 +34,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *car = std::get_if<VehicleHack>(&message); car && car->hack > CarHack::Accelerate)
     return std::nullopt;
+  if (const auto *away = std::get_if<Elsewhere>(&message); away && away->place > Place::Other)
+    return std::nullopt;
   if (const auto *awareness = std::get_if<NpcAwareness>(&message);
       awareness && awareness->entries.size() > kMaxNpcAwareness)
     return std::nullopt;
@@ -77,7 +79,7 @@ const char *NameOf(const Message &message) {
       "NpcAwareness", "Stealth",      "Noise",     "NpcHack",      "NpcHackState", "NpcStatus",
       "PlayerHack",   "VehicleHack",  "Journal",   "Tracked",      "PhoneCall",    "PhoneAction",
       "PhoneReply",   "Subtitle",     "ChoiceHub", "ChoiceCursor", "StoryState",   "QuestReward",
-      "TimeEffect",   "StoryEffect"};
+      "TimeEffect",   "StoryEffect",  "Elsewhere"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

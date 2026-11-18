@@ -1,5 +1,7 @@
 #include "tandem/endpoint.hpp"
 
+#include "tandem/elsewhere.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -261,6 +263,15 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::RemoteTimeEffect{relayed});
                    },
+                   [&](const proto::Elsewhere &away) {
+                     // A guest only goes elsewhere in its own name.
+                     auto relayed = elsewhere::Sanitized(away);
+                     relayed.player = player;
+                     if (!NoteElsewhere(relayed))
+                       return;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteElsewhere{relayed});
+                   },
                    [&](const proto::Bye &) {
                      RemovePlayer(event.peer, out); // gone now, not when ENet is done
                      m_session->Disconnect(event.peer);
@@ -293,6 +304,8 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   }
   // Gone in a Sandevistan: its bubble ends for everyone.
   EndTimeOf(player, out, true);
+  // Gone from another world: back in the city for everyone.
+  EndElsewhereOf(player, out, true);
   out.push_back(events::PlayerLeft{player});
   BroadcastRoster();
 }
@@ -331,6 +344,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
       out.push_back(events::PauseChanged{{player, false}});
     }
     EndTimeOf(player, out, true);
+    EndElsewhereOf(player, out, true);
     BroadcastRoster();
     SendSessionTo(peer);
     return;
@@ -382,6 +396,10 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
   for (const auto &[id, time] : m_timeEffects)
     if (self == m_playerOfPeer.end() || id != self->second)
       m_session->Send(peer, time);
+  // Who is in another world now.
+  for (const auto &[id, away] : m_elsewheres)
+    if (self == m_playerOfPeer.end() || id != self->second)
+      m_session->Send(peer, away);
 }
 
 void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &out) {
@@ -438,6 +456,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               SendLocalPausedNow();
               SendLocalStealthNow();
               SendLocalTimeNow();
+              SendLocalElsewhereNow();
             },
             [&](const proto::Refused &refused) {
               m_ended = true;
@@ -466,6 +485,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
                   if (NotePaused(id, false))
                     out.push_back(events::PauseChanged{{id, false}});
                   EndTimeOf(id, out, false);
+                  EndElsewhereOf(id, out, false);
                   out.push_back(events::PlayerLeft{id});
                 }
               m_players = std::move(next);
@@ -542,6 +562,11 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               const auto safe = Sanitized(time);
               if (safe.player != m_you && NoteTime(safe))
                 out.push_back(events::RemoteTimeEffect{safe});
+            },
+            [&](const proto::Elsewhere &away) {
+              const auto safe = elsewhere::Sanitized(away);
+              if (safe.player != m_you && NoteElsewhere(safe))
+                out.push_back(events::RemoteElsewhere{safe});
             },
             [&](const proto::Bye &bye) {
               m_ended = true;
@@ -978,6 +1003,53 @@ void Endpoint::EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out,
   if (broadcast)
     m_session->Broadcast(none);
   out.push_back(events::RemoteTimeEffect{none});
+}
+
+void Endpoint::SetLocalElsewhere(proto::Elsewhere state) {
+  state = elsewhere::Sanitized(state);
+  state.player = proto::kNoPlayer;
+  if (state == m_localElsewhere)
+    return;
+  m_localElsewhere = state;
+  SendLocalElsewhereNow();
+}
+
+void Endpoint::SendLocalElsewhereNow() {
+  if (!IsJoined() || m_ended)
+    return;
+  auto mine = m_localElsewhere;
+  mine.player = m_you;
+  // A guest that just joined has something to say only if it is away.
+  if (!NoteElsewhere(mine))
+    return;
+  if (IsHost())
+    m_session->Broadcast(mine);
+  else
+    m_session->Send(m_hostPeer, mine);
+}
+
+bool Endpoint::NoteElsewhere(const proto::Elsewhere &state) {
+  const auto it = m_elsewheres.find(state.player);
+  if (state.place == proto::Place::City) {
+    if (it == m_elsewheres.end())
+      return false;
+    m_elsewheres.erase(it);
+    return true;
+  }
+  if (it != m_elsewheres.end() && it->second == state)
+    return false;
+  m_elsewheres[state.player] = state;
+  return true;
+}
+
+void Endpoint::EndElsewhereOf(proto::PlayerId player, std::vector<SessionEvent> &out,
+                              bool broadcast) {
+  const proto::Elsewhere city{.player = player};
+  if (!NoteElsewhere(city))
+    return;
+  if (broadcast)
+    m_session->Broadcast(city);
+  out.push_back(events::RemoteElsewhere{city});
 }
 
 std::optional<net::Stats> Endpoint::HostLinkStats() const {

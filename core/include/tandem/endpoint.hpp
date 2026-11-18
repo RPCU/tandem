@@ -142,6 +142,11 @@ struct Story {
 struct RemoteTimeEffect {
   proto::TimeEffect effect;
 };
+// Another player went into another world, changed it or came back (place
+// City), or left while away. Never reported for our own.
+struct RemoteElsewhere {
+  proto::Elsewhere state;
+};
 // The session is over (refused, host gone, timed out).
 struct Ended {
   std::string reason;
@@ -183,15 +188,17 @@ struct JoinTarget {
   std::optional<net::RelayOptions> relay;
 };
 
-using SessionEvent = std::variant<
-    events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
-    events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
-    events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
-    events::HostNpcStates, events::HostNpcGone, events::HostNpcHealth, events::NpcHitBy,
-    events::NpcEffectBy, events::PauseChanged, events::Ended, events::PlayerReturned,
-    events::RemoteVehicleRadio, events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness,
-    events::NoiseBy, events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-    events::HostPlayerHack, events::VehicleHackOn, events::Story, events::RemoteTimeEffect>;
+using SessionEvent =
+    std::variant<events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
+                 events::RemotePose, events::RemoteAppearance, events::RemoteHeld,
+                 events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
+                 events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
+                 events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
+                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
+                 events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
+                 events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
+                 events::HostPlayerHack, events::VehicleHackOn, events::Story,
+                 events::RemoteTimeEffect, events::RemoteElsewhere>;
 
 class Endpoint {
 public:
@@ -262,6 +269,12 @@ public:
   void SetLocalTimeEffect(proto::TimeEffect effect);
   // Every active time ability this game knows of (us included), by player.
   const std::map<proto::PlayerId, proto::TimeEffect> &TimeEffects() const { return m_timeEffects; }
+  // Our V in another world (tandem/elsewhere.hpp). Kept: sent now if we are
+  // in the session, else as soon as we are; the host hands everyone's to
+  // late joiners.
+  void SetLocalElsewhere(proto::Elsewhere state);
+  // Every player not in the city, as this game knows them (us included).
+  const std::map<proto::PlayerId, proto::Elsewhere> &Elsewheres() const { return m_elsewheres; }
   // How hard our V is to see (kept: sent now if we are in the session, else
   // as soon as we are; the host hands everyone's to late joiners).
   void SetLocalStealth(proto::Stealth stealth);
@@ -361,6 +374,14 @@ private:
   bool NoteTime(const proto::TimeEffect &effect);
   // A player is gone (or back from a crash): its ability ends for everyone.
   void EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
+  // Players in another world (host: the session's record, for late joiners).
+  proto::Elsewhere m_localElsewhere;
+  std::map<proto::PlayerId, proto::Elsewhere> m_elsewheres;
+  void SendLocalElsewhereNow();
+  // Records a player's place; false when it did not change.
+  bool NoteElsewhere(const proto::Elsewhere &state);
+  // A player is gone (or back from a crash): back in the city for everyone.
+  void EndElsewhereOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
   // Our stealth, and (host) everyone's latest, for late joiners.
   std::optional<proto::Stealth> m_localStealth;
   std::uint32_t m_stealthRevision{};

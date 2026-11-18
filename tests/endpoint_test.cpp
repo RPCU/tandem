@@ -906,3 +906,78 @@ TEST_CASE("time abilities: stamped, made safe, kept for late joiners, ended when
   CHECK_FALSE(host->TimeEffects().contains(aId));
   CHECK_FALSE(late->TimeEffects().contains(aId));
 }
+
+namespace {
+void CollectElsewhere(const std::vector<SessionEvent> &events,
+                      std::vector<proto::Elsewhere> &into) {
+  for (const auto &event : events)
+    if (const auto *e = std::get_if<events::RemoteElsewhere>(&event))
+      into.push_back(e->state);
+}
+} // namespace
+
+TEST_CASE("other worlds: stamped, made safe, kept for late joiners, back when a player leaves") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  // Before joining: sent once in, in its own name; a settled flag without
+  // moved is dropped.
+  a->SetLocalElsewhere({.player = 9, .place = proto::Place::Braindance, .flags = 2});
+  std::vector<proto::Elsewhere> atHost;
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      CollectElsewhere(events, atHost);
+    return !atHost.empty();
+  }));
+  const proto::Elsewhere braindance{.player = a->You(), .place = proto::Place::Braindance};
+  CHECK(atHost.front() == braindance);
+  CHECK(host->Elsewheres().at(a->You()) == braindance);
+
+  // The host dives into cyberspace from a chair: a late joiner hears both.
+  const proto::Elsewhere dive{.place = proto::Place::Cyberspace,
+                              .flags = proto::kElsewhereMoved | proto::kElsewhereSettled,
+                              .anchor = {10.f, 20.f, 30.f},
+                              .yaw = 0.5f};
+  host->SetLocalElsewhere(dive);
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::vector<proto::Elsewhere> atLate, atA;
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      CollectElsewhere(events, atA);
+    if (i == 2)
+      CollectElsewhere(events, atLate);
+    return atLate.size() == 2 && !atA.empty();
+  }));
+  auto stamped = dive;
+  stamped.player = host->You();
+  CHECK(atA.front() == stamped);
+  CHECK(late->Elsewheres().at(host->You()) == stamped);
+  CHECK(late->Elsewheres().at(a->You()) == braindance);
+
+  // Back in the city: said once.
+  host->SetLocalElsewhere({});
+  atA.clear();
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      CollectElsewhere(events, atA);
+    return !atA.empty();
+  }));
+  CHECK(atA.front() == proto::Elsewhere{.player = host->You()});
+  CHECK_FALSE(a->Elsewheres().contains(host->You()));
+
+  // a leaves in its braindance: back in the city on every game.
+  const auto aId = a->You();
+  a->Leave();
+  atHost.clear(), atLate.clear();
+  REQUIRE(Pump({host.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    CollectElsewhere(events, i == 0 ? atHost : atLate);
+    return !atHost.empty() && !atLate.empty();
+  }));
+  CHECK(atHost.front() == proto::Elsewhere{.player = aId});
+  CHECK(atLate.front() == proto::Elsewhere{.player = aId});
+  CHECK_FALSE(host->Elsewheres().contains(aId));
+  CHECK_FALSE(late->Elsewheres().contains(aId));
+}
