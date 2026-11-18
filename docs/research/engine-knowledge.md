@@ -2244,6 +2244,33 @@ duration, easeIn, easeOut, ignoreGlobalDilation, useRealTime)`,
 - `GameInstance.GetSimTime` is assumed dilated and `GetEngineTime` real
   (final.reds 14148-14150); `time test` logs the ratio of the two.
   [2.5-untested]
+- **First run, 2026-11-18: the game broke twice** while Time.reds ran from
+  the plugin's per-frame call (RED4ext running-state update,
+  `OnRunningUpdate`), outside the script tick. Once it crashed loading a
+  save as host, in the script VM about three calls deep under
+  `TandemTime.Frame`, before "playing". Once it froze right after
+  "playing", when the work began (no backtrace). Suspects, most likely
+  first, all found by reading the code (none confirmed):
+  1. `GetActiveTimeDilation()` with no dilation active answers something
+     below 0.99 (0, say): `exempt` was then true on every frame, and the
+     first frame set a per-entity dilation (unset, then set) on every
+     remote puppet and proxy, entities moved by tandem's own movement
+     controller (a hand-built engine class). Fixed: exemption only while
+     `IsTimeDilationActive()` and 0 < factor < 0.99, and never on those
+     entities.
+  2. Engine calls made outside the script tick, and behind the loading
+     screen: time system queries, `FindEntityByID`, per-entity dilation and
+     effect events, while the world is being built. Fixed: the work runs
+     from `TandemSystem.Tick` once the world plays. The plugin's per-frame
+     call is back to `TandemPause.Frame` alone.
+  3. Something else that started at "playing" on the same frame (stealth,
+     takedowns): not Time.reds.
+
+  No deadlock found: the time natives each take `Runtime::m_lock` once and
+  release it before returning. They never call the engine or the network
+  while holding it, and nothing holds it while waiting on the game thread.
+  No loop in Time.reds or `TimeBubbles::Update` can run forever.
+  [2.5-untested]
 
 ### 13.17 Takedowns, finishers, carried bodies and "the player" reactions (2026-11-18, scripts only)
 
