@@ -1,0 +1,27 @@
+// The remote Vs' attitude groups (scripts/tandem/Attitudes.reds). Copies of
+// the player's own group record (its default attitude and attitude to
+// itself), under names of their own: an NPC made hostile to a group (vanilla
+// AttitudeAgent.SetAttitudeTowardsAgentGroup) is hostile to every member, so
+// in `player` hostility to one V reached every V (engine-knowledge §13.11).
+// One group per puppet at a time (3 guests at most: endpoint.hpp kMaxGuests),
+// and the shared one the puppet records start in.
+//
+// A group's relations to the others are not part of its record (they are
+// Attitude records naming two groups): the script copies the player's
+// relations into these groups at runtime.
+
+Attitudes.Group_TandemPlayer : Attitudes.Group_Player {
+  name = "tandem_player";
+}
+
+Attitudes.Group_TandemPlayer1 : Attitudes.Group_Player {
+  name = "tandem_player_1";
+}
+
+Attitudes.Group_TandemPlayer2 : Attitudes.Group_Player {
+  name = "tandem_player_2";
+}
+
+Attitudes.Group_TandemPlayer3 : Attitudes.Group_Player {
+  name = "tandem_player_3";
+}

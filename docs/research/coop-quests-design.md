@@ -131,7 +131,7 @@ in a session the hook refuses every node except those tandem itself runs
 `QuestsSystem.ExecuteNode` call needs, `CW scripts/Quest/QuestsSystem.reds`).
 
 - What a refused node returns (spike S1, read offline 2026-11-18,
-  `engine-knowledge.md` §13.12): **1**, the engine's own result for a
+  `engine-knowledge.md` §13.15): **1**, the engine's own result for a
   disabled node: nothing is queued, the graph pass goes on, the phase
   stays active. The engine does not retry the signal, so tandem holds it
   (phase node path, node id, input socket) and gives it back through the

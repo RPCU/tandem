@@ -289,6 +289,122 @@ TEST_CASE("a guest's hit reaches the host, stamped; health reaches guests, late 
   CHECK_FALSE(lateGotHealth);
 }
 
+TEST_CASE("quickhacks: uploads to the host, states to all, NPC hacks and car hacks to one V") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(a, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(b, error);
+  REQUIRE(Pump({host.get(), a.get(), b.get()},
+               [&](std::size_t, const auto &) { return a->IsJoined() && b->IsJoined(); }));
+
+  // a uploads on NPC 7: the host hears it in a's name, nobody else does.
+  a->SendNpcHack({.player = 99, .npc = 7, .action = 0x55, .uploadMs = 1200});
+  std::optional<proto::NpcHack> upload;
+  int othersHeard = 0;
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *h = std::get_if<events::NpcHackBy>(&event)) {
+        if (i == 0)
+          upload = h->hack;
+        else
+          ++othersHeard;
+      }
+  });
+  REQUIRE(upload);
+  CHECK(upload->player == a->You());
+  CHECK(upload->uploadMs == 1200);
+  CHECK(othersHeard == 0);
+
+  // The host tells everyone what runs on it; the effect reaches all but
+  // the V whose hack it is.
+  host->SendNpcHackState({.npc = 7, .player = a->You(), .action = 0x55});
+  host->SendNpcStatus({.npc = 7, .player = a->You(), .effect = 0x66, .applied = true});
+  // A host netrunner hacks b's V: only b hears it.
+  host->SendPlayerHack({.player = b->You(), .npc = 7, .action = 0x77, .flags = 1});
+  int states = 0, statusA = 0, statusB = 0, hackA = 0, hackB = 0;
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events) {
+      if (std::holds_alternative<events::HostNpcHackState>(event))
+        ++states;
+      if (std::holds_alternative<events::HostNpcStatus>(event))
+        ++(i == 1 ? statusA : statusB);
+      if (const auto *h = std::get_if<events::HostPlayerHack>(&event)) {
+        ++(i == 1 ? hackA : hackB);
+        CHECK(h->hack.action == 0x77);
+      }
+    }
+  });
+  CHECK(states == 2);
+  CHECK(statusA == 0);
+  CHECK(statusB == 1);
+  CHECK(hackA == 0);
+  CHECK(hackB == 1);
+
+  // a hacks the car b drives: it goes through the host to b, in a's name;
+  // and one the host drives stays on the host.
+  a->SendVehicleHack({.player = 99, .driver = b->You(), .hack = proto::CarHack::ForceBrakes});
+  a->SendVehicleHack({.driver = host->You(), .hack = proto::CarHack::Explode, .seconds = 2.f});
+  std::optional<proto::VehicleHack> onB, onHost;
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *h = std::get_if<events::VehicleHackOn>(&event)) {
+        CHECK(i != 1);
+        (i == 2 ? onB : onHost) = h->hack;
+      }
+  });
+  REQUIRE(onB);
+  CHECK(onB->player == a->You());
+  CHECK(onB->hack == proto::CarHack::ForceBrakes);
+  REQUIRE(onHost);
+  CHECK(onHost->player == a->You());
+  CHECK(onHost->seconds == 2.f);
+}
+
+TEST_CASE("an NPC's hit on a guest reaches that guest only, whole") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  const proto::PlayerHit sent{.player = a->You(),
+                              .npc = 7,
+                              .physical = 10.f,
+                              .thermal = 2.f,
+                              .attackType = 10,
+                              .flags = proto::kHitWeakSpot,
+                              .pierce = 0.25f,
+                              .position = {1, 2, 3},
+                              .direction = {0, 1, 0},
+                              .attack = 0x1234,
+                              .weapon = 0x5678};
+  CHECK(host->SendPlayerHit(sent));
+  // Nobody to send to: the host's own V, a player not in the session.
+  CHECK_FALSE(host->SendPlayerHit({.player = host->You(), .physical = 1.f}));
+  CHECK_FALSE(host->SendPlayerHit({.player = 42, .physical = 1.f}));
+  // A guest never sends one: the NPCs are the host's.
+  CHECK_FALSE(b->SendPlayerHit({.player = a->You(), .physical = 99.f}));
+
+  std::vector<proto::PlayerHit> atA, atB, atHost;
+  PumpFor({host.get(), a.get(), b.get()}, 500ms, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *hit = std::get_if<events::HitByNpc>(&event))
+        (i == 0 ? atHost : i == 1 ? atA : atB).push_back(hit->hit);
+  });
+  REQUIRE(atA.size() == 1);
+  CHECK(atA[0] == sent);
+  CHECK(atB.empty());
+  CHECK(atHost.empty());
+}
+
 namespace {
 // The pause changes an endpoint reported, in order.
 void CollectPauses(const std::vector<SessionEvent> &events, std::vector<proto::Pause> &into) {
@@ -410,6 +526,55 @@ TEST_CASE("a late joiner learns who is paused; a guest that leaves paused no lon
   CHECK(atLate.front() == proto::Pause{aId, false});
   CHECK(host->Paused().empty());
   CHECK(late->Paused().empty());
+}
+
+TEST_CASE("a driver's car radio reaches everyone, stamped, and late joiners") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->Players().size() == 2; }));
+
+  // a drives with its radio on: the host hears it in a's name.
+  a->SetLocalVehicleRadio({.player = 99, .on = true, .station = 4, .track = 0xabc});
+  std::optional<proto::VehicleRadio> atHost;
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *radio = std::get_if<events::RemoteVehicleRadio>(&event); radio && i == 0)
+        atHost = radio->radio;
+    return atHost.has_value();
+  }));
+  CHECK(atHost->player == a->You());
+  CHECK(atHost->on);
+  CHECK(atHost->station == 4);
+  CHECK(atHost->track == 0xabc);
+
+  // Sent again unchanged (a passenger got in): it goes out again.
+  a->SetLocalVehicleRadio({.on = true, .station = 4, .track = 0xabc});
+  atHost.reset();
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *radio = std::get_if<events::RemoteVehicleRadio>(&event); radio && i == 0)
+        atHost = radio->radio;
+    return atHost.has_value();
+  }));
+  CHECK(atHost->revision == 2);
+
+  // A player joining later learns it from the host, and the host's own.
+  host->SetLocalVehicleRadio({.on = false, .station = -1});
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::map<proto::PlayerId, proto::VehicleRadio> atLate;
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *radio = std::get_if<events::RemoteVehicleRadio>(&event); radio && i == 2)
+        atLate[radio->radio.player] = radio->radio;
+    return atLate.size() == 2;
+  }));
+  CHECK(atLate[a->You()].station == 4);
+  CHECK_FALSE(atLate[1].on);
 }
 
 TEST_CASE("a guest that crashes is reported gone within the timeout") {
@@ -604,4 +769,78 @@ TEST_CASE("a live player cannot be replaced by a namesake") {
   CHECK_FALSE(aEnded);
   CHECK(a->IsJoined());
   CHECK(host->Players().size() == 3);
+}
+
+TEST_CASE(
+    "a guest's stealth reaches everyone, stamped, late joiners too; its noise only the host") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  // Set before joining: sent once in.
+  guest->SetLocalStealth(
+      {.player = 99, .flags = proto::kStealthCamo, .visibility = 0.5f, .camo = 0x77});
+  std::optional<proto::Stealth> atHost;
+  std::optional<proto::Noise> noise;
+  bool noiseSent = false;
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1 && guest->IsJoined() && !noiseSent) {
+      guest->SendNoise({.player = 99, .stim = 23, .radius = 25.f});
+      noiseSent = true;
+    }
+    for (const auto &event : events) {
+      if (const auto *s = std::get_if<events::RemoteStealth>(&event); s && i == 0)
+        atHost = s->stealth;
+      if (const auto *n = std::get_if<events::NoiseBy>(&event); n && i == 0)
+        noise = n->noise;
+    }
+    return atHost && noise;
+  }));
+  CHECK(atHost->player == guest->You()); // a guest can't hide someone else
+  CHECK(atHost->flags == proto::kStealthCamo);
+  CHECK(atHost->visibility == 0.5f);
+  CHECK(atHost->camo == 0x77);
+  CHECK(noise->player == guest->You());
+  CHECK(noise->stim == 23);
+
+  // A later guest gets the first one's stealth; the noise was never relayed.
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::optional<proto::Stealth> atLate;
+  bool lateHeardNoise = false;
+  Pump({host.get(), guest.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (i == 2) {
+        if (const auto *s = std::get_if<events::RemoteStealth>(&event))
+          atLate = s->stealth;
+        lateHeardNoise |= std::holds_alternative<events::NoiseBy>(event);
+      }
+    return atLate.has_value();
+  });
+  REQUIRE(atLate);
+  CHECK(atLate->player == guest->You());
+  CHECK(atLate->flags == proto::kStealthCamo);
+  CHECK_FALSE(lateHeardNoise);
+
+  // The host's NPCs' awareness reaches the guests; a guest cannot send any.
+  guest->SendNpcAwareness({.entries = {{.npc = 1, .player = 1, .level = 9}}});
+  host->SendNpcAwareness({.entries = {{.npc = 7, .player = guest->You(), .level = 200}}});
+  std::optional<proto::NpcAwareness> awareness;
+  bool hostHeardAwareness = false;
+  Pump({host.get(), guest.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *a = std::get_if<events::HostNpcAwareness>(&event)) {
+        if (i == 1)
+          awareness = a->awareness;
+        hostHeardAwareness |= i == 0;
+      }
+    return awareness.has_value();
+  });
+  REQUIRE(awareness);
+  REQUIRE(awareness->entries.size() == 1);
+  CHECK(awareness->entries[0].npc == 7);
+  CHECK(awareness->entries[0].level == 200);
+  CHECK_FALSE(hostHeardAwareness);
 }

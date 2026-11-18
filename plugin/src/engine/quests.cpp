@@ -1,5 +1,5 @@
 // The guest's quest freeze: a hook on QuestPhaseInstance::ExecuteNode
-// (docs/research/engine-knowledge.md §13.12, read offline on the 2.50 exe).
+// (docs/research/engine-knowledge.md §13.15, read offline on the 2.50 exe).
 //
 //   ExecuteNode(phase, node, context, inputSocket, outputSockets) -> u8
 //     hash 3227858325 (0x1402b3aa0 on 2.50). Its only direct caller

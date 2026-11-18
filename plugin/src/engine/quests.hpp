@@ -1,6 +1,6 @@
 #pragma once
 // The guest's quest freeze (docs/research/coop-quests-design.md §1.3, spike
-// S1; engine-knowledge.md §13.12). A hook on QuestPhaseInstance::ExecuteNode
+// S1; engine-knowledge.md §13.15). A hook on QuestPhaseInstance::ExecuteNode
 // refuses the nodes of the guest's own story phases while it is in a session,
 // queues the signals it refused, and gives them back to their phases when the
 // freeze ends, so the guest's story resumes where it stopped. Open-world

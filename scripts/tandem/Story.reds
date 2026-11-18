@@ -851,7 +851,7 @@ protected cb func OnSceneTierChange(newState: Int32) -> Bool {
 // Quest rewards (final.reds:43468): the host's go to the guests that took
 // part; a reward already paid in co-op is not paid again in our own story.
 @wrapMethod(PlayerPuppet)
-protected cb func OnRewardEvent(evt: RewardEvent) -> Bool {
+protected cb func OnRewardEvent(evt: ref<RewardEvent>) -> Bool {
   let story = TandemStorySystem.Get(this.GetGame());
   if IsDefined(story) && story.AlreadyRewarded(evt.rewardName) {
     TandemNative.Log(s"reward: \(TDBID.ToStringDEBUG(evt.rewardName)) was earned in co-op: not paid again");

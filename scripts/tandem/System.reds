@@ -30,6 +30,9 @@ public class TandemPuppet {
   public let reattachAt: Float;
   public let stance: gamedataNPCStanceState;
   public let stanceFeature: CName;
+  // Its attitude group (Attitudes.reds), as read back once set.
+  public let grouped: Bool;
+  public let group: CName;
 }
 
 // A puppet on its way out, removed over several frames: deleting a vehicle
@@ -79,14 +82,19 @@ public class TandemSystem extends ScriptableSystem {
   private let m_rideCar: EntityID;
   private let m_world: ref<TandemWorld>;
   private let m_pause: ref<TandemPause>;
+  private let m_radio: ref<TandemRadio>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
+  // Stealth, detection and combat per player, camo, noises (Stealth.reds).
+  private let m_stealth: ref<TandemStealth>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
   private let m_testNpcs: array<EntityID>;
   private let m_testHostile: array<EntityID>;
   private let m_lastHostileReport: Float;
-  // (test) the attitude group puppets are put in ("puppet group NAME").
+  // (test) the attitude group puppets are put in instead of their own
+  // ("puppet group NAME"; "puppet group" alone: their own again).
   private let m_puppetGroup: CName;
+  private let m_attitudes: ref<TandemAttitudes>;
   // (test) "npc hostile": its attitude to our V (hostile unless "npc hostile puppets").
   private let m_hostileToV: Bool;
   private let m_hostileReports: Int32;
@@ -145,8 +153,14 @@ public class TandemSystem extends ScriptableSystem {
     this.m_world.Start(this.GetGameInstance());
     this.m_pause = new TandemPause();
     this.m_pause.Start(this.GetGameInstance());
+    this.m_radio = new TandemRadio();
+    this.m_radio.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
+    this.m_attitudes = new TandemAttitudes();
+    this.m_attitudes.Start(this.GetGameInstance());
+    this.m_stealth = new TandemStealth();
+    this.m_stealth.Start(this.GetGameInstance());
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -168,10 +182,19 @@ public class TandemSystem extends ScriptableSystem {
       this.m_npcs.Stop();
     }
     this.m_npcs = null;
+    this.m_attitudes = null;
+    if IsDefined(this.m_stealth) {
+      this.m_stealth.End();
+    }
+    this.m_stealth = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
       this.m_pause = null;
+    }
+    if IsDefined(this.m_radio) {
+      this.m_radio.Stop();
+      this.m_radio = null;
     }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
@@ -195,6 +218,10 @@ public class TandemSystem extends ScriptableSystem {
   // since this tick stands still while the world is paused.
   public func PauseSync() -> ref<TandemPause> {
     return this.m_pause;
+  }
+
+  public func Stealth() -> ref<TandemStealth> {
+    return this.m_stealth;
   }
 
   public func Tick() -> Void {
@@ -224,12 +251,22 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_npcs) && this.m_playing && this.m_you != 0u {
       this.m_npcs.Tick(this.Now(), this.m_you);
     }
+    if IsDefined(this.m_stealth) && this.m_playing && this.m_you != 0u {
+      this.m_stealth.Tick(this.Now(), this.m_you, this.m_npcs);
+    }
+    TandemHacks.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
     }
     this.HandleEvents();
     this.SpawnJoined();
     this.DrivePuppets();
+    // The car radio (Radio.reds): the driver's for everyone aboard.
+    if IsDefined(this.m_radio) && this.m_playing {
+      this.m_radio.Tick(this.Now(), this);
+    }
+
+    this.TickAttitudes();
     this.ProcessLeaving();
     this.DrawShots();
     this.TickProxyTests();
@@ -358,16 +395,17 @@ public class TandemSystem extends ScriptableSystem {
         let at = npc.GetWorldPosition();
         TandemNative.Log(s"npcs: \(EntityID.ToDebugStringDecimal(id)) static \(EntityID.IsStatic(id)) \(TDBID.ToStringDEBUG(npc.GetRecordID())) \(NameToString(npc.GetCurrentAppearanceName())) at (\(at.X), \(at.Y), \(at.Z))");
       }
+    } else if Equals(command, "puppet attitude") {
+      this.ReportAttitudes();
     } else if StrBeginsWith(command, "puppet group") {
-      // (test) the puppets' attitude group, now and for those to come.
-      this.m_puppetGroup = StringToName(StrAfterFirst(command, "group "));
+      // (test) the puppets' attitude group, now and for those to come
+      // ("puppet group" alone: each its own again).
+      this.m_puppetGroup = StrLen(command) > 13 ? StringToName(StrAfterFirst(command, "group ")) : n"";
       for puppet in this.m_puppets {
-        let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
-        if IsDefined(body) {
-          body.GetAttitudeAgent().SetAttitudeGroup(this.m_puppetGroup);
-        }
+        puppet.grouped = false;
+        this.Group(puppet);
       }
-      TandemNative.Log(s"puppet group: \(NameToString(this.m_puppetGroup))");
+      TandemNative.Log(s"puppet group: \(IsNameValid(this.m_puppetGroup) ? NameToString(this.m_puppetGroup) : "their own")");
     } else if StrBeginsWith(command, "npc hostile") && !Equals(command, "npc hostile clear") {
       // (test) a hostile ganger 12 m ahead, brain on: does it see, target
       // and shoot a remote player's puppet? (milestone 5) "npc hostile
@@ -447,6 +485,18 @@ public class TandemSystem extends ScriptableSystem {
       } else {
         TandemNative.Log("npc punch: no proxy");
       }
+    } else if StrBeginsWith(command, "hack ") {
+      // (test, Hacks.reds) "hack npc [RECORD]": our V quickhacks the nearest
+      // proxy; "hack car": brakes on the first remote player's car copy.
+      let hacker = GetPlayer(this.GetGameInstance());
+      let proxy = IsDefined(this.m_npcs) && IsDefined(hacker) ? this.m_npcs.NearestProxy(hacker.GetWorldPosition()) : null;
+      let copy: ref<VehicleObject>;
+      for puppet in this.m_puppets {
+        if !IsDefined(copy) && EntityID.IsDefined(puppet.car) {
+          copy = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.car) as VehicleObject;
+        }
+      }
+      TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
     } else if Equals(command, "vehicle clear") {
       // (experiment) delete the parked car copies: this froze the game
       // (engine-knowledge §13.6); run tools/game.sh bt if it does again.
@@ -707,6 +757,44 @@ public class TandemSystem extends ScriptableSystem {
     return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfProxy(id) : 0u;
   }
 
+  // Quickhacks (Hacks.reds): session NPCs by id and entity, the player whose
+  // car a copy is, our player id (0: not in a session).
+  public func NpcEntity(npc: Uint32) -> EntityID {
+    return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.EntityOfNpc(npc) : EntityID();
+  }
+
+  public func NpcOf(id: EntityID) -> Uint32 {
+    return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfEntity(id) : 0u;
+  }
+
+  public func PlayerOfCar(id: EntityID) -> Uint32 {
+    return this.CarOwner(id);
+  }
+
+  public func You() -> Uint32 {
+    return this.m_you;
+  }
+
+  // Host: the id one of our NPCs is shared under (0: none; Combat.reds).
+  public func SharedNpcOf(id: EntityID) -> Uint32 {
+    return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOf(id) : 0u;
+  }
+
+  // Guest: a hit of the host's NPC on our V, run by our damage system.
+  public func IsForwardedHit(hit: ref<gameHitEvent>) -> Bool {
+    return IsDefined(this.m_npcs) && this.m_npcs.IsForwarded(hit);
+  }
+
+  public func ForwardedPierce(hit: ref<gameHitEvent>, out pierce: Float) -> Bool {
+    return IsDefined(this.m_npcs) && this.m_npcs.ForwardedPierce(hit, pierce);
+  }
+
+  public func ForgetForwardedHit(hit: ref<gameHitEvent>) -> Void {
+    if IsDefined(this.m_npcs) {
+      this.m_npcs.Forget(hit);
+    }
+  }
+
   private func CarOwner(id: EntityID) -> Uint32 {
     for puppet in this.m_puppets {
       if EntityID.IsDefined(puppet.car) && puppet.car == id {
@@ -714,6 +802,37 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     return 0u;
+  }
+
+  // For Radio.reds: whose copy a car is (0: ours or the world's), the remote
+  // players sitting in our car, and every car copy we made (driven or parked).
+  public func CarOwnerOf(id: EntityID) -> Uint32 {
+    return this.CarOwner(id);
+  }
+
+  public func Riders() -> Int32 {
+    let riders = 0;
+    if this.m_you != 0u {
+      for puppet in this.m_puppets {
+        if TDBID.IsValid(TandemNative.RemoteSeatVehicle(puppet.player)) && TandemNative.RemoteSeatOwner(puppet.player) == this.m_you {
+          riders += 1;
+        }
+      }
+    }
+    return riders;
+  }
+
+  public func CarCopies() -> array<EntityID> {
+    let copies: array<EntityID>;
+    for puppet in this.m_puppets {
+      if EntityID.IsDefined(puppet.car) {
+        ArrayPush(copies, puppet.car);
+      }
+    }
+    for car in this.m_parked {
+      ArrayPush(copies, car);
+    }
+    return copies;
   }
 
   // What our V holds, every frame (two slot reads), sent when it changes.
@@ -817,6 +936,9 @@ public class TandemSystem extends ScriptableSystem {
           this.RemoveAllPuppets();
           if IsDefined(this.m_npcs) {
             this.m_npcs.End();
+          }
+          if IsDefined(this.m_stealth) {
+            this.m_stealth.End();
           }
           break;
         default:
@@ -923,12 +1045,79 @@ public class TandemSystem extends ScriptableSystem {
         let entity = entities.GetEntity(puppet.id);
         if IsDefined(entity) {
           puppet.controlled = TandemNative.AttachController(puppet.player, entity);
-          let body = entity as GameObject;
-          if puppet.controlled && IsDefined(body) && IsDefined(body.GetAttitudeAgent()) && NotEquals(this.m_puppetGroup, n"") {
-            body.GetAttitudeAgent().SetAttitudeGroup(this.m_puppetGroup);
-            TandemNative.Log(s"player \(puppet.player): puppet in the \(NameToString(this.m_puppetGroup)) attitude group");
+        }
+      }
+      if !puppet.grouped {
+        this.Group(puppet);
+      }
+    }
+  }
+
+  // A puppet's attitude group, once its body is in the world: its own
+  // (Attitudes.reds), or the one "puppet group NAME" set (test).
+  private func Group(puppet: ref<TandemPuppet>) -> Void {
+    let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
+    if !IsDefined(this.m_attitudes) || !IsDefined(body) || !body.IsAttached() || !IsDefined(body.GetAttitudeAgent()) {
+      return;
+    }
+    let wanted = IsNameValid(this.m_puppetGroup) ? this.m_puppetGroup : this.m_attitudes.Claim(puppet.player);
+    puppet.group = this.m_attitudes.Put(body, wanted);
+    puppet.grouped = true;
+    TandemNative.Log(s"player \(puppet.player): puppet in the \(NameToString(puppet.group)) attitude group");
+  }
+
+  private func TickAttitudes() -> Void {
+    if !IsDefined(this.m_attitudes) || ArraySize(this.m_puppets) == 0 {
+      return;
+    }
+    let bodies: array<ref<GameObject>>;
+    for puppet in this.m_puppets {
+      let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
+      if IsDefined(body) {
+        ArrayPush(bodies, body);
+      }
+    }
+    this.m_attitudes.Tick(this.Now(), bodies);
+  }
+
+  // (test, tools/game.sh cmd puppet attitude) each puppet's attitude group,
+  // and how the NPCs around V see it next to how they see V (EAIAttitude:
+  // 0 friendly, 1 neutral, 2 hostile), with the two group relations.
+  private func ReportAttitudes() -> Void {
+    let game = this.GetGameInstance();
+    let player = GetPlayer(game);
+    if ArraySize(this.m_puppets) == 0 || !IsDefined(player) {
+      TandemNative.Log("puppet attitude: no puppet");
+      return;
+    }
+    let system = GameInstance.GetAttitudeSystem(game);
+    let vGroup = player.GetAttitudeAgent().GetAttitudeGroup();
+    let npcs = player.GetNPCsAroundObject(60.0);
+    for puppet in this.m_puppets {
+      let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
+      if !IsDefined(body) || !IsDefined(body.GetAttitudeAgent()) {
+        TandemNative.Log(s"puppet attitude: player \(puppet.player) has no body yet");
+      } else {
+        let group = body.GetAttitudeAgent().GetAttitudeGroup();
+        let count = 0;
+        let same = 0;
+        let shown = 0;
+        for npc in npcs {
+          if this.PlayerOfPuppet(npc.GetEntityID()) == 0u && IsDefined(npc.GetAttitudeAgent()) {
+            count += 1;
+            let toV = GameObject.GetAttitudeBetween(npc, player);
+            let toPuppet = GameObject.GetAttitudeBetween(npc, body);
+            let npcGroup = npc.GetAttitudeAgent().GetAttitudeGroup();
+            if Equals(toV, toPuppet) {
+              same += 1;
+            }
+            if NotEquals(toV, toPuppet) || shown < 5 {
+              shown += 1;
+              TandemNative.Log(s"puppet attitude: npc \(EntityID.ToDebugStringDecimal(npc.GetEntityID())) (\(NameToString(npcGroup))) to V \(EnumInt(toV)), to player \(puppet.player) \(EnumInt(toPuppet)); group relations \(EnumInt(system.GetAttitudeRelation(npcGroup, vGroup)))/\(EnumInt(system.GetAttitudeRelation(npcGroup, group)))");
+            }
           }
         }
+        TandemNative.Log(s"puppet attitude: player \(puppet.player) in \(NameToString(group)) (V in \(NameToString(vGroup))), \(count) NPCs, \(same) see it as V, V to it \(EnumInt(GameObject.GetAttitudeBetween(player, body))), it to V \(EnumInt(GameObject.GetAttitudeBetween(body, player)))");
       }
     }
   }
@@ -1285,6 +1474,9 @@ public class TandemSystem extends ScriptableSystem {
     TandemNative.PoseBind(puppet.player, null);
     TandemNative.UnregisterPuppet(puppet.player);
     TandemMarkers.Hide(game, puppet.player);
+    if IsDefined(this.m_attitudes) {
+      this.m_attitudes.Release(puppet.player);
+    }
     let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
     if EntityID.IsDefined(puppet.seatedIn) && IsDefined(body) {
       TandemVehicles.Unseat(game, body, puppet.seatedIn, puppet.seatedSlot);

@@ -225,7 +225,7 @@ public final func TandemAnswerFor(contact: CName, reject: Bool) -> Bool {
 
 // Host: every phase of our call goes to the guests.
 @wrapMethod(PhoneSystem)
-private final func OnTriggerCall(request: questTriggerCallRequest) {
+private final func OnTriggerCall(request: ref<questTriggerCallRequest>) {
   let before = this.m_LastCallInformation;
   wrappedMethod(request);
   let story = TandemStorySystem.Get(this.GetGameInstance());
@@ -255,7 +255,7 @@ private final func OnTriggerCall(request: questTriggerCallRequest) {
 // Guest: our answer goes to the host's phone instead of our own quests.
 // Host: our own answer is sent so every phone shows it picked up.
 @wrapMethod(PhoneSystem)
-private final func OnPickupPhone(request: PickupPhoneRequest) {
+private final func OnPickupPhone(request: ref<PickupPhoneRequest>) {
   let story = TandemStorySystem.Get(this.GetGameInstance());
   if IsDefined(story) && story.IsGuest() && this.m_tandemMirror {
     let audio = GameInstance.GetAudioSystem(this.GetGameInstance());
@@ -290,7 +290,7 @@ private final func SetPhoneFact(isPlayerCalling: Bool, contactName: CName, state
 // Guest: a text reply goes to the host; the journal mirror brings back what
 // the host applied (the first reply wins there).
 @wrapMethod(MessengerDialogViewController)
-private final func ActivateReply(target: ListItemController) {
+private final func ActivateReply(target: ref<ListItemController>) {
   let story: ref<TandemStorySystem>;
   if IsDefined(this.m_playerObject) {
     story = TandemStorySystem.Get(this.m_playerObject.GetGame());

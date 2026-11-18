@@ -20,6 +20,24 @@ Character.TandemPuppetWa : Character.Panam {
   alternativeDisplayName = "";
   // NPC god mode comes from these record tags.
   tags -= [ "Invulnerable", "Immortal" ];
+  // Seen by NPCs as a V, not as Panam (tweaks/tandem/attitudes.tweak: the
+  // script moves each puppet on to a group of its own). Panam's group is
+  // `panam`, her faction the Aldecaldos: the faction gives her body and
+  // weapons its anim wrappers and is what a scan shows.
+  baseAttitudeGroup = "tandem_player";
+  affiliation = "Factions.Unaffiliated";
+  // Panam's barks and pain sounds.
+  voiceTag = "";
+  // Hers: burning immunity, sniper damage, a follower's damage against
+  // bosses. (VeryHighHealth stays: the puppet must not die of hits in our
+  // game; its V's own game decides that.)
+  statModifiers = [];
+  statModifierGroups -= [ "NPCStatPreset.PanamSniperDamage", "NPCStatPreset.FollowerDamageAgainstBosses" ];
+  // No NPC UI over a remote V (its senses, grafted by Body.reds, would get
+  // a detection indicator, final.reds 155737 and 406516; the stealth
+  // mappin's HideUIDetection): it has its own marker (Markers.reds).
+  hideUIElements = true;
+  hideUIDetection = true;
   // The base record's gender entry is Panam's (female, panam.ent): clothing
   // appearances are chosen by gender, so each body states its own.
   genders = [
