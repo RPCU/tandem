@@ -74,6 +74,17 @@ public final func TriggerSingleBroadcast(contextOwner: wref<GameObject>, gdStimT
   }
 }
 
+// A remote player's stealth as put on their puppet.
+public class TandemStealthApplied {
+  public let player: Uint32;
+  // The stealth updates received for them that it shows, and on which body.
+  public let changes: Int32;
+  public let on: EntityID;
+  public let flags: Int32;
+  // The camo status effect put on the puppet (None: none).
+  public let camo: TweakDBID;
+}
+
 public class TandemStealth {
   private let m_game: GameInstance;
   private let m_you: Uint32;
@@ -93,11 +104,9 @@ public class TandemStealth {
   private let m_sentVisibility: Float;
   private let m_sentCamo: TweakDBID;
   private let m_lastSample: Float;
-  // Each remote player's stealth on their puppet (index: player id).
-  private let m_appliedChanges: array<Int32>;
-  private let m_appliedOn: array<EntityID>;
-  private let m_appliedFlags: array<Int32>;
-  private let m_appliedCamo: array<TweakDBID>;
+  // Each remote player's stealth on their puppet. By player, not by index:
+  // ids keep growing in a session (players coming back, mock players).
+  private let m_applied: array<ref<TandemStealthApplied>>;
   // Guest: when each stimulus type was last sent (at most 10 a second each).
   private let m_noiseAt: array<Float>;
   // Host: noises heard since the last log line.
@@ -112,15 +121,6 @@ public class TandemStealth {
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
     let i = 0;
-    while i <= 8 {
-      ArrayPush(this.m_appliedChanges, 0);
-      let none: EntityID;
-      ArrayPush(this.m_appliedOn, none);
-      ArrayPush(this.m_appliedFlags, 0);
-      ArrayPush(this.m_appliedCamo, TDBID.None());
-      i += 1;
-    }
-    i = 0;
     while i < 70 {
       ArrayPush(this.m_noiseAt, -1.0);
       i += 1;
@@ -159,15 +159,7 @@ public class TandemStealth {
       this.WriteMeter(0.0, 0.0);
     }
     this.m_sent = false;
-    let i = 0;
-    while i <= 8 {
-      this.m_appliedChanges[i] = 0;
-      let none: EntityID;
-      this.m_appliedOn[i] = none;
-      this.m_appliedFlags[i] = 0;
-      this.m_appliedCamo[i] = TDBID.None();
-      i += 1;
-    }
+    ArrayClear(this.m_applied);
   }
 
   // ---- guest: what the host's NPCs know of us ----
@@ -311,31 +303,44 @@ public class TandemStealth {
     if !IsDefined(system) {
       return;
     }
-    let p = 1u;
-    while p <= 8u {
-      let i = Cast<Int32>(p);
+    for p in system.PuppetPlayers() {
       let changes = p == this.m_you ? 0 : TandemNative.RemoteStealthChanges(p);
       let puppet = changes > 0 ? system.PuppetOf(p) : null;
-      if IsDefined(puppet) && (changes != this.m_appliedChanges[i] || puppet.GetEntityID() != this.m_appliedOn[i]) {
-        this.m_appliedChanges[i] = changes;
-        this.m_appliedOn[i] = puppet.GetEntityID();
-        this.Apply(p, puppet, player);
+      if IsDefined(puppet) {
+        let applied = this.AppliedOf(p);
+        if changes != applied.changes || puppet.GetEntityID() != applied.on {
+          applied.changes = changes;
+          applied.on = puppet.GetEntityID();
+          this.Apply(p, puppet, player, applied);
+        }
       }
-      p += 1u;
     }
+  }
+
+  private func AppliedOf(p: Uint32) -> ref<TandemStealthApplied> {
+    for applied in this.m_applied {
+      if applied.player == p {
+        return applied;
+      }
+    }
+    let applied = new TandemStealthApplied();
+    applied.player = p;
+    applied.camo = TDBID.None();
+    ArrayPush(this.m_applied, applied);
+    return applied;
   }
 
   // How the player's V is seen, on their puppet: what vanilla does to its
   // own V's visible object (PlayerPuppet.SetInvisible,
   // UpdateVisibilityModifier, UpdateSecondaryVisibilityOffset), and the
-  // camo status effect itself for its look.
-  private func Apply(p: Uint32, puppet: ref<GameObject>, player: ref<PlayerPuppet>) -> Void {
-    let i = Cast<Int32>(p);
+  // camo status effect itself for its look. The flags decide camo; the
+  // effect id (0 when unknown, e.g. the mock player) only adds its look.
+  private func Apply(p: Uint32, puppet: ref<GameObject>, player: ref<PlayerPuppet>, state: ref<TandemStealthApplied>) -> Void {
     let flags = TandemNative.RemoteStealthFlags(p);
     let visibility = TandemNative.RemoteStealthVisibility(p);
     let camo = TandemNative.RemoteStealthCamo(p);
     let camoOn = (flags & 1) != 0;
-    let wasOn = (this.m_appliedFlags[i] & 1) != 0;
+    let wasOn = (state.flags & 1) != 0;
     // NPC senses see the puppet through its (grafted) visible object.
     for component in puppet.GetComponents() {
       if Equals(component.GetClassName(), n"senseVisibleObjectComponent") {
@@ -351,18 +356,18 @@ public class TandemStealth {
     offset.offset.Z = (flags & 4) != 0 ? TweakDBInterface.GetFloat(t"player.stealth.crouchVisibilityZOffset", 0.6) : TweakDBInterface.GetFloat(t"player.stealth.chestVisibilityZOffset", 1.3);
     puppet.QueueEvent(offset);
     // The camo's own effect (its look, its vision blocker), in place of the last.
-    let applied = this.m_appliedCamo[i];
+    let applied = state.camo;
     if TDBID.IsValid(applied) && (!camoOn || applied != camo) {
       StatusEffectHelper.RemoveStatusEffect(puppet, applied);
-      this.m_appliedCamo[i] = TDBID.None();
+      state.camo = TDBID.None();
     }
-    if camoOn && TDBID.IsValid(camo) && this.m_appliedCamo[i] != camo {
+    if camoOn && TDBID.IsValid(camo) && state.camo != camo {
       StatusEffectHelper.ApplyStatusEffect(puppet, camo, puppet.GetEntityID());
-      this.m_appliedCamo[i] = camo;
+      state.camo = camo;
     }
     // Fully blocking (the relic): the NPCs hunting them lose them, as
     // vanilla drops V from its hostile NPCs' trackers.
-    if (flags & 2) != 0 && (this.m_appliedFlags[i] & 2) == 0 && TandemNative.IsHost() {
+    if (flags & 2) != 0 && (state.flags & 2) == 0 && TandemNative.IsHost() {
       let dropped = 0;
       for npc in player.GetNPCsAroundObject(TandemNpcs.Range()) {
         let tracker = npc.GetTargetTrackerComponent();
@@ -378,7 +383,7 @@ public class TandemStealth {
       TandemNative.Log(s"stealth: player \(p) camo \(camoOn ? "on" : "off") (\(TDBID.ToStringDEBUG(camo)))");
     }
     TandemNative.Log(s"stealth: player \(p): visibility \(visibility), crouch \((flags & 4) != 0)");
-    this.m_appliedFlags[i] = flags;
+    state.flags = flags;
   }
 
   // ---- noises ----
