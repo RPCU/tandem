@@ -85,4 +85,47 @@ void Story::QuestMoved(std::uint32_t quest, const proto::Vec3 &host) {
 story::Participation::Award Story::Reward(const proto::Vec3 &host) {
   return m_participation.Attribute(net::NowUs(), GuestsNear(host));
 }
+
+void Story::SetPrivate(bool on) {
+  if (m_private.exchange(on) != on && !on)
+    m_releaseHeld = true;
+}
+
+void Story::FilterLocal(proto::PlayerState &state) {
+  if (m_releaseHeld.exchange(false))
+    m_held.reset();
+  if (!m_private.load())
+    return;
+  if (!m_held)
+    m_held = state;
+  // Standing where the scene began: nothing of the scene shows.
+  state.position = m_held->position;
+  state.orientation = m_held->orientation;
+  state.velocity = {};
+  state.stance = 0;
+}
+
+void Story::PausePose(proto::PlayerId player, bool paused) {
+  for (auto &slot : m_posePaused) {
+    if (!paused && slot.load() == player)
+      slot.store(0);
+    else if (paused && slot.load() == player)
+      return;
+  }
+  if (paused)
+    for (auto &slot : m_posePaused) {
+      proto::PlayerId empty = 0;
+      if (slot.compare_exchange_strong(empty, player))
+        return;
+    }
+}
+
+bool Story::PosePaused(proto::PlayerId player) const {
+  if (player == 0)
+    return false;
+  for (const auto &slot : m_posePaused)
+    if (slot.load(std::memory_order_relaxed) == player)
+      return true;
+  return false;
+}
 } // namespace tandem::plugin

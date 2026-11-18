@@ -55,7 +55,8 @@ PuppetController::~PuppetController() = default;
 void PuppetController::PreTick(float) {}
 
 void PuppetController::Tick(float delta) {
-  ChooseGait(m_speed, m_stance);
+  // On a ladder, in the water, climbing: no walk cycle under the streamed pose.
+  ChooseGait(movement::Walks(m_placement) ? m_speed : 0.f, m_stance);
   if (m_gait.clip > 0.f)
     m_gait.time = std::fmod(m_gait.time + delta, m_gait.clip);
   else
@@ -88,6 +89,17 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
   std::uint32_t seatChanges = 0;
   if (const auto seat = Runtime::Get().RemoteSeat(player, seatChanges); seat && seat->vehicle)
     return;
+  // Placed by something else for now: a grapple's workspot, a carrier's
+  // shoulder (Takedowns.reds), an NPC proxy's bench or wall (NpcAnims.reds).
+  // The gait idles meanwhile.
+  // Placement starts afresh once it is let go (no stale timers or landing).
+  if (Runtime::Get().IsPuppetHeld(player)) {
+    m_speed = 0.f;
+    m_placer = movement::Placer{};
+    m_placement = movement::Placement::Ground;
+    m_lastPlaceUs = 0;
+    return;
+  }
 
   const auto view = Runtime::Get().ViewOf(player);
   if (!view.valid)
@@ -96,13 +108,39 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
   const auto current = placed->worldTransform.Position.AsVector3();
   const float currentYaw = sync::YawOf(ToProto(placed->worldTransform.Orientation));
 
-  position = {view.position.x - current.X, view.position.y - current.Y, view.position.z - current.Z,
-              0.f};
+  // On the ground as before; in the air, on a ladder, in the water exactly
+  // where the stream says, easing back onto the ground on landing; a body
+  // left behind (a ledge, a refused move) is teleported by the game thread.
+  const auto now = Runtime::Get().HostNowUs();
+  const float dt =
+      m_lastPlaceUs && now > m_lastPlaceUs ? static_cast<float>(now - m_lastPlaceUs) / 1e6f : 0.f;
+  m_lastPlaceUs = now;
+  const auto placement = movement::PlacementOf(view.flags);
+  const auto step =
+      m_placer.Update({current.X, current.Y, current.Z}, view.position, placement, dt);
+  position = {step.delta.x, step.delta.y, step.delta.z, 0.f};
   const auto turn = sync::FromYaw(Wrap(view.yaw - currentYaw));
   rotation = {turn.i, turn.j, turn.k, turn.r};
 
   m_speed = view.speed;
   m_stance = view.stance;
+  m_placement = placement;
+  if (const auto bit = 1u << static_cast<unsigned>(placement);
+      step.changed && !(m_placementsSeen & bit)) {
+    m_placementsSeen |= bit;
+    log::Info("puppet {}: first {} placement{}", player, movement::NameOf(placement),
+              movement::FollowsFreely(placement) ? " (follows the stream freely)" : "");
+  }
+  // (NPC proxies send no movement: they stay on the ground and their
+  // scripts place them.)
+  if (step.snap && player < kNpcPuppetBase) {
+    Runtime::Get().RequestSnap(player);
+    if (m_placer.Snaps() <= 10 || m_placer.Snaps() % 10 == 0)
+      log::Info("puppet {}: body {:.2f} m from target ({}, {:+.2f} m up): teleport #{}", player,
+                std::hypot(view.position.x - current.X, view.position.y - current.Y,
+                           view.position.z - current.Z),
+                movement::NameOf(placement), view.position.z - current.Z, m_placer.Snaps());
+  }
 
   if (!std::exchange(m_loggedDelta, true))
     log::Info("puppet {}: moving, body ({:.1f}, {:.1f}, {:.1f}) -> ({:.1f}, {:.1f}, {:.1f})",
@@ -111,14 +149,14 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
 
   // Health line every ~5 s: is the body where the network says?
   ++m_frames;
-  const auto now = Runtime::Get().HostNowUs();
   if (now - m_lastHealthUs >= 5'000'000) {
     const float gap = std::hypot(view.position.x - current.X, view.position.y - current.Y,
                                  view.position.z - current.Z);
     log::Info("puppet {}: {} frames, body ({:.1f}, {:.1f}, {:.1f}) {:.2f} m from target, "
-              "speed {:.1f} m/s, gait {}{}",
+              "speed {:.1f} m/s, gait {}, {}, {} teleports{}",
               player, m_frames, current.X, current.Y, current.Z, gap, view.speed,
-              static_cast<int>(m_gait.style), view.extrapolated ? ", extrapolating" : "");
+              static_cast<int>(m_gait.style), movement::NameOf(placement), m_placer.Snaps(),
+              view.extrapolated ? ", extrapolating" : "");
     m_lastHealthUs = now;
     m_frames = 0;
   }
@@ -183,6 +221,9 @@ void PuppetController::Attach(RED4ext::move::Component &aComponent) {
   if (!m_sendsUntilClips)
     LoadClips();
   m_gait = {};
+  m_placer = movement::Placer{};
+  m_placement = movement::Placement::Ground;
+  m_lastPlaceUs = 0;
   log::Info("puppet {}: controller attached", player);
 }
 

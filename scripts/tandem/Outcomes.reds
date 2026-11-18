@@ -293,6 +293,8 @@ public class TandemOutcomes {
     ArrayPush(this.m_hits, hit);
     ArrayPush(this.m_strikes, strike);
     GameInstance.GetDamageSystem(this.m_game).QueueHitEvent(hit, body);
+    // A hostile NPC turns on whoever hit it (Reactions.reds).
+    TandemReactions.OnGuestHit(body, strike.instigator);
   }
 
   // The guest's hit as one of its puppet's on our NPC: its attack, weapon

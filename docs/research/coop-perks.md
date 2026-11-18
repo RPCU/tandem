@@ -223,7 +223,7 @@ Status (2026-11-18, untested in game): `NpcStrike` carries health, poise,
 non-lethal, leave-1-HP, killing blow, the minimum health and the hit shape;
 the host plays the real reaction and dismemberment from a hit of the
 guest's puppet, poise comes back as `NpcPoise`, wounds as `NpcWound`,
-knock-outs as `NpcGone` reason 2 (ARCHITECTURE "A hit carries its whole
+knock-outs as `NpcGone` reason 3 (ARCHITECTURE "A hit carries its whole
 outcome"). The reaction is the host's own (its rules, from the attack and
 shape), not the one the guest's game picked for the proxy.
 
@@ -643,6 +643,11 @@ section adds what makes each one a co-op problem.
   branch does. The puppet shows resurrecting or downed. A revive by a
   partner is a request to the owner (authority table). **Needs a rule**
   (with `coop-npcs-combat.md` §6.4).
+- Status (2026-11-18, `scripts/tandem/Revive.reds`, untested in game):
+  the rules are decided (ARCHITECTURE "Down and out"); Second Heart is
+  checked first by vanilla's own conditions and revives at 20 % in a
+  session; co-op down starts only when it does not apply
+  (engine-knowledge §13.20).
 - **Engine leftovers worth reusing:** `PlayerPuppet.OnIncapacitated`
   (`45050-45058`) enables a `Revive` interaction and sets the sense type
   `Deadbody`; `RefreshCPOVisionAppearance` (`45061-45082`) shows another
