@@ -49,6 +49,12 @@ public class TandemNpcs {
   // Our player id in the session, and the game time (Tick).
   private let m_you: Uint32;
   private let m_now: Float;
+  // Host: how far each NPC is in noticing each guest, gathered by Share and
+  // sent every other round (5 Hz; Stealth.reds shows it on the guest).
+  private let m_awareNpcs: array<Uint32>;
+  private let m_awarePlayers: array<Uint32>;
+  private let m_awareLevels: array<Float>;
+  private let m_rounds: Int32;
 
   public static func Range() -> Float {
     return 60.0;
@@ -146,6 +152,9 @@ public class TandemNpcs {
     let orientations: array<Quaternion>;
     let detected: array<Int32>;
     let watched = this.Watched(player);
+    ArrayClear(this.m_awareNpcs);
+    ArrayClear(this.m_awarePlayers);
+    ArrayClear(this.m_awareLevels);
     for npc in player.GetNPCsAroundObject(TandemNpcs.Range()) {
       let id = npc.GetEntityID();
       // The remote players' puppets are not the host's world (cars are not
@@ -165,7 +174,9 @@ public class TandemNpcs {
         ArrayPush(ids, known.npc);
         ArrayPush(positions, npc.GetWorldPosition());
         ArrayPush(orientations, npc.GetWorldOrientation());
-        ArrayPush(detected, this.Detected(npc, watched));
+        let mask = this.Detected(npc, watched);
+        ArrayPush(detected, mask);
+        this.Notice(known.npc, npc, watched, mask);
         let health = pools.GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Health, true) / 100.0;
         if AbsF(health - known.health) >= 0.01 {
           known.health = health;
@@ -196,6 +207,34 @@ public class TandemNpcs {
     }
     this.m_known = kept;
     TandemNative.SendNpcStates(ids, positions, orientations, detected);
+    this.m_rounds += 1;
+    if this.m_rounds % 2 == 0 {
+      TandemNative.SendNpcAwareness(this.m_awareNpcs, this.m_awarePlayers, this.m_awareLevels);
+    }
+  }
+
+  // How far this NPC is in noticing each guest's V (its detection meter,
+  // 0..1; full once it has detected them), for that guest's stealth meter.
+  // Our own V's is our game's own business.
+  private func Notice(id: Uint32, npc: ref<ScriptedPuppet>, watched: array<ref<GameObject>>, mask: Int32) -> Void {
+    let senses = npc.GetSensesComponent();
+    if !IsDefined(senses) {
+      return;
+    }
+    let p = 1u;
+    let bit = 1;
+    for v in watched {
+      if IsDefined(v) && p != this.m_you {
+        let level = (mask & bit) != 0 ? 1.0 : ClampF(senses.GetDetection(v.GetEntityID()) / 100.0, 0.0, 1.0);
+        if level >= 0.01 {
+          ArrayPush(this.m_awareNpcs, id);
+          ArrayPush(this.m_awarePlayers, p);
+          ArrayPush(this.m_awareLevels, level);
+        }
+      }
+      p += 1u;
+      bit *= 2;
+    }
   }
 
   private func IsPuppet(id: EntityID) -> Bool {
@@ -217,13 +256,16 @@ public class TandemNpcs {
 
   // Which Vs this NPC has detected (bit player - 1): each player is seen,
   // or not, on their own (ARCHITECTURE, each player is detected on their
-  // own). Full detection meter, or a hostile threat it tracks.
+  // own). Full detection meter, or in combat with them as a hostile threat
+  // (NPCPuppet.IsInCombatWithTarget: what keeps a V in combat once the NPC
+  // has lost sight of them and searches). A guest enters and leaves combat
+  // on this (Stealth.reds).
   private func Detected(npc: ref<ScriptedPuppet>, watched: array<ref<GameObject>>) -> Int32 {
     let mask = 0;
     let senses = npc.GetSensesComponent();
     let bit = 1;
     for v in watched {
-      if IsDefined(v) && IsDefined(senses) && senses.GetDetection(v.GetEntityID()) >= 100.0 {
+      if IsDefined(v) && ((IsDefined(senses) && senses.GetDetection(v.GetEntityID()) >= 100.0) || NPCPuppet.IsInCombatWithTarget(npc, v)) {
         mask += bit;
       }
       bit *= 2;
@@ -496,6 +538,11 @@ public class TandemNpcs {
       }
     }
     this.m_proxies = kept;
+  }
+
+  // Guest: the host's NPCs as shown here (Stealth.reds: their detection of us).
+  public func Proxies() -> array<ref<TandemNpcProxy>> {
+    return this.m_proxies;
   }
 
   public func Count() -> Int32 {

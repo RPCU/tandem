@@ -81,6 +81,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_pause: ref<TandemPause>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
+  // Stealth, detection and combat per player, camo, noises (Stealth.reds).
+  private let m_stealth: ref<TandemStealth>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
   private let m_testNpcs: array<EntityID>;
   private let m_testHostile: array<EntityID>;
@@ -147,6 +149,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_pause.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
+    this.m_stealth = new TandemStealth();
+    this.m_stealth.Start(this.GetGameInstance());
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -168,6 +172,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_npcs.Stop();
     }
     this.m_npcs = null;
+    if IsDefined(this.m_stealth) {
+      this.m_stealth.End();
+    }
+    this.m_stealth = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -197,6 +205,10 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_pause;
   }
 
+  public func Stealth() -> ref<TandemStealth> {
+    return this.m_stealth;
+  }
+
   public func Tick() -> Void {
     if !this.m_inGame {
       return;
@@ -223,6 +235,9 @@ public class TandemSystem extends ScriptableSystem {
     // guest between sessions has its own world back.
     if IsDefined(this.m_npcs) && this.m_playing && this.m_you != 0u {
       this.m_npcs.Tick(this.Now(), this.m_you);
+    }
+    if IsDefined(this.m_stealth) && this.m_playing && this.m_you != 0u {
+      this.m_stealth.Tick(this.Now(), this.m_you, this.m_npcs);
     }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
@@ -814,6 +829,9 @@ public class TandemSystem extends ScriptableSystem {
           this.RemoveAllPuppets();
           if IsDefined(this.m_npcs) {
             this.m_npcs.End();
+          }
+          if IsDefined(this.m_stealth) {
+            this.m_stealth.End();
           }
           break;
         default:

@@ -19,6 +19,8 @@
 
 #include <windows.h>
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 
@@ -66,6 +68,15 @@ struct TandemNpcEvent {
   float dx{}, dy{}, dz{}; // 3 hit: its direction (x, y, z: where it landed)
 };
 static_assert(alignof(TandemNpcEvent) <= 8, "the script VM aligns struct locals to 8");
+
+// Host: a guest's V made a noise (proto::Noise), for our NPCs to hear.
+struct TandemNoise {
+  std::uint32_t player{};
+  std::int32_t stim{}; // gamedataStimType
+  float radius{};      // 0: the stimulus's own
+  bool propagation{};
+};
+static_assert(alignof(TandemNoise) <= 8, "the script VM aligns struct locals to 8");
 
 Red::Quaternion ToQuaternion(const proto::Quat &q) { return {q.i, q.j, q.k, q.r}; }
 float YawOfQuaternion(const Red::Quaternion &q) { return sync::YawOf({q.i, q.j, q.k, q.r}); }
@@ -498,6 +509,65 @@ struct TandemNative : Red::IScriptable {
   }
   // Guest: which players the host's NPC has detected (bit player - 1).
   static std::int32_t NpcDetected(std::uint32_t npc) { return Runtime::Get().NpcDetected(npc); }
+  // Guest: how many of the host's NPCs have detected our V (0: none, or the
+  // host's states stopped coming).
+  static std::int32_t NpcsDetectingUs() { return Runtime::Get().NpcsDetectingUs(); }
+  // Guest: how far the host's NPC is in noticing our V, 0..1.
+  static float NpcAwareness(std::uint32_t npc) { return Runtime::Get().NpcAwarenessOfUs(npc); }
+  // Host: how far each of its NPCs is in noticing each guest (levels 0..1).
+  static void SendNpcAwareness(Red::DynArray<std::uint32_t> npcs,
+                               Red::DynArray<std::uint32_t> players, Red::DynArray<float> levels) {
+    proto::NpcAwareness awareness;
+    for (std::uint32_t i = 0; i < npcs.Size() && i < players.Size() && i < levels.Size() &&
+                              awareness.entries.size() < proto::kMaxNpcAwareness;
+         ++i) {
+      const auto level = std::clamp(levels[i], 0.f, 1.f);
+      awareness.entries.push_back({.npc = npcs[i],
+                                   .player = players[i],
+                                   .level = static_cast<std::uint8_t>(std::lround(level * 255.f))});
+    }
+    Runtime::Get().SubmitNpcAwareness(std::move(awareness));
+  }
+
+  // How hard our V is to see (proto::kStealth* flags, its Visibility stat,
+  // the camo status effect on it), when it changes.
+  static void SendStealth(std::int32_t flags, float visibility, Red::TweakDBID camo) {
+    Runtime::Get().SubmitLocalStealth(
+        {.flags = static_cast<std::uint8_t>(flags), .visibility = visibility, .camo = camo.value});
+  }
+  static std::int32_t RemoteStealthChanges(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    Runtime::Get().RemoteStealth(player, changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  static std::int32_t RemoteStealthFlags(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto stealth = Runtime::Get().RemoteStealth(player, changes);
+    return stealth ? stealth->flags : 0;
+  }
+  static float RemoteStealthVisibility(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto stealth = Runtime::Get().RemoteStealth(player, changes);
+    return stealth ? stealth->visibility : 1.f;
+  }
+  static Red::TweakDBID RemoteStealthCamo(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto stealth = Runtime::Get().RemoteStealth(player, changes);
+    return stealth ? Red::TweakDBID(stealth->camo) : Red::TweakDBID();
+  }
+
+  // Guest: a stimulus our V gave out, for the host's NPCs.
+  static void SendNoise(std::int32_t stim, float radius, bool propagation) {
+    Runtime::Get().SubmitLocalNoise(
+        {.stim = static_cast<std::uint8_t>(stim), .radius = radius, .propagation = propagation});
+  }
+  // Host: the guests' noises since the last call.
+  static Red::DynArray<TandemNoise> TakeNoises() {
+    Red::DynArray<TandemNoise> out;
+    for (const auto &noise : Runtime::Get().TakeRemoteNoises())
+      out.EmplaceBack(TandemNoise{noise.player, noise.stim, noise.radius, noise.propagation});
+    return out;
+  }
 
   static void SendNpcGone(std::uint32_t npc, std::int32_t reason, std::uint32_t killer) {
     Runtime::Get().SubmitNpcGone(
@@ -557,6 +627,13 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcEvent, "TandemNpcEvent", {
   RTTI_PROPERTY(dz);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemNoise, "TandemNoise", {
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(stim);
+  RTTI_PROPERTY(radius);
+  RTTI_PROPERTY(propagation);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
   RTTI_PROPERTY(player);
   RTTI_PROPERTY(left);
@@ -602,6 +679,16 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendNpcHit);
   RTTI_METHOD(SendNpcEffect);
   RTTI_METHOD(NpcDetected);
+  RTTI_METHOD(NpcsDetectingUs);
+  RTTI_METHOD(NpcAwareness);
+  RTTI_METHOD(SendNpcAwareness);
+  RTTI_METHOD(SendStealth);
+  RTTI_METHOD(RemoteStealthChanges);
+  RTTI_METHOD(RemoteStealthFlags);
+  RTTI_METHOD(RemoteStealthVisibility);
+  RTTI_METHOD(RemoteStealthCamo);
+  RTTI_METHOD(SendNoise);
+  RTTI_METHOD(TakeNoises);
   RTTI_METHOD(TakeNpcEvents);
   RTTI_METHOD(NpcPuppetId);
   RTTI_METHOD(IsHost);

@@ -19,6 +19,7 @@ struct NetThread::Impl {
   std::optional<proto::Appearance> lastAppearance;
   std::optional<proto::Held> lastHeld;
   std::optional<proto::Seat> lastSeat;
+  std::optional<proto::Stealth> lastStealth;
   bool lastPaused{};
 
   // The other players in their pause menu, for the game thread.
@@ -64,6 +65,8 @@ struct NetThread::Impl {
       endpoint->SetLocalHeld(*lastHeld);
     if (lastSeat)
       endpoint->SetLocalSeat(*lastSeat);
+    if (lastStealth)
+      endpoint->SetLocalStealth(*lastStealth);
     if (lastPaused)
       endpoint->SetLocalPaused(true);
     if (config.role == Config::Role::Host)
@@ -152,7 +155,15 @@ struct NetThread::Impl {
                                       .flags = e.hit.flags,
                                       .direction = e.hit.direction});
               } else if constexpr (std::is_same_v<E, events::HostNpcStates>) {
-                runtime.PushNpcStates(e.states);
+                runtime.PushNpcStates(e.states, endpoint->You());
+              } else if constexpr (std::is_same_v<E, events::HostNpcAwareness>) {
+                runtime.PushNpcAwareness(e.awareness, endpoint->You());
+              } else if constexpr (std::is_same_v<E, events::RemoteStealth>) {
+                log::Info("player {}: stealth flags {:#x}, visibility {:.2f}, camo {:#x}",
+                          e.stealth.player, e.stealth.flags, e.stealth.visibility, e.stealth.camo);
+                runtime.PushRemoteStealth(e.stealth);
+              } else if constexpr (std::is_same_v<E, events::NoiseBy>) {
+                runtime.PushRemoteNoise(e.noise);
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
                 log::Info("player {}: look of {} keys and {} items (revision {})",
                           e.appearance.player, e.appearance.look.size(), e.appearance.items.size(),
@@ -220,6 +231,14 @@ struct NetThread::Impl {
       }
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
+      if (auto awareness = runtime.TakeNpcAwareness())
+        endpoint->SendNpcAwareness(std::move(*awareness));
+      if (auto stealth = runtime.TakeLocalStealth()) {
+        lastStealth = *stealth;
+        endpoint->SetLocalStealth(*stealth);
+      }
+      for (const auto &noise : runtime.TakeLocalNoises())
+        endpoint->SendNoise(noise);
 
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {
         nextReport = now + 10s;

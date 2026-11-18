@@ -46,6 +46,16 @@ public native struct TandemNpcEvent {
   native let dz: Float;
 }
 
+// Host: a guest's V made a noise, for our NPCs to hear (Stealth.reds).
+public native struct TandemNoise {
+  native let player: Uint32;
+  // gamedataStimType
+  native let stim: Int32;
+  // 0: the stimulus's own radius
+  native let radius: Float;
+  native let propagation: Bool;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -85,6 +95,16 @@ public native class TandemNative extends IScriptable {
   public static native func SendNpcHit(npc: Uint32, damage: Float, flags: Int32, position: Vector4, direction: Vector4)
   public static native func SendNpcEffect(npc: Uint32, effects: array<TweakDBID>)
   public static native func NpcDetected(npc: Uint32) -> Int32
+  public static native func NpcsDetectingUs() -> Int32
+  public static native func NpcAwareness(npc: Uint32) -> Float
+  public static native func SendNpcAwareness(npcs: array<Uint32>, players: array<Uint32>, levels: array<Float>)
+  public static native func SendStealth(flags: Int32, visibility: Float, camo: TweakDBID)
+  public static native func RemoteStealthChanges(player: Uint32) -> Int32
+  public static native func RemoteStealthFlags(player: Uint32) -> Int32
+  public static native func RemoteStealthVisibility(player: Uint32) -> Float
+  public static native func RemoteStealthCamo(player: Uint32) -> TweakDBID
+  public static native func SendNoise(stim: Int32, radius: Float, propagation: Bool)
+  public static native func TakeNoises() -> array<TandemNoise>
   public static native func TakeNpcEvents() -> array<TandemNpcEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32
   public static native func IsHost() -> Bool

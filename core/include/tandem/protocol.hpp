@@ -307,9 +307,61 @@ struct Pause {
   friend bool operator==(const Pause &, const Pause &) = default;
 };
 
-using Message = std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye,
-                             PoseState, Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn,
-                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause>;
+// How far the host's NPCs are in noticing each guest: the level of the
+// game's detection meter (SenseComponent.GetDetection, 0..100) as 0..255,
+// for the guest's stealth meter. Sent by the host only (State channel,
+// ~5 Hz, empty when nobody is being noticed). Only pairs above 0 are
+// listed, never the host's own V. Who has fully detected whom (and so puts
+// that player in combat) is NpcEntry::detected.
+struct NpcAwarenessEntry {
+  NpcId npc{};
+  PlayerId player{};
+  std::uint8_t level{}; // 255: detection 100 %
+  friend bool operator==(const NpcAwarenessEntry &, const NpcAwarenessEntry &) = default;
+};
+inline constexpr std::size_t kMaxNpcAwareness = 96;
+
+struct NpcAwareness {
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  std::vector<NpcAwarenessEntry> entries;
+  friend bool operator==(const NpcAwareness &, const NpcAwareness &) = default;
+};
+
+// How hard a V is to see, sent by that player's game when it changes (Event
+// channel; the host stamps the player, keeps the latest for late joiners
+// and relays it). The host puts it on the player's puppet, where its NPCs'
+// senses look: camouflaged, the puppet's visible object is off; its
+// detection multiplier is the V's Visibility stat; crouched, it is seen at
+// crouch height. Every game shows the camo effect on the puppet.
+inline constexpr std::uint8_t kStealthCamo = 1;         // optical camo on
+inline constexpr std::uint8_t kStealthCamoBlocking = 2; // fully blocking (relic: NPCs drop the V)
+inline constexpr std::uint8_t kStealthCrouch = 4;       // crouched or sneaking
+struct Stealth {
+  PlayerId player{};
+  std::uint32_t revision{};
+  std::uint8_t flags{};  // kStealth*
+  float visibility{1.f}; // the V's Visibility stat: NPCs' detection multiplier
+  std::uint64_t camo{};  // TweakDB id of the camo status effect on the V (0: none, unknown)
+  friend bool operator==(const Stealth &, const Stealth &) = default;
+};
+
+// A stimulus a guest's V gave out (a gunshot, a silenced shot, a ground
+// slam, a distraction): the host's NPCs hear it from the guest's puppet,
+// which the host broadcasts it from. Guest to host only, never relayed
+// (State channel: a late one is worth nothing).
+struct Noise {
+  PlayerId player{};   // set by the host from the connection
+  std::uint8_t stim{}; // gamedataStimType
+  float radius{};      // metres (0: the stimulus's own)
+  bool propagation{};  // StimBroadcasterComponent's propagationChange
+  friend bool operator==(const Noise &, const Noise &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, NpcAwareness, Stealth, Noise>;
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);
