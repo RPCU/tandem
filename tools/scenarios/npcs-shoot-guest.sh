@@ -1,0 +1,18 @@
+# As a guest of a replayed host whose NPC fires at it every 3 s: our game fires the shot from the NPC's proxy and decides the hit
+# shellcheck shell=bash disable=SC2317
+ensure join
+peer host --mode idle --body female --replay recordings/npcs.rec --shoot-you 3
+expect 'in the session as player' 30
+expect 'npcs: guest, own crowd off' 20
+expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
+expect_peer 'npc [0-9]+ fires at player [0-9]+' 15
+# The proxy is handed the NPC's weapon, then fires it at our V.
+expect 'shots: npc [0-9]+.s shot at us fired from its proxy' 10
+reject 'shots: npc [0-9]+.s shot at us lost'
+# Our game decides: a hit (reported to the host) or a miss by the target's
+# own rules. Over a few shots at least one lands on a V standing still.
+expect 'shots: npc [0-9]+.s shot hit our V \(our game.s decision\), reported to the host' 20
+expect_peer 'player [0-9]+ reports npc [0-9]+.s shot hit their V' 5
+pkill -x tandem-peer
+expect 'session ended' 60
+reject 'watchdog: game thread silent'

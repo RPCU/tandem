@@ -70,6 +70,21 @@ TEST_CASE("every message survives encoding") {
   RoundTrips(Pause{.player = 3, .paused = true});
   RoundTrips(Pause{.player = 2, .paused = false});
   RoundTrips(TimeEffect{.player = 2, .abilities = kTimeSandevistan, .scale = 0.25f});
+  RoundTrips(NpcShot{.player = 2,
+                     .npc = 7,
+                     .timeUs = 123'456'789'012ULL,
+                     .attack = 0x1122334455ULL,
+                     .weapon = 0x0abcdef012ULL,
+                     .tbh = 0.8f,
+                     .trigger = 2,
+                     .factor = 0.25f});
+  RoundTrips(ShotHit{.player = 2, .npc = 7, .position = {1, 2, 3}, .direction = {0, -1, 0}});
+  CHECK(std::string(NameOf(NpcShot{})) == "NpcShot");
+  CHECK(std::string(NameOf(ShotHit{})) == "ShotHit");
+  // Shots change state (a hit, a dodge): never dropped, never doubled.
+  CHECK(ChannelOf(NpcShot{}) == Channel::Event);
+  CHECK(IsReliable(ShotHit{}));
+  CHECK(Encode(NpcShot{}).size() < 64);
   RoundTrips(TimeEffect{.player = 3, .abilities = kTimeScanning | kTimeSlowMo, .scale = 1.f});
   CHECK(std::string(NameOf(TimeEffect{})) == "TimeEffect");
   RoundTrips(NpcHack{

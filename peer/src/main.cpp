@@ -105,8 +105,10 @@ struct Options {
   int driveSeconds{0}; // drive: get out after this long (0: never)
   // drive: the car's radio (ERadioStationList index, -1 off); unset: none sent
   std::optional<int> radioStation;
-  int hitNpcsSeconds{0}; // join: hit one of the host's NPCs this often (0: never)
-  int hitYouSeconds{0};  // host: one of its NPCs hits each guest's V this often (0: never)
+  int hitNpcsSeconds{0};  // join: hit one of the host's NPCs this often (0: never)
+  int hitYouSeconds{0};   // host: one of its NPCs hits each guest's V this often (0: never)
+  int shootYouSeconds{0}; // host: one of its NPCs fires at each guest's V this often
+  std::string shotWeapon{"Items.Preset_Lexington_Default"}; // --shoot-you: its weapon
   // host: the world the game follows (time of day, weather name); unset: none sent
   std::optional<int> timeOfDayMinutes;
   std::string weather;
@@ -213,6 +215,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     radio_station_09_downtempo...; off): sent when seated and\n"
          "                     again when a passenger gets in\n"
          "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
+         "  --shoot-you N      host: an NPC (a replayed one) fires at each guest's V every N\n"
+         "                     seconds: the guest's game fires it and decides the hit\n"
+         "  --shot-weapon REC  --shoot-you: the NPC's weapon (default\n"
+         "                     Items.Preset_Lexington_Default)\n"
          "  --hit-you N        host: an NPC (a replayed one if any) hits each guest's V for\n"
          "                     10 physical every N seconds\n"
          "  --time HH:MM       host: the time of day the game must follow\n"
@@ -353,6 +359,10 @@ Options Parse(int argc, char **argv) {
       options.holdNpcsSeconds = Number<int>(value);
     else if (flag == "--hit-you")
       options.hitYouSeconds = Number<int>(value);
+    else if (flag == "--shoot-you")
+      options.shootYouSeconds = Number<int>(value);
+    else if (flag == "--shot-weapon")
+      options.shotWeapon = std::string(value);
     else if (flag == "--npc")
       options.npcRecord = std::string(value);
     else if (flag == "--detect-at")
@@ -1034,6 +1044,8 @@ int main(int argc, char **argv) {
   auto nextCarry = nextGrab;
   auto nextHold = nextGrab;
   auto nextHitYou = std::chrono::steady_clock::now() + std::chrono::seconds(options.hitYouSeconds);
+  auto nextShootYou =
+      std::chrono::steady_clock::now() + std::chrono::seconds(options.shootYouSeconds);
   std::set<tandem::proto::NpcId> replayedNpcs; // host: the replay's live NPCs
   // Quickhacks: our upload's effect to land, the host's uploads to finish,
   // the NPCs a replay spawned, who drives a car.
@@ -1246,6 +1258,11 @@ int main(int argc, char **argv) {
                   static_cast<int>(e.hold.how));
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcCue>) {
               Log("npc {}: cue {} for us", e.cue.npc, static_cast<int>(e.cue.cue));
+            } else if constexpr (std::is_same_v<E, tandem::events::NpcShotAt>) {
+              Log("npc {} fires at us (weapon {:#x}, speed {:.2f})", e.shot.npc, e.shot.weapon,
+                  e.shot.factor);
+            } else if constexpr (std::is_same_v<E, tandem::events::ShotHitBy>) {
+              Log("player {} reports npc {}'s shot hit their V", e.hit.player, e.hit.npc);
             } else if constexpr (std::is_same_v<E, tandem::events::HitByNpc>) {
               Log("hit by npc {}: {:.1f} physical, {:.1f} thermal, {:.1f} electric, {:.1f} "
                   "chemical (type {}, flags {}, attack {:#x})",
@@ -1651,6 +1668,26 @@ int main(int argc, char **argv) {
                                                               .attackType = 10,
                                                               .direction = {0.f, 1.f, 0.f}}))
           Log("npc {} hit player {} for 10 physical", shooter, id);
+    }
+    // --shoot-you: one of our (replayed) NPCs fires at each guest; the
+    // guest's game fires the shot from its proxy and decides the hit.
+    if (options.shootYouSeconds && options.host && now >= nextShootYou) {
+      nextShootYou = now + std::chrono::seconds(options.shootYouSeconds);
+      tandem::proto::NpcId shooter = 0;
+      for (const auto npc : replayedNpcs)
+        if (!deadNpcs.contains(npc)) {
+          shooter = npc;
+          break;
+        }
+      for (const auto &[id, info] : endpoint->Players())
+        if (shooter && id != endpoint->You() &&
+            endpoint->SendNpcShot({.player = id,
+                                   .npc = shooter,
+                                   .weapon = TweakDBID(options.shotWeapon),
+                                   .tbh = 1.f,
+                                   .trigger = 4, // SemiAuto
+                                   .factor = 1.f}))
+          Log("npc {} fires at player {}", shooter, id);
     }
     // Seconds since another player was first in the session with us.
     if (!sharedSince && endpoint->IsJoined() && endpoint->Players().size() > 1)

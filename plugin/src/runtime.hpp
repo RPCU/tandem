@@ -218,6 +218,15 @@ public:
   void SubmitPlayerHit(const proto::PlayerHit &hit);
   void PushPlayerHit(const proto::PlayerHit &hit);
   std::vector<proto::PlayerHit> TakePlayerHits();
+  // NPC shots at a guest's V: the host's go out on the NPC outbox; a guest
+  // takes the ones at it (net -> game), and its hit reports go out on the
+  // outbox too; the host takes the reports (net -> game).
+  void SubmitNpcShot(const proto::NpcShot &shot);
+  void PushNpcShot(const proto::NpcShot &shot);
+  std::vector<proto::NpcShot> TakeNpcShots();
+  void SubmitShotHit(const proto::ShotHit &hit);
+  void PushShotHit(const proto::ShotHit &hit);
+  std::vector<proto::ShotHit> TakeShotHits();
   // Guest: which players the host's NPC has detected (bit player - 1).
   std::uint8_t NpcDetected(proto::NpcId npc);
   void SubmitNpcStates(const proto::NpcStates &states);
@@ -332,6 +341,8 @@ private:
   std::vector<proto::Message> m_npcOutbox;                                           // m_lock
   std::optional<proto::NpcStates> m_npcStates;                                       // m_lock
   std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
+  std::vector<proto::NpcShot> m_npcShots;                                            // m_lock
+  std::vector<proto::ShotHit> m_shotHits;                                            // m_lock
   std::vector<proto::PlayerHit> m_playerHits;                                        // m_lock
   std::vector<proto::Message> m_hackOutbox;                                          // m_lock
   std::vector<HackEvent> m_hackEvents;                                               // m_lock

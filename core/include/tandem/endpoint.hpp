@@ -138,6 +138,14 @@ struct HostNpcHold {
 struct HostNpcCue {
   proto::NpcCue cue;
 };
+// The host's NPC fires at our V: our game simulates the shot (guests only).
+struct NpcShotAt {
+  proto::NpcShot shot;
+};
+// A guest's game says a shot it simulated hit its V (host only).
+struct ShotHitBy {
+  proto::ShotHit hit;
+};
 // The host's world changed (guests only).
 struct HostWorld {
   proto::World world;
@@ -199,16 +207,18 @@ struct JoinTarget {
   std::optional<net::RelayOptions> relay;
 };
 
-using SessionEvent = std::variant<
-    events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
-    events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
-    events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
-    events::HostNpcStates, events::HostNpcGone, events::HostNpcHealth, events::NpcHitBy,
-    events::NpcEffectBy, events::PauseChanged, events::Ended, events::PlayerReturned,
-    events::RemoteVehicleRadio, events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness,
-    events::NoiseBy, events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-    events::HostPlayerHack, events::VehicleHackOn, events::Story, events::RemoteTimeEffect,
-    events::NpcActionBy, events::NpcActionAnswered, events::HostNpcHold, events::HostNpcCue>;
+using SessionEvent =
+    std::variant<events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
+                 events::RemotePose, events::RemoteAppearance, events::RemoteHeld,
+                 events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
+                 events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
+                 events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
+                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
+                 events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
+                 events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
+                 events::HostPlayerHack, events::VehicleHackOn, events::Story,
+                 events::RemoteTimeEffect, events::NpcActionBy, events::NpcActionAnswered,
+                 events::HostNpcHold, events::HostNpcCue, events::NpcShotAt, events::ShotHitBy>;
 
 class Endpoint {
 public:
@@ -274,6 +284,11 @@ public:
   void SendNpcHold(const proto::NpcHold &hold);
   // Host only: an NPC's reaction for one player's game (cue.player).
   void SendNpcCue(const proto::NpcCue &cue);
+  // Host only: one of its NPCs fires at a guest's V (to that guest only;
+  // `timeUs` is filled with the host clock). False: not a guest here.
+  bool SendNpcShot(proto::NpcShot shot);
+  // Guest only: a shot our game simulated hit our V.
+  void SendShotHit(const proto::ShotHit &hit);
   // The NPCs held now, as this game knows them (host: the session's record).
   const std::map<proto::NpcId, proto::NpcHold> &NpcHolds() const { return m_npcHolds; }
   // Our pause menu is open (paused) or closed. Kept: sent now if we are in

@@ -1030,3 +1030,47 @@ TEST_CASE("time abilities: stamped, made safe, kept for late joiners, ended when
   CHECK_FALSE(host->TimeEffects().contains(aId));
   CHECK_FALSE(late->TimeEffects().contains(aId));
 }
+
+TEST_CASE(
+    "an NPC shot reaches the guest it is at only; the guest's hit report comes back stamped") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  CHECK_FALSE(host->SendNpcShot({.player = 1, .npc = 7})); // the host's own V: its game's
+  CHECK_FALSE(host->SendNpcShot({.player = 9, .npc = 7})); // nobody
+  const auto before = host->HostNowUs();
+  REQUIRE(host->SendNpcShot({.player = a->You(), .npc = 7, .attack = 5, .factor = 0.25f}));
+  std::optional<proto::NpcShot> atA;
+  bool bHeard = false;
+  Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events) {
+      if (const auto *s = std::get_if<events::NpcShotAt>(&event); s && i == 1)
+        atA = s->shot;
+      bHeard |= i == 2 && std::holds_alternative<events::NpcShotAt>(event);
+    }
+    return atA.has_value();
+  });
+  REQUIRE(atA);
+  CHECK(atA->npc == 7);
+  CHECK(atA->factor == 0.25f);
+  CHECK(atA->timeUs >= before); // stamped on the host clock
+  CHECK_FALSE(bHeard);
+
+  a->SendShotHit({.player = 99, .npc = 7, .position = {1, 2, 3}});
+  std::optional<proto::ShotHit> atHost;
+  Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *h = std::get_if<events::ShotHitBy>(&event); h && i == 0)
+        atHost = h->hit;
+    return atHost.has_value();
+  });
+  REQUIRE(atHost);
+  CHECK(atHost->player == a->You()); // a guest only reports its own V
+  CHECK(atHost->npc == 7);
+}

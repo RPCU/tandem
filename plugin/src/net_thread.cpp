@@ -287,6 +287,10 @@ struct NetThread::Impl {
                                        .seconds = e.hack.seconds});
               } else if constexpr (std::is_same_v<E, events::HitByNpc>) {
                 runtime.PushPlayerHit(e.hit);
+              } else if constexpr (std::is_same_v<E, events::NpcShotAt>) {
+                runtime.PushNpcShot(e.shot);
+              } else if constexpr (std::is_same_v<E, events::ShotHitBy>) {
+                runtime.PushShotHit(e.hit);
               } else if constexpr (std::is_same_v<E, events::HostNpcStates>) {
                 runtime.PushNpcStates(e.states, endpoint->You());
               } else if constexpr (std::is_same_v<E, events::HostNpcAwareness>) {
@@ -404,6 +408,11 @@ struct NetThread::Impl {
         else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
                  hit && !endpoint->SendPlayerHit(*hit))
           log::Info("hit on player {} dropped: not a guest in the session", hit->player);
+        else if (const auto *shot = std::get_if<proto::NpcShot>(&message);
+                 shot && !endpoint->SendNpcShot(*shot))
+          log::Info("shot at player {} dropped: not a guest in the session", shot->player);
+        else if (const auto *report = std::get_if<proto::ShotHit>(&message))
+          endpoint->SendShotHit(*report);
       }
       for (const auto &message : runtime.TakeHackOutbox()) {
         if (const auto *hack = std::get_if<proto::NpcHack>(&message))

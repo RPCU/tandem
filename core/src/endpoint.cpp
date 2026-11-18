@@ -238,6 +238,13 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::RemoteStealth{relayed});
                    },
+                   [&](const proto::ShotHit &hit) {
+                     // For the host's game only: it shows the hit on the
+                     // puppet. A guest only reports hits on its own V.
+                     auto mine = hit;
+                     mine.player = player;
+                     out.push_back(events::ShotHitBy{mine});
+                   },
                    [&](const proto::Noise &noise) {
                      // For the host's game only: its NPCs hear it.
                      auto mine = noise;
@@ -569,6 +576,10 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               if (cue.player == m_you)
                 out.push_back(events::HostNpcCue{cue});
             },
+            [&](const proto::NpcShot &shot) {
+              if (shot.player == m_you)
+                out.push_back(events::NpcShotAt{shot});
+            },
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
@@ -833,6 +844,26 @@ void Endpoint::SendVehicleHack(proto::VehicleHack hack) {
     m_session->Send(m_hostPeer, hack);
   else if (const auto peer = PeerOf(hack.driver))
     m_session->Send(*peer, hack);
+}
+
+bool Endpoint::SendNpcShot(proto::NpcShot shot) {
+  if (!IsHost() || m_ended || shot.player == m_you)
+    return false; // shots at our own V are our game's
+  const auto peer = PeerOf(shot.player);
+  if (!peer)
+    return false;
+  if (shot.timeUs == 0)
+    shot.timeUs = HostNowUs();
+  m_session->Send(*peer, shot);
+  return true;
+}
+
+void Endpoint::SendShotHit(const proto::ShotHit &hit) {
+  if (IsHost() || !IsJoined() || m_ended)
+    return;
+  auto mine = hit;
+  mine.player = m_you;
+  m_session->Send(m_hostPeer, mine);
 }
 
 std::optional<net::PeerId> Endpoint::PeerOf(proto::PlayerId player) const {

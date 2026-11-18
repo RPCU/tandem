@@ -261,6 +261,11 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
   let npc = TandemCombat.ProxyNpc(game, hitEvent.target);
   if npc == 0u {
     wrappedMethod(hitEvent);
+    // Guest: a proxy's shot (Shots.reds) hit our V: the host shows it.
+    let shots = TandemShots.Of(game);
+    if IsDefined(shots) {
+      shots.Report(hitEvent);
+    }
     return;
   }
   // A proxy: what this hit would take, measured, not applied.
@@ -367,6 +372,12 @@ private final func InvulnerabilityCheck(hitEvent: ref<gameHitEvent>, cache: ref<
 @wrapMethod(DamageSystem)
 private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<CacheData>) {
   let game = GetGameInstance();
+  // Host: a shot at a guest's puppet that the guest's game fires and decides
+  // (Shots.reds): never a second hit from here.
+  let shots = TandemShots.Of(game);
+  if IsDefined(shots) && shots.SimulatedByGuest(hitEvent) {
+    return;
+  }
   let victim = TandemCombat.PuppetPlayer(game, hitEvent.target);
   if victim != 0u {
     TandemNative.Log(s"combat: a hit on player \(victim)'s puppet enters the pipeline (type \(EnumInt(hitEvent.attackData.GetAttackType())))");

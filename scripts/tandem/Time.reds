@@ -94,6 +94,8 @@ public class TandemTime {
   // AI's sandevistanVersusSandevistan sub-action): out of every bubble.
   private let m_counters: array<EntityID>;
   private let m_bulletLogged: Bool;
+  // NPC shots at a guest's V (Shots.reds).
+  private let m_shots: ref<TandemShots>;
   // What we set on entities, and the bubble update's clock (real time).
   private let m_applied: array<ref<TandemTimeApplied>>;
   private let m_lastBubbles: Float;
@@ -112,6 +114,8 @@ public class TandemTime {
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
+    this.m_shots = new TandemShots();
+    this.m_shots.Start(game);
     this.m_neutral = 1.0;
     this.m_sentScale = 1.0;
     this.m_fx = TandemTime.PuppetFx();
@@ -183,6 +187,7 @@ public class TandemTime {
     let exempt = together && TandemTime.Dilated(times);
     this.Apply(system, exempt);
     this.Measure(now);
+    this.m_shots.Tick();
   }
 
   // Our V's time abilities, to the others when they change.
@@ -642,6 +647,10 @@ public class TandemTime {
     if !IsDefined(bullet) || !IsDefined(shooter) {
       return;
     }
+    // A guest: a proxy's shot at our V (Shots.reds) brings its own speed.
+    if this.m_shots.SetUp(bullet, shooter) {
+      return;
+    }
     let factor = this.AppliedFactor(shooter.GetEntityID());
     if factor < 0.0 {
       return;
@@ -693,8 +702,13 @@ public class TandemTime {
 
   // ---- the session ends, the world goes ----
 
+  public func Shots() -> ref<TandemShots> {
+    return this.m_shots;
+  }
+
   public func End() -> Void {
     TandemNative.ClearTimeBubbles();
+    this.m_shots.End();
     if this.m_selfSet {
       this.FreeSelf();
       TandemNative.Log("time: our V back to its own speed (the session ended)");
@@ -845,6 +859,10 @@ public final static func SetAttackBasedOnTimeDilation(owner: wref<GameObject>, w
     return;
   }
   let factor = time.AppliedFactor(owner.GetEntityID());
+  // A guest: the speed of a shot its proxy fires at our V (Shots.reds).
+  if factor < 0.0 && IsDefined(time.Shots()) {
+    factor = time.Shots().FiredFactor(owner.GetEntityID());
+  }
   if factor < 0.0 || factor >= 0.999 || StatusEffectSystem.ObjectHasStatusEffect(owner, t"BaseStatusEffect.SuicideWithWeapon") {
     return;
   }

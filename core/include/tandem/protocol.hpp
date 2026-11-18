@@ -709,6 +709,37 @@ struct NpcCue { // Event channel
   friend bool operator==(const NpcCue &, const NpcCue &) = default;
 };
 
+// NPC shots at a guest's V (docs/ARCHITECTURE.md, authority table): the
+// host's NPC decides to fire (when, at whom, with which weapon and attack);
+// the guest's game fires the shot from its proxy of that NPC at its own V,
+// simulates the bullet or projectile and decides the hit, as single player
+// would (aim, the target's miss rules, dodging under slow motion). The host
+// sends it to that guest only and no longer decides the hit itself.
+// Event channel: a lost shot is one never fired, a doubled one two (a
+// one-shot for the consistency layer, in no digest: it is not state).
+struct NpcShot {
+  PlayerId player{};      // the V shot at
+  NpcId npc{};            // the shooter, as the host shares it
+  std::uint64_t timeUs{}; // host clock when it fired
+  std::uint64_t attack{}; // TweakDB id of the ranged attack asked for (0: the weapon's)
+  std::uint64_t weapon{}; // TweakDB id of the shooter's weapon item
+  float tbh{};            // the AI's time-between-hits coefficient for this shot
+  std::uint8_t trigger{}; // gamedataTriggerMode
+  float factor{1.f};      // the shooter's time factor (its bubble; 1: none)
+  friend bool operator==(const NpcShot &, const NpcShot &) = default;
+};
+
+// A shot the guest's game simulated hit its V (guest to host; the host
+// stamps the player). The host shows the hit on that player's puppet (the
+// game's own hit reaction, no damage: the damage was the guest's).
+struct ShotHit {     // Event channel
+  PlayerId player{}; // the V hit: set by the host from the connection
+  NpcId npc{};       // the shooter
+  Vec3 position;     // where it landed and the way it went
+  Vec3 direction;
+  friend bool operator==(const ShotHit &, const ShotHit &) = default;
+};
+
 using Message =
     std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
                  Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
@@ -716,7 +747,7 @@ using Message =
                  Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
                  Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
                  StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
-                 NpcHold, NpcCue>;
+                 NpcHold, NpcCue, NpcShot, ShotHit>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.

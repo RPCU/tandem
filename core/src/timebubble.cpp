@@ -61,6 +61,17 @@ std::vector<TimeBubbles::Change> TimeBubbles::Clear() {
   return changes;
 }
 
+TimeBubbles::CatchUp TimeBubbles::ShotCatchUp(std::uint64_t firedUs, std::uint64_t nowUs) {
+  // Over this window the projectile covers its own normal way plus the lag's.
+  constexpr float kWindow = 0.25f;
+  if (nowUs <= firedUs)
+    return {};
+  const float lag = static_cast<float>(nowUs - firedUs) / 1e6f;
+  if (lag < 0.005f || lag > 1.f)
+    return {};
+  return {.boost = 1.f + lag / kWindow, .seconds = kWindow};
+}
+
 float TimeBubbles::PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
                                 std::span<const Owner> owners, bool inside) {
   const float reach = kRadius + (inside ? kMargin : 0.f);

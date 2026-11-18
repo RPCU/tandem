@@ -170,6 +170,7 @@ The owner simulates; everyone else displays.
 | time of day, weather, police heat       | host                      | applied (wanted level: open, see below)        |
 | a V's time abilities (Sandevistan…)     | that player's game        | shown on the puppet; never slow anyone's world |
 | an NPC's speed in a time bubble         | host                      | proxies animated at the same speed             |
+| NPC shots at a V                        | the V's game              | host's NPC decides to fire; see below          |
 | loot drops                              | host                      | each player loots their own copy               |
 
 **Enemy level** (decided 2026-11-18): enemies the host spawns and runs are
@@ -1307,8 +1308,26 @@ in-game tests still owed; none of it tested in a session yet):
   - the scanner's slow motion is off while another V is in the session;
   - a slowed NPC's bullets fly at its speed (per-entity dilation on the
     projectile, and the game's own projectile attack chosen for it where
-    no dilation is active); a guest does not see those bullets yet
-    (`research/coop-perks.md` §5.1a, for review);
+    no dilation is active);
+  - **NPC shots at a guest are simulated by that guest's game**
+    (`scripts/tandem/Shots.reds`, authority row "NPC shots at a V"). The
+    reason: dodging bullets under slow motion only feels like single
+    player if the game that draws the bullet is the one that decides the
+    hit. The host's NPC still decides to fire (when, at whom, weapon,
+    attack, its time-between-hits coefficient) and sends `NpcShot` to that
+    guest only; the host still fires for its own view, but its hit on the
+    puppet is dropped. The guest's game fires the shot from its proxy of
+    the NPC at its own V (the player-side miss rules, the weapon's spread,
+    a slow projectile under a bubble or its own Sandevistan), decides the
+    hit and applies it through its own pipeline (attacker side from the
+    proxy, which has the NPC's record and weapon); a hit is reported
+    (`ShotHit`) and the host plays the hit reaction on the puppet. The
+    shot reaches the guest about RTT/2 late: its projectile runs faster
+    for 0.25 s to catch up (`TimeBubbles::ShotCatchUp`), so the guest
+    dodges against the host's timeline. Melee, explosions and NPCs the
+    guest has no proxy of stay the host's (`PlayerHit`). Cheating is out
+    of scope (co-op among friends: a guest's game could ignore hits).
+    Scenario `npcs-shoot-guest`; not yet run in game;
   - a guest's lethal hit kills the proxy at once, so kill extensions fire
     as in single player; the host's word reconciles;
   - an enemy answering with its own Sandevistan is left out of bubbles

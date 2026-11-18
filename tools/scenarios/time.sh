@@ -56,4 +56,7 @@ expect_peer 'sandevistan off' 15
 expect 'time: our V back to its own speed' 5
 cmd npc hostile clear
 cmd god off
+# The NPC's shots at the mock player are its game's to decide
+# (Shots.reds): the host never forwards a ranged hit of a shot it announced.
+reject 'hit player [0-9]+.s puppet: .*type 10, .*sent to their game'
 reject 'watchdog: game thread silent'

@@ -454,6 +454,38 @@ std::vector<proto::PlayerHit> Runtime::TakePlayerHits() {
   return std::exchange(m_playerHits, {});
 }
 
+void Runtime::SubmitNpcShot(const proto::NpcShot &shot) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(shot);
+}
+
+void Runtime::PushNpcShot(const proto::NpcShot &shot) {
+  std::lock_guard _(m_lock);
+  if (m_npcShots.size() < 128)
+    m_npcShots.push_back(shot);
+}
+
+std::vector<proto::NpcShot> Runtime::TakeNpcShots() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_npcShots, {});
+}
+
+void Runtime::SubmitShotHit(const proto::ShotHit &hit) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(hit);
+}
+
+void Runtime::PushShotHit(const proto::ShotHit &hit) {
+  std::lock_guard _(m_lock);
+  if (m_shotHits.size() < 128)
+    m_shotHits.push_back(hit);
+}
+
+std::vector<proto::ShotHit> Runtime::TakeShotHits() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_shotHits, {});
+}
+
 std::uint8_t Runtime::NpcDetected(proto::NpcId npc) {
   std::lock_guard _(m_lock);
   const auto it = m_npcDetected.find(npc);

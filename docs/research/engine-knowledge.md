@@ -2353,3 +2353,28 @@ target, effectName, effectTag, opt statusEffect)` (252966) runs
   `SenseComponent.ReevaluateDetectionOverwrite` (156337),
   `DamageSystem.IsImmune` (86146), `GorillaArmsOnePunchNPCMark` (126464),
   `DisposalDevice`'s local player (210051). [2.5-untested]
+
+### 13.18 Firing an NPC's shot from a proxy (2026-11-18, scripts only)
+
+Used by `scripts/tandem/Shots.reds` (NPC shots at a guest's V, simulated
+by the guest's game); none of it run in game yet.
+
+- `AIWeapon.Fire` (final.reds 173136-173364) is the script entry of every
+  NPC shot: it aims (the target's `Head` slot or best targeting component,
+  15 cm lower for a player), asks the target's `TargetShootComponent.
+HandleBeingShot` (173757) for the miss offset (the player-side "time
+  between hits" rules, `coefficientMultiplier` = the AI's tbh), picks the
+  attack (`SetAttackBasedOnTimeDilation`, 173366) and calls a native
+  `WeaponObject.AI_ShootAt(positionProvider, target, instigator, ammoCost:
+Uint16, params, projectilesPerShot: Uint8, charge, opt maxSpread, opt
+muzzleOffset)` (54056), then the weapon effects. Its aiming needs the
+  owner's senses (`IsAgentVisible`, 173210), which a proxy has off: the
+  guest calls `AI_ShootAt` itself, with a static position provider at
+  the aim plus the offset, `hitPlaneOffset` = the offset, ammo cost 0.
+  [2.5-untested]
+- A proxy has no weapon in hand by default; `TandemWeapons.Hold` (the
+  transaction system) puts the NPC's weapon record in `WeaponRight`; the
+  shot waits up to 0.5 s for `IsAttached()`. [2.5-untested]
+- A hit whose instigator is the proxy reaches the guest's own pipeline
+  (`DealDamages`) like any NPC hit on V. `CheckForQuickExit` drops it if
+  the proxy's attitude to V is friendly (86453). [2.5-untested]

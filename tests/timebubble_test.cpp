@@ -155,3 +155,16 @@ TEST_CASE("a V at a bubble's edge does not flicker: a margin on the way out") {
   CHECK(TimeBubbles::PlayerFactor(2, 1.f, {edge + 1.f, 0, 0}, owner, true) == 0.25f);
   CHECK(TimeBubbles::PlayerFactor(2, 1.f, {edge + margin + 1.f, 0, 0}, owner, true) == 1.f);
 }
+
+TEST_CASE("a shot that arrives late catches up with the host's timeline") {
+  // 100 ms late: 0.25 s at 1.4x covers 0.35 s of flight, the 0.25 s
+  // window plus the 0.1 s lag.
+  const auto late = TimeBubbles::ShotCatchUp(1'000'000, 1'100'000);
+  CHECK(late.boost == doctest::Approx(1.4f));
+  CHECK(late.seconds == doctest::Approx(0.25f));
+  CHECK(late.boost * late.seconds == doctest::Approx(late.seconds + 0.1f));
+  // On time, from the future (clock jitter), or stale: no boost.
+  CHECK(TimeBubbles::ShotCatchUp(1'000'000, 1'002'000) == TimeBubbles::CatchUp{});
+  CHECK(TimeBubbles::ShotCatchUp(2'000'000, 1'000'000) == TimeBubbles::CatchUp{});
+  CHECK(TimeBubbles::ShotCatchUp(1'000'000, 2'500'000) == TimeBubbles::CatchUp{});
+}

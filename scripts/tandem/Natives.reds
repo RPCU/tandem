@@ -65,6 +65,35 @@ public native struct TandemHackEvent {
 }
 
 // Guest: one of the host's NPCs hit our V (Combat.reds).
+// Guest: one of the host's NPCs fires at our V (Shots.reds): fired from
+// its proxy here, at `factor`, `boost` times faster for `boostSeconds`
+// first (it catches up with the host's timeline).
+public native struct TandemNpcShot {
+  native let npc: Uint32;
+  // the ranged attack asked for (none: the weapon's own), the NPC's weapon
+  native let attack: TweakDBID;
+  native let weapon: TweakDBID;
+  // the AI's time-between-hits coefficient, its gamedataTriggerMode
+  native let tbh: Float;
+  native let trigger: Int32;
+  native let factor: Float;
+  native let boost: Float;
+  native let boostSeconds: Float;
+}
+
+// Host: a guest's game says a shot it simulated hit its V (Shots.reds).
+public native struct TandemShotHit {
+  native let player: Uint32;
+  native let npc: Uint32;
+  // where it landed, and its direction
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let dx: Float;
+  native let dy: Float;
+  native let dz: Float;
+}
+
 public native struct TandemPlayerHit {
   // the attacker as the host shares it (0: not shared)
   native let npc: Uint32;
@@ -169,6 +198,10 @@ public native class TandemNative extends IScriptable {
   public static native func SendNpcEffect(npc: Uint32, effects: array<TweakDBID>)
   public static native func SendPlayerHit(player: Uint32, npc: Uint32, physical: Float, thermal: Float, electric: Float, chemical: Float, attackType: Int32, flags: Int32, pierce: Float, position: Vector4, direction: Vector4, attack: TweakDBID, weapon: TweakDBID)
   public static native func TakePlayerHits() -> array<TandemPlayerHit>
+  public static native func SendNpcShot(player: Uint32, npc: Uint32, attack: TweakDBID, weapon: TweakDBID, tbh: Float, trigger: Int32, factor: Float)
+  public static native func TakeNpcShots() -> array<TandemNpcShot>
+  public static native func SendShotHit(npc: Uint32, position: Vector4, direction: Vector4)
+  public static native func TakeShotHits() -> array<TandemShotHit>
   public static native func NpcDetected(npc: Uint32) -> Int32
   public static native func NpcsDetectingUs() -> Int32
   public static native func NpcAwareness(npc: Uint32) -> Float

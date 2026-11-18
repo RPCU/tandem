@@ -78,6 +78,17 @@ public:
   // the world speed its own ability asks for (1: none), `owners` every V
   // with a bubble now (itself too, ignored), `inside` whether it was slowed
   // at the last ask (the edge's margin).
+  // A shot fired on the host reaches the guest `lagUs` later (its stamp
+  // against the host clock now). The guest's projectile is run faster for a
+  // moment, so it then flies where the host's timeline has it: `factor` x
+  // `boost` for `seconds`, then `factor`. No boost for a lag under 5 ms or
+  // over 1 s (a stale shot is fired as it comes).
+  struct CatchUp {
+    float boost{1.f};
+    float seconds{};
+    friend bool operator==(const CatchUp &, const CatchUp &) = default;
+  };
+  static CatchUp ShotCatchUp(std::uint64_t firedUs, std::uint64_t nowUs);
   static float PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
                             std::span<const Owner> owners, bool inside = false);
   std::size_t MembersOf(proto::PlayerId owner) const;
