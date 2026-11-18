@@ -100,6 +100,12 @@ public native struct TandemNoise {
   native let propagation: Bool;
 }
 
+// An NPC's new speed in the time bubbles (Time.reds): 1 = normal again.
+public native struct TandemTimeChange {
+  native let npc: Uint32;
+  native let factor: Float;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -174,6 +180,16 @@ public native class TandemNative extends IScriptable {
   public static native func PausedPlayers() -> array<Uint32>
   public static native func PausedChanges() -> Int32
   public static native func PlayerName(player: Uint32) -> String
+  public static native func SendTimeEffect(abilities: Int32, scale: Float)
+  public static native func TimeChanges() -> Int32
+  public static native func TimePlayers() -> array<Uint32>
+  public static native func TimeAbilities(player: Uint32) -> Int32
+  public static native func TimeScale(player: Uint32) -> Float
+  public static native func UpdateTimeBubbles(owners: array<Uint32>, scales: array<Float>, ownerPositions: array<Vector4>, npcs: array<Uint32>, npcPositions: array<Vector4>) -> array<TandemTimeChange>
+  public static native func ClearTimeBubbles() -> array<TandemTimeChange>
+  public static native func TimeFactorOf(npc: Uint32) -> Float
+  public static native func TimeBubbleMembers(player: Uint32) -> Int32
+  public static native func IsTimeHostFull() -> Bool
   public static native func SendSeat(vehicle: TweakDBID, seat: CName, owner: Uint32)
   public static native func SendVehicle(position: Vector4, orientation: Quaternion, velocity: Vector4)
   public static native func RemoteSeatChanges(player: Uint32) -> Int32
