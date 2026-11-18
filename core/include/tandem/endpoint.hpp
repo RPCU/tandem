@@ -150,6 +150,14 @@ struct HostNpcHold {
 struct HostNpcCue {
   proto::NpcCue cue;
 };
+// The host's NPC fires at our V: our game simulates the shot (guests only).
+struct ShotAtUs {
+  proto::NpcShotAt shot;
+};
+// A guest's game says a shot it simulated hit its V (host only).
+struct ShotHitBy {
+  proto::ShotHit hit;
+};
 // The host's world changed (guests only).
 struct HostWorld {
   proto::World world;
@@ -249,6 +257,15 @@ struct Resync {
 struct EpochChanged {
   proto::Epoch epoch;
 };
+// Another player's ride (metro, a ride, a scene vehicle) started, changed
+// or ended (kind None). Never reported for our own.
+struct RemoteTransit {
+  proto::Transit transit;
+};
+// One of the host's NPCs got into, or out of, a player's vehicle (guests only).
+struct HostNpcSeat {
+  proto::NpcSeat seat;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -282,7 +299,8 @@ using SessionEvent = std::variant<
     events::RegroupOffered, events::RegroupAnswered, events::WorldItemAppeared,
     events::WorldItemTakenBy, events::SharedItemFrom, events::RemoteVitals, events::ReviveBy,
     events::SessionLost, events::HostNpcAnims, events::HostNpcShot, events::Combat, events::Resync,
-    events::EpochChanged, events::RemoteElsewhere>;
+    events::EpochChanged, events::RemoteElsewhere, events::RemoteTransit, events::HostNpcSeat,
+    events::ShotAtUs, events::ShotHitBy>;
 
 class Endpoint {
 public:
@@ -352,6 +370,11 @@ public:
   void SendNpcHold(const proto::NpcHold &hold);
   // Host only: an NPC's reaction for one player's game (cue.player).
   void SendNpcCue(const proto::NpcCue &cue);
+  // Host only: one of its NPCs fires at a guest's V (to that guest only;
+  // `timeUs` is filled with the host clock). False: not a guest here.
+  bool SendNpcShotAt(proto::NpcShotAt shot);
+  // Guest only: a shot our game simulated hit our V.
+  void SendShotHit(const proto::ShotHit &hit);
   // The NPCs held now, as this game knows them (host: the session's record).
   const std::map<proto::NpcId, proto::NpcHold> &NpcHolds() const { return m_npcHolds; }
   // Our pause menu is open (paused) or closed. Kept: sent now if we are in
@@ -386,6 +409,14 @@ public:
   void SendNpcAwareness(proto::NpcAwareness awareness);
   // Guest only: a noise our V made, for the host's NPCs.
   void SendNoise(const proto::Noise &noise);
+  // Our V's ride (kind None: none). Kept: sent now if we are in the session,
+  // else as soon as we are; the host hands everyone's to late joiners.
+  void SetLocalTransit(proto::Transit transit);
+  // Every ride this game knows of, by player (host: the session's record).
+  const std::map<proto::PlayerId, proto::Transit> &Transits() const { return m_transits; }
+  // Host only: one of our NPCs got into (owner set) or out of a player's
+  // vehicle; kept while it sits, for late joiners.
+  void SendNpcSeat(const proto::NpcSeat &seat);
   // Offer `offer.to` (kNoPlayer: everyone else) to come to us, or answer an
   // offer. `from` is filled in; nothing is kept.
   void SendRegroup(proto::Regroup offer);
@@ -557,6 +588,15 @@ private:
   std::map<proto::PlayerId, proto::Stealth> m_stealth;
   void SendLocalStealthNow();
   std::uint32_t m_awarenessSeq{};
+  // Our ride, and everyone's (host: the session's record, for late joiners;
+  // only rides that are on).
+  std::optional<proto::Transit> m_localTransit;
+  std::uint32_t m_transitRevision{};
+  std::map<proto::PlayerId, proto::Transit> m_transits;
+  void SendLocalTransitNow();
+  void NoteTransit(const proto::Transit &transit);
+  // Host: our NPCs seated in a player's vehicle.
+  std::map<proto::NpcId, proto::NpcSeat> m_npcSeats;
   // Host: the story for late joiners, and who answered the call first.
   story::Record m_story;
   story::CallArbiter m_calls;
@@ -594,6 +634,8 @@ private:
   std::map<proto::PlayerId, std::uint32_t> m_seenHost, m_guestEpoch;
   std::uint64_t m_fenced{};
   std::uint64_t m_epochAtUs{};
+  // Host: whom each NPC last shot at with an NpcShotAt, and when.
+  std::map<proto::NpcId, std::pair<proto::PlayerId, std::uint64_t>> m_shotAt;
   // Host: digests (when the next round is due, guests owed one sooner) and
   // each guest's last resync, for its cooldown.
   std::uint32_t m_digestSeq{};

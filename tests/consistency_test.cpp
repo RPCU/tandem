@@ -153,6 +153,11 @@ TEST_CASE("faults never touch the handshake and never send a one-shot twice") {
   CHECK(link.Dropped() == 1);
   CHECK(consistency::IsOneShot(proto::PlayerHit{}));
   CHECK_FALSE(consistency::IsOneShot(proto::Appearance{}));
+  // A shot at a V and its hit: doubling either would be a second shot.
+  CHECK(consistency::IsOneShot(proto::NpcShotAt{}));
+  CHECK(consistency::IsOneShot(proto::ShotHit{}));
+  link.Set({.dup = 1.0});
+  CHECK(link.Decide(proto::NpcShotAt{}) == consistency::FaultyLink::Action::Send);
 }
 
 namespace {

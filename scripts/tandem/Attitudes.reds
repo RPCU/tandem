@@ -4,22 +4,24 @@
 // hostile to its target's whole group: AttitudeAgent.SetAttitudeTowardsAgentGroup;
 // engine-knowledge §13.11).
 //
-// A group's relations are not part of its record: the attitude system holds
-// one per pair of groups (AttitudeSystem.GetAttitudeRelation /
-// SetAttitudeRelation, final.reds 174691-174704). Ours start as copies of
-// V's group's, for every group seen on an NPC around V or a puppet:
-// friendly to the friendly, neutral to the neutral, hostile to the hostile,
-// so an ally never sees a stranger. When V's relation to a group changes (a
-// quest making a faction friendly, or the police hostile) every puppet's
-// follows. A puppet's own relation that changed while V's did not (a
-// security system turned hostile to that puppet's group only, final.reds
-// 114508) is left alone. Copies are not persistent: never saved.
-//
-// On top of that, each NPC around gets V's attitudes on the puppet's agent
-// where the groups do not already give them (CopyAgents): on the first run
-// in game the group copy did not show (civilians friendly to the puppet,
-// neutral to V; engine-knowledge §13.17), and a quest can set one NPC's
-// attitude to V alone.
+// What the attitude system does (game 2.50 exe, engine-knowledge §13.17):
+// - GetAttitudeRelation(a, b) reads the group table: TweakDB's relations
+//   and the persistent overrides, symmetric. A group with no relation
+//   record reads friendly.
+// - SetAttitudeRelation(a, b, x) does not write that table: it sets x
+//   between every agent now in group a and every agent now in group b
+//   (per-agent pairs, both ways). Agents that join either group later do
+//   not get it, and GetAttitudeRelation never shows it.
+// So a puppet's group gives it nothing by itself. It gets V's attitudes
+// agent by agent:
+// - when it is put in its group: SetAttitudeRelation from it to every
+//   group seen on an NPC around V or a puppet, with V's group relation;
+// - every 2 s, each NPC around V or a puppet: the attitudes it and V have
+//   to each other, onto the puppet's agent (AttitudeAgent.SetAttitudeTowards),
+//   once per NPC and puppet, again when the NPC's attitude to V changes (a
+//   quest turning a faction friendly or the police hostile). What changed
+//   between an NPC and a puppet alone stays (that V provoked it).
+// Nothing is persistent: never saved.
 
 public class TandemNpcAttitude {
   public let npc: EntityID;
@@ -104,20 +106,22 @@ public class TandemAttitudes {
     }
   }
 
-  // Puts a puppet in a group, one of ours starting from V's relations as
-  // they are now (a group held before by a player who left starts afresh).
+  // Puts a puppet in a group, then, in one of ours, gives it V's
+  // relations towards the agents around now (SetAttitudeRelation only
+  // reaches agents already in the group: the puppet must be in it first).
   // Returns the group the puppet reads back.
   public func Put(body: ref<GameObject>, group: CName) -> CName {
     let agent = body.GetAttitudeAgent();
     if !IsDefined(agent) {
       return n"";
     }
-    if TandemAttitudes.IsOurs(group) {
-      this.Befriend(group);
-      this.CopyAll(group);
-    }
     agent.SetAttitudeGroup(group);
-    return agent.GetAttitudeGroup();
+    let now = agent.GetAttitudeGroup();
+    if TandemAttitudes.IsOurs(now) {
+      this.Befriend(now);
+      this.CopyAll(now);
+    }
+    return now;
   }
 
   // Every 2 s while there are puppets: new groups around V and the puppets,
@@ -176,16 +180,13 @@ public class TandemAttitudes {
     this.CopyAgents(now, player, around, bodies);
   }
 
-  // V's relations to a group, into one of ours, read back: the log says
-  // whether the attitude system took them.
+  // V's group relation to a group, between the agents in one of ours and
+  // the agents in that group now (relations are symmetric: one call sets
+  // both ways; the group table it does not touch is logged for reference).
   private func CopyRelation(ours: CName, other: CName, vTowards: Int32, towardsV: Int32, why: String) -> Void {
     let system = GameInstance.GetAttitudeSystem(this.m_game);
     system.SetAttitudeRelation(ours, other, IntEnum<EAIAttitude>(vTowards));
-    system.SetAttitudeRelation(other, ours, IntEnum<EAIAttitude>(towardsV));
-    let readTowards = EnumInt(system.GetAttitudeRelation(ours, other));
-    let readFrom = EnumInt(system.GetAttitudeRelation(other, ours));
-    let took = readTowards == vTowards && readFrom == towardsV;
-    TandemNative.Log(s"attitudes: \(NameToString(ours)) / \(NameToString(other)) (\(why)): V's \(vTowards)/\(towardsV), read back \(readTowards)/\(readFrom)\(took ? "" : " (not taken)")");
+    TandemNative.Log(s"attitudes: \(NameToString(ours)) / \(NameToString(other)) (\(why)): V's \(vTowards)/\(towardsV) set between their agents (group table \(EnumInt(system.GetAttitudeRelation(ours, other))))");
   }
 
   // Each NPC around, as it sees V and V sees it, onto each puppet's agent

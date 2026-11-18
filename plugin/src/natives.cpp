@@ -115,6 +115,29 @@ struct TandemPlayerHit {
   Red::TweakDBID weapon;     // the NPC's weapon item record
 };
 static_assert(alignof(TandemPlayerHit) <= 8, "the script VM aligns struct locals to 8");
+// Guest: one of the host's NPCs fires at our V (proto::NpcShotAt); our game
+// fires it from the proxy. `boost` x `factor` for `boostSeconds`, then
+// `factor`: the projectile's speed, so it catches up with the host's
+// timeline (TimeBubbles::ShotCatchUp). Plain fields, as above.
+struct TandemShotAt {
+  std::uint32_t npc{};
+  Red::TweakDBID attack; // 0: the weapon's own
+  Red::TweakDBID weapon;
+  float tbh{};
+  std::int32_t trigger{}; // gamedataTriggerMode
+  float factor{};
+  float boost{};
+  float boostSeconds{};
+};
+static_assert(alignof(TandemShotAt) <= 8, "the script VM aligns struct locals to 8");
+// Host: a guest's game says a shot it simulated hit its V (proto::ShotHit).
+struct TandemShotHit {
+  std::uint32_t player{};
+  std::uint32_t npc{};
+  float x{}, y{}, z{};    // where it landed
+  float dx{}, dy{}, dz{}; // its direction
+};
+static_assert(alignof(TandemShotHit) <= 8, "the script VM aligns struct locals to 8");
 // Host: a guest's V made a noise (proto::Noise), for our NPCs to hear.
 struct TandemNoise {
   std::uint32_t player{};
@@ -671,6 +694,72 @@ struct TandemNative : Red::IScriptable {
     return {q.i, q.j, q.k, q.r};
   }
 
+  // Our V's ride (scripts/tandem/Transit.reds): proto::TransitKind (0 none,
+  // 1 metro, 2 ride, 3 scene), proto::kTransit* flags, the metro's station
+  // and next station (ENcartStations), the vehicle, the seat.
+  static void SendTransit(std::int32_t kind, std::int32_t flags, std::int32_t at, std::int32_t next,
+                          Red::EntityID vehicle, Red::CName seat, std::uint32_t carrier) {
+    if (kind < 0 || kind > static_cast<std::int32_t>(proto::TransitKind::Along))
+      return;
+    Runtime::Get().SubmitLocalTransit({.kind = static_cast<proto::TransitKind>(kind),
+                                       .flags = static_cast<std::uint8_t>(flags),
+                                       .at = static_cast<std::uint8_t>(std::clamp(at, 0, 255)),
+                                       .next = static_cast<std::uint8_t>(std::clamp(next, 0, 255)),
+                                       .vehicle = vehicle.hash,
+                                       .seat = seat.hash,
+                                       .carrier = carrier});
+  }
+
+  // A remote player's ride: how many arrived (0: none), and the latest.
+  static std::int32_t RemoteTransitChanges(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    Runtime::Get().RemoteTransit(player, changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  static std::int32_t RemoteTransitKind(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? static_cast<std::int32_t>(ride->kind) : 0;
+  }
+  static std::int32_t RemoteTransitFlags(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? ride->flags : 0;
+  }
+  static std::int32_t RemoteTransitAt(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? ride->at : 0;
+  }
+  static std::int32_t RemoteTransitNext(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? ride->next : 0;
+  }
+  // The entity the rider rides, as named in its world (the same in ours if
+  // it is a placed or quest entity streamed here too: check what it is).
+  static Red::EntityID RemoteTransitVehicle(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return Red::EntityID(ride ? ride->vehicle : 0);
+  }
+  // Along: whose vehicle carries the player (0: none).
+  static std::uint32_t RemoteTransitCarrier(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? ride->carrier : 0;
+  }
+  static Red::CName RemoteTransitSeat(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? Red::CName(ride->seat) : Red::CName();
+  }
+
+  // Host: our NPC `npc` sits in `owner`'s vehicle in `seat` (owner 0: out).
+  static void SendNpcSeat(std::uint32_t npc, std::uint32_t owner, Red::CName seat) {
+    Runtime::Get().SubmitNpcSeat({.npc = npc, .owner = owner, .seat = owner ? seat.hash : 0});
+  }
+
   // The radio of the car our V drives (scripts/tandem/Radio.reds): on, the
   // station (ERadioStationList index, -1 none), the song; `trackStarted` when
   // the song just changed on the same station (its start is now).
@@ -813,10 +902,26 @@ struct TandemNative : Red::IScriptable {
     return ToScript(Runtime::Get().Bubbles().Clear());
   }
   static float TimeFactorOf(std::uint32_t npc) { return Runtime::Get().Bubbles().FactorOf(npc); }
+  // How much our V is slowed by the other Vs' bubbles (1: not at all): our
+  // own ability's world speed (1: none), where we are, and the Vs with a
+  // bubble as for UpdateTimeBubbles.
+  static float TimePlayerFactor(std::uint32_t player, float own, Red::Vector4 position,
+                                Red::DynArray<std::uint32_t> owners, Red::DynArray<float> scales,
+                                Red::DynArray<Red::Vector4> ownerPositions, bool inside) {
+    std::vector<sync::TimeBubbles::Owner> who;
+    for (std::uint32_t i = 0; i < owners.Size() && i < scales.Size() && i < ownerPositions.Size();
+         ++i)
+      who.push_back({.player = owners[i],
+                     .scale = scales[i],
+                     .position = {ownerPositions[i].X, ownerPositions[i].Y, ownerPositions[i].Z}});
+    return sync::TimeBubbles::PlayerFactor(player, own, {position.X, position.Y, position.Z}, who,
+                                           inside);
+  }
   static std::int32_t TimeBubbleMembers(std::uint32_t player) {
     return static_cast<std::int32_t>(Runtime::Get().Bubbles().MembersOf(player));
   }
-  // tandem.ini time_host = full: the host keeps its own slow motion whole.
+  // tandem.ini time_host = full (the default): the host keeps its own slow
+  // motion whole; bubble: its world is put back to normal speed.
   static bool IsTimeHostFull() { return Runtime::Get().config.timeHostFull; }
   // Invites through tandem-relay (docs/ARCHITECTURE.md, "Invites"): the
   // host's join code to show ("K7Q-2M9"; "" until the relay gave one, or
@@ -907,6 +1012,46 @@ struct TandemNative : Red::IScriptable {
                                       hit.position.x, hit.position.y, hit.position.z,
                                       hit.direction.x, hit.direction.y, hit.direction.z,
                                       Red::TweakDBID(hit.attack), Red::TweakDBID(hit.weapon)});
+    return out;
+  }
+  // Host: our NPC `npc` fires at `player`'s V. That player's game fires it
+  // from its proxy and decides the hit (proto::NpcShotAt).
+  static void SendShotAt(std::uint32_t player, std::uint32_t npc, Red::TweakDBID attack,
+                         Red::TweakDBID weapon, float tbh, std::int32_t trigger, float factor) {
+    Runtime::Get().SubmitShotAt({.player = player,
+                                 .npc = npc,
+                                 .timeUs = Runtime::Get().HostNowUs(),
+                                 .attack = attack.value,
+                                 .weapon = weapon.value,
+                                 .tbh = tbh,
+                                 .trigger = static_cast<std::uint8_t>(trigger),
+                                 .factor = factor});
+  }
+  // Guest: the host's NPCs' shots at our V since the last call.
+  static Red::DynArray<TandemShotAt> TakeShotsAt() {
+    Red::DynArray<TandemShotAt> out;
+    const auto now = Runtime::Get().HostNowUs();
+    for (const auto &shot : Runtime::Get().TakeShotsAt()) {
+      const auto catchUp = sync::TimeBubbles::ShotCatchUp(shot.timeUs, now);
+      out.EmplaceBack(TandemShotAt{shot.npc, Red::TweakDBID(shot.attack),
+                                   Red::TweakDBID(shot.weapon), shot.tbh, shot.trigger, shot.factor,
+                                   catchUp.boost, catchUp.seconds});
+    }
+    return out;
+  }
+  // Guest: a shot our game simulated (from a proxy) hit our V.
+  static void SendShotHit(std::uint32_t npc, Red::Vector4 position, Red::Vector4 direction) {
+    Runtime::Get().SubmitShotHit({.npc = npc,
+                                  .position = {position.X, position.Y, position.Z},
+                                  .direction = {direction.X, direction.Y, direction.Z}});
+  }
+  // Host: the guests' reports of shots that hit their V since the last call.
+  static Red::DynArray<TandemShotHit> TakeShotHits() {
+    Red::DynArray<TandemShotHit> out;
+    for (const auto &hit : Runtime::Get().TakeShotHits())
+      out.EmplaceBack(TandemShotHit{hit.player, hit.npc, hit.position.x, hit.position.y,
+                                    hit.position.z, hit.direction.x, hit.direction.y,
+                                    hit.direction.z});
     return out;
   }
   // Guest: which players the host's NPC has detected (bit player - 1).
@@ -1404,6 +1549,28 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemHackEvent, "TandemHackEvent", {
   RTTI_PROPERTY(seconds);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemShotAt, "TandemShotAt", {
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(attack);
+  RTTI_PROPERTY(weapon);
+  RTTI_PROPERTY(tbh);
+  RTTI_PROPERTY(trigger);
+  RTTI_PROPERTY(factor);
+  RTTI_PROPERTY(boost);
+  RTTI_PROPERTY(boostSeconds);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemShotHit, "TandemShotHit", {
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+  RTTI_PROPERTY(dx);
+  RTTI_PROPERTY(dy);
+  RTTI_PROPERTY(dz);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemPlayerHit, "TandemPlayerHit", {
   RTTI_PROPERTY(npc);
   RTTI_PROPERTY(physical);
@@ -1571,6 +1738,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendNpcEffect);
   RTTI_METHOD(SendPlayerHit);
   RTTI_METHOD(TakePlayerHits);
+  RTTI_METHOD(SendShotAt);
+  RTTI_METHOD(TakeShotsAt);
+  RTTI_METHOD(SendShotHit);
+  RTTI_METHOD(TakeShotHits);
   RTTI_METHOD(NpcDetected);
   RTTI_METHOD(NpcsDetectingUs);
   RTTI_METHOD(NpcAwareness);
@@ -1638,6 +1809,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(ClearTimeBubbles);
   RTTI_METHOD(TimeFactorOf);
   RTTI_METHOD(TimeBubbleMembers);
+  RTTI_METHOD(TimePlayerFactor);
   RTTI_METHOD(IsTimeHostFull);
   RTTI_METHOD(RelayCode);
   RTTI_METHOD(RelayStatus);
@@ -1651,6 +1823,16 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RemoteSeatOwner);
   RTTI_METHOD(RemoteVehiclePosition);
   RTTI_METHOD(RemoteVehicleOrientation);
+  RTTI_METHOD(SendTransit);
+  RTTI_METHOD(RemoteTransitChanges);
+  RTTI_METHOD(RemoteTransitKind);
+  RTTI_METHOD(RemoteTransitFlags);
+  RTTI_METHOD(RemoteTransitAt);
+  RTTI_METHOD(RemoteTransitNext);
+  RTTI_METHOD(RemoteTransitVehicle);
+  RTTI_METHOD(RemoteTransitSeat);
+  RTTI_METHOD(RemoteTransitCarrier);
+  RTTI_METHOD(SendNpcSeat);
   RTTI_METHOD(SendHeld);
   RTTI_METHOD(SendShot);
   RTTI_METHOD(RemoteHeldChanges);

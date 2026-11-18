@@ -190,6 +190,8 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<WorldItem>(message) ||
          std::holds_alternative<WorldItemTaken>(message) ||
          std::holds_alternative<SharedItem>(message) || std::holds_alternative<Revive>(message) ||
+         // A shot at a V, and its hit: each one counts.
+         std::holds_alternative<NpcShotAt>(message) || std::holds_alternative<ShotHit>(message) ||
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
          std::holds_alternative<NpcStrike>(message) || std::holds_alternative<NpcWound>(message) ||
          std::holds_alternative<AreaHit>(message);

@@ -175,6 +175,8 @@ void Runtime::Stop() {
     m_localSeat.reset();
     m_localVehicle.reset();
     m_seats.clear();
+    m_localTransit.reset();
+    m_transits.clear();
     m_localRadios.clear();
     m_localTrack = m_localTrackStartUs = 0;
     m_radios.clear();
@@ -454,6 +456,33 @@ sync::VehicleView Runtime::VehicleOf(proto::PlayerId player) {
   return car->second.At(now > delayUs ? now - delayUs : 0);
 }
 
+void Runtime::SubmitLocalTransit(const proto::Transit &transit) {
+  std::lock_guard _(m_lock);
+  m_localTransit = transit;
+}
+
+std::optional<proto::Transit> Runtime::TakeLocalTransit() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localTransit, std::nullopt);
+}
+
+void Runtime::PushRemoteTransit(const proto::Transit &transit) {
+  std::lock_guard _(m_lock);
+  auto &[changes, latest] = m_transits[transit.player];
+  ++changes;
+  latest = transit;
+}
+
+std::optional<proto::Transit> Runtime::RemoteTransit(proto::PlayerId player,
+                                                     std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  const auto it = m_transits.find(player);
+  changes = it == m_transits.end() ? 0 : it->second.first;
+  if (it == m_transits.end() || it->second.second.kind == proto::TransitKind::None)
+    return std::nullopt;
+  return it->second.second;
+}
+
 void Runtime::SubmitLocalRadio(proto::VehicleRadio radio, bool trackStarted) {
   const auto now = HostNowUs();
   std::lock_guard _(m_lock);
@@ -661,6 +690,11 @@ void Runtime::SubmitNpcEffect(const proto::NpcEffect &effect) {
   m_npcOutbox.push_back(effect);
 }
 
+void Runtime::SubmitNpcSeat(const proto::NpcSeat &seat) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(seat);
+}
+
 void Runtime::SubmitPlayerHit(const proto::PlayerHit &hit) {
   std::lock_guard _(m_lock);
   m_npcOutbox.push_back(hit);
@@ -684,6 +718,38 @@ std::vector<proto::PlayerHit> Runtime::TakePlayerHits() {
   for (const auto &hit : std::exchange(m_playerHits, {}))
     out.push_back(hit.value);
   return out;
+}
+
+void Runtime::SubmitShotAt(const proto::NpcShotAt &shot) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(shot);
+}
+
+void Runtime::PushShotAt(const proto::NpcShotAt &shot) {
+  std::lock_guard _(m_lock);
+  if (m_shotsAt.size() < 128)
+    m_shotsAt.push_back(shot);
+}
+
+std::vector<proto::NpcShotAt> Runtime::TakeShotsAt() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_shotsAt, {});
+}
+
+void Runtime::SubmitShotHit(const proto::ShotHit &hit) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(hit);
+}
+
+void Runtime::PushShotHit(const proto::ShotHit &hit) {
+  std::lock_guard _(m_lock);
+  if (m_shotHits.size() < 128)
+    m_shotHits.push_back(hit);
+}
+
+std::vector<proto::ShotHit> Runtime::TakeShotHits() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_shotHits, {});
 }
 
 std::uint8_t Runtime::NpcDetected(proto::NpcId npc) {
@@ -1177,6 +1243,7 @@ void Runtime::ForgetRemote(proto::PlayerId player) {
     m_appearances.erase(player);
     m_held.erase(player);
     m_seats.erase(player);
+    m_transits.erase(player);
     m_radios.erase(player);
     m_stealth.erase(player);
     if (m_remoteTimes.erase(player) > 0)

@@ -5,8 +5,8 @@
 
 namespace tandem::sync {
 namespace {
-bool Near(const proto::Vec3 &a, const proto::Vec3 &b) {
-  return std::hypot(a.x - b.x, a.y - b.y) <= TimeBubbles::kRadius;
+bool Near(const proto::Vec3 &a, const proto::Vec3 &b, float reach = TimeBubbles::kRadius) {
+  return std::hypot(a.x - b.x, a.y - b.y) <= reach;
 }
 } // namespace
 
@@ -59,6 +59,28 @@ std::vector<TimeBubbles::Change> TimeBubbles::Clear() {
   m_factors.clear();
   m_bubbles.clear();
   return changes;
+}
+
+TimeBubbles::CatchUp TimeBubbles::ShotCatchUp(std::uint64_t firedUs, std::uint64_t nowUs) {
+  // Over this window the projectile covers its own normal way plus the lag's.
+  constexpr float kWindow = 0.25f;
+  if (nowUs <= firedUs)
+    return {};
+  const float lag = static_cast<float>(nowUs - firedUs) / 1e6f;
+  if (lag < 0.005f || lag > 1.f)
+    return {};
+  return {.boost = 1.f + lag / kWindow, .seconds = kWindow};
+}
+
+float TimeBubbles::PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
+                                std::span<const Owner> owners, bool inside) {
+  const float reach = kRadius + (inside ? kMargin : 0.f);
+  float strongest = 1.f;
+  for (const auto &owner : owners)
+    if (owner.player != player && owner.scale < 1.f && Near(owner.position, position, reach))
+      strongest = std::min(strongest, std::clamp(owner.scale, 0.05f, 1.f));
+  own = std::isfinite(own) ? std::clamp(own, 0.05f, 1.f) : 1.f;
+  return std::min(1.f, strongest / own);
 }
 
 float TimeBubbles::FactorOf(proto::NpcId npc) const {

@@ -35,7 +35,9 @@ class NetThread;
 // Host: a guest hit one of its NPCs. Guest: an NPC's health changed.
 struct NpcEvent {
   // Effect (host): a guest's hit put the status effect spawn.record on it.
-  enum class Kind : std::int32_t { Spawn = 1, Gone = 2, Hit = 3, Health = 4, Effect = 5 };
+  // Seat (guest): it sits in player's vehicle, in slot spawn.appearance (a
+  // CName hash; player kNoPlayer: it got out).
+  enum class Kind : std::int32_t { Spawn = 1, Gone = 2, Hit = 3, Health = 4, Effect = 5, Seat = 6 };
   Kind kind{};
   proto::NpcSpawn spawn; // npc set for every kind
   std::uint8_t reason{};
@@ -244,6 +246,12 @@ public:
   void PushRemoteVehicle(const proto::VehicleState &vehicle);
   // Where to draw the player's car now (the same delay as their body).
   sync::VehicleView VehicleOf(proto::PlayerId player);
+  // Our V's ride (scripts/tandem/Transit.reds), game -> net (newest only);
+  // the others' rides, net -> game (latest + count; kind None: none).
+  void SubmitLocalTransit(const proto::Transit &transit);
+  std::optional<proto::Transit> TakeLocalTransit();
+  void PushRemoteTransit(const proto::Transit &transit);
+  std::optional<proto::Transit> RemoteTransit(proto::PlayerId player, std::uint32_t &changes);
 
   // The radio of the car we drive, game -> net (each one sent: a repeat is
   // for a passenger getting in). `trackStarted`: the song just changed on
@@ -306,11 +314,21 @@ public:
   void SubmitNpcHealth(const proto::NpcHealth &health); // host
   void SubmitNpcHit(const proto::NpcHit &hit);          // guest
   void SubmitNpcEffect(const proto::NpcEffect &effect); // guest
+  void SubmitNpcSeat(const proto::NpcSeat &seat);       // host
   // Host: our NPC hit a guest's puppet, game -> net (queued with the NPCs').
   // Guest: the host's NPCs hit our V, net -> game (queued).
   void SubmitPlayerHit(const proto::PlayerHit &hit);
   void PushPlayerHit(const proto::PlayerHit &hit);
   std::vector<proto::PlayerHit> TakePlayerHits();
+  // NPC shots at a guest's V: the host's go out on the NPC outbox; a guest
+  // takes the ones at it (net -> game), and its hit reports go out on the
+  // outbox too; the host takes the reports (net -> game).
+  void SubmitShotAt(const proto::NpcShotAt &shot);
+  void PushShotAt(const proto::NpcShotAt &shot);
+  std::vector<proto::NpcShotAt> TakeShotsAt();
+  void SubmitShotHit(const proto::ShotHit &hit);
+  void PushShotHit(const proto::ShotHit &hit);
+  std::vector<proto::ShotHit> TakeShotHits();
   // Guest: which players the host's NPC has detected (bit player - 1).
   std::uint8_t NpcDetected(proto::NpcId npc);
   void SubmitNpcStates(const proto::NpcStates &states);
@@ -484,6 +502,8 @@ private:
   std::optional<proto::VehicleState> m_localVehicle;                                 // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Seat>> m_seats;          // m_lock
   std::map<proto::PlayerId, sync::VehicleTrack> m_vehicles;                          // m_tracksLock
+  std::optional<proto::Transit> m_localTransit;                                      // m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Transit>> m_transits;    // m_lock
   std::vector<proto::VehicleRadio> m_localRadios;                                    // m_lock
   std::uint64_t m_localTrack{}, m_localTrackStartUs{};                               // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::VehicleRadio>> m_radios; // m_lock
@@ -533,6 +553,8 @@ private:
   std::optional<bool> m_localPaused;                             // m_lock
   std::vector<proto::PlayerId> m_remotePaused;                   // m_lock
   std::uint32_t m_remotePausedChanges{};                         // m_lock
+  std::vector<proto::NpcShotAt> m_shotsAt;                       // m_lock
+  std::vector<proto::ShotHit> m_shotHits;                        // m_lock
   std::map<proto::PlayerId, std::string> m_names;                // m_lock
   std::optional<proto::TimeEffect> m_localTime;                  // m_lock
   std::map<proto::PlayerId, proto::TimeEffect> m_remoteTimes;    // m_lock

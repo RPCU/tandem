@@ -18,7 +18,8 @@ public native struct TandemShot {
 }
 
 public native struct TandemNpcEvent {
-  // 1 spawn, 2 gone
+  // 1 spawn, 2 gone, 3 hit (host), 4 health, 5 effect (host), 6 seat
+  // (guest: it sits in player's vehicle in slot `appearance`; player 0: out)
   native let kind: Int32;
   native let npc: Uint32;
   native let record: TweakDBID;
@@ -103,6 +104,35 @@ public native struct TandemHackEvent {
 }
 
 // Guest: one of the host's NPCs hit our V (Combat.reds).
+// Guest: one of the host's NPCs fires at our V (Shots.reds): fired from
+// its proxy here, at `factor`, `boost` times faster for `boostSeconds`
+// first (it catches up with the host's timeline).
+public native struct TandemShotAt {
+  native let npc: Uint32;
+  // the ranged attack asked for (none: the weapon's own), the NPC's weapon
+  native let attack: TweakDBID;
+  native let weapon: TweakDBID;
+  // the AI's time-between-hits coefficient, its gamedataTriggerMode
+  native let tbh: Float;
+  native let trigger: Int32;
+  native let factor: Float;
+  native let boost: Float;
+  native let boostSeconds: Float;
+}
+
+// Host: a guest's game says a shot it simulated hit its V (Shots.reds).
+public native struct TandemShotHit {
+  native let player: Uint32;
+  native let npc: Uint32;
+  // where it landed, and its direction
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let dx: Float;
+  native let dy: Float;
+  native let dz: Float;
+}
+
 public native struct TandemPlayerHit {
   // the attacker as the host shares it (0: not shared)
   native let npc: Uint32;
@@ -298,6 +328,10 @@ public native class TandemNative extends IScriptable {
   public static native func SendNpcEffect(npc: Uint32, effects: array<TweakDBID>)
   public static native func SendPlayerHit(player: Uint32, npc: Uint32, physical: Float, thermal: Float, electric: Float, chemical: Float, attackType: Int32, flags: Int32, pierce: Float, position: Vector4, direction: Vector4, attack: TweakDBID, weapon: TweakDBID)
   public static native func TakePlayerHits() -> array<TandemPlayerHit>
+  public static native func SendShotAt(player: Uint32, npc: Uint32, attack: TweakDBID, weapon: TweakDBID, tbh: Float, trigger: Int32, factor: Float)
+  public static native func TakeShotsAt() -> array<TandemShotAt>
+  public static native func SendShotHit(npc: Uint32, position: Vector4, direction: Vector4)
+  public static native func TakeShotHits() -> array<TandemShotHit>
   public static native func NpcDetected(npc: Uint32) -> Int32
   public static native func NpcsDetectingUs() -> Int32
   public static native func NpcAwareness(npc: Uint32) -> Float
@@ -365,6 +399,7 @@ public native class TandemNative extends IScriptable {
   public static native func ClearTimeBubbles() -> array<TandemTimeChange>
   public static native func TimeFactorOf(npc: Uint32) -> Float
   public static native func TimeBubbleMembers(player: Uint32) -> Int32
+  public static native func TimePlayerFactor(player: Uint32, own: Float, position: Vector4, owners: array<Uint32>, scales: array<Float>, ownerPositions: array<Vector4>, inside: Bool) -> Float
   public static native func IsTimeHostFull() -> Bool
   public static native func SendSeat(vehicle: TweakDBID, seat: CName, owner: Uint32)
   public static native func SendVehicle(position: Vector4, orientation: Quaternion, velocity: Vector4)
@@ -374,6 +409,19 @@ public native class TandemNative extends IScriptable {
   public static native func RemoteSeatOwner(player: Uint32) -> Uint32
   public static native func RemoteVehiclePosition(player: Uint32) -> Vector4
   public static native func RemoteVehicleOrientation(player: Uint32) -> Quaternion
+  // Rides (Transit.reds): kind 0 none, 1 metro, 2 ride, 3 scene, 4 along; flags 1
+  // skipping, 2 seats for partners; stations are ENcartStations (0 unknown).
+  public static native func SendTransit(kind: Int32, flags: Int32, at: Int32, next: Int32, vehicle: EntityID, seat: CName, carrier: Uint32)
+  public static native func RemoteTransitChanges(player: Uint32) -> Int32
+  public static native func RemoteTransitKind(player: Uint32) -> Int32
+  public static native func RemoteTransitFlags(player: Uint32) -> Int32
+  public static native func RemoteTransitAt(player: Uint32) -> Int32
+  public static native func RemoteTransitNext(player: Uint32) -> Int32
+  public static native func RemoteTransitVehicle(player: Uint32) -> EntityID
+  public static native func RemoteTransitSeat(player: Uint32) -> CName
+  public static native func RemoteTransitCarrier(player: Uint32) -> Uint32
+  // Host: our NPC sits in a player's vehicle (owner 0: got out).
+  public static native func SendNpcSeat(npc: Uint32, owner: Uint32, seat: CName)
   public static native func SendHeld(right: TweakDBID, left: TweakDBID)
   public static native func SendShot(left: Bool, effect: Int32)
   public static native func RemoteHeldChanges(player: Uint32) -> Int32

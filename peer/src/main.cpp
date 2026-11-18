@@ -19,7 +19,14 @@
 //   drive   drives a car in circles around your V (--vehicle RECORD): tests
 //           the copy of a remote player's car, its driver and its motion;
 //           --radio STATION plays that station on the car's radio, for
-//           whoever rides in it
+//           whoever rides in it; --seat SLOT rides in it instead while "an
+//           AI" drives (a ride: Delamain, a quest car), --scene makes it a
+//           story scene's (the host's: partners near it get a seat),
+//           --driver-npc RECORD (host) puts an NPC at the wheel
+//   metro   stands beside your V, then rides the NCART (--metro-at,
+//           --metro-for): the train is never shared, so your game shows the
+//           puppet hidden with a notice (or in your train if you ride one
+//           there), skipping halfway, and back where the ride ends
 //   course  runs a scripted course ahead of your V, every way a V moves:
 //           jumps, a double jump, a ledge climb, a drop, a ladder, swimming
 //           and diving, an elevator, a slide and a dodge, then back to the
@@ -117,7 +124,7 @@ using tandem::proto::Vec3;
 
 volatile std::sig_atomic_t g_stop = 0;
 
-enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Idle };
+enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Metro, Idle };
 
 struct Options {
   bool host{};
@@ -138,8 +145,10 @@ struct Options {
   int driveSeconds{0}; // drive: get out after this long (0: never)
   // drive: the car's radio (ERadioStationList index, -1 off); unset: none sent
   std::optional<int> radioStation;
-  int hitNpcsSeconds{0}; // join: hit one of the host's NPCs this often (0: never)
-  int hitYouSeconds{0};  // host: one of its NPCs hits each guest's V this often (0: never)
+  int hitNpcsSeconds{0};  // join: hit one of the host's NPCs this often (0: never)
+  int hitYouSeconds{0};   // host: one of its NPCs hits each guest's V this often (0: never)
+  int shootYouSeconds{0}; // host: one of its NPCs fires at each guest's V this often
+  std::string shotWeapon{"Items.Preset_Lexington_Default"}; // --shoot-you: its weapon
   // --hit-npcs: what each hit carries besides its damage (plain, nonlethal,
   // cap, poise, head, blade).
   std::string strike{"plain"};
@@ -182,6 +191,17 @@ struct Options {
   // tandem-relay: its address, a host token (host), the session's code (join)
   std::optional<tandem::net::RelayOptions> relay;
   std::string code;
+  // metro: board this long into the session, ride this long.
+  int metroAtSeconds{5};
+  int metroForSeconds{40};
+  // drive: our seat (not the driver's: an AI drives), a story scene, an NPC
+  // driver (host).
+  std::string seat{"seat_front_left"};
+  bool scene{};
+  std::string driverNpc;
+  // Answer a scene ride with seats (the host's) by riding along: hidden,
+  // carried with the car, out beside it when it ends.
+  bool rideAlong{};
   // Fast travel together: when to travel (-1: never), where to, the fast
   // travel point arrived at (a record name; empty: none), when to ask the
   // others to come (-1: never), how to answer their offers.
@@ -261,8 +281,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     ADDRESS does not answer, or with --code only\n"
          "  --relay-token HEX  host: one of the relay's host tokens (tandem-relay token)\n"
          "  --code CODE        join: the host's join code (needs --relay)\n"
-         "  --mode M           mirror | ghost | front | drive | course | path | idle\n"
-         "                     (default mirror)\n"
+         "  --mode M           mirror | ghost | front | drive | course | path | metro |\n"
+         "                     idle (default mirror)\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
          "  --look L           random | echo: random clothes of its own (default), or a\n"
@@ -279,6 +299,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     radio_station_09_downtempo...; off): sent when seated and\n"
          "                     again when a passenger gets in\n"
          "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
+         "  --shoot-you N      host: an NPC (a replayed one) fires at each guest's V every N\n"
+         "                     seconds: the guest's game fires it and decides the hit\n"
+         "  --shot-weapon REC  --shoot-you: the NPC's weapon (default\n"
+         "                     Items.Preset_Lexington_Default)\n"
          "  --strike KIND      --hit-npcs: what each hit carries: plain (35 health), nonlethal\n"
          "                     (a blunt hit: knocks out), cap (leave 1 HP), poise (10 health,\n"
          "                     40 poise), head (a headshot), blade (a katana on the left arm)\n"
@@ -365,7 +389,18 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --drop P           never send a message with probability P (0..1), reliable ones\n"
          "                     too, as a bug would lose them: digests and resyncs must heal it\n"
          "  --dup P            send a state message twice with probability P (0..1): it must\n"
-         "                     be applied once\n";
+         "                     be applied once\n"
+         "  --metro-at N       metro: board the NCART N seconds after another player is in\n"
+         "                     (default 5): it stands beside your V until then\n"
+         "  --metro-for N      metro: ride for N seconds (default 40), skipping (ten times\n"
+         "                     faster) for 3 s halfway, then get off where the ride ends\n"
+         "  --seat SLOT        drive: sit in SLOT (seat_front_right...) while an AI drives:\n"
+         "                     a ride its game runs (Transit Ride)\n"
+         "  --scene            drive --seat: the ride is a story scene (host: partners near\n"
+         "                     its copy get a free seat)\n"
+         "  --driver-npc REC   host, drive --seat: an NPC of REC at the wheel (NpcSeat)\n"
+         "  --ride-along       a player's scene ride with seats (Transit Scene): ride along\n"
+         "                     (Transit Along), carried with its car, out beside it at the end\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -427,6 +462,14 @@ Options Parse(int argc, char **argv) {
     const auto flag = args[i];
     if (flag == "--check") { // parse only (tests/peer_flags.sh)
       options.check = true;
+      continue;
+    }
+    if (flag == "--scene") {
+      options.scene = true;
+      continue;
+    }
+    if (flag == "--ride-along") {
+      options.rideAlong = true;
       continue;
     }
     if (i + 1 >= args.size())
@@ -500,6 +543,10 @@ Options Parse(int argc, char **argv) {
       options.holdNpcsSeconds = Number<int>(value);
     else if (flag == "--hit-you")
       options.hitYouSeconds = Number<int>(value);
+    else if (flag == "--shoot-you")
+      options.shootYouSeconds = Number<int>(value);
+    else if (flag == "--shot-weapon")
+      options.shotWeapon = std::string(value);
     else if (flag == "--strike") {
       constexpr std::string_view kinds[] = {"plain", "nonlethal", "cap", "poise", "head", "blade"};
       if (std::ranges::find(kinds, value) == std::end(kinds))
@@ -567,9 +614,19 @@ Options Parse(int argc, char **argv) {
         options.mode = Mode::Course;
       else if (value == "path")
         options.mode = Mode::Path;
+      else if (value == "metro")
+        options.mode = Mode::Metro;
       else
         Usage(std::format("unknown mode {}", value));
-    } else if (flag == "--offset")
+    } else if (flag == "--metro-at")
+      options.metroAtSeconds = std::max(0, Number<int>(value));
+    else if (flag == "--metro-for")
+      options.metroForSeconds = std::max(8, Number<int>(value));
+    else if (flag == "--seat")
+      options.seat = std::string(value);
+    else if (flag == "--driver-npc")
+      options.driverNpc = std::string(value);
+    else if (flag == "--offset")
       options.offset = Point(flag, value);
     else if (flag == "--travel-at")
       options.travelAtSeconds = Number<int>(value);
@@ -1407,8 +1464,32 @@ public:
       if (m_parkedAt)
         return Parked();
       return Drive(nowUs).first;
+    case Mode::Metro:
+      return Metro(nowUs);
     }
     return std::nullopt;
+  }
+
+  // metro: on the train from now on (once).
+  void Board(std::uint64_t nowUs) {
+    if (!m_boardUs)
+      m_boardUs = nowUs;
+  }
+
+  // metro: 0 waiting on the platform, 1 riding, 2 skipping (ten times
+  // faster), 3 off at the exit station; `secondHalf` past the skip.
+  int MetroStep(std::uint64_t nowUs, bool *secondHalf = nullptr) const {
+    if (!m_boardUs || nowUs < *m_boardUs)
+      return 0;
+    const float t = static_cast<float>(nowUs - *m_boardUs) / 1e6f;
+    const float ride = static_cast<float>(m_options.metroForSeconds), half = ride / 2.f;
+    if (secondHalf)
+      *secondHalf = t >= half + kSkipSeconds;
+    if (t >= ride)
+      return 3;
+    if (t >= half && t < half + kSkipSeconds)
+      return 2;
+    return 1;
   }
 
 private:
@@ -1479,6 +1560,49 @@ private:
   std::optional<Vec3> m_parkedAt;
   std::optional<Vec3> m_beside;
   std::optional<Vec3> m_station;
+
+  // metro: a straight line from the platform (3 m to the right of where
+  // your V was first heard, along its facing), 8 m up while riding, at
+  // 20 m/s, 200 m/s while skipping.
+  static constexpr float kMetroSpeed = 20.f, kSkipSeconds = 3.f, kSkipFactor = 10.f, kMetroUp = 8.f;
+  std::optional<std::uint64_t> m_boardUs;
+  std::optional<Vec3> m_platform;
+  float m_lineYaw{};
+
+  float MetroDistance(float t) const {
+    const float ride = static_cast<float>(m_options.metroForSeconds), half = ride / 2.f;
+    t = std::clamp(t, 0.f, ride);
+    if (t < half)
+      return kMetroSpeed * t;
+    const float skip = std::min(t - half, kSkipSeconds);
+    return kMetroSpeed * half + kMetroSpeed * kSkipFactor * skip +
+           kMetroSpeed * std::max(0.f, t - half - kSkipSeconds);
+  }
+
+  std::optional<PlayerState> Metro(std::uint64_t nowUs) {
+    if (m_heard.empty())
+      return std::nullopt;
+    if (!m_platform) {
+      const auto &them = m_heard.back().second;
+      m_lineYaw = tandem::sync::YawOf(them.orientation);
+      // The game's right is (cos, sin) of the yaw.
+      m_platform = Vec3{them.position.x + 3.f * std::cos(m_lineYaw),
+                        them.position.y + 3.f * std::sin(m_lineYaw), them.position.z};
+    }
+    const int step = MetroStep(nowUs);
+    const float t =
+        m_boardUs && nowUs > *m_boardUs ? static_cast<float>(nowUs - *m_boardUs) / 1e6f : 0.f;
+    const float along = step == 0 ? 0.f : MetroDistance(t);
+    // The game's forward is (-sin, cos) of the yaw.
+    const float fx = -std::sin(m_lineYaw), fy = std::cos(m_lineYaw);
+    const float speed = step == 1 ? kMetroSpeed : step == 2 ? kMetroSpeed * kSkipFactor : 0.f;
+    PlayerState out;
+    out.position = {m_platform->x + fx * along, m_platform->y + fy * along,
+                    m_platform->z + (step == 1 || step == 2 ? kMetroUp : 0.f)};
+    out.velocity = {fx * speed, fy * speed, 0.f};
+    out.orientation = tandem::sync::FromYaw(m_lineYaw);
+    return out;
+  }
 
   std::optional<PlayerState> Parked() const {
     PlayerState out;
@@ -1811,6 +1935,8 @@ int main(int argc, char **argv) {
   auto nextCarry = nextGrab;
   auto nextHold = nextGrab;
   auto nextHitYou = std::chrono::steady_clock::now() + std::chrono::seconds(options.hitYouSeconds);
+  auto nextShootYou =
+      std::chrono::steady_clock::now() + std::chrono::seconds(options.shootYouSeconds);
   std::set<tandem::proto::NpcId> replayedNpcs; // host: the replay's live NPCs
   // Quickhacks: our upload's effect to land, the host's uploads to finish,
   // the NPCs a replay spawned, who drives a car.
@@ -1928,6 +2054,22 @@ int main(int argc, char **argv) {
   std::uint64_t heard = 0, heardPoses = 0, heardShots = 0, heardVehicles = 0;
   // --pause-at: when someone else was first there, and how far the pause got.
   std::optional<std::chrono::steady_clock::time_point> togetherSince;
+  // --ride-along: whose scene ride we ride along in, the cars heard (by
+  // player), where we were carried last, out of it yet.
+  std::optional<tandem::proto::PlayerId> alongWith;
+  std::map<tandem::proto::PlayerId, tandem::proto::VehicleState> carOf;
+  std::optional<PlayerState> lastCarried;
+  bool gotOut = false;
+  // metro: the ride's step as last sent.
+  int metroStep = 0;
+  bool metroSecondHalf = false;
+  // drive --driver-npc: the NPC at the wheel (host), its states every 100 ms.
+  constexpr tandem::proto::NpcId kDriverNpc = 50'001;
+  auto nextDriverState = std::chrono::steady_clock::now();
+  // An NCART train's seat and id, made up: the game only uses them to find
+  // the same train in its own world.
+  const std::uint64_t kTrainSeat = CName("seat_front_right");
+  constexpr std::uint64_t kTrain = 0x4E43415254ULL; // "NCART"
   enum class PauseStep { Waiting, Paused, Done } pauseStep = PauseStep::Waiting;
   PauseStep sandevistanStep = PauseStep::Waiting;
   // Fast travel together: done yet, our offers so far, where we last stood.
@@ -2165,6 +2307,11 @@ int main(int argc, char **argv) {
                   static_cast<int>(e.hold.how));
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcCue>) {
               Log("npc {}: cue {} for us", e.cue.npc, static_cast<int>(e.cue.cue));
+            } else if constexpr (std::is_same_v<E, tandem::events::ShotAtUs>) {
+              Log("npc {} fires at us (weapon {:#x}, speed {:.2f})", e.shot.npc, e.shot.weapon,
+                  e.shot.factor);
+            } else if constexpr (std::is_same_v<E, tandem::events::ShotHitBy>) {
+              Log("player {} reports npc {}'s shot hit their V", e.hit.player, e.hit.npc);
             } else if constexpr (std::is_same_v<E, tandem::events::HitByNpc>) {
               Log("hit by npc {}: {:.1f} physical, {:.1f} thermal, {:.1f} electric, {:.1f} "
                   "chemical (type {}, flags {}, attack {:#x})",
@@ -2193,6 +2340,7 @@ int main(int argc, char **argv) {
               }
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteVehicle>) {
               ++heardVehicles;
+              carOf[e.vehicle.player] = e.vehicle;
               if (options.mode == Mode::Mirror || options.mode == Mode::Front) {
                 auto echo = e.vehicle;
                 echo.position.x += options.offset.x;
@@ -2286,6 +2434,31 @@ int main(int argc, char **argv) {
                 Log("phone: {} by player {}",
                     action->action == proto::kPhoneReject ? "rejected" : "answered",
                     action->player);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteTransit>) {
+              constexpr const char *kKinds[] = {"none", "metro", "ride", "scene", "along"};
+              const auto kind = static_cast<std::size_t>(e.transit.kind);
+              Log("player {} ride: {} (flags {:#x}, station {}, next {}, seat {:#x}, carrier {})",
+                  e.transit.player, kind < std::size(kKinds) ? kKinds[kind] : "?", e.transit.flags,
+                  e.transit.at, e.transit.next, e.transit.seat, e.transit.carrier);
+              namespace proto = tandem::proto;
+              const bool offered = e.transit.kind == proto::TransitKind::Scene &&
+                                   (e.transit.flags & proto::kTransitSeats) != 0;
+              if (options.rideAlong && offered && !alongWith) {
+                alongWith = e.transit.player;
+                endpoint->SetLocalTransit(
+                    {.kind = proto::TransitKind::Along, .carrier = e.transit.player});
+                Log("riding along with player {}", e.transit.player);
+              } else if (alongWith && *alongWith == e.transit.player && !offered) {
+                alongWith.reset();
+                endpoint->SetLocalTransit({});
+                gotOut = true;
+                Log("out of player {}'s ride along, beside the car", e.transit.player);
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcSeat>) {
+              Log("npc {} {} (seat {:#x})", e.seat.npc,
+                  e.seat.owner ? std::format("sits in player {}'s vehicle", e.seat.owner)
+                               : std::string("got out"),
+                  e.seat.seat);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteTimeEffect>) {
               Log("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
                   e.effect.abilities, e.effect.scale);
@@ -2385,6 +2558,8 @@ int main(int argc, char **argv) {
       nextSend += interval;
       if (nextSend < now)
         nextSend = now + interval;
+      if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
+        togetherSince = now;
       auto state = puppeteer.Next(tandem::net::NowUs());
       // Down or out: where it fell, still. Reviving: beside the downed V.
       if (ourLife != 0) {
@@ -2395,6 +2570,21 @@ int main(int argc, char **argv) {
       } else if (rescue && rescue->started && lastOf.contains(rescue->target)) {
         auto beside = lastOf[rescue->target];
         beside.position.x += 1.f;
+        beside.velocity = {};
+        state = beside;
+      }
+      // Riding along: where the car is; out of it, beside where it stopped.
+      const auto car = alongWith ? carOf.find(*alongWith) : carOf.end();
+      if (car != carOf.end()) {
+        PlayerState carried;
+        carried.position = car->second.position;
+        carried.orientation = car->second.orientation;
+        carried.velocity = car->second.velocity;
+        state = carried;
+        lastCarried = carried;
+      } else if (gotOut && lastCarried) {
+        auto beside = *lastCarried;
+        beside.position.x += 2.5f;
         beside.velocity = {};
         state = beside;
       }
@@ -2409,24 +2599,81 @@ int main(int argc, char **argv) {
       }
       if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip))
         endpoint->SendLocalPose(*pose);
+      // metro: board, skip halfway, get off; the ride as the game sends it
+      // (no seat: the train is never shared).
+      if (options.mode == Mode::Metro && endpoint->IsJoined()) {
+        const auto nowUs = tandem::net::NowUs();
+        if (togetherSince && now >= *togetherSince + std::chrono::seconds(options.metroAtSeconds))
+          puppeteer.Board(nowUs);
+        bool secondHalf = false;
+        const int step = puppeteer.MetroStep(nowUs, &secondHalf);
+        if (step != metroStep || secondHalf != metroSecondHalf) {
+          namespace proto = tandem::proto;
+          proto::Transit ride{.kind = proto::TransitKind::Metro,
+                              .at = static_cast<std::uint8_t>(secondHalf ? 6 : 5),
+                              .next = static_cast<std::uint8_t>(secondHalf ? 7 : 6),
+                              .vehicle = kTrain,
+                              .seat = kTrainSeat};
+          if (step == 2)
+            ride.flags = proto::kTransitSkipping;
+          if (step == 3)
+            ride = {};
+          endpoint->SetLocalTransit(ride);
+          constexpr const char *kSteps[] = {"on the platform", "riding the NCART", "skipping",
+                                            "off the NCART"};
+          Log("metro: {} (station {}, next {})", kSteps[step], ride.at, ride.next);
+          metroStep = step;
+          metroSecondHalf = secondHalf;
+        }
+      }
       if (options.mode == Mode::Drive && !parked) {
         const auto nowUs = tandem::net::NowUs();
-        if (!seated && endpoint->IsJoined()) {
+        const bool driving = options.seat == "seat_front_left";
+        const auto car = puppeteer.Drive(nowUs).second;
+        if (!seated && endpoint->IsJoined() && car) {
           endpoint->SetLocalSeat(
-              {.vehicle = TweakDBID(options.vehicle), .seat = CName("seat_front_left")});
-          Log("driving {} ({:#x})", options.vehicle, TweakDBID(options.vehicle));
+              {.vehicle = TweakDBID(options.vehicle), .seat = CName(options.seat)});
+          Log("{} {} ({:#x}) in {}", driving ? "driving" : "riding", options.vehicle,
+              TweakDBID(options.vehicle), options.seat);
           seated = true;
           seatedAtUs = nowUs;
           if (options.radioStation)
             sendRadio("at the wheel");
+          // Not at the wheel: a ride our game runs (an AI or a scene drives).
+          if (!driving) {
+            namespace proto = tandem::proto;
+            endpoint->SetLocalTransit(
+                {.kind = options.scene ? proto::TransitKind::Scene : proto::TransitKind::Ride,
+                 .flags = options.scene && options.host ? proto::kTransitSeats : std::uint8_t{0},
+                 .seat = CName(options.seat)});
+            Log("a {} ride{}", options.scene ? "scene" : "plain",
+                options.scene && options.host ? ": partners near it get a seat" : "");
+          }
+          if (!driving && options.host && !options.driverNpc.empty()) {
+            endpoint->SendNpcSpawn({.npc = kDriverNpc,
+                                    .record = TweakDBID(options.driverNpc),
+                                    .position = car->position,
+                                    .yaw = tandem::sync::YawOf(car->orientation)});
+            endpoint->SendNpcSeat(
+                {.npc = kDriverNpc, .owner = endpoint->You(), .seat = CName("seat_front_left")});
+            Log("npc {}: {} at the wheel", kDriverNpc, options.driverNpc);
+          }
         }
-        if (auto car = puppeteer.Drive(nowUs).second) {
+        if (car) {
           endpoint->SendLocalVehicle(*car);
           lastCar = car;
+          // The NPC at the wheel goes where the car goes (10 Hz).
+          if (!driving && options.host && !options.driverNpc.empty() && now >= nextDriverState) {
+            nextDriverState = now + 100ms;
+            endpoint->SendNpcStates({.npcs = {{.npc = kDriverNpc,
+                                               .position = car->position,
+                                               .yaw = tandem::sync::YawOf(car->orientation)}}});
+          }
         }
         if (seated && options.driveSeconds > 0 &&
             nowUs - seatedAtUs > static_cast<std::uint64_t>(options.driveSeconds) * 1'000'000) {
           endpoint->SetLocalSeat({}); // on foot, beside where the car stopped
+          endpoint->SetLocalTransit({});
           parked = true;
           if (lastCar)
             puppeteer.Park(lastCar->position);
@@ -2813,6 +3060,26 @@ int main(int argc, char **argv) {
                                                               .attackType = 10,
                                                               .direction = {0.f, 1.f, 0.f}}))
           Log("npc {} hit player {} for 10 physical", shooter, id);
+    }
+    // --shoot-you: one of our (replayed) NPCs fires at each guest; the
+    // guest's game fires the shot from its proxy and decides the hit.
+    if (options.shootYouSeconds && options.host && now >= nextShootYou) {
+      nextShootYou = now + std::chrono::seconds(options.shootYouSeconds);
+      tandem::proto::NpcId shooter = 0;
+      for (const auto npc : replayedNpcs)
+        if (!deadNpcs.contains(npc)) {
+          shooter = npc;
+          break;
+        }
+      for (const auto &[id, info] : endpoint->Players())
+        if (shooter && id != endpoint->You() &&
+            endpoint->SendNpcShotAt({.player = id,
+                                     .npc = shooter,
+                                     .weapon = TweakDBID(options.shotWeapon),
+                                     .tbh = 1.f,
+                                     .trigger = 4, // SemiAuto
+                                     .factor = 1.f}))
+          Log("npc {} fires at player {}", shooter, id);
     }
     // Seconds since another player was first in the session with us.
     if (!sharedSince && endpoint->IsJoined() && endpoint->Players().size() > 1)

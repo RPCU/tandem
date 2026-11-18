@@ -24,10 +24,10 @@
 //   private_scenes = , public_scenes =  ; scene resource paths, comma-separated
 //   quest_freeze_allow = ; more open-world phase resources that keep running
 //                        ; on a frozen guest (resource paths, comma-separated)
-//   time_host = bubble   ; host's Sandevistan (scripts/tandem/Time.reds): bubble keeps
-//                        ; its world at normal speed and slows only the NPCs around
-//                        ; its V; full keeps the single-player slow motion on its own
-//                        ; screen, shared NPCs and puppets exempted (experimental)
+//   time_host = full     ; host's Sandevistan (scripts/tandem/Time.reds): full keeps
+//                        ; the single-player slow motion whole on its own game (the
+//                        ; NPCs it shares follow the bubbles' rules); bubble puts its
+//                        ; world back to normal speed and slows only the NPCs
 
 #include "tandem/relay.hpp"
 
@@ -67,7 +67,7 @@ struct Config {
   // How the host's own time dilations are played (Time.reds): its world in
   // bubbles only (false), or the whole single-player slow motion with what
   // is shared exempted (true).
-  bool timeHostFull{false};
+  bool timeHostFull{true};
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;

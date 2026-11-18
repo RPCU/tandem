@@ -269,6 +269,11 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
   let npc = TandemCombat.ProxyNpc(game, hitEvent.target);
   if npc == 0u {
     wrappedMethod(hitEvent);
+    // Guest: a proxy's shot (Shots.reds) hit our V: the host shows it.
+    let shots = TandemShots.Of(game);
+    if IsDefined(shots) {
+      shots.Report(hitEvent);
+    }
     return;
   }
   // A proxy: what this hit would take, measured, not applied.
@@ -287,6 +292,11 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
     outcomes.Measured(hitEvent, npc, damage, TandemOutcomes.StrikeFlags(hitEvent, damage, TandemCombat.Health(game, hitEvent.target)));
     let xp = TandemCombat.AwardDamageExperience(game, hitEvent, damage);
     TandemNative.Log(s"combat: hit on proxy \(npc) for \(damage), for the host (skill XP for \(xp)% of its health queued)");
+    // It takes the last of the health the host gave this proxy: a kill, now,
+    // as our own game would have it (Npcs.reds PredictKill).
+    if damage >= TandemCombat.Health(game, hitEvent.target) - 0.01 {
+      TandemCombat.System(game).PredictKill(npc);
+    }
   }
   // The feedback the game gives for a hit (damage numbers, hit marker),
   // as SendDamageEvents would.
@@ -328,6 +338,7 @@ private final func ProcessInstantKill(hitEvent: ref<gameHitEvent>) {
   if IsDefined(instigator) && instigator.IsPlayer() && IsDefined(outcomes) {
     outcomes.Measured(hitEvent, npc, 0.0, TandemOutcomes.StrikeFlags(hitEvent, 0.0, 0.0) | 8);
     TandemNative.Log(s"combat: instant kill on proxy \(npc), for the host");
+    TandemCombat.System(game).PredictKill(npc);
   }
 }
 
@@ -371,6 +382,12 @@ private final func InvulnerabilityCheck(hitEvent: ref<gameHitEvent>, cache: ref<
 @wrapMethod(DamageSystem)
 private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<CacheData>) {
   let game = GetGameInstance();
+  // Host: a shot at a guest's puppet that the guest's game fires and decides
+  // (Shots.reds): never a second hit from here.
+  let shots = TandemShots.Of(game);
+  if IsDefined(shots) && shots.SimulatedByGuest(hitEvent) {
+    return;
+  }
   // Host: what a guest's game computed already (its effects' ticks and
   // explosions, its car copy's collisions) arrives as strikes.
   if TandemOutcomes.IsGuestComputed(game, hitEvent) {

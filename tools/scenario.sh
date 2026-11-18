@@ -7,7 +7,8 @@
 #   tools/scenario.sh all           run every one, host scenarios first
 #
 # A scenario is a bash file of steps:
-#   ensure host|join       the game runs this build in this role (restarts
+#   ensure host|join [KEY=VALUE...]  the game runs this build in this role,
+#                          with these extra tandem.ini keys (restarts
 #                          only when needed: tools/game.sh ensure)
 #   peer ARGS...           (re)start the mock player
 #   cmd TEXT               a tandem command in the game
@@ -61,11 +62,22 @@ fail() {
   exit 1
 }
 
-stalled() { since | grep -q 'watchdog: game thread silent'; }
+# The game thread is stalled when its last watchdog line since the mark is
+# "silent" and has stayed so for 45 s: a loading screen (fast travel, a
+# death and reload, a dive) silences it for a while and "back" follows.
+stall_since=''
+stalled() {
+  if [ "$(since | grep -o 'watchdog: game thread [a-z]*' | tail -1)" != 'watchdog: game thread silent' ]; then
+    stall_since=''
+    return 1
+  fi
+  [ -n "$stall_since" ] || stall_since=$SECONDS
+  ((SECONDS - stall_since >= 45))
+}
 
 ensure() {
   local output status=0
-  output=$($game ensure "$1" 2>&1) || status=$?
+  output=$($game ensure "$@" 2>&1) || status=$?
   while IFS= read -r line; do echo "  $line"; done <<<"$output"
   if grep -q 'redscript compile errors' <<<"$output"; then
     echo "  ABORT: the scripts do not compile, every scenario would fail"
@@ -164,9 +176,12 @@ list)
   names=("$@")
   if [ "$1" = all ]; then
     # Host scenarios first, then guest ones: one role switch, fewer restarts.
+    # A scenario marked "# runs last" (it leaves the game on a death screen)
+    # comes after all the others.
     mapfile -t names < <(
-      grep -l '^ensure host' tools/scenarios/*.sh | xargs -n1 basename | sed 's/\.sh$//'
-      grep -L '^ensure host' tools/scenarios/*.sh | xargs -n1 basename | sed 's/\.sh$//'
+      grep -l '^ensure host' tools/scenarios/*.sh | xargs grep -L '^# runs last' | xargs -n1 basename | sed 's/\.sh$//'
+      grep -L '^ensure host' tools/scenarios/*.sh | xargs grep -L '^# runs last' | xargs -n1 basename | sed 's/\.sh$//'
+      grep -l '^# runs last' tools/scenarios/*.sh | xargs -n1 basename | sed 's/\.sh$//'
     )
   fi
   passed=0 total=0 failures=()

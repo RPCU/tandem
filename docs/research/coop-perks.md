@@ -536,6 +536,97 @@ section adds what makes each one a co-op problem.
   Kerenzikov dodge (status-effect VFX on the puppet). **Cosmetic** once the
   time rule exists.
 
+### 5.1a Time bubbles: is everything tied to Sandevistan and slowed time unchanged for its user? (2026-11-18)
+
+Rule from the user: for the V using it, on its own game, a time ability
+behaves exactly as in single player (same scale against enemies, same
+duration, cooldown and extensions, same triggers and bonuses, same look);
+the only co-op difference is that the other players, and what is outside
+the ability's reach, are not slowed. Nothing here changes a perk, a stat or
+a record: everything is in tandem's layer (`scripts/tandem/Time.reds`,
+`Combat.reds`, `Npcs.reds`).
+
+**How far to trust this.** Scripts only (`final.reds` lines). TweakDB was
+not read on this machine, so each implant model's numbers, the mods and
+fragments, iconic items and consumables are covered **by the mechanism they
+use**, not item by item: each reaches the game through one of the rows
+below (a stat on V, a status effect with a prereq, a stat pool, an
+effector, or a script check). None of it has run in game: "identical"
+below means identical by construction (the game's own code runs on the
+user's game with the inputs single player gives it), "pending" names what
+must be measured.
+
+**How it is kept identical.**
+
+- The user's own game keeps the game's own global dilation, guest and host
+  alike (`time_host = full`, now the default): every check, formula, stat
+  pool, effect and sound on that game is single player's. On the host the
+  NPCs it shares are given their bubble's speed with the per-entity
+  dilation, the global factor ignored, so its own slow motion never
+  decides what the others get. (`time_host = bubble`, the earlier way,
+  puts the host's world back to normal speed: kept as a fallback, with the
+  differences it had.)
+- Reach: a bubble holds every NPC within 150 m of its V, more than any
+  game shows of NPCs (the host shares those within 60 m of its V), so the
+  user sees every enemy slowed, as in single player. At the edge the other
+  player sees an NPC walking in slow down and one already in stay slowed
+  until the end; a V is slowed from 150 m in and freed 15 m farther out,
+  so nothing flickers there.
+
+| What                                                                                                  | How the game does it [R]                                                                                                                                                                  | For its user (guest and host)                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Time scale of each Sandevistan model, and anything that modifies it                                   | stat `TimeDilationSandevistanTimeScale` on V (`524119-524126`), re-read every update (`524179-524195`)                                                                                    | identical: the bubble's factor is that stat, read every frame, a change mid-effect reaches the NPCs (unit test)                                                                                                                                                                                                                                                                |
+| Duration, charges, cooldown and its reductions                                                        | stat pool `SandevistanCharge` (`523700-523726`), enter cost `524146-524153`, `BaseStatusEffect.SandevistanCooldown` (`494112-494126`)                                                     | identical pending in-game check: time a full Sandevistan as host and as guest against single player (`time report` logs the charge)                                                                                                                                                                                                                                            |
+| Kills that extend or recharge it (`SandevistanKillRechargeValue`), health on kill, on-kill perks      | on-kill prereqs and effectors on V                                                                                                                                                        | identical pending in-game check: a guest's lethal hit now kills the proxy at once, by its V (`Npcs.PredictKill`); if the host says the NPC lives, the proxy is brought back 1.5 s later (what the kill gave stays given). Check a kill in the last second extends it                                                                                                           |
+| Crit, damage and other bonuses while active                                                           | status effects of type `Sandevistan` (`494085`), `TimeDilationPSMPrereq` (`311836`), set at `524134`                                                                                      | identical: the state machine and its effects are the game's own; attacker-side bonuses go through the guest's hit pipeline (§2.2)                                                                                                                                                                                                                                              |
+| Enemies slowed to the implant's factor                                                                | global dilation, V exempt (`522191-522212`)                                                                                                                                               | identical pending in-game check: every shown NPC is in the bubble; on a guest the NPCs slow a network round trip after its own screen does (measure the delay; its proxies animate at its own factor from the first frame)                                                                                                                                                     |
+| Everything else slowed (effects, physics, debris, sound, screen)                                      | global dilation                                                                                                                                                                           | identical: the user's own game is dilated. What a host's dilation still slows for the others: things nobody shares yet (its clock, physics props, traffic). To handle as each becomes shared                                                                                                                                                                                   |
+| Enemy bullets slow enough to see and dodge                                                            | a dilation active on that game turns NPC shots into projectiles (`173366-173373`); a projectile is an `ItemObject`, so a `TimeDilatable` (`52793`, `269557`), slowed by the global factor | host: identical pending in-game check (the bullet gets its shooter's speed, `SlowBullet`: check the logged class and that it flies slowly). Guest: identical pending in-game check: its own game fires the shot from the proxy and decides the hit (`Shots.reds`); check the bullet is drawn, slow, and dodgeable, and that the proxy's shots are not dropped as friendly fire |
+| V's own fire rate, reload and animations while active                                                 | `CalcCycleTimeDeltaFactor` (`286955-286967`) reads the global factor; items and V's animations follow the game's own time                                                                 | identical: the formula reads single player's values on the user's game (`time report` logs them)                                                                                                                                                                                                                                                                               |
+| V's shots as time-dilated attacks                                                                     | `PlayerTimeDilated` records while any dilation is active (`286770-286777`)                                                                                                                | identical                                                                                                                                                                                                                                                                                                                                                                      |
+| Blade deflect free while time is slowed (`Reflexes_Right_Perk_2_3`)                                   | `IsTimeDilationActive()` on the target's game (`87242`)                                                                                                                                   | identical: a V is hit on its own game (§2.5)                                                                                                                                                                                                                                                                                                                                   |
+| Air dash hover during Kerenzikov (`Reflexes_Inbetween_Left_3`), dodge barred during Kerenzikov        | state `kerenzikov`, reason `kereznikov` (`543278-543300`, `553463`, `557930-557941`)                                                                                                      | identical                                                                                                                                                                                                                                                                                                                                                                      |
+| Kerenzikov: world and V factors, its buff, cooldown                                                   | stats `TimeDilationKerenzikovTimeScale` / `PlayerTimeScale` (`527831-527896`), `KerenzikovPlayerBuff` (`525573`)                                                                          | identical: a bubble with its world factor                                                                                                                                                                                                                                                                                                                                      |
+| Focus (`Cool_Left_Milestone_2`, `Cool_Inbetween_Left_2`), Deadeye's reload (`Cool_Left_Perk_3_2`)     | global dilations `focusedStatePerkDilation` (`542858`), `coolReloadPerkDilation` (`547583`)                                                                                               | identical: each makes a bubble with the perk's own factor                                                                                                                                                                                                                                                                                                                      |
+| Implants and perks that slow time on a trigger (Reflex Tuner, Synaptic Accelerator, second chance, …) | `SetTimeDilationEffector` (`307231-307280`), reason, factor and duration in TweakDB                                                                                                       | identical pending in-game check: the reason is learned as the game sets it (an observing wrap) and makes a bubble; check the log line `time: effector dilation` when one triggers                                                                                                                                                                                              |
+| "No second dilation" rules                                                                            | `IsTimeDilationActive()` with exceptions (`523680-523685`, `525481`, `307251`, `552914`, `554281`)                                                                                        | identical                                                                                                                                                                                                                                                                                                                                                                      |
+| An enemy with a Sandevistan answering V's                                                             | AI sub-action, reason `sandevistanVersusSandevistan`: the NPC speeds itself up by what V's slows the world, so it moves at real speed for as long (`427380-427503`)                       | host: identical (the game's own; the bubble never replaces a dilation an NPC set itself). Guest: identical pending in-game check: while that sub-action runs on the host the NPC is left out of every bubble (`Counter`); check the AI starts it against a guest's puppet (its condition is TweakDB)                                                                           |
+| Berserk, Overclock                                                                                    | status effects and stats; `berserk` is an effector reason (`307274`)                                                                                                                      | identical                                                                                                                                                                                                                                                                                                                                                                      |
+| Melee hit stop, deflect and one-punch slow motion                                                     | `meleeHit` (`45789`), `deflect` (`39679`, `552917`, `554284`)                                                                                                                             | identical on the user's game (local, a few frames, no bubble)                                                                                                                                                                                                                                                                                                                  |
+| Skill XP for kills while active, the "time dilation" achievement                                      | `StatusEffectType.Sandevistan` on the killer (`37134-37153`), `CheckTimeDilationSources` (`51487-51492`)                                                                                  | identical; a guest's XP itself is §2.4                                                                                                                                                                                                                                                                                                                                         |
+| Scanner and quickhack panel slow motion                                                               | `focusMode` (`529159-529188`)                                                                                                                                                             | **off by decision** (user, 2026-11-18) while another V is in the session, on host and guest: the dilation is put back to normal speed under its own reason, the scanner itself is untouched. Alone or in single player: vanilla                                                                                                                                                |
+
+**Still open, for review** (nothing shipped blind):
+
+- _NPC shots at a guest_: decided (the user, option b) and built: the
+  guest's game simulates them (`Shots.reds`, ARCHITECTURE). To check in
+  game: the proxy holds and fires the NPC's weapon (it is handed the
+  weapon record of each shot); `AI_ShootAt` with no ammo cost fires at
+  all. The proxy is made hostile to the guest's V when it fires at it (a
+  friendly attacker's hits are dropped by `CheckForQuickExit`). Damage
+  parity: same record, weapon and difficulty (the session plays at the
+  host's, `Outcomes.reds`); the host puts no level or power modifier of
+  its own on its NPCs today (the "mean level" rule is decided, not
+  built), so there is nothing to copy yet: when it is built, the proxy
+  must get the same modifier.
+- _Projectiles crossing a bubble from outside_ (fired by an NPC farther
+  than 150 m): not slowed. Nothing shown is that far.
+- _The host's dilation and what is not shared yet_: its game clock, quest
+  timers, physics props and traffic slow with it. Each needs its rule when
+  it becomes shared (the clock: `World` already corrects guests).
+
+**Other Vs in a bubble** (user's rule, 2026-11-18): a bubble slows the
+other Vs inside it too, each on its own game, by the bubble's factor
+divided by that V's own ability's factor, never above 1
+(`TimeBubbles::PlayerFactor`, table-tested). No ability: as slow as the
+NPCs, and the owner looks very fast. The same or a stronger ability: not
+slowed, on an equal footing in the bubble. A weaker one: slowed by the
+ratio. The owner's own mechanics are untouched by this; a V slowed by
+someone else's bubble keeps its own rules in its own, slower, time.
+Vanilla has nothing like it (an enemy Sandevistan speeds the NPC up, never
+slows V, `427380-427400`), so there is no native sound or screen effect for
+being slowed: open, see ARCHITECTURE.
+
 ### 5.2 Berserk, ground slam, cyberware explosion
 
 - `UseBerserkAction` (`224021`) → PSM `OnBerserkActivated`; Berserk UI

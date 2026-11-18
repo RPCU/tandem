@@ -15,7 +15,8 @@
 #                              which tandem.ini the game reads (the player's
 #                              own is kept as tandem.ini.player; player puts
 #                              it back)
-#   tools/game.sh ensure host|join  this build running in this role: deploys,
+#   tools/game.sh ensure host|join [KEY=VALUE...]  this build running in this
+#                              role (with these extra tandem.ini keys): deploys,
 #                              hot-reloads scripts-only changes, restarts only
 #                              when the DLL, tweaks or role changed
 #   tools/game.sh healthy      the game plays and its game thread ticks
@@ -32,6 +33,9 @@
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
 #                              vehicle ride | vehicle unride | vehicle clear | where | npcs |
 #                              npc count | npc anims | markers |
+#                              ride (our ride, the vehicle's seats, the others' rides) |
+#                              ride hide | ride show (every puppet out of sight and back) |
+#                              ride npc [RECORD] (an NPC into a free seat of our vehicle) |
 #                              teleport home | teleport X Y Z [YAW] |
 #                              proxy test [record] | proxy clear |
 #                              pose hook | pose report | pose watch [3] | pose copy [off] |
@@ -206,10 +210,12 @@ cmd() {
     echo "the game is not running" >&2
     exit 1
   }
-  # One at a time: wait until tandem took the previous one (and this one).
+  # One at a time: wait until tandem took the previous one (and this one;
+  # up to 30 s, as a command that starts a loading screen is taken only once
+  # the world runs again).
   printf '%s\n' "$*" | remote "f='$dir/red4ext/plugins/tandem/tandem.cmd'; \
     for i in \$(seq 1 20); do [ -e \"\$f\" ] || break; sleep 0.25; done; cat > \"\$f\"; \
-    for i in \$(seq 1 20); do [ -e \"\$f\" ] || exit 0; sleep 0.25; done; echo 'not taken (in a game?)' >&2; exit 1"
+    for i in \$(seq 1 120); do [ -e \"\$f\" ] || exit 0; sleep 0.25; done; echo 'not taken (in a game?)' >&2; exit 1"
   echo "sent: $*"
 }
 
@@ -272,6 +278,9 @@ role() {
     exit 1
     ;;
   esac
+  # Extra keys for a test (ensure ROLE KEY=VALUE...): one per line.
+  local extra
+  for extra in ${ini_extra:-}; do text+="${extra%%=*} = ${extra#*=}"$'\n'; done
   printf '%s' "$text" | remote "[ -e '$ini.player' ] || cp '$ini' '$ini.player'; cat > '$ini'"
   echo "role: ${text%%$'\n'*}"
 }
@@ -283,13 +292,21 @@ stamp() { cat build/windows/plugin/tandem.dll scripts/tandem/*.reds tweaks/tande
 #   ensure host|join  deploy if the build changed; reload scripts when only
 #                     scripts did (RedHotTools); restart when the DLL, the
 #                     tweaks or the role changed, or the game is not playing.
+#   ensure ROLE KEY=VALUE...  the same with these keys in tandem.ini (the
+#                     plugin reads it at start: other keys mean a restart).
 ensure() {
-  local want=$1 started now
+  local role_name=$1 want started now
+  shift
+  ini_extra="$*"
+  # The role and its extra keys, as one word.
+  want="$role_name${ini_extra:+,${ini_extra// /,}}"
   now=$(stamp)
   started=$(remote "cat '$dir/red4ext/plugins/tandem/.started' 2>/dev/null" || true)
   local current_role
   current_role=$(remote "sed -n 's/^role *= *//p' '$dir/red4ext/plugins/tandem/tandem.ini'")
-  if [ "$current_role" != "$want" ]; then role "$want" >/dev/null; fi
+  if [ "$current_role" != "$role_name" ] || [ "${started#* }" != "$want" ]; then
+    role "$role_name" >/dev/null
+  fi
   if [ "$started" = "$now $want" ] && running && healthy; then
     echo "game: running this build as $want"
     return
@@ -344,7 +361,10 @@ role)
   shift
   role "$@"
   ;;
-ensure) ensure "${2:?host or join}" ;;
+ensure)
+  shift
+  ensure "${@:?host or join}"
+  ;;
 healthy) healthy && echo healthy ;;
 reload) reload ;;
 peer)

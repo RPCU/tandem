@@ -4,7 +4,9 @@
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --answer 2 --suggest 1
 expect 'joined \(player [0-9]+' 20
-expect 'journal: snapshot of [0-9]+ entries sent' 20
+# Our journal went out when the session began (before this scenario's
+# mark); the plugin's record hands it to the joiner.
+expect 'story: tandem-peer joins the story' 20
 expect_peer 'journal: snapshot of [0-9]+ entries' 20
 expect_peer 'tracked: [0-9]+' 10
 cmd story call tandem_test

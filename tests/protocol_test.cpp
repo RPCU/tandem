@@ -70,8 +70,40 @@ TEST_CASE("every message survives encoding") {
   RoundTrips(Pause{.player = 3, .paused = true});
   RoundTrips(Pause{.player = 2, .paused = false});
   RoundTrips(TimeEffect{.player = 2, .abilities = kTimeSandevistan, .scale = 0.25f});
+  RoundTrips(NpcShotAt{.player = 2,
+                       .npc = 7,
+                       .timeUs = 123'456'789'012ULL,
+                       .attack = 0x1122334455ULL,
+                       .weapon = 0x0abcdef012ULL,
+                       .tbh = 0.8f,
+                       .trigger = 2,
+                       .factor = 0.25f});
+  RoundTrips(ShotHit{.player = 2, .npc = 7, .position = {1, 2, 3}, .direction = {0, -1, 0}});
+  CHECK(std::string(NameOf(NpcShotAt{})) == "NpcShotAt");
+  CHECK(std::string(NameOf(ShotHit{})) == "ShotHit");
+  // Shots change state (a hit, a dodge): never dropped, never doubled.
+  CHECK(ChannelOf(NpcShotAt{}) == Channel::Event);
+  CHECK(IsReliable(ShotHit{}));
+  CHECK(Encode(NpcShotAt{}).size() < 64);
   RoundTrips(TimeEffect{.player = 3, .abilities = kTimeScanning | kTimeSlowMo, .scale = 1.f});
   CHECK(std::string(NameOf(TimeEffect{})) == "TimeEffect");
+  RoundTrips(Transit{.player = 2,
+                     .revision = 4,
+                     .kind = TransitKind::Metro,
+                     .flags = kTransitSkipping,
+                     .at = 5,
+                     .next = 6,
+                     .vehicle = 0x1234'5678'9abcULL,
+                     .seat = 0xb000b1d029d0cea0ULL});
+  RoundTrips(
+      Transit{.player = 1, .revision = 1, .kind = TransitKind::Scene, .flags = kTransitSeats});
+  RoundTrips(Transit{.player = 3, .revision = 9, .kind = TransitKind::None});
+  RoundTrips(Transit{
+      .player = 2, .revision = 3, .kind = TransitKind::Along, .vehicle = 0x99, .carrier = 1});
+  CHECK(std::string_view(NameOf(Transit{})) == "Transit");
+  RoundTrips(NpcSeat{.npc = 7, .owner = 1, .seat = 0xb000b1d029d0cea0ULL});
+  RoundTrips(NpcSeat{.npc = 7});
+  CHECK(std::string_view(NameOf(NpcSeat{})) == "NpcSeat");
   RoundTrips(NpcHack{
       .player = 2, .npc = 7, .action = 0x1122334455, .uploadMs = 1500, .flags = kUploadTraceable});
   RoundTrips(NpcHackState{
@@ -320,6 +352,17 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(IsReliable(Pause{}));
   CHECK(ChannelOf(TimeEffect{}) == Channel::Event);
   CHECK(IsReliable(TimeEffect{}));
+  // Rides and seats change state: never dropped, and not story messages.
+  CHECK(ChannelOf(Transit{}) == Channel::Event);
+  CHECK(IsReliable(Transit{}));
+  CHECK_FALSE(IsStory(Transit{}));
+  CHECK(ChannelOf(NpcSeat{}) == Channel::Event);
+  CHECK(IsReliable(NpcSeat{}));
+  CHECK_FALSE(IsStory(NpcSeat{}));
+  // A ride of a kind we do not know is refused, not guessed at.
+  CHECK(Decode(Encode(Transit{.kind = TransitKind::Along})).has_value());
+  Transit unknown{.kind = static_cast<TransitKind>(9)};
+  CHECK_FALSE(Decode(Encode(unknown)).has_value());
   // Quickhacks change state: never dropped.
   CHECK(ChannelOf(NpcHack{}) == Channel::Event);
   CHECK(ChannelOf(NpcHackState{}) == Channel::Event);

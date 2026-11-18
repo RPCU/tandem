@@ -15,7 +15,7 @@
 
 namespace tandem::proto {
 inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
-inline constexpr std::uint16_t kProtocolVersion = 5;
+inline constexpr std::uint16_t kProtocolVersion = 6;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -201,7 +201,9 @@ struct Seat {
 };
 
 // The car a player drives, sent by the driver's game (State channel, 30 Hz).
-// Other games teleport their copy of it to the interpolated transform.
+// Other games teleport their copy of it to the interpolated transform. Also
+// sent for a vehicle the player's game moves while the player does not
+// drive it (Transit::Ride, Scene): its game runs it, so it is the owner.
 struct VehicleState {
   PlayerId player{};
   std::uint32_t seq{};
@@ -612,8 +614,11 @@ struct QuestReward {
 // (tandem/timebubble.hpp), and every game shows the ability on its puppet.
 inline constexpr std::uint8_t kTimeSandevistan = 1, kTimeKerenzikov = 2, kTimeSlowMo = 4,
                               kTimeScanning = 8;
-// The abilities that make a bubble; the others stay on their owner's screen.
-inline constexpr std::uint8_t kTimeBubbleAbilities = kTimeSandevistan | kTimeKerenzikov;
+// The abilities that make a bubble (kTimeSlowMo: perks and implants that
+// slow time, Focus, Deadeye, Reflex Tuner...); scanning stays on its owner's
+// screen.
+inline constexpr std::uint8_t kTimeBubbleAbilities =
+    kTimeSandevistan | kTimeKerenzikov | kTimeSlowMo;
 struct TimeEffect {
   PlayerId player{};
   std::uint8_t abilities{}; // kTime* bits (0: none)
@@ -1048,16 +1053,98 @@ struct Elsewhere {
   friend bool operator==(const Elsewhere &, const Elsewhere &) = default;
 };
 
-using Message =
-    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
-                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
-                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
-                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
-                 Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
-                 NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
-                 Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise,
-                 Difficulty, AreaHit, Digest, ResyncRequest, NpcSet, Epoch, Elsewhere>;
+// A ride a player's own game runs for its V (docs/ARCHITECTURE.md,
+// "Scripted transit and quest vehicles"), sent by that game when it starts,
+// changes or ends (Event channel; the host stamps the sender, keeps the
+// latest of each player for late joiners and relays it).
+// - Metro: an NCART train (ncartMetroObject, status effect tag MetroRide).
+//   Never copied: every game that rides runs its own train. The others
+//   seat the rider's puppet in a train of their own world when one is
+//   there (the same entity, or the one they ride themselves, near the
+//   rider), else hide it with a notice; it comes back at the exit station.
+//   No Seat is sent for a train.
+// - Ride: a vehicle our game moves for us while we do not drive it (a
+//   Delamain cab, a car an NPC drives): Seat and VehicleState as for a car
+//   we drive, so the others see its copy with us seated.
+// - Scene: the same in a story scene (the host's quest vehicle): a partner
+//   near it on foot is offered to come along (kTransitSeats): a free seat
+//   of its copy, or, when the car has none (two seats: the host and Panam),
+//   a ride along.
+// - Along: our V rides along in `carrier`'s scene vehicle with no seat of
+//   its own (Transit.reds): carried with its copy here, out of sight, and
+//   out of sight everywhere else too (no seat to show it in).
+enum class TransitKind : std::uint8_t { None = 0, Metro = 1, Ride = 2, Scene = 3, Along = 4 };
+inline constexpr std::uint8_t kTransitSkipping =
+    1; // the ride's own skip runs (the world fast-forwards)
+inline constexpr std::uint8_t kTransitSeats = 2; // partners near its copy get a free seat
+struct Transit {
+  PlayerId player{};
+  std::uint32_t revision{};
+  TransitKind kind{};
+  std::uint8_t flags{}; // kTransit*
+  // Metro: the station the train is at or last stopped at, and the next one
+  // (ENcartStations: 1..19; 0 unknown).
+  std::uint8_t at{};
+  std::uint8_t next{};
+  std::uint64_t vehicle{}; // the vehicle's EntityID hash in the rider's world
+  std::uint64_t seat{};    // the rider's seat slot (CName hash; 0 unknown)
+  PlayerId carrier{};      // Along: whose vehicle carries us
+  friend bool operator==(const Transit &, const Transit &) = default;
+};
+
+// One of the host's NPCs sits in the vehicle carrying a player (the vehicle
+// that player's game runs: its copy everywhere else), or got out (owner
+// kNoPlayer). Host to guests (Event channel; kept while it sits, for late
+// joiners). A guest seats its proxy in that copy: Panam at the wheel of the
+// quest car the host's V rides in.
+struct NpcSeat {
+  NpcId npc{};
+  PlayerId owner{};     // the player whose vehicle (kNoPlayer: out)
+  std::uint64_t seat{}; // the slot's CName hash
+  friend bool operator==(const NpcSeat &, const NpcSeat &) = default;
+};
+
+// NPC shots at a guest's V (docs/ARCHITECTURE.md, authority table; not
+// NpcShot, the cosmetic shot every guest draws on its proxy): the
+// host's NPC decides to fire (when, at whom, with which weapon and attack);
+// the guest's game fires the shot from its proxy of that NPC at its own V,
+// simulates the bullet or projectile and decides the hit, as single player
+// would (aim, the target's miss rules, dodging under slow motion). The host
+// sends it to that guest only and no longer decides the hit itself.
+// Event channel: a lost shot is one never fired, a doubled one two (a
+// one-shot for the consistency layer, in no digest: it is not state).
+struct NpcShotAt {
+  PlayerId player{};      // the V shot at
+  NpcId npc{};            // the shooter, as the host shares it
+  std::uint64_t timeUs{}; // host clock when it fired
+  std::uint64_t attack{}; // TweakDB id of the ranged attack asked for (0: the weapon's)
+  std::uint64_t weapon{}; // TweakDB id of the shooter's weapon item
+  float tbh{};            // the AI's time-between-hits coefficient for this shot
+  std::uint8_t trigger{}; // gamedataTriggerMode
+  float factor{1.f};      // the shooter's time factor (its bubble; 1: none)
+  friend bool operator==(const NpcShotAt &, const NpcShotAt &) = default;
+};
+
+// A shot the guest's game simulated hit its V (guest to host; the host
+// stamps the player). The host shows the hit on that player's puppet (the
+// game's own hit reaction, no damage: the damage was the guest's).
+struct ShotHit {     // Event channel
+  PlayerId player{}; // the V hit: set by the host from the connection
+  NpcId npc{};       // the shooter
+  Vec3 position;     // where it landed and the way it went
+  Vec3 direction;
+  friend bool operator==(const ShotHit &, const ShotHit &) = default;
+};
+
+using Message = std::variant<
+    Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
+    Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
+    Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
+    PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle,
+    ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
+    NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
+    Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
+    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.
