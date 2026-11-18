@@ -46,6 +46,29 @@ public native struct TandemNpcEvent {
   native let dz: Float;
 }
 
+// Grapples, takedowns, finishers and carried bodies (Takedowns.reds).
+public native struct TandemNpcAction {
+  // 1 a guest's request (host), 2 the host's answer (guest), 3 who holds an NPC, 4 a cue for us
+  native let kind: Int32;
+  native let npc: Uint32;
+  // 1: who asks; 3: the holder (0: released); 4: us
+  native let player: Uint32;
+  // 1, 2: NpcActionKind (1 grab ... 10 dispose); 3: NpcHoldKind; 4: NpcCueKind
+  native let action: Int32;
+  native let name: CName;
+  // the item: a TweakDB id (finisher: weapon) or an entity (dispose: container)
+  native let record: TweakDBID;
+  native let entity: EntityID;
+  native let amount: Float;
+  // throw: the impulse
+  native let dx: Float;
+  native let dy: Float;
+  native let dz: Float;
+  // 2: accepted, else why not (reason)
+  native let accepted: Bool;
+  native let reason: Int32;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -87,6 +110,12 @@ public native class TandemNative extends IScriptable {
   public static native func NpcDetected(npc: Uint32) -> Int32
   public static native func TakeNpcEvents() -> array<TandemNpcEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32
+  public static native func SendNpcAction(npc: Uint32, kind: Int32, name: CName, record: TweakDBID, entity: EntityID, amount: Float, direction: Vector4)
+  public static native func SendNpcActionReply(player: Uint32, npc: Uint32, kind: Int32, accepted: Bool, reason: Int32)
+  public static native func SendNpcHold(npc: Uint32, player: Uint32, how: Int32, name: CName)
+  public static native func SendNpcCue(npc: Uint32, player: Uint32, cue: Int32)
+  public static native func TakeNpcActions() -> array<TandemNpcAction>
+  public static native func HoldPuppet(player: Uint32, hold: Bool)
   public static native func IsHost() -> Bool
   public static native func SendWorld(gameTimeSeconds: Int32, weather: CName, paused: Bool)
   public static native func HostWorldChanges() -> Int32

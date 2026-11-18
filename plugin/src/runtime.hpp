@@ -18,7 +18,9 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace tandem::plugin {
@@ -37,6 +39,23 @@ struct NpcEvent {
   float amount{};           // Hit: damage (health points); Health: fraction 0..1
   std::uint8_t flags{};     // Hit: proto::kHit*
   proto::Vec3 direction;    // Hit: its way (spawn.position: where it landed)
+};
+
+// Grapples, takedowns, finishers and carried bodies (Takedowns.reds), for
+// the scripts: a guest's request (host), the host's answer to ours, who holds
+// an NPC, our half of an NPC's reaction (guests).
+struct ActionEvent {
+  enum class Kind : std::int32_t { Request = 1, Reply = 2, Hold = 3, Cue = 4 };
+  Kind kind{};
+  proto::NpcId npc{};
+  proto::PlayerId player{}; // Request: who asks; Hold: the holder; Cue: us
+  std::uint8_t action{};    // Request, Reply: proto::NpcActionKind; Hold: NpcHoldKind; Cue: cue
+  std::uint64_t name{};
+  std::uint64_t item{};
+  float amount{};
+  proto::Vec3 direction;
+  bool accepted{};
+  std::uint8_t reason{};
 };
 
 // NPC proxies use the player-puppet tracks and controller under these ids.
@@ -154,6 +173,22 @@ public:
   std::vector<NpcEvent> TakeNpcEvents();
   void PushNpcStates(const proto::NpcStates &states);
 
+  // Grapples, takedowns, carried bodies: requests (guest) and holds and
+  // cues (host) go out with the NPC outbox; answers to one player separately.
+  void SubmitNpcAction(const proto::NpcAction &action);                                  // guest
+  void SubmitNpcHold(const proto::NpcHold &hold);                                        // host
+  void SubmitNpcCue(const proto::NpcCue &cue);                                           // host
+  void SubmitNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply); // host
+  std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> TakeNpcReplies();
+  void PushActionEvent(const ActionEvent &event);
+  std::vector<ActionEvent> TakeActionEvents();
+
+  // A puppet (player or NPC proxy) the controller must leave where it is:
+  // something else places it (a grapple workspot, a carrier's shoulder).
+  // Game thread writes, the movement controller reads.
+  void HoldPuppet(proto::PlayerId player, bool hold);
+  bool IsPuppetHeld(proto::PlayerId player) const;
+
   // Net thread writes remote states; the animation thread and scripts read views.
   void PushRemote(const proto::PlayerState &state);
   void ForgetRemote(proto::PlayerId player);
@@ -193,21 +228,25 @@ private:
   std::optional<proto::PlayerState> m_local;
   std::vector<ScriptEvent> m_events;
 
-  std::optional<proto::PoseState> m_localPose;                              // under m_lock
-  std::optional<proto::Appearance> m_localAppearance;                       // under m_lock
-  std::optional<proto::Held> m_localHeld;                                   // under m_lock
-  std::vector<proto::Shot> m_localShots, m_remoteShots;                     // under m_lock
-  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Held>> m_held;  // m_lock
-  std::optional<proto::Seat> m_localSeat;                                   // m_lock
-  std::optional<proto::VehicleState> m_localVehicle;                        // m_lock
-  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Seat>> m_seats; // m_lock
-  std::map<proto::PlayerId, sync::VehicleTrack> m_vehicles;                 // m_tracksLock
-  std::optional<proto::World> m_localWorld;                                 // m_lock
-  std::optional<proto::World> m_hostWorld;                                  // m_lock
-  std::uint32_t m_hostWorldChanges{};                                       // m_lock
-  std::vector<proto::Message> m_npcOutbox;                                  // m_lock
-  std::optional<proto::NpcStates> m_npcStates;                              // m_lock
-  std::vector<NpcEvent> m_npcEvents;                                        // m_lock
+  std::optional<proto::PoseState> m_localPose;                                 // under m_lock
+  std::optional<proto::Appearance> m_localAppearance;                          // under m_lock
+  std::optional<proto::Held> m_localHeld;                                      // under m_lock
+  std::vector<proto::Shot> m_localShots, m_remoteShots;                        // under m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Held>> m_held;     // m_lock
+  std::optional<proto::Seat> m_localSeat;                                      // m_lock
+  std::optional<proto::VehicleState> m_localVehicle;                           // m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Seat>> m_seats;    // m_lock
+  std::map<proto::PlayerId, sync::VehicleTrack> m_vehicles;                    // m_tracksLock
+  std::optional<proto::World> m_localWorld;                                    // m_lock
+  std::optional<proto::World> m_hostWorld;                                     // m_lock
+  std::uint32_t m_hostWorldChanges{};                                          // m_lock
+  std::vector<proto::Message> m_npcOutbox;                                     // m_lock
+  std::optional<proto::NpcStates> m_npcStates;                                 // m_lock
+  std::vector<NpcEvent> m_npcEvents;                                           // m_lock
+  std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> m_npcReplies; // m_lock
+  std::vector<ActionEvent> m_actionEvents;                                     // m_lock
+  mutable std::mutex m_heldLock;
+  std::set<proto::PlayerId> m_heldPuppets; // m_heldLock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::uint32_t m_loopSeq{};

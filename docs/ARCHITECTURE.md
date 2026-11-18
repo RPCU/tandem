@@ -353,8 +353,44 @@ redscript natives (UI, events)              ENet socket
   their damage ticks stay the guest's (they reach the host as hits), and
   the host's own ticks for them deal nothing. Stealth bonuses depend on
   the attacker's combat state, so they follow per-player detection
-  (above). Open: aggro (the NPC turning on whoever hit it), quickhacks
-  (uploads, not hits), NPCs hitting guests (milestone 5, next), loot.
+  (above). A hostile NPC a guest hits turns on that guest's puppet
+  (`TargetTrackingExtension.InjectThreat`, `scripts/tandem/Reactions.reds`).
+  Open: aggro of NPCs not yet hostile, quickhacks (uploads, not hits),
+  NPCs hitting guests (milestone 5, next), loot.
+- **Takedowns, finishers, carried bodies** (`scripts/tandem/Takedowns.reds`,
+  not yet run in game): the actor's game plays its V's side at once on its
+  proxy (the takedown state machine, the finisher, the carry) and sends
+  `NpcAction` (grab, release, takedown, knock-out, other takedown
+  animation, finisher, pick up, drop, throw, dispose) to the host. Its
+  requests are caught where vanilla runs the NPC's side:
+  `TakedownGameEffectHelper.FillTakedownData`, the grapple's break-free and
+  release, `FinisherAttackEvents.PlayFinisherGameEffect`, the body's
+  `CarriedObject` states and `DisposalDevice`. The host validates (the NPC
+  is there, alive for a grab or takedown, a body for a pick up, nobody else
+  holds it, within 6 m, the finisher's health no higher than the guest saw
+  or its guard broken), answers the asker alone (`NpcActionReply`) and plays
+  the NPC's side on the real one with the guest's puppet as activator: the
+  same `takedowns` or `playFinisher` game effect, the mount on the
+  `leftShoulder` slot with the carried pose, the throw's kill, ragdoll and
+  impulse, the disposal's kill and hide; the kill or knock-out is applied
+  4–5 s later if the effect did not do it, credited to the puppet. Who holds
+  what goes to everyone (`NpcHold`, kept for late joiners, released when
+  the holder leaves), so each game puts its proxy in the same grapple or on
+  the same shoulder of that V, holds the proxy's movement controller
+  meanwhile (`TandemNative.HoldPuppet`) and switches its takedown prompts
+  off. A refused grab breaks free on the guest, vanilla's end for a failed
+  grapple; a refused pick up is a forced drop. A disposed body is gone for
+  everyone (`NpcGone` reason 2: proxies deleted). A guest's proxy killed by
+  the host during its own takedown dies once its animation is over.
+- **"The player" reactions on the host** (`scripts/tandem/Reactions.reds`):
+  NPC code that reacts to "the player" uses whoever acted. An NPC entering
+  combat with a guest's puppet gives the host's V no second chance or gag;
+  a guard a guest broke offers the host's V no finisher; both go to that
+  guest's game as `NpcCue`, which runs them on its own V with its proxy (the
+  second chance's memory wipe comes back as an `NpcEffect`; the proxy's
+  missing senses are replaced by the host's detection bit). A guest's
+  Bait/Whistle walks the NPC to that guest's puppet. TODO list in
+  `research/engine-knowledge.md` §13.12.
 - **Looks** (`engine/look.cpp`, `scripts/tandem/Outfit.reds`): a V's face
   and body travel as the appearance keys the game's appearance changer takes
   (a resource path hash and a name hash each: the same in every copy of the
@@ -472,6 +508,12 @@ game thread stop). Each feature verified in game gets a scenario.
 - **idle** — connects and reports.
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
+- **Takedowns**: `join --grab-npcs N` grabs one of the host's NPCs every N
+  s (standing by it) and takes it down two seconds later, lethal and
+  non-lethal in turn; `join --carry-npcs N` picks up a body, carries it
+  for three seconds and throws it; as host it answers the game's requests
+  (refusing dead or held NPCs) and `host --hold-npcs N` shows its own V
+  grabbing and taking down a replayed NPC, with a combat cue for the game.
 - **NPC record and replay** (first piece of the simulated second game):
   `join --record FILE` saves the host's `NpcSpawn`/`NpcStates`/`NpcGone`
   with their times; `host --replay FILE [--offset X,Y,Z]` sends them again
@@ -586,7 +628,12 @@ in-game tests still owed; none of it tested in a session yet):
   action at once (its V's animation, sound and effects) so it feels local.
   Physics objects (crates, bodies, cars hit) need an owner and a sync of
   their transform like vehicles; which ones (all props, or only those a
-  player touched) is to decide.
+  player touched) is to decide. Done for takedowns, grapples, finishers
+  and carried, thrown and disposed bodies (see Inside the plugin; to
+  verify in game with scenarios `takedowns-host` and `takedowns-guest`).
+  Still open there: the disposal container's own state (door, light,
+  "used") stays the actor's until devices are synced, and loot from a
+  disposed body.
 - **Radio: each V's own on foot, the driver's in a car.** On foot every
   player listens to their own pocket radio, which nobody else hears. In a
   car everyone aboard hears the car's radio, and the driver owns it: their

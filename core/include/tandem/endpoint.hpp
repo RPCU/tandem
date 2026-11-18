@@ -97,6 +97,22 @@ struct NpcHitBy {
 struct NpcEffectBy {
   proto::NpcEffect effect;
 };
+// A guest's grapple, takedown, finisher or carry request (host only), and
+// the host's answer to ours (guests only).
+struct NpcActionBy {
+  proto::NpcAction action;
+};
+struct NpcActionAnswered {
+  proto::NpcActionReply reply;
+};
+// Who holds or animates one of the host's NPCs (guests only).
+struct HostNpcHold {
+  proto::NpcHold hold;
+};
+// Our half of an NPC's reaction to our V (guests only).
+struct HostNpcCue {
+  proto::NpcCue cue;
+};
 // The host's world changed (guests only).
 struct HostWorld {
   proto::World world;
@@ -124,7 +140,8 @@ using SessionEvent =
                  events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
                  events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
-                 events::Ended, events::PlayerReturned>;
+                 events::Ended, events::PlayerReturned, events::NpcActionBy,
+                 events::NpcActionAnswered, events::HostNpcHold, events::HostNpcCue>;
 
 class Endpoint {
 public:
@@ -160,6 +177,17 @@ public:
   // Guest only: we hit one of the host's NPCs.
   void SendNpcHit(const proto::NpcHit &hit);
   void SendNpcEffect(const proto::NpcEffect &effect);
+  // Guest only: we grab, take down, finish or carry one of the host's NPCs.
+  void SendNpcAction(const proto::NpcAction &action);
+  // Host only: the answer to `player`'s NpcAction, to that player alone.
+  void SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply);
+  // Host only: who holds an NPC now (kept for late joiners until released,
+  // gone, or the holder leaves).
+  void SendNpcHold(const proto::NpcHold &hold);
+  // Host only: an NPC's reaction for one player's game (cue.player).
+  void SendNpcCue(const proto::NpcCue &cue);
+  // The NPCs held now, as this game knows them (host: the session's record).
+  const std::map<proto::NpcId, proto::NpcHold> &NpcHolds() const { return m_npcHolds; }
   // Our pause menu is open (paused) or closed. Kept: sent now if we are in
   // the session, else as soon as we are.
   void SetLocalPaused(bool paused);
@@ -226,7 +254,10 @@ private:
   std::uint32_t m_worldRevision{};
   std::map<proto::NpcId, proto::NpcSpawn> m_npcs;
   std::map<proto::NpcId, proto::NpcHealth> m_npcHealth;
+  std::map<proto::NpcId, proto::NpcHold> m_npcHolds;
   std::uint32_t m_npcSeq{};
+  // Host: the connection of a welcomed player (none: 0).
+  net::PeerId PeerOf(proto::PlayerId player) const;
   // Who is in the pause menu (host: the session's record, for late joiners).
   bool m_localPaused{};
   std::set<proto::PlayerId> m_paused;

@@ -224,6 +224,8 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_npcs) && this.m_playing && this.m_you != 0u {
       this.m_npcs.Tick(this.Now(), this.m_you);
     }
+    // Grapples, takedowns, carried bodies (Takedowns.reds); 0: not in a session.
+    TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
     }
@@ -447,6 +449,8 @@ public class TandemSystem extends ScriptableSystem {
       } else {
         TandemNative.Log("npc punch: no proxy");
       }
+    } else if StrBeginsWith(command, "takedown") {
+      TandemTakedowns.Get(this.GetGameInstance()).Command(command);
     } else if Equals(command, "vehicle clear") {
       // (experiment) delete the parked car copies: this froze the game
       // (engine-knowledge §13.6); run tools/game.sh bt if it does again.
@@ -700,6 +704,16 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // The host NPC a proxy in our world stands for (0: none; Combat.reds).
+  // The host's NPCs as this game shares or shows them (Takedowns.reds).
+  public func NpcsSync() -> ref<TandemNpcs> {
+    return this.m_npcs;
+  }
+
+  // Our player id in the session (0: not in one).
+  public func You() -> Uint32 {
+    return this.m_you;
+  }
+
   public func NpcOfProxy(id: EntityID) -> Uint32 {
     return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfProxy(id) : 0u;
   }

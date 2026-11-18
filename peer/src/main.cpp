@@ -20,6 +20,11 @@
 // Pause menu: --pause-at opens "its pause menu" that many seconds into the
 // session (once another player is there) for --pause-for seconds; the pause
 // states it hears are logged.
+// Takedowns: --grab-npcs grabs one of the host's NPCs, then takes it down
+// (lethal and non-lethal in turn); --carry-npcs picks up a body (one that
+// died), carries it and throws it; as host, it answers the game's requests
+// (refusing a dead or held NPC) and --hold-npcs shows its own V grabbing and
+// taking down a replayed NPC, with an NPC cue for the game.
 // Body pose: mirror and front echo your V's pose; --pose FILE (a .tpose made by
 // tools/re/pose_export.py from a recording) plays a recorded pose instead, in
 // a loop, with any mode.
@@ -70,11 +75,14 @@ struct Options {
   // host: the world the game follows (time of day, weather name); unset: none sent
   std::optional<int> timeOfDayMinutes;
   std::string weather;
-  std::string recordFile; // join: save the host's NPC messages here
-  std::string replayFile; // host: send a recording's NPC messages again
-  int pauseAtSeconds{-1}; // open the pause menu this long into the session (-1: never)
-  int pauseForSeconds{3}; // ...for this long
-  bool check{};           // parse the options, then exit
+  std::string recordFile;  // join: save the host's NPC messages here
+  std::string replayFile;  // host: send a recording's NPC messages again
+  int pauseAtSeconds{-1};  // open the pause menu this long into the session (-1: never)
+  int pauseForSeconds{3};  // ...for this long
+  int grabNpcsSeconds{0};  // join: grab and take down one NPC this often (0: never)
+  int carryNpcsSeconds{0}; // join: pick up, carry and throw a body this often
+  int holdNpcsSeconds{0};  // host: our V grabs and takes down a replayed NPC this often
+  bool check{};            // parse the options, then exit
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -105,28 +113,34 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
 [[noreturn]] void Usage(std::string_view error = {}) {
   if (!error.empty())
     std::cerr << "tandem-peer: " << error << "\n\n";
-  std::cerr << "usage: tandem-peer host [options]\n"
-               "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
-               "  --port N           UDP port (default 27450)\n"
-               "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
-               "  --name NAME        player name (default tandem-peer)\n"
-               "  --body B           female | male: the puppet rig others see (default female)\n"
-               "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
-               "  --delay MS         mirror: extra delay before copying (default 0)\n"
-               "  --rate HZ          states sent per second (default 30)\n"
-               "  --pose FILE        play a recorded body pose (.tpose) in a loop\n"
-               "  --vehicle RECORD   drive: the car's record (default "
-               "Vehicle.v_standard2_archer_hella_player)\n"
-               "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
-               "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
-               "  --time HH:MM       host: the time of day the game must follow\n"
-               "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
-               "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
-               "  --replay FILE      host: send a recording's NPCs again, at its pace (moved by\n"
-               "                     --offset)\n"
-               "  --pause-at N       open the pause menu N seconds after another player is in the\n"
-               "                     session: every game pauses\n"
-               "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n";
+  std::cerr
+      << "usage: tandem-peer host [options]\n"
+         "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
+         "  --port N           UDP port (default 27450)\n"
+         "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
+         "  --name NAME        player name (default tandem-peer)\n"
+         "  --body B           female | male: the puppet rig others see (default female)\n"
+         "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
+         "  --delay MS         mirror: extra delay before copying (default 0)\n"
+         "  --rate HZ          states sent per second (default 30)\n"
+         "  --pose FILE        play a recorded body pose (.tpose) in a loop\n"
+         "  --vehicle RECORD   drive: the car's record (default "
+         "Vehicle.v_standard2_archer_hella_player)\n"
+         "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
+         "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
+         "  --time HH:MM       host: the time of day the game must follow\n"
+         "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
+         "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
+         "  --replay FILE      host: send a recording's NPCs again, at its pace (moved by\n"
+         "                     --offset)\n"
+         "  --pause-at N       open the pause menu N seconds after another player is in the\n"
+         "                     session: every game pauses\n"
+         "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n"
+         "  --grab-npcs N      join: every N seconds grab one of the host's NPCs, then take it\n"
+         "                     down (lethal, then non-lethal, in turn)\n"
+         "  --carry-npcs N     join: every N seconds pick up a dead NPC, carry it, throw it\n"
+         "  --hold-npcs N      host: every N seconds our V grabs a replayed NPC and takes it\n"
+         "                     down; the game gets a combat cue for it\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -196,6 +210,12 @@ Options Parse(int argc, char **argv) {
       options.pauseForSeconds = Number<int>(value);
     else if (flag == "--hit-npcs")
       options.hitNpcsSeconds = Number<int>(value);
+    else if (flag == "--grab-npcs")
+      options.grabNpcsSeconds = Number<int>(value);
+    else if (flag == "--carry-npcs")
+      options.carryNpcsSeconds = Number<int>(value);
+    else if (flag == "--hold-npcs")
+      options.holdNpcsSeconds = Number<int>(value);
     else if (flag == "--drive-seconds")
       options.driveSeconds = Number<int>(value);
     else if (flag == "--vehicle")
@@ -377,6 +397,13 @@ public:
   }
 
   std::optional<PlayerState> Next(std::uint64_t nowUs) {
+    // Standing by an NPC it grabs or carries (--grab-npcs, --carry-npcs).
+    if (m_beside) {
+      PlayerState out;
+      out.position = {m_beside->x + 0.8f, m_beside->y, m_beside->z};
+      out.orientation = tandem::sync::FromYaw(std::numbers::pi_v<float> / 2.f); // facing -X
+      return out;
+    }
     switch (m_options.mode) {
     case Mode::Idle:
       return std::nullopt;
@@ -455,10 +482,12 @@ public:
   }
 
   void Park(const Vec3 &at) { m_parkedAt = at; }
+  void Beside(std::optional<Vec3> at) { m_beside = at; }
 
 private:
   std::optional<Vec3> m_center;
   std::optional<Vec3> m_parkedAt;
+  std::optional<Vec3> m_beside;
 
   std::optional<PlayerState> Parked() const {
     PlayerState out;
@@ -536,10 +565,26 @@ int main(int argc, char **argv) {
   std::set<tandem::proto::NpcId> liveNpcs;
   std::map<tandem::proto::NpcId, float> npcHealth; // host: replayed NPCs hit by guests
   std::set<tandem::proto::NpcId> deadNpcs;
+  std::map<tandem::proto::NpcId, Vec3> npcAt; // join: where the host's NPCs are
+  std::set<tandem::proto::NpcId> bodies;      // join: the host's NPCs that died, still lying there
   std::optional<tandem::proto::NpcId> hitTarget;
   std::set<tandem::proto::NpcId> burnt;
   std::map<tandem::proto::NpcId, std::uint8_t> detection;
   auto nextHit = std::chrono::steady_clock::now();
+  // Takedowns: what we ask (join), what we answer and hold (host).
+  using tandem::proto::NpcActionKind;
+  using tandem::proto::NpcHoldKind;
+  struct TakedownStep {
+    tandem::proto::NpcId npc{};
+    int step{}; // 0 idle, then the steps of each test
+    std::chrono::steady_clock::time_point at{};
+  } grab, carry, hold;
+  int takedowns = 0;
+  std::set<tandem::proto::NpcId> hostNpcs;                      // host: replayed
+  std::map<tandem::proto::NpcId, tandem::proto::PlayerId> held; // host: who holds what
+  auto nextGrab = std::chrono::steady_clock::now() + 5s;
+  auto nextCarry = nextGrab;
+  auto nextHold = nextGrab;
   std::vector<NpcRecording::Entry> replay;
   std::size_t replayNext = 0;
   std::optional<std::uint64_t> replayStartUs;
@@ -599,14 +644,20 @@ int main(int argc, char **argv) {
                 recording.Add(e.states);
               // Who each NPC has detected, when it changes.
               for (const auto &entry : e.states.npcs)
+                npcAt[entry.npc] = entry.position;
+              for (const auto &entry : e.states.npcs)
                 if (auto &seen = detection[entry.npc]; seen != entry.detected) {
                   Log("npc {} has detected players {:#x}", entry.npc, entry.detected);
                   seen = entry.detected;
                 }
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcGone>) {
               liveNpcs.erase(e.gone.npc);
-              if (e.gone.reason == 1)
+              if (e.gone.reason == tandem::proto::kGoneDead) {
                 Log("npc {} died", e.gone.npc);
+                bodies.insert(e.gone.npc);
+              } else {
+                bodies.erase(e.gone.npc);
+              }
               if (!options.recordFile.empty())
                 recording.Add(e.gone);
             } else if constexpr (std::is_same_v<E, tandem::events::NpcEffectBy>) {
@@ -625,6 +676,67 @@ int main(int argc, char **argv) {
                 Log("npc {} died", e.hit.npc);
               } else
                 endpoint->SendNpcHealth({.npc = e.hit.npc, .health = health});
+            } else if constexpr (std::is_same_v<E, tandem::events::NpcActionBy>) {
+              // As the host of a replay: the NPC is ours; refuse what cannot be.
+              const auto &a = e.action;
+              const bool alive = hostNpcs.contains(a.npc) && !deadNpcs.contains(a.npc);
+              const bool body = a.kind == NpcActionKind::PickUp || a.kind == NpcActionKind::Drop ||
+                                a.kind == NpcActionKind::Throw || a.kind == NpcActionKind::Dispose;
+              const auto holder = held.contains(a.npc) ? held[a.npc] : tandem::proto::kNoPlayer;
+              std::uint8_t reason = 0;
+              if (!alive && !body)
+                reason = tandem::proto::kRefusedGone;
+              else if (holder != tandem::proto::kNoPlayer && holder != a.player)
+                reason = tandem::proto::kRefusedHeld;
+              endpoint->SendNpcActionReply(
+                  a.player,
+                  {.npc = a.npc, .kind = a.kind, .accepted = reason == 0, .reason = reason});
+              Log("npc {}: player {} asks action {}: {}", a.npc, a.player, static_cast<int>(a.kind),
+                  reason ? std::format("refused ({})", reason) : std::string("accepted"));
+              if (reason == 0) {
+                if (a.kind == NpcActionKind::Grab || a.kind == NpcActionKind::PickUp) {
+                  held[a.npc] = a.player;
+                  endpoint->SendNpcHold({.npc = a.npc,
+                                         .player = a.player,
+                                         .how = a.kind == NpcActionKind::Grab
+                                                    ? NpcHoldKind::Grappled
+                                                    : NpcHoldKind::Carried,
+                                         .name = a.name});
+                } else {
+                  held.erase(a.npc);
+                  endpoint->SendNpcHold({.npc = a.npc});
+                  const bool kills =
+                      a.kind == NpcActionKind::Takedown || a.kind == NpcActionKind::Knockout ||
+                      a.kind == NpcActionKind::Finisher || a.kind == NpcActionKind::Throw;
+                  if (a.kind == NpcActionKind::Dispose) {
+                    deadNpcs.insert(a.npc);
+                    endpoint->SendNpcGone(
+                        {.npc = a.npc, .reason = tandem::proto::kGoneDisposed, .killer = a.player});
+                    Log("npc {} disposed of", a.npc);
+                  } else if (kills && alive) {
+                    deadNpcs.insert(a.npc);
+                    endpoint->SendNpcGone(
+                        {.npc = a.npc, .reason = tandem::proto::kGoneDead, .killer = a.player});
+                    Log("npc {} died", a.npc);
+                  }
+                }
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::NpcActionAnswered>) {
+              Log("npc {}: action {} {}", e.reply.npc, static_cast<int>(e.reply.kind),
+                  e.reply.accepted ? std::string("accepted")
+                                   : std::format("refused ({})", e.reply.reason));
+              if (!e.reply.accepted) {
+                if (grab.npc == e.reply.npc)
+                  grab.step = 0;
+                if (carry.npc == e.reply.npc)
+                  carry.step = 0;
+                puppeteer.Beside(std::nullopt);
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcHold>) {
+              Log("npc {} held by player {} (how {})", e.hold.npc, e.hold.player,
+                  static_cast<int>(e.hold.how));
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcCue>) {
+              Log("npc {}: cue {} for us", e.cue.npc, static_cast<int>(e.cue.cue));
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcHealth>) {
               if (options.hitNpcsSeconds)
                 Log("npc {} health {:.0f}%", e.health.npc, e.health.health * 100.f);
@@ -743,6 +855,81 @@ int main(int argc, char **argv) {
         Log("set npc {} on fire", *hitTarget);
       }
     }
+    // --grab-npcs: grab one NPC, take it down two seconds later.
+    if (options.grabNpcsSeconds && !options.host && endpoint->IsJoined()) {
+      if (grab.step == 0 && now >= nextGrab && !liveNpcs.empty()) {
+        nextGrab = now + std::chrono::seconds(options.grabNpcsSeconds);
+        grab = {*liveNpcs.begin(), 1, now + 2s};
+        if (npcAt.contains(grab.npc))
+          puppeteer.Beside(npcAt[grab.npc]);
+        endpoint->SendNpcAction(
+            {.npc = grab.npc, .kind = NpcActionKind::Grab, .name = CName("GrappleTarget")});
+        Log("grab npc {}", grab.npc);
+      } else if (grab.step == 1 && now >= grab.at) {
+        const bool lethal = takedowns++ % 2 == 0;
+        endpoint->SendNpcAction({.npc = grab.npc,
+                                 .kind = lethal ? NpcActionKind::Takedown : NpcActionKind::Knockout,
+                                 .name = CName(lethal ? "kill" : "setUnconscious")});
+        Log("take down npc {} ({})", grab.npc, lethal ? "lethal" : "non-lethal");
+        grab.step = 0;
+        puppeteer.Beside(std::nullopt);
+      }
+    }
+    // --carry-npcs: pick up a body, carry it three seconds, throw it.
+    if (options.carryNpcsSeconds && !options.host && endpoint->IsJoined()) {
+      if (carry.step == 0 && now >= nextCarry && !bodies.empty()) {
+        nextCarry = now + std::chrono::seconds(options.carryNpcsSeconds);
+        carry = {*bodies.begin(), 1, now + 3s};
+        if (npcAt.contains(carry.npc))
+          puppeteer.Beside(npcAt[carry.npc]);
+        endpoint->SendNpcAction({.npc = carry.npc, .kind = NpcActionKind::PickUp});
+        Log("pick up npc {}", carry.npc);
+      } else if (carry.step == 1 && now >= carry.at) {
+        endpoint->SendNpcAction(
+            {.npc = carry.npc, .kind = NpcActionKind::Throw, .direction = {0.f, 100.f, 20.f}});
+        Log("throw npc {}", carry.npc);
+        bodies.erase(carry.npc);
+        carry.step = 0;
+        puppeteer.Beside(std::nullopt);
+      }
+    }
+    // --hold-npcs (host): our V grabs a replayed NPC, then takes it down.
+    if (options.holdNpcsSeconds && options.host && endpoint->Players().size() > 1) {
+      if (hold.step == 0 && now >= nextHold) {
+        nextHold = now + std::chrono::seconds(options.holdNpcsSeconds);
+        for (const auto npc : hostNpcs)
+          if (!deadNpcs.contains(npc) && !held.contains(npc)) {
+            hold = {npc, 1, now + 3s};
+            held[npc] = endpoint->You();
+            endpoint->SendNpcHold({.npc = npc,
+                                   .player = endpoint->You(),
+                                   .how = NpcHoldKind::Grappled,
+                                   .name = CName("GrappleTarget")});
+            for (const auto &[id, info] : endpoint->Players())
+              if (id != endpoint->You())
+                endpoint->SendNpcCue(
+                    {.npc = npc, .player = id, .cue = tandem::proto::NpcCueKind::CombatStart});
+            Log("our V grabs npc {}", npc);
+            break;
+          }
+      } else if (hold.step == 1 && now >= hold.at) {
+        endpoint->SendNpcHold({.npc = hold.npc,
+                               .player = endpoint->You(),
+                               .how = NpcHoldKind::Takedown,
+                               .name = CName("kill")});
+        hold.step = 2;
+        hold.at = now + 3s;
+        Log("our V takes npc {} down", hold.npc);
+      } else if (hold.step == 2 && now >= hold.at) {
+        held.erase(hold.npc);
+        endpoint->SendNpcHold({.npc = hold.npc});
+        deadNpcs.insert(hold.npc);
+        endpoint->SendNpcGone(
+            {.npc = hold.npc, .reason = tandem::proto::kGoneDead, .killer = endpoint->You()});
+        Log("npc {} died", hold.npc);
+        hold.step = 0;
+      }
+    }
     // Replay, once someone is there to see it, at the recording's pace.
     if (options.host && replayNext < replay.size() && endpoint->Players().size() > 1) {
       const auto nowUs = tandem::net::NowUs();
@@ -760,6 +947,7 @@ int main(int argc, char **argv) {
         if (auto *spawn = std::get_if<tandem::proto::NpcSpawn>(&message)) {
           shift(spawn->position);
           endpoint->SendNpcSpawn(*spawn);
+          hostNpcs.insert(spawn->npc);
         } else if (auto *states = std::get_if<tandem::proto::NpcStates>(&message)) {
           std::erase_if(states->npcs,
                         [&](const auto &entry) { return deadNpcs.contains(entry.npc); });
@@ -767,8 +955,11 @@ int main(int argc, char **argv) {
             shift(entry.position);
           endpoint->SendNpcStates(*states);
         } else if (const auto *gone = std::get_if<tandem::proto::NpcGone>(&message)) {
-          if (!deadNpcs.contains(gone->npc))
+          if (!deadNpcs.contains(gone->npc)) {
             endpoint->SendNpcGone(*gone);
+            hostNpcs.erase(gone->npc);
+            held.erase(gone->npc);
+          }
         } else if (const auto *health = std::get_if<tandem::proto::NpcHealth>(&message))
           endpoint->SendNpcHealth(*health);
       }
