@@ -700,6 +700,18 @@ in-game tests still owed; none of it tested in a session yet):
   the quests system; deaths, loot and destroyed objects via their
   persistent states). Until then the host's save is the source.
 
+- **Quests together, gigs apart.** A quest or gig the players finish
+  together rewards both: each game gives its own V the rewards (XP,
+  street cred, money, items, the fixer's message) by the game's own
+  rules, the guest's game told by the host when it completes with them
+  taking part. Players may also split up and do gigs on their own (fixer
+  jobs, side gigs, NCPD hustles) while the other does something else: the
+  game of the player doing it runs that gig's quest and NPCs in its region
+  (Region limits) and reports the outcome (gig done, NPCs dead, items
+  taken) to the host's record of the world, so it stays one world. Main
+  story quests stay the host's, played together. Solo gigs come after the
+  first story version if they prove too costly; design in
+  `research/coop-quests-design.md`.
 - **Slowed and stopped time.** The single-player game bends time for one V,
   and in a shared world that V is not alone. Everything that does it must be
   handled, each with a deliberate co-op rule:
