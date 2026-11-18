@@ -690,6 +690,33 @@ public class TandemSystem extends ScriptableSystem {
         this.Group(puppet);
       }
       TandemNative.Log(s"puppet group: \(IsNameValid(this.m_puppetGroup) ? NameToString(this.m_puppetGroup) : "their own")");
+    } else if StrBeginsWith(command, "npc spawn") {
+      // (test) "npc spawn [N]": N gangers (3) standing 6 m ahead, 2 m apart,
+      // brain on, left as they are: NPCs to share when the street is empty
+      // (rain, night), for recordings and takedown tests.
+      let count = StrLen(command) > 10 ? StringToInt(StrAfterFirst(command, "spawn "), 3) : 3;
+      let spawner = GetPlayer(this.GetGameInstance());
+      let ahead = spawner.GetWorldForward();
+      let side = spawner.GetWorldRight();
+      let n = 0;
+      while n < count {
+        let offset = (Cast<Float>(n) - Cast<Float>(count - 1) * 0.5) * 2.0;
+        let spec = new DynamicEntitySpec();
+        spec.recordID = t"Character.kab_tyger_claws_biker1_ranged1_saratoga_ma";
+        spec.position = spawner.GetWorldPosition();
+        spec.position.X += ahead.X * 6.0 + side.X * offset;
+        spec.position.Y += ahead.Y * 6.0 + side.Y * offset;
+        spec.orientation = spawner.GetWorldOrientation();
+        spec.alwaysSpawned = true;
+        spec.persistState = false;
+        spec.persistSpawn = false;
+        spec.spawnInView = true;
+        spec.active = true;
+        ArrayPush(spec.tags, n"Tandem.Test");
+        GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+        n += 1;
+      }
+      TandemNative.Log(s"npc spawn: \(count) gangers ahead");
     } else if StrBeginsWith(command, "npc hostile") && !Equals(command, "npc hostile clear") {
       // (test) a hostile ganger 12 m ahead, brain on: does it see, target
       // and shoot a remote player's puppet? (milestone 5) "npc hostile

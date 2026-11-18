@@ -1375,7 +1375,13 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   `join --record FILE` saves the host's `NpcSpawn`/`NpcStates`/`NpcGone`
   with their times; `host --replay FILE [--offset X,Y,Z]` sends them again
   at the recorded pace once a player joins. Record with the game as host,
-  then let it join as a guest of the replay (`role = join`). Recordings
+  then let it join as a guest of the replay (`role = join`). A recording
+  with no `NpcSpawn` (an empty street: rain or night) is not saved and
+  the previous file stays, since its replay gives a guest no proxies at
+  all (on 2026-11-18 that broke every guest scenario); a replay without
+  spawns says so in its log. The `npcs-host` scenario spawns its own
+  gangers first (`tools/game.sh cmd npc spawn [N]`). Tested on Linux by
+  `tests/peer_replay.sh` (part of `task test`). Recordings
   carry the NPCs' animation states and shots too; `host --replay FILE
 --anims SCRIPT` adds scripted ones (a text file: time, NPC or `*`, the
   three states by name, optional weapon, target, shots, workspot; e.g.

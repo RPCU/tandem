@@ -102,6 +102,7 @@
 #include <cmath>
 #include <csignal>
 #include <deque>
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <iostream>
@@ -749,11 +750,31 @@ private:
 // the first, u32 length, the encoded message.
 class Recording {
 public:
+  // Written beside the file (FILE.part) and put in its place by Finish, so
+  // a recording without a single NPC (an empty street) never replaces a
+  // good one: replaying it gives a guest no proxies at all.
   bool Open(const std::string &path) {
-    m_out.open(path, std::ios::binary);
+    m_path = path;
+    m_out.open(path + ".part", std::ios::binary);
     return bool(m_out);
   }
+  // Keeps the recording if it holds NPCs; false (and the old file) if not.
+  bool Finish() {
+    if (m_path.empty())
+      return false;
+    m_out.close();
+    std::error_code error;
+    if (m_spawns == 0) {
+      std::filesystem::remove(m_path + ".part", error);
+      return false;
+    }
+    std::filesystem::rename(m_path + ".part", m_path, error);
+    return !error;
+  }
+  std::size_t Spawns() const { return m_spawns; }
   void Add(const tandem::proto::Message &message) {
+    if (std::holds_alternative<tandem::proto::NpcSpawn>(message))
+      ++m_spawns;
     const auto now = tandem::net::NowUs();
     if (!m_start)
       m_start = now;
@@ -790,10 +811,19 @@ public:
     return out;
   }
 
+  // NPC spawns in a loaded recording (none: nothing to replay).
+  static std::size_t SpawnsIn(const std::vector<Entry> &entries) {
+    return static_cast<std::size_t>(std::ranges::count_if(entries, [](const Entry &entry) {
+      return std::holds_alternative<tandem::proto::NpcSpawn>(entry.message);
+    }));
+  }
+
 private:
   std::ofstream m_out;
+  std::string m_path;
   std::optional<std::uint64_t> m_start;
   std::size_t m_count{};
+  std::size_t m_spawns{};
 };
 
 // The course mode's script: where a V is `t` seconds in, in metres along
@@ -1870,6 +1900,9 @@ int main(int argc, char **argv) {
   if (!options.replayFile.empty()) {
     replay = Recording::Load(options.replayFile);
     Log("replay: {} NPC messages from {}", replay.size(), options.replayFile);
+    if (NpcRecording::SpawnsIn(replay) == 0)
+      Log("replay: no NPC spawns in {}: its guest gets no proxies (recorded on an empty street?)",
+          options.replayFile);
   }
   NpcAnimScript anims;
   if (!options.animsFile.empty()) {
@@ -2050,8 +2083,10 @@ int main(int argc, char **argv) {
                 endpoint->SetLocalHeld(e.held);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcSpawn>) {
               liveNpcs.insert(e.spawn.npc);
-              if (!options.recordFile.empty())
+              if (!options.recordFile.empty()) {
                 recording.Add(e.spawn);
+                Log("recorded the spawn of npc {}", e.spawn.npc);
+              }
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcStates>) {
               if (!options.recordFile.empty())
                 recording.Add(e.states);
@@ -2681,17 +2716,20 @@ int main(int argc, char **argv) {
         Log("set npc {} on fire", *hitTarget);
       }
     }
-    // --grab-npcs: grab one NPC, take it down two seconds later.
+    // --grab-npcs: walk up to one NPC, grab it two seconds later (the other
+    // games must see us beside it first), take it down two seconds after.
     if (options.grabNpcsSeconds && !options.host && endpoint->IsJoined()) {
       if (grab.step == 0 && now >= nextGrab && !liveNpcs.empty()) {
         nextGrab = now + std::chrono::seconds(options.grabNpcsSeconds);
         grab = {*liveNpcs.begin(), 1, now + 2s};
-        if (npcAt.contains(grab.npc))
-          puppeteer.Beside(npcAt[grab.npc]);
+        Log("walk up to npc {}", grab.npc);
+      } else if (grab.step == 1 && now >= grab.at) {
+        grab.step = 2;
+        grab.at = now + 2s;
         endpoint->SendNpcAction(
             {.npc = grab.npc, .kind = NpcActionKind::Grab, .name = CName("GrappleTarget")});
         Log("grab npc {}", grab.npc);
-      } else if (grab.step == 1 && now >= grab.at) {
+      } else if (grab.step == 2 && now >= grab.at) {
         const bool lethal = takedowns++ % 2 == 0;
         endpoint->SendNpcAction({.npc = grab.npc,
                                  .kind = lethal ? NpcActionKind::Takedown : NpcActionKind::Knockout,
@@ -2705,12 +2743,14 @@ int main(int argc, char **argv) {
     if (options.carryNpcsSeconds && !options.host && endpoint->IsJoined()) {
       if (carry.step == 0 && now >= nextCarry && !bodies.empty()) {
         nextCarry = now + std::chrono::seconds(options.carryNpcsSeconds);
-        carry = {*bodies.begin(), 1, now + 3s};
-        if (npcAt.contains(carry.npc))
-          puppeteer.Beside(npcAt[carry.npc]);
+        carry = {*bodies.begin(), 1, now + 2s};
+        Log("walk up to the body of npc {}", carry.npc);
+      } else if (carry.step == 1 && now >= carry.at) {
+        carry.step = 2;
+        carry.at = now + 3s;
         endpoint->SendNpcAction({.npc = carry.npc, .kind = NpcActionKind::PickUp});
         Log("pick up npc {}", carry.npc);
-      } else if (carry.step == 1 && now >= carry.at) {
+      } else if (carry.step == 2 && now >= carry.at) {
         endpoint->SendNpcAction(
             {.npc = carry.npc, .kind = NpcActionKind::Throw, .direction = {0.f, 100.f, 20.f}});
         Log("throw npc {}", carry.npc);
@@ -2719,6 +2759,13 @@ int main(int argc, char **argv) {
         puppeteer.Beside(std::nullopt);
       }
     }
+    // Beside the NPC we are busy with, wherever it walks (grab before carry).
+    if (grab.step && npcAt.contains(grab.npc))
+      puppeteer.Beside(npcAt[grab.npc]);
+    else if (carry.step && npcAt.contains(carry.npc))
+      puppeteer.Beside(npcAt[carry.npc]);
+    else if (options.grabNpcsSeconds || options.carryNpcsSeconds)
+      puppeteer.Beside(std::nullopt);
     // --hold-npcs (host): our V grabs a replayed NPC, then takes it down.
     if (options.holdNpcsSeconds && options.host && endpoint->Players().size() > 1) {
       if (hold.step == 0 && now >= nextHold) {
@@ -3101,5 +3148,12 @@ int main(int argc, char **argv) {
   }
 
   endpoint->Leave("tandem-peer stopped");
+  if (!options.recordFile.empty()) {
+    if (recording.Finish())
+      Log("recording saved: {} NPC messages, {} spawns, in {}", recording.Count(),
+          recording.Spawns(), options.recordFile);
+    else
+      Log("recording not saved: no NPC spawns ({} kept as it was)", options.recordFile);
+  }
   return 0;
 }
