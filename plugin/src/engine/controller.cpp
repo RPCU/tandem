@@ -88,6 +88,12 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
   std::uint32_t seatChanges = 0;
   if (const auto seat = Runtime::Get().RemoteSeat(player, seatChanges); seat && seat->vehicle)
     return;
+  // On an NCART train: seated in a train of our world, or hidden and placed
+  // by the scripts (scripts/tandem/Transit.reds). Never walked along the line.
+  std::uint32_t transitChanges = 0;
+  if (const auto ride = Runtime::Get().RemoteTransit(player, transitChanges);
+      ride && ride->kind == proto::TransitKind::Metro)
+    return;
 
   const auto view = Runtime::Get().ViewOf(player);
   if (!view.valid)

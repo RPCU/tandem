@@ -453,6 +453,70 @@ struct TandemNative : Red::IScriptable {
     return {q.i, q.j, q.k, q.r};
   }
 
+  // Our V's ride (scripts/tandem/Transit.reds): proto::TransitKind (0 none,
+  // 1 metro, 2 ride, 3 scene), proto::kTransit* flags, the metro's station
+  // and next station (ENcartStations), the vehicle, the seat.
+  static void SendTransit(std::int32_t kind, std::int32_t flags, std::int32_t at, std::int32_t next,
+                          Red::EntityID vehicle, Red::CName seat) {
+    if (kind < 0 || kind > static_cast<std::int32_t>(proto::TransitKind::Scene))
+      return;
+    Runtime::Get().SubmitLocalTransit({.kind = static_cast<proto::TransitKind>(kind),
+                                       .flags = static_cast<std::uint8_t>(flags),
+                                       .at = static_cast<std::uint8_t>(std::clamp(at, 0, 255)),
+                                       .next = static_cast<std::uint8_t>(std::clamp(next, 0, 255)),
+                                       .vehicle = vehicle.hash,
+                                       .seat = seat.hash});
+  }
+
+  // A remote player's ride: how many arrived (0: none), and the latest.
+  static std::int32_t RemoteTransitChanges(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    Runtime::Get().RemoteTransit(player, changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  static std::int32_t RemoteTransitKind(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? static_cast<std::int32_t>(ride->kind) : 0;
+  }
+  static std::int32_t RemoteTransitFlags(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? ride->flags : 0;
+  }
+  static std::int32_t RemoteTransitAt(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? ride->at : 0;
+  }
+  static std::int32_t RemoteTransitNext(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? ride->next : 0;
+  }
+  // The entity the rider rides, as named in its world (the same in ours if
+  // it is a placed or quest entity streamed here too: check what it is).
+  static Red::EntityID RemoteTransitVehicle(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return Red::EntityID(ride ? ride->vehicle : 0);
+  }
+  static Red::CName RemoteTransitSeat(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? Red::CName(ride->seat) : Red::CName();
+  }
+
+  // How many times a remote player jumped (fast travel, a skipped ride).
+  static std::int32_t RemoteJumps(std::uint32_t player) {
+    return static_cast<std::int32_t>(Runtime::Get().JumpsOf(player));
+  }
+
+  // Host: our NPC `npc` sits in `owner`'s vehicle in `seat` (owner 0: out).
+  static void SendNpcSeat(std::uint32_t npc, std::uint32_t owner, Red::CName seat) {
+    Runtime::Get().SubmitNpcSeat({.npc = npc, .owner = owner, .seat = owner ? seat.hash : 0});
+  }
+
   // The radio of the car our V drives (scripts/tandem/Radio.reds): on, the
   // station (ERadioStationList index, -1 none), the song; `trackStarted` when
   // the song just changed on the same station (its start is now).
@@ -999,6 +1063,16 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RemoteSeatOwner);
   RTTI_METHOD(RemoteVehiclePosition);
   RTTI_METHOD(RemoteVehicleOrientation);
+  RTTI_METHOD(SendTransit);
+  RTTI_METHOD(RemoteTransitChanges);
+  RTTI_METHOD(RemoteTransitKind);
+  RTTI_METHOD(RemoteTransitFlags);
+  RTTI_METHOD(RemoteTransitAt);
+  RTTI_METHOD(RemoteTransitNext);
+  RTTI_METHOD(RemoteTransitVehicle);
+  RTTI_METHOD(RemoteTransitSeat);
+  RTTI_METHOD(RemoteJumps);
+  RTTI_METHOD(SendNpcSeat);
   RTTI_METHOD(SendHeld);
   RTTI_METHOD(SendShot);
   RTTI_METHOD(RemoteHeldChanges);

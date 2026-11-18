@@ -18,7 +18,8 @@ public native struct TandemShot {
 }
 
 public native struct TandemNpcEvent {
-  // 1 spawn, 2 gone
+  // 1 spawn, 2 gone, 3 hit (host), 4 health, 5 effect (host), 6 seat
+  // (guest: it sits in player's vehicle in slot `appearance`; player 0: out)
   native let kind: Int32;
   native let npc: Uint32;
   native let record: TweakDBID;
@@ -198,6 +199,20 @@ public native class TandemNative extends IScriptable {
   public static native func RemoteSeatOwner(player: Uint32) -> Uint32
   public static native func RemoteVehiclePosition(player: Uint32) -> Vector4
   public static native func RemoteVehicleOrientation(player: Uint32) -> Quaternion
+  // Rides (Transit.reds): kind 0 none, 1 metro, 2 ride, 3 scene; flags 1
+  // skipping, 2 seats for partners; stations are ENcartStations (0 unknown).
+  public static native func SendTransit(kind: Int32, flags: Int32, at: Int32, next: Int32, vehicle: EntityID, seat: CName)
+  public static native func RemoteTransitChanges(player: Uint32) -> Int32
+  public static native func RemoteTransitKind(player: Uint32) -> Int32
+  public static native func RemoteTransitFlags(player: Uint32) -> Int32
+  public static native func RemoteTransitAt(player: Uint32) -> Int32
+  public static native func RemoteTransitNext(player: Uint32) -> Int32
+  public static native func RemoteTransitVehicle(player: Uint32) -> EntityID
+  public static native func RemoteTransitSeat(player: Uint32) -> CName
+  // Jumps of a remote player (fast travel, a skipped ride), counted.
+  public static native func RemoteJumps(player: Uint32) -> Int32
+  // Host: our NPC sits in a player's vehicle (owner 0: got out).
+  public static native func SendNpcSeat(npc: Uint32, owner: Uint32, seat: CName)
   public static native func SendHeld(right: TweakDBID, left: TweakDBID)
   public static native func SendShot(left: Bool, effect: Int32)
   public static native func RemoteHeldChanges(player: Uint32) -> Int32
