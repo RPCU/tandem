@@ -882,7 +882,7 @@ pose.
 Sent since 2026-11-18 (`core/include/tandem/movement.hpp`, packed in
 `PlayerState::flags`): `LocomotionDetailed`, `Swimming`,
 `IsPlayerInsideMovingElevator`, `IsInWorkspot`, `Felled`; the puppet's
-placement follows from them (engine-knowledge.md §13.14). [2.5-untested]
+placement follows from them (engine-knowledge.md §13.15). [2.5-untested]
 
 Workspots. `gameWorkspotGameSystem` [N]: `PlayInDevice(device, actor, opt
 workspotStateFlavourName, opt actorDataCompName, opt deviceDataCompName,
