@@ -324,6 +324,33 @@ redscript natives (UI, events)              ENet socket
   `Appearance` (reliable) when the clothes change; the host keeps everyone's
   latest for late joiners. A puppet wears the clothes as preview items, the
   way the inventory paper doll dresses V.
+- **Player markers** (`scripts/tandem/Markers.reds`,
+  `tweaks/tandem/markers.tweak`): every remote player has a marker in the
+  world, on the minimap and on the world map, the way the game marks your
+  car. It is a mappin registered with `MappinSystem.RegisterMappinWithObject`
+  on the puppet as soon as it exists (the `roleMappin` slot if the body has
+  one, else 2 m above its feet), moved to the car the puppet sits in (the
+  vehicle's `vehMappin` slot, as for your car's marker) and back, and
+  unregistered when the player leaves (`TandemSystem.Leave`). The mappin
+  system moves it with the entity. Its variant is the game's own for a
+  remote player, `CPO_RemotePlayerVariant` (from the cut multiplayer; never
+  registered in single player), so the UI changes touch no other marker:
+  the world container draws it with the quest marker widget and the car's
+  profile (`WorldMappinUIProfile.Vehicle`, spawned at any distance), the
+  minimap with its point-of-interest widget, both with the `fixer` icon of
+  the mappin atlas; the world map shows it whatever the zoom and filters.
+  The player's name is the world label and the world map tooltip's title.
+  Its definition, `Mappins.TandemPlayerMappin`, is the game's remote player
+  definition with `showInWorld`, `showOnMinimap`, `showOnMap` forced on.
+  `tools/game.sh cmd markers` logs the definition's flags and where each
+  marker is; scenario `markers`. **Not yet verified in game**: that it
+  shows at all in each of the three places (the definition's other fields,
+  e.g. `visibilityRange`, are the base's), the icon and its colour (no
+  mappin group knows the variant: the widgets fall back to their quest
+  state), the name label in the world (the quest widget's display name or
+  distance text, rewritten after each native update: watch for flicker)
+  and on the map tooltip, and that the marker follows a seated player's car
+  copy.
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name, pose).
 
 ## Talking to the engine safely
