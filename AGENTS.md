@@ -60,6 +60,11 @@ vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 | `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
 | `task logs`          | follow the plugin's log on the game machine                  |
 
+`tools/remote.sh TASK…` runs a task on the game machine instead (more cores):
+it syncs the working tree to `~/.cache/tandem/src/<worktree>` there, runs
+the task in devenv under that machine's own build lock at low priority, and
+copies `build/windows/plugin/tandem.{dll,pdb}` back, ready for `task deploy`.
+
 Run the checks your change can break before saying it works: `task test` for
 `core/`, `task build:plugin` for anything compiled into the DLL,
 `task relay:test` for `relay/`, `task k8s:check` for `deploy/`.
@@ -213,7 +218,8 @@ K7Q-2M9 --relay 127.0.0.1`. `task test` does the same (`relay-loopback`,
 - **One build at a time** on the laptop: every build or test goes through
   the shared lock, with limited parallelism:
   `CMAKE_BUILD_PARALLEL_LEVEL=8 flock /tmp/tandem-build.lock direnv exec . task test`
-  (same for `task build`, `task check`).
+  (same for `task build`, `task check`). Prefer `tools/remote.sh build:plugin
+test` on anya when the laptop's lock has a queue: anya has its own lock.
 - Vendored dependencies are submodules; don't edit files under `vendor/`.
   Work around upstream issues in our own build (see the `sdk-casefix` link
   in `plugin/CMakeLists.txt`).
