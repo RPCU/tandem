@@ -258,6 +258,12 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      mine.player = player;
                      out.push_back(events::NoiseBy{mine});
                    },
+                   [&](const proto::NpcAction &action) {
+                     // For the host's game only: it owns the NPC and answers.
+                     auto mine = action;
+                     mine.player = player;
+                     out.push_back(events::NpcActionBy{mine});
+                   },
                    [&](const proto::Pause &pause) {
                      // A guest only pauses in its own name.
                      const proto::Pause relayed{player, pause.paused};
@@ -311,6 +317,16 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_appearances.erase(player);
   m_held.erase(player);
   m_seats.erase(player);
+  // What it held is free again for the others (the host's game lets go of
+  // the real NPC itself when the puppet goes).
+  for (auto it = m_npcHolds.begin(); it != m_npcHolds.end();) {
+    if (it->second.player == player) {
+      m_session->Broadcast(proto::NpcHold{.npc = it->first});
+      it = m_npcHolds.erase(it);
+    } else {
+      ++it;
+    }
+  }
   m_radios.erase(player);
   m_stealth.erase(player);
   m_story.Forget(player);
@@ -401,6 +417,8 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
   // The story so far: journal, tracked entry, call, choice hub, story states.
   for (const auto &message : m_story.ForJoiner())
     m_session->Send(peer, message);
+  for (const auto &[npc, hold] : m_npcHolds)
+    m_session->Send(peer, hold);
   // Who is in their pause menu (the newcomer itself is not).
   const auto self = m_playerOfPeer.find(peer);
   for (const auto paused : m_paused)
@@ -537,7 +555,10 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::World &world) { out.push_back(events::HostWorld{world}); },
             [&](const proto::NpcSpawn &spawn) { out.push_back(events::HostNpcSpawn{spawn}); },
             [&](const proto::NpcStates &states) { out.push_back(events::HostNpcStates{states}); },
-            [&](const proto::NpcGone &gone) { out.push_back(events::HostNpcGone{gone}); },
+            [&](const proto::NpcGone &gone) {
+              m_npcHolds.erase(gone.npc);
+              out.push_back(events::HostNpcGone{gone});
+            },
             [&](const proto::NpcHealth &health) { out.push_back(events::HostNpcHealth{health}); },
             [&](const proto::NpcHackState &state) {
               out.push_back(events::HostNpcHackState{state});
@@ -565,6 +586,20 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::Stealth &stealth) {
               if (stealth.player != m_you)
                 out.push_back(events::RemoteStealth{stealth});
+            },
+            [&](const proto::NpcActionReply &reply) {
+              out.push_back(events::NpcActionAnswered{reply});
+            },
+            [&](const proto::NpcHold &hold) {
+              if (hold.player == proto::kNoPlayer)
+                m_npcHolds.erase(hold.npc);
+              else
+                m_npcHolds[hold.npc] = hold;
+              out.push_back(events::HostNpcHold{hold});
+            },
+            [&](const proto::NpcCue &cue) {
+              if (cue.player == m_you)
+                out.push_back(events::HostNpcCue{cue});
             },
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
@@ -733,7 +768,40 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
     return;
   m_npcs.erase(gone.npc);
   m_npcHealth.erase(gone.npc);
+  m_npcHolds.erase(gone.npc);
   m_session->Broadcast(gone);
+}
+
+void Endpoint::SendNpcAction(const proto::NpcAction &action) {
+  if (IsHost() || !IsJoined() || m_ended)
+    return; // the host's own actions are its game's
+  auto mine = action;
+  mine.player = m_you;
+  m_session->Send(m_hostPeer, mine);
+}
+
+void Endpoint::SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply) {
+  if (!IsHost() || m_ended)
+    return;
+  if (const auto peer = PeerOf(player))
+    m_session->Send(*peer, reply);
+}
+
+void Endpoint::SendNpcHold(const proto::NpcHold &hold) {
+  if (!IsHost() || m_ended)
+    return;
+  if (hold.player == proto::kNoPlayer)
+    m_npcHolds.erase(hold.npc);
+  else
+    m_npcHolds[hold.npc] = hold;
+  m_session->Broadcast(hold);
+}
+
+void Endpoint::SendNpcCue(const proto::NpcCue &cue) {
+  if (!IsHost() || m_ended || cue.player == m_you)
+    return;
+  if (const auto peer = PeerOf(cue.player))
+    m_session->Send(*peer, cue);
 }
 
 void Endpoint::SendNpcHealth(const proto::NpcHealth &health) {

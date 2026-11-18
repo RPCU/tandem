@@ -222,6 +222,35 @@ struct NetThread::Impl {
                                       .amount = e.hit.damage,
                                       .flags = e.hit.flags,
                                       .direction = e.hit.direction});
+              } else if constexpr (std::is_same_v<E, events::NpcActionBy>) {
+                const auto &a = e.action;
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Request,
+                                         .npc = a.npc,
+                                         .player = a.player,
+                                         .action = static_cast<std::uint8_t>(a.kind),
+                                         .name = a.name,
+                                         .item = a.item,
+                                         .amount = a.amount,
+                                         .direction = a.direction});
+              } else if constexpr (std::is_same_v<E, events::NpcActionAnswered>) {
+                const auto &r = e.reply;
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Reply,
+                                         .npc = r.npc,
+                                         .action = static_cast<std::uint8_t>(r.kind),
+                                         .accepted = r.accepted,
+                                         .reason = r.reason});
+              } else if constexpr (std::is_same_v<E, events::HostNpcHold>) {
+                const auto &h = e.hold;
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Hold,
+                                         .npc = h.npc,
+                                         .player = h.player,
+                                         .action = static_cast<std::uint8_t>(h.how),
+                                         .name = h.name});
+              } else if constexpr (std::is_same_v<E, events::HostNpcCue>) {
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Cue,
+                                         .npc = e.cue.npc,
+                                         .player = e.cue.player,
+                                         .action = static_cast<std::uint8_t>(e.cue.cue)});
               } else if constexpr (std::is_same_v<E, events::NpcHackBy>) {
                 runtime.PushHackEvent({.kind = HackEvent::Kind::Upload,
                                        .npc = e.hack.npc,
@@ -377,6 +406,12 @@ struct NetThread::Impl {
           endpoint->SendNpcHit(*hit);
         else if (const auto *effect = std::get_if<proto::NpcEffect>(&message))
           endpoint->SendNpcEffect(*effect);
+        else if (const auto *action = std::get_if<proto::NpcAction>(&message))
+          endpoint->SendNpcAction(*action);
+        else if (const auto *hold = std::get_if<proto::NpcHold>(&message))
+          endpoint->SendNpcHold(*hold);
+        else if (const auto *cue = std::get_if<proto::NpcCue>(&message))
+          endpoint->SendNpcCue(*cue);
         else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
                  hit && !endpoint->SendPlayerHit(*hit))
           log::Info("hit on player {} dropped: not a guest in the session", hit->player);
@@ -393,6 +428,8 @@ struct NetThread::Impl {
         else if (const auto *car = std::get_if<proto::VehicleHack>(&message))
           endpoint->SendVehicleHack(*car);
       }
+      for (const auto &[player, reply] : runtime.TakeNpcReplies())
+        endpoint->SendNpcActionReply(player, reply);
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
       if (auto awareness = runtime.TakeNpcAwareness())

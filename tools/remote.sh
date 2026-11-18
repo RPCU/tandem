@@ -11,7 +11,8 @@
 # devenv under anya's own build lock, at low priority so a running game
 # keeps its frames. Nothing is written inside the game's directory.
 # build/windows/plugin/tandem.{dll,pdb} come back into this tree, so
-# `task deploy` and tools/scenario.sh pick them up.
+# `task deploy` and tools/scenario.sh pick them up; after build, build:linux
+# or test, so does build/linux/peer/tandem-peer (scenarios run it here).
 set -euo pipefail
 
 host=${GAME_HOST:-anya}
@@ -46,6 +47,14 @@ for task in "$@"; do
     rsync -a "$host:$remote/build/windows/plugin/tandem.dll" "$host:$remote/build/windows/plugin/tandem.pdb" \
       build/windows/plugin/
     echo "remote: build/windows/plugin/tandem.dll from $host" >&2
+    ;;
+  esac
+  case $task in
+  build | build:linux | test)
+    # Same devenv lock on both machines, so the same store paths: it runs here.
+    mkdir -p build/linux/peer
+    rsync -a "$host:$remote/build/linux/peer/tandem-peer" build/linux/peer/
+    echo "remote: build/linux/peer/tandem-peer from $host" >&2
     ;;
   esac
 done

@@ -43,6 +43,19 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *hub = std::get_if<ChoiceHub>(&message);
       hub && hub->options.size() > kMaxChoiceOptions)
     return std::nullopt;
+  // Kinds the receiver does not know mean the two sides disagree.
+  const auto known = [](NpcActionKind kind) {
+    return kind >= NpcActionKind::Grab && kind <= NpcActionKind::Dispose;
+  };
+  if (const auto *action = std::get_if<NpcAction>(&message); action && !known(action->kind))
+    return std::nullopt;
+  if (const auto *reply = std::get_if<NpcActionReply>(&message); reply && !known(reply->kind))
+    return std::nullopt;
+  if (const auto *hold = std::get_if<NpcHold>(&message); hold && hold->how > NpcHoldKind::Finisher)
+    return std::nullopt;
+  if (const auto *cue = std::get_if<NpcCue>(&message);
+      cue && (cue->cue < NpcCueKind::CombatStart || cue->cue > NpcCueKind::PoiseBroken))
+    return std::nullopt;
   if (const auto *regroup = std::get_if<Regroup>(&message);
       regroup && regroup->label.size() > kMaxRegroupLabel)
     return std::nullopt;
@@ -73,14 +86,15 @@ bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::
 
 const char *NameOf(const Message &message) {
   constexpr const char *names[] = {
-      "Hello",        "Welcome",      "Refused",   "Ping",         "Pong",         "Roster",
-      "PlayerState",  "Bye",          "PoseState", "Appearance",   "Held",         "Shot",
-      "Seat",         "VehicleState", "World",     "NpcSpawn",     "NpcStates",    "NpcGone",
-      "NpcHit",       "NpcHealth",    "NpcEffect", "Pause",        "VehicleRadio", "PlayerHit",
-      "NpcAwareness", "Stealth",      "Noise",     "NpcHack",      "NpcHackState", "NpcStatus",
-      "PlayerHack",   "VehicleHack",  "Journal",   "Tracked",      "PhoneCall",    "PhoneAction",
-      "PhoneReply",   "Subtitle",     "ChoiceHub", "ChoiceCursor", "StoryState",   "QuestReward",
-      "TimeEffect",   "StoryEffect",  "Regroup",   "RegroupAnswer"};
+      "Hello",        "Welcome",      "Refused",   "Ping",           "Pong",         "Roster",
+      "PlayerState",  "Bye",          "PoseState", "Appearance",     "Held",         "Shot",
+      "Seat",         "VehicleState", "World",     "NpcSpawn",       "NpcStates",    "NpcGone",
+      "NpcHit",       "NpcHealth",    "NpcEffect", "Pause",          "VehicleRadio", "PlayerHit",
+      "NpcAwareness", "Stealth",      "Noise",     "NpcHack",        "NpcHackState", "NpcStatus",
+      "PlayerHack",   "VehicleHack",  "Journal",   "Tracked",        "PhoneCall",    "PhoneAction",
+      "PhoneReply",   "Subtitle",     "ChoiceHub", "ChoiceCursor",   "StoryState",   "QuestReward",
+      "TimeEffect",   "StoryEffect",  "NpcAction", "NpcActionReply", "NpcHold",      "NpcCue",
+      "Regroup",      "RegroupAnswer"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }
