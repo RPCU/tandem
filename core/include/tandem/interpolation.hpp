@@ -25,6 +25,9 @@ struct View {
   std::uint8_t stance{};
   std::uint16_t flags{};
   bool extrapolated{};
+  // How many times the player jumped (fast travel, a skipped ride, a
+  // teleport): the body is to be put there at once, not walked across.
+  std::uint32_t jumps{};
 };
 
 struct TrackStats {
@@ -42,6 +45,13 @@ public:
   static constexpr std::uint64_t kMaxDelayUs = 400'000;
   static constexpr std::uint64_t kMaxJitterExtraUs = 100'000;
   static constexpr std::size_t kMaxSamples = 64;
+  // A jump: further than this between two states, or further than
+  // kJumpMinMetres at more than kJumpSpeed (no V runs or drives that fast;
+  // a fast-forwarded train, 10 times its speed, stays under it). The track
+  // starts again from the new state, standing still.
+  static constexpr float kJumpMetres = 200.f;
+  static constexpr float kJumpMinMetres = 30.f;
+  static constexpr float kJumpSpeed = 150.f;
 
   explicit Track(std::uint32_t sendRateHz = 30);
 
@@ -54,6 +64,7 @@ public:
   std::uint64_t DelayUs() const;
   TrackStats Stats() const;
   bool Empty() const { return m_samples.empty(); }
+  std::uint32_t Jumps() const { return m_jumps; }
 
 private:
   struct Sample {
@@ -76,6 +87,7 @@ private:
 
   float m_speed{};
   std::uint64_t m_lastViewUs{};
+  std::uint32_t m_jumps{};
 
   TrackStats m_stats;
 };

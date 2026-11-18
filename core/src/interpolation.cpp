@@ -80,6 +80,25 @@ void Track::Push(const proto::PlayerState &state, std::uint64_t arrivalHostUs) {
   m_lastTransitUs = transit;
   m_lastArrivalUs = arrivalHostUs;
 
+  // A jump (fast travel, a skipped ride): start again there, standing still,
+  // so the body is put there at once rather than sped across the map.
+  if (!m_samples.empty()) {
+    const auto &last = m_samples.back().state;
+    const float distance =
+        std::hypot(state.position.x - last.position.x, state.position.y - last.position.y,
+                   state.position.z - last.position.z);
+    const float seconds = std::max(Seconds(last.timeUs, state.timeUs), 1e-3f);
+    if (distance > kJumpMetres || (distance > kJumpMinMetres && distance / seconds > kJumpSpeed)) {
+      m_samples.clear();
+      m_speed = 0.f;
+      ++m_jumps;
+      auto landed = state;
+      landed.velocity = {}; // the sender's speed across the jump means nothing
+      m_samples.push_back({state.timeUs, landed});
+      return;
+    }
+  }
+
   m_samples.push_back({state.timeUs, state});
   while (m_samples.size() > kMaxSamples)
     m_samples.pop_front();
@@ -98,6 +117,7 @@ std::uint64_t Track::DelayUs() const {
 
 View Track::At(std::uint64_t nowHostUs) {
   View view;
+  view.jumps = m_jumps;
   if (m_samples.empty())
     return view;
   view.valid = true;

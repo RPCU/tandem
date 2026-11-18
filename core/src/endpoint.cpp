@@ -261,6 +261,14 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::RemoteTimeEffect{relayed});
                    },
+                   [&](const proto::Transit &transit) {
+                     // A guest only rides in its own name.
+                     auto relayed = transit;
+                     relayed.player = player;
+                     NoteTransit(relayed);
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteTransit{relayed});
+                   },
                    [&](const proto::Bye &) {
                      RemovePlayer(event.peer, out); // gone now, not when ENet is done
                      m_session->Disconnect(event.peer);
@@ -285,6 +293,16 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_seats.erase(player);
   m_radios.erase(player);
   m_stealth.erase(player);
+  m_transits.erase(player);
+  // Our NPCs seated in its vehicle: out (its copy stays parked elsewhere).
+  for (auto it = m_npcSeats.begin(); it != m_npcSeats.end();) {
+    if (it->second.owner != player) {
+      ++it;
+      continue;
+    }
+    m_session->Broadcast(proto::NpcSeat{.npc = it->first});
+    it = m_npcSeats.erase(it);
+  }
   m_story.Forget(player);
   // Gone while in the pause menu: no longer pausing anyone.
   if (NotePaused(player, false)) {
@@ -370,6 +388,9 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
     m_session->Send(peer, spawn);
   for (const auto &[npc, health] : m_npcHealth)
     m_session->Send(peer, health);
+  // After the spawns and the seats: who sits where, and who rides what.
+  for (const auto &[npc, seat] : m_npcSeats)
+    m_session->Send(peer, seat);
   // The story so far: journal, tracked entry, call, choice hub, story states.
   for (const auto &message : m_story.ForJoiner())
     m_session->Send(peer, message);
@@ -382,6 +403,9 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
   for (const auto &[id, time] : m_timeEffects)
     if (self == m_playerOfPeer.end() || id != self->second)
       m_session->Send(peer, time);
+  for (const auto &[id, transit] : m_transits)
+    if (self == m_playerOfPeer.end() || id != self->second)
+      m_session->Send(peer, transit);
 }
 
 void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &out) {
@@ -438,6 +462,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               SendLocalPausedNow();
               SendLocalStealthNow();
               SendLocalTimeNow();
+              SendLocalTransitNow();
             },
             [&](const proto::Refused &refused) {
               m_ended = true;
@@ -466,6 +491,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
                   if (NotePaused(id, false))
                     out.push_back(events::PauseChanged{{id, false}});
                   EndTimeOf(id, out, false);
+                  m_transits.erase(id);
                   out.push_back(events::PlayerLeft{id});
                 }
               m_players = std::move(next);
@@ -543,6 +569,13 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               if (safe.player != m_you && NoteTime(safe))
                 out.push_back(events::RemoteTimeEffect{safe});
             },
+            [&](const proto::Transit &transit) {
+              if (transit.player == m_you)
+                return;
+              NoteTransit(transit);
+              out.push_back(events::RemoteTransit{transit});
+            },
+            [&](const proto::NpcSeat &seat) { out.push_back(events::HostNpcSeat{seat}); },
             [&](const proto::Bye &bye) {
               m_ended = true;
               out.push_back(events::Ended{bye.reason});
@@ -693,6 +726,7 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
     return;
   m_npcs.erase(gone.npc);
   m_npcHealth.erase(gone.npc);
+  m_npcSeats.erase(gone.npc);
   m_session->Broadcast(gone);
 }
 
@@ -978,6 +1012,53 @@ void Endpoint::EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out,
   if (broadcast)
     m_session->Broadcast(none);
   out.push_back(events::RemoteTimeEffect{none});
+}
+
+void Endpoint::SetLocalTransit(proto::Transit transit) {
+  transit.player = proto::kNoPlayer;
+  transit.revision = 0;
+  if (m_localTransit) {
+    auto same = *m_localTransit;
+    same.player = proto::kNoPlayer;
+    same.revision = 0;
+    if (same == transit)
+      return;
+  }
+  transit.revision = ++m_transitRevision;
+  m_localTransit = transit;
+  SendLocalTransitNow();
+}
+
+void Endpoint::SendLocalTransitNow() {
+  if (!m_localTransit || !IsJoined() || m_ended)
+    return;
+  m_localTransit->player = m_you;
+  NoteTransit(*m_localTransit);
+  if (IsHost())
+    m_session->Broadcast(*m_localTransit);
+  else
+    m_session->Send(m_hostPeer, *m_localTransit);
+}
+
+void Endpoint::NoteTransit(const proto::Transit &transit) {
+  if (transit.kind == proto::TransitKind::None)
+    m_transits.erase(transit.player);
+  else
+    m_transits[transit.player] = transit;
+}
+
+void Endpoint::SendNpcSeat(const proto::NpcSeat &seat) {
+  if (!IsHost() || m_ended)
+    return;
+  if (seat.owner == proto::kNoPlayer) {
+    if (m_npcSeats.erase(seat.npc) == 0)
+      return; // it was not seated: nothing to say
+  } else {
+    if (const auto it = m_npcSeats.find(seat.npc); it != m_npcSeats.end() && it->second == seat)
+      return;
+    m_npcSeats[seat.npc] = seat;
+  }
+  m_session->Broadcast(seat);
 }
 
 std::optional<net::Stats> Endpoint::HostLinkStats() const {

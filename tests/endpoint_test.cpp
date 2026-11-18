@@ -906,3 +906,121 @@ TEST_CASE("time abilities: stamped, made safe, kept for late joiners, ended when
   CHECK_FALSE(host->TimeEffects().contains(aId));
   CHECK_FALSE(late->TimeEffects().contains(aId));
 }
+
+namespace {
+void CollectTransits(const std::vector<SessionEvent> &events, std::vector<proto::Transit> &into) {
+  for (const auto &event : events)
+    if (const auto *t = std::get_if<events::RemoteTransit>(&event))
+      into.push_back(t->transit);
+}
+void CollectNpcSeats(const std::vector<SessionEvent> &events, std::vector<proto::NpcSeat> &into) {
+  for (const auto &event : events)
+    if (const auto *s = std::get_if<events::HostNpcSeat>(&event))
+      into.push_back(s->seat);
+}
+} // namespace
+
+TEST_CASE("rides and NPC seats: stamped, kept for late joiners, ended when they end") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  // a boards the NCART before it is even in: sent once in, in its own name.
+  const std::uint64_t seat = 0xb000b1d029d0cea0ULL;
+  a->SetLocalTransit({.player = 9,
+                      .kind = proto::TransitKind::Metro,
+                      .at = 5,
+                      .next = 6,
+                      .vehicle = 0x77,
+                      .seat = seat});
+  std::vector<proto::Transit> atHost;
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      CollectTransits(events, atHost);
+    return !atHost.empty();
+  }));
+  CHECK(atHost.front().player == a->You());
+  CHECK(atHost.front().kind == proto::TransitKind::Metro);
+  CHECK(atHost.front().next == 6);
+  CHECK(host->Transits().at(a->You()).seat == seat);
+
+  // The host rides a quest car Panam drives: its scene offers seats, and its
+  // NPC 7 sits at the wheel. A late joiner learns all of it.
+  host->SetLocalTransit({.kind = proto::TransitKind::Scene, .flags = proto::kTransitSeats});
+  host->SendNpcSpawn({.npc = 7, .record = 0x2a});
+  host->SendNpcSeat({.npc = 7, .owner = host->You(), .seat = seat});
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::vector<proto::Transit> atLate, atA;
+  std::vector<proto::NpcSeat> seatsAtLate;
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      CollectTransits(events, atA);
+    if (i == 2) {
+      CollectTransits(events, atLate);
+      CollectNpcSeats(events, seatsAtLate);
+    }
+    return atLate.size() == 2 && !atA.empty() && !seatsAtLate.empty();
+  }));
+  CHECK(atA.front().player == host->You());
+  CHECK(atA.front().kind == proto::TransitKind::Scene);
+  CHECK(late->Transits().size() == 2);
+  CHECK(late->Transits().at(a->You()).kind == proto::TransitKind::Metro);
+  CHECK(seatsAtLate.front() == proto::NpcSeat{.npc = 7, .owner = host->You(), .seat = seat});
+
+  // The same ride again says nothing new; a skip does.
+  const auto revision = host->Transits().at(a->You()).revision;
+  a->SetLocalTransit(
+      {.kind = proto::TransitKind::Metro, .at = 5, .next = 6, .vehicle = 0x77, .seat = seat});
+  a->SetLocalTransit({.kind = proto::TransitKind::Metro,
+                      .flags = proto::kTransitSkipping,
+                      .at = 5,
+                      .next = 6,
+                      .vehicle = 0x77,
+                      .seat = seat});
+  atLate.clear();
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 2)
+      CollectTransits(events, atLate);
+    return !atLate.empty();
+  }));
+  CHECK(atLate.size() == 1);
+  CHECK(atLate.front().flags == proto::kTransitSkipping);
+  CHECK(atLate.front().revision == revision + 1);
+
+  // a gets off: its ride ends everywhere and is no longer handed to joiners.
+  a->SetLocalTransit({});
+  atHost.clear(), atLate.clear();
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      CollectTransits(events, atHost);
+    if (i == 2)
+      CollectTransits(events, atLate);
+    return !atHost.empty() && !atLate.empty();
+  }));
+  CHECK(atLate.front().kind == proto::TransitKind::None);
+  CHECK_FALSE(host->Transits().contains(a->You()));
+  CHECK_FALSE(late->Transits().contains(a->You()));
+
+  // Panam gets out; an NPC seated in late's car gets out when late leaves.
+  host->SendNpcSeat({.npc = 7});
+  host->SendNpcSpawn({.npc = 8, .record = 0x2b});
+  host->SendNpcSeat({.npc = 8, .owner = late->You(), .seat = seat});
+  std::vector<proto::NpcSeat> seatsAtA;
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      CollectNpcSeats(events, seatsAtA);
+    return seatsAtA.size() == 2;
+  }));
+  CHECK(seatsAtA[0] == proto::NpcSeat{.npc = 7});
+  CHECK(seatsAtA[1].owner == late->You());
+  late->Leave();
+  seatsAtA.clear();
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      CollectNpcSeats(events, seatsAtA);
+    return !seatsAtA.empty();
+  }));
+  CHECK(seatsAtA.front() == proto::NpcSeat{.npc = 8});
+}

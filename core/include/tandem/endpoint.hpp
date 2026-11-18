@@ -163,6 +163,15 @@ struct HostNpcAwareness {
 struct NoiseBy {
   proto::Noise noise;
 };
+// Another player's ride (metro, a ride, a scene vehicle) started, changed
+// or ended (kind None). Never reported for our own.
+struct RemoteTransit {
+  proto::Transit transit;
+};
+// One of the host's NPCs got into, or out of, a player's vehicle (guests only).
+struct HostNpcSeat {
+  proto::NpcSeat seat;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -183,15 +192,17 @@ struct JoinTarget {
   std::optional<net::RelayOptions> relay;
 };
 
-using SessionEvent = std::variant<
-    events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
-    events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
-    events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
-    events::HostNpcStates, events::HostNpcGone, events::HostNpcHealth, events::NpcHitBy,
-    events::NpcEffectBy, events::PauseChanged, events::Ended, events::PlayerReturned,
-    events::RemoteVehicleRadio, events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness,
-    events::NoiseBy, events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-    events::HostPlayerHack, events::VehicleHackOn, events::Story, events::RemoteTimeEffect>;
+using SessionEvent =
+    std::variant<events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
+                 events::RemotePose, events::RemoteAppearance, events::RemoteHeld,
+                 events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
+                 events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
+                 events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
+                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
+                 events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
+                 events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
+                 events::HostPlayerHack, events::VehicleHackOn, events::Story,
+                 events::RemoteTimeEffect, events::RemoteTransit, events::HostNpcSeat>;
 
 class Endpoint {
 public:
@@ -269,6 +280,14 @@ public:
   void SendNpcAwareness(proto::NpcAwareness awareness);
   // Guest only: a noise our V made, for the host's NPCs.
   void SendNoise(const proto::Noise &noise);
+  // Our V's ride (kind None: none). Kept: sent now if we are in the session,
+  // else as soon as we are; the host hands everyone's to late joiners.
+  void SetLocalTransit(proto::Transit transit);
+  // Every ride this game knows of, by player (host: the session's record).
+  const std::map<proto::PlayerId, proto::Transit> &Transits() const { return m_transits; }
+  // Host only: one of our NPCs got into (owner set) or out of a player's
+  // vehicle; kept while it sits, for late joiners.
+  void SendNpcSeat(const proto::NpcSeat &seat);
 
   // Time on the host's clock (the session's shared timeline).
   std::uint64_t HostNowUs() const { return net::NowUs() + m_clockOffsetUs; }
@@ -367,6 +386,15 @@ private:
   std::map<proto::PlayerId, proto::Stealth> m_stealth;
   void SendLocalStealthNow();
   std::uint32_t m_awarenessSeq{};
+  // Our ride, and everyone's (host: the session's record, for late joiners;
+  // only rides that are on).
+  std::optional<proto::Transit> m_localTransit;
+  std::uint32_t m_transitRevision{};
+  std::map<proto::PlayerId, proto::Transit> m_transits;
+  void SendLocalTransitNow();
+  void NoteTransit(const proto::Transit &transit);
+  // Host: our NPCs seated in a player's vehicle.
+  std::map<proto::NpcId, proto::NpcSeat> m_npcSeats;
   // Host: the story for late joiners, and who answered the call first.
   story::Record m_story;
   story::CallArbiter m_calls;
