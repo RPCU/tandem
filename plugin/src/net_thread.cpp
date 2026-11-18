@@ -19,6 +19,7 @@ struct NetThread::Impl {
   std::optional<proto::Appearance> lastAppearance;
   std::optional<proto::Held> lastHeld;
   std::optional<proto::Seat> lastSeat;
+  std::optional<proto::VehicleRadio> lastRadio;
   bool lastPaused{};
 
   // The other players in their pause menu, for the game thread.
@@ -64,6 +65,8 @@ struct NetThread::Impl {
       endpoint->SetLocalHeld(*lastHeld);
     if (lastSeat)
       endpoint->SetLocalSeat(*lastSeat);
+    if (lastRadio)
+      endpoint->SetLocalVehicleRadio(*lastRadio);
     if (lastPaused)
       endpoint->SetLocalPaused(true);
     if (config.role == Config::Role::Host)
@@ -125,6 +128,11 @@ struct NetThread::Impl {
                 runtime.PushRemoteSeat(e.seat);
               } else if constexpr (std::is_same_v<E, events::RemoteVehicle>) {
                 runtime.PushRemoteVehicle(e.vehicle);
+              } else if constexpr (std::is_same_v<E, events::RemoteVehicleRadio>) {
+                log::Info("player {}: car radio {}, station {}, track {:#x}{}", e.radio.player,
+                          e.radio.on ? "on" : "off", e.radio.station, e.radio.track,
+                          e.radio.trackStartUs ? " (start known)" : "");
+                runtime.PushRemoteRadio(e.radio);
               } else if constexpr (std::is_same_v<E, events::HostWorld>) {
                 runtime.PushHostWorld(e.world);
               } else if constexpr (std::is_same_v<E, events::HostNpcSpawn>) {
@@ -199,6 +207,10 @@ struct NetThread::Impl {
       }
       if (auto vehicle = runtime.TakeLocalVehicle())
         endpoint->SendLocalVehicle(*vehicle);
+      for (const auto &radio : runtime.TakeLocalRadios()) {
+        lastRadio = radio;
+        endpoint->SetLocalVehicleRadio(radio);
+      }
       if (auto paused = runtime.TakeLocalPaused()) {
         lastPaused = *paused;
         endpoint->SetLocalPaused(*paused);

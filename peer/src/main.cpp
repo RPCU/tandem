@@ -12,7 +12,9 @@
 //   front   stands 3 m in front of your V, facing it, stepping side to side:
 //           always in view, for checking how a puppet looks and moves
 //   drive   drives a car in circles around your V (--vehicle RECORD): tests
-//           the copy of a remote player's car, its driver and its motion
+//           the copy of a remote player's car, its driver and its motion;
+//           --radio STATION plays that station on the car's radio, for
+//           whoever rides in it
 //   idle    only connects and reports
 //
 // Looks, held weapons, shots, seats and cars: mirror and front echo yours
@@ -28,6 +30,7 @@
 #include "tandem/interpolation.hpp"
 #include "tandem/pose.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <cmath>
 #include <csignal>
@@ -65,7 +68,9 @@ struct Options {
   int rateHz{30};
   std::string poseFile;
   std::string vehicle{"Vehicle.v_standard2_archer_hella_player"};
-  int driveSeconds{0};   // drive: get out after this long (0: never)
+  int driveSeconds{0}; // drive: get out after this long (0: never)
+  // drive: the car's radio (ERadioStationList index, -1 off); unset: none sent
+  std::optional<int> radioStation;
   int hitNpcsSeconds{0}; // join: hit one of the host's NPCs this often (0: never)
   // host: the world the game follows (time of day, weather name); unset: none sent
   std::optional<int> timeOfDayMinutes;
@@ -96,6 +101,20 @@ std::uint64_t CName(std::string_view name) {
   return hash;
 }
 
+// The game's radio stations, by ERadioStationList index (final.reds,
+// RadioStationDataProvider.GetStationName).
+constexpr std::string_view kStations[] = {
+    "radio_station_02_aggro_ind",    "radio_station_03_elec_ind",  "radio_station_04_hiphop",
+    "radio_station_07_aggro_techno", "radio_station_09_downtempo", "radio_station_01_att_rock",
+    "radio_station_05_pop",          "radio_station_10_latino",    "radio_station_11_metal",
+    "radio_station_06_minim_techno", "radio_station_08_jazz",      "radio_station_12_growl_fm",
+    "radio_station_13_dark_star",    "radio_station_14_impulse_fm"};
+
+std::string_view StationName(int station) {
+  return station >= 0 && station < static_cast<int>(std::size(kStations)) ? kStations[station]
+                                                                          : "off";
+}
+
 template <class... Args> void Log(std::format_string<Args...> format, Args &&...args) {
   std::cout << std::format("[{:>8.3f}] ", tandem::net::NowUs() % 100'000'000 / 1e6)
             << std::format(format, std::forward<Args>(args)...) << '\n'
@@ -118,6 +137,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
                "  --vehicle RECORD   drive: the car's record (default "
                "Vehicle.v_standard2_archer_hella_player)\n"
                "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
+               "  --radio STATION    drive: the car's radio plays STATION (0-13 or its name,\n"
+               "                     radio_station_09_downtempo...; off): sent when seated and\n"
+               "                     again when a passenger gets in\n"
                "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
                "  --time HH:MM       host: the time of day the game must follow\n"
                "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
@@ -198,7 +220,17 @@ Options Parse(int argc, char **argv) {
       options.hitNpcsSeconds = Number<int>(value);
     else if (flag == "--drive-seconds")
       options.driveSeconds = Number<int>(value);
-    else if (flag == "--vehicle")
+    else if (flag == "--radio") {
+      if (value == "off")
+        options.radioStation = -1;
+      else if (const auto *named = std::ranges::find(kStations, value);
+               named != std::end(kStations))
+        options.radioStation = static_cast<int>(named - std::begin(kStations));
+      else if (const auto station = Number<int>(value); station >= 0 && station < 14)
+        options.radioStation = station;
+      else
+        Usage(std::format("--radio: no station {}", value));
+    } else if (flag == "--vehicle")
       options.vehicle = std::string(value);
     else if (flag == "--pose")
       options.poseFile = std::string(value);
@@ -554,6 +586,13 @@ int main(int argc, char **argv) {
   bool seated = false, parked = false;
   std::uint64_t seatedAtUs = 0;
   std::optional<tandem::proto::VehicleState> lastCar;
+  // --radio: the radio of the car we drive, as a driver's game sends it.
+  const auto sendRadio = [&](std::string_view why) {
+    const int station = *options.radioStation;
+    endpoint->SetLocalVehicleRadio(
+        {.on = station >= 0, .station = static_cast<std::int8_t>(station)});
+    Log("car radio sent ({}): {}", why, StationName(station));
+  };
   const auto interval = std::chrono::microseconds(1'000'000 / options.rateHz);
   auto nextSend = std::chrono::steady_clock::now();
   auto nextReport = nextSend + 5s;
@@ -633,6 +672,10 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteSeat>) {
               Log("player {} sits in {:#x} (seat {:#x}, car of player {})", e.seat.player,
                   e.seat.vehicle, e.seat.seat, e.seat.owner);
+              // A passenger in the car we drive: our radio again, for them.
+              if (options.mode == Mode::Drive && options.radioStation && seated && !parked &&
+                  e.seat.vehicle != 0 && e.seat.owner == endpoint->You())
+                sendRadio(std::format("player {} got in", e.seat.player));
               // Echo: the same seat in our own copy of the car.
               if (options.mode == Mode::Mirror || options.mode == Mode::Front) {
                 auto echo = e.seat;
@@ -648,6 +691,9 @@ int main(int argc, char **argv) {
                 echo.position.z += options.offset.z;
                 endpoint->SendLocalVehicle(echo);
               }
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteVehicleRadio>) {
+              Log("player {}'s car radio: {} (track {:#x})", e.radio.player,
+                  StationName(e.radio.on ? e.radio.station : -1), e.radio.track);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteShot>) {
               ++heardShots;
               Log("player {}: weapon event {}", e.shot.player, e.shot.effect);
@@ -684,6 +730,8 @@ int main(int argc, char **argv) {
           Log("driving {} ({:#x})", options.vehicle, TweakDBID(options.vehicle));
           seated = true;
           seatedAtUs = nowUs;
+          if (options.radioStation)
+            sendRadio("at the wheel");
         }
         if (auto car = puppeteer.Drive(nowUs).second) {
           endpoint->SendLocalVehicle(*car);

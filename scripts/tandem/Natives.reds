@@ -87,6 +87,12 @@ public native class TandemNative extends IScriptable {
   public static native func NpcDetected(npc: Uint32) -> Int32
   public static native func TakeNpcEvents() -> array<TandemNpcEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32
+  public static native func SendVehicleRadio(on: Bool, station: Int32, track: CName, trackStarted: Bool)
+  public static native func RemoteRadioChanges(player: Uint32) -> Int32
+  public static native func RemoteRadioOn(player: Uint32) -> Bool
+  public static native func RemoteRadioStation(player: Uint32) -> Int32
+  public static native func RemoteRadioTrack(player: Uint32) -> CName
+  public static native func RemoteRadioTrackAge(player: Uint32) -> Float
   public static native func IsHost() -> Bool
   public static native func SendWorld(gameTimeSeconds: Int32, weather: CName, paused: Bool)
   public static native func HostWorldChanges() -> Int32

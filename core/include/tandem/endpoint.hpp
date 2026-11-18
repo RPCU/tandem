@@ -110,6 +110,11 @@ struct PauseChanged {
 struct Ended {
   std::string reason;
 };
+// The radio of the car another player drives changed (or was sent again
+// for a passenger getting in). Never reported for our own.
+struct RemoteVehicleRadio {
+  proto::VehicleRadio radio;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -124,7 +129,7 @@ using SessionEvent =
                  events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
                  events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
-                 events::Ended, events::PlayerReturned>;
+                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio>;
 
 class Endpoint {
 public:
@@ -149,6 +154,9 @@ public:
   // Where we sit (kept and handed to late joiners), and the car we drive.
   void SetLocalSeat(proto::Seat seat);
   void SendLocalVehicle(proto::VehicleState vehicle);
+  // The radio of the car we drive: sent now (each call, even unchanged: a
+  // passenger getting in is sent it again), kept and handed to late joiners.
+  void SetLocalVehicleRadio(proto::VehicleRadio radio);
   // Host only: the world every guest follows (kept for late joiners).
   void SetWorld(proto::World world);
   // Host only: its NPCs (spawns kept for late joiners until gone).
@@ -222,6 +230,10 @@ private:
   std::map<proto::PlayerId, proto::Seat> m_seats;
   std::uint32_t m_vehicleSeq{};
   void SendLocalSeatNow();
+  std::optional<proto::VehicleRadio> m_localRadio;
+  std::uint32_t m_radioRevision{};
+  std::map<proto::PlayerId, proto::VehicleRadio> m_radios;
+  void SendLocalRadioNow();
   std::optional<proto::World> m_world;
   std::uint32_t m_worldRevision{};
   std::map<proto::NpcId, proto::NpcSpawn> m_npcs;

@@ -135,6 +135,14 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::RemoteVehicle{relayed});
                    },
+                   [&](const proto::VehicleRadio &radio) {
+                     // A guest only speaks for the car it drives.
+                     auto relayed = radio;
+                     relayed.player = player;
+                     m_radios[player] = relayed;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteVehicleRadio{relayed});
+                   },
                    [&](const proto::Shot &shot) {
                      auto relayed = shot;
                      relayed.player = player;
@@ -182,6 +190,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_appearances.erase(player);
   m_held.erase(player);
   m_seats.erase(player);
+  m_radios.erase(player);
   // Gone while in the pause menu: no longer pausing anyone.
   if (NotePaused(player, false)) {
     m_session->Broadcast(proto::Pause{player, false});
@@ -253,6 +262,8 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
     m_session->Send(peer, held);
   for (const auto &[id, seat] : m_seats)
     m_session->Send(peer, seat);
+  for (const auto &[id, radio] : m_radios)
+    m_session->Send(peer, radio);
   if (m_world)
     m_session->Send(peer, *m_world);
   for (const auto &[npc, spawn] : m_npcs)
@@ -298,6 +309,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               SendLocalAppearanceNow();
               SendLocalHeldNow();
               SendLocalSeatNow();
+              SendLocalRadioNow();
               SendLocalPausedNow();
             },
             [&](const proto::Refused &refused) {
@@ -357,6 +369,10 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::VehicleState &vehicle) {
               if (vehicle.player != m_you)
                 out.push_back(events::RemoteVehicle{vehicle});
+            },
+            [&](const proto::VehicleRadio &radio) {
+              if (radio.player != m_you)
+                out.push_back(events::RemoteVehicleRadio{radio});
             },
             [&](const proto::World &world) { out.push_back(events::HostWorld{world}); },
             [&](const proto::NpcSpawn &spawn) { out.push_back(events::HostNpcSpawn{spawn}); },
@@ -462,6 +478,24 @@ void Endpoint::SendLocalSeatNow() {
     m_session->Broadcast(*m_localSeat);
   } else {
     m_session->Send(m_hostPeer, *m_localSeat);
+  }
+}
+
+void Endpoint::SetLocalVehicleRadio(proto::VehicleRadio radio) {
+  radio.revision = ++m_radioRevision;
+  m_localRadio = radio;
+  SendLocalRadioNow();
+}
+
+void Endpoint::SendLocalRadioNow() {
+  if (!m_localRadio || !IsJoined() || m_ended)
+    return;
+  m_localRadio->player = m_you;
+  if (IsHost()) {
+    m_radios[m_you] = *m_localRadio;
+    m_session->Broadcast(*m_localRadio);
+  } else {
+    m_session->Send(m_hostPeer, *m_localRadio);
   }
 }
 

@@ -2,6 +2,8 @@
 
 #include <doctest/doctest.h>
 
+#include <string_view>
+
 using namespace tandem::proto;
 
 namespace {
@@ -67,6 +69,20 @@ TEST_CASE("every message survives encoding") {
       .revision = 2, .gameTimeSeconds = 86400 + 3600 * 18, .weather = 0x1234, .timePaused = true});
   RoundTrips(Pause{.player = 3, .paused = true});
   RoundTrips(Pause{.player = 2, .paused = false});
+  RoundTrips(VehicleRadio{.player = 2,
+                          .revision = 5,
+                          .on = true,
+                          .station = 13,
+                          .track = 0xfeedfacecafef00dULL,
+                          .trackStartUs = 123'456'789'012ULL});
+  RoundTrips(VehicleRadio{.player = 3, .revision = 1, .on = false, .station = -1});
+}
+
+TEST_CASE("a car's radio is a small reliable event") {
+  CHECK(ChannelOf(VehicleRadio{}) == Channel::Event);
+  CHECK(IsReliable(VehicleRadio{}));
+  CHECK(std::string_view(NameOf(VehicleRadio{})) == "VehicleRadio");
+  CHECK(Encode(VehicleRadio{}).size() < 64);
 }
 
 TEST_CASE("an appearance past its limits is refused") {

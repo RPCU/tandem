@@ -412,6 +412,55 @@ TEST_CASE("a late joiner learns who is paused; a guest that leaves paused no lon
   CHECK(late->Paused().empty());
 }
 
+TEST_CASE("a driver's car radio reaches everyone, stamped, and late joiners") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->Players().size() == 2; }));
+
+  // a drives with its radio on: the host hears it in a's name.
+  a->SetLocalVehicleRadio({.player = 99, .on = true, .station = 4, .track = 0xabc});
+  std::optional<proto::VehicleRadio> atHost;
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *radio = std::get_if<events::RemoteVehicleRadio>(&event); radio && i == 0)
+        atHost = radio->radio;
+    return atHost.has_value();
+  }));
+  CHECK(atHost->player == a->You());
+  CHECK(atHost->on);
+  CHECK(atHost->station == 4);
+  CHECK(atHost->track == 0xabc);
+
+  // Sent again unchanged (a passenger got in): it goes out again.
+  a->SetLocalVehicleRadio({.on = true, .station = 4, .track = 0xabc});
+  atHost.reset();
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *radio = std::get_if<events::RemoteVehicleRadio>(&event); radio && i == 0)
+        atHost = radio->radio;
+    return atHost.has_value();
+  }));
+  CHECK(atHost->revision == 2);
+
+  // A player joining later learns it from the host, and the host's own.
+  host->SetLocalVehicleRadio({.on = false, .station = -1});
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::map<proto::PlayerId, proto::VehicleRadio> atLate;
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *radio = std::get_if<events::RemoteVehicleRadio>(&event); radio && i == 2)
+        atLate[radio->radio.player] = radio->radio;
+    return atLate.size() == 2;
+  }));
+  CHECK(atLate[a->You()].station == 4);
+  CHECK_FALSE(atLate[1].on);
+}
+
 TEST_CASE("a guest that crashes is reported gone within the timeout") {
   const auto port = NextPort();
   std::string error;

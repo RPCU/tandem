@@ -120,6 +120,15 @@ public:
   // Where to draw the player's car now (the same delay as their body).
   sync::VehicleView VehicleOf(proto::PlayerId player);
 
+  // The radio of the car we drive, game -> net (each one sent: a repeat is
+  // for a passenger getting in). `trackStarted`: the song just changed on
+  // the same station, so its start is now (else unknown). The others' car
+  // radios, net -> game (latest + count).
+  void SubmitLocalRadio(proto::VehicleRadio radio, bool trackStarted);
+  std::vector<proto::VehicleRadio> TakeLocalRadios();
+  void PushRemoteRadio(const proto::VehicleRadio &radio);
+  std::optional<proto::VehicleRadio> RemoteRadio(proto::PlayerId player, std::uint32_t &changes);
+
   // Host: the world as our game has it, game -> net (newest only).
   // Guest: the host's world, net -> game (latest + count).
   void SubmitWorld(const proto::World &world);
@@ -193,21 +202,24 @@ private:
   std::optional<proto::PlayerState> m_local;
   std::vector<ScriptEvent> m_events;
 
-  std::optional<proto::PoseState> m_localPose;                              // under m_lock
-  std::optional<proto::Appearance> m_localAppearance;                       // under m_lock
-  std::optional<proto::Held> m_localHeld;                                   // under m_lock
-  std::vector<proto::Shot> m_localShots, m_remoteShots;                     // under m_lock
-  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Held>> m_held;  // m_lock
-  std::optional<proto::Seat> m_localSeat;                                   // m_lock
-  std::optional<proto::VehicleState> m_localVehicle;                        // m_lock
-  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Seat>> m_seats; // m_lock
-  std::map<proto::PlayerId, sync::VehicleTrack> m_vehicles;                 // m_tracksLock
-  std::optional<proto::World> m_localWorld;                                 // m_lock
-  std::optional<proto::World> m_hostWorld;                                  // m_lock
-  std::uint32_t m_hostWorldChanges{};                                       // m_lock
-  std::vector<proto::Message> m_npcOutbox;                                  // m_lock
-  std::optional<proto::NpcStates> m_npcStates;                              // m_lock
-  std::vector<NpcEvent> m_npcEvents;                                        // m_lock
+  std::optional<proto::PoseState> m_localPose;                                       // under m_lock
+  std::optional<proto::Appearance> m_localAppearance;                                // under m_lock
+  std::optional<proto::Held> m_localHeld;                                            // under m_lock
+  std::vector<proto::Shot> m_localShots, m_remoteShots;                              // under m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Held>> m_held;           // m_lock
+  std::optional<proto::Seat> m_localSeat;                                            // m_lock
+  std::optional<proto::VehicleState> m_localVehicle;                                 // m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Seat>> m_seats;          // m_lock
+  std::map<proto::PlayerId, sync::VehicleTrack> m_vehicles;                          // m_tracksLock
+  std::vector<proto::VehicleRadio> m_localRadios;                                    // m_lock
+  std::uint64_t m_localTrack{}, m_localTrackStartUs{};                               // m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::VehicleRadio>> m_radios; // m_lock
+  std::optional<proto::World> m_localWorld;                                          // m_lock
+  std::optional<proto::World> m_hostWorld;                                           // m_lock
+  std::uint32_t m_hostWorldChanges{};                                                // m_lock
+  std::vector<proto::Message> m_npcOutbox;                                           // m_lock
+  std::optional<proto::NpcStates> m_npcStates;                                       // m_lock
+  std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::uint32_t m_loopSeq{};

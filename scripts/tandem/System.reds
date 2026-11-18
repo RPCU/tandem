@@ -79,6 +79,7 @@ public class TandemSystem extends ScriptableSystem {
   private let m_rideCar: EntityID;
   private let m_world: ref<TandemWorld>;
   private let m_pause: ref<TandemPause>;
+  private let m_radio: ref<TandemRadio>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
@@ -145,6 +146,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_world.Start(this.GetGameInstance());
     this.m_pause = new TandemPause();
     this.m_pause.Start(this.GetGameInstance());
+    this.m_radio = new TandemRadio();
+    this.m_radio.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
     if TandemNative.IsProbe() {
@@ -172,6 +175,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
       this.m_pause = null;
+    }
+    if IsDefined(this.m_radio) {
+      this.m_radio.Stop();
+      this.m_radio = null;
     }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
@@ -230,6 +237,10 @@ public class TandemSystem extends ScriptableSystem {
     this.HandleEvents();
     this.SpawnJoined();
     this.DrivePuppets();
+    // The car radio (Radio.reds): the driver's for everyone aboard.
+    if IsDefined(this.m_radio) && this.m_playing {
+      this.m_radio.Tick(this.Now(), this);
+    }
     this.ProcessLeaving();
     this.DrawShots();
     this.TickProxyTests();
@@ -711,6 +722,37 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     return 0u;
+  }
+
+  // For Radio.reds: whose copy a car is (0: ours or the world's), the remote
+  // players sitting in our car, and every car copy we made (driven or parked).
+  public func CarOwnerOf(id: EntityID) -> Uint32 {
+    return this.CarOwner(id);
+  }
+
+  public func Riders() -> Int32 {
+    let riders = 0;
+    if this.m_you != 0u {
+      for puppet in this.m_puppets {
+        if TDBID.IsValid(TandemNative.RemoteSeatVehicle(puppet.player)) && TandemNative.RemoteSeatOwner(puppet.player) == this.m_you {
+          riders += 1;
+        }
+      }
+    }
+    return riders;
+  }
+
+  public func CarCopies() -> array<EntityID> {
+    let copies: array<EntityID>;
+    for puppet in this.m_puppets {
+      if EntityID.IsDefined(puppet.car) {
+        ArrayPush(copies, puppet.car);
+      }
+    }
+    for car in this.m_parked {
+      ArrayPush(copies, car);
+    }
+    return copies;
   }
 
   // What our V holds, every frame (two slot reads), sent when it changes.
