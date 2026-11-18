@@ -21,6 +21,9 @@ base=${TANDEM_REDSCRIPT_BASE:-$cache/redscript-base}
 lock=/tmp/tandem-build.lock
 ours=$(cd "${1:-$root/scripts/tandem}" && pwd)
 
+# What scc lets through and the game dies of: a method defined twice.
+python3 "$root/tools/scripts-duplicates.py" "$ours"
+
 # True when an ancestor process holds the build lock (flock ... task deploy):
 # taking it again from here would wait forever.
 lock_held_by_ancestor() {
