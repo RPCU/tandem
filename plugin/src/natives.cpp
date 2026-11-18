@@ -116,6 +116,23 @@ Red::DynArray<TandemTimeChange> ToScript(const std::vector<sync::TimeBubbles::Ch
   return out;
 }
 
+// Grapples, takedowns, finishers and carried bodies (Takedowns.reds). Plain
+// fields only, like TandemNpcEvent.
+struct TandemNpcAction {
+  std::int32_t kind{}; // 1 a guest's request (host), 2 the host's answer, 3 who holds, 4 cue
+  std::uint32_t npc{};
+  std::uint32_t player{}; // 1: who asks; 3: the holder (0: released); 4: us
+  std::int32_t action{};  // 1, 2: proto::NpcActionKind; 3: proto::NpcHoldKind; 4: proto::NpcCueKind
+  Red::CName name;
+  Red::TweakDBID record; // the item, as a TweakDB id (finisher: weapon)
+  Red::EntityID entity;  // the item, as an entity id (dispose: the container)
+  float amount{};
+  float dx{}, dy{}, dz{}; // throw: the impulse
+  bool accepted{};        // 2
+  std::int32_t reason{};  // 2: proto::kRefused*
+};
+static_assert(alignof(TandemNpcAction) <= 8, "the script VM aligns struct locals to 8");
+
 Red::Quaternion ToQuaternion(const proto::Quat &q) { return {q.i, q.j, q.k, q.r}; }
 float YawOfQuaternion(const Red::Quaternion &q) { return sync::YawOf({q.i, q.j, q.k, q.r}); }
 
@@ -819,6 +836,63 @@ struct TandemNative : Red::IScriptable {
                                       event.flags, event.seconds});
     return out;
   }
+  // Grapples, takedowns, finishers, carried bodies (Takedowns.reds).
+  // Guest: our V acts on the host's NPC; `record` or else `entity` is the item.
+  static void SendNpcAction(std::uint32_t npc, std::int32_t kind, Red::CName name,
+                            Red::TweakDBID record, Red::EntityID entity, float amount,
+                            Red::Vector4 direction) {
+    Runtime::Get().SubmitNpcAction({.npc = npc,
+                                    .kind = static_cast<proto::NpcActionKind>(kind),
+                                    .name = name.hash,
+                                    .item = record.value ? record.value : entity.hash,
+                                    .amount = amount,
+                                    .direction = {direction.X, direction.Y, direction.Z}});
+  }
+  // Host: the answer to a guest's request, to that guest only.
+  static void SendNpcActionReply(std::uint32_t player, std::uint32_t npc, std::int32_t kind,
+                                 bool accepted, std::int32_t reason) {
+    Runtime::Get().SubmitNpcActionReply(player, {.npc = npc,
+                                                 .kind = static_cast<proto::NpcActionKind>(kind),
+                                                 .accepted = accepted,
+                                                 .reason = static_cast<std::uint8_t>(reason)});
+  }
+  // Host: who holds an NPC now (player 0: released).
+  static void SendNpcHold(std::uint32_t npc, std::uint32_t player, std::int32_t how,
+                          Red::CName name) {
+    Runtime::Get().SubmitNpcHold({.npc = npc,
+                                  .player = player,
+                                  .how = static_cast<proto::NpcHoldKind>(how),
+                                  .name = name.hash});
+  }
+  // Host: an NPC's reaction for one player's game.
+  static void SendNpcCue(std::uint32_t npc, std::uint32_t player, std::int32_t cue) {
+    Runtime::Get().SubmitNpcCue(
+        {.npc = npc, .player = player, .cue = static_cast<proto::NpcCueKind>(cue)});
+  }
+  static Red::DynArray<TandemNpcAction> TakeNpcActions() {
+    Red::DynArray<TandemNpcAction> out;
+    for (const auto &e : Runtime::Get().TakeActionEvents()) {
+      TandemNpcAction action{.kind = static_cast<std::int32_t>(e.kind),
+                             .npc = e.npc,
+                             .player = e.player,
+                             .action = e.action,
+                             .name = Red::CName(e.name),
+                             .record = Red::TweakDBID(e.item),
+                             .amount = e.amount,
+                             .dx = e.direction.x,
+                             .dy = e.direction.y,
+                             .dz = e.direction.z,
+                             .accepted = e.accepted,
+                             .reason = e.reason};
+      action.entity.hash = e.item;
+      out.EmplaceBack(action);
+    }
+    return out;
+  }
+  // The controller leaves this puppet (player or NpcPuppetId) where it is.
+  static void HoldPuppet(std::uint32_t player, bool hold) {
+    Runtime::Get().HoldPuppet(player, hold);
+  }
 
   // The puppet id the controller and tracks know an NPC proxy by.
   static std::uint32_t NpcPuppetId(std::uint32_t npc) { return kNpcPuppetBase + npc; }
@@ -893,6 +967,22 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNoise, "TandemNoise", {
   RTTI_PROPERTY(propagation);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcAction, "TandemNpcAction", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(action);
+  RTTI_PROPERTY(name);
+  RTTI_PROPERTY(record);
+  RTTI_PROPERTY(entity);
+  RTTI_PROPERTY(amount);
+  RTTI_PROPERTY(dx);
+  RTTI_PROPERTY(dy);
+  RTTI_PROPERTY(dz);
+  RTTI_PROPERTY(accepted);
+  RTTI_PROPERTY(reason);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
   RTTI_PROPERTY(player);
   RTTI_PROPERTY(left);
@@ -963,6 +1053,12 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendVehicleHack);
   RTTI_METHOD(TakeHackEvents);
   RTTI_METHOD(NpcPuppetId);
+  RTTI_METHOD(SendNpcAction);
+  RTTI_METHOD(SendNpcActionReply);
+  RTTI_METHOD(SendNpcHold);
+  RTTI_METHOD(SendNpcCue);
+  RTTI_METHOD(TakeNpcActions);
+  RTTI_METHOD(HoldPuppet);
   RTTI_METHOD(SendVehicleRadio);
   RTTI_METHOD(RemoteRadioChanges);
   RTTI_METHOD(RemoteRadioOn);

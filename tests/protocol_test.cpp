@@ -136,6 +136,46 @@ TEST_CASE("stealth travels reliably, awareness and noise as state") {
   CHECK(Encode(Noise{}).size() < 32);
 }
 
+TEST_CASE("takedown messages survive encoding") {
+  RoundTrips(NpcAction{.player = 2,
+                       .npc = 7,
+                       .kind = NpcActionKind::Finisher,
+                       .name = 0xfeedULL,
+                       .item = 0x2a1bULL,
+                       .amount = 0.2f,
+                       .direction = {0, 100, 10}});
+  RoundTrips(NpcAction{.npc = 8, .kind = NpcActionKind::Dispose, .item = 0x123456789ULL});
+  RoundTrips(NpcActionReply{.npc = 7, .kind = NpcActionKind::Grab, .accepted = true});
+  RoundTrips(NpcActionReply{
+      .npc = 7, .kind = NpcActionKind::PickUp, .accepted = false, .reason = kRefusedHeld});
+  RoundTrips(NpcHold{.npc = 7, .player = 2, .how = NpcHoldKind::Grappled, .name = 0xbeef});
+  RoundTrips(NpcHold{.npc = 7});
+  RoundTrips(NpcCue{.npc = 7, .player = 3, .cue = NpcCueKind::PoiseBroken});
+  RoundTrips(NpcGone{.npc = 7, .reason = kGoneDisposed, .killer = 2});
+}
+
+TEST_CASE("NPC actions travel reliably and unknown kinds are refused") {
+  CHECK(ChannelOf(NpcAction{}) == Channel::Event);
+  CHECK(ChannelOf(NpcActionReply{}) == Channel::Event);
+  CHECK(ChannelOf(NpcHold{}) == Channel::Event);
+  CHECK(ChannelOf(NpcCue{}) == Channel::Event);
+  CHECK(IsReliable(NpcAction{.kind = NpcActionKind::Grab}));
+  CHECK(std::string(NameOf(NpcAction{})) == "NpcAction");
+  CHECK(std::string(NameOf(NpcActionReply{})) == "NpcActionReply");
+  CHECK(std::string(NameOf(NpcHold{})) == "NpcHold");
+  CHECK(std::string(NameOf(NpcCue{})) == "NpcCue");
+  CHECK(std::string(NameOf(Pause{})) == "Pause");
+  CHECK_FALSE(Decode(Encode(NpcAction{.kind = NpcActionKind{0}})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcAction{.kind = NpcActionKind{11}})).has_value());
+  CHECK(Decode(Encode(NpcAction{.kind = NpcActionKind::Dispose})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcActionReply{.kind = NpcActionKind{0}})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcHold{.how = NpcHoldKind{5}})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcCue{.cue = NpcCueKind{0}})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcCue{.cue = NpcCueKind{3}})).has_value());
+  // Small: a grapple is one request, not a stream.
+  CHECK(Encode(NpcAction{}).size() < 64);
+}
+
 TEST_CASE("an appearance past its limits is refused") {
   Appearance big;
   big.look.resize(kMaxAppearanceKeys + 1);

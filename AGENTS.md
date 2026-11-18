@@ -63,7 +63,10 @@ vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 `tools/remote.sh TASK…` runs a task on the game machine instead (more cores):
 it syncs the working tree to `~/.cache/tandem/src/<worktree>` there, runs
 the task in devenv under that machine's own build lock at low priority, and
-copies `build/windows/plugin/tandem.{dll,pdb}` back, ready for `task deploy`.
+copies `build/windows/plugin/tandem.{dll,pdb}` (and, after `build`,
+`build:linux` or `test`, `build/linux/peer/tandem-peer`) back. Then
+`TANDEM_PREBUILT=1 tools/scenario.sh …` deploys that DLL as is
+(`task deploy:files`) instead of rebuilding it here.
 
 Run the checks your change can break before saying it works: `task test` for
 `core/`, `task build:plugin` for anything compiled into the DLL,

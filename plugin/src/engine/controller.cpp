@@ -89,6 +89,11 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
   if (const auto seat = Runtime::Get().RemoteSeat(player, seatChanges); seat && seat->vehicle)
     return;
 
+  // Placed by something else for now: a grapple's workspot, a carrier's
+  // shoulder (Takedowns.reds).
+  if (Runtime::Get().IsPuppetHeld(player))
+    return;
+
   const auto view = Runtime::Get().ViewOf(player);
   if (!view.valid)
     return;

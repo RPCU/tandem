@@ -281,6 +281,8 @@ public class TandemSystem extends ScriptableSystem {
       this.m_stealth.Tick(this.Now(), this.m_you, this.m_npcs);
     }
     TandemHacks.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
+    // Grapples, takedowns, carried bodies (Takedowns.reds); 0: not in a session.
+    TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
     }
@@ -529,6 +531,8 @@ public class TandemSystem extends ScriptableSystem {
         }
       }
       TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
+    } else if StrBeginsWith(command, "takedown") {
+      TandemTakedowns.Get(this.GetGameInstance()).Command(command);
     } else if Equals(command, "vehicle clear") {
       // (experiment) delete the parked car copies: this froze the game
       // (engine-knowledge §13.6); run tools/game.sh bt if it does again.

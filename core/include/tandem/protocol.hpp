@@ -256,7 +256,7 @@ struct NpcStates { // State channel, ~10 Hz: every NPC the host shares, in one g
 
 struct NpcGone { // Event channel
   NpcId npc{};
-  std::uint8_t reason{}; // 0 out of range or despawned, 1 dead
+  std::uint8_t reason{}; // kGone*: 0 out of range or despawned, 1 dead, 2 disposed of
   PlayerId killer{};     // dead: the player whose hit killed it (kNoPlayer: none)
   friend bool operator==(const NpcGone &, const NpcGone &) = default;
 };
@@ -629,13 +629,94 @@ struct StoryEffect {
   friend bool operator==(const StoryEffect &, const StoryEffect &) = default;
 };
 
+// NpcGone::reason values. A disposed body (in a container) is gone for good:
+// guests delete its proxy instead of leaving a corpse.
+inline constexpr std::uint8_t kGoneAway = 0, kGoneDead = 1, kGoneDisposed = 2;
+
+// A player's action that moves, animates or kills one of the host's NPCs:
+// grapples, takedowns, finishers, carrying and throwing bodies. The actor's
+// game plays its own side at once (its V's animation, on its proxy); this is
+// the request to the NPC's owner, the host, which validates it and plays the
+// NPC's side on the real one (scripts/tandem/Takedowns.reds).
+enum class NpcActionKind : std::uint8_t {
+  Grab = 1,     // grapple start; name: the takedown action (GrappleTarget...)
+  Release = 2,  // let go alive (break free, failed grapple, shove); name: why
+  Takedown = 3, // lethal takedown; name: the takedown effect tag (kill)
+  Knockout = 4, // non-lethal takedown; name: its effect tag (setUnconscious...)
+  Animate = 5,  // another takedown animation (aerial, boss); name: its tag
+  Finisher = 6, // name: the playFinisher effect; item: weapon record
+  PickUp = 7,   // pick up a body (unconscious or dead)
+  Drop = 8,     // put it down
+  Throw = 9,    // throw it; direction: the ragdoll impulse
+  Dispose = 10, // into a container; item: the device's entity id; name: kill or not
+};
+
+struct NpcAction {   // Event channel; guest to host, never relayed
+  PlayerId player{}; // who: set by the host from the connection
+  NpcId npc{};
+  NpcActionKind kind{};
+  std::uint64_t name{}; // CName hash, see NpcActionKind
+  std::uint64_t item{}; // TweakDB id or entity hash, see NpcActionKind
+  float amount{};       // finisher: the NPC's health (fraction) as the actor saw it
+  Vec3 direction;       // throw
+  friend bool operator==(const NpcAction &, const NpcAction &) = default;
+};
+
+// Why the host refused an NpcAction.
+inline constexpr std::uint8_t kRefusedGone = 1, kRefusedHeld = 2, kRefusedConditions = 3,
+                              kRefusedNotYours = 4, kRefusedTooFar = 5;
+
+struct NpcActionReply { // Event channel; host to the player who asked only
+  NpcId npc{};
+  NpcActionKind kind{};
+  bool accepted{};
+  std::uint8_t reason{}; // kRefused*, when refused
+  friend bool operator==(const NpcActionReply &, const NpcActionReply &) = default;
+};
+
+// Who holds or animates one of the host's NPCs, so every game shows it the
+// same way: its proxy goes into the grapple, onto the shoulder or into the
+// takedown with that player's V (puppet or own). Host to everyone, kept for
+// late joiners until released (player kNoPlayer) or gone.
+enum class NpcHoldKind : std::uint8_t {
+  None = 0,     // free again
+  Grappled = 1, // name: the takedown action that started it
+  Carried = 2,
+  Takedown = 3, // a takedown being played; name: its effect tag
+  Finisher = 4, // a finisher being played; name: the playFinisher effect
+};
+
+struct NpcHold { // Event channel
+  NpcId npc{};
+  PlayerId player{}; // the holder; kNoPlayer when released
+  NpcHoldKind how{};
+  std::uint64_t name{};
+  friend bool operator==(const NpcHold &, const NpcHold &) = default;
+};
+
+// The player's half of an NPC's reaction that single player gives "the
+// player" (on the host: its own V) when another V is the one concerned.
+// Host to that player's game only.
+enum class NpcCueKind : std::uint8_t {
+  CombatStart = 1, // the NPC entered combat with them: second chance, gag
+  PoiseBroken = 2, // their hit broke its guard: a finisher is offered
+};
+
+struct NpcCue { // Event channel
+  NpcId npc{};
+  PlayerId player{}; // whose game it is for
+  NpcCueKind cue{};
+  friend bool operator==(const NpcCue &, const NpcCue &) = default;
+};
+
 using Message =
     std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
                  Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
                  NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
                  Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
                  Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward, TimeEffect, StoryEffect>;
+                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
+                 NpcHold, NpcCue>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.

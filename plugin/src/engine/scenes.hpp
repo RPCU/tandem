@@ -1,7 +1,7 @@
 #pragma once
 // Which scene a game is playing, and whether it is private (romance,
 // intimate, one-to-one chats, minor side scenes): docs/research/
-// coop-quests-design.md §2.12, engine-knowledge.md §13.17.
+// coop-quests-design.md §2.12, engine-knowledge.md §13.18.
 //
 // The quest hook (quests.cpp) reports every scene node it sees run; the game
 // thread reads the scene resource the scene system has loaded for it (its

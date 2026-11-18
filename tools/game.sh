@@ -296,16 +296,22 @@ ensure() {
   if running && healthy && [ "${started#* }" = "$want" ] &&
     [ "$(remote "cat '$dir/red4ext/plugins/tandem/.started-dll' 2>/dev/null" || true)" = "$dll" ] &&
     [ "$(remote "cat '$dir/red4ext/plugins/tandem/.started-tweaks' 2>/dev/null" || true)" = "$(cat tweaks/tandem/*.tweak | sha256sum | cut -c1-16)" ]; then
-    task deploy >/dev/null
+    deploy
     if reload 2>/dev/null; then
       remote "echo '$now $want' > '$dir/red4ext/plugins/tandem/.started'"
       return
     fi
   fi
-  task deploy >/dev/null
+  deploy
   start
   remote "cd '$dir/red4ext/plugins/tandem'; echo '$now $want' > .started; echo '$dll' > .started-dll; \
     echo '$(cat tweaks/tandem/*.tweak | sha256sum | cut -c1-16)' > .started-tweaks"
+}
+
+# TANDEM_PREBUILT=1: install the DLL already in build/ (tools/remote.sh
+# built it on the game machine) instead of building it here.
+deploy() {
+  if [ -n "${TANDEM_PREBUILT:-}" ]; then task deploy:files >/dev/null; else task deploy >/dev/null; fi
 }
 
 # The game runs and its game thread ticks (no watchdog line since the last

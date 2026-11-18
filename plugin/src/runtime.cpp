@@ -92,6 +92,8 @@ void Runtime::Stop() {
     m_npcOutbox.clear();
     m_npcStates.reset();
     m_npcEvents.clear();
+    m_npcReplies.clear();
+    m_actionEvents.clear();
     m_npcDetected.clear();
     m_detectingUs = 0;
     m_npcStatesAtUs = 0;
@@ -119,6 +121,10 @@ void Runtime::Stop() {
     }
   }
   net.reset(); // joins outside the lock: the net thread takes it too
+  {
+    std::lock_guard _(m_heldLock);
+    m_heldPuppets.clear();
+  }
   {
     std::lock_guard _(m_tracksLock);
     m_tracks.clear();
@@ -479,6 +485,56 @@ void Runtime::PushNpcEvent(const NpcEvent &event) {
 std::vector<NpcEvent> Runtime::TakeNpcEvents() {
   std::lock_guard _(m_lock);
   return std::exchange(m_npcEvents, {});
+}
+
+void Runtime::SubmitNpcAction(const proto::NpcAction &action) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(action);
+}
+
+void Runtime::SubmitNpcHold(const proto::NpcHold &hold) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(hold);
+}
+
+void Runtime::SubmitNpcCue(const proto::NpcCue &cue) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(cue);
+}
+
+void Runtime::SubmitNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply) {
+  std::lock_guard _(m_lock);
+  m_npcReplies.emplace_back(player, reply);
+}
+
+std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> Runtime::TakeNpcReplies() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_npcReplies, {});
+}
+
+void Runtime::PushActionEvent(const ActionEvent &event) {
+  std::lock_guard _(m_lock);
+  // Scripts drain these every frame; a pile-up means nobody is listening.
+  if (m_actionEvents.size() < 256)
+    m_actionEvents.push_back(event);
+}
+
+std::vector<ActionEvent> Runtime::TakeActionEvents() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_actionEvents, {});
+}
+
+void Runtime::HoldPuppet(proto::PlayerId player, bool hold) {
+  std::lock_guard _(m_heldLock);
+  if (hold)
+    m_heldPuppets.insert(player);
+  else
+    m_heldPuppets.erase(player);
+}
+
+bool Runtime::IsPuppetHeld(proto::PlayerId player) const {
+  std::lock_guard _(m_heldLock);
+  return m_heldPuppets.contains(player);
 }
 
 void Runtime::SubmitHack(const proto::Message &message) {
