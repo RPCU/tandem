@@ -2244,3 +2244,40 @@ duration, easeIn, easeOut, ignoreGlobalDilation, useRealTime)`,
 - `GameInstance.GetSimTime` is assumed dilated and `GetEngineTime` real
   (final.reds 14148-14150); `time test` logs the ratio of the two.
   [2.5-untested]
+
+### 13.17 Scenes: what kind, from the game's data (2026-11-18, offline and SDK)
+
+For private scenes (`plugin/src/engine/scenes.cpp`,
+`coop-quests-design.md` §2.12).
+
+- A quest scene starts from a `questSceneNodeDefinition` (RTTI 0x88): its
+  `sceneFile` (`RaRef<scnSceneResource>`, +0x48) is the scene's resource
+  path. It runs through `QuestPhaseInstance::ExecuteNode` (§13.15), which
+  the engine calls again while the scene plays (the campaign fork's dedup
+  of scene nodes, §7). [2.5-verified offline: RTTI size = the SDK's
+  generated struct; the re-wake is [K]]
+- `scnSceneResource` (RTTI 0x2D8 = SDK): `sceneCategoryTag` at +0x290,
+  `scnSceneCategoryTag` = voiceset 0, mainQuests 1, sideQuests 2,
+  minorQuests 3, otherQuests 4, dialoguesQuests 5, streetOpenWorld 6,
+  vendorsOpenWorld 7, dancefloorsOpenWorld 8, cityOpenWorld 9,
+  chatsOpenWorld 10, otherOpenWorld 11, holocalls 12, other 13;
+  `actors` (`scnActorDef`, 0x1E0: `actorName` +0x1B0,
+  `specCharacterRecordId` +0x1D0), `playerActors`. [SDK, sizes checked
+  against `rtti-vtables-2.50.tsv`]
+- No scene, node or resource field says "private", "romance" or
+  "intimate", and the vanilla scripts never mention romance: the category
+  tag and the actors are the data there is. Romance state lives in quest
+  facts the scripts do not name. [2.5-verified offline: final.reds has no
+  match]
+- A loaded resource by path: `ResourceLoader::FindToken` (address hash
+  0xC86F39B7 = `res::ResourceLoader::TryAcquireResourceToken_NoLock` at
+  0x14027d834 on 2.50; the SDK takes the loader's token lock around it).
+  Called from the game thread only. [2.5-verified offline]
+- Hiding a puppet with a fade:
+  `GameObject.ToggleForcedVisibilityInAnimSystemEvent(owner, source,
+visible, transitionTime)` (final.reds:14006, a
+  `ToggleVisibilityInAnimSystemEvent`, per source name). [2.5-untested]
+- To check in game: the log's `scenes: 0x… is private (…)` lines for a
+  vendor chat, Judy's or Panam's romance scenes, a main quest scene with
+  Judy (must be important); the category of a few known scenes.
+  [2.5-untested]

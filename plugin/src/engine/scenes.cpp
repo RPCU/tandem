@@ -1,0 +1,259 @@
+// Scene privacy (engine-knowledge.md §13.17, read offline on 2.50).
+//
+// A quest starts a scene through a questSceneNodeDefinition (RTTI size
+// 0x88; `sceneFile` at +0x48, a resource path) run by
+// QuestPhaseInstance::ExecuteNode; the engine wakes the node again and again
+// while the scene plays, so "the scene node seen last" is the scene now.
+// The scene's resource, scnSceneResource (RTTI size 0x2D8), says what kind
+// of scene it is: `sceneCategoryTag` (scnSceneCategoryTag: mainQuests,
+// sideQuests, minorQuests, dialoguesQuests, chatsOpenWorld, holocalls…) and
+// who plays in it (`actors`, each with an `actorName` and a character
+// record; `playerActors`). The scene system has it loaded while it plays:
+// the resource loader's token for its path holds it
+// (ResourceLoader::FindToken, address hash 0xC86F39B7 =
+// TryAcquireResourceToken_NoLock, under the loader's token lock).
+//
+// Field offsets come from the RTTI by name (properties' value offsets), not
+// by hand; a missing class or property turns classification off (every
+// scene counts as Important: nothing is hidden by mistake).
+
+// The SDK's headers need its main header first (own group: keep it first).
+#include <RED4ext/RED4ext.hpp>
+
+#include "../log.hpp"
+#include "scenes.hpp"
+
+#include "tandem/session.hpp"
+
+#include <RED4ext/CString.hpp>
+#include <RED4ext/RTTISystem.hpp>
+#include <RED4ext/ResourceLoader.hpp>
+#include <RED4ext/Scripting/Natives/CResource.hpp>
+
+#include <algorithm>
+#include <atomic>
+#include <cctype>
+#include <format>
+#include <map>
+#include <mutex>
+
+namespace tandem::plugin::engine {
+namespace {
+std::atomic<std::uint64_t> g_lastPath{0};
+std::atomic<std::uint64_t> g_lastUs{0};
+std::atomic<RED4ext::CClass *> g_nodeClass{nullptr};
+std::atomic_bool g_layoutChecked{false}, g_layoutOk{false};
+// By RTTI: questSceneNodeDefinition.sceneFile, scnSceneResource
+// .sceneCategoryTag / .actors, scnActorDef.actorName, scnActorDef's size.
+std::atomic<std::uint32_t> g_sceneFile{0};
+std::uint32_t g_category = 0, g_actors = 0, g_actorName = 0, g_actorSize = 0;
+
+// scnSceneCategoryTag (the SDK's generated enum, the game's values).
+enum class Tag : std::int8_t {
+  voiceset = 0,
+  mainQuests = 1,
+  sideQuests = 2,
+  minorQuests = 3,
+  otherQuests = 4,
+  dialoguesQuests = 5,
+  streetOpenWorld = 6,
+  vendorsOpenWorld = 7,
+  dancefloorsOpenWorld = 8,
+  cityOpenWorld = 9,
+  chatsOpenWorld = 10,
+  otherOpenWorld = 11,
+  holocalls = 12,
+  other = 13,
+};
+
+ScenePrivacy g_privacy;                         // set at load
+std::vector<std::uint64_t> g_private, g_public; // their path hashes
+std::map<std::uint64_t, SceneClass> g_cache;    // game thread
+
+std::string Lower(std::string text) {
+  std::ranges::transform(text, text.begin(), [](unsigned char c) { return std::tolower(c); });
+  return text;
+}
+
+bool LayoutOk() {
+  if (!g_layoutChecked.exchange(true)) {
+    auto *rtti = RED4ext::CRTTISystem::Get();
+    auto *node = rtti->GetClass("questSceneNodeDefinition");
+    auto *scene = rtti->GetClass("scnSceneResource");
+    auto *actor = rtti->GetClass("scnActorDef");
+    const auto offset = [](RED4ext::CClass *type, const char *name) -> std::uint32_t {
+      const auto *property = type ? type->GetProperty(name) : nullptr;
+      return property ? property->valueOffset : 0;
+    };
+    const auto sceneFile = offset(node, "sceneFile");
+    g_category = offset(scene, "sceneCategoryTag");
+    g_actors = offset(scene, "actors");
+    g_actorName = offset(actor, "actorName");
+    g_actorSize = actor ? actor->GetSize() : 0;
+    const bool ok =
+        sceneFile && g_category && g_actors && g_actorName && g_actorSize >= g_actorName + 8;
+    g_layoutOk = ok;
+    if (ok) {
+      g_sceneFile = sceneFile;
+      g_nodeClass = node;
+      log::Info(
+          "scenes: sceneFile +{:#x}, category +{:#x}, actors +{:#x} (each {:#x}, name +{:#x})",
+          sceneFile, g_category, g_actors, g_actorSize, g_actorName);
+    } else
+      log::Error("scenes: questSceneNodeDefinition, scnSceneResource or scnActorDef differ "
+                 "from 2.50: every scene counts as important (none private)");
+  }
+  return g_layoutOk;
+}
+
+const char *Category(Tag tag) {
+  using T = Tag;
+  switch (tag) {
+  case T::voiceset:
+    return "voiceset";
+  case T::mainQuests:
+    return "mainQuests";
+  case T::sideQuests:
+    return "sideQuests";
+  case T::minorQuests:
+    return "minorQuests";
+  case T::otherQuests:
+    return "otherQuests";
+  case T::dialoguesQuests:
+    return "dialoguesQuests";
+  case T::streetOpenWorld:
+    return "streetOpenWorld";
+  case T::vendorsOpenWorld:
+    return "vendorsOpenWorld";
+  case T::dancefloorsOpenWorld:
+    return "dancefloorsOpenWorld";
+  case T::cityOpenWorld:
+    return "cityOpenWorld";
+  case T::chatsOpenWorld:
+    return "chatsOpenWorld";
+  case T::otherOpenWorld:
+    return "otherOpenWorld";
+  case T::holocalls:
+    return "holocalls";
+  case T::other:
+    return "other";
+  }
+  return "?";
+}
+
+// The rules (design §2.12). A scene of the story (main quests, a side
+// quest's scenes with several people, holocalls) is for everyone; chats,
+// open-world and minor one-to-one scenes, and a side or minor quest's scene
+// with a romance partner alone, are private.
+SceneClass Classify(const std::uint8_t *scene, std::string &why) {
+  using T = Tag;
+  const auto category =
+      static_cast<Tag>(*reinterpret_cast<const std::int8_t *>(scene + g_category));
+  const auto &actors = *reinterpret_cast<const RED4ext::DynArray<std::uint8_t> *>(scene + g_actors);
+  // DynArray's head: entries, capacity, size (the element type is scnActorDef).
+  const auto *entries = *reinterpret_cast<const std::uint8_t *const *>(&actors);
+  const std::uint32_t npcs = reinterpret_cast<const std::uint32_t *>(&actors)[3];
+  std::string partner;
+  for (std::uint32_t i = 0; i < npcs && i < 64 && entries; ++i) {
+    const auto &actorName =
+        *reinterpret_cast<const RED4ext::CString *>(entries + i * g_actorSize + g_actorName);
+    const auto name = Lower(actorName.c_str());
+    for (const auto &wanted : g_privacy.actors)
+      if (!wanted.empty() && name.find(wanted) != std::string::npos)
+        partner = name;
+  }
+  why = std::format("{}, {} actor(s){}", Category(category), npcs,
+                    partner.empty() ? "" : std::format(", partner {}", partner));
+  switch (category) {
+  case T::voiceset:
+  case T::dialoguesQuests:
+  case T::streetOpenWorld:
+  case T::vendorsOpenWorld:
+  case T::dancefloorsOpenWorld:
+  case T::cityOpenWorld:
+  case T::chatsOpenWorld:
+  case T::otherOpenWorld:
+    return SceneClass::Minor;
+  case T::sideQuests:
+  case T::minorQuests:
+  case T::otherQuests:
+    if (!partner.empty() && npcs <= 2)
+      return SceneClass::Romance;
+    if (category == T::minorQuests && npcs <= 1)
+      return SceneClass::Minor;
+    return SceneClass::Important;
+  case T::mainQuests:
+  case T::holocalls:
+  case T::other:
+    return SceneClass::Important;
+  }
+  return SceneClass::Important;
+}
+} // namespace
+
+void SetScenePrivacy(const ScenePrivacy &privacy) {
+  g_privacy = privacy;
+  for (auto &actor : g_privacy.actors)
+    actor = Lower(actor);
+  for (const auto &path : privacy.privates)
+    g_private.push_back(RED4ext::ResourcePath(path.c_str()).hash);
+  for (const auto &path : privacy.publics)
+    g_public.push_back(RED4ext::ResourcePath(path.c_str()).hash);
+}
+
+void ObserveSceneNode(void *node) {
+  auto *wanted = g_nodeClass.load(std::memory_order_relaxed);
+  if (!wanted || !node)
+    return;
+  auto *type = static_cast<RED4ext::ISerializable *>(node)->GetType();
+  if (!type || !type->IsA(wanted))
+    return;
+  // RaRef<scnSceneResource>: its resource path first.
+  const auto path = *reinterpret_cast<const std::uint64_t *>(
+      static_cast<const std::uint8_t *>(node) + g_sceneFile.load());
+  g_lastPath.store(path, std::memory_order_relaxed);
+  g_lastUs.store(net::NowUs(), std::memory_order_relaxed);
+}
+
+std::uint64_t RecentScenePath() { return g_lastPath.load(); }
+
+SceneClass ClassifyRecentScene(std::uint32_t maxAgeMs, std::string &why) {
+  // The layout check also arms the observer (it needs the node class).
+  if (!LayoutOk())
+    return SceneClass::None;
+  const auto path = g_lastPath.load();
+  const auto at = g_lastUs.load();
+  if (path == 0 || net::NowUs() - at > static_cast<std::uint64_t>(maxAgeMs) * 1000)
+    return SceneClass::None;
+  if (std::ranges::find(g_public, path) != g_public.end()) {
+    why = "listed public";
+    return SceneClass::Important;
+  }
+  if (std::ranges::find(g_private, path) != g_private.end()) {
+    why = "listed private";
+    return SceneClass::Minor;
+  }
+  if (const auto it = g_cache.find(path); it != g_cache.end()) {
+    why = "known";
+    return it->second;
+  }
+  auto *loader = RED4ext::ResourceLoader::Get();
+  if (!loader)
+    return SceneClass::None;
+  auto token = loader->FindToken<RED4ext::CResource>(RED4ext::ResourcePath(path));
+  if (!token || !token->IsLoaded() || !token->resource)
+    return SceneClass::None; // not loaded yet: asked again next time
+  auto *resource = token->resource.GetPtr();
+  if (!resource || !resource->GetType() ||
+      resource->GetType()->GetName() != RED4ext::CName("scnSceneResource"))
+    return SceneClass::None;
+  const auto result = Classify(reinterpret_cast<const std::uint8_t *>(resource), why);
+  g_cache[path] = result;
+  log::Info("scenes: {:#x} is {} ({})", path,
+            result == SceneClass::Romance ? "private (romance)"
+            : result == SceneClass::Minor ? "private (minor)"
+                                          : "important",
+            why);
+  return result;
+}
+} // namespace tandem::plugin::engine

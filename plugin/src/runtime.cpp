@@ -4,6 +4,7 @@
 #include "log.hpp"
 #include "net_thread.hpp"
 #include "runtime.hpp"
+#include "story.hpp"
 
 #include "tandem/session.hpp"
 
@@ -623,6 +624,9 @@ void Runtime::PushRemotePose(const proto::PoseState &pose) {
 }
 
 bool Runtime::PoseOf(proto::PlayerId player, pose::Pose &out) {
+  // A player in a private scene: its puppet shows its own idle (story.hpp).
+  if (Story::Get().PosePaused(player))
+    return false;
   // Drawn as far in the past as the player's position (interpolation.hpp);
   // a loopback pose, with no network, a fixed two frames.
   std::uint64_t delayUs = 33'000;

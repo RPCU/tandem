@@ -561,6 +561,8 @@ private:
 //   effect RECORD on|off         a story status effect on the host's V
 //                                (a relic glitch: BaseStatusEffect.JohnnySicknessLow)
 //   replacer on|off              the host plays as Johnny (StoryState flag)
+//   private on|off               the host is in a private scene (romance,
+//                                a minor one-to-one chat: StoryState flag)
 // Lines starting with # are comments.
 struct StoryStep {
   double at{};
@@ -662,6 +664,9 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
                                  .kind = proto::kCursorPicked};
     if (step.verb == "tier" && !a.empty())
       return proto::StoryState{.tier = static_cast<std::uint8_t>(std::stoi(a[0]))};
+    if (step.verb == "private" && !a.empty())
+      return proto::StoryState{.tier = static_cast<std::uint8_t>(a[0] == "on" ? 3 : 1),
+                               .flags = a[0] == "on" ? proto::kStoryPrivate : std::uint8_t{0}};
     if (step.verb == "replacer" && !a.empty())
       return proto::StoryState{.tier = 1,
                                .flags = a[0] == "on" ? proto::kStoryReplacer : std::uint8_t{0}};

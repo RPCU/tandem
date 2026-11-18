@@ -579,7 +579,10 @@ struct ChoiceCursor {
 
 // A player's story state from its own game (either way; the host stamps,
 // keeps and relays it).
-inline constexpr std::uint8_t kStoryBraindance = 1, kStoryReplacer = 2, kStoryInCall = 4;
+// Bits of StoryState::flags (free from 16 up: add new ones there, e.g. other
+// worlds such as cyberspace).
+inline constexpr std::uint8_t kStoryBraindance = 1, kStoryReplacer = 2, kStoryInCall = 4,
+                              kStoryPrivate = 8; // in a private scene: not to be watched
 struct StoryState {
   PlayerId player{};
   std::uint8_t tier{};  // GameplayTier 1..5

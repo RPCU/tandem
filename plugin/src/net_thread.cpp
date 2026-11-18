@@ -319,9 +319,11 @@ struct NetThread::Impl {
 
       runtime.SetClockOffset(static_cast<std::int64_t>(endpoint->HostNowUs()) -
                              static_cast<std::int64_t>(net::NowUs()));
-      if (auto local = runtime.TakeLocal())
+      if (auto local = runtime.TakeLocal()) {
+        Story::Get().FilterLocal(*local); // a private scene: held where it began
         endpoint->SendLocalState(*local);
-      if (auto pose = runtime.TakeLocalPose())
+      }
+      if (auto pose = runtime.TakeLocalPose(); pose && !Story::Get().Private())
         endpoint->SendLocalPose(*pose);
       if (auto appearance = runtime.TakeLocalAppearance()) {
         lastAppearance = *appearance;

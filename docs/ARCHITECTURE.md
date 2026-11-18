@@ -538,12 +538,21 @@ redscript natives (UI, events)              ENet socket
     widget. The host playing as Johnny (`isReplacer`) or in a braindance
     counts as a cinematic for the holds and the offer, with a notice. The
     host's puppet does not yet take Johnny's look.
+  - _Private scenes_ (`engine/scenes.cpp`, design §2.12): each game
+    classifies the scene it plays from the scene resource's category tag
+    and actors (chats, open-world and minor one-to-one scenes, a romance
+    partner alone: private). In a private scene, the others' puppets near
+    that player fade out. The others see the player "busy", standing where
+    the scene began and idling on its own animation graph (no pose sent),
+    with no hold or offer. `scene_privacy = on` by default; it installs the
+    quest node hook in observe mode on every game.
   - _Rewards_: the host's `OnRewardEvent` goes to the guests that took part
     (within 150 m of the host as the quest moved or completed;
     `story::Participation`); each guest gives its own V the reward
     (`RPGManager.GiveReward`) once, and keeps it in a persistent ledger so
     its own story pays nothing again for it.
-  - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`.
+  - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`,
+    `story-private`, `story-private-host`.
 - **How NPCs see a remote V** (`scripts/tandem/Attitudes.reds`,
   `tweaks/tandem/attitudes.tweak`, `tweaks/tandem/puppet.tweak`): every
   puppet is in an attitude group of its own, `tandem_player_1` to `_3`
@@ -589,7 +598,8 @@ redscript natives (UI, events)              ENet socket
   their true speed. The plugin calls `TandemTime.Frame` every frame
   (`plugin/src/main.cpp`). Scenario `time`; not yet run in game.
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name,
-  pose, story, quest_freeze, quest_freeze_allow, time_host; `relay`,
+  pose, story, quest_freeze, quest_freeze_allow, scene_privacy,
+  private_actors, private_scenes, public_scenes, time_host; `relay`,
   `relay_token`, `join` for the relay and join codes).
 
 ## Talking to the engine safely
