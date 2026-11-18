@@ -617,6 +617,16 @@ struct TandemNative : Red::IScriptable {
   }
   // tandem.ini time_host = full: the host keeps its own slow motion whole.
   static bool IsTimeHostFull() { return Runtime::Get().config.timeHostFull; }
+  // Invites through tandem-relay (docs/ARCHITECTURE.md, "Invites"): the
+  // host's join code to show ("K7Q-2M9"; "" until the relay gave one, or
+  // with no relay), what the relay link is doing ("" no relay,
+  // "connecting", "ready", else the problem, in words), and joining the
+  // session a typed code names (false: not a code, or no relay set).
+  static Red::CString RelayCode() { return Red::CString(Runtime::Get().RelayCode().c_str()); }
+
+  static Red::CString RelayStatus() { return Red::CString(Runtime::Get().RelayStatus().c_str()); }
+
+  static bool JoinByCode(Red::CString code) { return Runtime::Get().JoinByCode(code.c_str()); }
 
   // Host: its NPCs.
   static void SendNpcSpawn(std::uint32_t npc, Red::TweakDBID record, Red::CName appearance,
@@ -1074,6 +1084,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(TimeFactorOf);
   RTTI_METHOD(TimeBubbleMembers);
   RTTI_METHOD(IsTimeHostFull);
+  RTTI_METHOD(RelayCode);
+  RTTI_METHOD(RelayStatus);
+  RTTI_METHOD(JoinByCode);
   RTTI_METHOD(SendSeat);
   RTTI_METHOD(SendVehicle);
   RTTI_METHOD(RemoteSeatChanges);

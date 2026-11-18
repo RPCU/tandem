@@ -24,6 +24,29 @@ struct NetThread::Impl {
   std::optional<proto::Stealth> lastStealth;
   bool lastPaused{};
   std::optional<proto::TimeEffect> lastTime;
+  // Guest through a relay: the session's secret, to join again after the
+  // code expired.
+  std::optional<net::RelaySecret> relaySecret;
+
+  // Once in the session, joining again goes by its secret alone: the code
+  // has likely expired, and a host that restarted has a new code anyway (a
+  // stale code would only spend the relay's lookups).
+  std::optional<net::RelayOptions> RelayOf() const {
+    if (config.relay.empty())
+      return std::nullopt;
+    return net::RelayOptions{.address = config.relay,
+                             .port = config.relayPort,
+                             .token = config.relayToken,
+                             .secret = relaySecret,
+                             .code = relaySecret ? std::string() : config.joinCode};
+  }
+
+  // The relay link's state for scripts (Runtime::RelayStatus).
+  static std::string StatusText(const net::RelayStatus &status) {
+    if (status.state == net::RelayStatus::State::Ready)
+      return "ready";
+    return status.error.empty() ? "connecting" : status.error;
+  }
 
   // The other players in their pause menu, for the game thread.
   static void PublishPaused(const Endpoint &endpoint) {
@@ -36,12 +59,19 @@ struct NetThread::Impl {
 
   // A guest whose session ends (host gone, unreachable, timed out) tries
   // again every 5 s for as long as the game runs: a host that crashed or
-  // restarted is joined again without touching the guest's game.
+  // restarted is joined again without touching the guest's game. A join
+  // code that never led into a session (wrong, expired) is tried 3 times:
+  // each try costs one of the relay's limited code lookups.
   void Run(std::stop_token stop) {
-    for (;;) {
+    for (int codeTries = 1;; ++codeTries) {
       Session(stop);
       if (stop.stop_requested() || config.role != Config::Role::Join)
         return;
+      if (!config.joinCode.empty() && !relaySecret && codeTries >= 3) {
+        log::Warn("not joining again: code {} led to no session",
+                  net::DisplayJoinCode(config.joinCode));
+        return;
+      }
       for (int i = 0; i < 50 && !stop.stop_requested(); ++i)
         std::this_thread::sleep_for(100ms);
       if (stop.stop_requested())
@@ -54,9 +84,20 @@ struct NetThread::Impl {
     auto &runtime = Runtime::Get();
     std::string error;
     const Identity identity{config.name, body};
-    auto endpoint = config.role == Config::Role::Host
-                        ? Endpoint::Host(identity, config.port, error)
-                        : Endpoint::Join(identity, config.address, config.port, error);
+    const auto relay = RelayOf();
+    // A guest with a join code goes through the relay, after the address
+    // when tandem.ini gives one; without a code, to the address only.
+    const bool byCode = !config.joinCode.empty();
+    const JoinTarget target{.address = !byCode || config.addressSet ? config.address : "",
+                            .port = config.port,
+                            .relay = byCode ? relay : std::nullopt};
+    std::unique_ptr<Endpoint> endpoint;
+    if (config.role == Config::Role::Host)
+      endpoint = Endpoint::Host(identity, config.port, error, {}, relay);
+    else if (byCode && !relay)
+      error = "a join code needs a relay (relay = host:port in tandem.ini)";
+    else
+      endpoint = Endpoint::Join(identity, target, error);
     if (!endpoint) {
       log::Error("could not start the session: {}", error);
       runtime.PushEvent({ScriptEvent::Kind::SessionEnded, 0, error, {}});
@@ -77,9 +118,16 @@ struct NetThread::Impl {
     if (lastTime)
       endpoint->SetLocalTimeEffect(*lastTime);
     if (config.role == Config::Role::Host)
-      log::Info("hosting on UDP {}", config.port);
+      log::Info("hosting on UDP {}{}", config.port,
+                relay ? std::format(", and through relay {}:{}", relay->address, relay->port) : "");
+    else if (target.address.empty())
+      log::Info("joining code {} through relay {}:{}", net::DisplayJoinCode(config.joinCode),
+                config.relay, config.relayPort);
     else
-      log::Info("joining {}:{}", config.address, config.port);
+      log::Info("joining {}:{}{}", config.address, config.port,
+                target.relay ? " (through the relay if it does not answer)" : "");
+    // The relay as last logged and handed to scripts.
+    std::optional<net::RelayStatus> relayShown;
 
     auto nextReport = std::chrono::steady_clock::now() + 10s;
     bool ended = false;
@@ -105,7 +153,10 @@ struct NetThread::Impl {
             [&](const auto &e) {
               using E = std::decay_t<decltype(e)>;
               if constexpr (std::is_same_v<E, events::Joined>) {
-                log::Info("in the session as player {} (host {})", e.you, e.host);
+                log::Info("in the session as player {} (host {}{})", e.you, e.host,
+                          endpoint->ThroughRelay() ? ", through the relay" : "");
+                if (const auto secret = endpoint->RelaySessionSecret())
+                  relaySecret = secret;
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
                 Story::Get().PushInbound(
@@ -278,6 +329,23 @@ struct NetThread::Impl {
             event);
       }
 
+      if (auto status = endpoint->Relay()) {
+        status->codeSecondsLeft = 0; // not a change worth a line
+        if (status != relayShown) {
+          if (!status->code.empty() && (!relayShown || relayShown->code != status->code))
+            log::Info("join code {} (relay {}:{})", net::DisplayJoinCode(status->code),
+                      config.relay, config.relayPort);
+          if (!status->error.empty() && (!relayShown || relayShown->error != status->error))
+            log::Warn("relay: {}", status->error);
+          else if (status->state == net::RelayStatus::State::Ready &&
+                   (!relayShown || relayShown->state != status->state))
+            log::Info("relay: registered");
+          runtime.SetRelay(status->code.empty() ? "" : net::DisplayJoinCode(status->code),
+                           StatusText(*status));
+          relayShown = status;
+        }
+      }
+
       runtime.SetClockOffset(static_cast<std::int64_t>(endpoint->HostNowUs()) -
                              static_cast<std::int64_t>(net::NowUs()));
       if (auto local = runtime.TakeLocal())
@@ -383,8 +451,9 @@ struct NetThread::Impl {
         }
       }
     }
-    // Nobody in this session pauses us any more.
+    // Nobody in this session pauses us any more; its code is gone.
     runtime.SetRemotePaused({});
+    runtime.SetRelay("", "");
     endpoint->Leave("the game closed");
   }
 };

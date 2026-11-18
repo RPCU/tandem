@@ -769,6 +769,15 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // A remote player's puppet in our world (null if none).
+  // The remote players who have a puppet in our world.
+  public func PuppetPlayers() -> array<Uint32> {
+    let out: array<Uint32>;
+    for puppet in this.m_puppets {
+      ArrayPush(out, puppet.player);
+    }
+    return out;
+  }
+
   public func PuppetOf(player: Uint32) -> ref<GameObject> {
     for puppet in this.m_puppets {
       if puppet.player == player {

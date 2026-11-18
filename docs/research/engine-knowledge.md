@@ -1709,7 +1709,7 @@ puppets' attitude group. With the mock player in front mode:
   `player` group, hostility to the puppet made the NPC hostile to V as
   well (it shot V although set neutral to it): never put puppets in the
   `player` group. [2.5-verified] Puppets now get groups of their own
-  (§13.12).
+  (§13.17).
 - **The NPC's senses never detect the puppet**
   (`SenseComponent.GetDetection(puppetId)` stays 0 at 3–12 m in plain
   view), and `TargetTrackingExtension.InjectThreat(npc, puppet)` puts it
@@ -1837,7 +1837,7 @@ stationName, songName)` (149608, no script caller) asks a station for a
   `CarRadioVolume`, `RadioportVolume`, read by the popup): not synced.
   [2.5-untested]
 
-### 13.12 Attitude groups and a puppet's record traits (2026-11-18, scripts only)
+### 13.17 Attitude groups and a puppet's record traits (2026-11-18, scripts, then one run)
 
 Read from the 2.50 scripts (`final.reds` line numbers) and the RTTI dump;
 none of it run in game yet.
@@ -1859,10 +1859,18 @@ none of it run in game yet.
   Quests and prevention change V's group relations with the persistent
   setter (141857–141868, police and gangs towards V's current group); a
   security system breached by someone turns its group hostile to the
-  intruder's group (114508–114537). Whether the attitude system knows a
-  group added by TweakXL (it may build its table from TweakDB at start) is
-  what `attitudes: N of 4 puppet groups declared` and the read-back
-  group in `player N: puppet in the G attitude group` will show.
+  intruder's group (114508–114537). [2.5-untested]
+- **A group added by TweakXL is accepted**: `SetAttitudeGroup(n"tandem_player_1")`
+  reads back as `tandem_player_1` (scenario `puppet-attitude`, first run).
+  But 10 s later `GetAttitudeRelation(n"civilian", n"tandem_player_1")`
+  was friendly (0) while `civilian` to `player` was neutral (1): the
+  relation copy had not taken, or not run, and civilians saw the puppet as
+  friendly where they see V as neutral. A fresh group's relations with no
+  copy read friendly. [2.5-verified] Since then every relation copy is read
+  back and logged (`attitudes: OURS / OTHER (...): V's a/b, read back
+c/d`, `(not taken)` when it differs), and each NPC around also gets V's
+  attitudes on the puppet's agent where the groups do not give them
+  (`AttitudeAgent.SetAttitudeTowards`, which reads back: §13.11).
   [2.5-untested]
 - **Why one group per V**: vanilla turns an NPC hostile to its target's
   whole group, `AttitudeAgent.SetAttitudeTowardsAgentGroup(target, owner,
@@ -2164,6 +2172,22 @@ choiceHubs: array<ListChoiceHubData>}`, `:243020`, `:389618`),
   see.
 - The co-op reward ledger is a `persistent` array on `TandemStorySystem`:
   it reaches the guest's save with its next save after the session.
+- Johnny is an NPC of the host's world, `Character.Silverhand`
+  (`PlayerPuppet.IsTargetFriendlyNPC`, `:40624`); playing as Johnny is the
+  `Character.johnny_replacer` puppet (`:39363`), `UI_PlayerStats.isReplacer`
+  (`:83411`) and the fact `isPlayerPossessedByJohnny` (`:50012`). His relic
+  glitches are status effects with the `JohnnySickness` tag
+  (`BaseStatusEffect.JohnnySicknessLow/Medium/Heavy/MediumQuest`, `:44352`).
+  `GetPlayer` is the _controlled_ object (`:39193`): as Johnny, the host's
+  streamed position and pose are the replacer's.
+- Songbird's calls use `questPhoneCallVisuals.Somi` (`:10735`), drawn by
+  `HudPhoneGameController` (extends the native
+  `SongbirdAudioCallGameController`, `:389152`, `:389380`) instead of the
+  regular call widget (`:408912`).
+- `PlayerPuppet.OnStatusEffectApplied` / `OnStatusEffectRemoved`
+  (`:43899`, `:44474`) are where the host sees a story effect come and go;
+  `ApplyStatusEffectEvent.isNewApplication`,
+  `RemoveStatusEffect.isFinalRemoval` (`:203824`, `:203958`).
 
 ### 13.15 Time dilation in a shared world (2026-11-18, scripts and RTTI only)
 
