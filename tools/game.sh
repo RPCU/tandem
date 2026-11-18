@@ -189,7 +189,7 @@ peer() {
     local address
     address=$(getent ahostsv4 "$host" | awk 'NR == 1 { print $1 }')
     [ -n "$address" ] || address=$(remote "ip -4 -o route get 1.1.1.1" | awk '{ for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1) }')
-    args=(join "$address:27450" --mode front --body male)
+    args=(join "$address:27450" --mode front --body female)
   fi
   mkdir -p .cache
   nohup build/linux/peer/tandem-peer "${args[@]}" >.cache/peer.log 2>&1 &

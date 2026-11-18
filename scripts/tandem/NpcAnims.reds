@@ -1,5 +1,5 @@
 // How the host's NPCs animate, on the guests' proxies (docs/ARCHITECTURE.md,
-// NPCs; engine-knowledge §13.14). The host samples, four times a second, what
+// NPCs; engine-knowledge §13.17). The host samples, four times a second, what
 // each shared NPC's animation graph reads: its high-level, upper-body and
 // stance states (NPCStatesComponent), the weapon in its right hand, whom it
 // looks or aims at, and the workspot it plays in (a bench, a wall to lean
@@ -239,7 +239,7 @@ public class TandemNpcAnims {
   // Host: a shot of one of our shared NPCs (AIWeapon.Fire).
   public static func Shot(owner: ref<GameObject>, effect: Int32, at: Vector4) -> Void {
     let system = GameInstance.GetScriptableSystemsContainer(owner.GetGame()).Get(n"TandemSystem") as TandemSystem;
-    let npc = IsDefined(system) ? system.SharedNpc(owner.GetEntityID()) : 0u;
+    let npc = IsDefined(system) ? system.SharedNpcOf(owner.GetEntityID()) : 0u;
     if npc != 0u {
       TandemNative.SendNpcShot(npc, effect, at);
     }

@@ -1896,3 +1896,338 @@ hostile)` (`TryChangingAttitudeToHostile` 169933, companions 152568);
   entering combat could draw her Grad), her bounty draw table (a scan may
   show her bounty; a null foreign key's `.tweak` syntax is unchecked),
   `VeryHighHealth` (wanted: our game must not kill a remote V).
+
+### 13.12 Splitting a hit between the attacker's game and the target's (2026-11-18)
+
+Read in the 2.50 scripts (`final.reds`), for NPC hits on a guest's puppet
+(the host runs the attacker's side, the guest's game the target's) and
+guests' skill XP. None of it run in game yet.
+
+- The pipeline (`ProcessPipeline` 84290): `PreProcess` 84558
+  (`ConvertDPSToHitDamage`, `CalculateDamageVariants`, quick exit,
+  invulnerability, immortality, death check, `ModifyHitData`), then
+  `Process` 84914 (returns at once on `DealNoDamage`, else the modifier
+  stages and `DealDamages` 85771), `ProcessHitReaction`, `PostProcess`
+  85801 (`ProcessStatusEffects` 85883). [2.5-untested]
+- Attacker's side, for an NPC instigator: `ConvertDPSToHitDamage` 84575
+  (divides by the weapon's `ProjectilesPerShot`; needs a weapon),
+  `CalculateSourceModifiers` 86219 (bonus vs. target type, charge, pierce,
+  ricochet, crit, damage multipliers, cyberware, stealth, spreading),
+  `ProcessEffectiveRange` 86554 (weapon range falloff, explosion distance).
+  `CalculateDamageVariants`, `ProcessLocalizedDamage`, `ProcessCriticalHit`
+  and `ProcessQuickHackModifiers` only act for a player instigator.
+  [2.5-untested]
+- Target's side: `ProcessDamageReduction` 84618 (resistances per damage
+  type, explosion/melee/DoT/boss/mech resistances), `ProcessDodge` 84781
+  (`IsDodging` stat → no damage), `ProcessEvasion` 84795, `ProcessMitigation`
+  84808, `ProcessPlayerIncomingDamageMultiplier` 84831 (target a
+  `PlayerPuppet`), `ProcessPlayerFixedPercentageOverride` 85107 and
+  `ProcessGrenadeExplosionDamageToPlayer` 85250 (difficulty),
+  `CalculateTargetModifiers` 86213 (damage reductions, `ProcessArmor` 86621,
+  on-vehicle mitigation), `ProcessBlockAndDeflect` 87114,
+  `ProcessOneShotProtection` 85069 (per-hit cap by difficulty), and in
+  `StatPoolsManager` overshield, armour pool, `CannotKillPlayer`, god-mode
+  immortality and minimum health (`ApplyDamageSingle` 219067,
+  `DrainStatPool` 219283). [2.5-untested]
+- **No flag skips the attacker's side.** `DeterministicDamage` is read only
+  by `ProcessCriticalHit` (86769), which already returns for a player
+  target; `CannotModifyDamage` by `ProcessCriticalHit`,
+  `ProcessOnVehicleMitigation` (86704: a target-side stage, wrongly skipped
+  for a forwarded hit) and the no-op `ClearDamage` (52652). So tandem wraps
+  the stages instead: on the host the target's stages return for a hit on a
+  puppet; on the guest the three attacker stages return for a forwarded
+  hit (`scripts/tandem/Combat.reds`). [2.5-untested]
+- `ProcessArmor`, `ProcessOneShotProtection`, `ConvertDPSToHitDamage` and
+  the melee block all need `attackData.GetWeapon()`; armour penetration
+  comes from `GetArmorPenetrationValue(weapon, hitEvent)` 87006 (protected,
+  wrappable). A forwarded hit carries the host's value. [2.5-untested]
+- `CheckForQuickExit` 86416 drops a hit with no source, and turns a hit
+  from an attacker friendly to the target into no damage unless the hit has
+  `hitFlag.FriendlyFire` (86453; the flag is read nowhere else, and only
+  removed for player instigators, 86413). [2.5-untested]
+- The attack record's status effects are applied by `ProcessStatusEffects`
+  from `GetAttackDefinition().GetRecord().StatusEffects()` (85930), and the
+  target's application-rate rolls (`ProcessStatusEffectApplicationStats` 85983) use the instigator's stats: a hit rebuilt from the same record and
+  the proxy as instigator brings them along. [2.5-untested]
+- Skill XP: `DrainStatPool` (219283-219327) calls
+  `RPGManager.AwardExperienceFromDamage(hitEvent, percentDrained)` 36969;
+  it requires an active, XP-awarding (`AwardsExperience`: not crowd, not
+  police) puppet target, a player instigator, and reads the weapon's item
+  type for the skill. The request is queued per target entity and paid by
+  `ProcessQueuedCombatExperience(entity)` (80726) when the player gets
+  `TargetNeutraliziedEvent` (45336), sent by `ScriptedPuppet.RewardKiller`
+  (21851) only to a `PlayerPuppet` killer; `FindAndRewardKiller` (12550)
+  uses the damage history, else the `Kill` instigator. No other kill XP is
+  given in scripts. [2.5-untested]
+
+### 13.12 Combat state, detection and stealth for a guest (2026-11-18, scripts only)
+
+Read in the 2.50 scripts (`final.reds` line numbers); none of it tried in
+game yet. Used by `scripts/tandem/Stealth.reds`.
+
+- **What puts V in combat.** `PlayerCombatController` (242633) keeps flags
+  (crouch, `m_isTracked`, quickhack, Johnny) and `VerifyActivation`
+  (242719) picks a state: tracked → `ActivateCombat` (242876: PSM
+  blackboard `PlayerStateMachine.Combat` = 1, `AnimFeature_CombatState`,
+  `FastTravelSystem.AddFastTravelLock(n"InCombat")`, combat chatter,
+  `NotifyGameTone(n"EnterCombat")`, `HandleCombatMix`); crouched and not
+  tracked → stealth (3); neither → out of combat (2, `LeaveCombat` tone,
+  lock removed). `m_isTracked` is set only by
+  `OnStartedBeingTrackedAsHostile` / `OnStoppedBeingTrackedAsHostile`
+  (242808-242816), public, the event argument unused; `PlayerPuppet`
+  forwards the native AI events `StartedBeingTrackedAsHostile` /
+  `StoppedBeingTrackedAsHostile` (importonly, 315706-315709) to them
+  (46292-46298). `PlayerPuppet.OnCombatStateChanged` (43634) listens to
+  the PSM value and sets `m_inCombat` (`IsInCombat()`, 45377), the perk
+  blackboard's `CombatStateTime`, `UpdateVisibility`.
+  `AttackData.IsPlayerInCombat` (52593) reads the PSM value directly.
+  Tandem's guest calls the two controller functions from an `@addMethod`
+  on `PlayerPuppet` (the controller is the private `m_combatController`),
+  with `null` for the event, and wraps the `PlayerPuppet` callbacks so a
+  local "stopped" does not end a combat the host's NPCs still hold.
+  [2.5-untested]
+- **NPC side of "in combat with V".** `NPCPuppet.IsInCombatWithTarget(npc,
+target)` (130026): high-level state Combat and the target tracker's
+  threat for the target is `Hostile`. The host ORs it with
+  `GetDetection >= 100` for `NpcEntry::detected`. [2.5-untested]
+- **The stealth meter.** The HUD meter and the detection perks read the
+  `UI_Stealth` blackboard (`highestDetectionOnPlayer`,
+  `highestHostileDetectionOnPlayer`, 243024; `DetectionMeterEffector`
+  300783 stacks an effect per `detectionStep`), written by the engine.
+  The indicator over an NPC is its sense component's `StealthMappin`
+  (`CreateSenseMappin`, 155542); `StealthMappinController.OnUpdate`
+  (406522) takes the level from the native `GetDetectionProgress()`, not
+  from script. `NPCPuppet.SetDetectionPercentage` (125823) writes
+  `PuppetState.DetectionPercentage`, which some effectors compare
+  (313954). Tandem writes the blackboard (scale assumed 0..100, as
+  `GetDetection`) and each proxy's percentage, and creates the proxy's
+  sense mappin while it notices us. To check in game: whether the engine
+  overwrites the blackboard every frame, and what a proxy's mappin shows
+  with its senses off (likely no progress: then the per-proxy meter needs
+  native work). [2.5-untested]
+- **What NPC senses see of V.** V's visible object is the
+  `senseVisibleObject` component (ScriptedPuppet 19809;
+  `GetVisibleObjectComponent`). `PlayerPuppet.SetInvisible` (43505)
+  toggles it (`IsInvisible`). `UpdateVisibilityModifier` (40819) queues
+  `VisibleObjectDetectionMultEvent{multiplier = Visibility stat}` on V;
+  `UpdateSecondaryVisibilityOffset` (43599) queues
+  `VisibleObjectSecondaryPositionEvent` with Z
+  `player.stealth.crouchVisibilityZOffset` (0.6) crouched or
+  `chestVisibilityZOffset` (1.3). Tandem queues the same events on a
+  puppet and toggles its grafted `senseVisibleObjectComponent` (§13.11)
+  for camo. [2.5-untested]
+- **Optical camo.** Status effects tagged `CamoActiveOnPlayer` (269230)
+  or `ActiveCamo` (44019). Their `AttachOpticalCamoVisionBlockerEffector`
+  (249803, an `AttachCapsuleVisionBlockerEffector` 249727) registers a
+  capsule vision blocker on the owner with the sense manager's
+  `VisionBlockersRegistrar`. With the relic
+  (`CanPlayerExitCombatWithOpticalCamo`, 44019-44056) in combat:
+  `SetInvisible(true)`, each hostile threat's tracker
+  `DeactivateThreat(V)`, `ExitCombatOnOpticalCamoActivatedEvent` later.
+  Tandem applies the V's camo effect to its puppet (owner: the puppet) for
+  the look and the blocker; whether a player camo effect runs on an NPC
+  body is to check. [2.5-untested]
+- **Stimuli.** `StimBroadcasterComponent.TriggerSingleBroadcast(contextOwner,
+type, radius, investigateData, propagationChange)` (149948) is how V's
+  shots are heard (`ShootEvents.OnEnter` 548102: `Gunshot` at 25 m indoors
+  or `GetGunshotRange()`, `SilencedGunshot` + `IllegalAction` when
+  silenced; muzzle brake: none). With no broadcaster on an entity,
+  `StimBroadcasterComponentHelper.CreateStimEvent` +
+  `ProcessSingleStimuliBroadcast` (150609) do the same. `gamedataStimType`
+  values: `Explosion` 24, `Gunshot` 28, `SilencedGunshot` 49. Grenades
+  broadcast from the projectile (`Explosion`, 127920), not from V.
+  [2.5-untested]
+
+### 13.14 Quickhacks between games (2026-11-18, scripts only)
+
+Read in `final.reds`; none of it seen in a session yet.
+
+- An NPC's upload is a `QuickHackUpload` stat pool **on the target**
+  (`ScriptableDeviceAction.StartUpload` 28078, `QuickHackUploadListener`
+  194694): its `OnStatPoolAdded` queues `UploadProgramProgressEvent`
+  (`STARTED`, `EProgressBarType.UPLOAD`, `duration` = the action's
+  activation time) on the target, and at 100 % `CompleteAction` then
+  `COMPLETED`. `ScriptedPuppet.OnUploadProgressStateChanged` (24388) puts
+  `AIQuickHackStatusEffect.BeingHacked` (and `BeingHackedWithTraceableHack`
+  when `QuickHackableHelper.WillHackRevealPlayer`, 123133) on the target at
+  `STARTED` and removes both at `COMPLETED`. One pool per target: two
+  uploads by the vanilla path on one NPC would share it. [2.5-untested]
+- The queue (`QuickHackableQueueHelper.PutActionInQuickhackQueue` 122261)
+  and cost skipping (`CanSkipPayCost` 26943) work only for a `PlayerPuppet`
+  executor; a puppet executor on the host gets none of it.
+  `GetActivationTime` (26793) takes the executor's stats. [2.5-untested]
+- A quickhack effect on an NPC (gameplay tag `Quickhack`,
+  `NPCPuppet.OnStatusEffectApplied` 126476 → `OnQuickHackEffectApplied` 126593) alerts and traces only when `instigatorEntityID ==
+GetPlayerID()` and the effect lacks the `Stealth` tag:
+  `NonStealthQuickHackVictimEvent` (126787) → `RevealPlayerPositionIfNeeded`
+  (126798: a `HackTargetEvent` with `AIQuickHack.HackRevealPosition`
+  queued on the player, unless in combat or already revealed) or
+  `NPCStatesComponent.AlertPuppet` (168014), then
+  `AIActionHelper.TryChangingAttitudeToHostile` (169916). [2.5-untested]
+- NPC hacks: `AISubActionQuickHack.Hack` (493744) queues a `HackTargetEvent`
+  (195237: netrunner, target, action record, settings) on the target;
+  `ScriptedPuppet.OnHackTargetEvent` (22119) runs it as an
+  `AIQuickHackAction` with the netrunner as executor; `PlayerPuppet`
+  (45832) adds the reveal state. Queued on our V with a proxy as
+  `netrunnerID`, it should run the hack from the proxy. [2.5-untested]
+- `ExecutePuppetActionEvent{actionID}` (201075) queued on an NPC runs a
+  quickhack from the local player on it, by the normal path (22452). [2.5-untested]
+- Spread (`SpreadInitEffector` 316185, `SpreadEffector` 316386) reads
+  `GetPlayer(game)` at initialisation for stats, spread map
+  (`HackingDataDef.AddItemToSpreadMap`) and the spread effect's
+  instigator; a `SpreadEffector` with no map entry for its action does not
+  spread. [2.5-untested]
+- Vehicle quickhacks reach `VehicleComponentPS.OnVehicleOverrideForceBrakes`
+  / `…Explode` / `…Accelerate` (96426-96451) and call
+  `VehicleObject.ActivateNetrunnerQuickhack` (87829); the police hacker
+  loop stops a player's car with `ForceBrakesUntilStoppedOrFor` (87873,
+  194573). Whether `ActivateNetrunnerQuickhack(Accelerate)` acts on a car a
+  player drives is not known. [2.5-untested]
+
+### 13.15 Quest phases: making a node wait (2026-11-18, offline, spike S1)
+
+Read in the 2.50 exe with `tools/re/decompile` (offline, no game). Feeds
+`plugin/src/engine/quests.cpp`, the guest's quest freeze
+(`coop-quests-design.md` §1.3).
+
+- `QuestPhaseInstance::ExecuteNode` (hash 3227858325, `0x1402b3aa0`):
+  returns 1 at once when the node is a disableable node in the phase's
+  disabled set (`phase+0xC8`, by `node+0x40` id) or when the node's
+  pre-check vfunc `+0x150(node, ctx+0x110, socket)` returns 1; otherwise
+  notifies the context's listener (`ctx+0x70`, vfuncs `+0x1B8` before,
+  `+0x1C0` after), runs the node (`0x14034fa80`: `ctx+0x110` vfunc `+0xE0`
+  with the node id, clears the outputs, node vfunc `+0x158`), and maps the
+  result through node vfunc `+0x160`; a context state byte `ctx+1 == 7`
+  forces 3. [2.5-verified offline]
+- Its only direct caller, `0x1402b393c`, runs one entry of
+  `ExecuteGraph`'s work list (`0x140352984`, entered through
+  `QuestPhaseInstance_ExecuteGraph` 779107884 = `0x1403528a4`, which
+  pushes the phase on `ctx.phaseStack` at `+0xF8` around the call):
+  result **0**: the node finished; a `questOutputNodeDefinition` (size
+  0x58: socket name `+0x48`, type `+0x50`) ends the pass with its socket,
+  any other node queues its output sockets; **2**: finished, outputs
+  queued; **1 or 3**: nothing queued, the pass goes on with the other
+  queued nodes. [2.5-verified offline]
+- So a hook that returns **1 without calling the original** makes a node
+  do what a disabled node does: nothing, no outputs, the phase stays
+  active. The engine keeps no trace of that signal: tandem holds it
+  (phase `NodePath` `+0x70`, node id, input socket CName) and gives it
+  back at the end of the freeze with the root phase's `ExecutePath`
+  (vfunc `+0x120`, under the quests system's lock `+0x60`, after
+  `QuestsSystem::CreateContext` 3144298192 `(sys, ctx, 1, 0, -1, -1)`:
+  Codeware's `QuestPhaseExecutor::ExecutePath`, used by its
+  `OpenWorldSystem`). [I] — whether every node resumes cleanly that way
+  is the in-game check.
+- Per-phase filter: a phase is open-world when its resource
+  (`phase+0x30` → `CResource.path` `+0x30`) or an ancestor's on
+  `ctx.phaseStack` is one of Codeware's open-world phases
+  (`QuestPhaseRegistry.cpp:12-20`), or its `NodePath` extends one of
+  theirs; the root phase (empty path) always runs. [C][I]
+- To check in game (`quest_freeze = on`, `tools/game.sh cmd quest freeze
+on`, `quest report`, `quest freeze off`): refused-node counts by phase;
+  no pending call rings and the tracker does not move while frozen; on
+  `off`, the held signals resume (a call queued during the freeze rings);
+  vendors, metro, apartment, car summon, NCPD hustles still work; no
+  crash in the 1 s after `off`. [2.5-untested]
+
+### 13.16 Story levers in the scripts (2026-11-18, read in final.reds, not run)
+
+What `scripts/tandem/Story.reds`, `Phone.reds` and `Dialogue.reds` rely
+on; every line is [2.5-untested] until `story-guest.sh` / `story-host.sh`
+pass.
+
+- A guest presents the host's call through its own
+  `PhoneSystem.TriggerCall` (`final.reds:240618`, private: reached from an
+  `@addMethod`), which writes `UI_ComDevice.PhoneCallInformation` and the
+  `phonecall_*` fact; the fact is held back by a wrap of `SetPhoneFact`
+  (`:240841`) while a mirrored call is up. The HUD's answer goes through
+  `PickupPhoneRequest` → `OnPickupPhone` (`:240662`), wrapped to send it to
+  the host. The incoming widget finds the contact by journal id
+  (`GetIncomingContact`, `:409000`): a contact the guest's journal lacks
+  shows no name.
+- Subtitles: `UIGameData.ShowDialogLine` carries `array<scnDialogLineData>`,
+  `HideDialogLine` `array<CRUID>` (`:268284`, `:268327`). Scripts cannot
+  build a `CRUID`: `TandemStory.LineId` / `LineValue` convert it.
+- Choice hubs: `UIInteractions.DialogChoiceHubs` (`DialogChoiceHubs{
+choiceHubs: array<ListChoiceHubData>}`, `:243020`, `:389618`),
+  `ActiveChoiceHubID`, `SelectedIndex`, `LastAttemptedChoice`
+  (`InteractionAttemptedChoice`, `:199455`). The guest's stand-in hub has
+  no native backing: its cursor moves on the input actions
+  `ChoiceScrollUp` / `ChoiceScrollDown` / `ChoiceApply` (names from the
+  input contexts, not seen in the scripts: to confirm).
+- Holds: `GameplayRestriction.NoCombat` and `BaseStatusEffect.Invulnerable`
+  status effects (`:128602`); script god mode does not protect V (§13.11).
+- Saving: a `ScriptableSystem` overriding `IsSavingLocked` (`:48411`) and
+  `SaveLocksManager.RequestSaveLockAdd(game, n"tandem")` (`:195179`, not
+  saved: re-added after a load); `AutoSaveSystem.InvalidateAutoSaveRequests`
+  (`:203134`). Whether the pause menu greys out Save with only these: to
+  see.
+- The co-op reward ledger is a `persistent` array on `TandemStorySystem`:
+  it reaches the guest's save with its next save after the session.
+
+### 13.17 An NPC's animation state, for a brain-off proxy (2026-11-18, scripts only)
+
+What tandem's NPC animation sync (`scripts/tandem/NpcAnims.reds`) relies
+on. Read in `final.reds` (2.50) and Codeware's scripts; none of it run yet:
+all [2.5-untested].
+
+- **The states an NPC's graph reads** live in `NPCStatesComponent`
+  (`final.reds:167844`) as the native replicated integers (§3.1 of
+  coop-npcs-combat.md) and in the `PuppetState` blackboard, read with
+  `ScriptedPuppet.GetHighLevelStateFromBlackboard`,
+  `GetUpperBodyStateFromBlackboard`, `GetStanceStateFromBlackboard`
+  (`:20698-20722`). Applying one (`ChangeHighLevelState` `:168077`,
+  `UpdateHighLevelState` `:168168`, `UpdateUpperBodyState` `:168454`,
+  `UpdateStanceState` `:168839`) is: an `AnimFeature_NPCState {state}`
+  under the component's private feature names
+  (`m_highLevelAnimFeatureName`, `m_upperBodyAnimFeatureName`,
+  `m_stanceAnimFeatureName`), anim wrappers by state
+  (`GetAnimWrapperNameBasedOnHighLevelState` `:167984`:
+  `alertedLocomotion`, `combatLocomotion`, `stealthLocomotion`; by stance
+  `:167998`: `inCrouch`, `inCover`, `inSwim`, `inVehicle`), the blackboard,
+  and `AnimationSystem.EnterCombatMode/ExitCombatMode`
+  (`HandleCombatStateAnimHint` `:168190`). The upper body's graph value is
+  its own numbering (`GetUpperBodyStateForAnimGraph` `:168491`: Aim 1 …
+  Shoot 9). The public path (`NPCPuppet.ChangeHighLevelState` `:126331`)
+  goes through the AI signal table, and its high-level change also plays
+  combat VO, changes senses presets and queues a
+  `gameHighLevelStateDataEvent` **on the local player** (`:168088`): a
+  proxy must not take that path. An `@addMethod(NPCStatesComponent)`
+  reaches the private names and helpers.
+- **Shots**: every NPC (and turret) shot is `AIWeapon.Fire` (static,
+  `:173136`; callers `:155212`, `:171583`); `OnStopShooting` plays
+  `gamedataFxAction.ExitShoot` (`:173113`). A guest plays a shot with
+  `WeaponObject.TriggerWeaponEffects(weapon, Shoot)` as for players
+  ([2.5-verified] on player puppets, §Weapons in ARCHITECTURE).
+- **Target**: `TargetTrackerComponent.GetTopHostileThreat(onlyVisible, out
+TrackedLocation) -> Bool` (`:156469`), `TrackedLocation.entity`.
+  An NPC turns its head and chest with a `LookAtAddEvent` (`:172727`;
+  `SetEntityTarget(entity, n"pla_default_tgt", offset)`, `bodyPart
+n"Eyes"`, extra parts Head/Chest, as `ReactionComponent` does at
+  `:147434`), removed with `LookAtRemoveEvent.QueueRemoveLookatEvent`
+  (`:174614`). No AI needed: it is an animation request.
+- **Workspots**: `WorkspotGameSystem` (`:53211`): `IsActorInWorkspot`,
+  `PlayNpcInWorkspot(npc, master, referenceEntity, actorDataCompName, opt
+syncSlotName, opt slideTime)` (`:53330`; vanilla plays it on a dead or
+  unconscious body for body disposal, `:92662`, `:210081`: no brain
+  needed), `SendJumpCommandEnt(actor, entryId, instant)`,
+  `SendJumpToAnimEnt`, `SendSlowExitSignal`, `StopNpcInWorkspot`.
+  `ExtendedWorkspotInfo` (`:319157`) has only flags. Codeware adds
+  `WorkspotGameSystem.GetWorkspotInstance(actorID) ->
+workWorkspotInstance {resource, animName, idleAnim, entryId}`
+  (`scripts/World/WorkspotSystem.reds`), `CResource.path`, `ResRef.resource`
+  with `ResourceAsyncRef.GetHash`: the resource's depot path hash, the same
+  in every copy of the game. `WorkspotStartedEvent.nodeId: GlobalNodeID`
+  (`:250074`) names the workspot's world node, unused so far.
+- **A workspot to play from**: `WorkspotResourceComponent` (`:105125`, an
+  `IPlacedComponent`; Codeware exposes `workspotResource: ResourceAsyncRef`).
+  Codeware's `Entity.AddComponent` only appends to the components array, so
+  it must run before the entity initializes: tandem adds one in the
+  `Entity/Assemble` callback of entities tagged `Tandem.Proxy`. Redscript
+  cannot build a `ResourceAsyncRef` from a hash: the plugin writes it
+  (`TandemNative.SetResourcePath`, by RTTI property name and type
+  `ResourceAsyncReference`). To check in game: that the component added at
+  assembly is initialized, that an unparented placed component's local
+  transform is its world transform, that `PlayNpcInWorkspot` takes the
+  proxy as its own master and reference entity, and that the movement
+  controller (kept still meanwhile) does not fight the workspot.
