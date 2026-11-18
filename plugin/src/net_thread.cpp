@@ -151,6 +151,40 @@ struct NetThread::Impl {
                                       .amount = e.hit.damage,
                                       .flags = e.hit.flags,
                                       .direction = e.hit.direction});
+              } else if constexpr (std::is_same_v<E, events::NpcHackBy>) {
+                runtime.PushHackEvent({.kind = HackEvent::Kind::Upload,
+                                       .npc = e.hack.npc,
+                                       .player = e.hack.player,
+                                       .action = e.hack.action,
+                                       .flags = e.hack.flags,
+                                       .seconds = static_cast<float>(e.hack.uploadMs) / 1000.f});
+              } else if constexpr (std::is_same_v<E, events::HostNpcHackState>) {
+                runtime.PushHackEvent({.kind = HackEvent::Kind::State,
+                                       .npc = e.state.npc,
+                                       .player = e.state.player,
+                                       .action = e.state.action,
+                                       .state = static_cast<std::int32_t>(e.state.step),
+                                       .seconds = static_cast<float>(e.state.uploadMs) / 1000.f});
+              } else if constexpr (std::is_same_v<E, events::HostNpcStatus>) {
+                runtime.PushHackEvent({.kind = HackEvent::Kind::Status,
+                                       .npc = e.status.npc,
+                                       .player = e.status.player,
+                                       .action = e.status.effect,
+                                       .state = e.status.applied ? 1 : 0});
+              } else if constexpr (std::is_same_v<E, events::HostPlayerHack>) {
+                log::Info("npc {} hacks our V ({:#x})", e.hack.npc, e.hack.action);
+                runtime.PushHackEvent({.kind = HackEvent::Kind::PlayerHack,
+                                       .npc = e.hack.npc,
+                                       .player = e.hack.player,
+                                       .action = e.hack.action,
+                                       .flags = e.hack.flags});
+              } else if constexpr (std::is_same_v<E, events::VehicleHackOn>) {
+                log::Info("player {} hacked the car we drive ({})", e.hack.player,
+                          static_cast<int>(e.hack.hack));
+                runtime.PushHackEvent({.kind = HackEvent::Kind::Car,
+                                       .player = e.hack.player,
+                                       .state = static_cast<std::int32_t>(e.hack.hack),
+                                       .seconds = e.hack.seconds});
               } else if constexpr (std::is_same_v<E, events::HostNpcStates>) {
                 runtime.PushNpcStates(e.states);
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
@@ -217,6 +251,18 @@ struct NetThread::Impl {
           endpoint->SendNpcHit(*hit);
         else if (const auto *effect = std::get_if<proto::NpcEffect>(&message))
           endpoint->SendNpcEffect(*effect);
+      }
+      for (const auto &message : runtime.TakeHackOutbox()) {
+        if (const auto *hack = std::get_if<proto::NpcHack>(&message))
+          endpoint->SendNpcHack(*hack);
+        else if (const auto *state = std::get_if<proto::NpcHackState>(&message))
+          endpoint->SendNpcHackState(*state);
+        else if (const auto *status = std::get_if<proto::NpcStatus>(&message))
+          endpoint->SendNpcStatus(*status);
+        else if (const auto *player = std::get_if<proto::PlayerHack>(&message))
+          endpoint->SendPlayerHack(*player);
+        else if (const auto *car = std::get_if<proto::VehicleHack>(&message))
+          endpoint->SendVehicleHack(*car);
       }
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);

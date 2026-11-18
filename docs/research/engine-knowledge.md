@@ -1753,3 +1753,49 @@ puppets' attitude group. With the mock player in front mode:
   169949). `GetThreats(false)` still read 0 while the NPC fought the
   puppet: not a usable measure of who it fights; its `CombatTarget`
   behaviour argument is. [2.5-verified]
+
+### 13.12 Quickhacks between games (2026-11-18, scripts only)
+
+Read in `final.reds`; none of it seen in a session yet.
+
+- An NPC's upload is a `QuickHackUpload` stat pool **on the target**
+  (`ScriptableDeviceAction.StartUpload` 28078, `QuickHackUploadListener`
+  194694): its `OnStatPoolAdded` queues `UploadProgramProgressEvent`
+  (`STARTED`, `EProgressBarType.UPLOAD`, `duration` = the action's
+  activation time) on the target, and at 100 % `CompleteAction` then
+  `COMPLETED`. `ScriptedPuppet.OnUploadProgressStateChanged` (24388) puts
+  `AIQuickHackStatusEffect.BeingHacked` (and `BeingHackedWithTraceableHack`
+  when `QuickHackableHelper.WillHackRevealPlayer`, 123133) on the target at
+  `STARTED` and removes both at `COMPLETED`. One pool per target: two
+  uploads by the vanilla path on one NPC would share it. [2.5-untested]
+- The queue (`QuickHackableQueueHelper.PutActionInQuickhackQueue` 122261)
+  and cost skipping (`CanSkipPayCost` 26943) work only for a `PlayerPuppet`
+  executor; a puppet executor on the host gets none of it.
+  `GetActivationTime` (26793) takes the executor's stats. [2.5-untested]
+- A quickhack effect on an NPC (gameplay tag `Quickhack`,
+  `NPCPuppet.OnStatusEffectApplied` 126476 → `OnQuickHackEffectApplied` 126593) alerts and traces only when `instigatorEntityID ==
+GetPlayerID()` and the effect lacks the `Stealth` tag:
+  `NonStealthQuickHackVictimEvent` (126787) → `RevealPlayerPositionIfNeeded`
+  (126798: a `HackTargetEvent` with `AIQuickHack.HackRevealPosition`
+  queued on the player, unless in combat or already revealed) or
+  `NPCStatesComponent.AlertPuppet` (168014), then
+  `AIActionHelper.TryChangingAttitudeToHostile` (169916). [2.5-untested]
+- NPC hacks: `AISubActionQuickHack.Hack` (493744) queues a `HackTargetEvent`
+  (195237: netrunner, target, action record, settings) on the target;
+  `ScriptedPuppet.OnHackTargetEvent` (22119) runs it as an
+  `AIQuickHackAction` with the netrunner as executor; `PlayerPuppet`
+  (45832) adds the reveal state. Queued on our V with a proxy as
+  `netrunnerID`, it should run the hack from the proxy. [2.5-untested]
+- `ExecutePuppetActionEvent{actionID}` (201075) queued on an NPC runs a
+  quickhack from the local player on it, by the normal path (22452). [2.5-untested]
+- Spread (`SpreadInitEffector` 316185, `SpreadEffector` 316386) reads
+  `GetPlayer(game)` at initialisation for stats, spread map
+  (`HackingDataDef.AddItemToSpreadMap`) and the spread effect's
+  instigator; a `SpreadEffector` with no map entry for its action does not
+  spread. [2.5-untested]
+- Vehicle quickhacks reach `VehicleComponentPS.OnVehicleOverrideForceBrakes`
+  / `…Explode` / `…Accelerate` (96426-96451) and call
+  `VehicleObject.ActivateNetrunnerQuickhack` (87829); the police hacker
+  loop stops a player's car with `ForceBrakesUntilStoppedOrFor` (87873,
+  194573). Whether `ActivateNetrunnerQuickhack(Accelerate)` acts on a car a
+  player drives is not known. [2.5-untested]

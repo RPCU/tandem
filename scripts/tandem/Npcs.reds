@@ -485,6 +485,25 @@ public class TandemNpcs {
     return 0u;
   }
 
+  // Quickhacks (Hacks.reds): the entity of a session NPC (host: the real
+  // one; guest: its live proxy), and the other way round.
+  public func EntityOfNpc(npc: Uint32) -> EntityID {
+    if TandemNative.IsHost() {
+      let known = this.FindNpc(npc);
+      return IsDefined(known) ? known.id : EntityID();
+    }
+    let proxy = this.FindProxy(npc);
+    return IsDefined(proxy) && !proxy.dead ? proxy.id : EntityID();
+  }
+
+  public func NpcOfEntity(id: EntityID) -> Uint32 {
+    if !TandemNative.IsHost() {
+      return this.NpcOfProxy(id);
+    }
+    let known = this.Find(id);
+    return IsDefined(known) && !known.dead ? known.npc : 0u;
+  }
+
   private func Remove(npc: Uint32) -> Void {
     let kept: array<ref<TandemNpcProxy>>;
     for proxy in this.m_proxies {

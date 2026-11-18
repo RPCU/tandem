@@ -46,6 +46,24 @@ public native struct TandemNpcEvent {
   native let dz: Float;
 }
 
+public native struct TandemHackEvent {
+  // 1 upload (host: a guest started one on our NPC), 2 upload state (guest),
+  // 3 quickhack effect on a host NPC (guest), 4 an NPC hacks our V (guest),
+  // 5 someone hacked the car we drive
+  native let kind: Int32;
+  native let npc: Uint32;
+  // the uploader, the effect's V, the hacker
+  native let player: Uint32;
+  // ObjectAction record; 3: the status effect record
+  native let action: TweakDBID;
+  // 2: 0 started, 1 done, 2 failed; 3: 1 applied, 0 removed; 5: 0 brakes, 1 explode, 2 accelerate
+  native let state: Int32;
+  // 1: 1 traceable; 4: 1 reveal, 2 directional, 4 skip being hacked
+  native let flags: Int32;
+  // upload time; 5: how long it lasts
+  native let seconds: Float;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -86,6 +104,12 @@ public native class TandemNative extends IScriptable {
   public static native func SendNpcEffect(npc: Uint32, effects: array<TweakDBID>)
   public static native func NpcDetected(npc: Uint32) -> Int32
   public static native func TakeNpcEvents() -> array<TandemNpcEvent>
+  public static native func SendNpcHack(npc: Uint32, action: TweakDBID, seconds: Float, flags: Int32)
+  public static native func SendNpcHackState(npc: Uint32, player: Uint32, action: TweakDBID, step: Int32, seconds: Float)
+  public static native func SendNpcStatus(npc: Uint32, player: Uint32, effect: TweakDBID, applied: Bool)
+  public static native func SendPlayerHack(player: Uint32, npc: Uint32, action: TweakDBID, flags: Int32)
+  public static native func SendVehicleHack(driver: Uint32, hack: Int32, seconds: Float)
+  public static native func TakeHackEvents() -> array<TandemHackEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32
   public static native func IsHost() -> Bool
   public static native func SendWorld(gameTimeSeconds: Int32, weather: CName, paused: Bool)

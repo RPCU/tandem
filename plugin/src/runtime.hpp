@@ -39,6 +39,24 @@ struct NpcEvent {
   proto::Vec3 direction;    // Hit: its way (spawn.position: where it landed)
 };
 
+// Quickhacks for the scripts (scripts/tandem/Hacks.reds), net -> game thread.
+struct HackEvent {
+  enum class Kind : std::int32_t {
+    Upload = 1,     // host: a guest started an upload on one of our NPCs
+    State = 2,      // guest: an upload on a host NPC started or ended
+    Status = 3,     // guest: a quickhack effect came onto (state 1) or left a host NPC
+    PlayerHack = 4, // guest: a host NPC netrunner hacks our V
+    Car = 5,        // the driver: someone hacked the car we drive
+  };
+  Kind kind{};
+  proto::NpcId npc{};
+  proto::PlayerId player{}; // the uploader, the effect's V, the hacker
+  std::uint64_t action{};   // ObjectAction record (Status: the status effect record)
+  std::int32_t state{};     // State: proto::HackStep; Status: applied; Car: proto::CarHack
+  std::int32_t flags{};     // Upload: proto::kUpload*; PlayerHack: proto::kPlayerHack*
+  float seconds{};          // upload time; Car: how long it lasts
+};
+
 // NPC proxies use the player-puppet tracks and controller under these ids.
 inline constexpr proto::PlayerId kNpcPuppetBase = 0x10000;
 
@@ -154,6 +172,13 @@ public:
   std::vector<NpcEvent> TakeNpcEvents();
   void PushNpcStates(const proto::NpcStates &states);
 
+  // Quickhacks: messages for the session, game -> net (queued); what the
+  // session says about them, net -> game (queued).
+  void SubmitHack(const proto::Message &message);
+  std::vector<proto::Message> TakeHackOutbox();
+  void PushHackEvent(const HackEvent &event);
+  std::vector<HackEvent> TakeHackEvents();
+
   // Net thread writes remote states; the animation thread and scripts read views.
   void PushRemote(const proto::PlayerState &state);
   void ForgetRemote(proto::PlayerId player);
@@ -208,6 +233,8 @@ private:
   std::vector<proto::Message> m_npcOutbox;                                  // m_lock
   std::optional<proto::NpcStates> m_npcStates;                              // m_lock
   std::vector<NpcEvent> m_npcEvents;                                        // m_lock
+  std::vector<proto::Message> m_hackOutbox;                                 // m_lock
+  std::vector<HackEvent> m_hackEvents;                                      // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::uint32_t m_loopSeq{};

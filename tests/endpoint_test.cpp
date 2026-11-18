@@ -289,6 +289,81 @@ TEST_CASE("a guest's hit reaches the host, stamped; health reaches guests, late 
   CHECK_FALSE(lateGotHealth);
 }
 
+TEST_CASE("quickhacks: uploads to the host, states to all, NPC hacks and car hacks to one V") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(a, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(b, error);
+  REQUIRE(Pump({host.get(), a.get(), b.get()},
+               [&](std::size_t, const auto &) { return a->IsJoined() && b->IsJoined(); }));
+
+  // a uploads on NPC 7: the host hears it in a's name, nobody else does.
+  a->SendNpcHack({.player = 99, .npc = 7, .action = 0x55, .uploadMs = 1200});
+  std::optional<proto::NpcHack> upload;
+  int othersHeard = 0;
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *h = std::get_if<events::NpcHackBy>(&event)) {
+        if (i == 0)
+          upload = h->hack;
+        else
+          ++othersHeard;
+      }
+  });
+  REQUIRE(upload);
+  CHECK(upload->player == a->You());
+  CHECK(upload->uploadMs == 1200);
+  CHECK(othersHeard == 0);
+
+  // The host tells everyone what runs on it; the effect reaches all but
+  // the V whose hack it is.
+  host->SendNpcHackState({.npc = 7, .player = a->You(), .action = 0x55});
+  host->SendNpcStatus({.npc = 7, .player = a->You(), .effect = 0x66, .applied = true});
+  // A host netrunner hacks b's V: only b hears it.
+  host->SendPlayerHack({.player = b->You(), .npc = 7, .action = 0x77, .flags = 1});
+  int states = 0, statusA = 0, statusB = 0, hackA = 0, hackB = 0;
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events) {
+      if (std::holds_alternative<events::HostNpcHackState>(event))
+        ++states;
+      if (std::holds_alternative<events::HostNpcStatus>(event))
+        ++(i == 1 ? statusA : statusB);
+      if (const auto *h = std::get_if<events::HostPlayerHack>(&event)) {
+        ++(i == 1 ? hackA : hackB);
+        CHECK(h->hack.action == 0x77);
+      }
+    }
+  });
+  CHECK(states == 2);
+  CHECK(statusA == 0);
+  CHECK(statusB == 1);
+  CHECK(hackA == 0);
+  CHECK(hackB == 1);
+
+  // a hacks the car b drives: it goes through the host to b, in a's name;
+  // and one the host drives stays on the host.
+  a->SendVehicleHack({.player = 99, .driver = b->You(), .hack = proto::CarHack::ForceBrakes});
+  a->SendVehicleHack({.driver = host->You(), .hack = proto::CarHack::Explode, .seconds = 2.f});
+  std::optional<proto::VehicleHack> onB, onHost;
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *h = std::get_if<events::VehicleHackOn>(&event)) {
+        CHECK(i != 1);
+        (i == 2 ? onB : onHost) = h->hack;
+      }
+  });
+  REQUIRE(onB);
+  CHECK(onB->player == a->You());
+  CHECK(onB->hack == proto::CarHack::ForceBrakes);
+  REQUIRE(onHost);
+  CHECK(onHost->player == a->You());
+  CHECK(onHost->seconds == 2.f);
+}
+
 namespace {
 // The pause changes an endpoint reported, in order.
 void CollectPauses(const std::vector<SessionEvent> &events, std::vector<proto::Pause> &into) {

@@ -152,6 +152,21 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      mine.player = player;
                      out.push_back(events::NpcEffectBy{mine});
                    },
+                   [&](const proto::NpcHack &hack) {
+                     // For the host's game only: it owns the NPC.
+                     auto mine = hack;
+                     mine.player = player;
+                     out.push_back(events::NpcHackBy{mine});
+                   },
+                   [&](const proto::VehicleHack &hack) {
+                     // The driver's game owns the car: ours, or pass it on.
+                     auto mine = hack;
+                     mine.player = player;
+                     if (mine.driver == m_you)
+                       out.push_back(events::VehicleHackOn{mine});
+                     else if (const auto peer = PeerOf(mine.driver); peer && mine.driver != player)
+                       m_session->Send(*peer, mine);
+                   },
                    [&](const proto::Pause &pause) {
                      // A guest only pauses in its own name.
                      const proto::Pause relayed{player, pause.paused};
@@ -363,6 +378,21 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::NpcStates &states) { out.push_back(events::HostNpcStates{states}); },
             [&](const proto::NpcGone &gone) { out.push_back(events::HostNpcGone{gone}); },
             [&](const proto::NpcHealth &health) { out.push_back(events::HostNpcHealth{health}); },
+            [&](const proto::NpcHackState &state) {
+              out.push_back(events::HostNpcHackState{state});
+            },
+            [&](const proto::NpcStatus &status) {
+              if (status.player != m_you)
+                out.push_back(events::HostNpcStatus{status});
+            },
+            [&](const proto::PlayerHack &hack) {
+              if (hack.player == m_you)
+                out.push_back(events::HostPlayerHack{hack});
+            },
+            [&](const proto::VehicleHack &hack) {
+              if (hack.driver == m_you && hack.player != m_you)
+                out.push_back(events::VehicleHackOn{hack});
+            },
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
@@ -523,6 +553,50 @@ void Endpoint::SendNpcHit(const proto::NpcHit &hit) {
   auto mine = hit;
   mine.player = m_you;
   m_session->Send(m_hostPeer, mine);
+}
+
+void Endpoint::SendNpcHack(const proto::NpcHack &hack) {
+  if (IsHost() || !IsJoined() || m_ended)
+    return; // the host's own uploads are its game's
+  auto mine = hack;
+  mine.player = m_you;
+  m_session->Send(m_hostPeer, mine);
+}
+
+void Endpoint::SendNpcHackState(const proto::NpcHackState &state) {
+  if (!IsHost() || m_ended)
+    return;
+  m_session->Broadcast(state);
+}
+
+void Endpoint::SendNpcStatus(const proto::NpcStatus &status) {
+  if (!IsHost() || m_ended)
+    return;
+  m_session->Broadcast(status);
+}
+
+void Endpoint::SendPlayerHack(const proto::PlayerHack &hack) {
+  if (!IsHost() || m_ended)
+    return;
+  if (const auto peer = PeerOf(hack.player))
+    m_session->Send(*peer, hack);
+}
+
+void Endpoint::SendVehicleHack(proto::VehicleHack hack) {
+  if (!IsJoined() || m_ended || hack.driver == m_you)
+    return; // our own car is not a copy: nothing to send
+  hack.player = m_you;
+  if (!IsHost())
+    m_session->Send(m_hostPeer, hack);
+  else if (const auto peer = PeerOf(hack.driver))
+    m_session->Send(*peer, hack);
+}
+
+std::optional<net::PeerId> Endpoint::PeerOf(proto::PlayerId player) const {
+  for (const auto &[peer, id] : m_playerOfPeer)
+    if (id == player)
+      return peer;
+  return std::nullopt;
 }
 
 void Endpoint::SendLocalVehicle(proto::VehicleState vehicle) {

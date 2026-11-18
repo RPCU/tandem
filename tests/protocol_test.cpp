@@ -2,6 +2,8 @@
 
 #include <doctest/doctest.h>
 
+#include <string_view>
+
 using namespace tandem::proto;
 
 namespace {
@@ -67,6 +69,15 @@ TEST_CASE("every message survives encoding") {
       .revision = 2, .gameTimeSeconds = 86400 + 3600 * 18, .weather = 0x1234, .timePaused = true});
   RoundTrips(Pause{.player = 3, .paused = true});
   RoundTrips(Pause{.player = 2, .paused = false});
+  RoundTrips(NpcHack{
+      .player = 2, .npc = 7, .action = 0x1122334455, .uploadMs = 1500, .flags = kUploadTraceable});
+  RoundTrips(NpcHackState{
+      .npc = 7, .player = 2, .action = 0x1122334455, .step = HackStep::Done, .uploadMs = 1500});
+  RoundTrips(NpcStatus{.npc = 7, .player = 1, .effect = 0xAB, .applied = true});
+  RoundTrips(NpcStatus{.npc = 7, .player = 0, .effect = 0xAB, .applied = false});
+  RoundTrips(PlayerHack{
+      .player = 2, .npc = 7, .action = 0x99, .flags = kPlayerHackReveal | kPlayerHackDirectional});
+  RoundTrips(VehicleHack{.player = 2, .driver = 1, .hack = CarHack::Accelerate, .seconds = 4.5f});
 }
 
 TEST_CASE("an appearance past its limits is refused") {
@@ -88,6 +99,15 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(ChannelOf(NpcEffect{}) == Channel::Event);
   CHECK(ChannelOf(Pause{}) == Channel::Event);
   CHECK(IsReliable(Pause{}));
+  // Quickhacks change state: never dropped.
+  CHECK(ChannelOf(NpcHack{}) == Channel::Event);
+  CHECK(ChannelOf(NpcHackState{}) == Channel::Event);
+  CHECK(ChannelOf(NpcStatus{}) == Channel::Event);
+  CHECK(ChannelOf(PlayerHack{}) == Channel::Event);
+  CHECK(ChannelOf(VehicleHack{}) == Channel::Event);
+  CHECK(IsReliable(VehicleHack{}));
+  CHECK(std::string_view(NameOf(VehicleHack{})) == "VehicleHack");
+  CHECK(std::string_view(NameOf(NpcHack{})) == "NpcHack");
   // A guest cannot flood the host with effects.
   NpcEffect many{.npc = 1, .effects = std::vector<std::uint64_t>(kMaxNpcEffects + 1, 5)};
   CHECK_FALSE(Decode(Encode(many)));
@@ -97,6 +117,17 @@ TEST_CASE("an appearance past its limits is refused") {
   crowd.npcs.resize(kMaxNpcsPerState + 1);
   CHECK_FALSE(Decode(Encode(crowd)).has_value());
   CHECK(Encode(VehicleState{}).size() < 64);
+}
+
+TEST_CASE("quickhack messages out of range are refused") {
+  auto step = Encode(NpcHackState{.step = HackStep::Failed});
+  CHECK(Decode(step).has_value());
+  auto car = Encode(VehicleHack{.hack = CarHack::Accelerate});
+  CHECK(Decode(car).has_value());
+  NpcHackState badStep{.step = static_cast<HackStep>(3)};
+  CHECK_FALSE(Decode(Encode(badStep)).has_value());
+  VehicleHack badCar{.hack = static_cast<CarHack>(7)};
+  CHECK_FALSE(Decode(Encode(badCar)).has_value());
 }
 
 TEST_CASE("broken input is refused, never half-read") {

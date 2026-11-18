@@ -355,6 +355,46 @@ redscript natives (UI, events)              ENet socket
   the attacker's combat state, so they follow per-player detection
   (above). Open: aggro (the NPC turning on whoever hit it), quickhacks
   (uploads, not hits), NPCs hitting guests (milestone 5, next), loot.
+- **Quickhacks** (`scripts/tandem/Hacks.reds`, milestone 5): a guest's
+  quickhack on a proxy runs in its own game as in solo (panel, RAM, its
+  cooldown and queue, upload bar, the effect on the proxy, whose effects
+  reach the host as `NpcEffect` like a hit's). When its upload starts
+  (`ScriptedPuppet.OnUploadProgressStateChanged`, `STARTED`) it sends
+  `NpcHack` (action record, NPC, the upload time its perks give, whether
+  it is traceable); the host keeps the real NPC being hacked for that long
+  (`AIQuickHackStatusEffect.BeingHacked`, `…WithTraceableHack`), uploads
+  from several players at once, ended in arrival order. A guest's
+  non-stealth quickhack effect makes the host's NPC do what the game does
+  for the host's V (`NonStealthQuickHackVictimEvent`): alert
+  (`NPCStatesComponent.AlertPuppet`), turn on the guest's puppet
+  (`AIActionHelper.TryChangingAttitudeToHostile`) and trace that V
+  (`PlayerHack` with `AIQuickHack.HackRevealPosition`). The host sends
+  everyone every upload on its NPCs (`NpcHackState`, the host's V's too)
+  and every `Quickhack`-tagged effect that comes and goes (`NpcStatus`);
+  guests put them on their proxies, so the proxy looks hacked and the
+  menu's "already affected" lockouts (the action's target-active prereqs,
+  checked on the proxy) are the host's. **NPC netrunners**: a host NPC's
+  hack on a puppet (`ScriptedPuppet.OnHackTargetEvent`) is not run there
+  but sent to that guest (`PlayerHack`), whose game runs it on its own V
+  through the same event, with its proxy as the netrunner: its ICE, the
+  upload bar, the effect; an ICE counterhack lands on the proxy and goes
+  back as an effect. **Spreading** runs on the caster's game only, over
+  its proxies (the vanilla spread takes the local player's stats, spread
+  map and executor: on the host it would be the host's V's); each copy it
+  lands is forwarded like any effect, and the host never runs a guest's
+  completion effects, so it does not spread them again. **Cars**: the
+  brake, accelerate and explode hacks on the copy of a car another V
+  drives (`VehicleComponentPS.OnVehicleOverride…`) are not applied to the
+  copy but sent (`VehicleHack`, through the host) to the driver's game,
+  which applies them to its car (`ForceBrakesUntilStoppedOrFor`,
+  `ActivateNetrunnerQuickhack`); taking control of such a car is refused
+  for now (it needs the car handed over to the hacker). Not yet verified
+  in game (scenarios `hacks-upload`, `hacks-guest`, `hacks-car`). Open:
+  Breach Protocol (`Breach{access point, programs}` to the host, which
+  runs the daemons with the puppet as executor and sets the breached flag;
+  the loot stays the guest's), an upload of the same hack by another
+  player shown as locked in the menu while it runs, the host NPC
+  netrunner's own AI not told how its forwarded hack ended, take control.
 - **Looks** (`engine/look.cpp`, `scripts/tandem/Outfit.reds`): a V's face
   and body travel as the appearance keys the game's appearance changer takes
   (a resource path hash and a name hash each: the same in every copy of the
@@ -470,6 +510,12 @@ game thread stop). Each feature verified in game gets a scenario.
   tests the copy of a remote player's car, its seated driver and its motion
   without anyone driving.
 - **idle** — connects and reports.
+- **quickhacks**: `join --hack-npcs N` uploads `--hack-action` on one of
+  the host's NPCs every N s (1.5 s) and then lands `--hack-effect`;
+  `host --replay FILE --hack-player N` has a replayed NPC hack the guest's
+  V with `--npc-hack` (default the trace); `--hack-car N` brakes the car
+  another player drives. The game side's test commands: `tools/game.sh cmd
+hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
 - **NPC record and replay** (first piece of the simulated second game):
@@ -646,6 +692,10 @@ in-game tests still owed; none of it tested in a session yet):
   owner of the target (host for NPCs and devices, the driver for a car)
   applies the uploads in the order they land and tells both players what
   is running on it, so each one's scanner shows the true state.
+  Done (2026-11-18, not yet verified in game; see Inside the plugin):
+  uploads to the host and their state to all, quickhack effects
+  mirrored on proxies, guest hacks alerting host NPCs, NPC netrunners
+  hacking a guest's own V, car hacks to the driver.
   A V can also quickhack the car another V is driving (vehicle quickhacks:
   forced acceleration, sudden brake, loss of control, overheat). The
   driver's game owns that car, so the hack is a request to the driver's

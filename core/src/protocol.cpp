@@ -29,6 +29,11 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *effect = std::get_if<NpcEffect>(&message);
       effect && effect->effects.size() > kMaxNpcEffects)
     return std::nullopt;
+  if (const auto *state = std::get_if<NpcHackState>(&message);
+      state && state->step > HackStep::Failed)
+    return std::nullopt;
+  if (const auto *car = std::get_if<VehicleHack>(&message); car && car->hack > CarHack::Accelerate)
+    return std::nullopt;
   return message;
 }
 
@@ -46,10 +51,10 @@ bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::
 
 const char *NameOf(const Message &message) {
   constexpr const char *names[] = {
-      "Hello",       "Welcome",      "Refused",   "Ping",       "Pong",      "Roster",
-      "PlayerState", "Bye",          "PoseState", "Appearance", "Held",      "Shot",
-      "Seat",        "VehicleState", "World",     "NpcSpawn",   "NpcStates", "NpcGone",
-      "NpcHit",      "NpcHealth",    "NpcEffect", "Pause"};
+      "Hello", "Welcome",   "Refused",      "Ping",      "Pong",       "Roster",     "PlayerState",
+      "Bye",   "PoseState", "Appearance",   "Held",      "Shot",       "Seat",       "VehicleState",
+      "World", "NpcSpawn",  "NpcStates",    "NpcGone",   "NpcHit",     "NpcHealth",  "NpcEffect",
+      "Pause", "NpcHack",   "NpcHackState", "NpcStatus", "PlayerHack", "VehicleHack"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

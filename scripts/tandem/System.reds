@@ -224,6 +224,7 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_npcs) && this.m_playing && this.m_you != 0u {
       this.m_npcs.Tick(this.Now(), this.m_you);
     }
+    TandemHacks.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
     }
@@ -447,6 +448,18 @@ public class TandemSystem extends ScriptableSystem {
       } else {
         TandemNative.Log("npc punch: no proxy");
       }
+    } else if StrBeginsWith(command, "hack ") {
+      // (test, Hacks.reds) "hack npc [RECORD]": our V quickhacks the nearest
+      // proxy; "hack car": brakes on the first remote player's car copy.
+      let hacker = GetPlayer(this.GetGameInstance());
+      let proxy = IsDefined(this.m_npcs) && IsDefined(hacker) ? this.m_npcs.NearestProxy(hacker.GetWorldPosition()) : null;
+      let copy: ref<VehicleObject>;
+      for puppet in this.m_puppets {
+        if !IsDefined(copy) && EntityID.IsDefined(puppet.car) {
+          copy = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.car) as VehicleObject;
+        }
+      }
+      TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
     } else if Equals(command, "vehicle clear") {
       // (experiment) delete the parked car copies: this froze the game
       // (engine-knowledge §13.6); run tools/game.sh bt if it does again.
@@ -702,6 +715,24 @@ public class TandemSystem extends ScriptableSystem {
   // The host NPC a proxy in our world stands for (0: none; Combat.reds).
   public func NpcOfProxy(id: EntityID) -> Uint32 {
     return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfProxy(id) : 0u;
+  }
+
+  // Quickhacks (Hacks.reds): session NPCs by id and entity, the player whose
+  // car a copy is, our player id (0: not in a session).
+  public func NpcEntity(npc: Uint32) -> EntityID {
+    return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.EntityOfNpc(npc) : EntityID();
+  }
+
+  public func NpcOf(id: EntityID) -> Uint32 {
+    return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfEntity(id) : 0u;
+  }
+
+  public func PlayerOfCar(id: EntityID) -> Uint32 {
+    return this.CarOwner(id);
+  }
+
+  public func You() -> Uint32 {
+    return this.m_you;
   }
 
   private func CarOwner(id: EntityID) -> Uint32 {
