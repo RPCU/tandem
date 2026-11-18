@@ -35,6 +35,9 @@ public class TandemDonor {
   // Its senseComponent: NPC senses see "agents", objects with senses of
   // their own (IsAgentVisible stayed false with the visible object alone).
   public let senses: ref<IComponent>;
+  // Its HitPhysicalQueryMesh collider: the shape bullets and blows are
+  // tested against (V's TPP template has none, so nothing ever hit a puppet).
+  public let hitMesh: ref<IComponent>;
 }
 
 public class TandemBodies {
@@ -189,11 +192,14 @@ public class TandemBodies {
     }
     donor.visible = null;
     donor.senses = null;
+    donor.hitMesh = null;
     for component in components {
       if Equals(component.GetClassName(), n"senseVisibleObjectComponent") {
         donor.visible = component;
       } else if Equals(component.GetClassName(), n"senseComponent") {
         donor.senses = component;
+      } else if Equals(component.GetName(), n"HitPhysicalQueryMesh") {
+        donor.hitMesh = component;
       }
     }
     ArrayClear(donor.stateFeatures);
@@ -226,7 +232,10 @@ public class TandemBodies {
     if IsDefined(donor.senses) {
       builder.GetTemplate().AddComponent(donor.senses.Clone() as IComponent);
     }
-    TandemNative.Log(s"body: \(body) body visible to NPCs (senses \(IsDefined(donor.senses)))");
+    if IsDefined(donor.hitMesh) {
+      builder.GetTemplate().AddComponent(donor.hitMesh.Clone() as IComponent);
+    }
+    TandemNative.Log(s"body: \(body) body visible to NPCs (senses \(IsDefined(donor.senses)), hit mesh \(IsDefined(donor.hitMesh)))");
   }
 
   private func Graft(body: String, donor: ref<TandemDonor>, components: array<ref<IComponent>>) -> Void {

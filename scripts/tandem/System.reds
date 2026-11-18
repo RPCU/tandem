@@ -585,6 +585,9 @@ public class TandemSystem extends ScriptableSystem {
         TandemNative.Log(s"components: NPC \(TDBID.ToStringDEBUG(npc.GetRecordID())) (\(NameToString(npc.GetClassName()))) \(ArraySize(npcClasses)) classes, puppet (\(NameToString(body.GetClassName()))) \(ArraySize(puppetClasses))");
         TandemNative.Log(s"components: the puppet lacks\(missing)");
         TandemNative.Log(s"components: only the puppet has\(extra)");
+        // What hits and senses use, by name and state, on both.
+        TandemNative.Log(s"components: NPC hit/sense parts\(TandemSystem.HitParts(npc))");
+        TandemNative.Log(s"components: puppet hit/sense parts\(TandemSystem.HitParts(body))");
       }
     } else if Equals(command, "inspect") {
       this.Inspect();
@@ -645,6 +648,19 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // The player whose car this is, when it is a copy we made; 0 otherwise.
+  // (measure) the hit, collider and sense components of an entity, named,
+  // with whether they are on.
+  public static func HitParts(entity: ref<Entity>) -> String {
+    let out = "";
+    for c in entity.GetComponents() {
+      let kind = NameToString(c.GetClassName());
+      if StrContains(kind, "Hit") || StrContains(kind, "Collider") || StrContains(kind, "sense") || StrContains(kind, "Targeting") {
+        out += s" \(kind):\(NameToString(c.GetName()))\(c.IsEnabled() ? "" : "(off)")";
+      }
+    }
+    return out;
+  }
+
   // A remote player's puppet in our world (null if none).
   public func PuppetOf(player: Uint32) -> ref<GameObject> {
     for puppet in this.m_puppets {
@@ -1098,10 +1114,15 @@ public class TandemSystem extends ScriptableSystem {
         // Threats again, now that it has surely settled: the puppets, and
         // after 10 s our V too (control: do injected threats work at all?).
         this.m_hostileReports += 1;
+        // As vanilla's "inject combat target" does: hostile, a threat, and
+        // a persistent one (it would otherwise drop while out of sight).
+        let source = Cast<Uint32>(TweakDBInterface.GetAIThreatPersistenceSourceRecord(t"AIThreatPersistenceSource.CommandInjectCombatTarget").EnumValue());
         for puppet in this.m_puppets {
           let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
           if IsDefined(body) {
+            GameObject.ChangeAttitudeToHostile(npc, body);
             TargetTrackingExtension.InjectThreat(npc, body);
+            TargetTrackingExtension.SetThreatPersistence(npc, body, true, source);
           }
         }
 

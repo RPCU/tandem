@@ -1738,5 +1738,18 @@ puppets' attitude group. With the mock player in front mode:
   `EntityBuilderTemplateWrapper.AddComponent(component.Clone())`) makes a
   hostile NPC detect it (`GetDetection` 100, `IsAgentVisible` true when in
   sight) and keep it as its `CombatTarget`. The visible object alone was
-  not enough. Still open: no hit on the puppet reaches the damage
-  pipeline. [2.5-verified]
+  not enough (an NPC is seen through its senses' own visible object; its
+  separate `VisibleObject` component is the dead-body one, off while it
+  lives). [2.5-verified]
+- **Fixed: the puppet is hit.** NPCs have an `entColliderComponent`
+  named `HitPhysicalQueryMesh`, the shape bullets and blows are tested
+  against; V's TPP template has none, so the ganger's shots and swings
+  passed through. Grafted from the donor too, its shots land: hits of
+  type 10, 31.9 physical each, reach `DamageSystem.ProcessPipeline` for
+  the puppet (measured, never applied there). [2.5-verified]
+- Vanilla's inject-combat-target pattern: `GameObject.ChangeAttitudeToHostile`,
+  `TargetTrackingExtension.InjectThreat`, then `SetThreatPersistence`
+  with `AIThreatPersistenceSource.CommandInjectCombatTarget` (final.reds
+  169949). `GetThreats(false)` still read 0 while the NPC fought the
+  puppet: not a usable measure of who it fights; its `CombatTarget`
+  behaviour argument is. [2.5-verified]
