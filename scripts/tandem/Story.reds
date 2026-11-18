@@ -61,7 +61,14 @@ public class TandemStorySystem extends ScriptableSystem {
 
   // Quest rewards this V got in co-op (its own save keeps them: a quest it
   // was rewarded for with a host pays nothing again in its own story).
+  // Pairs (reward record, its quest's journal hash): generic records are
+  // shared by many quests, so the quest is part of the key.
   private persistent let m_rewarded: array<TweakDBID>;
+  private persistent let m_rewardedQuests: array<Uint32>;
+  // The quest whose journal moved last, and when (a reward in our own story
+  // belongs to it: the host's rule, core/story.hpp).
+  private let m_lastQuest: Uint32;
+  private let m_lastQuestAt: Float;
 
   public static func Get(game: GameInstance) -> ref<TandemStorySystem> {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemStorySystem") as TandemStorySystem;
@@ -87,6 +94,9 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_phone.Start(this.GetGameInstance(), this);
     this.m_dialogue = new TandemDialogue();
     this.m_dialogue.Start(this.GetGameInstance(), this);
+    // Journal changes: the host sends them; every game keeps the last quest
+    // that moved (rewards, below).
+    this.Listen();
     // A load brings the save's own lock list back: ours again if in a session.
     if this.m_saveLocked {
       SaveLocksManager.RequestSaveLockAdd(this.GetGameInstance(), n"tandem");
@@ -108,6 +118,10 @@ public class TandemStorySystem extends ScriptableSystem {
     }
     if IsDefined(this.m_phone) {
       this.m_phone.Stop();
+    }
+    if this.m_listening && IsDefined(this.m_journal) {
+      this.m_journal.UnregisterScriptCallback(this, n"OnJournalState");
+      this.m_journal.UnregisterScriptCallback(this, n"OnJournalTracked");
     }
     this.m_listening = false;
   }
@@ -271,13 +285,17 @@ public class TandemStorySystem extends ScriptableSystem {
 
   // ---- host ----
 
-  private func HostStart() -> Void {
-    TandemNative.Log("story: hosting the story");
+  private func Listen() -> Void {
     if !this.m_listening {
       this.m_journal.RegisterScriptCallback(this, n"OnJournalState", gameJournalListenerType.State);
       this.m_journal.RegisterScriptCallback(this, n"OnJournalTracked", gameJournalListenerType.Tracked);
       this.m_listening = true;
     }
+  }
+
+  private func HostStart() -> Void {
+    TandemNative.Log("story: hosting the story");
+    this.Listen();
     this.m_dialogue.HostStart();
     this.m_snapshotOwed = true;
     this.m_trackedOwed = true;
@@ -318,11 +336,19 @@ public class TandemStorySystem extends ScriptableSystem {
   // JournalManager callbacks (signature of JournalNotificationQueue's,
   // final.reds:341545).
   protected cb func OnJournalState(hash: Uint32, className: CName, notifyOption: JournalNotifyOption, changeType: JournalChangeType) -> Bool {
-    if !this.IsHostInSession() {
-      return false;
-    }
     let entry = this.m_journal.GetEntry(hash);
     if !IsDefined(entry) {
+      return false;
+    }
+    if !this.IsHostInSession() {
+      // Our own story (not a guest's mirror): which quest moved last.
+      if !this.InSession() {
+        let own = this.QuestOf(entry);
+        if IsDefined(own) {
+          this.m_lastQuest = Cast<Uint32>(this.m_journal.GetEntryHash(own));
+          this.m_lastQuestAt = this.Now();
+        }
+      }
       return false;
     }
     ArrayPush(this.m_changedHashes, hash);
@@ -555,7 +581,9 @@ public class TandemStorySystem extends ScriptableSystem {
     if ArraySize(this.m_touched) > 0 {
       let i = 0;
       while i < ArraySize(this.m_touched) {
-        this.m_journal.ChangeEntryStateByHash(this.m_touched[i], IntEnum<gameJournalEntryState>(this.m_touchedBefore[i]), JournalNotifyOption.DoNotNotify);
+        // Undefined (never set) goes back as Inactive: the same to the game.
+        let before = this.m_touchedBefore[i] <= 1 ? 1 : this.m_touchedBefore[i];
+        this.m_journal.ChangeEntryStateByHash(this.m_touched[i], IntEnum<gameJournalEntryState>(before), JournalNotifyOption.DoNotNotify);
         i += 1;
       }
       // The check: every entry as it was.
@@ -563,7 +591,8 @@ public class TandemStorySystem extends ScriptableSystem {
       while i < ArraySize(this.m_touched) {
         let entry = this.m_journal.GetEntry(this.m_touched[i]);
         let now: Int32 = IsDefined(entry) ? EnumInt(this.m_journal.GetEntryState(entry)) : -1;
-        if now != this.m_touchedBefore[i] {
+        let same = now <= 1 ? this.m_touchedBefore[i] <= 1 : now == this.m_touchedBefore[i];
+        if !same {
           mismatches += 1;
         }
         i += 1;
@@ -624,7 +653,7 @@ public class TandemStorySystem extends ScriptableSystem {
     if !IsDefined(player) {
       return;
     }
-    if wantCombat != this.m_holdCombat {
+    if NotEquals(wantCombat, this.m_holdCombat) {
       this.m_holdCombat = wantCombat;
       if wantCombat {
         StatusEffectHelper.ApplyStatusEffect(player, t"GameplayRestriction.NoCombat");
@@ -635,7 +664,7 @@ public class TandemStorySystem extends ScriptableSystem {
     }
     // A status effect: script god mode does not protect V (engine-knowledge
     // §13.11).
-    if wantGod != this.m_holdGod {
+    if NotEquals(wantGod, this.m_holdGod) {
       this.m_holdGod = wantGod;
       if wantGod {
         StatusEffectHelper.ApplyStatusEffect(player, t"BaseStatusEffect.Invulnerable");
@@ -648,7 +677,7 @@ public class TandemStorySystem extends ScriptableSystem {
       if !this.m_offerShown {
         this.m_offerShown = true;
         this.m_offerOpen = true;
-        this.Notice(s"\(this.NameOf(this.m_host)) started a scene. Join them: hold Interact.");
+        this.Notice(s"\(this.NameOf(this.m_host)) started a scene. Join them: press Interact.");
         GetPlayer(this.GetGameInstance()).RegisterInputListener(this, n"Choice1");
         TandemNative.Log("story: join offer shown");
       }
@@ -667,7 +696,7 @@ public class TandemStorySystem extends ScriptableSystem {
 
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
     if this.m_offerOpen && Equals(ListenerAction.GetName(action), n"Choice1")
-      && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_HOLD_COMPLETE) {
+      && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_RELEASED) {
       this.AcceptOffer();
     }
   }
@@ -720,19 +749,36 @@ public class TandemStorySystem extends ScriptableSystem {
     if this.m_isHost {
       return;
     }
-    if ArrayContains(this.m_rewarded, reward) {
+    if this.Rewarded(reward, quest) {
       TandemNative.Log(s"reward: \(TDBID.ToStringDEBUG(reward)) already given in co-op");
       return;
     }
     ArrayPush(this.m_rewarded, reward);
+    ArrayPush(this.m_rewardedQuests, quest);
     // By our own rules: our level, our perks, our toasts (final.reds:37406).
     RPGManager.GiveReward(this.GetGameInstance(), reward);
     TandemNative.Log(s"reward: given \(TDBID.ToStringDEBUG(reward)) (quest \(quest))");
   }
 
   // Our own story pays a reward: not again if co-op already paid it.
+  // Only for a quest we know (the host's quest hash is 0 when no quest
+  // moved in the 10 s before its reward: then nothing is blocked later).
   public func AlreadyRewarded(reward: TweakDBID) -> Bool {
-    return !this.InSession() && ArrayContains(this.m_rewarded, reward);
+    if this.InSession() || this.m_lastQuest == 0u || this.Now() - this.m_lastQuestAt > 10.0 {
+      return false;
+    }
+    return this.Rewarded(reward, this.m_lastQuest);
+  }
+
+  private func Rewarded(reward: TweakDBID, quest: Uint32) -> Bool {
+    let i = 0;
+    while i < ArraySize(this.m_rewarded) {
+      if this.m_rewarded[i] == reward && i < ArraySize(this.m_rewardedQuests) && this.m_rewardedQuests[i] == quest {
+        return true;
+      }
+      i += 1;
+    }
+    return false;
   }
 
   // ---- commands (tools/game.sh cmd story … / quest …) ----

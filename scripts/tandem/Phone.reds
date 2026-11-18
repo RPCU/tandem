@@ -201,6 +201,10 @@ public let m_tandemAnswering: Bool;
 public final func TandemPresent(contact: CName, phase: Int32, playerCalling: Bool, rejectable: Bool, visuals: Int32) -> Void {
   this.m_tandemMirror = true;
   this.TriggerCall(questPhoneCallMode.Audio, true, contact, playerCalling, IntEnum<questPhoneCallPhase>(phase), false, rejectable, true, IntEnum<questPhoneCallVisuals>(visuals));
+  // The call is over: our own calls are ours again.
+  if phase == 3 || phase == 0 {
+    this.m_tandemMirror = false;
+  }
 }
 
 // Host: a guest answered first: the pickup our HUD would make (:408455).
@@ -222,9 +226,13 @@ public final func TandemAnswerFor(contact: CName, reject: Bool) -> Bool {
 // Host: every phase of our call goes to the guests.
 @wrapMethod(PhoneSystem)
 private final func OnTriggerCall(request: questTriggerCallRequest) {
+  let before = this.m_LastCallInformation;
   wrappedMethod(request);
   let story = TandemStorySystem.Get(this.GetGameInstance());
-  if IsDefined(story) && story.IsHostInSession() {
+  // Only when the call changed (a request without a contact changes nothing).
+  let changed = NotEquals(before.callPhase, this.m_LastCallInformation.callPhase)
+    || NotEquals(before.contactName, this.m_LastCallInformation.contactName);
+  if IsDefined(story) && story.IsHostInSession() && changed {
     let info = this.m_LastCallInformation;
     let flags = 0;
     if info.isRejectable {

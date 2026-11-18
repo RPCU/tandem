@@ -115,15 +115,15 @@ public class TandemDialogue {
       let kind: Int32 = EnumInt(line.type);
       // Radio and TV are each game's own; scene comments and invisible
       // lines are not for players.
-      if kind == 3 || kind == 5 || kind == 6 || kind == 7 || kind == 11 {
-        continue;
-      }
+      let shared = !(kind == 3 || kind == 5 || kind == 6 || kind == 7 || kind == 11);
       let speaker = 0u;
-      if IsDefined(line.speaker) && IsDefined(player) && line.speaker.GetEntityID() == player.GetEntityID() {
-        speaker = this.m_story.You();
+      if shared {
+        if IsDefined(line.speaker) && IsDefined(player) && line.speaker.GetEntityID() == player.GetEntityID() {
+          speaker = this.m_story.You();
+        }
+        TandemStory.SendLine(TandemStory.LineValue(line.id), kind, line.isPersistent ? 2 : 0, line.duration, speaker, line.speakerName, line.text);
+        TandemNative.Log(s"subtitle: sent (type \(kind))");
       }
-      TandemStory.SendLine(TandemStory.LineValue(line.id), kind, line.isPersistent ? 2 : 0, line.duration, speaker, line.speakerName, line.text);
-      TandemNative.Log(s"subtitle: sent (type \(kind))");
     }
   }
 
@@ -381,7 +381,8 @@ public class TandemDialogue {
       this.m_cursor = Equals(name, n"ChoiceScrollUp") ? (this.m_cursor + count - 1) % count : (this.m_cursor + 1) % count;
       this.Board(false).SetInt(GetAllBlackboardDefs().UIInteractions.SelectedIndex, this.m_cursor, true);
       TandemStory.SendCursor(this.m_shownHub, this.m_cursor, 0);
-    } else if Equals(name, n"ChoiceApply") && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_RELEASED) {
+    } else if Equals(name, n"ChoiceApply") && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_RELEASED)
+      && this.m_cursor >= 0 && this.m_cursor < count {
       TandemStory.SendCursor(this.m_shownHub, this.m_cursor, 1);
       this.m_story.Notice(s"Suggested: \(this.m_pendingTexts[this.m_cursor])");
       TandemNative.Log(s"choice: suggested \(this.m_cursor)");
