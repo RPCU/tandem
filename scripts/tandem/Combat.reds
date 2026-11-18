@@ -275,8 +275,14 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
   let instigator = hitEvent.attackData.GetInstigator();
   if damage > 0.0 && IsDefined(instigator) && instigator.IsPlayer() {
     TandemNative.SendNpcHit(npc, damage, TandemCombat.Flags(hitEvent), hitEvent.hitPosition, hitEvent.hitDirection);
+    let health = TandemCombat.Health(game, hitEvent.target);
     let xp = TandemCombat.AwardDamageExperience(game, hitEvent, damage);
     TandemNative.Log(s"combat: hit on proxy \(npc) for \(damage) sent to the host (skill XP for \(xp)% of its health queued)");
+    // It takes the last of the health the host gave this proxy: a kill, now,
+    // as our own game would have it (Npcs.reds PredictKill).
+    if damage >= health - 0.01 {
+      TandemCombat.System(game).PredictKill(npc);
+    }
   }
   // The feedback the game gives for a hit (damage numbers, hit marker),
   // as SendDamageEvents would.
@@ -317,6 +323,7 @@ private final func ProcessInstantKill(hitEvent: ref<gameHitEvent>) {
   if IsDefined(instigator) && instigator.IsPlayer() {
     TandemNative.SendNpcHit(npc, 0.0, TandemCombat.Flags(hitEvent), hitEvent.hitPosition, hitEvent.hitDirection);
     TandemNative.Log(s"combat: instant kill on proxy \(npc) sent to the host");
+    TandemCombat.System(game).PredictKill(npc);
   }
 }
 

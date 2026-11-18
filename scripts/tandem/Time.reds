@@ -7,7 +7,8 @@
 //
 // - Sandevistan (reason "sandevistan", SandevistanEvents.OnEnter,
 //   final.reds:524119) and Kerenzikov ("kereznikov", KerenzikovEvents.OnEnter,
-//   final.reds:527831): a time bubble. The NPCs within 50 m of that V are
+//   final.reds:527831): a time bubble. The NPCs within 150 m of that V (all
+//   that any game shows) are
 //   slowed, for every player, by the factor the implant asks for (its stat
 //   TimeDilationSandevistanTimeScale / TimeDilationKerenzikovTimeScale): the
 //   host slows its real NPCs with the per-entity dilation vanilla gives a
@@ -40,8 +41,11 @@
 // - A bubble slows the other Vs in it too, each on its own game (SlowSelf).
 // - Nothing of the game's own is changed (docs/research/coop-perks.md
 //   §5.1a): its checks see a dilation active for as long as single player.
+// - The host too keeps the game's own global dilation by default
+//   (time_host = full): what its V's abilities read is single player's.
 // - Scanner and quickhack panel ("focusMode", TimeDilationFocusModeEvents,
-//   final.reds:529159), melee hit stop ("meleeHit", final.reds:45789) and
+//   final.reds:529159): no slow motion at all while another V is in the
+//   session (ScannerOff). Melee hit stop ("meleeHit", final.reds:45789) and
 //   deflect/one-punch ("deflect", final.reds:39679): local only, no bubble. A guest keeps them on its
 //   screen; the host drops their world part (time_host = bubble). Others see the V as it is: standing, scanning.
 // - Any other global dilation left on the host is logged ("an unknown
@@ -85,6 +89,11 @@ public class TandemTime {
   private let m_selfFactor: Float;
   private let m_selfEntity: Bool;
   private let m_selfChecked: Bool;
+  private let m_scannerLogged: Bool;
+  // Host: NPCs answering a V's Sandevistan with their own right now (the
+  // AI's sandevistanVersusSandevistan sub-action): out of every bubble.
+  private let m_counters: array<EntityID>;
+  private let m_bulletLogged: Bool;
   // What we set on entities, and the bubble update's clock (real time).
   private let m_applied: array<ref<TandemTimeApplied>>;
   private let m_lastBubbles: Float;
@@ -155,6 +164,12 @@ public class TandemTime {
       this.TakeBack(times);
     } else {
       ArrayClear(this.m_taken);
+    }
+    // The scanner's slow motion is off while another V is here (the user's
+    // decision): its dilation is put back to normal speed under its own
+    // reason, on host and guest alike, so the scanner itself carries on.
+    if together {
+      this.ScannerOff(times);
     }
     this.PuppetEffects(system);
     if now - this.m_lastBubbles >= 0.05 {
@@ -290,7 +305,6 @@ public class TandemTime {
   private func TakeBack(times: ref<TimeSystem>) -> Void {
     this.Hold(times, n"sandevistan", 999.0);
     this.Hold(times, n"kereznikov", 999.0);
-    this.Hold(times, n"focusMode", 999.0);
     this.Hold(times, n"focusedStatePerkDilation", 12.0);
     this.Hold(times, n"coolReloadPerkDilation", 3.0);
     // Effector dilations end by their own unset (ActionOff) or duration;
@@ -330,6 +344,25 @@ public class TandemTime {
     if !ArrayContains(this.m_taken, reason) {
       ArrayPush(this.m_taken, reason);
       TandemNative.Log(s"time: \(NameToString(reason)) would slow the shared world to \(asked): kept at \(this.m_neutral), still active \(times.IsTimeDilationActive(reason))");
+    }
+  }
+
+  private func ScannerOff(times: ref<TimeSystem>) -> Void {
+    if !times.IsTimeDilationActive(n"focusMode") || times.GetActiveTimeDilation(n"focusMode", true) >= 0.99 {
+      return;
+    }
+    times.SetTimeDilation(n"focusMode", this.m_neutral, 999.0, n"None", n"None");
+    if !times.IsTimeDilationActive(n"focusMode") {
+      // A factor of 1 reads as none: the state would set it again each frame.
+      this.m_neutral = 0.999;
+      this.m_neutralChecked = true;
+      times.SetTimeDilation(n"focusMode", this.m_neutral, 999.0, n"None", n"None");
+    }
+    // The player's own factor, if the scanner's profile gives one.
+    times.UnsetTimeDilationOnLocalPlayerZero(n"focusMode", n"None");
+    if !this.m_scannerLogged {
+      this.m_scannerLogged = true;
+      TandemNative.Log("time: the scanner's slow motion is off while another V is in the session");
     }
   }
 
@@ -381,7 +414,7 @@ public class TandemTime {
       this.ReportBubbles(owners);
     }
     let own = (this.m_sentAbilities & 7) != 0 ? this.m_sentScale : 1.0;
-    this.SlowSelf(player, TandemNative.TimePlayerFactor(system.You(), own, player.GetWorldPosition(), owners, scales, at));
+    this.SlowSelf(player, TandemNative.TimePlayerFactor(system.You(), own, player.GetWorldPosition(), owners, scales, at, this.m_selfSet));
   }
 
   // Our V inside another V's bubble is slowed like the NPCs in it, unless
@@ -487,7 +520,10 @@ public class TandemTime {
       let entities = npcs.TimeEntities();
       let i = 0;
       while i < ArraySize(shared) {
-        this.Want(entities[i], TandemNative.TimeFactorOf(shared[i]), exempt, shared[i]);
+        // An enemy answering with its own Sandevistan is not slowed by a
+        // bubble while it does (Counter).
+        let factor = ArrayContains(this.m_counters, entities[i]) ? 1.0 : TandemNative.TimeFactorOf(shared[i]);
+        this.Want(entities[i], factor, exempt, shared[i]);
         i += 1;
       }
     }
@@ -569,6 +605,52 @@ public class TandemTime {
       }
     }
     return null;
+  }
+
+  // ---- enemies with a Sandevistan, and bullets ----
+
+  // An NPC's AI starts or ends its answer to a Sandevistan (the wraps at the
+  // end). In single player the NPC speeds itself up by what V's slows the
+  // world (final.reds:427380-427400), so it moves at real speed for as long:
+  // here it is left out of every bubble for as long. The host's own V's
+  // case is the game's own; this gives a guest's bubble the same.
+  public func Counter(npc: ref<GameObject>, on: Bool) -> Void {
+    if !IsDefined(npc) {
+      return;
+    }
+    let id = npc.GetEntityID();
+    if on && !ArrayContains(this.m_counters, id) {
+      ArrayPush(this.m_counters, id);
+      TandemNative.Log(s"time: an NPC answers with its own sandevistan (\(ArraySize(this.m_counters)) now)");
+    } else if !on {
+      ArrayRemove(this.m_counters, id);
+    }
+  }
+
+  // The speed we set on an entity (-1: none).
+  public func AppliedFactor(id: EntityID) -> Float {
+    let applied = this.Find(id);
+    return IsDefined(applied) ? applied.factor : -1.0;
+  }
+
+  // A bullet or projectile leaves an NPC we slowed: it flies at that NPC's
+  // speed, as bullets do under V's Sandevistan in single player (there the
+  // global factor slows every projectile entity; here the bullet, an
+  // ItemObject and so a TimeDilatable like its shooter, gets the bubble's
+  // factor of its own).
+  public func SlowBullet(bullet: ref<ItemObject>, shooter: wref<GameObject>) -> Void {
+    if !IsDefined(bullet) || !IsDefined(shooter) {
+      return;
+    }
+    let factor = this.AppliedFactor(shooter.GetEntityID());
+    if factor < 0.0 {
+      return;
+    }
+    bullet.SetIndividualTimeDilation(n"tandemTime", factor, 30.0, n"None", n"None", true, false);
+    if !this.m_bulletLogged && factor < 0.999 {
+      this.m_bulletLogged = true;
+      TandemNative.Log(s"time: a slowed NPC's bullet flies at \(factor) (\(NameToString(bullet.GetClassName())))");
+    }
   }
 
   // ---- what the others see ----
@@ -675,6 +757,7 @@ public class TandemTime {
       }
       TandemNative.Log(s"time: puppet effect \(NameToString(this.m_fx)) played on every puppet");
     } else if Equals(command, "time report") {
+      TandemNative.Log(s"time: what the game's fire-rate formula reads (CalcCycleTimeDeltaFactor): sandevistan active \(times.IsTimeDilationActive(n"sandevistan")), factor \(times.GetActiveTimeDilation()); sandevistan charge \(GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(GetPlayer(this.m_game).GetEntityID()), gamedataStatPoolType.SandevistanCharge, true))%");
       TandemNative.Log(s"time: world speed here \(times.GetActiveTimeDilation()) (a dilation active: \(times.IsTimeDilationActive())), our abilities \(this.m_sentAbilities) (\(this.m_sentScale)), \(ArraySize(this.m_applied)) entities set, taken back \(ArraySize(this.m_taken)), neutral \(this.m_neutral), host full \(TandemNative.IsTimeHostFull())");
       for applied in this.m_applied {
         let body = GameInstance.FindEntityByID(this.m_game, applied.id) as gamePuppet;
@@ -717,4 +800,81 @@ protected func ActionOn(owner: ref<GameObject>) -> Void {
       time.EffectorOn(this.m_reason, this.m_dilation);
     }
   }
+}
+
+// An enemy's answer to a Sandevistan (AISubActionApplyTimeDilation with the
+// reason sandevistanVersusSandevistan): seen here, not changed.
+@wrapMethod(AISubActionApplyTimeDilation_Record_Implementation)
+public final static func Activate(context: ScriptExecutionContext, record: wref<AISubActionApplyTimeDilation_Record>) -> Void {
+  wrappedMethod(context, record);
+  if Equals(record.Reason(), n"sandevistanVersusSandevistan") {
+    let npc = ScriptExecutionContext.GetOwner(context);
+    let time = IsDefined(npc) ? TandemTime.Of(npc.GetGame()) : null;
+    if IsDefined(time) {
+      time.Counter(npc, true);
+    }
+  }
+}
+
+@wrapMethod(AISubActionApplyTimeDilation_Record_Implementation)
+public final static func Deactivate(context: ScriptExecutionContext, record: wref<AISubActionApplyTimeDilation_Record>, const duration: Float, interrupted: Bool) -> Void {
+  wrappedMethod(context, record, duration, interrupted);
+  if Equals(record.Reason(), n"sandevistanVersusSandevistan") {
+    let npc = ScriptExecutionContext.GetOwner(context);
+    let time = IsDefined(npc) ? TandemTime.Of(npc.GetGame()) : null;
+    if IsDefined(time) {
+      time.Counter(npc, false);
+    }
+  }
+}
+
+// Under V's Sandevistan the game turns NPC shots into projectiles a V can
+// see and dodge, when a dilation is active on that game
+// (final.reds:173366-173373). An NPC slowed by a guest's bubble shoots on
+// the host, where none is: the same choice is made for it, from the same
+// records.
+@wrapMethod(AIWeapon)
+public final static func SetAttackBasedOnTimeDilation(owner: wref<GameObject>, weapon: wref<WeaponObject>, opt overrideRangedAttack: TweakDBID) -> Void {
+  wrappedMethod(owner, weapon, overrideRangedAttack);
+  if !IsDefined(owner) || !IsDefined(weapon) || !owner.IsNPC() {
+    return;
+  }
+  let game = owner.GetGame();
+  let time = TandemTime.Of(game);
+  if !IsDefined(time) || GameInstance.GetTimeSystem(game).IsTimeDilationActive() {
+    return;
+  }
+  let factor = time.AppliedFactor(owner.GetEntityID());
+  if factor < 0.0 || factor >= 0.999 || StatusEffectSystem.ObjectHasStatusEffect(owner, t"BaseStatusEffect.SuicideWithWeapon") {
+    return;
+  }
+  let attack: wref<RangedAttack_Record>;
+  if TDBID.IsValid(overrideRangedAttack) {
+    attack = TweakDBInterface.GetRangedAttackRecord(overrideRangedAttack);
+  } else if IsDefined(weapon.GetCurrentRangedAttack()) {
+    attack = weapon.GetCurrentRangedAttack().DefaultFire();
+  }
+  if IsDefined(attack) && IsDefined(attack.NPCTimeDilated()) {
+    weapon.SetAttack(attack.NPCTimeDilated().GetID());
+  }
+}
+
+@wrapMethod(BaseBullet)
+protected cb func OnProjectileInitialize(eventData: ref<gameprojectileSetUpEvent>) -> Bool {
+  let result = wrappedMethod(eventData);
+  let time = TandemTime.Of(this.GetGame());
+  if IsDefined(time) {
+    time.SlowBullet(this, eventData.owner);
+  }
+  return result;
+}
+
+@wrapMethod(BaseProjectile)
+protected cb func OnProjectileInitialize(eventData: ref<gameprojectileSetUpEvent>) -> Bool {
+  let result = wrappedMethod(eventData);
+  let time = TandemTime.Of(this.GetGame());
+  if IsDefined(time) {
+    time.SlowBullet(this, eventData.owner);
+  }
+  return result;
 }

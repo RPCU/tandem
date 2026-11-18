@@ -20,12 +20,15 @@ expect 'time: player [0-9]+.s sandevistan ended' 5
 expect 'time: bubble of player [0-9]+ ended' 5
 expect 'time: npc [0-9]+ back to normal speed' 5
 expect 'time: our V back to its own speed' 5
-# The host's own dilation: taken back at once, the world keeps normal speed,
-# our V's bubble slows the NPC and the mock player hears of it.
+# The host's own dilation (time_host = full, the default): its own game
+# slows as in single player, the NPC it shares is set to the bubble's speed
+# whatever the game's own factor, and the mock player hears of it.
 cmd time test 0.25 4
 expect 'time: our abilities 1 \(world speed 0.25' 5
-expect 'time: sandevistan would slow the shared world to 0.25: kept at [01.9]+, still active true' 5
-expect 'time: world speed (0\.9[5-9]|1)[0-9.]* over the test' 5
+expect 'time: world speed 0\.2[0-9]* over the test' 5
+expect 'time: npc [0-9]+ at 0.25 .*ignoring our global factor true' 5
+cmd time report
+expect 'time: what the game.s fire-rate formula reads .*sandevistan active true, factor 0\.2' 5
 expect 'time: bubble of player 1: [1-9][0-9]* NPC' 5
 expect_peer 'player 1: time abilities 0x1 \(world speed 0.25\)' 5
 expect 'time: test dilation over' 10

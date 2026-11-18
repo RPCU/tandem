@@ -236,6 +236,13 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_time;
   }
 
+  // Guest: our hit takes the last of this proxy's health (Combat.reds).
+  public func PredictKill(npc: Uint32) -> Void {
+    if IsDefined(this.m_npcs) && this.m_you != 0u && !TandemNative.IsHost() {
+      this.m_npcs.PredictKill(npc);
+    }
+  }
+
   // The NPCs shared in this session (host: ours; guest: the proxies).
   public func NpcsSync() -> ref<TandemNpcs> {
     return this.m_you != 0u ? this.m_npcs : null;
@@ -280,7 +287,9 @@ public class TandemSystem extends ScriptableSystem {
     // Only in a session (m_you: this game's player id while in one): a
     // guest between sessions has its own world back.
     if IsDefined(this.m_npcs) && this.m_playing && this.m_you != 0u {
-      this.m_npcs.Tick(this.Now(), this.m_you);
+      // On real time: under our own slow motion (Time.reds) the world's
+      // clock runs slower, and the others must hear of our NPCs as often.
+      this.m_npcs.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this.m_you);
     }
     if IsDefined(this.m_stealth) && this.m_playing && this.m_you != 0u {
       this.m_stealth.Tick(this.Now(), this.m_you, this.m_npcs);

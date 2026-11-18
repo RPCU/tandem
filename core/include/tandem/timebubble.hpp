@@ -29,7 +29,7 @@
 //   slow as the NPCs and sees the bubble's owner move fast; one whose own
 //   ability matches or beats the bubble is not slowed and stands in it on
 //   an equal footing; a weaker one is slowed by the ratio. Not sticky: a
-//   V that walks out is free again.
+//   V that walks out is free again, kMargin past the edge.
 
 #include "tandem/protocol.hpp"
 
@@ -42,9 +42,14 @@
 namespace tandem::sync {
 class TimeBubbles {
 public:
-  // Metres around the V, on the ground plane: a gunfight's reach, within
-  // the 60 m around the host's V that it shares NPCs for.
-  static constexpr float kRadius = 50.f;
+  // Metres around the V, on the ground plane: everything its player can
+  // see or fight. In single player the whole world slows; here it is every
+  // NPC a game shows (the host shares those within 60 m of its V), with
+  // room for players some way apart.
+  static constexpr float kRadius = 150.f;
+  // A V already slowed by a bubble stays in it this much farther out, so
+  // one walking along its edge does not flicker between two speeds.
+  static constexpr float kMargin = 15.f;
 
   struct Owner {
     proto::PlayerId player{};
@@ -71,9 +76,10 @@ public:
   float FactorOf(proto::NpcId npc) const;
   // How much a V is slowed by the others' bubbles (1: not at all): `own` is
   // the world speed its own ability asks for (1: none), `owners` every V
-  // with a bubble now (itself too, ignored).
+  // with a bubble now (itself too, ignored), `inside` whether it was slowed
+  // at the last ask (the edge's margin).
   static float PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
-                            std::span<const Owner> owners);
+                            std::span<const Owner> owners, bool inside = false);
   std::size_t MembersOf(proto::PlayerId owner) const;
   std::size_t Bubbles() const { return m_bubbles.size(); }
 

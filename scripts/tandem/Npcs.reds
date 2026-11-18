@@ -29,6 +29,13 @@ public class TandemNpcProxy {
   public let dead: Bool;
   // The host's health for it (fraction), applied once the proxy exists.
   public let health: Float;
+  // What it was spawned from (to bring it back, see Revive).
+  public let record: TweakDBID;
+  public let appearance: CName;
+  // Our own hit killed it here before the host said so (PredictKill): when,
+  // and when the host's health for it said it lives (0: no such doubt).
+  public let predictedAt: Float;
+  public let doubtAt: Float;
 }
 
 public class TandemNpcs {
@@ -474,6 +481,9 @@ public class TandemNpcs {
         if IsDefined(proxy) {
           proxy.health = event.amount;
           this.ApplyHealth(proxy);
+          if proxy.predictedAt > 0.0 && event.amount > 0.0 {
+            proxy.doubtAt = now;
+          }
         }
       } else if event.kind == 2 && event.reason == 1 {
         this.Die(event.npc, event.player);
@@ -492,12 +502,15 @@ public class TandemNpcs {
         let proxy = new TandemNpcProxy();
         proxy.npc = event.npc;
         proxy.health = -1.0;
+        proxy.record = event.record;
+        proxy.appearance = event.appearance;
         proxy.id = entities.CreateEntity(spec);
         ArrayPush(this.m_proxies, proxy);
       } else {
         this.Remove(event.npc);
       }
     }
+    this.Reconcile(now);
     // Brain off and our controller on, as soon as each proxy exists.
     for proxy in this.m_proxies {
       if !proxy.ready {
@@ -548,6 +561,13 @@ public class TandemNpcs {
       return;
     }
     let proxy = this.FindProxy(npc);
+    if IsDefined(proxy) && proxy.predictedAt > 0.0 {
+      // The kill our own game saw first (PredictKill): the host agrees.
+      proxy.predictedAt = 0.0;
+      proxy.doubtAt = 0.0;
+      TandemNative.Log(s"npcs: proxy \(npc) died on the host too (killer: player \(killer))");
+      return;
+    }
     if !IsDefined(proxy) || proxy.dead {
       return;
     }
@@ -664,6 +684,63 @@ public class TandemNpcs {
       }
     }
     this.m_proxies = kept;
+  }
+
+  // Guest: our own hit takes the last of a proxy's health (Combat.reds).
+  // It dies here at once, by our V, as in single player: on-kill perks, a
+  // Sandevistan's kill extension and the skill XP fire at the hit, not a
+  // round trip to the host later. The host's word follows (Die); if it
+  // says the NPC lives instead (its health was above what we knew), the
+  // proxy is brought back (Reconcile).
+  public func PredictKill(npc: Uint32) -> Void {
+    let proxy = this.FindProxy(npc);
+    if !IsDefined(proxy) || proxy.dead || TandemTakedowns.Get(this.m_game).DefersDeath(npc, this.m_you) {
+      return;
+    }
+    proxy.dead = true;
+    proxy.predictedAt = this.m_now;
+    proxy.doubtAt = 0.0;
+    TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
+    let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
+    if IsDefined(body) {
+      body.Kill(GetPlayer(this.m_game), false, false);
+    }
+    TandemNative.Log(s"npcs: proxy \(npc) died by our hit (ahead of the host)");
+  }
+
+  // A kill we saw that the host did not: 1.5 s after it, with the host's
+  // health for the NPC above zero since and no death from it, the proxy is
+  // spawned again where it fell. (What the kill gave our V stays given.)
+  private func Reconcile(now: Float) -> Void {
+    for proxy in this.m_proxies {
+      if proxy.predictedAt > 0.0 && proxy.doubtAt > 0.0 && now - proxy.predictedAt > 1.5 {
+        let entities = GameInstance.GetDynamicEntitySystem();
+        let old = entities.GetEntity(proxy.id) as GameObject;
+        let spec = new DynamicEntitySpec();
+        spec.recordID = proxy.record;
+        spec.appearanceName = proxy.appearance;
+        if IsDefined(old) {
+          spec.position = old.GetWorldPosition();
+          spec.orientation = old.GetWorldOrientation();
+        } else {
+          spec.position = GetPlayer(this.m_game).GetWorldPosition();
+        }
+        spec.alwaysSpawned = true;
+        spec.persistState = false;
+        spec.persistSpawn = false;
+        spec.spawnInView = true;
+        spec.active = true;
+        ArrayPush(spec.tags, n"Tandem.Proxy");
+        entities.DeleteEntity(proxy.id);
+        proxy.id = entities.CreateEntity(spec);
+        proxy.ready = false;
+        proxy.seenAt = 0.0;
+        proxy.dead = false;
+        proxy.predictedAt = 0.0;
+        proxy.doubtAt = 0.0;
+        TandemNative.Log(s"npcs: proxy \(proxy.npc) lives on the host: our kill was not one, brought back");
+      }
+    }
   }
 
   // Guest: the host's NPCs as shown here (Stealth.reds: their detection of us).

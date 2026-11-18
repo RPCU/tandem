@@ -611,7 +611,7 @@ redscript natives (UI, events)              ENet socket
   Sandevistan, Kerenzikov, slow-motion perks, scanning, and the world speed
   the implant asks for; reliable, kept by the host for late joiners, ended
   when a player leaves). Every V with a Sandevistan or Kerenzikov on has a
-  **time bubble**: the NPCs within 50 m of it are slowed by its factor, for
+  **time bubble**: the NPCs within 150 m of it are slowed by its factor, for
   everyone. The host does it to its real NPCs with the per-entity dilation
   (`SetIndividualTimeDilation`, the local global factor ignored); guests
   see it through their proxies' motion (the same bubbles are computed
@@ -1296,6 +1296,23 @@ in-game tests still owed; none of it tested in a session yet):
     native sound or screen cue exists for being slowed (vanilla never
     slows V from outside), and leaving a bubble on foot is not sticky
     (a V at its edge can flicker between speeds: add a margin if seen).
+
+  And then (2026-11-18, the user: unchanged for the ability's user):
+  - the host keeps the game's own global dilation too (`time_host = full`
+    is the default), so its fire rate, duration, effects and sound are
+    single player's; the NPCs it shares get their bubble's speed whatever
+    its own factor, and its NPC updates go out on real time;
+  - a bubble reaches 150 m (every NPC a game shows), a V leaves it 15 m
+    farther out than it enters;
+  - the scanner's slow motion is off while another V is in the session;
+  - a slowed NPC's bullets fly at its speed (per-entity dilation on the
+    projectile, and the game's own projectile attack chosen for it where
+    no dilation is active); a guest does not see those bullets yet
+    (`research/coop-perks.md` §5.1a, for review);
+  - a guest's lethal hit kills the proxy at once, so kill extensions fire
+    as in single player; the host's word reconciles;
+  - an enemy answering with its own Sandevistan is left out of bubbles
+    while its AI does so.
 
   To verify in game: the bubble NPCs slow on host and guest alike, that a
   factor of 1.0 keeps Sandevistan going on the host (else 0.999 is used),

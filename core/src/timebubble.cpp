@@ -5,8 +5,8 @@
 
 namespace tandem::sync {
 namespace {
-bool Near(const proto::Vec3 &a, const proto::Vec3 &b) {
-  return std::hypot(a.x - b.x, a.y - b.y) <= TimeBubbles::kRadius;
+bool Near(const proto::Vec3 &a, const proto::Vec3 &b, float reach = TimeBubbles::kRadius) {
+  return std::hypot(a.x - b.x, a.y - b.y) <= reach;
 }
 } // namespace
 
@@ -62,10 +62,11 @@ std::vector<TimeBubbles::Change> TimeBubbles::Clear() {
 }
 
 float TimeBubbles::PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
-                                std::span<const Owner> owners) {
+                                std::span<const Owner> owners, bool inside) {
+  const float reach = kRadius + (inside ? kMargin : 0.f);
   float strongest = 1.f;
   for (const auto &owner : owners)
-    if (owner.player != player && owner.scale < 1.f && Near(owner.position, position))
+    if (owner.player != player && owner.scale < 1.f && Near(owner.position, position, reach))
       strongest = std::min(strongest, std::clamp(owner.scale, 0.05f, 1.f));
   own = std::isfinite(own) ? std::clamp(own, 0.05f, 1.f) : 1.f;
   return std::min(1.f, strongest / own);

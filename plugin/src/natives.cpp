@@ -617,19 +617,21 @@ struct TandemNative : Red::IScriptable {
   // bubble as for UpdateTimeBubbles.
   static float TimePlayerFactor(std::uint32_t player, float own, Red::Vector4 position,
                                 Red::DynArray<std::uint32_t> owners, Red::DynArray<float> scales,
-                                Red::DynArray<Red::Vector4> ownerPositions) {
+                                Red::DynArray<Red::Vector4> ownerPositions, bool inside) {
     std::vector<sync::TimeBubbles::Owner> who;
     for (std::uint32_t i = 0; i < owners.Size() && i < scales.Size() && i < ownerPositions.Size();
          ++i)
       who.push_back({.player = owners[i],
                      .scale = scales[i],
                      .position = {ownerPositions[i].X, ownerPositions[i].Y, ownerPositions[i].Z}});
-    return sync::TimeBubbles::PlayerFactor(player, own, {position.X, position.Y, position.Z}, who);
+    return sync::TimeBubbles::PlayerFactor(player, own, {position.X, position.Y, position.Z}, who,
+                                           inside);
   }
   static std::int32_t TimeBubbleMembers(std::uint32_t player) {
     return static_cast<std::int32_t>(Runtime::Get().Bubbles().MembersOf(player));
   }
-  // tandem.ini time_host = full: the host keeps its own slow motion whole.
+  // tandem.ini time_host = full (the default): the host keeps its own slow
+  // motion whole; bubble: its world is put back to normal speed.
   static bool IsTimeHostFull() { return Runtime::Get().config.timeHostFull; }
   // Invites through tandem-relay (docs/ARCHITECTURE.md, "Invites"): the
   // host's join code to show ("K7Q-2M9"; "" until the relay gave one, or
