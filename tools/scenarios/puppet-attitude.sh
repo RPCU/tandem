@@ -4,11 +4,16 @@ ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female
 expect 'joined \(player [0-9]+' 20
 expect 'player [0-9]+: puppet in the tandem_player_[1-3] attitude group' 20
-# The relations are copied from V's within 2 s of NPCs being seen.
+# At least one NPC near V, spawned after the puppet got its group (an agent
+# SetAttitudeRelation never reached): a ganger 8 m ahead, brain off.
+cmd proxy test
+expect 'proxy test: .* spawning \(true\)' 10
+# Each NPC around gets V's attitudes on the puppet within 2 s.
 pause 5
 cmd puppet attitude
-# Every NPC within 60 m of V (at least one) sees the puppet as it sees V;
-# V and the puppet are friends.
+# Every NPC within 60 m of V sees the puppet as it sees V; V and the
+# puppet are friends.
 expect 'puppet attitude: player [0-9]+ in tandem_player_[1-3] \(V in [^)]+\), ([1-9][0-9]*) NPCs, \1 see it as V, V to it 0, it to V 0' 10
 reject 'puppet attitude: player [0-9]+ has no body'
+cmd proxy clear
 reject 'watchdog: game thread silent'
