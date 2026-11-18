@@ -842,7 +842,7 @@ public class TandemStorySystem extends ScriptableSystem {
 protected cb func OnSceneTierChange(newState: Int32) -> Bool {
   let result = wrappedMethod(newState);
   let story = TandemStorySystem.Get(this.GetGame());
-  if IsDefined(story) && this == GetPlayer(this.GetGame()) {
+  if IsDefined(story) && IsDefined(GetPlayer(this.GetGame())) && this.GetEntityID() == GetPlayer(this.GetGame()).GetEntityID() {
     story.OnOurTier(newState);
   }
   return result;
