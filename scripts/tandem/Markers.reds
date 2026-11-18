@@ -85,6 +85,24 @@ public class TandemMarkers extends ScriptableSystem {
     return IsDefined(markers) ? markers.PlayerName(mappin.GetNewMappinID()) : "";
   }
 
+  // The player a mappin marks (0 if it is not one of ours): Travel.reds.
+  public static func PlayerOf(mappin: wref<IMappin>) -> Uint32 {
+    if !IsDefined(mappin) || !TandemMarkers.IsOurs(mappin.GetVariant()) {
+      return 0u;
+    }
+    let markers = TandemMarkers.Get(GetGameInstance());
+    if !IsDefined(markers) {
+      return 0u;
+    }
+    let id = mappin.GetNewMappinID();
+    for marker in markers.m_markers {
+      if marker.mappin.value != 0ul && marker.mappin.value == id.value {
+        return marker.player;
+      }
+    }
+    return 0u;
+  }
+
   public func PlayerName(id: NewMappinID) -> String {
     for marker in this.m_markers {
       if marker.mappin.value != 0ul && marker.mappin.value == id.value {

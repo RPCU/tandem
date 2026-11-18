@@ -89,6 +89,17 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
   std::uint32_t seatChanges = 0;
   if (const auto seat = Runtime::Get().RemoteSeat(player, seatChanges); seat && seat->vehicle)
     return;
+  // Placed by something else for now: a grapple's workspot, a carrier's
+  // shoulder (Takedowns.reds), an NPC proxy's bench or wall (NpcAnims.reds).
+  // The gait idles meanwhile.
+  // Placement starts afresh once it is let go (no stale timers or landing).
+  if (Runtime::Get().IsPuppetHeld(player)) {
+    m_speed = 0.f;
+    m_placer = movement::Placer{};
+    m_placement = movement::Placement::Ground;
+    m_lastPlaceUs = 0;
+    return;
+  }
 
   const auto view = Runtime::Get().ViewOf(player);
   if (!view.valid)

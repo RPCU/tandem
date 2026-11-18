@@ -2244,7 +2244,328 @@ duration, easeIn, easeOut, ignoreGlobalDilation, useRealTime)`,
 - `GameInstance.GetSimTime` is assumed dilated and `GetEngineTime` real
   (final.reds 14148-14150); `time test` logs the ratio of the two.
 
-### 13.17 Every way a V moves: the signals, and NPC bodies in water (2026-11-18, scripts and exe read)
+### 13.17 Takedowns, finishers, carried bodies and "the player" reactions (2026-11-18, scripts only)
+
+Read in `final.reds` for `scripts/tandem/Takedowns.reds` and
+`Reactions.reds`; none of it run in a session yet.
+
+- **Every takedown's NPC side is one game effect**:
+  `TakedownGameEffectHelper.FillTakedownData(executionOwner, activator,
+target, effectName, effectTag, opt statusEffect)` (252966) runs
+  `GameEffectSystem.CreateEffectStatic(n"takedowns", tag, activator)` with
+  the target as shared `entity`. Tags: the grapple start
+  (`GrappleTarget`, `GrappleTargetCover`, `GrappleTargetPlayerCrouch`,
+  from `TakedownGrapplePreyEvents.OnEnter` 535235), `kill`,
+  `setUnconscious`, `setUnconsciousTakedownNetrunner`,
+  `setUnconsciousTakedownMassiveTarget`, `setUnconsciousAerialTakedown`
+  (`LocomotionTakedownEvents.DefeatTarget` 285348, which also sends
+  `takedown_defeat` for the non-lethal ones), and aerial or boss workspot
+  names (`SelectSyncedAnimationAndExecuteAction` 285240). A static
+  function can be wrapped (`@wrapMethod` on it, as NCO does for
+  `TimeDilationHelper`). [2.5-untested]
+- The grappled NPC is in a workspot tagged `Grappled`
+  (`ScriptedPuppet.OnWorkspotStartedEvent` 22563 applies
+  `BaseStatusEffect.Grappled`); `ScriptedPuppet.IsBeingGrappled` (21171)
+  reads it. Synced animations: `grapple_sync_kill[_02|_03]`,
+  `grapple_sync_nonlethal[_crouch]`, `grapple_sync_recover` (break free),
+  `grapple_sync_shove`, `grapple_sync_death`, played with
+  `WorkspotGameSystem.SendJumpToAnimEnt` (`PlayExitAnimation` 285006). Whether the effect takes
+  with a **puppet** as activator (tandem's host does that) is the first
+  thing to check in game; tandem falls back to `Grappled` plus placing the
+  NPC 0.6 m in front of the puppet each frame. [2.5-untested]
+- **A failed grapple, vanilla's way**: `TakedownGrappleFailedDecisions`
+  (535796) enters when `ShouldInstantlyBreakFree` (530408: a massive target
+  of too high a level); `GrappleBreakFreeDecisions.EnterCondition` (537741)
+  is true after the hold time (4.5 s), on `GrappleFailed`, or in deep
+  water; `GrappleBreakFreeEvents.OnEnter` (537827) clears the NPC's
+  workspot and `Grappled`, `InjectThreat`s V and plays the break-free
+  animation. tandem's refused grab makes that condition true.
+  `TakedownReleasePreyEvents` (538977) ends a grapple without a takedown.
+  [2.5-untested]
+- **Finishers**: `FinisherAttackEvents.ApplyFinisher` (250093) plays
+  `CreateEffectStatic(n"playFinisher", name, instigator)` on the target
+  (`PlayFinisherGameEffect` 250132; the name from the weapon's item type or
+  tags, `GetFinisherNameBasedOnWeapon` 250182), then queues a
+  `Attacks.Finisher_Fake_Attack` hit with `DealNoDamage` and
+  `hitFlag.FinisherTriggered` (250115) and `MarkForDeath`s the NPC. The
+  offer: `NewPerkFinisherCondition` (514031), health below the attacker's
+  `NewPerkFinisher*_TargetHealthMax` stat (`IsInFinisherHealthThreshold` 13152) or `BaseStatusEffect.FinisherActiveStatusEffect` (a broken guard,
+  `NPCPoiseListener` 203306). The blunt "hold" finisher kills at once
+  (`TriggerNewPerkFinisherBluntHold` 22433). [2.5-untested]
+- **Carrying**: the body runs the `CarriedObject` state machine
+  (`scriptInterface.owner` = the body, `executionOwner` = V).
+  `CarriedObjectEvents.OnEnter` (526537) mounts it on V
+  (`MountingRequest`, slot `leftShoulder`) and calls
+  `NPCPuppet.MountingStartDisableComponents` (129544); the pose comes from
+  the `Carry` (`AnimFeature_Carry`, `ECarryState` 10593) and `Mounting`
+  features. States: `PickUpEvents` (531436), `DropEvents` (533304),
+  `ReleaseEvents` (536937), `ThrowEvents` (534389: `Kill(V, true, true)`,
+  `ThrownNPC`, ragdoll, an impulse along the camera, 100 by default),
+  `DisposeEvents` (533904). A forced drop is the PSM parameter
+  `forceDropBody` (`PSMPostponedParameterBool`, 135452). [2.5-untested]
+- **Disposal**: `DisposalDevice.OnDisposeBody` (210049),
+  `OnTakedownAndDisposeBody` (210105), `OnNonlethalTakedownAndDisposeBody`
+  (210112) unmount the body from the **local** player, play the device
+  and NPC workspots, then on `OnWorkspotFinished` (210236) kill it,
+  `SetNPCDisposedFact` and hide it for good. [2.5-untested]
+- **"The player" in host NPC code** (§2.1 of `coop-perks.md`):
+  `NPCStatesComponent.OnCombat` (168307; second chance and gag for
+  `GetPlayer`, 168333-168352), `NPCPoiseListener.OnStatPoolMinValueReached`
+  (203306; finisher offer and sound for the local player; the hit's author
+  is `NPCPuppet.GetLastHitInstigator` 128511),
+  `ForceMoveInCombatWhistleEffector.Initialize/ActionOn` (317768, the local
+  player's position), `UpdateWhistlePosition.Activate` (317836),
+  `PlayerPuppet.OnDodgeToAvoidCombatEvent` (39682, reads the NPC's senses,
+  which a proxy has off). Still "the player" and left as TODO:
+  `ForceMoveInCombatEffector.StartMovement`'s facing target (317559),
+  `ApplyLegendaryWhistleEffector` (317913), `NPCPuppet.OnQuickHackEffectApplied`
+  (126593, quickhack alerts: the quickhack work), `SpreadInitEffector`
+  (316185), `SetFriendlyEffector` (315998),
+  `ScriptedPuppet.ProcessQuickHackQueueOnDefeat` (21698),
+  `SenseComponent.ReevaluateDetectionOverwrite` (156337),
+  `DamageSystem.IsImmune` (86146), `GorillaArmsOnePunchNPCMark` (126464),
+  `DisposalDevice`'s local player (210051). [2.5-untested]
+
+### 13.18 Fast travel and regroup (2026-11-18, 2.50 scripts read)
+
+Read from the 2.50 scripts (`final.reds` line numbers); none of it run in
+game yet (scenarios `travel`, `regroup`).
+
+- **`FastTravelSystem`** (scriptable system, 50235–50901): persistent
+  `m_fastTravelNodes: [FastTravelPointData]` (the points this save has
+  discovered) and `m_fastTravelLocks`. `PerformFastTravel(player,
+nodeData)` (50415, private, reached from `PerformFastTravelRequest`,
+  237972, `OnPerformFastTravelRequest` 50687) acts only for a point in
+  that list (`HasFastTravelPoint`), and only when it is not the starting
+  point: `RemoveAllGameplayRestrictions`, blackboard `FastTRavelSystem`
+  `DestinationPoint`, `ResetPitch`, `TeleportationFacility.TeleportToNode(
+player, markerRef)` (192804), `UISystem.NotifyFastTravelStart()`
+  (50161), and an autosave after the loading screen
+  (`m_requestAutoSafeAfterLoadingScreen`). Tandem wraps it to see our own
+  fast travel, and repeats its steps for a point not on our map (no
+  registration: the point stays undiscovered). Whether `TeleportToNode`
+  resolves a marker that is not streamed in, and whether
+  `NotifyFastTravelStart` alone brings up the fast travel loading screen,
+  is what the `travel` scenario will show. [2.5-untested]
+- **`FastTravelPointData`** (50954): `pointRecord` (TweakDB id, the same in
+  every game), `markerRef` (`NodeRef`, a 64-bit hash: the same in every
+  game; read and rebuilt by the natives `NodeRefHash` / `NodeRefOf`),
+  `mappinID` (the world map pin; `MappinSystem.GetMappin(id)
+.GetWorldPosition()` places the point). `DisplayName()` of its
+  `FastTravelPoint_Record` is a localization key. [2.5-untested]
+- **Locks**: `IsFastTravelEnabled()` is false while any lock is held
+  (combat, vehicle, quests, `BlockFastTravel`); `IsFastTravelEnabledOnMap()`
+  also needs a data terminal's map. Regroup uses the first. [2.5-untested]
+- **The world map** (`WorldMapMenuGameController`, 358072): holding
+  `world_map_menu_fast_travel` calls `TryFastTravel` (358864) for the
+  selected pin whatever opened the map (only the press checks the
+  terminal); its hints go to container `WorldMapInputHints`
+  (`RefreshInputHints`, 359339). Tandem's wrap of `TryFastTravel` regroups
+  with a player whose marker (`CPO_RemotePlayerVariant`) is selected.
+  [2.5-untested]
+- **The phone key**: `PhoneInteract` released answers a ringing holocall,
+  held (`BUTTON_HOLD_COMPLETE`) opens the phone; `PhoneReject` held
+  rejects (389308–389366). A regroup offer takes a release that was not a
+  hold and no call is ringing (`UI_ComDevice.PhoneCallInformation`
+  `callPhase` `IncomingCall`). [2.5-untested]
+- **Puppets after a jump**: `TeleportationFacility.Teleport` does not move
+  a puppet (§3, broken on 2.5), so a remote player's fast travel reaches
+  the puppet as one large step of the movement controller (core snaps the
+  track instead of flying it). Whether the controller applies a
+  kilometre-long delta in one frame is unverified. [2.5-untested]
+
+### 13.19 Loot: corpses, dropped items, quest items (2026-11-18, 2.50 scripts read)
+
+Read from the 2.50 scripts (`final.reds` line numbers), used by
+`scripts/tandem/Loot.reds`; none of it has run in a session yet.
+
+- **A corpse's loot is rolled by its own death.** `Kill()` on a puppet
+  (`ScriptedPuppet.Kill` 21286, `NPCPuppet.Kill` 125843) takes its health
+  to zero; `OnDeath` (21683) → `OnDied` → `NPCPuppet.OnIncapacitated`
+  (128876), which calls the native `ProcessLoot()` (128931, `gamePuppet` 19444) after `ScriptedPuppet.OnIncapacitated` (21797) has queued the
+  loot interaction for `items.dropSettings.delayBeforeEnablingLootPickUp`
+  (default 2 s, 22251). So a guest's proxy killed by the host's word rolls
+  its own loot, from its record (the real NPC's: the proxy is spawned from
+  it), in the guest's game only. `WasLootGenerated()` (19436) says whether
+  it did; `GenerateLoot()` (19406) is what a corpse loaded from a save
+  runs (`NPCPuppet.OnGameAttached`, 125562). Quality and quest flags are
+  worked out from the inventory afterwards (`EvaluateLootQuality` 23381:
+  items tagged `Quest` set `m_hasQuestItems`).
+  [2.5-untested]
+- **Weapons**: `ScriptedPuppet.DropHeldItems` (22027, private, no script
+  caller: presumably called by `ProcessLoot`) drops the items in
+  `AttachmentSlots.WeaponRight` / `WeaponLeft` when the record's
+  `DropsWeaponOnDeath()` and the item's `DropObject()` allow, via
+  `DropWeapons()`. Only what is **in the hands** drops: a proxy whose brain
+  went off before it drew its weapon may drop none. [2.5-untested]
+- **A body that goes leaves a bag**: vanilla's disposal and trunk paths
+  (210096-210100, 92707) call `ProcessLoot()` if `!WasLootGenerated()`,
+  else `DropLootBag()` (19432) if `!RPGManager.IsInventoryEmpty(body)`
+  (36468). Whether the bag survives deleting the body a second later is
+  unknown. [2.5-untested]
+- **The player's drops**: the backpack and inventory menus queue what the
+  player drops and drop it when they close
+  (`BackpackMainGameController.OnCloseMenu` 350981,
+  `gameuiInventoryGameController.OnCloseMenu` 429123): one item of
+  quantity 1 through `ItemActionsHelper.DropItem` (69371, an item action),
+  more through `RPGManager.DropManyItems` (38020): retrievable weapon mods
+  back to the player (`ReturnRetrievableWeaponMods` 36198), then
+  `LootManager.SpawnItemDropOfManyItems(player, [DropInstruction], n"playerDropBag",
+position)` (202210), which presumably moves the items out of `player`'s
+  inventory into one bag. `GameInstance.GetLootManager` (14188). Which
+  class the `playerDropBag` spawns (`gameLootBag` 298042 or
+  `gameItemDropObject` 294978, a `gameLootObject`) is unknown: tandem
+  watches both with Codeware's `Entity/Attach` callback. [2.5-untested]
+- **Making the same item in another game**: `ItemID.GetRngSeed(id)` and
+  `ItemID.CreateFromSeedWithOffset(record, seed, 0)` (53824-53828);
+  `ItemID.GetStructure(id)` tells a unique item (`gamedataItemStructure.Unique` 2) from a stackable one (`ItemID.FromTDBID`). Whether offset 0 gives back
+  the same stats is unknown; crafting upgrades (stat modifiers on the item
+  data) are not in the seed. [2.5-untested]
+- **Picking up** from a bag or drop is native (no script hook before the
+  transfer); `gameItemDropObject` sees it after the fact
+  (`OnItemRemoveddEvent` 295221, `OnInventoryEmptyEvent` 295198). "Take
+  all" on a corpse is `TransactionSystem.TransferAllItems(body, player)`
+  (22557, 52091). [2.5-untested]
+- **Every item our V gets** passes through
+  `PlayerPuppet.OnItemAddedToInventory(evt: ItemAddedEvent)` (41260:
+  `itemID`, `itemData`, `currentQuantity`, `flaggedAsSilent`), which also
+  writes the pickup log; tandem wraps it to share important items. What
+  makes one important: `gameItemData.HasTag(n"Quest")`, item type
+  `gamedataItemType.Gen_Keycard` (`RPGManager.GetItemType`, 36087), or
+  `RPGManager.IsItemIconic` (the `IsItemIconic` stat, 35655); bought ones
+  carry the stat `ItemPurchasedAtVendor` (41291). `TransactionSystem.GiveItem`
+  (52046) adds an item the way loot does (the same event). [2.5-untested]
+- **Rewards**: `RPGManager.GiveReward(gi, rewardID)` (37406) pays a reward
+  record's items, XP (street cred included) and currencies, scaled by the
+  receiving V. [2.5-untested]
+
+### 13.20 Down, revive, respawn: the levers (2026-11-18, read in final.reds, not run)
+
+Used by `scripts/tandem/Revive.reds`; every line is [2.5-untested] until
+the `revive-*` scenarios pass.
+
+- Second Heart keeps V alive with a god-mode **override**, not a source:
+  `SecondHeartStatListener.OnStatChanged` (243476) calls
+  `GodModeSystem.EnableOverride(V, Immortal, n"SecondHeart")` /
+  `DisableOverride(V, n"SecondHeart")` (natives at 87686-87688). A plain
+  `AddGodMode` on V did not protect it (§13.11): tandem uses its own
+  override source. [2.5-untested]
+- With that health floor, `DeathDecisions.EnterCondition` (528038) enters
+  the death state when `HasSecondHeart` and health <= 1.1 % (and V is not
+  Invulnerable); otherwise only at the minimum or `GetIsDead`. Wrapping it
+  lets a co-op floor enter the same way. [2.5-untested]
+- `DeathEvents.OnEnter` (527754) → `HighLevelTransition.StartDeathEffects`
+  (283766): custom death animation, `ForceTemporaryUnequip`, `Vitals = 1`,
+  `global_death_enter` / `ui_death` sounds, then
+  `SetIsResurrectionAllowedBasedOnState` (283786): Second Heart allowed
+  (`ForcePreventResurrect == 0`, `HasSecondHeart`, not `DeathLand`, no
+  `BaseStatusEffect.ForceKill`) sets the permanent parameter
+  `isResurrectionAllowed`; else `DisplayDeathMenu = true` (unless the
+  `block_death_menu` fact) and health to 0. [2.5-untested]
+- `DeathDecisionsWithResurrection.ToResurrect` (528472): allowed and
+  3 s (`stateDuration`) in the state. Holding it false keeps V in the
+  death state with no menu; letting it go runs `ResurrectEvents` (529013:
+  applies `BaseStatusEffect.SecondHeart`, `Vitals = 2`, `PlayerResurrect`
+  anim event; on exit a `ResurrectEvent` → `PlayerPuppet.OnResurrected`
+  45083, health 100 %, or 20 % `IsMultiplayer()`). `ResurrectDecisions`
+  (528747) leaves when the `SecondHeart` effect has run out. Whether that
+  effect also starts the cyberware's cooldown is unknown. [2.5-untested]
+- No `gameDeathEvent` while Immortal, so none of `PlayerPuppet.OnDeath`
+  (45314: `BlockAllMenu`, autosaves invalidated) happens to a downed V.
+  [2.5-untested]
+- Vanilla multiplayer's downed player: `PlayerPuppet.OnIncapacitated`
+  (45051) enables the `Revive` interaction layer (on the player entity:
+  our NPC-template puppet has none) and makes it a `Deadbody` to senses;
+  `RefreshCPOVisionAppearance` (45061) outlines another client's
+  incapacitated player through walls (`VisionAppearance{fill 1, outline
+4, showThroughWalls}`, `VisionModeSystem.ForceVisionAppearance` /
+  `CancelForceVisionAppearance`, 49958). The `Revive` choice handler is
+  `ScriptedPuppet.OnInteraction` (22542). [2.5-untested]
+- An interaction prompt without an interaction component: write
+  `UIInteractions.InteractionChoiceHub` (`InteractionChoiceHubData{id,
+active, title, choices}`, 243011; `InteractionChoiceData{inputAction,
+isHoldAction, localizedName}`, 390126) and `VisualizersInfo{activeVisId,
+visIds}` (390208): the interaction widget (394589) shows the buttons
+  only while `activeVisId` is the hub's id. Input: `GameObject.
+RegisterInputListener(listener, n"Choice1")` (11423) and the listener's
+  `OnAction(ListenerAction, ListenerActionConsumer)` with
+  `IsButtonJustPressed` / `IsButtonJustReleased` (192853). [2.5-untested]
+- The HUD progress bar: `UI_HUDProgressBar` (195213) `Header`,
+  `BottomText`, `CompletedText`, `MessageType` (a `SimpleMessageType`
+  variant), `Progress` 0..1, `Active` (the Twintone scan drives it so,
+  451258). [2.5-untested]
+- `BaseStatusEffect.PlayerInvulnerable` is what Bloodswell puts on V
+  (307839). `PlayerPuppet.SetInvisible` (43505) toggles V's visible object
+  (what NPC senses see). [2.5-untested]
+
+### 13.21 An NPC's animation state, for a brain-off proxy (2026-11-18, scripts only)
+
+What tandem's NPC animation sync (`scripts/tandem/NpcAnims.reds`) relies
+on. Read in `final.reds` (2.50) and Codeware's scripts; none of it run yet:
+all [2.5-untested].
+
+- **The states an NPC's graph reads** live in `NPCStatesComponent`
+  (`final.reds:167844`) as the native replicated integers (§3.1 of
+  coop-npcs-combat.md) and in the `PuppetState` blackboard, read with
+  `ScriptedPuppet.GetHighLevelStateFromBlackboard`,
+  `GetUpperBodyStateFromBlackboard`, `GetStanceStateFromBlackboard`
+  (`:20698-20722`). Applying one (`ChangeHighLevelState` `:168077`,
+  `UpdateHighLevelState` `:168168`, `UpdateUpperBodyState` `:168454`,
+  `UpdateStanceState` `:168839`) is: an `AnimFeature_NPCState {state}`
+  under the component's private feature names
+  (`m_highLevelAnimFeatureName`, `m_upperBodyAnimFeatureName`,
+  `m_stanceAnimFeatureName`), anim wrappers by state
+  (`GetAnimWrapperNameBasedOnHighLevelState` `:167984`:
+  `alertedLocomotion`, `combatLocomotion`, `stealthLocomotion`; by stance
+  `:167998`: `inCrouch`, `inCover`, `inSwim`, `inVehicle`), the blackboard,
+  and `AnimationSystem.EnterCombatMode/ExitCombatMode`
+  (`HandleCombatStateAnimHint` `:168190`). The upper body's graph value is
+  its own numbering (`GetUpperBodyStateForAnimGraph` `:168491`: Aim 1 …
+  Shoot 9). The public path (`NPCPuppet.ChangeHighLevelState` `:126331`)
+  goes through the AI signal table, and its high-level change also plays
+  combat VO, changes senses presets and queues a
+  `gameHighLevelStateDataEvent` **on the local player** (`:168088`): a
+  proxy must not take that path. An `@addMethod(NPCStatesComponent)`
+  reaches the private names and helpers.
+- **Shots**: every NPC (and turret) shot is `AIWeapon.Fire` (static,
+  `:173136`; callers `:155212`, `:171583`); `OnStopShooting` plays
+  `gamedataFxAction.ExitShoot` (`:173113`). A guest plays a shot with
+  `WeaponObject.TriggerWeaponEffects(weapon, Shoot)` as for players
+  ([2.5-verified] on player puppets, §Weapons in ARCHITECTURE).
+- **Target**: `TargetTrackerComponent.GetTopHostileThreat(onlyVisible, out
+TrackedLocation) -> Bool` (`:156469`), `TrackedLocation.entity`.
+  An NPC turns its head and chest with a `LookAtAddEvent` (`:172727`;
+  `SetEntityTarget(entity, n"pla_default_tgt", offset)`, `bodyPart
+n"Eyes"`, extra parts Head/Chest, as `ReactionComponent` does at
+  `:147434`), removed with `LookAtRemoveEvent.QueueRemoveLookatEvent`
+  (`:174614`). No AI needed: it is an animation request.
+- **Workspots**: `WorkspotGameSystem` (`:53211`): `IsActorInWorkspot`,
+  `PlayNpcInWorkspot(npc, master, referenceEntity, actorDataCompName, opt
+syncSlotName, opt slideTime)` (`:53330`; vanilla plays it on a dead or
+  unconscious body for body disposal, `:92662`, `:210081`: no brain
+  needed), `SendJumpCommandEnt(actor, entryId, instant)`,
+  `SendJumpToAnimEnt`, `SendSlowExitSignal`, `StopNpcInWorkspot`.
+  `ExtendedWorkspotInfo` (`:319157`) has only flags. Codeware adds
+  `WorkspotGameSystem.GetWorkspotInstance(actorID) ->
+workWorkspotInstance {resource, animName, idleAnim, entryId}`
+  (`scripts/World/WorkspotSystem.reds`), `CResource.path`, `ResRef.resource`
+  with `ResourceAsyncRef.GetHash`: the resource's depot path hash, the same
+  in every copy of the game. `WorkspotStartedEvent.nodeId: GlobalNodeID`
+  (`:250074`) names the workspot's world node, unused so far.
+- **A workspot to play from**: `WorkspotResourceComponent` (`:105125`, an
+  `IPlacedComponent`; Codeware exposes `workspotResource: ResourceAsyncRef`).
+  Codeware's `Entity.AddComponent` only appends to the components array, so
+  it must run before the entity initializes: tandem adds one in the
+  `Entity/Assemble` callback of entities tagged `Tandem.Proxy`. Redscript
+  cannot build a `ResourceAsyncRef` from a hash: the plugin writes it
+  (`TandemNative.SetResourcePath`, by RTTI property name and type
+  `ResourceAsyncReference`). To check in game: that the component added at
+  assembly is initialized, that an unparented placed component's local
+  transform is its world transform, that `PlayNpcInWorkspot` takes the
+  proxy as its own master and reference entity, and that the movement
+  controller (kept still meanwhile) does not fight the workspot.
+
+### 13.22 Every way a V moves: the signals, and NPC bodies in water (2026-11-18, scripts and exe read)
 
 Read from the 2.50 scripts (`final.reds` line numbers) and the exe on
 disk; none of it run in game yet. Used by `core/include/tandem/movement.hpp`

@@ -86,10 +86,13 @@ public class TandemSystem extends ScriptableSystem {
   private let m_pause: ref<TandemPause>;
   private let m_radio: ref<TandemRadio>;
   private let m_time: ref<TandemTime>;
+  private let m_travel: ref<TandemTravel>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
   // Stealth, detection and combat per player, camo, noises (Stealth.reds).
   private let m_stealth: ref<TandemStealth>;
+  // Down, revive, respawn (Revive.reds).
+  private let m_revive: ref<TandemRevive>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
   private let m_testNpcs: array<EntityID>;
   private let m_testHostile: array<EntityID>;
@@ -160,12 +163,16 @@ public class TandemSystem extends ScriptableSystem {
     this.m_radio.Start(this.GetGameInstance());
     this.m_time = new TandemTime();
     this.m_time.Start(this.GetGameInstance());
+    this.m_travel = new TandemTravel();
+    this.m_travel.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
     this.m_attitudes = new TandemAttitudes();
     this.m_attitudes.Start(this.GetGameInstance());
     this.m_stealth = new TandemStealth();
     this.m_stealth.Start(this.GetGameInstance());
+    this.m_revive = new TandemRevive();
+    this.m_revive.Start(this.GetGameInstance(), this);
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -192,6 +199,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_stealth.End();
     }
     this.m_stealth = null;
+    if IsDefined(this.m_revive) {
+      this.m_revive.Stop();
+    }
+    this.m_revive = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -204,6 +215,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_time) {
       this.m_time.Stop();
       this.m_time = null;
+    }
+    if IsDefined(this.m_travel) {
+      this.m_travel.Stop();
+      this.m_travel = null;
     }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
@@ -252,6 +267,15 @@ public class TandemSystem extends ScriptableSystem {
     return out;
   }
 
+  // Fast travel together and regroup (Travel.reds).
+  public func Travel() -> ref<TandemTravel> {
+    return this.m_travel;
+  }
+
+  public func Revive() -> ref<TandemRevive> {
+    return this.m_revive;
+  }
+
   public func Tick() -> Void {
     if !this.m_inGame {
       return;
@@ -283,6 +307,11 @@ public class TandemSystem extends ScriptableSystem {
       this.m_stealth.Tick(this.Now(), this.m_you, this.m_npcs);
     }
     TandemHacks.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
+    // Grapples, takedowns, carried bodies (Takedowns.reds); 0: not in a session.
+    TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
+    if IsDefined(this.m_revive) && this.m_playing {
+      this.m_revive.Tick(this.Now(), this.m_you);
+    }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
     }
@@ -292,6 +321,9 @@ public class TandemSystem extends ScriptableSystem {
     // The car radio (Radio.reds): the driver's for everyone aboard.
     if IsDefined(this.m_radio) && this.m_playing {
       this.m_radio.Tick(this.Now(), this);
+    }
+    if IsDefined(this.m_travel) && this.m_playing {
+      this.m_travel.Tick(this.Now(), this.m_you);
     }
 
     this.TickAttitudes();
@@ -387,6 +419,8 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.PoseHook();
     } else if Equals(command, "npc count") {
       TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0)");
+    } else if Equals(command, "npc anims") {
+      TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
     } else if Equals(command, "proxy clear") {
       for test in this.m_proxyTests {
         GameInstance.GetDynamicEntitySystem().DeleteEntity(test.id);
@@ -429,6 +463,8 @@ public class TandemSystem extends ScriptableSystem {
         let at = npc.GetWorldPosition();
         TandemNative.Log(s"npcs: \(EntityID.ToDebugStringDecimal(id)) static \(EntityID.IsStatic(id)) \(TDBID.ToStringDEBUG(npc.GetRecordID())) \(NameToString(npc.GetCurrentAppearanceName())) at (\(at.X), \(at.Y), \(at.Z))");
       }
+    } else if StrBeginsWith(command, "loot") {
+      TandemLoot.Command(this.GetGameInstance(), command);
     } else if Equals(command, "puppet attitude") {
       this.ReportAttitudes();
     } else if StrBeginsWith(command, "puppet group") {
@@ -531,6 +567,8 @@ public class TandemSystem extends ScriptableSystem {
         }
       }
       TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
+    } else if StrBeginsWith(command, "takedown") {
+      TandemTakedowns.Get(this.GetGameInstance()).Command(command);
     } else if Equals(command, "vehicle clear") {
       // (experiment) delete the parked car copies: this froze the game
       // (engine-knowledge §13.6); run tools/game.sh bt if it does again.
@@ -701,10 +739,19 @@ public class TandemSystem extends ScriptableSystem {
         ArrayPush(this.m_joins, join);
       }
       this.RemoveAllPuppets();
+    } else if Equals(command, "travel") || StrBeginsWith(command, "regroup") {
+      if IsDefined(this.m_travel) {
+        this.m_travel.Command(command);
+      }
     } else if Equals(command, "markers") {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {
       this.RemoveAllPuppets();
+    } else if StrBeginsWith(command, "revive") {
+      // Revive.reds: revive down | hold | report.
+      if IsDefined(this.m_revive) {
+        this.m_revive.Command(command);
+      }
     } else if StrBeginsWith(command, "story") || StrBeginsWith(command, "quest") {
       // Story.reds: story …, quest freeze on|off, quest report.
       TandemStorySystem.Get(this.GetGameInstance()).Command(command);
@@ -796,6 +843,12 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // The host NPC a proxy in our world stands for (0: none; Combat.reds).
+  // The proxy of a host NPC in our world, alive or dead (Loot.reds).
+  public func ProxyOfNpc(npc: Uint32) -> EntityID {
+    let none: EntityID;
+    return IsDefined(this.m_npcs) ? this.m_npcs.ProxyEntity(npc) : none;
+  }
+
   public func NpcOfProxy(id: EntityID) -> Uint32 {
     return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfProxy(id) : 0u;
   }
@@ -976,6 +1029,9 @@ public class TandemSystem extends ScriptableSystem {
           break;
         case 4:
           this.m_you = event.player;
+          if IsDefined(this.m_revive) {
+            this.m_revive.InSession();
+          }
           break;
         case 3:
           TandemNative.Log(s"session ended: \(event.name)");
@@ -989,6 +1045,9 @@ public class TandemSystem extends ScriptableSystem {
           }
           if IsDefined(this.m_stealth) {
             this.m_stealth.End();
+          }
+          if IsDefined(this.m_revive) {
+            this.m_revive.SessionEnded();
           }
           break;
         default:

@@ -36,6 +36,10 @@ float GroundDistance(const proto::Vec3 &a, const proto::Vec3 &b) {
   return std::hypot(b.x - a.x, b.y - a.y);
 }
 
+float Distance(const proto::Vec3 &a, const proto::Vec3 &b) {
+  return std::hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+}
+
 // Seconds between two host times: only differences become floating point.
 float Seconds(std::uint64_t from, std::uint64_t to) {
   return to >= from ? static_cast<float>(to - from) / 1e6f : -static_cast<float>(from - to) / 1e6f;
@@ -131,6 +135,20 @@ View Track::At(std::uint64_t nowHostUs) {
     const auto &a = m_samples[i];
     const auto &b = m_samples[i + 1];
     const float span = Seconds(a.timeUs, b.timeUs);
+    const float jump = Distance(a.state.position, b.state.position);
+    if (jump > kTeleportDistance && jump > kTeleportSpeed * span) {
+      // A teleport: where it was until then (b takes over once reached).
+      view.position = a.state.position;
+      view.yaw = YawOf(a.state.orientation);
+      view.stance = a.state.stance;
+      view.flags = a.state.flags;
+      const float dt =
+          m_lastViewUs ? std::clamp(Seconds(m_lastViewUs, nowHostUs), 0.f, 0.25f) : 1.f;
+      m_lastViewUs = nowHostUs;
+      m_speed -= m_speed * std::min(1.f, dt * kSpeedFollowPerSecond);
+      view.speed = m_speed;
+      return view;
+    }
     const float t = std::clamp(Seconds(a.timeUs, render) / span, 0.f, 1.f);
     view.position = Lerp(a.state.position, b.state.position, t);
     view.yaw = LerpAngle(YawOf(a.state.orientation), YawOf(b.state.orientation), t);
@@ -139,10 +157,14 @@ View Track::At(std::uint64_t nowHostUs) {
     view.flags = nearest.flags;
     measured = GroundDistance(a.state.position, b.state.position) / span;
   } else {
-    // Past the newest state: carry on along its velocity for a moment, then hold.
+    // Past the newest state: carry on along its velocity for a moment, then
+    // hold. A teleport's velocity (the jump over one sample) is not motion.
+    const auto &sent = last.state.velocity;
+    const bool moving = std::hypot(sent.x, sent.y, sent.z) <= kTeleportSpeed;
+    const proto::Vec3 v = moving ? sent : proto::Vec3{};
     const float ahead = std::min(Seconds(last.timeUs, render), kExtrapolateUs / 1e6f);
-    const auto &v = last.state.velocity;
-    const float fall = movement::PlacementOf(last.state.flags) == movement::Placement::Air
+    // In the air it keeps falling (not across a teleport).
+    const float fall = moving && movement::PlacementOf(last.state.flags) == movement::Placement::Air
                            ? 0.5f * kAirGravity * ahead * ahead
                            : 0.f;
     view.position = {last.state.position.x + v.x * ahead, last.state.position.y + v.y * ahead,
