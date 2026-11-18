@@ -29,15 +29,21 @@ std::filesystem::path PluginDirectory(RED4ext::v1::PluginHandle handle) {
 // Every frame of the running game, on the game thread, also while the world
 // is paused (scripts' delayed callbacks then stand still): the pause script
 // follows the other players' pause menus (scripts/tandem/Pause.reds), and
-// can let go of a pause from there.
+// can let go of a pause from there; the time script (scripts/tandem/Time.reds)
+// takes back, within the frame, a time dilation that would slow the shared
+// world.
 bool OnRunningUpdate(RED4ext::CGameApplication *) {
   if (!tandem::plugin::Runtime::Get().Started())
     return false;
-  static bool reported = false;
+  static bool reported = false, timeReported = false;
   Red::ScriptGameInstance game;
   if (!Red::CallStatic("TandemPause", "Frame", game) && !reported) {
     reported = true;
     tandem::plugin::log::Warn("pause: TandemPause.Frame could not be called: no shared pause");
+  }
+  if (!Red::CallStatic("TandemTime", "Frame", game) && !timeReported) {
+    timeReported = true;
+    tandem::plugin::log::Warn("time: TandemTime.Frame could not be called: no time rules");
   }
   return false; // ignored for the running state
 }

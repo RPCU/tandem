@@ -79,6 +79,7 @@ public class TandemSystem extends ScriptableSystem {
   private let m_rideCar: EntityID;
   private let m_world: ref<TandemWorld>;
   private let m_pause: ref<TandemPause>;
+  private let m_time: ref<TandemTime>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
@@ -145,6 +146,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_world.Start(this.GetGameInstance());
     this.m_pause = new TandemPause();
     this.m_pause.Start(this.GetGameInstance());
+    this.m_time = new TandemTime();
+    this.m_time.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
     if TandemNative.IsProbe() {
@@ -173,6 +176,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_pause.Stop();
       this.m_pause = null;
     }
+    if IsDefined(this.m_time) {
+      this.m_time.Stop();
+      this.m_time = null;
+    }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
       this.m_bodies = null;
@@ -195,6 +202,30 @@ public class TandemSystem extends ScriptableSystem {
   // since this tick stands still while the world is paused.
   public func PauseSync() -> ref<TandemPause> {
     return this.m_pause;
+  }
+
+  // Slowed time (Time.reds), also driven every frame by the plugin.
+  public func TimeSync() -> ref<TandemTime> {
+    return this.m_time;
+  }
+
+  // Our player id in the session (0: not in one).
+  public func You() -> Uint32 {
+    return this.m_you;
+  }
+
+  // The NPCs shared in this session (host: ours; guest: the proxies).
+  public func NpcsSync() -> ref<TandemNpcs> {
+    return this.m_you != 0u ? this.m_npcs : null;
+  }
+
+  // The remote players who have a puppet here.
+  public func PuppetPlayers() -> array<Uint32> {
+    let out: array<Uint32>;
+    for puppet in this.m_puppets {
+      ArrayPush(out, puppet.player);
+    }
+    return out;
   }
 
   public func Tick() -> Void {
@@ -255,6 +286,12 @@ public class TandemSystem extends ScriptableSystem {
     this.BindPoses();
     let command = TandemNative.TakeCommand();
     if Equals(command, "") {
+      return;
+    }
+    if StrBeginsWith(command, "time ") {
+      if IsDefined(this.m_time) {
+        this.m_time.Command(command);
+      }
       return;
     }
     if Equals(command, "probe") {
@@ -759,7 +796,10 @@ public class TandemSystem extends ScriptableSystem {
     if !IsDefined(player) {
       return;
     }
-    let now = EngineTime.ToFloat(GameInstance.GetSimTime(game));
+    // Real time, not the world's: under our own slow motion (Time.reds) the
+    // world's clock runs slower, and states (host-clock stamped) would thin
+    // out and carry a velocity too high.
+    let now = EngineTime.ToFloat(GameInstance.GetEngineTime(game));
     // 30 states a second.
     if this.m_haveLast && now - this.m_lastSampleTime < 0.0333 {
       return;
@@ -811,6 +851,9 @@ public class TandemSystem extends ScriptableSystem {
         case 3:
           TandemNative.Log(s"session ended: \(event.name)");
           this.m_you = 0u;
+          if IsDefined(this.m_time) {
+            this.m_time.End();
+          }
           this.RemoveAllPuppets();
           if IsDefined(this.m_npcs) {
             this.m_npcs.End();

@@ -20,6 +20,10 @@
 // Pause menu: --pause-at opens "its pause menu" that many seconds into the
 // session (once another player is there) for --pause-for seconds; the pause
 // states it hears are logged.
+// Sandevistan: --sandevistan-at switches "its Sandevistan" on that many
+// seconds into the session for --sandevistan-for seconds, at
+// --sandevistan-scale: the host slows the NPCs around its V (time bubble);
+// the time abilities it hears are logged.
 // Body pose: mirror and front echo your V's pose; --pose FILE (a .tpose made by
 // tools/re/pose_export.py from a recording) plays a recorded pose instead, in
 // a loop, with any mode.
@@ -70,11 +74,14 @@ struct Options {
   // host: the world the game follows (time of day, weather name); unset: none sent
   std::optional<int> timeOfDayMinutes;
   std::string weather;
-  std::string recordFile; // join: save the host's NPC messages here
-  std::string replayFile; // host: send a recording's NPC messages again
-  int pauseAtSeconds{-1}; // open the pause menu this long into the session (-1: never)
-  int pauseForSeconds{3}; // ...for this long
-  bool check{};           // parse the options, then exit
+  std::string recordFile;        // join: save the host's NPC messages here
+  std::string replayFile;        // host: send a recording's NPC messages again
+  int pauseAtSeconds{-1};        // open the pause menu this long into the session (-1: never)
+  int pauseForSeconds{3};        // ...for this long
+  int sandevistanAtSeconds{-1};  // switch a Sandevistan on this long into the session (-1: never)
+  int sandevistanForSeconds{5};  // ...for this long
+  float sandevistanScale{0.25f}; // ...asking for this world speed
+  bool check{};                  // parse the options, then exit
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -105,28 +112,33 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
 [[noreturn]] void Usage(std::string_view error = {}) {
   if (!error.empty())
     std::cerr << "tandem-peer: " << error << "\n\n";
-  std::cerr << "usage: tandem-peer host [options]\n"
-               "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
-               "  --port N           UDP port (default 27450)\n"
-               "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
-               "  --name NAME        player name (default tandem-peer)\n"
-               "  --body B           female | male: the puppet rig others see (default female)\n"
-               "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
-               "  --delay MS         mirror: extra delay before copying (default 0)\n"
-               "  --rate HZ          states sent per second (default 30)\n"
-               "  --pose FILE        play a recorded body pose (.tpose) in a loop\n"
-               "  --vehicle RECORD   drive: the car's record (default "
-               "Vehicle.v_standard2_archer_hella_player)\n"
-               "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
-               "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
-               "  --time HH:MM       host: the time of day the game must follow\n"
-               "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
-               "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
-               "  --replay FILE      host: send a recording's NPCs again, at its pace (moved by\n"
-               "                     --offset)\n"
-               "  --pause-at N       open the pause menu N seconds after another player is in the\n"
-               "                     session: every game pauses\n"
-               "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n";
+  std::cerr
+      << "usage: tandem-peer host [options]\n"
+         "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
+         "  --port N           UDP port (default 27450)\n"
+         "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
+         "  --name NAME        player name (default tandem-peer)\n"
+         "  --body B           female | male: the puppet rig others see (default female)\n"
+         "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
+         "  --delay MS         mirror: extra delay before copying (default 0)\n"
+         "  --rate HZ          states sent per second (default 30)\n"
+         "  --pose FILE        play a recorded body pose (.tpose) in a loop\n"
+         "  --vehicle RECORD   drive: the car's record (default "
+         "Vehicle.v_standard2_archer_hella_player)\n"
+         "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
+         "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
+         "  --time HH:MM       host: the time of day the game must follow\n"
+         "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
+         "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
+         "  --replay FILE      host: send a recording's NPCs again, at its pace (moved by\n"
+         "                     --offset)\n"
+         "  --pause-at N       open the pause menu N seconds after another player is in the\n"
+         "                     session: every game pauses\n"
+         "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n"
+         "  --sandevistan-at N switch a Sandevistan on N seconds after another player is in\n"
+         "                     the session: the host slows the NPCs around this V\n"
+         "  --sandevistan-for N  --sandevistan-at: switch it off after N seconds (default 5)\n"
+         "  --sandevistan-scale S  --sandevistan-at: the world speed it asks for (default 0.25)\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -194,6 +206,12 @@ Options Parse(int argc, char **argv) {
       options.pauseAtSeconds = Number<int>(value);
     else if (flag == "--pause-for")
       options.pauseForSeconds = Number<int>(value);
+    else if (flag == "--sandevistan-at")
+      options.sandevistanAtSeconds = Number<int>(value);
+    else if (flag == "--sandevistan-for")
+      options.sandevistanForSeconds = Number<int>(value);
+    else if (flag == "--sandevistan-scale")
+      options.sandevistanScale = Number<float>(value);
     else if (flag == "--hit-npcs")
       options.hitNpcsSeconds = Number<int>(value);
     else if (flag == "--drive-seconds")
@@ -561,6 +579,7 @@ int main(int argc, char **argv) {
   // --pause-at: when someone else was first there, and how far the pause got.
   std::optional<std::chrono::steady_clock::time_point> togetherSince;
   enum class PauseStep { Waiting, Paused, Done } pauseStep = PauseStep::Waiting;
+  PauseStep sandevistanStep = PauseStep::Waiting;
 
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
@@ -659,6 +678,9 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::PauseChanged>) {
               Log("player {} {} (pause menu)", e.pause.player,
                   e.pause.paused ? "paused" : "resumed");
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteTimeEffect>) {
+              Log("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
+                  e.effect.abilities, e.effect.scale);
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
               g_stop = 1;
@@ -725,6 +747,26 @@ int main(int argc, char **argv) {
         endpoint->SetLocalPaused(false);
         pauseStep = PauseStep::Done;
         Log("pause menu closed");
+      }
+    }
+    // --sandevistan-at: on, then off.
+    if (options.sandevistanAtSeconds >= 0 && sandevistanStep != PauseStep::Done) {
+      if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
+        togetherSince = now;
+      const auto at = togetherSince
+                          ? *togetherSince + std::chrono::seconds(options.sandevistanAtSeconds)
+                          : std::chrono::steady_clock::time_point::max();
+      if (sandevistanStep == PauseStep::Waiting && now >= at) {
+        endpoint->SetLocalTimeEffect(
+            {.abilities = tandem::proto::kTimeSandevistan, .scale = options.sandevistanScale});
+        sandevistanStep = PauseStep::Paused;
+        Log("sandevistan on: world speed {:.2f} around us for {} s", options.sandevistanScale,
+            options.sandevistanForSeconds);
+      } else if (sandevistanStep == PauseStep::Paused &&
+                 now >= at + std::chrono::seconds(options.sandevistanForSeconds)) {
+        endpoint->SetLocalTimeEffect({});
+        sandevistanStep = PauseStep::Done;
+        Log("sandevistan off");
       }
     }
     // --hit-npcs: one NPC at a time until it dies.

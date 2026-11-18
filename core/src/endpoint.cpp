@@ -1,6 +1,7 @@
 #include "tandem/endpoint.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace tandem {
 namespace {
@@ -8,6 +9,16 @@ constexpr std::uint64_t kPingIntervalUs = 500'000;
 // The clock offset follows the lowest-RTT ping, but forgets it slowly so a
 // route change or a drifting clock is picked up.
 constexpr std::uint64_t kRttForgetUsPerPing = 200;
+
+// What a game says of its own time ability, made safe to act on: a speed in
+// 0.05..1 (a bubble never stops NPCs, nor speeds them up), 1 without a
+// bubble ability.
+proto::TimeEffect Sanitized(proto::TimeEffect effect) {
+  if (!std::isfinite(effect.scale) || (effect.abilities & proto::kTimeBubbleAbilities) == 0)
+    effect.scale = 1.f;
+  effect.scale = std::clamp(effect.scale, 0.05f, 1.f);
+  return effect;
+}
 
 template <class... Ts> struct Overloaded : Ts... {
   using Ts::operator()...;
@@ -160,6 +171,15 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::PauseChanged{relayed});
                    },
+                   [&](const proto::TimeEffect &time) {
+                     // A guest only bends time in its own name.
+                     auto relayed = Sanitized(time);
+                     relayed.player = player;
+                     if (!NoteTime(relayed))
+                       return;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteTimeEffect{relayed});
+                   },
                    [&](const proto::Bye &) {
                      RemovePlayer(event.peer, out); // gone now, not when ENet is done
                      m_session->Disconnect(event.peer);
@@ -187,6 +207,8 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
     m_session->Broadcast(proto::Pause{player, false});
     out.push_back(events::PauseChanged{{player, false}});
   }
+  // Gone in a Sandevistan: its bubble ends for everyone.
+  EndTimeOf(player, out, true);
   out.push_back(events::PlayerLeft{player});
   BroadcastRoster();
 }
@@ -224,6 +246,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
       m_session->Broadcast(proto::Pause{player, false});
       out.push_back(events::PauseChanged{{player, false}});
     }
+    EndTimeOf(player, out, true);
     BroadcastRoster();
     SendSessionTo(peer);
     return;
@@ -264,6 +287,10 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
   for (const auto paused : m_paused)
     if (self == m_playerOfPeer.end() || paused != self->second)
       m_session->Send(peer, proto::Pause{paused, true});
+  // Who is in a Sandevistan (or another time ability) now.
+  for (const auto &[id, time] : m_timeEffects)
+    if (self == m_playerOfPeer.end() || id != self->second)
+      m_session->Send(peer, time);
 }
 
 void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &out) {
@@ -299,6 +326,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               SendLocalHeldNow();
               SendLocalSeatNow();
               SendLocalPausedNow();
+              SendLocalTimeNow();
             },
             [&](const proto::Refused &refused) {
               m_ended = true;
@@ -326,6 +354,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
                 if (!next.contains(id)) {
                   if (NotePaused(id, false))
                     out.push_back(events::PauseChanged{{id, false}});
+                  EndTimeOf(id, out, false);
                   out.push_back(events::PlayerLeft{id});
                 }
               m_players = std::move(next);
@@ -366,6 +395,11 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
+            },
+            [&](const proto::TimeEffect &time) {
+              const auto safe = Sanitized(time);
+              if (safe.player != m_you && NoteTime(safe))
+                out.push_back(events::RemoteTimeEffect{safe});
             },
             [&](const proto::Bye &bye) {
               m_ended = true;
@@ -569,6 +603,52 @@ void Endpoint::SendLocalPausedNow() {
 
 bool Endpoint::NotePaused(proto::PlayerId player, bool paused) {
   return paused ? m_paused.insert(player).second : m_paused.erase(player) > 0;
+}
+
+void Endpoint::SetLocalTimeEffect(proto::TimeEffect effect) {
+  effect = Sanitized(effect);
+  effect.player = proto::kNoPlayer;
+  if (effect == m_localTime)
+    return;
+  m_localTime = effect;
+  SendLocalTimeNow();
+}
+
+void Endpoint::SendLocalTimeNow() {
+  if (!IsJoined() || m_ended)
+    return;
+  auto mine = m_localTime;
+  mine.player = m_you;
+  // A guest that just joined has something to say only if one is on.
+  if (!NoteTime(mine))
+    return;
+  if (IsHost())
+    m_session->Broadcast(mine);
+  else
+    m_session->Send(m_hostPeer, mine);
+}
+
+bool Endpoint::NoteTime(const proto::TimeEffect &effect) {
+  const auto it = m_timeEffects.find(effect.player);
+  if (effect.abilities == 0) {
+    if (it == m_timeEffects.end())
+      return false;
+    m_timeEffects.erase(it);
+    return true;
+  }
+  if (it != m_timeEffects.end() && it->second == effect)
+    return false;
+  m_timeEffects[effect.player] = effect;
+  return true;
+}
+
+void Endpoint::EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast) {
+  const proto::TimeEffect none{.player = player};
+  if (!NoteTime(none))
+    return;
+  if (broadcast)
+    m_session->Broadcast(none);
+  out.push_back(events::RemoteTimeEffect{none});
 }
 
 std::optional<net::Stats> Endpoint::HostLinkStats() const {
