@@ -125,7 +125,7 @@ public abstract class TandemCombat {
     let electric = values.GetAttackValue(gamedataDamageType.Electric);
     let chemical = values.GetAttackValue(gamedataDamageType.Chemical);
     let flags = TandemCombat.Flags(hitEvent);
-    TandemNative.SendPlayerHit(victim, npc, physical, thermal, electric, chemical, Cast<Int32>(EnumInt(hitEvent.attackData.GetAttackType())), flags, pierce, hitEvent.hitPosition, hitEvent.hitDirection, attackId, weaponId);
+    TandemNative.SendPlayerHit(victim, npc, physical, thermal, electric, chemical, EnumInt(hitEvent.attackData.GetAttackType()), flags, pierce, hitEvent.hitPosition, hitEvent.hitDirection, attackId, weaponId);
     TandemNative.Log(s"combat: \(IsDefined(from) ? TDBID.ToStringDEBUG(GameObject.GetTDBID(from)) : "?") (npc \(npc)) hit player \(victim)'s puppet: \(physical) physical, \(thermal) thermal, \(electric) electric, \(chemical) chemical, type \(EnumInt(hitEvent.attackData.GetAttackType())), flags \(flags), sent to their game");
   }
 

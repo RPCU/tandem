@@ -1,7 +1,7 @@
 # V rides in a player's car: the car plays the driver's station, V's pocket radio goes quiet and comes back
 # shellcheck shell=bash disable=SC2317
 ensure host
-peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode drive --body male --radio radio_station_09_downtempo
+peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode drive --body female --radio radio_station_09_downtempo
 expect 'copy spawning' 30
 expect 'seated in seat_front_left' 30
 expect_peer 'car radio sent \(at the wheel\): radio_station_09_downtempo' 10

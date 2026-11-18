@@ -47,6 +47,7 @@
 #include <map>
 #include <numbers>
 #include <optional>
+#include <random>
 #include <set>
 #include <string>
 #include <string_view>
@@ -74,6 +75,10 @@ struct Options {
   int rateHz{30};
   std::string poseFile;
   std::string vehicle{"Vehicle.v_standard2_archer_hella_player"};
+  // Our own look: random clothes (so tests see a V of its own, not a copy
+  // of the other player), or an echo of theirs.
+  bool echoLook{};
+  std::optional<unsigned> lookSeed;
   int driveSeconds{0}; // drive: get out after this long (0: never)
   // drive: the car's radio (ERadioStationList index, -1 off); unset: none sent
   std::optional<int> radioStation;
@@ -136,33 +141,6 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
 [[noreturn]] void Usage(std::string_view error = {}) {
   if (!error.empty())
     std::cerr << "tandem-peer: " << error << "\n\n";
-  std::cerr << "usage: tandem-peer host [options]\n"
-               "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
-               "  --port N           UDP port (default 27450)\n"
-               "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
-               "  --name NAME        player name (default tandem-peer)\n"
-               "  --body B           female | male: the puppet rig others see (default female)\n"
-               "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
-               "  --delay MS         mirror: extra delay before copying (default 0)\n"
-               "  --rate HZ          states sent per second (default 30)\n"
-               "  --pose FILE        play a recorded body pose (.tpose) in a loop\n"
-               "  --vehicle RECORD   drive: the car's record (default "
-               "Vehicle.v_standard2_archer_hella_player)\n"
-               "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
-               "  --radio STATION    drive: the car's radio plays STATION (0-13 or its name,\n"
-               "                     radio_station_09_downtempo...; off): sent when seated and\n"
-               "                     again when a passenger gets in\n"
-               "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
-               "  --hit-you N        host: an NPC (a replayed one if any) hits each guest's V for\n"
-               "                     10 physical every N seconds\n"
-               "  --time HH:MM       host: the time of day the game must follow\n"
-               "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
-               "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
-               "  --replay FILE      host: send a recording's NPCs again, at its pace (moved by\n"
-               "                     --offset)\n"
-               "  --pause-at N       open the pause menu N seconds after another player is in the\n"
-               "                     session: every game pauses\n"
-               "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n";
   std::cerr
       << "usage: tandem-peer host [options]\n"
          "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
@@ -170,6 +148,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
+         "  --look L           random | echo: random clothes of its own (default), or a\n"
+         "                     copy of the other player's look (mirror, front)\n"
+         "  --seed N           --look random: the same outfit every time for N\n"
          "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
          "  --delay MS         mirror: extra delay before copying (default 0)\n"
          "  --rate HZ          states sent per second (default 30)\n"
@@ -177,7 +158,12 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --vehicle RECORD   drive: the car's record (default "
          "Vehicle.v_standard2_archer_hella_player)\n"
          "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
+         "  --radio STATION    drive: the car's radio plays STATION (0-13 or its name,\n"
+         "                     radio_station_09_downtempo...; off): sent when seated and\n"
+         "                     again when a passenger gets in\n"
          "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
+         "  --hit-you N        host: an NPC (a replayed one if any) hits each guest's V for\n"
+         "                     10 physical every N seconds\n"
          "  --time HH:MM       host: the time of day the game must follow\n"
          "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
          "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
@@ -286,7 +272,16 @@ Options Parse(int argc, char **argv) {
         options.radioStation = station;
       else
         Usage(std::format("--radio: no station {}", value));
-    } else if (flag == "--vehicle")
+    } else if (flag == "--look") {
+      if (value == "echo")
+        options.echoLook = true;
+      else if (value == "random")
+        options.echoLook = false;
+      else
+        Usage(std::format("unknown look {}", value));
+    } else if (flag == "--seed")
+      options.lookSeed = Number<unsigned>(value);
+    else if (flag == "--vehicle")
       options.vehicle = std::string(value);
     else if (flag == "--pose")
       options.poseFile = std::string(value);
@@ -583,6 +578,43 @@ private:
 };
 } // namespace
 
+// A look of our own: no face keys (the puppet keeps its record's face and
+// body) and one random piece per slot from clothing records the game's own
+// scripts name (their crafting specs end in _Crafting; the item is the same
+// name without it).
+tandem::proto::Appearance RandomLook(tandem::proto::Body body, unsigned seed) {
+  static const std::vector<std::vector<std::string_view>> slots = {
+      {"Items.FormalShirt_01_rich_06", "Items.FormalShirt_02_basic_03",
+       "Items.LooseShirt_01_rich_02", "Items.Fixer_01_Set_TShirt"},
+      {"Items.Jacket_19_basic_04", "Items.Jacket_20_basic_01", "Items.Jacket_01_rich_01",
+       "Items.Jacket_17_rich_06", "Items.Coat_01_basic_03", "Items.Coat_04_rich_02",
+       "Items.FormalJacket_02_basic_02", "Items.FormalJacket_04_basic_02"},
+      {"Items.Pants_02_basic_01", "Items.Pants_04_basic_01", "Items.Pants_08_rich_01",
+       "Items.FormalPants_02_rich_01", "Items.FormalPants_03_rich_02",
+       "Items.FormalSkirt_01_rich_01", "Items.FormalSkirt_02_rich_03"},
+      {"Items.Boots_03_basic_02", "Items.Boots_07_basic_01", "Items.Boots_09_rich_01",
+       "Items.CasualShoes_01_basic_01", "Items.CasualShoes_02_basic_01",
+       "Items.CasualShoes_05_basic_03", "Items.FormalShoes_01_rich_02",
+       "Items.FormalShoes_03_rich_01"},
+      // Head and face: sometimes nothing.
+      {"", "", "Items.Cap_02_basic_01", "Items.Cap_03_rich_02", "Items.Hat_02_rich_02",
+       "Items.Hat_03_basic_02"},
+      {"", "", "Items.Glasses_01_basic_03", "Items.Glasses_03_basic_06"},
+  };
+  std::mt19937 random(seed);
+  tandem::proto::Appearance look{.body = body};
+  std::string picked;
+  for (const auto &slot : slots) {
+    const auto name = slot[random() % slot.size()];
+    if (name.empty())
+      continue;
+    look.items.push_back(TweakDBID(name));
+    picked += std::format(" {}", name.substr(6));
+  }
+  Log("our look: random (seed {}):{}", seed, picked);
+  return look;
+}
+
 int main(int argc, char **argv) {
   const auto options = Parse(argc, argv);
   if (options.check) {
@@ -601,6 +633,9 @@ int main(int argc, char **argv) {
     std::cerr << "tandem-peer: " << error << '\n';
     return 1;
   }
+  if (!options.echoLook)
+    endpoint->SetLocalAppearance(
+        RandomLook(options.body, options.lookSeed.value_or(std::random_device{}())));
   if (options.host)
     Log("hosting on UDP {} as {}", options.port, options.name);
   else
@@ -721,7 +756,8 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteAppearance>) {
               Log("look from player {}: {} keys, {} items", e.appearance.player,
                   e.appearance.look.size(), e.appearance.items.size());
-              if (options.mode == Mode::Mirror || options.mode == Mode::Front) {
+              if (options.echoLook &&
+                  (options.mode == Mode::Mirror || options.mode == Mode::Front)) {
                 auto echo = e.appearance;
                 echo.body = options.body;
                 endpoint->SetLocalAppearance(std::move(echo));

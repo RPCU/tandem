@@ -1,7 +1,7 @@
 # As a guest of a replayed host whose NPC shoots it every 2 s: each hit runs on our V by our game's rules and lowers its health
 # shellcheck shell=bash disable=SC2317
 ensure join
-peer host --mode idle --body male --replay recordings/npcs.rec --hit-you 2
+peer host --mode idle --body female --replay recordings/npcs.rec --hit-you 2
 expect 'in the session as player' 30
 expect 'npcs: guest, own crowd off' 20
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30

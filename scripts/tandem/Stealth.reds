@@ -386,7 +386,7 @@ public class TandemStealth {
   // Guest: a stimulus our V gave out, to the host (each type at most ten
   // times a second).
   public func OwnNoise(stim: gamedataStimType, radius: Float, propagation: Bool) -> Void {
-    let kind = Cast<Int32>(EnumInt(stim));
+    let kind: Int32 = EnumInt(stim);
     if kind < 0 || kind >= ArraySize(this.m_noiseAt) {
       return;
     }
