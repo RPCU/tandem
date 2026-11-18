@@ -212,4 +212,11 @@ public native class TandemNative extends IScriptable {
   public static native func PoseLoop(player: Uint32)
   public static native func PoseStreamReport()
   public static native func Log(text: String)
+  // Invites through tandem-relay: the host's join code ("K7Q-2M9", "" none
+  // yet or no relay), the relay link's state ("" no relay, "connecting",
+  // "ready", else the problem), and joining by a typed code (false: not a
+  // code, or no relay in tandem.ini; starts now, or with the next game).
+  public static native func RelayCode() -> String
+  public static native func RelayStatus() -> String
+  public static native func JoinByCode(code: String) -> Bool
 }
