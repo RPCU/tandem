@@ -66,6 +66,17 @@ public:
   void Stop();
   bool Started() const;
 
+  // tandem-relay, net thread -> game thread: the host's join code to show
+  // ("K7Q-2M9", "" none yet or no relay) and what the link is doing (""
+  // no relay, "connecting", "ready", else what went wrong).
+  void SetRelay(std::string code, std::string status);
+  std::string RelayCode() const;
+  std::string RelayStatus() const;
+  // Game thread: be the guest of the session `code` names, through
+  // tandem.ini's relay. A running session is left for it at once; else it
+  // starts with the next loaded game. False: not a code, or no relay.
+  bool JoinByCode(std::string_view code);
+
   // Game thread -> net thread: our V, newest only.
   void SubmitLocal(const proto::PlayerState &state);
   std::optional<proto::PlayerState> TakeLocal();
@@ -199,6 +210,8 @@ private:
 
   mutable std::mutex m_lock; // session lifecycle, local outbox, events
   std::unique_ptr<NetThread> m_net;
+  proto::Body m_body{};                   // m_lock: the last Start's
+  std::string m_relayCode, m_relayStatus; // m_lock
   std::optional<proto::PlayerState> m_local;
   std::vector<ScriptEvent> m_events;
 

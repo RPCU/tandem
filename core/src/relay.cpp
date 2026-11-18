@@ -477,7 +477,8 @@ void RelayLink::Wait(ENetSocket enet, enet_uint32 ms) {
     if (socket == ENET_SOCKET_NULL)
       return;
     ENET_SOCKETSET_ADD(set, socket);
-    highest = std::max(highest, socket);
+    if (socket > highest) // not std::max: windows.h has a max macro
+      highest = socket;
   };
   add(m_outer);
   add(m_inner);
