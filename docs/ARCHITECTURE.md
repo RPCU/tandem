@@ -1272,6 +1272,31 @@ in-game tests still owed; none of it tested in a session yet):
   - Breach timers and network dive: not handled yet (owner-local, real
     time, `research/coop-time.md` §2.7).
 
+  Since then (2026-11-18, same state: not yet run in game):
+  - _Perks and implants that slow time_ (Focus, Deadeye's reload, and
+    every `SetTimeDilationEffector`: Reflex Tuner, Synaptic Accelerator,
+    second chance) make a bubble with their own factor too, so they keep
+    their purpose; only the scanner, hit stop and deflect stay local.
+    Everything tied to slowed time was read for what still holds for its
+    user (`research/coop-perks.md` §5.1a): nothing of the game's is
+    changed, the user's own checks see what single player shows.
+  - _A bubble slows the other Vs in it_: each game slows its own V
+    (the player's own time factor, as Kerenzikov gives it; the per-entity
+    dilation if that one counts as an active dilation) by the strongest
+    bubble around it that is not its own, divided by its own ability's
+    factor. No ability: as slow as the NPCs, the owner looks very fast.
+    The same or a stronger ability: not slowed, in the bubble on an equal
+    footing. A weaker one: slowed by the ratio. Eased in and out with
+    Kerenzikov's curves. Nothing new on the wire: every game has the
+    `TimeEffect`s and where each V is. Decided: a slowed V's shots and
+    hits need nothing more (its game slows them); a V in a vehicle, dead
+    or downed is not slowed; three bubbles: the strongest; host in a
+    guest's bubble and the reverse are the same rule; the factor is
+    given back when the session or the world ends, always. Open: no
+    native sound or screen cue exists for being slowed (vanilla never
+    slows V from outside), and leaving a bubble on foot is not sticky
+    (a V at its edge can flicker between speeds: add a margin if seen).
+
   To verify in game: the bubble NPCs slow on host and guest alike, that a
   factor of 1.0 keeps Sandevistan going on the host (else 0.999 is used),
   the effect on the puppet, the projectile bullets of NPCs while a held

@@ -101,3 +101,46 @@ TEST_CASE("NPCs that go, scales that slow nothing, and the end of a session") {
   CHECK(bubbles.Clear() == std::vector<Change>{{2, 1.f}});
   CHECK(bubbles.FactorOf(2) == 1.f);
 }
+
+TEST_CASE("a bubble slows the other Vs in it by the ratio of their own ability") {
+  const std::vector<Owner> owners{{.player = 1, .scale = 0.25f, .position = {0, 0, 0}},
+                                  {.player = 2, .scale = 0.5f, .position = {20, 0, 0}},
+                                  {.player = 3, .scale = 0.1f, .position = {500, 0, 0}}};
+  struct Case {
+    tandem::proto::PlayerId player;
+    float own;
+    tandem::proto::Vec3 at;
+    float slowed;
+  };
+  const Case cases[] = {
+      {4, 1.f, {10, 0, 0}, 0.25f},  // no ability, in 1's and 2's: the strongest
+      {4, 1.f, {65, 0, 0}, 0.5f},   // only in 2's
+      {4, 1.f, {200, 0, 0}, 1.f},   // in nobody's
+      {4, 1.f, {480, 0, 0}, 0.1f},  // in 3's
+      {1, 0.25f, {0, 0, 0}, 1.f},   // an owner is never slowed by its own, nor by a weaker one
+      {2, 0.5f, {20, 0, 0}, 0.5f},  // a weaker ability: slowed by the ratio 0.25 / 0.5
+      {4, 0.25f, {10, 0, 0}, 1.f},  // the same strength: an equal footing
+      {4, 0.1f, {10, 0, 0}, 1.f},   // a stronger one: not slowed, never sped up
+      {4, 0.5f, {480, 0, 0}, 0.2f}, // 0.1 / 0.5
+      {4, -7.f, {10, 0, 0}, 1.f},   // nonsense in: clamped (0.25 / 0.05 is above 1)
+  };
+  for (const auto &c : cases)
+    CHECK(TimeBubbles::PlayerFactor(c.player, c.own, c.at, owners) == doctest::Approx(c.slowed));
+  // Three bubbles on one spot: the strongest.
+  const std::vector<Owner> three{
+      {.player = 1, .scale = 0.6f}, {.player = 2, .scale = 0.3f}, {.player = 3, .scale = 0.4f}};
+  CHECK(TimeBubbles::PlayerFactor(4, 1.f, {1, 1, 0}, three) == doctest::Approx(0.3f));
+  CHECK(TimeBubbles::PlayerFactor(2, 0.3f, {1, 1, 0}, three) == doctest::Approx(1.f));
+  CHECK(TimeBubbles::PlayerFactor(1, 0.6f, {1, 1, 0}, three) == doctest::Approx(0.5f));
+  CHECK(TimeBubbles::PlayerFactor(4, 1.f, {1, 1, 0}, {}) == 1.f);
+}
+
+TEST_CASE("an implant's factor that changes mid-effect reaches its NPCs") {
+  TimeBubbles bubbles;
+  const std::vector<Npc> npcs{{1, {3, 0, 0}}};
+  bubbles.Update(std::vector<Owner>{{.player = 2, .scale = 0.5f}}, npcs);
+  CHECK(bubbles.Update(std::vector<Owner>{{.player = 2, .scale = 0.25f}}, npcs) ==
+        std::vector<Change>{{1, 0.25f}});
+  CHECK(bubbles.Update(std::vector<Owner>{{.player = 2, .scale = 0.4f}}, npcs) ==
+        std::vector<Change>{{1, 0.4f}});
+}

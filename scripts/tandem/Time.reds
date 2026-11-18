@@ -32,16 +32,20 @@
 //     slow).
 //   * The others: that V's puppet keeps normal speed among slowed enemies,
 //     with the implant's effect on it (PuppetFx, effect name to confirm).
+// - Focus ("focusedStatePerkDilation", final.reds:542858), Deadeye's reload
+//   ("coolReloadPerkDilation", final.reds:547583) and every effector that
+//   slows time for our V (SetTimeDilationEffector, final.reds:307231: Reflex
+//   Tuner, Synaptic Accelerator, second chance; reasons learned from the
+//   wrap at the end): a bubble with their own factor, like the implants.
+// - A bubble slows the other Vs in it too, each on its own game (SlowSelf).
+// - Nothing of the game's own is changed (docs/research/coop-perks.md
+//   §5.1a): its checks see a dilation active for as long as single player.
 // - Scanner and quickhack panel ("focusMode", TimeDilationFocusModeEvents,
-//   final.reds:529159), Focus ("focusedStatePerkDilation", final.reds:542858),
-//   Deadeye's reload ("coolReloadPerkDilation", final.reds:547583), Berserk
-//   ("berserk", SetTimeDilationEffector final.reds:307231), melee hit stop
-//   ("meleeHit", final.reds:45789) and deflect/one-punch ("deflect",
-//   final.reds:39679): local only, no bubble. A guest keeps them on its
+//   final.reds:529159), melee hit stop ("meleeHit", final.reds:45789) and
+//   deflect/one-punch ("deflect", final.reds:39679): local only, no bubble. A guest keeps them on its
 //   screen; the host drops their world part (time_host = bubble). Others see the V as it is: standing, scanning.
-// - Second chance (BaseStatusEffect.SecondChancePerkTimeDilation, its
-//   dilation in TweakDB): its reason is unknown; any other global dilation
-//   left on the host is logged ("an unknown dilation") to find it.
+// - Any other global dilation left on the host is logged ("an unknown
+//   dilation").
 // - Menus, pause, time skips: not here (Pause.reds; ARCHITECTURE).
 //
 // Runs from TandemSystem.Tick, every frame once the world plays: the script
@@ -70,6 +74,17 @@ public class TandemTime {
   // Reasons taken back during their current activation (logged once each).
   private let m_taken: array<CName>;
   private let m_unknownLogged: Float;
+  // What the game asked for under each reason we follow, and the reasons
+  // of the effector dilations on our V now.
+  private let m_askedReasons: array<CName>;
+  private let m_askedScales: array<Float>;
+  private let m_effectors: array<CName>;
+  // Our V slowed by another V's bubble: on, by how much, and how (the
+  // player's own factor, or the per-entity dilation).
+  private let m_selfSet: Bool;
+  private let m_selfFactor: Float;
+  private let m_selfEntity: Bool;
+  private let m_selfChecked: Bool;
   // What we set on entities, and the bubble update's clock (real time).
   private let m_applied: array<ref<TandemTimeApplied>>;
   private let m_lastBubbles: Float;
@@ -161,17 +176,40 @@ public class TandemTime {
     let scale = 1.0;
     let stats = GameInstance.GetStatsSystem(this.m_game);
     let id = Cast<StatsObjectID>(player.GetEntityID());
+    // The factor is the one the game itself asked for (the implant's stat
+    // with every modifier on it, a perk's or an effector's own value),
+    // followed while it is on: a change mid-effect reaches the bubble.
     if times.IsTimeDilationActive(n"sandevistan") {
       abilities += 1;
-      scale = MinF(scale, TandemTime.ScaleOf(stats.GetStatValue(id, gamedataStatType.TimeDilationSandevistanTimeScale), this.TestScale()));
+      let asked = this.Asked(times, n"sandevistan", this.m_testUntil > 0.0 ? this.m_testScale : 1.0);
+      scale = MinF(scale, TandemTime.ScaleOf(stats.GetStatValue(id, gamedataStatType.TimeDilationSandevistanTimeScale), asked));
+    } else {
+      this.Forget(n"sandevistan");
     }
     if times.IsTimeDilationActive(n"kereznikov") {
       abilities += 2;
-      scale = MinF(scale, TandemTime.ScaleOf(stats.GetStatValue(id, gamedataStatType.TimeDilationKerenzikovTimeScale), 1.0));
+      let askedDodge = this.Asked(times, n"kereznikov", 1.0);
+      scale = MinF(scale, TandemTime.ScaleOf(stats.GetStatValue(id, gamedataStatType.TimeDilationKerenzikovTimeScale), askedDodge));
+    } else {
+      this.Forget(n"kereznikov");
     }
-    if times.IsTimeDilationActive(n"focusedStatePerkDilation") || times.IsTimeDilationActive(n"coolReloadPerkDilation")
-      || times.IsTimeDilationActive(n"berserk") || times.IsTimeDilationActive(n"meleeHit") || times.IsTimeDilationActive(n"deflect") {
+    // Perks and implants that slow time: Focus, Deadeye's reload, and every
+    // SetTimeDilationEffector on our V (Reflex Tuner, Synaptic Accelerator,
+    // second chance, Berserk if its record slows time...).
+    let slow = MinF(this.Slow(times, n"focusedStatePerkDilation"), this.Slow(times, n"coolReloadPerkDilation"));
+    let kept: array<CName>;
+    for reason in this.m_effectors {
+      if times.IsTimeDilationActive(reason) {
+        ArrayPush(kept, reason);
+        slow = MinF(slow, this.Slow(times, reason));
+      } else {
+        this.Forget(reason);
+      }
+    }
+    this.m_effectors = kept;
+    if slow < 1.0 {
       abilities += 4;
+      scale = MinF(scale, slow);
     }
     if times.IsTimeDilationActive(n"focusMode") {
       abilities += 8;
@@ -199,8 +237,50 @@ public class TandemTime {
     return stat > 0.0 && stat < 1.0 ? stat : fallback;
   }
 
-  private func TestScale() -> Float {
-    return this.m_testUntil > 0.0 ? this.m_testScale : 0.25;
+  // The factor the game asked for under a reason: read while it is still
+  // there, remembered once our takeback has put the reason at normal speed.
+  private func Asked(times: ref<TimeSystem>, reason: CName, fallback: Float) -> Float {
+    let factor = times.GetActiveTimeDilation(reason, true);
+    let index = ArrayFindFirst(this.m_askedReasons, reason);
+    if factor > 0.0 && factor < 0.99 {
+      if index < 0 {
+        ArrayPush(this.m_askedReasons, reason);
+        ArrayPush(this.m_askedScales, factor);
+      } else {
+        this.m_askedScales[index] = factor;
+      }
+      return factor;
+    }
+    return index < 0 ? fallback : this.m_askedScales[index];
+  }
+
+  private func Forget(reason: CName) -> Void {
+    let index = ArrayFindFirst(this.m_askedReasons, reason);
+    if index >= 0 {
+      ArrayErase(this.m_askedReasons, index);
+      ArrayErase(this.m_askedScales, index);
+    }
+  }
+
+  // A slow-motion reason's factor while it is on (1: off).
+  private func Slow(times: ref<TimeSystem>, reason: CName) -> Float {
+    if !times.IsTimeDilationActive(reason) {
+      this.Forget(reason);
+      return 1.0;
+    }
+    return this.Asked(times, reason, 1.0);
+  }
+
+  // A SetTimeDilationEffector slowed time for our V (the wrap below): its
+  // reason is followed like the perks' until it ends.
+  public func EffectorOn(reason: CName, dilation: Float) -> Void {
+    if !IsNameValid(reason) || Equals(reason, n"sandevistan") || Equals(reason, n"kereznikov") || Equals(reason, n"focusMode") {
+      return;
+    }
+    if !ArrayContains(this.m_effectors, reason) {
+      ArrayPush(this.m_effectors, reason);
+      TandemNative.Log(s"time: effector dilation \(NameToString(reason)) at \(dilation)");
+    }
   }
 
   // Host (time_host = bubble): the world part of our V's dilations taken
@@ -213,7 +293,11 @@ public class TandemTime {
     this.Hold(times, n"focusMode", 999.0);
     this.Hold(times, n"focusedStatePerkDilation", 12.0);
     this.Hold(times, n"coolReloadPerkDilation", 3.0);
-    this.Hold(times, n"berserk", 999.0);
+    // Effector dilations end by their own unset (ActionOff) or duration;
+    // held a little at a time so one that only expires still does.
+    for reason in this.m_effectors {
+      this.Hold(times, reason, 0.5);
+    }
     this.Drop(times, n"meleeHit");
     this.Drop(times, n"deflect");
     let left = times.GetActiveTimeDilation();
@@ -233,6 +317,7 @@ public class TandemTime {
     if asked >= 0.99 {
       return;
     }
+    this.Asked(times, reason, 1.0);
     times.SetTimeDilation(reason, this.m_neutral, duration, n"None", n"None");
     if !this.m_neutralChecked {
       this.m_neutralChecked = true;
@@ -261,7 +346,7 @@ public class TandemTime {
     let owners: array<Uint32>;
     let scales: array<Float>;
     let at: array<Vector4>;
-    if (this.m_sentAbilities & 3) != 0 && this.m_sentScale < 1.0 {
+    if (this.m_sentAbilities & 7) != 0 && this.m_sentScale < 1.0 {
       ArrayPush(owners, system.You());
       ArrayPush(scales, this.m_sentScale);
       ArrayPush(at, player.GetWorldPosition());
@@ -269,7 +354,7 @@ public class TandemTime {
     for other in TandemNative.TimePlayers() {
       let scale = TandemNative.TimeScale(other);
       let spot = TandemNative.RemotePosition(other);
-      if (TandemNative.TimeAbilities(other) & 3) != 0 && scale < 1.0 && spot.W != 0.0 {
+      if (TandemNative.TimeAbilities(other) & 7) != 0 && scale < 1.0 && spot.W != 0.0 {
         ArrayPush(owners, other);
         ArrayPush(scales, scale);
         ArrayPush(at, spot);
@@ -294,6 +379,71 @@ public class TandemTime {
     let changes = TandemNative.UpdateTimeBubbles(owners, scales, at, ids, positions);
     if ArraySize(changes) > 0 {
       this.ReportBubbles(owners);
+    }
+    let own = (this.m_sentAbilities & 7) != 0 ? this.m_sentScale : 1.0;
+    this.SlowSelf(player, TandemNative.TimePlayerFactor(system.You(), own, player.GetWorldPosition(), owners, scales, at));
+  }
+
+  // Our V inside another V's bubble is slowed like the NPCs in it, unless
+  // its own ability keeps up (tandem/timebubble.hpp). Our game does it to
+  // our own V, with the player's own time factor (what Kerenzikov gives V,
+  // TimeSystem.SetTimeDilationOnLocalPlayerZero, final.reds:53870), eased
+  // in and out with Kerenzikov's curves. If the time system counts that as
+  // a dilation being active (it would bar our V's own Sandevistan, whose
+  // enter condition refuses under a foreign dilation, final.reds:523680),
+  // the per-entity dilation on V is used instead (checked once).
+  // Not slowed: a dead or downed V, and a V in a vehicle (a car has no time
+  // of its own to slow with it).
+  private func SlowSelf(player: ref<GameObject>, factor: Float) -> Void {
+    if player.IsDead() || VehicleComponent.IsMountedToVehicle(this.m_game, player) {
+      factor = 1.0;
+    }
+    if !this.m_selfSet && factor >= 0.999 || this.m_selfSet && AbsF(factor - this.m_selfFactor) < 0.01 {
+      return;
+    }
+    let times = GameInstance.GetTimeSystem(this.m_game);
+    if factor >= 0.999 {
+      this.FreeSelf();
+      TandemNative.Log("time: our V back to its own speed");
+      return;
+    }
+    if !this.m_selfEntity {
+      times.SetTimeDilationOnLocalPlayerZero(n"tandemBubble", factor, 999.0, n"KereznikovDodgeEaseIn", n"KerenzikovEaseOut");
+      if !this.m_selfChecked {
+        this.m_selfChecked = true;
+        if times.IsTimeDilationActive(n"tandemBubble") {
+          times.UnsetTimeDilationOnLocalPlayerZero(n"tandemBubble", n"None");
+          this.m_selfEntity = true;
+          TandemNative.Log("time: the player's own factor counts as an active dilation: our V is slowed as an entity instead");
+        }
+      }
+    }
+    if this.m_selfEntity {
+      let body = player as gamePuppet;
+      if IsDefined(body) {
+        body.SetIndividualTimeDilation(n"tandemBubble", factor, 999.0, n"KereznikovDodgeEaseIn", n"KerenzikovEaseOut", true, false);
+      }
+    }
+    this.m_selfSet = true;
+    this.m_selfFactor = factor;
+    TandemNative.Log(s"time: our V slowed to \(factor) (in another V's bubble)");
+  }
+
+  // Our V's own speed back: out of the bubble, and always when the session
+  // or the world ends.
+  private func FreeSelf() -> Void {
+    if !this.m_selfSet {
+      return;
+    }
+    this.m_selfSet = false;
+    this.m_selfFactor = 1.0;
+    if this.m_selfEntity {
+      let body = GetPlayer(this.m_game);
+      if IsDefined(body) && body.HasIndividualTimeDilation(n"tandemBubble") {
+        body.UnsetIndividualTimeDilation(n"KerenzikovEaseOut");
+      }
+    } else {
+      GameInstance.GetTimeSystem(this.m_game).UnsetTimeDilationOnLocalPlayerZero(n"tandemBubble", n"KerenzikovEaseOut");
     }
   }
 
@@ -389,7 +539,13 @@ public class TandemTime {
     if !IsDefined(body) {
       return false;
     }
+    // An entity has one dilation of its own: an NPC that set one itself (an
+    // enemy Sandevistan answering ours, sandevistanVersusSandevistan; a hit
+    // reaction) keeps it, as in single player, and joins when it is over.
     if body.HasIndividualTimeDilation() {
+      if !body.HasIndividualTimeDilation(n"tandemTime") {
+        return false;
+      }
       body.UnsetIndividualTimeDilation(n"None");
     }
     body.SetIndividualTimeDilation(n"tandemTime", factor, 999.0, n"None", n"None", true, false);
@@ -457,6 +613,10 @@ public class TandemTime {
 
   public func End() -> Void {
     TandemNative.ClearTimeBubbles();
+    if this.m_selfSet {
+      this.FreeSelf();
+      TandemNative.Log("time: our V back to its own speed (the session ended)");
+    }
     for applied in this.m_applied {
       this.Release(applied.id, n"None");
     }
@@ -541,6 +701,20 @@ public class TandemTime {
       let speed = (this.SimNow() - this.m_measureSim) / (now - this.m_measureFrom);
       this.m_measureFrom = 0.0;
       TandemNative.Log(s"time: world speed \(speed) over the test's first second");
+    }
+  }
+}
+
+// Implants and perks that slow time through an effector (Reflex Tuner,
+// Synaptic Accelerator, second chance...): their reasons are TweakDB data,
+// learned here as the game sets them. The effector itself is untouched.
+@wrapMethod(SetTimeDilationEffector)
+protected func ActionOn(owner: ref<GameObject>) -> Void {
+  wrappedMethod(owner);
+  if IsDefined(owner) && owner.IsPlayer() && this.m_duration != 0.0 && this.m_dilation < 1.0 {
+    let time = TandemTime.Of(owner.GetGame());
+    if IsDefined(time) {
+      time.EffectorOn(this.m_reason, this.m_dilation);
     }
   }
 }

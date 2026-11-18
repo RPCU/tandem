@@ -218,6 +218,7 @@ public native class TandemNative extends IScriptable {
   public static native func ClearTimeBubbles() -> array<TandemTimeChange>
   public static native func TimeFactorOf(npc: Uint32) -> Float
   public static native func TimeBubbleMembers(player: Uint32) -> Int32
+  public static native func TimePlayerFactor(player: Uint32, own: Float, position: Vector4, owners: array<Uint32>, scales: array<Float>, ownerPositions: array<Vector4>) -> Float
   public static native func IsTimeHostFull() -> Bool
   public static native func SendSeat(vehicle: TweakDBID, seat: CName, owner: Uint32)
   public static native func SendVehicle(position: Vector4, orientation: Quaternion, velocity: Vector4)

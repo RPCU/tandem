@@ -605,8 +605,11 @@ struct QuestReward {
 // (tandem/timebubble.hpp), and every game shows the ability on its puppet.
 inline constexpr std::uint8_t kTimeSandevistan = 1, kTimeKerenzikov = 2, kTimeSlowMo = 4,
                               kTimeScanning = 8;
-// The abilities that make a bubble; the others stay on their owner's screen.
-inline constexpr std::uint8_t kTimeBubbleAbilities = kTimeSandevistan | kTimeKerenzikov;
+// The abilities that make a bubble (kTimeSlowMo: perks and implants that
+// slow time, Focus, Deadeye, Reflex Tuner...); scanning stays on its owner's
+// screen.
+inline constexpr std::uint8_t kTimeBubbleAbilities =
+    kTimeSandevistan | kTimeKerenzikov | kTimeSlowMo;
 struct TimeEffect {
   PlayerId player{};
   std::uint8_t abilities{}; // kTime* bits (0: none)

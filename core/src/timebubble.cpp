@@ -61,6 +61,16 @@ std::vector<TimeBubbles::Change> TimeBubbles::Clear() {
   return changes;
 }
 
+float TimeBubbles::PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
+                                std::span<const Owner> owners) {
+  float strongest = 1.f;
+  for (const auto &owner : owners)
+    if (owner.player != player && owner.scale < 1.f && Near(owner.position, position))
+      strongest = std::min(strongest, std::clamp(owner.scale, 0.05f, 1.f));
+  own = std::isfinite(own) ? std::clamp(own, 0.05f, 1.f) : 1.f;
+  return std::min(1.f, strongest / own);
+}
+
 float TimeBubbles::FactorOf(proto::NpcId npc) const {
   const auto it = m_factors.find(npc);
   return it == m_factors.end() ? 1.f : it->second;

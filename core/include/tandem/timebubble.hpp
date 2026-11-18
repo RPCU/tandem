@@ -22,7 +22,14 @@
 // - a bubble ends when its V's ability does (or that player leaves): all
 //   its NPCs go back together, except those still in another bubble, which
 //   take that one's factor;
-// - an NPC that is no longer listed (gone, dead) is released.
+// - an NPC that is no longer listed (gone, dead) is released;
+// - a bubble slows the other Vs inside it too (PlayerFactor): each V's own
+//   game slows its V by the strongest bubble around it that is not its
+//   own, divided by its own ability's factor. A V with no ability is as
+//   slow as the NPCs and sees the bubble's owner move fast; one whose own
+//   ability matches or beats the bubble is not slowed and stands in it on
+//   an equal footing; a weaker one is slowed by the ratio. Not sticky: a
+//   V that walks out is free again.
 
 #include "tandem/protocol.hpp"
 
@@ -62,6 +69,11 @@ public:
   std::vector<Change> Clear();
 
   float FactorOf(proto::NpcId npc) const;
+  // How much a V is slowed by the others' bubbles (1: not at all): `own` is
+  // the world speed its own ability asks for (1: none), `owners` every V
+  // with a bubble now (itself too, ignored).
+  static float PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
+                            std::span<const Owner> owners);
   std::size_t MembersOf(proto::PlayerId owner) const;
   std::size_t Bubbles() const { return m_bubbles.size(); }
 

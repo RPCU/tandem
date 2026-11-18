@@ -612,6 +612,20 @@ struct TandemNative : Red::IScriptable {
     return ToScript(Runtime::Get().Bubbles().Clear());
   }
   static float TimeFactorOf(std::uint32_t npc) { return Runtime::Get().Bubbles().FactorOf(npc); }
+  // How much our V is slowed by the other Vs' bubbles (1: not at all): our
+  // own ability's world speed (1: none), where we are, and the Vs with a
+  // bubble as for UpdateTimeBubbles.
+  static float TimePlayerFactor(std::uint32_t player, float own, Red::Vector4 position,
+                                Red::DynArray<std::uint32_t> owners, Red::DynArray<float> scales,
+                                Red::DynArray<Red::Vector4> ownerPositions) {
+    std::vector<sync::TimeBubbles::Owner> who;
+    for (std::uint32_t i = 0; i < owners.Size() && i < scales.Size() && i < ownerPositions.Size();
+         ++i)
+      who.push_back({.player = owners[i],
+                     .scale = scales[i],
+                     .position = {ownerPositions[i].X, ownerPositions[i].Y, ownerPositions[i].Z}});
+    return sync::TimeBubbles::PlayerFactor(player, own, {position.X, position.Y, position.Z}, who);
+  }
   static std::int32_t TimeBubbleMembers(std::uint32_t player) {
     return static_cast<std::int32_t>(Runtime::Get().Bubbles().MembersOf(player));
   }
@@ -1083,6 +1097,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(ClearTimeBubbles);
   RTTI_METHOD(TimeFactorOf);
   RTTI_METHOD(TimeBubbleMembers);
+  RTTI_METHOD(TimePlayerFactor);
   RTTI_METHOD(IsTimeHostFull);
   RTTI_METHOD(RelayCode);
   RTTI_METHOD(RelayStatus);
