@@ -1707,7 +1707,8 @@ puppets' attitude group. With the mock player in front mode:
   reads back as hostile (`GameObject.GetAttitudeBetween` = 2). In the
   `player` group, hostility to the puppet made the NPC hostile to V as
   well (it shot V although set neutral to it): never put puppets in the
-  `player` group. [2.5-verified]
+  `player` group. [2.5-verified] Puppets now get groups of their own
+  (§13.12).
 - **The NPC's senses never detect the puppet**
   (`SenseComponent.GetDetection(puppetId)` stays 0 at 3–12 m in plain
   view), and `TargetTrackingExtension.InjectThreat(npc, puppet)` puts it
@@ -1753,3 +1754,63 @@ puppets' attitude group. With the mock player in front mode:
   169949). `GetThreats(false)` still read 0 while the NPC fought the
   puppet: not a usable measure of who it fights; its `CombatTarget`
   behaviour argument is. [2.5-verified]
+
+### 13.12 Attitude groups and a puppet's record traits (2026-11-18, scripts only)
+
+Read from the 2.50 scripts (`final.reds` line numbers) and the RTTI dump;
+none of it run in game yet.
+
+- **Groups are TweakDB records, relations are not part of them.**
+  `AttitudeGroup_Record` (final.reds 174676) has `name` (CName, what
+  `AttitudeAgent.GetAttitudeGroup` returns), `defaultAttitude`,
+  `attitudeToSelf` (strings), `parent`, `isState`. Relations are separate
+  `Attitude_Record`s (515340: `group1`, `group2`, `value`). V's group is
+  `Attitudes.Group_Player`, name `player` (116087). A record copied with
+  TweakXL (`Attitudes.Group_TandemPlayer1 : Attitudes.Group_Player`) gets
+  the group's own fields only, none of its relations; whether the engine
+  falls back to `parent`'s relations is unknown (not tried: a parent might
+  also share hostility). [2.5-untested]
+- **Relations at runtime**: `GameInstance.GetAttitudeSystem(game)`
+  (14160) → `AttitudeSystem.GetAttitudeRelation(a, b)` /
+  `SetAttitudeRelation(a, b, attitude)` by group name, with `Persistent`
+  variants that are saved (174691–174704; RTTI `gameCAttitudeManager`).
+  Quests and prevention change V's group relations with the persistent
+  setter (141857–141868, police and gangs towards V's current group); a
+  security system breached by someone turns its group hostile to the
+  intruder's group (114508–114537). Whether the attitude system knows a
+  group added by TweakXL (it may build its table from TweakDB at start) is
+  what `attitudes: N of 4 puppet groups declared` and the read-back
+  group in `player N: puppet in the G attitude group` will show.
+  [2.5-untested]
+- **Why one group per V**: vanilla turns an NPC hostile to its target's
+  whole group, `AttitudeAgent.SetAttitudeTowardsAgentGroup(target, owner,
+hostile)` (`TryChangingAttitudeToHostile` 169933, companions 152568);
+  `GameObject.ChangeAttitudeToHostile` is per agent (11816).
+  `GameObject.GetAttitudeBetween` asks the first object's agent
+  (`GetAttitudeTowards`, 11750). [2.5-untested]
+- **A record's group**: `Character_Record.baseAttitudeGroup` (CName,
+  19232); Panam's is `panam`. Her 2.02 record (moddocs,
+  `changing-npcs-tweak-edit-redmod.md`): base
+  `aldecaldos_grunt2_sniper2_sor22_wa_elite`, tag `Invulnerable`,
+  `voiceTag` `panam`, `statModifiers` = burning immunity,
+  `statModifierGroups` += VeryHighHealth, PanamSniperDamage,
+  FollowerDamageAgainstBosses, a Grad sniper as primary equipment, a
+  bounty draw table, `skipDisplayArchetype`. Her faction (`affiliation`,
+  from the Aldecaldos base) gives the body and its items the faction's
+  anim wrappers (24607, 126116) and is the scan's faction line (129227).
+  [2.5-untested]
+- **Companions**: `ScriptedPuppet.IsPlayerCompanion` needs the AI role
+  `Follower` and the player as `FriendlyTarget` (160150), which quests
+  give, not the record: a puppet is no companion, so
+  `SenseComponent.ShouldIgnoreIfPlayerCompanion` (156168) does not make
+  NPCs ignore it. [2.5-untested]
+- **NPC UI**: `hideUIElements` is read as a character flat
+  (`GetBoolFromCharacterTweak("hideUIElements")`): no sense mappin (the
+  detection indicator) is created (155737) and no object marker drawn
+  (406516, 406724). The stealth mappin's `HideUIDetection()` (398508,
+  native) hides the detection meter; `Character_Record.hideUIDetection`
+  exists (19260), presumably its source. [2.5-untested]
+- Left on the puppet for now: Panam's primary equipment (an NPC brain
+  entering combat could draw her Grad), her bounty draw table (a scan may
+  show her bounty; a null foreign key's `.tweak` syntax is unchecked),
+  `VeryHighHealth` (wanted: our game must not kill a remote V).

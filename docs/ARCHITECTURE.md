@@ -389,6 +389,24 @@ redscript natives (UI, events)              ENet socket
   distance text, rewritten after each native update: watch for flicker)
   and on the map tooltip, and that the marker follows a seated player's car
   copy.
+- **How NPCs see a remote V** (`scripts/tandem/Attitudes.reds`,
+  `tweaks/tandem/attitudes.tweak`, `tweaks/tandem/puppet.tweak`): every
+  puppet is in an attitude group of its own, `tandem_player_1` to `_3`
+  (one per puppet at a time; `tandem_player`, the records' own, beyond
+  that), declared as copies of the `Attitudes.Group_Player` record. A
+  group's relations to the others are not in its record: the attitude
+  system holds one per pair of groups, so the script copies V's group's
+  relations into ours for every group seen on an NPC within 60 m of V or a
+  puppet (checked every 2 s), and when V's relation to a group changes (a
+  quest), the puppets' follow. A puppet's relation that changed while V's
+  did not (a security system turned on that puppet's group) stays its own.
+  Vs are friends to each other. The puppet record drops what made it Panam:
+  her group and faction (Aldecaldos: anim wrappers, the scan's faction),
+  her voice, her burning immunity and damage presets, and shows no NPC UI
+  (`hideUIElements`, `hideUIDetection`): no detection indicator from the
+  senses Body.reds grafts. `tools/game.sh cmd puppet attitude` logs each
+  puppet's group and how the NPCs around V see it next to V; scenario
+  `puppet-attitude`. **Not yet verified in game** (engine-knowledge §13.12).
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name, pose).
 
 ## Talking to the engine safely
@@ -625,7 +643,14 @@ in-game tests still owed; none of it tested in a session yet):
   `player` group's relations (a TweakXL record), not `player` itself: in
   `player`, hostility to one V spreads to every V (§13.11). What a single
   V does (provoking a gang, crimes) changes that NPC's attitude to that V
-  only, per NPC and per player, by the game's own rules.
+  only, per NPC and per player, by the game's own rules. Done (2026-11-18,
+  to verify in game with scenario `puppet-attitude`): one group per puppet,
+  relations copied from V's at runtime (see Inside the plugin). Known
+  limits: a group seen only on devices (a turret's security system with no
+  NPC of its faction near) keeps the record's default attitude; a group
+  relation V's own deeds change (if a provocation or a security breach by
+  V changes a group relation, not a per-NPC attitude) reaches the puppets
+  too; per-NPC attitudes a quest sets towards V are not copied.
 - **Players linking up (later).** One V can send the other a request to
   connect, in the game's own style (a neural link, like jacking in with a
   partner); once the other accepts, the two share what a linked crew
@@ -667,7 +692,9 @@ in-game tests still owed; none of it tested in a session yet):
   do not see puppets at all (detection 0, injected threats ignored), so
   they cannot detect or fight a guest yet. Puppets need the components NPC
   senses look for; they must keep an attitude group of their own (in
-  `player`, hostility to one V becomes hostility to all).
+  `player`, hostility to one V becomes hostility to all): each puppet now
+  has one (`tandem_player_N`, Attitudes.reds), so hostility to one guest's
+  V reaches neither the host's V nor another guest's.
 - **Every way a V moves, on the puppet.** Walking on flat ground works; the
   rest must too: stairs and slopes, ladders, climbing and vaulting
   (mantling ledges), jumps and double jumps, falls and landings, sliding,
