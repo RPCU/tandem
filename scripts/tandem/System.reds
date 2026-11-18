@@ -33,6 +33,8 @@ public class TandemPuppet {
   // Its attitude group (Attitudes.reds), as read back once set.
   public let grouped: Bool;
   public let group: CName;
+  // Consistency (CheckPuppets): since when its player is not in the session.
+  public let orphanSince: Float;
 }
 
 // A puppet on its way out, removed over several frames: deleting a vehicle
@@ -116,6 +118,11 @@ public class TandemSystem extends ScriptableSystem {
   private let m_sentSlot: CName;
   private let m_sentOwner: Uint32;
   private let m_sentSeat: Bool;
+  // Consistency (CheckPuppets): when the puppets were last checked against
+  // the session's players, and the players without one, since when.
+  private let m_lastPuppetCheck: Float;
+  private let m_missingPlayers: array<Uint32>;
+  private let m_missingSince: array<Float>;
 
   private func OnAttach() -> Void {
     if TandemNative.IsConfigured() {
@@ -286,6 +293,9 @@ public class TandemSystem extends ScriptableSystem {
     }
     this.HandleEvents();
     this.SpawnJoined();
+    if this.m_playing && this.m_you != 0u {
+      this.CheckPuppets();
+    }
     this.DrivePuppets();
     // The car radio (Radio.reds): the driver's for everyone aboard.
     if IsDefined(this.m_radio) && this.m_playing {
@@ -384,7 +394,7 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(command, "pose hook") {
       TandemNative.PoseHook();
     } else if Equals(command, "npc count") {
-      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0)");
+      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0)");
     } else if Equals(command, "proxy clear") {
       for test in this.m_proxyTests {
         GameInstance.GetDynamicEntitySystem().DeleteEntity(test.id);
@@ -987,11 +997,89 @@ public class TandemSystem extends ScriptableSystem {
           if IsDefined(this.m_stealth) {
             this.m_stealth.End();
           }
+          ArrayClear(this.m_missingPlayers);
+          ArrayClear(this.m_missingSince);
+          break;
+        case 5:
+          // Something serious, said once (the plugin keeps it rare).
+          TandemConsistency.Notice(this.GetGameInstance(), event.name);
           break;
         default:
           break;
       }
     }
+  }
+
+  // ---- consistency (docs/ARCHITECTURE.md, Consistency) ----
+
+  // Our puppets against the session's players: a puppet whose player is no
+  // longer in the session goes; a player in it with no puppet (none on its
+  // way) gets one. Each waits 2 s first, in case the event is on its way.
+  private func CheckPuppets() -> Void {
+    let now = this.Now();
+    if now - this.m_lastPuppetCheck < 1.0 {
+      return;
+    }
+    this.m_lastPuppetCheck = now;
+    let orphans: array<Uint32>;
+    for puppet in this.m_puppets {
+      if TandemSync.InSession(puppet.player) {
+        puppet.orphanSince = 0.0;
+      } else if puppet.orphanSince <= 0.0 {
+        puppet.orphanSince = now;
+      } else if now - puppet.orphanSince >= 2.0 {
+        ArrayPush(orphans, puppet.player);
+      }
+    }
+    for player in orphans {
+      TandemNative.Log(s"consistency: puppet of player \(player) has no player in the session, removed");
+      this.RemovePuppet(player);
+    }
+    let missing: array<Uint32>;
+    let since: array<Float>;
+    for info in TandemSync.Players() {
+      if info.player != this.m_you && !this.HasPuppet(info.player) && !this.JoinPending(info.player) {
+        let first = now;
+        let i = 0;
+        while i < ArraySize(this.m_missingPlayers) {
+          if this.m_missingPlayers[i] == info.player {
+            first = this.m_missingSince[i];
+          }
+          i += 1;
+        }
+        if now - first >= 2.0 {
+          TandemNative.Log(s"consistency: player \(info.player) in the session had no puppet, spawning one");
+          let join = new TandemJoin();
+          join.player = info.player;
+          join.name = info.name;
+          join.body = info.body;
+          ArrayPush(this.m_joins, join);
+        } else {
+          ArrayPush(missing, info.player);
+          ArrayPush(since, first);
+        }
+      }
+    }
+    this.m_missingPlayers = missing;
+    this.m_missingSince = since;
+  }
+
+  private func HasPuppet(player: Uint32) -> Bool {
+    for puppet in this.m_puppets {
+      if puppet.player == player {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private func JoinPending(player: Uint32) -> Bool {
+    for join in this.m_joins {
+      if join.player == player {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Joins wait for V's bodies (their donors are captured in the first second).

@@ -101,6 +101,10 @@ void Runtime::Stop() {
     m_stealth.clear();
     m_localNoises.clear();
     m_remoteNoises.clear();
+    m_sharedNpcs.clear();
+    m_roster.clear();
+    m_epochRequest.reset();
+    m_overflows = 0;
     m_hackOutbox.clear();
     m_hackEvents.clear();
     m_localPaused.reset();
@@ -228,12 +232,20 @@ void Runtime::PushRemoteShot(const proto::Shot &shot) {
   std::lock_guard _(m_lock);
   // Scripts drain these every frame; a pile-up means nobody is listening.
   if (m_remoteShots.size() < 256)
-    m_remoteShots.push_back(shot);
+    m_remoteShots.push_back({shot, net::NowUs()});
+  else
+    ++m_overflows;
 }
 
 std::vector<proto::Shot> Runtime::TakeRemoteShots() {
   std::lock_guard _(m_lock);
-  return std::exchange(m_remoteShots, {});
+  // A shot half a second old (a loading screen, a stall) is not drawn: a
+  // burst of muzzle flashes at once would be wrong.
+  consistency::DropStale(m_remoteShots, net::NowUs(), 500'000);
+  std::vector<proto::Shot> out;
+  for (const auto &shot : std::exchange(m_remoteShots, {}))
+    out.push_back(shot.value);
+  return out;
 }
 
 void Runtime::SubmitLocalSeat(const proto::Seat &seat) {
@@ -440,12 +452,21 @@ void Runtime::SubmitPlayerHit(const proto::PlayerHit &hit) {
 void Runtime::PushPlayerHit(const proto::PlayerHit &hit) {
   std::lock_guard _(m_lock);
   if (m_playerHits.size() < 256)
-    m_playerHits.push_back(hit);
+    m_playerHits.push_back({hit, net::NowUs()});
+  else
+    ++m_overflows;
 }
 
 std::vector<proto::PlayerHit> Runtime::TakePlayerHits() {
   std::lock_guard _(m_lock);
-  return std::exchange(m_playerHits, {});
+  // Hits that waited behind a loading screen or a stall are not applied:
+  // every queued hit at once would kill V the moment the world comes back.
+  if (const auto stale = consistency::DropStale(m_playerHits, net::NowUs(), 1'500'000))
+    log::Info("consistency: {} hit(s) on our V dropped, too old to apply", stale);
+  std::vector<proto::PlayerHit> out;
+  for (const auto &hit : std::exchange(m_playerHits, {}))
+    out.push_back(hit.value);
+  return out;
 }
 
 std::uint8_t Runtime::NpcDetected(proto::NpcId npc) {
@@ -473,6 +494,8 @@ void Runtime::PushNpcEvent(const NpcEvent &event) {
   std::lock_guard _(m_lock);
   if (m_npcEvents.size() < 1024)
     m_npcEvents.push_back(event);
+  else
+    ++m_overflows; // the scripts' checks put the proxies right (SharedNpcs)
 }
 
 std::vector<NpcEvent> Runtime::TakeNpcEvents() {
@@ -494,12 +517,23 @@ std::vector<proto::Message> Runtime::TakeHackOutbox() {
 void Runtime::PushHackEvent(const HackEvent &event) {
   std::lock_guard _(m_lock);
   // Scripts drain these every frame; a pile-up means nobody is listening.
-  if (m_hackEvents.size() < 512)
+  if (m_hackEvents.size() < 512) {
     m_hackEvents.push_back(event);
+    m_hackEvents.back().atUs = net::NowUs();
+  } else {
+    ++m_overflows;
+  }
 }
 
 std::vector<HackEvent> Runtime::TakeHackEvents() {
   std::lock_guard _(m_lock);
+  // An NPC's hack on our V that waited behind a loading screen is void (its
+  // netrunner is likely gone); upload states and effects are state: kept.
+  const auto now = net::NowUs();
+  std::erase_if(m_hackEvents, [&](const HackEvent &event) {
+    return event.kind == HackEvent::Kind::PlayerHack && now > event.atUs &&
+           now - event.atUs > 3'000'000;
+  });
   return std::exchange(m_hackEvents, {});
 }
 
@@ -609,12 +643,94 @@ std::vector<proto::Noise> Runtime::TakeLocalNoises() {
 void Runtime::PushRemoteNoise(const proto::Noise &noise) {
   std::lock_guard _(m_lock);
   if (m_remoteNoises.size() < 64)
-    m_remoteNoises.push_back(noise);
+    m_remoteNoises.push_back({noise, net::NowUs()});
 }
 
 std::vector<proto::Noise> Runtime::TakeRemoteNoises() {
   std::lock_guard _(m_lock);
-  return std::exchange(m_remoteNoises, {});
+  // A gunshot a second old is not heard now.
+  consistency::DropStale(m_remoteNoises, net::NowUs(), 1'000'000);
+  std::vector<proto::Noise> out;
+  for (const auto &noise : std::exchange(m_remoteNoises, {}))
+    out.push_back(noise.value);
+  return out;
+}
+
+void Runtime::SetShared(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
+                        const std::map<proto::PlayerId, proto::PlayerInfo> &players) {
+  std::lock_guard _(m_lock);
+  m_sharedNpcs = npcs;
+  m_roster = players;
+}
+
+bool Runtime::IsNpcShared(proto::NpcId npc) {
+  std::lock_guard _(m_lock);
+  return m_sharedNpcs.contains(npc);
+}
+
+std::vector<proto::NpcSpawn> Runtime::SharedNpcs() {
+  std::lock_guard _(m_lock);
+  std::vector<proto::NpcSpawn> out;
+  out.reserve(m_sharedNpcs.size());
+  for (const auto &[id, spawn] : m_sharedNpcs)
+    out.push_back(spawn);
+  return out;
+}
+
+bool Runtime::InRoster(proto::PlayerId player) {
+  std::lock_guard _(m_lock);
+  return m_roster.contains(player);
+}
+
+std::vector<proto::PlayerInfo> Runtime::RosterPlayers() {
+  std::lock_guard _(m_lock);
+  std::vector<proto::PlayerInfo> out;
+  for (const auto &[id, info] : m_roster)
+    out.push_back(info);
+  return out;
+}
+
+void Runtime::RequestEpoch(std::uint8_t reason) {
+  std::lock_guard _(m_lock);
+  m_epochRequest = reason;
+}
+
+std::optional<std::uint8_t> Runtime::TakeEpochRequest() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_epochRequest, std::nullopt);
+}
+
+std::uint32_t Runtime::TakeOverflows() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_overflows, 0);
+}
+
+void Runtime::ResetSession() {
+  {
+    std::lock_guard _(m_lock);
+    m_localShots.clear();
+    m_remoteShots.clear();
+    m_npcOutbox.clear();
+    m_npcStates.reset();
+    m_npcEvents.clear();
+    m_playerHits.clear();
+    m_hackOutbox.clear();
+    m_hackEvents.clear();
+    m_npcDetected.clear();
+    m_detectingUs = 0;
+    m_npcStatesAtUs = 0;
+    m_awarenessOfUs.clear();
+    m_awarenessAtUs = 0;
+    m_localAwareness.reset();
+    m_localNoises.clear();
+    m_remoteNoises.clear();
+    m_sharedNpcs.clear();
+    m_roster.clear();
+    m_epochRequest.reset();
+  }
+  // The NPCs' tracks: the next session's ids are other NPCs.
+  std::lock_guard _(m_tracksLock);
+  std::erase_if(m_tracks, [](const auto &entry) { return entry.first >= kNpcPuppetBase; });
 }
 
 void Runtime::PushRemotePose(const proto::PoseState &pose) {

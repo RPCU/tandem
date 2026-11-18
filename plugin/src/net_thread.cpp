@@ -27,6 +27,41 @@ struct NetThread::Impl {
   // Guest through a relay: the session's secret, to join again after the
   // code expired.
   std::optional<net::RelaySecret> relaySecret;
+  // Consistency: what the player is told (never twice in a short while),
+  // and whether our last session was lost (to say we are back).
+  consistency::NoticeGate notices;
+  bool lostSession{};
+
+  // Something serious, on screen (System.reds shows it the game's way), at
+  // most once per `gapUs` for each key.
+  void Notice(std::string_view key, std::string text, std::uint64_t gapUs = 60'000'000) {
+    if (!notices.Allow(key, net::NowUs(), gapUs))
+      return;
+    log::Info("notice: {}", text);
+    Runtime::Get().PushEvent({ScriptEvent::Kind::Notice, 0, std::move(text), {}});
+  }
+
+  static std::string Domains(std::uint8_t domains) {
+    std::string out;
+    for (const auto &[bit, name] : {std::pair{proto::kDomainWorld, "world"},
+                                    {proto::kDomainNpcs, "npcs"},
+                                    {proto::kDomainStory, "story"},
+                                    {proto::kDomainPlayers, "players"}})
+      if (domains & bit)
+        out += out.empty() ? name : std::string(", ") + name;
+    return out.empty() ? "nothing" : out;
+  }
+
+  static const char *EpochReason(std::uint8_t reason) {
+    switch (reason) {
+    case proto::kEpochLoading:
+      return "loading screen";
+    case proto::kEpochFastTravel:
+      return "fast travel";
+    default:
+      return "join";
+    }
+  }
 
   // Once in the session, joining again goes by its secret alone: the code
   // has likely expired, and a host that restarted has a new code anyway (a
@@ -82,6 +117,8 @@ struct NetThread::Impl {
 
   void Session(std::stop_token stop) {
     auto &runtime = Runtime::Get();
+    // Nothing queued for or from the last session reaches this one.
+    runtime.ResetSession();
     std::string error;
     const Identity identity{config.name, body};
     const auto relay = RelayOf();
@@ -132,6 +169,8 @@ struct NetThread::Impl {
     auto nextReport = std::chrono::steady_clock::now() + 10s;
     bool ended = false;
     std::uint64_t silentSinceUs = 0;
+    proto::PlayerId hostId = proto::kNoPlayer;
+    std::uint32_t reportedRequests = 0;
 
     while (!stop.stop_requested() && !ended) {
       // Watchdog (runtime.hpp): one line when the game thread stops ticking,
@@ -148,6 +187,8 @@ struct NetThread::Impl {
         }
       }
       // 2 ms: states go out within a frame of the game handing them over.
+      // `shared`: what the scripts' checks compare with changed.
+      bool shared = false;
       for (const auto &event : endpoint->Update(2ms)) {
         std::visit(
             [&](const auto &e) {
@@ -159,18 +200,25 @@ struct NetThread::Impl {
                   relaySecret = secret;
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
+                hostId = e.host;
+                shared = true;
+                if (lostSession && !endpoint->IsHost())
+                  Notice("back", "Back in the session.", 0);
+                lostSession = false;
                 Story::Get().PushInbound(
                     {.kind = StoryInbound::Kind::InSession, .player = e.you, .host = e.host});
               } else if constexpr (std::is_same_v<E, events::PlayerJoined>) {
                 log::Info("{} joined (player {}, body {})", e.player.name, e.player.id,
                           static_cast<int>(e.player.body));
                 runtime.NotePlayerName(e.player.id, e.player.name);
+                shared = true;
                 runtime.PushEvent(
                     {ScriptEvent::Kind::PlayerJoined, e.player.id, e.player.name, e.player.body});
                 Story::Get().PushInbound(
                     {.kind = StoryInbound::Kind::Joined, .player = e.player.id});
               } else if constexpr (std::is_same_v<E, events::PlayerLeft>) {
                 log::Info("player {} left", e.player);
+                shared = true;
                 runtime.ForgetRemote(e.player);
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
@@ -199,8 +247,10 @@ struct NetThread::Impl {
               } else if constexpr (std::is_same_v<E, events::HostWorld>) {
                 runtime.PushHostWorld(e.world);
               } else if constexpr (std::is_same_v<E, events::HostNpcSpawn>) {
+                shared = true;
                 runtime.PushNpcEvent({NpcEvent::Kind::Spawn, e.spawn, 0});
               } else if constexpr (std::is_same_v<E, events::HostNpcGone>) {
+                shared = true;
                 runtime.PushNpcEvent({.kind = NpcEvent::Kind::Gone,
                                       .spawn = {.npc = e.gone.npc},
                                       .reason = e.gone.reason,
@@ -284,9 +334,36 @@ struct NetThread::Impl {
                 log::Info("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
                           e.effect.abilities, e.effect.scale);
                 runtime.PushRemoteTime(e.effect);
+              } else if constexpr (std::is_same_v<E, events::Resync>) {
+                if (e.player == endpoint->You()) {
+                  log::Info("resync: asking the host for {} (our copy differed from its digest)",
+                            Domains(e.domains));
+                  // The world alone heals silently (a clock, a weather).
+                  if (e.domains &
+                      (proto::kDomainNpcs | proto::kDomainStory | proto::kDomainPlayers))
+                    Notice("resync", "Resyncing with the host...");
+                } else {
+                  log::Info("resync: player {} asked for {}", e.player, Domains(e.domains));
+                }
+              } else if constexpr (std::is_same_v<E, events::EpochChanged>) {
+                log::Info("epoch: player {}'s world was rebuilt ({}, epoch {})", e.epoch.player,
+                          EpochReason(e.epoch.reason), e.epoch.epoch);
+                if (!endpoint->IsHost() && e.epoch.player == hostId &&
+                    e.epoch.reason == proto::kEpochFastTravel) {
+                  const auto name = runtime.PlayerName(hostId);
+                  Notice("travel",
+                         std::format("{} fast travelled.", name.empty() ? "The host" : name),
+                         30'000'000);
+                }
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
+                // A guest that was in: it tries again on its own (Run).
+                if (!endpoint->IsHost() && endpoint->IsJoined() &&
+                    config.role == Config::Role::Join) {
+                  lostSession = true;
+                  Notice("lost", "Lost the connection to the host. Reconnecting...", 30'000'000);
+                }
                 runtime.SetRemotePaused({});
                 // The next session's players start afresh (a restarted host
                 // counts its states from the start again).
@@ -294,10 +371,23 @@ struct NetThread::Impl {
                   if (id != endpoint->You())
                     runtime.ForgetRemote(id);
                 runtime.PushEvent({ScriptEvent::Kind::SessionEnded, 0, e.reason, {}});
+                runtime.ResetSession();
                 ended = true;
               }
             },
             event);
+      }
+      if (shared && !ended)
+        runtime.SetShared(endpoint->SharedNpcs(), endpoint->Players());
+      if (const auto lost = runtime.TakeOverflows())
+        log::Warn("consistency: {} event(s) dropped, a queue was full (the game was not taking "
+                  "them); its checks put the proxies right",
+                  lost);
+      // Our world was rebuilt (a fast travel, Consistency.reds).
+      if (const auto reason = runtime.TakeEpochRequest(); reason && !ended) {
+        endpoint->BumpEpoch(*reason);
+        log::Info("epoch: our world was rebuilt ({}), epoch {}", EpochReason(*reason),
+                  endpoint->WorldEpoch());
       }
 
       if (auto status = endpoint->Relay()) {
@@ -402,6 +492,15 @@ struct NetThread::Impl {
             "{} player(s){}", endpoint->Players().size(),
             link ? std::format(", rtt {} ms, loss {:.1f}%", link->rttMs, link->packetLoss * 100)
                  : "");
+        // Consistency: only when something happened.
+        if (const auto &checks = endpoint->Checks(); checks.Requests() != reportedRequests) {
+          reportedRequests = checks.Requests();
+          log::Info("consistency: {} digest mismatch(es), {} resync(s) asked", checks.Mismatches(),
+                    checks.Requests());
+        }
+        if (endpoint->Fenced())
+          log::Info("consistency: {} guest request(s) aimed at an older world dropped",
+                    endpoint->Fenced());
         for (const auto &[id, info] : endpoint->Players()) {
           if (id == endpoint->You())
             continue;

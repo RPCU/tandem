@@ -5,6 +5,7 @@
 
 #include "config.hpp"
 
+#include "tandem/consistency.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
@@ -56,6 +57,7 @@ struct HackEvent {
   std::int32_t state{};     // State: proto::HackStep; Status: applied; Car: proto::CarHack
   std::int32_t flags{};     // Upload: proto::kUpload*; PlayerHack: proto::kPlayerHack*
   float seconds{};          // upload time; Car: how long it lasts
+  std::uint64_t atUs{};     // when it arrived (steady clock): a PlayerHack goes stale
 };
 
 // NPC proxies use the player-puppet tracks and controller under these ids.
@@ -67,6 +69,9 @@ struct ScriptEvent {
     PlayerLeft = 2,
     SessionEnded = 3,
     InSession = 4,
+    // Something serious to tell the player (name: the text), at most once
+    // in a while (net_thread.cpp): a resync, a lost host, a reconnection.
+    Notice = 5,
   };
   Kind kind{};
   proto::PlayerId player{};
@@ -238,6 +243,30 @@ public:
   void PushHackEvent(const HackEvent &event);
   std::vector<HackEvent> TakeHackEvents();
 
+  // Consistency (docs/ARCHITECTURE.md). Net thread -> game thread: the NPCs
+  // the host shares as our session's record has them (guest: what our game
+  // must show as proxies, no more, no less) and the players in the session
+  // (roster), so scripts can find orphans and what is missing.
+  void SetShared(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
+                 const std::map<proto::PlayerId, proto::PlayerInfo> &players);
+  bool IsNpcShared(proto::NpcId npc);
+  std::vector<proto::NpcSpawn> SharedNpcs();
+  bool InRoster(proto::PlayerId player);
+  std::vector<proto::PlayerInfo> RosterPlayers();
+  // Game -> net thread: our world was rebuilt around our V (proto::kEpoch*:
+  // a fast travel the scripts saw), newest only.
+  void RequestEpoch(std::uint8_t reason);
+  std::optional<std::uint8_t> TakeEpochRequest();
+  // Net thread: a session starts or ends. What was queued for or from the
+  // last one goes: its NPC ids, hits and uploads mean nothing in the next
+  // (a restarted host numbers its NPCs from 1 again), and NPC tracks go so
+  // the next session's states are not refused as older.
+  void ResetSession();
+  // Events dropped because a queue was full (the game was not taking them,
+  // e.g. behind a long loading screen); the scripts' checks then put the
+  // proxies right. Read and cleared by the net thread.
+  std::uint32_t TakeOverflows();
+
   // Net thread writes remote states; the animation thread and scripts read views.
   void PushRemote(const proto::PlayerState &state);
   void ForgetRemote(proto::PlayerId player);
@@ -282,7 +311,8 @@ private:
   std::optional<proto::PoseState> m_localPose;                                       // under m_lock
   std::optional<proto::Appearance> m_localAppearance;                                // under m_lock
   std::optional<proto::Held> m_localHeld;                                            // under m_lock
-  std::vector<proto::Shot> m_localShots, m_remoteShots;                              // under m_lock
+  std::vector<proto::Shot> m_localShots;                                             // under m_lock
+  std::vector<consistency::Timed<proto::Shot>> m_remoteShots;                        // under m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Held>> m_held;           // m_lock
   std::optional<proto::Seat> m_localSeat;                                            // m_lock
   std::optional<proto::VehicleState> m_localVehicle;                                 // m_lock
@@ -297,7 +327,7 @@ private:
   std::vector<proto::Message> m_npcOutbox;                                           // m_lock
   std::optional<proto::NpcStates> m_npcStates;                                       // m_lock
   std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
-  std::vector<proto::PlayerHit> m_playerHits;                                        // m_lock
+  std::vector<consistency::Timed<proto::PlayerHit>> m_playerHits;                    // m_lock
   std::vector<proto::Message> m_hackOutbox;                                          // m_lock
   std::vector<HackEvent> m_hackEvents;                                               // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
@@ -319,15 +349,21 @@ private:
   std::optional<proto::NpcAwareness> m_localAwareness; // m_lock
   std::optional<proto::Stealth> m_localStealth;        // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Stealth>> m_stealth; // m_lock
-  std::vector<proto::Noise> m_localNoises, m_remoteNoises;                       // m_lock
-  std::optional<bool> m_localPaused;                                             // m_lock
-  std::vector<proto::PlayerId> m_remotePaused;                                   // m_lock
-  std::uint32_t m_remotePausedChanges{};                                         // m_lock
-  std::map<proto::PlayerId, std::string> m_names;                                // m_lock
-  std::optional<proto::TimeEffect> m_localTime;                                  // m_lock
-  std::map<proto::PlayerId, proto::TimeEffect> m_remoteTimes;                    // m_lock
-  std::uint32_t m_remoteTimeChanges{};                                           // m_lock
-  sync::TimeBubbles m_bubbles;                                                   // game thread
+  std::vector<proto::Noise> m_localNoises;                                       // m_lock
+  std::vector<consistency::Timed<proto::Noise>> m_remoteNoises;                  // m_lock
+  // Consistency (m_lock): the session's record for the scripts' checks.
+  std::map<proto::NpcId, proto::NpcSpawn> m_sharedNpcs;
+  std::map<proto::PlayerId, proto::PlayerInfo> m_roster;
+  std::optional<std::uint8_t> m_epochRequest;
+  std::uint32_t m_overflows{};
+  std::optional<bool> m_localPaused;                          // m_lock
+  std::vector<proto::PlayerId> m_remotePaused;                // m_lock
+  std::uint32_t m_remotePausedChanges{};                      // m_lock
+  std::map<proto::PlayerId, std::string> m_names;             // m_lock
+  std::optional<proto::TimeEffect> m_localTime;               // m_lock
+  std::map<proto::PlayerId, proto::TimeEffect> m_remoteTimes; // m_lock
+  std::uint32_t m_remoteTimeChanges{};                        // m_lock
+  sync::TimeBubbles m_bubbles;                                // game thread
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin

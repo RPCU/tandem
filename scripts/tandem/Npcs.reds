@@ -29,6 +29,10 @@ public class TandemNpcProxy {
   public let dead: Bool;
   // The host's health for it (fraction), applied once the proxy exists.
   public let health: Float;
+  // Consistency checks (Check): since when the host has no such NPC, and
+  // since when its body is gone (0: not so).
+  public let orphanSince: Float;
+  public let goneSince: Float;
 }
 
 public class TandemNpcs {
@@ -59,6 +63,11 @@ public class TandemNpcs {
   private let m_awarePlayers: array<Uint32>;
   private let m_awareLevels: array<Float>;
   private let m_rounds: Int32;
+  // Guest: the consistency checks (Check): when they last ran, and the
+  // NPCs the host shares that we do not show, since when.
+  private let m_lastCheck: Float;
+  private let m_missingIds: array<Uint32>;
+  private let m_missingSince: array<Float>;
 
   public static func Range() -> Float {
     return 60.0;
@@ -90,6 +99,10 @@ public class TandemNpcs {
       }
       this.Follow(now);
       this.TakePlayerHits();
+      if now - this.m_lastCheck >= 1.0 {
+        this.m_lastCheck = now;
+        this.Check(now);
+      }
     }
   }
 
@@ -163,6 +176,8 @@ public class TandemNpcs {
     }
     ArrayClear(this.m_proxies);
     ArrayClear(this.m_known);
+    ArrayClear(this.m_missingIds);
+    ArrayClear(this.m_missingSince);
     this.Stop();
   }
 
@@ -483,22 +498,13 @@ public class TandemNpcs {
       } else if event.kind == 2 && event.reason == 1 {
         this.Die(event.npc, event.player);
       } else if event.kind == 1 {
-        let spec = new DynamicEntitySpec();
-        spec.recordID = event.record;
-        spec.appearanceName = event.appearance;
-        spec.position = new Vector4(event.x, event.y, event.z, 1.0);
-        spec.orientation = new Quaternion(event.i, event.j, event.k, event.r);
-        spec.alwaysSpawned = true;
-        spec.persistState = false;
-        spec.persistSpawn = false;
-        spec.spawnInView = true;
-        spec.active = true;
-        ArrayPush(spec.tags, n"Tandem.Proxy");
-        let proxy = new TandemNpcProxy();
-        proxy.npc = event.npc;
-        proxy.health = -1.0;
-        proxy.id = entities.CreateEntity(spec);
-        ArrayPush(this.m_proxies, proxy);
+        // Never two proxies of one NPC (a spawn after the checks put it
+        // back already).
+        if IsDefined(this.FindProxy(event.npc)) {
+          TandemNative.Log(s"consistency: spawn of npc \(event.npc) ignored, its proxy exists");
+        } else {
+          this.SpawnProxy(event.npc, event.record, event.appearance, new Vector4(event.x, event.y, event.z, 1.0), new Quaternion(event.i, event.j, event.k, event.r));
+        }
       } else {
         this.Remove(event.npc);
       }
@@ -521,6 +527,108 @@ public class TandemNpcs {
         }
       }
     }
+  }
+
+  private func SpawnProxy(npc: Uint32, record: TweakDBID, appearance: CName, position: Vector4, orientation: Quaternion) -> Void {
+    let spec = new DynamicEntitySpec();
+    spec.recordID = record;
+    spec.appearanceName = appearance;
+    spec.position = position;
+    spec.orientation = orientation;
+    spec.alwaysSpawned = true;
+    spec.persistState = false;
+    spec.persistSpawn = false;
+    spec.spawnInView = true;
+    spec.active = true;
+    ArrayPush(spec.tags, n"Tandem.Proxy");
+    let proxy = new TandemNpcProxy();
+    proxy.npc = npc;
+    proxy.health = -1.0;
+    proxy.id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    ArrayPush(this.m_proxies, proxy);
+  }
+
+  // ---- guest: consistency (docs/ARCHITECTURE.md, Consistency) ----
+
+  // Our proxies against the session's record of what the host shares (the
+  // events that build them can be lost to a full queue, a loading screen,
+  // a body streamed out): a proxy whose NPC the host no longer has goes, one
+  // the host has and we lack is spawned, one whose body is gone comes back.
+  // Each waits 2 s first, in case the event that fixes it is on its way.
+  private func Check(now: Float) -> Void {
+    let entities = GameInstance.GetDynamicEntitySystem();
+    let kept: array<ref<TandemNpcProxy>>;
+    let lost: array<Uint32>;
+    for proxy in this.m_proxies {
+      let keep = true;
+      if !proxy.dead && !TandemSync.IsNpcShared(proxy.npc) {
+        if proxy.orphanSince <= 0.0 {
+          proxy.orphanSince = now;
+        } else if now - proxy.orphanSince >= 2.0 {
+          TandemNative.Log(s"consistency: proxy \(proxy.npc) has no NPC on the host, removed");
+          keep = false;
+        }
+      } else {
+        proxy.orphanSince = 0.0;
+      }
+      if keep && proxy.seenAt > 0.0 && !IsDefined(entities.GetEntity(proxy.id)) {
+        if proxy.goneSince <= 0.0 {
+          proxy.goneSince = now;
+        } else if now - proxy.goneSince >= 3.0 {
+          TandemNative.Log(s"consistency: proxy \(proxy.npc) lost its body\(proxy.dead ? ", corpse dropped" : ", spawned again")");
+          keep = false;
+          if !proxy.dead {
+            ArrayPush(lost, proxy.npc);
+          }
+        }
+      } else {
+        proxy.goneSince = 0.0;
+      }
+      if keep {
+        ArrayPush(kept, proxy);
+      } else {
+        TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(proxy.npc));
+        entities.DeleteEntity(proxy.id);
+      }
+    }
+    this.m_proxies = kept;
+    // What the host shares and we do not show.
+    let missing: array<Uint32>;
+    let since: array<Float>;
+    for npc in TandemSync.SharedNpcs() {
+      if !IsDefined(this.FindProxy(npc.npc)) {
+        let first = this.MissingSince(npc.npc, now);
+        if ArrayContains(lost, npc.npc) || now - first >= 2.0 {
+          let half = npc.yaw * 0.5;
+          this.SpawnProxy(npc.npc, npc.record, npc.appearance, new Vector4(npc.x, npc.y, npc.z, 1.0), new Quaternion(0.0, 0.0, SinF(half), CosF(half)));
+          if !ArrayContains(lost, npc.npc) {
+            TandemNative.Log(s"consistency: proxy \(npc.npc) was missing, spawned from the session's record");
+          }
+        } else {
+          ArrayPush(missing, npc.npc);
+          ArrayPush(since, first);
+        }
+      }
+    }
+    this.m_missingIds = missing;
+    this.m_missingSince = since;
+  }
+
+  // Since when the host's NPC has had no proxy here (now: from now).
+  private func MissingSince(npc: Uint32, now: Float) -> Float {
+    let i = 0;
+    while i < ArraySize(this.m_missingIds) {
+      if this.m_missingIds[i] == npc {
+        return this.m_missingSince[i];
+      }
+      i += 1;
+    }
+    return now;
+  }
+
+  // (tools/game.sh cmd npc count) the host's NPCs the session's record has.
+  public func SharedCount() -> Int32 {
+    return ArraySize(TandemSync.SharedNpcs());
   }
 
   private func FindProxy(npc: Uint32) -> ref<TandemNpcProxy> {
