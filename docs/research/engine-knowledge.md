@@ -23,7 +23,8 @@ was copied; each fact names where it came from.
 
 **Tags**: [2.5-verified] = NCO notes say it ran on 2.5, or CW uses it today; [2.31-only] = decoded/used
 on 2.31 and not re-verified (or known different) on 2.5; [broken-on-2.5] = recorded as crashing/failing
-on 2.5; [unverified] = built, never proven live.
+on 2.5; [unverified] = built, never proven live; [2.5-untested] = read from the 2.50 game's own
+scripts, not yet run in game.
 
 **The 2.31→2.5 rule NCO learned the hard way** (`code/client/Game/CharacterCustomizationSystem.h:111-119`):
 "Every raw offset, hand-numbered vtable slot and engine-struct mimic in the client was decoded on 2.31
@@ -1753,3 +1754,69 @@ puppets' attitude group. With the mock player in front mode:
   169949). `GetThreats(false)` still read 0 while the NPC fought the
   puppet: not a usable measure of who it fights; its `CombatTarget`
   behaviour argument is. [2.5-verified]
+
+### 13.12 The car radio and the pocket radio (2026-11-18, 2.50 scripts read)
+
+Read from the 2.50 scripts (`final.reds` line numbers), used by
+`scripts/tandem/Radio.reds`; none of it has run in a session yet.
+
+- **Stations** are the `ERadioStationList` index 0..13 (`final.reds`
+  9476: AGGRO_INDUSTRIAL 0 … DOWNTEMPO 4 … IMPULSE_FM 13); their audio
+  names (`radio_station_09_downtempo`…) come from
+  `RadioStationDataProvider.GetStationName` (198877), or
+  `GetStationNameByIndex(index, isUI)` (`station_none` for -1). The radio
+  popup lists them in another order (`GetRadioStationUIIndex` /
+  `GetRadioStationByUIIndex`, 198811/198844) and converts before sending.
+  [2.5-untested]
+- **The car's radio**, `VehicleObject` natives (87773–87839):
+  `ToggleRadioReceiver(Bool)`, `SetRadioReceiverStation(Uint32)` (an
+  `ERadioStationList` index: the pocket radio hands its own index to it,
+  244342), `NextRadioReceiverStation()`, `SetRadioTier(Uint32, Bool)`,
+  `IsRadioReceiverActive()`, `WasRadioReceiverPlaying()`,
+  `GetCurrentRadioIndex() -> Uint32` (read back as that index, 244354),
+  `GetRadioReceiverStationName()`, `GetRadioReceiverTrackName() -> CName`
+  (a localisation key: the popup shows it with `SetLocalizedText`,
+  392189). [2.5-untested]
+- **Setting it the game's way**: a `VehicleRadioEvent { toggle;
+setStation; station }` (215564) queued on the car reaches
+  `VehicleComponent.OnVehicleRadioEvent` (93566): `toggle` turns the
+  receiver on (or, already on, steps to the next station), `setStation`
+  then sets `station`; both update the vehicle blackboard
+  (`VehRadioState`, `VehRadioStationName`) and the HUD
+  (`UIVehicleRadioEvent`). The popup's choice
+  (`VehicleRadioPopupGameController.Activate`, 392196) goes through
+  `QuickSlotsManager.SendRadioEvent(toggle, setStation, index)` (240038):
+  `(true, true, station)` to tune, `(false, false, -1)` for off. The
+  short press of the radio button is a `RadioToggleEvent` (93543).
+  [2.5-untested]
+- **No playback position**: nothing in the scripts reads or sets where a
+  song is. `GetRadioStationCurrentTrackName(stationName)` (244526) names
+  the current song of a station; `AudioSystem.RequestSongOnRadioStation(
+stationName, songName)` (149608, no script caller) asks a station for a
+  song, presumably from its start; whether it takes the track name the
+  receiver reports, and whether it cuts in at once, is unknown. So two
+  games can be on the same station but not at the same point of a song;
+  tandem asks the passenger's station for the driver's song, which lines
+  up when the driver's song has just begun. [2.5-untested]
+- **The pocket radio** is `PlayerPuppet.GetPocketRadio()` (40614), a
+  `PocketRadio` (244010) playing through audio switches on the player's
+  `pocket_radio_emitter` (`radio_port_station`, `radio_port_on`,
+  `radio_port_off`). Restrictions (`PocketRadioRestrictions`, 1002: scene
+  tier, phone call, `VehicleBlockPocketRadio`…) go through
+  `HandleRestriction(restriction, Bool)` (244196): while any is set it
+  turns off; once all are lifted it waits for the status effect
+  `BaseStatusEffect.PocketRadioRestrictionUnlockDelay` (244165), then
+  plays its selected station again (or stays off if it was off).
+  [2.5-untested]
+- **Pocket radio and cars in vanilla**: only the **driver's seat**
+  (`seat_front_left`) links the two (`PlayerPuppet.OnMountingEvent` /
+  `OnUnmountingEvent`, 40460/40485): with the setting
+  `/gameplay/radioport` `radioport_sync_to_car` on, getting in hands the
+  pocket station to the car (`HandleVehicleMounted`, 244340) and getting
+  out takes the car's back (`HandleVehicleUnmounted`, 244346). In a car
+  with the setting off, the pocket radio ignores radio events
+  (`ShouldIgnoreEvents`, 244077). Nothing in the scripts turns it off for
+  a passenger seat, hence tandem's restriction. [2.5-untested]
+- Volumes are each player's own settings (`/audio/volume`
+  `CarRadioVolume`, `RadioportVolume`, read by the popup): not synced.
+  [2.5-untested]

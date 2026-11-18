@@ -289,6 +289,28 @@ redscript natives (UI, events)              ENet socket
   one that had someone seated in it froze the game): a car someone got out
   of stays parked. Puppets leave in steps over several frames (out of the
   seat, then the body).
+- **Radio** (`scripts/tandem/Radio.reds`, engine-knowledge §13.12): the
+  driver owns the car's radio. While our V drives its own car, our game
+  reads the car's receiver four times a second (on, station as an
+  `ERadioStationList` index, song name) and sends `VehicleRadio`
+  (reliable, kept by the host for late joiners) when it changes and when
+  a remote player gets in; a song that changes on a station we have been
+  on for a while is stamped with its start on the host clock. A passenger
+  riding in a remote player's car (our copy of it) sets the copy to the
+  driver's radio the game's way (a `VehicleRadioEvent` on the car, as the
+  radio popup does), checks a second later and falls back to the
+  receiver natives (twice at most), and asks its own copy of the station
+  for the driver's song when another plays
+  (`AudioSystem.RequestSongOnRadioStation`). The game exposes no playback
+  position, so the target is the same station and, best effort, the same
+  song: it lines up when the driver's song has just begun, otherwise it
+  starts from the top. While riding, the passenger's pocket radio is held
+  off with the game's own `VehicleBlockPocketRadio` restriction; getting
+  out lifts it and the pocket radio comes back with its station after
+  vanilla's short unlock delay. No remote player's radio plays anywhere
+  else: a puppet is an NPC (no pocket radio) and a car copy nobody of
+  ours rides in is switched off. Volumes stay each player's own
+  settings. Not yet verified in game (scenario `radio`).
 - **World** (`scripts/tandem/World.reds`): the host sends `World` (game
   time in seconds, the weather state's name, paused) on a weather change or
   a clock jump and every 10 s; guests set their clock to the host's when it
@@ -468,7 +490,9 @@ game thread stop). Each feature verified in game gets a scenario.
   look, held weapon, shots, pose (with `--pose FILE`, a recorded pose).
 - **drive** — drives a car (`--vehicle RECORD`) in circles around your V:
   tests the copy of a remote player's car, its seated driver and its motion
-  without anyone driving.
+  without anyone driving. `--radio STATION` (0–13, a station name, or
+  `off`) plays that station on its radio: sent at the wheel and again when
+  your V gets in (`tools/game.sh cmd vehicle ride`).
 - **idle** — connects and reports.
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
@@ -595,7 +619,15 @@ in-game tests still owed; none of it tested in a session yet):
   sync: the driver's station and the track's start time (host clock), so
   each passenger's game plays the same song at the same point, and changes
   when the driver changes station. Getting out gives each player their own
-  radio back as it was.
+  radio back as it was. Done (2026-11-18, to verify in game with scenario
+  `radio`; see Inside the plugin): the driver's on/off, station and song
+  reach the passengers, who hear them on their copy of the car with their
+  own pocket radio held off, and get it back on the way out; copies and
+  puppets play nothing. Not possible with the game's scripts: the same
+  point of a song (no playback position to read or seek; the song is
+  asked for by name and lines up only when it has just begun on the
+  driver's side) and the driver's volume (a per-player setting, left
+  alone).
 - **The pause menu pauses everyone; nothing else does.** When any player
   opens the pause menu, the game pauses for every player: the world, the
   NPCs and every V stop together, and each player sees who paused it. It

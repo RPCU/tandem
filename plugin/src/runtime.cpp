@@ -36,6 +36,9 @@ void Runtime::Stop() {
     m_localSeat.reset();
     m_localVehicle.reset();
     m_seats.clear();
+    m_localRadios.clear();
+    m_localTrack = m_localTrackStartUs = 0;
+    m_radios.clear();
     m_localWorld.reset();
     m_hostWorld.reset();
     m_hostWorldChanges = 0;
@@ -222,6 +225,42 @@ sync::VehicleView Runtime::VehicleOf(proto::PlayerId player) {
   return car->second.At(now > delayUs ? now - delayUs : 0);
 }
 
+void Runtime::SubmitLocalRadio(proto::VehicleRadio radio, bool trackStarted) {
+  const auto now = HostNowUs();
+  std::lock_guard _(m_lock);
+  // The song's start: now if it just began, kept while it plays on.
+  if (trackStarted && radio.track != 0)
+    m_localTrackStartUs = now;
+  else if (radio.track != m_localTrack)
+    m_localTrackStartUs = 0;
+  m_localTrack = radio.track;
+  radio.trackStartUs = radio.on ? m_localTrackStartUs : 0;
+  if (m_localRadios.size() < 16)
+    m_localRadios.push_back(radio);
+}
+
+std::vector<proto::VehicleRadio> Runtime::TakeLocalRadios() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localRadios, {});
+}
+
+void Runtime::PushRemoteRadio(const proto::VehicleRadio &radio) {
+  std::lock_guard _(m_lock);
+  auto &[changes, latest] = m_radios[radio.player];
+  ++changes;
+  latest = radio;
+}
+
+std::optional<proto::VehicleRadio> Runtime::RemoteRadio(proto::PlayerId player,
+                                                        std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  const auto it = m_radios.find(player);
+  changes = it == m_radios.end() ? 0 : it->second.first;
+  if (it == m_radios.end())
+    return std::nullopt;
+  return it->second.second;
+}
+
 void Runtime::SubmitWorld(const proto::World &world) {
   std::lock_guard _(m_lock);
   m_localWorld = world;
@@ -402,6 +441,7 @@ void Runtime::ForgetRemote(proto::PlayerId player) {
     m_appearances.erase(player);
     m_held.erase(player);
     m_seats.erase(player);
+    m_radios.erase(player);
   }
   {
     std::lock_guard _(m_tracksLock);

@@ -404,6 +404,47 @@ struct TandemNative : Red::IScriptable {
     return {q.i, q.j, q.k, q.r};
   }
 
+  // The radio of the car our V drives (scripts/tandem/Radio.reds): on, the
+  // station (ERadioStationList index, -1 none), the song; `trackStarted` when
+  // the song just changed on the same station (its start is now).
+  static void SendVehicleRadio(bool on, std::int32_t station, Red::CName track, bool trackStarted) {
+    Runtime::Get().SubmitLocalRadio({.on = on,
+                                     .station = static_cast<std::int8_t>(on ? station : -1),
+                                     .track = on ? track.hash : 0},
+                                    trackStarted);
+  }
+
+  // The radio of the car a remote player drives: how many arrived (0: none).
+  static std::int32_t RemoteRadioChanges(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    Runtime::Get().RemoteRadio(player, changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  static bool RemoteRadioOn(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto radio = Runtime::Get().RemoteRadio(player, changes);
+    return radio && radio->on;
+  }
+  static std::int32_t RemoteRadioStation(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto radio = Runtime::Get().RemoteRadio(player, changes);
+    return radio ? radio->station : -1;
+  }
+  static Red::CName RemoteRadioTrack(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto radio = Runtime::Get().RemoteRadio(player, changes);
+    return radio ? Red::CName(radio->track) : Red::CName();
+  }
+  // Seconds since the driver's song began (host clock); -1: unknown.
+  static float RemoteRadioTrackAge(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto radio = Runtime::Get().RemoteRadio(player, changes);
+    const auto now = Runtime::Get().HostNowUs();
+    if (!radio || radio->trackStartUs == 0 || radio->trackStartUs > now)
+      return -1.f;
+    return static_cast<float>(static_cast<double>(now - radio->trackStartUs) / 1e6);
+  }
+
   static bool IsHost() { return Runtime::Get().config.role == Config::Role::Host; }
 
   // Host: the world as our game has it (sent when it changes, and every few
@@ -604,6 +645,12 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(NpcDetected);
   RTTI_METHOD(TakeNpcEvents);
   RTTI_METHOD(NpcPuppetId);
+  RTTI_METHOD(SendVehicleRadio);
+  RTTI_METHOD(RemoteRadioChanges);
+  RTTI_METHOD(RemoteRadioOn);
+  RTTI_METHOD(RemoteRadioStation);
+  RTTI_METHOD(RemoteRadioTrack);
+  RTTI_METHOD(RemoteRadioTrackAge);
   RTTI_METHOD(IsHost);
   RTTI_METHOD(SendWorld);
   RTTI_METHOD(HostWorldChanges);

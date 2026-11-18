@@ -307,9 +307,29 @@ struct Pause {
   friend bool operator==(const Pause &, const Pause &) = default;
 };
 
+// The radio of the car a player drives, sent by the driver's game when it
+// changes and when a passenger gets in (Event channel; the host keeps the
+// latest of each player for late joiners). Everyone riding in that car hears
+// it: a passenger's game sets its copy of the car to this. On foot each V
+// hears only its own pocket radio, which is never sent.
+// `station` is the game's ERadioStationList index (0..13), -1 for none;
+// `track` the current song's CName hash (0: unknown). The game exposes no
+// playback position, so `trackStartUs` is when the driver's game saw this
+// song begin on the station, on the host clock (0: unknown, e.g. it was
+// already playing when the driver tuned in).
+struct VehicleRadio {
+  PlayerId player{}; // the driver: set by the host from the connection
+  std::uint32_t revision{};
+  bool on{};
+  std::int8_t station{-1};
+  std::uint64_t track{};
+  std::uint64_t trackStartUs{};
+  friend bool operator==(const VehicleRadio &, const VehicleRadio &) = default;
+};
+
 using Message = std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye,
                              PoseState, Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn,
-                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause>;
+                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio>;
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);
