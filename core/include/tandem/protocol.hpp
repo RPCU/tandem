@@ -626,13 +626,66 @@ struct StoryEffect {
   friend bool operator==(const StoryEffect &, const StoryEffect &) = default;
 };
 
+// ---- Consistency (docs/ARCHITECTURE.md, "Consistency") ----
+// The shared state the host's digests cover, as bits.
+inline constexpr std::uint8_t kDomainWorld = 1;   // World: time, weather
+inline constexpr std::uint8_t kDomainNpcs = 2;    // the NPCs the host shares, their health
+inline constexpr std::uint8_t kDomainStory = 4;   // journal, tracked entry, call, hub, effects
+inline constexpr std::uint8_t kDomainPlayers = 8; // roster, looks, held items, seats, radios...
+inline constexpr std::uint8_t kAllDomains = 15;
+
+// Host to each guest every few seconds (Event channel: it falls in the
+// reliable stream after everything the host sent before it, so the guest
+// compares at the same point). A hash of each domain as the host's record
+// has it for that guest (tandem/consistency.hpp); the guest hashes its own
+// copy the same way and asks again for a domain that differs twice in a row.
+struct Digest {
+  std::uint32_t epoch{}; // the host's world epoch
+  std::uint32_t seq{};
+  std::uint32_t world{}, npcs{}, story{}, players{};
+  std::uint16_t npcCount{};
+  friend bool operator==(const Digest &, const Digest &) = default;
+};
+
+// Guest to host: send me these domains again (kDomain* bits). Never relayed.
+struct ResyncRequest {
+  std::uint8_t domains{};
+  friend bool operator==(const ResyncRequest &, const ResyncRequest &) = default;
+};
+
+// Host to one guest, opening a resync of its NPCs: every NPC the host
+// shares now. Their NpcSpawn and NpcHealth follow; the guest drops the rest.
+inline constexpr std::size_t kMaxNpcSet = 1024;
+struct NpcSet {
+  std::vector<NpcId> npcs;
+  friend bool operator==(const NpcSet &, const NpcSet &) = default;
+};
+
+// A game's world was rebuilt around its V (a loading screen, a fast
+// travel): its epoch moves on, and what was in flight about the old one is
+// void (Event channel). The host's goes to every guest (and to a newcomer);
+// each guest answers with its own, naming the host epoch it has seen, and
+// until then the host drops that guest's hits, effects, uploads and noises
+// (they aimed at the old world). A guest's own goes to the host, which
+// stamps and relays it.
+inline constexpr std::uint8_t kEpochJoin = 0, kEpochLoading = 1, kEpochFastTravel = 2;
+struct Epoch {
+  PlayerId player{};           // whose world: set by the host from the connection
+  std::uint32_t epoch{};       // that game's world epoch (1 at the start of a session)
+  std::uint32_t seenHost{};    // a guest's: the host epoch it has seen
+  std::uint8_t reason{};       // kEpoch*
+  std::uint32_t firstNpcSeq{}; // the host's: NpcStates older than this are the old world's
+  friend bool operator==(const Epoch &, const Epoch &) = default;
+};
+
 using Message =
     std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
                  Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
                  NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
                  Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
                  Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward, TimeEffect, StoryEffect>;
+                 StoryState, QuestReward, TimeEffect, StoryEffect, Digest, ResyncRequest, NpcSet,
+                 Epoch>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.

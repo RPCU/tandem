@@ -8,6 +8,7 @@
 // the host; the host relays what one guest sends to the others. Each player's
 // game owns its own V (PlayerState); the host's game owns the shared world.
 
+#include "tandem/consistency.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
 #include "tandem/story.hpp"
@@ -38,6 +39,11 @@ struct Timing {
   // id, puppet and seat (a game back from a crash or a dropped link). A live
   // player is heard from several times a second, so nobody takes its place.
   std::chrono::milliseconds takeover{2'000};
+  // Host: how often each guest gets a digest of the shared state
+  // (docs/ARCHITECTURE.md, Consistency). Guest: how soon the same domain may
+  // be asked for again after a resync.
+  std::chrono::milliseconds digest{3'000};
+  std::chrono::milliseconds resyncCooldown{5'000};
 };
 
 namespace events {
@@ -163,6 +169,18 @@ struct HostNpcAwareness {
 struct NoiseBy {
   proto::Noise noise;
 };
+// Consistency. Guest: our copy of these domains (kDomain* bits) differed
+// from the host's digest twice in a row; we asked for them again (player:
+// us). Host: `player` asked, and was sent them.
+struct Resync {
+  proto::PlayerId player{};
+  std::uint8_t domains{};
+};
+// Another game's world was rebuilt around its V (loading screen, fast
+// travel): its epoch moved on. Never reported for our own, nor for a join.
+struct EpochChanged {
+  proto::Epoch epoch;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -183,15 +201,17 @@ struct JoinTarget {
   std::optional<net::RelayOptions> relay;
 };
 
-using SessionEvent = std::variant<
-    events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
-    events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
-    events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
-    events::HostNpcStates, events::HostNpcGone, events::HostNpcHealth, events::NpcHitBy,
-    events::NpcEffectBy, events::PauseChanged, events::Ended, events::PlayerReturned,
-    events::RemoteVehicleRadio, events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness,
-    events::NoiseBy, events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-    events::HostPlayerHack, events::VehicleHackOn, events::Story, events::RemoteTimeEffect>;
+using SessionEvent =
+    std::variant<events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
+                 events::RemotePose, events::RemoteAppearance, events::RemoteHeld,
+                 events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
+                 events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
+                 events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
+                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
+                 events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
+                 events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
+                 events::HostPlayerHack, events::VehicleHackOn, events::Story,
+                 events::RemoteTimeEffect, events::Resync, events::EpochChanged>;
 
 class Endpoint {
 public:
@@ -270,6 +290,25 @@ public:
   // Guest only: a noise our V made, for the host's NPCs.
   void SendNoise(const proto::Noise &noise);
 
+  // Consistency (docs/ARCHITECTURE.md). Our world was rebuilt around our V
+  // (proto::kEpoch* reason): what was in flight about the old one is void.
+  // Host: every guest learns it, and their requests aimed at the old world
+  // are dropped until they have. Guest: the host learns it.
+  void BumpEpoch(std::uint8_t reason);
+  std::uint32_t WorldEpoch() const { return m_epoch; }
+  // Guest: the host's world epoch as last heard.
+  std::uint32_t HostEpoch() const { return m_hostEpoch; }
+  // The NPCs the host shares: host, its record; guest, its copy of it (what
+  // its game must show as proxies, no more, no less).
+  const std::map<proto::NpcId, proto::NpcSpawn> &SharedNpcs() const { return m_npcs; }
+  // Guest: its digest checks so far. Host: the guests' requests it dropped
+  // because they aimed at an older epoch of its world.
+  const consistency::Checker &Checks() const { return m_checker; }
+  std::uint64_t Fenced() const { return m_fenced; }
+  // Faults on what this endpoint sends (tests, tandem-peer --drop/--dup).
+  void SetFaults(const consistency::Faults &faults) { m_faults.Set(faults); }
+  const consistency::FaultyLink &FaultStats() const { return m_faults; }
+
   // Time on the host's clock (the session's shared timeline).
   std::uint64_t HostNowUs() const { return net::NowUs() + m_clockOffsetUs; }
 
@@ -299,6 +338,16 @@ private:
   void OnHello(net::PeerId peer, const proto::Hello &hello, std::vector<SessionEvent> &out);
   void RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out);
   void SendSessionTo(net::PeerId peer);
+  // Host: these domains (kDomain*) as they are now, to one guest. `resync`:
+  // its copy may hold what we no longer have (NpcSet first).
+  void SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync);
+  // Every send goes through these (faults injected here).
+  bool Send(net::PeerId peer, const proto::Message &message);
+  void Broadcast(const proto::Message &message, net::PeerId except = 0);
+  void OnGuestMessage(const proto::Message &message, std::vector<SessionEvent> &out);
+  // Each domain's hash as `self` sees it (consistency.hpp).
+  proto::Digest DigestFor(proto::PlayerId self) const;
+  void SendDigests();
   void BroadcastRoster();
   // Host: the connection of a welcomed player (nullopt: none, or us).
   std::optional<net::PeerId> PeerOf(proto::PlayerId player) const;
@@ -372,6 +421,26 @@ private:
   story::CallArbiter m_calls;
   void OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
                     std::vector<SessionEvent> &out);
+  // Consistency: our world epoch; guest, the host's and the first NpcStates
+  // of it; host, the host epoch each guest has seen and its own epoch.
+  std::uint32_t m_epoch{1};
+  std::uint32_t m_hostEpoch{};
+  std::uint32_t m_firstNpcSeq{};
+  std::map<proto::PlayerId, std::uint32_t> m_seenHost, m_guestEpoch;
+  std::uint64_t m_fenced{};
+  std::uint64_t m_epochAtUs{};
+  // Host: digests (when the next round is due, guests owed one sooner) and
+  // each guest's last resync, for its cooldown.
+  std::uint32_t m_digestSeq{};
+  std::uint64_t m_nextDigestUs{};
+  std::set<proto::PlayerId> m_digestSoon;
+  std::map<proto::PlayerId, std::uint64_t> m_resyncAtUs;
+  // Guest: its checks, the host's NPCs that died (corpses until the host's
+  // goes), and what came before the Welcome (the bulk channel can overtake it).
+  consistency::Checker m_checker;
+  std::set<proto::NpcId> m_corpses;
+  std::vector<proto::Message> m_early;
+  consistency::FaultyLink m_faults;
   bool m_ended{};
   // Guest: the relay to try when the host does not answer directly.
   std::optional<net::RelayOptions> m_fallback;

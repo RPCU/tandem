@@ -287,3 +287,36 @@ TEST_CASE("a story effect survives encoding and is a story message") {
   CHECK(ChannelOf(StoryEffect{}) == Channel::Event);
   CHECK(std::string(NameOf(StoryEffect{})) == "StoryEffect");
 }
+
+TEST_CASE("consistency messages survive encoding, are small and reliable") {
+  RoundTrips(Digest{.epoch = 3,
+                    .seq = 9,
+                    .world = 0x11111111,
+                    .npcs = 0x22222222,
+                    .story = 0x33333333,
+                    .players = 0x44444444,
+                    .npcCount = 12});
+  RoundTrips(ResyncRequest{.domains = kDomainNpcs | kDomainStory});
+  RoundTrips(NpcSet{.npcs = {1, 2, 70000}});
+  RoundTrips(Epoch{
+      .player = 2, .epoch = 4, .seenHost = 3, .reason = kEpochFastTravel, .firstNpcSeq = 1234});
+  for (const Message message :
+       {Message{Digest{}}, Message{ResyncRequest{}}, Message{NpcSet{}}, Message{Epoch{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK_FALSE(IsStory(message));
+  }
+  CHECK(std::string(NameOf(Digest{})) == "Digest");
+  CHECK(std::string(NameOf(ResyncRequest{})) == "ResyncRequest");
+  CHECK(std::string(NameOf(NpcSet{})) == "NpcSet");
+  CHECK(std::string(NameOf(Epoch{})) == "Epoch");
+  // Sent every few seconds to every guest: a few dozen bytes.
+  CHECK(Encode(Digest{}).size() < 32);
+  CHECK(Encode(Epoch{}).size() < 24);
+
+  CHECK_FALSE(Decode(Encode(ResyncRequest{.domains = 0x80})).has_value());
+  NpcSet big;
+  big.npcs.resize(kMaxNpcSet + 1);
+  CHECK_FALSE(Decode(Encode(big)).has_value());
+  big.npcs.resize(kMaxNpcSet);
+  CHECK(Decode(Encode(big)).has_value());
+}
