@@ -59,7 +59,7 @@ public native class TandemStory extends IScriptable {
   public static native func SendHub(hub: Int32, flags: Int32, title: String, texts: array<String>, types: array<Int32>, timed: Float) -> Void;
   public static native func SendCursor(hub: Int32, index: Int32, kind: Int32) -> Void;
   public static native func SendState(tier: Int32, flags: Int32) -> Void;
-  public static native func QuestMoved(quest: Uint32, x: Float, y: Float, z: Float) -> Void;
+  public static native func QuestMoved(questHash: Uint32, x: Float, y: Float, z: Float) -> Void;
   public static native func Reward(reward: TweakDBID, x: Float, y: Float, z: Float) -> Int32;
   public static native func SendEffect(effect: TweakDBID, applied: Bool) -> Void;
   public static native func LineId(line: Uint64) -> CRUID;
