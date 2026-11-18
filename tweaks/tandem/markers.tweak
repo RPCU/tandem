@@ -1,0 +1,11 @@
+// A remote player's marker (scripts/tandem/Markers.reds): the game's own
+// definition for a remote player (from the cut multiplayer), shown in the
+// world, on the minimap and on the world map whatever the base says. The
+// script falls back to the base record when this one is missing, and logs
+// the flags it got ("markers: definition ...").
+
+Mappins.TandemPlayerMappin : Mappins.CPO_RemotePlayerMappinDefinition {
+  showInWorld = true;
+  showOnMinimap = true;
+  showOnMap = true;
+}

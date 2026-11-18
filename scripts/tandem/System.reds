@@ -598,6 +598,8 @@ public class TandemSystem extends ScriptableSystem {
         ArrayPush(this.m_joins, join);
       }
       this.RemoveAllPuppets();
+    } else if Equals(command, "markers") {
+      TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {
       this.RemoveAllPuppets();
     } else {
@@ -842,6 +844,7 @@ public class TandemSystem extends ScriptableSystem {
     ArrayPush(this.m_puppets, puppet);
     TandemNative.RegisterPuppet(player, id);
     TandemNative.Log(s"spawning \(name) (player \(player), \(TandemNative.PuppetRecord(body)))");
+    TandemMarkers.Show(game, player, name, id);
   }
 
   private func DrivePuppets() -> Void {
@@ -1241,6 +1244,7 @@ public class TandemSystem extends ScriptableSystem {
     let game = this.GetGameInstance();
     TandemNative.PoseBind(puppet.player, null);
     TandemNative.UnregisterPuppet(puppet.player);
+    TandemMarkers.Hide(game, puppet.player);
     let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
     if EntityID.IsDefined(puppet.seatedIn) && IsDefined(body) {
       TandemVehicles.Unseat(game, body, puppet.seatedIn, puppet.seatedSlot);
