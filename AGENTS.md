@@ -113,6 +113,10 @@ K7Q-2M9 --relay 127.0.0.1`. `task test` does the same (`relay-loopback`,
   `#include <RED4ext/RED4ext.hpp>` in **its own include group** (a blank line
   after it): the SDK's headers only compile after it, and clang-format would
   sort it below the others inside a shared group.
+- After a merge, look for a script method kept twice: redscript compiles a
+  class with two definitions of one method silently, and the game then dies
+  in the script VM (frozen after the loading screen) at its first call.
+  `task scripts:check` refuses it (`tools/scripts-duplicates.py`).
 - Use `__builtin_offsetof` in `static_assert`s: the MSVC CRT's `offsetof` is
   not a constant expression under clang.
 - `scripts/tandem/Natives.reds` must match `plugin/src/natives.cpp` exactly
