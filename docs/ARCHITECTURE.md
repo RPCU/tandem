@@ -783,6 +783,24 @@ in-game tests still owed; none of it tested in a session yet):
   the quests system; deaths, loot and destroyed objects via their
   persistent states). Until then the host's save is the source.
 
+- **Story decisions** (2026-11-18; design in `research/coop-quests-design.md`):
+  the host's game runs the story; a guest's own story is frozen for the
+  session (not overwritten), its saves locked, and restored as it was when
+  it leaves (one save and reload). Decided by the user: in dialogues with
+  choices **the host picks and guests suggest** (the same native choice hub
+  on every screen, each with its own cursor, the host sees suggestions);
+  **holocalls and texts reach everyone in sync and anyone can answer or
+  reply for all, first wins**; a guest far away when the host starts a
+  story scene **is offered to join** (a native-looking prompt to regroup;
+  declining leaves it the subtitles and journal); a guest earns a quest's
+  rewards when it was near the host (150 m) as the quest completed or
+  advanced, **only once**: a quest it was rewarded for in co-op pays
+  nothing again when it later plays it in its own save. Provisional (the
+  design's proposals, to confirm): romance and intimate scenes are never
+  replayed for guests; leaving reloads the guest's game; subtitles in the
+  host's language for now; shards and the codex stay per player; Johnny's
+  appearances beside the host are shown to guests later; after the first
+  version: scene voice, then quest-only interiors, then solo gigs.
 - **Quests together, gigs apart.** A quest or gig the players finish
   together rewards both: each game gives its own V the rewards (XP,
   street cred, money, items, the fixer's message) by the game's own
