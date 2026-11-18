@@ -904,8 +904,11 @@ in-game tests still owed; none of it tested in a session yet):
   meter: `UI_Stealth.highestDetectionOnPlayer` (what the detection perks
   listen to), each proxy's detection percentage, and the proxy's sense
   mappin (the indicator over an NPC) while it notices us. What host NPCs
-  know of another V never counts. Not yet verified in game (scenario
-  `stealth-guest`; whether the native meter draws a proxy's level is open).
+  know of another V never counts. Verified 2026-11-18 (scenario
+  `stealth-guest`: in and out of combat, the meter's log); whether the
+  native meter draws a proxy's level is open. Open: player ids grow
+  within a session (players coming back), but `detected` has bits for
+  players 1–8 only, so a guest numbered 9 or more is never detected.
   The other way, **a guest's stealth reaches the host's NPCs**: every game
   sends its V's optical camo (the camo status effect, the relic's fully
   blocking state), its `Visibility` stat and whether it crouches as
