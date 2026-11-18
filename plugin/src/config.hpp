@@ -2,7 +2,7 @@
 
 // tandem.ini, next to tandem.dll:
 //
-//   role = join          ; off | host | join
+//   role = join          ; off | host | join (the co-op menu can pick another)
 //   address = 127.0.0.1  ; join: the host's address
 //   port = 27450
 //   name = V
@@ -19,6 +19,9 @@
 //   story = on           ; off: no story sync (journal, calls, lines, hubs, rewards)
 //   quest_freeze = off   ; on: a guest's own story phases wait while it is in a
 //                        ; session (engine/quests.cpp); off: the hook stays out
+//   scene_privacy = on   ; off: every scene is watched (no private scenes)
+//   private_actors = judy, panam, river, kerry, meredith  ; romance partners
+//   private_scenes = , public_scenes =  ; scene resource paths, comma-separated
 //   quest_freeze_allow = ; more open-world phase resources that keep running
 //                        ; on a frozen guest (resource paths, comma-separated)
 //   time_host = full     ; host's Sandevistan (scripts/tandem/Time.reds): full keeps
@@ -57,12 +60,18 @@ struct Config {
   bool story{true};
   bool questFreeze{false};
   std::vector<std::string> questFreezeAllow;
+  // Scene privacy (engine/scenes.cpp): private scenes are not watched.
+  bool scenePrivacy{true};
+  std::vector<std::string> privateActors{"judy", "panam", "river", "kerry", "meredith"};
+  std::vector<std::string> privateScenes, publicScenes;
   // How the host's own time dilations are played (Time.reds): its world in
   // bubbles only (false), or the whole single-player slow motion with what
   // is shared exempted (true).
   bool timeHostFull{true};
-  // Not from the file: tandem.cmd next to it, a command for the running game.
+  // Not from the file: tandem.cmd next to it, a command for the running game;
+  // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;
+  std::filesystem::path recentFile;
 };
 
 // Missing file: the defaults (off). Unknown keys and bad values are logged.

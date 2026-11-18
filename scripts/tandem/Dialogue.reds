@@ -243,7 +243,11 @@ public class TandemDialogue {
       }
       return;
     }
-    // Holocall lines: everyone on the call. The rest: within earshot.
+    // Holocall lines: everyone on the call. The rest: within earshot, and
+    // never from the host's private scene.
+    if event.index != 2 && this.m_story.HostBusy() {
+      return;
+    }
     let distance = this.m_story.DistanceToHost();
     if event.index != 2 && (distance < 0.0 || distance > 25.0) {
       return;
@@ -305,7 +309,7 @@ public class TandemDialogue {
   private func PresentHub() -> Void {
     let phoneLock = (this.m_pendingFlags & 1) != 0;
     let distance = this.m_story.DistanceToHost();
-    if !phoneLock && (distance < 0.0 || distance > 25.0) {
+    if !phoneLock && (distance < 0.0 || distance > 25.0 || this.m_story.HostBusy()) {
       TandemNative.Log("choice: hub not shown (too far from the host)");
       return;
     }

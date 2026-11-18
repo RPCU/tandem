@@ -49,6 +49,11 @@ void Story::Note(const StoryInbound &inbound) {
     m_you = m_host = proto::kNoPlayer;
     m_others.clear();
     m_participation = {};
+    // Nobody's pose stays held for a private scene (the next session's
+    // player 2 is someone else), and ours is no longer held back.
+    for (auto &slot : m_posePaused)
+      slot.store(0);
+    SetPrivate(false);
     break;
   case StoryInbound::Kind::Joined:
     m_others.insert(inbound.player);
@@ -56,6 +61,8 @@ void Story::Note(const StoryInbound &inbound) {
   case StoryInbound::Kind::Left:
     m_others.erase(inbound.player);
     m_participation.Forget(inbound.player);
+    // Gone in its private scene (it may have vanished without a word).
+    PausePose(inbound.player, false);
     break;
   case StoryInbound::Kind::Message:
     break;
@@ -84,5 +91,48 @@ void Story::QuestMoved(std::uint32_t quest, const proto::Vec3 &host) {
 
 story::Participation::Award Story::Reward(const proto::Vec3 &host) {
   return m_participation.Attribute(net::NowUs(), GuestsNear(host));
+}
+
+void Story::SetPrivate(bool on) {
+  if (m_private.exchange(on) != on && !on)
+    m_releaseHeld = true;
+}
+
+void Story::FilterLocal(proto::PlayerState &state) {
+  if (m_releaseHeld.exchange(false))
+    m_held.reset();
+  if (!m_private.load())
+    return;
+  if (!m_held)
+    m_held = state;
+  // Standing where the scene began: nothing of the scene shows.
+  state.position = m_held->position;
+  state.orientation = m_held->orientation;
+  state.velocity = {};
+  state.stance = 0;
+}
+
+void Story::PausePose(proto::PlayerId player, bool paused) {
+  for (auto &slot : m_posePaused) {
+    if (!paused && slot.load() == player)
+      slot.store(0);
+    else if (paused && slot.load() == player)
+      return;
+  }
+  if (paused)
+    for (auto &slot : m_posePaused) {
+      proto::PlayerId empty = 0;
+      if (slot.compare_exchange_strong(empty, player))
+        return;
+    }
+}
+
+bool Story::PosePaused(proto::PlayerId player) const {
+  if (player == 0)
+    return false;
+  for (const auto &slot : m_posePaused)
+    if (slot.load(std::memory_order_relaxed) == player)
+      return true;
+  return false;
 }
 } // namespace tandem::plugin

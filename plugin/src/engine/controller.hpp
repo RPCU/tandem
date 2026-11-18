@@ -6,7 +6,9 @@
 // body's position change this frame (GetDeltaTransform) and for the
 // locomotion animation to play (SendAnimationParameters). Ours answers both
 // from the remote player's interpolated state, so the body is exactly where
-// the network says, with the engine's own walk/jog/sprint animation.
+// the network says, with the engine's own walk/jog/sprint animation. How the
+// body is placed (ground, air, ladder, water) and when it must be teleported
+// instead is tandem::movement::Placer's.
 //
 // The class layout and its 19 virtual functions are an ENGINE ABI (the
 // idle-controller interface, measured on 2.50, docs/research §3): no base
@@ -17,6 +19,7 @@
 
 #include "animation.hpp"
 
+#include "tandem/movement.hpp"
 #include "tandem/protocol.hpp"
 
 #include <RED4ext/Memory/Allocators.hpp>
@@ -106,6 +109,12 @@ private:
   void LoadClips();
   float m_speed{};
   std::uint8_t m_stance{};
+  // How the body is placed (tandem/movement.hpp): on the ground, or
+  // following the stream freely in the air, on a ladder, in the water...
+  movement::Placer m_placer;
+  movement::Placement m_placement{movement::Placement::Ground};
+  std::uint64_t m_lastPlaceUs{};
+  std::uint32_t m_placementsSeen{}; // bit per Placement: logged once each
   bool m_loggedDelta{}, m_loggedSend{}, m_loggedNoPlacement{}, m_loggedCanary{};
   std::uint32_t m_frames{};
   std::uint64_t m_lastHealthUs{};

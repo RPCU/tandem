@@ -18,8 +18,14 @@ namespace tandem::story {
 // the open choice hub and every player's StoryState.
 class Record {
 public:
-  // A story message the host sent (or relayed).
-  void Note(const proto::Message &message);
+  // A story message the host sent (or relayed); a guest notes what it
+  // receives the same way. False when it changed nothing (a repeat).
+  bool Note(const proto::Message &message);
+  // The story domain's hash for digests (tandem/consistency.hpp): the
+  // journal and the tracked entry, what lasts and what a resync (ForJoiner)
+  // sends whole. Calls, hubs and effects are short-lived and sent again on
+  // every change; StoryStates are left out (a guest is never sent its own).
+  std::uint32_t Digest() const;
   // A player left: its StoryState goes.
   void Forget(proto::PlayerId player);
   // What to send a newcomer, in order: the journal snapshot first.

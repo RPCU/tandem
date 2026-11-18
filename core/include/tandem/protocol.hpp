@@ -107,7 +107,7 @@ struct PlayerState {
   Quat orientation;
   Vec3 velocity;
   std::uint8_t stance{}; // locomotion state, see the plugin
-  std::uint16_t flags{}; // weapon drawn, aiming, in vehicle...
+  std::uint16_t flags{}; // how it moves: tandem/movement.hpp (bits 10-14 free)
   friend bool operator==(const PlayerState &, const PlayerState &) = default;
 };
 
@@ -256,7 +256,8 @@ struct NpcStates { // State channel, ~10 Hz: every NPC the host shares, in one g
 
 struct NpcGone { // Event channel
   NpcId npc{};
-  std::uint8_t reason{}; // kGone*: 0 out of range or despawned, 1 dead, 2 disposed of
+  std::uint8_t reason{}; // kGone*: 0 out of range or despawned, 1 dead, 2 disposed of,
+                         // 3 knocked out (unconscious; still a target)
   PlayerId killer{};     // dead: the player whose hit killed it (kNoPlayer: none)
   friend bool operator==(const NpcGone &, const NpcGone &) = default;
 };
@@ -274,6 +275,9 @@ struct NpcHit {      // Event channel
   friend bool operator==(const NpcHit &, const NpcHit &) = default;
 };
 inline constexpr std::uint8_t kHitWeakSpot = 1, kHitCritical = 2, kHitMelee = 4, kHitLethal = 8;
+// PlayerHit and AreaHit only: the attack's own rules for the V it lands on
+// (hitFlag.IgnoreDifficulty, hitFlag.CannotKillPlayer: a brawl leaves 1 HP).
+inline constexpr std::uint8_t kHitIgnoreDifficulty = 16, kHitCannotKill = 32;
 
 // An NPC's health as the host's game has it, sent when it changes. Death
 // is NpcGone with reason 1.
@@ -579,7 +583,10 @@ struct ChoiceCursor {
 
 // A player's story state from its own game (either way; the host stamps,
 // keeps and relays it).
-inline constexpr std::uint8_t kStoryBraindance = 1, kStoryReplacer = 2, kStoryInCall = 4;
+// Bits of StoryState::flags (free from 16 up: add new ones there, e.g. other
+// worlds such as cyberspace).
+inline constexpr std::uint8_t kStoryBraindance = 1, kStoryReplacer = 2, kStoryInCall = 4,
+                              kStoryPrivate = 8; // in a private scene: not to be watched
 struct StoryState {
   PlayerId player{};
   std::uint8_t tier{};  // GameplayTier 1..5
@@ -631,7 +638,9 @@ struct StoryEffect {
 
 // NpcGone::reason values. A disposed body (in a container) is gone for good:
 // guests delete its proxy instead of leaving a corpse.
-inline constexpr std::uint8_t kGoneAway = 0, kGoneDead = 1, kGoneDisposed = 2;
+inline constexpr std::uint8_t kGoneAway = 0, kGoneDead = 1, kGoneDisposed = 2,
+                              kGoneKnockedOut = 3; // a non-lethal hit: the body stays, a later
+                                                   // lethal one sends kGoneDead
 
 // A player's action that moves, animates or kills one of the host's NPCs:
 // grapples, takedowns, finishers, carrying and throwing bodies. The actor's
@@ -709,7 +718,341 @@ struct NpcCue { // Event channel
   friend bool operator==(const NpcCue &, const NpcCue &) = default;
 };
 
-// NPC shots at a guest's V (docs/ARCHITECTURE.md, authority table): the
+// A player offers others to come to them ("regroup", milestone 4): sent by
+// that player's game when it arrives from a fast travel, when a story scene
+// starts while someone is far (the story work), or when the player asks. The
+// others get the game's own style of prompt; accepting brings them there
+// (their own fast travel to the same point when they know it, with its
+// loading screen; else next to the player). Nobody is ever moved without
+// accepting: players stay free to be anywhere.
+// Event channel. The host stamps `from` from the connection and delivers it
+// to `to` only (kNoPlayer: every other player). Not kept: an offer is of the
+// moment; a newer one from the same player replaces the one shown.
+enum class RegroupReason : std::uint8_t {
+  FastTravel = 0, // `from` fast travelled here
+  Asked = 1,      // `from` asks to be joined (a regroup request)
+  Story = 2,      // a story scene starts beside `from` (label: what)
+  Teleport = 3,   // a quest moved `from` far away
+};
+inline constexpr std::size_t kMaxRegroupLabel = 96;
+
+struct Regroup {
+  PlayerId from{};
+  PlayerId to{};
+  std::uint32_t offer{}; // the sender's count of offers: an answer names it
+  RegroupReason reason{};
+  std::uint64_t point{};  // TweakDB id of the fast travel point `from` is at (0: none)
+  std::uint64_t marker{}; // that point's marker node (NodeRef hash; 0: none)
+  Vec3 position;          // where `from` stands
+  float yaw{};
+  std::string label; // shown with the prompt (a quest's title...); may be empty
+  friend bool operator==(const Regroup &, const Regroup &) = default;
+};
+
+// The answer to a Regroup (Event channel; the host stamps `from` and
+// delivers it to `to`, the offer's sender). `offer` 0: not an answer but a
+// player coming on their own (the regroup action).
+struct RegroupAnswer {
+  PlayerId from{};
+  PlayerId to{};
+  std::uint32_t offer{};
+  bool accepted{};
+  friend bool operator==(const RegroupAnswer &, const RegroupAnswer &) = default;
+};
+
+// Loot (docs/ARCHITECTURE.md, "Loot"). Corpses and containers are per
+// player: every game rolls its own loot, nothing is sent. What a V drops
+// from its inventory on purpose is a shared world item, the host's: it lies
+// in every game, and the first player to pick a stack up keeps it.
+using WorldItemId = std::uint32_t;
+inline constexpr std::size_t kMaxWorldItemStacks = 16;
+
+struct ItemStack {
+  std::uint64_t record{};   // TweakDB id of the item's record
+  std::uint32_t seed{};     // its ItemID's random seed: the same stats everywhere (0: stackable)
+  std::uint32_t quantity{}; // 0: taken
+  friend bool operator==(const ItemStack &, const ItemStack &) = default;
+};
+
+// A bag of stacks a V dropped (Event channel). The dropper's game sends it
+// with id 0 and a token of its own; the host numbers it, keeps it for late
+// joiners until every stack is taken, and sends it to everyone, the dropper
+// included (its game matches the token to the bag it already has).
+struct WorldItem {
+  WorldItemId id{};
+  PlayerId dropper{};    // set by the host from the connection
+  std::uint32_t token{}; // the dropper's own number for it
+  Vec3 position;
+  std::vector<ItemStack> stacks;
+  friend bool operator==(const WorldItem &, const WorldItem &) = default;
+};
+
+// A stack of a world item was picked up (Event channel). The picker's game
+// sends it to the host: a claim (the host sets `taker` from the connection).
+// The host grants the first claim and tells everyone who has it; a later
+// claimer hears the winner (kNoPlayer: the item was gone) and gives its own
+// pickup back.
+struct WorldItemTaken {
+  WorldItemId id{};
+  std::uint8_t stack{};
+  PlayerId taker{};
+  friend bool operator==(const WorldItemTaken &, const WorldItemTaken &) = default;
+};
+
+// Quest and important items are every player's (docs/ARCHITECTURE.md,
+// Loot): an item tagged Quest, a keycard or an iconic item that came into a
+// V's inventory (kSharedLooted: every other game gives it to its own V,
+// unless it has one; the host's own quests see it), or one on a host NPC's
+// corpse (kSharedOnCorpse, host only: guests put it on their proxy corpse
+// of `npc`). Event channel; a guest's goes to the host, which stamps it and
+// passes it on to the others.
+inline constexpr std::uint8_t kSharedLooted = 0, kSharedOnCorpse = 1;
+struct SharedItem {
+  PlayerId player{}; // who got it: set by the host from the connection
+  std::uint8_t kind{};
+  NpcId npc{}; // kSharedOnCorpse: whose corpse
+  ItemStack item;
+  friend bool operator==(const SharedItem &, const SharedItem &) = default;
+};
+
+// ---- Down and out (milestone 8, docs/ARCHITECTURE.md "Down, revive, respawn") ----
+
+// A V's life, owned and sent by that player's game when it changes (Event
+// channel; the host stamps the player, keeps everyone's latest for late
+// joiners and relays it). A V that would die while another V is up goes
+// Down (revivable, no bleed-out); one that cannot be revived (down again
+// within the cooldown after a revive, or killed outright) is Out until it
+// respawns beside a partner. The host decides the session is lost when no V
+// is Up (GameOver).
+enum class Life : std::uint8_t { Up = 0, Down = 1, Out = 2 };
+inline constexpr std::uint8_t kVitalsInCombat = 1; // the V is in combat (a respawn waits for it)
+struct Vitals {
+  PlayerId player{};
+  std::uint32_t revision{};
+  Life life{};
+  std::uint8_t flags{}; // kVitals*
+  friend bool operator==(const Vitals &, const Vitals &) = default;
+};
+
+// A player reviving another's downed V (the puppet in the reviver's game,
+// held for 10 s within 2 m): started, given up, done. To the downed V's game
+// through the host, which stamps the reviver and drops it unless the target
+// is Down; the downed V's game decides.
+enum class ReviveStep : std::uint8_t { Start = 0, Cancel = 1, Done = 2 };
+struct Revive {
+  PlayerId player{}; // the reviver: set by the host from the connection
+  PlayerId target{};
+  ReviveStep step{};
+  friend bool operator==(const Revive &, const Revive &) = default;
+};
+
+// Host to everyone: no V in the session is Up any more. The host's game runs
+// the normal death (death screen, checkpoint reload); guests wait for it.
+struct GameOver {
+  std::uint32_t round{}; // counts the losses of this session
+  friend bool operator==(const GameOver &, const GameOver &) = default;
+};
+
+// How one of the host's NPCs animates, in the game's own terms: what its
+// animation graph reads (NPCStatesComponent's states and anim features, the
+// weapon in its hands, a look-at target, the workspot it plays in), so a
+// guest's brain-off proxy is put in the same states and its own graph plays
+// them. A separate message from NpcStates (positions, 10 Hz, every NPC):
+// these change seldom, so they go only when they change (the host samples
+// them 4 times a second), reliably, and the host keeps each NPC's latest for
+// late joiners. The values are the game's enums (engine-knowledge §13.21).
+inline constexpr std::uint8_t kNpcAnimWeaponDrawn = 1; // something in its right hand
+inline constexpr std::uint8_t kNpcAnimInWorkspot = 2;  // workspot below is valid
+struct NpcAnim {
+  NpcId npc{};
+  std::uint8_t highLevel{5}; // gamedataNPCHighLevelState (Relaxed 5, Combat 2, Alerted 0…)
+  std::uint8_t upperBody{6}; // gamedataNPCUpperBodyState (Normal 6, Aim 0, Shoot 9, Reload 8…)
+  std::uint8_t stance{3};    // gamedataNPCStanceState (Stand 3, Crouch 2, Cover 1…)
+  std::uint8_t flags{};      // kNpcAnim*
+  std::uint64_t weapon{};    // TweakDB id of the item in its right hand (0: none)
+  // Who it looks or aims at: a player id, or 0x10000 + an NpcId (0: nobody).
+  std::uint32_t target{};
+  // Its workspot (a bench, a wall to lean on, a cigarette): the workspot
+  // resource's path hash, the tree entry it plays, the animation's CName hash.
+  std::uint64_t workspot{};
+  std::uint32_t workspotEntry{};
+  std::uint64_t workspotAnim{};
+  friend bool operator==(const NpcAnim &, const NpcAnim &) = default;
+};
+
+inline constexpr std::size_t kMaxNpcAnims = 64;
+struct NpcAnims { // Event channel, host only: the NPCs whose animation state changed
+  std::vector<NpcAnim> npcs;
+  friend bool operator==(const NpcAnims &, const NpcAnims &) = default;
+};
+
+// One shot (or reload) of a host NPC's weapon, drawn on the guests' proxy as
+// the weapon's own effects (muzzle flash, report, shells), like a player's
+// Shot. State channel: a late one is worth nothing. Host only.
+struct NpcShot {
+  NpcId npc{};
+  std::uint8_t effect{}; // gamedataFxAction, as Shot (Shoot 16, SilencedShoot 17…)
+  Vec3 target;           // where the shot went (tracers, later; zero: unknown)
+  friend bool operator==(const NpcShot &, const NpcShot &) = default;
+};
+
+// ---- Hit outcomes (docs/ARCHITECTURE.md, "Game rules hold for every hit") ----
+
+// A guest's hit on one of the host's NPCs (its proxy) with its whole outcome
+// as the guest's game computed it: health and poise lost, the rules that
+// bound the loss (non-lethal, leave 1 HP, the attack's minimum health), and
+// what the host's NPC needs to react as to a hit of its own (the attack, the
+// body part and kind of hit shape it landed on). The host applies it as
+// given (combat.hpp StrikeLoss) and plays the real reaction, wounds and
+// dismemberment on its NPC. Supersedes NpcHit, which the host still takes.
+// Guest to host, never relayed.
+inline constexpr std::uint16_t kStrikeWeakSpot = 1, kStrikeCritical = 2, kStrikeMelee = 4,
+                               kStrikeInstantKill = 8, // finisher, Kill flag: health to 0
+    kStrikeNonlethal = 16,                             // hitFlag.Nonlethal: knocks out
+    kStrikeLeaveOneHp = 32,                            // finisher grace, bleeding perk
+    kStrikeKillingBlow = 64,                           // hitFlag.WasKillingBlow on the proxy
+    kStrikeHeadshot = 128,                             // hitFlag.Headshot
+    kStrikeForceDismember = 256;                       // hitFlag.ForceDismember
+inline constexpr std::uint8_t kNoZone = 255;
+struct NpcStrike {   // Event channel
+  PlayerId player{}; // who hit: set by the host from the connection
+  NpcId npc{};
+  float damage{};             // health points
+  float poise{};              // poise points
+  float minHealth{};          // AttackData.GetMinimumHealthPercent (0: none)
+  std::uint16_t flags{};      // kStrike*
+  std::uint8_t attackType{};  // gamedataAttackType
+  std::uint8_t zone{kNoZone}; // EHitReactionZone of the hit shape (kNoZone: none)
+  std::int8_t part{-1};       // EAIDismembermentBodyPart (-1 none)
+  std::int8_t shape{-1};      // EHitShapeType (-1 none)
+  std::uint64_t attack{};     // TweakDB id of the attack record (0: unknown)
+  Vec3 position;              // where it landed, and the way it went
+  Vec3 direction;
+  friend bool operator==(const NpcStrike &, const NpcStrike &) = default;
+};
+
+// A host NPC lost a limb or got a wound (its hit reaction decided it, by the
+// game's rules, from a hit by anyone): every guest's proxy gets the same.
+// Host to everyone.
+struct NpcWound { // Event channel
+  NpcId npc{};
+  PlayerId player{};    // whose hit (kNoPlayer: an NPC's, or unknown)
+  std::uint8_t part{};  // gameDismBodyPart 0..5
+  std::uint8_t wound{}; // gameDismWoundType 0..2
+  Vec3 position;
+  friend bool operator==(const NpcWound &, const NpcWound &) = default;
+};
+
+// A host NPC's poise (guard), as its health: guests' proxies follow it, so
+// their own finisher and guard-break checks see the host's. Host to
+// everyone, on change; kept for late joiners until the NPC is gone.
+struct NpcPoise { // Event channel
+  NpcId npc{};
+  float poise{}; // fraction of its maximum, 0..1
+  friend bool operator==(const NpcPoise &, const NpcPoise &) = default;
+};
+
+// The session plays at the host's difficulty (gameDifficulty: Easy 0, Hard 1,
+// VeryHard 2, Story 3). Guests switch to it while in the session and back
+// when they leave. Host to everyone, kept for late joiners.
+struct Difficulty { // Event channel
+  std::uint8_t level{};
+  friend bool operator==(const Difficulty &, const Difficulty &) = default;
+};
+
+// An area effect our game computed (our V's grenade or explosion) reached
+// another player's V (its puppet here). The attacker's game ran the
+// attacker's side; the victim's runs the target's side on its own V, with
+// our puppet as the attacker: never applied twice. To the host, which
+// stamps `from` and passes it to `player` (or applies it to its own V).
+struct AreaHit {     // Event channel
+  PlayerId from{};   // the attacker: set by the host from the connection
+  PlayerId player{}; // whose V was hit
+  float physical{}, thermal{}, electric{}, chemical{};
+  std::uint8_t attackType{}; // gamedataAttackType (Explosion 3, PressureWave...)
+  std::uint8_t flags{};      // kHit*
+  Vec3 position;
+  Vec3 direction;
+  std::uint64_t attack{}; // TweakDB id of the attack record
+  std::uint64_t weapon{}; // TweakDB id of the item (grenade, weapon; 0: none)
+  friend bool operator==(const AreaHit &, const AreaHit &) = default;
+};
+
+// ---- Consistency (docs/ARCHITECTURE.md, "Consistency") ----
+// The shared state the host's digests cover, as bits.
+inline constexpr std::uint8_t kDomainWorld = 1;   // World: time, weather
+inline constexpr std::uint8_t kDomainNpcs = 2;    // the NPCs the host shares, their health
+inline constexpr std::uint8_t kDomainStory = 4;   // journal, tracked entry, call, hub, effects
+inline constexpr std::uint8_t kDomainPlayers = 8; // roster, looks, held items, seats, radios...
+inline constexpr std::uint8_t kAllDomains = 15;
+
+// Host to each guest every few seconds (Event channel: it falls in the
+// reliable stream after everything the host sent before it, so the guest
+// compares at the same point). A hash of each domain as the host's record
+// has it for that guest (tandem/consistency.hpp); the guest hashes its own
+// copy the same way and asks again for a domain that differs twice in a row.
+struct Digest {
+  std::uint32_t epoch{}; // the host's world epoch
+  std::uint32_t seq{};
+  std::uint32_t world{}, npcs{}, story{}, players{};
+  std::uint16_t npcCount{};
+  friend bool operator==(const Digest &, const Digest &) = default;
+};
+
+// Guest to host: send me these domains again (kDomain* bits). Never relayed.
+struct ResyncRequest {
+  std::uint8_t domains{};
+  friend bool operator==(const ResyncRequest &, const ResyncRequest &) = default;
+};
+
+// Host to one guest, opening a resync of its NPCs: every NPC the host
+// shares now. Their NpcSpawn and NpcHealth follow; the guest drops the rest.
+inline constexpr std::size_t kMaxNpcSet = 1024;
+struct NpcSet {
+  std::vector<NpcId> npcs;
+  friend bool operator==(const NpcSet &, const NpcSet &) = default;
+};
+
+// A game's world was rebuilt around its V (a loading screen, a fast
+// travel): its epoch moves on, and what was in flight about the old one is
+// void (Event channel). The host's goes to every guest (and to a newcomer);
+// each guest answers with its own, naming the host epoch it has seen, and
+// until then the host drops that guest's hits, effects, uploads and noises
+// (they aimed at the old world). A guest's own goes to the host, which
+// stamps and relays it.
+inline constexpr std::uint8_t kEpochJoin = 0, kEpochLoading = 1, kEpochFastTravel = 2;
+struct Epoch {
+  PlayerId player{};           // whose world: set by the host from the connection
+  std::uint32_t epoch{};       // that game's world epoch (1 at the start of a session)
+  std::uint32_t seenHost{};    // a guest's: the host epoch it has seen
+  std::uint8_t reason{};       // kEpoch*
+  std::uint32_t firstNpcSeq{}; // the host's: NpcStates older than this are the old world's
+  friend bool operator==(const Epoch &, const Epoch &) = default;
+};
+
+// A V in another world (docs/ARCHITECTURE.md, other worlds; core
+// elsewhere.hpp): cyberspace, a braindance, playing as Johnny or someone
+// else. Sent by that player's game when it changes (Event channel); the host
+// stamps the sender, keeps everyone's for late joiners (a player who leaves,
+// or comes back from a crash, is back in the city) and relays it. While the
+// scene has taken the player away from its body (kElsewhereMoved), its game
+// sends the body's place (`anchor`) as its PlayerState and holds the body's
+// pose as it was; the others show the body there when it was sitting or
+// lying (kElsewhereSettled: a chair, a bed, a braindance rig) and hide it
+// otherwise. Part of the players domain of the host's digests.
+enum class Place : std::uint8_t { City = 0, Cyberspace = 1, Braindance = 2, Johnny = 3, Other = 4 };
+inline constexpr std::uint8_t kElsewhereMoved = 1, kElsewhereSettled = 2;
+struct Elsewhere {
+  PlayerId player{};
+  Place place{};
+  std::uint8_t flags{}; // kElsewhere*
+  Vec3 anchor;          // kElsewhereMoved: where the body is, in the city
+  float yaw{};          // its heading (radians, sync::YawOf)
+  friend bool operator==(const Elsewhere &, const Elsewhere &) = default;
+};
+
+// NPC shots at a guest's V (docs/ARCHITECTURE.md, authority table; not
+// NpcShot, the cosmetic shot every guest draws on its proxy): the
 // host's NPC decides to fire (when, at whom, with which weapon and attack);
 // the guest's game fires the shot from its proxy of that NPC at its own V,
 // simulates the bullet or projectile and decides the hit, as single player
@@ -717,7 +1060,7 @@ struct NpcCue { // Event channel
 // sends it to that guest only and no longer decides the hit itself.
 // Event channel: a lost shot is one never fired, a doubled one two (a
 // one-shot for the consistency layer, in no digest: it is not state).
-struct NpcShot {
+struct NpcShotAt {
   PlayerId player{};      // the V shot at
   NpcId npc{};            // the shooter, as the host shares it
   std::uint64_t timeUs{}; // host clock when it fired
@@ -726,7 +1069,7 @@ struct NpcShot {
   float tbh{};            // the AI's time-between-hits coefficient for this shot
   std::uint8_t trigger{}; // gamedataTriggerMode
   float factor{1.f};      // the shooter's time factor (its bubble; 1: none)
-  friend bool operator==(const NpcShot &, const NpcShot &) = default;
+  friend bool operator==(const NpcShotAt &, const NpcShotAt &) = default;
 };
 
 // A shot the guest's game simulated hit its V (guest to host; the host
@@ -740,18 +1083,21 @@ struct ShotHit {     // Event channel
   friend bool operator==(const ShotHit &, const ShotHit &) = default;
 };
 
-using Message =
-    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
-                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
-                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
-                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
-                 Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
-                 NpcHold, NpcCue, NpcShot, ShotHit>;
+using Message = std::variant<
+    Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
+    Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
+    Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
+    PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle,
+    ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
+    NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
+    Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
+    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, NpcShotAt, ShotHit>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.
 bool IsStory(const Message &message);
+// A hit outcome message (NpcStrike … AreaHit): one path in endpoint.hpp too.
+bool IsCombat(const Message &message);
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

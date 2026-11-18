@@ -28,6 +28,8 @@ public class TandemMarker {
   public let attachedTo: EntityID;
   public let inCar: Bool;
   public let mappin: NewMappinID;
+  // Not shown for now: the player is in another world (Elsewhere.reds).
+  public let suppressed: Bool;
 }
 
 public class TandemMarkersTick extends DelayCallback {
@@ -67,6 +69,26 @@ public class TandemMarkers extends ScriptableSystem {
     }
   }
 
+  // A player's marker off for now (on: false, back), its puppet kept.
+  public static func Suppress(game: GameInstance, player: Uint32, on: Bool) -> Void {
+    let markers = TandemMarkers.Get(game);
+    if IsDefined(markers) {
+      markers.SetSuppressed(player, on);
+    }
+  }
+
+  public func SetSuppressed(player: Uint32, on: Bool) -> Void {
+    for marker in this.m_markers {
+      if marker.player == player && NotEquals(marker.suppressed, on) {
+        marker.suppressed = on;
+        if on {
+          this.Unregister(marker);
+        }
+        TandemNative.Log(s"marker: player \(player) \(on ? "off for now" : "back")");
+      }
+    }
+  }
+
   public static func Hide(game: GameInstance, player: Uint32) -> Void {
     let markers = TandemMarkers.Get(game);
     if IsDefined(markers) {
@@ -83,6 +105,24 @@ public class TandemMarkers extends ScriptableSystem {
     }
     let markers = TandemMarkers.Get(GetGameInstance());
     return IsDefined(markers) ? markers.PlayerName(mappin.GetNewMappinID()) : "";
+  }
+
+  // The player a mappin marks (0 if it is not one of ours): Travel.reds.
+  public static func PlayerOf(mappin: wref<IMappin>) -> Uint32 {
+    if !IsDefined(mappin) || !TandemMarkers.IsOurs(mappin.GetVariant()) {
+      return 0u;
+    }
+    let markers = TandemMarkers.Get(GetGameInstance());
+    if !IsDefined(markers) {
+      return 0u;
+    }
+    let id = mappin.GetNewMappinID();
+    for marker in markers.m_markers {
+      if marker.mappin.value != 0ul && marker.mappin.value == id.value {
+        return marker.player;
+      }
+    }
+    return 0u;
   }
 
   public func PlayerName(id: NewMappinID) -> String {
@@ -140,7 +180,7 @@ public class TandemMarkers extends ScriptableSystem {
     let entities = GameInstance.GetDynamicEntitySystem();
     for marker in this.m_markers {
       let body = entities.GetEntity(marker.puppet) as GameObject;
-      if IsDefined(body) {
+      if IsDefined(body) && !marker.suppressed {
         let target: wref<GameObject> = body;
         let car: wref<VehicleObject>;
         let inCar = VehicleComponent.GetVehicle(game, marker.puppet, car) && IsDefined(car);

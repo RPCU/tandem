@@ -22,7 +22,7 @@ public class TandemShots {
   private let m_announcedAt: array<Uint32>;
   private let m_announcedTime: array<Float>;
   // Guest: shots waiting for their proxy's weapon to be in its hand.
-  private let m_waiting: array<TandemNpcShot>;
+  private let m_waiting: array<TandemShotAt>;
   private let m_waitingSince: array<Float>;
   // Guest: the time factor and catch-up of shots fired from a proxy just
   // now (their projectiles take it as they are set up), and projectiles
@@ -75,7 +75,7 @@ public class TandemShots {
 
   // ---- host ----
 
-  // AIWeapon.Fire is about to run on the host (the wrap below): at a
+  // AIWeapon.Fire is about to run on the host (NpcAnims.reds' wrap): at a
   // guest's puppet, the shot goes to that guest's game instead of deciding
   // the hit here. The host still fires it, for its own view (the flash, the
   // sound, the NPC's ammo and timing): its hit on the puppet is dropped.
@@ -98,7 +98,7 @@ public class TandemShots {
     if factor < 0.0 {
       factor = 1.0;
     }
-    TandemNative.SendNpcShot(guest, npc, attack, ItemID.GetTDBID(weapon.GetItemID()), tbh, EnumInt(trigger), factor);
+    TandemNative.SendShotAt(guest, npc, attack, ItemID.GetTDBID(weapon.GetItemID()), tbh, EnumInt(trigger), factor);
     ArrayPush(this.m_announcedBy, owner.GetEntityID());
     ArrayPush(this.m_announcedAt, guest);
     ArrayPush(this.m_announcedTime, this.Now());
@@ -157,24 +157,38 @@ public class TandemShots {
       let body = system.PuppetOf(hit.player) as ScriptedPuppet;
       let npcs = system.NpcsSync();
       let shooter = IsDefined(npcs) ? GameInstance.FindEntityByID(this.m_game, npcs.EntityOfNpc(hit.npc)) as GameObject : null;
-      if IsDefined(body) && IsDefined(shooter) {
-        let event: TandemNpcEvent;
-        event.x = hit.x;
-        event.y = hit.y;
-        event.z = hit.z;
-        event.dx = hit.dx;
-        event.dy = hit.dy;
-        event.dz = hit.dz;
-        TandemNpcs.React(body, shooter, event);
+      if IsDefined(body) && IsDefined(shooter) && !body.IsDead() {
+        TandemShots.ShowHit(body, shooter, new Vector4(hit.x, hit.y, hit.z, 1.0), new Vector4(hit.dx, hit.dy, hit.dz, 0.0));
       }
       this.Once(n"report", s"shots: player \(hit.player) reports npc \(hit.npc)'s shot hit their V (shown on the puppet: \(IsDefined(body) && IsDefined(shooter)))");
     }
   }
 
+  // A bullet's hit on the puppet as the game shows one (its hit reaction,
+  // sounds, effects), dealing nothing: no damage, no floater. Our own
+  // pipeline passes it (it carries DealNoDamage: SimulatedByGuest).
+  public static func ShowHit(body: ref<ScriptedPuppet>, shooter: ref<GameObject>, at: Vector4, way: Vector4) -> Void {
+    let context: AttackInitContext;
+    context.record = TweakDBInterface.GetAttackRecord(t"Attacks.REMOVE_BulletWithDamage");
+    context.instigator = shooter;
+    context.source = shooter;
+    let hit = new gameHitEvent();
+    hit.attackData = new AttackData();
+    hit.target = body;
+    hit.hitPosition = at;
+    hit.hitDirection = way;
+    hit.attackData.AddFlag(hitFlag.DealNoDamage, n"tandem_shot_report");
+    hit.attackData.AddFlag(hitFlag.DontShowDamageFloater, n"tandem_shot_report");
+    hit.attackData.SetSource(shooter);
+    hit.attackData.SetInstigator(shooter);
+    hit.attackData.SetAttackDefinition(IAttack.Create(context));
+    GameInstance.GetDamageSystem(body.GetGame()).QueueHitEvent(hit, body);
+  }
+
   // ---- guest ----
 
   private func FireIncoming(now: Float) -> Void {
-    for shot in TandemNative.TakeNpcShots() {
+    for shot in TandemNative.TakeShotsAt() {
       ArrayPush(this.m_waiting, shot);
       ArrayPush(this.m_waitingSince, now);
     }
@@ -209,7 +223,7 @@ public class TandemShots {
   // a player (final.reds:173195-173307): the head, 15 cm lower, the
   // target's miss offset, the weapon's AI spread. No ammo is spent on the
   // proxy (the host's NPC has the magazine). False: not ready yet.
-  private func Fire(shot: TandemNpcShot, now: Float) -> Bool {
+  private func Fire(shot: TandemShotAt, now: Float) -> Bool {
     let system = this.System();
     let npcs = IsDefined(system) ? system.NpcsSync() : null;
     let player = GetPlayer(this.m_game);
@@ -228,6 +242,12 @@ public class TandemShots {
     }
     if !IsDefined(weapon) || !weapon.IsAttached() {
       return false;
+    }
+    // The host's NPC is shooting at us: so is its proxy here, whatever its
+    // group says (a friendly attacker's hits are dropped, CheckForQuickExit).
+    let agent = proxy.GetAttitudeAgent();
+    if IsDefined(agent) && IsDefined(player.GetAttitudeAgent()) && NotEquals(agent.GetAttitudeTowards(player.GetAttitudeAgent()), EAIAttitude.AIA_Hostile) {
+      agent.SetAttitudeTowards(player.GetAttitudeAgent(), EAIAttitude.AIA_Hostile);
     }
     let aim: Vector4;
     let head = IPositionProvider.CreateSlotPositionProvider(player, n"Head");
@@ -351,17 +371,4 @@ public class TandemShots {
     ArrayClear(this.m_boostUntil);
     ArrayClear(this.m_boostFactor);
   }
-}
-
-// Every NPC shot (final.reds:173136): at a guest's puppet, announced to that
-// guest first. The shot itself runs unchanged.
-@wrapMethod(AIWeapon)
-public final static func Fire(weaponOwner: wref<GameObject>, weapon: wref<WeaponObject>, const timeStamp: Float, tbhCoefficient: Float, requestedTriggerMode: gamedataTriggerMode, opt targetPosition: Vector4, opt target: ref<GameObject>, opt rangedAttack: TweakDBID, opt maxSpreadOverride: Float, opt aimingDelay: Float, opt offset: Vector4, opt shouldTrackTarget: Bool, opt predictionTime: Float, opt posProviderOverride: ref<IPositionProvider>, opt muzzleOffset: Vector4, opt weaponCustomEvent: CName) -> Void {
-  if IsDefined(weaponOwner) && IsDefined(target) && TandemNative.IsHost() {
-    let shots = TandemShots.Of(weaponOwner.GetGame());
-    if IsDefined(shots) {
-      shots.Announce(weaponOwner, weapon, target, tbhCoefficient, requestedTriggerMode, rangedAttack);
-    }
-  }
-  wrappedMethod(weaponOwner, weapon, timeStamp, tbhCoefficient, requestedTriggerMode, targetPosition, target, rangedAttack, maxSpreadOverride, aimingDelay, offset, shouldTrackTarget, predictionTime, posProviderOverride, muzzleOffset, weaponCustomEvent);
 }

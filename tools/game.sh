@@ -31,10 +31,14 @@
 #                              respawn | inspect | bodies | probe | probe stop | despawn |
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
 #                              vehicle ride | vehicle unride | vehicle clear | where | npcs |
-#                              npc count | markers |
+#                              npc count | npc anims | markers |
 #                              teleport home | teleport X Y Z [YAW] |
 #                              proxy test [record] | proxy clear |
-#                              pose hook | pose report | pose watch [3] | pose copy [off]
+#                              pose hook | pose report | pose watch [3] | pose copy [off] |
+#                              coop status | coop host [PORT] | coop join ADDRESS[:PORT] |
+#                              coop leave | coop menu PAGE | coop pick TEXT
+#                              (the co-op menu: in game any time; menu and pick drive
+#                              an open main or pause menu, pages root coop host join save)
 #
 # The game machine runs Steam in a Sway session (headless output for Sunshine)
 # and ydotoold for input; GAME_HOST and GAME_DIR override the defaults.

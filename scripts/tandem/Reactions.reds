@@ -162,6 +162,11 @@ protected cb func OnDodgeToAvoidCombatEvent(evt: ref<DodgeToAvoidCombatEvent>) -
 // A guard broken by a guest's hit offers that guest the finisher, not our V.
 @wrapMethod(NPCPoiseListener)
 protected cb func OnStatPoolMinValueReached(value: Float) -> Bool {
+  // Guest: a proxy's poise follows the host's (NpcPoise, Outcomes.reds);
+  // whose finisher it is comes from the host, as a cue.
+  if IsDefined(this.npc) && !TandemNative.IsHost() && TandemTakedowns.Get(this.npc.GetGame()).NpcOf(this.npc) != 0u {
+    return true;
+  }
   if IsDefined(this.npc) {
     let guest = TandemReactions.GuestOf(this.npc.GetGame(), this.npc.GetLastHitInstigator());
     if guest != 0u {
