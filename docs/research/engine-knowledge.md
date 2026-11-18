@@ -3012,3 +3012,30 @@ item is [2.5-untested] unless marked.
 - Hiding a body reversibly: `IVisualComponent.TemporaryHide(on)` (106206;
   vanilla swaps broken and fixed meshes with it, 511696-511718).
   `HideIrreversibly` (19392) is for good.
+
+**A V in a vehicle with no seat for it** (a guest riding along, Transit.reds).
+
+- No camera to lend: the vehicle's FPP/TPP cameras and its scene camera
+  mode (`SetVehicleCameraSceneMode`, `vehicleRequestCameraPerspectiveEvent`)
+  are driven by the player state machine's vehicle states, which only run
+  for a V mounted in a seat (`VehicleComponent.OnMountingEvent` adds the
+  `Vehicle` state machine, 291579-291602); `StateGameScriptInterface.
+ActivateCameraSetting` (247390) switches settings of V's own camera.
+  Only photo mode has a free camera. A carried V therefore looks through
+  its own eyes.
+- A mount without the vehicle state machine exists: a mounting request
+  whose `mountEventOptions.silentUnmount` is set adds no `Vehicle` state
+  machine (`MountFromParent`, 291579), but it still needs a slot of the
+  vehicle; with every seat taken there is none to use. Not used.
+- Restrictions a script can put on V and take off by record:
+  `GameplayRestriction.NoMovement`, `NoJump`, `NoWeapons`,
+  `NoWorldInteractions`, `VehicleNoInteraction`, `ForceCrouch`,
+  `NoCameraControl` (all used by vanilla, `t"GameplayRestriction.*"`), and
+  `BaseStatusEffect.Invulnerable`. Status effects can be saved: tandem
+  removes its own on load.
+- `WorkspotSystem.MountToVehicle(parent, child, slide, delay,
+n"OccupantSlots", slot)` (53240) is the scene's way into a seat's
+  workspot: a seat again.
+- Whether a V teleported every frame into a moving copy's cabin
+  (`TeleportationFacility.Teleport`) collides with the car's hull or
+  seats, and whether the per-frame teleport is smooth: [unverified].

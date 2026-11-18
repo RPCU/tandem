@@ -467,13 +467,46 @@ redscript natives (UI, events)              ENet socket
     scene's passenger holds is never taken), else in another free one, else
     it is hidden until one frees.
   - _The host's quest scene vehicle_ (`Scene` with `kTransitSeats`): the
-    quest runs on the host, so its vehicle is the host's, and guests are
-    brought along the way the scene seats a companion: a guest's V on foot
-    within 20 m of the copy and out of combat is seated in a free
-    passenger or gunner seat of it (the driver's never), with a notice, and
-    taken out when the ride ends. No free seat: a notice, and the story's
-    rules for a guest outside the scene apply (weapons lowered near it, the
-    join offer from afar).
+    quest runs on the host, so the scene and its vehicle are the host's,
+    and nothing a guest does moves, reserves or empties a seat of it. A
+    guest's V on foot within 20 m of the copy, up and out of combat, is
+    asked the game's way (a notice and two input hints, the keys co-op
+    offers use): **Ride with NAME** (the phone key) or **Follow** (the
+    reject key held); nothing chosen in 6 s while still near is riding;
+    walking off (30 m) or getting into a car of its own is following.
+    - _Ride, a free seat_ (a passenger or gunner seat nobody holds, never
+      the driver's): seated in it, as the scene seats a companion.
+    - _Ride, no free seat_ (two-seat cars: the host with Panam or Johnny
+      beside it, an NPC driving the host): **carried along**. The guest's V
+      is hidden (its own meshes and what it holds), held by the game's own
+      restrictions (no movement, no jump, no weapons, no world or vehicle
+      interaction, crouched, invulnerable) and put in the copy's cabin
+      every frame, behind the seats, turning with the car while its camera
+      stays free: it sees the ride and hears the scene (the host's lines,
+      Dialogue.reds) from where a passenger would. It sends `Transit`
+      `Along` (the carrier), so every game hides its puppet (there is no
+      seat to show it in). The game lends no camera to a V without a seat:
+      a vehicle's cameras and its scene camera mode belong to the seated
+      V's state machine (vehicle states Passenger, Scene), and only photo
+      mode has a free camera; V's own eyes, carried, are the passenger's
+      view.
+    - _Follow_: nothing is done to the guest's V. The host's marker sits
+      on its car (Markers.reds); when the host's scene ride ends, the host
+      offers everyone far from it to join (the regroup offer, "Join NAME",
+      Travel.reds), so a guest left behind is brought to the destination
+      if it says yes.
+    - _The end, whatever ends it_: the host's ride leaves `Scene`, the copy
+      goes, the guest goes down (a downed V is never carried, nor asked),
+      or the session ends (a vanished host included, the desync work's
+      rules): every restriction off, seen again, put down beside the car.
+      A game that loads clears the restrictions a save could have kept. A
+      guest that vanishes is the host's PlayerLeft as always.
+    - _Rejected: an extra seat on the guest's copy only._ The host's game
+      owns the car and its seats; the copy must look like the host's car
+      (an extra body would sit where the host's world has nobody, or in
+      Panam's lap), the host's game would still have to place the guest's
+      puppet somewhere, and the scene could later seat someone where the
+      guest sits.
   - _The NCART metro_ (`Metro`): V mounts an `ncartMetroObject` the
     `ue_metro` quest drives. **Deliberate exception to "one world, one
     owner": every game that rides runs its own train**, with its own
@@ -488,7 +521,8 @@ redscript natives (UI, events)              ENet socket
     that world when one is where the rider is (the entity the rider rides,
     if streamed there too, or the observer's own train, within 60/150 m,
     kept until 300 m), in the rider's seat if free; otherwise it is hidden
-    (`IVisualComponent.TemporaryHide`, held items too), placed along the
+    (PuppetVisibility.reds, reason `metro`; `along` for a guest riding
+    along, `noseat` for a puppet with no free seat), placed along the
     ride twice a second so the map marker follows, with a notice ("… is
     riding the NCART toward Japantown South"). When the ride ends it is
     shown again where the rider is, the exit station ("… got off the
@@ -512,10 +546,12 @@ redscript natives (UI, events)              ENet socket
     the host's world's; every other game plays the effect on its copy.
     Not done; NPCs driving vehicles that carry no player (chases) are the
     host's AI vehicles of the authority table, also not shared yet.
-  - Not yet verified in game: scenarios `metro`, `ride`,
-    `scene-ride`; `tools/game.sh cmd ride` logs our ride, the vehicle's
-    seats and everyone's rides; `ride npc [RECORD]` seats an NPC in our
-    vehicle (a host test of `NpcSeat`).
+  - Not yet verified in game: scenarios `metro`, `ride`, `scene-ride`,
+    `scene-ride-full` (a two-seat car: ride along), `scene-ride-follow`;
+    `tools/game.sh cmd ride` logs our ride, the vehicle's seats and
+    everyone's rides; `ride along` / `ride follow` answer the question;
+    `ride npc [RECORD]` seats an NPC in our vehicle (a host test of
+    `NpcSeat`).
 - **Radio** (`scripts/tandem/Radio.reds`, engine-knowledge §13.12): the
   driver owns the car's radio. While our V drives its own car, our game
   reads the car's receiver four times a second (on, station as an
@@ -1335,7 +1371,12 @@ game thread stop). Each feature verified in game gets a scenario.
 - **drive --seat SLOT** — the same car, but the mock player rides in SLOT
   while "an AI" drives it (a `Ride`); `--scene` makes it a story scene's
   (as host: guests near it get a free seat); `--driver-npc RECORD` (host)
-  puts an NPC at the wheel (`NpcSeat`). Scenarios `ride`, `scene-ride`.
+  puts an NPC at the wheel (`NpcSeat`). Scenarios `ride`, `scene-ride`;
+  with a two-seat car (`--vehicle Vehicle.v_sport2_porsche_911turbo`, the
+  NPC driving, the mock player beside it) `scene-ride-full` and
+  `scene-ride-follow`. As a guest, `--ride-along` answers a scene ride
+  with seats by riding along (`Transit` `Along`, carried with the car,
+  out beside it at the end): the host's side of a ride along.
 - **metro** — stands beside your V, then rides the NCART (`--metro-at`,
   `--metro-for`): a straight line 8 m up at 20 m/s, skipping (ten times
   faster) for 3 s halfway, then off at the end. Scenario `metro`.
