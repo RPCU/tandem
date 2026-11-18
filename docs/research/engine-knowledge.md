@@ -1866,12 +1866,41 @@ none of it run in game yet.
   was friendly (0) while `civilian` to `player` was neutral (1): the
   relation copy had not taken, or not run, and civilians saw the puppet as
   friendly where they see V as neutral. A fresh group's relations with no
-  copy read friendly. [2.5-verified] Since then every relation copy is read
-  back and logged (`attitudes: OURS / OTHER (...): V's a/b, read back
-c/d`, `(not taken)` when it differs), and each NPC around also gets V's
-  attitudes on the puppet's agent where the groups do not give them
-  (`AttitudeAgent.SetAttitudeTowards`, which reads back: §13.11).
-  [2.5-untested]
+  copy read friendly. [2.5-verified] Second run: every copy logged
+  `tandem_player_1 / civilian (puppet put in): V's 1/1, read back 0/0 (not
+taken)`, and no NPC was within 60 m of V when the command ran (the
+  scenario failed on `0 NPCs`). [2.5-verified]
+- **Why the copy never shows: the setter and the getter use different
+  tables** (Ghidra on the 2.50 exe, `tools/re/decompile`, 2026-11-18):
+  - `GetAttitudeRelation` (native 0x140fcc234 → 0x14026981c) looks both
+    names up in the manager's group table (manager +0x48; a name not
+    found gives neutral, 1), then in an override map at +0xC8 keyed by a
+    symmetric hash of the two names (0x14026a3f8), else the base relation
+    from a packed 2-bit triangular matrix (0x14026a438): relations are
+    **symmetric**. `tandem_player_1` is in the table (it read 0, not the
+    unknown-name 1): TweakXL's groups exist before the world loads.
+  - `SetAttitudeRelation` (native 0x140ca8650 → 0x140ca8730) **does not
+    write either**: it walks the registered attitude agents (manager
+    +0x158), matches each agent's group name (its PS's current group,
+    else `baseAttitudeGroup` at +0xC8 of the agent), and for every agent
+    of the first group and every agent of the second sets a per-agent-pair
+    attitude both ways (0x14048b73c → 0x14048ac70, map at manager +0x190)
+    and sends them an event. Agents that join either group later get
+    nothing, and the group table is untouched. tandem copied while no
+    agent was in `tandem_player_1` yet (before `SetAttitudeGroup`), so it
+    did nothing.
+  - `SetAttitudeGroupRelationPersistent` (native 0x14141b41c →
+    0x14141b4fc) is the one that writes the group override map at +0xC8
+    (for two names in the table), then updates agents. It is what quests
+    use, and it is saved with the game.
+    Read from the decompiled code, not run. [2.5-untested]
+- Since then: a puppet is put in its group first, then gets
+  `SetAttitudeRelation` from it to every group seen (reaching the agents
+  around), and every 2 s each NPC within 60 m of V or a puppet gets its
+  and V's attitudes on the puppet's agent (`AttitudeAgent.SetAttitudeTowards`,
+  which reads back: §13.11). The persistent setter would give the real
+  group copy (every NPC of the group, now and later) but writes the host's
+  save; not used. [2.5-untested]
 - **Why one group per V**: vanilla turns an NPC hostile to its target's
   whole group, `AttitudeAgent.SetAttitudeTowardsAgentGroup(target, owner,
 hostile)` (`TryChangingAttitudeToHostile` 169933, companions 152568);
