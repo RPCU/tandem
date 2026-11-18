@@ -558,8 +558,8 @@ redscript natives (UI, events)              ENet socket
   teleport, and when a world comes with it (or within 4 s) the scene has
   taken V away from its body; cyberspace and braindances always do, jump or
   not (V's entity is their camera: a braindance flies it). The body stays
-  where V was just before: that game then sends the body's place as its `PlayerState` (no
-  velocity), holds the body's pose as it was then (kept 5 s back, sent again
+  where V was just before: that game then sends the body's place as its
+  `PlayerState` (no velocity), holds the body's pose as it was then (kept 5 s back, sent again
   10 times a second), says whether it sat or lay (a workspot: a netrunner
   chair, a braindance rig, a bed) and shares no NPCs (they are the other
   world's). A teleport with no world for 3 s was one in the city: the body
@@ -570,8 +570,8 @@ redscript natives (UI, events)              ENet socket
     the puppet and what it wears and holds) with its marker off. A takeover
     in the city keeps the puppet. A notice says it the game's way
     ("… is in cyberspace", "… is living one of Johnny's memories", "… is
-    back"); a puppet shows again 0.75 s after its player is back, once it
-    has moved there.
+    back"); a hidden puppet shows again 0.75 s after its player is back,
+    once it has moved there.
   - _Our own V elsewhere_ (cyberspace, a braindance, or away from its body)
     sees no puppet and no marker of the others; they come back with it.
   - _The story_: a host away from its body, or our V in another world,
