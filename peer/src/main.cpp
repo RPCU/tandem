@@ -22,6 +22,10 @@
 // Pause menu: --pause-at opens "its pause menu" that many seconds into the
 // session (once another player is there) for --pause-for seconds; the pause
 // states it hears are logged.
+// NPCs: join --record saves the host's NPC messages (spawns, positions,
+// animation states, shots, health, gone); host --replay sends them again,
+// and --anims FILE adds animation states and shots from a text script
+// (NpcAnimScript below) to the replayed NPCs: aim, crouch, shoot, a workspot.
 // Body pose: mirror and front echo your V's pose; --pose FILE (a .tpose made by
 // tools/re/pose_export.py from a recording) plays a recorded pose instead, in
 // a loop, with any mode.
@@ -77,6 +81,7 @@ struct Options {
   std::string weather;
   std::string recordFile; // join: save the host's NPC messages here
   std::string replayFile; // host: send a recording's NPC messages again
+  std::string animsFile;  // host: NPC animation states and shots to send (with --replay)
   int pauseAtSeconds{-1}; // open the pause menu this long into the session (-1: never)
   int pauseForSeconds{3}; // ...for this long
   bool check{};           // parse the options, then exit
@@ -146,6 +151,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
                "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
                "  --replay FILE      host: send a recording's NPCs again, at its pace (moved by\n"
                "                     --offset)\n"
+               "  --anims FILE       host: with --replay, NPC animation states and shots from\n"
+               "                     FILE (lines: SECONDS NPC|* HIGH UPPER STANCE\n"
+               "                     [weapon=RECORD] [target=PLAYER] [shoot=N]\n"
+               "                     [workspot=HASH:ENTRY:ANIM])\n"
                "  --pause-at N       open the pause menu N seconds after another player is in the\n"
                "                     session: every game pauses\n"
                "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n";
@@ -264,6 +273,8 @@ Options Parse(int argc, char **argv) {
       options.recordFile = value;
     } else if (flag == "--replay") {
       options.replayFile = value;
+    } else if (flag == "--anims") {
+      options.animsFile = value;
     } else
       Usage(std::format("unknown option {}", flag));
   }
@@ -371,6 +382,156 @@ private:
   std::ofstream m_out;
   std::optional<std::uint64_t> m_start;
   std::size_t m_count{};
+};
+
+// --anims: NPC animation states and shots by time, for the replayed NPCs.
+// One line per change, `#` comments:
+//   SECONDS NPC HIGH UPPER STANCE [weapon=RECORD] [target=PLAYER] [shoot=N]
+//           [workspot=HASH:ENTRY:ANIM]
+// SECONDS count from the replay's start. NPC is a replayed NPC's id or *
+// (every replayed NPC out then); HIGH, UPPER and STANCE are the game's state
+// names (gamedataNPCHighLevelState, gamedataNPCUpperBodyState,
+// gamedataNPCStanceState) or numbers; shoot=N fires N shots, five a second;
+// workspot takes the resource path hash (as the game logs it, 0x… or
+// decimal), the tree entry and the animation name.
+class NpcAnimScript {
+public:
+  struct Line {
+    std::uint64_t atUs{};
+    std::optional<tandem::proto::NpcId> npc; // none: every NPC
+    tandem::proto::NpcAnim anim;
+    int shots{};
+  };
+
+  bool Load(const std::string &path, std::string &error) {
+    std::ifstream in(path);
+    if (!in) {
+      error = std::format("cannot read {}", path);
+      return false;
+    }
+    std::string text;
+    for (int number = 1; std::getline(in, text); ++number) {
+      if (const auto hash = text.find('#'); hash != std::string::npos)
+        text.resize(hash);
+      std::vector<std::string> words;
+      for (std::size_t at = 0; at < text.size();) {
+        const auto start = text.find_first_not_of(" \t\r", at);
+        if (start == std::string::npos)
+          break;
+        const auto end = text.find_first_of(" \t\r", start);
+        words.push_back(text.substr(start, end - start));
+        at = end == std::string::npos ? text.size() : end;
+      }
+      if (words.empty())
+        continue;
+      Line line;
+      if (words.size() < 5 || !ParseLine(words, line)) {
+        error =
+            std::format("{}:{}: not SECONDS NPC HIGH UPPER STANCE [key=value...]", path, number);
+        return false;
+      }
+      m_lines.push_back(line);
+    }
+    std::ranges::stable_sort(m_lines, {}, &Line::atUs);
+    return true;
+  }
+
+  std::size_t Size() const { return m_lines.size(); }
+  const std::vector<Line> &Lines() const { return m_lines; }
+
+private:
+  static std::optional<int> Number(std::string_view text) {
+    int value = 0;
+    const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (ec != std::errc{} || end != text.data() + text.size())
+      return std::nullopt;
+    return value;
+  }
+  // A state by its enum value's name or number.
+  static std::optional<std::uint8_t> State(std::string_view text,
+                                           std::initializer_list<std::string_view> names) {
+    if (const auto number = Number(text))
+      return static_cast<std::uint8_t>(*number);
+    std::uint8_t index = 0;
+    for (const auto name : names) {
+      if (name == text)
+        return index;
+      ++index;
+    }
+    return std::nullopt;
+  }
+
+  static bool ParseLine(const std::vector<std::string> &words, Line &line) {
+    double seconds = 0;
+    if (std::from_chars(words[0].data(), words[0].data() + words[0].size(), seconds).ec !=
+        std::errc{})
+      return false;
+    line.atUs = static_cast<std::uint64_t>(seconds * 1e6);
+    if (words[1] != "*") {
+      const auto npc = Number(words[1]);
+      if (!npc)
+        return false;
+      line.npc = static_cast<tandem::proto::NpcId>(*npc);
+    }
+    const auto high = State(words[2], {"Alerted", "Any", "Combat", "Dead", "Fear", "Relaxed",
+                                       "Stealth", "Unconscious", "Wounded"});
+    const auto upper = State(words[3], {"Aim", "Any", "Attack", "ChargedAttack", "Defend", "Equip",
+                                        "Normal", "Parry", "Reload", "Shoot", "Taunt"});
+    const auto stance =
+        State(words[4], {"Any", "Cover", "Crouch", "Stand", "Swim", "Vehicle", "VehicleWindow"});
+    if (!high || !upper || !stance)
+      return false;
+    line.anim.highLevel = *high;
+    line.anim.upperBody = *upper;
+    line.anim.stance = *stance;
+    for (std::size_t i = 5; i < words.size(); ++i) {
+      const auto equals = words[i].find('=');
+      if (equals == std::string::npos)
+        return false;
+      const std::string_view key(words[i].data(), equals);
+      const std::string_view value(words[i].data() + equals + 1, words[i].size() - equals - 1);
+      if (key == "weapon") {
+        line.anim.weapon = TweakDBID(value);
+        line.anim.flags |= tandem::proto::kNpcAnimWeaponDrawn;
+      } else if (key == "target") {
+        const auto player = Number(value);
+        if (!player)
+          return false;
+        line.anim.target = static_cast<std::uint32_t>(*player);
+      } else if (key == "shoot") {
+        const auto shots = Number(value);
+        if (!shots)
+          return false;
+        line.shots = *shots;
+      } else if (key == "workspot") {
+        // HASH:ENTRY:ANIM
+        const auto first = value.find(':');
+        if (first == std::string_view::npos)
+          return false;
+        const auto second = value.find(':', first + 1);
+        if (second == std::string_view::npos)
+          return false;
+        const auto hashText = value.substr(0, first);
+        const bool hex = hashText.starts_with("0x");
+        const auto digits = hex ? hashText.substr(2) : hashText;
+        std::uint64_t hash = 0;
+        if (std::from_chars(digits.data(), digits.data() + digits.size(), hash, hex ? 16 : 10).ec !=
+            std::errc{})
+          return false;
+        const auto entry = Number(value.substr(first + 1, second - first - 1));
+        if (!entry)
+          return false;
+        line.anim.workspot = hash;
+        line.anim.workspotEntry = static_cast<std::uint32_t>(*entry);
+        line.anim.workspotAnim = CName(value.substr(second + 1));
+        line.anim.flags |= tandem::proto::kNpcAnimInWorkspot;
+      } else
+        return false;
+    }
+    return true;
+  }
+
+  std::vector<Line> m_lines;
 };
 
 // What the mock player does with the states it hears.
@@ -579,6 +740,23 @@ int main(int argc, char **argv) {
     replay = NpcRecording::Load(options.replayFile);
     Log("replay: {} NPC messages from {}", replay.size(), options.replayFile);
   }
+  NpcAnimScript anims;
+  if (!options.animsFile.empty()) {
+    std::string error;
+    if (!anims.Load(options.animsFile, error)) {
+      std::cerr << "tandem-peer: " << error << '\n';
+      return 1;
+    }
+    Log("anims: {} NPC animation changes from {}", anims.Size(), options.animsFile);
+  }
+  std::size_t animsNext = 0;
+  std::set<tandem::proto::NpcId> replayNpcs; // spawned by the replay, not gone
+  // --anims shoot=N: shots still to fire, per NPC, and when the next is due.
+  struct Burst {
+    int left{};
+    std::uint64_t nextUs{};
+  };
+  std::map<tandem::proto::NpcId, Burst> bursts;
 
   Puppeteer puppeteer(options);
   const auto startUs = tandem::net::NowUs();
@@ -642,6 +820,17 @@ int main(int argc, char **argv) {
                   Log("npc {} has detected players {:#x}", entry.npc, entry.detected);
                   seen = entry.detected;
                 }
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcAnims>) {
+              if (!options.recordFile.empty())
+                recording.Add(e.anims);
+              for (const auto &anim : e.anims.npcs)
+                Log("npc {} animates: high {}, upper {}, stance {}, weapon {:#x}, target {}, "
+                    "workspot {:#x} entry {}",
+                    anim.npc, anim.highLevel, anim.upperBody, anim.stance, anim.weapon, anim.target,
+                    anim.workspot, anim.workspotEntry);
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcShot>) {
+              if (!options.recordFile.empty())
+                recording.Add(e.shot);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcGone>) {
               liveNpcs.erase(e.gone.npc);
               if (e.gone.reason == 1)
@@ -808,6 +997,7 @@ int main(int argc, char **argv) {
         if (auto *spawn = std::get_if<tandem::proto::NpcSpawn>(&message)) {
           shift(spawn->position);
           endpoint->SendNpcSpawn(*spawn);
+          replayNpcs.insert(spawn->npc);
         } else if (auto *states = std::get_if<tandem::proto::NpcStates>(&message)) {
           std::erase_if(states->npcs,
                         [&](const auto &entry) { return deadNpcs.contains(entry.npc); });
@@ -815,13 +1005,52 @@ int main(int argc, char **argv) {
             shift(entry.position);
           endpoint->SendNpcStates(*states);
         } else if (const auto *gone = std::get_if<tandem::proto::NpcGone>(&message)) {
+          replayNpcs.erase(gone->npc);
           if (!deadNpcs.contains(gone->npc))
             endpoint->SendNpcGone(*gone);
         } else if (const auto *health = std::get_if<tandem::proto::NpcHealth>(&message))
           endpoint->SendNpcHealth(*health);
+        else if (auto *recorded = std::get_if<tandem::proto::NpcAnims>(&message)) {
+          std::erase_if(recorded->npcs,
+                        [&](const auto &anim) { return deadNpcs.contains(anim.npc); });
+          endpoint->SendNpcAnims(*recorded);
+        } else if (const auto *shot = std::get_if<tandem::proto::NpcShot>(&message)) {
+          if (!deadNpcs.contains(shot->npc))
+            endpoint->SendNpcShot(*shot);
+        }
       }
       if (replayNext == replay.size())
         Log("replay: done");
+    }
+    if (options.host && replayStartUs && anims.Size() > 0) {
+      const auto nowUs = tandem::net::NowUs();
+      // --anims: the script's changes as their time comes, on the NPCs the
+      // replay has out (all of them for *), and their shots.
+      const auto elapsedUs = nowUs - *replayStartUs;
+      for (; animsNext < anims.Size() && anims.Lines()[animsNext].atUs <= elapsedUs; ++animsNext) {
+        const auto &line = anims.Lines()[animsNext];
+        tandem::proto::NpcAnims batch;
+        for (const auto npc : replayNpcs) {
+          if ((line.npc && *line.npc != npc) || deadNpcs.contains(npc) ||
+              batch.npcs.size() == tandem::proto::kMaxNpcAnims)
+            continue;
+          auto anim = line.anim;
+          anim.npc = npc;
+          batch.npcs.push_back(anim);
+          if (line.shots > 0)
+            bursts[npc] = {line.shots, nowUs};
+        }
+        endpoint->SendNpcAnims(batch);
+        Log("anims: line {} for {} NPC(s): high {}, upper {}, stance {}{}", animsNext + 1,
+            batch.npcs.size(), line.anim.highLevel, line.anim.upperBody, line.anim.stance,
+            line.shots ? std::format(", {} shots", line.shots) : "");
+      }
+      for (auto &[npc, burst] : bursts)
+        if (burst.left > 0 && nowUs >= burst.nextUs && !deadNpcs.contains(npc)) {
+          endpoint->SendNpcShot({.npc = npc, .effect = 16});
+          --burst.left;
+          burst.nextUs = nowUs + 200'000;
+        }
     }
     if (now >= nextReport) {
       nextReport = now + 5s;

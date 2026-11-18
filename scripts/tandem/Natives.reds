@@ -46,6 +46,34 @@ public native struct TandemNpcEvent {
   native let dz: Float;
 }
 
+// A host NPC's animation state (NpcAnims.reds).
+public native struct TandemNpcAnim {
+  native let npc: Uint32;
+  // gamedataNPCHighLevelState, gamedataNPCUpperBodyState, gamedataNPCStanceState
+  native let highLevel: Int32;
+  native let upperBody: Int32;
+  native let stance: Int32;
+  // 1 weapon drawn, 2 in a workspot
+  native let flags: Int32;
+  native let weapon: TweakDBID;
+  // a player id, or 0x10000 + an NPC id (0: nobody)
+  native let target: Uint32;
+  // the workspot resource's path hash, its tree entry, the animation playing
+  native let workspot: Uint64;
+  native let workspotEntry: Int32;
+  native let workspotAnim: CName;
+}
+
+public native struct TandemNpcShot {
+  native let npc: Uint32;
+  // gamedataFxAction: Shoot 16, SilencedShoot 17, EnterReload 5, ExitReload 11
+  native let effect: Int32;
+  // where it went (zero: unknown)
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -87,6 +115,12 @@ public native class TandemNative extends IScriptable {
   public static native func NpcDetected(npc: Uint32) -> Int32
   public static native func TakeNpcEvents() -> array<TandemNpcEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32
+  public static native func SendNpcAnim(npc: Uint32, highLevel: Int32, upperBody: Int32, stance: Int32, flags: Int32, weapon: TweakDBID, target: Uint32, workspot: Uint64, workspotEntry: Int32, workspotAnim: CName)
+  public static native func SendNpcShot(npc: Uint32, effect: Int32, target: Vector4)
+  public static native func TakeNpcAnims() -> array<TandemNpcAnim>
+  public static native func TakeNpcShots() -> array<TandemNpcShot>
+  public static native func HoldPuppet(player: Uint32, held: Bool)
+  public static native func SetResourcePath(object: ref<IScriptable>, property: CName, path: Uint64) -> Bool
   public static native func SendVehicleRadio(on: Bool, station: Int32, track: CName, trackStarted: Bool)
   public static native func RemoteRadioChanges(player: Uint32) -> Int32
   public static native func RemoteRadioOn(player: Uint32) -> Bool

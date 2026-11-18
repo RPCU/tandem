@@ -1,6 +1,7 @@
 #include "tandem/endpoint.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace tandem {
 namespace {
@@ -270,6 +271,14 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
     m_session->Send(peer, spawn);
   for (const auto &[npc, health] : m_npcHealth)
     m_session->Send(peer, health);
+  proto::NpcAnims anims;
+  for (const auto &[npc, anim] : m_npcAnims) {
+    anims.npcs.push_back(anim);
+    if (anims.npcs.size() == proto::kMaxNpcAnims)
+      m_session->Send(peer, std::exchange(anims, {}));
+  }
+  if (!anims.npcs.empty())
+    m_session->Send(peer, anims);
   // Who is in their pause menu (the newcomer itself is not).
   const auto self = m_playerOfPeer.find(peer);
   for (const auto paused : m_paused)
@@ -379,6 +388,8 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::NpcStates &states) { out.push_back(events::HostNpcStates{states}); },
             [&](const proto::NpcGone &gone) { out.push_back(events::HostNpcGone{gone}); },
             [&](const proto::NpcHealth &health) { out.push_back(events::HostNpcHealth{health}); },
+            [&](const proto::NpcAnims &anims) { out.push_back(events::HostNpcAnims{anims}); },
+            [&](const proto::NpcShot &shot) { out.push_back(events::HostNpcShot{shot}); },
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
@@ -533,6 +544,7 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
     return;
   m_npcs.erase(gone.npc);
   m_npcHealth.erase(gone.npc);
+  m_npcAnims.erase(gone.npc);
   m_session->Broadcast(gone);
 }
 
@@ -541,6 +553,26 @@ void Endpoint::SendNpcHealth(const proto::NpcHealth &health) {
     return;
   m_npcHealth[health.npc] = health;
   m_session->Broadcast(health);
+}
+
+void Endpoint::SendNpcAnims(const proto::NpcAnims &anims) {
+  if (!IsHost() || m_ended || anims.npcs.empty())
+    return;
+  // Only NPCs announced and not gone: a late joiner gets nothing it can't place.
+  proto::NpcAnims known;
+  for (const auto &anim : anims.npcs)
+    if (m_npcs.contains(anim.npc) && known.npcs.size() < proto::kMaxNpcAnims) {
+      m_npcAnims[anim.npc] = anim;
+      known.npcs.push_back(anim);
+    }
+  if (!known.npcs.empty())
+    m_session->Broadcast(known);
+}
+
+void Endpoint::SendNpcShot(const proto::NpcShot &shot) {
+  if (!IsHost() || m_ended || !m_npcs.contains(shot.npc))
+    return;
+  m_session->Broadcast(shot);
 }
 
 void Endpoint::SendNpcEffect(const proto::NpcEffect &effect) {

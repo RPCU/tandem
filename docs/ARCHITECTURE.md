@@ -351,7 +351,37 @@ redscript natives (UI, events)              ENet socket
   proxies are deleted and the density reset. Verified 2026-11-18: 9–12 own
   NPCs hidden, 9–13 proxies shown, all proxies gone when the host left.
   Open: police (`PreventionSpawnSystem`), quest NPCs the guest needs to
-  talk to (milestone 6), proxy animation beyond gait.
+  talk to (milestone 6), hit reactions and ragdolls from other players'
+  hits (below).
+- **NPC animation** (`scripts/tandem/NpcAnims.reds`, engine-knowledge
+  §13.14): the pose stream is too heavy for dozens of NPCs, so the host
+  sends what an NPC's animation graph reads and the proxy's own graph
+  plays it. Four times a second the host samples each shared NPC's
+  high-level, upper-body and stance states (the `PuppetState` blackboard
+  NPCStatesComponent fills), the item in its right hand, whom it is after
+  (its top hostile threat: a player, or another shared NPC) and the
+  workspot it plays in (Codeware's `GetWorkspotInstance`: the workspot
+  resource's path hash, its tree entry, the animation), and sends the NPCs
+  whose state changed as `NpcAnims` (reliable; the host keeps each NPC's
+  latest for late joiners). Every NPC shot passes `AIWeapon.Fire` and goes
+  as `NpcShot` (unreliable). A guest applies a state once the proxy is
+  ready: the states as NPCStatesComponent applies its own (anim features
+  under the component's own names, the `combatLocomotion`/`inCrouch`/
+  `inCover` wrappers the controller unlocks, the blackboard, combat mode;
+  not the brain's side effects: senses, voice, squads, the local V's
+  combat state), the weapon in the proxy's hand, a look-at of head and
+  chest at the target, the reload sounds when the upper body enters and
+  leaves `Reload`, and a shot as the weapon's own effects (flash, report,
+  shells). A workspot is played from a `WorkspotResourceComponent` every
+  proxy gets while it is assembled: the host's resource is written into
+  it (by RTTI name), it is placed where the proxy stands, the proxy is put
+  in it (`PlayNpcInWorkspot`) and jumped to the host's entry; meanwhile
+  the controller keeps still (`HoldPuppet`). When the host's NPC gets up
+  the proxy plays the slow exit and the controller takes over again.
+  Scenarios `npcs-anims` (guest of a replay with `--anims`) and
+  `npcs-anims-host`. **Not yet verified in game**; open: tracers (the
+  shot's target is sent, not drawn), cover poses beyond the stance, hit
+  reactions, ragdolls.
 - **Fights** (`scripts/tandem/Combat.reds`, milestone 5): a guest's hit on
   a proxy runs the game's damage pipeline as usual (aim, weapon, perks,
   the proxy's armour) up to `DamageSystem.DealDamages`. There the damage
@@ -518,7 +548,11 @@ game thread stop). Each feature verified in game gets a scenario.
   `join --record FILE` saves the host's `NpcSpawn`/`NpcStates`/`NpcGone`
   with their times; `host --replay FILE [--offset X,Y,Z]` sends them again
   at the recorded pace once a player joins. Record with the game as host,
-  then let it join as a guest of the replay (`role = join`).
+  then let it join as a guest of the replay (`role = join`). Recordings
+  carry the NPCs' animation states and shots too; `host --replay FILE
+--anims SCRIPT` adds scripted ones (a text file: time, NPC or `*`, the
+  three states by name, optional weapon, target, shots, workspot; e.g.
+  `tools/scenarios/npcs-anims.anims`).
 - Planned — **the whole simulated second game**, so everything can be
   tested with one PC and one copy of the game. Built up as the protocol
   matures (each milestone adds what its messages need):

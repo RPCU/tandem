@@ -76,6 +76,34 @@ TEST_CASE("every message survives encoding") {
                           .track = 0xfeedfacecafef00dULL,
                           .trackStartUs = 123'456'789'012ULL});
   RoundTrips(VehicleRadio{.player = 3, .revision = 1, .on = false, .station = -1});
+  RoundTrips(NpcAnims{.npcs = {{.npc = 7,
+                                .highLevel = 2,
+                                .upperBody = 0,
+                                .stance = 2,
+                                .flags = kNpcAnimWeaponDrawn,
+                                .weapon = 0x1122334455667788ULL,
+                                .target = 2},
+                               {.npc = 8,
+                                .flags = kNpcAnimInWorkspot,
+                                .workspot = 0xabcdef0123456789ULL,
+                                .workspotEntry = 3,
+                                .workspotAnim = 0x99}}});
+  RoundTrips(NpcShot{.npc = 7, .effect = 16, .target = {1, 2, 3}});
+}
+
+TEST_CASE("NPC animation states are reliable and small, their shots unreliable") {
+  CHECK(ChannelOf(NpcAnims{}) == Channel::Event);
+  CHECK(IsReliable(NpcAnims{}));
+  CHECK(ChannelOf(NpcShot{}) == Channel::State);
+  CHECK(std::string_view(NameOf(NpcAnims{})) == "NpcAnims");
+  CHECK(std::string_view(NameOf(NpcShot{})) == "NpcShot");
+  CHECK(Encode(NpcShot{}).size() < 32);
+  NpcAnims crowd;
+  crowd.npcs.resize(kMaxNpcAnims);
+  CHECK(Encode(crowd).size() < 4096); // all 64 at once, rare (a fight starting)
+  CHECK(Encode(NpcAnims{.npcs = {NpcAnim{}}}).size() < 64);
+  crowd.npcs.resize(kMaxNpcAnims + 1);
+  CHECK_FALSE(Decode(Encode(crowd)).has_value());
 }
 
 TEST_CASE("a car's radio is a small reliable event") {

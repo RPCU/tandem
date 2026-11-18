@@ -161,6 +161,10 @@ struct NetThread::Impl {
                                       .direction = e.hit.direction});
               } else if constexpr (std::is_same_v<E, events::HostNpcStates>) {
                 runtime.PushNpcStates(e.states);
+              } else if constexpr (std::is_same_v<E, events::HostNpcAnims>) {
+                runtime.PushNpcAnims(e.anims);
+              } else if constexpr (std::is_same_v<E, events::HostNpcShot>) {
+                runtime.PushNpcShot(e.shot);
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
                 log::Info("player {}: look of {} keys and {} items (revision {})",
                           e.appearance.player, e.appearance.look.size(), e.appearance.items.size(),
@@ -229,6 +233,10 @@ struct NetThread::Impl {
           endpoint->SendNpcHit(*hit);
         else if (const auto *effect = std::get_if<proto::NpcEffect>(&message))
           endpoint->SendNpcEffect(*effect);
+        else if (const auto *anims = std::get_if<proto::NpcAnims>(&message))
+          endpoint->SendNpcAnims(*anims);
+        else if (const auto *shot = std::get_if<proto::NpcShot>(&message))
+          endpoint->SendNpcShot(*shot);
       }
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);

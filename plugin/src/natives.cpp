@@ -67,6 +67,28 @@ struct TandemNpcEvent {
 };
 static_assert(alignof(TandemNpcEvent) <= 8, "the script VM aligns struct locals to 8");
 
+// A host NPC's animation state (proto::NpcAnim), for NpcAnims.reds.
+struct TandemNpcAnim {
+  std::uint32_t npc{};
+  std::int32_t highLevel{}; // gamedataNPCHighLevelState
+  std::int32_t upperBody{}; // gamedataNPCUpperBodyState
+  std::int32_t stance{};    // gamedataNPCStanceState
+  std::int32_t flags{};     // proto::kNpcAnim*
+  Red::TweakDBID weapon;
+  std::uint32_t target{}; // a player id, or 0x10000 + an NPC id (0: nobody)
+  std::uint64_t workspot{};
+  std::int32_t workspotEntry{};
+  Red::CName workspotAnim;
+};
+static_assert(alignof(TandemNpcAnim) <= 8, "the script VM aligns struct locals to 8");
+
+// One shot of a host NPC (proto::NpcShot).
+struct TandemNpcShot {
+  std::uint32_t npc{};
+  std::int32_t effect{}; // gamedataFxAction
+  float x{}, y{}, z{};   // where it went (zero: unknown)
+};
+
 Red::Quaternion ToQuaternion(const proto::Quat &q) { return {q.i, q.j, q.k, q.r}; }
 float YawOfQuaternion(const Red::Quaternion &q) { return sync::YawOf({q.i, q.j, q.k, q.r}); }
 
@@ -560,6 +582,69 @@ struct TandemNative : Red::IScriptable {
     return out;
   }
 
+  // Host: an NPC's animation state changed (NpcAnims.reds samples them).
+  static void SendNpcAnim(std::uint32_t npc, std::int32_t highLevel, std::int32_t upperBody,
+                          std::int32_t stance, std::int32_t flags, Red::TweakDBID weapon,
+                          std::uint32_t target, std::uint64_t workspot, std::int32_t workspotEntry,
+                          Red::CName workspotAnim) {
+    Runtime::Get().SubmitNpcAnim({.npc = npc,
+                                  .highLevel = static_cast<std::uint8_t>(highLevel),
+                                  .upperBody = static_cast<std::uint8_t>(upperBody),
+                                  .stance = static_cast<std::uint8_t>(stance),
+                                  .flags = static_cast<std::uint8_t>(flags),
+                                  .weapon = weapon.value,
+                                  .target = target,
+                                  .workspot = workspot,
+                                  .workspotEntry = static_cast<std::uint32_t>(workspotEntry),
+                                  .workspotAnim = workspotAnim.hash});
+  }
+  // Host: one of its NPCs fired (or reloaded).
+  static void SendNpcShot(std::uint32_t npc, std::int32_t effect, Red::Vector4 target) {
+    Runtime::Get().SubmitNpcShot({.npc = npc,
+                                  .effect = static_cast<std::uint8_t>(effect),
+                                  .target = {target.X, target.Y, target.Z}});
+  }
+  // Guest: the host's NPCs' animation states and shots since the last ask.
+  static Red::DynArray<TandemNpcAnim> TakeNpcAnims() {
+    Red::DynArray<TandemNpcAnim> out;
+    for (const auto &a : Runtime::Get().TakeNpcAnims())
+      out.EmplaceBack(TandemNpcAnim{
+          a.npc, a.highLevel, a.upperBody, a.stance, a.flags, Red::TweakDBID(a.weapon), a.target,
+          a.workspot, static_cast<std::int32_t>(a.workspotEntry), Red::CName(a.workspotAnim)});
+    return out;
+  }
+  static Red::DynArray<TandemNpcShot> TakeNpcShots() {
+    Red::DynArray<TandemNpcShot> out;
+    for (const auto &shot : Runtime::Get().TakeNpcShots())
+      out.EmplaceBack(
+          TandemNpcShot{shot.npc, shot.effect, shot.target.x, shot.target.y, shot.target.z});
+    return out;
+  }
+  // A puppet the game places for now (a proxy in a workspot): its movement
+  // controller keeps still until released.
+  static void HoldPuppet(std::uint32_t player, bool held) {
+    Runtime::Get().SetPuppetHeld(player, held);
+  }
+  // Writes a resource path (a depot path hash, the same in every copy of the
+  // game) into an async resource reference property, found by its RTTI name
+  // and type: redscript cannot make a ResourceAsyncRef from a hash.
+  static bool SetResourcePath(Red::Handle<Red::IScriptable> object, Red::CName property,
+                              std::uint64_t path) {
+    if (!object)
+      return false;
+    const auto *field = object->GetType()->GetProperty(property);
+    if (!field || !field->type ||
+        field->type->GetType() != Red::rtti::ERTTIType::ResourceAsyncReference) {
+      log::Warn("resource path: {} has no async resource property {}",
+                object->GetType()->GetName().ToString(), property.ToString());
+      return false;
+    }
+    auto *reference = reinterpret_cast<Red::ResourceAsyncReference<> *>(
+        reinterpret_cast<std::uint8_t *>(object.GetPtr()) + field->valueOffset);
+    reference->path = Red::ResourcePath(path);
+    return true;
+  }
+
   // The puppet id the controller and tracks know an NPC proxy by.
   static std::uint32_t NpcPuppetId(std::uint32_t npc) { return kNpcPuppetBase + npc; }
 
@@ -596,6 +681,27 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcEvent, "TandemNpcEvent", {
   RTTI_PROPERTY(dx);
   RTTI_PROPERTY(dy);
   RTTI_PROPERTY(dz);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcAnim, "TandemNpcAnim", {
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(highLevel);
+  RTTI_PROPERTY(upperBody);
+  RTTI_PROPERTY(stance);
+  RTTI_PROPERTY(flags);
+  RTTI_PROPERTY(weapon);
+  RTTI_PROPERTY(target);
+  RTTI_PROPERTY(workspot);
+  RTTI_PROPERTY(workspotEntry);
+  RTTI_PROPERTY(workspotAnim);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcShot, "TandemNpcShot", {
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(effect);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
@@ -645,6 +751,12 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(NpcDetected);
   RTTI_METHOD(TakeNpcEvents);
   RTTI_METHOD(NpcPuppetId);
+  RTTI_METHOD(SendNpcAnim);
+  RTTI_METHOD(SendNpcShot);
+  RTTI_METHOD(TakeNpcAnims);
+  RTTI_METHOD(TakeNpcShots);
+  RTTI_METHOD(HoldPuppet);
+  RTTI_METHOD(SetResourcePath);
   RTTI_METHOD(SendVehicleRadio);
   RTTI_METHOD(RemoteRadioChanges);
   RTTI_METHOD(RemoteRadioOn);

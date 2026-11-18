@@ -45,6 +45,8 @@ void Runtime::Stop() {
     m_npcOutbox.clear();
     m_npcStates.reset();
     m_npcEvents.clear();
+    m_npcAnimsIn.clear();
+    m_npcShotsIn.clear();
     m_localPaused.reset();
     // Nobody pauses us any more: the change count moves so scripts let go.
     if (!m_remotePaused.empty()) {
@@ -393,6 +395,47 @@ void Runtime::PushNpcStates(const proto::NpcStates &states) {
   }
 }
 
+void Runtime::SubmitNpcAnim(const proto::NpcAnim &anim) {
+  std::lock_guard _(m_lock);
+  // Into the outbox's last message when it is a batch with room, so a state
+  // follows its NPC's spawn and the net thread sends one message per batch.
+  if (!m_npcOutbox.empty())
+    if (auto *batch = std::get_if<proto::NpcAnims>(&m_npcOutbox.back());
+        batch && batch->npcs.size() < proto::kMaxNpcAnims) {
+      batch->npcs.push_back(anim);
+      return;
+    }
+  m_npcOutbox.push_back(proto::NpcAnims{.npcs = {anim}});
+}
+
+void Runtime::SubmitNpcShot(const proto::NpcShot &shot) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(shot);
+}
+
+void Runtime::PushNpcAnims(const proto::NpcAnims &anims) {
+  std::lock_guard _(m_lock);
+  for (const auto &anim : anims.npcs)
+    if (m_npcAnimsIn.size() < 1024)
+      m_npcAnimsIn.push_back(anim);
+}
+
+std::vector<proto::NpcAnim> Runtime::TakeNpcAnims() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_npcAnimsIn, {});
+}
+
+void Runtime::PushNpcShot(const proto::NpcShot &shot) {
+  std::lock_guard _(m_lock);
+  if (m_npcShotsIn.size() < 256)
+    m_npcShotsIn.push_back(shot);
+}
+
+std::vector<proto::NpcShot> Runtime::TakeNpcShots() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_npcShotsIn, {});
+}
+
 void Runtime::PushRemotePose(const proto::PoseState &pose) {
   std::lock_guard _(m_posesLock);
   m_poses[pose.player].Push(pose);
@@ -479,6 +522,7 @@ void Runtime::RegisterPuppet(proto::PlayerId player, std::uint64_t entityHash) {
     if (slot.entity.compare_exchange_strong(empty, entityHash)) {
       slot.player.store(player);
       slot.wantsController.store(false);
+      slot.held.store(false);
       return;
     }
   }
@@ -491,6 +535,7 @@ void Runtime::UnregisterPuppet(proto::PlayerId player) {
       slot.player.store(0);
       slot.entity.store(0);
       slot.wantsController.store(false);
+      slot.held.store(false);
     }
   }
 }
@@ -510,6 +555,20 @@ void Runtime::RequestController(std::uint64_t entityHash) {
     if (slot.entity.load() == entityHash)
       slot.wantsController.store(true);
   }
+}
+
+void Runtime::SetPuppetHeld(proto::PlayerId player, bool held) {
+  for (auto &slot : m_puppets)
+    if (slot.player.load() == player && slot.entity.load() != 0)
+      slot.held.store(held, std::memory_order_release);
+}
+
+bool Runtime::PuppetHeld(proto::PlayerId player) const {
+  for (const auto &slot : m_puppets)
+    if (slot.player.load(std::memory_order_acquire) == player &&
+        slot.entity.load(std::memory_order_acquire) != 0)
+      return slot.held.load(std::memory_order_acquire);
+  return false;
 }
 
 bool Runtime::TakeControllerRequest(proto::PlayerId player) {

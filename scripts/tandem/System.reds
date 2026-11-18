@@ -337,6 +337,8 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.PoseHook();
     } else if Equals(command, "npc count") {
       TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0)");
+    } else if Equals(command, "npc anims") {
+      TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
     } else if Equals(command, "proxy clear") {
       for test in this.m_proxyTests {
         GameInstance.GetDynamicEntitySystem().DeleteEntity(test.id);
@@ -724,6 +726,11 @@ public class TandemSystem extends ScriptableSystem {
   // The host NPC a proxy in our world stands for (0: none; Combat.reds).
   public func NpcOfProxy(id: EntityID) -> Uint32 {
     return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfProxy(id) : 0u;
+  }
+
+  // Host: the session id of one of our NPCs the guests see (0: not shared).
+  public func SharedNpc(id: EntityID) -> Uint32 {
+    return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOf(id) : 0u;
   }
 
   private func CarOwner(id: EntityID) -> Uint32 {

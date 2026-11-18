@@ -289,6 +289,64 @@ TEST_CASE("a guest's hit reaches the host, stamped; health reaches guests, late 
   CHECK_FALSE(lateGotHealth);
 }
 
+TEST_CASE("NPC animation states reach guests and late joiners; shots too; guests can't send them") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  host->SendNpcSpawn({.npc = 8, .record = 1});
+  // Kept before anyone joined; an NPC never announced (9) is dropped.
+  host->SendNpcAnims({.npcs = {{.npc = 7, .highLevel = 2, .upperBody = 0, .weapon = 42},
+                               {.npc = 9, .highLevel = 2}}});
+  host->SendNpcAnims({.npcs = {{.npc = 8, .flags = proto::kNpcAnimInWorkspot, .workspot = 5}}});
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+
+  std::map<proto::NpcId, proto::NpcAnim> heard;
+  std::optional<proto::NpcShot> shot;
+  bool sent = false, hostHeardAnims = false;
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1 && guest->IsJoined() && !sent) {
+      // A guest's NPC messages are refused: it owns no NPC.
+      guest->SendNpcAnims({.npcs = {{.npc = 7, .highLevel = 4}}});
+      sent = true;
+    }
+    if (i == 0 && heard.size() == 2 && !shot)
+      host->SendNpcShot({.npc = 7, .effect = 16});
+    for (const auto &event : events) {
+      if (const auto *a = std::get_if<events::HostNpcAnims>(&event); a && i == 1)
+        for (const auto &anim : a->anims.npcs)
+          heard[anim.npc] = anim;
+      if (const auto *s = std::get_if<events::HostNpcShot>(&event); s && i == 1)
+        shot = s->shot;
+      hostHeardAnims |= i == 0 && Has<events::HostNpcAnims>(events);
+    }
+    return heard.size() == 2 && shot;
+  }));
+  CHECK_FALSE(heard.contains(9));
+  CHECK(heard.at(7).weapon == 42);
+  CHECK(heard.at(7).highLevel == 2);
+  CHECK(heard.at(8).workspot == 5);
+  CHECK(shot->effect == 16);
+  CHECK_FALSE(hostHeardAnims);
+
+  // Gone: its state is not handed to the next joiner.
+  host->SendNpcGone({.npc = 8});
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::map<proto::NpcId, proto::NpcAnim> lateHeard;
+  Pump({host.get(), guest.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *a = std::get_if<events::HostNpcAnims>(&event); a && i == 2)
+        for (const auto &anim : a->anims.npcs)
+          lateHeard[anim.npc] = anim;
+    return false; // the full two seconds: nothing more may arrive
+  });
+  CHECK(lateHeard.size() == 1);
+  CHECK(lateHeard.contains(7));
+}
+
 namespace {
 // The pause changes an endpoint reported, in order.
 void CollectPauses(const std::vector<SessionEvent> &events, std::vector<proto::Pause> &into) {

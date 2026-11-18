@@ -327,9 +327,53 @@ struct VehicleRadio {
   friend bool operator==(const VehicleRadio &, const VehicleRadio &) = default;
 };
 
-using Message = std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye,
-                             PoseState, Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn,
-                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio>;
+// How one of the host's NPCs animates, in the game's own terms: what its
+// animation graph reads (NPCStatesComponent's states and anim features, the
+// weapon in its hands, a look-at target, the workspot it plays in), so a
+// guest's brain-off proxy is put in the same states and its own graph plays
+// them. A separate message from NpcStates (positions, 10 Hz, every NPC):
+// these change seldom, so they go only when they change (the host samples
+// them 4 times a second), reliably, and the host keeps each NPC's latest for
+// late joiners. The values are the game's enums (engine-knowledge §13.14).
+inline constexpr std::uint8_t kNpcAnimWeaponDrawn = 1; // something in its right hand
+inline constexpr std::uint8_t kNpcAnimInWorkspot = 2;  // workspot below is valid
+struct NpcAnim {
+  NpcId npc{};
+  std::uint8_t highLevel{5}; // gamedataNPCHighLevelState (Relaxed 5, Combat 2, Alerted 0…)
+  std::uint8_t upperBody{6}; // gamedataNPCUpperBodyState (Normal 6, Aim 0, Shoot 9, Reload 8…)
+  std::uint8_t stance{3};    // gamedataNPCStanceState (Stand 3, Crouch 2, Cover 1…)
+  std::uint8_t flags{};      // kNpcAnim*
+  std::uint64_t weapon{};    // TweakDB id of the item in its right hand (0: none)
+  // Who it looks or aims at: a player id, or 0x10000 + an NpcId (0: nobody).
+  std::uint32_t target{};
+  // Its workspot (a bench, a wall to lean on, a cigarette): the workspot
+  // resource's path hash, the tree entry it plays, the animation's CName hash.
+  std::uint64_t workspot{};
+  std::uint32_t workspotEntry{};
+  std::uint64_t workspotAnim{};
+  friend bool operator==(const NpcAnim &, const NpcAnim &) = default;
+};
+
+inline constexpr std::size_t kMaxNpcAnims = 64;
+struct NpcAnims { // Event channel, host only: the NPCs whose animation state changed
+  std::vector<NpcAnim> npcs;
+  friend bool operator==(const NpcAnims &, const NpcAnims &) = default;
+};
+
+// One shot (or reload) of a host NPC's weapon, drawn on the guests' proxy as
+// the weapon's own effects (muzzle flash, report, shells), like a player's
+// Shot. State channel: a late one is worth nothing. Host only.
+struct NpcShot {
+  NpcId npc{};
+  std::uint8_t effect{}; // gamedataFxAction, as Shot (Shoot 16, SilencedShoot 17…)
+  Vec3 target;           // where the shot went (tracers, later; zero: unknown)
+  friend bool operator==(const NpcShot &, const NpcShot &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, NpcAnims, NpcShot>;
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

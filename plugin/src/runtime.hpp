@@ -162,6 +162,15 @@ public:
   void PushNpcEvent(const NpcEvent &event);
   std::vector<NpcEvent> TakeNpcEvents();
   void PushNpcStates(const proto::NpcStates &states);
+  // NPC animation (scripts/tandem/NpcAnims.reds). Host, game -> net: states
+  // that changed (batched into NpcAnims in the NPC outbox, in order with the
+  // spawns) and shots. Guest, net -> game: both queued for the scripts.
+  void SubmitNpcAnim(const proto::NpcAnim &anim);
+  void SubmitNpcShot(const proto::NpcShot &shot);
+  void PushNpcAnims(const proto::NpcAnims &anims);
+  std::vector<proto::NpcAnim> TakeNpcAnims();
+  void PushNpcShot(const proto::NpcShot &shot);
+  std::vector<proto::NpcShot> TakeNpcShots();
 
   // Net thread writes remote states; the animation thread and scripts read views.
   void PushRemote(const proto::PlayerState &state);
@@ -189,12 +198,18 @@ public:
   // The animation thread saw a puppet whose movement needs our controller.
   void RequestController(std::uint64_t entityHash);
   bool TakeControllerRequest(proto::PlayerId player);
+  // A puppet the game itself places for now (an NPC proxy in a workspot):
+  // its movement controller keeps still. Game thread writes, the engine's
+  // movement update reads.
+  void SetPuppetHeld(proto::PlayerId player, bool held);
+  bool PuppetHeld(proto::PlayerId player) const;
 
 private:
   struct PuppetSlot {
     std::atomic<std::uint64_t> entity{0};
     std::atomic<proto::PlayerId> player{0};
     std::atomic<bool> wantsController{false};
+    std::atomic<bool> held{false};
   };
 
   mutable std::mutex m_lock; // session lifecycle, local outbox, events
@@ -220,6 +235,8 @@ private:
   std::vector<proto::Message> m_npcOutbox;                                           // m_lock
   std::optional<proto::NpcStates> m_npcStates;                                       // m_lock
   std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
+  std::vector<proto::NpcAnim> m_npcAnimsIn;                                          // m_lock
+  std::vector<proto::NpcShot> m_npcShotsIn;                                          // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
   std::uint32_t m_loopSeq{};

@@ -88,6 +88,12 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
   std::uint32_t seatChanges = 0;
   if (const auto seat = Runtime::Get().RemoteSeat(player, seatChanges); seat && seat->vehicle)
     return;
+  // An NPC proxy in a workspot (sitting, leaning): the workspot places the
+  // body, the controller keeps still and the gait idles.
+  if (Runtime::Get().PuppetHeld(player)) {
+    m_speed = 0.f;
+    return;
+  }
 
   const auto view = Runtime::Get().ViewOf(player);
   if (!view.valid)

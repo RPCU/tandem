@@ -90,6 +90,12 @@ struct HostNpcGone {
 struct HostNpcHealth {
   proto::NpcHealth health;
 };
+struct HostNpcAnims {
+  proto::NpcAnims anims;
+};
+struct HostNpcShot {
+  proto::NpcShot shot;
+};
 // A guest hit one of our NPCs (host only).
 struct NpcHitBy {
   proto::NpcHit hit;
@@ -129,7 +135,8 @@ using SessionEvent =
                  events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
                  events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
-                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio>;
+                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
+                 events::HostNpcAnims, events::HostNpcShot>;
 
 class Endpoint {
 public:
@@ -165,6 +172,10 @@ public:
   void SendNpcGone(const proto::NpcGone &gone);
   // Host only: an NPC's health changed (kept for late joiners until gone).
   void SendNpcHealth(const proto::NpcHealth &health);
+  // Host only: NPCs whose animation state changed (each NPC's latest kept
+  // for late joiners until gone), and one of their shots.
+  void SendNpcAnims(const proto::NpcAnims &anims);
+  void SendNpcShot(const proto::NpcShot &shot);
   // Guest only: we hit one of the host's NPCs.
   void SendNpcHit(const proto::NpcHit &hit);
   void SendNpcEffect(const proto::NpcEffect &effect);
@@ -238,6 +249,7 @@ private:
   std::uint32_t m_worldRevision{};
   std::map<proto::NpcId, proto::NpcSpawn> m_npcs;
   std::map<proto::NpcId, proto::NpcHealth> m_npcHealth;
+  std::map<proto::NpcId, proto::NpcAnim> m_npcAnims;
   std::uint32_t m_npcSeq{};
   // Who is in the pause menu (host: the session's record, for late joiners).
   bool m_localPaused{};
