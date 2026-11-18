@@ -14,6 +14,21 @@
 // follows. A puppet's own relation that changed while V's did not (a
 // security system turned hostile to that puppet's group only, final.reds
 // 114508) is left alone. Copies are not persistent: never saved.
+//
+// On top of that, each NPC around gets V's attitudes on the puppet's agent
+// where the groups do not already give them (CopyAgents): on the first run
+// in game the group copy did not show (civilians friendly to the puppet,
+// neutral to V; engine-knowledge §13.17), and a quest can set one NPC's
+// attitude to V alone.
+
+public class TandemNpcAttitude {
+  public let npc: EntityID;
+  public let body: EntityID;
+  // EAIAttitude values (-1: not yet).
+  public let toV: Int32;
+  public let fromV: Int32;
+  public let seenAt: Float;
+}
 
 public class TandemAttitudes {
   private let m_game: GameInstance;
@@ -25,6 +40,9 @@ public class TandemAttitudes {
   private let m_vTowards: array<Int32>;
   private let m_towardsV: array<Int32>;
   private let m_lastScan: Float;
+  // Each NPC around and each puppet, with the NPC's attitudes to and from V
+  // as last copied onto that puppet.
+  private let m_pairs: array<ref<TandemNpcAttitude>>;
 
   // One per puppet at a time (3 guests at most, core endpoint.hpp kMaxGuests).
   public static func Groups() -> array<CName> {
@@ -117,49 +135,122 @@ public class TandemAttitudes {
     let around = player.GetNPCsAroundObject(60.0);
     for body in bodies {
       for npc in body.GetNPCsAroundObject(60.0) {
-        ArrayPush(around, npc);
+        if !ArrayContains(around, npc) {
+          ArrayPush(around, npc);
+        }
       }
     }
     let added = "";
     for npc in around {
       let agent = npc.GetAttitudeAgent();
       if IsDefined(agent) {
-        let group = agent.GetAttitudeGroup();
-        if IsNameValid(group) && !TandemAttitudes.IsOurs(group) && NotEquals(group, vGroup) && !ArrayContains(this.m_seen, group) {
-          ArrayPush(this.m_seen, group);
+        let npcGroup = agent.GetAttitudeGroup();
+        if IsNameValid(npcGroup) && !TandemAttitudes.IsOurs(npcGroup) && NotEquals(npcGroup, vGroup) && !ArrayContains(this.m_seen, npcGroup) {
+          ArrayPush(this.m_seen, npcGroup);
           ArrayPush(this.m_vTowards, -1);
           ArrayPush(this.m_towardsV, -1);
-          added += s" \(NameToString(group))";
+          added += s" \(NameToString(npcGroup))";
         }
       }
     }
+    if StrLen(added) > 0 {
+      TandemNative.Log(s"attitudes: \(ArraySize(this.m_seen)) groups follow \(NameToString(vGroup))'s relations, new:\(added)");
+    }
     let system = GameInstance.GetAttitudeSystem(this.m_game);
     let active = this.Active();
-    let changed = "";
     let i = 0;
     while i < ArraySize(this.m_seen) {
       let other = this.m_seen[i];
       let vTowards = EnumInt(system.GetAttitudeRelation(vGroup, other));
       let towardsV = EnumInt(system.GetAttitudeRelation(other, vGroup));
       if vTowards != this.m_vTowards[i] || towardsV != this.m_towardsV[i] {
-        for group in active {
-          system.SetAttitudeRelation(group, other, IntEnum<EAIAttitude>(vTowards));
-          system.SetAttitudeRelation(other, group, IntEnum<EAIAttitude>(towardsV));
-        }
-        if this.m_vTowards[i] >= 0 {
-          changed += s" \(NameToString(other)) \(vTowards)/\(towardsV)";
+        let why = this.m_vTowards[i] < 0 ? "new" : "V's changed";
+        for ours in active {
+          this.CopyRelation(ours, other, vTowards, towardsV, why);
         }
         this.m_vTowards[i] = vTowards;
         this.m_towardsV[i] = towardsV;
       }
       i += 1;
     }
-    if StrLen(added) > 0 {
-      TandemNative.Log(s"attitudes: \(ArraySize(this.m_seen)) groups follow \(NameToString(vGroup))'s relations, new:\(added)");
+    this.CopyAgents(now, player, around, bodies);
+  }
+
+  // V's relations to a group, into one of ours, read back: the log says
+  // whether the attitude system took them.
+  private func CopyRelation(ours: CName, other: CName, vTowards: Int32, towardsV: Int32, why: String) -> Void {
+    let system = GameInstance.GetAttitudeSystem(this.m_game);
+    system.SetAttitudeRelation(ours, other, IntEnum<EAIAttitude>(vTowards));
+    system.SetAttitudeRelation(other, ours, IntEnum<EAIAttitude>(towardsV));
+    let readTowards = EnumInt(system.GetAttitudeRelation(ours, other));
+    let readFrom = EnumInt(system.GetAttitudeRelation(other, ours));
+    let took = readTowards == vTowards && readFrom == towardsV;
+    TandemNative.Log(s"attitudes: \(NameToString(ours)) / \(NameToString(other)) (\(why)): V's \(vTowards)/\(towardsV), read back \(readTowards)/\(readFrom)\(took ? "" : " (not taken)")");
+  }
+
+  // Each NPC around, as it sees V and V sees it, onto each puppet's agent
+  // where the groups alone do not give it (a relation the attitude system
+  // did not take, or an NPC's own attitude to V that a quest set): once per
+  // NPC and puppet, then whenever the NPC's attitude to V changes. What
+  // changed between an NPC and a puppet alone stays.
+  private func CopyAgents(now: Float, player: ref<GameObject>, around: array<ref<NPCPuppet>>, bodies: array<ref<GameObject>>) -> Void {
+    let vAgent = player.GetAttitudeAgent();
+    if !IsDefined(vAgent) {
+      return;
     }
-    if StrLen(changed) > 0 {
-      TandemNative.Log(s"attitudes: \(NameToString(vGroup))'s relations changed, puppets follow:\(changed)");
+    let copied = 0;
+    for body in bodies {
+      let bodyAgent = body.GetAttitudeAgent();
+      if IsDefined(bodyAgent) && TandemAttitudes.IsOurs(bodyAgent.GetAttitudeGroup()) {
+        for npc in around {
+          let npcAgent = npc.GetAttitudeAgent();
+          if IsDefined(npcAgent) && !TandemAttitudes.IsOurs(npcAgent.GetAttitudeGroup()) {
+            let toV = npcAgent.GetAttitudeTowards(vAgent);
+            let fromV = vAgent.GetAttitudeTowards(npcAgent);
+            let pair = this.Pair(npc.GetEntityID(), body.GetEntityID());
+            pair.seenAt = now;
+            if EnumInt(toV) != pair.toV || EnumInt(fromV) != pair.fromV {
+              if NotEquals(npcAgent.GetAttitudeTowards(bodyAgent), toV) {
+                npcAgent.SetAttitudeTowards(bodyAgent, toV);
+                copied += 1;
+              }
+              if NotEquals(bodyAgent.GetAttitudeTowards(npcAgent), fromV) {
+                bodyAgent.SetAttitudeTowards(npcAgent, fromV);
+                copied += 1;
+              }
+              pair.toV = EnumInt(toV);
+              pair.fromV = EnumInt(fromV);
+            }
+          }
+        }
+      }
     }
+    // NPCs gone for 30 s are forgotten (back in range, they start from V's again).
+    let kept: array<ref<TandemNpcAttitude>>;
+    for pair in this.m_pairs {
+      if now - pair.seenAt < 30.0 {
+        ArrayPush(kept, pair);
+      }
+    }
+    this.m_pairs = kept;
+    if copied > 0 {
+      TandemNative.Log(s"attitudes: \(copied) NPC attitudes copied from V's onto puppets");
+    }
+  }
+
+  private func Pair(npc: EntityID, body: EntityID) -> ref<TandemNpcAttitude> {
+    for pair in this.m_pairs {
+      if pair.npc == npc && pair.body == body {
+        return pair;
+      }
+    }
+    let pair = new TandemNpcAttitude();
+    pair.npc = npc;
+    pair.body = body;
+    pair.toV = -1;
+    pair.fromV = -1;
+    ArrayPush(this.m_pairs, pair);
+    return pair;
   }
 
   // V's group (quests may move V to another).
@@ -204,8 +295,7 @@ public class TandemAttitudes {
     let system = GameInstance.GetAttitudeSystem(this.m_game);
     let vGroup = this.PlayerGroup();
     for other in this.m_seen {
-      system.SetAttitudeRelation(group, other, system.GetAttitudeRelation(vGroup, other));
-      system.SetAttitudeRelation(other, group, system.GetAttitudeRelation(other, vGroup));
+      this.CopyRelation(group, other, EnumInt(system.GetAttitudeRelation(vGroup, other)), EnumInt(system.GetAttitudeRelation(other, vGroup)), "puppet put in");
     }
   }
 }

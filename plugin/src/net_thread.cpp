@@ -23,6 +23,7 @@ struct NetThread::Impl {
   std::optional<proto::VehicleRadio> lastRadio;
   std::optional<proto::Stealth> lastStealth;
   bool lastPaused{};
+  std::optional<proto::TimeEffect> lastTime;
 
   // The other players in their pause menu, for the game thread.
   static void PublishPaused(const Endpoint &endpoint) {
@@ -73,6 +74,8 @@ struct NetThread::Impl {
       endpoint->SetLocalStealth(*lastStealth);
     if (lastPaused)
       endpoint->SetLocalPaused(true);
+    if (lastTime)
+      endpoint->SetLocalTimeEffect(*lastTime);
     if (config.role == Config::Role::Host)
       log::Info("hosting on UDP {}", config.port);
     else
@@ -230,6 +233,10 @@ struct NetThread::Impl {
               } else if constexpr (std::is_same_v<E, events::Story>) {
                 Story::Get().PushInbound(
                     {.kind = StoryInbound::Kind::Message, .message = e.message});
+              } else if constexpr (std::is_same_v<E, events::RemoteTimeEffect>) {
+                log::Info("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
+                          e.effect.abilities, e.effect.scale);
+                runtime.PushRemoteTime(e.effect);
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
@@ -276,6 +283,11 @@ struct NetThread::Impl {
         lastPaused = *paused;
         endpoint->SetLocalPaused(*paused);
         log::Info("our pause menu {}", *paused ? "opened: pausing everyone" : "closed");
+      }
+      if (auto time = runtime.TakeLocalTime()) {
+        lastTime = *time;
+        endpoint->SetLocalTimeEffect(*time);
+        log::Info("our time abilities {:#x} (world speed {:.2f})", time->abilities, time->scale);
       }
       if (auto world = runtime.TakeWorld())
         endpoint->SetWorld(*world);

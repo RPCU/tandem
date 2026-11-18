@@ -196,6 +196,10 @@ Run the checks your change can break before saying it works: `task test` for
   feature that needs no game) can run in separate agents, each in its own
   git worktree; the game machine is one shared resource, so in-game
   testing (deploys, `tools/scenario.sh`) stays with one agent at a time.
+- **One build at a time** on the laptop: every build or test goes through
+  the shared lock, with limited parallelism:
+  `CMAKE_BUILD_PARALLEL_LEVEL=8 flock /tmp/tandem-build.lock direnv exec . task test`
+  (same for `task build`, `task check`).
 - Vendored dependencies are submodules; don't edit files under `vendor/`.
   Work around upstream issues in our own build (see the `sdk-casefix` link
   in `plugin/CMakeLists.txt`).

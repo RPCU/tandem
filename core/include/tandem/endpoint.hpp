@@ -143,6 +143,11 @@ struct PauseChanged {
 struct Story {
   proto::Message message;
 };
+// Another player's time ability started, changed or ended (abilities 0),
+// or they left while it was on. Never reported for our own.
+struct RemoteTimeEffect {
+  proto::TimeEffect effect;
+};
 // The session is over (refused, host gone, timed out).
 struct Ended {
   std::string reason;
@@ -181,8 +186,8 @@ using SessionEvent =
                  events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
                  events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
                  events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-                 events::HostPlayerHack, events::VehicleHackOn, events::Story, events::HostNpcAnims,
-                 events::HostNpcShot>;
+                 events::HostPlayerHack, events::VehicleHackOn, events::Story,
+                 events::RemoteTimeEffect, events::HostNpcAnims, events::HostNpcShot>;
 
 class Endpoint {
 public:
@@ -247,6 +252,11 @@ public:
   void SendStory(proto::Message message, proto::PlayerId to = proto::kNoPlayer);
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
+  // Our V's time ability (Sandevistan...). Kept: sent now if we are in the
+  // session, else as soon as we are; the host hands everyone's to late joiners.
+  void SetLocalTimeEffect(proto::TimeEffect effect);
+  // Every active time ability this game knows of (us included), by player.
+  const std::map<proto::PlayerId, proto::TimeEffect> &TimeEffects() const { return m_timeEffects; }
   // How hard our V is to see (kept: sent now if we are in the session, else
   // as soon as we are; the host hands everyone's to late joiners).
   void SetLocalStealth(proto::Stealth stealth);
@@ -329,6 +339,14 @@ private:
   void SendLocalPausedNow();
   // Records a player's pause state; false when it did not change.
   bool NotePaused(proto::PlayerId player, bool paused);
+  // Active time abilities (host: the session's record, for late joiners).
+  proto::TimeEffect m_localTime;
+  std::map<proto::PlayerId, proto::TimeEffect> m_timeEffects;
+  void SendLocalTimeNow();
+  // Records a player's time ability; false when it did not change.
+  bool NoteTime(const proto::TimeEffect &effect);
+  // A player is gone (or back from a crash): its ability ends for everyone.
+  void EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
   // Our stealth, and (host) everyone's latest, for late joiners.
   std::optional<proto::Stealth> m_localStealth;
   std::uint32_t m_stealthRevision{};

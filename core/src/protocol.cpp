@@ -79,7 +79,7 @@ const char *NameOf(const Message &message) {
       "NpcAwareness", "Stealth",      "Noise",     "NpcHack",      "NpcHackState", "NpcStatus",
       "PlayerHack",   "VehicleHack",  "Journal",   "Tracked",      "PhoneCall",    "PhoneAction",
       "PhoneReply",   "Subtitle",     "ChoiceHub", "ChoiceCursor", "StoryState",   "QuestReward",
-      "NpcAnims",     "NpcShot"};
+      "TimeEffect",   "NpcAnims",     "NpcShot"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

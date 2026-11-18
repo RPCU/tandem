@@ -31,6 +31,10 @@
 // Quickhacks: --hack-npcs (as a guest) uploads on the host's NPCs and lands
 // the effect; --hack-player (as the host of a replay) has an NPC hack the
 // guest's V; --hack-car brakes the car another player drives.
+// Sandevistan: --sandevistan-at switches "its Sandevistan" on that many
+// seconds into the session for --sandevistan-for seconds, at
+// --sandevistan-scale: the host slows the NPCs around its V (time bubble);
+// the time abilities it hears are logged.
 // NPCs: join --record saves the host's NPC messages (spawns, positions,
 // animation states, shots, health, gone); host --replay sends them again,
 // and --anims FILE adds animation states and shots from a text script
@@ -119,11 +123,14 @@ struct Options {
   int hackPlayerSeconds{0};
   std::string npcHack{"AIQuickHack.HackRevealPosition"};
   int hackCarSeconds{0};
-  std::string storyFile;      // host: a scripted story (tools/scenarios/story-host.story)
-  int answerSeconds{-1};      // join: answer the host's ringing call after this long (-1: never)
-  std::uint32_t replyEntry{}; // join: reply to the text with this choice entry hash
-  int suggestIndex{-1};       // join: suggest this option of every hub (-1: never)
-  bool check{};               // parse the options, then exit
+  std::string storyFile;         // host: a scripted story (tools/scenarios/story-host.story)
+  int answerSeconds{-1};         // join: answer the host's ringing call after this long (-1: never)
+  std::uint32_t replyEntry{};    // join: reply to the text with this choice entry hash
+  int suggestIndex{-1};          // join: suggest this option of every hub (-1: never)
+  bool check{};                  // parse the options, then exit
+  int sandevistanAtSeconds{-1};  // switch a Sandevistan on this long into the session (-1: never)
+  int sandevistanForSeconds{5};  // ...for this long
+  float sandevistanScale{0.25f}; // ...asking for this world speed
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -225,6 +232,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --answer N         join: answer the host's ringing call after N seconds\n"
          "  --reply HASH       join: reply to a text with this choice entry (journal hash)\n"
          "  --suggest N        join: suggest option N of every choice hub the host shows\n";
+  "  --sandevistan-at N switch a Sandevistan on N seconds after another player is in\n"
+  "                     the session: the host slows the NPCs around this V\n"
+  "  --sandevistan-for N  --sandevistan-at: switch it off after N seconds (default 5)\n"
+  "  --sandevistan-scale S  --sandevistan-at: the world speed it asks for (default 0.25)\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -304,6 +315,12 @@ Options Parse(int argc, char **argv) {
       options.npcHack = std::string(value);
     else if (flag == "--hack-car")
       options.hackCarSeconds = Number<int>(value);
+    else if (flag == "--sandevistan-at")
+      options.sandevistanAtSeconds = Number<int>(value);
+    else if (flag == "--sandevistan-for")
+      options.sandevistanForSeconds = Number<int>(value);
+    else if (flag == "--sandevistan-scale")
+      options.sandevistanScale = Number<float>(value);
     else if (flag == "--hit-npcs")
       options.hitNpcsSeconds = Number<int>(value);
     else if (flag == "--hit-you")
@@ -1140,6 +1157,7 @@ int main(int argc, char **argv) {
   // --pause-at: when someone else was first there, and how far the pause got.
   std::optional<std::chrono::steady_clock::time_point> togetherSince;
   enum class PauseStep { Waiting, Paused, Done } pauseStep = PauseStep::Waiting;
+  PauseStep sandevistanStep = PauseStep::Waiting;
 
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
@@ -1334,6 +1352,9 @@ int main(int argc, char **argv) {
                 Log("phone: {} by player {}",
                     action->action == proto::kPhoneReject ? "rejected" : "answered",
                     action->player);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteTimeEffect>) {
+              Log("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
+                  e.effect.abilities, e.effect.scale);
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
               g_stop = 1;
@@ -1402,6 +1423,26 @@ int main(int argc, char **argv) {
         endpoint->SetLocalPaused(false);
         pauseStep = PauseStep::Done;
         Log("pause menu closed");
+      }
+    }
+    // --sandevistan-at: on, then off.
+    if (options.sandevistanAtSeconds >= 0 && sandevistanStep != PauseStep::Done) {
+      if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
+        togetherSince = now;
+      const auto at = togetherSince
+                          ? *togetherSince + std::chrono::seconds(options.sandevistanAtSeconds)
+                          : std::chrono::steady_clock::time_point::max();
+      if (sandevistanStep == PauseStep::Waiting && now >= at) {
+        endpoint->SetLocalTimeEffect(
+            {.abilities = tandem::proto::kTimeSandevistan, .scale = options.sandevistanScale});
+        sandevistanStep = PauseStep::Paused;
+        Log("sandevistan on: world speed {:.2f} around us for {} s", options.sandevistanScale,
+            options.sandevistanForSeconds);
+      } else if (sandevistanStep == PauseStep::Paused &&
+                 now >= at + std::chrono::seconds(options.sandevistanForSeconds)) {
+        endpoint->SetLocalTimeEffect({});
+        sandevistanStep = PauseStep::Done;
+        Log("sandevistan off");
       }
     }
     // --hit-npcs: one NPC at a time until it dies.
