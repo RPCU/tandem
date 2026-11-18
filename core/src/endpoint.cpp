@@ -916,6 +916,8 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
     cursor->player = m_you;
   if (auto *state = std::get_if<proto::StoryState>(&message))
     state->player = m_you;
+  if (auto *effect = std::get_if<proto::StoryEffect>(&message))
+    effect->player = m_you;
   if (const auto *call = std::get_if<proto::PhoneCall>(&message)) {
     m_calls.Update(*call);
     message = *m_calls.Call();
