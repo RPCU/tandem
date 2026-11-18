@@ -188,8 +188,13 @@ Run the checks your change can break before saying it works: `task test` for
 
 ### Git
 
-- The repository is local only for now. **Do not commit, push or create a
-  remote unless the user asks.**
+- The repository is local only. **Commit locally** (small, focused
+  commits, hooks passing: treefmt, shellcheck); **never push or create a
+  remote** unless the user asks.
+- Parallel work: independent tasks (research, reverse engineering, a
+  feature that needs no game) can run in separate agents, each in its own
+  git worktree; the game machine is one shared resource, so in-game
+  testing (deploys, `tools/scenario.sh`) stays with one agent at a time.
 - Vendored dependencies are submodules; don't edit files under `vendor/`.
   Work around upstream issues in our own build (see the `sdk-casefix` link
   in `plugin/CMakeLists.txt`).

@@ -9,3 +9,4 @@ devenv.local.nix
 /result*
 /.task/
 __pycache__/
+/.claude/

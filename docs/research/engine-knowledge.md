@@ -1525,9 +1525,9 @@ and `TurnVehicleOn(on: Bool)` are script natives (handlers `0x1414CE088`,
 
 `scripts/tandem/VehicleProbe.reds` (`tools/game.sh cmd vehicle probe
 [record]`): a dynamic `Vehicle.v_standard2_archer_hella_player` spawned
-ahead of V and moved every frame (≈85 frames/s) with
-`TeleportationFacility.Teleport(vehicle, position, EulerAngles(0, 0, yaw))`
-along a 6 m circle at 5 m/s.
+ahead of V and moved every frame (≈85 frames/s) with the teleportation
+facility (`Teleport` with the vehicle, a position and
+`EulerAngles(0, 0, yaw)`) along a 6 m circle at 5 m/s.
 
 - The car is exactly where each teleport puts it: **zero drift between
   frames** over 20 s, and `GetLinearVelocity()` reads 0, so its own
@@ -1731,3 +1731,12 @@ puppets' attitude group. With the mock player in front mode:
   depend on it. [2.5-verified]
 - V's death screen ("Flatlined") stops the game thread: the watchdog
   reports it as silent (no crash frames in `tools/game.sh bt`). [2.5-verified]
+- **Fixed: the puppet is seen.** A puppet built from V's TPP cutscene
+  template lacks the components NPC senses work with. Grafting the donor
+  NPC's `senseVisibleObjectComponent` **and** `senseComponent` into the
+  puppet as it is built (Codeware `Entity/Extract` callback,
+  `EntityBuilderTemplateWrapper.AddComponent(component.Clone())`) makes a
+  hostile NPC detect it (`GetDetection` 100, `IsAgentVisible` true when in
+  sight) and keep it as its `CombatTarget`. The visible object alone was
+  not enough. Still open: no hit on the puppet reaches the damage
+  pipeline. [2.5-verified]
