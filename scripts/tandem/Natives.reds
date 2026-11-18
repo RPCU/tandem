@@ -46,11 +46,57 @@ public native struct TandemNpcEvent {
   native let dz: Float;
 }
 
+// The co-op menu's view of the session (Coop.reds).
+public native struct TandemStatus {
+  // the chosen session: 0 off, 1 host, 2 join
+  native let role: Int32;
+  // 0 off, 1 starting, 2 connecting, 3 in the session, 4 retrying, 5 failed
+  native let state: Int32;
+  // join: the host's address
+  native let address: String;
+  native let port: Int32;
+  native let you: Uint32;
+  native let host: Uint32;
+  native let players: Int32;
+  // guest: to the host; -1 unknown
+  native let pingMs: Int32;
+  // why the last session ended, or failed
+  native let detail: String;
+  // chosen in the co-op menu (else tandem.ini)
+  native let fromMenu: Bool;
+}
+
+public native struct TandemPlayer {
+  native let id: Uint32;
+  native let name: String;
+  // our link to them; -1: unknown, or ourselves
+  native let pingMs: Int32;
+  native let host: Bool;
+  native let you: Bool;
+}
+
+// A host this game joined (recent.txt next to the plugin).
+public native struct TandemHost {
+  native let address: String;
+  native let port: Int32;
+  native let name: String;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
   public static native func Start(body: Int32)
   public static native func Stop()
+  public static native func StartHost(port: Int32) -> Bool
+  public static native func Join(address: String, port: Int32) -> Bool
+  public static native func ParseAddress(text: String) -> TandemHost
+  public static native func Leave()
+  public static native func ResetChoice()
+  public static native func SessionStatus() -> TandemStatus
+  public static native func SessionPlayers() -> array<TandemPlayer>
+  public static native func RecentHosts() -> array<TandemHost>
+  public static native func LocalAddresses() -> array<String>
+  public static native func DefaultPort() -> Int32
   public static native func SendLocalState(position: Vector4, orientation: Quaternion, velocity: Vector4, locomotion: Int32, flags: Int32)
   public static native func TakeEvents() -> array<TandemEvent>
   public static native func RegisterPuppet(player: Uint32, id: EntityID)

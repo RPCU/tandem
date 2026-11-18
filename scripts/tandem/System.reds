@@ -55,10 +55,12 @@ public class TandemJoin {
 
 public class TandemTick extends DelayCallback {
   public let system: wref<TandemSystem>;
+  // The chain it belongs to: a session starting or ending starts a new one.
+  public let gen: Int32;
 
   public func Call() -> Void {
     if IsDefined(this.system) {
-      this.system.Tick();
+      this.system.OnTick(this.gen);
     }
   }
 }
@@ -113,6 +115,13 @@ public class TandemSystem extends ScriptableSystem {
   private let m_sentSlot: CName;
   private let m_sentOwner: Uint32;
   private let m_sentSeat: Bool;
+  // A game is loaded (our V in a world that is not the main menu's): the
+  // co-op menu can start a session in it.
+  private let m_attached: Bool;
+  // The current tick chain (TandemTick.gen).
+  private let m_tickGen: Int32;
+  // When we got into the current session (join notices come after it).
+  private let m_sessionAt: Float;
 
   private func OnAttach() -> Void {
     if TandemNative.IsConfigured() {
@@ -120,15 +129,38 @@ public class TandemSystem extends ScriptableSystem {
     }
   }
 
+  public static func Of(game: GameInstance) -> ref<TandemSystem> {
+    return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
+  }
+
   // A V attached to a world. The main menu's background scene attaches one
   // too, so the game's own pre-game flag decides. (Codeware's session events
   // were tried: they do not reach a system after a save loads.)
   private final func OnPlayerAttach(request: ref<PlayerAttachRequest>) -> Void {
-    if !TandemNative.IsConfigured() {
+    if GameInstance.GetSystemRequestsHandler().IsPreGame() {
+      if TandemNative.IsConfigured() {
+        TandemNative.Log("main menu world: not a game");
+      }
       return;
     }
-    if GameInstance.GetSystemRequestsHandler().IsPreGame() {
-      TandemNative.Log("main menu world: not a game");
+    let player = GetPlayer(this.GetGameInstance());
+    if !IsDefined(player) {
+      return;
+    }
+    this.m_attached = true;
+    if TandemNative.IsConfigured() {
+      this.BeginSession();
+    } else {
+      // No session yet: only listen for commands (the co-op menu needs nothing).
+      this.m_tickGen += 1;
+      this.Schedule(0.25);
+    }
+  }
+
+  // The chosen session, in this game, now (at the load, or from the co-op
+  // menu in game).
+  public func BeginSession() -> Void {
+    if this.m_inGame || !this.m_attached {
       return;
     }
     let player = GetPlayer(this.GetGameInstance());
@@ -161,23 +193,45 @@ public class TandemSystem extends ScriptableSystem {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
     }
-    this.Schedule();
+    this.m_tickGen += 1;
+    this.Schedule(0.0);
   }
 
   private final func OnPlayerDetach(request: ref<PlayerDetachRequest>) -> Void {
+    this.m_attached = false;
+    this.m_tickGen += 1;
     if !this.m_inGame {
       return;
     }
     TandemNative.Log("left the game");
+    this.EndSession(false);
+  }
+
+  // Out of the session, its puppets, proxies and borrowed state with it.
+  // worldStays: we stay in this game (the co-op menu's Leave), so bodies go
+  // the careful way and the game's own NPCs come back; else the world is
+  // going away with them.
+  private func EndSession(worldStays: Bool) -> Void {
+    if !this.m_inGame {
+      return;
+    }
     TandemNative.PoseSource(null);
     this.m_inGame = false;
+    this.m_you = 0u;
     this.RemoveAllPuppets();
-    // The world goes away with them: nothing left to delete step by step.
-    ArrayClear(this.m_leaving);
+    if !worldStays {
+      // Nothing left to delete step by step.
+      ArrayClear(this.m_leaving);
+    }
     if IsDefined(this.m_npcs) {
-      this.m_npcs.Stop();
+      if worldStays {
+        this.m_npcs.End();
+      } else {
+        this.m_npcs.Stop();
+      }
     }
     this.m_npcs = null;
+    this.m_world = null;
     this.m_attitudes = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
@@ -197,13 +251,56 @@ public class TandemSystem extends ScriptableSystem {
       this.m_probe = null;
     }
     TandemNative.Stop();
+    this.m_tickGen += 1;
+    if worldStays && this.m_attached {
+      // Bodies on their way out, and commands.
+      this.Schedule(0.25);
+    }
   }
 
-  private func Schedule() -> Void {
+  // ---- the co-op menu, in game (Coop.reds) ----
+
+  public func InWorld() -> Bool {
+    return this.m_attached;
+  }
+
+  public func InSession() -> Bool {
+    return this.m_inGame;
+  }
+
+  // Host this game now (port 0: tandem.ini's), out of any session it was in.
+  public func CoopHost(port: Int32) -> Bool {
+    this.EndSession(true);
+    TandemNative.StartHost(port);
+    this.BeginSession();
+    return this.m_inGame;
+  }
+
+  // Join "address[:port]" now. False (and nothing changed): not an address.
+  public func CoopJoin(address: String) -> Bool {
+    let target = TandemNative.ParseAddress(address);
+    if StrLen(target.address) == 0 {
+      return false;
+    }
+    this.EndSession(true);
+    TandemNative.Join(target.address, target.port);
+    this.BeginSession();
+    return this.m_inGame;
+  }
+
+  public func CoopLeave() -> Void {
+    this.EndSession(true);
+    TandemNative.Leave();
+    TandemCoop.Notice(this.GetGameInstance(), "You left the co-op session");
+  }
+
+  // delay 0 s: the next frame.
+  private func Schedule(delay: Float) -> Void {
     let tick = new TandemTick();
     tick.system = this;
-    // 0 s: the next frame.
-    GameInstance.GetDelaySystem(this.GetGameInstance()).DelayCallback(tick, 0.0, false);
+    tick.gen = this.m_tickGen;
+    // Real time (false): not slowed by time dilation.
+    GameInstance.GetDelaySystem(this.GetGameInstance()).DelayCallback(tick, delay, false);
   }
 
   // The shared pause menu (Pause.reds): driven every frame by the plugin,
@@ -212,8 +309,17 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_pause;
   }
 
-  public func Tick() -> Void {
+  public func OnTick(gen: Int32) -> Void {
+    // An older chain (a session started or ended since), or no game.
+    if gen != this.m_tickGen || !this.m_attached {
+      return;
+    }
     if !this.m_inGame {
+      // No session: bodies of the last one on their way out, and commands
+      // (tools/game.sh cmd coop ...).
+      this.ProcessLeaving();
+      this.HandleCommand();
+      this.Schedule(0.25);
       return;
     }
     // The world's clock stands still behind the loading screen: two seconds
@@ -262,23 +368,35 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_vehicleProbe) {
       this.m_vehicleProbe.Tick();
     }
-    this.Schedule();
+    this.Schedule(0.0);
   }
 
   // ---- commands from the developer (tools/game.sh cmd), twice a second ----
 
   private func HandleCommand() -> Void {
     let now = EngineTime.ToFloat(GameInstance.GetSimTime(this.GetGameInstance()));
-    if now - this.m_lastCommandCheck < 0.5 {
+    if now - this.m_lastCommandCheck < 0.45 {
       return;
     }
     this.m_lastCommandCheck = now;
-    this.BindPoses();
+    if this.m_inGame {
+      this.BindPoses();
+    }
     let command = TandemNative.TakeCommand();
     if Equals(command, "") {
       return;
     }
-    if Equals(command, "probe") {
+    this.RunCommand(command);
+  }
+
+  // Also from the pause menu (Coop.reds), which takes the commands while the
+  // world, and so our tick, is paused.
+  public func RunCommand(command: String) -> Void {
+    if StrBeginsWith(command, "coop") {
+      this.CoopCommand(command);
+    } else if !this.m_inGame && !TandemSystem.SoloCommand(command) {
+      TandemNative.Log(s"not in a session: \(command)");
+    } else if Equals(command, "probe") {
       // Start over: new bodies, so a reloaded script or tweak takes part.
       if IsDefined(this.m_probe) {
         this.m_probe.Stop();
@@ -648,6 +766,40 @@ public class TandemSystem extends ScriptableSystem {
     }
   }
 
+  // Commands that make sense without a session.
+  private static func SoloCommand(command: String) -> Bool {
+    return Equals(command, "where") || StrBeginsWith(command, "teleport") || StrBeginsWith(command, "god ");
+  }
+
+  // coop status | coop host [PORT] | coop join ADDRESS[:PORT] | coop leave:
+  // what the pause menu's co-op page does, without the menu. The menu
+  // pages themselves (coop menu, coop pick) are the menus' own (Coop.reds).
+  private func CoopCommand(command: String) -> Void {
+    let words = StrSplit(command, " ");
+    let verb = "status";
+    let arg = "";
+    if ArraySize(words) > 1 {
+      verb = words[1];
+    }
+    if ArraySize(words) > 2 {
+      arg = words[2];
+    }
+    if Equals(verb, "status") {
+      TandemCoop.LogStatus();
+    } else if Equals(verb, "host") {
+      let hosting = this.CoopHost(StringToInt(arg, 0));
+      TandemNative.Log(s"coop: host, in session \(hosting)");
+    } else if Equals(verb, "join") {
+      let joining = this.CoopJoin(arg);
+      TandemNative.Log(s"coop: join \(arg), in session \(joining)");
+    } else if Equals(verb, "leave") {
+      this.CoopLeave();
+      TandemNative.Log("coop: left the session");
+    } else {
+      TandemNative.Log(s"coop: \(verb) needs the co-op menu open (the pause menu's or the main menu's)");
+    }
+  }
+
   // Body poses (plugin: engine/posestream.cpp): which V is read, which body
   // draws which player. Repeated twice a second: entities come and go.
   private func BindPoses() -> Void {
@@ -854,15 +1006,25 @@ public class TandemSystem extends ScriptableSystem {
           join.name = event.name;
           join.body = event.body;
           ArrayPush(this.m_joins, join);
+          // Those already there when we came in are not news.
+          if this.m_you != 0u && this.Now() - this.m_sessionAt > 3.0 {
+            TandemCoop.Notice(this.GetGameInstance(), s"\(event.name) joined the session");
+          }
           break;
         case 2:
+          this.NoticeLeft(event.player);
           this.RemovePuppet(event.player);
           break;
         case 4:
           this.m_you = event.player;
+          this.m_sessionAt = this.Now();
+          TandemCoop.NoticeInSession(this.GetGameInstance());
           break;
         case 3:
           TandemNative.Log(s"session ended: \(event.name)");
+          if this.m_you != 0u {
+            TandemCoop.Notice(this.GetGameInstance(), s"Co-op session ended: \(event.name)");
+          }
           this.m_you = 0u;
           this.RemoveAllPuppets();
           if IsDefined(this.m_npcs) {
@@ -1380,6 +1542,14 @@ public class TandemSystem extends ScriptableSystem {
 
   private func Now() -> Float {
     return EngineTime.ToFloat(GameInstance.GetSimTime(this.GetGameInstance()));
+  }
+
+  private func NoticeLeft(player: Uint32) -> Void {
+    for puppet in this.m_puppets {
+      if puppet.player == player {
+        TandemCoop.Notice(this.GetGameInstance(), s"\(puppet.name) left the session");
+      }
+    }
   }
 
   private func RemovePuppet(player: Uint32) -> Void {

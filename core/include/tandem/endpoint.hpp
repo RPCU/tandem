@@ -180,8 +180,12 @@ public:
   bool IsHost() const { return m_session->IsHost(); }
   bool IsJoined() const { return m_you != proto::kNoPlayer; }
   proto::PlayerId You() const { return m_you; }
+  proto::PlayerId HostPlayer() const { return m_host; } // kNoPlayer until welcomed
   const std::map<proto::PlayerId, proto::PlayerInfo> &Players() const { return m_players; }
   std::optional<net::Stats> HostLinkStats() const;
+  // The link to a player: host, to each guest; guest, to the host only
+  // (the others are reached through it). nullopt for ourselves and strangers.
+  std::optional<net::Stats> LinkStatsOf(proto::PlayerId player) const;
 
   void Leave(const std::string &reason = "left");
 

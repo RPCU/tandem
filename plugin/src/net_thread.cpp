@@ -31,14 +31,35 @@ struct NetThread::Impl {
     Runtime::Get().SetRemotePaused(std::move(others));
   }
 
+  // What the co-op menu shows: the state, and everyone with their ping.
+  void Publish(SessionStatus::State state, const std::string &detail,
+               const Endpoint *endpoint = nullptr) {
+    SessionStatus status{.state = state, .detail = detail};
+    if (endpoint) {
+      status.you = endpoint->You();
+      status.host = endpoint->HostPlayer();
+      for (const auto &[id, info] : endpoint->Players()) {
+        const auto link = endpoint->LinkStatsOf(id);
+        status.players.push_back(
+            {id, info.name, link ? static_cast<std::int32_t>(link->rttMs) : -1});
+      }
+    }
+    Runtime::Get().SetStatus(std::move(status));
+  }
+
   // A guest whose session ends (host gone, unreachable, timed out) tries
   // again every 5 s for as long as the game runs: a host that crashed or
   // restarted is joined again without touching the guest's game.
   void Run(std::stop_token stop) {
     for (;;) {
-      Session(stop);
-      if (stop.stop_requested() || config.role != Config::Role::Join)
+      const auto ended = Session(stop);
+      if (stop.stop_requested())
         return;
+      if (config.role != Config::Role::Join) {
+        Publish(SessionStatus::State::Failed, ended);
+        return;
+      }
+      Publish(SessionStatus::State::Retrying, ended);
       for (int i = 0; i < 50 && !stop.stop_requested(); ++i)
         std::this_thread::sleep_for(100ms);
       if (stop.stop_requested())
@@ -47,7 +68,8 @@ struct NetThread::Impl {
     }
   }
 
-  void Session(std::stop_token stop) {
+  // Runs one session; answers why it ended.
+  std::string Session(std::stop_token stop) {
     auto &runtime = Runtime::Get();
     std::string error;
     const Identity identity{config.name, body};
@@ -57,8 +79,12 @@ struct NetThread::Impl {
     if (!endpoint) {
       log::Error("could not start the session: {}", error);
       runtime.PushEvent({ScriptEvent::Kind::SessionEnded, 0, error, {}});
-      return;
+      return error;
     }
+    Publish(config.role == Config::Role::Host ? SessionStatus::State::InSession
+                                              : SessionStatus::State::Connecting,
+            {}, endpoint.get());
+    std::string endReason;
     if (lastAppearance)
       endpoint->SetLocalAppearance(*lastAppearance);
     if (lastHeld)
@@ -75,6 +101,7 @@ struct NetThread::Impl {
       log::Info("joining {}:{}", config.address, config.port);
 
     auto nextReport = std::chrono::steady_clock::now() + 10s;
+    auto nextStatus = std::chrono::steady_clock::now() + 500ms;
     bool ended = false;
     std::uint64_t silentSinceUs = 0;
 
@@ -101,10 +128,16 @@ struct NetThread::Impl {
                 log::Info("in the session as player {} (host {})", e.you, e.host);
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
+                Publish(SessionStatus::State::InSession, {}, endpoint.get());
+                // Joined: worth offering again (the host's name comes with the roster).
+                if (!endpoint->IsHost())
+                  runtime.RememberHost({config.address, config.port}, {});
               } else if constexpr (std::is_same_v<E, events::PlayerJoined>) {
                 log::Info("{} joined (player {}, body {})", e.player.name, e.player.id,
                           static_cast<int>(e.player.body));
                 runtime.NotePlayerName(e.player.id, e.player.name);
+                if (!endpoint->IsHost() && e.player.id == endpoint->HostPlayer())
+                  runtime.RememberHost({config.address, config.port}, e.player.name);
                 runtime.PushEvent(
                     {ScriptEvent::Kind::PlayerJoined, e.player.id, e.player.name, e.player.body});
               } else if constexpr (std::is_same_v<E, events::PlayerLeft>) {
@@ -179,6 +212,7 @@ struct NetThread::Impl {
                   if (id != endpoint->You())
                     runtime.ForgetRemote(id);
                 runtime.PushEvent({ScriptEvent::Kind::SessionEnded, 0, e.reason, {}});
+                endReason = e.reason;
                 ended = true;
               }
             },
@@ -233,6 +267,12 @@ struct NetThread::Impl {
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
 
+      if (const auto now = std::chrono::steady_clock::now(); now >= nextStatus && !ended) {
+        nextStatus = now + 500ms;
+        Publish(endpoint->IsJoined() ? SessionStatus::State::InSession
+                                     : SessionStatus::State::Connecting,
+                {}, endpoint.get());
+      }
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {
         nextReport = now + 10s;
         const auto link = endpoint->HostLinkStats();
@@ -254,7 +294,8 @@ struct NetThread::Impl {
     }
     // Nobody in this session pauses us any more.
     runtime.SetRemotePaused({});
-    endpoint->Leave("the game closed");
+    endpoint->Leave(stop.stop_requested() ? "left the session" : "the game closed");
+    return endReason.empty() ? std::string("the session ended") : endReason;
   }
 };
 

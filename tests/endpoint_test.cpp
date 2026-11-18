@@ -119,6 +119,25 @@ TEST_CASE("a guest joins, both see each other's V") {
   CHECK(atGuest->position == proto::Vec3{7.f, 8.f, 9.f});
 }
 
+TEST_CASE("each side knows its link to the others (the co-op menu's ping)") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  CHECK(host->LinkStatsOf(a->You()).has_value());
+  CHECK(host->LinkStatsOf(b->You()).has_value());
+  CHECK(a->LinkStatsOf(1).has_value());              // the host
+  CHECK_FALSE(a->LinkStatsOf(b->You()).has_value()); // reached through the host
+  CHECK_FALSE(host->LinkStatsOf(1).has_value());     // ourselves
+  CHECK_FALSE(host->LinkStatsOf(42).has_value());    // nobody
+}
+
 TEST_CASE("the host relays one guest to the other") {
   const auto port = NextPort();
   std::string error;

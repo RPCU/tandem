@@ -7,6 +7,10 @@
 
 #include "tandem/session.hpp"
 
+#include <format>
+#include <fstream>
+#include <sstream>
+
 namespace tandem::plugin {
 Runtime &Runtime::Get() {
   static Runtime runtime;
@@ -15,9 +19,83 @@ Runtime &Runtime::Get() {
 
 void Runtime::Start(proto::Body body) {
   std::lock_guard _(m_lock);
-  if (m_net || config.role == Config::Role::Off)
+  if (m_net || m_choice.role == Config::Role::Off)
     return;
-  m_net = std::make_unique<NetThread>(config, body);
+  // The net thread runs on its own copy: tandem.ini's settings, the chosen session.
+  auto session = config;
+  session.role = m_choice.role;
+  session.address = m_choice.address;
+  session.port = m_choice.port;
+  m_status = {.state = SessionStatus::State::Starting};
+  log::Info("session: starting as {}{}", NameOf(session.role),
+            session.role == Config::Role::Join
+                ? std::format(" of {}:{}", session.address, session.port)
+                : std::format(" on UDP {}", session.port));
+  m_net = std::make_unique<NetThread>(session, body);
+}
+
+void Runtime::Choose(SessionChoice choice) {
+  if (Started()) {
+    log::Info("session: stopping for the new choice");
+    Stop();
+  }
+  std::lock_guard _(m_lock);
+  m_choice = std::move(choice);
+  std::string what;
+  if (m_choice.role == Config::Role::Join)
+    what = std::format(" {}:{}", m_choice.address, m_choice.port);
+  else if (m_choice.role == Config::Role::Host)
+    what = std::format(" on UDP {}", m_choice.port);
+  log::Info("session: chosen {}{}{}", NameOf(m_choice.role), what,
+            m_choice.fromMenu ? " (co-op menu)" : " (tandem.ini)");
+}
+
+void Runtime::ResetChoice() {
+  Choose({.role = config.role, .address = config.address, .port = config.port});
+}
+
+SessionChoice Runtime::Choice() const {
+  std::lock_guard _(m_lock);
+  return m_choice;
+}
+
+Config::Role Runtime::ChosenRole() const {
+  std::lock_guard _(m_lock);
+  return m_choice.role;
+}
+
+void Runtime::SetStatus(SessionStatus status) {
+  std::lock_guard _(m_lock);
+  // Not after Stop took the thread away: its last words are not the state.
+  if (m_net)
+    m_status = std::move(status);
+}
+
+SessionStatus Runtime::Status() const {
+  std::lock_guard _(m_lock);
+  return m_net ? m_status : SessionStatus{};
+}
+
+std::vector<hosts::Recent> Runtime::RecentHosts() const {
+  std::lock_guard _(m_recentLock);
+  if (config.recentFile.empty())
+    return {};
+  std::ifstream file(config.recentFile);
+  std::stringstream text;
+  text << file.rdbuf();
+  return hosts::ParseRecent(text.str());
+}
+
+void Runtime::RememberHost(const hosts::Target &target, std::string name) {
+  auto list = RecentHosts();
+  hosts::Remember(list, target, std::move(name));
+  std::lock_guard _(m_recentLock);
+  if (config.recentFile.empty())
+    return;
+  std::ofstream file(config.recentFile, std::ios::trunc);
+  file << hosts::FormatRecent(list);
+  if (!file)
+    log::Warn("could not write {}", config.recentFile.filename().string());
 }
 
 void Runtime::Stop() {
@@ -52,8 +130,17 @@ void Runtime::Stop() {
       ++m_remotePausedChanges;
     }
     m_names.clear();
+    // What the old session said is not for the next one.
+    m_events.clear();
+    m_npcDetected.clear();
+    m_status = {};
   }
   net.reset(); // joins outside the lock: the net thread takes it too
+  {
+    // Anything it queued on its way out.
+    std::lock_guard _(m_lock);
+    m_events.clear();
+  }
   {
     std::lock_guard _(m_tracksLock);
     m_tracks.clear();

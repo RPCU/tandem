@@ -86,19 +86,23 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     auto &runtime = Runtime::Get();
     runtime.config = LoadConfig(PluginDirectory(handle) / "tandem.ini");
     runtime.config.commandFile = PluginDirectory(handle) / "tandem.cmd";
+    runtime.config.recentFile = PluginDirectory(handle) / "recent.txt";
+    runtime.ResetChoice();
     // A command left from an earlier run is not for this one.
     std::error_code ignored;
     std::filesystem::remove(runtime.config.commandFile, ignored);
-    log::Info("role: {}", NameOf(runtime.config.role));
+    log::Info("role: {} (tandem.ini; the co-op menu can pick another)",
+              NameOf(runtime.config.role));
 
     Red::TypeInfoRegistrar::RegisterDiscovered();
     // Installed later, from the game thread (TandemNative.PoseHook).
     engine::SetPoseHookContext(sdk, handle);
-    if (runtime.config.role != Config::Role::Off) {
-      engine::InstallHooks(sdk, handle);
-      sdk->gameStates->Add(handle, RED4ext::EGameStateType::Running, &g_running);
-    }
-    if (runtime.config.role != Config::Role::Off && runtime.config.pose)
+    // Whatever the role: the co-op menu can start a session at any time, and
+    // hooking a running game races its other threads. Without a session the
+    // hooks only pass through (no puppet registered, no pose source).
+    engine::InstallHooks(sdk, handle);
+    sdk->gameStates->Add(handle, RED4ext::EGameStateType::Running, &g_running);
+    if (runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
     if (runtime.config.trace || runtime.config.mirror)
       engine::InstallTrace(sdk, handle, runtime.config.trace);

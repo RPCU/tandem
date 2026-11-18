@@ -2,7 +2,7 @@
 
 // tandem.ini, next to tandem.dll:
 //
-//   role = join          ; off | host | join
+//   role = join          ; off | host | join (the co-op menu can pick another)
 //   address = 127.0.0.1  ; join: the host's address
 //   port = 27450
 //   name = V
@@ -31,8 +31,10 @@ struct Config {
   bool trace{false};
   bool mirror{false};
   bool pose{true};
-  // Not from the file: tandem.cmd next to it, a command for the running game.
+  // Not from the file: tandem.cmd next to it, a command for the running game;
+  // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;
+  std::filesystem::path recentFile;
 };
 
 // Missing file: the defaults (off). Unknown keys and bad values are logged.

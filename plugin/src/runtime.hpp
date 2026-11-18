@@ -5,6 +5,7 @@
 
 #include "config.hpp"
 
+#include "tandem/hosts.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
@@ -55,16 +56,66 @@ struct ScriptEvent {
   proto::Body body{};
 };
 
+// The session the next Start runs: tandem.ini's until the co-op menu picks
+// another (scripts/tandem/Coop.reds).
+struct SessionChoice {
+  Config::Role role{Config::Role::Off};
+  std::string address; // join: the host
+  std::uint16_t port{};
+  bool fromMenu{};
+};
+
+// How the session is doing, for the co-op menu (net thread writes, game
+// thread reads).
+struct SessionStatus {
+  enum class State : std::int32_t {
+    Off = 0,        // no session
+    Starting = 1,   // chosen, the net thread is setting up
+    Connecting = 2, // guest: waiting for the host's welcome
+    InSession = 3,  // hosting, or welcomed by the host
+    Retrying = 4,   // guest: the session ended or the host was not reached; again in 5 s
+    Failed = 5,     // host: could not open the port (the thread gave up)
+  };
+  struct Player {
+    proto::PlayerId id{};
+    std::string name;
+    std::int32_t pingMs{-1}; // -1: unknown, or ourselves
+  };
+  State state{State::Off};
+  std::string detail; // why it ended or failed
+  proto::PlayerId you{}, host{};
+  std::vector<Player> players; // us included
+};
+
 class Runtime {
 public:
   static Runtime &Get();
 
+  // tandem.ini, as loaded (the defaults; the choice below overrides the role).
   Config config;
 
-  // Game thread: the local V exists; start the session once.
+  // Game thread: the local V exists; start the chosen session once.
   void Start(proto::Body body);
   void Stop();
   bool Started() const;
+
+  // Game thread (co-op menu): what the next session is. A running session
+  // stops first; scripts start the new one (Start) when a game is loaded.
+  void Choose(SessionChoice choice);
+  // Back to tandem.ini's choice (the main menu shows: a menu choice was for
+  // the game the player left).
+  void ResetChoice();
+  SessionChoice Choice() const;
+  Config::Role ChosenRole() const;
+
+  // Net thread -> game thread: how the session is doing.
+  void SetStatus(SessionStatus status);
+  SessionStatus Status() const;
+
+  // The hosts this game joined, newest first (config.recentFile). Read on
+  // the game thread, written by the net thread when a host welcomes us.
+  std::vector<hosts::Recent> RecentHosts() const;
+  void RememberHost(const hosts::Target &target, std::string name);
 
   // Game thread -> net thread: our V, newest only.
   void SubmitLocal(const proto::PlayerState &state);
@@ -199,6 +250,9 @@ private:
 
   mutable std::mutex m_lock; // session lifecycle, local outbox, events
   std::unique_ptr<NetThread> m_net;
+  SessionChoice m_choice; // m_lock
+  SessionStatus m_status; // m_lock
+  mutable std::mutex m_recentLock;
   std::optional<proto::PlayerState> m_local;
   std::vector<ScriptEvent> m_events;
 

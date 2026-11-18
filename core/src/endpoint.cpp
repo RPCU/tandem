@@ -609,6 +609,17 @@ std::optional<net::Stats> Endpoint::HostLinkStats() const {
   return IsHost() ? std::nullopt : m_session->StatsOf(m_hostPeer);
 }
 
+std::optional<net::Stats> Endpoint::LinkStatsOf(proto::PlayerId player) const {
+  if (player == proto::kNoPlayer || player == m_you)
+    return std::nullopt;
+  if (!IsHost())
+    return player == m_host ? m_session->StatsOf(m_hostPeer) : std::nullopt;
+  for (const auto &[peer, id] : m_playerOfPeer)
+    if (id == player)
+      return m_session->StatsOf(peer);
+  return std::nullopt;
+}
+
 void Endpoint::Leave(const std::string &reason) {
   if (m_ended)
     return;

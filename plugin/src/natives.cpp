@@ -5,6 +5,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "addresses.hpp"
 #include "engine/animation.hpp"
 #include "engine/hooks.hpp"
 #include "engine/look.hpp"
@@ -67,18 +68,144 @@ struct TandemNpcEvent {
 };
 static_assert(alignof(TandemNpcEvent) <= 8, "the script VM aligns struct locals to 8");
 
+// The co-op menu's view of the session (Runtime::SessionStatus).
+struct TandemStatus {
+  std::int32_t role{};  // the chosen session: 0 off, 1 host, 2 join
+  std::int32_t state{}; // SessionStatus::State (0 off .. 5 failed)
+  Red::CString address; // join: the host's address
+  std::int32_t port{};
+  std::uint32_t you{};
+  std::uint32_t host{};
+  std::int32_t players{};
+  std::int32_t pingMs{}; // guest: to the host; -1 unknown
+  Red::CString detail;   // why the last session ended, or failed
+  bool fromMenu{};       // chosen in the co-op menu (else tandem.ini)
+};
+
+struct TandemPlayer {
+  std::uint32_t id{};
+  Red::CString name;
+  std::int32_t pingMs{}; // our link to them; -1: unknown, or ourselves
+  bool host{};
+  bool you{};
+};
+
+// A host this game joined (recent.txt).
+struct TandemHost {
+  Red::CString address;
+  std::int32_t port{};
+  Red::CString name;
+};
+
 Red::Quaternion ToQuaternion(const proto::Quat &q) { return {q.i, q.j, q.k, q.r}; }
 float YawOfQuaternion(const Red::Quaternion &q) { return sync::YawOf({q.i, q.j, q.k, q.r}); }
 
 struct TandemNative : Red::IScriptable {
-  static bool IsConfigured() { return Runtime::Get().config.role != Config::Role::Off; }
+  // A session is chosen (tandem.ini's role, or the co-op menu's choice).
+  static bool IsConfigured() { return Runtime::Get().ChosenRole() != Config::Role::Off; }
 
   static bool IsStarted() { return Runtime::Get().Started(); }
 
-  // The local V is in a loaded game: start the session (once).
+  // The local V is in a loaded game: start the chosen session (once).
   static void Start(std::int32_t body) { Runtime::Get().Start(BodyOf(body)); }
 
   static void Stop() { Runtime::Get().Stop(); }
+
+  // ---- the co-op menu (scripts/tandem/Coop.reds) ----
+  // Each picks the next session and stops a running one; TandemSystem starts
+  // the new one when a game is loaded (at once in game, else at the load).
+
+  // Host on this UDP port (0: tandem.ini's).
+  static bool StartHost(std::int32_t port) {
+    auto &runtime = Runtime::Get();
+    const auto chosen =
+        port > 0 && port < 65536 ? static_cast<std::uint16_t>(port) : runtime.config.port;
+    runtime.Choose({.role = Config::Role::Host, .port = chosen, .fromMenu = true});
+    return true;
+  }
+
+  // Join "address" or "address:port" (port 0: tandem.ini's). False: not an address.
+  static bool Join(Red::CString address, std::int32_t port) {
+    auto &runtime = Runtime::Get();
+    const auto fallback =
+        port > 0 && port < 65536 ? static_cast<std::uint16_t>(port) : runtime.config.port;
+    const auto target = hosts::Parse(address.c_str(), fallback);
+    if (!target) {
+      log::Warn("co-op: \"{}\" is not an address to join", address.c_str());
+      return false;
+    }
+    runtime.Choose({.role = Config::Role::Join,
+                    .address = target->address,
+                    .port = target->port,
+                    .fromMenu = true});
+    return true;
+  }
+
+  // "address" or "address:port" as the menu would join it (port 0: tandem.ini's);
+  // an empty address: not one.
+  static TandemHost ParseAddress(Red::CString text) {
+    const auto target = hosts::Parse(text.c_str(), Runtime::Get().config.port);
+    if (!target)
+      return {};
+    return {Red::CString(target->address.c_str()), target->port, {}};
+  }
+
+  // No session (until the next choice, or tandem.ini's at the main menu).
+  static void Leave() { Runtime::Get().Choose({.role = Config::Role::Off, .fromMenu = true}); }
+
+  // tandem.ini's choice again (the main menu: a menu choice was for the game left).
+  static void ResetChoice() {
+    if (Runtime::Get().Choice().fromMenu)
+      Runtime::Get().ResetChoice();
+  }
+
+  static TandemStatus SessionStatus() {
+    auto &runtime = Runtime::Get();
+    const auto choice = runtime.Choice();
+    const auto status = runtime.Status();
+    TandemStatus out;
+    out.role = static_cast<std::int32_t>(choice.role);
+    out.state = static_cast<std::int32_t>(status.state);
+    out.address = Red::CString(choice.address.c_str());
+    out.port = choice.port;
+    out.you = status.you;
+    out.host = status.host;
+    out.players = static_cast<std::int32_t>(status.players.size());
+    out.pingMs = -1;
+    for (const auto &player : status.players)
+      if (player.id == status.host && status.host != status.you)
+        out.pingMs = player.pingMs;
+    out.detail = Red::CString(status.detail.c_str());
+    out.fromMenu = choice.fromMenu;
+    return out;
+  }
+
+  static Red::DynArray<TandemPlayer> SessionPlayers() {
+    const auto status = Runtime::Get().Status();
+    Red::DynArray<TandemPlayer> out;
+    for (const auto &player : status.players)
+      out.EmplaceBack(TandemPlayer{player.id, Red::CString(player.name.c_str()), player.pingMs,
+                                   player.id == status.host, player.id == status.you});
+    return out;
+  }
+
+  static Red::DynArray<TandemHost> RecentHosts() {
+    Red::DynArray<TandemHost> out;
+    for (const auto &recent : Runtime::Get().RecentHosts())
+      out.EmplaceBack(TandemHost{Red::CString(recent.target.address.c_str()), recent.target.port,
+                                 Red::CString(recent.name.c_str())});
+    return out;
+  }
+
+  // Where friends reach this game: its IPv4 addresses, the main one first.
+  static Red::DynArray<Red::CString> LocalAddresses() {
+    Red::DynArray<Red::CString> out;
+    for (const auto &address : plugin::LocalAddresses())
+      out.EmplaceBack(Red::CString(address.c_str()));
+    return out;
+  }
+
+  static std::int32_t DefaultPort() { return Runtime::Get().config.port; }
 
   static void SendLocalState(Red::Vector4 position, Red::Quaternion orientation,
                              Red::Vector4 velocity, std::int32_t locomotion, std::int32_t flags) {
@@ -445,7 +572,7 @@ struct TandemNative : Red::IScriptable {
     return static_cast<float>(static_cast<double>(now - radio->trackStartUs) / 1e6);
   }
 
-  static bool IsHost() { return Runtime::Get().config.role == Config::Role::Host; }
+  static bool IsHost() { return Runtime::Get().ChosenRole() == Config::Role::Host; }
 
   // Host: the world as our game has it (sent when it changes, and every few
   // seconds by the script).
@@ -604,11 +731,48 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
   RTTI_PROPERTY(effect);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemStatus, "TandemStatus", {
+  RTTI_PROPERTY(role);
+  RTTI_PROPERTY(state);
+  RTTI_PROPERTY(address);
+  RTTI_PROPERTY(port);
+  RTTI_PROPERTY(you);
+  RTTI_PROPERTY(host);
+  RTTI_PROPERTY(players);
+  RTTI_PROPERTY(pingMs);
+  RTTI_PROPERTY(detail);
+  RTTI_PROPERTY(fromMenu);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemPlayer, "TandemPlayer", {
+  RTTI_PROPERTY(id);
+  RTTI_PROPERTY(name);
+  RTTI_PROPERTY(pingMs);
+  RTTI_PROPERTY(host);
+  RTTI_PROPERTY(you);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemHost, "TandemHost", {
+  RTTI_PROPERTY(address);
+  RTTI_PROPERTY(port);
+  RTTI_PROPERTY(name);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(IsConfigured);
   RTTI_METHOD(IsStarted);
   RTTI_METHOD(Start);
   RTTI_METHOD(Stop);
+  RTTI_METHOD(StartHost);
+  RTTI_METHOD(Join);
+  RTTI_METHOD(ParseAddress);
+  RTTI_METHOD(Leave);
+  RTTI_METHOD(ResetChoice);
+  RTTI_METHOD(SessionStatus);
+  RTTI_METHOD(SessionPlayers);
+  RTTI_METHOD(RecentHosts);
+  RTTI_METHOD(LocalAddresses);
+  RTTI_METHOD(DefaultPort);
   RTTI_METHOD(SendLocalState);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(RegisterPuppet);
