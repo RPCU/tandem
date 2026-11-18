@@ -103,6 +103,13 @@ struct TandemHackEvent {
 };
 static_assert(alignof(TandemHackEvent) <= 8, "the script VM aligns struct locals to 8");
 
+// Down and out (scripts/tandem/Revive.reds): someone reviving our V.
+struct TandemRevive {
+  std::uint32_t player{}; // the reviver
+  std::int32_t step{};    // proto::ReviveStep: 0 start, 1 cancel, 2 done
+};
+static_assert(alignof(TandemRevive) <= 8, "the script VM aligns struct locals to 8");
+
 Red::Quaternion ToQuaternion(const proto::Quat &q) { return {q.i, q.j, q.k, q.r}; }
 float YawOfQuaternion(const Red::Quaternion &q) { return sync::YawOf({q.i, q.j, q.k, q.r}); }
 
@@ -737,6 +744,61 @@ struct TandemNative : Red::IScriptable {
     return out;
   }
 
+  // Down and out (Revive.reds). Our V's life (proto::Life: 0 up, 1 down,
+  // 2 out) and proto::kVitals* flags, when they change.
+  static void SendVitals(std::int32_t life, std::int32_t flags) {
+    if (life < 0 || life > static_cast<std::int32_t>(proto::Life::Out))
+      return;
+    Runtime::Get().SubmitLocalVitals(
+        {.life = static_cast<proto::Life>(life), .flags = static_cast<std::uint8_t>(flags)});
+  }
+  // The other players in the session (whatever their life), and how many
+  // times that or their lives changed (0: never).
+  static Red::DynArray<std::uint32_t> OtherPlayers() {
+    std::uint32_t changes = 0;
+    Red::DynArray<std::uint32_t> out;
+    for (const auto &vitals : Runtime::Get().OthersLives(changes))
+      out.EmplaceBack(vitals.player);
+    return out;
+  }
+  static std::int32_t LivesChanges() {
+    std::uint32_t changes = 0;
+    Runtime::Get().OthersLives(changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  // Another player's life (0 up, also when unknown) and its flags.
+  static std::int32_t RemoteLife(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    for (const auto &vitals : Runtime::Get().OthersLives(changes))
+      if (vitals.player == player)
+        return static_cast<std::int32_t>(vitals.life);
+    return 0;
+  }
+  static std::int32_t RemoteVitalsFlags(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    for (const auto &vitals : Runtime::Get().OthersLives(changes))
+      if (vitals.player == player)
+        return vitals.flags;
+    return 0;
+  }
+  // We revive `target`'s downed V: 0 start, 1 cancel, 2 done.
+  static void SendRevive(std::uint32_t target, std::int32_t step) {
+    if (step < 0 || step > static_cast<std::int32_t>(proto::ReviveStep::Done))
+      return;
+    Runtime::Get().SubmitRevive({.target = target, .step = static_cast<proto::ReviveStep>(step)});
+  }
+  // Revives of our V since the last call.
+  static Red::DynArray<TandemRevive> TakeRevives() {
+    Red::DynArray<TandemRevive> out;
+    for (const auto &revive : Runtime::Get().TakeRevives())
+      out.EmplaceBack(TandemRevive{revive.player, static_cast<std::int32_t>(revive.step)});
+    return out;
+  }
+  // How many times a session was lost (no V up) since the game started.
+  static std::int32_t SessionLosses() {
+    return static_cast<std::int32_t>(Runtime::Get().SessionLosses());
+  }
+
   // The puppet id the controller and tracks know an NPC proxy by.
   static std::uint32_t NpcPuppetId(std::uint32_t npc) { return kNpcPuppetBase + npc; }
 
@@ -810,6 +872,11 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNoise, "TandemNoise", {
   RTTI_PROPERTY(propagation);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemRevive, "TandemRevive", {
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(step);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
   RTTI_PROPERTY(player);
   RTTI_PROPERTY(left);
@@ -875,6 +942,14 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendVehicleHack);
   RTTI_METHOD(TakeHackEvents);
   RTTI_METHOD(NpcPuppetId);
+  RTTI_METHOD(SendVitals);
+  RTTI_METHOD(OtherPlayers);
+  RTTI_METHOD(LivesChanges);
+  RTTI_METHOD(RemoteLife);
+  RTTI_METHOD(RemoteVitalsFlags);
+  RTTI_METHOD(SendRevive);
+  RTTI_METHOD(TakeRevives);
+  RTTI_METHOD(SessionLosses);
   RTTI_METHOD(SendVehicleRadio);
   RTTI_METHOD(RemoteRadioChanges);
   RTTI_METHOD(RemoteRadioOn);

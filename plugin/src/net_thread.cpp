@@ -23,6 +23,22 @@ struct NetThread::Impl {
   std::optional<proto::VehicleRadio> lastRadio;
   std::optional<proto::Stealth> lastStealth;
   bool lastPaused{};
+  std::optional<proto::Vitals> lastVitals;
+
+  // Every other player in the session with its life (up unless it said
+  // otherwise), for the game thread (Revive.reds). Cheap: the runtime keeps
+  // it only when it changed.
+  static void PublishLives(const Endpoint &endpoint) {
+    std::vector<proto::Vitals> others;
+    for (const auto &[id, info] : endpoint.Players()) {
+      if (id == endpoint.You())
+        continue;
+      const auto it = endpoint.Lives().find(id);
+      others.push_back(it != endpoint.Lives().end() ? it->second : proto::Vitals{.player = id});
+      others.back().revision = 0; // only life and flags matter to the scripts
+    }
+    Runtime::Get().SetOthersLives(std::move(others));
+  }
 
   // The other players in their pause menu, for the game thread.
   static void PublishPaused(const Endpoint &endpoint) {
@@ -73,6 +89,8 @@ struct NetThread::Impl {
       endpoint->SetLocalStealth(*lastStealth);
     if (lastPaused)
       endpoint->SetLocalPaused(true);
+    if (lastVitals)
+      endpoint->SetLocalVitals(*lastVitals);
     if (config.role == Config::Role::Host)
       log::Info("hosting on UDP {}", config.port);
     else
@@ -223,6 +241,16 @@ struct NetThread::Impl {
                 log::Info("player {} {} (pause menu)", e.pause.player,
                           e.pause.paused ? "paused" : "resumed");
                 PublishPaused(*endpoint);
+              } else if constexpr (std::is_same_v<E, events::RemoteVitals>) {
+                log::Info("player {}: life {} (flags {:#x})", e.vitals.player,
+                          static_cast<int>(e.vitals.life), e.vitals.flags);
+              } else if constexpr (std::is_same_v<E, events::ReviveBy>) {
+                log::Info("player {} revives our V: step {}", e.revive.player,
+                          static_cast<int>(e.revive.step));
+                runtime.PushRevive(e.revive);
+              } else if constexpr (std::is_same_v<E, events::SessionLost>) {
+                log::Info("session lost: no V is up (loss {})", e.over.round);
+                runtime.NoteSessionLost();
               } else if constexpr (std::is_same_v<E, events::Story>) {
                 Story::Get().PushInbound(
                     {.kind = StoryInbound::Kind::Message, .message = e.message});
@@ -230,6 +258,7 @@ struct NetThread::Impl {
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
                 runtime.SetRemotePaused({});
+                runtime.SetOthersLives({});
                 // The next session's players start afresh (a restarted host
                 // counts its states from the start again).
                 for (const auto &[id, info] : endpoint->Players())
@@ -314,6 +343,15 @@ struct NetThread::Impl {
         endpoint->SendNoise(noise);
       for (auto &[message, to] : Story::Get().TakeOutbound())
         endpoint->SendStory(std::move(message), to);
+      if (auto vitals = runtime.TakeLocalVitals()) {
+        lastVitals = *vitals;
+        endpoint->SetLocalVitals(*vitals);
+        log::Info("our V: life {} (flags {:#x})", static_cast<int>(vitals->life), vitals->flags);
+      }
+      for (const auto &revive : runtime.TakeLocalRevives())
+        endpoint->SendRevive(revive);
+      if (!ended)
+        PublishLives(*endpoint);
 
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {
         nextReport = now + 10s;

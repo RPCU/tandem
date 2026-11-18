@@ -14,6 +14,7 @@ declare -A value=(
   ["--hack-player"]=6 ["--npc-hack"]=AIQuickHack.HackRevealPosition ["--hack-car"]=5
   ["--npc"]=Character.x ["--detect-at"]=15 ["--detect-for"]=10 ["--camo"]=10 ["--shoot"]=3
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
+  ["--go-down"]=10 ["--go-out"]=10 ["--revive"]=3
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true
 [ -n "$flags" ] || {

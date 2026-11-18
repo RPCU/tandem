@@ -595,13 +595,51 @@ struct QuestReward {
   friend bool operator==(const QuestReward &, const QuestReward &) = default;
 };
 
+// ---- Down and out (milestone 8, docs/ARCHITECTURE.md "Down, revive, respawn") ----
+
+// A V's life, owned and sent by that player's game when it changes (Event
+// channel; the host stamps the player, keeps everyone's latest for late
+// joiners and relays it). A V that would die while another V is up goes
+// Down (revivable, no bleed-out); one that cannot be revived (down again
+// within the cooldown after a revive, or killed outright) is Out until it
+// respawns beside a partner. The host decides the session is lost when no V
+// is Up (GameOver).
+enum class Life : std::uint8_t { Up = 0, Down = 1, Out = 2 };
+inline constexpr std::uint8_t kVitalsInCombat = 1; // the V is in combat (a respawn waits for it)
+struct Vitals {
+  PlayerId player{};
+  std::uint32_t revision{};
+  Life life{};
+  std::uint8_t flags{}; // kVitals*
+  friend bool operator==(const Vitals &, const Vitals &) = default;
+};
+
+// A player reviving another's downed V (the puppet in the reviver's game,
+// held for 10 s within 2 m): started, given up, done. To the downed V's game
+// through the host, which stamps the reviver and drops it unless the target
+// is Down; the downed V's game decides.
+enum class ReviveStep : std::uint8_t { Start = 0, Cancel = 1, Done = 2 };
+struct Revive {
+  PlayerId player{}; // the reviver: set by the host from the connection
+  PlayerId target{};
+  ReviveStep step{};
+  friend bool operator==(const Revive &, const Revive &) = default;
+};
+
+// Host to everyone: no V in the session is Up any more. The host's game runs
+// the normal death (death screen, checkpoint reload); guests wait for it.
+struct GameOver {
+  std::uint32_t round{}; // counts the losses of this session
+  friend bool operator==(const GameOver &, const GameOver &) = default;
+};
+
 using Message =
     std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
                  Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
                  NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
                  Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
                  Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward>;
+                 StoryState, QuestReward, Vitals, Revive, GameOver>;
 
 // A story message (Journal … QuestReward): endpoint.hpp relays these
 // through one path.

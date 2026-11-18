@@ -275,3 +275,19 @@ TEST_CASE("story messages: channels, limits, sizes") {
   typical.entries.resize(3000);
   CHECK(Encode(typical).size() < 32 * 1024);
 }
+
+TEST_CASE("down-and-out messages survive encoding, reliably, and refuse what is out of range") {
+  RoundTrips(Vitals{.player = 2, .revision = 7, .life = Life::Down, .flags = kVitalsInCombat});
+  RoundTrips(Vitals{.player = 1, .revision = 1, .life = Life::Out});
+  RoundTrips(Revive{.player = 1, .target = 2, .step = ReviveStep::Done});
+  RoundTrips(GameOver{.round = 3});
+  for (const Message message : {Message{Vitals{}}, Message{Revive{}}, Message{GameOver{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK_FALSE(IsStory(message));
+  }
+  CHECK(std::string(NameOf(Vitals{})) == "Vitals");
+  CHECK(std::string(NameOf(GameOver{})) == "GameOver");
+  CHECK_FALSE(Decode(Encode(Vitals{.life = static_cast<Life>(3)})).has_value());
+  CHECK_FALSE(Decode(Encode(Revive{.step = static_cast<ReviveStep>(3)})).has_value());
+  CHECK(Encode(Vitals{}).size() < 16);
+}

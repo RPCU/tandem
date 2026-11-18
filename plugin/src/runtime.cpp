@@ -64,6 +64,14 @@ void Runtime::Stop() {
       ++m_remotePausedChanges;
     }
     m_names.clear();
+    // Counts keep going (scripts compare them with what they saw).
+    m_localVitals.reset();
+    if (!m_othersLives.empty()) {
+      m_othersLives.clear();
+      ++m_othersLivesChanges;
+    }
+    m_localRevives.clear();
+    m_revives.clear();
   }
   net.reset(); // joins outside the lock: the net thread takes it too
   {
@@ -401,6 +409,62 @@ void Runtime::PushNpcEvent(const NpcEvent &event) {
 std::vector<NpcEvent> Runtime::TakeNpcEvents() {
   std::lock_guard _(m_lock);
   return std::exchange(m_npcEvents, {});
+}
+
+void Runtime::SubmitLocalVitals(const proto::Vitals &vitals) {
+  std::lock_guard _(m_lock);
+  m_localVitals = vitals;
+}
+
+std::optional<proto::Vitals> Runtime::TakeLocalVitals() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localVitals, std::nullopt);
+}
+
+void Runtime::SetOthersLives(std::vector<proto::Vitals> others) {
+  std::lock_guard _(m_lock);
+  if (others == m_othersLives)
+    return;
+  m_othersLives = std::move(others);
+  ++m_othersLivesChanges;
+}
+
+std::vector<proto::Vitals> Runtime::OthersLives(std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  changes = m_othersLivesChanges;
+  return m_othersLives;
+}
+
+void Runtime::SubmitRevive(const proto::Revive &revive) {
+  std::lock_guard _(m_lock);
+  if (m_localRevives.size() < 32)
+    m_localRevives.push_back(revive);
+}
+
+std::vector<proto::Revive> Runtime::TakeLocalRevives() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localRevives, {});
+}
+
+void Runtime::PushRevive(const proto::Revive &revive) {
+  std::lock_guard _(m_lock);
+  if (m_revives.size() < 32)
+    m_revives.push_back(revive);
+}
+
+std::vector<proto::Revive> Runtime::TakeRevives() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_revives, {});
+}
+
+void Runtime::NoteSessionLost() {
+  std::lock_guard _(m_lock);
+  ++m_sessionLosses;
+}
+
+std::uint32_t Runtime::SessionLosses() {
+  std::lock_guard _(m_lock);
+  return m_sessionLosses;
 }
 
 void Runtime::SubmitHack(const proto::Message &message) {

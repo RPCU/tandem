@@ -209,6 +209,22 @@ public:
   void PushRemoteNoise(const proto::Noise &noise);
   std::vector<proto::Noise> TakeRemoteNoises();
 
+  // Down and out (scripts/tandem/Revive.reds): our V's life, game -> net
+  // (newest only); every other player in the session with its life (up
+  // unless it said otherwise), net -> game (a snapshot + a count of
+  // changes); revives, ours to send and those for our V (queued); how many
+  // times the session was lost (no V up).
+  void SubmitLocalVitals(const proto::Vitals &vitals);
+  std::optional<proto::Vitals> TakeLocalVitals();
+  void SetOthersLives(std::vector<proto::Vitals> others);
+  std::vector<proto::Vitals> OthersLives(std::uint32_t &changes);
+  void SubmitRevive(const proto::Revive &revive);
+  std::vector<proto::Revive> TakeLocalRevives();
+  void PushRevive(const proto::Revive &revive);
+  std::vector<proto::Revive> TakeRevives();
+  void NoteSessionLost();
+  std::uint32_t SessionLosses();
+
   // Quickhacks: messages for the session, game -> net (queued); what the
   // session says about them, net -> game (queued).
   void SubmitHack(const proto::Message &message);
@@ -300,6 +316,11 @@ private:
   std::vector<proto::PlayerId> m_remotePaused;                                   // m_lock
   std::uint32_t m_remotePausedChanges{};                                         // m_lock
   std::map<proto::PlayerId, std::string> m_names;                                // m_lock
+  std::optional<proto::Vitals> m_localVitals;                                    // m_lock
+  std::vector<proto::Vitals> m_othersLives;                                      // m_lock
+  std::uint32_t m_othersLivesChanges{};                                          // m_lock
+  std::vector<proto::Revive> m_localRevives, m_revives;                          // m_lock
+  std::uint32_t m_sessionLosses{};                                               // m_lock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin

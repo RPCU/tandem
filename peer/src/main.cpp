@@ -118,7 +118,12 @@ struct Options {
   int answerSeconds{-1};      // join: answer the host's ringing call after this long (-1: never)
   std::uint32_t replyEntry{}; // join: reply to the text with this choice entry hash
   int suggestIndex{-1};       // join: suggest this option of every hub (-1: never)
-  bool check{};               // parse the options, then exit
+  // Down and out: our V goes down (revivable) or out N s after another player
+  // is there (-1: never); a downed other V is revived after N s (-1: never).
+  int goDownSeconds{-1};
+  int goOutSeconds{-1};
+  int reviveSeconds{-1};
+  bool check{}; // parse the options, then exit
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -215,7 +220,13 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     rewards; format in tools/scenarios/story-host.story)\n"
          "  --answer N         join: answer the host's ringing call after N seconds\n"
          "  --reply HASH       join: reply to a text with this choice entry (journal hash)\n"
-         "  --suggest N        join: suggest option N of every choice hub the host shows\n";
+         "  --suggest N        join: suggest option N of every choice hub the host shows\n"
+         "  --go-down N        our V goes down N seconds after another player is there: it\n"
+         "                     stays where it is until a player revives it\n"
+         "  --go-out N         our V is out N seconds after another player is there (not\n"
+         "                     revivable), and gets up again 10 s later\n"
+         "  --revive N         another player's V that goes down is revived N seconds later:\n"
+         "                     ours walks to it and holds the revive for 10 s\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -366,6 +377,12 @@ Options Parse(int argc, char **argv) {
       options.replayFile = value;
     } else if (flag == "--story") {
       options.storyFile = value;
+    } else if (flag == "--go-down") {
+      options.goDownSeconds = Number<int>(value);
+    } else if (flag == "--go-out") {
+      options.goOutSeconds = Number<int>(value);
+    } else if (flag == "--revive") {
+      options.reviveSeconds = Number<int>(value);
     } else if (flag == "--answer") {
       options.answerSeconds = Number<int>(value);
     } else if (flag == "--reply") {
@@ -944,6 +961,26 @@ int main(int argc, char **argv) {
   std::optional<std::chrono::steady_clock::time_point> joinedAt;
 
   Puppeteer puppeteer(options);
+  // Down and out: our V's life (0 up, 1 down, 2 out) and where it lies;
+  // since when another player is with us; the downed V we revive, the
+  // others' latest positions.
+  int ourLife = 0;
+  bool downDone = false;
+  std::optional<PlayerState> lying;
+  std::optional<std::chrono::steady_clock::time_point> withSince, outSince;
+  struct Rescue {
+    tandem::proto::PlayerId target{};
+    std::chrono::steady_clock::time_point at;
+    bool started{};
+  };
+  std::optional<Rescue> rescue;
+  std::map<tandem::proto::PlayerId, PlayerState> lastOf;
+  const auto setLife = [&](int life, std::string_view why) {
+    ourLife = life;
+    endpoint->SetLocalVitals({.life = static_cast<tandem::proto::Life>(life)});
+    constexpr const char *kLives[] = {"up", "down", "out"};
+    Log("our V is {} ({})", kLives[life], why);
+  };
   const auto startUs = tandem::net::NowUs();
   auto nextWorld = std::chrono::steady_clock::now();
   bool seated = false, parked = false;
@@ -982,6 +1019,7 @@ int main(int argc, char **argv) {
               puppeteer.Heard(e.state);
               if (!firstRemote)
                 firstRemote = e.state;
+              lastOf[e.state.player] = e.state;
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteStealth>) {
               Log("player {} stealth: flags {:#x}, visibility {:.2f}, camo {:#x}", e.stealth.player,
                   e.stealth.flags, e.stealth.visibility, e.stealth.camo);
@@ -1146,6 +1184,30 @@ int main(int argc, char **argv) {
                 Log("phone: {} by player {}",
                     action->action == proto::kPhoneReject ? "rejected" : "answered",
                     action->player);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteVitals>) {
+              constexpr const char *kLives[] = {"up", "down", "out"};
+              Log("player {} is {} (flags {:#x})", e.vitals.player,
+                  kLives[static_cast<int>(e.vitals.life)], e.vitals.flags);
+              if (e.vitals.life == tandem::proto::Life::Down && options.reviveSeconds >= 0 &&
+                  ourLife == 0 && !rescue)
+                rescue = Rescue{e.vitals.player, std::chrono::steady_clock::now() +
+                                                     std::chrono::seconds(options.reviveSeconds)};
+              if (e.vitals.life != tandem::proto::Life::Down && rescue &&
+                  rescue->target == e.vitals.player) {
+                Log("revive of player {}: {}", e.vitals.player,
+                    rescue->started ? "they are up" : "no longer needed");
+                rescue.reset();
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::ReviveBy>) {
+              constexpr const char *kSteps[] = {"starts reviving us", "stopped reviving us",
+                                                "revived us"};
+              Log("player {} {}", e.revive.player, kSteps[static_cast<int>(e.revive.step)]);
+              if (e.revive.step == tandem::proto::ReviveStep::Done && ourLife == 1) {
+                lying.reset();
+                setLife(0, std::format("revived by player {}", e.revive.player));
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::SessionLost>) {
+              Log("session lost: no V is up (loss {})", e.over.round);
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
               g_stop = 1;
@@ -1159,7 +1221,20 @@ int main(int argc, char **argv) {
       nextSend += interval;
       if (nextSend < now)
         nextSend = now + interval;
-      if (auto state = puppeteer.Next(tandem::net::NowUs()))
+      auto state = puppeteer.Next(tandem::net::NowUs());
+      // Down or out: where it fell, still. Reviving: beside the downed V.
+      if (ourLife != 0) {
+        if (!lying)
+          lying = state.value_or(PlayerState{});
+        lying->velocity = {};
+        state = lying;
+      } else if (rescue && rescue->started && lastOf.contains(rescue->target)) {
+        auto beside = lastOf[rescue->target];
+        beside.position.x += 1.f;
+        beside.velocity = {};
+        state = beside;
+      }
+      if (state)
         endpoint->SendLocalState(*state);
       if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip))
         endpoint->SendLocalPose(*pose);
@@ -1457,6 +1532,38 @@ int main(int argc, char **argv) {
       }
       if (replayNext == replay.size())
         Log("replay: done");
+    }
+    // --go-down / --go-out / --revive: down and out.
+    if (!withSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
+      withSince = now;
+    if (withSince && !downDone && ourLife == 0) {
+      if (options.goDownSeconds >= 0 &&
+          now >= *withSince + std::chrono::seconds(options.goDownSeconds)) {
+        downDone = true;
+        setLife(1, "--go-down");
+      } else if (options.goOutSeconds >= 0 &&
+                 now >= *withSince + std::chrono::seconds(options.goOutSeconds)) {
+        downDone = true;
+        outSince = now;
+        setLife(2, "--go-out");
+      }
+    }
+    if (ourLife == 2 && outSince && now >= *outSince + 10s) {
+      outSince.reset();
+      lying.reset();
+      setLife(0, "up again beside the others");
+    }
+    if (rescue && ourLife == 0 && now >= rescue->at) {
+      if (!rescue->started) {
+        endpoint->SendRevive({.target = rescue->target, .step = tandem::proto::ReviveStep::Start});
+        rescue->started = true;
+        rescue->at = now + 10s;
+        Log("reviving player {} (10 s)", rescue->target);
+      } else {
+        endpoint->SendRevive({.target = rescue->target, .step = tandem::proto::ReviveStep::Done});
+        Log("revived player {}", rescue->target);
+        rescue.reset();
+      }
     }
     if (now >= nextReport) {
       nextReport = now + 5s;

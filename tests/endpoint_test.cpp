@@ -844,3 +844,180 @@ TEST_CASE(
   CHECK(awareness->entries[0].level == 200);
   CHECK_FALSE(hostHeardAwareness);
 }
+
+namespace {
+struct DownAndOut {
+  std::vector<proto::Vitals> vitals;
+  std::vector<proto::Revive> revives;
+  std::vector<proto::GameOver> lost;
+  void Collect(const std::vector<SessionEvent> &events) {
+    for (const auto &event : events) {
+      if (const auto *v = std::get_if<events::RemoteVitals>(&event))
+        vitals.push_back(v->vitals);
+      else if (const auto *r = std::get_if<events::ReviveBy>(&event))
+        revives.push_back(r->revive);
+      else if (const auto *l = std::get_if<events::SessionLost>(&event))
+        lost.push_back(l->over);
+    }
+  }
+};
+} // namespace
+
+TEST_CASE("down and out: a guest's life reaches everyone, stamped, and late joiners") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  a->SetLocalVitals({.player = 99, .life = proto::Life::Down}); // never in someone else's name
+  DownAndOut atHost, atA, atB;
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : i == 1 ? atA : atB).Collect(events);
+    return !atHost.vitals.empty() && !atB.vitals.empty();
+  }));
+  CHECK(atHost.vitals.front().player == a->You());
+  CHECK(atHost.vitals.front().life == proto::Life::Down);
+  CHECK(atB.vitals.front().player == a->You());
+  CHECK(atA.vitals.empty()); // never told about its own
+  CHECK(host->LifeOf(a->You()) == proto::Life::Down);
+  CHECK(b->LifeOf(a->You()) == proto::Life::Down);
+  CHECK(atHost.lost.empty()); // two Vs are still up
+
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  DownAndOut atLate;
+  REQUIRE(Pump({host.get(), a.get(), b.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 3)
+      atLate.Collect(events);
+    return !atLate.vitals.empty();
+  }));
+  CHECK(atLate.vitals.front().player == a->You());
+  CHECK(late->LifeOf(a->You()) == proto::Life::Down);
+
+  // A player who leaves is forgotten.
+  const auto aId = a->You();
+  a->Leave();
+  REQUIRE(Pump({host.get(), b.get(), late.get()},
+               [&](std::size_t, const auto &) { return late->Players().size() == 3; }));
+  CHECK(host->LifeOf(aId) == proto::Life::Up);
+  CHECK(late->LifeOf(aId) == proto::Life::Up);
+}
+
+TEST_CASE("down and out: a revive reaches the downed V's game only, and only while it is down") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  // Not down: the host drops it.
+  b->SendRevive({.target = a->You(), .step = proto::ReviveStep::Start});
+  DownAndOut atHost, atA, atB;
+  PumpFor({host.get(), a.get(), b.get()}, 200ms, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : i == 1 ? atA : atB).Collect(events);
+  });
+  CHECK(atA.revives.empty());
+
+  a->SetLocalVitals({.life = proto::Life::Down});
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return host->LifeOf(a->You()) == proto::Life::Down;
+  }));
+  b->SendRevive({.player = 1, .target = a->You(), .step = proto::ReviveStep::Start});
+  b->SendRevive({.target = a->You(), .step = proto::ReviveStep::Done});
+  atA = {};
+  atB = {};
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : i == 1 ? atA : atB).Collect(events);
+    return atA.revives.size() == 2;
+  }));
+  CHECK(atA.revives[0] == proto::Revive{b->You(), a->You(), proto::ReviveStep::Start});
+  CHECK(atA.revives[1] == proto::Revive{b->You(), a->You(), proto::ReviveStep::Done});
+  CHECK(atHost.revives.empty());
+  CHECK(atB.revives.empty());
+
+  // The host revives a guest directly; a guest revives the host.
+  host->SendRevive({.target = a->You(), .step = proto::ReviveStep::Cancel});
+  host->SetLocalVitals({.life = proto::Life::Down});
+  atA = {};
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : i == 1 ? atA : atB).Collect(events);
+    return a->LifeOf(1) == proto::Life::Down;
+  }));
+  a->SendRevive({.target = 1, .step = proto::ReviveStep::Done});
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : i == 1 ? atA : atB).Collect(events);
+    return !atHost.revives.empty() && !atA.revives.empty();
+  }));
+  CHECK(atA.revives.front() == proto::Revive{1, a->You(), proto::ReviveStep::Cancel});
+  CHECK(atHost.revives.front() == proto::Revive{a->You(), 1, proto::ReviveStep::Done});
+}
+
+TEST_CASE("down and out: the session is lost when no V is up, once, and again after a revive") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->Players().size() == 2; }));
+
+  DownAndOut atHost, atA;
+  const auto collect = [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : atA).Collect(events);
+  };
+  host->SetLocalVitals({.life = proto::Life::Down});
+  PumpFor({host.get(), a.get()}, 200ms, collect);
+  CHECK(atHost.lost.empty());
+  CHECK(atA.lost.empty());
+
+  a->SetLocalVitals({.life = proto::Life::Out});
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return !atHost.lost.empty() && !atA.lost.empty();
+  }));
+  CHECK(atHost.lost.front().round == 1);
+  CHECK(atA.lost.front().round == 1);
+  // Nothing more while it stays lost.
+  a->SetLocalVitals({.life = proto::Life::Down});
+  PumpFor({host.get(), a.get()}, 200ms, collect);
+  CHECK(atHost.lost.size() == 1);
+
+  // Up again (the reload), then everyone down again: a second loss.
+  host->SetLocalVitals({.life = proto::Life::Up});
+  PumpFor({host.get(), a.get()}, 100ms, collect);
+  host->SetLocalVitals({.life = proto::Life::Out});
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return atA.lost.size() == 2;
+  }));
+  CHECK(atA.lost.back().round == 2);
+}
+
+TEST_CASE("down and out: the last V up leaving loses the session for the one left down") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->Players().size() == 2; }));
+  host->SetLocalVitals({.life = proto::Life::Down});
+  DownAndOut atHost;
+  PumpFor({host.get(), a.get()}, 200ms,
+          [&](std::size_t i, const auto &events) { i == 0 ? atHost.Collect(events) : void(); });
+  CHECK(atHost.lost.empty());
+  a->Leave();
+  REQUIRE(Pump({host.get()}, [&](std::size_t, const auto &events) {
+    atHost.Collect(events);
+    return !atHost.lost.empty();
+  }));
+}

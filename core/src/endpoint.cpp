@@ -1,6 +1,7 @@
 #include "tandem/endpoint.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace tandem {
 namespace {
@@ -38,7 +39,7 @@ std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const std::string &h
 }
 
 std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
-  std::vector<SessionEvent> out;
+  std::vector<SessionEvent> out = std::exchange(m_deferred, {});
   if (m_ended)
     return out;
 
@@ -200,6 +201,28 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::PauseChanged{relayed});
                    },
+                   [&](const proto::Vitals &vitals) {
+                     // A guest only speaks for its own V.
+                     auto relayed = vitals;
+                     relayed.player = player;
+                     m_lives[player] = relayed;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteVitals{relayed});
+                     CheckLost(out);
+                   },
+                   [&](const proto::Revive &revive) {
+                     // The downed V's game decides; only a V that is down
+                     // can be revived (a cancel always passes).
+                     auto mine = revive;
+                     mine.player = player;
+                     if (mine.target == player || (mine.step != proto::ReviveStep::Cancel &&
+                                                   LifeOf(mine.target) != proto::Life::Down))
+                       return;
+                     if (mine.target == m_you)
+                       out.push_back(events::ReviveBy{mine});
+                     else if (const auto peer = PeerOf(mine.target))
+                       m_session->Send(*peer, mine);
+                   },
                    [&](const proto::Bye &) {
                      RemovePlayer(event.peer, out); // gone now, not when ENet is done
                      m_session->Disconnect(event.peer);
@@ -230,8 +253,11 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
     m_session->Broadcast(proto::Pause{player, false});
     out.push_back(events::PauseChanged{{player, false}});
   }
+  m_lives.erase(player);
   out.push_back(events::PlayerLeft{player});
   BroadcastRoster();
+  // The last V up left: whoever is left down has nobody to revive them.
+  CheckLost(out);
 }
 
 void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
@@ -267,6 +293,14 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
       m_session->Broadcast(proto::Pause{player, false});
       out.push_back(events::PauseChanged{{player, false}});
     }
+    // ...and its V is up until it says otherwise.
+    if (LifeOf(player) != proto::Life::Up) {
+      const proto::Vitals up{.player = player, .revision = m_lives[player].revision + 1};
+      m_lives.erase(player);
+      m_session->Broadcast(up, peer);
+      out.push_back(events::RemoteVitals{up});
+      CheckLost(out);
+    }
     BroadcastRoster();
     SendSessionTo(peer);
     return;
@@ -285,6 +319,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
   out.push_back(events::PlayerJoined{m_players[player]});
   BroadcastRoster();
   SendSessionTo(peer);
+  CheckLost(out); // a V up again
 }
 
 // Everyone already here, as they look now, and the world: what a player
@@ -314,6 +349,10 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
   for (const auto paused : m_paused)
     if (self == m_playerOfPeer.end() || paused != self->second)
       m_session->Send(peer, proto::Pause{paused, true});
+  // Who is down or out (the newcomer's own is its game's).
+  for (const auto &[id, vitals] : m_lives)
+    if (self == m_playerOfPeer.end() || id != self->second)
+      m_session->Send(peer, vitals);
 }
 
 void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &out) {
@@ -363,6 +402,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               SendLocalRadioNow();
               SendLocalPausedNow();
               SendLocalStealthNow();
+              SendLocalVitalsNow();
             },
             [&](const proto::Refused &refused) {
               m_ended = true;
@@ -390,6 +430,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
                 if (!next.contains(id)) {
                   if (NotePaused(id, false))
                     out.push_back(events::PauseChanged{{id, false}});
+                  m_lives.erase(id);
                   out.push_back(events::PlayerLeft{id});
                 }
               m_players = std::move(next);
@@ -462,6 +503,18 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
             },
+            [&](const proto::Vitals &vitals) {
+              // Ours is our game's: never taken from the network.
+              if (vitals.player == m_you || vitals.player == proto::kNoPlayer)
+                return;
+              m_lives[vitals.player] = vitals;
+              out.push_back(events::RemoteVitals{vitals});
+            },
+            [&](const proto::Revive &revive) {
+              if (revive.target == m_you && revive.player != m_you)
+                out.push_back(events::ReviveBy{revive});
+            },
+            [&](const proto::GameOver &over) { out.push_back(events::SessionLost{over}); },
             [&](const proto::Bye &bye) {
               m_ended = true;
               out.push_back(events::Ended{bye.reason});
@@ -769,6 +822,59 @@ void Endpoint::SendNoise(const proto::Noise &noise) {
   auto mine = noise;
   mine.player = m_you;
   m_session->Send(m_hostPeer, mine);
+}
+
+void Endpoint::SetLocalVitals(proto::Vitals vitals) {
+  vitals.revision = ++m_vitalsRevision;
+  m_localVitals = vitals;
+  SendLocalVitalsNow();
+}
+
+void Endpoint::SendLocalVitalsNow() {
+  if (!m_localVitals || !IsJoined() || m_ended)
+    return;
+  m_localVitals->player = m_you;
+  m_lives[m_you] = *m_localVitals;
+  if (IsHost()) {
+    m_session->Broadcast(*m_localVitals);
+    CheckLost(m_deferred);
+  } else {
+    m_session->Send(m_hostPeer, *m_localVitals);
+  }
+}
+
+void Endpoint::SendRevive(proto::Revive revive) {
+  if (!IsJoined() || m_ended || revive.target == m_you)
+    return;
+  revive.player = m_you;
+  if (!IsHost())
+    m_session->Send(m_hostPeer, revive);
+  else if (const auto peer = PeerOf(revive.target);
+           peer &&
+           (revive.step == proto::ReviveStep::Cancel || LifeOf(revive.target) == proto::Life::Down))
+    m_session->Send(*peer, revive);
+}
+
+proto::Life Endpoint::LifeOf(proto::PlayerId player) const {
+  const auto it = m_lives.find(player);
+  return it == m_lives.end() ? proto::Life::Up : it->second.life;
+}
+
+void Endpoint::CheckLost(std::vector<SessionEvent> &out) {
+  if (!IsHost() || m_ended || m_players.empty())
+    return;
+  const bool nobodyUp = std::ranges::none_of(
+      m_players, [&](const auto &entry) { return LifeOf(entry.first) == proto::Life::Up; });
+  if (!nobodyUp) {
+    m_lost = false;
+    return;
+  }
+  if (m_lost)
+    return;
+  m_lost = true;
+  const proto::GameOver over{++m_losses};
+  m_session->Broadcast(over);
+  out.push_back(events::SessionLost{over});
 }
 
 bool Endpoint::NotePaused(proto::PlayerId player, bool paused) {

@@ -158,6 +158,19 @@ struct HostNpcAwareness {
 struct NoiseBy {
   proto::Noise noise;
 };
+// Down and out. Another player's V went up, down or out (never our own; a
+// player who leaves is forgotten without one).
+struct RemoteVitals {
+  proto::Vitals vitals;
+};
+// Someone is reviving our downed V (target is us), stamped by the host.
+struct ReviveBy {
+  proto::Revive revive;
+};
+// No V is up any more: the session is lost (host: our own arbitration).
+struct SessionLost {
+  proto::GameOver over;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -175,7 +188,8 @@ using SessionEvent =
                  events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
                  events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
                  events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-                 events::HostPlayerHack, events::VehicleHackOn, events::Story>;
+                 events::HostPlayerHack, events::VehicleHackOn, events::Story, events::RemoteVitals,
+                 events::ReviveBy, events::SessionLost>;
 
 class Endpoint {
 public:
@@ -243,6 +257,17 @@ public:
   void SendNpcAwareness(proto::NpcAwareness awareness);
   // Guest only: a noise our V made, for the host's NPCs.
   void SendNoise(const proto::Noise &noise);
+  // Down and out (docs/ARCHITECTURE.md). Our V's life: kept, sent now if we
+  // are in the session, else as soon as we are; the host hands everyone's
+  // to late joiners and decides when the session is lost (no V up).
+  void SetLocalVitals(proto::Vitals vitals);
+  // We revive (or stop reviving) `revive.target`'s downed V: to that
+  // player's game, through the host.
+  void SendRevive(proto::Revive revive);
+  // Every player's life as this game knows it (us included; a player with
+  // none sent yet is up).
+  proto::Life LifeOf(proto::PlayerId player) const;
+  const std::map<proto::PlayerId, proto::Vitals> &Lives() const { return m_lives; }
 
   // Time on the host's clock (the session's shared timeline).
   std::uint64_t HostNowUs() const { return net::NowUs() + m_clockOffsetUs; }
@@ -328,6 +353,17 @@ private:
   story::CallArbiter m_calls;
   void OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
                     std::vector<SessionEvent> &out);
+  // Down and out: our V's life, and everyone's (host: the record for late
+  // joiners). Host: whether the session is lost now, and how many times.
+  std::optional<proto::Vitals> m_localVitals;
+  std::uint32_t m_vitalsRevision{};
+  std::map<proto::PlayerId, proto::Vitals> m_lives;
+  bool m_lost{};
+  std::uint32_t m_losses{};
+  void SendLocalVitalsNow();
+  // Host: every player is down or out: GameOver to all, once per loss.
+  void CheckLost(std::vector<SessionEvent> &out);
+  std::vector<SessionEvent> m_deferred; // host: events from calls outside Update
   bool m_ended{};
 };
 } // namespace tandem

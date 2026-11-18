@@ -444,6 +444,44 @@ redscript natives (UI, events)              ENet socket
   the loot stays the guest's), an upload of the same hack by another
   player shown as locked in the menu while it runs, the host NPC
   netrunner's own AI not told how its forwarded hack ended, take control.
+- **Down, revive, respawn** (`scripts/tandem/Revive.reds`, milestone 8;
+  the rules are under Open problems, "Down and out"). Each game owns its
+  own V's life and sends it as `Vitals` (up, down, out, and whether it
+  fights; reliable, stamped and kept by the host for late joiners). In a
+  session with another player our V is Immortal through a god-mode
+  override of our own, the way vanilla keeps a V with Second Heart alive
+  (`SecondHeartStatListener`, `EnableOverride`), so its health stops at the
+  floor and the player state machine enters its death state there
+  (`DeathDecisions.EnterCondition` wrap, as for Second Heart at 1.1 %): V
+  collapses with the game's own death animation, camera and sounds, its
+  weapons away. Where vanilla picks resurrection or the death screen
+  (`HighLevelTransition.SetIsResurrectionAllowedBasedOnState` wrap),
+  Second Heart keeps its own rule (it revives at 20 % in a session, the
+  vanilla multiplayer branch's amount); failing it, V goes down (or out),
+  resurrection allowed but held (`DeathDecisionsWithResurrection.ToResurrect`
+  wrap) and no death screen. While down it is invulnerable
+  (`BaseStatusEffect.PlayerInvulnerable`), invisible to NPC senses (its
+  visible object off, a dead body to their senses) and dropped from their
+  trackers. Getting up is the game's Second Heart stand-up
+  (`ResurrectEvents`), then `PlayerPuppet.OnResurrected` (wrapped) sets 40 %
+  health, with 3 s of invulnerability. On the others' screens a downed
+  puppet is outlined through walls (vanilla multiplayer's look,
+  `ForceVisionAppearance`) with a notice; within 2 m the game's own
+  interaction prompt (`UIInteractions.InteractionChoiceHub`, "[Hold F]
+  Revive") appears; holding `Choice1` for 10 s with the HUD progress bar
+  (`UI_HUDProgressBar`) sends `Revive` (start, cancel, done) to the downed
+  V's game through the host, which drops it unless the target is down; the
+  downed game shows "NAME is reviving you" on the same bar and accepts a
+  done from a reviver within 4 m. Moving past 2.5 m, letting go, being hit
+  or getting in a car cancels. Out: it gets up 1.5 m behind the nearest V
+  that is up once that V has been out of combat for 3 s, or after 30 s.
+  The host arbitrates the shared game over (`GameOver` when no V in the
+  session is up; once per loss): the host's V dies the game's way (death
+  screen, checkpoint reload); a guest's lies waiting and gets up beside the
+  host's V once back in the host's session. Alone in no session for 30 s
+  (120 s after a loss) a downed V dies the game's way. `tools/game.sh cmd
+revive down|hold|report`; scenarios `revive-peer`, `revive-game`,
+  `revive-out`, `revive-lost`. **Not yet verified in game.**
 - **Looks** (`engine/look.cpp`, `scripts/tandem/Outfit.reds`): a V's face
   and body travel as the appearance keys the game's appearance changer takes
   (a resource path hash and a name hash each: the same in every copy of the
@@ -648,6 +686,11 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
 - **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s;
   `host --hit-you N` has one of its NPCs (a replayed one if any) hit every
   guest's V for 10 physical every N s; a guest logs the NPC hits it gets.
+- **Down and out** (any mode): `--go-down N` puts its V down N s after
+  another player is there (it lies still until someone revives it);
+  `--go-out N` puts it out instead, up again 10 s later; `--revive N`
+  revives another V that goes down N s later (its V walks beside it and
+  holds for 10 s). The lives, revives and losses it hears are logged.
 - **Stealth** (any mode): as host, `--npc RECORD` stands an NPC 6 m in
   front of the guest and `--detect-at N [--detect-for M]` makes the NPCs
   it sends notice the guests (meter rising over 2 s), detect them for M s
@@ -687,7 +730,7 @@ Each milestone ends with something visible in game.
 | 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot through the host (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18)                              |
 | 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests (step 1 written: freeze, saves, journal, calls, texts, lines, hubs, rewards; to test in game) |
 | 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join                                                                      |
-| 8   | Co-op features      | revive, pings and shared markers, and what we add as we play                                                                                                               |
+| 8   | Co-op features      | revive, pings and shared markers, and what we add as we play (down, revive, respawn, shared game over written; to test in game)                                            |
 
 Alongside every milestone from 2 on: the simulated second game (record,
 replay, scripted players, network shaping) covers what that milestone
@@ -728,6 +771,39 @@ in-game tests still owed; none of it tested in a session yet):
   Part of milestone 7 (invites, relay); needs an ink widget in the main
   menu's controller and a lobby list the relay or a Steam-free directory can
   answer.
+- **Down and out** (decided by the user, 2026-11-18; milestone 8). (1) A V
+  that would die while another V is up (not down) goes **down** instead:
+  on the ground in the game's own downed or dying look and sound, unable
+  to fight; death prevention (Second Heart, Bloodswell, health floors)
+  resolves first by its own rules. There is **no bleed-out**: a downed V
+  waits as long as it takes. (2) Another player **revives** it through
+  the game's interaction prompt on the downed V's puppet, held for **10 s**
+  within **2 m**; moving away or being interrupted cancels; the revived V
+  gets up with 40 % health. (3) **Cooldown, per player: 5 minutes.** A V
+  that goes down again within 5 minutes of being revived cannot be
+  revived: it is out. (4) A V that is out while another is up **respawns
+  beside the living partner** once out of combat (or after a short timer
+  if the fight drags on), with no death screen, no reload and no death
+  penalty; until then it watches from where it lies. (5) The session is
+  **lost only when every V is down or out at once**: then the normal death
+  runs (the host's game shows the death screen and reloads its
+  checkpoint; guests follow the host's reload). Authority: each game owns
+  its V's life (`Vitals`), the reviver's game sends the revive request
+  (`Revive`), the host arbitrates the loss (`GameOver`). Done (2026-11-18,
+  not yet verified in game; see Inside the plugin): all five, with
+  loopback tests (`tests/endpoint_test.cpp`) and scenarios. Choices made
+  for the user's open points: 40 % on a revive or respawn; Second Heart at
+  20 % in a session (vanilla's multiplayer branch, research/coop-perks.md
+  §5.5); out also when killed outright (`BaseStatusEffect.ForceKill`);
+  respawn 3 s after the partner leaves combat, or after 30 s out; the last
+  V up leaving the session loses it for whoever is left down (host) or
+  leaves the guest's V down until it is alone for 30 s. Open: the puppet
+  of a downed V shows what the owner's third-person body does in its death
+  state (pose stream: to check; a downed animation on the puppet is the
+  fallback); a V downed in a car; the reviver's own kneeling animation;
+  localized prompt texts; whether `BaseStatusEffect.SecondHeart` (applied
+  by the stand-up we reuse) starts the Second Heart cooldown of a V that
+  has the cyberware.
 - **Unplanned disconnects, on either side.** A guest's game can crash, lose
   its network or be killed; so can the host's. Every case must end cleanly
   for the ones left: a guest gone (timeout or ENet disconnect) — its puppet,

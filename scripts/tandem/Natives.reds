@@ -100,6 +100,14 @@ public native struct TandemNoise {
   native let propagation: Bool;
 }
 
+// Down and out: someone reviving our V (Revive.reds).
+public native struct TandemRevive {
+  // the reviver
+  native let player: Uint32;
+  // 0 start, 1 cancel, 2 done
+  native let step: Int32;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -159,6 +167,14 @@ public native class TandemNative extends IScriptable {
   public static native func SendVehicleHack(driver: Uint32, hack: Int32, seconds: Float)
   public static native func TakeHackEvents() -> array<TandemHackEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32
+  public static native func SendVitals(life: Int32, flags: Int32)
+  public static native func OtherPlayers() -> array<Uint32>
+  public static native func LivesChanges() -> Int32
+  public static native func RemoteLife(player: Uint32) -> Int32
+  public static native func RemoteVitalsFlags(player: Uint32) -> Int32
+  public static native func SendRevive(target: Uint32, step: Int32)
+  public static native func TakeRevives() -> array<TandemRevive>
+  public static native func SessionLosses() -> Int32
   public static native func SendVehicleRadio(on: Bool, station: Int32, track: CName, trackStarted: Bool)
   public static native func RemoteRadioChanges(player: Uint32) -> Int32
   public static native func RemoteRadioOn(player: Uint32) -> Bool

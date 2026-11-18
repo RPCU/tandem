@@ -43,6 +43,10 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *hub = std::get_if<ChoiceHub>(&message);
       hub && hub->options.size() > kMaxChoiceOptions)
     return std::nullopt;
+  if (const auto *vitals = std::get_if<Vitals>(&message); vitals && vitals->life > Life::Out)
+    return std::nullopt;
+  if (const auto *revive = std::get_if<Revive>(&message); revive && revive->step > ReviveStep::Done)
+    return std::nullopt;
   return message;
 }
 
@@ -75,7 +79,8 @@ const char *NameOf(const Message &message) {
       "NpcHit",       "NpcHealth",    "NpcEffect", "Pause",        "VehicleRadio", "PlayerHit",
       "NpcAwareness", "Stealth",      "Noise",     "NpcHack",      "NpcHackState", "NpcStatus",
       "PlayerHack",   "VehicleHack",  "Journal",   "Tracked",      "PhoneCall",    "PhoneAction",
-      "PhoneReply",   "Subtitle",     "ChoiceHub", "ChoiceCursor", "StoryState",   "QuestReward"};
+      "PhoneReply",   "Subtitle",     "ChoiceHub", "ChoiceCursor", "StoryState",   "QuestReward",
+      "Vitals",       "Revive",       "GameOver"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

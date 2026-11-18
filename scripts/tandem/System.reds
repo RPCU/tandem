@@ -87,6 +87,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_npcs: ref<TandemNpcs>;
   // Stealth, detection and combat per player, camo, noises (Stealth.reds).
   private let m_stealth: ref<TandemStealth>;
+  // Down, revive, respawn (Revive.reds).
+  private let m_revive: ref<TandemRevive>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
   private let m_testNpcs: array<EntityID>;
   private let m_testHostile: array<EntityID>;
@@ -161,6 +163,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_attitudes.Start(this.GetGameInstance());
     this.m_stealth = new TandemStealth();
     this.m_stealth.Start(this.GetGameInstance());
+    this.m_revive = new TandemRevive();
+    this.m_revive.Start(this.GetGameInstance(), this);
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -187,6 +191,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_stealth.End();
     }
     this.m_stealth = null;
+    if IsDefined(this.m_revive) {
+      this.m_revive.Stop();
+    }
+    this.m_revive = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -224,6 +232,10 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_stealth;
   }
 
+  public func Revive() -> ref<TandemRevive> {
+    return this.m_revive;
+  }
+
   public func Tick() -> Void {
     if !this.m_inGame {
       return;
@@ -255,6 +267,9 @@ public class TandemSystem extends ScriptableSystem {
       this.m_stealth.Tick(this.Now(), this.m_you, this.m_npcs);
     }
     TandemHacks.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
+    if IsDefined(this.m_revive) && this.m_playing {
+      this.m_revive.Tick(this.Now(), this.m_you);
+    }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
     }
@@ -671,6 +686,11 @@ public class TandemSystem extends ScriptableSystem {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {
       this.RemoveAllPuppets();
+    } else if StrBeginsWith(command, "revive") {
+      // Revive.reds: revive down | hold | report.
+      if IsDefined(this.m_revive) {
+        this.m_revive.Command(command);
+      }
     } else if StrBeginsWith(command, "story") || StrBeginsWith(command, "quest") {
       // Story.reds: story …, quest freeze on|off, quest report.
       TandemStorySystem.Get(this.GetGameInstance()).Command(command);
@@ -929,6 +949,9 @@ public class TandemSystem extends ScriptableSystem {
           break;
         case 4:
           this.m_you = event.player;
+          if IsDefined(this.m_revive) {
+            this.m_revive.InSession();
+          }
           break;
         case 3:
           TandemNative.Log(s"session ended: \(event.name)");
@@ -939,6 +962,9 @@ public class TandemSystem extends ScriptableSystem {
           }
           if IsDefined(this.m_stealth) {
             this.m_stealth.End();
+          }
+          if IsDefined(this.m_revive) {
+            this.m_revive.SessionEnded();
           }
           break;
         default:
