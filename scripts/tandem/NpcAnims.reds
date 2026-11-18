@@ -1,5 +1,5 @@
 // How the host's NPCs animate, on the guests' proxies (docs/ARCHITECTURE.md,
-// NPCs; engine-knowledge §13.18). The host samples, four times a second, what
+// NPCs; engine-knowledge §13.21). The host samples, four times a second, what
 // each shared NPC's animation graph reads: its high-level, upper-body and
 // stance states (NPCStatesComponent), the weapon in its right hand, whom it
 // looks or aims at, and the workspot it plays in (a bench, a wall to lean

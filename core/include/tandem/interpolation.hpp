@@ -42,6 +42,12 @@ public:
   static constexpr std::uint64_t kMaxDelayUs = 400'000;
   static constexpr std::uint64_t kMaxJitterExtraUs = 100'000;
   static constexpr std::size_t kMaxSamples = 64;
+  // Faster than this between two states is a teleport (fast travel, a
+  // quest, a regroup), not motion: the body is not flown across the map, it
+  // stays until the moment of the jump and is then put there; a velocity
+  // that fast is not extrapolated.
+  static constexpr float kTeleportSpeed = 150.f;   // m/s
+  static constexpr float kTeleportDistance = 20.f; // m
 
   explicit Track(std::uint32_t sendRateHz = 30);
 

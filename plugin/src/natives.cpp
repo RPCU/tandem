@@ -115,6 +115,61 @@ Red::DynArray<TandemTimeChange> ToScript(const std::vector<sync::TimeBubbles::Ch
     out.EmplaceBack(TandemTimeChange{change.npc, change.factor});
   return out;
 }
+// Fast travel together (scripts/tandem/Travel.reds). Plain fields, as above.
+struct TandemRegroup {
+  std::int32_t kind{}; // 1 an offer to come to `player`, 2 their answer to our offer
+  std::uint32_t player{};
+  std::uint32_t offer{};
+  std::int32_t reason{};  // proto::RegroupReason
+  Red::TweakDBID point;   // the fast travel point `player` is at (invalid: none)
+  std::uint64_t marker{}; // its marker node's hash (NodeRefOf; 0: none)
+  float x{}, y{}, z{};    // where `player` stands
+  float yaw{};            // radians, 0 = facing +Y
+  Red::CString label;     // shown with the prompt; may be empty
+  bool accepted{};        // 2: the answer
+};
+static_assert(alignof(TandemRegroup) <= 8, "the script VM aligns struct locals to 8");
+
+// Grapples, takedowns, finishers and carried bodies (Takedowns.reds). Plain
+// fields only, like TandemNpcEvent.
+struct TandemNpcAction {
+  std::int32_t kind{}; // 1 a guest's request (host), 2 the host's answer, 3 who holds, 4 cue
+  std::uint32_t npc{};
+  std::uint32_t player{}; // 1: who asks; 3: the holder (0: released); 4: us
+  std::int32_t action{};  // 1, 2: proto::NpcActionKind; 3: proto::NpcHoldKind; 4: proto::NpcCueKind
+  Red::CName name;
+  Red::TweakDBID record; // the item, as a TweakDB id (finisher: weapon)
+  Red::EntityID entity;  // the item, as an entity id (dispose: the container)
+  float amount{};
+  float dx{}, dy{}, dz{}; // throw: the impulse
+  bool accepted{};        // 2
+  std::int32_t reason{};  // 2: proto::kRefused*
+};
+static_assert(alignof(TandemNpcAction) <= 8, "the script VM aligns struct locals to 8");
+// Loot (scripts/tandem/Loot.reds): one stack of a shared world item lying
+// in the world (1), or who picked up a stack (2). Plain fields only, as above.
+struct TandemLootEvent {
+  // 1 a stack of a world item, 2 a stack taken, 3 an important item another
+  // player got (id 0), 4 (guest) one on the host's corpse of NPC `id`
+  std::int32_t kind{};
+  std::uint32_t id{};
+  std::uint32_t player{}; // 1: the dropper; 2: who has it (0: nobody, it was gone)
+  std::uint32_t token{};  // 1: the dropper's own number for it
+  std::int32_t stack{};
+  std::int32_t stacks{}; // 1: how many stacks the item has
+  Red::TweakDBID record;
+  std::uint32_t seed{};
+  std::int32_t quantity{}; // 1: 0 when already taken
+  float x{}, y{}, z{};     // 1: where it lies
+};
+static_assert(alignof(TandemLootEvent) <= 8, "the script VM aligns struct locals to 8");
+
+// Down and out (scripts/tandem/Revive.reds): someone reviving our V.
+struct TandemRevive {
+  std::uint32_t player{}; // the reviver
+  std::int32_t step{};    // proto::ReviveStep: 0 start, 1 cancel, 2 done
+};
+static_assert(alignof(TandemRevive) <= 8, "the script VM aligns struct locals to 8");
 
 // A host NPC's animation state (proto::NpcAnim), for NpcAnims.reds.
 struct TandemNpcAnim {
@@ -841,6 +896,193 @@ struct TandemNative : Red::IScriptable {
                                       event.flags, event.seconds});
     return out;
   }
+  // Grapples, takedowns, finishers, carried bodies (Takedowns.reds).
+  // Guest: our V acts on the host's NPC; `record` or else `entity` is the item.
+  static void SendNpcAction(std::uint32_t npc, std::int32_t kind, Red::CName name,
+                            Red::TweakDBID record, Red::EntityID entity, float amount,
+                            Red::Vector4 direction) {
+    Runtime::Get().SubmitNpcAction({.npc = npc,
+                                    .kind = static_cast<proto::NpcActionKind>(kind),
+                                    .name = name.hash,
+                                    .item = record.value ? record.value : entity.hash,
+                                    .amount = amount,
+                                    .direction = {direction.X, direction.Y, direction.Z}});
+  }
+  // Host: the answer to a guest's request, to that guest only.
+  static void SendNpcActionReply(std::uint32_t player, std::uint32_t npc, std::int32_t kind,
+                                 bool accepted, std::int32_t reason) {
+    Runtime::Get().SubmitNpcActionReply(player, {.npc = npc,
+                                                 .kind = static_cast<proto::NpcActionKind>(kind),
+                                                 .accepted = accepted,
+                                                 .reason = static_cast<std::uint8_t>(reason)});
+  }
+  // Host: who holds an NPC now (player 0: released).
+  static void SendNpcHold(std::uint32_t npc, std::uint32_t player, std::int32_t how,
+                          Red::CName name) {
+    Runtime::Get().SubmitNpcHold({.npc = npc,
+                                  .player = player,
+                                  .how = static_cast<proto::NpcHoldKind>(how),
+                                  .name = name.hash});
+  }
+  // Host: an NPC's reaction for one player's game.
+  static void SendNpcCue(std::uint32_t npc, std::uint32_t player, std::int32_t cue) {
+    Runtime::Get().SubmitNpcCue(
+        {.npc = npc, .player = player, .cue = static_cast<proto::NpcCueKind>(cue)});
+  }
+  static Red::DynArray<TandemNpcAction> TakeNpcActions() {
+    Red::DynArray<TandemNpcAction> out;
+    for (const auto &e : Runtime::Get().TakeActionEvents()) {
+      TandemNpcAction action{.kind = static_cast<std::int32_t>(e.kind),
+                             .npc = e.npc,
+                             .player = e.player,
+                             .action = e.action,
+                             .name = Red::CName(e.name),
+                             .record = Red::TweakDBID(e.item),
+                             .amount = e.amount,
+                             .dx = e.direction.x,
+                             .dy = e.direction.y,
+                             .dz = e.direction.z,
+                             .accepted = e.accepted,
+                             .reason = e.reason};
+      action.entity.hash = e.item;
+      out.EmplaceBack(action);
+    }
+    return out;
+  }
+  // The controller leaves this puppet (player or NpcPuppetId) where it is.
+  static void HoldPuppet(std::uint32_t player, bool hold) {
+    Runtime::Get().HoldPuppet(player, hold);
+  }
+  // Loot: our V dropped a bag of stacks from its inventory (a shared world
+  // item: the host numbers it, `token` is ours), or picked up a stack of one
+  // (a claim: the first one to reach the host keeps it).
+  static void SendWorldItem(std::uint32_t token, Red::Vector4 position,
+                            Red::DynArray<Red::TweakDBID> records,
+                            Red::DynArray<std::uint32_t> seeds,
+                            Red::DynArray<std::int32_t> quantities) {
+    proto::WorldItem item{.token = token, .position = {position.X, position.Y, position.Z}};
+    for (std::uint32_t i = 0; i < records.Size() && i < seeds.Size() && i < quantities.Size() &&
+                              item.stacks.size() < proto::kMaxWorldItemStacks;
+         ++i)
+      if (quantities[i] > 0)
+        item.stacks.push_back({.record = records[i].value,
+                               .seed = seeds[i],
+                               .quantity = static_cast<std::uint32_t>(quantities[i])});
+    if (!item.stacks.empty())
+      Runtime::Get().SubmitLoot(std::move(item));
+  }
+  static void TakeWorldItem(std::uint32_t id, std::int32_t stack) {
+    if (stack >= 0 && stack < static_cast<std::int32_t>(proto::kMaxWorldItemStacks))
+      Runtime::Get().SubmitLoot(proto::WorldItemTaken{id, static_cast<std::uint8_t>(stack)});
+  }
+  // World items appearing (one event per stack) and stacks taken.
+  static Red::DynArray<TandemLootEvent> TakeLootEvents() {
+    Red::DynArray<TandemLootEvent> out;
+    for (const auto &message : Runtime::Get().TakeLoot()) {
+      if (const auto *item = std::get_if<proto::WorldItem>(&message)) {
+        for (std::size_t i = 0; i < item->stacks.size(); ++i) {
+          const auto &stack = item->stacks[i];
+          out.EmplaceBack(TandemLootEvent{
+              .kind = 1,
+              .id = item->id,
+              .player = item->dropper,
+              .token = item->token,
+              .stack = static_cast<std::int32_t>(i),
+              .stacks = static_cast<std::int32_t>(item->stacks.size()),
+              .record = Red::TweakDBID(stack.record),
+              .seed = stack.seed,
+              .quantity = static_cast<std::int32_t>(stack.quantity),
+              .x = item->position.x,
+              .y = item->position.y,
+              .z = item->position.z,
+          });
+        }
+      } else if (const auto *shared = std::get_if<proto::SharedItem>(&message)) {
+        out.EmplaceBack(TandemLootEvent{
+            .kind = shared->kind == proto::kSharedOnCorpse ? 4 : 3,
+            .id = shared->npc,
+            .player = shared->player,
+            .record = Red::TweakDBID(shared->item.record),
+            .seed = shared->item.seed,
+            .quantity = static_cast<std::int32_t>(shared->item.quantity),
+        });
+      } else if (const auto *taken = std::get_if<proto::WorldItemTaken>(&message)) {
+        out.EmplaceBack(TandemLootEvent{
+            .kind = 2, .id = taken->id, .player = taken->taker, .stack = taken->stack});
+      }
+    }
+    return out;
+  }
+  // A quest or important item our V got (kind 0), or (host) one on our NPC
+  // `npc`'s corpse (kind 1): every other player gets it.
+  static void SendSharedItem(std::int32_t kind, std::uint32_t npc, Red::TweakDBID record,
+                             std::uint32_t seed, std::int32_t quantity) {
+    if (kind != proto::kSharedLooted && kind != proto::kSharedOnCorpse)
+      return;
+    Runtime::Get().SubmitLoot(
+        proto::SharedItem{.kind = static_cast<std::uint8_t>(kind),
+                          .npc = npc,
+                          .item = {.record = record.value,
+                                   .seed = seed,
+                                   .quantity = static_cast<std::uint32_t>(std::max(quantity, 1))}});
+  }
+  // Our player id in the session (0: not in one).
+  static std::uint32_t You() { return Runtime::Get().You(); }
+
+  // Down and out (Revive.reds). Our V's life (proto::Life: 0 up, 1 down,
+  // 2 out) and proto::kVitals* flags, when they change.
+  static void SendVitals(std::int32_t life, std::int32_t flags) {
+    if (life < 0 || life > static_cast<std::int32_t>(proto::Life::Out))
+      return;
+    Runtime::Get().SubmitLocalVitals(
+        {.life = static_cast<proto::Life>(life), .flags = static_cast<std::uint8_t>(flags)});
+  }
+  // The other players in the session (whatever their life), and how many
+  // times that or their lives changed (0: never).
+  static Red::DynArray<std::uint32_t> OtherPlayers() {
+    std::uint32_t changes = 0;
+    Red::DynArray<std::uint32_t> out;
+    for (const auto &vitals : Runtime::Get().OthersLives(changes))
+      out.EmplaceBack(vitals.player);
+    return out;
+  }
+  static std::int32_t LivesChanges() {
+    std::uint32_t changes = 0;
+    Runtime::Get().OthersLives(changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  // Another player's life (0 up, also when unknown) and its flags.
+  static std::int32_t RemoteLife(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    for (const auto &vitals : Runtime::Get().OthersLives(changes))
+      if (vitals.player == player)
+        return static_cast<std::int32_t>(vitals.life);
+    return 0;
+  }
+  static std::int32_t RemoteVitalsFlags(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    for (const auto &vitals : Runtime::Get().OthersLives(changes))
+      if (vitals.player == player)
+        return vitals.flags;
+    return 0;
+  }
+  // We revive `target`'s downed V: 0 start, 1 cancel, 2 done.
+  static void SendRevive(std::uint32_t target, std::int32_t step) {
+    if (step < 0 || step > static_cast<std::int32_t>(proto::ReviveStep::Done))
+      return;
+    Runtime::Get().SubmitRevive({.target = target, .step = static_cast<proto::ReviveStep>(step)});
+  }
+  // Revives of our V since the last call.
+  static Red::DynArray<TandemRevive> TakeRevives() {
+    Red::DynArray<TandemRevive> out;
+    for (const auto &revive : Runtime::Get().TakeRevives())
+      out.EmplaceBack(TandemRevive{revive.player, static_cast<std::int32_t>(revive.step)});
+    return out;
+  }
+  // How many times a session was lost (no V up) since the game started.
+  static std::int32_t SessionLosses() {
+    return static_cast<std::int32_t>(Runtime::Get().SessionLosses());
+  }
   // Host: an NPC's animation state changed (NpcAnims.reds samples them).
   static void SendNpcAnim(std::uint32_t npc, std::int32_t highLevel, std::int32_t upperBody,
                           std::int32_t stance, std::int32_t flags, Red::TweakDBID weapon,
@@ -879,11 +1121,6 @@ struct TandemNative : Red::IScriptable {
           TandemNpcShot{shot.npc, shot.effect, shot.target.x, shot.target.y, shot.target.z});
     return out;
   }
-  // A puppet the game places for now (a proxy in a workspot): its movement
-  // controller keeps still until released.
-  static void HoldPuppet(std::uint32_t player, bool held) {
-    Runtime::Get().SetPuppetHeld(player, held);
-  }
   // Writes a resource path (a depot path hash, the same in every copy of the
   // game) into an async resource reference property, found by its RTTI name
   // and type: redscript cannot make a ResourceAsyncRef from a hash.
@@ -906,6 +1143,55 @@ struct TandemNative : Red::IScriptable {
 
   // The puppet id the controller and tracks know an NPC proxy by.
   static std::uint32_t NpcPuppetId(std::uint32_t npc) { return kNpcPuppetBase + npc; }
+
+  // Fast travel together: offer `to` (0: everyone) to come to us, where we
+  // stand (and at which fast travel point, if any). Answers our offer's id.
+  static std::uint32_t SendRegroup(std::uint32_t to, std::int32_t reason, Red::TweakDBID point,
+                                   Red::NodeRef marker, Red::Vector4 position,
+                                   Red::Quaternion orientation, Red::CString label) {
+    return Runtime::Get().SubmitRegroup(
+        {.to = to,
+         .reason = static_cast<proto::RegroupReason>(std::clamp(reason, 0, 3)),
+         .point = point.value,
+         .marker = marker.hash,
+         .position = {position.X, position.Y, position.Z},
+         .yaw = YawOfQuaternion(orientation),
+         .label = label.c_str()});
+  }
+  // Our answer to player `to`'s offer (offer 0: we come on our own).
+  static void SendRegroupAnswer(std::uint32_t to, std::uint32_t offer, bool accepted) {
+    Runtime::Get().SubmitRegroupAnswer({.to = to, .offer = offer, .accepted = accepted});
+  }
+  // The others' offers and answers since the last call.
+  static Red::DynArray<TandemRegroup> TakeRegroups() {
+    Red::DynArray<TandemRegroup> out;
+    for (const auto &event : Runtime::Get().TakeRegroupEvents()) {
+      TandemRegroup item;
+      item.kind = static_cast<std::int32_t>(event.kind);
+      if (event.kind == RegroupEvent::Kind::Offer) {
+        const auto &o = event.offer;
+        item.player = o.from;
+        item.offer = o.offer;
+        item.reason = static_cast<std::int32_t>(o.reason);
+        item.point = Red::TweakDBID(o.point);
+        item.marker = o.marker;
+        item.x = o.position.x;
+        item.y = o.position.y;
+        item.z = o.position.z;
+        item.yaw = o.yaw;
+        item.label = Red::CString(o.label.c_str());
+      } else {
+        item.player = event.answer.from;
+        item.offer = event.answer.offer;
+        item.accepted = event.answer.accepted;
+      }
+      out.EmplaceBack(std::move(item));
+    }
+    return out;
+  }
+  // A node reference as the number that names it in every game, and back.
+  static std::uint64_t NodeRefHash(Red::NodeRef node) { return node.hash; }
+  static Red::NodeRef NodeRefOf(std::uint64_t hash) { return Red::NodeRef(hash); }
 
   static void Log(Red::CString text) { log::Info("[script] {}", text.c_str()); }
 
@@ -998,6 +1284,57 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNoise, "TandemNoise", {
   RTTI_PROPERTY(propagation);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcAction, "TandemNpcAction", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(action);
+  RTTI_PROPERTY(name);
+  RTTI_PROPERTY(record);
+  RTTI_PROPERTY(entity);
+  RTTI_PROPERTY(amount);
+  RTTI_PROPERTY(dx);
+  RTTI_PROPERTY(dy);
+  RTTI_PROPERTY(dz);
+  RTTI_PROPERTY(accepted);
+  RTTI_PROPERTY(reason);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemRegroup, "TandemRegroup", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(offer);
+  RTTI_PROPERTY(reason);
+  RTTI_PROPERTY(point);
+  RTTI_PROPERTY(marker);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+  RTTI_PROPERTY(yaw);
+  RTTI_PROPERTY(label);
+  RTTI_PROPERTY(accepted);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemLootEvent, "TandemLootEvent", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(id);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(token);
+  RTTI_PROPERTY(stack);
+  RTTI_PROPERTY(stacks);
+  RTTI_PROPERTY(record);
+  RTTI_PROPERTY(seed);
+  RTTI_PROPERTY(quantity);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemRevive, "TandemRevive", {
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(step);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
   RTTI_PROPERTY(player);
   RTTI_PROPERTY(left);
@@ -1068,6 +1405,24 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendVehicleHack);
   RTTI_METHOD(TakeHackEvents);
   RTTI_METHOD(NpcPuppetId);
+  RTTI_METHOD(SendNpcAction);
+  RTTI_METHOD(SendNpcActionReply);
+  RTTI_METHOD(SendNpcHold);
+  RTTI_METHOD(SendNpcCue);
+  RTTI_METHOD(TakeNpcActions);
+  RTTI_METHOD(SendWorldItem);
+  RTTI_METHOD(TakeWorldItem);
+  RTTI_METHOD(TakeLootEvents);
+  RTTI_METHOD(SendSharedItem);
+  RTTI_METHOD(You);
+  RTTI_METHOD(SendVitals);
+  RTTI_METHOD(OtherPlayers);
+  RTTI_METHOD(LivesChanges);
+  RTTI_METHOD(RemoteLife);
+  RTTI_METHOD(RemoteVitalsFlags);
+  RTTI_METHOD(SendRevive);
+  RTTI_METHOD(TakeRevives);
+  RTTI_METHOD(SessionLosses);
   RTTI_METHOD(SendNpcAnim);
   RTTI_METHOD(SendNpcShot);
   RTTI_METHOD(TakeNpcAnims);
@@ -1123,5 +1478,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(PoseBind);
   RTTI_METHOD(PoseLoop);
   RTTI_METHOD(PoseStreamReport);
+  RTTI_METHOD(SendRegroup);
+  RTTI_METHOD(SendRegroupAnswer);
+  RTTI_METHOD(TakeRegroups);
+  RTTI_METHOD(NodeRefHash);
+  RTTI_METHOD(NodeRefOf);
   RTTI_METHOD(Log);
 });

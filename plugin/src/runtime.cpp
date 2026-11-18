@@ -91,6 +91,8 @@ void Runtime::Stop() {
     m_npcOutbox.clear();
     m_npcStates.reset();
     m_npcEvents.clear();
+    m_npcReplies.clear();
+    m_actionEvents.clear();
     m_npcDetected.clear();
     m_detectingUs = 0;
     m_npcStatesAtUs = 0;
@@ -103,6 +105,8 @@ void Runtime::Stop() {
     m_remoteNoises.clear();
     m_hackOutbox.clear();
     m_hackEvents.clear();
+    m_lootOutbox.clear();
+    m_lootInbox.clear();
     m_npcAnimsIn.clear();
     m_npcShotsIn.clear();
     m_localPaused.reset();
@@ -118,8 +122,23 @@ void Runtime::Stop() {
       m_remoteTimes.clear();
       ++m_remoteTimeChanges;
     }
+    m_regroupOutbox.clear();
+    m_regroupEvents.clear();
+    // Counts keep going (scripts compare them with what they saw).
+    m_localVitals.reset();
+    if (!m_othersLives.empty()) {
+      m_othersLives.clear();
+      ++m_othersLivesChanges;
+    }
+    m_localRevives.clear();
+    m_revives.clear();
   }
   net.reset(); // joins outside the lock: the net thread takes it too
+  m_you.store(0);
+  {
+    std::lock_guard _(m_heldLock);
+    m_heldPuppets.clear();
+  }
   {
     std::lock_guard _(m_tracksLock);
     m_tracks.clear();
@@ -409,6 +428,37 @@ std::string Runtime::PlayerName(proto::PlayerId player) {
   return it == m_names.end() ? std::string{} : it->second;
 }
 
+std::uint32_t Runtime::SubmitRegroup(proto::Regroup offer) {
+  std::lock_guard _(m_lock);
+  offer.offer = ++m_regroupOffers;
+  if (m_regroupOutbox.size() < 16)
+    m_regroupOutbox.push_back(std::move(offer));
+  return m_regroupOffers;
+}
+
+void Runtime::SubmitRegroupAnswer(const proto::RegroupAnswer &answer) {
+  std::lock_guard _(m_lock);
+  if (m_regroupOutbox.size() < 16)
+    m_regroupOutbox.push_back(answer);
+}
+
+std::vector<proto::Message> Runtime::TakeRegroupOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_regroupOutbox, {});
+}
+
+void Runtime::PushRegroupEvent(RegroupEvent event) {
+  std::lock_guard _(m_lock);
+  // Scripts drain these every tick; a pile-up means nobody is listening.
+  if (m_regroupEvents.size() < 32)
+    m_regroupEvents.push_back(std::move(event));
+}
+
+std::vector<RegroupEvent> Runtime::TakeRegroupEvents() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_regroupEvents, {});
+}
+
 void Runtime::SubmitNpcSpawn(const proto::NpcSpawn &spawn) {
   std::lock_guard _(m_lock);
   m_npcOutbox.push_back(spawn);
@@ -482,6 +532,112 @@ std::vector<NpcEvent> Runtime::TakeNpcEvents() {
   return std::exchange(m_npcEvents, {});
 }
 
+void Runtime::SubmitNpcAction(const proto::NpcAction &action) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(action);
+}
+
+void Runtime::SubmitNpcHold(const proto::NpcHold &hold) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(hold);
+}
+
+void Runtime::SubmitNpcCue(const proto::NpcCue &cue) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(cue);
+}
+
+void Runtime::SubmitNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply) {
+  std::lock_guard _(m_lock);
+  m_npcReplies.emplace_back(player, reply);
+}
+
+std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> Runtime::TakeNpcReplies() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_npcReplies, {});
+}
+
+void Runtime::PushActionEvent(const ActionEvent &event) {
+  std::lock_guard _(m_lock);
+  // Scripts drain these every frame; a pile-up means nobody is listening.
+  if (m_actionEvents.size() < 256)
+    m_actionEvents.push_back(event);
+}
+
+std::vector<ActionEvent> Runtime::TakeActionEvents() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_actionEvents, {});
+}
+
+void Runtime::HoldPuppet(proto::PlayerId player, bool hold) {
+  std::lock_guard _(m_heldLock);
+  if (hold)
+    m_heldPuppets.insert(player);
+  else
+    m_heldPuppets.erase(player);
+}
+
+bool Runtime::IsPuppetHeld(proto::PlayerId player) const {
+  std::lock_guard _(m_heldLock);
+  return m_heldPuppets.contains(player);
+}
+
+void Runtime::SubmitLocalVitals(const proto::Vitals &vitals) {
+  std::lock_guard _(m_lock);
+  m_localVitals = vitals;
+}
+
+std::optional<proto::Vitals> Runtime::TakeLocalVitals() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localVitals, std::nullopt);
+}
+
+void Runtime::SetOthersLives(std::vector<proto::Vitals> others) {
+  std::lock_guard _(m_lock);
+  if (others == m_othersLives)
+    return;
+  m_othersLives = std::move(others);
+  ++m_othersLivesChanges;
+}
+
+std::vector<proto::Vitals> Runtime::OthersLives(std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  changes = m_othersLivesChanges;
+  return m_othersLives;
+}
+
+void Runtime::SubmitRevive(const proto::Revive &revive) {
+  std::lock_guard _(m_lock);
+  if (m_localRevives.size() < 32)
+    m_localRevives.push_back(revive);
+}
+
+std::vector<proto::Revive> Runtime::TakeLocalRevives() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localRevives, {});
+}
+
+void Runtime::PushRevive(const proto::Revive &revive) {
+  std::lock_guard _(m_lock);
+  if (m_revives.size() < 32)
+    m_revives.push_back(revive);
+}
+
+std::vector<proto::Revive> Runtime::TakeRevives() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_revives, {});
+}
+
+void Runtime::NoteSessionLost() {
+  std::lock_guard _(m_lock);
+  ++m_sessionLosses;
+}
+
+std::uint32_t Runtime::SessionLosses() {
+  std::lock_guard _(m_lock);
+  return m_sessionLosses;
+}
+
 void Runtime::SubmitHack(const proto::Message &message) {
   std::lock_guard _(m_lock);
   if (m_hackOutbox.size() < 256)
@@ -503,6 +659,28 @@ void Runtime::PushHackEvent(const HackEvent &event) {
 std::vector<HackEvent> Runtime::TakeHackEvents() {
   std::lock_guard _(m_lock);
   return std::exchange(m_hackEvents, {});
+}
+
+void Runtime::SubmitLoot(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_lootOutbox.size() < 256)
+    m_lootOutbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeLootOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_lootOutbox, {});
+}
+
+void Runtime::PushLoot(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_lootInbox.size() < 1024)
+    m_lootInbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeLoot() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_lootInbox, {});
 }
 
 void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you) {
@@ -749,7 +927,6 @@ void Runtime::RegisterPuppet(proto::PlayerId player, std::uint64_t entityHash) {
     if (slot.entity.compare_exchange_strong(empty, entityHash)) {
       slot.player.store(player);
       slot.wantsController.store(false);
-      slot.held.store(false);
       return;
     }
   }
@@ -762,7 +939,6 @@ void Runtime::UnregisterPuppet(proto::PlayerId player) {
       slot.player.store(0);
       slot.entity.store(0);
       slot.wantsController.store(false);
-      slot.held.store(false);
     }
   }
 }
@@ -782,20 +958,6 @@ void Runtime::RequestController(std::uint64_t entityHash) {
     if (slot.entity.load() == entityHash)
       slot.wantsController.store(true);
   }
-}
-
-void Runtime::SetPuppetHeld(proto::PlayerId player, bool held) {
-  for (auto &slot : m_puppets)
-    if (slot.player.load() == player && slot.entity.load() != 0)
-      slot.held.store(held, std::memory_order_release);
-}
-
-bool Runtime::PuppetHeld(proto::PlayerId player) const {
-  for (const auto &slot : m_puppets)
-    if (slot.player.load(std::memory_order_acquire) == player &&
-        slot.entity.load(std::memory_order_acquire) != 0)
-      return slot.held.load(std::memory_order_acquire);
-  return false;
 }
 
 bool Runtime::TakeControllerRequest(proto::PlayerId player) {

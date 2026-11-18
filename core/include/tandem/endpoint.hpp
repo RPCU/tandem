@@ -128,6 +128,22 @@ struct HostPlayerHack {
 struct VehicleHackOn {
   proto::VehicleHack hack;
 };
+// A guest's grapple, takedown, finisher or carry request (host only), and
+// the host's answer to ours (guests only).
+struct NpcActionBy {
+  proto::NpcAction action;
+};
+struct NpcActionAnswered {
+  proto::NpcActionReply reply;
+};
+// Who holds or animates one of the host's NPCs (guests only).
+struct HostNpcHold {
+  proto::NpcHold hold;
+};
+// Our half of an NPC's reaction to our V (guests only).
+struct HostNpcCue {
+  proto::NpcCue cue;
+};
 // The host's world changed (guests only).
 struct HostWorld {
   proto::World world;
@@ -169,6 +185,41 @@ struct HostNpcAwareness {
 struct NoiseBy {
   proto::Noise noise;
 };
+// Another player offers us to come to them (Regroup), or answers ours. Only
+// ever what is meant for us (to us, or to everyone).
+struct RegroupOffered {
+  proto::Regroup offer;
+};
+struct RegroupAnswered {
+  proto::RegroupAnswer answer;
+};
+// Loot: a shared world item lies in the world (numbered by the host; ours
+// too, with our token), and who picked up one of its stacks (our own
+// claims included: taker is us when the host granted it).
+struct WorldItemAppeared {
+  proto::WorldItem item;
+};
+struct WorldItemTakenBy {
+  proto::WorldItemTaken taken;
+};
+// Another player got a quest or important item (or, guests: one lies on a
+// host NPC's corpse). Never reported for our own.
+struct SharedItemFrom {
+  proto::SharedItem item;
+};
+// Down and out. Another player's V went up, down or out (never our own; a
+// player who leaves is forgotten without one).
+struct RemoteVitals {
+  proto::Vitals vitals;
+};
+// Someone is reviving our downed V (target is us), stamped by the host.
+struct ReviveBy {
+  proto::Revive revive;
+};
+// No V is up any more: the session is lost (host: our own arbitration).
+struct SessionLost {
+  proto::GameOver over;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -189,17 +240,19 @@ struct JoinTarget {
   std::optional<net::RelayOptions> relay;
 };
 
-using SessionEvent =
-    std::variant<events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
-                 events::RemotePose, events::RemoteAppearance, events::RemoteHeld,
-                 events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
-                 events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
-                 events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
-                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
-                 events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
-                 events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-                 events::HostPlayerHack, events::VehicleHackOn, events::Story,
-                 events::RemoteTimeEffect, events::HostNpcAnims, events::HostNpcShot>;
+using SessionEvent = std::variant<
+    events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
+    events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
+    events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
+    events::HostNpcStates, events::HostNpcGone, events::HostNpcHealth, events::NpcHitBy,
+    events::NpcEffectBy, events::PauseChanged, events::Ended, events::PlayerReturned,
+    events::RemoteVehicleRadio, events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness,
+    events::NoiseBy, events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
+    events::HostPlayerHack, events::VehicleHackOn, events::Story, events::RemoteTimeEffect,
+    events::NpcActionBy, events::NpcActionAnswered, events::HostNpcHold, events::HostNpcCue,
+    events::RegroupOffered, events::RegroupAnswered, events::WorldItemAppeared,
+    events::WorldItemTakenBy, events::SharedItemFrom, events::RemoteVitals, events::ReviveBy,
+    events::SessionLost, events::HostNpcAnims, events::HostNpcShot>;
 
 class Endpoint {
 public:
@@ -260,6 +313,17 @@ public:
   // We hacked the car `hack.driver` drives: to its driver's game, through
   // the host (which stamps the hacker).
   void SendVehicleHack(proto::VehicleHack hack);
+  // Guest only: we grab, take down, finish or carry one of the host's NPCs.
+  void SendNpcAction(const proto::NpcAction &action);
+  // Host only: the answer to `player`'s NpcAction, to that player alone.
+  void SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply);
+  // Host only: who holds an NPC now (kept for late joiners until released,
+  // gone, or the holder leaves).
+  void SendNpcHold(const proto::NpcHold &hold);
+  // Host only: an NPC's reaction for one player's game (cue.player).
+  void SendNpcCue(const proto::NpcCue &cue);
+  // The NPCs held now, as this game knows them (host: the session's record).
+  const std::map<proto::NpcId, proto::NpcHold> &NpcHolds() const { return m_npcHolds; }
   // Our pause menu is open (paused) or closed. Kept: sent now if we are in
   // the session, else as soon as we are.
   void SetLocalPaused(bool paused);
@@ -281,6 +345,31 @@ public:
   void SendNpcAwareness(proto::NpcAwareness awareness);
   // Guest only: a noise our V made, for the host's NPCs.
   void SendNoise(const proto::Noise &noise);
+  // Offer `offer.to` (kNoPlayer: everyone else) to come to us, or answer an
+  // offer. `from` is filled in; nothing is kept.
+  void SendRegroup(proto::Regroup offer);
+  void SendRegroupAnswer(proto::RegroupAnswer answer);
+  // Loot: our V dropped a bag of stacks (id ignored: the host numbers it;
+  // `token` is ours, to know it again), or picked up a stack of a world item
+  // (a claim: the host grants the first one). Each comes back as an event.
+  void DropWorldItem(proto::WorldItem item);
+  void TakeWorldItem(proto::WorldItemId id, std::uint8_t stack);
+  // Loot: our V got a quest or important item, or (host) one lies on our
+  // NPC's corpse: every other player gets it.
+  void SendSharedItem(proto::SharedItem item);
+  // Host: the world items still lying somewhere (taken stacks at quantity 0).
+  const std::map<proto::WorldItemId, proto::WorldItem> &WorldItems() const { return m_worldItems; }
+  // Down and out (docs/ARCHITECTURE.md). Our V's life: kept, sent now if we
+  // are in the session, else as soon as we are; the host hands everyone's
+  // to late joiners and decides when the session is lost (no V up).
+  void SetLocalVitals(proto::Vitals vitals);
+  // We revive (or stop reviving) `revive.target`'s downed V: to that
+  // player's game, through the host.
+  void SendRevive(proto::Revive revive);
+  // Every player's life as this game knows it (us included; a player with
+  // none sent yet is up).
+  proto::Life LifeOf(proto::PlayerId player) const;
+  const std::map<proto::PlayerId, proto::Vitals> &Lives() const { return m_lives; }
 
   // Time on the host's clock (the session's shared timeline).
   std::uint64_t HostNowUs() const { return net::NowUs() + m_clockOffsetUs; }
@@ -290,6 +379,8 @@ public:
   proto::PlayerId You() const { return m_you; }
   const std::map<proto::PlayerId, proto::PlayerInfo> &Players() const { return m_players; }
   std::optional<net::Stats> HostLinkStats() const;
+  // The UDP port we listen on (host) or send from (guest).
+  std::uint16_t LocalPort() const { return m_session->LocalPort(); }
 
   // The relay, when the session uses one: host, its join code; guest, how
   // far it got (nullopt while still trying directly).
@@ -314,6 +405,9 @@ private:
   void BroadcastRoster();
   // Host: the connection of a welcomed player (nullopt: none, or us).
   std::optional<net::PeerId> PeerOf(proto::PlayerId player) const;
+  // Host: delivers a message meant for `to` (kNoPlayer: everyone but
+  // `except`) and tells whether it is for us too.
+  template <class M> bool Deliver(const M &message, proto::PlayerId to, net::PeerId except);
 
   std::unique_ptr<net::Session> m_session;
   Identity m_identity;
@@ -358,6 +452,7 @@ private:
   std::uint32_t m_worldRevision{};
   std::map<proto::NpcId, proto::NpcSpawn> m_npcs;
   std::map<proto::NpcId, proto::NpcHealth> m_npcHealth;
+  std::map<proto::NpcId, proto::NpcHold> m_npcHolds;
   std::map<proto::NpcId, proto::NpcAnim> m_npcAnims;
   std::uint32_t m_npcSeq{};
   // Who is in the pause menu (host: the session's record, for late joiners).
@@ -385,6 +480,25 @@ private:
   story::CallArbiter m_calls;
   void OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
                     std::vector<SessionEvent> &out);
+  // Host: the shared world items and who took each stack; events for our
+  // own game from calls made between updates (our drops and claims).
+  std::map<proto::WorldItemId, proto::WorldItem> m_worldItems;
+  std::map<proto::WorldItemId, std::vector<proto::PlayerId>> m_worldTakers;
+  proto::WorldItemId m_nextWorldItem{1};
+  std::vector<SessionEvent> m_pending;
+  void AddWorldItem(proto::PlayerId dropper, proto::WorldItem item, std::vector<SessionEvent> &out);
+  void ClaimWorldItem(proto::PlayerId player, proto::WorldItemId id, std::uint8_t stack,
+                      std::optional<net::PeerId> peer, std::vector<SessionEvent> &out);
+  // Down and out: our V's life, and everyone's (host: the record for late
+  // joiners). Host: whether the session is lost now, and how many times.
+  std::optional<proto::Vitals> m_localVitals;
+  std::uint32_t m_vitalsRevision{};
+  std::map<proto::PlayerId, proto::Vitals> m_lives;
+  bool m_lost{};
+  std::uint32_t m_losses{};
+  void SendLocalVitalsNow();
+  // Host: every player is down or out: GameOver to all, once per loss.
+  void CheckLost(std::vector<SessionEvent> &out);
   bool m_ended{};
   // Guest: the relay to try when the host does not answer directly.
   std::optional<net::RelayOptions> m_fallback;
