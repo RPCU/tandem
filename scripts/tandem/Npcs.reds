@@ -21,6 +21,10 @@ public class TandemNpcKnown {
   // The last guest who hit it, and when: its killer when the game names none.
   public let lastHitBy: Uint32;
   public let lastHitAt: Float;
+  // The vehicle carrying our V it was seen seated in, and the seat, as
+  // sent (NpcSeat): Panam at the wheel of the quest car we ride in.
+  public let seatVehicle: EntityID;
+  public let seat: CName;
 }
 
 public class TandemNpcProxy {
@@ -41,13 +45,30 @@ public class TandemNpcProxy {
   // since when its body is gone (0: not so).
   public let orphanSince: Float;
   public let goneSince: Float;
-  // What it was spawned from (to bring it back, see Revive).
+  // Where the host says it sits (NpcSeat: whose vehicle, which seat; owner
+  // 0: on foot), whether that is still to do, and where it sits here.
+  public let seatOwner: Uint32;
+  public let seatSlot: CName;
+  public let seatChanged: Bool;
+  public let seatRetryAt: Float;
+  public let seatedIn: EntityID;
+  public let seatedSlot: CName;
+  // Out of a seat: our controller goes back on at this time.
+  public let reattachAt: Float;
+  // What it was spawned from (to bring it back, see Reconcile).
   public let record: TweakDBID;
   public let appearance: CName;
   // Our own hit killed it here before the host said so (PredictKill): when,
   // and when the host's health for it said it lives (0: no such doubt).
   public let predictedAt: Float;
   public let doubtAt: Float;
+}
+
+// A proxy taken out of its seat, deleted a moment later (a body is deleted
+// once it is no longer mounted, as System.reds does for puppets).
+public class TandemNpcLeaving {
+  public let id: EntityID;
+  public let at: Float;
 }
 
 public class TandemNpcs {
@@ -78,6 +99,8 @@ public class TandemNpcs {
   private let m_awarePlayers: array<Uint32>;
   private let m_awareLevels: array<Float>;
   private let m_rounds: Int32;
+  // Guest: proxies on their way out of a seat.
+  private let m_leaving: array<ref<TandemNpcLeaving>>;
   // How they animate (NpcAnims.reds): sampled here, followed on proxies.
   private let m_anims: ref<TandemNpcAnims>;
   // Guest: the consistency checks (Check): when they last ran, and the
@@ -114,7 +137,9 @@ public class TandemNpcs {
       }
       // Not while our V is in another world (Elsewhere.reds): the NPCs
       // around it are that world's, and hiding is for good.
-      if now - this.m_lastQuiet >= 0.5 && !TandemElsewhere.Inside(this.m_game) {
+      // On the NCART our train is our own (Transit.reds): its passengers
+      // stay, as the host's stay on its train.
+      if now - this.m_lastQuiet >= 0.5 && !TandemElsewhere.Inside(this.m_game) && !this.OnMetro() {
         this.m_lastQuiet = now;
         this.HideOwn();
       }
@@ -129,6 +154,15 @@ public class TandemNpcs {
     if IsDefined(outcomes) {
       outcomes.Tick(now, you, this);
     }
+  }
+
+  // Our V rides the NCART: every game runs its own train, passengers and
+  // all, so those NPCs are not shared (the host's would float along the
+  // line on the guests' screens, with no train under them).
+  private func OnMetro() -> Bool {
+    let player = GetPlayer(this.m_game);
+    let car: wref<VehicleObject>;
+    return IsDefined(player) && VehicleComponent.GetVehicle(this.m_game, player, car) && TandemTransit.IsMetro(this.m_game, player, car);
   }
 
   // ---- guest: the host's NPCs hitting our V ----
@@ -201,14 +235,31 @@ public class TandemNpcs {
   public func End() -> Void {
     for proxy in this.m_proxies {
       TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(proxy.npc));
+      this.Unseat(proxy);
       GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
     }
+    for leaving in this.m_leaving {
+      GameInstance.GetDynamicEntitySystem().DeleteEntity(leaving.id);
+    }
+    ArrayClear(this.m_leaving);
     ArrayClear(this.m_proxies);
     ArrayClear(this.m_known);
     this.m_anims.Clear();
     ArrayClear(this.m_missingIds);
     ArrayClear(this.m_missingSince);
     this.Stop();
+  }
+
+  // A proxy out of its seat at once (the session is over). Deleting a body
+  // just taken out of a car copy was not seen to hurt (§13.6: the vehicle's
+  // deletion does); seated proxies only exist with a ride going on.
+  private func Unseat(proxy: ref<TandemNpcProxy>) -> Void {
+    let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as GameObject;
+    if EntityID.IsDefined(proxy.seatedIn) && IsDefined(body) {
+      TandemVehicles.Unseat(this.m_game, body, proxy.seatedIn, proxy.seatedSlot);
+    }
+    let none: EntityID;
+    proxy.seatedIn = none;
   }
 
   // The game's crowd back as it was (leaving the session), and our difficulty.
@@ -267,9 +318,12 @@ public class TandemNpcs {
     let orientations: array<Quaternion>;
     let detected: array<Int32>;
     let watched = this.Watched(player);
+    let carrier = this.Carrier(player);
     ArrayClear(this.m_awareNpcs);
     ArrayClear(this.m_awarePlayers);
     ArrayClear(this.m_awareLevels);
+    // On the NCART none are listed: the ones known go (NpcGone, out of range).
+    let riding = this.OnMetro();
     let sampling = this.m_anims.Due(this.m_now);
     // Our V away from its body in another world (Elsewhere.reds): the NPCs
     // around it are that world's, none is shared, and the shared ones go.
@@ -281,7 +335,7 @@ public class TandemNpcs {
       let id = npc.GetEntityID();
       // The remote players' puppets are not the host's world (cars are not
       // listed, the host has no proxies); the dead are handled below.
-      if ArraySize(ids) < 64 && !this.IsPuppet(id) && !npc.IsDead() {
+      if ArraySize(ids) < 64 && !riding && !this.IsPuppet(id) && !npc.IsDead() {
         let known = this.Find(id);
         if !IsDefined(known) {
           known = new TandemNpcKnown();
@@ -308,6 +362,7 @@ public class TandemNpcs {
           known.health = health;
           TandemNative.SendNpcHealth(known.npc, health);
         }
+        this.ShareSeat(known, npc, carrier);
         // Its guard, as its health (a guest's finisher checks the proxy's).
         let poise = pools.GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Poise, true) / 100.0;
         if AbsF(poise - known.poise) >= 0.05 || (poise <= 0.0 && known.poise > 0.0) {
@@ -353,6 +408,53 @@ public class TandemNpcs {
     this.m_rounds += 1;
     if this.m_rounds % 2 == 0 {
       TandemNative.SendNpcAwareness(this.m_awareNpcs, this.m_awarePlayers, this.m_awareLevels);
+    }
+  }
+
+  // The vehicle carrying our V that our game runs (our car, a ride, the
+  // quest car a scene drives; not another player's copy): the one the
+  // guests have a copy of, under our player id.
+  private func Carrier(player: ref<GameObject>) -> ref<VehicleObject> {
+    let car: wref<VehicleObject>;
+    if !VehicleComponent.GetVehicle(this.m_game, player, car) || !IsDefined(car) || TandemTransit.IsMetro(this.m_game, player, car) {
+      return null;
+    }
+    let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
+    if !IsDefined(system) || system.CarOwnerOf(car.GetEntityID()) != 0u {
+      return null;
+    }
+    return car;
+  }
+
+  // An NPC seated in the vehicle carrying our V (Panam at the wheel, Judy
+  // beside us): the guests seat its proxy in their copy. It stays seated
+  // there while it sits in that vehicle here, our V in it or not (the copy
+  // is parked where we left it, and so is the car here).
+  private func ShareSeat(known: ref<TandemNpcKnown>, npc: ref<ScriptedPuppet>, carrier: ref<VehicleObject>) -> Void {
+    let none: EntityID;
+    let slot: CName;
+    if EntityID.IsDefined(known.seatVehicle) {
+      let was = GameInstance.FindEntityByID(this.m_game, known.seatVehicle) as VehicleObject;
+      if IsDefined(was) && VehicleComponent.IsMountedToProvidedVehicle(this.m_game, known.id, was) {
+        VehicleComponent.GetMountedSlotName(this.m_game, npc, slot);
+        if !Equals(slot, known.seat) {
+          known.seat = slot;
+          TandemNative.SendNpcSeat(known.npc, this.m_you, slot);
+          TandemNative.Log(s"npcs: \(known.npc) moved to \(NameToString(slot))");
+        }
+        return;
+      }
+      known.seatVehicle = none;
+      known.seat = n"None";
+      TandemNative.SendNpcSeat(known.npc, 0u, n"None");
+      TandemNative.Log(s"npcs: \(known.npc) got out");
+    }
+    if IsDefined(carrier) && VehicleComponent.IsMountedToProvidedVehicle(this.m_game, known.id, carrier) {
+      VehicleComponent.GetMountedSlotName(this.m_game, npc, slot);
+      known.seatVehicle = carrier.GetEntityID();
+      known.seat = slot;
+      TandemNative.SendNpcSeat(known.npc, this.m_you, slot);
+      TandemNative.Log(s"npcs: \(known.npc) sits in \(NameToString(slot)) of our vehicle");
     }
   }
 
@@ -529,6 +631,14 @@ public class TandemNpcs {
         }
       } else if event.kind == 2 && event.reason == 1 {
         this.Die(event.npc, event.player);
+      } else if event.kind == 6 {
+        let seated = this.FindProxy(event.npc);
+        if IsDefined(seated) {
+          seated.seatOwner = event.player;
+          seated.seatSlot = event.appearance;
+          seated.seatChanged = true;
+          seated.seatRetryAt = 0.0;
+        }
       } else if event.kind == 2 && event.reason == 3 {
         this.KnockOut(event.npc, event.player);
       } else if event.kind == 1 {
@@ -561,9 +671,76 @@ public class TandemNpcs {
           TandemNative.RegisterPuppet(puppet, proxy.id);
           proxy.ready = TandemNative.AttachController(puppet, npc);
         }
+      } else if !proxy.dead {
+        this.FollowSeat(proxy, now);
       }
     }
+    this.ProcessLeaving(now);
     this.m_anims.Follow(now, this.m_you);
+  }
+
+  // A proxy into the seat the host says (in the copy of the vehicle
+  // carrying that player), or out of it, once it is ready (its controller
+  // on: mounting takes it off, getting out puts it back).
+  private func FollowSeat(proxy: ref<TandemNpcProxy>, now: Float) -> Void {
+    let game = this.m_game;
+    let entities = GameInstance.GetDynamicEntitySystem();
+    if proxy.reattachAt > 0.0 && now >= proxy.reattachAt && !GameInstance.GetMountingFacility(game).IsMountedToAnything(proxy.id) {
+      let body = entities.GetEntity(proxy.id);
+      if IsDefined(body) {
+        TandemNative.AttachController(TandemNative.NpcPuppetId(proxy.npc), body);
+      }
+      proxy.reattachAt = 0.0;
+    }
+    if !proxy.seatChanged || now < proxy.seatRetryAt {
+      return;
+    }
+    let npc = entities.GetEntity(proxy.id) as GameObject;
+    if !IsDefined(npc) {
+      return;
+    }
+    let none: EntityID;
+    if EntityID.IsDefined(proxy.seatedIn) {
+      TandemVehicles.Unseat(game, npc, proxy.seatedIn, proxy.seatedSlot);
+      proxy.seatedIn = none;
+      proxy.reattachAt = now + 0.5;
+      TandemNative.Log(s"npcs: proxy \(proxy.npc) out of its seat");
+    }
+    if proxy.seatOwner == 0u {
+      proxy.seatChanged = false;
+      return;
+    }
+    let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
+    let carId = IsDefined(system) ? system.CarOf(proxy.seatOwner) : none;
+    let car = entities.GetEntity(carId) as VehicleObject;
+    let slot = TandemVehicles.FreeSlot(game, car, proxy.seatSlot, proxy.id);
+    if !IsDefined(car) || !IsNameValid(slot) {
+      // No copy yet (it spawns with the player's seat), or every seat taken.
+      proxy.seatRetryAt = now + 0.5;
+      return;
+    }
+    TandemVehicles.Seat(game, npc, car, slot);
+    proxy.seatedIn = carId;
+    proxy.seatedSlot = slot;
+    proxy.seatChanged = false;
+    proxy.reattachAt = 0.0;
+    TandemNative.Log(s"npcs: proxy \(proxy.npc) seated in \(NameToString(slot)) of player \(proxy.seatOwner)'s vehicle");
+  }
+
+  // Proxies taken out of a seat: deleted once off it.
+  private func ProcessLeaving(now: Float) -> Void {
+    if ArraySize(this.m_leaving) == 0 {
+      return;
+    }
+    let kept: array<ref<TandemNpcLeaving>>;
+    for leaving in this.m_leaving {
+      if now - leaving.at >= 0.5 || (now - leaving.at >= 0.1 && !GameInstance.GetMountingFacility(this.m_game).IsMountedToAnything(leaving.id)) {
+        GameInstance.GetDynamicEntitySystem().DeleteEntity(leaving.id);
+      } else {
+        ArrayPush(kept, leaving);
+      }
+    }
+    this.m_leaving = kept;
   }
 
   // Guest: a proxy that is alive and moved by our controller (null: none).
@@ -920,8 +1097,16 @@ public class TandemNpcs {
       if proxy.npc == npc {
         this.m_anims.Drop(npc);
         TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
-        // A corpse leaves what it still holds as a loot bag (Loot.reds).
-        if !proxy.dead || !TandemLoot.LeaveCorpse(this.m_game, proxy.id) {
+        let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as GameObject;
+        if EntityID.IsDefined(proxy.seatedIn) && IsDefined(body) {
+          // Out of its seat first, deleted once off it (ProcessLeaving).
+          TandemVehicles.Unseat(this.m_game, body, proxy.seatedIn, proxy.seatedSlot);
+          let leaving = new TandemNpcLeaving();
+          leaving.id = proxy.id;
+          leaving.at = this.m_now;
+          ArrayPush(this.m_leaving, leaving);
+        } else if !proxy.dead || !TandemLoot.LeaveCorpse(this.m_game, proxy.id) {
+          // A corpse leaves what it still holds as a loot bag (Loot.reds).
           GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
         }
       } else {
@@ -1038,6 +1223,7 @@ public class TandemNpcs {
   public func Clear() -> Void {
     for proxy in this.m_proxies {
       TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(proxy.npc));
+      this.Unseat(proxy);
       GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
     }
     ArrayClear(this.m_proxies);

@@ -26,6 +26,7 @@ struct NetThread::Impl {
   std::optional<proto::Stealth> lastStealth;
   bool lastPaused{};
   std::optional<proto::TimeEffect> lastTime;
+  std::optional<proto::Transit> lastTransit;
   std::optional<proto::Elsewhere> lastElsewhere;
   // Guest through a relay: the session's secret, to join again after the
   // code expired.
@@ -200,6 +201,8 @@ struct NetThread::Impl {
       endpoint->SetLocalPaused(true);
     if (lastTime)
       endpoint->SetLocalTimeEffect(*lastTime);
+    if (lastTransit)
+      endpoint->SetLocalTransit(*lastTransit);
     if (lastElsewhere)
       endpoint->SetLocalElsewhere(*lastElsewhere);
     if (lastVitals)
@@ -293,6 +296,15 @@ struct NetThread::Impl {
                 runtime.PushRemoteSeat(e.seat);
               } else if constexpr (std::is_same_v<E, events::RemoteVehicle>) {
                 runtime.PushRemoteVehicle(e.vehicle);
+              } else if constexpr (std::is_same_v<E, events::RemoteTransit>) {
+                log::Info("player {}: ride {} (flags {:#x}, station {} next {}, seat {:#x})",
+                          e.transit.player, static_cast<int>(e.transit.kind), e.transit.flags,
+                          e.transit.at, e.transit.next, e.transit.seat);
+                runtime.PushRemoteTransit(e.transit);
+              } else if constexpr (std::is_same_v<E, events::HostNpcSeat>) {
+                runtime.PushNpcEvent({.kind = NpcEvent::Kind::Seat,
+                                      .spawn = {.npc = e.seat.npc, .appearance = e.seat.seat},
+                                      .player = e.seat.owner});
               } else if constexpr (std::is_same_v<E, events::RemoteVehicleRadio>) {
                 log::Info("player {}: car radio {}, station {}, track {:#x}{}", e.radio.player,
                           e.radio.on ? "on" : "off", e.radio.station, e.radio.track,
@@ -552,6 +564,12 @@ struct NetThread::Impl {
       }
       if (auto vehicle = runtime.TakeLocalVehicle())
         endpoint->SendLocalVehicle(*vehicle);
+      if (auto transit = runtime.TakeLocalTransit()) {
+        lastTransit = *transit;
+        endpoint->SetLocalTransit(*transit);
+        log::Info("our ride {} (flags {:#x}, station {} next {})", static_cast<int>(transit->kind),
+                  transit->flags, transit->at, transit->next);
+      }
       for (const auto &radio : runtime.TakeLocalRadios()) {
         lastRadio = radio;
         endpoint->SetLocalVehicleRadio(radio);
@@ -584,6 +602,8 @@ struct NetThread::Impl {
           endpoint->SendNpcHit(*hit);
         else if (const auto *effect = std::get_if<proto::NpcEffect>(&message))
           endpoint->SendNpcEffect(*effect);
+        else if (const auto *seat = std::get_if<proto::NpcSeat>(&message))
+          endpoint->SendNpcSeat(*seat);
         else if (const auto *action = std::get_if<proto::NpcAction>(&message))
           endpoint->SendNpcAction(*action);
         else if (const auto *hold = std::get_if<proto::NpcHold>(&message))

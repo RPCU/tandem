@@ -601,11 +601,14 @@ must be measured.
 - _NPC shots at a guest_: decided (the user, option b) and built: the
   guest's game simulates them (`Shots.reds`, ARCHITECTURE). To check in
   game: the proxy holds and fires the NPC's weapon (it is handed the
-  weapon record of each shot); its attitude to the guest's V is hostile
-  (a friendly attacker's hits are dropped by `CheckForQuickExit`); the
-  attacker side from the proxy matches the host's NPC (same record and
-  weapon; any level modifier the host puts on its NPC must be on the
-  proxy too); `AI_ShootAt` with no ammo cost fires at all.
+  weapon record of each shot); `AI_ShootAt` with no ammo cost fires at
+  all. The proxy is made hostile to the guest's V when it fires at it (a
+  friendly attacker's hits are dropped by `CheckForQuickExit`). Damage
+  parity: same record, weapon and difficulty (the session plays at the
+  host's, `Outcomes.reds`); the host puts no level or power modifier of
+  its own on its NPCs today (the "mean level" rule is decided, not
+  built), so there is nothing to copy yet: when it is built, the proxy
+  must get the same modifier.
 - _Projectiles crossing a bubble from outside_ (fired by an NPC farther
   than 150 m): not slowed. Nothing shown is that far.
 - _The host's dilation and what is not shared yet_: its game clock, quest

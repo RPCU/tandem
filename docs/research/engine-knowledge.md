@@ -1866,12 +1866,41 @@ none of it run in game yet.
   was friendly (0) while `civilian` to `player` was neutral (1): the
   relation copy had not taken, or not run, and civilians saw the puppet as
   friendly where they see V as neutral. A fresh group's relations with no
-  copy read friendly. [2.5-verified] Since then every relation copy is read
-  back and logged (`attitudes: OURS / OTHER (...): V's a/b, read back
-c/d`, `(not taken)` when it differs), and each NPC around also gets V's
-  attitudes on the puppet's agent where the groups do not give them
-  (`AttitudeAgent.SetAttitudeTowards`, which reads back: §13.11).
-  [2.5-untested]
+  copy read friendly. [2.5-verified] Second run: every copy logged
+  `tandem_player_1 / civilian (puppet put in): V's 1/1, read back 0/0 (not
+taken)`, and no NPC was within 60 m of V when the command ran (the
+  scenario failed on `0 NPCs`). [2.5-verified]
+- **Why the copy never shows: the setter and the getter use different
+  tables** (Ghidra on the 2.50 exe, `tools/re/decompile`, 2026-11-18):
+  - `GetAttitudeRelation` (native 0x140fcc234 → 0x14026981c) looks both
+    names up in the manager's group table (manager +0x48; a name not
+    found gives neutral, 1), then in an override map at +0xC8 keyed by a
+    symmetric hash of the two names (0x14026a3f8), else the base relation
+    from a packed 2-bit triangular matrix (0x14026a438): relations are
+    **symmetric**. `tandem_player_1` is in the table (it read 0, not the
+    unknown-name 1): TweakXL's groups exist before the world loads.
+  - `SetAttitudeRelation` (native 0x140ca8650 → 0x140ca8730) **does not
+    write either**: it walks the registered attitude agents (manager
+    +0x158), matches each agent's group name (its PS's current group,
+    else `baseAttitudeGroup` at +0xC8 of the agent), and for every agent
+    of the first group and every agent of the second sets a per-agent-pair
+    attitude both ways (0x14048b73c → 0x14048ac70, map at manager +0x190)
+    and sends them an event. Agents that join either group later get
+    nothing, and the group table is untouched. tandem copied while no
+    agent was in `tandem_player_1` yet (before `SetAttitudeGroup`), so it
+    did nothing.
+  - `SetAttitudeGroupRelationPersistent` (native 0x14141b41c →
+    0x14141b4fc) is the one that writes the group override map at +0xC8
+    (for two names in the table), then updates agents. It is what quests
+    use, and it is saved with the game.
+    Read from the decompiled code, not run. [2.5-untested]
+- Since then: a puppet is put in its group first, then gets
+  `SetAttitudeRelation` from it to every group seen (reaching the agents
+  around), and every 2 s each NPC within 60 m of V or a puppet gets its
+  and V's attitudes on the puppet's agent (`AttitudeAgent.SetAttitudeTowards`,
+  which reads back: §13.11). The persistent setter would give the real
+  group copy (every NPC of the group, now and later) but writes the host's
+  save; not used. [2.5-untested]
 - **Why one group per V**: vanilla turns an NPC hostile to its target's
   whole group, `AttitudeAgent.SetAttitudeTowardsAgentGroup(target, owner,
 hostile)` (`TryChangingAttitudeToHostile` 169933, companions 152568);
@@ -2895,7 +2924,123 @@ destinationRef, destinationOffset, areaNodeTriggerRef}` (Codeware
   it hides skinned and garment meshes on a puppet (and their shadows):
   to see. [2.5-untested]
 
-### 13.27 Firing an NPC's shot from a proxy (2026-11-18, scripts only)
+### 13.27 The NCART metro, rides and quest vehicles (2026-11-18, 2.50 scripts and resource list read, not run)
+
+Read in the 2.50 script dump (`final.reds`, line numbers below) and
+RedHotTools' resource list; used by `scripts/tandem/Transit.reds`,
+`Npcs.reds` and `System.reds`. Nothing here has run in game yet: every
+item is [2.5-untested] unless marked.
+
+**The metro is a vehicle V mounts.**
+
+- The train is `ncartMetroObject extends AVObject` (216019), its vehicle
+  component `NcartMetroComponent extends VehicleComponent` (291468): V gets
+  on through the mounting facility like into any car, so
+  `VehicleComponent.GetVehicle` / `PlayerPuppet.GetMountedVehicle` return
+  the train and the state machine's `MountedToVehicle` is true. Its
+  template: `base\open_world\metro\ue_metro\entities\ue_metro_train.ent`;
+  its passengers are NPCs of their own (`ue_metro_passenger_*.ent`); the
+  ride is the `ue_metro` quest (per station `phases\stations\*.questphase`,
+  not in scripts). Whether the train entity has a static id (the same in
+  every game) is unknown: tandem checks the class of whatever entity has
+  the rider's train id.
+- `VehicleComponent.IsDriver` is false for every `AVObject` (89437-89452),
+  the metro included, whatever the seat.
+- While V rides, it has a status effect tagged `MetroRide`: the pocket
+  radio stays allowed and its toggles go to the train (`PocketRadio`
+  244237, 244370-244382); the radio HUD checks it too (531048, 483377).
+  The train keeps itself level with `PitchUp`/`PitchDown` transform
+  animations unless fact `ue_metro_disable_pitch_adjustment` (216100) and
+  turns round with a 180° teleport (`PerformYawAjustment`).
+- Stations: `ENcartStations` 1..19 (10800), the same numbers in the facts
+  `ue_metro_active_station` (set by `NcartStationMarker` when the metro
+  passes it: 492639-492646) and `ue_metro_next_station`; names
+  `LocKey#95259..95277` (`NcartTrainInkControllerBase`, 284641); lines
+  `ue_metro_show_line_[a-e][12]` (343001).
+- The station: entering a subway gate's `SubwayGateArea` (`DataTerm`,
+  237572-237600) sets `ue_metro_display_options` = 1, records the gate as
+  `FastTRavelSystem.LastSubwayGateUsed` and teleports the gate's metro
+  animation entity to it. The gate opens the world map
+  (`OpenWorldMapDeviceAction`, 50624); NCART stations are fast travel
+  mappins of variant `Zzz17_NCARTVariant` (50553). Fast travelling from
+  there is ordinary fast travel (`FastTravelPrefetchRequest` to the gate,
+  facts `ue_metro_map_ui_ft_clicked`, `ue_metro_ft_system_prefetch_*`;
+  358871-358902, 359078-359090): a loading screen and a jump.
+- **Skipping a ride is a speed-up, not a teleport.** Under a status effect
+  tagged `CustomFastForward`, V gets the fast-forward prompt
+  (`PlayerPuppet.SetCustomFastForwardEnabled`, 44213-44255); holding
+  `SceneFastForward` sets the global dilation `customFFTimeDilation` to
+  **10** with the `transition_glitch_loop` effect and the
+  `motion_light_fast_2d` sound, releasing it unsets it (40298-40311). That
+  the metro ride grants `CustomFastForward` is the quest's data, not read
+  [unverified]. tandem sends `kTransitSkipping` while it is active.
+- Delamain's cab: `DelamainTaxiSystem`, UI context `DelamainTaxi`, status
+  tag `DelamainTaxi` (the pocket radio stays allowed, 483377-483379).
+
+**Story scenes in vehicles.**
+
+- The player state machine's vehicle state (`PlayerStateMachine.Vehicle`,
+  `gamePSMVehicle`: 1 Driving, 2 Combat, 3 Passenger, 5 Turret, 6
+  DriverCombat, 7 Scene) is Scene while a scene tier 3..5 holds V in a
+  vehicle (`SceneDecisions`, 551665-551700; `SceneEvents` 552330): the
+  vehicle camera goes to scene mode and V is put on the vehicle's
+  `OccupantSlots` workspot (`WorkspotSystem.MountToVehicle`). The scene
+  switches V between `PuppetVehicleState` IdleMounted, IdleStand,
+  CombatWindowed, CombatSeated, Turret and GunnerSlot
+  (`scenePuppetVehicleState`), drawing a ranged weapon for the combat ones.
+- Gunner seats are slots `gunner_back_left` / `gunner_back_right`
+  (`GunnerDecisions`, 548550: vehicle state 2, ranged weapon out).
+  `VehicleObject.IsPerformingSceneAnimation`, `GetActiveWeapons`,
+  `IsArmedVehicle`, `CanSwitchWeapons`, `NPCShoot(target, projectiles)`,
+  `EnableNPCCombat` are natives of every vehicle (87700-87940); a driver of
+  a vehicle with `gamedataDriverCombatType.MountedWeapons` fires its
+  mounted guns (`ToDriverCombatMountedWeapons`).
+- **The Basilisk** is a `TankObject extends VehicleObject` (174400;
+  `gamedataVehicleType.Panzer`, model `Basilisk`; template
+  `base\vehicles\special\v_militech_basilisk_01__basic_01.ent`, quest
+  record names not read). Its pilot sits in `seat_front_left`: mounting
+  there turns V's hit shapes off and makes targeting ignore the tank
+  (`TogglePlayerHitShapesForPanzer`, `ToggleTargetingSystemForPanzer`,
+  90643-90646, 92281-92320), and a failsafe makes the pilot's door
+  available whenever its interaction is evaluated
+  (`EvaluatePanzerInteractions`, 91791).
+- Seats: `VehicleComponent.GetSeats` (the record's
+  `VehDataPackage.VehSeatSet`, each `SeatName()`), `HasSlot`,
+  `IsSlotOccupied` (the mounting facility's child in that slot),
+  `IsSlotAvailable`, `GetFirstAvailableSlot` (which also skips seats the
+  AI component reserves), `IsDriverSlot` (90016-90440, 89349).
+- Hiding a body reversibly: `IVisualComponent.TemporaryHide(on)` (106206;
+  vanilla swaps broken and fixed meshes with it, 511696-511718).
+  `HideIrreversibly` (19392) is for good.
+
+**A V in a vehicle with no seat for it** (a guest riding along, Transit.reds).
+
+- No camera to lend: the vehicle's FPP/TPP cameras and its scene camera
+  mode (`SetVehicleCameraSceneMode`, `vehicleRequestCameraPerspectiveEvent`)
+  are driven by the player state machine's vehicle states, which only run
+  for a V mounted in a seat (`VehicleComponent.OnMountingEvent` adds the
+  `Vehicle` state machine, 291579-291602); `StateGameScriptInterface.
+ActivateCameraSetting` (247390) switches settings of V's own camera.
+  Only photo mode has a free camera. A carried V therefore looks through
+  its own eyes.
+- A mount without the vehicle state machine exists: a mounting request
+  whose `mountEventOptions.silentUnmount` is set adds no `Vehicle` state
+  machine (`MountFromParent`, 291579), but it still needs a slot of the
+  vehicle; with every seat taken there is none to use. Not used.
+- Restrictions a script can put on V and take off by record:
+  `GameplayRestriction.NoMovement`, `NoJump`, `NoWeapons`,
+  `NoWorldInteractions`, `VehicleNoInteraction`, `ForceCrouch`,
+  `NoCameraControl` (all used by vanilla, `t"GameplayRestriction.*"`), and
+  `BaseStatusEffect.Invulnerable`. Status effects can be saved: tandem
+  removes its own on load.
+- `WorkspotSystem.MountToVehicle(parent, child, slide, delay,
+n"OccupantSlots", slot)` (53240) is the scene's way into a seat's
+  workspot: a seat again.
+- Whether a V teleported every frame into a moving copy's cabin
+  (`TeleportationFacility.Teleport`) collides with the car's hull or
+  seats, and whether the per-frame teleport is smooth: [unverified].
+
+### 13.28 Firing an NPC's shot from a proxy (2026-11-18, scripts only)
 
 Used by `scripts/tandem/Shots.reds` (NPC shots at a guest's V, simulated
 by the guest's game); none of it run in game yet.

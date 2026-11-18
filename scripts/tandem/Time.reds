@@ -50,6 +50,13 @@
 //   screen; the host drops their world part (time_host = bubble). Others see the V as it is: standing, scanning.
 // - Any other global dilation left on the host is logged ("an unknown
 //   dilation").
+// - A ride's own skip (the NCART, a cab: "customFFTimeDilation" at 10 while
+//   the skip is held, PlayerPuppet.OnAction SceneFastForward under a
+//   CustomFastForward effect, final.reds:40298): kept, on the host too. It
+//   compresses a ride its owner runs alone (the others never share that
+//   train: Transit.reds), and the clock moves on by what the ride takes
+//   either way (World.reds brings the guests along). What the network
+//   drives here is exempted from it, as from a slow motion.
 // - Menus, pause, time skips: not here (Pause.reds; ARCHITECTURE).
 //
 // Runs from TandemSystem.Tick, every frame once the world plays: the script
@@ -181,7 +188,8 @@ public class TandemTime {
       this.Bubbles(system, player);
     }
     // Our world runs slower than the network (the host with time_host =
-    // full): the NPCs we share are exempted. Only while a dilation is
+    // full), or faster (a ride's own skip, customFFTimeDilation at 10:
+    // Transit.reds): the NPCs we share are exempted. Only while a dilation is
     // active: what GetActiveTimeDilation answers with none is unknown (0
     // would exempt everything, every frame).
     let exempt = together && TandemTime.Dilated(times);
@@ -249,7 +257,7 @@ public class TandemTime {
       return false;
     }
     let factor = times.GetActiveTimeDilation();
-    return factor > 0.0 && factor < 0.99;
+    return factor > 0.0 && (factor < 0.99 || factor > 1.01);
   }
 
   // An implant's stat, or the test's scale when there is none (no implant).

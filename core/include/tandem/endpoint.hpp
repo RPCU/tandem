@@ -257,6 +257,15 @@ struct Resync {
 struct EpochChanged {
   proto::Epoch epoch;
 };
+// Another player's ride (metro, a ride, a scene vehicle) started, changed
+// or ended (kind None). Never reported for our own.
+struct RemoteTransit {
+  proto::Transit transit;
+};
+// One of the host's NPCs got into, or out of, a player's vehicle (guests only).
+struct HostNpcSeat {
+  proto::NpcSeat seat;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -290,7 +299,8 @@ using SessionEvent = std::variant<
     events::RegroupOffered, events::RegroupAnswered, events::WorldItemAppeared,
     events::WorldItemTakenBy, events::SharedItemFrom, events::RemoteVitals, events::ReviveBy,
     events::SessionLost, events::HostNpcAnims, events::HostNpcShot, events::Combat, events::Resync,
-    events::EpochChanged, events::RemoteElsewhere, events::ShotAtUs, events::ShotHitBy>;
+    events::EpochChanged, events::RemoteElsewhere, events::RemoteTransit, events::HostNpcSeat,
+    events::ShotAtUs, events::ShotHitBy>;
 
 class Endpoint {
 public:
@@ -399,6 +409,14 @@ public:
   void SendNpcAwareness(proto::NpcAwareness awareness);
   // Guest only: a noise our V made, for the host's NPCs.
   void SendNoise(const proto::Noise &noise);
+  // Our V's ride (kind None: none). Kept: sent now if we are in the session,
+  // else as soon as we are; the host hands everyone's to late joiners.
+  void SetLocalTransit(proto::Transit transit);
+  // Every ride this game knows of, by player (host: the session's record).
+  const std::map<proto::PlayerId, proto::Transit> &Transits() const { return m_transits; }
+  // Host only: one of our NPCs got into (owner set) or out of a player's
+  // vehicle; kept while it sits, for late joiners.
+  void SendNpcSeat(const proto::NpcSeat &seat);
   // Offer `offer.to` (kNoPlayer: everyone else) to come to us, or answer an
   // offer. `from` is filled in; nothing is kept.
   void SendRegroup(proto::Regroup offer);
@@ -570,6 +588,15 @@ private:
   std::map<proto::PlayerId, proto::Stealth> m_stealth;
   void SendLocalStealthNow();
   std::uint32_t m_awarenessSeq{};
+  // Our ride, and everyone's (host: the session's record, for late joiners;
+  // only rides that are on).
+  std::optional<proto::Transit> m_localTransit;
+  std::uint32_t m_transitRevision{};
+  std::map<proto::PlayerId, proto::Transit> m_transits;
+  void SendLocalTransitNow();
+  void NoteTransit(const proto::Transit &transit);
+  // Host: our NPCs seated in a player's vehicle.
+  std::map<proto::NpcId, proto::NpcSeat> m_npcSeats;
   // Host: the story for late joiners, and who answered the call first.
   story::Record m_story;
   story::CallArbiter m_calls;

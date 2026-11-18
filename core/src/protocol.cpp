@@ -82,6 +82,9 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *difficulty = std::get_if<Difficulty>(&message);
       difficulty && difficulty->level > 3)
     return std::nullopt;
+  if (const auto *transit = std::get_if<Transit>(&message);
+      transit && transit->kind > TransitKind::Along)
+    return std::nullopt;
   return message;
 }
 
@@ -130,7 +133,8 @@ const char *NameOf(const Message &message) {
       "WorldItem",      "WorldItemTaken", "SharedItem",   "Vitals",       "Revive",
       "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",    "NpcWound",
       "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",       "ResyncRequest",
-      "NpcSet",         "Epoch",          "Elsewhere",    "NpcShotAt",    "ShotHit"};
+      "NpcSet",         "Epoch",          "Elsewhere",    "Transit",      "NpcSeat",
+      "NpcShotAt",      "ShotHit"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

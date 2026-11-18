@@ -201,7 +201,9 @@ struct Seat {
 };
 
 // The car a player drives, sent by the driver's game (State channel, 30 Hz).
-// Other games teleport their copy of it to the interpolated transform.
+// Other games teleport their copy of it to the interpolated transform. Also
+// sent for a vehicle the player's game moves while the player does not
+// drive it (Transit::Ride, Scene): its game runs it, so it is the owner.
 struct VehicleState {
   PlayerId player{};
   std::uint32_t seq{};
@@ -1051,6 +1053,57 @@ struct Elsewhere {
   friend bool operator==(const Elsewhere &, const Elsewhere &) = default;
 };
 
+// A ride a player's own game runs for its V (docs/ARCHITECTURE.md,
+// "Scripted transit and quest vehicles"), sent by that game when it starts,
+// changes or ends (Event channel; the host stamps the sender, keeps the
+// latest of each player for late joiners and relays it).
+// - Metro: an NCART train (ncartMetroObject, status effect tag MetroRide).
+//   Never copied: every game that rides runs its own train. The others
+//   seat the rider's puppet in a train of their own world when one is
+//   there (the same entity, or the one they ride themselves, near the
+//   rider), else hide it with a notice; it comes back at the exit station.
+//   No Seat is sent for a train.
+// - Ride: a vehicle our game moves for us while we do not drive it (a
+//   Delamain cab, a car an NPC drives): Seat and VehicleState as for a car
+//   we drive, so the others see its copy with us seated.
+// - Scene: the same in a story scene (the host's quest vehicle): a partner
+//   near it on foot is offered to come along (kTransitSeats): a free seat
+//   of its copy, or, when the car has none (two seats: the host and Panam),
+//   a ride along.
+// - Along: our V rides along in `carrier`'s scene vehicle with no seat of
+//   its own (Transit.reds): carried with its copy here, out of sight, and
+//   out of sight everywhere else too (no seat to show it in).
+enum class TransitKind : std::uint8_t { None = 0, Metro = 1, Ride = 2, Scene = 3, Along = 4 };
+inline constexpr std::uint8_t kTransitSkipping =
+    1; // the ride's own skip runs (the world fast-forwards)
+inline constexpr std::uint8_t kTransitSeats = 2; // partners near its copy get a free seat
+struct Transit {
+  PlayerId player{};
+  std::uint32_t revision{};
+  TransitKind kind{};
+  std::uint8_t flags{}; // kTransit*
+  // Metro: the station the train is at or last stopped at, and the next one
+  // (ENcartStations: 1..19; 0 unknown).
+  std::uint8_t at{};
+  std::uint8_t next{};
+  std::uint64_t vehicle{}; // the vehicle's EntityID hash in the rider's world
+  std::uint64_t seat{};    // the rider's seat slot (CName hash; 0 unknown)
+  PlayerId carrier{};      // Along: whose vehicle carries us
+  friend bool operator==(const Transit &, const Transit &) = default;
+};
+
+// One of the host's NPCs sits in the vehicle carrying a player (the vehicle
+// that player's game runs: its copy everywhere else), or got out (owner
+// kNoPlayer). Host to guests (Event channel; kept while it sits, for late
+// joiners). A guest seats its proxy in that copy: Panam at the wheel of the
+// quest car the host's V rides in.
+struct NpcSeat {
+  NpcId npc{};
+  PlayerId owner{};     // the player whose vehicle (kNoPlayer: out)
+  std::uint64_t seat{}; // the slot's CName hash
+  friend bool operator==(const NpcSeat &, const NpcSeat &) = default;
+};
+
 // NPC shots at a guest's V (docs/ARCHITECTURE.md, authority table; not
 // NpcShot, the cosmetic shot every guest draws on its proxy): the
 // host's NPC decides to fire (when, at whom, with which weapon and attack);
@@ -1091,7 +1144,7 @@ using Message = std::variant<
     ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
     NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
     Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
-    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, NpcShotAt, ShotHit>;
+    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.

@@ -157,24 +157,26 @@ within half the timeout (2.5 s), without reporting an end in between
 
 The owner simulates; everyone else displays.
 
-| State                                   | Owner                     | Others                                         |
-| --------------------------------------- | ------------------------- | ---------------------------------------------- |
-| a V: transform, stance, aim, animation  | that player's game        | puppet, interpolated                           |
-| a V: appearance, equipment, cyberware   | that player's game        | applied on the puppet when it changes          |
-| a V: health, death, downed              | that player's game        | shown; revives are requests to the owner       |
-| a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level  |
-| a vehicle someone drives                | the driver's game         | puppet vehicle, passengers mounted             |
-| a parked or AI vehicle                  | host                      | proxy                                          |
-| NPCs: AI, position, health, death       | host                      | **proxy with its AI off**, driven by the host  |
-| spawns: crowds, traffic, encounters     | host                      | guests' own spawning is suppressed             |
-| quests: facts, journal, phases, scenes  | host                      | followed, never run on their own               |
-| time of day, weather, police heat       | host                      | applied (wanted level: open, see below)        |
-| a V's time abilities (Sandevistan…)     | that player's game        | shown on the puppet; never slow anyone's world |
-| an NPC's speed in a time bubble         | host                      | proxies animated at the same speed             |
-| NPC shots at a V                        | the V's game              | host's NPC decides to fire; see below          |
-| loot: corpses and containers            | each player's game        | rolled per player: each loots their own copy   |
-| items a V drops on purpose              | host                      | lie in every game; the first pickup keeps it   |
-| quest and important items, rewards      | every player's own V      | whoever gets one, every V gets it              |
+| State                                                        | Owner                     | Others                                                             |
+| ------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------ |
+| a V: transform, stance, aim, animation                       | that player's game        | puppet, interpolated                                               |
+| a V: appearance, equipment, cyberware                        | that player's game        | applied on the puppet when it changes                              |
+| a V: health, death, downed                                   | that player's game        | shown; revives are requests to the owner                           |
+| a V: level, XP, perks, inventory, money                      | that player's game (save) | not shared: each player keeps their own level                      |
+| a vehicle someone drives                                     | the driver's game         | puppet vehicle, passengers mounted                                 |
+| a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game        | copy, riders and NPCs seated; host's scene: a seat or a ride along |
+| an NCART train (scripted transit)                            | each rider's own game     | never shared: puppet in a train of ours, else hidden               |
+| a parked or AI vehicle                                       | host                      | proxy                                                              |
+| NPCs: AI, position, health, death                            | host                      | **proxy with its AI off**, driven by the host                      |
+| spawns: crowds, traffic, encounters                          | host                      | guests' own spawning is suppressed                                 |
+| quests: facts, journal, phases, scenes                       | host                      | followed, never run on their own                                   |
+| time of day, weather, police heat                            | host                      | applied (wanted level: open, see below)                            |
+| a V's time abilities (Sandevistan…)                          | that player's game        | shown on the puppet; never slow anyone's world                     |
+| an NPC's speed in a time bubble                              | host                      | proxies animated at the same speed                                 |
+| NPC shots at a V                                             | the V's game              | host's NPC decides to fire; see below                              |
+| loot: corpses and containers                                 | each player's game        | rolled per player: each loots their own copy                       |
+| items a V drops on purpose                                   | host                      | lie in every game; the first pickup keeps it                       |
+| quest and important items, rewards                           | every player's own V      | whoever gets one, every V gets it                                  |
 
 **Enemy level** (decided 2026-11-18): enemies the host spawns and runs are
 scaled to the **mean of the character levels of the players in the
@@ -447,6 +449,111 @@ redscript natives (UI, events)              ENet socket
   one that had someone seated in it froze the game): a car someone got out
   of stays parked. Puppets leave in steps over several frames (out of the
   seat, then the body).
+- **Scripted transit and quest vehicles** (`scripts/tandem/Transit.reds`,
+  engine-knowledge §13.27). Each game sends its V's ride as `Transit`
+  (kind, flags, the metro's stations, the vehicle, the seat; reliable,
+  kept by the host for late joiners):
+  - _A ride its game runs_ (`Ride`: a Delamain cab, a car an NPC drives, an
+    AV; `Scene` when a story scene runs it: the player state machine's
+    vehicle state Scene, tier 3+, or the `VehicleScene` tag). The rule "the
+    driver's game owns the car" becomes "the game that moves the vehicle
+    owns it": a V in a vehicle its own world moves, driving or not (for
+    every AV `IsDriver` is false), sends that vehicle's `VehicleState`, so
+    the others spawn its copy and seat the puppet as for a car it drives.
+    NPCs seated in it (Panam at the wheel, Judy beside the host) go as
+    `NpcSeat` (host to guests, kept while seated): a guest seats the proxy
+    in the copy, deletes a seated proxy only once it is out of its seat, and
+    puts the controller back when it gets out. The host's own vehicle is
+    never moved nor reserved by anyone else: a remote player's puppet sits
+    in it only in a seat nobody holds (`TandemVehicles.FreeSlot`; a seat the
+    scene's passenger holds is never taken), else in another free one, else
+    it is hidden until one frees.
+  - _The host's quest scene vehicle_ (`Scene` with `kTransitSeats`): the
+    quest runs on the host, so the scene and its vehicle are the host's,
+    and nothing a guest does moves, reserves or empties a seat of it. A
+    guest's V on foot within 20 m of the copy, up and out of combat, is
+    asked the game's way (a notice and two input hints, the keys co-op
+    offers use): **Ride with NAME** (the phone key) or **Follow** (the
+    reject key held); nothing chosen in 6 s while still near is riding;
+    walking off (30 m) or getting into a car of its own is following.
+    - _Ride, a free seat_ (a passenger or gunner seat nobody holds, never
+      the driver's): seated in it, as the scene seats a companion.
+    - _Ride, no free seat_ (two-seat cars: the host with Panam or Johnny
+      beside it, an NPC driving the host): **carried along**. The guest's V
+      is hidden (its own meshes and what it holds), held by the game's own
+      restrictions (no movement, no jump, no weapons, no world or vehicle
+      interaction, crouched, invulnerable) and put in the copy's cabin
+      every frame, behind the seats, turning with the car while its camera
+      stays free: it sees the ride and hears the scene (the host's lines,
+      Dialogue.reds) from where a passenger would. It sends `Transit`
+      `Along` (the carrier), so every game hides its puppet (there is no
+      seat to show it in). The game lends no camera to a V without a seat:
+      a vehicle's cameras and its scene camera mode belong to the seated
+      V's state machine (vehicle states Passenger, Scene), and only photo
+      mode has a free camera; V's own eyes, carried, are the passenger's
+      view.
+    - _Follow_: nothing is done to the guest's V. The host's marker sits
+      on its car (Markers.reds); when the host's scene ride ends, the host
+      offers everyone far from it to join (the regroup offer, "Join NAME",
+      Travel.reds), so a guest left behind is brought to the destination
+      if it says yes.
+    - _The end, whatever ends it_: the host's ride leaves `Scene`, the copy
+      goes, the guest goes down (a downed V is never carried, nor asked),
+      or the session ends (a vanished host included, the desync work's
+      rules): every restriction off, seen again, put down beside the car.
+      A game that loads clears the restrictions a save could have kept. A
+      guest that vanishes is the host's PlayerLeft as always.
+    - _Rejected: an extra seat on the guest's copy only._ The host's game
+      owns the car and its seats; the copy must look like the host's car
+      (an extra body would sit where the host's world has nobody, or in
+      Panam's lap), the host's game would still have to place the guest's
+      puppet somewhere, and the scene could later seat someone where the
+      guest sits.
+  - _The NCART metro_ (`Metro`): V mounts an `ncartMetroObject` the
+    `ue_metro` quest drives. **Deliberate exception to "one world, one
+    owner": every game that rides runs its own train**, with its own
+    passengers, and no train is ever copied or shared (no `Seat`, no
+    `VehicleState`, the host lists no NPCs while it rides, a guest keeps
+    its train's passengers). It is consistent because a metro ride is a
+    scripted transit, not world state: the train follows a fixed line on
+    a timetable, nothing on it outlives the ride, nobody else can act on
+    it, and the only shared facts are where the rider is (its `PlayerState`,
+    as always) and when it gets off; a shared train would need one game to
+    run the other's quest. Elsewhere the rider's puppet sits in a train of
+    that world when one is where the rider is (the entity the rider rides,
+    if streamed there too, or the observer's own train, within 60/150 m,
+    kept until 300 m), in the rider's seat if free; otherwise it is hidden
+    (PuppetVisibility.reds, reason `metro`; `along` for a guest riding
+    along, `noseat` for a puppet with no free seat), placed along the
+    ride twice a second so the map marker follows, with a notice ("… is
+    riding the NCART toward Japantown South"). When the ride ends it is
+    shown again where the rider is, the exit station ("… got off the
+    NCART at …").
+  - _Skipping a ride_: the ride's own fast-forward is a tenfold speed-up of
+    the world (`customFFTimeDilation`), not a teleport: kept, on the host
+    too (it compresses a ride its owner runs alone; the clock moves on by
+    what the ride takes either way), with what the network drives exempted
+    as from a slow motion (Time.reds), and flagged (`kTransitSkipping`).
+  - _Jumps_: a metro station's fast travel, or any other teleport of the
+    rider, is the interpolation's teleport (Time and smoothing): the
+    puppet is put there. A fast-forwarded train (≈ 250 m/s, 8 m per
+    state) is motion, not a teleport.
+  - _Follow-up: a guest gunner's fire._ Shots from a seat already travel as
+    `Shot` and hits as `NpcHit` (the guest's own weapon). A vehicle's
+    mounted weapons (the Basilisk's guns, a gunner seat's turret) belong to
+    the vehicle's owner: the gunner's game would aim its copy's weapon,
+    send `VehicleFire{vehicle owner, weapon slot, target point, projectiles}`
+    to the owner (through the host), which fires its real weapon
+    (`VehicleObject.NPCShoot` / the weapon's own trigger) so the damage is
+    the host's world's; every other game plays the effect on its copy.
+    Not done; NPCs driving vehicles that carry no player (chases) are the
+    host's AI vehicles of the authority table, also not shared yet.
+  - Not yet verified in game: scenarios `metro`, `ride`, `scene-ride`,
+    `scene-ride-full` (a two-seat car: ride along), `scene-ride-follow`;
+    `tools/game.sh cmd ride` logs our ride, the vehicle's seats and
+    everyone's rides; `ride along` / `ride follow` answer the question;
+    `ride npc [RECORD]` seats an NPC in our vehicle (a host test of
+    `NpcSeat`).
 - **Radio** (`scripts/tandem/Radio.reds`, engine-knowledge §13.12): the
   driver owns the car's radio. While our V drives its own car, our game
   reads the car's receiver four times a second (on, station as an
@@ -977,27 +1084,29 @@ revive down|hold|report`; scenarios `revive-peer`, `revive-game`,
   puppet is in an attitude group of its own, `tandem_player_1` to `_3`
   (one per puppet at a time; `tandem_player`, the records' own, beyond
   that), declared as copies of the `Attitudes.Group_Player` record. A
-  group's relations to the others are not in its record: the attitude
-  system holds one per pair of groups, so the script copies V's group's
-  relations into ours for every group seen on an NPC within 60 m of V or a
-  puppet (checked every 2 s), and when V's relation to a group changes (a
-  quest), the puppets' follow. A puppet's relation that changed while V's
-  did not (a security system turned on that puppet's group) stays its own.
-  Each copy is read back and logged. On top of the groups, each NPC around
-  gets, on the puppet's agent, the attitudes it and V have to each other
-  where the groups do not already give them (first run in game: the group
-  copy did not show, civilians saw the puppet as friendly; and a quest can
-  set one NPC's attitude to V alone): once per NPC and puppet, again when
-  the NPC's attitude to V changes, forgotten 30 s after it leaves range.
+  group's relations are not in its record, and the only non-saved way to
+  set them, `SetAttitudeRelation`, sets attitudes between the agents in
+  the two groups at that moment, not the group relation
+  (engine-knowledge §13.17). So a puppet gets V's attitudes agent by
+  agent: once in its group, `SetAttitudeRelation` from it to every group
+  seen on an NPC near V or a puppet; then, every 2 s, each NPC within
+  60 m of V or a puppet gets the attitudes it and V have to each other on
+  the puppet's agent, once per NPC and puppet, again when the NPC's
+  attitude to V changes (a quest), forgotten 30 s after it leaves range.
+  What changed between an NPC and a puppet alone stays its own (that V
+  provoked it). An NPC that appears near a puppet sees it as friendly
+  (our groups' default) for up to 2 s. The persistent setter would set
+  the real group relations but writes the host's save: not used.
   Vs are friends to each other. The puppet record drops what made it Panam:
   her group and faction (Aldecaldos: anim wrappers, the scan's faction),
   her voice, her burning immunity and damage presets, and shows no NPC UI
   (`hideUIElements`, `hideUIDetection`): no detection indicator from the
   senses Body.reds grafts. `tools/game.sh cmd puppet attitude` logs each
   puppet's group and how the NPCs around V see it next to V; scenario
-  `puppet-attitude`. Verified in game: the groups are accepted. Failed on
-  the first run: civilians friendly to the puppet, neutral to V (fixed
-  since, to run again; engine-knowledge §13.17).
+  `puppet-attitude` (it spawns a ganger near V so there is always an NPC
+  to compare). Verified in game: the groups are accepted. Failed twice:
+  civilians friendly to the puppet, neutral to V, and no NPC near V
+  (fixed since, to run again; engine-knowledge §13.17).
 - **Co-op menu** (`scripts/tandem/Coop.reds`, milestone 7): the session is
   chosen at runtime. The main menu gets a "Co-op" entry whose pages live in
   the menu's own list (wraps of `SingleplayerMenuGameController`'s
@@ -1261,6 +1370,18 @@ game thread stop). Each feature verified in game gets a scenario.
   without anyone driving. `--radio STATION` (0–13, a station name, or
   `off`) plays that station on its radio: sent at the wheel and again when
   your V gets in (`tools/game.sh cmd vehicle ride`).
+- **drive --seat SLOT** — the same car, but the mock player rides in SLOT
+  while "an AI" drives it (a `Ride`); `--scene` makes it a story scene's
+  (as host: guests near it get a free seat); `--driver-npc RECORD` (host)
+  puts an NPC at the wheel (`NpcSeat`). Scenarios `ride`, `scene-ride`;
+  with a two-seat car (`--vehicle Vehicle.v_sport2_porsche_911turbo`, the
+  NPC driving, the mock player beside it) `scene-ride-full` and
+  `scene-ride-follow`. As a guest, `--ride-along` answers a scene ride
+  with seats by riding along (`Transit` `Along`, carried with the car,
+  out beside it at the end): the host's side of a ride along.
+- **metro** — stands beside your V, then rides the NCART (`--metro-at`,
+  `--metro-for`): a straight line 8 m up at 20 m/s, skipping (ten times
+  faster) for 3 s halfway, then off at the end. Scenario `metro`.
 - **course** — runs a scripted course ahead of your V with every way a V
   moves, each with the state machine's own values: jumps, a double jump, a
   1.5 m ledge climb, a drop, a 4 m ladder, swimming and diving, an
@@ -1390,7 +1511,7 @@ Each milestone ends with something visible in game.
 | 0   | Toolchain           | DLL built on Linux loads in the game and logs; mock player; relay image ✓                                                                                                                                       |
 | 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                                                                                                   |
 | 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)                                                                               |
-| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test)                                                                                                     |
+| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test; rides, quest vehicles, NCART written: to test)                                                      |
 | 4   | Shared world basics | time, weather, police heat follow the host; fast travel together, no tether (time, weather ✓ 2026-11-18; regroup built, untested)                                                                               |
 | 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18; loot built)                                                                        |
 | 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests (step 1 written: freeze, saves, journal, calls, texts, lines, hubs, rewards; to test in game)                                      |
@@ -1900,13 +2021,18 @@ in-game tests still owed; none of it tested in a session yet):
     reason: dodging bullets under slow motion only feels like single
     player if the game that draws the bullet is the one that decides the
     hit. The host's NPC still decides to fire (when, at whom, weapon,
-    attack, its time-between-hits coefficient) and sends `NpcShot` to that
-    guest only; the host still fires for its own view, but its hit on the
-    puppet is dropped. The guest's game fires the shot from its proxy of
+    attack, its time-between-hits coefficient) and sends `NpcShotAt` to
+    that guest only, from the one `AIWeapon.Fire` wrap that also sends the
+    cosmetic `NpcShot` (`NpcAnims.reds`) to every other guest: the target
+    guest is left out of the cosmetic one (its proxy fires for real, the
+    endpoint pairs the two). The host still fires for its own view, but
+    its hit on the puppet is dropped. The guest's game fires the shot from its proxy of
     the NPC at its own V (the player-side miss rules, the weapon's spread,
     a slow projectile under a bubble or its own Sandevistan), decides the
     hit and applies it through its own pipeline (attacker side from the
-    proxy, which has the NPC's record and weapon); a hit is reported
+    proxy, which has the NPC's record and weapon and plays at the host's
+    difficulty; the proxy turns hostile to our V when it fires at it, so
+    the hit is not dropped as friendly fire); a hit is reported
     (`ShotHit`) and the host plays the hit reaction on the puppet. The
     shot reaches the guest about RTT/2 late: its projectile runs faster
     for 0.25 s to catch up (`TimeBubbles::ShotCatchUp`), so the guest
