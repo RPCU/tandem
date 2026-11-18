@@ -83,6 +83,7 @@ public class TandemSystem extends ScriptableSystem {
   private let m_world: ref<TandemWorld>;
   private let m_pause: ref<TandemPause>;
   private let m_radio: ref<TandemRadio>;
+  private let m_travel: ref<TandemTravel>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
@@ -153,6 +154,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_pause.Start(this.GetGameInstance());
     this.m_radio = new TandemRadio();
     this.m_radio.Start(this.GetGameInstance());
+    this.m_travel = new TandemTravel();
+    this.m_travel.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
     this.m_attitudes = new TandemAttitudes();
@@ -188,6 +191,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_radio.Stop();
       this.m_radio = null;
     }
+    if IsDefined(this.m_travel) {
+      this.m_travel.Stop();
+      this.m_travel = null;
+    }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
       this.m_bodies = null;
@@ -210,6 +217,11 @@ public class TandemSystem extends ScriptableSystem {
   // since this tick stands still while the world is paused.
   public func PauseSync() -> ref<TandemPause> {
     return this.m_pause;
+  }
+
+  // Fast travel together and regroup (Travel.reds).
+  public func Travel() -> ref<TandemTravel> {
+    return this.m_travel;
   }
 
   public func Tick() -> Void {
@@ -248,6 +260,9 @@ public class TandemSystem extends ScriptableSystem {
     // The car radio (Radio.reds): the driver's for everyone aboard.
     if IsDefined(this.m_radio) && this.m_playing {
       this.m_radio.Tick(this.Now(), this);
+    }
+    if IsDefined(this.m_travel) && this.m_playing {
+      this.m_travel.Tick(this.Now(), this.m_you);
     }
 
     this.TickAttitudes();
@@ -639,6 +654,10 @@ public class TandemSystem extends ScriptableSystem {
         ArrayPush(this.m_joins, join);
       }
       this.RemoveAllPuppets();
+    } else if Equals(command, "travel") || StrBeginsWith(command, "regroup") {
+      if IsDefined(this.m_travel) {
+        this.m_travel.Command(command);
+      }
     } else if Equals(command, "markers") {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {

@@ -170,6 +170,17 @@ struct NetThread::Impl {
                 log::Info("player {} {} (pause menu)", e.pause.player,
                           e.pause.paused ? "paused" : "resumed");
                 PublishPaused(*endpoint);
+              } else if constexpr (std::is_same_v<E, events::RegroupOffered>) {
+                log::Info("player {} offers to join them (offer {}, reason {}, point {:#x}, at "
+                          "({:.1f}, {:.1f}, {:.1f}))",
+                          e.offer.from, e.offer.offer, static_cast<int>(e.offer.reason),
+                          e.offer.point, e.offer.position.x, e.offer.position.y,
+                          e.offer.position.z);
+                runtime.PushRegroupEvent({.kind = RegroupEvent::Kind::Offer, .offer = e.offer});
+              } else if constexpr (std::is_same_v<E, events::RegroupAnswered>) {
+                log::Info("player {} {} our offer {}", e.answer.from,
+                          e.answer.accepted ? "accepted" : "declined", e.answer.offer);
+                runtime.PushRegroupEvent({.kind = RegroupEvent::Kind::Answer, .answer = e.answer});
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 log::Info("session ended: {}", e.reason);
                 runtime.SetRemotePaused({});
@@ -232,6 +243,12 @@ struct NetThread::Impl {
       }
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
+      for (auto &message : runtime.TakeRegroupOutbox()) {
+        if (auto *offer = std::get_if<proto::Regroup>(&message))
+          endpoint->SendRegroup(std::move(*offer));
+        else if (const auto *answer = std::get_if<proto::RegroupAnswer>(&message))
+          endpoint->SendRegroupAnswer(*answer);
+      }
 
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {
         nextReport = now + 10s;

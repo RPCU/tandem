@@ -39,6 +39,15 @@ struct NpcEvent {
   proto::Vec3 direction;    // Hit: its way (spawn.position: where it landed)
 };
 
+// Fast travel together (scripts/tandem/Travel.reds): an offer to come to
+// another player, or an answer to ours, for the scripts.
+struct RegroupEvent {
+  enum class Kind : std::int32_t { Offer = 1, Answer = 2 };
+  Kind kind{};
+  proto::Regroup offer;        // Offer
+  proto::RegroupAnswer answer; // Answer
+};
+
 // NPC proxies use the player-puppet tracks and controller under these ids.
 inline constexpr proto::PlayerId kNpcPuppetBase = 0x10000;
 
@@ -146,6 +155,14 @@ public:
   void NotePlayerName(proto::PlayerId player, std::string name);
   std::string PlayerName(proto::PlayerId player);
 
+  // Regroup offers and answers: ours, game -> net (queued; offers numbered
+  // here); the others', net -> game (queued).
+  std::uint32_t SubmitRegroup(proto::Regroup offer);
+  void SubmitRegroupAnswer(const proto::RegroupAnswer &answer);
+  std::vector<proto::Message> TakeRegroupOutbox();
+  void PushRegroupEvent(RegroupEvent event);
+  std::vector<RegroupEvent> TakeRegroupEvents();
+
   // Host: its NPCs, game -> net (spawns and removals queued, states newest).
   // Guest: the host's NPCs, net -> game (events queued; states feed the
   // tracks of kNpcPuppetBase + npc).
@@ -236,6 +253,9 @@ private:
   std::vector<proto::PlayerId> m_remotePaused;        // m_lock
   std::uint32_t m_remotePausedChanges{};              // m_lock
   std::map<proto::PlayerId, std::string> m_names;     // m_lock
+  std::vector<proto::Message> m_regroupOutbox;        // m_lock
+  std::vector<RegroupEvent> m_regroupEvents;          // m_lock
+  std::uint32_t m_regroupOffers{};                    // m_lock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin

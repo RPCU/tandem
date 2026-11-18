@@ -1,5 +1,7 @@
 #include "tandem/session.hpp"
 
+#include "enet_util.hpp"
+
 #include <enet/enet.h>
 
 #ifdef _WIN32
@@ -18,6 +20,7 @@ namespace tandem::net {
 namespace {
 std::mutex g_enetLock;
 int g_enetUsers = 0;
+} // namespace
 
 bool AcquireEnet() {
   std::lock_guard _(g_enetLock);
@@ -47,6 +50,7 @@ bool ResolveIpv4(const std::string &name, ENetAddress &address) {
   return true;
 }
 
+namespace {
 // ENet's millisecond clock wraps; its differences do not.
 enet_uint32 Since(enet_uint32 now, enet_uint32 then) { return now - then; }
 bool Reached(enet_uint32 now, enet_uint32 when) {
@@ -267,6 +271,13 @@ std::optional<Stats> Session::StatsOf(PeerId id) const {
           static_cast<float>(peer->packetLoss) / static_cast<float>(ENET_PEER_PACKET_LOSS_SCALE),
       .quietMs = Impl::QuietMs(peer),
   };
+}
+
+std::uint16_t Session::LocalPort() const {
+  ENetAddress address{};
+  if (enet_socket_get_address(m_impl->host->socket, &address) != 0)
+    return 0;
+  return address.port;
 }
 
 std::vector<PeerId> Session::Peers() const {

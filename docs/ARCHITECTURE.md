@@ -205,9 +205,13 @@ health, its target and its status effects), the way a region's owner
 changes as players move. What outlives a region (deaths, loot taken,
 destroyed objects, quest facts, heat) goes to the host's record of the
 world (the host's save), so it is still true when anyone comes back. The
-first version keeps players together (proxies of the host's NPCs only
-near the host, a soft tether with regroup on fast travel); per-player
-regions are the step after it.
+first version shares the host's NPCs only near the host and never tethers
+anyone: a player who fast travels offers the others to join (accepted or
+not, each stays free), and anyone can regroup with another player at any
+time (see Fast travel together, Inside the plugin); per-player regions are
+the step after it. Until then a guest far from the host plays in a quiet
+world: its own crowd is off and the host's NPCs are shared only around the
+host.
 
 ## Identity: naming the same thing in every game
 
@@ -234,6 +238,16 @@ Two games must agree on which NPC, car or object a message is about.
   player by measured jitter and transit, capped at 400 ms (numbers measured
   on 2.5 by NCO, see the research file). Short gaps are extrapolated (250 ms
   for players, 500 ms for vehicles), then held; recovery blends back.
+- **Teleports are put, not flown.** Two states further apart than 20 m and
+  faster than 150 m/s (a fast travel, a quest teleport, a regroup) are not
+  interpolated: the body stays until the moment of the jump and is then
+  drawn there, and a velocity that fast (the sender's own jump over one
+  sample) is not extrapolated (`sync::Track`, tested).
+- **The clock offset follows the best ping.** Until 2026-11-18 the
+  best-RTT filter started from `UINT64_MAX`, its slow forgetting wrapped it
+  to 199 µs, and no pong over a real link ever counted: a guest's host
+  clock stayed the `Welcome`'s, off by the one-way latency. Found by the
+  shaped-link test (60 ms off at 40 ms each way; now within 7 ms).
 - Rates: players and vehicles 30 Hz; NPC proxies 10–30 Hz by distance and
   relevance (budgeted per frame).
 
@@ -429,6 +443,35 @@ redscript natives (UI, events)              ENet socket
   senses Body.reds grafts. `tools/game.sh cmd puppet attitude` logs each
   puppet's group and how the NPCs around V see it next to V; scenario
   `puppet-attitude`. **Not yet verified in game** (engine-knowledge §13.12).
+- **Fast travel together** (`scripts/tandem/Travel.reds`, milestone 4):
+  no tether. When our V arrives from a fast travel (seen where vanilla
+  performs it, a wrap of `FastTravelSystem.PerformFastTravel`; arrived
+  once V has jumped and the world has run 1.5 s behind the loading
+  screen), the others get `Regroup` (reason fast travel, the point's
+  record and marker node, where we stand; the host stamps the sender and
+  delivers it to whom it is for). An offer shows the game's way: the HUD's
+  on-screen message ("NAME fast travelled to POINT") and an input hint on
+  the phone key, the one that answers a holocall ("Join NAME"); a press
+  joins, it lapses after 15 s, and the sender is told either way
+  (`RegroupAnswer`: "NAME is on the way" / "NAME stays where they are").
+  Not shown to a player already within 60 m. Joining goes the game's way:
+  our own fast travel to the same point when we know it
+  (`PerformFastTravelRequest`: its loading screen and streaming); else
+  vanilla's steps to that point's marker (`TeleportToNode`,
+  `NotifyFastTravelStart`) without adding the point to our map; else, more
+  than 150 m away, our fast travel point nearest to them (within 1.5 km)
+  and then a hop; else the hop alone, 2 m behind them, facing their way.
+  The game's fast travel locks (combat, a vehicle, quests) block joining
+  too. The regroup action: a player's marker on the world map, held like a
+  fast travel point ("Join NAME"), joins them the same way. API for the
+  story work: `TandemTravel.OfferRegroup(game, player, reason, label)`
+  (reason 2: a story scene; `label` its title) and
+  `TandemTravel.RegroupTo(game, player)`. The host's world stays coherent
+  when the host travels away from a guest: the guest keeps playing; the
+  host's NPCs around the old place go (`NpcGone`, out of range) and new
+  ones are shared around the host. Not yet verified in game (scenarios
+  `travel`, `regroup`; `tools/game.sh cmd travel`, `regroup [PLAYER]`,
+  `regroup accept|decline|offer`).
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name, pose).
 
 ## Talking to the engine safely
@@ -484,6 +527,7 @@ localhost, so ENet itself never knows the relay exists (planned, milestone 7).
 | ----------- | --------------------------------------------------------------------- | --------------------------------- |
 | unit        | protocol round trips, strict decoding, sizes                          | `task test`                       |
 | loopback    | real host + guests over UDP in one process: join, relay, clock, leave | `task test`                       |
+| bad link    | smoothing and reliable channels through a shaped link (loss, jitter)  | `task test`                       |
 | relay       | protocol, limits, amplification, real sockets, race detector          | `task relay:test`                 |
 | mock player | `tandem-peer` as host or guest against the real game                  | `task peer -- host --mode mirror` |
 | natives     | `Natives.reds` matches `natives.cpp`: types, struct fields, alignment | `task natives:check`              |
@@ -514,6 +558,27 @@ game thread stop). Each feature verified in game gets a scenario.
 - **idle** — connects and reports.
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
+- **Fast travel together** (any mode): `--travel-at N` "fast travels" N s
+  after another player is in the session: it stands at `--travel-to X,Y,Z`
+  (default the game's `teleport home` spot) until another V comes within
+  10 m, and offers everyone to join (`--travel-point RECORD`: the point
+  arrived at); `--offer-regroup N` asks the others to come to it; offers it
+  gets are answered by `--regroup-answer yes|no|ignore` (yes: it goes
+  there).
+- **A bad network** (any mode): `--latency MS`, `--jitter MS`,
+  `--loss PERCENT`, `--reorder PERCENT`, each way. A UDP relay with a link
+  model on each direction (`net::Shaper`, `core/src/shaping.cpp`) sits
+  between the mock player's endpoint and the others (host: on the port the
+  game joins; guest: a local port its endpoint joins), so ENet itself
+  (acknowledgements, resends, pings) crosses the bad link. Jitter keeps
+  the order; reordering holds a datagram back 30 ms plus the jitter.
+  Tests (`tests/shaping_test.cpp`): at 80 ms each way, 60 ms of jitter,
+  10% lost, 5% reordered, a walking body is drawn 174 ms behind, never
+  backwards, at most 0.06 m a frame (0.05 m is walking), 8 frames of 510
+  extrapolated; a car at 20 m/s stays within 0.02 m of its circle; a
+  pose's bone within 0.0001 rad; over real UDP at 40 ms, 15% lost, 200
+  reliable changes each way all arrive, in order, once. Scenarios
+  `front-badlink`, `drive-badlink`, `npcs-guest-badlink`.
 - **NPC record and replay** (first piece of the simulated second game):
   `join --record FILE` saves the host's `NpcSpawn`/`NpcStates`/`NpcGone`
   with their times; `host --replay FILE [--offset X,Y,Z]` sends them again
@@ -530,8 +595,8 @@ game thread stop). Each feature verified in game gets a scenario.
   - **scripted players**: recordings edited or generated (walk a path, get
     in a car, shoot an NPC, join late, disconnect mid-fight) as repeatable
     regression scenarios, with checks on what the real game reports back;
-  - **network shaping** in the peer (latency, jitter, loss, reordering) to
-    test the smoothing and the reliable channels under bad links.
+  - **network shaping** in the peer (latency, jitter, loss, reordering):
+    done, see above.
 
 ## Roadmap
 
@@ -543,7 +608,7 @@ Each milestone ends with something visible in game.
 | 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                                 |
 | 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)             |
 | 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test)                                   |
-| 4   | Shared world basics | time, weather, police heat follow the host; tether and regroup on fast travel (time, weather ✓ 2026-11-18)                                    |
+| 4   | Shared world basics | time, weather, police heat follow the host; fast travel together, no tether (time, weather ✓ 2026-11-18; regroup built, untested)             |
 | 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot through the host (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18) |
 | 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests                                                                  |
 | 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join                                         |
@@ -852,7 +917,8 @@ in-game tests still owed; none of it tested in a session yet):
   on every screen, each with its own cursor, the host sees suggestions);
   **holocalls and texts reach everyone in sync and anyone can answer or
   reply for all, first wins**; a guest far away when the host starts a
-  story scene **is offered to join** (a native-looking prompt to regroup;
+  story scene **is offered to join** (a native-looking prompt to regroup:
+  `TandemTravel.OfferRegroup(game, guest, 2, title)`, milestone 4's;
   declining leaves it the subtitles and journal); a guest earns a quest's
   rewards when it was near the host (150 m) as the quest completed or
   advanced, **only once**: a quest it was rewarded for in co-op pays

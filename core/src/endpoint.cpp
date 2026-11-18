@@ -37,6 +37,20 @@ std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const std::string &h
   return std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity), timing));
 }
 
+template <class M>
+bool Endpoint::Deliver(const M &message, proto::PlayerId to, net::PeerId except) {
+  if (to == proto::kNoPlayer) {
+    m_session->Broadcast(message, except);
+    return true;
+  }
+  if (to == m_you)
+    return true;
+  for (const auto &[peer, player] : m_playerOfPeer)
+    if (player == to && peer != except)
+      m_session->Send(peer, message);
+  return false;
+}
+
 std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
   std::vector<SessionEvent> out;
   if (m_ended)
@@ -167,6 +181,20 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                        return;
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::PauseChanged{relayed});
+                   },
+                   [&](const proto::Regroup &offer) {
+                     // A guest only offers to come to itself.
+                     auto relayed = offer;
+                     relayed.from = player;
+                     if (relayed.to != player && Deliver(relayed, relayed.to, event.peer))
+                       out.push_back(events::RegroupOffered{relayed});
+                   },
+                   [&](const proto::RegroupAnswer &answer) {
+                     auto relayed = answer;
+                     relayed.from = player;
+                     if (relayed.to != player && relayed.to != proto::kNoPlayer &&
+                         Deliver(relayed, relayed.to, event.peer))
+                       out.push_back(events::RegroupAnswered{relayed});
                    },
                    [&](const proto::Bye &) {
                      RemovePlayer(event.peer, out); // gone now, not when ENet is done
@@ -319,7 +347,11 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::Pong &pong) {
               const auto now = net::NowUs();
               const auto rtt = now - pong.pingSentUs;
-              m_bestRttUs += kRttForgetUsPerPing;
+              // Saturating: from UINT64_MAX (no ping yet) it wrapped to 199 us,
+              // and no pong over a real link (rtt > 0.2 ms) ever counted, so
+              // the offset stayed the Welcome's, off by the one-way latency.
+              if (m_bestRttUs <= UINT64_MAX - kRttForgetUsPerPing)
+                m_bestRttUs += kRttForgetUsPerPing;
               if (rtt <= m_bestRttUs) {
                 m_bestRttUs = rtt;
                 const auto midpoint = pong.pingSentUs + rtt / 2;
@@ -382,6 +414,14 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
+            },
+            [&](const proto::Regroup &offer) {
+              if (offer.from != m_you && (offer.to == m_you || offer.to == proto::kNoPlayer))
+                out.push_back(events::RegroupOffered{offer});
+            },
+            [&](const proto::RegroupAnswer &answer) {
+              if (answer.from != m_you && answer.to == m_you)
+                out.push_back(events::RegroupAnswered{answer});
             },
             [&](const proto::Bye &bye) {
               m_ended = true;
@@ -599,6 +639,30 @@ void Endpoint::SendLocalPausedNow() {
     m_session->Broadcast(proto::Pause{m_you, m_localPaused});
   else
     m_session->Send(m_hostPeer, proto::Pause{m_you, m_localPaused});
+}
+
+void Endpoint::SendRegroup(proto::Regroup offer) {
+  if (!IsJoined() || m_ended)
+    return;
+  offer.from = m_you;
+  if (offer.label.size() > proto::kMaxRegroupLabel)
+    offer.label.resize(proto::kMaxRegroupLabel);
+  if (offer.to == m_you)
+    return;
+  if (IsHost())
+    Deliver(offer, offer.to, 0);
+  else
+    m_session->Send(m_hostPeer, offer);
+}
+
+void Endpoint::SendRegroupAnswer(proto::RegroupAnswer answer) {
+  if (!IsJoined() || m_ended || answer.to == proto::kNoPlayer || answer.to == m_you)
+    return;
+  answer.from = m_you;
+  if (IsHost())
+    Deliver(answer, answer.to, 0);
+  else
+    m_session->Send(m_hostPeer, answer);
 }
 
 bool Endpoint::NotePaused(proto::PlayerId player, bool paused) {

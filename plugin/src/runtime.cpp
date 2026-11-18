@@ -52,6 +52,8 @@ void Runtime::Stop() {
       ++m_remotePausedChanges;
     }
     m_names.clear();
+    m_regroupOutbox.clear();
+    m_regroupEvents.clear();
   }
   net.reset(); // joins outside the lock: the net thread takes it too
   {
@@ -316,6 +318,37 @@ std::string Runtime::PlayerName(proto::PlayerId player) {
   std::lock_guard _(m_lock);
   const auto it = m_names.find(player);
   return it == m_names.end() ? std::string{} : it->second;
+}
+
+std::uint32_t Runtime::SubmitRegroup(proto::Regroup offer) {
+  std::lock_guard _(m_lock);
+  offer.offer = ++m_regroupOffers;
+  if (m_regroupOutbox.size() < 16)
+    m_regroupOutbox.push_back(std::move(offer));
+  return m_regroupOffers;
+}
+
+void Runtime::SubmitRegroupAnswer(const proto::RegroupAnswer &answer) {
+  std::lock_guard _(m_lock);
+  if (m_regroupOutbox.size() < 16)
+    m_regroupOutbox.push_back(answer);
+}
+
+std::vector<proto::Message> Runtime::TakeRegroupOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_regroupOutbox, {});
+}
+
+void Runtime::PushRegroupEvent(RegroupEvent event) {
+  std::lock_guard _(m_lock);
+  // Scripts drain these every tick; a pile-up means nobody is listening.
+  if (m_regroupEvents.size() < 32)
+    m_regroupEvents.push_back(std::move(event));
+}
+
+std::vector<RegroupEvent> Runtime::TakeRegroupEvents() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_regroupEvents, {});
 }
 
 void Runtime::SubmitNpcSpawn(const proto::NpcSpawn &spawn) {

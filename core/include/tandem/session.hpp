@@ -83,6 +83,8 @@ public:
   std::optional<Stats> StatsOf(PeerId peer) const;
   std::vector<PeerId> Peers() const;
   bool IsHost() const { return m_isHost; }
+  // The UDP port the socket is bound to (Listen on port 0 picks a free one).
+  std::uint16_t LocalPort() const;
 
 private:
   struct Impl;

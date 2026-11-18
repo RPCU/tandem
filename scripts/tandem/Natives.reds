@@ -46,6 +46,27 @@ public native struct TandemNpcEvent {
   native let dz: Float;
 }
 
+public native struct TandemRegroup {
+  // 1 an offer to come to `player`, 2 their answer to our offer
+  native let kind: Int32;
+  native let player: Uint32;
+  native let offer: Uint32;
+  // 0 fast travel, 1 asked, 2 story, 3 teleport
+  native let reason: Int32;
+  // The fast travel point `player` is at (invalid: none), its marker node's
+  // hash (TandemNative.NodeRefOf; 0: none).
+  native let point: TweakDBID;
+  native let marker: Uint64;
+  // Where `player` stands (plain floats: see TandemNpcEvent); yaw in radians.
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let yaw: Float;
+  native let label: String;
+  // 2: the answer
+  native let accepted: Bool;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -123,5 +144,10 @@ public native class TandemNative extends IScriptable {
   public static native func PoseBind(player: Uint32, entity: ref<Entity>)
   public static native func PoseLoop(player: Uint32)
   public static native func PoseStreamReport()
+  public static native func SendRegroup(to: Uint32, reason: Int32, point: TweakDBID, marker: NodeRef, position: Vector4, orientation: Quaternion, label: String) -> Uint32
+  public static native func SendRegroupAnswer(to: Uint32, offer: Uint32, accepted: Bool)
+  public static native func TakeRegroups() -> array<TandemRegroup>
+  public static native func NodeRefHash(node: NodeRef) -> Uint64
+  public static native func NodeRefOf(hash: Uint64) -> NodeRef
   public static native func Log(text: String)
 }

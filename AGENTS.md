@@ -129,8 +129,11 @@ Run the checks your change can break before saying it works: `task test` for
 - Test without a second player or input: `tandem-peer` modes (`front`
   echoes your V in view; `drive` drives a car round you; `host --time
 --weather` plays the host while the game joins as a guest with
-  `role = join`, `address = <this machine>`), and `tools/game.sh cmd`
-  commands (`teleport home`, `where`, `vehicle ride`, `pose loop`…) that
+  `role = join`, `address = <this machine>`; `--latency`, `--jitter`,
+  `--loss`, `--reorder` put a bad link in between; `--travel-at` and
+  `--offer-regroup` test fast travel together), and `tools/game.sh cmd`
+  commands (`teleport home`, `where`, `vehicle ride`, `pose loop`, `travel`,
+  `regroup accept`…) that
   need no restart. Restart only for script or plugin changes. anya's
   keyboard is AZERTY: simulated keys land on other letters.
 - The game is launched through the Steam already running in anya's Sway

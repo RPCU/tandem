@@ -76,6 +76,30 @@ TEST_CASE("every message survives encoding") {
                           .track = 0xfeedfacecafef00dULL,
                           .trackStartUs = 123'456'789'012ULL});
   RoundTrips(VehicleRadio{.player = 3, .revision = 1, .on = false, .station = -1});
+  RoundTrips(Regroup{.from = 2,
+                     .to = 0,
+                     .offer = 4,
+                     .reason = RegroupReason::FastTravel,
+                     .point = 0x1b2c3d4e5fULL,
+                     .marker = 0xcbf29ce484222325ULL,
+                     .position = {-915.f, 1879.5f, 36.3f},
+                     .yaw = 1.5f});
+  RoundTrips(Regroup{
+      .from = 1, .to = 3, .offer = 1, .reason = RegroupReason::Story, .label = "The Heist"});
+  RoundTrips(RegroupAnswer{.from = 3, .to = 1, .offer = 1, .accepted = true});
+  RoundTrips(RegroupAnswer{.from = 2, .to = 1, .offer = 0, .accepted = false});
+}
+
+TEST_CASE("a regroup offer is a reliable event with a bounded label") {
+  CHECK(ChannelOf(Regroup{}) == Channel::Event);
+  CHECK(IsReliable(RegroupAnswer{}));
+  CHECK(std::string_view(NameOf(Regroup{})) == "Regroup");
+  CHECK(std::string_view(NameOf(RegroupAnswer{})) == "RegroupAnswer");
+  Regroup offer{.label = std::string(kMaxRegroupLabel, 'x')};
+  CHECK(Decode(Encode(offer)).has_value());
+  CHECK(Encode(offer).size() < 160);
+  offer.label.push_back('x');
+  CHECK_FALSE(Decode(Encode(offer)).has_value());
 }
 
 TEST_CASE("a car's radio is a small reliable event") {

@@ -8,6 +8,9 @@ declare -A value=(
   ["--delay"]=100 ["--rate"]=30 ["--pose"]=x.tpose ["--vehicle"]=Vehicle.x
   ["--drive-seconds"]=5 ["--radio"]=radio_station_09_downtempo ["--time"]=06:30 ["--weather"]=24h_weather_rain
   ["--record"]=x.rec ["--replay"]=x.rec ["--hit-npcs"]=2 ["--pause-at"]=10 ["--pause-for"]=3
+  ["--travel-at"]=15 ["--travel-to"]="-915,1879.5,36.3" ["--travel-point"]=FastTravel.x
+  ["--offer-regroup"]=10 ["--regroup-answer"]=no
+  ["--latency"]=120 ["--jitter"]=40 ["--loss"]=5 ["--reorder"]=2.5
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true
 [ -n "$flags" ] || {

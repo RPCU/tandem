@@ -25,10 +25,18 @@
 // Body pose: mirror and front echo your V's pose; --pose FILE (a .tpose made by
 // tools/re/pose_export.py from a recording) plays a recorded pose instead, in
 // a loop, with any mode.
+// Fast travel together (milestone 4): --travel-at N "fast travels" the mock
+// player N seconds into the session (it stands at --travel-to from then on,
+// until another V comes to it) and offers the others to join it, as a game
+// does on arriving; --offer-regroup N asks them to come to it; the offers it
+// gets are answered as --regroup-answer says (yes: it goes there).
+// A bad network: --latency, --jitter, --loss and --reorder put a shaped link
+// (tandem/shaping.hpp) between the mock player and the others, both ways.
 
 #include "tandem/endpoint.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/pose.hpp"
+#include "tandem/shaping.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -79,7 +87,16 @@ struct Options {
   std::string replayFile; // host: send a recording's NPC messages again
   int pauseAtSeconds{-1}; // open the pause menu this long into the session (-1: never)
   int pauseForSeconds{3}; // ...for this long
-  bool check{};           // parse the options, then exit
+  // Fast travel together: when to travel (-1: never), where to, the fast
+  // travel point arrived at (a record name; empty: none), when to ask the
+  // others to come (-1: never), how to answer their offers.
+  int travelAtSeconds{-1};
+  Vec3 travelTo{-915.f, 1879.5f, 36.3f}; // the game's "teleport home" spot
+  std::string travelPoint;
+  int offerRegroupSeconds{-1};
+  enum class Answer { Yes, No, Ignore } regroupAnswer{Answer::Yes};
+  tandem::net::LinkShape link; // a bad network, both ways (none: direct)
+  bool check{};                // parse the options, then exit
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -124,31 +141,45 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
 [[noreturn]] void Usage(std::string_view error = {}) {
   if (!error.empty())
     std::cerr << "tandem-peer: " << error << "\n\n";
-  std::cerr << "usage: tandem-peer host [options]\n"
-               "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
-               "  --port N           UDP port (default 27450)\n"
-               "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
-               "  --name NAME        player name (default tandem-peer)\n"
-               "  --body B           female | male: the puppet rig others see (default female)\n"
-               "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
-               "  --delay MS         mirror: extra delay before copying (default 0)\n"
-               "  --rate HZ          states sent per second (default 30)\n"
-               "  --pose FILE        play a recorded body pose (.tpose) in a loop\n"
-               "  --vehicle RECORD   drive: the car's record (default "
-               "Vehicle.v_standard2_archer_hella_player)\n"
-               "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
-               "  --radio STATION    drive: the car's radio plays STATION (0-13 or its name,\n"
-               "                     radio_station_09_downtempo...; off): sent when seated and\n"
-               "                     again when a passenger gets in\n"
-               "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
-               "  --time HH:MM       host: the time of day the game must follow\n"
-               "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
-               "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
-               "  --replay FILE      host: send a recording's NPCs again, at its pace (moved by\n"
-               "                     --offset)\n"
-               "  --pause-at N       open the pause menu N seconds after another player is in the\n"
-               "                     session: every game pauses\n"
-               "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n";
+  std::cerr
+      << "usage: tandem-peer host [options]\n"
+         "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
+         "  --port N           UDP port (default 27450)\n"
+         "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
+         "  --name NAME        player name (default tandem-peer)\n"
+         "  --body B           female | male: the puppet rig others see (default female)\n"
+         "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
+         "  --delay MS         mirror: extra delay before copying (default 0)\n"
+         "  --rate HZ          states sent per second (default 30)\n"
+         "  --pose FILE        play a recorded body pose (.tpose) in a loop\n"
+         "  --vehicle RECORD   drive: the car's record (default "
+         "Vehicle.v_standard2_archer_hella_player)\n"
+         "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
+         "  --radio STATION    drive: the car's radio plays STATION (0-13 or its name,\n"
+         "                     radio_station_09_downtempo...; off): sent when seated and\n"
+         "                     again when a passenger gets in\n"
+         "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
+         "  --time HH:MM       host: the time of day the game must follow\n"
+         "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
+         "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
+         "  --replay FILE      host: send a recording's NPCs again, at its pace (moved by\n"
+         "                     --offset)\n"
+         "  --pause-at N       open the pause menu N seconds after another player is in the\n"
+         "                     session: every game pauses\n"
+         "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n"
+         "  --travel-at N      fast travel N seconds after another player is in the session:\n"
+         "                     stand at --travel-to and offer everyone to join\n"
+         "  --travel-to X,Y,Z  --travel-at: where to (default -915,1879.5,36.3, the game's\n"
+         "                     teleport home spot)\n"
+         "  --travel-point REC --travel-at: the fast travel point record arrived at\n"
+         "  --offer-regroup N  N seconds after another player is in the session, ask them\n"
+         "                     to come to us\n"
+         "  --regroup-answer A yes | no | ignore: how to answer an offer to join (default\n"
+         "                     yes: go there)\n"
+         "  --latency MS       a bad network: MS added each way\n"
+         "  --jitter MS        up to MS more at random, each way (the order kept)\n"
+         "  --loss PERCENT     PERCENT of the datagrams lost, each way\n"
+         "  --reorder PERCENT  PERCENT of the datagrams held back behind later ones\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -158,6 +189,26 @@ template <class T> T Number(std::string_view text) {
   if (ec != std::errc{} || end != text.data() + text.size())
     Usage(std::format("not a number: {}", text));
   return value;
+}
+
+Vec3 Point(std::string_view flag, std::string_view value) {
+  float xyz[3]{};
+  std::size_t start = 0;
+  for (int axis = 0; axis < 3; ++axis) {
+    const auto comma = value.find(',', start);
+    if ((axis < 2) == (comma == std::string_view::npos))
+      Usage(std::format("{} is X,Y,Z", flag));
+    xyz[axis] = Number<float>(value.substr(start, comma - start));
+    start = comma + 1;
+  }
+  return {xyz[0], xyz[1], xyz[2]};
+}
+
+float Percent(std::string_view flag, std::string_view value) {
+  const auto percent = Number<float>(value);
+  if (percent < 0.f || percent > 100.f)
+    Usage(std::format("{} is a percentage, 0 to 100", flag));
+  return percent / 100.f;
 }
 
 Options Parse(int argc, char **argv) {
@@ -249,18 +300,34 @@ Options Parse(int argc, char **argv) {
         options.mode = Mode::Drive;
       else
         Usage(std::format("unknown mode {}", value));
-    } else if (flag == "--offset") {
-      float xyz[3]{};
-      std::size_t start = 0;
-      for (int axis = 0; axis < 3; ++axis) {
-        const auto comma = value.find(',', start);
-        if ((axis < 2) == (comma == std::string_view::npos))
-          Usage("--offset is X,Y,Z");
-        xyz[axis] = Number<float>(value.substr(start, comma - start));
-        start = comma + 1;
-      }
-      options.offset = {xyz[0], xyz[1], xyz[2]};
-    } else if (flag == "--record") {
+    } else if (flag == "--offset")
+      options.offset = Point(flag, value);
+    else if (flag == "--travel-at")
+      options.travelAtSeconds = Number<int>(value);
+    else if (flag == "--travel-to")
+      options.travelTo = Point(flag, value);
+    else if (flag == "--travel-point")
+      options.travelPoint = std::string(value);
+    else if (flag == "--offer-regroup")
+      options.offerRegroupSeconds = Number<int>(value);
+    else if (flag == "--regroup-answer") {
+      if (value == "yes")
+        options.regroupAnswer = Options::Answer::Yes;
+      else if (value == "no")
+        options.regroupAnswer = Options::Answer::No;
+      else if (value == "ignore")
+        options.regroupAnswer = Options::Answer::Ignore;
+      else
+        Usage(std::format("--regroup-answer: yes, no or ignore, not {}", value));
+    } else if (flag == "--latency")
+      options.link.latencyMs = Number<std::uint32_t>(value);
+    else if (flag == "--jitter")
+      options.link.jitterMs = Number<std::uint32_t>(value);
+    else if (flag == "--loss")
+      options.link.loss = Percent(flag, value);
+    else if (flag == "--reorder")
+      options.link.reorder = Percent(flag, value);
+    else if (flag == "--record") {
       options.recordFile = value;
     } else if (flag == "--replay") {
       options.replayFile = value;
@@ -408,7 +475,23 @@ public:
     return *pick;
   }
 
+  // After a fast travel: stand there instead of the mode's motion, until
+  // cleared (another V came to us).
+  void StandAt(std::optional<Vec3> at) { m_station = at; }
+  const std::optional<Vec3> &Station() const { return m_station; }
+  // Where the other player's V was last heard (nullopt: not yet).
+  std::optional<Vec3> HeardAt() const {
+    if (m_heard.empty())
+      return std::nullopt;
+    return m_heard.back().second.position;
+  }
+
   std::optional<PlayerState> Next(std::uint64_t nowUs) {
+    if (m_station) {
+      PlayerState out;
+      out.position = *m_station;
+      return out;
+    }
     switch (m_options.mode) {
     case Mode::Idle:
       return std::nullopt;
@@ -491,6 +574,7 @@ public:
 private:
   std::optional<Vec3> m_center;
   std::optional<Vec3> m_parkedAt;
+  std::optional<Vec3> m_station;
 
   std::optional<PlayerState> Parked() const {
     PlayerState out;
@@ -537,10 +621,31 @@ int main(int argc, char **argv) {
   std::signal(SIGTERM, [](int) { g_stop = 1; });
 
   std::string error;
-  auto endpoint = options.host
-                      ? tandem::Endpoint::Host({options.name, options.body}, options.port, error)
-                      : tandem::Endpoint::Join({options.name, options.body}, options.address,
-                                               options.port, error);
+  // A bad network: the shaper takes the public side (host: the port the
+  // others join; guest: a local port the endpoint joins), the endpoint sits
+  // behind it on loopback.
+  std::unique_ptr<tandem::net::Shaper> shaper;
+  std::unique_ptr<tandem::Endpoint> endpoint;
+  if (options.link.Active()) {
+    if (options.host) {
+      endpoint = tandem::Endpoint::Host({options.name, options.body}, 0, error);
+      if (endpoint)
+        shaper = tandem::net::Shaper::Start(options.port, "127.0.0.1", endpoint->LocalPort(),
+                                            options.link, error);
+    } else {
+      shaper = tandem::net::Shaper::Start(0, options.address, options.port, options.link, error);
+      if (shaper)
+        endpoint = tandem::Endpoint::Join({options.name, options.body}, "127.0.0.1", shaper->Port(),
+                                          error);
+    }
+    if (!shaper)
+      endpoint.reset();
+  } else {
+    endpoint = options.host
+                   ? tandem::Endpoint::Host({options.name, options.body}, options.port, error)
+                   : tandem::Endpoint::Join({options.name, options.body}, options.address,
+                                            options.port, error);
+  }
   if (!endpoint) {
     std::cerr << "tandem-peer: " << error << '\n';
     return 1;
@@ -549,6 +654,10 @@ int main(int argc, char **argv) {
     Log("hosting on UDP {} as {}", options.port, options.name);
   else
     Log("joining {}:{} as {}", options.address, options.port, options.name);
+  if (shaper)
+    Log("bad network, each way: +{} ms, jitter {} ms, {:.0f}% lost, {:.0f}% reordered",
+        options.link.latencyMs, options.link.jitterMs, options.link.loss * 100.f,
+        options.link.reorder * 100.f);
 
   PoseClip clip;
   if (!options.poseFile.empty()) {
@@ -600,6 +709,13 @@ int main(int argc, char **argv) {
   // --pause-at: when someone else was first there, and how far the pause got.
   std::optional<std::chrono::steady_clock::time_point> togetherSince;
   enum class PauseStep { Waiting, Paused, Done } pauseStep = PauseStep::Waiting;
+  // Fast travel together: done yet, our offers so far, where we last stood.
+  bool travelled = false, offeredRegroup = false;
+  std::uint32_t offers = 0;
+  std::optional<Vec3> lastSent;
+  const auto distance = [](const Vec3 &a, const Vec3 &b) {
+    return std::hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  };
 
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
@@ -705,6 +821,30 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::PauseChanged>) {
               Log("player {} {} (pause menu)", e.pause.player,
                   e.pause.paused ? "paused" : "resumed");
+            } else if constexpr (std::is_same_v<E, tandem::events::RegroupOffered>) {
+              const auto &o = e.offer;
+              Log("player {} offers to join them (offer {}, reason {}, point {:#x}{}) at ({:.1f}, "
+                  "{:.1f}, {:.1f})",
+                  o.from, o.offer, static_cast<int>(o.reason), o.point,
+                  o.label.empty() ? "" : ", " + o.label, o.position.x, o.position.y, o.position.z);
+              if (options.regroupAnswer == Options::Answer::Ignore) {
+                Log("offer {} of player {}: not answered", o.offer, o.from);
+              } else {
+                const bool yes = options.regroupAnswer == Options::Answer::Yes;
+                endpoint->SendRegroupAnswer({.to = o.from, .offer = o.offer, .accepted = yes});
+                if (yes) {
+                  // There, beside them, as a game lands next to whom it joins.
+                  puppeteer.StandAt(Vec3{o.position.x + 1.5f, o.position.y, o.position.z});
+                  Log("joining player {} at ({:.1f}, {:.1f}, {:.1f})", o.from, o.position.x,
+                      o.position.y, o.position.z);
+                } else
+                  Log("offer {} of player {}: declined", o.offer, o.from);
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::RegroupAnswered>) {
+              Log("player {} {} (offer {})", e.answer.from,
+                  e.answer.accepted ? (e.answer.offer ? "accepted: on the way" : "is on the way")
+                                    : "declined: stays",
+                  e.answer.offer);
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
               g_stop = 1;
@@ -718,8 +858,10 @@ int main(int argc, char **argv) {
       nextSend += interval;
       if (nextSend < now)
         nextSend = now + interval;
-      if (auto state = puppeteer.Next(tandem::net::NowUs()))
+      if (auto state = puppeteer.Next(tandem::net::NowUs())) {
         endpoint->SendLocalState(*state);
+        lastSent = state->position;
+      }
       if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip))
         endpoint->SendLocalPose(*pose);
       if (options.mode == Mode::Drive && !parked) {
@@ -757,10 +899,43 @@ int main(int argc, char **argv) {
       world.weather = options.weather.empty() ? 0 : CName(options.weather);
       endpoint->SetWorld(world);
     }
+    if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
+      togetherSince = now;
+    const auto together = [&](int seconds) {
+      return seconds >= 0 && togetherSince && now >= *togetherSince + std::chrono::seconds(seconds);
+    };
+    // --travel-at: arrive somewhere else, as from a fast travel, and offer
+    // the others to join (as a game does once its loading screen is over).
+    if (!travelled && together(options.travelAtSeconds)) {
+      travelled = true;
+      puppeteer.StandAt(options.travelTo);
+      const auto &to = options.travelTo;
+      endpoint->SendRegroup(
+          {.offer = ++offers,
+           .reason = tandem::proto::RegroupReason::FastTravel,
+           .point = options.travelPoint.empty() ? 0 : TweakDBID(options.travelPoint),
+           .position = to});
+      Log("fast travelled to ({:.1f}, {:.1f}, {:.1f}){}: offered everyone to join (offer {})", to.x,
+          to.y, to.z, options.travelPoint.empty() ? "" : " at " + options.travelPoint, offers);
+    }
+    // --offer-regroup: ask the others to come.
+    if (!offeredRegroup && together(options.offerRegroupSeconds)) {
+      offeredRegroup = true;
+      const auto at = lastSent.value_or(Vec3{});
+      endpoint->SendRegroup(
+          {.offer = ++offers, .reason = tandem::proto::RegroupReason::Asked, .position = at});
+      Log("asked the others to come to ({:.1f}, {:.1f}, {:.1f}) (offer {})", at.x, at.y, at.z,
+          offers);
+    }
+    // Someone came to where we stand: back to the mode's motion.
+    if (const auto station = puppeteer.Station()) {
+      if (const auto them = puppeteer.HeardAt(); them && distance(*them, *station) < 10.f) {
+        Log("another V is with us again ({:.1f} m)", distance(*them, *station));
+        puppeteer.StandAt(std::nullopt);
+      }
+    }
     // --pause-at: open the pause menu, then close it.
     if (options.pauseAtSeconds >= 0 && pauseStep != PauseStep::Done) {
-      if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
-        togetherSince = now;
       const auto pauseAt = togetherSince
                                ? *togetherSince + std::chrono::seconds(options.pauseAtSeconds)
                                : std::chrono::steady_clock::time_point::max();
@@ -832,6 +1007,11 @@ int main(int argc, char **argv) {
           endpoint->Players().size(), heard, heardPoses, heardShots, heardVehicles,
           stats ? std::format(", rtt {} ms, loss {:.1f}%", stats->rttMs, stats->packetLoss * 100)
                 : "");
+      if (shaper) {
+        const auto link = shaper->Stats();
+        Log("bad network: {} datagrams through, {} lost, {} held back", link.passed, link.lost,
+            link.reordered);
+      }
     }
   }
 

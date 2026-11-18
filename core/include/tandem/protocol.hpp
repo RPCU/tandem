@@ -327,9 +327,52 @@ struct VehicleRadio {
   friend bool operator==(const VehicleRadio &, const VehicleRadio &) = default;
 };
 
-using Message = std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye,
-                             PoseState, Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn,
-                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio>;
+// A player offers others to come to them ("regroup", milestone 4): sent by
+// that player's game when it arrives from a fast travel, when a story scene
+// starts while someone is far (the story work), or when the player asks. The
+// others get the game's own style of prompt; accepting brings them there
+// (their own fast travel to the same point when they know it, with its
+// loading screen; else next to the player). Nobody is ever moved without
+// accepting: players stay free to be anywhere.
+// Event channel. The host stamps `from` from the connection and delivers it
+// to `to` only (kNoPlayer: every other player). Not kept: an offer is of the
+// moment; a newer one from the same player replaces the one shown.
+enum class RegroupReason : std::uint8_t {
+  FastTravel = 0, // `from` fast travelled here
+  Asked = 1,      // `from` asks to be joined (a regroup request)
+  Story = 2,      // a story scene starts beside `from` (label: what)
+  Teleport = 3,   // a quest moved `from` far away
+};
+inline constexpr std::size_t kMaxRegroupLabel = 96;
+
+struct Regroup {
+  PlayerId from{};
+  PlayerId to{};
+  std::uint32_t offer{}; // the sender's count of offers: an answer names it
+  RegroupReason reason{};
+  std::uint64_t point{};  // TweakDB id of the fast travel point `from` is at (0: none)
+  std::uint64_t marker{}; // that point's marker node (NodeRef hash; 0: none)
+  Vec3 position;          // where `from` stands
+  float yaw{};
+  std::string label; // shown with the prompt (a quest's title...); may be empty
+  friend bool operator==(const Regroup &, const Regroup &) = default;
+};
+
+// The answer to a Regroup (Event channel; the host stamps `from` and
+// delivers it to `to`, the offer's sender). `offer` 0: not an answer but a
+// player coming on their own (the regroup action).
+struct RegroupAnswer {
+  PlayerId from{};
+  PlayerId to{};
+  std::uint32_t offer{};
+  bool accepted{};
+  friend bool operator==(const RegroupAnswer &, const RegroupAnswer &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, Regroup, RegroupAnswer>;
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

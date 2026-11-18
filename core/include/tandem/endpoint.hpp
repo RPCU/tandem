@@ -115,6 +115,14 @@ struct Ended {
 struct RemoteVehicleRadio {
   proto::VehicleRadio radio;
 };
+// Another player offers us to come to them (Regroup), or answers ours. Only
+// ever what is meant for us (to us, or to everyone).
+struct RegroupOffered {
+  proto::Regroup offer;
+};
+struct RegroupAnswered {
+  proto::RegroupAnswer answer;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -129,7 +137,8 @@ using SessionEvent =
                  events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
                  events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
-                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio>;
+                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
+                 events::RegroupOffered, events::RegroupAnswered>;
 
 class Endpoint {
 public:
@@ -173,6 +182,10 @@ public:
   void SetLocalPaused(bool paused);
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
+  // Offer `offer.to` (kNoPlayer: everyone else) to come to us, or answer an
+  // offer. `from` is filled in; nothing is kept.
+  void SendRegroup(proto::Regroup offer);
+  void SendRegroupAnswer(proto::RegroupAnswer answer);
 
   // Time on the host's clock (the session's shared timeline).
   std::uint64_t HostNowUs() const { return net::NowUs() + m_clockOffsetUs; }
@@ -182,6 +195,8 @@ public:
   proto::PlayerId You() const { return m_you; }
   const std::map<proto::PlayerId, proto::PlayerInfo> &Players() const { return m_players; }
   std::optional<net::Stats> HostLinkStats() const;
+  // The UDP port we listen on (host) or send from (guest).
+  std::uint16_t LocalPort() const { return m_session->LocalPort(); }
 
   void Leave(const std::string &reason = "left");
 
@@ -194,6 +209,9 @@ private:
   void RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out);
   void SendSessionTo(net::PeerId peer);
   void BroadcastRoster();
+  // Host: delivers a message meant for `to` (kNoPlayer: everyone but
+  // `except`) and tells whether it is for us too.
+  template <class M> bool Deliver(const M &message, proto::PlayerId to, net::PeerId except);
 
   std::unique_ptr<net::Session> m_session;
   Identity m_identity;

@@ -19,6 +19,7 @@
 
 #include <windows.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -66,6 +67,21 @@ struct TandemNpcEvent {
   float dx{}, dy{}, dz{}; // 3 hit: its direction (x, y, z: where it landed)
 };
 static_assert(alignof(TandemNpcEvent) <= 8, "the script VM aligns struct locals to 8");
+
+// Fast travel together (scripts/tandem/Travel.reds). Plain fields, as above.
+struct TandemRegroup {
+  std::int32_t kind{}; // 1 an offer to come to `player`, 2 their answer to our offer
+  std::uint32_t player{};
+  std::uint32_t offer{};
+  std::int32_t reason{};  // proto::RegroupReason
+  Red::TweakDBID point;   // the fast travel point `player` is at (invalid: none)
+  std::uint64_t marker{}; // its marker node's hash (NodeRefOf; 0: none)
+  float x{}, y{}, z{};    // where `player` stands
+  float yaw{};            // radians, 0 = facing +Y
+  Red::CString label;     // shown with the prompt; may be empty
+  bool accepted{};        // 2: the answer
+};
+static_assert(alignof(TandemRegroup) <= 8, "the script VM aligns struct locals to 8");
 
 Red::Quaternion ToQuaternion(const proto::Quat &q) { return {q.i, q.j, q.k, q.r}; }
 float YawOfQuaternion(const Red::Quaternion &q) { return sync::YawOf({q.i, q.j, q.k, q.r}); }
@@ -563,6 +579,55 @@ struct TandemNative : Red::IScriptable {
   // The puppet id the controller and tracks know an NPC proxy by.
   static std::uint32_t NpcPuppetId(std::uint32_t npc) { return kNpcPuppetBase + npc; }
 
+  // Fast travel together: offer `to` (0: everyone) to come to us, where we
+  // stand (and at which fast travel point, if any). Answers our offer's id.
+  static std::uint32_t SendRegroup(std::uint32_t to, std::int32_t reason, Red::TweakDBID point,
+                                   Red::NodeRef marker, Red::Vector4 position,
+                                   Red::Quaternion orientation, Red::CString label) {
+    return Runtime::Get().SubmitRegroup(
+        {.to = to,
+         .reason = static_cast<proto::RegroupReason>(std::clamp(reason, 0, 3)),
+         .point = point.value,
+         .marker = marker.hash,
+         .position = {position.X, position.Y, position.Z},
+         .yaw = YawOfQuaternion(orientation),
+         .label = label.c_str()});
+  }
+  // Our answer to player `to`'s offer (offer 0: we come on our own).
+  static void SendRegroupAnswer(std::uint32_t to, std::uint32_t offer, bool accepted) {
+    Runtime::Get().SubmitRegroupAnswer({.to = to, .offer = offer, .accepted = accepted});
+  }
+  // The others' offers and answers since the last call.
+  static Red::DynArray<TandemRegroup> TakeRegroups() {
+    Red::DynArray<TandemRegroup> out;
+    for (const auto &event : Runtime::Get().TakeRegroupEvents()) {
+      TandemRegroup item;
+      item.kind = static_cast<std::int32_t>(event.kind);
+      if (event.kind == RegroupEvent::Kind::Offer) {
+        const auto &o = event.offer;
+        item.player = o.from;
+        item.offer = o.offer;
+        item.reason = static_cast<std::int32_t>(o.reason);
+        item.point = Red::TweakDBID(o.point);
+        item.marker = o.marker;
+        item.x = o.position.x;
+        item.y = o.position.y;
+        item.z = o.position.z;
+        item.yaw = o.yaw;
+        item.label = Red::CString(o.label.c_str());
+      } else {
+        item.player = event.answer.from;
+        item.offer = event.answer.offer;
+        item.accepted = event.answer.accepted;
+      }
+      out.EmplaceBack(std::move(item));
+    }
+    return out;
+  }
+  // A node reference as the number that names it in every game, and back.
+  static std::uint64_t NodeRefHash(Red::NodeRef node) { return node.hash; }
+  static Red::NodeRef NodeRefOf(std::uint64_t hash) { return Red::NodeRef(hash); }
+
   static void Log(Red::CString text) { log::Info("[script] {}", text.c_str()); }
 
   RTTI_IMPL_TYPEINFO(TandemNative);
@@ -596,6 +661,21 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcEvent, "TandemNpcEvent", {
   RTTI_PROPERTY(dx);
   RTTI_PROPERTY(dy);
   RTTI_PROPERTY(dz);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemRegroup, "TandemRegroup", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(offer);
+  RTTI_PROPERTY(reason);
+  RTTI_PROPERTY(point);
+  RTTI_PROPERTY(marker);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+  RTTI_PROPERTY(yaw);
+  RTTI_PROPERTY(label);
+  RTTI_PROPERTY(accepted);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
@@ -681,5 +761,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(PoseBind);
   RTTI_METHOD(PoseLoop);
   RTTI_METHOD(PoseStreamReport);
+  RTTI_METHOD(SendRegroup);
+  RTTI_METHOD(SendRegroupAnswer);
+  RTTI_METHOD(TakeRegroups);
+  RTTI_METHOD(NodeRefHash);
+  RTTI_METHOD(NodeRefOf);
   RTTI_METHOD(Log);
 });
