@@ -544,12 +544,20 @@ redscript natives (UI, events)              ENet socket
     within 30 m of the host in a tier 3+ scene has its weapons lowered, tier
     4+ also invulnerable; a guest further than 100 m from a tier 4+ scene
     gets an offer to join (the regroup itself: TODO).
+  - _Johnny, Songbird, takeovers_ (`research/coop-quests-design.md` §2.11):
+    Johnny and Songbird are NPCs of the host's world, so a guest near the
+    host sees them as proxies where the host does. Johnny's relic glitches
+    and Songbird's glitch effects on the host's V (`StoryEffect`) go onto a
+    guest's V within 30 m while they last. Songbird's calls keep their own
+    widget. The host playing as Johnny (`isReplacer`) or in a braindance
+    counts as a cinematic for the holds and the offer, with a notice. The
+    host's puppet does not yet take Johnny's look.
   - _Rewards_: the host's `OnRewardEvent` goes to the guests that took part
     (within 150 m of the host as the quest moved or completed;
     `story::Participation`); each guest gives its own V the reward
     (`RPGManager.GiveReward`) once, and keeps it in a persistent ledger so
     its own story pays nothing again for it.
-  - Not yet verified in game: scenarios `story-guest`, `story-host`.
+  - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`.
 - **How NPCs see a remote V** (`scripts/tandem/Attitudes.reds`,
   `tweaks/tandem/attitudes.tweak`, `tweaks/tandem/puppet.tweak`): every
   puppet is in an attitude group of its own, `tandem_player_1` to `_3`
