@@ -526,6 +526,7 @@ in-game tests still owed; none of it tested in a session yet):
 | `research/coop-time.md`            | every time dilation, pause and time skip, and the game clock                    |
 | `research/coop-quests-world.md`    | facts, journal, persistent state, weather, police, crowds, saves, rewards       |
 | `research/coop-perks.md`           | every perk tree, relic, cyberware ability and quickhack, by co-op risk          |
+| `research/coop-regions.md`         | players apart: per-player regions, NPC hand-over, world ledger, staged plan     |
 
 - **Scenes for guests.** Replaying the host's quest-scene nodes in a guest's
   game (the campaign fork's approach) is unproven: nodes run outside their
@@ -534,7 +535,8 @@ in-game tests still owed; none of it tested in a session yet):
   locked to the host.
 - **Suppressing guests' own world simulation** (crowds, traffic, encounters,
   quest phases) without breaking systems that expect them.
-- **Region authority** once players spread out.
+- **Region authority** once players spread out (feasibility and a staged
+  plan: `research/coop-regions.md`).
 - **Co-op from the main menu.** Today a session is set up in `tandem.ini`
   (role, address). The goal: a co-op entry in the game's main menu, where a
   player hosts (with one of their saves) or picks whom to join — friends'
