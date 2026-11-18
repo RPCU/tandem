@@ -134,6 +134,8 @@ struct Options {
   // tandem-relay: its address, a host token (host), the session's code (join)
   std::optional<tandem::net::RelayOptions> relay;
   std::string code;
+  // Faults on what we send (docs/ARCHITECTURE.md, Consistency).
+  float drop{}, dup{};
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -236,11 +238,15 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     rewards; format in tools/scenarios/story-host.story)\n"
          "  --answer N         join: answer the host's ringing call after N seconds\n"
          "  --reply HASH       join: reply to a text with this choice entry (journal hash)\n"
-         "  --suggest N        join: suggest option N of every choice hub the host shows\n";
-  "  --sandevistan-at N switch a Sandevistan on N seconds after another player is in\n"
-  "                     the session: the host slows the NPCs around this V\n"
-  "  --sandevistan-for N  --sandevistan-at: switch it off after N seconds (default 5)\n"
-  "  --sandevistan-scale S  --sandevistan-at: the world speed it asks for (default 0.25)\n";
+         "  --suggest N        join: suggest option N of every choice hub the host shows\n"
+         "  --sandevistan-at N switch a Sandevistan on N seconds after another player is in\n"
+         "                     the session: the host slows the NPCs around this V\n"
+         "  --sandevistan-for N  --sandevistan-at: switch it off after N seconds (default 5)\n"
+         "  --sandevistan-scale S  --sandevistan-at: the world speed it asks for (default 0.25)\n"
+         "  --drop P           never send a message with probability P (0..1), reliable ones\n"
+         "                     too, as a bug would lose them: digests and resyncs must heal it\n"
+         "  --dup P            send a state message twice with probability P (0..1): it must\n"
+         "                     be applied once\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -312,7 +318,12 @@ Options Parse(int argc, char **argv) {
       options.pauseAtSeconds = Number<int>(value);
     else if (flag == "--pause-for")
       options.pauseForSeconds = Number<int>(value);
-    else if (flag == "--hack-npcs")
+    else if (flag == "--drop" || flag == "--dup") {
+      const auto p = Number<float>(value);
+      if (!(p >= 0.f && p <= 1.f))
+        Usage(std::format("{} is a probability (0..1), not {}", flag, value));
+      (flag == "--drop" ? options.drop : options.dup) = p;
+    } else if (flag == "--hack-npcs")
       options.hackNpcsSeconds = Number<int>(value);
     else if (flag == "--hack-action")
       options.hackAction = std::string(value);
@@ -929,6 +940,11 @@ int main(int argc, char **argv) {
     std::cerr << "tandem-peer: " << error << '\n';
     return 1;
   }
+  if (options.drop > 0.f || options.dup > 0.f) {
+    endpoint->SetFaults({.drop = options.drop, .dup = options.dup, .seed = std::random_device{}()});
+    Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice",
+        options.drop * 100, options.dup * 100);
+  }
   if (!options.echoLook)
     endpoint->SetLocalAppearance(
         RandomLook(options.body, options.lookSeed.value_or(std::random_device{}())));
@@ -1045,6 +1061,7 @@ int main(int argc, char **argv) {
   const auto interval = std::chrono::microseconds(1'000'000 / options.rateHz);
   auto nextSend = std::chrono::steady_clock::now();
   auto nextReport = nextSend + 5s;
+  int resyncsAsked = 0;
   std::uint64_t heard = 0, heardPoses = 0, heardShots = 0, heardVehicles = 0;
   // --pause-at: when someone else was first there, and how far the pause got.
   std::optional<std::chrono::steady_clock::time_point> togetherSince;
@@ -1236,6 +1253,16 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteTimeEffect>) {
               Log("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
                   e.effect.abilities, e.effect.scale);
+            } else if constexpr (std::is_same_v<E, tandem::events::Resync>) {
+              if (e.player == endpoint->You())
+                Log("resync: asked the host for domains {:#x}", e.domains);
+              else {
+                ++resyncsAsked;
+                Log("resync: player {} asked for domains {:#x}", e.player, e.domains);
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::EpochChanged>) {
+              Log("epoch: player {}'s world was rebuilt (reason {}, epoch {})", e.epoch.player,
+                  e.epoch.reason, e.epoch.epoch);
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
               g_stop = 1;
@@ -1591,6 +1618,9 @@ int main(int argc, char **argv) {
           endpoint->Players().size(), heard, heardPoses, heardShots, heardVehicles,
           stats ? std::format(", rtt {} ms, loss {:.1f}%", stats->rttMs, stats->packetLoss * 100)
                 : "");
+      if (const auto &faults = endpoint->FaultStats(); faults.Active())
+        Log("faults: {} message(s) lost, {} sent twice; {} resync(s) asked of us so far",
+            faults.Dropped(), faults.Duplicated(), resyncsAsked);
     }
   }
 
