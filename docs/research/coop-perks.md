@@ -328,6 +328,10 @@ its own V (`coop-npcs-combat.md` §9.1), and its perks follow. The guest
 sends its V's `Visibility` value and camo state; the host applies them to
 the puppet (`VisibleObjectDetectionMultEvent` on the puppet, `SetInvisible`
 and threat drops for camo). [I]
+Status (2026-11-18, untested in game): the guest's combat state follows
+the host's `detected` bit through the combat controller, and `UI_Stealth`
+follows `NpcAwareness` (engine-knowledge §13.12); `OnBeingNoticed` is not
+queued yet.
 
 ### 2.7 Effects that run inside NPCs run twice
 
@@ -372,6 +376,10 @@ slam's `gamedataStimType.Explosion` broadcast (`558290`),
 game; the host's NPCs never hear a guest (`coop-npcs-combat.md` §9.3).
 **Rule:** the host re-broadcasts a guest's stimuli from its puppet (type,
 radius, position), sent with the shot or action that made them. [I]
+Status (2026-11-18, untested in game): a guest's single broadcasts from
+its V (`StimBroadcasterComponent.TriggerSingleBroadcast`, wrapped) travel
+as `Noise` and are broadcast again from its puppet; projectile and grenade
+explosions are not covered yet.
 
 ---
 
@@ -590,6 +598,11 @@ section adds what makes each one a co-op problem.
   blocker to the puppet and drops the puppet from its NPCs' trackers. The
   other V keeps seeing the puppet with the cloak shader (`cloak_on`), like
   NPCs with `Ability.CanSeeThroughOpticalCamos` (`190103`). [I]
+- Status (2026-11-18, `scripts/tandem/Stealth.reds`, untested in game):
+  `Stealth` carries camo, fully blocking, crouch and `Visibility`; the
+  host turns the puppet's visible object off, applies the camo effect to
+  it and drops it from its NPCs' trackers when blocking
+  (engine-knowledge §13.12).
 
 ### 5.5 Death prevention and defensive cyberware
 

@@ -24,6 +24,10 @@
 // states it hears are logged.
 // Fights: --hit-npcs (join) hits the host's NPCs; --hit-you (host) has one of
 // its NPCs hit every guest's V; a guest logs the NPC hits it receives.
+// Stealth: as host, --npc puts an NPC in front of the guest and --detect-at
+// makes the NPCs it sends notice, detect and lose the guests (NpcAwareness,
+// NpcEntry::detected); --camo turns "its optical camo" on, --shoot (join)
+// fires gunshots its host's NPCs hear. Stealth and noises heard are logged.
 // Body pose: mirror and front echo your V's pose; --pose FILE (a .tpose made by
 // tools/re/pose_export.py from a recording) plays a recorded pose instead, in
 // a loop, with any mode.
@@ -78,11 +82,16 @@ struct Options {
   // host: the world the game follows (time of day, weather name); unset: none sent
   std::optional<int> timeOfDayMinutes;
   std::string weather;
-  std::string recordFile; // join: save the host's NPC messages here
-  std::string replayFile; // host: send a recording's NPC messages again
-  int pauseAtSeconds{-1}; // open the pause menu this long into the session (-1: never)
-  int pauseForSeconds{3}; // ...for this long
-  bool check{};           // parse the options, then exit
+  std::string recordFile;   // join: save the host's NPC messages here
+  std::string replayFile;   // host: send a recording's NPC messages again
+  int pauseAtSeconds{-1};   // open the pause menu this long into the session (-1: never)
+  int pauseForSeconds{3};   // ...for this long
+  std::string npcRecord;    // host: one NPC of this record in front of the guest
+  int detectAtSeconds{-1};  // host: its NPCs detect the guests this long in (-1: never)
+  int detectForSeconds{10}; // ...for this long
+  int camoAtSeconds{-1};    // optical camo on this long into the session, for 5 s
+  int shootSeconds{0};      // join: a gunshot (shot + noise) this often (0: never)
+  bool check{};             // parse the options, then exit
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -154,6 +163,36 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
                "  --pause-at N       open the pause menu N seconds after another player is in the\n"
                "                     session: every game pauses\n"
                "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n";
+  std::cerr
+      << "usage: tandem-peer host [options]\n"
+         "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
+         "  --port N           UDP port (default 27450)\n"
+         "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
+         "  --name NAME        player name (default tandem-peer)\n"
+         "  --body B           female | male: the puppet rig others see (default female)\n"
+         "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
+         "  --delay MS         mirror: extra delay before copying (default 0)\n"
+         "  --rate HZ          states sent per second (default 30)\n"
+         "  --pose FILE        play a recorded body pose (.tpose) in a loop\n"
+         "  --vehicle RECORD   drive: the car's record (default "
+         "Vehicle.v_standard2_archer_hella_player)\n"
+         "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
+         "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
+         "  --time HH:MM       host: the time of day the game must follow\n"
+         "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
+         "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
+         "  --replay FILE      host: send a recording's NPCs again, at its pace (moved by\n"
+         "                     --offset)\n"
+         "  --pause-at N       open the pause menu N seconds after another player is in the\n"
+         "                     session: every game pauses\n"
+         "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n"
+         "  --npc RECORD       host: one NPC of RECORD standing 6 m in front of the guest\n"
+         "  --detect-at N      host: N seconds after a guest is there, the NPCs it sends\n"
+         "                     notice it (meter rising over 2 s), then have detected it\n"
+         "  --detect-for N     --detect-at: and lose it again after N seconds (default 10)\n"
+         "  --camo N           turn optical camo on N seconds after another player is in the\n"
+         "                     session, for 5 seconds\n"
+         "  --shoot N          join: fire a gunshot (shot and noise) every N seconds\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -225,6 +264,16 @@ Options Parse(int argc, char **argv) {
       options.hitNpcsSeconds = Number<int>(value);
     else if (flag == "--hit-you")
       options.hitYouSeconds = Number<int>(value);
+    else if (flag == "--npc")
+      options.npcRecord = std::string(value);
+    else if (flag == "--detect-at")
+      options.detectAtSeconds = Number<int>(value);
+    else if (flag == "--detect-for")
+      options.detectForSeconds = Number<int>(value);
+    else if (flag == "--camo")
+      options.camoAtSeconds = Number<int>(value);
+    else if (flag == "--shoot")
+      options.shootSeconds = std::max(1, Number<int>(value));
     else if (flag == "--drive-seconds")
       options.driveSeconds = Number<int>(value);
     else if (flag == "--radio") {
@@ -578,6 +627,28 @@ int main(int argc, char **argv) {
   std::optional<tandem::proto::NpcId> hitTarget;
   std::set<tandem::proto::NpcId> burnt;
   std::map<tandem::proto::NpcId, std::uint8_t> detection;
+  // Stealth: --npc's NPC (where the guest was first heard), the NPCs last
+  // sent (host), how far each NPC notices us (join), --camo, --shoot.
+  constexpr tandem::proto::NpcId kOwnNpc = 50'000;
+  std::optional<PlayerState> firstRemote;
+  std::optional<tandem::proto::NpcEntry> ownNpc;
+  std::vector<tandem::proto::NpcId> sentNpcs;
+  std::map<tandem::proto::NpcId, int> noticedStep;
+  int detectPhase = 0; // 0 nothing, 1 noticing, 2 detected, 3 lost
+  auto nextNpcState = std::chrono::steady_clock::now();
+  auto nextAwareness = std::chrono::steady_clock::now();
+  int camoStep = 0; // 0 waiting, 1 on, 2 done
+  auto nextShot = std::chrono::steady_clock::now();
+  std::optional<std::chrono::steady_clock::time_point> sharedSince;
+  // --detect-at: while detected, every guest's bit (player - 1).
+  const auto detectedBits = [&]() -> std::uint8_t {
+    std::uint8_t bits = 0;
+    if (detectPhase == 2)
+      for (const auto &[id, info] : endpoint->Players())
+        if (id != endpoint->You() && id >= 1 && id <= 8)
+          bits |= static_cast<std::uint8_t>(1u << (id - 1));
+    return bits;
+  };
   auto nextHit = std::chrono::steady_clock::now();
   auto nextHitYou = std::chrono::steady_clock::now() + std::chrono::seconds(options.hitYouSeconds);
   std::set<tandem::proto::NpcId> replayedNpcs; // host: the replay's live NPCs
@@ -626,6 +697,27 @@ int main(int argc, char **argv) {
             else if constexpr (std::is_same_v<E, tandem::events::RemoteState>) {
               ++heard;
               puppeteer.Heard(e.state);
+              if (!firstRemote)
+                firstRemote = e.state;
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteStealth>) {
+              Log("player {} stealth: flags {:#x}, visibility {:.2f}, camo {:#x}", e.stealth.player,
+                  e.stealth.flags, e.stealth.visibility, e.stealth.camo);
+            } else if constexpr (std::is_same_v<E, tandem::events::NoiseBy>) {
+              Log("player {} noise: stim {}, radius {:.0f}", e.noise.player, e.noise.stim,
+                  e.noise.radius);
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcAwareness>) {
+              // How far each NPC notices us, in quarters, when it changes.
+              std::map<tandem::proto::NpcId, int> now;
+              for (const auto &entry : e.awareness.entries)
+                if (entry.player == endpoint->You())
+                  now[entry.npc] = entry.level * 4 / 255;
+              for (const auto &[npc, step] : now)
+                if (noticedStep[npc] != step)
+                  Log("npc {} notices us: {}%", npc, step * 25);
+              for (const auto &[npc, step] : noticedStep)
+                if (step && !now.contains(npc))
+                  Log("npc {} notices us: 0%", npc);
+              noticedStep = std::move(now);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteAppearance>) {
               Log("look from player {}: {} keys, {} items", e.appearance.player,
                   e.appearance.look.size(), e.appearance.items.size());
@@ -824,6 +916,81 @@ int main(int argc, char **argv) {
                                                               .direction = {0.f, 1.f, 0.f}}))
           Log("npc {} hit player {} for 10 physical", shooter, id);
     }
+    // Seconds since another player was first in the session with us.
+    if (!sharedSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
+      sharedSince = now;
+    const double shared =
+        sharedSince ? std::chrono::duration<double>(now - *sharedSince).count() : -1.0;
+    // --detect-at: the host's NPCs notice the guests (2 s), have detected
+    // them (--detect-for s), then lose them.
+    if (options.host && options.detectAtSeconds >= 0 && shared >= 0.0) {
+      const double at = options.detectAtSeconds;
+      const int phase = shared < at                                    ? 0
+                        : shared < at + 2.0                            ? 1
+                        : shared < at + 2.0 + options.detectForSeconds ? 2
+                                                                       : 3;
+      if (phase != detectPhase) {
+        detectPhase = phase;
+        constexpr const char *kPhases[] = {"", "notice", "have detected", "lost"};
+        Log("npcs {} the guests", kPhases[phase]);
+      }
+      if (now >= nextAwareness) {
+        nextAwareness = now + 200ms;
+        const auto level = phase == 1   ? static_cast<std::uint8_t>((shared - at) / 2.0 * 255.0)
+                           : phase == 2 ? std::uint8_t{255}
+                                        : std::uint8_t{0};
+        tandem::proto::NpcAwareness awareness;
+        auto npcs = sentNpcs;
+        if (ownNpc)
+          npcs.push_back(ownNpc->npc);
+        for (const auto npc : npcs)
+          for (const auto &[id, info] : endpoint->Players())
+            if (id != endpoint->You() && level > 0 &&
+                awareness.entries.size() < tandem::proto::kMaxNpcAwareness)
+              awareness.entries.push_back({.npc = npc, .player = id, .level = level});
+        endpoint->SendNpcAwareness(std::move(awareness));
+      }
+    }
+    // --npc: one NPC standing 6 m in front of where the guest was first
+    // heard, facing it, its states at 10 Hz (with the replay's, if any).
+    if (options.host && !options.npcRecord.empty() && firstRemote && shared >= 0.0) {
+      if (!ownNpc) {
+        const float yaw = tandem::sync::YawOf(firstRemote->orientation);
+        const Vec3 at{firstRemote->position.x - std::sin(yaw) * 6.f,
+                      firstRemote->position.y + std::cos(yaw) * 6.f, firstRemote->position.z};
+        ownNpc = tandem::proto::NpcEntry{
+            .npc = kOwnNpc, .position = at, .yaw = yaw + std::numbers::pi_v<float>};
+        endpoint->SendNpcSpawn({.npc = kOwnNpc,
+                                .record = TweakDBID(options.npcRecord),
+                                .position = at,
+                                .yaw = ownNpc->yaw});
+        Log("npc {}: {} in front of player {}", kOwnNpc, options.npcRecord, firstRemote->player);
+      }
+      ownNpc->detected = detectedBits();
+      if (replay.empty() && now >= nextNpcState) {
+        nextNpcState = now + 100ms;
+        endpoint->SendNpcStates({.npcs = {*ownNpc}});
+      }
+    }
+    // --camo: our optical camo on for 5 s.
+    if (options.camoAtSeconds >= 0 && shared >= 0.0 && camoStep < 2) {
+      if (camoStep == 0 && shared >= options.camoAtSeconds) {
+        endpoint->SetLocalStealth({.flags = tandem::proto::kStealthCamo, .visibility = 0.2f});
+        camoStep = 1;
+        Log("optical camo on");
+      } else if (camoStep == 1 && shared >= options.camoAtSeconds + 5) {
+        endpoint->SetLocalStealth({.flags = 0, .visibility = 1.f});
+        camoStep = 2;
+        Log("optical camo off");
+      }
+    }
+    // --shoot: a gunshot, seen (Shot) and heard (Noise, gamedataStimType.Gunshot 28).
+    if (options.shootSeconds && !options.host && endpoint->IsJoined() && now >= nextShot) {
+      nextShot = now + std::chrono::seconds(options.shootSeconds);
+      endpoint->SendLocalShot({.hand = tandem::proto::Hand::Right, .effect = 16});
+      endpoint->SendNoise({.stim = 28, .radius = 25.f});
+      Log("gunshot");
+    }
     // Replay, once someone is there to see it, at the recording's pace.
     if (options.host && replayNext < replay.size() && endpoint->Players().size() > 1) {
       const auto nowUs = tandem::net::NowUs();
@@ -845,8 +1012,14 @@ int main(int argc, char **argv) {
         } else if (auto *states = std::get_if<tandem::proto::NpcStates>(&message)) {
           std::erase_if(states->npcs,
                         [&](const auto &entry) { return deadNpcs.contains(entry.npc); });
-          for (auto &entry : states->npcs)
+          sentNpcs.clear();
+          for (auto &entry : states->npcs) {
             shift(entry.position);
+            entry.detected |= detectedBits();
+            sentNpcs.push_back(entry.npc);
+          }
+          if (ownNpc)
+            states->npcs.push_back(*ownNpc);
           endpoint->SendNpcStates(*states);
         } else if (const auto *gone = std::get_if<tandem::proto::NpcGone>(&message)) {
           replayedNpcs.erase(gone->npc);

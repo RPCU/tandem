@@ -119,6 +119,18 @@ struct Ended {
 struct RemoteVehicleRadio {
   proto::VehicleRadio radio;
 };
+// Another player's stealth changed (camo, visibility, crouch).
+struct RemoteStealth {
+  proto::Stealth stealth;
+};
+// How far the host's NPCs are in noticing each guest (guests only).
+struct HostNpcAwareness {
+  proto::NpcAwareness awareness;
+};
+// A guest's V made a noise for our NPCs to hear (host only).
+struct NoiseBy {
+  proto::Noise noise;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -134,7 +146,8 @@ using SessionEvent =
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
                  events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
                  events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
-                 events::HitByNpc>;
+                 events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness,
+                 events::NoiseBy>;
 
 class Endpoint {
 public:
@@ -181,6 +194,13 @@ public:
   void SetLocalPaused(bool paused);
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
+  // How hard our V is to see (kept: sent now if we are in the session, else
+  // as soon as we are; the host hands everyone's to late joiners).
+  void SetLocalStealth(proto::Stealth stealth);
+  // Host only: how far its NPCs are in noticing each guest.
+  void SendNpcAwareness(proto::NpcAwareness awareness);
+  // Guest only: a noise our V made, for the host's NPCs.
+  void SendNoise(const proto::Noise &noise);
 
   // Time on the host's clock (the session's shared timeline).
   std::uint64_t HostNowUs() const { return net::NowUs() + m_clockOffsetUs; }
@@ -253,6 +273,12 @@ private:
   void SendLocalPausedNow();
   // Records a player's pause state; false when it did not change.
   bool NotePaused(proto::PlayerId player, bool paused);
+  // Our stealth, and (host) everyone's latest, for late joiners.
+  std::optional<proto::Stealth> m_localStealth;
+  std::uint32_t m_stealthRevision{};
+  std::map<proto::PlayerId, proto::Stealth> m_stealth;
+  void SendLocalStealthNow();
+  std::uint32_t m_awarenessSeq{};
   bool m_ended{};
 };
 } // namespace tandem

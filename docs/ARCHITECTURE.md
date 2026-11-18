@@ -544,6 +544,12 @@ game thread stop). Each feature verified in game gets a scenario.
 - **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s;
   `host --hit-you N` has one of its NPCs (a replayed one if any) hit every
   guest's V for 10 physical every N s; a guest logs the NPC hits it gets.
+- **Stealth** (any mode): as host, `--npc RECORD` stands an NPC 6 m in
+  front of the guest and `--detect-at N [--detect-for M]` makes the NPCs
+  it sends notice the guests (meter rising over 2 s), detect them for M s
+  (default 10), then lose them; `--camo N` turns "its optical camo" on for
+  5 s; as guest, `--shoot N` fires a gunshot (shot and noise) every N s.
+  Stealth, noises and the host's awareness of it are logged.
 - **NPC record and replay** (first piece of the simulated second game):
   `join --record FILE` saves the host's `NpcSpawn`/`NpcStates`/`NpcGone`
   with their times; `host --replay FILE [--offset X,Y,Z]` sends them again
@@ -748,17 +754,38 @@ in-game tests still owed; none of it tested in a session yet):
   measures each NPC's detection of every V (its own, and each guest's
   puppet: `SenseComponent.GetDetection`, the NPC's threats) and sends it
   per player: `NpcEntry::detected` has a bit per player for "has detected
-  them", and a per-player detection level for the meter is to come. A
-  guest's game drives its own V from that: the stealth meter and the
-  detection indicators over the proxies, its combat state (which decides
-  stealth bonuses, `AttackData.IsPlayerInCombat`, and combat-only perks),
-  and its music. Blocker found (engine-knowledge §13.11): the host's NPCs
-  do not see puppets at all (detection 0, injected threats ignored), so
-  they cannot detect or fight a guest yet. Puppets need the components NPC
-  senses look for; they must keep an attitude group of their own (in
-  `player`, hostility to one V becomes hostility to all): each puppet now
-  has one (`tandem_player_N`, Attitudes.reds), so hostility to one guest's
-  V reaches neither the host's V nor another guest's.
+  them" (full detection meter, or in combat with them as a hostile threat:
+  `NPCPuppet.IsInCombatWithTarget`), and `NpcAwareness` (5 Hz) the level
+  of each NPC's meter for each guest it is noticing. A guest's game drives
+  its own V from that (`scripts/tandem/Stealth.reds`): while any host NPC
+  has detected it, its V is "tracked as hostile" through the game's own
+  switch (the player combat controller's `OnStartedBeingTrackedAsHostile`,
+  the call a local NPC's target tracker makes), so the PSM combat state
+  and everything on it follow: combat music and HUD, the fast travel lock,
+  stealth bonuses (`AttackData.IsPlayerInCombat`), combat-only perks; it
+  leaves combat the same way when no host NPC has it any more (a local
+  tracker, if any, keeps it in). The awareness levels drive the stealth
+  meter: `UI_Stealth.highestDetectionOnPlayer` (what the detection perks
+  listen to), each proxy's detection percentage, and the proxy's sense
+  mappin (the indicator over an NPC) while it notices us. What host NPCs
+  know of another V never counts. Not yet verified in game (scenario
+  `stealth-guest`; whether the native meter draws a proxy's level is open).
+  The other way, **a guest's stealth reaches the host's NPCs**: every game
+  sends its V's optical camo (the camo status effect, the relic's fully
+  blocking state), its `Visibility` stat and whether it crouches as
+  `Stealth` (reliable, kept for late joiners); the host puts it on the
+  puppet where its NPC senses look (camo: the grafted visible object off,
+  and the camo effect itself, which every game also shows; the visibility
+  as the detection multiplier; crouch height for the visible point; fully
+  blocking: its NPCs drop the puppet as a threat). A guest's noises (every
+  stimulus its V broadcasts: gunshots, silenced shots…) go to the host as
+  `Noise` and are broadcast again from its puppet. Grenade and other
+  projectile explosions are broadcast by the projectile, not the V: still
+  open. Not yet verified in game (scenario `stealth-host`). Puppets keep
+  an attitude group of their own (in `player`, hostility to one V becomes
+  hostility to all): each puppet has one (`tandem_player_N`,
+  Attitudes.reds), so hostility to one guest's V reaches neither the
+  host's V nor another guest's.
 - **Every way a V moves, on the puppet.** Walking on flat ground works; the
   rest must too: stairs and slopes, ladders, climbing and vaulting
   (mantling ledges), jumps and double jumps, falls and landings, sliding,

@@ -1959,3 +1959,81 @@ guests' skill XP. None of it run in game yet.
   (21851) only to a `PlayerPuppet` killer; `FindAndRewardKiller` (12550)
   uses the damage history, else the `Kill` instigator. No other kill XP is
   given in scripts. [2.5-untested]
+
+### 13.12 Combat state, detection and stealth for a guest (2026-11-18, scripts only)
+
+Read in the 2.50 scripts (`final.reds` line numbers); none of it tried in
+game yet. Used by `scripts/tandem/Stealth.reds`.
+
+- **What puts V in combat.** `PlayerCombatController` (242633) keeps flags
+  (crouch, `m_isTracked`, quickhack, Johnny) and `VerifyActivation`
+  (242719) picks a state: tracked → `ActivateCombat` (242876: PSM
+  blackboard `PlayerStateMachine.Combat` = 1, `AnimFeature_CombatState`,
+  `FastTravelSystem.AddFastTravelLock(n"InCombat")`, combat chatter,
+  `NotifyGameTone(n"EnterCombat")`, `HandleCombatMix`); crouched and not
+  tracked → stealth (3); neither → out of combat (2, `LeaveCombat` tone,
+  lock removed). `m_isTracked` is set only by
+  `OnStartedBeingTrackedAsHostile` / `OnStoppedBeingTrackedAsHostile`
+  (242808-242816), public, the event argument unused; `PlayerPuppet`
+  forwards the native AI events `StartedBeingTrackedAsHostile` /
+  `StoppedBeingTrackedAsHostile` (importonly, 315706-315709) to them
+  (46292-46298). `PlayerPuppet.OnCombatStateChanged` (43634) listens to
+  the PSM value and sets `m_inCombat` (`IsInCombat()`, 45377), the perk
+  blackboard's `CombatStateTime`, `UpdateVisibility`.
+  `AttackData.IsPlayerInCombat` (52593) reads the PSM value directly.
+  Tandem's guest calls the two controller functions from an `@addMethod`
+  on `PlayerPuppet` (the controller is the private `m_combatController`),
+  with `null` for the event, and wraps the `PlayerPuppet` callbacks so a
+  local "stopped" does not end a combat the host's NPCs still hold.
+  [2.5-untested]
+- **NPC side of "in combat with V".** `NPCPuppet.IsInCombatWithTarget(npc,
+target)` (130026): high-level state Combat and the target tracker's
+  threat for the target is `Hostile`. The host ORs it with
+  `GetDetection >= 100` for `NpcEntry::detected`. [2.5-untested]
+- **The stealth meter.** The HUD meter and the detection perks read the
+  `UI_Stealth` blackboard (`highestDetectionOnPlayer`,
+  `highestHostileDetectionOnPlayer`, 243024; `DetectionMeterEffector`
+  300783 stacks an effect per `detectionStep`), written by the engine.
+  The indicator over an NPC is its sense component's `StealthMappin`
+  (`CreateSenseMappin`, 155542); `StealthMappinController.OnUpdate`
+  (406522) takes the level from the native `GetDetectionProgress()`, not
+  from script. `NPCPuppet.SetDetectionPercentage` (125823) writes
+  `PuppetState.DetectionPercentage`, which some effectors compare
+  (313954). Tandem writes the blackboard (scale assumed 0..100, as
+  `GetDetection`) and each proxy's percentage, and creates the proxy's
+  sense mappin while it notices us. To check in game: whether the engine
+  overwrites the blackboard every frame, and what a proxy's mappin shows
+  with its senses off (likely no progress: then the per-proxy meter needs
+  native work). [2.5-untested]
+- **What NPC senses see of V.** V's visible object is the
+  `senseVisibleObject` component (ScriptedPuppet 19809;
+  `GetVisibleObjectComponent`). `PlayerPuppet.SetInvisible` (43505)
+  toggles it (`IsInvisible`). `UpdateVisibilityModifier` (40819) queues
+  `VisibleObjectDetectionMultEvent{multiplier = Visibility stat}` on V;
+  `UpdateSecondaryVisibilityOffset` (43599) queues
+  `VisibleObjectSecondaryPositionEvent` with Z
+  `player.stealth.crouchVisibilityZOffset` (0.6) crouched or
+  `chestVisibilityZOffset` (1.3). Tandem queues the same events on a
+  puppet and toggles its grafted `senseVisibleObjectComponent` (§13.11)
+  for camo. [2.5-untested]
+- **Optical camo.** Status effects tagged `CamoActiveOnPlayer` (269230)
+  or `ActiveCamo` (44019). Their `AttachOpticalCamoVisionBlockerEffector`
+  (249803, an `AttachCapsuleVisionBlockerEffector` 249727) registers a
+  capsule vision blocker on the owner with the sense manager's
+  `VisionBlockersRegistrar`. With the relic
+  (`CanPlayerExitCombatWithOpticalCamo`, 44019-44056) in combat:
+  `SetInvisible(true)`, each hostile threat's tracker
+  `DeactivateThreat(V)`, `ExitCombatOnOpticalCamoActivatedEvent` later.
+  Tandem applies the V's camo effect to its puppet (owner: the puppet) for
+  the look and the blocker; whether a player camo effect runs on an NPC
+  body is to check. [2.5-untested]
+- **Stimuli.** `StimBroadcasterComponent.TriggerSingleBroadcast(contextOwner,
+type, radius, investigateData, propagationChange)` (149948) is how V's
+  shots are heard (`ShootEvents.OnEnter` 548102: `Gunshot` at 25 m indoors
+  or `GetGunshotRange()`, `SilencedGunshot` + `IllegalAction` when
+  silenced; muzzle brake: none). With no broadcaster on an entity,
+  `StimBroadcasterComponentHelper.CreateStimEvent` +
+  `ProcessSingleStimuliBroadcast` (150609) do the same. `gamedataStimType`
+  values: `Explosion` 24, `Gunshot` 28, `SilencedGunshot` 49. Grenades
+  broadcast from the projectile (`Explosion`, 127920), not from V.
+  [2.5-untested]

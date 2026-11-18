@@ -45,6 +45,16 @@ void Runtime::Stop() {
     m_npcOutbox.clear();
     m_npcStates.reset();
     m_npcEvents.clear();
+    m_npcDetected.clear();
+    m_detectingUs = 0;
+    m_npcStatesAtUs = 0;
+    m_awarenessOfUs.clear();
+    m_awarenessAtUs = 0;
+    m_localAwareness.reset();
+    m_localStealth.reset();
+    m_stealth.clear();
+    m_localNoises.clear();
+    m_remoteNoises.clear();
     m_localPaused.reset();
     // Nobody pauses us any more: the change count moves so scripts let go.
     if (!m_remotePaused.empty()) {
@@ -391,11 +401,20 @@ std::vector<NpcEvent> Runtime::TakeNpcEvents() {
   return std::exchange(m_npcEvents, {});
 }
 
-void Runtime::PushNpcStates(const proto::NpcStates &states) {
+void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you) {
   {
+    // The states list every NPC the host shares: who is not in them
+    // detects nobody any more.
     std::lock_guard _(m_lock);
-    for (const auto &entry : states.npcs)
+    m_npcDetected.clear();
+    m_detectingUs = 0;
+    const auto ours = you >= 1 && you <= 8 ? static_cast<std::uint8_t>(1u << (you - 1)) : 0;
+    for (const auto &entry : states.npcs) {
       m_npcDetected[entry.npc] = entry.detected;
+      if (entry.detected & ours)
+        ++m_detectingUs;
+    }
+    m_npcStatesAtUs = HostNowUs();
   }
   // Each NPC is a track of its own, drawn like a remote player.
   for (const auto &entry : states.npcs) {
@@ -407,6 +426,93 @@ void Runtime::PushNpcStates(const proto::NpcStates &states) {
     state.orientation = sync::FromYaw(entry.yaw);
     PushRemote(state);
   }
+}
+
+std::int32_t Runtime::NpcsDetectingUs() {
+  const auto now = HostNowUs();
+  std::lock_guard _(m_lock);
+  // The host went quiet (or left): nobody can be hunting us on its say.
+  // (Signed: the clock offset may move a stamp a little into the future.)
+  return !m_npcStatesAtUs || static_cast<std::int64_t>(now - m_npcStatesAtUs) > 3'000'000
+             ? 0
+             : m_detectingUs;
+}
+
+float Runtime::NpcAwarenessOfUs(proto::NpcId npc) {
+  const auto now = HostNowUs();
+  std::lock_guard _(m_lock);
+  if (!m_awarenessAtUs || static_cast<std::int64_t>(now - m_awarenessAtUs) > 1'000'000)
+    return 0.f;
+  const auto it = m_awarenessOfUs.find(npc);
+  return it == m_awarenessOfUs.end() ? 0.f : it->second;
+}
+
+void Runtime::PushNpcAwareness(const proto::NpcAwareness &awareness, proto::PlayerId you) {
+  std::lock_guard _(m_lock);
+  m_awarenessOfUs.clear();
+  for (const auto &entry : awareness.entries)
+    if (entry.player == you)
+      m_awarenessOfUs[entry.npc] = static_cast<float>(entry.level) / 255.f;
+  m_awarenessAtUs = HostNowUs();
+}
+
+void Runtime::SubmitNpcAwareness(proto::NpcAwareness awareness) {
+  std::lock_guard _(m_lock);
+  m_localAwareness = std::move(awareness);
+}
+
+std::optional<proto::NpcAwareness> Runtime::TakeNpcAwareness() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localAwareness, std::nullopt);
+}
+
+void Runtime::SubmitLocalStealth(const proto::Stealth &stealth) {
+  std::lock_guard _(m_lock);
+  m_localStealth = stealth;
+}
+
+std::optional<proto::Stealth> Runtime::TakeLocalStealth() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localStealth, std::nullopt);
+}
+
+void Runtime::PushRemoteStealth(const proto::Stealth &stealth) {
+  std::lock_guard _(m_lock);
+  auto &[changes, latest] = m_stealth[stealth.player];
+  ++changes;
+  latest = stealth;
+}
+
+std::optional<proto::Stealth> Runtime::RemoteStealth(proto::PlayerId player,
+                                                     std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  const auto it = m_stealth.find(player);
+  changes = it == m_stealth.end() ? 0 : it->second.first;
+  if (it == m_stealth.end())
+    return std::nullopt;
+  return it->second.second;
+}
+
+void Runtime::SubmitLocalNoise(const proto::Noise &noise) {
+  std::lock_guard _(m_lock);
+  if (m_localNoises.size() < 32)
+    m_localNoises.push_back(noise);
+}
+
+std::vector<proto::Noise> Runtime::TakeLocalNoises() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localNoises, {});
+}
+
+void Runtime::PushRemoteNoise(const proto::Noise &noise) {
+  std::lock_guard _(m_lock);
+  if (m_remoteNoises.size() < 64)
+    m_remoteNoises.push_back(noise);
+}
+
+std::vector<proto::Noise> Runtime::TakeRemoteNoises() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_remoteNoises, {});
 }
 
 void Runtime::PushRemotePose(const proto::PoseState &pose) {
@@ -458,6 +564,7 @@ void Runtime::ForgetRemote(proto::PlayerId player) {
     m_held.erase(player);
     m_seats.erase(player);
     m_radios.erase(player);
+    m_stealth.erase(player);
   }
   {
     std::lock_guard _(m_tracksLock);

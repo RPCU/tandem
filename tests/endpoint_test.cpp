@@ -695,3 +695,77 @@ TEST_CASE("a live player cannot be replaced by a namesake") {
   CHECK(a->IsJoined());
   CHECK(host->Players().size() == 3);
 }
+
+TEST_CASE(
+    "a guest's stealth reaches everyone, stamped, late joiners too; its noise only the host") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  // Set before joining: sent once in.
+  guest->SetLocalStealth(
+      {.player = 99, .flags = proto::kStealthCamo, .visibility = 0.5f, .camo = 0x77});
+  std::optional<proto::Stealth> atHost;
+  std::optional<proto::Noise> noise;
+  bool noiseSent = false;
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1 && guest->IsJoined() && !noiseSent) {
+      guest->SendNoise({.player = 99, .stim = 23, .radius = 25.f});
+      noiseSent = true;
+    }
+    for (const auto &event : events) {
+      if (const auto *s = std::get_if<events::RemoteStealth>(&event); s && i == 0)
+        atHost = s->stealth;
+      if (const auto *n = std::get_if<events::NoiseBy>(&event); n && i == 0)
+        noise = n->noise;
+    }
+    return atHost && noise;
+  }));
+  CHECK(atHost->player == guest->You()); // a guest can't hide someone else
+  CHECK(atHost->flags == proto::kStealthCamo);
+  CHECK(atHost->visibility == 0.5f);
+  CHECK(atHost->camo == 0x77);
+  CHECK(noise->player == guest->You());
+  CHECK(noise->stim == 23);
+
+  // A later guest gets the first one's stealth; the noise was never relayed.
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::optional<proto::Stealth> atLate;
+  bool lateHeardNoise = false;
+  Pump({host.get(), guest.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (i == 2) {
+        if (const auto *s = std::get_if<events::RemoteStealth>(&event))
+          atLate = s->stealth;
+        lateHeardNoise |= std::holds_alternative<events::NoiseBy>(event);
+      }
+    return atLate.has_value();
+  });
+  REQUIRE(atLate);
+  CHECK(atLate->player == guest->You());
+  CHECK(atLate->flags == proto::kStealthCamo);
+  CHECK_FALSE(lateHeardNoise);
+
+  // The host's NPCs' awareness reaches the guests; a guest cannot send any.
+  guest->SendNpcAwareness({.entries = {{.npc = 1, .player = 1, .level = 9}}});
+  host->SendNpcAwareness({.entries = {{.npc = 7, .player = guest->You(), .level = 200}}});
+  std::optional<proto::NpcAwareness> awareness;
+  bool hostHeardAwareness = false;
+  Pump({host.get(), guest.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *a = std::get_if<events::HostNpcAwareness>(&event)) {
+        if (i == 1)
+          awareness = a->awareness;
+        hostHeardAwareness |= i == 0;
+      }
+    return awareness.has_value();
+  });
+  REQUIRE(awareness);
+  REQUIRE(awareness->entries.size() == 1);
+  CHECK(awareness->entries[0].npc == 7);
+  CHECK(awareness->entries[0].level == 200);
+  CHECK_FALSE(hostHeardAwareness);
+}

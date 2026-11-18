@@ -166,7 +166,30 @@ public:
   std::optional<proto::NpcStates> TakeNpcStates();
   void PushNpcEvent(const NpcEvent &event);
   std::vector<NpcEvent> TakeNpcEvents();
-  void PushNpcStates(const proto::NpcStates &states);
+  // Guest: `you` is our player id (whose detection counts for our V).
+  void PushNpcStates(const proto::NpcStates &states, proto::PlayerId you);
+
+  // Each player is detected on their own (docs/ARCHITECTURE.md). Guest: how
+  // many of the host's NPCs have detected our V (0 once the host's states
+  // are 3 s old), and how far an NPC is in noticing it (0..1; 0 once 1 s
+  // old). Host: its NPCs' awareness of the guests, game -> net (newest).
+  std::int32_t NpcsDetectingUs();
+  float NpcAwarenessOfUs(proto::NpcId npc);
+  void PushNpcAwareness(const proto::NpcAwareness &awareness, proto::PlayerId you);
+  void SubmitNpcAwareness(proto::NpcAwareness awareness);
+  std::optional<proto::NpcAwareness> TakeNpcAwareness();
+
+  // How hard our V is to see, game -> net (newest only); the others',
+  // net -> game (latest + count). Our V's noises (queued, guest -> host);
+  // a guest's noises for our NPCs (queued, host).
+  void SubmitLocalStealth(const proto::Stealth &stealth);
+  std::optional<proto::Stealth> TakeLocalStealth();
+  void PushRemoteStealth(const proto::Stealth &stealth);
+  std::optional<proto::Stealth> RemoteStealth(proto::PlayerId player, std::uint32_t &changes);
+  void SubmitLocalNoise(const proto::Noise &noise);
+  std::vector<proto::Noise> TakeLocalNoises();
+  void PushRemoteNoise(const proto::Noise &noise);
+  std::vector<proto::Noise> TakeRemoteNoises();
 
   // Net thread writes remote states; the animation thread and scripts read views.
   void PushRemote(const proto::PlayerState &state);
@@ -237,11 +260,19 @@ private:
 
   std::atomic<std::int64_t> m_clockOffsetUs{0};
   std::atomic<std::uint64_t> m_lastFrameUs{0};
-  std::map<proto::NpcId, std::uint8_t> m_npcDetected; // under m_lock
-  std::optional<bool> m_localPaused;                  // m_lock
-  std::vector<proto::PlayerId> m_remotePaused;        // m_lock
-  std::uint32_t m_remotePausedChanges{};              // m_lock
-  std::map<proto::PlayerId, std::string> m_names;     // m_lock
+  std::map<proto::NpcId, std::uint8_t> m_npcDetected;  // under m_lock
+  std::int32_t m_detectingUs{};                        // m_lock
+  std::uint64_t m_npcStatesAtUs{};                     // m_lock (host clock)
+  std::map<proto::NpcId, float> m_awarenessOfUs;       // m_lock
+  std::uint64_t m_awarenessAtUs{};                     // m_lock (host clock)
+  std::optional<proto::NpcAwareness> m_localAwareness; // m_lock
+  std::optional<proto::Stealth> m_localStealth;        // m_lock
+  std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Stealth>> m_stealth; // m_lock
+  std::vector<proto::Noise> m_localNoises, m_remoteNoises;                       // m_lock
+  std::optional<bool> m_localPaused;                                             // m_lock
+  std::vector<proto::PlayerId> m_remotePaused;                                   // m_lock
+  std::uint32_t m_remotePausedChanges{};                                         // m_lock
+  std::map<proto::PlayerId, std::string> m_names;                                // m_lock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin

@@ -96,6 +96,32 @@ TEST_CASE("a car's radio is a small reliable event") {
   CHECK(IsReliable(VehicleRadio{}));
   CHECK(std::string_view(NameOf(VehicleRadio{})) == "VehicleRadio");
   CHECK(Encode(VehicleRadio{}).size() < 64);
+  RoundTrips(NpcAwareness{
+      .seq = 3,
+      .timeUs = 7'000'000,
+      .entries = {{.npc = 7, .player = 2, .level = 128}, {.npc = 9, .player = 3, .level = 255}}});
+  RoundTrips(Stealth{.player = 2,
+                     .revision = 4,
+                     .flags = kStealthCamo | kStealthCrouch,
+                     .visibility = 0.35f,
+                     .camo = 0x1a2b3c4d5eULL});
+  RoundTrips(Noise{.player = 2, .stim = 23, .radius = 25.f, .propagation = true});
+  CHECK(std::string(NameOf(Noise{})) == "Noise");
+  CHECK(std::string(NameOf(NpcAwareness{})) == "NpcAwareness");
+  CHECK(std::string(NameOf(Stealth{})) == "Stealth");
+}
+
+TEST_CASE("stealth travels reliably, awareness and noise as state") {
+  CHECK(ChannelOf(NpcAwareness{}) == Channel::State);
+  CHECK(ChannelOf(Noise{}) == Channel::State);
+  CHECK(ChannelOf(Stealth{}) == Channel::Event);
+  CHECK(IsReliable(Stealth{}));
+  NpcAwareness crowd;
+  crowd.entries.resize(kMaxNpcAwareness);
+  CHECK(Encode(crowd).size() < 1400); // one datagram
+  crowd.entries.resize(kMaxNpcAwareness + 1);
+  CHECK_FALSE(Decode(Encode(crowd)).has_value());
+  CHECK(Encode(Noise{}).size() < 32);
 }
 
 TEST_CASE("an appearance past its limits is refused") {
