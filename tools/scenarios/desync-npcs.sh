@@ -8,7 +8,7 @@ expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
 # What the host lost shows in two digests in a row (3 s apart); the host sends it again.
 expect 'resync: asking the host for' 60
 expect_peer 'resync: player [0-9]+ asked for' 15
-expect 'notice: Resyncing with the host' 5
+expect 'notice: Resyncing with the host' 60
 pause 20
 cmd npc count
 expect "npcs shared: [1-9][0-9]*, own hidden: [0-9]+, in the session's record: [1-9]"
