@@ -773,6 +773,7 @@ hand).
 | via relay   | a real relay process: join by code, fallback from direct, mock players     | `task test` (`relay-loopback`)    |
 | mock player | `tandem-peer` as host or guest against the real game                       | `task peer -- host --mode mirror` |
 | natives     | `Natives.reds`/`StoryNatives.reds` match `natives.cpp`/`story_natives.cpp` | `task natives:check`              |
+| scripts     | `scripts/tandem` compiles with the game's redscript, bundle and mods       | `task scripts:check`              |
 | scenarios   | the real game against the mock player, checked on the game's log           | `task scenario -- all`            |
 | in game     | deploy the DLL, read its log                                               | `task deploy`, `task logs`        |
 
