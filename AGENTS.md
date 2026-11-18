@@ -20,7 +20,7 @@ tests/         doctest tests of core/ (Linux)
 relay/         tandem-relay (Go, stdlib only): cmd/tandem-relay, internal/relay
 nix/           relay package and OCI image; default.nix exposes them
 deploy/        kubernetes/base: kustomize base for the relay
-scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp, StoryNatives.reds story_natives.cpp)
+scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp, StoryNatives.reds story_natives.cpp, SyncNatives.reds sync_natives.cpp)
 tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet records, their attitude groups, the player marker)
 dist/          files installed next to the DLL (tandem.ini)
 cmake/         clang-cl-msvc.cmake: the Windows cross toolchain
@@ -92,6 +92,12 @@ K7Q-2M9 --relay 127.0.0.1`. `task test` does the same (`relay-loopback`,
   `kProtocolVersion`. Add the message to `NameOf`, decide its channel in
   `ChannelOf`, and add a round-trip case to `tests/protocol_test.cpp`.
 - High-rate messages stay small (`PlayerState` < 64 bytes is tested).
+- Shared state stays consistent (`docs/ARCHITECTURE.md`, Consistency): a
+  state message must be idempotent (the receiver drops a repeat), and a new
+  domain of host-owned state goes into the host's digests and its resync
+  (`Endpoint::DigestFor`, `SendDomainsTo`). A one-shot event (a hit, a
+  reward) is listed in `consistency::IsOneShot`; a time-sensitive one the
+  game queues gets an age limit (`consistency::DropStale`).
 - Absolute times are `uint64_t` microseconds on the host clock; never store
   them in a float.
 
@@ -111,7 +117,8 @@ K7Q-2M9 --relay 127.0.0.1`. `task test` does the same (`relay-loopback`,
 - Use `__builtin_offsetof` in `static_assert`s: the MSVC CRT's `offsetof` is
   not a constant expression under clang.
 - `scripts/tandem/Natives.reds` must match `plugin/src/natives.cpp` exactly
-  (and `StoryNatives.reds` `story_natives.cpp`; `task natives:check` reads both).
+  (and `StoryNatives.reds` `story_natives.cpp`, `SyncNatives.reds`
+  `sync_natives.cpp`; `task natives:check` reads every pair).
   A redscript compile error disables **every** script in the game, so check
   vanilla and Codeware names before using them (NCO's working 2.5 scripts and
   Codeware's `scripts/` are good references) and read

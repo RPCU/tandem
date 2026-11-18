@@ -17,12 +17,13 @@ several games render**. Every design choice below follows from that.
 4. [Authority: who decides what](#authority-who-decides-what)
 5. [Identity: naming the same thing in every game](#identity-naming-the-same-thing-in-every-game)
 6. [Time and smoothing](#time-and-smoothing)
-7. [Inside the plugin](#inside-the-plugin)
-8. [Talking to the engine safely](#talking-to-the-engine-safely)
-9. [The relay](#the-relay)
-10. [Testing without a second player](#testing-without-a-second-player)
-11. [Roadmap](#roadmap)
-12. [Open problems](#open-problems)
+7. [Consistency](#consistency)
+8. [Inside the plugin](#inside-the-plugin)
+9. [Talking to the engine safely](#talking-to-the-engine-safely)
+10. [The relay](#the-relay)
+11. [Testing without a second player](#testing-without-a-second-player)
+12. [Roadmap](#roadmap)
+13. [Open problems](#open-problems)
 
 ## Principles
 
@@ -242,6 +243,109 @@ Two games must agree on which NPC, car or object a message is about.
   for players, 500 ms for vehicles), then held; recovery blends back.
 - Rates: players and vehicles 30 Hz; NPC proxies 10–30 Hz by distance and
   relevance (budgeted per frame).
+
+## Consistency
+
+Every game must show the same world, whatever the network or a loading
+screen does. The authority table says who decides; this section is how the
+others stay on what was decided, and what happens when they do not.
+
+**Mechanisms** (`core/include/tandem/consistency.hpp`, `endpoint.cpp`,
+`plugin/src/sync_natives.cpp`, `scripts/tandem/Consistency.reds`; tests in
+`tests/consistency_test.cpp`):
+
+- **Digests.** Every 3 s the host sends each guest a `Digest` (Event
+  channel, ~25 bytes): an FNV-1a hash of each domain as the host's record
+  has it for that guest — world (time, weather), NPCs (the shared set,
+  their records and health; positions are state and left out), story (the
+  journal and tracked entry: what lasts), players (roster, looks, held
+  items, seats, radios, stealth, pause menus, time abilities, all but the
+  guest's own). The guest's endpoint keeps the same record of what it
+  received and hashes it the same way. Being on the reliable ordered
+  channel, the digest is compared at the exact point of the stream where
+  it was made. A domain that differs **twice in a row** (the first may race
+  the journal snapshot on the bulk channel) is asked for again
+  (`ResyncRequest`, at most once per 5 s per domain; the host answers at
+  most every 2.5 s per guest).
+- **Resync.** The host sends that guest the domain whole, as a late joiner
+  gets it: for NPCs an `NpcSet` first (the guest drops what the host no
+  longer shares), then every spawn and health; for players the roster and,
+  explicitly, who is not paused and has no time ability.
+- **Idempotent application.** Both endpoints compare each state message
+  with their copy: a repeat (a resync of what never changed, a duplicate)
+  is applied nowhere (`Keep`, `story::Record::Note`, the NPC set and
+  corpses). One-shot events (hits, effects, uploads, rewards, shots,
+  journal changes: `IsOneShot`) are delivered exactly once per connection
+  by ENet, a new connection starts with empty queues
+  (`Runtime::ResetSession`), and the scripts keep their own ledgers where a
+  game repeats itself (rewards, story effects).
+- **Epochs.** A game whose world is rebuilt around its V (fast travel,
+  `FastTravelSystem.PerformFastTravel`) moves its epoch on and says so
+  (`Epoch`). After the host's, each guest answers with the host epoch it has
+  seen; until then (2 s at most) the host drops that guest's world requests
+  (`NpcHit`, `NpcEffect`, `NpcHack`, `Noise`: aimed at NPCs that are gone),
+  and guests drop `NpcStates` older than the epoch. After a guest's, the
+  host checks that guest at once (a digest). A session is an epoch too: a
+  save load or a restart ends the session (the plugin stops with the
+  world), and everything queued for the old one is flushed.
+- **Game-side checks** (once a second, each acting after 2–3 s so the event
+  that fixes things may arrive first). A guest's proxies against the
+  session's record (`TandemSync.SharedNpcs`): a proxy whose NPC the host no
+  longer shares goes, a shared NPC with no proxy is spawned where its track
+  is, a proxy whose body is gone (streamed out, a fast travel) is spawned
+  again; a second spawn of an NPC that has a proxy is ignored. Puppets
+  against the roster: a puppet of a player no longer in the session goes, a
+  player with no puppet gets one.
+- **Stale time-sensitive events.** Kept with their arrival time and dropped
+  when old: an NPC's hit on our V after 1.5 s (behind a loading screen a
+  pile of hits at once killed V on arrival), a shot after 0.5 s, a noise
+  after 1 s, an NPC netrunner's hack after 3 s. A full queue counts what it
+  drops and says so once; the checks above then repair the proxies.
+- **Notices**, the HUD's own warning message, at most once a minute per
+  kind and only when the player would notice: "Resyncing with the host…"
+  (NPCs, story or players; the world heals silently), "Lost the connection
+  to the host. Reconnecting…", "Back in the session.", "NAME fast
+  travelled.".
+- **Faults for tests**: `Endpoint::SetFaults` (`tandem-peer --drop P --dup
+P`) loses a share of everything sent, reliable messages too (as a bug
+  would), and sends state twice; the session must converge anyway.
+
+**Audit** (2026-11-18): every synced state, how it can diverge, what the
+player sees, and the guard. _Done_ means in this change; _was_ means
+already there; _open_ and _branch_ are follow-ups (branch: on a branch
+not merged yet).
+
+| State (messages)                                          | How it diverges                                                                                                        | What the player sees                                                                   | Guard                                                                                                                                                                                   |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A V's motion (`PlayerState`, `PoseState`, `VehicleState`) | lost or reordered (unreliable)                                                                                         | a hitch                                                                                | was: ENet drops older; tracks drop older seqs, extrapolate 250/500 ms, then hold and blend back                                                                                         |
+| Puppets (`Roster`)                                        | a join or leave event missed by the game; a roster lost (bug)                                                          | a ghost puppet, or a player with none                                                  | done: players digest + roster resync; `CheckPuppets` removes orphans, spawns the missing                                                                                                |
+| Looks, held items, seats, radios, stealth                 | sent again (resync, duplicate)                                                                                         | the puppet redressed or reseated: a flicker                                            | done: equal messages dropped on host and guest (`Keep`)                                                                                                                                 |
+| A guest away > 5 s (timeout), rejoin                      | the session ends for it, a new one begins                                                                              | puppets and proxies vanish and come back                                               | was: rejoin every 5 s; done: notices, old queues and NPC tracks flushed; open: a grace time after the timeout                                                                           |
+| Join snapshot (`Journal` on Bulk)                         | the bulk channel overtakes the `Welcome` when a packet is lost: the snapshot was dropped                               | a guest with an empty journal for the whole session                                    | done: messages before the `Welcome` kept and applied after it; story digest                                                                                                             |
+| World (`World`)                                           | lost (bug); the guest sleeps or skips time; its quest pins its clock                                                   | another hour or weather                                                                | was: sent every 10 s, guest corrects > 60 s off; done: world digest; open: the quest pin (milestone 6)                                                                                  |
+| Pause menus (`Pause`)                                     | a player leaves or crashes in its pause menu                                                                           | everyone paused for good                                                               | was: the host unpauses a player that leaves or returns; done: a resync says who is not paused                                                                                           |
+| Time bubbles (`TimeEffect`)                               | a player leaves in a Sandevistan; each game computes membership from its own positions                                 | slowed NPCs for good; an NPC at the 50 m edge slowed on one game only (animation only) | was: ended when the player leaves; done: in the players digest; open: the host sending membership                                                                                       |
+| NPC set (`NpcSpawn`, `NpcGone`)                           | a spawn or removal lost (bug, a full queue behind a loading screen), sent twice, an event racing the session's end     | a missing enemy, a ghost proxy, two proxies of one NPC                                 | done: guest copy with dedupe; NPC digest + `NpcSet` resync; `TandemNpcs.Check` against the record; duplicate spawns ignored                                                             |
+| NPC motion (`NpcStates`)                                  | a state overtakes its `NpcGone` (other channel) and brings a track back; the host's old world after a fast travel      | a proxy drawn where the NPC was                                                        | done: states only for known NPCs, none older than the host's epoch                                                                                                                      |
+| NPC ids after the host's save load                        | the host restarts its session and numbers NPCs from 1; the guest kept the old tracks (newer seqs) and queued events    | a new proxy frozen for minutes; an old hit landing on another NPC                      | done: `ResetSession` at each session start and end (NPC tracks, queues, outboxes)                                                                                                       |
+| Proxy bodies (entity streaming)                           | a proxy's body streamed out or lost in the guest's fast travel; a corpse whose removal was lost                        | an invisible or missing enemy                                                          | done: respawned at its track after 3 s; corpses not in digests (open: corpses for late joiners)                                                                                         |
+| NPC health (`NpcHealth`)                                  | lost (bug), duplicated                                                                                                 | a wrong health bar                                                                     | done: in the NPC digest, dedupe                                                                                                                                                         |
+| Hits on NPCs (`NpcHit`, `NpcEffect`, `NpcHack`, `Noise`)  | applied twice; aimed at the host's world before its fast travel; at an NPC that died                                   | double damage; a hit on the wrong enemy                                                | was: exactly once per connection, a dead NPC ignores hits; done: never duplicated by faults, epoch fence, flushed outboxes                                                              |
+| Hits on a guest (`PlayerHit`, `PlayerHack`)               | queued behind the guest's loading screen, applied all at once                                                          | V dies the moment the world comes back                                                 | done: dropped after 1.5 s (hacks 3 s)                                                                                                                                                   |
+| Shots, noises (`Shot`, `Noise`)                           | queued behind a stall                                                                                                  | a burst of muzzle flashes; NPCs hearing an old shot                                    | done: dropped after 0.5 s / 1 s                                                                                                                                                         |
+| Quickhack state (`NpcHackState`, `NpcStatus`)             | the NPC goes mid-upload; the host's netrunner AI never learns the outcome                                              | a stuck upload bar on a proxy                                                          | was: the proxy goes with its NPC; open: the netrunner's outcome                                                                                                                         |
+| Detection (`NpcStates.detected`, `NpcAwareness`)          | the host goes quiet                                                                                                    | combat music for good                                                                  | was: detection ends 3 s after the host's last states, the meter 1 s; open: players ≥ 9 never detected                                                                                   |
+| Journal, tracked entry (`Journal`, `Tracked`)             | a change lost (bug); a resync's snapshot of an unchanged journal                                                       | a wrong objective; toasts replayed                                                     | done: story digest, `ForJoiner` resync, an unchanged snapshot is not applied                                                                                                            |
+| Calls, texts, hubs (`PhoneCall`…`ChoiceCursor`)           | two answers at once; a reply to a closed text; the host quits mid-call or mid-hub; a hub id reused by the next scene   | two answers; a hub left open                                                           | was: first answer wins, replies checked against the open entry, the guest closes its phone and hub on leaving; open: hub ids reused (a late suggestion lands on the next hub, cosmetic) |
+| Scenes (`StoryState`, `StoryEffect`)                      | the host quits mid-scene; an effect sent twice                                                                         | weapons locked, invulnerable, or glitching for good                                    | was: holds released and effects taken off on leaving, effects kept once; done: dedupe in the record                                                                                     |
+| Rewards (`QuestReward`)                                   | paid twice (the host replays a quest after a save load, a repeat)                                                      | double XP or money                                                                     | was: the guest's persistent ledger (reward, quest); done: never duplicated by faults                                                                                                    |
+| Host save load                                            | the plugin stops with the host's world: the session ends                                                               | guests leave and rejoin (puppets and proxies respawn, the journal toggles)             | done: notices, flushed queues; open: keep the session across a host load (an epoch instead of a restart)                                                                                |
+| Guest save load                                           | its plugin stops: it leaves and joins as a new player                                                                  | its puppet respawns, its car copy stays parked                                         | was (copies are never deleted: deleting one froze the game)                                                                                                                             |
+| Fast travel, loading screens                              | one side's world is rebuilt while the other's messages fly                                                             | hits on enemies gone; proxies or puppets without a body                                | done: epoch on fast travel, stale events dropped, checks respawn bodies; open: other loading screens (quest teleports, metro) have no epoch yet                                         |
+| Menus, death, cutscenes on one side                       | a non-pause menu keeps its game running (by design); a dead or cinematic V keeps receiving hits                        | —                                                                                      | was: only the pause menu pauses everyone, the death menu is skipped, tier 4+ scenes make a guest invulnerable; branch: revive                                                           |
+| Clock (`Ping`/`Pong`)                                     | drift between the machines; a host restart                                                                             | puppets drawn too late or early                                                        | was: the offset follows the lowest-RTT ping and forgets 200 µs per ping (400 ppm); a new session, a new offset; done: NPC tracks reset with it                                          |
+| Host quits mid-scene, mid-fight                           | the guest's world is the host's                                                                                        | proxies frozen                                                                         | was: proxies and puppets removed, crowd and story given back within 5 s; done: "Lost the connection to the host"                                                                        |
+| Branches not merged yet                                   | loot taken twice by two players; a revive of a V that already respawned; a takedown of an NPC that died; a menu switch | —                                                                                      | branch: loot (one host-arbitrated grant per container, a ledger), revive (requests by death epoch), takedowns (the epoch fence), main menu (`ResetSession` on a role switch)            |
 
 ## Inside the plugin
 
@@ -729,16 +833,17 @@ hand).
 
 ## Testing without a second player
 
-| Level       | What                                                                       | Command                           |
-| ----------- | -------------------------------------------------------------------------- | --------------------------------- |
-| unit        | protocol round trips, strict decoding, sizes                               | `task test`                       |
-| loopback    | real host + guests over UDP in one process: join, relay, clock, leave      | `task test`                       |
-| relay       | protocol, codes, limits, amplification, real sockets, race detector        | `task relay:test`                 |
-| via relay   | a real relay process: join by code, fallback from direct, mock players     | `task test` (`relay-loopback`)    |
-| mock player | `tandem-peer` as host or guest against the real game                       | `task peer -- host --mode mirror` |
-| natives     | `Natives.reds`/`StoryNatives.reds` match `natives.cpp`/`story_natives.cpp` | `task natives:check`              |
-| scenarios   | the real game against the mock player, checked on the game's log           | `task scenario -- all`            |
-| in game     | deploy the DLL, read its log                                               | `task deploy`, `task logs`        |
+| Level       | What                                                                        | Command                           |
+| ----------- | --------------------------------------------------------------------------- | --------------------------------- |
+| unit        | protocol round trips, strict decoding, sizes                                | `task test`                       |
+| loopback    | real host + guests over UDP in one process: join, relay, clock, leave       | `task test`                       |
+| relay       | protocol, codes, limits, amplification, real sockets, race detector         | `task relay:test`                 |
+| via relay   | a real relay process: join by code, fallback from direct, mock players      | `task test` (`relay-loopback`)    |
+| mock player | `tandem-peer` as host or guest against the real game                        | `task peer -- host --mode mirror` |
+| consistency | digests, resyncs, epochs, dedupe; convergence with a third of messages lost | `task test`                       |
+| natives     | each `*Natives.reds` matches its `*natives.cpp` (types, struct fields)      | `task natives:check`              |
+| scenarios   | the real game against the mock player, checked on the game's log            | `task scenario -- all`            |
+| in game     | deploy the DLL, read its log                                                | `task deploy`, `task logs`        |
 
 **Scenarios** (`tools/scenario.sh`, `tools/scenarios/*.sh`) are the
 in-game regression suite: each one puts the game in a role, drives the
@@ -777,6 +882,10 @@ game thread stop). Each feature verified in game gets a scenario.
   V with `--npc-hack` (default the trace); `--hack-car N` brakes the car
   another player drives. The game side's test commands: `tools/game.sh cmd
 hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
+- `--drop P`, `--dup P` (any mode): a share P of what the peer sends never
+  leaves, reliable messages too (as a bug would lose them), and a share of
+  its state goes twice: the game must converge anyway (Consistency;
+  scenarios `desync-npcs`, `desync-rejoin`). Resyncs and epochs are logged.
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
 - **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s;
@@ -893,7 +1002,8 @@ in-game tests still owed; none of it tested in a session yet):
   crashed game takes longer than that to restart anyway). When a session
   ends, the plugin now forgets every remote player's tracks, so a
   restarted host's states (counted from the start again) are not dropped
-  as old. Not yet checked in game. Each case gets a
+  as old; the NPC proxies' tracks and every queue of the old session go
+  too (Consistency). Not yet checked in game. Each case gets a
   scripted test with the mock player (kill it mid-drive, mid-fight, while
   seated in our car; host vanishes while a guest is in a cutscene).
 - **The second player acts on the world too.** A guest is not a spectator:
