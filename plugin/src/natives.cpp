@@ -67,6 +67,21 @@ struct TandemNpcEvent {
 };
 static_assert(alignof(TandemNpcEvent) <= 8, "the script VM aligns struct locals to 8");
 
+// Guest: one of the host's NPCs hit our V (proto::PlayerHit). Plain fields,
+// as above.
+struct TandemPlayerHit {
+  std::uint32_t npc{}; // the attacker as the host shares it (0: not shared)
+  float physical{}, thermal{}, electric{}, chemical{};
+  std::int32_t attackType{}; // gamedataAttackType
+  std::int32_t flags{};      // proto::kHit*
+  float pierce{};            // the attacker's armour penetration
+  float x{}, y{}, z{};       // where it landed
+  float dx{}, dy{}, dz{};    // its direction
+  Red::TweakDBID attack;     // attack record
+  Red::TweakDBID weapon;     // the NPC's weapon item record
+};
+static_assert(alignof(TandemPlayerHit) <= 8, "the script VM aligns struct locals to 8");
+
 Red::Quaternion ToQuaternion(const proto::Quat &q) { return {q.i, q.j, q.k, q.r}; }
 float YawOfQuaternion(const Red::Quaternion &q) { return sync::YawOf({q.i, q.j, q.k, q.r}); }
 
@@ -537,6 +552,37 @@ struct TandemNative : Red::IScriptable {
     if (!message.effects.empty())
       Runtime::Get().SubmitNpcEffect(message);
   }
+  // Host: our NPC `npc` (0: not shared) hit `player`'s puppet. The damage
+  // is the attacker's side only; that player's game applies the target's.
+  static void SendPlayerHit(std::uint32_t player, std::uint32_t npc, float physical, float thermal,
+                            float electric, float chemical, std::int32_t attackType,
+                            std::int32_t flags, float pierce, Red::Vector4 position,
+                            Red::Vector4 direction, Red::TweakDBID attack, Red::TweakDBID weapon) {
+    Runtime::Get().SubmitPlayerHit({.player = player,
+                                    .npc = npc,
+                                    .physical = physical,
+                                    .thermal = thermal,
+                                    .electric = electric,
+                                    .chemical = chemical,
+                                    .attackType = static_cast<std::uint8_t>(attackType),
+                                    .flags = static_cast<std::uint8_t>(flags),
+                                    .pierce = pierce,
+                                    .position = {position.X, position.Y, position.Z},
+                                    .direction = {direction.X, direction.Y, direction.Z},
+                                    .attack = attack.value,
+                                    .weapon = weapon.value});
+  }
+  // Guest: the host's NPCs' hits on our V since the last call.
+  static Red::DynArray<TandemPlayerHit> TakePlayerHits() {
+    Red::DynArray<TandemPlayerHit> out;
+    for (const auto &hit : Runtime::Get().TakePlayerHits())
+      out.EmplaceBack(TandemPlayerHit{hit.npc, hit.physical, hit.thermal, hit.electric,
+                                      hit.chemical, hit.attackType, hit.flags, hit.pierce,
+                                      hit.position.x, hit.position.y, hit.position.z,
+                                      hit.direction.x, hit.direction.y, hit.direction.z,
+                                      Red::TweakDBID(hit.attack), Red::TweakDBID(hit.weapon)});
+    return out;
+  }
   // Guest: which players the host's NPC has detected (bit player - 1).
   static std::int32_t NpcDetected(std::uint32_t npc) { return Runtime::Get().NpcDetected(npc); }
 
@@ -598,6 +644,25 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcEvent, "TandemNpcEvent", {
   RTTI_PROPERTY(dz);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemPlayerHit, "TandemPlayerHit", {
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(physical);
+  RTTI_PROPERTY(thermal);
+  RTTI_PROPERTY(electric);
+  RTTI_PROPERTY(chemical);
+  RTTI_PROPERTY(attackType);
+  RTTI_PROPERTY(flags);
+  RTTI_PROPERTY(pierce);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+  RTTI_PROPERTY(dx);
+  RTTI_PROPERTY(dy);
+  RTTI_PROPERTY(dz);
+  RTTI_PROPERTY(attack);
+  RTTI_PROPERTY(weapon);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
   RTTI_PROPERTY(player);
   RTTI_PROPERTY(left);
@@ -642,6 +707,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendNpcHealth);
   RTTI_METHOD(SendNpcHit);
   RTTI_METHOD(SendNpcEffect);
+  RTTI_METHOD(SendPlayerHit);
+  RTTI_METHOD(TakePlayerHits);
   RTTI_METHOD(NpcDetected);
   RTTI_METHOD(TakeNpcEvents);
   RTTI_METHOD(NpcPuppetId);

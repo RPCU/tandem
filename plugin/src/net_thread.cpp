@@ -159,6 +159,8 @@ struct NetThread::Impl {
                                       .amount = e.hit.damage,
                                       .flags = e.hit.flags,
                                       .direction = e.hit.direction});
+              } else if constexpr (std::is_same_v<E, events::HitByNpc>) {
+                runtime.PushPlayerHit(e.hit);
               } else if constexpr (std::is_same_v<E, events::HostNpcStates>) {
                 runtime.PushNpcStates(e.states);
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
@@ -229,6 +231,9 @@ struct NetThread::Impl {
           endpoint->SendNpcHit(*hit);
         else if (const auto *effect = std::get_if<proto::NpcEffect>(&message))
           endpoint->SendNpcEffect(*effect);
+        else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
+                 hit && !endpoint->SendPlayerHit(*hit))
+          log::Info("hit on player {} dropped: not a guest in the session", hit->player);
       }
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);

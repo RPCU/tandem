@@ -379,6 +379,11 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::NpcStates &states) { out.push_back(events::HostNpcStates{states}); },
             [&](const proto::NpcGone &gone) { out.push_back(events::HostNpcGone{gone}); },
             [&](const proto::NpcHealth &health) { out.push_back(events::HostNpcHealth{health}); },
+            [&](const proto::PlayerHit &hit) {
+              // Only ever meant for us: anything else is not ours to apply.
+              if (hit.player == m_you)
+                out.push_back(events::HitByNpc{hit});
+            },
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
@@ -549,6 +554,17 @@ void Endpoint::SendNpcEffect(const proto::NpcEffect &effect) {
   auto mine = effect;
   mine.player = m_you;
   m_session->Send(m_hostPeer, mine);
+}
+
+bool Endpoint::SendPlayerHit(const proto::PlayerHit &hit) {
+  if (!IsHost() || m_ended || hit.player == m_you)
+    return false; // our own V's hits are our game's
+  const auto target = std::ranges::find_if(
+      m_playerOfPeer, [&](const auto &entry) { return entry.second == hit.player; });
+  if (target == m_playerOfPeer.end())
+    return false;
+  m_session->Send(target->first, hit); // that player's game only
+  return true;
 }
 
 void Endpoint::SendNpcHit(const proto::NpcHit &hit) {

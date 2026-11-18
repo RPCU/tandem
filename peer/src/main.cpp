@@ -22,6 +22,8 @@
 // Pause menu: --pause-at opens "its pause menu" that many seconds into the
 // session (once another player is there) for --pause-for seconds; the pause
 // states it hears are logged.
+// Fights: --hit-npcs (join) hits the host's NPCs; --hit-you (host) has one of
+// its NPCs hit every guest's V; a guest logs the NPC hits it receives.
 // Body pose: mirror and front echo your V's pose; --pose FILE (a .tpose made by
 // tools/re/pose_export.py from a recording) plays a recorded pose instead, in
 // a loop, with any mode.
@@ -72,6 +74,7 @@ struct Options {
   // drive: the car's radio (ERadioStationList index, -1 off); unset: none sent
   std::optional<int> radioStation;
   int hitNpcsSeconds{0}; // join: hit one of the host's NPCs this often (0: never)
+  int hitYouSeconds{0};  // host: one of its NPCs hits each guest's V this often (0: never)
   // host: the world the game follows (time of day, weather name); unset: none sent
   std::optional<int> timeOfDayMinutes;
   std::string weather;
@@ -141,6 +144,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
                "                     radio_station_09_downtempo...; off): sent when seated and\n"
                "                     again when a passenger gets in\n"
                "  --hit-npcs N       join: hit one of the host's NPCs (35 health) every N seconds\n"
+               "  --hit-you N        host: an NPC (a replayed one if any) hits each guest's V for\n"
+               "                     10 physical every N seconds\n"
                "  --time HH:MM       host: the time of day the game must follow\n"
                "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
                "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
@@ -218,6 +223,8 @@ Options Parse(int argc, char **argv) {
       options.pauseForSeconds = Number<int>(value);
     else if (flag == "--hit-npcs")
       options.hitNpcsSeconds = Number<int>(value);
+    else if (flag == "--hit-you")
+      options.hitYouSeconds = Number<int>(value);
     else if (flag == "--drive-seconds")
       options.driveSeconds = Number<int>(value);
     else if (flag == "--radio") {
@@ -572,6 +579,8 @@ int main(int argc, char **argv) {
   std::set<tandem::proto::NpcId> burnt;
   std::map<tandem::proto::NpcId, std::uint8_t> detection;
   auto nextHit = std::chrono::steady_clock::now();
+  auto nextHitYou = std::chrono::steady_clock::now() + std::chrono::seconds(options.hitYouSeconds);
+  std::set<tandem::proto::NpcId> replayedNpcs; // host: the replay's live NPCs
   std::vector<NpcRecording::Entry> replay;
   std::size_t replayNext = 0;
   std::optional<std::uint64_t> replayStartUs;
@@ -664,6 +673,11 @@ int main(int argc, char **argv) {
                 Log("npc {} died", e.hit.npc);
               } else
                 endpoint->SendNpcHealth({.npc = e.hit.npc, .health = health});
+            } else if constexpr (std::is_same_v<E, tandem::events::HitByNpc>) {
+              Log("hit by npc {}: {:.1f} physical, {:.1f} thermal, {:.1f} electric, {:.1f} "
+                  "chemical (type {}, flags {}, attack {:#x})",
+                  e.hit.npc, e.hit.physical, e.hit.thermal, e.hit.electric, e.hit.chemical,
+                  e.hit.attackType, e.hit.flags, e.hit.attack);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcHealth>) {
               if (options.hitNpcsSeconds)
                 Log("npc {} health {:.0f}%", e.health.npc, e.health.health * 100.f);
@@ -791,6 +805,25 @@ int main(int argc, char **argv) {
         Log("set npc {} on fire", *hitTarget);
       }
     }
+    // --hit-you: one of our NPCs (a live replayed one, else none) shoots each
+    // guest: an ordinary ranged hit (gamedataAttackType.Ranged = 10), no
+    // attack record (the game falls back to a plain bullet).
+    if (options.hitYouSeconds && options.host && now >= nextHitYou) {
+      nextHitYou = now + std::chrono::seconds(options.hitYouSeconds);
+      tandem::proto::NpcId shooter = 0;
+      for (const auto npc : replayedNpcs)
+        if (!deadNpcs.contains(npc)) {
+          shooter = npc;
+          break;
+        }
+      for (const auto &[id, info] : endpoint->Players())
+        if (id != endpoint->You() && endpoint->SendPlayerHit({.player = id,
+                                                              .npc = shooter,
+                                                              .physical = 10.f,
+                                                              .attackType = 10,
+                                                              .direction = {0.f, 1.f, 0.f}}))
+          Log("npc {} hit player {} for 10 physical", shooter, id);
+    }
     // Replay, once someone is there to see it, at the recording's pace.
     if (options.host && replayNext < replay.size() && endpoint->Players().size() > 1) {
       const auto nowUs = tandem::net::NowUs();
@@ -808,6 +841,7 @@ int main(int argc, char **argv) {
         if (auto *spawn = std::get_if<tandem::proto::NpcSpawn>(&message)) {
           shift(spawn->position);
           endpoint->SendNpcSpawn(*spawn);
+          replayedNpcs.insert(spawn->npc);
         } else if (auto *states = std::get_if<tandem::proto::NpcStates>(&message)) {
           std::erase_if(states->npcs,
                         [&](const auto &entry) { return deadNpcs.contains(entry.npc); });
@@ -815,6 +849,7 @@ int main(int argc, char **argv) {
             shift(entry.position);
           endpoint->SendNpcStates(*states);
         } else if (const auto *gone = std::get_if<tandem::proto::NpcGone>(&message)) {
+          replayedNpcs.erase(gone->npc);
           if (!deadNpcs.contains(gone->npc))
             endpoint->SendNpcGone(*gone);
         } else if (const auto *health = std::get_if<tandem::proto::NpcHealth>(&message))

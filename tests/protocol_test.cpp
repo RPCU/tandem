@@ -76,6 +76,19 @@ TEST_CASE("every message survives encoding") {
                           .track = 0xfeedfacecafef00dULL,
                           .trackStartUs = 123'456'789'012ULL});
   RoundTrips(VehicleRadio{.player = 3, .revision = 1, .on = false, .station = -1});
+  RoundTrips(PlayerHit{.player = 2,
+                       .npc = 7,
+                       .physical = 29.5f,
+                       .thermal = 3.f,
+                       .electric = 0.5f,
+                       .chemical = 1.f,
+                       .attackType = 10,
+                       .flags = kHitWeakSpot | kHitCritical,
+                       .pierce = 0.25f,
+                       .position = {1, 2, 3},
+                       .direction = {0, -1, 0},
+                       .attack = 0x1234567890ULL,
+                       .weapon = 0x0abcdef012ULL});
 }
 
 TEST_CASE("a car's radio is a small reliable event") {
@@ -104,6 +117,9 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(ChannelOf(NpcEffect{}) == Channel::Event);
   CHECK(ChannelOf(Pause{}) == Channel::Event);
   CHECK(IsReliable(Pause{}));
+  CHECK(ChannelOf(PlayerHit{}) == Channel::Event);
+  CHECK(IsReliable(PlayerHit{}));
+  CHECK(std::string_view(NameOf(PlayerHit{})) == "PlayerHit");
   // A guest cannot flood the host with effects.
   NpcEffect many{.npc = 1, .effects = std::vector<std::uint64_t>(kMaxNpcEffects + 1, 5)};
   CHECK_FALSE(Decode(Encode(many)));

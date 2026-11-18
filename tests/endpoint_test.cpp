@@ -289,6 +289,47 @@ TEST_CASE("a guest's hit reaches the host, stamped; health reaches guests, late 
   CHECK_FALSE(lateGotHealth);
 }
 
+TEST_CASE("an NPC's hit on a guest reaches that guest only, whole") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  const proto::PlayerHit sent{.player = a->You(),
+                              .npc = 7,
+                              .physical = 10.f,
+                              .thermal = 2.f,
+                              .attackType = 10,
+                              .flags = proto::kHitWeakSpot,
+                              .pierce = 0.25f,
+                              .position = {1, 2, 3},
+                              .direction = {0, 1, 0},
+                              .attack = 0x1234,
+                              .weapon = 0x5678};
+  CHECK(host->SendPlayerHit(sent));
+  // Nobody to send to: the host's own V, a player not in the session.
+  CHECK_FALSE(host->SendPlayerHit({.player = host->You(), .physical = 1.f}));
+  CHECK_FALSE(host->SendPlayerHit({.player = 42, .physical = 1.f}));
+  // A guest never sends one: the NPCs are the host's.
+  CHECK_FALSE(b->SendPlayerHit({.player = a->You(), .physical = 99.f}));
+
+  std::vector<proto::PlayerHit> atA, atB, atHost;
+  PumpFor({host.get(), a.get(), b.get()}, 500ms, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *hit = std::get_if<events::HitByNpc>(&event))
+        (i == 0 ? atHost : i == 1 ? atA : atB).push_back(hit->hit);
+  });
+  REQUIRE(atA.size() == 1);
+  CHECK(atA[0] == sent);
+  CHECK(atB.empty());
+  CHECK(atHost.empty());
+}
+
 namespace {
 // The pause changes an endpoint reported, in order.
 void CollectPauses(const std::vector<SessionEvent> &events, std::vector<proto::Pause> &into) {
