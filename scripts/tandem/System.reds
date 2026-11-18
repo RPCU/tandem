@@ -903,7 +903,7 @@ public class TandemSystem extends ScriptableSystem {
             this.m_rideCar = puppet.car;
             this.m_rideSlot = slot;
             seated = true;
-            TandemNative.Log(s"vehicle ride: in \(NameToString(slot)) of player \(puppet.player)'s car");
+            TandemNative.Log(s"vehicle ride: in player \(puppet.player)'s car, seat \(NameToString(slot))");
           } else if IsDefined(car) {
             TandemNative.Log(s"vehicle ride: no free passenger seat in player \(puppet.player)'s car");
           }

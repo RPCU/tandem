@@ -503,7 +503,8 @@ redscript natives (UI, events)              ENet socket
       follows a moving parent), and a transform binding (`entHardTransformBinding`
       binds components inside one entity, not the player to another). It sends `Transit`
       `Along` (the carrier), so every game hides its puppet (there is no
-      seat to show it in), and sends no `Seat` (the trunk slot is no
+      seat to show it in) and puts its map marker on the car that carries
+      it (the carrier's real car on the host, its copy elsewhere), and sends no `Seat` (the trunk slot is no
       one's seat). The game lends no camera to a V without a seat:
       a vehicle's cameras and its scene camera mode belong to the seated
       V's state machine (vehicle states Passenger, Scene), and only photo

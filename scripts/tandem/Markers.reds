@@ -60,6 +60,28 @@ public class TandemMarkers extends ScriptableSystem {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemMarkers") as TandemMarkers;
   }
 
+  // The car carrying a player who rides along with no seat (Transit Along):
+  // ours when we carry them, else our copy of the carrier's car; null when
+  // they do not ride along or no such car is here.
+  public static func CarrierCar(game: GameInstance, player: Uint32) -> ref<VehicleObject> {
+    if TandemNative.RemoteTransitKind(player) != 4 {
+      return null;
+    }
+    let carrier = TandemNative.RemoteTransitCarrier(player);
+    let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
+    if carrier == 0u || !IsDefined(system) {
+      return null;
+    }
+    if carrier == system.You() {
+      let ours: wref<VehicleObject>;
+      if VehicleComponent.GetVehicle(game, GetPlayer(game), ours) && IsDefined(ours) {
+        return ours;
+      }
+      return null;
+    }
+    return GameInstance.GetDynamicEntitySystem().GetEntity(system.CarOf(carrier)) as VehicleObject;
+  }
+
   // ---- from TandemSystem: a puppet came, a puppet goes ----
 
   public static func Show(game: GameInstance, player: Uint32, name: String, puppet: EntityID) -> Void {
@@ -186,6 +208,14 @@ public class TandemMarkers extends ScriptableSystem {
         let inCar = VehicleComponent.GetVehicle(game, marker.puppet, car) && IsDefined(car);
         if inCar {
           target = car;
+        } else {
+          // Riding along with no seat (Transit.reds): its body is hidden and
+          // still; the marker goes on the car that carries it.
+          let carrier = TandemMarkers.CarrierCar(game, marker.player);
+          if IsDefined(carrier) {
+            target = carrier;
+            inCar = true;
+          }
         }
         if !EntityID.IsDefined(marker.attachedTo) || marker.attachedTo != target.GetEntityID() {
           this.Unregister(marker);
