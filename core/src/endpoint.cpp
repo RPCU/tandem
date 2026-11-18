@@ -1715,6 +1715,10 @@ void Endpoint::ClaimWorldItem(proto::PlayerId player, proto::WorldItemId id, std
   auto &takers = m_worldTakers[id];
   if (takers[stack] != proto::kNoPlayer) {
     answer(takers[stack]); // someone was first
+    // ...and the bag as it really is: the claimer's copy may have missed
+    // more than this stack (a lost WorldItemTaken: a ghost bag).
+    if (peer)
+      Send(*peer, item->second);
     return;
   }
   takers[stack] = player;

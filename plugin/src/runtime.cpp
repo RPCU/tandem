@@ -1050,6 +1050,13 @@ void Runtime::ResetSession() {
     m_sharedNpcs.clear();
     m_roster.clear();
     m_epochRequest.reset();
+    // Bags, claims, revives and offers name the old session's numbers.
+    m_lootOutbox.clear();
+    m_lootInbox.clear();
+    m_localRevives.clear();
+    m_revives.clear();
+    m_regroupOutbox.clear();
+    m_regroupEvents.clear();
   }
   // The NPCs' tracks: the next session's ids are other NPCs.
   std::lock_guard _(m_tracksLock);
