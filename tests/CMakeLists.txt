@@ -3,6 +3,7 @@ target_link_libraries(tandem-tests PRIVATE tandem_core)
 target_include_directories(tandem-tests SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/vendor/doctest")
 add_test(NAME tandem-tests COMMAND tandem-tests)
 add_test(NAME peer-flags COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_flags.sh" $<TARGET_FILE:tandem-peer>)
+add_test(NAME peer-replay COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_replay.sh" $<TARGET_FILE:tandem-peer>)
 
 # Sessions through a real relay process (built from relay/ with Go).
 find_program(GO_EXECUTABLE go)
