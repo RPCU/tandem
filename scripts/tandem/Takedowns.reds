@@ -12,7 +12,7 @@
 // puts its proxy in the same grapple or on the same shoulder. A refused grab
 // ends on the guest the way vanilla's failed grapples do: the NPC breaks free
 // (GrappleBreakFreeDecisions). Vanilla references: final.reds, see
-// docs/research/engine-knowledge.md §13.15.
+// docs/research/engine-knowledge.md §13.17.
 
 public class TandemHeldNpc {
   public let npc: Uint32;

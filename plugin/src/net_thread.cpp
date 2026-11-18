@@ -1,6 +1,7 @@
 #include "net_thread.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
+#include "story.hpp"
 
 #include "tandem/endpoint.hpp"
 
@@ -22,6 +23,7 @@ struct NetThread::Impl {
   std::optional<proto::VehicleRadio> lastRadio;
   std::optional<proto::Stealth> lastStealth;
   bool lastPaused{};
+  std::optional<proto::TimeEffect> lastTime;
 
   // The other players in their pause menu, for the game thread.
   static void PublishPaused(const Endpoint &endpoint) {
@@ -72,6 +74,8 @@ struct NetThread::Impl {
       endpoint->SetLocalStealth(*lastStealth);
     if (lastPaused)
       endpoint->SetLocalPaused(true);
+    if (lastTime)
+      endpoint->SetLocalTimeEffect(*lastTime);
     if (config.role == Config::Role::Host)
       log::Info("hosting on UDP {}", config.port);
     else
@@ -104,16 +108,21 @@ struct NetThread::Impl {
                 log::Info("in the session as player {} (host {})", e.you, e.host);
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
+                Story::Get().PushInbound(
+                    {.kind = StoryInbound::Kind::InSession, .player = e.you, .host = e.host});
               } else if constexpr (std::is_same_v<E, events::PlayerJoined>) {
                 log::Info("{} joined (player {}, body {})", e.player.name, e.player.id,
                           static_cast<int>(e.player.body));
                 runtime.NotePlayerName(e.player.id, e.player.name);
                 runtime.PushEvent(
                     {ScriptEvent::Kind::PlayerJoined, e.player.id, e.player.name, e.player.body});
+                Story::Get().PushInbound(
+                    {.kind = StoryInbound::Kind::Joined, .player = e.player.id});
               } else if constexpr (std::is_same_v<E, events::PlayerLeft>) {
                 log::Info("player {} left", e.player);
                 runtime.ForgetRemote(e.player);
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
+                Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
               } else if constexpr (std::is_same_v<E, events::PlayerReturned>) {
                 // Its puppet and seat stay; its new game sends its look again.
                 log::Info("{} is back on a new connection (player {})", e.player.name, e.player.id);
@@ -246,7 +255,15 @@ struct NetThread::Impl {
                 log::Info("player {} {} (pause menu)", e.pause.player,
                           e.pause.paused ? "paused" : "resumed");
                 PublishPaused(*endpoint);
+              } else if constexpr (std::is_same_v<E, events::Story>) {
+                Story::Get().PushInbound(
+                    {.kind = StoryInbound::Kind::Message, .message = e.message});
+              } else if constexpr (std::is_same_v<E, events::RemoteTimeEffect>) {
+                log::Info("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
+                          e.effect.abilities, e.effect.scale);
+                runtime.PushRemoteTime(e.effect);
               } else if constexpr (std::is_same_v<E, events::Ended>) {
+                Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
                 runtime.SetRemotePaused({});
                 // The next session's players start afresh (a restarted host
@@ -291,6 +308,11 @@ struct NetThread::Impl {
         lastPaused = *paused;
         endpoint->SetLocalPaused(*paused);
         log::Info("our pause menu {}", *paused ? "opened: pausing everyone" : "closed");
+      }
+      if (auto time = runtime.TakeLocalTime()) {
+        lastTime = *time;
+        endpoint->SetLocalTimeEffect(*time);
+        log::Info("our time abilities {:#x} (world speed {:.2f})", time->abilities, time->scale);
       }
       if (auto world = runtime.TakeWorld())
         endpoint->SetWorld(*world);
@@ -339,6 +361,8 @@ struct NetThread::Impl {
       }
       for (const auto &noise : runtime.TakeLocalNoises())
         endpoint->SendNoise(noise);
+      for (auto &[message, to] : Story::Get().TakeOutbound())
+        endpoint->SendStory(std::move(message), to);
 
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {
         nextReport = now + 10s;

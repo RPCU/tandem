@@ -2084,7 +2084,144 @@ GetPlayerID()` and the effect lacks the `Stealth` tag:
   194573). Whether `ActivateNetrunnerQuickhack(Accelerate)` acts on a car a
   player drives is not known. [2.5-untested]
 
-### 13.15 Takedowns, finishers, carried bodies and "the player" reactions (2026-11-18, scripts only)
+### 13.15 Quest phases: making a node wait (2026-11-18, offline, spike S1)
+
+Read in the 2.50 exe with `tools/re/decompile` (offline, no game). Feeds
+`plugin/src/engine/quests.cpp`, the guest's quest freeze
+(`coop-quests-design.md` §1.3).
+
+- `QuestPhaseInstance::ExecuteNode` (hash 3227858325, `0x1402b3aa0`):
+  returns 1 at once when the node is a disableable node in the phase's
+  disabled set (`phase+0xC8`, by `node+0x40` id) or when the node's
+  pre-check vfunc `+0x150(node, ctx+0x110, socket)` returns 1; otherwise
+  notifies the context's listener (`ctx+0x70`, vfuncs `+0x1B8` before,
+  `+0x1C0` after), runs the node (`0x14034fa80`: `ctx+0x110` vfunc `+0xE0`
+  with the node id, clears the outputs, node vfunc `+0x158`), and maps the
+  result through node vfunc `+0x160`; a context state byte `ctx+1 == 7`
+  forces 3. [2.5-verified offline]
+- Its only direct caller, `0x1402b393c`, runs one entry of
+  `ExecuteGraph`'s work list (`0x140352984`, entered through
+  `QuestPhaseInstance_ExecuteGraph` 779107884 = `0x1403528a4`, which
+  pushes the phase on `ctx.phaseStack` at `+0xF8` around the call):
+  result **0**: the node finished; a `questOutputNodeDefinition` (size
+  0x58: socket name `+0x48`, type `+0x50`) ends the pass with its socket,
+  any other node queues its output sockets; **2**: finished, outputs
+  queued; **1 or 3**: nothing queued, the pass goes on with the other
+  queued nodes. [2.5-verified offline]
+- So a hook that returns **1 without calling the original** makes a node
+  do what a disabled node does: nothing, no outputs, the phase stays
+  active. The engine keeps no trace of that signal: tandem holds it
+  (phase `NodePath` `+0x70`, node id, input socket CName) and gives it
+  back at the end of the freeze with the root phase's `ExecutePath`
+  (vfunc `+0x120`, under the quests system's lock `+0x60`, after
+  `QuestsSystem::CreateContext` 3144298192 `(sys, ctx, 1, 0, -1, -1)`:
+  Codeware's `QuestPhaseExecutor::ExecutePath`, used by its
+  `OpenWorldSystem`). [I] — whether every node resumes cleanly that way
+  is the in-game check.
+- Per-phase filter: a phase is open-world when its resource
+  (`phase+0x30` → `CResource.path` `+0x30`) or an ancestor's on
+  `ctx.phaseStack` is one of Codeware's open-world phases
+  (`QuestPhaseRegistry.cpp:12-20`), or its `NodePath` extends one of
+  theirs; the root phase (empty path) always runs. [C][I]
+- To check in game (`quest_freeze = on`, `tools/game.sh cmd quest freeze
+on`, `quest report`, `quest freeze off`): refused-node counts by phase;
+  no pending call rings and the tracker does not move while frozen; on
+  `off`, the held signals resume (a call queued during the freeze rings);
+  vendors, metro, apartment, car summon, NCPD hustles still work; no
+  crash in the 1 s after `off`. [2.5-untested]
+
+### 13.16 Story levers in the scripts (2026-11-18, read in final.reds, not run)
+
+What `scripts/tandem/Story.reds`, `Phone.reds` and `Dialogue.reds` rely
+on; every line is [2.5-untested] until `story-guest.sh` / `story-host.sh`
+pass.
+
+- A guest presents the host's call through its own
+  `PhoneSystem.TriggerCall` (`final.reds:240618`, private: reached from an
+  `@addMethod`), which writes `UI_ComDevice.PhoneCallInformation` and the
+  `phonecall_*` fact; the fact is held back by a wrap of `SetPhoneFact`
+  (`:240841`) while a mirrored call is up. The HUD's answer goes through
+  `PickupPhoneRequest` → `OnPickupPhone` (`:240662`), wrapped to send it to
+  the host. The incoming widget finds the contact by journal id
+  (`GetIncomingContact`, `:409000`): a contact the guest's journal lacks
+  shows no name.
+- Subtitles: `UIGameData.ShowDialogLine` carries `array<scnDialogLineData>`,
+  `HideDialogLine` `array<CRUID>` (`:268284`, `:268327`). Scripts cannot
+  build a `CRUID`: `TandemStory.LineId` / `LineValue` convert it.
+- Choice hubs: `UIInteractions.DialogChoiceHubs` (`DialogChoiceHubs{
+choiceHubs: array<ListChoiceHubData>}`, `:243020`, `:389618`),
+  `ActiveChoiceHubID`, `SelectedIndex`, `LastAttemptedChoice`
+  (`InteractionAttemptedChoice`, `:199455`). The guest's stand-in hub has
+  no native backing: its cursor moves on the input actions
+  `ChoiceScrollUp` / `ChoiceScrollDown` / `ChoiceApply` (names from the
+  input contexts, not seen in the scripts: to confirm).
+- Holds: `GameplayRestriction.NoCombat` and `BaseStatusEffect.Invulnerable`
+  status effects (`:128602`); script god mode does not protect V (§13.11).
+- Saving: a `ScriptableSystem` overriding `IsSavingLocked` (`:48411`) and
+  `SaveLocksManager.RequestSaveLockAdd(game, n"tandem")` (`:195179`, not
+  saved: re-added after a load); `AutoSaveSystem.InvalidateAutoSaveRequests`
+  (`:203134`). Whether the pause menu greys out Save with only these: to
+  see.
+- The co-op reward ledger is a `persistent` array on `TandemStorySystem`:
+  it reaches the guest's save with its next save after the session.
+
+### 13.15 Time dilation in a shared world (2026-11-18, scripts and RTTI only)
+
+Read from the 2.50 RTTI natives (`docs/research/data/rtti-natives-2.50.tsv`)
+and the script dump; used by `scripts/tandem/Time.reds`, **not yet run in
+game**. Research behind it: `coop-time.md` §1-2.
+
+- The time system has exactly three scopes and no render-only one: global
+  (`gameTimeSystem.SetTimeDilation` / `UnsetTimeDilation` /
+  `GetActiveTimeDilation` / `IsTimeDilationActive`), the local player's
+  own (`SetTimeDilationOnLocalPlayerZero`, the exemption flag
+  `SetIgnoreTimeDilationOnLocalPlayerZero`) and per entity
+  (`gameTimeDilatable.SetIndividualTimeDilation(reason, dilation,
+duration, easeIn, easeOut, ignoreGlobalDilation, useRealTime)`,
+  `UnsetIndividualTimeDilation`, `HasIndividualTimeDilation`,
+  `GetTimeDilationValue`, `IsIgnoringGlobalTimeDilation`; final.reds
+  14724-14744). Besides them only attacks
+  (`gameAttack_GameEffect.OverrideTimeDilationDriver(timeDilatable)`,
+  effector drivers `Source`/`Target`, final.reds 299725-299729) follow an
+  entity's time. A host therefore cannot show its own NPCs slowed while
+  simulating them at normal speed. [2.5-untested]
+- A per-entity dilation is a single slot (`UnsetIndividualTimeDilation`
+  takes no reason): setting ours replaces an NPC's own (hit reactions
+  `VeryStrongHit`, `MeleeLegKnockdown`, NPC Sandevistan). Vanilla slows a
+  single NPC with it: `SetTemporaryIndividualTimeDilation`, 0.05 for 2.5 s
+  (final.reds 525198-525204); NPC Sandevistans speed one up (factors above
+  1, `AISubActionApplyTimeDilation`, final.reds 427367-427503).
+  [2.5-untested]
+- `GetActiveTimeDilation()` with no reason is the current global factor
+  (`WeaponTransition.CalcCycleTimeDeltaFactor` reads it that way,
+  final.reds 286960). [2.5-untested]
+- Sandevistan lasts only while `IsTimeDilationActive(n"sandevistan")`
+  (`SandevistanDecisions.ToTimeDilationReady`, final.reds 523705), and the
+  scanner's state re-sets its dilation whenever none is active
+  (`TimeDilationFocusModeEvents.OnUpdate`, final.reds 529164): a dilation
+  that must stop slowing the world is re-set at normal speed under the
+  same reason, never unset. Whether a factor of exactly 1.0 still reads as
+  active is checked once at run time (Time.reds falls back to 0.999 and
+  logs it). [2.5-untested]
+- While any global dilation is active, NPC guns fire projectiles instead
+  of hitscan (`AIWeapon.SetAttackBasedOnTimeDilation`, final.reds 173373):
+  a dilation kept active at normal speed keeps that. [2.5-untested]
+- The implant's world factor is a stat on the player:
+  `gamedataStatType.TimeDilationSandevistanTimeScale` (read by
+  `SandevistanEvents.OnEnter`, final.reds 524119-524126),
+  `TimeDilationKerenzikovTimeScale` and `TimeDilationKerenzikovPlayerTimeScale`
+  (`KerenzikovEvents`, final.reds 527840, 527894). [2.5-untested]
+- Effect names on the Sandevistan boss's entity: `sandevistan_low_00..03`,
+  `sandevistan_medium_00..03`, `sandevistan_high_00..03`
+  (`DisableAllSandyEdgerunnerFxs`, final.reds 296270, 297181).
+  Whether a puppet's entity has any of them is unknown; the NPC
+  Sandevistan's own effect is in TweakDB/entity data not read. Try names
+  with `tools/game.sh cmd time fx NAME`. [unverified]
+- `GameInstance.GetSimTime` is assumed dilated and `GetEngineTime` real
+  (final.reds 14148-14150); `time test` logs the ratio of the two.
+  [2.5-untested]
+
+### 13.17 Takedowns, finishers, carried bodies and "the player" reactions (2026-11-18, scripts only)
 
 Read in `final.reds` for `scripts/tandem/Takedowns.reds` and
 `Reactions.reds`; none of it run in a session yet.

@@ -247,6 +247,11 @@ are.**
   time-dilated attack records stay as in single-player. The others see that
   V's puppet move fast, with the Sandevistan trail effect: the state is a
   field of that player's replicated state (authority row "a V: stance…").
+- **Decided instead (2026-11-18)**: a time bubble. The NPCs around that V
+  are slowed by its factor for everyone (per-entity dilation on the host),
+  the owner keeps its slow motion on its own screen, no V is sped up.
+  Rules per mechanism: ARCHITECTURE.md (slowed and stopped time) and
+  `scripts/tandem/Time.reds`.
 
 ### 2.2 Kerenzikov
 

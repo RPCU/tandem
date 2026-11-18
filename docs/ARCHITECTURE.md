@@ -152,19 +152,21 @@ in order.
 
 The owner simulates; everyone else displays.
 
-| State                                   | Owner                     | Others                                        |
-| --------------------------------------- | ------------------------- | --------------------------------------------- |
-| a V: transform, stance, aim, animation  | that player's game        | puppet, interpolated                          |
-| a V: appearance, equipment, cyberware   | that player's game        | applied on the puppet when it changes         |
-| a V: health, death, downed              | that player's game        | shown; revives are requests to the owner      |
-| a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level |
-| a vehicle someone drives                | the driver's game         | puppet vehicle, passengers mounted            |
-| a parked or AI vehicle                  | host                      | proxy                                         |
-| NPCs: AI, position, health, death       | host                      | **proxy with its AI off**, driven by the host |
-| spawns: crowds, traffic, encounters     | host                      | guests' own spawning is suppressed            |
-| quests: facts, journal, phases, scenes  | host                      | followed, never run on their own              |
-| time of day, weather, police heat       | host                      | applied (wanted level: open, see below)       |
-| loot drops                              | host                      | each player loots their own copy              |
+| State                                   | Owner                     | Others                                         |
+| --------------------------------------- | ------------------------- | ---------------------------------------------- |
+| a V: transform, stance, aim, animation  | that player's game        | puppet, interpolated                           |
+| a V: appearance, equipment, cyberware   | that player's game        | applied on the puppet when it changes          |
+| a V: health, death, downed              | that player's game        | shown; revives are requests to the owner       |
+| a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level  |
+| a vehicle someone drives                | the driver's game         | puppet vehicle, passengers mounted             |
+| a parked or AI vehicle                  | host                      | proxy                                          |
+| NPCs: AI, position, health, death       | host                      | **proxy with its AI off**, driven by the host  |
+| spawns: crowds, traffic, encounters     | host                      | guests' own spawning is suppressed             |
+| quests: facts, journal, phases, scenes  | host                      | followed, never run on their own               |
+| time of day, weather, police heat       | host                      | applied (wanted level: open, see below)        |
+| a V's time abilities (Sandevistan…)     | that player's game        | shown on the puppet; never slow anyone's world |
+| an NPC's speed in a time bubble         | host                      | proxies animated at the same speed             |
+| loot drops                              | host                      | each player loots their own copy               |
 
 **Enemy level** (decided 2026-11-18): enemies the host spawns and runs are
 scaled to the **mean of the character levels of the players in the
@@ -479,7 +481,7 @@ redscript natives (UI, events)              ENet socket
   second chance's memory wipe comes back as an `NpcEffect`; the proxy's
   missing senses are replaced by the host's detection bit). A guest's
   Bait/Whistle walks the NPC to that guest's puppet. TODO list in
-  `research/engine-knowledge.md` §13.15.
+  `research/engine-knowledge.md` §13.17.
 - **Looks** (`engine/look.cpp`, `scripts/tandem/Outfit.reds`): a V's face
   and body travel as the appearance keys the game's appearance changer takes
   (a resource path hash and a name hash each: the same in every copy of the
@@ -514,6 +516,58 @@ redscript natives (UI, events)              ENet socket
   distance text, rewritten after each native update: watch for flicker)
   and on the map tooltip, and that the marker follows a seated player's car
   copy.
+- **Story** (`scripts/tandem/Story.reds`, `Phone.reds`, `Dialogue.reds`,
+  `plugin/src/engine/quests.cpp`, `core/src/story.cpp`; milestone 6 step 1
+  of `research/coop-quests-design.md`). The host's game runs the story;
+  everything travels as the story messages (`Journal` … `QuestReward`,
+  one path through `Endpoint::SendStory` / `events::Story`; the host keeps
+  the journal, tracked entry, open call and hub for late joiners).
+  - _A guest's own story waits_: a hook on `QuestPhaseInstance::ExecuteNode`
+    (hash 3227858325, behind an RTTI layout check) refuses the nodes of the
+    guest's story phases while it is in a session, the way the engine
+    skips a disabled node (result 1, read offline: engine-knowledge §13.15),
+    holds each refused signal and gives it back through the root phase's
+    `ExecutePath` when the freeze ends. **Per phase, not global**:
+    open-world phases (communities, vendors, NCPD hustles, city scenes,
+    fixers: Codeware's list, plus `quest_freeze_allow`) and phases under
+    them keep running, so a guest away from the host runs its own
+    surroundings (`research/coop-regions.md`). **Off by default**
+    (`quest_freeze = on` to use it) until checked in game; without it a
+    guest gets calls, lines, hubs and rewards but not the journal or texts.
+  - _Saves_: a guest in a session never saves (`TandemStorySystem` overrides
+    `IsSavingLocked`, plus a `SaveLocksManager` lock and dropped autosaves).
+    Every journal entry the mirror changes keeps its state from before; on
+    leaving (the guest quits or the host is gone) the journal and tracked
+    entry go back, are checked, the freeze ends and saving unlocks. A
+    mismatch keeps saving locked and says "load your last save". The
+    design's final step (write one "back from co-op" save and reload it) is
+    a logged TODO: the guest goes on in place.
+  - _Journal, tracker, markers_: the host's journal (snapshot at join,
+    changes with their notify flag, so the guest gets the same toasts and
+    sounds) and tracked quest; quest pins follow the journal. Shown only on
+    a frozen guest. Entity-bound pins and objective counters: step 2.
+  - _Calls and texts_ (`Phone.reds`): the host's `PhoneSystem` phases go to
+    every phone; a guest presents them through its own `PhoneSystem`
+    (ringtone, incoming widget, audio call with the caller's portrait) with
+    its phone facts held back. Anyone answers: the first answer wins
+    (`story::CallArbiter` on the host's endpoint) and picks up the host's
+    phone. Texts come through the journal; a guest's reply goes to the host,
+    which applies it if the option is still open (first reply wins).
+  - _Dialogue_ (`Dialogue.reds`): the host's subtitles and its active choice
+    hub reach guests within 25 m (holocall lines and phone hubs: everyone),
+    drawn by the guest's own subtitle and hub widgets (a stand-in hub). A
+    guest moves its own cursor and can suggest; the host sees the
+    suggestion; the host's pick closes every hub. No story voice yet.
+  - _Scenes_: each game sends its V's scene tier (`StoryState`). A guest
+    within 30 m of the host in a tier 3+ scene has its weapons lowered, tier
+    4+ also invulnerable; a guest further than 100 m from a tier 4+ scene
+    gets an offer to join (the regroup itself: TODO).
+  - _Rewards_: the host's `OnRewardEvent` goes to the guests that took part
+    (within 150 m of the host as the quest moved or completed;
+    `story::Participation`); each guest gives its own V the reward
+    (`RPGManager.GiveReward`) once, and keeps it in a persistent ledger so
+    its own story pays nothing again for it.
+  - Not yet verified in game: scenarios `story-guest`, `story-host`.
 - **How NPCs see a remote V** (`scripts/tandem/Attitudes.reds`,
   `tweaks/tandem/attitudes.tweak`, `tweaks/tandem/puppet.tweak`): every
   puppet is in an attitude group of its own, `tandem_player_1` to `_3`
@@ -532,7 +586,26 @@ redscript natives (UI, events)              ENet socket
   senses Body.reds grafts. `tools/game.sh cmd puppet attitude` logs each
   puppet's group and how the NPCs around V see it next to V; scenario
   `puppet-attitude`. **Not yet verified in game** (engine-knowledge §13.12).
-- Configuration: `tandem.ini` next to the DLL (role, address, port, name, pose).
+- **Slowed time** (`scripts/tandem/Time.reds`, `core/src/timebubble.cpp`):
+  each game sends its V's time abilities when they change (`TimeEffect`:
+  Sandevistan, Kerenzikov, slow-motion perks, scanning, and the world speed
+  the implant asks for; reliable, kept by the host for late joiners, ended
+  when a player leaves). Every V with a Sandevistan or Kerenzikov on has a
+  **time bubble**: the NPCs within 50 m of it are slowed by its factor, for
+  everyone. The host does it to its real NPCs with the per-entity dilation
+  (`SetIndividualTimeDilation`, the local global factor ignored); each
+  guest computes the same bubbles (same core code, same messages) for its
+  proxies, so they animate at the speed they move. Membership is sticky
+  until the bubble ends; an NPC in several takes the smallest factor; when
+  a bubble ends its NPCs go back together. The owner keeps its own
+  single-player slow motion, except the host, whose global factor is taken
+  back within the frame (re-set at normal speed under the same reason, so
+  the state machine carries on) unless `time_host = full`. A game whose
+  world runs dilated exempts what the network drives (proxies, puppets) to
+  their true speed. The plugin calls `TandemTime.Frame` every frame
+  (`plugin/src/main.cpp`). Scenario `time`; not yet run in game.
+- Configuration: `tandem.ini` next to the DLL (role, address, port, name,
+  pose, story, quest_freeze, quest_freeze_allow, time_host).
 
 ## Talking to the engine safely
 
@@ -583,15 +656,15 @@ localhost, so ENet itself never knows the relay exists (planned, milestone 7).
 
 ## Testing without a second player
 
-| Level       | What                                                                  | Command                           |
-| ----------- | --------------------------------------------------------------------- | --------------------------------- |
-| unit        | protocol round trips, strict decoding, sizes                          | `task test`                       |
-| loopback    | real host + guests over UDP in one process: join, relay, clock, leave | `task test`                       |
-| relay       | protocol, limits, amplification, real sockets, race detector          | `task relay:test`                 |
-| mock player | `tandem-peer` as host or guest against the real game                  | `task peer -- host --mode mirror` |
-| natives     | `Natives.reds` matches `natives.cpp`: types, struct fields, alignment | `task natives:check`              |
-| scenarios   | the real game against the mock player, checked on the game's log      | `task scenario -- all`            |
-| in game     | deploy the DLL, read its log                                          | `task deploy`, `task logs`        |
+| Level       | What                                                                       | Command                           |
+| ----------- | -------------------------------------------------------------------------- | --------------------------------- |
+| unit        | protocol round trips, strict decoding, sizes                               | `task test`                       |
+| loopback    | real host + guests over UDP in one process: join, relay, clock, leave      | `task test`                       |
+| relay       | protocol, limits, amplification, real sockets, race detector               | `task relay:test`                 |
+| mock player | `tandem-peer` as host or guest against the real game                       | `task peer -- host --mode mirror` |
+| natives     | `Natives.reds`/`StoryNatives.reds` match `natives.cpp`/`story_natives.cpp` | `task natives:check`              |
+| scenarios   | the real game against the mock player, checked on the game's log           | `task scenario -- all`            |
+| in game     | deploy the DLL, read its log                                               | `task deploy`, `task logs`        |
 
 **Scenarios** (`tools/scenario.sh`, `tools/scenarios/*.sh`) are the
 in-game regression suite: each one puts the game in a role, drives the
@@ -615,6 +688,11 @@ game thread stop). Each feature verified in game gets a scenario.
   `off`) plays that station on its radio: sent at the wheel and again when
   your V gets in (`tools/game.sh cmd vehicle ride`).
 - **idle** — connects and reports.
+- **story** (milestone 6): `host --story FILE` plays a scripted host story
+  (journal snapshot and changes, tracked entry, call phases, lines, hubs, a
+  pick, scene tiers, a reward; `tools/scenarios/story-host.story`); as a
+  guest, `--answer N`, `--reply HASH`, `--suggest N` act on the host's
+  calls, texts and hubs, and every story message heard is logged.
 - **quickhacks**: `join --hack-npcs N` uploads `--hack-action` on one of
   the host's NPCs every N s (1.5 s) and then lands `--hack-effect`;
   `host --replay FILE --hack-player N` has a replayed NPC hack the guest's
@@ -661,17 +739,17 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
 
 Each milestone ends with something visible in game.
 
-| #   | Milestone           | Done when                                                                                                                                     |
-| --- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0   | Toolchain           | DLL built on Linux loads in the game and logs; mock player; relay image ✓                                                                     |
-| 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                                 |
-| 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)             |
-| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test)                                   |
-| 4   | Shared world basics | time, weather, police heat follow the host; tether and regroup on fast travel (time, weather ✓ 2026-11-18)                                    |
-| 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot through the host (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18) |
-| 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests                                                                  |
-| 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join                                         |
-| 8   | Co-op features      | revive, pings and shared markers, and what we add as we play                                                                                  |
+| #   | Milestone           | Done when                                                                                                                                                                  |
+| --- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0   | Toolchain           | DLL built on Linux loads in the game and logs; mock player; relay image ✓                                                                                                  |
+| 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                                                              |
+| 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)                                          |
+| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test)                                                                |
+| 4   | Shared world basics | time, weather, police heat follow the host; tether and regroup on fast travel (time, weather ✓ 2026-11-18)                                                                 |
+| 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot through the host (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18)                              |
+| 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests (step 1 written: freeze, saves, journal, calls, texts, lines, hubs, rewards; to test in game) |
+| 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join                                                                      |
+| 8   | Co-op features      | revive, pings and shared markers, and what we add as we play                                                                                                               |
 
 Alongside every milestone from 2 on: the simulated second game (record,
 replay, scripted players, network shaping) covers what that milestone
@@ -1039,6 +1117,46 @@ in-game tests still owed; none of it tested in a session yet):
   - _stopped time_: the pause menu, inventory, map, character and perk
     screens, crafting, the wardrobe, photo mode, tutorials and popups —
     single-player pauses the whole world for all of them.
+
+  Done (2026-11-18, not yet run in game; scenario `time`, unit tests in
+  `tests/timebubble_test.cpp`): the rule per mechanism, in
+  `scripts/tandem/Time.reds`.
+  - _Sandevistan, Kerenzikov_: a **time bubble** around the V using it
+    (Inside the plugin). On its own screen the user keeps the
+    single-player slow motion; the shared world slows only where it
+    matters, the enemies around that V, really and for everyone, so the
+    ability keeps both its purposes: more actions per enemy action, and
+    more real time to aim. Its hits go to the host at real time, as
+    always. The host cannot slow only its view of its own NPCs (the time
+    system has global, local-player and per-entity scopes, no render-only
+    one: `research/engine-knowledge.md` §13.15), so as the user it keeps
+    its world at normal speed and its bubble does the slowing (default),
+    or with `time_host = full` keeps the whole slow motion and exempts
+    what it shares (experimental: its projectiles, physics and clock
+    still slow). Kerenzikov is the same, shorter; its V keeps its own
+    player factor.
+  - _What the others see_: the NPCs around that V slow down, the V itself
+    moves at its normal speed among them (it is never slowed, nor sped
+    up), with the implant's effect played on its puppet (effect name to
+    confirm in game). Two Vs in a Sandevistan at once: one bubble each, an
+    NPC in both takes the stronger factor; each sees the NPCs slowed and
+    the other V at normal speed; when one ends, its NPCs go back unless
+    the other's bubble holds them.
+  - _Scanner and quickhack panel, Focus, Deadeye's reload, Berserk, melee
+    hit stop, deflect_: local only, no bubble. A guest keeps them on its
+    screen (proxies and puppets exempted, so the shared world shows at its
+    true speed); the host drops their world part. Others see the V as it
+    is (standing, scanning).
+  - _Second chance_ (its dilation is in TweakDB, reason unknown): any
+    other dilation left on the host is logged to find it.
+  - Breach timers and network dive: not handled yet (owner-local, real
+    time, `research/coop-time.md` §2.7).
+
+  To verify in game: the bubble NPCs slow on host and guest alike, that a
+  factor of 1.0 keeps Sandevistan going on the host (else 0.999 is used),
+  the effect on the puppet, the projectile bullets of NPCs while a held
+  dilation is active, and how a guest's proxies look under its own slow
+  motion.
 
   Direction to start from: the world (host) never slows or stops for one
   player. A V's own time effects are local to that player's game and seen by

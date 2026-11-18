@@ -66,6 +66,12 @@ void Runtime::Stop() {
       ++m_remotePausedChanges;
     }
     m_names.clear();
+    m_localTime.reset();
+    // Nobody bends time around us any more: the count moves so scripts let go.
+    if (!m_remoteTimes.empty()) {
+      m_remoteTimes.clear();
+      ++m_remoteTimeChanges;
+    }
   }
   net.reset(); // joins outside the lock: the net thread takes it too
   {
@@ -323,6 +329,31 @@ std::vector<proto::PlayerId> Runtime::RemotePaused(std::uint32_t &changes) {
   std::lock_guard _(m_lock);
   changes = m_remotePausedChanges;
   return m_remotePaused;
+}
+
+void Runtime::SubmitLocalTime(const proto::TimeEffect &effect) {
+  std::lock_guard _(m_lock);
+  m_localTime = effect;
+}
+
+std::optional<proto::TimeEffect> Runtime::TakeLocalTime() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localTime, std::nullopt);
+}
+
+void Runtime::PushRemoteTime(const proto::TimeEffect &effect) {
+  std::lock_guard _(m_lock);
+  if (effect.abilities == 0)
+    m_remoteTimes.erase(effect.player);
+  else
+    m_remoteTimes[effect.player] = effect;
+  ++m_remoteTimeChanges;
+}
+
+std::map<proto::PlayerId, proto::TimeEffect> Runtime::RemoteTimes(std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  changes = m_remoteTimeChanges;
+  return m_remoteTimes;
 }
 
 void Runtime::NotePlayerName(proto::PlayerId player, std::string name) {
@@ -646,6 +677,8 @@ void Runtime::ForgetRemote(proto::PlayerId player) {
     m_seats.erase(player);
     m_radios.erase(player);
     m_stealth.erase(player);
+    if (m_remoteTimes.erase(player) > 0)
+      ++m_remoteTimeChanges;
   }
   {
     std::lock_guard _(m_tracksLock);

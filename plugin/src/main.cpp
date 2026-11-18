@@ -4,6 +4,7 @@
 #include "engine/hooks.hpp"
 #include "engine/pose.hpp"
 #include "engine/posestream.hpp"
+#include "engine/quests.hpp"
 #include "engine/trace.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
@@ -30,40 +31,53 @@ std::filesystem::path PluginDirectory(RED4ext::v1::PluginHandle handle) {
 // Every frame of the running game, on the game thread, also while the world
 // is paused (scripts' delayed callbacks then stand still): the pause script
 // follows the other players' pause menus (scripts/tandem/Pause.reds), and
-// can let go of a pause from there.
+// can let go of a pause from there; the time script (scripts/tandem/Time.reds)
+// takes back, within the frame, a time dilation that would slow the shared
+// world.
+// A script class's static function, found once: a script class's static
+// functions are neither in its member nor its static list, they are
+// registered as global functions under a qualified name
+// (docs/research/engine-knowledge.md §13.13).
+struct ScriptFrame {
+  const char *script;
+  const char *what; // the log's word for it
+  RED4ext::CBaseFunction *function{};
+  bool searched{};
+  std::uint32_t failures{};
+
+  void Call(Red::ScriptGameInstance &game) {
+    if (!function && !searched && Red::GetClass(script)) {
+      searched = true;
+      RED4ext::DynArray<RED4ext::CBaseFunction *> globals;
+      RED4ext::CRTTISystem::Get()->GetGlobalFunctions(globals);
+      std::string seen;
+      for (auto *f : globals) {
+        const std::string_view full = f->fullName.ToString();
+        if (full.find(script) != std::string_view::npos) {
+          seen += std::format(" {}", full);
+          if (full.find("Frame") != std::string_view::npos)
+            function = f;
+        }
+      }
+      tandem::plugin::log::Info("{}: {} globals:{}; frame {}", what, script, seen,
+                                function != nullptr);
+    }
+    // Reported on the first failure and every 1000 after: the scripts may
+    // not be there in the first frames.
+    if ((!function || !Red::CallFunction(function, game)) && failures++ % 1000 == 0)
+      tandem::plugin::log::Warn("{}: {}.Frame could not be called ({} times)", what, script,
+                                failures);
+  }
+};
+
 bool OnRunningUpdate(RED4ext::CGameApplication *) {
   if (!tandem::plugin::Runtime::Get().Started())
     return false;
-  static std::uint32_t failures = 0;
   Red::ScriptGameInstance game;
-  // Reported on the first failure and every 1000 after: the scripts may not
-  // be there in the first frames.
-  // A script class keeps its static functions in its member list, which
-  // CallStatic does not search: look in both.
-  // A script class's static functions are neither in its member nor its
-  // static list: they are registered as global functions under a qualified
-  // name. Found once by scanning the globals.
-  static RED4ext::CBaseFunction *frame = nullptr;
-  static bool searched = false;
-  if (!frame && !searched && Red::GetClass("TandemPause")) {
-    searched = true;
-    RED4ext::DynArray<RED4ext::CBaseFunction *> globals;
-    RED4ext::CRTTISystem::Get()->GetGlobalFunctions(globals);
-    std::string seen;
-    for (auto *f : globals) {
-      const std::string_view full = f->fullName.ToString();
-      if (full.find("TandemPause") != std::string_view::npos) {
-        seen += std::format(" {}", full);
-        if (full.find("Frame") != std::string_view::npos)
-          frame = f;
-      }
-    }
-    tandem::plugin::log::Info("pause: TandemPause globals:{}; frame {}", seen, frame != nullptr);
-  }
-  if ((!frame || !Red::CallFunction(frame, game)) && failures++ % 1000 == 0)
-    tandem::plugin::log::Warn("pause: TandemPause.Frame could not be called ({} times): "
-                              "no shared pause",
-                              failures);
+  static ScriptFrame pause{"TandemPause", "pause"};
+  static ScriptFrame time{"TandemTime", "time"};
+  pause.Call(game);
+  time.Call(game);
   return false; // ignored for the running state
 }
 
@@ -100,6 +114,9 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     }
     if (runtime.config.role != Config::Role::Off && runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
+    // The guest's quest freeze (engine/quests.cpp): only when asked for.
+    if (runtime.config.role != Config::Role::Off && runtime.config.questFreeze)
+      engine::InstallQuestFreeze(sdk, handle, runtime.config.questFreezeAllow);
     if (runtime.config.trace || runtime.config.mirror)
       engine::InstallTrace(sdk, handle, runtime.config.trace);
     // The session starts when scripts report a loaded game (TandemNative.Start).
@@ -110,6 +127,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     engine::RemoveHooks(g_sdk, handle);
     engine::RemovePoseStream(g_sdk, handle);
     engine::RemoveTrace(g_sdk, handle);
+    engine::RemoveQuestFreeze(g_sdk, handle);
     engine::RemovePoseHook();
     log::Info("tandem unloaded");
     log::g_logger = nullptr;

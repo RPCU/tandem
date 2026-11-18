@@ -10,6 +10,7 @@
 
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
+#include "tandem/story.hpp"
 
 #include <cstdint>
 #include <map>
@@ -146,6 +147,17 @@ struct HostWorld {
 struct PauseChanged {
   proto::Pause pause;
 };
+// A story message (proto::IsStory) for this game. Host: from a guest,
+// stamped with its player (PhoneAction only when it is the answer that
+// counts, story::CallArbiter). Guest: from the host.
+struct Story {
+  proto::Message message;
+};
+// Another player's time ability started, changed or ended (abilities 0),
+// or they left while it was on. Never reported for our own.
+struct RemoteTimeEffect {
+  proto::TimeEffect effect;
+};
 // The session is over (refused, host gone, timed out).
 struct Ended {
   std::string reason;
@@ -175,17 +187,16 @@ struct Identity {
   proto::Body body{};
 };
 
-using SessionEvent =
-    std::variant<events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
-                 events::RemotePose, events::RemoteAppearance, events::RemoteHeld,
-                 events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
-                 events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
-                 events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
-                 events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
-                 events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
-                 events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-                 events::HostPlayerHack, events::VehicleHackOn, events::NpcActionBy,
-                 events::NpcActionAnswered, events::HostNpcHold, events::HostNpcCue>;
+using SessionEvent = std::variant<
+    events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
+    events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
+    events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
+    events::HostNpcStates, events::HostNpcGone, events::HostNpcHealth, events::NpcHitBy,
+    events::NpcEffectBy, events::PauseChanged, events::Ended, events::PlayerReturned,
+    events::RemoteVehicleRadio, events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness,
+    events::NoiseBy, events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
+    events::HostPlayerHack, events::VehicleHackOn, events::Story, events::RemoteTimeEffect,
+    events::NpcActionBy, events::NpcActionAnswered, events::HostNpcHold, events::HostNpcCue>;
 
 class Endpoint {
 public:
@@ -251,8 +262,17 @@ public:
   // Our pause menu is open (paused) or closed. Kept: sent now if we are in
   // the session, else as soon as we are.
   void SetLocalPaused(bool paused);
+  // Story (milestone 6, proto::IsStory). Host: to every guest (to: one
+  // guest), kept for late joiners (story::Record). Guest: to the host, which
+  // relays ChoiceCursor and StoryState. Anything else is dropped.
+  void SendStory(proto::Message message, proto::PlayerId to = proto::kNoPlayer);
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
+  // Our V's time ability (Sandevistan...). Kept: sent now if we are in the
+  // session, else as soon as we are; the host hands everyone's to late joiners.
+  void SetLocalTimeEffect(proto::TimeEffect effect);
+  // Every active time ability this game knows of (us included), by player.
+  const std::map<proto::PlayerId, proto::TimeEffect> &TimeEffects() const { return m_timeEffects; }
   // How hard our V is to see (kept: sent now if we are in the session, else
   // as soon as we are; the host hands everyone's to late joiners).
   void SetLocalStealth(proto::Stealth stealth);
@@ -335,12 +355,25 @@ private:
   void SendLocalPausedNow();
   // Records a player's pause state; false when it did not change.
   bool NotePaused(proto::PlayerId player, bool paused);
+  // Active time abilities (host: the session's record, for late joiners).
+  proto::TimeEffect m_localTime;
+  std::map<proto::PlayerId, proto::TimeEffect> m_timeEffects;
+  void SendLocalTimeNow();
+  // Records a player's time ability; false when it did not change.
+  bool NoteTime(const proto::TimeEffect &effect);
+  // A player is gone (or back from a crash): its ability ends for everyone.
+  void EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
   // Our stealth, and (host) everyone's latest, for late joiners.
   std::optional<proto::Stealth> m_localStealth;
   std::uint32_t m_stealthRevision{};
   std::map<proto::PlayerId, proto::Stealth> m_stealth;
   void SendLocalStealthNow();
   std::uint32_t m_awarenessSeq{};
+  // Host: the story for late joiners, and who answered the call first.
+  story::Record m_story;
+  story::CallArbiter m_calls;
+  void OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
+                    std::vector<SessionEvent> &out);
   bool m_ended{};
 };
 } // namespace tandem

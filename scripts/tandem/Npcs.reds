@@ -671,6 +671,44 @@ public class TandemNpcs {
     return this.m_proxies;
   }
 
+  // (Time.reds) The live NPCs this game shares (host: the ones it lists;
+  // guest: its proxies), and their entities in the same order.
+  public func TimeIds() -> array<Uint32> {
+    let out: array<Uint32>;
+    if TandemNative.IsHost() {
+      for known in this.m_known {
+        if !known.dead {
+          ArrayPush(out, known.npc);
+        }
+      }
+    } else {
+      for proxy in this.m_proxies {
+        if !proxy.dead {
+          ArrayPush(out, proxy.npc);
+        }
+      }
+    }
+    return out;
+  }
+
+  public func TimeEntities() -> array<EntityID> {
+    let out: array<EntityID>;
+    if TandemNative.IsHost() {
+      for known in this.m_known {
+        if !known.dead {
+          ArrayPush(out, known.id);
+        }
+      }
+    } else {
+      for proxy in this.m_proxies {
+        if !proxy.dead {
+          ArrayPush(out, proxy.id);
+        }
+      }
+    }
+    return out;
+  }
+
   public func Count() -> Int32 {
     return TandemNative.IsHost() ? ArraySize(this.m_known) : ArraySize(this.m_proxies);
   }

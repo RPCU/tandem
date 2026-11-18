@@ -71,6 +71,32 @@ Config LoadConfig(const std::filesystem::path &path) {
         config.pose = false;
       else
         log::Warn("tandem.ini:{}: pose is on or off", number);
+    } else if (key == "story" || key == "quest_freeze") {
+      auto &flag = key == "story" ? config.story : config.questFreeze;
+      if (value == "on" || value == "true")
+        flag = true;
+      else if (value == "off" || value == "false")
+        flag = false;
+      else
+        log::Warn("tandem.ini:{}: {} is on or off", number, key);
+    } else if (key == "quest_freeze_allow") {
+      for (std::size_t start = 0; start <= value.size();) {
+        const auto comma = value.find(',', start);
+        const auto path = Trim(
+            value.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+        if (!path.empty())
+          config.questFreezeAllow.push_back(path);
+        if (comma == std::string::npos)
+          break;
+        start = comma + 1;
+      }
+    } else if (key == "time_host") {
+      if (value == "bubble")
+        config.timeHostFull = false;
+      else if (value == "full")
+        config.timeHostFull = true;
+      else
+        log::Warn("tandem.ini:{}: time_host is bubble or full", number);
     } else if (key == "trace") {
       config.trace = value == "on" || value == "true";
     } else if (key == "port") {

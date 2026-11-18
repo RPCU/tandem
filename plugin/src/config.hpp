@@ -12,10 +12,20 @@
 //   trace = off          ; on: log every distinct anim feature the engine applies
 //   mirror = off         ; on (experiment): puppets get the local V's anim features
 //   pose = on            ; off: no body pose streaming (the hooks stay out)
+//   story = on           ; off: no story sync (journal, calls, lines, hubs, rewards)
+//   quest_freeze = off   ; on: a guest's own story phases wait while it is in a
+//                        ; session (engine/quests.cpp); off: the hook stays out
+//   quest_freeze_allow = ; more open-world phase resources that keep running
+//                        ; on a frozen guest (resource paths, comma-separated)
+//   time_host = bubble   ; host's Sandevistan (scripts/tandem/Time.reds): bubble keeps
+//                        ; its world at normal speed and slows only the NPCs around
+//                        ; its V; full keeps the single-player slow motion on its own
+//                        ; screen, shared NPCs and puppets exempted (experimental)
 
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace tandem::plugin {
 struct Config {
@@ -31,6 +41,13 @@ struct Config {
   bool trace{false};
   bool mirror{false};
   bool pose{true};
+  bool story{true};
+  bool questFreeze{false};
+  std::vector<std::string> questFreezeAllow;
+  // How the host's own time dilations are played (Time.reds): its world in
+  // bubbles only (false), or the whole single-player slow motion with what
+  // is shared exempted (true).
+  bool timeHostFull{false};
   // Not from the file: tandem.cmd next to it, a command for the running game.
   std::filesystem::path commandFile;
 };

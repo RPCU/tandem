@@ -1,6 +1,7 @@
 #include "tandem/endpoint.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace tandem {
 namespace {
@@ -8,6 +9,16 @@ constexpr std::uint64_t kPingIntervalUs = 500'000;
 // The clock offset follows the lowest-RTT ping, but forgets it slowly so a
 // route change or a drifting clock is picked up.
 constexpr std::uint64_t kRttForgetUsPerPing = 200;
+
+// What a game says of its own time ability, made safe to act on: a speed in
+// 0.05..1 (a bubble never stops NPCs, nor speeds them up), 1 without a
+// bubble ability.
+proto::TimeEffect Sanitized(proto::TimeEffect effect) {
+  if (!std::isfinite(effect.scale) || (effect.abilities & proto::kTimeBubbleAbilities) == 0)
+    effect.scale = 1.f;
+  effect.scale = std::clamp(effect.scale, 0.05f, 1.f);
+  return effect;
+}
 
 template <class... Ts> struct Overloaded : Ts... {
   using Ts::operator()...;
@@ -90,6 +101,10 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
     if (known == m_playerOfPeer.end())
       return;
     const auto player = known->second;
+    if (proto::IsStory(message)) {
+      OnGuestStory(event.peer, player, message, out);
+      return;
+    }
 
     std::visit(Overloaded{
                    [&](const proto::Ping &ping) {
@@ -202,6 +217,15 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      m_session->Broadcast(relayed, event.peer);
                      out.push_back(events::PauseChanged{relayed});
                    },
+                   [&](const proto::TimeEffect &time) {
+                     // A guest only bends time in its own name.
+                     auto relayed = Sanitized(time);
+                     relayed.player = player;
+                     if (!NoteTime(relayed))
+                       return;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteTimeEffect{relayed});
+                   },
                    [&](const proto::Bye &) {
                      RemovePlayer(event.peer, out); // gone now, not when ENet is done
                      m_session->Disconnect(event.peer);
@@ -236,11 +260,14 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   }
   m_radios.erase(player);
   m_stealth.erase(player);
+  m_story.Forget(player);
   // Gone while in the pause menu: no longer pausing anyone.
   if (NotePaused(player, false)) {
     m_session->Broadcast(proto::Pause{player, false});
     out.push_back(events::PauseChanged{{player, false}});
   }
+  // Gone in a Sandevistan: its bubble ends for everyone.
+  EndTimeOf(player, out, true);
   out.push_back(events::PlayerLeft{player});
   BroadcastRoster();
 }
@@ -278,6 +305,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
       m_session->Broadcast(proto::Pause{player, false});
       out.push_back(events::PauseChanged{{player, false}});
     }
+    EndTimeOf(player, out, true);
     BroadcastRoster();
     SendSessionTo(peer);
     return;
@@ -317,6 +345,9 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
     m_session->Send(peer, spawn);
   for (const auto &[npc, health] : m_npcHealth)
     m_session->Send(peer, health);
+  // The story so far: journal, tracked entry, call, choice hub, story states.
+  for (const auto &message : m_story.ForJoiner())
+    m_session->Send(peer, message);
   for (const auto &[npc, hold] : m_npcHolds)
     m_session->Send(peer, hold);
   // Who is in their pause menu (the newcomer itself is not).
@@ -324,6 +355,10 @@ void Endpoint::SendSessionTo(net::PeerId peer) {
   for (const auto paused : m_paused)
     if (self == m_playerOfPeer.end() || paused != self->second)
       m_session->Send(peer, proto::Pause{paused, true});
+  // Who is in a Sandevistan (or another time ability) now.
+  for (const auto &[id, time] : m_timeEffects)
+    if (self == m_playerOfPeer.end() || id != self->second)
+      m_session->Send(peer, time);
 }
 
 void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &out) {
@@ -342,6 +377,18 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
     out.push_back(events::Ended{IsJoined() ? "the host is gone" : "could not reach the host"});
     break;
   case Kind::Received:
+    if (proto::IsStory(*event.message)) {
+      // Only the host speaks for the story; our own relayed states are ours.
+      if (const auto *state = std::get_if<proto::StoryState>(&*event.message);
+          state && state->player == m_you)
+        break;
+      if (const auto *cursor = std::get_if<proto::ChoiceCursor>(&*event.message);
+          cursor && cursor->player == m_you)
+        break;
+      if (IsJoined())
+        out.push_back(events::Story{*event.message});
+      break;
+    }
     std::visit(
         Overloaded{
             [&](const proto::Welcome &welcome) {
@@ -361,6 +408,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               SendLocalRadioNow();
               SendLocalPausedNow();
               SendLocalStealthNow();
+              SendLocalTimeNow();
             },
             [&](const proto::Refused &refused) {
               m_ended = true;
@@ -388,6 +436,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
                 if (!next.contains(id)) {
                   if (NotePaused(id, false))
                     out.push_back(events::PauseChanged{{id, false}});
+                  EndTimeOf(id, out, false);
                   out.push_back(events::PlayerLeft{id});
                 }
               m_players = std::move(next);
@@ -476,6 +525,11 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::Pause &pause) {
               if (pause.player != m_you && NotePaused(pause.player, pause.paused))
                 out.push_back(events::PauseChanged{pause});
+            },
+            [&](const proto::TimeEffect &time) {
+              const auto safe = Sanitized(time);
+              if (safe.player != m_you && NoteTime(safe))
+                out.push_back(events::RemoteTimeEffect{safe});
             },
             [&](const proto::Bye &bye) {
               m_ended = true;
@@ -821,6 +875,128 @@ void Endpoint::SendNoise(const proto::Noise &noise) {
 
 bool Endpoint::NotePaused(proto::PlayerId player, bool paused) {
   return paused ? m_paused.insert(player).second : m_paused.erase(player) > 0;
+}
+
+void Endpoint::OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
+                            std::vector<SessionEvent> &out) {
+  if (const auto *action = std::get_if<proto::PhoneAction>(&message)) {
+    auto mine = *action;
+    mine.player = player;
+    if (mine.action == proto::kPhoneDial) {
+      out.push_back(events::Story{mine});
+      return;
+    }
+    // The first answer wins; the call's new state goes to everyone.
+    if (!m_calls.TryAnswer(player, mine.action, mine.contact))
+      return;
+    out.push_back(events::Story{mine});
+    const auto call = *m_calls.Call();
+    m_story.Note(call);
+    m_session->Broadcast(call);
+  } else if (const auto *reply = std::get_if<proto::PhoneReply>(&message)) {
+    auto mine = *reply;
+    mine.player = player;
+    out.push_back(events::Story{mine});
+  } else if (const auto *cursor = std::get_if<proto::ChoiceCursor>(&message)) {
+    auto relayed = *cursor;
+    relayed.player = player;
+    m_session->Broadcast(relayed, peer);
+    out.push_back(events::Story{relayed});
+  } else if (const auto *state = std::get_if<proto::StoryState>(&message)) {
+    auto relayed = *state;
+    relayed.player = player;
+    m_story.Note(relayed);
+    m_session->Broadcast(relayed, peer);
+    out.push_back(events::Story{relayed});
+  }
+  // The rest (journal, calls, lines, hubs, rewards) is the host's to say.
+}
+
+void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
+  if (!IsJoined() || m_ended || !proto::IsStory(message))
+    return;
+  if (!IsHost()) {
+    // A guest speaks for itself, and only about what it may ask.
+    if (auto *action = std::get_if<proto::PhoneAction>(&message))
+      action->player = m_you;
+    else if (auto *reply = std::get_if<proto::PhoneReply>(&message))
+      reply->player = m_you;
+    else if (auto *cursor = std::get_if<proto::ChoiceCursor>(&message))
+      cursor->player = m_you;
+    else if (auto *state = std::get_if<proto::StoryState>(&message))
+      state->player = m_you;
+    else
+      return;
+    m_session->Send(m_hostPeer, message);
+    return;
+  }
+  if (std::holds_alternative<proto::PhoneAction>(message) ||
+      std::holds_alternative<proto::PhoneReply>(message))
+    return; // the host applies its own answers itself
+  if (auto *cursor = std::get_if<proto::ChoiceCursor>(&message))
+    cursor->player = m_you;
+  if (auto *state = std::get_if<proto::StoryState>(&message))
+    state->player = m_you;
+  if (const auto *call = std::get_if<proto::PhoneCall>(&message)) {
+    m_calls.Update(*call);
+    message = *m_calls.Call();
+  }
+  if (to != proto::kNoPlayer) {
+    // One guest (a reward): not part of the story a joiner gets.
+    for (const auto &[peer, player] : m_playerOfPeer)
+      if (player == to)
+        m_session->Send(peer, message);
+    return;
+  }
+  if (!std::holds_alternative<proto::QuestReward>(message) &&
+      !std::holds_alternative<proto::Subtitle>(message))
+    m_story.Note(message);
+  m_session->Broadcast(message);
+}
+void Endpoint::SetLocalTimeEffect(proto::TimeEffect effect) {
+  effect = Sanitized(effect);
+  effect.player = proto::kNoPlayer;
+  if (effect == m_localTime)
+    return;
+  m_localTime = effect;
+  SendLocalTimeNow();
+}
+
+void Endpoint::SendLocalTimeNow() {
+  if (!IsJoined() || m_ended)
+    return;
+  auto mine = m_localTime;
+  mine.player = m_you;
+  // A guest that just joined has something to say only if one is on.
+  if (!NoteTime(mine))
+    return;
+  if (IsHost())
+    m_session->Broadcast(mine);
+  else
+    m_session->Send(m_hostPeer, mine);
+}
+
+bool Endpoint::NoteTime(const proto::TimeEffect &effect) {
+  const auto it = m_timeEffects.find(effect.player);
+  if (effect.abilities == 0) {
+    if (it == m_timeEffects.end())
+      return false;
+    m_timeEffects.erase(it);
+    return true;
+  }
+  if (it != m_timeEffects.end() && it->second == effect)
+    return false;
+  m_timeEffects[effect.player] = effect;
+  return true;
+}
+
+void Endpoint::EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast) {
+  const proto::TimeEffect none{.player = player};
+  if (!NoteTime(none))
+    return;
+  if (broadcast)
+    m_session->Broadcast(none);
+  out.push_back(events::RemoteTimeEffect{none});
 }
 
 std::optional<net::Stats> Endpoint::HostLinkStats() const {
