@@ -1753,3 +1753,18 @@ puppets' attitude group. With the mock player in front mode:
   169949). `GetThreats(false)` still read 0 while the NPC fought the
   puppet: not a usable measure of who it fights; its `CombatTarget`
   behaviour argument is. [2.5-verified]
+
+### 13.13 Calling a script static function from the plugin (2026-11-18)
+
+A redscript class's **static** functions are neither in the class's
+member list (`CClass::funcs`) nor its static list (`staticFuncs`): the
+compiler registers them as **global** functions with a qualified, typed
+name, e.g. `TandemPause::Frame;GameInstance`. RedLib's `CallStatic` and
+`GetFunction(class, name)` therefore never find them; scan
+`CRTTISystem::GetGlobalFunctions` for the qualified name (as
+`plugin/src/main.cpp` does) and `Red::CallFunction` it. Its game-instance
+parameter arrives empty from native code: the script takes the game from
+the global `GetGameInstance()` instead. A RED4ext game-state update
+(`RED4ext::v1::GameState`, running state) calls it every frame, also
+while the world is paused (scripts' delayed callbacks stand still then).
+[2.5-verified]

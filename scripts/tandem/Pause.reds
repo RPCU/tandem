@@ -17,6 +17,8 @@ public class TandemPause {
   private let m_menuOpen: Bool;
   // We asked for a pause for the others, not given back yet.
   private let m_holding: Bool;
+  // The plugin's per-frame call has reached us (logged once).
+  private let m_framesSeen: Bool;
   // The other players in their pause menu, as of PausedChanges() m_seen.
   private let m_paused: array<Uint32>;
   private let m_seen: Int32;
@@ -46,9 +48,17 @@ public class TandemPause {
   }
 
   // Every frame, from the plugin, paused or not.
-  public static func Frame(game: GameInstance) -> Void {
-    let pause = TandemPause.Of(game);
+  // No return type: RedLib's CallStatic counts one as an extra argument and
+  // refuses the call when the plugin passes only the game.
+  public static func Frame(game: GameInstance) {
+    // The plugin has no game instance to hand: an empty one comes in, which
+    // finds no system. The game's own global is the right one.
+    let pause = TandemPause.Of(GetGameInstance());
     if IsDefined(pause) {
+      if !pause.m_framesSeen {
+        pause.m_framesSeen = true;
+        TandemNative.Log("pause: following the other players' pause menus every frame");
+      }
       pause.Update();
     }
   }
