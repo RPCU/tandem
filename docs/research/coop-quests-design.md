@@ -524,7 +524,7 @@ talk with a vendor, a fixer's one-to-one chat. The user's rule: **these do
 not involve the other player.**
 
 **Classification, from the game's own data** (`engine/scenes.cpp`,
-engine-knowledge §13.18). Each game's quest node hook sees the scene node
+engine-knowledge §13.23). Each game's quest node hook sees the scene node
 it runs (`questSceneNodeDefinition.sceneFile`). The scene's resource
 (`scnSceneResource`, loaded by the scene system while it plays) carries
 the designers' category, `sceneCategoryTag`, and its actors:

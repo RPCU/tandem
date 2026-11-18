@@ -106,6 +106,34 @@ public native struct TandemTimeChange {
   native let factor: Float;
 }
 
+// A host NPC's animation state (NpcAnims.reds).
+public native struct TandemNpcAnim {
+  native let npc: Uint32;
+  // gamedataNPCHighLevelState, gamedataNPCUpperBodyState, gamedataNPCStanceState
+  native let highLevel: Int32;
+  native let upperBody: Int32;
+  native let stance: Int32;
+  // 1 weapon drawn, 2 in a workspot
+  native let flags: Int32;
+  native let weapon: TweakDBID;
+  // a player id, or 0x10000 + an NPC id (0: nobody)
+  native let target: Uint32;
+  // the workspot resource's path hash, its tree entry, the animation playing
+  native let workspot: Uint64;
+  native let workspotEntry: Int32;
+  native let workspotAnim: CName;
+}
+
+public native struct TandemNpcShot {
+  native let npc: Uint32;
+  // gamedataFxAction: Shoot 16, SilencedShoot 17, EnterReload 5, ExitReload 11
+  native let effect: Int32;
+  // where it went (zero: unknown)
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+}
+
 // Grapples, takedowns, finishers and carried bodies (Takedowns.reds).
 public native struct TandemNpcAction {
   // 1 a guest's request (host), 2 the host's answer (guest), 3 who holds an NPC, 4 a cue for us
@@ -129,6 +157,57 @@ public native struct TandemNpcAction {
   native let reason: Int32;
 }
 
+public native struct TandemRegroup {
+  // 1 an offer to come to `player`, 2 their answer to our offer
+  native let kind: Int32;
+  native let player: Uint32;
+  native let offer: Uint32;
+  // 0 fast travel, 1 asked, 2 story, 3 teleport
+  native let reason: Int32;
+  // The fast travel point `player` is at (invalid: none), its marker node's
+  // hash (TandemNative.NodeRefOf; 0: none).
+  native let point: TweakDBID;
+  native let marker: Uint64;
+  // Where `player` stands (plain floats: see TandemNpcEvent); yaw in radians.
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let yaw: Float;
+  native let label: String;
+  // 2: the answer
+  native let accepted: Bool;
+}
+
+public native struct TandemLootEvent {
+  // 1 a stack of a shared world item, 2 a stack taken, 3 an important item
+  // another player got, 4 (guest) one on the host's corpse of NPC `id`
+  native let kind: Int32;
+  native let id: Uint32;
+  // 1: the dropper; 2: who has it (0: nobody, it was gone)
+  native let player: Uint32;
+  // 1: the dropper's own number for it
+  native let token: Uint32;
+  native let stack: Int32;
+  // 1: how many stacks the item has
+  native let stacks: Int32;
+  native let record: TweakDBID;
+  native let seed: Uint32;
+  // 1: 0 when already taken
+  native let quantity: Int32;
+  // 1: where it lies
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+}
+
+// Down and out: someone reviving our V (Revive.reds).
+public native struct TandemRevive {
+  // the reviver
+  native let player: Uint32;
+  // 0 start, 1 cancel, 2 done
+  native let step: Int32;
+}
+
 public native class TandemNative extends IScriptable {
   public static native func IsConfigured() -> Bool
   public static native func IsStarted() -> Bool
@@ -143,6 +222,8 @@ public native class TandemNative extends IScriptable {
   public static native func RemotePosition(player: Uint32) -> Vector4
   public static native func RemoteYaw(player: Uint32) -> Float
   public static native func RemoteStance(player: Uint32) -> Int32
+  public static native func TakeSnap(player: Uint32) -> Bool
+  public static native func RemotePlacement(player: Uint32) -> Int32
   public static native func PuppetRecord(body: Int32) -> String
   public static native func IsProbe() -> Bool
   public static native func ClipLengths(entity: ref<Entity>) -> String
@@ -188,6 +269,24 @@ public native class TandemNative extends IScriptable {
   public static native func SendVehicleHack(driver: Uint32, hack: Int32, seconds: Float)
   public static native func TakeHackEvents() -> array<TandemHackEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32
+  public static native func SendWorldItem(token: Uint32, position: Vector4, records: array<TweakDBID>, seeds: array<Uint32>, quantities: array<Int32>)
+  public static native func TakeWorldItem(id: Uint32, stack: Int32)
+  public static native func TakeLootEvents() -> array<TandemLootEvent>
+  public static native func SendSharedItem(kind: Int32, npc: Uint32, record: TweakDBID, seed: Uint32, quantity: Int32)
+  public static native func You() -> Uint32
+  public static native func SendVitals(life: Int32, flags: Int32)
+  public static native func OtherPlayers() -> array<Uint32>
+  public static native func LivesChanges() -> Int32
+  public static native func RemoteLife(player: Uint32) -> Int32
+  public static native func RemoteVitalsFlags(player: Uint32) -> Int32
+  public static native func SendRevive(target: Uint32, step: Int32)
+  public static native func TakeRevives() -> array<TandemRevive>
+  public static native func SessionLosses() -> Int32
+  public static native func SendNpcAnim(npc: Uint32, highLevel: Int32, upperBody: Int32, stance: Int32, flags: Int32, weapon: TweakDBID, target: Uint32, workspot: Uint64, workspotEntry: Int32, workspotAnim: CName)
+  public static native func SendNpcShot(npc: Uint32, effect: Int32, target: Vector4)
+  public static native func TakeNpcAnims() -> array<TandemNpcAnim>
+  public static native func TakeNpcShots() -> array<TandemNpcShot>
+  public static native func SetResourcePath(object: ref<IScriptable>, property: CName, path: Uint64) -> Bool
   public static native func SendVehicleRadio(on: Bool, station: Int32, track: CName, trackStarted: Bool)
   public static native func RemoteRadioChanges(player: Uint32) -> Int32
   public static native func RemoteRadioOn(player: Uint32) -> Bool
@@ -240,6 +339,11 @@ public native class TandemNative extends IScriptable {
   public static native func PoseBind(player: Uint32, entity: ref<Entity>)
   public static native func PoseLoop(player: Uint32)
   public static native func PoseStreamReport()
+  public static native func SendRegroup(to: Uint32, reason: Int32, point: TweakDBID, marker: NodeRef, position: Vector4, orientation: Quaternion, label: String) -> Uint32
+  public static native func SendRegroupAnswer(to: Uint32, offer: Uint32, accepted: Bool)
+  public static native func TakeRegroups() -> array<TandemRegroup>
+  public static native func NodeRefHash(node: NodeRef) -> Uint64
+  public static native func NodeRefOf(hash: Uint64) -> NodeRef
   public static native func Log(text: String)
   // Invites through tandem-relay: the host's join code ("K7Q-2M9", "" none
   // yet or no relay), the relay link's state ("" no relay, "connecting",

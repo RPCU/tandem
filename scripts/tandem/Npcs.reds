@@ -59,6 +59,8 @@ public class TandemNpcs {
   private let m_awarePlayers: array<Uint32>;
   private let m_awareLevels: array<Float>;
   private let m_rounds: Int32;
+  // How they animate (NpcAnims.reds): sampled here, followed on proxies.
+  private let m_anims: ref<TandemNpcAnims>;
 
   public static func Range() -> Float {
     return 60.0;
@@ -67,6 +69,8 @@ public class TandemNpcs {
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
     this.m_next = 1u;
+    this.m_anims = new TandemNpcAnims();
+    this.m_anims.Start(game, this);
   }
 
   public func Tick(now: Float, you: Uint32) -> Void {
@@ -157,6 +161,7 @@ public class TandemNpcs {
     }
     ArrayClear(this.m_proxies);
     ArrayClear(this.m_known);
+    this.m_anims.Clear();
     this.Stop();
   }
 
@@ -215,6 +220,7 @@ public class TandemNpcs {
     ArrayClear(this.m_awareNpcs);
     ArrayClear(this.m_awarePlayers);
     ArrayClear(this.m_awareLevels);
+    let sampling = this.m_anims.Due(this.m_now);
     for npc in player.GetNPCsAroundObject(TandemNpcs.Range()) {
       let id = npc.GetEntityID();
       // The remote players' puppets are not the host's world (cars are not
@@ -237,6 +243,9 @@ public class TandemNpcs {
         let mask = this.Detected(npc, watched);
         ArrayPush(detected, mask);
         this.Notice(known.npc, npc, watched, mask);
+        if sampling {
+          this.m_anims.Sample(npc, known.npc, this.m_you);
+        }
         let health = pools.GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Health, true) / 100.0;
         if AbsF(health - known.health) >= 0.01 {
           known.health = health;
@@ -257,11 +266,15 @@ public class TandemNpcs {
             known.dead = true;
             let killer = this.KillerOf(body, known, player);
             TandemNative.SendNpcGone(known.npc, 1, killer);
+            this.m_anims.Forget(known.npc);
             TandemNative.Log(s"npcs: \(known.npc) died (killer: player \(killer))");
+            // Its quest and important items reach the guests' corpses (Loot.reds).
+            TandemLoot.HostCorpse(this.m_game, known.id, known.npc);
           }
           ArrayPush(kept, known);
         } else {
           TandemNative.SendNpcGone(known.npc, 0, 0u);
+          this.m_anims.Forget(known.npc);
         }
       }
     }
@@ -516,6 +529,23 @@ public class TandemNpcs {
         }
       }
     }
+    this.m_anims.Follow(now, this.m_you);
+  }
+
+  // Guest: a proxy that is alive and moved by our controller (null: none).
+  public func ReadyProxy(npc: Uint32) -> ref<ScriptedPuppet> {
+    let proxy = this.FindProxy(npc);
+    if !IsDefined(proxy) || !proxy.ready || proxy.dead {
+      return null;
+    }
+    return GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
+  }
+
+  // The proxy entity of a host NPC, alive or dead (Loot.reds).
+  public func ProxyEntity(npc: Uint32) -> EntityID {
+    let proxy = this.FindProxy(npc);
+    let none: EntityID;
+    return IsDefined(proxy) ? proxy.id : none;
   }
 
   private func FindProxy(npc: Uint32) -> ref<TandemNpcProxy> {
@@ -552,6 +582,7 @@ public class TandemNpcs {
       return;
     }
     proxy.dead = true;
+    this.m_anims.Drop(npc);
     TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
     let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
     // Our kill: the game credits our V (on-kill perks, its own feedback) and
@@ -561,6 +592,8 @@ public class TandemNpcs {
     let ours = killer != 0u && killer == this.m_you;
     if IsDefined(body) {
       body.Kill(ours ? GetPlayer(this.m_game) : null, false, false);
+      // Its loot is ours to roll, as any corpse's (Loot.reds).
+      TandemLoot.Corpse(this.m_game, proxy.id);
     }
     // Someone else's kill we helped with: our share is paid too (a co-op
     // choice, coop-perks.md §2.4), and the queue does not keep it forever.
@@ -657,8 +690,12 @@ public class TandemNpcs {
     let kept: array<ref<TandemNpcProxy>>;
     for proxy in this.m_proxies {
       if proxy.npc == npc {
+        this.m_anims.Drop(npc);
         TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
-        GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
+        // A corpse leaves what it still holds as a loot bag (Loot.reds).
+        if !proxy.dead || !TandemLoot.LeaveCorpse(this.m_game, proxy.id) {
+          GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
+        }
       } else {
         ArrayPush(kept, proxy);
       }
@@ -720,5 +757,10 @@ public class TandemNpcs {
     }
     ArrayClear(this.m_proxies);
     ArrayClear(this.m_known);
+    this.m_anims.Clear();
+  }
+
+  public func AnimsReport() -> String {
+    return this.m_anims.Report();
   }
 }

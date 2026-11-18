@@ -1,4 +1,4 @@
-// Scene privacy (engine-knowledge.md §13.18, read offline on 2.50).
+// Scene privacy (engine-knowledge.md §13.23, read offline on 2.50).
 //
 // A quest starts a scene through a questSceneNodeDefinition (RTTI size
 // 0x88; `sceneFile` at +0x48, a resource path) run by

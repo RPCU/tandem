@@ -106,6 +106,10 @@ void Runtime::Stop() {
     m_remoteNoises.clear();
     m_hackOutbox.clear();
     m_hackEvents.clear();
+    m_lootOutbox.clear();
+    m_lootInbox.clear();
+    m_npcAnimsIn.clear();
+    m_npcShotsIn.clear();
     m_localPaused.reset();
     // Nobody pauses us any more: the change count moves so scripts let go.
     if (!m_remotePaused.empty()) {
@@ -119,8 +123,19 @@ void Runtime::Stop() {
       m_remoteTimes.clear();
       ++m_remoteTimeChanges;
     }
+    m_regroupOutbox.clear();
+    m_regroupEvents.clear();
+    // Counts keep going (scripts compare them with what they saw).
+    m_localVitals.reset();
+    if (!m_othersLives.empty()) {
+      m_othersLives.clear();
+      ++m_othersLivesChanges;
+    }
+    m_localRevives.clear();
+    m_revives.clear();
   }
   net.reset(); // joins outside the lock: the net thread takes it too
+  m_you.store(0);
   {
     std::lock_guard _(m_heldLock);
     m_heldPuppets.clear();
@@ -414,6 +429,37 @@ std::string Runtime::PlayerName(proto::PlayerId player) {
   return it == m_names.end() ? std::string{} : it->second;
 }
 
+std::uint32_t Runtime::SubmitRegroup(proto::Regroup offer) {
+  std::lock_guard _(m_lock);
+  offer.offer = ++m_regroupOffers;
+  if (m_regroupOutbox.size() < 16)
+    m_regroupOutbox.push_back(std::move(offer));
+  return m_regroupOffers;
+}
+
+void Runtime::SubmitRegroupAnswer(const proto::RegroupAnswer &answer) {
+  std::lock_guard _(m_lock);
+  if (m_regroupOutbox.size() < 16)
+    m_regroupOutbox.push_back(answer);
+}
+
+std::vector<proto::Message> Runtime::TakeRegroupOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_regroupOutbox, {});
+}
+
+void Runtime::PushRegroupEvent(RegroupEvent event) {
+  std::lock_guard _(m_lock);
+  // Scripts drain these every tick; a pile-up means nobody is listening.
+  if (m_regroupEvents.size() < 32)
+    m_regroupEvents.push_back(std::move(event));
+}
+
+std::vector<RegroupEvent> Runtime::TakeRegroupEvents() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_regroupEvents, {});
+}
+
 void Runtime::SubmitNpcSpawn(const proto::NpcSpawn &spawn) {
   std::lock_guard _(m_lock);
   m_npcOutbox.push_back(spawn);
@@ -537,6 +583,62 @@ bool Runtime::IsPuppetHeld(proto::PlayerId player) const {
   return m_heldPuppets.contains(player);
 }
 
+void Runtime::SubmitLocalVitals(const proto::Vitals &vitals) {
+  std::lock_guard _(m_lock);
+  m_localVitals = vitals;
+}
+
+std::optional<proto::Vitals> Runtime::TakeLocalVitals() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localVitals, std::nullopt);
+}
+
+void Runtime::SetOthersLives(std::vector<proto::Vitals> others) {
+  std::lock_guard _(m_lock);
+  if (others == m_othersLives)
+    return;
+  m_othersLives = std::move(others);
+  ++m_othersLivesChanges;
+}
+
+std::vector<proto::Vitals> Runtime::OthersLives(std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  changes = m_othersLivesChanges;
+  return m_othersLives;
+}
+
+void Runtime::SubmitRevive(const proto::Revive &revive) {
+  std::lock_guard _(m_lock);
+  if (m_localRevives.size() < 32)
+    m_localRevives.push_back(revive);
+}
+
+std::vector<proto::Revive> Runtime::TakeLocalRevives() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localRevives, {});
+}
+
+void Runtime::PushRevive(const proto::Revive &revive) {
+  std::lock_guard _(m_lock);
+  if (m_revives.size() < 32)
+    m_revives.push_back(revive);
+}
+
+std::vector<proto::Revive> Runtime::TakeRevives() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_revives, {});
+}
+
+void Runtime::NoteSessionLost() {
+  std::lock_guard _(m_lock);
+  ++m_sessionLosses;
+}
+
+std::uint32_t Runtime::SessionLosses() {
+  std::lock_guard _(m_lock);
+  return m_sessionLosses;
+}
+
 void Runtime::SubmitHack(const proto::Message &message) {
   std::lock_guard _(m_lock);
   if (m_hackOutbox.size() < 256)
@@ -558,6 +660,28 @@ void Runtime::PushHackEvent(const HackEvent &event) {
 std::vector<HackEvent> Runtime::TakeHackEvents() {
   std::lock_guard _(m_lock);
   return std::exchange(m_hackEvents, {});
+}
+
+void Runtime::SubmitLoot(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_lootOutbox.size() < 256)
+    m_lootOutbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeLootOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_lootOutbox, {});
+}
+
+void Runtime::PushLoot(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_lootInbox.size() < 1024)
+    m_lootInbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeLoot() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_lootInbox, {});
 }
 
 void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you) {
@@ -585,6 +709,47 @@ void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you)
     state.orientation = sync::FromYaw(entry.yaw);
     PushRemote(state);
   }
+}
+
+void Runtime::SubmitNpcAnim(const proto::NpcAnim &anim) {
+  std::lock_guard _(m_lock);
+  // Into the outbox's last message when it is a batch with room, so a state
+  // follows its NPC's spawn and the net thread sends one message per batch.
+  if (!m_npcOutbox.empty())
+    if (auto *batch = std::get_if<proto::NpcAnims>(&m_npcOutbox.back());
+        batch && batch->npcs.size() < proto::kMaxNpcAnims) {
+      batch->npcs.push_back(anim);
+      return;
+    }
+  m_npcOutbox.push_back(proto::NpcAnims{.npcs = {anim}});
+}
+
+void Runtime::SubmitNpcShot(const proto::NpcShot &shot) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(shot);
+}
+
+void Runtime::PushNpcAnims(const proto::NpcAnims &anims) {
+  std::lock_guard _(m_lock);
+  for (const auto &anim : anims.npcs)
+    if (m_npcAnimsIn.size() < 1024)
+      m_npcAnimsIn.push_back(anim);
+}
+
+std::vector<proto::NpcAnim> Runtime::TakeNpcAnims() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_npcAnimsIn, {});
+}
+
+void Runtime::PushNpcShot(const proto::NpcShot &shot) {
+  std::lock_guard _(m_lock);
+  if (m_npcShotsIn.size() < 256)
+    m_npcShotsIn.push_back(shot);
+}
+
+std::vector<proto::NpcShot> Runtime::TakeNpcShots() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_npcShotsIn, {});
 }
 
 std::int32_t Runtime::NpcsDetectingUs() {
@@ -805,5 +970,18 @@ bool Runtime::TakeControllerRequest(proto::PlayerId player) {
       return slot.wantsController.exchange(false);
   }
   return false;
+}
+
+void Runtime::RequestSnap(proto::PlayerId player) {
+  std::lock_guard _(m_snapsLock);
+  m_snaps.insert(player);
+}
+
+bool Runtime::TakeSnap(proto::PlayerId player) {
+  // A held puppet (a grapple, a carrier, an NPC's workspot) is placed by
+  // whoever holds it: a teleport asked for just before is dropped.
+  const bool held = IsPuppetHeld(player);
+  std::lock_guard _(m_snapsLock);
+  return m_snaps.erase(player) != 0 && !held;
 }
 } // namespace tandem::plugin

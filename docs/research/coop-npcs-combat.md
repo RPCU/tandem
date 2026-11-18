@@ -301,9 +301,8 @@ takedown interactions until they are forwarded (§9).
 
 ### 2.3 `NPCPuppet.SetDisableRagdoll`
 
-`final.reds:125961`:
-`SetDisableRagdoll(disableRagdoll: Bool, opt force: Bool, opt leaveRagdollEnabled: Bool)`
-toggles `m_npcRagdollComponent` (an `entRagdollComponent`, `isEnabled` at
+At `final.reds:125961`, the function
+`SetDisableRagdoll(disableRagdoll: Bool, opt force: Bool, opt leaveRagdollEnabled: Bool)` toggles `m_npcRagdollComponent` (an `entRagdollComponent`, `isEnabled` at
 +0x8b). `CanEnableRagdollComponent()` (`125938`) refuses while the entity has
 god mode Invulnerable or Immortal, a status effect tagged `DisableRagdoll`,
 or is a boss/MaxTac not yet incapacitated. `NPCPuppet.OnGodModeChanged()`
@@ -1419,6 +1418,14 @@ choiceEvent.activator)` (`22557`); then `OnInventoryEmptyEvent` (`23451`),
   local player's level and perks (`EvaluateLootQuality`, `23368-23381`).
 
 ### 8.2 "Each player loots their own copy"
+
+**Decided and built 2026-11-18** (ARCHITECTURE.md, Loot;
+`scripts/tandem/Loot.reds`): per-player loot as below; dropped weapons
+per player; quest and important items (Quest tag, keycards, iconics) go
+to every player's inventory whoever loots them (`SharedItem`, user's rule
+2026-11-18); a removed proxy corpse leaves a loot bag; what a V drops on
+purpose is a shared world item the host arbitrates (`WorldItem`,
+`WorldItemTaken`). Engine facts in engine-knowledge §13.19.
 
 This falls out of the proxy design with almost no messages `[I]`:
 
