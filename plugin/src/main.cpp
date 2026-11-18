@@ -4,6 +4,7 @@
 #include "engine/hooks.hpp"
 #include "engine/pose.hpp"
 #include "engine/posestream.hpp"
+#include "engine/quests.hpp"
 #include "engine/trace.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
@@ -75,6 +76,9 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     }
     if (runtime.config.role != Config::Role::Off && runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
+    // The guest's quest freeze (engine/quests.cpp): only when asked for.
+    if (runtime.config.role != Config::Role::Off && runtime.config.questFreeze)
+      engine::InstallQuestFreeze(sdk, handle, runtime.config.questFreezeAllow);
     if (runtime.config.trace || runtime.config.mirror)
       engine::InstallTrace(sdk, handle, runtime.config.trace);
     // The session starts when scripts report a loaded game (TandemNative.Start).
@@ -85,6 +89,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     engine::RemoveHooks(g_sdk, handle);
     engine::RemovePoseStream(g_sdk, handle);
     engine::RemoveTrace(g_sdk, handle);
+    engine::RemoveQuestFreeze(g_sdk, handle);
     engine::RemovePoseHook();
     log::Info("tandem unloaded");
     log::g_logger = nullptr;
