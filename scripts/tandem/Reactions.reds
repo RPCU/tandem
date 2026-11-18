@@ -94,7 +94,7 @@ public abstract class TandemReactions {
 // An NPC entering combat with a guest's puppet: the host's own V gets no
 // second chance or gag for it; the guest's game gets the cue.
 @wrapMethod(NPCStatesComponent)
-private final func OnCombat() {
+private final func OnCombat() -> Void {
   let npc = this.GetPuppet() as NPCPuppet;
   let guest = 0u;
   if IsDefined(npc) {
@@ -175,7 +175,7 @@ protected cb func OnStatPoolMinValueReached(value: Float) -> Bool {
 // Bait / Whistle from a guest: the NPC walks to that guest's V, not ours
 // (vanilla takes the local player: final.reds 317768, 317836).
 @wrapMethod(ForceMoveInCombatWhistleEffector)
-protected func ActionOn(owner: GameObject) {
+protected func ActionOn(owner: ref<GameObject>) -> Void {
   let caster = TandemReactions.WhistleCaster(owner);
   if IsDefined(caster) {
     this.m_targetPosition = caster.GetWorldPosition();
@@ -185,7 +185,7 @@ protected func ActionOn(owner: GameObject) {
 }
 
 @wrapMethod(UpdateWhistlePosition)
-protected func Activate(context: ScriptExecutionContext) {
+protected func Activate(context: ScriptExecutionContext) -> Void {
   let owner = AIBehaviorScriptBase.GetPuppet(context);
   let caster = TandemReactions.WhistleCaster(owner);
   if !IsDefined(caster) {

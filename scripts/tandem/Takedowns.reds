@@ -12,7 +12,7 @@
 // puts its proxy in the same grapple or on the same shoulder. A refused grab
 // ends on the guest the way vanilla's failed grapples do: the NPC breaks free
 // (GrappleBreakFreeDecisions). Vanilla references: final.reds, see
-// docs/research/engine-knowledge.md §13.12.
+// docs/research/engine-knowledge.md §13.15.
 
 public class TandemHeldNpc {
   public let npc: Uint32;
@@ -868,7 +868,7 @@ public final static func FillTakedownData(executionOwner: wref<GameObject>, acti
 // A grab the host refused breaks free at once: vanilla's own end for a
 // failed grapple (final.reds 537741).
 @wrapMethod(GrappleBreakFreeDecisions)
-protected const final func EnterCondition(const stateContext: StateContext, const scriptInterface: StateGameScriptInterface) -> Bool {
+protected const final func EnterCondition(const stateContext: ref<StateContext>, const scriptInterface: ref<StateGameScriptInterface>) -> Bool {
   if TandemTakedowns.Get(scriptInterface.GetGame()).Refused(this.stateMachineInitData.target) {
     return true;
   }
@@ -877,7 +877,7 @@ protected const final func EnterCondition(const stateContext: StateContext, cons
 
 // The grapple ended with the NPC alive (it broke free, final.reds 537827).
 @wrapMethod(GrappleBreakFreeEvents)
-public func OnEnter(stateContext: StateContext, scriptInterface: StateGameScriptInterface) {
+public func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
   let takedowns = TandemTakedowns.Get(scriptInterface.GetGame());
   if !takedowns.ClearRefused(this.stateMachineInitData.target) {
@@ -889,7 +889,7 @@ public func OnEnter(stateContext: StateContext, scriptInterface: StateGameScript
 
 // Let go of a grabbed NPC without a takedown (final.reds 538977).
 @wrapMethod(TakedownReleasePreyEvents)
-public func OnEnter(stateContext: StateContext, scriptInterface: StateGameScriptInterface) {
+public func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
   let takedowns = TandemTakedowns.Get(scriptInterface.GetGame());
   if takedowns.IsOurs(this.stateMachineInitData.target, 1) {
@@ -902,7 +902,7 @@ public func OnEnter(stateContext: StateContext, scriptInterface: StateGameScript
 // Finishers play the "playFinisher" game effect on the target
 // (final.reds 250132); the kill itself reaches the host as a lethal hit.
 @wrapMethod(FinisherAttackEvents)
-public final func PlayFinisherGameEffect(const targetPuppet: GameObject, instigator: GameObject, const hasFromFront: Bool, const hasFromBack: Bool) -> Bool {
+public final func PlayFinisherGameEffect(const targetPuppet: ref<GameObject>, instigator: ref<GameObject>, const hasFromFront: Bool, const hasFromBack: Bool) -> Bool {
   let played = wrappedMethod(targetPuppet, instigator, hasFromFront, hasFromBack);
   if played && IsDefined(instigator) && instigator.IsPlayer() {
     let finisherName: CName;
@@ -918,7 +918,7 @@ public final func PlayFinisherGameEffect(const targetPuppet: GameObject, instiga
 
 // The blunt "hold" finisher kills on the spot (final.reds 22433).
 @wrapMethod(ScriptedPuppet)
-private final func TriggerNewPerkFinisherBluntHold(playerPuppet: PlayerPuppet, npcPuppet: NPCPuppet) {
+private final func TriggerNewPerkFinisherBluntHold(playerPuppet: ref<PlayerPuppet>, npcPuppet: ref<NPCPuppet>) -> Void {
   wrappedMethod(playerPuppet, npcPuppet);
   let none: TweakDBID;
   let noEntity: EntityID;
@@ -929,7 +929,7 @@ private final func TriggerNewPerkFinisherBluntHold(playerPuppet: PlayerPuppet, n
 // executionOwner: our V), final.reds 531436 (pick up), 533304 (drop),
 // 536937 (release), 534389 (throw).
 @wrapMethod(PickUpEvents)
-protected func OnEnter(stateContext: StateContext, scriptInterface: StateGameScriptInterface) {
+protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
   let none: TweakDBID;
   let noEntity: EntityID;
@@ -937,7 +937,7 @@ protected func OnEnter(stateContext: StateContext, scriptInterface: StateGameScr
 }
 
 @wrapMethod(DropEvents)
-protected func OnEnter(stateContext: StateContext, scriptInterface: StateGameScriptInterface) {
+protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
   let takedowns = TandemTakedowns.Get(scriptInterface.GetGame());
   if takedowns.IsOurs(scriptInterface.owner, 2) {
@@ -948,7 +948,7 @@ protected func OnEnter(stateContext: StateContext, scriptInterface: StateGameScr
 }
 
 @wrapMethod(ReleaseEvents)
-protected func OnEnter(stateContext: StateContext, scriptInterface: StateGameScriptInterface) {
+protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
   let takedowns = TandemTakedowns.Get(scriptInterface.GetGame());
   if takedowns.IsOurs(scriptInterface.owner, 2) {
@@ -959,7 +959,7 @@ protected func OnEnter(stateContext: StateContext, scriptInterface: StateGameScr
 }
 
 @wrapMethod(ThrowEvents)
-protected func OnEnter(stateContext: StateContext, scriptInterface: StateGameScriptInterface) {
+protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
   let forward = Transform.GetForward(scriptInterface.GetCameraWorldTransform());
   let impulse = forward * this.GetStaticFloatParameterDefault("ragdollMaxImpulse", 100.0);

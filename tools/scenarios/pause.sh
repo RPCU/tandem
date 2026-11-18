@@ -1,7 +1,7 @@
 # A player opens the pause menu: our world pauses, the notice names them, and it resumes when they close it
 # shellcheck shell=bash disable=SC2317
 ensure host
-peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --pause-at 10 --pause-for 3
+peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female --pause-at 10 --pause-for 3
 expect 'joined \(player [0-9]+' 20
 expect_peer 'pause menu open' 30
 expect 'player [0-9]+ paused \(pause menu\)' 5

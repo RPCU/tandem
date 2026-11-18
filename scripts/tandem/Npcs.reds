@@ -49,6 +49,16 @@ public class TandemNpcs {
   // Our player id in the session, and the game time (Tick).
   private let m_you: Uint32;
   private let m_now: Float;
+  // Guest: the host's NPCs' hits on our V queued in our damage system, with
+  // the armour penetration the host sent for each (Combat.reds).
+  private let m_forwarded: array<ref<gameHitEvent>>;
+  private let m_forwardedPierce: array<Float>;
+  // Host: how far each NPC is in noticing each guest, gathered by Share and
+  // sent every other round (5 Hz; Stealth.reds shows it on the guest).
+  private let m_awareNpcs: array<Uint32>;
+  private let m_awarePlayers: array<Uint32>;
+  private let m_awareLevels: array<Float>;
+  private let m_rounds: Int32;
 
   public static func Range() -> Float {
     return 60.0;
@@ -79,6 +89,62 @@ public class TandemNpcs {
         this.HideOwn();
       }
       this.Follow(now);
+      this.TakePlayerHits();
+    }
+  }
+
+  // ---- guest: the host's NPCs hitting our V ----
+
+  // Each hit runs on our V through our own damage system (the target's side
+  // of the hit by our game's rules), from the NPC's proxy when we have it.
+  private func TakePlayerHits() -> Void {
+    let damage = GameInstance.GetDamageSystem(this.m_game);
+    for hit in TandemNative.TakePlayerHits() {
+      let proxy: ref<ScriptedPuppet>;
+      let known = hit.npc != 0u ? this.FindProxy(hit.npc) : null;
+      if IsDefined(known) {
+        proxy = GameInstance.GetDynamicEntitySystem().GetEntity(known.id) as ScriptedPuppet;
+      }
+      let event = TandemCombat.PlayerHitEvent(this.m_game, hit, proxy);
+      if IsDefined(event) {
+        // The newest few: an entry leaves when its pipeline ends.
+        while ArraySize(this.m_forwarded) >= 16 {
+          ArrayErase(this.m_forwarded, 0);
+          ArrayErase(this.m_forwardedPierce, 0);
+        }
+        ArrayPush(this.m_forwarded, event);
+        ArrayPush(this.m_forwardedPierce, hit.pierce);
+        damage.QueueHitEvent(event, event.target);
+        TandemNative.Log(s"npcs: hit by npc \(hit.npc)\(IsDefined(proxy) ? "" : " (no proxy)"): \(hit.physical) physical, \(hit.thermal) thermal, \(hit.electric) electric, \(hit.chemical) chemical, type \(hit.attackType), attack \(TDBID.ToStringDEBUG(hit.attack))");
+      }
+    }
+  }
+
+  public func IsForwarded(hit: ref<gameHitEvent>) -> Bool {
+    return ArrayContains(this.m_forwarded, hit);
+  }
+
+  public func ForwardedPierce(hit: ref<gameHitEvent>, out pierce: Float) -> Bool {
+    let i = 0;
+    while i < ArraySize(this.m_forwarded) {
+      if this.m_forwarded[i] == hit {
+        pierce = this.m_forwardedPierce[i];
+        return true;
+      }
+      i += 1;
+    }
+    return false;
+  }
+
+  public func Forget(hit: ref<gameHitEvent>) -> Void {
+    let i = 0;
+    while i < ArraySize(this.m_forwarded) {
+      if this.m_forwarded[i] == hit {
+        ArrayErase(this.m_forwarded, i);
+        ArrayErase(this.m_forwardedPierce, i);
+        return;
+      }
+      i += 1;
     }
   }
 
@@ -146,6 +212,9 @@ public class TandemNpcs {
     let orientations: array<Quaternion>;
     let detected: array<Int32>;
     let watched = this.Watched(player);
+    ArrayClear(this.m_awareNpcs);
+    ArrayClear(this.m_awarePlayers);
+    ArrayClear(this.m_awareLevels);
     for npc in player.GetNPCsAroundObject(TandemNpcs.Range()) {
       let id = npc.GetEntityID();
       // The remote players' puppets are not the host's world (cars are not
@@ -165,7 +234,9 @@ public class TandemNpcs {
         ArrayPush(ids, known.npc);
         ArrayPush(positions, npc.GetWorldPosition());
         ArrayPush(orientations, npc.GetWorldOrientation());
-        ArrayPush(detected, this.Detected(npc, watched));
+        let mask = this.Detected(npc, watched);
+        ArrayPush(detected, mask);
+        this.Notice(known.npc, npc, watched, mask);
         let health = pools.GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Health, true) / 100.0;
         if AbsF(health - known.health) >= 0.01 {
           known.health = health;
@@ -196,6 +267,34 @@ public class TandemNpcs {
     }
     this.m_known = kept;
     TandemNative.SendNpcStates(ids, positions, orientations, detected);
+    this.m_rounds += 1;
+    if this.m_rounds % 2 == 0 {
+      TandemNative.SendNpcAwareness(this.m_awareNpcs, this.m_awarePlayers, this.m_awareLevels);
+    }
+  }
+
+  // How far this NPC is in noticing each guest's V (its detection meter,
+  // 0..1; full once it has detected them), for that guest's stealth meter.
+  // Our own V's is our game's own business.
+  private func Notice(id: Uint32, npc: ref<ScriptedPuppet>, watched: array<ref<GameObject>>, mask: Int32) -> Void {
+    let senses = npc.GetSensesComponent();
+    if !IsDefined(senses) {
+      return;
+    }
+    let p = 1u;
+    let bit = 1;
+    for v in watched {
+      if IsDefined(v) && p != this.m_you {
+        let level = (mask & bit) != 0 ? 1.0 : ClampF(senses.GetDetection(v.GetEntityID()) / 100.0, 0.0, 1.0);
+        if level >= 0.01 {
+          ArrayPush(this.m_awareNpcs, id);
+          ArrayPush(this.m_awarePlayers, p);
+          ArrayPush(this.m_awareLevels, level);
+        }
+      }
+      p += 1u;
+      bit *= 2;
+    }
   }
 
   private func IsPuppet(id: EntityID) -> Bool {
@@ -217,13 +316,16 @@ public class TandemNpcs {
 
   // Which Vs this NPC has detected (bit player - 1): each player is seen,
   // or not, on their own (ARCHITECTURE, each player is detected on their
-  // own). Full detection meter, or a hostile threat it tracks.
+  // own). Full detection meter, or in combat with them as a hostile threat
+  // (NPCPuppet.IsInCombatWithTarget: what keeps a V in combat once the NPC
+  // has lost sight of them and searches). A guest enters and leaves combat
+  // on this (Stealth.reds).
   private func Detected(npc: ref<ScriptedPuppet>, watched: array<ref<GameObject>>) -> Int32 {
     let mask = 0;
     let senses = npc.GetSensesComponent();
     let bit = 1;
     for v in watched {
-      if IsDefined(v) && IsDefined(senses) && senses.GetDetection(v.GetEntityID()) >= 100.0 {
+      if IsDefined(v) && ((IsDefined(senses) && senses.GetDetection(v.GetEntityID()) >= 100.0) || NPCPuppet.IsInCombatWithTarget(npc, v)) {
         mask += bit;
       }
       bit *= 2;
@@ -452,10 +554,21 @@ public class TandemNpcs {
     proxy.dead = true;
     TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
     let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
-    // Our kill: the game credits our V (on-kill perks, XP, its own feedback).
+    // Our kill: the game credits our V (on-kill perks, its own feedback) and
+    // pays the skill XP our hits on it queued (Combat.reds): RewardKiller
+    // sends our V TargetNeutraliziedEvent, which processes the queue for this
+    // entity (final.reds 21851-21871, 45336-45346).
     let ours = killer != 0u && killer == this.m_you;
     if IsDefined(body) {
       body.Kill(ours ? GetPlayer(this.m_game) : null, false, false);
+    }
+    // Someone else's kill we helped with: our share is paid too (a co-op
+    // choice, coop-perks.md §2.4), and the queue does not keep it forever.
+    let player = GetPlayer(this.m_game);
+    if !ours && IsDefined(player) {
+      let pay = new ProcessQueuedCombatExperience();
+      pay.Set(player, proxy.id);
+      GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"PlayerDevelopmentSystem").QueueRequest(pay);
     }
     TandemNative.Log(s"npcs: proxy \(npc) died\(ours ? ", our kill" : "")");
   }
@@ -521,6 +634,25 @@ public class TandemNpcs {
     return 0u;
   }
 
+  // Quickhacks (Hacks.reds): the entity of a session NPC (host: the real
+  // one; guest: its live proxy), and the other way round.
+  public func EntityOfNpc(npc: Uint32) -> EntityID {
+    if TandemNative.IsHost() {
+      let known = this.FindNpc(npc);
+      return IsDefined(known) ? known.id : EntityID();
+    }
+    let proxy = this.FindProxy(npc);
+    return IsDefined(proxy) && !proxy.dead ? proxy.id : EntityID();
+  }
+
+  public func NpcOfEntity(id: EntityID) -> Uint32 {
+    if !TandemNative.IsHost() {
+      return this.NpcOfProxy(id);
+    }
+    let known = this.Find(id);
+    return IsDefined(known) && !known.dead ? known.npc : 0u;
+  }
+
   private func Remove(npc: Uint32) -> Void {
     let kept: array<ref<TandemNpcProxy>>;
     for proxy in this.m_proxies {
@@ -532,6 +664,11 @@ public class TandemNpcs {
       }
     }
     this.m_proxies = kept;
+  }
+
+  // Guest: the host's NPCs as shown here (Stealth.reds: their detection of us).
+  public func Proxies() -> array<ref<TandemNpcProxy>> {
+    return this.m_proxies;
   }
 
   public func Count() -> Int32 {

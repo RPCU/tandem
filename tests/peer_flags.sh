@@ -4,11 +4,16 @@
 set -euo pipefail
 peer=$1
 declare -A value=(
-  ["--port"]=27451 ["--name"]=test ["--body"]=male ["--mode"]=idle ["--offset"]="1,2,3"
+  ["--port"]=27451 ["--look"]=random ["--seed"]=7 ["--name"]=test ["--body"]=male ["--mode"]=idle ["--offset"]="1,2,3"
   ["--delay"]=100 ["--rate"]=30 ["--pose"]=x.tpose ["--vehicle"]=Vehicle.x
+  ["--drive-seconds"]=5 ["--radio"]=radio_station_09_downtempo ["--time"]=06:30 ["--weather"]=24h_weather_rain
+  ["--record"]=x.rec ["--replay"]=x.rec ["--hit-npcs"]=2 ["--hit-you"]=2 ["--pause-at"]=10 ["--pause-for"]=3
   ["--drive-seconds"]=5 ["--time"]=06:30 ["--weather"]=24h_weather_rain
   ["--record"]=x.rec ["--replay"]=x.rec ["--hit-npcs"]=2 ["--pause-at"]=10 ["--pause-for"]=3
   ["--grab-npcs"]=5 ["--carry-npcs"]=5 ["--hold-npcs"]=5
+  ["--hack-npcs"]=4 ["--hack-action"]=QuickHack.BlindHack ["--hack-effect"]=BaseStatusEffect.Blind
+  ["--hack-player"]=6 ["--npc-hack"]=AIQuickHack.HackRevealPosition ["--hack-car"]=5
+  ["--npc"]=Character.x ["--detect-at"]=15 ["--detect-for"]=10 ["--camo"]=10 ["--shoot"]=3
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true
 [ -n "$flags" ] || {
