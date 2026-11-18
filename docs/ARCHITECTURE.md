@@ -152,19 +152,21 @@ in order.
 
 The owner simulates; everyone else displays.
 
-| State                                   | Owner                     | Others                                        |
-| --------------------------------------- | ------------------------- | --------------------------------------------- |
-| a V: transform, stance, aim, animation  | that player's game        | puppet, interpolated                          |
-| a V: appearance, equipment, cyberware   | that player's game        | applied on the puppet when it changes         |
-| a V: health, death, downed              | that player's game        | shown; revives are requests to the owner      |
-| a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level |
-| a vehicle someone drives                | the driver's game         | puppet vehicle, passengers mounted            |
-| a parked or AI vehicle                  | host                      | proxy                                         |
-| NPCs: AI, position, health, death       | host                      | **proxy with its AI off**, driven by the host |
-| spawns: crowds, traffic, encounters     | host                      | guests' own spawning is suppressed            |
-| quests: facts, journal, phases, scenes  | host                      | followed, never run on their own              |
-| time of day, weather, police heat       | host                      | applied (wanted level: open, see below)       |
-| loot drops                              | host                      | each player loots their own copy              |
+| State                                   | Owner                     | Others                                         |
+| --------------------------------------- | ------------------------- | ---------------------------------------------- |
+| a V: transform, stance, aim, animation  | that player's game        | puppet, interpolated                           |
+| a V: appearance, equipment, cyberware   | that player's game        | applied on the puppet when it changes          |
+| a V: health, death, downed              | that player's game        | shown; revives are requests to the owner       |
+| a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level  |
+| a vehicle someone drives                | the driver's game         | puppet vehicle, passengers mounted             |
+| a parked or AI vehicle                  | host                      | proxy                                          |
+| NPCs: AI, position, health, death       | host                      | **proxy with its AI off**, driven by the host  |
+| spawns: crowds, traffic, encounters     | host                      | guests' own spawning is suppressed             |
+| quests: facts, journal, phases, scenes  | host                      | followed, never run on their own               |
+| time of day, weather, police heat       | host                      | applied (wanted level: open, see below)        |
+| a V's time abilities (Sandevistan…)     | that player's game        | shown on the puppet; never slow anyone's world |
+| an NPC's speed in a time bubble         | host                      | proxies animated at the same speed             |
+| loot drops                              | host                      | each player loots their own copy               |
 
 **Enemy level** (decided 2026-11-18): enemies the host spawns and runs are
 scaled to the **mean of the character levels of the players in the
@@ -582,9 +584,27 @@ redscript natives (UI, events)              ENet socket
   `TandemCoop.InviteText` are where the relay's code natives plug in.
   **Not yet verified in game** (scenario `coop` for the runtime switches;
   the menus by hand or with `coop menu` / `coop pick`).
+- **Slowed time** (`scripts/tandem/Time.reds`, `core/src/timebubble.cpp`):
+  each game sends its V's time abilities when they change (`TimeEffect`:
+  Sandevistan, Kerenzikov, slow-motion perks, scanning, and the world speed
+  the implant asks for; reliable, kept by the host for late joiners, ended
+  when a player leaves). Every V with a Sandevistan or Kerenzikov on has a
+  **time bubble**: the NPCs within 50 m of it are slowed by its factor, for
+  everyone. The host does it to its real NPCs with the per-entity dilation
+  (`SetIndividualTimeDilation`, the local global factor ignored); each
+  guest computes the same bubbles (same core code, same messages) for its
+  proxies, so they animate at the speed they move. Membership is sticky
+  until the bubble ends; an NPC in several takes the smallest factor; when
+  a bubble ends its NPCs go back together. The owner keeps its own
+  single-player slow motion, except the host, whose global factor is taken
+  back within the frame (re-set at normal speed under the same reason, so
+  the state machine carries on) unless `time_host = full`. A game whose
+  world runs dilated exempts what the network drives (proxies, puppets) to
+  their true speed. The plugin calls `TandemTime.Frame` every frame
+  (`plugin/src/main.cpp`). Scenario `time`; not yet run in game.
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name,
-  pose, story, quest_freeze, quest_freeze_allow): the defaults, and the
-  test harness's session.
+  pose, story, quest_freeze, quest_freeze_allow, time_host): the defaults,
+  and the test harness's session.
 
 ## Talking to the engine safely
 
@@ -1091,6 +1111,46 @@ in-game tests still owed; none of it tested in a session yet):
   - _stopped time_: the pause menu, inventory, map, character and perk
     screens, crafting, the wardrobe, photo mode, tutorials and popups —
     single-player pauses the whole world for all of them.
+
+  Done (2026-11-18, not yet run in game; scenario `time`, unit tests in
+  `tests/timebubble_test.cpp`): the rule per mechanism, in
+  `scripts/tandem/Time.reds`.
+  - _Sandevistan, Kerenzikov_: a **time bubble** around the V using it
+    (Inside the plugin). On its own screen the user keeps the
+    single-player slow motion; the shared world slows only where it
+    matters, the enemies around that V, really and for everyone, so the
+    ability keeps both its purposes: more actions per enemy action, and
+    more real time to aim. Its hits go to the host at real time, as
+    always. The host cannot slow only its view of its own NPCs (the time
+    system has global, local-player and per-entity scopes, no render-only
+    one: `research/engine-knowledge.md` §13.15), so as the user it keeps
+    its world at normal speed and its bubble does the slowing (default),
+    or with `time_host = full` keeps the whole slow motion and exempts
+    what it shares (experimental: its projectiles, physics and clock
+    still slow). Kerenzikov is the same, shorter; its V keeps its own
+    player factor.
+  - _What the others see_: the NPCs around that V slow down, the V itself
+    moves at its normal speed among them (it is never slowed, nor sped
+    up), with the implant's effect played on its puppet (effect name to
+    confirm in game). Two Vs in a Sandevistan at once: one bubble each, an
+    NPC in both takes the stronger factor; each sees the NPCs slowed and
+    the other V at normal speed; when one ends, its NPCs go back unless
+    the other's bubble holds them.
+  - _Scanner and quickhack panel, Focus, Deadeye's reload, Berserk, melee
+    hit stop, deflect_: local only, no bubble. A guest keeps them on its
+    screen (proxies and puppets exempted, so the shared world shows at its
+    true speed); the host drops their world part. Others see the V as it
+    is (standing, scanning).
+  - _Second chance_ (its dilation is in TweakDB, reason unknown): any
+    other dilation left on the host is logged to find it.
+  - Breach timers and network dive: not handled yet (owner-local, real
+    time, `research/coop-time.md` §2.7).
+
+  To verify in game: the bubble NPCs slow on host and guest alike, that a
+  factor of 1.0 keeps Sandevistan going on the host (else 0.999 is used),
+  the effect on the puppet, the projectile bullets of NPCs while a held
+  dilation is active, and how a guest's proxies look under its own slow
+  motion.
 
   Direction to start from: the world (host) never slows or stops for one
   player. A V's own time effects are local to that player's game and seen by

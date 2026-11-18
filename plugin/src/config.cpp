@@ -90,6 +90,13 @@ Config LoadConfig(const std::filesystem::path &path) {
           break;
         start = comma + 1;
       }
+    } else if (key == "time_host") {
+      if (value == "bubble")
+        config.timeHostFull = false;
+      else if (value == "full")
+        config.timeHostFull = true;
+      else
+        log::Warn("tandem.ini:{}: time_host is bubble or full", number);
     } else if (key == "trace") {
       config.trace = value == "on" || value == "true";
     } else if (key == "port") {

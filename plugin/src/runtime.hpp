@@ -10,6 +10,7 @@
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
+#include "tandem/timebubble.hpp"
 #include "tandem/vehicle.hpp"
 
 #include <array>
@@ -212,6 +213,16 @@ public:
   std::optional<bool> TakeLocalPaused();
   void SetRemotePaused(std::vector<proto::PlayerId> players);
   std::vector<proto::PlayerId> RemotePaused(std::uint32_t &changes);
+  // Time abilities (scripts/tandem/Time.reds): ours, game -> net (newest
+  // only); the other players' active ones, net -> game (latest + a count of
+  // changes, 0: none yet).
+  void SubmitLocalTime(const proto::TimeEffect &effect);
+  std::optional<proto::TimeEffect> TakeLocalTime();
+  void PushRemoteTime(const proto::TimeEffect &effect);
+  std::map<proto::PlayerId, proto::TimeEffect> RemoteTimes(std::uint32_t &changes);
+  // The NPCs slowed around the Vs in a Sandevistan. Game thread only (the
+  // scripts that apply them).
+  sync::TimeBubbles &Bubbles() { return m_bubbles; }
   void NotePlayerName(proto::PlayerId player, std::string name);
   std::string PlayerName(proto::PlayerId player);
 
@@ -354,6 +365,10 @@ private:
   std::vector<proto::PlayerId> m_remotePaused;                                   // m_lock
   std::uint32_t m_remotePausedChanges{};                                         // m_lock
   std::map<proto::PlayerId, std::string> m_names;                                // m_lock
+  std::optional<proto::TimeEffect> m_localTime;                                  // m_lock
+  std::map<proto::PlayerId, proto::TimeEffect> m_remoteTimes;                    // m_lock
+  std::uint32_t m_remoteTimeChanges{};                                           // m_lock
+  sync::TimeBubbles m_bubbles;                                                   // game thread
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin
