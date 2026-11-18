@@ -335,6 +335,16 @@ public class TandemNpcs {
 
   // The player whose hit killed it: the game's killer when it is a V, else
   // the last guest who hit it in the last three seconds, else none.
+  // Host: a player acted on this NPC (Takedowns.reds): its killer if it
+  // dies within three seconds and the game names none.
+  public func NoteActor(npc: Uint32, player: Uint32) -> Void {
+    let known = this.FindNpc(npc);
+    if IsDefined(known) {
+      known.lastHitBy = player;
+      known.lastHitAt = this.m_now;
+    }
+  }
+
   private func KillerOf(body: ref<ScriptedPuppet>, known: ref<TandemNpcKnown>, player: ref<GameObject>) -> Uint32 {
     let killer = body.GetKiller() as GameObject;
     if IsDefined(killer) {

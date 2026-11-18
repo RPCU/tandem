@@ -408,6 +408,10 @@ public class TandemTakedowns extends ScriptableSystem {
       at.Y += forward.Y * 0.6;
       GameInstance.GetTeleportationFacility(this.GetGameInstance()).Teleport(body, at, TandemYawAngles(puppet.GetWorldYaw()));
     }
+    if held.how >= 3 {
+      // Its death, by the effect or the outcome, is this player's kill.
+      this.NoteActor(held.npc, held.player);
+    }
     if held.endAt > 0.0 && this.m_now >= held.endAt {
       this.Outcome(body, held, puppet);
       this.Free(body, held, false);
@@ -430,6 +434,16 @@ public class TandemTakedowns extends ScriptableSystem {
     } else if held.outcome == 4 && !ScriptedPuppet.IsDefeated(body) && !ScriptedPuppet.IsUnconscious(body) {
       StatusEffectHelper.ApplyStatusEffect(body, t"BaseStatusEffect.Unconscious", puppet.GetEntityID());
       TandemNative.Log(s"takedowns: \(held.npc) knocked out by player \(held.player) (outcome)");
+    }
+  }
+
+  // The player whose takedown, finisher or throw this NPC dies of: its
+  // killer when the game names none (a puppet as the takedown's activator
+  // is not recorded as the killer: "killer: player 0" in game).
+  private func NoteActor(npc: Uint32, player: Uint32) -> Void {
+    let npcs = this.Npcs();
+    if IsDefined(npcs) {
+      npcs.NoteActor(npc, player);
     }
   }
 
@@ -529,18 +543,28 @@ public class TandemTakedowns extends ScriptableSystem {
       let held = this.Hold(event.npc, event.player, 3, event.name);
       held.outcome = kind == 5 ? 0 : kind;
       held.endAt = this.m_now + 4.0;
-      if kind == 3 {
-        body.SetMyKiller(puppet);
-      } else if kind == 4 {
-        ScriptedPuppet.SendActionSignal(body, n"takedown_defeat", -1.0);
+      this.NoteActor(event.npc, event.player);
+      if kind == 4 {
+        // Knocked out the way vanilla ends a grapple with V down
+        // (TakedownUnmountPreyEvents): the status itself. The setUnconscious
+        // effect run with a puppet (plus takedown_defeat) was followed by a
+        // stopped game thread in the first in-game run (2026-11-18).
+        StatusEffectHelper.RemoveStatusEffect(body, t"BaseStatusEffect.Grappled");
+        StatusEffectHelper.ApplyStatusEffect(body, t"BaseStatusEffect.Unconscious", puppet.GetEntityID());
+      } else {
+        if kind == 3 {
+          body.SetMyKiller(puppet);
+        }
+        // The kill effect takes with a puppet (it killed the NPC in game).
+        TakedownGameEffectHelper.FillTakedownData(puppet, puppet, body, n"takedowns", event.name, "");
       }
-      TakedownGameEffectHelper.FillTakedownData(puppet, puppet, body, n"takedowns", event.name, "");
       this.Announce(event.npc, event.player, 3, event.name);
       TandemNative.Log(s"takedowns: \(event.npc) taken down by player \(event.player) (\(NameToString(event.name)))");
     } else if kind == 6 {
       let held = this.Hold(event.npc, event.player, 4, event.name);
       held.outcome = 6;
       held.endAt = this.m_now + 5.0;
+      this.NoteActor(event.npc, event.player);
       if Equals(event.name, n"tandem_blunt_hold") {
         // The blunt "hold" finisher throws and kills at once (final.reds
         // TriggerNewPerkFinisherBluntHold).
@@ -577,6 +601,7 @@ public class TandemTakedowns extends ScriptableSystem {
       }
       this.Forget(event.npc);
       if kind == 9 {
+        this.NoteActor(event.npc, event.player);
         TandemTakedowns.Throw(game, body, puppet, new Vector4(event.dx, event.dy, event.dz, 0.0));
       }
       this.Announce(event.npc, 0u, 0, n"None");
@@ -587,6 +612,7 @@ public class TandemTakedowns extends ScriptableSystem {
         this.Free(body, held, false);
       }
       this.Forget(event.npc);
+      this.NoteActor(event.npc, event.player);
       TandemTakedowns.Dispose(body, puppet);
       this.Announce(event.npc, 0u, 0, n"None");
       this.DisposedLater(event.npc, event.player);

@@ -2297,10 +2297,19 @@ target, effectName, effectTag, opt statusEffect)` (252966) runs
   reads it. Synced animations: `grapple_sync_kill[_02|_03]`,
   `grapple_sync_nonlethal[_crouch]`, `grapple_sync_recover` (break free),
   `grapple_sync_shove`, `grapple_sync_death`, played with
-  `WorkspotGameSystem.SendJumpToAnimEnt` (`PlayExitAnimation` 285006). Whether the effect takes
-  with a **puppet** as activator (tandem's host does that) is the first
-  thing to check in game; tandem falls back to `Grappled` plus placing the
-  NPC 0.6 m in front of the puppet each frame. [2.5-untested]
+  `WorkspotGameSystem.SendJumpToAnimEnt` (`PlayExitAnimation` 285006).
+  With a **puppet** as activator (tandem's host) the grapple start effect
+  (`GrappleTarget`) does **not** take: half a second later the NPC is not
+  `IsBeingGrappled`, so tandem falls back to `Grappled` plus placing the
+  NPC 0.6 m in front of the puppet each frame (scenario `takedowns-host`,
+  2026-11-18). [2.5-verified] The `kill` effect with a puppet does kill
+  the NPC, but the game names no killer (`GetKiller` is not the puppet):
+  the host credits the player itself. [2.5-verified] A non-lethal
+  takedown run the same way (`setUnconscious` effect plus the
+  `takedown_defeat` signal, on an NPC in the fallback grapple) was followed
+  within seconds by a stopped game thread (watchdog, no backtrace taken);
+  tandem now applies `BaseStatusEffect.Unconscious` directly instead, as
+  `TakedownUnmountPreyEvents` does. [2.5-tested: cause not confirmed]
 - **A failed grapple, vanilla's way**: `TakedownGrappleFailedDecisions`
   (535796) enters when `ShouldInstantlyBreakFree` (530408: a massive target
   of too high a level); `GrappleBreakFreeDecisions.EnterCondition` (537741)
