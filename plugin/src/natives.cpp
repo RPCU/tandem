@@ -91,6 +91,17 @@ struct TandemNoise {
   bool propagation{};
 };
 static_assert(alignof(TandemNoise) <= 8, "the script VM aligns struct locals to 8");
+// Quickhacks (scripts/tandem/Hacks.reds); plain fields, as above.
+struct TandemHackEvent {
+  std::int32_t kind{}; // HackEvent::Kind
+  std::uint32_t npc{};
+  std::uint32_t player{};
+  Red::TweakDBID action; // ObjectAction record; 3 status: the status effect record
+  std::int32_t state{};  // 2: proto::HackStep; 3: applied; 5: proto::CarHack
+  std::int32_t flags{};  // 1: proto::kUpload*; 4: proto::kPlayerHack*
+  float seconds{};
+};
+static_assert(alignof(TandemHackEvent) <= 8, "the script VM aligns struct locals to 8");
 
 Red::Quaternion ToQuaternion(const proto::Quat &q) { return {q.i, q.j, q.k, q.r}; }
 float YawOfQuaternion(const Red::Quaternion &q) { return sync::YawOf({q.i, q.j, q.k, q.r}); }
@@ -675,6 +686,57 @@ struct TandemNative : Red::IScriptable {
     return out;
   }
 
+  // Quickhacks. Guest: we started uploading `action` on the host's NPC.
+  static void SendNpcHack(std::uint32_t npc, Red::TweakDBID action, float seconds,
+                          std::int32_t flags) {
+    Runtime::Get().SubmitHack(proto::NpcHack{
+        .npc = npc,
+        .action = action.value,
+        .uploadMs = static_cast<std::uint32_t>(std::clamp(seconds, 0.f, 600.f) * 1000.f),
+        .flags = static_cast<std::uint8_t>(flags)});
+  }
+  // Host: an upload on one of our NPCs started (0), was done (1) or failed (2).
+  static void SendNpcHackState(std::uint32_t npc, std::uint32_t player, Red::TweakDBID action,
+                               std::int32_t step, float seconds) {
+    if (step < 0 || step > static_cast<std::int32_t>(proto::HackStep::Failed))
+      return;
+    Runtime::Get().SubmitHack(proto::NpcHackState{
+        .npc = npc,
+        .player = player,
+        .action = action.value,
+        .step = static_cast<proto::HackStep>(step),
+        .uploadMs = static_cast<std::uint32_t>(std::clamp(seconds, 0.f, 600.f) * 1000.f)});
+  }
+  // Host: a quickhack effect came onto (applied) or left one of our NPCs.
+  static void SendNpcStatus(std::uint32_t npc, std::uint32_t player, Red::TweakDBID effect,
+                            bool applied) {
+    Runtime::Get().SubmitHack(
+        proto::NpcStatus{.npc = npc, .player = player, .effect = effect.value, .applied = applied});
+  }
+  // Host: our NPC netrunner `npc` hacks player `player`'s V.
+  static void SendPlayerHack(std::uint32_t player, std::uint32_t npc, Red::TweakDBID action,
+                             std::int32_t flags) {
+    Runtime::Get().SubmitHack(proto::PlayerHack{.player = player,
+                                                .npc = npc,
+                                                .action = action.value,
+                                                .flags = static_cast<std::uint8_t>(flags)});
+  }
+  // We hacked the car player `driver` drives (proto::CarHack).
+  static void SendVehicleHack(std::uint32_t driver, std::int32_t hack, float seconds) {
+    if (hack < 0 || hack > static_cast<std::int32_t>(proto::CarHack::Accelerate))
+      return;
+    Runtime::Get().SubmitHack(proto::VehicleHack{
+        .driver = driver, .hack = static_cast<proto::CarHack>(hack), .seconds = seconds});
+  }
+  static Red::DynArray<TandemHackEvent> TakeHackEvents() {
+    Red::DynArray<TandemHackEvent> out;
+    for (const auto &event : Runtime::Get().TakeHackEvents())
+      out.EmplaceBack(TandemHackEvent{static_cast<std::int32_t>(event.kind), event.npc,
+                                      event.player, Red::TweakDBID(event.action), event.state,
+                                      event.flags, event.seconds});
+    return out;
+  }
+
   // The puppet id the controller and tracks know an NPC proxy by.
   static std::uint32_t NpcPuppetId(std::uint32_t npc) { return kNpcPuppetBase + npc; }
 
@@ -711,6 +773,16 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNpcEvent, "TandemNpcEvent", {
   RTTI_PROPERTY(dx);
   RTTI_PROPERTY(dy);
   RTTI_PROPERTY(dz);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemHackEvent, "TandemHackEvent", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(action);
+  RTTI_PROPERTY(state);
+  RTTI_PROPERTY(flags);
+  RTTI_PROPERTY(seconds);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemPlayerHit, "TandemPlayerHit", {
@@ -796,6 +868,12 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendNoise);
   RTTI_METHOD(TakeNoises);
   RTTI_METHOD(TakeNpcEvents);
+  RTTI_METHOD(SendNpcHack);
+  RTTI_METHOD(SendNpcHackState);
+  RTTI_METHOD(SendNpcStatus);
+  RTTI_METHOD(SendPlayerHack);
+  RTTI_METHOD(SendVehicleHack);
+  RTTI_METHOD(TakeHackEvents);
   RTTI_METHOD(NpcPuppetId);
   RTTI_METHOD(SendVehicleRadio);
   RTTI_METHOD(RemoteRadioChanges);

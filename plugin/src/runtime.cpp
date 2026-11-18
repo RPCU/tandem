@@ -55,6 +55,8 @@ void Runtime::Stop() {
     m_stealth.clear();
     m_localNoises.clear();
     m_remoteNoises.clear();
+    m_hackOutbox.clear();
+    m_hackEvents.clear();
     m_localPaused.reset();
     // Nobody pauses us any more: the change count moves so scripts let go.
     if (!m_remotePaused.empty()) {
@@ -399,6 +401,29 @@ void Runtime::PushNpcEvent(const NpcEvent &event) {
 std::vector<NpcEvent> Runtime::TakeNpcEvents() {
   std::lock_guard _(m_lock);
   return std::exchange(m_npcEvents, {});
+}
+
+void Runtime::SubmitHack(const proto::Message &message) {
+  std::lock_guard _(m_lock);
+  if (m_hackOutbox.size() < 256)
+    m_hackOutbox.push_back(message);
+}
+
+std::vector<proto::Message> Runtime::TakeHackOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_hackOutbox, {});
+}
+
+void Runtime::PushHackEvent(const HackEvent &event) {
+  std::lock_guard _(m_lock);
+  // Scripts drain these every frame; a pile-up means nobody is listening.
+  if (m_hackEvents.size() < 512)
+    m_hackEvents.push_back(event);
+}
+
+std::vector<HackEvent> Runtime::TakeHackEvents() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_hackEvents, {});
 }
 
 void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you) {

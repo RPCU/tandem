@@ -398,10 +398,84 @@ struct Noise {
   friend bool operator==(const Noise &, const Noise &) = default;
 };
 
-using Message = std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye,
-                             PoseState, Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn,
-                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio,
-                             PlayerHit, NpcAwareness, Stealth, Noise>;
+// Quickhacks (docs/ARCHITECTURE.md, "Quickhacks from two players on one
+// target"). `action` is always the TweakDB id of an ObjectAction record
+// (QuickHack.*, AIQuickHack.*), `effect` that of a status effect record.
+
+// A guest started uploading a quickhack on one of the host's NPCs (its
+// proxy): its game runs the panel, the RAM cost, its cooldown and queue and
+// the upload bar; the effects it lands come as NpcEffect as for a hit. The
+// host runs the upload on the real NPC (being hacked, trace) and its
+// reaction to the hack. Guest to host, never relayed.
+inline constexpr std::uint8_t kUploadTraceable = 1; // the hack reveals its netrunner
+struct NpcHack {                                    // Event channel
+  PlayerId player{};                                // who: set by the host from the connection
+  NpcId npc{};
+  std::uint64_t action{};
+  std::uint32_t uploadMs{}; // the upload time the guest's game computed (its perks)
+  std::uint8_t flags{};     // kUpload*
+  friend bool operator==(const NpcHack &, const NpcHack &) = default;
+};
+
+// What is being uploaded to a host NPC, by whom (host to everyone, the
+// uploader included: its game learns the host's order). Each game shows the
+// others' uploads on its proxy.
+enum class HackStep : std::uint8_t { Started = 0, Done = 1, Failed = 2 };
+struct NpcHackState { // Event channel
+  NpcId npc{};
+  PlayerId player{}; // the uploader (the host's own V too)
+  std::uint64_t action{};
+  HackStep step{};
+  std::uint32_t uploadMs{};
+  friend bool operator==(const NpcHackState &, const NpcHackState &) = default;
+};
+
+// A quickhack's status effect came onto, or left, a host NPC (host to
+// everyone). Guests put it on their proxy, so its look and the game's own
+// "already affected" lockouts in their quickhack menu are true; the game
+// whose V put it there (`player`) has it already.
+struct NpcStatus { // Event channel
+  NpcId npc{};
+  PlayerId player{}; // whose hack it is (kNoPlayer: an NPC's, or unknown)
+  std::uint64_t effect{};
+  bool applied{}; // false: removed
+  friend bool operator==(const NpcStatus &, const NpcStatus &) = default;
+};
+
+// One of the host's NPC netrunners hacks a guest's V (host to that guest
+// only). On the host the hack would land on the puppet; the guest's game
+// runs it on its own V instead, with its proxy of the netrunner as the
+// hacker: its ICE and cyberdeck defences, the upload bar, the effect.
+inline constexpr std::uint8_t kPlayerHackReveal = 1;      // trace: reveals the V's position
+inline constexpr std::uint8_t kPlayerHackDirectional = 2; // show the attack's direction
+inline constexpr std::uint8_t kPlayerHackSkipBeingHacked = 4;
+struct PlayerHack {  // Event channel
+  PlayerId player{}; // the V hacked
+  NpcId npc{};       // the netrunner
+  std::uint64_t action{};
+  std::uint8_t flags{}; // kPlayerHack*
+  friend bool operator==(const PlayerHack &, const PlayerHack &) = default;
+};
+
+// A V quickhacked the car another V drives (its copy in the hacker's game).
+// The driver's game owns that car and applies the hack to it; the others
+// see the result through the car's usual sync. Sent to the host, which
+// stamps the hacker and passes it to the driver (or applies it, when the
+// host drives).
+enum class CarHack : std::uint8_t { ForceBrakes = 0, Explode = 1, Accelerate = 2 };
+struct VehicleHack { // Event channel
+  PlayerId player{}; // the hacker: set by the host from the connection
+  PlayerId driver{};
+  CarHack hack{};
+  float seconds{}; // how long it lasts (brakes, acceleration), as the hacker's game has it
+  friend bool operator==(const VehicleHack &, const VehicleHack &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
+                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack>;
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

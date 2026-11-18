@@ -101,6 +101,26 @@ struct NpcEffectBy {
 struct HitByNpc {
   proto::PlayerHit hit;
 };
+// Quickhacks. Host: a guest started an upload on one of our NPCs.
+struct NpcHackBy {
+  proto::NpcHack hack;
+};
+// Guests: an upload on a host NPC started or ended (anyone's, ours too).
+struct HostNpcHackState {
+  proto::NpcHackState state;
+};
+// Guests: a quickhack effect came onto or left a host NPC (never our own).
+struct HostNpcStatus {
+  proto::NpcStatus status;
+};
+// Guests: a host NPC netrunner hacks our V.
+struct HostPlayerHack {
+  proto::PlayerHack hack;
+};
+// The driver's game (host or guest): someone hacked the car we drive.
+struct VehicleHackOn {
+  proto::VehicleHack hack;
+};
 // The host's world changed (guests only).
 struct HostWorld {
   proto::World world;
@@ -146,8 +166,9 @@ using SessionEvent =
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
                  events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
                  events::Ended, events::PlayerReturned, events::RemoteVehicleRadio,
-                 events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness,
-                 events::NoiseBy>;
+                 events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
+                 events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
+                 events::HostPlayerHack, events::VehicleHackOn>;
 
 class Endpoint {
 public:
@@ -189,6 +210,16 @@ public:
   // Host only: one of our NPCs hit `hit.player`'s V (its puppet here). Sent
   // to that player alone; false when it is not a guest in the session.
   bool SendPlayerHit(const proto::PlayerHit &hit);
+  // Quickhacks (docs/ARCHITECTURE.md). Guest only: we started uploading on a
+  // host NPC. Host only: uploads and quickhack effects on our NPCs, to
+  // everyone; an NPC netrunner's hack on a guest's V, to that guest only.
+  void SendNpcHack(const proto::NpcHack &hack);
+  void SendNpcHackState(const proto::NpcHackState &state);
+  void SendNpcStatus(const proto::NpcStatus &status);
+  void SendPlayerHack(const proto::PlayerHack &hack);
+  // We hacked the car `hack.driver` drives: to its driver's game, through
+  // the host (which stamps the hacker).
+  void SendVehicleHack(proto::VehicleHack hack);
   // Our pause menu is open (paused) or closed. Kept: sent now if we are in
   // the session, else as soon as we are.
   void SetLocalPaused(bool paused);
@@ -222,6 +253,8 @@ private:
   void RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out);
   void SendSessionTo(net::PeerId peer);
   void BroadcastRoster();
+  // Host: the connection of a welcomed player (nullopt: none, or us).
+  std::optional<net::PeerId> PeerOf(proto::PlayerId player) const;
 
   std::unique_ptr<net::Session> m_session;
   Identity m_identity;

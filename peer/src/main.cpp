@@ -28,6 +28,9 @@
 // makes the NPCs it sends notice, detect and lose the guests (NpcAwareness,
 // NpcEntry::detected); --camo turns "its optical camo" on, --shoot (join)
 // fires gunshots its host's NPCs hear. Stealth and noises heard are logged.
+// Quickhacks: --hack-npcs (as a guest) uploads on the host's NPCs and lands
+// the effect; --hack-player (as the host of a replay) has an NPC hack the
+// guest's V; --hack-car brakes the car another player drives.
 // Body pose: mirror and front echo your V's pose; --pose FILE (a .tpose made by
 // tools/re/pose_export.py from a recording) plays a recorded pose instead, in
 // a loop, with any mode.
@@ -96,7 +99,16 @@ struct Options {
   int detectForSeconds{10}; // ...for this long
   int camoAtSeconds{-1};    // optical camo on this long into the session, for 5 s
   int shootSeconds{0};      // join: a gunshot (shot + noise) this often (0: never)
-  bool check{};             // parse the options, then exit
+  // Quickhacks: join: upload --hack-action on a host NPC every N s, then land
+  // --hack-effect; host: one of our NPCs hacks the guest (--npc-hack) every
+  // N s; either: hack the car another player drives every N s.
+  int hackNpcsSeconds{0};
+  std::string hackAction{"QuickHack.BlindHack"};
+  std::string hackEffect{"BaseStatusEffect.Blind"};
+  int hackPlayerSeconds{0};
+  std::string npcHack{"AIQuickHack.HackRevealPosition"};
+  int hackCarSeconds{0};
+  bool check{}; // parse the options, then exit
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -178,7 +190,17 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --detect-for N     --detect-at: and lose it again after N seconds (default 10)\n"
          "  --camo N           turn optical camo on N seconds after another player is in the\n"
          "                     session, for 5 seconds\n"
-         "  --shoot N          join: fire a gunshot (shot and noise) every N seconds\n";
+         "  --shoot N          join: fire a gunshot (shot and noise) every N seconds\n"
+         "  --hack-npcs N      join: upload a quickhack on one of the host's NPCs every N\n"
+         "                     seconds (1.5 s upload), then land its effect\n"
+         "  --hack-action REC  --hack-npcs: the quickhack (default QuickHack.BlindHack)\n"
+         "  --hack-effect REC  --hack-npcs: the effect it lands (default BaseStatusEffect.Blind)\n"
+         "  --hack-player N    host: one of our (replayed) NPCs hacks the guest's V every N\n"
+         "                     seconds\n"
+         "  --npc-hack REC     --hack-player: the NPC's hack (default\n"
+         "                     AIQuickHack.HackRevealPosition, a trace)\n"
+         "  --hack-car N       hack the car another player drives (brakes, 3 s) every N\n"
+         "                     seconds\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -246,6 +268,18 @@ Options Parse(int argc, char **argv) {
       options.pauseAtSeconds = Number<int>(value);
     else if (flag == "--pause-for")
       options.pauseForSeconds = Number<int>(value);
+    else if (flag == "--hack-npcs")
+      options.hackNpcsSeconds = Number<int>(value);
+    else if (flag == "--hack-action")
+      options.hackAction = std::string(value);
+    else if (flag == "--hack-effect")
+      options.hackEffect = std::string(value);
+    else if (flag == "--hack-player")
+      options.hackPlayerSeconds = Number<int>(value);
+    else if (flag == "--npc-hack")
+      options.npcHack = std::string(value);
+    else if (flag == "--hack-car")
+      options.hackCarSeconds = Number<int>(value);
     else if (flag == "--hit-npcs")
       options.hitNpcsSeconds = Number<int>(value);
     else if (flag == "--hit-you")
@@ -687,6 +721,18 @@ int main(int argc, char **argv) {
   auto nextHit = std::chrono::steady_clock::now();
   auto nextHitYou = std::chrono::steady_clock::now() + std::chrono::seconds(options.hitYouSeconds);
   std::set<tandem::proto::NpcId> replayedNpcs; // host: the replay's live NPCs
+  // Quickhacks: our upload's effect to land, the host's uploads to finish,
+  // the NPCs a replay spawned, who drives a car.
+  struct Pending {
+    std::chrono::steady_clock::time_point at;
+    tandem::proto::NpcHackState state;
+    std::uint64_t effect{};
+  };
+  std::vector<Pending> pendingHacks;
+  std::map<tandem::proto::PlayerId, bool> driving;
+  auto nextHack = std::chrono::steady_clock::now() + 5s;
+  auto nextPlayerHack = std::chrono::steady_clock::now() + 5s;
+  auto nextCarHack = std::chrono::steady_clock::now() + 5s;
   std::vector<NpcRecording::Entry> replay;
   std::size_t replayNext = 0;
   std::optional<std::uint64_t> replayStartUs;
@@ -814,6 +860,9 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteSeat>) {
               Log("player {} sits in {:#x} (seat {:#x}, car of player {})", e.seat.player,
                   e.seat.vehicle, e.seat.seat, e.seat.owner);
+              driving[e.seat.player] = e.seat.vehicle != 0 &&
+                                       e.seat.seat == CName("seat_front_left") &&
+                                       e.seat.owner == e.seat.player;
               // A passenger in the car we drive: our radio again, for them.
               if (options.mode == Mode::Drive && options.radioStation && seated && !parked &&
                   e.seat.vehicle != 0 && e.seat.owner == endpoint->You())
@@ -844,6 +893,30 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemotePose>) {
               ++heardPoses;
               puppeteer.HeardPose(e.pose);
+            } else if constexpr (std::is_same_v<E, tandem::events::NpcHackBy>) {
+              // As the host of a replay: the NPC is being hacked for that long.
+              Log("player {} uploads {:#x} on npc {} ({} ms)", e.hack.player, e.hack.action,
+                  e.hack.npc, e.hack.uploadMs);
+              tandem::proto::NpcHackState state{.npc = e.hack.npc,
+                                                .player = e.hack.player,
+                                                .action = e.hack.action,
+                                                .uploadMs = e.hack.uploadMs};
+              endpoint->SendNpcHackState(state);
+              state.step = tandem::proto::HackStep::Done;
+              pendingHacks.push_back(
+                  {std::chrono::steady_clock::now() + std::chrono::milliseconds(e.hack.uploadMs),
+                   state});
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcHackState>) {
+              Log("npc {}: upload {:#x} of player {} step {}", e.state.npc, e.state.action,
+                  e.state.player, static_cast<int>(e.state.step));
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcStatus>) {
+              Log("npc {} {} effect {:#x} (player {})", e.status.npc,
+                  e.status.applied ? "has" : "lost", e.status.effect, e.status.player);
+            } else if constexpr (std::is_same_v<E, tandem::events::HostPlayerHack>) {
+              Log("npc {} hacks us with {:#x} (flags {})", e.hack.npc, e.hack.action, e.hack.flags);
+            } else if constexpr (std::is_same_v<E, tandem::events::VehicleHackOn>) {
+              Log("player {} hacked our car: {} ({:.1f} s)", e.hack.player,
+                  static_cast<int>(e.hack.hack), e.hack.seconds);
             } else if constexpr (std::is_same_v<E, tandem::events::PauseChanged>) {
               Log("player {} {} (pause menu)", e.pause.player,
                   e.pause.paused ? "paused" : "resumed");
@@ -932,6 +1005,59 @@ int main(int argc, char **argv) {
             {.npc = *hitTarget, .effects = {TweakDBID("BaseStatusEffect.Burning")}});
         Log("set npc {} on fire", *hitTarget);
       }
+    }
+    // Quickhacks. Uploads whose time is up: the host's word that they are
+    // done, our own effect landing.
+    for (auto it = pendingHacks.begin(); it != pendingHacks.end();) {
+      if (now < it->at) {
+        ++it;
+        continue;
+      }
+      if (it->effect) {
+        endpoint->SendNpcEffect({.npc = it->state.npc, .effects = {it->effect}});
+        Log("upload on npc {} done: effect {}", it->state.npc, options.hackEffect);
+      } else {
+        endpoint->SendNpcHackState(it->state);
+        Log("npc {}: player {}'s upload done", it->state.npc, it->state.player);
+      }
+      it = pendingHacks.erase(it);
+    }
+    // --hack-npcs: upload on one of the host's NPCs, as the game would send it.
+    if (options.hackNpcsSeconds && !options.host && endpoint->IsJoined() && !liveNpcs.empty() &&
+        now >= nextHack) {
+      nextHack = now + std::chrono::seconds(options.hackNpcsSeconds);
+      const auto npc = *liveNpcs.begin();
+      endpoint->SendNpcHack(
+          {.npc = npc, .action = TweakDBID(options.hackAction), .uploadMs = 1500, .flags = 0});
+      pendingHacks.push_back({now + 1500ms, {.npc = npc}, TweakDBID(options.hackEffect)});
+      Log("upload {} on npc {} (1.5 s)", options.hackAction, npc);
+    }
+    // --hack-player: one of our NPCs hacks the first guest.
+    if (options.hackPlayerSeconds && options.host && !replayedNpcs.empty() &&
+        endpoint->Players().size() > 1 && now >= nextPlayerHack) {
+      nextPlayerHack = now + std::chrono::seconds(options.hackPlayerSeconds);
+      for (const auto &[id, info] : endpoint->Players())
+        if (id != endpoint->You()) {
+          const auto npc = *replayedNpcs.begin();
+          const bool trace = options.npcHack == "AIQuickHack.HackRevealPosition";
+          endpoint->SendPlayerHack(
+              {.player = id,
+               .npc = npc,
+               .action = TweakDBID(options.npcHack),
+               .flags = trace ? tandem::proto::kPlayerHackReveal : std::uint8_t{0}});
+          Log("npc {} hacks player {} with {}", npc, id, options.npcHack);
+          break;
+        }
+    }
+    // --hack-car: brake the car someone else drives.
+    if (options.hackCarSeconds && endpoint->IsJoined() && now >= nextCarHack) {
+      nextCarHack = now + std::chrono::seconds(options.hackCarSeconds);
+      for (const auto &[player, drives] : driving)
+        if (drives && player != endpoint->You()) {
+          endpoint->SendVehicleHack(
+              {.driver = player, .hack = tandem::proto::CarHack::ForceBrakes, .seconds = 3.f});
+          Log("hack player {}'s car: brakes for 3 s", player);
+        }
     }
     // --hit-you: one of our NPCs (a live replayed one, else none) shoots each
     // guest: an ordinary ranged hit (gamedataAttackType.Ranged = 10), no
