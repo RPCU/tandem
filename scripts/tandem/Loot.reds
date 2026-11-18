@@ -424,7 +424,11 @@ public class TandemLoot extends ScriptableSystem {
     TandemNative.Log(s"loot: world item \(item.id)\(item.ownDrop ? " (ours)" : "") found in our world");
   }
 
-  // Our V picking stacks up: gone from the bag, arrived in its inventory.
+  // Our V picking stacks up: gone from our copy of the bag (only our V
+  // loots in our world; the others' takes are marked taken before they are
+  // taken out). Whether it shows up in V's inventory is not asked: an item
+  // the game turns into something else on pickup (a consumable, a crafting
+  // part) never would (loot-drop, 2026-11-18: taken, never seen arriving).
   private func Watch() -> Void {
     let player = GetPlayer(this.GetGameInstance());
     if !IsDefined(player) {
@@ -439,9 +443,10 @@ public class TandemLoot extends ScriptableSystem {
           if !stack.taken && !stack.ours {
             let mine = this.CountIn(player, stack);
             let left = IsDefined(object) ? this.CountIn(object, stack) : -1;
-            if (left == 0 && mine > stack.had) || (left < 0 && near && mine >= stack.had + stack.quantity) {
+            // Gone from the bag, or the bag gone with our V standing by it.
+            if left == 0 || (left < 0 && near) {
               stack.ours = true;
-              TandemNative.Log(s"loot: we picked up world item \(item.id) stack \(i) (\(TDBID.ToStringDEBUG(stack.record)) x\(stack.quantity))");
+              TandemNative.Log(s"loot: we picked up world item \(item.id) stack \(i) (\(TDBID.ToStringDEBUG(stack.record)) x\(stack.quantity); bag \(left < 0 ? "gone" : "empty"), ours \(stack.had) -> \(mine))");
             }
             stack.had = mine;
           }
@@ -772,8 +777,12 @@ public class TandemLoot extends ScriptableSystem {
         }
       }
       if IsDefined(best) {
-        let ok = GameInstance.GetTransactionSystem(game).TransferAllItems(this.ObjectOf(best), player);
-        TandemNative.Log(s"loot take: world item \(best.id), \(ok)");
+        let first = this.FirstLeft(best);
+        let bag = this.ObjectOf(best);
+        let before = this.CountIn(bag, first);
+        let had = this.CountIn(player, first);
+        let ok = GameInstance.GetTransactionSystem(game).TransferAllItems(bag, player);
+        TandemNative.Log(s"loot take: world item \(best.id), \(ok) (bag \(before) -> \(this.CountIn(bag, first)), ours \(had) -> \(this.CountIn(player, first)))");
       } else {
         TandemNative.Log("loot take: no world item within 6 m");
       }
