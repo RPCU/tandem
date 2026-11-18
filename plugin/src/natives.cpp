@@ -675,15 +675,16 @@ struct TandemNative : Red::IScriptable {
   // 1 metro, 2 ride, 3 scene), proto::kTransit* flags, the metro's station
   // and next station (ENcartStations), the vehicle, the seat.
   static void SendTransit(std::int32_t kind, std::int32_t flags, std::int32_t at, std::int32_t next,
-                          Red::EntityID vehicle, Red::CName seat) {
-    if (kind < 0 || kind > static_cast<std::int32_t>(proto::TransitKind::Scene))
+                          Red::EntityID vehicle, Red::CName seat, std::uint32_t carrier) {
+    if (kind < 0 || kind > static_cast<std::int32_t>(proto::TransitKind::Along))
       return;
     Runtime::Get().SubmitLocalTransit({.kind = static_cast<proto::TransitKind>(kind),
                                        .flags = static_cast<std::uint8_t>(flags),
                                        .at = static_cast<std::uint8_t>(std::clamp(at, 0, 255)),
                                        .next = static_cast<std::uint8_t>(std::clamp(next, 0, 255)),
                                        .vehicle = vehicle.hash,
-                                       .seat = seat.hash});
+                                       .seat = seat.hash,
+                                       .carrier = carrier});
   }
 
   // A remote player's ride: how many arrived (0: none), and the latest.
@@ -718,6 +719,12 @@ struct TandemNative : Red::IScriptable {
     std::uint32_t changes = 0;
     const auto ride = Runtime::Get().RemoteTransit(player, changes);
     return Red::EntityID(ride ? ride->vehicle : 0);
+  }
+  // Along: whose vehicle carries the player (0: none).
+  static std::uint32_t RemoteTransitCarrier(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto ride = Runtime::Get().RemoteTransit(player, changes);
+    return ride ? ride->carrier : 0;
   }
   static Red::CName RemoteTransitSeat(std::uint32_t player) {
     std::uint32_t changes = 0;
@@ -1718,6 +1725,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RemoteTransitNext);
   RTTI_METHOD(RemoteTransitVehicle);
   RTTI_METHOD(RemoteTransitSeat);
+  RTTI_METHOD(RemoteTransitCarrier);
   RTTI_METHOD(SendNpcSeat);
   RTTI_METHOD(SendHeld);
   RTTI_METHOD(SendShot);

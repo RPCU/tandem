@@ -83,6 +83,8 @@ TEST_CASE("every message survives encoding") {
   RoundTrips(
       Transit{.player = 1, .revision = 1, .kind = TransitKind::Scene, .flags = kTransitSeats});
   RoundTrips(Transit{.player = 3, .revision = 9, .kind = TransitKind::None});
+  RoundTrips(Transit{
+      .player = 2, .revision = 3, .kind = TransitKind::Along, .vehicle = 0x99, .carrier = 1});
   CHECK(std::string_view(NameOf(Transit{})) == "Transit");
   RoundTrips(NpcSeat{.npc = 7, .owner = 1, .seat = 0xb000b1d029d0cea0ULL});
   RoundTrips(NpcSeat{.npc = 7});
@@ -343,7 +345,7 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(IsReliable(NpcSeat{}));
   CHECK_FALSE(IsStory(NpcSeat{}));
   // A ride of a kind we do not know is refused, not guessed at.
-  CHECK(Decode(Encode(Transit{.kind = TransitKind::Scene})).has_value());
+  CHECK(Decode(Encode(Transit{.kind = TransitKind::Along})).has_value());
   Transit unknown{.kind = static_cast<TransitKind>(9)};
   CHECK_FALSE(Decode(Encode(unknown)).has_value());
   // Quickhacks change state: never dropped.

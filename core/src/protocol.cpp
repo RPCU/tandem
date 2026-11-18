@@ -81,7 +81,7 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
       difficulty && difficulty->level > 3)
     return std::nullopt;
   if (const auto *transit = std::get_if<Transit>(&message);
-      transit && transit->kind > TransitKind::Scene)
+      transit && transit->kind > TransitKind::Along)
     return std::nullopt;
   return message;
 }

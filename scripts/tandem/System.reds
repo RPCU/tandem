@@ -320,6 +320,9 @@ public class TandemSystem extends ScriptableSystem {
       this.m_time.Stop();
       this.m_time = null;
     }
+    if IsDefined(this.m_transit) {
+      this.m_transit.End();
+    }
     this.m_transit = null;
     if IsDefined(this.m_travel) {
       this.m_travel.Stop();
@@ -887,6 +890,11 @@ public class TandemSystem extends ScriptableSystem {
       this.m_rideNpc = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
       this.m_rideNpcSeated = false;
       TandemNative.Log(s"ride npc: \(record) spawning");
+    } else if Equals(command, "ride along") || Equals(command, "ride follow") {
+      // (test) the answer to a partner's scene ride: ride along, or follow.
+      if IsDefined(this.m_transit) {
+        this.m_transit.Choose(Equals(command, "ride along"));
+      }
     } else if Equals(command, "ride hide") || Equals(command, "ride show") {
       // (test) every puppet out of sight and back (TemporaryHide).
       let hide = Equals(command, "ride hide");
@@ -1403,6 +1411,10 @@ public class TandemSystem extends ScriptableSystem {
           this.m_you = 0u;
           if IsDefined(this.m_time) {
             this.m_time.End();
+          }
+          // Riding along: out, while the copy is still where it was.
+          if IsDefined(this.m_transit) {
+            this.m_transit.End();
           }
           this.RemoveAllPuppets();
           if IsDefined(this.m_npcs) {

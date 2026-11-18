@@ -25,12 +25,36 @@
 // marker follows. When they get off it comes back where they are: the exit
 // station (a fast-forwarded ride is a jump, System.reds).
 //
-// A partner's scene ride with seats (the host's quest vehicle): our V,
-// on foot within 20 m of its copy and out of combat, is seated in a free
-// passenger or gunner seat of the copy, as the scene would seat a
-// companion, and taken out when the ride ends. No free seat: it stays out
-// (the story's own rules then: weapons lowered near the scene, the join
-// offer from afar).
+// A partner's scene ride with seats (the host's quest vehicle): our V, on
+// foot within 20 m of its copy, up and out of combat, is asked the game's
+// way (a notice and two input hints): "Ride with NAME" (the phone key, the
+// one co-op offers use) or "Follow" (the reject key held). Nothing chosen
+// in 6 s while still near: ride. Walking off (30 m) or getting into a car
+// of our own is following.
+// - Ride, with a free seat (a passenger or gunner seat nobody holds, never
+//   the driver's): seated in it, as the scene would seat a companion.
+// - Ride, with none (two seats: the host and Panam or Johnny; an NPC
+//   driving the host): carried along. The scene and its car stay the
+//   host's and nobody is moved: our V is hidden (TemporaryHide), kept still
+//   (the game's own restrictions: no movement, no jump, no weapons, no
+//   world or vehicle interaction, crouched, invulnerable) and put in the
+//   copy's cabin every frame, behind the seats, turning with the car while
+//   the camera stays free. We send Transit Along, so every other game hides
+//   our puppet. The game has no camera to lend a V without a seat: a
+//   vehicle's cameras (and its scene camera mode) are the seated V's
+//   (the player state machine's vehicle states), and only photo mode has a
+//   free camera; V's own eyes, carried, are the passenger's view.
+// - Out again when the ride ends (the host's Transit leaves Scene), its
+//   copy goes, our V goes down, or the session ends (a vanished host
+//   included): every restriction off, seen again, and put down beside the
+//   car. A game loading back up clears restrictions a save may have kept.
+// - Follow: nothing is done to our V; the host's map marker sits on its car
+//   (Markers.reds), and when the host's ride ends the host offers everyone
+//   far from it to join (Travel.reds' regroup, "Join NAME").
+// An extra seat on our copy only is not done: the host's game owns the car
+// and its seats, the copy must look like it (an extra body would sit where
+// the host's world has nobody, or in Panam's lap), and the scene could
+// later seat someone where we are.
 
 public class TandemTransit {
   private let m_game: GameInstance;
@@ -48,12 +72,39 @@ public class TandemTransit {
   private let m_seatedBy: Uint32;
   private let m_seatedCar: EntityID;
   private let m_seatedSlot: CName;
-  // Rides we were offered no seat in (player, their ride's change count).
-  private let m_noSeatPlayers: array<Uint32>;
-  private let m_noSeatChanges: array<Int32>;
+  // Rides we answered (player, their ride's change count): not asked again.
+  private let m_answeredPlayers: array<Uint32>;
+  private let m_answeredChanges: array<Int32>;
+  // The question on screen: whose ride, since when, the input listened to.
+  private let m_askedBy: Uint32;
+  private let m_askedAt: Float;
+  private let m_listening: Bool;
+  private let m_held: Bool;
+  // Carried along (no seat): by whom, in which copy, its yaw last frame.
+  private let m_carriedBy: Uint32;
+  private let m_carriedCar: EntityID;
+  private let m_carYaw: Float;
+  private let m_now: Float;
+  // Our last ride was the host's scene ride with seats: its end offers the
+  // far ones to join us.
+  private let m_sceneSent: Bool;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
+    // A save made while carried along may have kept our restrictions.
+    let player = GetPlayer(game);
+    if IsDefined(player) {
+      TandemTransit.Restrict(player, false);
+    }
+  }
+
+  // The session is over (or the world goes): carried along, out again.
+  public func End() -> Void {
+    this.StopCarry(true, "the session ended");
+    this.Ask(0u);
+    this.m_seatedBy = 0u;
+    ArrayClear(this.m_answeredPlayers);
+    ArrayClear(this.m_answeredChanges);
   }
 
   // ---- what our V rides ----
@@ -103,8 +154,13 @@ public class TandemTransit {
     let next = 0;
     let vehicleId: EntityID;
     let seat: CName;
+    let carrier = 0u;
     let car: wref<VehicleObject>;
-    if VehicleComponent.GetVehicle(this.m_game, player, car) && IsDefined(car) {
+    if this.m_carriedBy != 0u {
+      kind = 4;
+      carrier = this.m_carriedBy;
+      vehicleId = this.m_carriedCar;
+    } else if VehicleComponent.GetVehicle(this.m_game, player, car) && IsDefined(car) {
       if TandemTransit.IsMetro(this.m_game, player, car) {
         kind = 1;
         let quests = GameInstance.GetQuestsSystem(this.m_game);
@@ -129,7 +185,15 @@ public class TandemTransit {
       && vehicleId == this.m_sentVehicle && Equals(seat, this.m_sentSeat) {
       return;
     }
-    TandemNative.SendTransit(kind, flags, at, next, vehicleId, seat);
+    TandemNative.SendTransit(kind, flags, at, next, vehicleId, seat, carrier);
+    // The host's scene ride is over: whoever followed from afar is offered
+    // to join us (Travel.reds shows it only to the far ones).
+    let scene = kind == 3 && (flags & 2) != 0;
+    if this.m_sceneSent && !scene {
+      TandemTravel.OfferRegroup(this.m_game, 0u, 2, "the ride is over");
+      TandemNative.Log("ride: our scene ride is over, the far ones are offered to join");
+    }
+    this.m_sceneSent = scene;
     if this.m_sent || kind != 0 {
       TandemNative.Log(s"our ride: kind \(kind), flags \(flags), station \(at), next \(next), seat \(NameToString(seat)), vehicle \(EntityID.ToDebugStringDecimal(vehicleId))");
     }
@@ -150,6 +214,11 @@ public class TandemTransit {
   // ---- every frame ----
 
   public func Tick(now: Float, system: ref<TandemSystem>, puppets: array<ref<TandemPuppet>>) -> Void {
+    this.m_now = now;
+    // After System.DrivePuppets moved the copies: the carried V with them.
+    if this.m_carriedBy != 0u {
+      this.Carry();
+    }
     this.SampleOurs(now, system);
     for puppet in puppets {
       this.Follow(now, system, puppet);
@@ -171,11 +240,53 @@ public class TandemTransit {
         this.Station(puppet);
       }
     }
+    let along = TandemNative.RemoteTransitKind(puppet.player) == 4;
     if metro {
       this.Ride(now, system, puppet);
+    } else if along {
+      this.Along(puppet);
+    } else if puppet.transitMode == 3 {
+      this.Back(puppet);
     } else if puppet.transitMode != 0 {
       this.GetOff(now, puppet);
     }
+  }
+
+  // Riding along in a full scene vehicle (no seat anywhere): out of sight
+  // here too, still (the controller keeps still on Along), until it ends.
+  private func Along(puppet: ref<TandemPuppet>) -> Void {
+    if puppet.transitMode == 3 {
+      return;
+    }
+    let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
+    if !IsDefined(body) {
+      return;
+    }
+    if puppet.transitMode == 1 {
+      this.OffTrain(puppet, body);
+    }
+    TandemTransit.Hide(body, true);
+    puppet.hidden = true;
+    puppet.transitMode = 3;
+    TandemNative.Log(s"player \(puppet.player): riding along with player \(TandemNative.RemoteTransitCarrier(puppet.player)), hidden");
+  }
+
+  // Off the ride along: seen again where it got out (beside the car).
+  private func Back(puppet: ref<TandemPuppet>) -> Void {
+    let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
+    if IsDefined(body) {
+      let at = TandemNative.RemotePosition(puppet.player);
+      if at.W != 0.0 {
+        at.W = 1.0;
+        GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, at, TandemYawAngles(Rad2Deg(TandemNative.RemoteYaw(puppet.player))));
+      }
+      if puppet.hidden && !puppet.wantsSeat {
+        TandemTransit.Hide(body, false);
+        puppet.hidden = false;
+      }
+    }
+    puppet.transitMode = 0;
+    TandemNative.Log(s"player \(puppet.player): off the ride along, seen again");
   }
 
   // On its train: in one of ours if there is one where they are, else
@@ -304,7 +415,7 @@ public class TandemTransit {
     TandemNative.Log(s"player \(puppet.player): NCART station \(at), next \(next)\(skipping ? ", skipping" : "")");
   }
 
-  // ---- a partner's scene ride: a seat for our V ----
+  // ---- a partner's scene ride: a seat, or a ride along, for our V ----
 
   private func Invites(system: ref<TandemSystem>, puppets: array<ref<TandemPuppet>>) -> Void {
     let game = this.m_game;
@@ -312,10 +423,20 @@ public class TandemTransit {
     if !IsDefined(player) {
       return;
     }
+    let down = TandemTransit.Down(game);
+    // Carried by a ride that ended, whose copy went, or while down: out.
+    if this.m_carriedBy != 0u {
+      let carried = TandemNative.RemoteTransitKind(this.m_carriedBy) == 3 && system.CarOf(this.m_carriedBy) == this.m_carriedCar;
+      if !carried || down {
+        let why = down ? "we went down" : "the ride is over";
+        this.StopCarry(true, why);
+      }
+      return;
+    }
     // Seated by a ride that has ended (or moved on): out again.
     if this.m_seatedBy != 0u {
       let still = TandemNative.RemoteTransitKind(this.m_seatedBy) == 3 && system.CarOf(this.m_seatedBy) == this.m_seatedCar;
-      if !still || !VehicleComponent.IsMountedToVehicle(game, player) {
+      if !still || !VehicleComponent.IsMountedToVehicle(game, player) || down {
         if VehicleComponent.IsMountedToVehicle(game, player) {
           TandemVehicles.Unseat(game, player, this.m_seatedCar, this.m_seatedSlot);
           TandemNative.Log(s"ride: player \(this.m_seatedBy)'s scene ride is over, out of its seat");
@@ -324,45 +445,265 @@ public class TandemTransit {
       }
       return;
     }
-    if VehicleComponent.IsMountedToVehicle(game, player) || player.IsInCombat() {
+    // The question on screen: lapsed (the ride ended), followed (we walked
+    // off or got into a car of ours), or ridden (nothing chosen in time).
+    if this.m_askedBy != 0u {
+      let asker = this.m_askedBy;
+      let askedCar = GameInstance.GetDynamicEntitySystem().GetEntity(system.CarOf(asker)) as VehicleObject;
+      let open = TandemNative.RemoteTransitKind(asker) == 3 && (TandemNative.RemoteTransitFlags(asker) & 2) != 0 && IsDefined(askedCar);
+      if !open {
+        TandemNative.Log(s"ride: player \(asker)'s ride ended before we chose");
+        this.Ask(0u);
+      } else if down || VehicleComponent.IsMountedToVehicle(game, player) || Vector4.Distance(askedCar.GetWorldPosition(), player.GetWorldPosition()) > 30.0 {
+        this.FollowOnOwn(asker, down ? "down" : "on our own");
+      } else if this.m_now - this.m_askedAt >= 6.0 {
+        this.Board(system, asker);
+      }
+      return;
+    }
+    if VehicleComponent.IsMountedToVehicle(game, player) || player.IsInCombat() || down {
       return;
     }
     for puppet in puppets {
       if TandemNative.RemoteTransitKind(puppet.player) == 3 && (TandemNative.RemoteTransitFlags(puppet.player) & 2) != 0 {
-        this.Offer(system, puppet, player);
+        let car = GameInstance.GetDynamicEntitySystem().GetEntity(system.CarOf(puppet.player)) as VehicleObject;
+        if IsDefined(car) && Vector4.Distance(car.GetWorldPosition(), player.GetWorldPosition()) <= 20.0 && !this.Answered(puppet.player) {
+          this.Ask(puppet.player);
+        }
       }
     }
   }
 
-  private func Offer(system: ref<TandemSystem>, puppet: ref<TandemPuppet>, player: ref<PlayerPuppet>) -> Void {
-    let carId = system.CarOf(puppet.player);
-    let car = GameInstance.GetDynamicEntitySystem().GetEntity(carId) as VehicleObject;
-    if !IsDefined(car) || Vector4.Distance(car.GetWorldPosition(), player.GetWorldPosition()) > 20.0 {
+  // This ride of `player` was answered already.
+  private func Answered(player: Uint32) -> Bool {
+    let i = ArrayFindFirst(this.m_answeredPlayers, player);
+    return i >= 0 && this.m_answeredChanges[i] == TandemNative.RemoteTransitChanges(player);
+  }
+
+  private func Answer(player: Uint32) -> Void {
+    let changes = TandemNative.RemoteTransitChanges(player);
+    let i = ArrayFindFirst(this.m_answeredPlayers, player);
+    if i < 0 {
+      ArrayPush(this.m_answeredPlayers, player);
+      ArrayPush(this.m_answeredChanges, changes);
+    } else {
+      this.m_answeredChanges[i] = changes;
+    }
+  }
+
+  // The question, the game's way: a notice and two input hints (0: none).
+  private func Ask(player: Uint32) -> Void {
+    let local = GetPlayer(this.m_game);
+    if this.m_askedBy != 0u {
+      this.Hint(n"PhoneInteract", false, "", inkInputHintHoldIndicationType.Press);
+      this.Hint(n"PhoneReject", false, "", inkInputHintHoldIndicationType.Hold);
+    }
+    if this.m_listening && IsDefined(local) {
+      local.UnregisterInputListener(this, n"PhoneInteract");
+      local.UnregisterInputListener(this, n"PhoneReject");
+      this.m_listening = false;
+    }
+    this.m_askedBy = player;
+    if player == 0u {
       return;
     }
-    let changes = TandemNative.RemoteTransitChanges(puppet.player);
-    let i = ArrayFindFirst(this.m_noSeatPlayers, puppet.player);
-    if i >= 0 && this.m_noSeatChanges[i] == changes {
-      return; // already told there is no seat for this ride
+    this.m_askedAt = this.m_now;
+    this.m_held = false;
+    let name = this.NameOf(player);
+    TandemTransit.Notice(this.m_game, s"\(name)'s ride is leaving: ride along, or follow");
+    this.Hint(n"PhoneInteract", true, s"Ride with \(name)", inkInputHintHoldIndicationType.Press);
+    this.Hint(n"PhoneReject", true, "Follow", inkInputHintHoldIndicationType.Hold);
+    if IsDefined(local) {
+      local.RegisterInputListener(this, n"PhoneInteract");
+      local.RegisterInputListener(this, n"PhoneReject");
+      this.m_listening = true;
     }
-    let slot = TandemVehicles.FreeSlot(this.m_game, car, n"seat_front_right", player.GetEntityID());
-    if !IsNameValid(slot) || VehicleComponent.IsDriverSlot(slot) {
-      if i < 0 {
-        ArrayPush(this.m_noSeatPlayers, puppet.player);
-        ArrayPush(this.m_noSeatChanges, changes);
-      } else {
-        this.m_noSeatChanges[i] = changes;
+    TandemNative.Log(s"ride: asked to ride with player \(player) or follow");
+  }
+
+  // The phone key pressed: ride. The reject key held: follow. (The phone's
+  // own hold on the same key opens the phone: not for us.)
+  protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    if this.m_askedBy == 0u {
+      return false;
+    }
+    let name = ListenerAction.GetName(action);
+    let kind = ListenerAction.GetType(action);
+    if Equals(name, n"PhoneInteract") {
+      if Equals(kind, gameinputActionType.BUTTON_HOLD_COMPLETE) {
+        this.m_held = true;
+      } else if Equals(kind, gameinputActionType.BUTTON_RELEASED) {
+        if this.m_held {
+          this.m_held = false;
+        } else {
+          this.Choose(true);
+        }
       }
-      TandemTransit.Notice(this.m_game, s"No free seat in \(puppet.name)'s ride: stay close");
-      TandemNative.Log(s"ride: no free seat in player \(puppet.player)'s scene ride");
+    } else if Equals(name, n"PhoneReject") && Equals(kind, gameinputActionType.BUTTON_HOLD_COMPLETE) {
+      this.Choose(false);
+    }
+    return false;
+  }
+
+  // (the input, or tools/game.sh cmd ride along | ride follow)
+  public func Choose(ride: Bool) -> Void {
+    let asker = this.m_askedBy;
+    if asker == 0u {
+      TandemNative.Log("ride: nothing to choose");
       return;
     }
-    TandemVehicles.Seat(this.m_game, player, car, slot);
-    this.m_seatedBy = puppet.player;
-    this.m_seatedCar = carId;
-    this.m_seatedSlot = slot;
-    TandemTransit.Notice(this.m_game, s"You ride with \(puppet.name)");
-    TandemNative.Log(s"ride: seated in \(NameToString(slot)) of player \(puppet.player)'s scene ride");
+    let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
+    if ride && IsDefined(system) {
+      this.Board(system, asker);
+    } else {
+      this.FollowOnOwn(asker, "chosen");
+    }
+  }
+
+  private func FollowOnOwn(asker: Uint32, why: String) -> Void {
+    this.Answer(asker);
+    this.Ask(0u);
+    let name = this.NameOf(asker);
+    TandemTransit.Notice(this.m_game, s"Following \(name): join them when the ride is over");
+    TandemNative.Log(s"ride: following player \(asker) (\(why))");
+  }
+
+  // Ride: a free seat of the copy (never the driver's), else carried along.
+  private func Board(system: ref<TandemSystem>, asker: Uint32) -> Void {
+    this.Answer(asker);
+    this.Ask(0u);
+    let player = GetPlayer(this.m_game);
+    let carId = system.CarOf(asker);
+    let car = GameInstance.GetDynamicEntitySystem().GetEntity(carId) as VehicleObject;
+    if !IsDefined(player) || !IsDefined(car) {
+      return;
+    }
+    let name = this.NameOf(asker);
+    let slot = TandemVehicles.FreeSlot(this.m_game, car, n"seat_front_right", player.GetEntityID());
+    if IsNameValid(slot) && !VehicleComponent.IsDriverSlot(slot) {
+      TandemVehicles.Seat(this.m_game, player, car, slot);
+      this.m_seatedBy = asker;
+      this.m_seatedCar = carId;
+      this.m_seatedSlot = slot;
+      TandemTransit.Notice(this.m_game, s"You ride with \(name)");
+      TandemNative.Log(s"ride: seated in \(NameToString(slot)) of player \(asker)'s scene ride");
+      return;
+    }
+    this.StartCarry(asker, carId, car);
+  }
+
+  // ---- riding along with no seat ----
+
+  private func StartCarry(asker: Uint32, carId: EntityID, car: ref<VehicleObject>) -> Void {
+    let player = GetPlayer(this.m_game);
+    TandemTransit.Restrict(player, true);
+    TandemTransit.Hide(player, true);
+    this.m_carriedBy = asker;
+    this.m_carriedCar = carId;
+    this.m_carYaw = Quaternion.ToEulerAngles(car.GetWorldOrientation()).Yaw;
+    this.Carry();
+    let name = this.NameOf(asker);
+    TandemTransit.Notice(this.m_game, s"Riding along with \(name)");
+    TandemNative.Log(s"ride: no free seat in player \(asker)'s scene ride: riding along, carried with its copy");
+  }
+
+  // Every frame: in the copy's cabin, behind the seats, at a passenger's
+  // eye height (crouched), turned with the car; the camera stays ours.
+  private func Carry() -> Void {
+    let player = GetPlayer(this.m_game);
+    let car = GameInstance.GetDynamicEntitySystem().GetEntity(this.m_carriedCar) as VehicleObject;
+    if !IsDefined(player) || !IsDefined(car) {
+      return; // Invites ends it (the copy went)
+    }
+    let carYaw = Quaternion.ToEulerAngles(car.GetWorldOrientation()).Yaw;
+    let turn = carYaw - this.m_carYaw;
+    this.m_carYaw = carYaw;
+    let yaw = Quaternion.ToEulerAngles(player.GetWorldOrientation()).Yaw + turn;
+    let forward = car.GetWorldForward();
+    let at = car.GetWorldPosition();
+    at.X -= forward.X * 0.45;
+    at.Y -= forward.Y * 0.45;
+    at.Z += 0.2;
+    at.W = 1.0;
+    GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, at, TandemYawAngles(yaw));
+  }
+
+  // Out of the ride along: every restriction off, seen again, put down
+  // beside the car (its right side), facing the way it faces.
+  private func StopCarry(placeOut: Bool, why: String) -> Void {
+    if this.m_carriedBy == 0u {
+      return;
+    }
+    let player = GetPlayer(this.m_game);
+    let car = GameInstance.GetDynamicEntitySystem().GetEntity(this.m_carriedCar) as VehicleObject;
+    if IsDefined(player) {
+      TandemTransit.Restrict(player, false);
+      TandemTransit.Hide(player, false);
+      if placeOut && IsDefined(car) {
+        let yaw = Quaternion.ToEulerAngles(car.GetWorldOrientation()).Yaw;
+        let right = car.GetWorldRight();
+        let at = car.GetWorldPosition();
+        at.X += right.X * 2.5;
+        at.Y += right.Y * 2.5;
+        at.W = 1.0;
+        GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, at, TandemYawAngles(yaw));
+      }
+    }
+    let none: EntityID;
+    TandemNative.Log(s"ride: out of player \(this.m_carriedBy)'s ride along (\(why))");
+    this.m_carriedBy = 0u;
+    this.m_carriedCar = none;
+  }
+
+  // The game's own restrictions for a V that only rides (status effects,
+  // removed by record; also cleared when a game loads).
+  public static func Restrict(player: ref<GameObject>, on: Bool) -> Void {
+    if !IsDefined(player) {
+      return;
+    }
+    let records = [
+      t"GameplayRestriction.NoMovement", t"GameplayRestriction.NoJump", t"GameplayRestriction.NoWeapons",
+      t"GameplayRestriction.NoWorldInteractions", t"GameplayRestriction.VehicleNoInteraction",
+      t"GameplayRestriction.ForceCrouch", t"BaseStatusEffect.Invulnerable"
+    ];
+    for record in records {
+      if on {
+        StatusEffectHelper.ApplyStatusEffect(player, record);
+      } else {
+        StatusEffectHelper.RemoveStatusEffect(player, record);
+      }
+    }
+  }
+
+  // Our V is down (Revive.reds): never carried.
+  private static func Down(game: GameInstance) -> Bool {
+    let revive = TandemRevive.Of(game);
+    return IsDefined(revive) && revive.IsDown();
+  }
+
+  // Whom we ride along with (0: nobody).
+  public func CarriedBy() -> Uint32 {
+    return this.m_carriedBy;
+  }
+
+  private func NameOf(player: Uint32) -> String {
+    let name = TandemNative.PlayerName(player);
+    return StrLen(name) > 0 ? name : s"player \(player)";
+  }
+
+  private func Hint(action: CName, show: Bool, label: String, hold: inkInputHintHoldIndicationType) -> Void {
+    let data: InputHintData;
+    data.action = action;
+    data.source = n"TandemRide";
+    data.localizedLabel = label;
+    data.queuePriority = 10;
+    data.sortingPriority = 10;
+    data.holdIndicationType = hold;
+    let evt = new UpdateInputHintEvent();
+    evt.data = data;
+    evt.show = show;
+    evt.targetHintContainer = n"GameplayInputHelper";
+    GameInstance.GetUISystem(this.m_game).QueueEvent(evt);
   }
 
   // ---- helpers ----
@@ -451,6 +792,6 @@ public class TandemTransit {
     for puppet in puppets {
       TandemNative.Log(s"ride: player \(puppet.player) kind \(TandemNative.RemoteTransitKind(puppet.player)) flags \(TandemNative.RemoteTransitFlags(puppet.player)) station \(TandemNative.RemoteTransitAt(puppet.player)) next \(TandemNative.RemoteTransitNext(puppet.player)) seat \(NameToString(TandemNative.RemoteTransitSeat(puppet.player))); here mode \(puppet.transitMode), hidden \(puppet.hidden), seated \(EntityID.IsDefined(puppet.seatedIn))");
     }
-    TandemNative.Log(s"ride: seated by player \(this.m_seatedBy)");
+    TandemNative.Log(s"ride: seated by player \(this.m_seatedBy), carried by player \(this.m_carriedBy), asked by player \(this.m_askedBy)");
   }
 }

@@ -197,6 +197,9 @@ struct Options {
   std::string seat{"seat_front_left"};
   bool scene{};
   std::string driverNpc;
+  // Answer a scene ride with seats (the host's) by riding along: hidden,
+  // carried with the car, out beside it when it ends.
+  bool rideAlong{};
   // Fast travel together: when to travel (-1: never), where to, the fast
   // travel point arrived at (a record name; empty: none), when to ask the
   // others to come (-1: never), how to answer their offers.
@@ -389,7 +392,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     a ride its game runs (Transit Ride)\n"
          "  --scene            drive --seat: the ride is a story scene (host: partners near\n"
          "                     its copy get a free seat)\n"
-         "  --driver-npc REC   host, drive --seat: an NPC of REC at the wheel (NpcSeat)\n";
+         "  --driver-npc REC   host, drive --seat: an NPC of REC at the wheel (NpcSeat)\n"
+         "  --ride-along       a player's scene ride with seats (Transit Scene): ride along\n"
+         "                     (Transit Along), carried with its car, out beside it at the end\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -455,6 +460,10 @@ Options Parse(int argc, char **argv) {
     }
     if (flag == "--scene") {
       options.scene = true;
+      continue;
+    }
+    if (flag == "--ride-along") {
+      options.rideAlong = true;
       continue;
     }
     if (i + 1 >= args.size())
@@ -1900,7 +1909,7 @@ int main(int argc, char **argv) {
   if (!options.replayFile.empty()) {
     replay = Recording::Load(options.replayFile);
     Log("replay: {} NPC messages from {}", replay.size(), options.replayFile);
-    if (NpcRecording::SpawnsIn(replay) == 0)
+    if (Recording::SpawnsIn(replay) == 0)
       Log("replay: no NPC spawns in {}: its guest gets no proxies (recorded on an empty street?)",
           options.replayFile);
   }
@@ -1996,6 +2005,12 @@ int main(int argc, char **argv) {
   std::uint64_t heard = 0, heardPoses = 0, heardShots = 0, heardVehicles = 0;
   // --pause-at: when someone else was first there, and how far the pause got.
   std::optional<std::chrono::steady_clock::time_point> togetherSince;
+  // --ride-along: whose scene ride we ride along in, the cars heard (by
+  // player), where we were carried last, out of it yet.
+  std::optional<tandem::proto::PlayerId> alongWith;
+  std::map<tandem::proto::PlayerId, tandem::proto::VehicleState> carOf;
+  std::optional<PlayerState> lastCarried;
+  bool gotOut = false;
   // metro: the ride's step as last sent.
   int metroStep = 0;
   bool metroSecondHalf = false;
@@ -2271,6 +2286,7 @@ int main(int argc, char **argv) {
               }
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteVehicle>) {
               ++heardVehicles;
+              carOf[e.vehicle.player] = e.vehicle;
               if (options.mode == Mode::Mirror || options.mode == Mode::Front) {
                 auto echo = e.vehicle;
                 echo.position.x += options.offset.x;
@@ -2365,10 +2381,25 @@ int main(int argc, char **argv) {
                     action->action == proto::kPhoneReject ? "rejected" : "answered",
                     action->player);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteTransit>) {
-              constexpr const char *kKinds[] = {"none", "metro", "ride", "scene"};
-              Log("player {} ride: {} (flags {:#x}, station {}, next {}, seat {:#x})",
-                  e.transit.player, kKinds[static_cast<int>(e.transit.kind) & 3], e.transit.flags,
-                  e.transit.at, e.transit.next, e.transit.seat);
+              constexpr const char *kKinds[] = {"none", "metro", "ride", "scene", "along"};
+              const auto kind = static_cast<std::size_t>(e.transit.kind);
+              Log("player {} ride: {} (flags {:#x}, station {}, next {}, seat {:#x}, carrier {})",
+                  e.transit.player, kind < std::size(kKinds) ? kKinds[kind] : "?", e.transit.flags,
+                  e.transit.at, e.transit.next, e.transit.seat, e.transit.carrier);
+              namespace proto = tandem::proto;
+              const bool offered = e.transit.kind == proto::TransitKind::Scene &&
+                                   (e.transit.flags & proto::kTransitSeats) != 0;
+              if (options.rideAlong && offered && !alongWith) {
+                alongWith = e.transit.player;
+                endpoint->SetLocalTransit(
+                    {.kind = proto::TransitKind::Along, .carrier = e.transit.player});
+                Log("riding along with player {}", e.transit.player);
+              } else if (alongWith && *alongWith == e.transit.player && !offered) {
+                alongWith.reset();
+                endpoint->SetLocalTransit({});
+                gotOut = true;
+                Log("out of player {}'s ride along, beside the car", e.transit.player);
+              }
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcSeat>) {
               Log("npc {} {} (seat {:#x})", e.seat.npc,
                   e.seat.owner ? std::format("sits in player {}'s vehicle", e.seat.owner)
@@ -2473,6 +2504,21 @@ int main(int argc, char **argv) {
       } else if (rescue && rescue->started && lastOf.contains(rescue->target)) {
         auto beside = lastOf[rescue->target];
         beside.position.x += 1.f;
+        beside.velocity = {};
+        state = beside;
+      }
+      // Riding along: where the car is; out of it, beside where it stopped.
+      const auto car = alongWith ? carOf.find(*alongWith) : carOf.end();
+      if (car != carOf.end()) {
+        PlayerState carried;
+        carried.position = car->second.position;
+        carried.orientation = car->second.orientation;
+        carried.velocity = car->second.velocity;
+        state = carried;
+        lastCarried = carried;
+      } else if (gotOut && lastCarried) {
+        auto beside = *lastCarried;
+        beside.position.x += 2.5f;
         beside.velocity = {};
         state = beside;
       }
