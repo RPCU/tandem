@@ -1,7 +1,7 @@
 # A player joins: their marker (world, minimap, map) comes and goes with them
 # shellcheck shell=bash disable=SC2317
 ensure host
-peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male
+peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female
 expect 'joined \(player [0-9]+' 20
 expect 'marker: player [0-9]+ \(.*\) on the puppet, slot .*, registered true' 30
 pause 3

@@ -1897,7 +1897,194 @@ hostile)` (`TryChangingAttitudeToHostile` 169933, companions 152568);
   show her bounty; a null foreign key's `.tweak` syntax is unchecked),
   `VeryHighHealth` (wanted: our game must not kill a remote V).
 
-### 13.13 Loot: corpses, dropped items, quest items (2026-11-18, 2.50 scripts read)
+### 13.12 Splitting a hit between the attacker's game and the target's (2026-11-18)
+
+Read in the 2.50 scripts (`final.reds`), for NPC hits on a guest's puppet
+(the host runs the attacker's side, the guest's game the target's) and
+guests' skill XP. None of it run in game yet.
+
+- The pipeline (`ProcessPipeline` 84290): `PreProcess` 84558
+  (`ConvertDPSToHitDamage`, `CalculateDamageVariants`, quick exit,
+  invulnerability, immortality, death check, `ModifyHitData`), then
+  `Process` 84914 (returns at once on `DealNoDamage`, else the modifier
+  stages and `DealDamages` 85771), `ProcessHitReaction`, `PostProcess`
+  85801 (`ProcessStatusEffects` 85883). [2.5-untested]
+- Attacker's side, for an NPC instigator: `ConvertDPSToHitDamage` 84575
+  (divides by the weapon's `ProjectilesPerShot`; needs a weapon),
+  `CalculateSourceModifiers` 86219 (bonus vs. target type, charge, pierce,
+  ricochet, crit, damage multipliers, cyberware, stealth, spreading),
+  `ProcessEffectiveRange` 86554 (weapon range falloff, explosion distance).
+  `CalculateDamageVariants`, `ProcessLocalizedDamage`, `ProcessCriticalHit`
+  and `ProcessQuickHackModifiers` only act for a player instigator.
+  [2.5-untested]
+- Target's side: `ProcessDamageReduction` 84618 (resistances per damage
+  type, explosion/melee/DoT/boss/mech resistances), `ProcessDodge` 84781
+  (`IsDodging` stat → no damage), `ProcessEvasion` 84795, `ProcessMitigation`
+  84808, `ProcessPlayerIncomingDamageMultiplier` 84831 (target a
+  `PlayerPuppet`), `ProcessPlayerFixedPercentageOverride` 85107 and
+  `ProcessGrenadeExplosionDamageToPlayer` 85250 (difficulty),
+  `CalculateTargetModifiers` 86213 (damage reductions, `ProcessArmor` 86621,
+  on-vehicle mitigation), `ProcessBlockAndDeflect` 87114,
+  `ProcessOneShotProtection` 85069 (per-hit cap by difficulty), and in
+  `StatPoolsManager` overshield, armour pool, `CannotKillPlayer`, god-mode
+  immortality and minimum health (`ApplyDamageSingle` 219067,
+  `DrainStatPool` 219283). [2.5-untested]
+- **No flag skips the attacker's side.** `DeterministicDamage` is read only
+  by `ProcessCriticalHit` (86769), which already returns for a player
+  target; `CannotModifyDamage` by `ProcessCriticalHit`,
+  `ProcessOnVehicleMitigation` (86704: a target-side stage, wrongly skipped
+  for a forwarded hit) and the no-op `ClearDamage` (52652). So tandem wraps
+  the stages instead: on the host the target's stages return for a hit on a
+  puppet; on the guest the three attacker stages return for a forwarded
+  hit (`scripts/tandem/Combat.reds`). [2.5-untested]
+- `ProcessArmor`, `ProcessOneShotProtection`, `ConvertDPSToHitDamage` and
+  the melee block all need `attackData.GetWeapon()`; armour penetration
+  comes from `GetArmorPenetrationValue(weapon, hitEvent)` 87006 (protected,
+  wrappable). A forwarded hit carries the host's value. [2.5-untested]
+- `CheckForQuickExit` 86416 drops a hit with no source, and turns a hit
+  from an attacker friendly to the target into no damage unless the hit has
+  `hitFlag.FriendlyFire` (86453; the flag is read nowhere else, and only
+  removed for player instigators, 86413). [2.5-untested]
+- The attack record's status effects are applied by `ProcessStatusEffects`
+  from `GetAttackDefinition().GetRecord().StatusEffects()` (85930), and the
+  target's application-rate rolls (`ProcessStatusEffectApplicationStats` 85983) use the instigator's stats: a hit rebuilt from the same record and
+  the proxy as instigator brings them along. [2.5-untested]
+- Skill XP: `DrainStatPool` (219283-219327) calls
+  `RPGManager.AwardExperienceFromDamage(hitEvent, percentDrained)` 36969;
+  it requires an active, XP-awarding (`AwardsExperience`: not crowd, not
+  police) puppet target, a player instigator, and reads the weapon's item
+  type for the skill. The request is queued per target entity and paid by
+  `ProcessQueuedCombatExperience(entity)` (80726) when the player gets
+  `TargetNeutraliziedEvent` (45336), sent by `ScriptedPuppet.RewardKiller`
+  (21851) only to a `PlayerPuppet` killer; `FindAndRewardKiller` (12550)
+  uses the damage history, else the `Kill` instigator. No other kill XP is
+  given in scripts. [2.5-untested]
+
+### 13.12 Combat state, detection and stealth for a guest (2026-11-18, scripts only)
+
+Read in the 2.50 scripts (`final.reds` line numbers); none of it tried in
+game yet. Used by `scripts/tandem/Stealth.reds`.
+
+- **What puts V in combat.** `PlayerCombatController` (242633) keeps flags
+  (crouch, `m_isTracked`, quickhack, Johnny) and `VerifyActivation`
+  (242719) picks a state: tracked → `ActivateCombat` (242876: PSM
+  blackboard `PlayerStateMachine.Combat` = 1, `AnimFeature_CombatState`,
+  `FastTravelSystem.AddFastTravelLock(n"InCombat")`, combat chatter,
+  `NotifyGameTone(n"EnterCombat")`, `HandleCombatMix`); crouched and not
+  tracked → stealth (3); neither → out of combat (2, `LeaveCombat` tone,
+  lock removed). `m_isTracked` is set only by
+  `OnStartedBeingTrackedAsHostile` / `OnStoppedBeingTrackedAsHostile`
+  (242808-242816), public, the event argument unused; `PlayerPuppet`
+  forwards the native AI events `StartedBeingTrackedAsHostile` /
+  `StoppedBeingTrackedAsHostile` (importonly, 315706-315709) to them
+  (46292-46298). `PlayerPuppet.OnCombatStateChanged` (43634) listens to
+  the PSM value and sets `m_inCombat` (`IsInCombat()`, 45377), the perk
+  blackboard's `CombatStateTime`, `UpdateVisibility`.
+  `AttackData.IsPlayerInCombat` (52593) reads the PSM value directly.
+  Tandem's guest calls the two controller functions from an `@addMethod`
+  on `PlayerPuppet` (the controller is the private `m_combatController`),
+  with `null` for the event, and wraps the `PlayerPuppet` callbacks so a
+  local "stopped" does not end a combat the host's NPCs still hold.
+  [2.5-untested]
+- **NPC side of "in combat with V".** `NPCPuppet.IsInCombatWithTarget(npc,
+target)` (130026): high-level state Combat and the target tracker's
+  threat for the target is `Hostile`. The host ORs it with
+  `GetDetection >= 100` for `NpcEntry::detected`. [2.5-untested]
+- **The stealth meter.** The HUD meter and the detection perks read the
+  `UI_Stealth` blackboard (`highestDetectionOnPlayer`,
+  `highestHostileDetectionOnPlayer`, 243024; `DetectionMeterEffector`
+  300783 stacks an effect per `detectionStep`), written by the engine.
+  The indicator over an NPC is its sense component's `StealthMappin`
+  (`CreateSenseMappin`, 155542); `StealthMappinController.OnUpdate`
+  (406522) takes the level from the native `GetDetectionProgress()`, not
+  from script. `NPCPuppet.SetDetectionPercentage` (125823) writes
+  `PuppetState.DetectionPercentage`, which some effectors compare
+  (313954). Tandem writes the blackboard (scale assumed 0..100, as
+  `GetDetection`) and each proxy's percentage, and creates the proxy's
+  sense mappin while it notices us. To check in game: whether the engine
+  overwrites the blackboard every frame, and what a proxy's mappin shows
+  with its senses off (likely no progress: then the per-proxy meter needs
+  native work). [2.5-untested]
+- **What NPC senses see of V.** V's visible object is the
+  `senseVisibleObject` component (ScriptedPuppet 19809;
+  `GetVisibleObjectComponent`). `PlayerPuppet.SetInvisible` (43505)
+  toggles it (`IsInvisible`). `UpdateVisibilityModifier` (40819) queues
+  `VisibleObjectDetectionMultEvent{multiplier = Visibility stat}` on V;
+  `UpdateSecondaryVisibilityOffset` (43599) queues
+  `VisibleObjectSecondaryPositionEvent` with Z
+  `player.stealth.crouchVisibilityZOffset` (0.6) crouched or
+  `chestVisibilityZOffset` (1.3). Tandem queues the same events on a
+  puppet and toggles its grafted `senseVisibleObjectComponent` (§13.11)
+  for camo. [2.5-untested]
+- **Optical camo.** Status effects tagged `CamoActiveOnPlayer` (269230)
+  or `ActiveCamo` (44019). Their `AttachOpticalCamoVisionBlockerEffector`
+  (249803, an `AttachCapsuleVisionBlockerEffector` 249727) registers a
+  capsule vision blocker on the owner with the sense manager's
+  `VisionBlockersRegistrar`. With the relic
+  (`CanPlayerExitCombatWithOpticalCamo`, 44019-44056) in combat:
+  `SetInvisible(true)`, each hostile threat's tracker
+  `DeactivateThreat(V)`, `ExitCombatOnOpticalCamoActivatedEvent` later.
+  Tandem applies the V's camo effect to its puppet (owner: the puppet) for
+  the look and the blocker; whether a player camo effect runs on an NPC
+  body is to check. [2.5-untested]
+- **Stimuli.** `StimBroadcasterComponent.TriggerSingleBroadcast(contextOwner,
+type, radius, investigateData, propagationChange)` (149948) is how V's
+  shots are heard (`ShootEvents.OnEnter` 548102: `Gunshot` at 25 m indoors
+  or `GetGunshotRange()`, `SilencedGunshot` + `IllegalAction` when
+  silenced; muzzle brake: none). With no broadcaster on an entity,
+  `StimBroadcasterComponentHelper.CreateStimEvent` +
+  `ProcessSingleStimuliBroadcast` (150609) do the same. `gamedataStimType`
+  values: `Explosion` 24, `Gunshot` 28, `SilencedGunshot` 49. Grenades
+  broadcast from the projectile (`Explosion`, 127920), not from V.
+  [2.5-untested]
+
+### 13.14 Quickhacks between games (2026-11-18, scripts only)
+
+Read in `final.reds`; none of it seen in a session yet.
+
+- An NPC's upload is a `QuickHackUpload` stat pool **on the target**
+  (`ScriptableDeviceAction.StartUpload` 28078, `QuickHackUploadListener`
+  194694): its `OnStatPoolAdded` queues `UploadProgramProgressEvent`
+  (`STARTED`, `EProgressBarType.UPLOAD`, `duration` = the action's
+  activation time) on the target, and at 100 % `CompleteAction` then
+  `COMPLETED`. `ScriptedPuppet.OnUploadProgressStateChanged` (24388) puts
+  `AIQuickHackStatusEffect.BeingHacked` (and `BeingHackedWithTraceableHack`
+  when `QuickHackableHelper.WillHackRevealPlayer`, 123133) on the target at
+  `STARTED` and removes both at `COMPLETED`. One pool per target: two
+  uploads by the vanilla path on one NPC would share it. [2.5-untested]
+- The queue (`QuickHackableQueueHelper.PutActionInQuickhackQueue` 122261)
+  and cost skipping (`CanSkipPayCost` 26943) work only for a `PlayerPuppet`
+  executor; a puppet executor on the host gets none of it.
+  `GetActivationTime` (26793) takes the executor's stats. [2.5-untested]
+- A quickhack effect on an NPC (gameplay tag `Quickhack`,
+  `NPCPuppet.OnStatusEffectApplied` 126476 → `OnQuickHackEffectApplied` 126593) alerts and traces only when `instigatorEntityID ==
+GetPlayerID()` and the effect lacks the `Stealth` tag:
+  `NonStealthQuickHackVictimEvent` (126787) → `RevealPlayerPositionIfNeeded`
+  (126798: a `HackTargetEvent` with `AIQuickHack.HackRevealPosition`
+  queued on the player, unless in combat or already revealed) or
+  `NPCStatesComponent.AlertPuppet` (168014), then
+  `AIActionHelper.TryChangingAttitudeToHostile` (169916). [2.5-untested]
+- NPC hacks: `AISubActionQuickHack.Hack` (493744) queues a `HackTargetEvent`
+  (195237: netrunner, target, action record, settings) on the target;
+  `ScriptedPuppet.OnHackTargetEvent` (22119) runs it as an
+  `AIQuickHackAction` with the netrunner as executor; `PlayerPuppet`
+  (45832) adds the reveal state. Queued on our V with a proxy as
+  `netrunnerID`, it should run the hack from the proxy. [2.5-untested]
+- `ExecutePuppetActionEvent{actionID}` (201075) queued on an NPC runs a
+  quickhack from the local player on it, by the normal path (22452). [2.5-untested]
+- Spread (`SpreadInitEffector` 316185, `SpreadEffector` 316386) reads
+  `GetPlayer(game)` at initialisation for stats, spread map
+  (`HackingDataDef.AddItemToSpreadMap`) and the spread effect's
+  instigator; a `SpreadEffector` with no map entry for its action does not
+  spread. [2.5-untested]
+- Vehicle quickhacks reach `VehicleComponentPS.OnVehicleOverrideForceBrakes`
+  / `…Explode` / `…Accelerate` (96426-96451) and call
+  `VehicleObject.ActivateNetrunnerQuickhack` (87829); the police hacker
+  loop stops a player's car with `ForceBrakesUntilStoppedOrFor` (87873,
+  194573). Whether `ActivateNetrunnerQuickhack(Accelerate)` acts on a car a
+  player drives is not known. [2.5-untested]
+
+### 13.15 Loot: corpses, dropped items, quest items (2026-11-18, 2.50 scripts read)
 
 Read from the 2.50 scripts (`final.reds` line numbers), used by
 `scripts/tandem/Loot.reds`; none of it has run in a session yet.

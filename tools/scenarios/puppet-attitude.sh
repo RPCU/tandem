@@ -1,7 +1,7 @@
 # A joined player's puppet has an attitude group of its own, and the NPCs around see it as they see V
 # shellcheck shell=bash disable=SC2317
 ensure host
-peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male
+peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female
 expect 'joined \(player [0-9]+' 20
 expect 'player [0-9]+: puppet in the tandem_player_[1-3] attitude group' 20
 # The relations are copied from V's within 2 s of NPCs being seen.
