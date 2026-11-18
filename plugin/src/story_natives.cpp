@@ -59,6 +59,7 @@ enum Kind : std::int32_t {
   kCursor = 33,
   kState = 40,
   kReward = 41,
+  kEffect = 42,
 };
 
 void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
@@ -142,6 +143,11 @@ void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
   } else if (const auto *state = std::get_if<proto::StoryState>(&m)) {
     out.EmplaceBack(TandemStoryEvent{
         .kind = kState, .player = state->player, .state = state->tier, .flags = state->flags});
+  } else if (const auto *effect = std::get_if<proto::StoryEffect>(&m)) {
+    out.EmplaceBack(TandemStoryEvent{.kind = kEffect,
+                                     .player = effect->player,
+                                     .flags = effect->applied ? 1 : 0,
+                                     .reward = Red::TweakDBID(effect->effect)});
   } else if (const auto *reward = std::get_if<proto::QuestReward>(&m)) {
     out.EmplaceBack(TandemStoryEvent{
         .kind = kReward, .hash = reward->quest, .reward = Red::TweakDBID(reward->reward)});
@@ -271,6 +277,11 @@ struct TandemStory : Red::IScriptable {
     return static_cast<std::int32_t>(award.players.size());
   }
 
+  // Host: a story status effect came onto our V (applied) or went.
+  static void SendEffect(Red::TweakDBID effect, bool applied) {
+    Story::Get().Send(proto::StoryEffect{.effect = effect.value, .applied = applied});
+  }
+
   // A dialogue line's id as a number and back (the script cannot build one).
   static Red::CRUID LineId(std::uint64_t line) {
     Red::CRUID id{};
@@ -323,6 +334,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SendState);
   RTTI_METHOD(QuestMoved);
   RTTI_METHOD(Reward);
+  RTTI_METHOD(SendEffect);
   RTTI_METHOD(LineId);
   RTTI_METHOD(LineValue);
 });

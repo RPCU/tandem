@@ -513,6 +513,9 @@ private:
 //   pick ID INDEX                the host picks (every hub closes)
 //   tier N                       the host's scene tier (1..5)
 //   reward RECORD [QUESTHASH]    a quest reward for every guest
+//   effect RECORD on|off         a story status effect on the host's V
+//                                (a relic glitch: BaseStatusEffect.JohnnySicknessLow)
+//   replacer on|off              the host plays as Johnny (StoryState flag)
 // Lines starting with # are comments.
 struct StoryStep {
   double at{};
@@ -614,6 +617,11 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
                                  .kind = proto::kCursorPicked};
     if (step.verb == "tier" && !a.empty())
       return proto::StoryState{.tier = static_cast<std::uint8_t>(std::stoi(a[0]))};
+    if (step.verb == "replacer" && !a.empty())
+      return proto::StoryState{.tier = 1,
+                               .flags = a[0] == "on" ? proto::kStoryReplacer : std::uint8_t{0}};
+    if (step.verb == "effect" && a.size() >= 2)
+      return proto::StoryEffect{.effect = TweakDBID(a[0]), .applied = a[1] == "on"};
     if (step.verb == "reward" && !a.empty())
       return proto::QuestReward{.reward = TweakDBID(a[0]),
                                 .quest = a.size() > 1 ? Hash32(a[1]) : 0};
@@ -657,6 +665,9 @@ std::string Describe(const tandem::proto::Message &message) {
                        state->flags);
   if (const auto *reward = std::get_if<proto::QuestReward>(&message))
     return std::format("reward: {:#x} (quest {})", reward->reward, reward->quest);
+  if (const auto *effect = std::get_if<proto::StoryEffect>(&message))
+    return std::format("story effect: {:#x} {} on player {}", effect->effect,
+                       effect->applied ? "on" : "off", effect->player);
   return "story: ?";
 }
 

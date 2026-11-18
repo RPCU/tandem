@@ -2164,6 +2164,22 @@ choiceHubs: array<ListChoiceHubData>}`, `:243020`, `:389618`),
   see.
 - The co-op reward ledger is a `persistent` array on `TandemStorySystem`:
   it reaches the guest's save with its next save after the session.
+- Johnny is an NPC of the host's world, `Character.Silverhand`
+  (`PlayerPuppet.IsTargetFriendlyNPC`, `:40624`); playing as Johnny is the
+  `Character.johnny_replacer` puppet (`:39363`), `UI_PlayerStats.isReplacer`
+  (`:83411`) and the fact `isPlayerPossessedByJohnny` (`:50012`). His relic
+  glitches are status effects with the `JohnnySickness` tag
+  (`BaseStatusEffect.JohnnySicknessLow/Medium/Heavy/MediumQuest`, `:44352`).
+  `GetPlayer` is the _controlled_ object (`:39193`): as Johnny, the host's
+  streamed position and pose are the replacer's.
+- Songbird's calls use `questPhoneCallVisuals.Somi` (`:10735`), drawn by
+  `HudPhoneGameController` (extends the native
+  `SongbirdAudioCallGameController`, `:389152`, `:389380`) instead of the
+  regular call widget (`:408912`).
+- `PlayerPuppet.OnStatusEffectApplied` / `OnStatusEffectRemoved`
+  (`:43899`, `:44474`) are where the host sees a story effect come and go;
+  `ApplyStatusEffectEvent.isNewApplication`,
+  `RemoveStatusEffect.isFinalRemoval` (`:203824`, `:203958`).
 
 ### 13.15 Time dilation in a shared world (2026-11-18, scripts and RTTI only)
 
