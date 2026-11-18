@@ -915,7 +915,7 @@ public class TandemStorySystem extends ScriptableSystem {
     ArrayPush(this.m_rewardedQuests, questHash);
     // By our own rules: our level, our perks, our toasts (final.reds:37406).
     RPGManager.GiveReward(this.GetGameInstance(), reward);
-    TandemNative.Log(s"reward: given \(TDBID.ToStringDEBUG(reward)) (quest \(quest))");
+    TandemNative.Log(s"reward: given \(TDBID.ToStringDEBUG(reward)) (quest \(questHash))");
   }
 
   // Our own story pays a reward: not again if co-op already paid it.

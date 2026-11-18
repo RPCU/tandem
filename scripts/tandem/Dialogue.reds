@@ -13,12 +13,12 @@ public class TandemDialogue {
 
   // Host: our blackboards and what we last sent.
   private let m_hostListening: Bool;
-  private let m_cbShow: CallbackHandle;
-  private let m_cbHide: CallbackHandle;
-  private let m_cbHubs: CallbackHandle;
-  private let m_cbActive: CallbackHandle;
-  private let m_cbSelected: CallbackHandle;
-  private let m_cbAttempt: CallbackHandle;
+  private let m_cbShow: ref<CallbackHandle>;
+  private let m_cbHide: ref<CallbackHandle>;
+  private let m_cbHubs: ref<CallbackHandle>;
+  private let m_cbActive: ref<CallbackHandle>;
+  private let m_cbSelected: ref<CallbackHandle>;
+  private let m_cbAttempt: ref<CallbackHandle>;
   private let m_hubs: DialogChoiceHubs;
   private let m_activeHub: Int32;
   private let m_sentOpen: Bool;
