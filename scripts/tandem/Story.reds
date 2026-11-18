@@ -91,6 +91,10 @@ public class TandemStorySystem extends ScriptableSystem {
     if this.m_saveLocked {
       SaveLocksManager.RequestSaveLockAdd(this.GetGameInstance(), n"tandem");
     }
+    // The host loaded a save in a session: its journal is another one now.
+    if this.m_isHost && this.m_you != 0u {
+      this.HostStart();
+    }
     this.Schedule();
   }
 
