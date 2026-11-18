@@ -595,6 +595,25 @@ struct QuestReward {
   friend bool operator==(const QuestReward &, const QuestReward &) = default;
 };
 
+// A V's time ability (docs/ARCHITECTURE.md, slowed and stopped time): what
+// is active now and the world speed it asks for (Event channel, sent by that
+// player's game when it starts, changes or ends). The host stamps the sender
+// from the connection, keeps the latest of each player for late joiners
+// (a player who leaves has none) and relays it. The owner's own game keeps
+// its single-player slow motion; the shared world never slows as a whole:
+// the host slows only the NPCs around that V, its time bubble
+// (tandem/timebubble.hpp), and every game shows the ability on its puppet.
+inline constexpr std::uint8_t kTimeSandevistan = 1, kTimeKerenzikov = 2, kTimeSlowMo = 4,
+                              kTimeScanning = 8;
+// The abilities that make a bubble; the others stay on their owner's screen.
+inline constexpr std::uint8_t kTimeBubbleAbilities = kTimeSandevistan | kTimeKerenzikov;
+struct TimeEffect {
+  PlayerId player{};
+  std::uint8_t abilities{}; // kTime* bits (0: none)
+  float scale{1.f};         // world speed it asks for, 0..1 (1: no bubble)
+  friend bool operator==(const TimeEffect &, const TimeEffect &) = default;
+};
+
 // A player offers others to come to them ("regroup", milestone 4): sent by
 // that player's game when it arrives from a fast travel, when a story scene
 // starts while someone is far (the story work), or when the player asks. The
@@ -643,7 +662,7 @@ using Message =
                  NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
                  Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
                  Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward, Regroup, RegroupAnswer>;
+                 StoryState, QuestReward, TimeEffect, Regroup, RegroupAnswer>;
 
 // A story message (Journal … QuestReward): endpoint.hpp relays these
 // through one path.

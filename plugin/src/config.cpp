@@ -47,9 +47,27 @@ Config LoadConfig(const std::filesystem::path &path) {
         config.role = Config::Role::Join;
       else
         log::Warn("tandem.ini:{}: role is off, host or join", number);
-    } else if (key == "address")
+    } else if (key == "address") {
       config.address = value;
-    else if (key == "name")
+      config.addressSet = !value.empty();
+    } else if (key == "relay") {
+      if (value.empty())
+        config.relay.clear();
+      else if (!net::ParseRelayAddress(value, config.relay, config.relayPort))
+        log::Warn("tandem.ini:{}: relay is host or host:port, not {}", number, value);
+    } else if (key == "relay_token") {
+      if (const auto token = net::ParseRelayToken(value))
+        config.relayToken = *token;
+      else
+        log::Warn("tandem.ini:{}: relay_token is 64 hex digits (tandem-relay token)", number);
+    } else if (key == "join") {
+      if (value.empty())
+        config.joinCode.clear();
+      else if (const auto code = net::NormalizeJoinCode(value))
+        config.joinCode = *code;
+      else
+        log::Warn("tandem.ini:{}: join is a join code like K7Q-2M9, not {}", number, value);
+    } else if (key == "name")
       config.name = value;
     else if (key == "puppet_female")
       config.puppetFemale = value;
@@ -90,6 +108,13 @@ Config LoadConfig(const std::filesystem::path &path) {
           break;
         start = comma + 1;
       }
+    } else if (key == "time_host") {
+      if (value == "bubble")
+        config.timeHostFull = false;
+      else if (value == "full")
+        config.timeHostFull = true;
+      else
+        log::Warn("tandem.ini:{}: time_host is bubble or full", number);
     } else if (key == "trace") {
       config.trace = value == "on" || value == "true";
     } else if (key == "port") {

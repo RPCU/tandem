@@ -5,6 +5,7 @@
 // (the plugin runs it on its network thread, the mock player in its main loop).
 
 #include "tandem/protocol.hpp"
+#include "tandem/relay.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -39,6 +40,8 @@ struct Event {
   Kind kind{};
   PeerId peer{};
   std::optional<proto::Message> message;
+  // Disconnected while connecting through the relay: why it failed.
+  std::string reason;
 };
 
 struct Stats {
@@ -53,14 +56,24 @@ class Session {
 public:
   // `maxConnections` counts connections, welcomed or not: room for a
   // returning player or one to tell the session is full is the caller's.
-  // `timeout`: see kDefaultTimeout (tests shorten it).
+  // `timeout`: see kDefaultTimeout (tests shorten it). With `relay`, the
+  // session is also open through that relay (tandem/relay.hpp), for guests
+  // that cannot reach `port`; a relay that fails leaves direct guests be.
   static std::unique_ptr<Session> Listen(std::uint16_t port, std::size_t maxConnections,
                                          std::string &error,
-                                         std::chrono::milliseconds timeout = kDefaultTimeout);
-  // A host that does not answer within `timeout` is reported Disconnected.
+                                         std::chrono::milliseconds timeout = kDefaultTimeout,
+                                         const RelayOptions *relay = nullptr);
+  // A host that does not answer within `connectTimeout` (0: `timeout`) is
+  // reported Disconnected.
   static std::unique_ptr<Session> Connect(const std::string &host, std::uint16_t port,
                                           std::string &error,
-                                          std::chrono::milliseconds timeout = kDefaultTimeout);
+                                          std::chrono::milliseconds timeout = kDefaultTimeout,
+                                          std::chrono::milliseconds connectTimeout = {});
+  // The host of a session on a relay, by its secret or join code. Reported
+  // Disconnected, with a reason, when the relay refuses or does not answer;
+  // the relay and then the host each get `timeout` to answer.
+  static std::unique_ptr<Session> ConnectRelay(const RelayOptions &relay, std::string &error,
+                                               std::chrono::milliseconds timeout = kDefaultTimeout);
 
   ~Session();
   Session(const Session &) = delete;
@@ -85,6 +98,12 @@ public:
   bool IsHost() const { return m_isHost; }
   // The UDP port the socket is bound to (Listen on port 0 picks a free one).
   std::uint16_t LocalPort() const;
+
+  // The relay link, if the session has one (host: its join code).
+  std::optional<RelayStatus> Relay() const;
+  // Guest through a relay: the session's secret, to join again without the
+  // code once it expired.
+  std::optional<RelaySecret> RelaySessionSecret() const;
 
 private:
   struct Impl;

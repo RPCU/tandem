@@ -9,6 +9,7 @@
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
+#include "tandem/timebubble.hpp"
 #include "tandem/vehicle.hpp"
 
 #include <array>
@@ -93,6 +94,17 @@ public:
   void Stop();
   bool Started() const;
 
+  // tandem-relay, net thread -> game thread: the host's join code to show
+  // ("K7Q-2M9", "" none yet or no relay) and what the link is doing (""
+  // no relay, "connecting", "ready", else what went wrong).
+  void SetRelay(std::string code, std::string status);
+  std::string RelayCode() const;
+  std::string RelayStatus() const;
+  // Game thread: be the guest of the session `code` names, through
+  // tandem.ini's relay. A running session is left for it at once; else it
+  // starts with the next loaded game. False: not a code, or no relay.
+  bool JoinByCode(std::string_view code);
+
   // Game thread -> net thread: our V, newest only.
   void SubmitLocal(const proto::PlayerState &state);
   std::optional<proto::PlayerState> TakeLocal();
@@ -170,6 +182,16 @@ public:
   std::optional<bool> TakeLocalPaused();
   void SetRemotePaused(std::vector<proto::PlayerId> players);
   std::vector<proto::PlayerId> RemotePaused(std::uint32_t &changes);
+  // Time abilities (scripts/tandem/Time.reds): ours, game -> net (newest
+  // only); the other players' active ones, net -> game (latest + a count of
+  // changes, 0: none yet).
+  void SubmitLocalTime(const proto::TimeEffect &effect);
+  std::optional<proto::TimeEffect> TakeLocalTime();
+  void PushRemoteTime(const proto::TimeEffect &effect);
+  std::map<proto::PlayerId, proto::TimeEffect> RemoteTimes(std::uint32_t &changes);
+  // The NPCs slowed around the Vs in a Sandevistan. Game thread only (the
+  // scripts that apply them).
+  sync::TimeBubbles &Bubbles() { return m_bubbles; }
   void NotePlayerName(proto::PlayerId player, std::string name);
   std::string PlayerName(proto::PlayerId player);
 
@@ -269,6 +291,8 @@ private:
 
   mutable std::mutex m_lock; // session lifecycle, local outbox, events
   std::unique_ptr<NetThread> m_net;
+  proto::Body m_body{};                   // m_lock: the last Start's
+  std::string m_relayCode, m_relayStatus; // m_lock
   std::optional<proto::PlayerState> m_local;
   std::vector<ScriptEvent> m_events;
 
@@ -317,6 +341,10 @@ private:
   std::vector<proto::PlayerId> m_remotePaused;                                   // m_lock
   std::uint32_t m_remotePausedChanges{};                                         // m_lock
   std::map<proto::PlayerId, std::string> m_names;                                // m_lock
+  std::optional<proto::TimeEffect> m_localTime;                                  // m_lock
+  std::map<proto::PlayerId, proto::TimeEffect> m_remoteTimes;                    // m_lock
+  std::uint32_t m_remoteTimeChanges{};                                           // m_lock
+  sync::TimeBubbles m_bubbles;                                                   // game thread
   std::vector<proto::Message> m_regroupOutbox;                                   // m_lock
   std::vector<RegroupEvent> m_regroupEvents;                                     // m_lock
   std::uint32_t m_regroupOffers{};                                               // m_lock
