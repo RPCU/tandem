@@ -4,6 +4,11 @@
 //
 //   tandem-peer host [options]          the game joins it
 //   tandem-peer join ADDRESS[:PORT]     it joins the game
+//   tandem-peer join --code CODE --relay RELAY   it joins by a join code
+//
+// Relay (--relay HOST[:PORT]): a host is also reachable through tandem-relay
+// and logs its join code; a guest joins by --code through it, after trying
+// ADDRESS directly when one is given.
 //
 // Modes (--mode):
 //   mirror  copies your V back as a second player, offset and delayed: you see
@@ -79,7 +84,10 @@ struct Options {
   std::string replayFile; // host: send a recording's NPC messages again
   int pauseAtSeconds{-1}; // open the pause menu this long into the session (-1: never)
   int pauseForSeconds{3}; // ...for this long
-  bool check{};           // parse the options, then exit
+  // tandem-relay: its address, a host token (host), the session's code (join)
+  std::optional<tandem::net::RelayOptions> relay;
+  std::string code;
+  bool check{}; // parse the options, then exit
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -125,8 +133,14 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
   if (!error.empty())
     std::cerr << "tandem-peer: " << error << "\n\n";
   std::cerr << "usage: tandem-peer host [options]\n"
-               "       tandem-peer join ADDRESS[:PORT] [options]\n\n"
+               "       tandem-peer join ADDRESS[:PORT] [options]\n"
+               "       tandem-peer join --code CODE --relay HOST[:PORT] [options]\n\n"
                "  --port N           UDP port (default 27450)\n"
+               "  --relay HOST[:PORT] tandem-relay (default port 27460): host, also reachable\n"
+               "                     through it (its join code is logged); join, used when\n"
+               "                     ADDRESS does not answer, or with --code only\n"
+               "  --relay-token HEX  host: one of the relay's host tokens (tandem-relay token)\n"
+               "  --code CODE        join: the host's join code (needs --relay)\n"
                "  --mode M           mirror | ghost | front | drive | idle (default mirror)\n"
                "  --name NAME        player name (default tandem-peer)\n"
                "  --body B           female | male: the puppet rig others see (default female)\n"
@@ -171,14 +185,18 @@ Options Parse(int argc, char **argv) {
     options.host = true;
   else if (args[0] == "join") {
     if (args.size() < 2)
-      Usage("join needs an address");
-    auto target = args[1];
-    if (auto colon = target.rfind(':'); colon != std::string_view::npos) {
-      options.port = Number<std::uint16_t>(target.substr(colon + 1));
-      target = target.substr(0, colon);
+      Usage("join needs an address or --code");
+    if (args[1].starts_with("--")) {
+      options.address.clear(); // by --code, through the relay only
+    } else {
+      auto target = args[1];
+      if (auto colon = target.rfind(':'); colon != std::string_view::npos) {
+        options.port = Number<std::uint16_t>(target.substr(colon + 1));
+        target = target.substr(0, colon);
+      }
+      options.address = std::string(target);
+      i = 2;
     }
-    options.address = std::string(target);
-    i = 2;
   } else
     Usage(std::format("unknown command {}", args[0]));
 
@@ -264,9 +282,36 @@ Options Parse(int argc, char **argv) {
       options.recordFile = value;
     } else if (flag == "--replay") {
       options.replayFile = value;
+    } else if (flag == "--relay") {
+      if (!options.relay)
+        options.relay.emplace();
+      if (!tandem::net::ParseRelayAddress(value, options.relay->address, options.relay->port))
+        Usage(std::format("--relay is HOST[:PORT], not {}", value));
+    } else if (flag == "--relay-token") {
+      const auto token = tandem::net::ParseRelayToken(value);
+      if (!token)
+        Usage("--relay-token is 64 hex digits (tandem-relay token)");
+      if (!options.relay)
+        options.relay.emplace();
+      options.relay->token = *token;
+    } else if (flag == "--code") {
+      const auto code = tandem::net::NormalizeJoinCode(value);
+      if (!code)
+        Usage(std::format("not a join code: {}", value));
+      options.code = *code;
     } else
       Usage(std::format("unknown option {}", flag));
   }
+  if (!options.host && !options.check) {
+    if (options.address.empty() && options.code.empty())
+      Usage("join needs an address or --code");
+    if (!options.code.empty() && (!options.relay || options.relay->address.empty()))
+      Usage("--code needs --relay");
+  }
+  if (options.relay && options.relay->address.empty() && !options.check)
+    Usage("--relay-token needs --relay");
+  if (options.relay)
+    options.relay->code = options.code;
   return options;
 }
 
@@ -537,18 +582,31 @@ int main(int argc, char **argv) {
   std::signal(SIGTERM, [](int) { g_stop = 1; });
 
   std::string error;
+  // A guest with a code but no address goes through the relay only.
+  const tandem::JoinTarget target{.address = options.address,
+                                  .port = options.port,
+                                  .relay = options.code.empty() ? std::nullopt : options.relay};
   auto endpoint = options.host
-                      ? tandem::Endpoint::Host({options.name, options.body}, options.port, error)
-                      : tandem::Endpoint::Join({options.name, options.body}, options.address,
-                                               options.port, error);
+                      ? tandem::Endpoint::Host({options.name, options.body}, options.port, error,
+                                               {}, options.relay)
+                      : tandem::Endpoint::Join({options.name, options.body}, target, error);
   if (!endpoint) {
     std::cerr << "tandem-peer: " << error << '\n';
     return 1;
   }
   if (options.host)
-    Log("hosting on UDP {} as {}", options.port, options.name);
+    Log("hosting on UDP {} as {}{}", options.port, options.name,
+        options.relay
+            ? std::format(", and on relay {}:{}", options.relay->address, options.relay->port)
+            : "");
+  else if (options.address.empty())
+    Log("joining code {} through relay {}:{} as {}", tandem::net::DisplayJoinCode(options.code),
+        options.relay->address, options.relay->port, options.name);
   else
-    Log("joining {}:{} as {}", options.address, options.port, options.name);
+    Log("joining {}:{} as {}{}", options.address, options.port, options.name,
+        target.relay ? " (the relay if it does not answer)" : "");
+  // The relay as last logged: its state, the host's code, the last error.
+  std::optional<tandem::net::RelayStatus> relayShown;
 
   PoseClip clip;
   if (!options.poseFile.empty()) {
@@ -711,6 +769,20 @@ int main(int argc, char **argv) {
             }
           },
           event);
+    }
+    if (auto relay = endpoint->Relay()) {
+      relay->codeSecondsLeft = 0; // not a change worth a line
+      if (relay != relayShown) {
+        using State = tandem::net::RelayStatus::State;
+        if (!relay->code.empty() && (!relayShown || relayShown->code != relay->code))
+          Log("join code {} (relay {}:{})", tandem::net::DisplayJoinCode(relay->code),
+              options.relay->address, options.relay->port);
+        if (relay->state == State::Ready && (!relayShown || relayShown->state != State::Ready))
+          Log("relay: registered{}", endpoint->ThroughRelay() ? ", joining through it" : "");
+        if (!relay->error.empty() && (!relayShown || relayShown->error != relay->error))
+          Log("relay: {}", relay->error);
+        relayShown = relay;
+      }
     }
 
     const auto now = std::chrono::steady_clock::now();
