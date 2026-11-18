@@ -24,6 +24,7 @@ struct NetThread::Impl {
   std::optional<proto::Stealth> lastStealth;
   bool lastPaused{};
   std::optional<proto::TimeEffect> lastTime;
+  std::optional<proto::Elsewhere> lastElsewhere;
   // Guest through a relay: the session's secret, to join again after the
   // code expired.
   std::optional<net::RelaySecret> relaySecret;
@@ -117,6 +118,8 @@ struct NetThread::Impl {
       endpoint->SetLocalPaused(true);
     if (lastTime)
       endpoint->SetLocalTimeEffect(*lastTime);
+    if (lastElsewhere)
+      endpoint->SetLocalElsewhere(*lastElsewhere);
     if (config.role == Config::Role::Host)
       log::Info("hosting on UDP {}{}", config.port,
                 relay ? std::format(", and through relay {}:{}", relay->address, relay->port) : "");
@@ -284,10 +287,17 @@ struct NetThread::Impl {
                 log::Info("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
                           e.effect.abilities, e.effect.scale);
                 runtime.PushRemoteTime(e.effect);
+              } else if constexpr (std::is_same_v<E, events::RemoteElsewhere>) {
+                log::Info("player {}: place {} (flags {:#x}, body at {:.1f} {:.1f} {:.1f})",
+                          e.state.player, static_cast<int>(e.state.place), e.state.flags,
+                          e.state.anchor.x, e.state.anchor.y, e.state.anchor.z);
+                runtime.PushRemoteElsewhere(e.state);
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
                 runtime.SetRemotePaused({});
+                // Nobody of this session is anywhere for us any more.
+                runtime.ClearRemoteElsewhere();
                 // The next session's players start afresh (a restarted host
                 // counts its states from the start again).
                 for (const auto &[id, info] : endpoint->Players())
@@ -353,6 +363,11 @@ struct NetThread::Impl {
         endpoint->SetLocalTimeEffect(*time);
         log::Info("our time abilities {:#x} (world speed {:.2f})", time->abilities, time->scale);
       }
+      if (auto away = runtime.TakeLocalElsewhere()) {
+        lastElsewhere = *away;
+        endpoint->SetLocalElsewhere(*away);
+        log::Info("our place {} (flags {:#x})", static_cast<int>(away->place), away->flags);
+      }
       if (auto world = runtime.TakeWorld())
         endpoint->SetWorld(*world);
       for (const auto &message : runtime.TakeNpcOutbox()) {
@@ -416,6 +431,7 @@ struct NetThread::Impl {
     }
     // Nobody in this session pauses us any more; its code is gone.
     runtime.SetRemotePaused({});
+    runtime.ClearRemoteElsewhere();
     runtime.SetRelay("", "");
     endpoint->Leave("the game closed");
   }

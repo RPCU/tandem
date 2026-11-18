@@ -106,6 +106,11 @@ public abstract class TandemCombat {
 
   // The attacker's side of the hit, as our game computed it, to the player.
   public static func SendPlayerHit(game: GameInstance, victim: Uint32, hitEvent: ref<gameHitEvent>, pierce: Float) -> Void {
+    // A player in another world (Elsewhere.reds) is not here to be hurt.
+    if TandemElsewhere.IsElsewhere(game, victim) {
+      TandemNative.Log(s"combat: hit on player \(victim)'s puppet not sent: they are in another world");
+      return;
+    }
     let from = hitEvent.attackData.GetInstigator();
     let system = TandemCombat.System(game);
     let npc = IsDefined(from) && IsDefined(system) ? system.SharedNpcOf(from.GetEntityID()) : 0u;

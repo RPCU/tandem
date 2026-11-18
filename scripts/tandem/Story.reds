@@ -757,6 +757,12 @@ public class TandemStorySystem extends ScriptableSystem {
   // takeover, a flashback, "Johnny drives") or in a braindance counts as a
   // cinematic: weapons down and safe near the host, an offer to join far away.
   private func HostSceneTier() -> Int32 {
+    // The host away from its body in another world, or our V in one
+    // (Elsewhere.reds): no scene here to hold us for or to join.
+    let game = this.GetGameInstance();
+    if TandemElsewhere.IsAwayFromBody(game, this.m_host) || TandemElsewhere.Inside(game) {
+      return 1;
+    }
     if (this.m_hostFlags & 3) != 0 && this.m_hostTier < 4 {
       return 4;
     }
@@ -791,13 +797,13 @@ public class TandemStorySystem extends ScriptableSystem {
     if (flags & 2) != 0 && (before & 2) == 0 {
       // TODO: dress the host's puppet as Johnny (Character.Silverhand's
       // look) for the takeover; until then its V shows, moving as Johnny.
-      this.Notice(s"\(this.NameOf(this.m_host)) is Johnny Silverhand now.");
+      // The notice is Elsewhere.reds' (a takeover or a flashback).
       TandemNative.Log("story: the host plays as Johnny");
     } else if (flags & 2) == 0 && (before & 2) != 0 {
       TandemNative.Log("story: the host is V again");
     }
     if (flags & 1) != 0 && (before & 1) == 0 {
-      this.Notice(s"\(this.NameOf(this.m_host)) is in a braindance.");
+      // The notice is Elsewhere.reds'.
       TandemNative.Log("story: the host is in a braindance");
     }
   }

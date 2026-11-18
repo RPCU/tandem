@@ -5,6 +5,7 @@
 
 #include "config.hpp"
 
+#include "tandem/elsewhere.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
@@ -110,6 +111,12 @@ public:
   void SubmitLocalPose(const proto::PoseState &pose);
   std::optional<proto::PoseState> TakeLocalPose();
   void SetPoseLoopback(proto::PlayerId player) { m_poseLoopback.store(player); }
+  // Our V away from its body (scripts/tandem/Elsewhere.reds): the body's
+  // pose as it was at `timeUs` (net::NowUs) is sent in place of the live
+  // one, ten times a second, until released.
+  void HoldLocalPose(std::uint64_t timeUs);
+  void ReleaseLocalPose();
+  bool LocalPoseHeld() const;
   proto::PlayerId PoseLoopback() const { return m_poseLoopback.load(); }
 
   // Net thread writes remote poses; animation job threads read them, drawn
@@ -183,6 +190,15 @@ public:
   // The NPCs slowed around the Vs in a Sandevistan. Game thread only (the
   // scripts that apply them).
   sync::TimeBubbles &Bubbles() { return m_bubbles; }
+  // Other worlds (tandem/elsewhere.hpp): ours, game -> net (newest only);
+  // the other players not in the city, net -> game (latest + a count of
+  // changes, 0: none yet). The tracker of our V: game thread only.
+  void SubmitLocalElsewhere(const proto::Elsewhere &state);
+  std::optional<proto::Elsewhere> TakeLocalElsewhere();
+  void PushRemoteElsewhere(const proto::Elsewhere &state);
+  void ClearRemoteElsewhere();
+  std::map<proto::PlayerId, proto::Elsewhere> RemoteElsewhere(std::uint32_t &changes);
+  elsewhere::Tracker &Away() { return m_away; }
   void NotePlayerName(proto::PlayerId player, std::string name);
   std::string PlayerName(proto::PlayerId player);
 
@@ -328,6 +344,13 @@ private:
   std::map<proto::PlayerId, proto::TimeEffect> m_remoteTimes;                    // m_lock
   std::uint32_t m_remoteTimeChanges{};                                           // m_lock
   sync::TimeBubbles m_bubbles;                                                   // game thread
+  elsewhere::Tracker m_away;                                                     // game thread
+  elsewhere::PoseHistory m_poseHistory;                                          // m_lock
+  std::optional<proto::PoseState> m_poseHold;                                    // m_lock
+  std::uint64_t m_poseHoldSentUs{};                                              // m_lock
+  std::optional<proto::Elsewhere> m_localElsewhere;                              // m_lock
+  std::map<proto::PlayerId, proto::Elsewhere> m_remoteElsewhere;                 // m_lock
+  std::uint32_t m_remoteElsewhereChanges{};                                      // m_lock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin

@@ -18,6 +18,7 @@ add_library(tandem SHARED
   src/natives.cpp
   src/story.cpp
   src/story_natives.cpp
+  src/elsewhere_natives.cpp
   src/engine/layout.cpp
   src/engine/animation.cpp
   src/engine/controller.cpp

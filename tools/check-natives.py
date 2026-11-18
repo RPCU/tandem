@@ -16,8 +16,16 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CPP = [ROOT / "plugin/src/natives.cpp", ROOT / "plugin/src/story_natives.cpp"]
-REDS = [ROOT / "scripts/tandem/Natives.reds", ROOT / "scripts/tandem/StoryNatives.reds"]
+CPP = [
+    ROOT / "plugin/src/natives.cpp",
+    ROOT / "plugin/src/story_natives.cpp",
+    ROOT / "plugin/src/elsewhere_natives.cpp",
+]
+REDS = [
+    ROOT / "scripts/tandem/Natives.reds",
+    ROOT / "scripts/tandem/StoryNatives.reds",
+    ROOT / "scripts/tandem/ElsewhereNatives.reds",
+]
 
 SCALARS = {
     "void": "Void",

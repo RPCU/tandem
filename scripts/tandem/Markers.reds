@@ -28,6 +28,8 @@ public class TandemMarker {
   public let attachedTo: EntityID;
   public let inCar: Bool;
   public let mappin: NewMappinID;
+  // Not shown for now: the player is in another world (Elsewhere.reds).
+  public let suppressed: Bool;
 }
 
 public class TandemMarkersTick extends DelayCallback {
@@ -64,6 +66,26 @@ public class TandemMarkers extends ScriptableSystem {
     let markers = TandemMarkers.Get(game);
     if IsDefined(markers) {
       markers.Add(player, name, puppet);
+    }
+  }
+
+  // A player's marker off for now (on: false, back), its puppet kept.
+  public static func Suppress(game: GameInstance, player: Uint32, on: Bool) -> Void {
+    let markers = TandemMarkers.Get(game);
+    if IsDefined(markers) {
+      markers.SetSuppressed(player, on);
+    }
+  }
+
+  public func SetSuppressed(player: Uint32, on: Bool) -> Void {
+    for marker in this.m_markers {
+      if marker.player == player && NotEquals(marker.suppressed, on) {
+        marker.suppressed = on;
+        if on {
+          this.Unregister(marker);
+        }
+        TandemNative.Log(s"marker: player \(player) \(on ? "off for now" : "back")");
+      }
     }
   }
 
@@ -140,7 +162,7 @@ public class TandemMarkers extends ScriptableSystem {
     let entities = GameInstance.GetDynamicEntitySystem();
     for marker in this.m_markers {
       let body = entities.GetEntity(marker.puppet) as GameObject;
-      if IsDefined(body) {
+      if IsDefined(body) && !marker.suppressed {
         let target: wref<GameObject> = body;
         let car: wref<VehicleObject>;
         let inCar = VehicleComponent.GetVehicle(game, marker.puppet, car) && IsDefined(car);

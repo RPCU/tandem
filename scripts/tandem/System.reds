@@ -84,6 +84,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_pause: ref<TandemPause>;
   private let m_radio: ref<TandemRadio>;
   private let m_time: ref<TandemTime>;
+  // Our V and the others in other worlds (Elsewhere.reds).
+  private let m_elsewhere: ref<TandemElsewhere>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
   // Stealth, detection and combat per player, camo, noises (Stealth.reds).
@@ -158,6 +160,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_radio.Start(this.GetGameInstance());
     this.m_time = new TandemTime();
     this.m_time.Start(this.GetGameInstance());
+    this.m_elsewhere = new TandemElsewhere();
+    this.m_elsewhere.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
     this.m_attitudes = new TandemAttitudes();
@@ -203,6 +207,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_time.Stop();
       this.m_time = null;
     }
+    if IsDefined(this.m_elsewhere) {
+      this.m_elsewhere.Stop();
+      this.m_elsewhere = null;
+    }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
       this.m_bodies = null;
@@ -229,6 +237,11 @@ public class TandemSystem extends ScriptableSystem {
 
   public func Stealth() -> ref<TandemStealth> {
     return this.m_stealth;
+  }
+
+  // Other worlds (Elsewhere.reds).
+  public func Elsewhere() -> ref<TandemElsewhere> {
+    return this.m_elsewhere;
   }
 
   // Slowed time (Time.reds), also driven every frame by the plugin.
@@ -287,6 +300,9 @@ public class TandemSystem extends ScriptableSystem {
     this.HandleEvents();
     this.SpawnJoined();
     this.DrivePuppets();
+    if IsDefined(this.m_elsewhere) {
+      this.m_elsewhere.Tick(this.Now(), this, this.m_playing ? this.m_you : 0u);
+    }
     // The car radio (Radio.reds): the driver's for everyone aboard.
     if IsDefined(this.m_radio) && this.m_playing {
       this.m_radio.Tick(this.Now(), this);
@@ -703,6 +719,9 @@ public class TandemSystem extends ScriptableSystem {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {
       this.RemoveAllPuppets();
+    } else if StrBeginsWith(command, "elsewhere") && IsDefined(this.m_elsewhere) {
+      // Elsewhere.reds: elsewhere test PLACE|off, elsewhere state.
+      this.m_elsewhere.Command(command);
     } else if StrBeginsWith(command, "story") || StrBeginsWith(command, "quest") {
       // Story.reds: story …, quest freeze on|off, quest report.
       TandemStorySystem.Get(this.GetGameInstance()).Command(command);
@@ -946,7 +965,24 @@ public class TandemSystem extends ScriptableSystem {
     let psm = GameInstance.GetBlackboardSystem(game).GetLocalInstanced(player.GetEntityID(), GetAllBlackboardDefs().PlayerStateMachine);
     let locomotion = IsDefined(psm) ? psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Locomotion) : 0;
 
-    TandemNative.SendLocalState(position, player.GetWorldOrientation(), velocity, locomotion, 0);
+    // In another world away from its body (Elsewhere.reds): the body, as it
+    // was, is what the others see.
+    let orientation = player.GetWorldOrientation();
+    if IsDefined(this.m_elsewhere) {
+      let vehicle: wref<VehicleObject>;
+      let mounted = VehicleComponent.GetVehicle(game, player, vehicle) && IsDefined(vehicle);
+      let body = this.m_elsewhere.Sample(position, orientation, mounted);
+      if body.held {
+        position = new Vector4(body.x, body.y, body.z, 1.0);
+        orientation.i = body.i;
+        orientation.j = body.j;
+        orientation.k = body.k;
+        orientation.r = body.r;
+        velocity = new Vector4(0.0, 0.0, 0.0, 0.0);
+      }
+    }
+
+    TandemNative.SendLocalState(position, orientation, velocity, locomotion, 0);
 
     // Driving our own car: its transform, for the copies on the other games.
     let car: wref<VehicleObject>;
@@ -970,6 +1006,9 @@ public class TandemSystem extends ScriptableSystem {
           break;
         case 2:
           this.RemovePuppet(event.player);
+          if IsDefined(this.m_elsewhere) {
+            this.m_elsewhere.Forget(event.player);
+          }
           break;
         case 4:
           this.m_you = event.player;
@@ -986,6 +1025,9 @@ public class TandemSystem extends ScriptableSystem {
           }
           if IsDefined(this.m_stealth) {
             this.m_stealth.End();
+          }
+          if IsDefined(this.m_elsewhere) {
+            this.m_elsewhere.End();
           }
           break;
         default:
