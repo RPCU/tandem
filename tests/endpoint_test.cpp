@@ -246,3 +246,126 @@ TEST_CASE("a guest's hit reaches the host, stamped; health reaches guests, late 
   CHECK(lateJoined);
   CHECK_FALSE(lateGotHealth);
 }
+
+namespace {
+// The pause changes an endpoint reported, in order.
+void CollectPauses(const std::vector<SessionEvent> &events, std::vector<proto::Pause> &into) {
+  for (const auto &event : events)
+    if (const auto *p = std::get_if<events::PauseChanged>(&event))
+      into.push_back(p->pause);
+}
+} // namespace
+
+TEST_CASE("a guest's pause menu reaches the host and the other guest, stamped") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  a->SetLocalPaused(true);
+  std::vector<proto::Pause> atHost, atA, atB;
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    CollectPauses(events, i == 0 ? atHost : i == 1 ? atA : atB);
+    return !atHost.empty() && !atB.empty();
+  }));
+  CHECK(atHost.front() == proto::Pause{a->You(), true});
+  CHECK(atB.front() == proto::Pause{a->You(), true});
+  CHECK(atA.empty()); // never told about its own
+  CHECK(host->Paused() == std::set<proto::PlayerId>{a->You()});
+  CHECK(b->Paused() == std::set<proto::PlayerId>{a->You()});
+
+  // The host's own pause reaches both guests; a resumes.
+  host->SetLocalPaused(true);
+  a->SetLocalPaused(false);
+  atHost.clear(), atA.clear(), atB.clear();
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    CollectPauses(events, i == 0 ? atHost : i == 1 ? atA : atB);
+    return !atHost.empty() && atB.size() == 2 && !atA.empty();
+  }));
+  CHECK(atHost.front() == proto::Pause{a->You(), false});
+  CHECK(atA.front() == proto::Pause{1, true});
+  CHECK(b->Paused() == std::set<proto::PlayerId>{1});
+  CHECK(host->Paused() == std::set<proto::PlayerId>{1});
+}
+
+TEST_CASE("a guest cannot pause or resume in someone else's name") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  host->SetLocalPaused(true);
+  // A raw connection, to send what the Endpoint API never would.
+  auto raw = net::Session::Connect("127.0.0.1", port, error);
+  REQUIRE_MESSAGE(raw, error);
+
+  proto::PlayerId rawId = proto::kNoPlayer;
+  std::vector<proto::Pause> atHost;
+  const auto deadline = std::chrono::steady_clock::now() + 2s;
+  bool sent = false;
+  while (atHost.empty() && std::chrono::steady_clock::now() < deadline) {
+    for (const auto &event : raw->Poll(1ms)) {
+      if (event.kind == net::Event::Kind::Connected)
+        raw->Send(event.peer, proto::Hello{.name = "raw"});
+      if (event.kind != net::Event::Kind::Received)
+        continue;
+      if (const auto *welcome = std::get_if<proto::Welcome>(&*event.message); welcome && !sent) {
+        rawId = welcome->you;
+        raw->Send(event.peer, proto::Pause{.player = 99, .paused = true});
+        raw->Send(event.peer, proto::Pause{.player = 1, .paused = false});
+        sent = true;
+      }
+    }
+    CollectPauses(host->Update(1ms), atHost);
+  }
+  // Both landed on the sender: paused (in its own name), the host untouched.
+  // (Its second message, "1 resumes", became "rawId resumes".)
+  Pump({host.get()}, [&](std::size_t, const auto &events) {
+    CollectPauses(events, atHost);
+    return atHost.size() >= 2;
+  });
+  REQUIRE(atHost.size() == 2);
+  CHECK(rawId != proto::kNoPlayer);
+  CHECK(atHost[0] == proto::Pause{rawId, true});
+  CHECK(atHost[1] == proto::Pause{rawId, false});
+  CHECK(host->Paused() == std::set<proto::PlayerId>{1});
+}
+
+TEST_CASE("a late joiner learns who is paused; a guest that leaves paused no longer is") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  a->SetLocalPaused(true); // before joining: sent once in
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return host->Paused().size() == 1; }));
+
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::vector<proto::Pause> atLate;
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 2)
+      CollectPauses(events, atLate);
+    return !atLate.empty();
+  }));
+  CHECK(atLate.front() == proto::Pause{a->You(), true});
+
+  // a leaves while paused: the host and the late joiner both drop it.
+  const auto aId = a->You();
+  a->Leave();
+  std::vector<proto::Pause> atHost;
+  atLate.clear();
+  REQUIRE(Pump({host.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    CollectPauses(events, i == 0 ? atHost : atLate);
+    return !atHost.empty() && !atLate.empty() && late->Players().size() == 2;
+  }));
+  CHECK(atHost.front() == proto::Pause{aId, false});
+  CHECK(atLate.front() == proto::Pause{aId, false});
+  CHECK(host->Paused().empty());
+  CHECK(late->Paused().empty());
+}

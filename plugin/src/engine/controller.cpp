@@ -167,7 +167,8 @@ RED4ext::CName PuppetController::GetName() const { return RED4ext::CName("tandem
 bool PuppetController::Unknown12() { return true; }
 void PuppetController::Unknown13() {}
 void PuppetController::Unknown14() {}
-void PuppetController::Mount(RED4ext::move::Component &, RED4ext::Handle<RED4ext::ent::Entity>) {}
+void PuppetController::Mount(RED4ext::move::Component &,
+                             const RED4ext::Handle<RED4ext::ent::Entity> &) {}
 
 void PuppetController::Attach(RED4ext::move::Component &aComponent) {
   if (!aComponent.owner || !aComponent.owner->transformComponent) {

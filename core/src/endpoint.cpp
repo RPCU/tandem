@@ -78,6 +78,11 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
       m_appearances.erase(player);
       m_held.erase(player);
       m_seats.erase(player);
+      // Gone while in the pause menu: no longer pausing anyone.
+      if (NotePaused(player, false)) {
+        m_session->Broadcast(proto::Pause{player, false});
+        out.push_back(events::PauseChanged{{player, false}});
+      }
       out.push_back(events::PlayerLeft{player});
       BroadcastRoster();
     }
@@ -116,6 +121,9 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
         m_session->Send(event.peer, spawn);
       for (const auto &[npc, health] : m_npcHealth)
         m_session->Send(event.peer, health);
+      for (const auto paused : m_paused)
+        if (paused != player)
+          m_session->Send(event.peer, proto::Pause{paused, true});
       return;
     }
 
@@ -185,6 +193,14 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      mine.player = player;
                      out.push_back(events::NpcEffectBy{mine});
                    },
+                   [&](const proto::Pause &pause) {
+                     // A guest only pauses in its own name.
+                     const proto::Pause relayed{player, pause.paused};
+                     if (!NotePaused(player, pause.paused))
+                       return;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::PauseChanged{relayed});
+                   },
                    [&](const proto::Bye &) { m_session->Disconnect(event.peer); },
                    [](const auto &) {},
                },
@@ -221,6 +237,7 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
               SendLocalAppearanceNow();
               SendLocalHeldNow();
               SendLocalSeatNow();
+              SendLocalPausedNow();
             },
             [&](const proto::Refused &refused) {
               m_ended = true;
@@ -245,8 +262,11 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
                 if (id != m_you && !m_players.contains(id))
                   out.push_back(events::PlayerJoined{info});
               for (const auto &[id, info] : m_players)
-                if (!next.contains(id))
+                if (!next.contains(id)) {
+                  if (NotePaused(id, false))
+                    out.push_back(events::PauseChanged{{id, false}});
                   out.push_back(events::PlayerLeft{id});
+                }
               m_players = std::move(next);
             },
             [&](const proto::PlayerState &state) {
@@ -282,6 +302,10 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::NpcStates &states) { out.push_back(events::HostNpcStates{states}); },
             [&](const proto::NpcGone &gone) { out.push_back(events::HostNpcGone{gone}); },
             [&](const proto::NpcHealth &health) { out.push_back(events::HostNpcHealth{health}); },
+            [&](const proto::Pause &pause) {
+              if (pause.player != m_you && NotePaused(pause.player, pause.paused))
+                out.push_back(events::PauseChanged{pause});
+            },
             [&](const proto::Bye &bye) {
               m_ended = true;
               out.push_back(events::Ended{bye.reason});
@@ -461,6 +485,29 @@ void Endpoint::SendLocalShot(proto::Shot shot) {
     m_session->Broadcast(shot);
   else
     m_session->Send(m_hostPeer, shot);
+}
+
+void Endpoint::SetLocalPaused(bool paused) {
+  if (paused == m_localPaused)
+    return;
+  m_localPaused = paused;
+  SendLocalPausedNow();
+}
+
+void Endpoint::SendLocalPausedNow() {
+  if (!IsJoined() || m_ended)
+    return;
+  // A guest that just joined has something to say only if it is paused.
+  if (!NotePaused(m_you, m_localPaused))
+    return;
+  if (IsHost())
+    m_session->Broadcast(proto::Pause{m_you, m_localPaused});
+  else
+    m_session->Send(m_hostPeer, proto::Pause{m_you, m_localPaused});
+}
+
+bool Endpoint::NotePaused(proto::PlayerId player, bool paused) {
+  return paused ? m_paused.insert(player).second : m_paused.erase(player) > 0;
 }
 
 std::optional<net::Stats> Endpoint::HostLinkStats() const {

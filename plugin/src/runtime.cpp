@@ -42,6 +42,13 @@ void Runtime::Stop() {
     m_npcOutbox.clear();
     m_npcStates.reset();
     m_npcEvents.clear();
+    m_localPaused.reset();
+    // Nobody pauses us any more: the change count moves so scripts let go.
+    if (!m_remotePaused.empty()) {
+      m_remotePaused.clear();
+      ++m_remotePausedChanges;
+    }
+    m_names.clear();
   }
   net.reset(); // joins outside the lock: the net thread takes it too
   {
@@ -235,6 +242,41 @@ std::optional<proto::World> Runtime::HostWorld(std::uint32_t &changes) {
   std::lock_guard _(m_lock);
   changes = m_hostWorldChanges;
   return m_hostWorld;
+}
+
+void Runtime::SubmitLocalPaused(bool paused) {
+  std::lock_guard _(m_lock);
+  m_localPaused = paused;
+}
+
+std::optional<bool> Runtime::TakeLocalPaused() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localPaused, std::nullopt);
+}
+
+void Runtime::SetRemotePaused(std::vector<proto::PlayerId> players) {
+  std::lock_guard _(m_lock);
+  if (players == m_remotePaused)
+    return;
+  m_remotePaused = std::move(players);
+  ++m_remotePausedChanges;
+}
+
+std::vector<proto::PlayerId> Runtime::RemotePaused(std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  changes = m_remotePausedChanges;
+  return m_remotePaused;
+}
+
+void Runtime::NotePlayerName(proto::PlayerId player, std::string name) {
+  std::lock_guard _(m_lock);
+  m_names[player] = std::move(name);
+}
+
+std::string Runtime::PlayerName(proto::PlayerId player) {
+  std::lock_guard _(m_lock);
+  const auto it = m_names.find(player);
+  return it == m_names.end() ? std::string{} : it->second;
 }
 
 void Runtime::SubmitNpcSpawn(const proto::NpcSpawn &spawn) {

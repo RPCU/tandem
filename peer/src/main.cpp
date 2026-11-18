@@ -17,6 +17,9 @@
 //
 // Looks, held weapons, shots, seats and cars: mirror and front echo yours
 // back (the car moved by --offset, so the copy does not sit in yours).
+// Pause menu: --pause-at opens "its pause menu" that many seconds into the
+// session (once another player is there) for --pause-for seconds; the pause
+// states it hears are logged.
 // Body pose: mirror and front echo your V's pose; --pose FILE (a .tpose made by
 // tools/re/pose_export.py from a recording) plays a recorded pose instead, in
 // a loop, with any mode.
@@ -69,6 +72,8 @@ struct Options {
   std::string weather;
   std::string recordFile; // join: save the host's NPC messages here
   std::string replayFile; // host: send a recording's NPC messages again
+  int pauseAtSeconds{-1}; // open the pause menu this long into the session (-1: never)
+  int pauseForSeconds{3}; // ...for this long
   bool check{};           // parse the options, then exit
 };
 
@@ -118,7 +123,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
                "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
                "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
                "  --replay FILE      host: send a recording's NPCs again, at its pace (moved by\n"
-               "                     --offset)\n";
+               "                     --offset)\n"
+               "  --pause-at N       open the pause menu N seconds after another player is in the\n"
+               "                     session: every game pauses\n"
+               "  --pause-for N      --pause-at: close it again after N seconds (default 3)\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -182,6 +190,10 @@ Options Parse(int argc, char **argv) {
           Number<int>(value.substr(0, colon)) * 60 + Number<int>(value.substr(colon + 1));
     } else if (flag == "--weather")
       options.weather = std::string(value);
+    else if (flag == "--pause-at")
+      options.pauseAtSeconds = Number<int>(value);
+    else if (flag == "--pause-for")
+      options.pauseForSeconds = Number<int>(value);
     else if (flag == "--hit-npcs")
       options.hitNpcsSeconds = Number<int>(value);
     else if (flag == "--drive-seconds")
@@ -546,6 +558,9 @@ int main(int argc, char **argv) {
   auto nextSend = std::chrono::steady_clock::now();
   auto nextReport = nextSend + 5s;
   std::uint64_t heard = 0, heardPoses = 0, heardShots = 0, heardVehicles = 0;
+  // --pause-at: when someone else was first there, and how far the pause got.
+  std::optional<std::chrono::steady_clock::time_point> togetherSince;
+  enum class PauseStep { Waiting, Paused, Done } pauseStep = PauseStep::Waiting;
 
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
@@ -639,6 +654,9 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemotePose>) {
               ++heardPoses;
               puppeteer.HeardPose(e.pose);
+            } else if constexpr (std::is_same_v<E, tandem::events::PauseChanged>) {
+              Log("player {} {} (pause menu)", e.pause.player,
+                  e.pause.paused ? "paused" : "resumed");
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
               g_stop = 1;
@@ -688,6 +706,24 @@ int main(int argc, char **argv) {
       world.gameTimeSeconds = 86400 + options.timeOfDayMinutes.value_or(12 * 60) * 60 + elapsed * 8;
       world.weather = options.weather.empty() ? 0 : CName(options.weather);
       endpoint->SetWorld(world);
+    }
+    // --pause-at: open the pause menu, then close it.
+    if (options.pauseAtSeconds >= 0 && pauseStep != PauseStep::Done) {
+      if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
+        togetherSince = now;
+      const auto pauseAt = togetherSince
+                               ? *togetherSince + std::chrono::seconds(options.pauseAtSeconds)
+                               : std::chrono::steady_clock::time_point::max();
+      if (pauseStep == PauseStep::Waiting && now >= pauseAt) {
+        endpoint->SetLocalPaused(true);
+        pauseStep = PauseStep::Paused;
+        Log("pause menu open: pausing everyone for {} s", options.pauseForSeconds);
+      } else if (pauseStep == PauseStep::Paused &&
+                 now >= pauseAt + std::chrono::seconds(options.pauseForSeconds)) {
+        endpoint->SetLocalPaused(false);
+        pauseStep = PauseStep::Done;
+        Log("pause menu closed");
+      }
     }
     // --hit-npcs: one NPC at a time until it dies.
     if (options.hitNpcsSeconds && !options.host && endpoint->IsJoined() && !liveNpcs.empty() &&

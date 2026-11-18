@@ -15,7 +15,7 @@
 
 namespace tandem::proto {
 inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
-inline constexpr std::uint16_t kProtocolVersion = 4;
+inline constexpr std::uint16_t kProtocolVersion = 5;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -296,9 +296,20 @@ struct NpcEffect {   // Event channel
   friend bool operator==(const NpcEffect &, const NpcEffect &) = default;
 };
 
+// A player opened or closed the game's pause menu (Event channel). The
+// pause menu pauses everyone: each game pauses its world while any other
+// player is in theirs. A guest sends its own; the host stamps the player from
+// the connection, keeps who is paused (for late joiners; a player who leaves
+// is no longer paused) and relays it. Other menus never send this.
+struct Pause {
+  PlayerId player{};
+  bool paused{};
+  friend bool operator==(const Pause &, const Pause &) = default;
+};
+
 using Message = std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye,
                              PoseState, Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn,
-                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect>;
+                             NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect, Pause>;
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

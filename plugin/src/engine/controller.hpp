@@ -54,13 +54,18 @@ public:
   virtual void Unknown09(RED4ext::Vector4 &, RED4ext::Quaternion &, RED4ext::Vector4 &,
                          RED4ext::Quaternion &); // 09
   virtual void Unknown10(RED4ext::Vector4 &, RED4ext::Quaternion &, float, RED4ext::Vector4 &,
-                         RED4ext::Quaternion &);          // 10
-  virtual RED4ext::CName GetName() const;                 // 11
-  virtual bool Unknown12();                               // 12
-  virtual void Unknown13();                               // 13
-  virtual void Unknown14();                               // 14
+                         RED4ext::Quaternion &); // 10
+  virtual RED4ext::CName GetName() const;        // 11
+  virtual bool Unknown12();                      // 12
+  virtual void Unknown13();                      // 13
+  virtual void Unknown14();                      // 14
+  // The engine passes a pointer to a handle it owns and releases itself: by
+  // reference, never by value (the MSVC ABI makes a by-value callee destroy
+  // its argument, which released the mount parent once per call and freed
+  // car copies too early: engine-knowledge.md §13.6). No engine object is
+  // ever taken by value in this vtable.
   virtual void Mount(RED4ext::move::Component &component, // 15
-                     RED4ext::Handle<RED4ext::ent::Entity> owner);
+                     const RED4ext::Handle<RED4ext::ent::Entity> &parent);
   virtual void Attach(RED4ext::move::Component &component); // 16
   virtual void Detach(RED4ext::move::Component &component); // 17
   virtual void GetAnimationParameters(AnimationData &data); // 18

@@ -78,6 +78,7 @@ public class TandemSystem extends ScriptableSystem {
   private let m_leaving: array<ref<TandemLeaving>>;
   private let m_rideCar: EntityID;
   private let m_world: ref<TandemWorld>;
+  private let m_pause: ref<TandemPause>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
@@ -142,6 +143,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_bodies.Start(this.GetGameInstance());
     this.m_world = new TandemWorld();
     this.m_world.Start(this.GetGameInstance());
+    this.m_pause = new TandemPause();
+    this.m_pause.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
     if TandemNative.IsProbe() {
@@ -166,6 +169,10 @@ public class TandemSystem extends ScriptableSystem {
     }
     this.m_npcs = null;
     ArrayClear(this.m_joins);
+    if IsDefined(this.m_pause) {
+      this.m_pause.Stop();
+      this.m_pause = null;
+    }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
       this.m_bodies = null;
@@ -184,6 +191,12 @@ public class TandemSystem extends ScriptableSystem {
     GameInstance.GetDelaySystem(this.GetGameInstance()).DelayCallback(tick, 0.0, false);
   }
 
+  // The shared pause menu (Pause.reds): driven every frame by the plugin,
+  // since this tick stands still while the world is paused.
+  public func PauseSync() -> ref<TandemPause> {
+    return this.m_pause;
+  }
+
   public func Tick() -> Void {
     if !this.m_inGame {
       return;
@@ -193,6 +206,9 @@ public class TandemSystem extends ScriptableSystem {
     if !this.m_playing && this.Now() - this.m_attachedAt > 2.0 {
       this.m_playing = true;
       TandemNative.Log("playing");
+      if IsDefined(this.m_pause) {
+        this.m_pause.SetReady();
+      }
     }
     this.SampleLocal();
     this.SendAppearance();

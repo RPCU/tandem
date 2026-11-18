@@ -25,6 +25,25 @@ std::filesystem::path PluginDirectory(RED4ext::v1::PluginHandle handle) {
   GetModuleFileNameW(reinterpret_cast<HMODULE>(handle), path, MAX_PATH);
   return std::filesystem::path(path).parent_path();
 }
+
+// Every frame of the running game, on the game thread, also while the world
+// is paused (scripts' delayed callbacks then stand still): the pause script
+// follows the other players' pause menus (scripts/tandem/Pause.reds), and
+// can let go of a pause from there.
+bool OnRunningUpdate(RED4ext::CGameApplication *) {
+  if (!tandem::plugin::Runtime::Get().Started())
+    return false;
+  static bool reported = false;
+  Red::ScriptGameInstance game;
+  if (!Red::CallStatic("TandemPause", "Frame", game) && !reported) {
+    reported = true;
+    tandem::plugin::log::Warn("pause: TandemPause.Frame could not be called: no shared pause");
+  }
+  return false; // ignored for the running state
+}
+
+bool OnRunningEdge(RED4ext::CGameApplication *) { return true; }
+RED4ext::v1::GameState g_running{&OnRunningEdge, &OnRunningUpdate, &OnRunningEdge};
 } // namespace
 
 RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
@@ -50,8 +69,10 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     Red::TypeInfoRegistrar::RegisterDiscovered();
     // Installed later, from the game thread (TandemNative.PoseHook).
     engine::SetPoseHookContext(sdk, handle);
-    if (runtime.config.role != Config::Role::Off)
+    if (runtime.config.role != Config::Role::Off) {
       engine::InstallHooks(sdk, handle);
+      sdk->gameStates->Add(handle, RED4ext::EGameStateType::Running, &g_running);
+    }
     if (runtime.config.role != Config::Role::Off && runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
     if (runtime.config.trace || runtime.config.mirror)

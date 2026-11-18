@@ -65,6 +65,8 @@ TEST_CASE("every message survives encoding") {
   RoundTrips(NpcHealth{.npc = 7, .health = 0.25f});
   RoundTrips(World{
       .revision = 2, .gameTimeSeconds = 86400 + 3600 * 18, .weather = 0x1234, .timePaused = true});
+  RoundTrips(Pause{.player = 3, .paused = true});
+  RoundTrips(Pause{.player = 2, .paused = false});
 }
 
 TEST_CASE("an appearance past its limits is refused") {
@@ -84,6 +86,8 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(ChannelOf(NpcHit{}) == Channel::Event);
   CHECK(ChannelOf(NpcHealth{}) == Channel::Event);
   CHECK(ChannelOf(NpcEffect{}) == Channel::Event);
+  CHECK(ChannelOf(Pause{}) == Channel::Event);
+  CHECK(IsReliable(Pause{}));
   // A guest cannot flood the host with effects.
   NpcEffect many{.npc = 1, .effects = std::vector<std::uint64_t>(kMaxNpcEffects + 1, 5)};
   CHECK_FALSE(Decode(Encode(many)));

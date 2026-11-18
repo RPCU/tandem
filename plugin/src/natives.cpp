@@ -430,6 +430,27 @@ struct TandemNative : Red::IScriptable {
     return world ? Red::CName(world->weather) : Red::CName();
   }
 
+  // The pause menu pauses everyone: ours opened (true) or closed.
+  static void SendPaused(bool paused) { Runtime::Get().SubmitLocalPaused(paused); }
+  // The other players in their pause menu, and how many times that changed
+  // (0: never).
+  static Red::DynArray<std::uint32_t> PausedPlayers() {
+    std::uint32_t changes = 0;
+    Red::DynArray<std::uint32_t> out;
+    for (const auto player : Runtime::Get().RemotePaused(changes))
+      out.EmplaceBack(player);
+    return out;
+  }
+  static std::int32_t PausedChanges() {
+    std::uint32_t changes = 0;
+    Runtime::Get().RemotePaused(changes);
+    return static_cast<std::int32_t>(changes);
+  }
+  // A player's name in the session (empty: unknown).
+  static Red::CString PlayerName(std::uint32_t player) {
+    return Red::CString(Runtime::Get().PlayerName(player).c_str());
+  }
+
   // Host: its NPCs.
   static void SendNpcSpawn(std::uint32_t npc, Red::TweakDBID record, Red::CName appearance,
                            Red::Vector4 position, Red::Quaternion orientation) {
@@ -588,6 +609,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(HostWorldChanges);
   RTTI_METHOD(HostGameTime);
   RTTI_METHOD(HostWeather);
+  RTTI_METHOD(SendPaused);
+  RTTI_METHOD(PausedPlayers);
+  RTTI_METHOD(PausedChanges);
+  RTTI_METHOD(PlayerName);
   RTTI_METHOD(SendSeat);
   RTTI_METHOD(SendVehicle);
   RTTI_METHOD(RemoteSeatChanges);

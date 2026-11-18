@@ -127,6 +127,16 @@ public:
   void PushHostWorld(const proto::World &world);
   std::optional<proto::World> HostWorld(std::uint32_t &changes);
 
+  // The pause menu (docs/ARCHITECTURE.md): ours open or closed, game -> net
+  // (newest only); the other players in theirs, net -> game (latest + a
+  // count of changes, 0: none yet). Names, from the roster, for the notice.
+  void SubmitLocalPaused(bool paused);
+  std::optional<bool> TakeLocalPaused();
+  void SetRemotePaused(std::vector<proto::PlayerId> players);
+  std::vector<proto::PlayerId> RemotePaused(std::uint32_t &changes);
+  void NotePlayerName(proto::PlayerId player, std::string name);
+  std::string PlayerName(proto::PlayerId player);
+
   // Host: its NPCs, game -> net (spawns and removals queued, states newest).
   // Guest: the host's NPCs, net -> game (events queued; states feed the
   // tracks of kNpcPuppetBase + npc).
@@ -210,6 +220,10 @@ private:
   std::atomic<std::int64_t> m_clockOffsetUs{0};
   std::atomic<std::uint64_t> m_lastFrameUs{0};
   std::map<proto::NpcId, std::uint8_t> m_npcDetected; // under m_lock
+  std::optional<bool> m_localPaused;                  // m_lock
+  std::vector<proto::PlayerId> m_remotePaused;        // m_lock
+  std::uint32_t m_remotePausedChanges{};              // m_lock
+  std::map<proto::PlayerId, std::string> m_names;     // m_lock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
 };
 } // namespace tandem::plugin

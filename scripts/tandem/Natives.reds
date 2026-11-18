@@ -92,6 +92,10 @@ public native class TandemNative extends IScriptable {
   public static native func HostWorldChanges() -> Int32
   public static native func HostGameTime() -> Int32
   public static native func HostWeather() -> CName
+  public static native func SendPaused(paused: Bool)
+  public static native func PausedPlayers() -> array<Uint32>
+  public static native func PausedChanges() -> Int32
+  public static native func PlayerName(player: Uint32) -> String
   public static native func SendSeat(vehicle: TweakDBID, seat: CName, owner: Uint32)
   public static native func SendVehicle(position: Vector4, orientation: Quaternion, velocity: Vector4)
   public static native func RemoteSeatChanges(player: Uint32) -> Int32

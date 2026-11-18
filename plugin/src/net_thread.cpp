@@ -19,6 +19,16 @@ struct NetThread::Impl {
   std::optional<proto::Appearance> lastAppearance;
   std::optional<proto::Held> lastHeld;
   std::optional<proto::Seat> lastSeat;
+  bool lastPaused{};
+
+  // The other players in their pause menu, for the game thread.
+  static void PublishPaused(const Endpoint &endpoint) {
+    std::vector<proto::PlayerId> others;
+    for (const auto player : endpoint.Paused())
+      if (player != endpoint.You())
+        others.push_back(player);
+    Runtime::Get().SetRemotePaused(std::move(others));
+  }
 
   // A guest whose session ends (host gone, unreachable, timed out) tries
   // again every 5 s for as long as the game runs: a host that crashed or
@@ -54,6 +64,8 @@ struct NetThread::Impl {
       endpoint->SetLocalHeld(*lastHeld);
     if (lastSeat)
       endpoint->SetLocalSeat(*lastSeat);
+    if (lastPaused)
+      endpoint->SetLocalPaused(true);
     if (config.role == Config::Role::Host)
       log::Info("hosting on UDP {}", config.port);
     else
@@ -84,10 +96,12 @@ struct NetThread::Impl {
               using E = std::decay_t<decltype(e)>;
               if constexpr (std::is_same_v<E, events::Joined>) {
                 log::Info("in the session as player {} (host {})", e.you, e.host);
+                runtime.NotePlayerName(e.you, config.name);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
               } else if constexpr (std::is_same_v<E, events::PlayerJoined>) {
                 log::Info("{} joined (player {}, body {})", e.player.name, e.player.id,
                           static_cast<int>(e.player.body));
+                runtime.NotePlayerName(e.player.id, e.player.name);
                 runtime.PushEvent(
                     {ScriptEvent::Kind::PlayerJoined, e.player.id, e.player.name, e.player.body});
               } else if constexpr (std::is_same_v<E, events::PlayerLeft>) {
@@ -141,8 +155,13 @@ struct NetThread::Impl {
                           e.appearance.player, e.appearance.look.size(), e.appearance.items.size(),
                           e.appearance.revision);
                 runtime.PushRemoteAppearance(e.appearance);
+              } else if constexpr (std::is_same_v<E, events::PauseChanged>) {
+                log::Info("player {} {} (pause menu)", e.pause.player,
+                          e.pause.paused ? "paused" : "resumed");
+                PublishPaused(*endpoint);
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 log::Info("session ended: {}", e.reason);
+                runtime.SetRemotePaused({});
                 runtime.PushEvent({ScriptEvent::Kind::SessionEnded, 0, e.reason, {}});
                 ended = true;
               }
@@ -172,6 +191,11 @@ struct NetThread::Impl {
       }
       if (auto vehicle = runtime.TakeLocalVehicle())
         endpoint->SendLocalVehicle(*vehicle);
+      if (auto paused = runtime.TakeLocalPaused()) {
+        lastPaused = *paused;
+        endpoint->SetLocalPaused(*paused);
+        log::Info("our pause menu {}", *paused ? "opened: pausing everyone" : "closed");
+      }
       if (auto world = runtime.TakeWorld())
         endpoint->SetWorld(*world);
       for (const auto &message : runtime.TakeNpcOutbox()) {
@@ -208,6 +232,8 @@ struct NetThread::Impl {
         }
       }
     }
+    // Nobody in this session pauses us any more.
+    runtime.SetRemotePaused({});
     endpoint->Leave("the game closed");
   }
 };

@@ -15,6 +15,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <variant>
 #include <vector>
@@ -79,6 +80,11 @@ struct NpcEffectBy {
 struct HostWorld {
   proto::World world;
 };
+// Another player opened (paused) or closed their pause menu, or left while
+// in it (paused false). Never reported for our own.
+struct PauseChanged {
+  proto::Pause pause;
+};
 // The session is over (refused, host gone, timed out).
 struct Ended {
   std::string reason;
@@ -96,7 +102,8 @@ using SessionEvent =
                  events::RemotePose, events::RemoteAppearance, events::RemoteHeld,
                  events::RemoteShot, events::RemoteSeat, events::RemoteVehicle, events::HostWorld,
                  events::HostNpcSpawn, events::HostNpcStates, events::HostNpcGone,
-                 events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::Ended>;
+                 events::HostNpcHealth, events::NpcHitBy, events::NpcEffectBy, events::PauseChanged,
+                 events::Ended>;
 
 class Endpoint {
 public:
@@ -131,6 +138,11 @@ public:
   // Guest only: we hit one of the host's NPCs.
   void SendNpcHit(const proto::NpcHit &hit);
   void SendNpcEffect(const proto::NpcEffect &effect);
+  // Our pause menu is open (paused) or closed. Kept: sent now if we are in
+  // the session, else as soon as we are.
+  void SetLocalPaused(bool paused);
+  // The players in their pause menu, as this game knows them (us included).
+  const std::set<proto::PlayerId> &Paused() const { return m_paused; }
 
   // Time on the host's clock (the session's shared timeline).
   std::uint64_t HostNowUs() const { return net::NowUs() + m_clockOffsetUs; }
@@ -189,6 +201,12 @@ private:
   std::map<proto::NpcId, proto::NpcSpawn> m_npcs;
   std::map<proto::NpcId, proto::NpcHealth> m_npcHealth;
   std::uint32_t m_npcSeq{};
+  // Who is in the pause menu (host: the session's record, for late joiners).
+  bool m_localPaused{};
+  std::set<proto::PlayerId> m_paused;
+  void SendLocalPausedNow();
+  // Records a player's pause state; false when it did not change.
+  bool NotePaused(proto::PlayerId player, bool paused);
   bool m_ended{};
 };
 } // namespace tandem

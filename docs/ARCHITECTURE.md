@@ -273,6 +273,20 @@ redscript natives (UI, events)              ENet socket
   as a guest of `tandem-peer host --time 06:30 --weather 24h_weather_rain`.
   Open: a guest whose own quest pins its clock (the guest's quest phases
   are to be suppressed: milestone 6) is corrected again every 10 s.
+- **Pause** (`scripts/tandem/Pause.reds`): the pause menu pauses everyone.
+  Our pause menu opening and closing is seen where vanilla pauses for it
+  (wraps of `PauseMenuBackgroundGameController.OnInitialize/OnUninitialize`;
+  the death menu shares that background and is skipped) and sent as `Pause`
+  (reliable). The host stamps the sender, keeps who is paused (late joiners
+  get it; a player who leaves is no longer paused) and relays it. While any
+  other player is in their pause menu, a game pauses its world the way the
+  pause menu does (the system requests handler's `PauseGame`, Codeware's
+  `GameInstance.GetSystemRequestsHandler`), without opening its own menu,
+  shows "NAME paused the game" (the HUD's `UI_Notifications.WarningMessage`)
+  and resumes when nobody is paused. Scripts' delayed tick stands still
+  while paused, so the plugin calls `TandemPause.Frame` every frame from
+  RED4ext's running game state (`plugin/src/main.cpp`). Not yet verified in
+  game (scenario `pause`).
 - **NPCs** (`scripts/tandem/Npcs.reds`, milestone 5): once the world
   plays, the host lists the NPCs within 60 m of its V ten times a second
   (`GetNPCsAroundObject`, skipping our own puppets, copies and the dead),
@@ -405,6 +419,8 @@ game thread stop). Each feature verified in game gets a scenario.
   tests the copy of a remote player's car, its seated driver and its motion
   without anyone driving.
 - **idle** — connects and reports.
+- `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
+  another player is in the session, for M s (default 3): every game pauses.
 - **NPC record and replay** (first piece of the simulated second game):
   `join --record FILE` saves the host's `NpcSpawn`/`NpcStates`/`NpcGone`
   with their times; `host --replay FILE [--offset X,Y,Z]` sends them again
@@ -528,9 +544,16 @@ in-game tests still owed; none of it tested in a session yet):
   co-op games. The player in such a menu stays in the world, vulnerable,
   and the others see them standing there (later: a small "in menu" sign
   over their V). Only the pause menu, with its settings, save/load and
-  quit, stops everyone. `World.paused` carries the host's state; guests send their own
-  pause-menu state to the host, which pauses its world and relays it.
-  Scanning slow-motion, braindances and the like follow their own notes.
+  quit, stops everyone. Scanning slow-motion, braindances and the like
+  follow their own notes. Done (2026-11-18, to verify in game with scenario
+  `pause`): every game sends its own pause-menu state (`Pause`), the host
+  keeps and relays it, and each game pauses its world while anyone else is
+  in the pause menu, with a notice naming them (see Inside the plugin).
+  (`World.timePaused` still carries only the host's own time-system state.)
+  Still to do: the other menus keep pausing their own game (vanilla:
+  `MenuHubGameController`/`RadialMenuHubGameController` set the `hubMenu`
+  time dilation profile and the `HubMenu` menu mode; `TimeDilationHelper`
+  gives up when `IsMultiplayer()`), and the "in menu" sign.
 - **A second V is welcome wherever the first is.** In co-op every V
   starts with the attitudes the player has: friendly to friendly NPCs
   (fixers, allies, quest characters, vendors), neutral to the neutral,
