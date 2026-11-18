@@ -156,21 +156,23 @@ within half the timeout (2.5 s), without reporting an end in between
 
 The owner simulates; everyone else displays.
 
-| State                                   | Owner                     | Others                                         |
-| --------------------------------------- | ------------------------- | ---------------------------------------------- |
-| a V: transform, stance, aim, animation  | that player's game        | puppet, interpolated                           |
-| a V: appearance, equipment, cyberware   | that player's game        | applied on the puppet when it changes          |
-| a V: health, death, downed              | that player's game        | shown; revives are requests to the owner       |
-| a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level  |
-| a vehicle someone drives                | the driver's game         | puppet vehicle, passengers mounted             |
-| a parked or AI vehicle                  | host                      | proxy                                          |
-| NPCs: AI, position, health, death       | host                      | **proxy with its AI off**, driven by the host  |
-| spawns: crowds, traffic, encounters     | host                      | guests' own spawning is suppressed             |
-| quests: facts, journal, phases, scenes  | host                      | followed, never run on their own               |
-| time of day, weather, police heat       | host                      | applied (wanted level: open, see below)        |
-| a V's time abilities (Sandevistan…)     | that player's game        | shown on the puppet; never slow anyone's world |
-| an NPC's speed in a time bubble         | host                      | proxies animated at the same speed             |
-| loot drops                              | host                      | each player loots their own copy               |
+| State                                                        | Owner                     | Others                                                         |
+| ------------------------------------------------------------ | ------------------------- | -------------------------------------------------------------- |
+| a V: transform, stance, aim, animation                       | that player's game        | puppet, interpolated                                           |
+| a V: appearance, equipment, cyberware                        | that player's game        | applied on the puppet when it changes                          |
+| a V: health, death, downed                                   | that player's game        | shown; revives are requests to the owner                       |
+| a V: level, XP, perks, inventory, money                      | that player's game (save) | not shared: each player keeps their own level                  |
+| a vehicle someone drives                                     | the driver's game         | puppet vehicle, passengers mounted                             |
+| a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game        | copy, riders and NPCs seated; host's scene: free seats offered |
+| an NCART train (scripted transit)                            | each rider's own game     | never shared: puppet in a train of ours, else hidden           |
+| a parked or AI vehicle                                       | host                      | proxy                                                          |
+| NPCs: AI, position, health, death                            | host                      | **proxy with its AI off**, driven by the host                  |
+| spawns: crowds, traffic, encounters                          | host                      | guests' own spawning is suppressed                             |
+| quests: facts, journal, phases, scenes                       | host                      | followed, never run on their own                               |
+| time of day, weather, police heat                            | host                      | applied (wanted level: open, see below)                        |
+| a V's time abilities (Sandevistan…)                          | that player's game        | shown on the puppet; never slow anyone's world                 |
+| an NPC's speed in a time bubble                              | host                      | proxies animated at the same speed                             |
+| loot drops                                                   | host                      | each player loots their own copy                               |
 
 **Enemy level** (decided 2026-11-18): enemies the host spawns and runs are
 scaled to the **mean of the character levels of the players in the
@@ -295,6 +297,77 @@ redscript natives (UI, events)              ENet socket
   one that had someone seated in it froze the game): a car someone got out
   of stays parked. Puppets leave in steps over several frames (out of the
   seat, then the body).
+- **Scripted transit and quest vehicles** (`scripts/tandem/Transit.reds`,
+  engine-knowledge §13.18). Each game sends its V's ride as `Transit`
+  (kind, flags, the metro's stations, the vehicle, the seat; reliable,
+  kept by the host for late joiners):
+  - _A ride its game runs_ (`Ride`: a Delamain cab, a car an NPC drives, an
+    AV; `Scene` when a story scene runs it: the player state machine's
+    vehicle state Scene, tier 3+, or the `VehicleScene` tag). The rule "the
+    driver's game owns the car" becomes "the game that moves the vehicle
+    owns it": a V in a vehicle its own world moves, driving or not (for
+    every AV `IsDriver` is false), sends that vehicle's `VehicleState`, so
+    the others spawn its copy and seat the puppet as for a car it drives.
+    NPCs seated in it (Panam at the wheel, Judy beside the host) go as
+    `NpcSeat` (host to guests, kept while seated): a guest seats the proxy
+    in the copy, deletes a seated proxy only once it is out of its seat, and
+    puts the controller back when it gets out. The host's own vehicle is
+    never moved nor reserved by anyone else: a remote player's puppet sits
+    in it only in a seat nobody holds (`TandemVehicles.FreeSlot`; a seat the
+    scene's passenger holds is never taken), else in another free one, else
+    it is hidden until one frees.
+  - _The host's quest scene vehicle_ (`Scene` with `kTransitSeats`): the
+    quest runs on the host, so its vehicle is the host's, and guests are
+    brought along the way the scene seats a companion: a guest's V on foot
+    within 20 m of the copy and out of combat is seated in a free
+    passenger or gunner seat of it (the driver's never), with a notice, and
+    taken out when the ride ends. No free seat: a notice, and the story's
+    rules for a guest outside the scene apply (weapons lowered near it, the
+    join offer from afar).
+  - _The NCART metro_ (`Metro`): V mounts an `ncartMetroObject` the
+    `ue_metro` quest drives. **Deliberate exception to "one world, one
+    owner": every game that rides runs its own train**, with its own
+    passengers, and no train is ever copied or shared (no `Seat`, no
+    `VehicleState`, the host lists no NPCs while it rides, a guest keeps
+    its train's passengers). It is consistent because a metro ride is a
+    scripted transit, not world state: the train follows a fixed line on
+    a timetable, nothing on it outlives the ride, nobody else can act on
+    it, and the only shared facts are where the rider is (its `PlayerState`,
+    as always) and when it gets off; a shared train would need one game to
+    run the other's quest. Elsewhere the rider's puppet sits in a train of
+    that world when one is where the rider is (the entity the rider rides,
+    if streamed there too, or the observer's own train, within 60/150 m,
+    kept until 300 m), in the rider's seat if free; otherwise it is hidden
+    (`IVisualComponent.TemporaryHide`, held items too), placed along the
+    ride twice a second so the map marker follows, with a notice ("… is
+    riding the NCART toward Japantown South"). When the ride ends it is
+    shown again where the rider is, the exit station ("… got off the
+    NCART at …").
+  - _Skipping a ride_: the ride's own fast-forward is a tenfold speed-up of
+    the world (`customFFTimeDilation`), not a teleport: kept, on the host
+    too (it compresses a ride its owner runs alone; the clock moves on by
+    what the ride takes either way), with what the network drives exempted
+    as from a slow motion (Time.reds), and flagged (`kTransitSkipping`).
+  - _Jumps_: a remote V whose state lands more than 200 m from the last
+    one, or more than 30 m away at over 150 m/s (fast travel, a fast-travel
+    from a metro station, a quest teleport), starts its track again
+    standing there (`sync::Track`, `View::jumps`), and its puppet is
+    teleported there at once instead of being sped across the map. A
+    fast-forwarded train (≈ 250 m/s, 8 m per state) is not a jump.
+  - _Follow-up: a guest gunner's fire._ Shots from a seat already travel as
+    `Shot` and hits as `NpcHit` (the guest's own weapon). A vehicle's
+    mounted weapons (the Basilisk's guns, a gunner seat's turret) belong to
+    the vehicle's owner: the gunner's game would aim its copy's weapon,
+    send `VehicleFire{vehicle owner, weapon slot, target point, projectiles}`
+    to the owner (through the host), which fires its real weapon
+    (`VehicleObject.NPCShoot` / the weapon's own trigger) so the damage is
+    the host's world's; every other game plays the effect on its copy.
+    Not done; NPCs driving vehicles that carry no player (chases) are the
+    host's AI vehicles of the authority table, also not shared yet.
+  - Not yet verified in game: scenarios `metro`, `jump`, `ride`,
+    `scene-ride`; `tools/game.sh cmd ride` logs our ride, the vehicle's
+    seats and everyone's rides; `ride npc [RECORD]` seats an NPC in our
+    vehicle (a host test of `NpcSeat`).
 - **Radio** (`scripts/tandem/Radio.reds`, engine-knowledge §13.12): the
   driver owns the car's radio. While our V drives its own car, our game
   reads the car's receiver four times a second (on, station as an
@@ -761,6 +834,15 @@ game thread stop). Each feature verified in game gets a scenario.
   without anyone driving. `--radio STATION` (0–13, a station name, or
   `off`) plays that station on its radio: sent at the wheel and again when
   your V gets in (`tools/game.sh cmd vehicle ride`).
+- **drive --seat SLOT** — the same car, but the mock player rides in SLOT
+  while "an AI" drives it (a `Ride`); `--scene` makes it a story scene's
+  (as host: guests near it get a free seat); `--driver-npc RECORD` (host)
+  puts an NPC at the wheel (`NpcSeat`). Scenarios `ride`, `scene-ride`.
+- **metro** — stands beside your V, then rides the NCART (`--metro-at`,
+  `--metro-for`): a straight line 8 m up at 20 m/s, skipping (ten times
+  faster) for 3 s halfway, then off at the end. Scenario `metro`.
+- `--jump-at N` (any mode): fast travel, 1.5 km along +X from N s on.
+  Scenario `jump`.
 - **idle** — connects and reports.
 - `--relay HOST[:PORT]` (any mode): as host, also reachable through that
   relay (`--relay-token` if it needs one), logging `join code K7Q-2M9`; as
@@ -816,7 +898,7 @@ Each milestone ends with something visible in game.
 | 0   | Toolchain           | DLL built on Linux loads in the game and logs; mock player; relay image ✓                                                                                                  |
 | 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                                                              |
 | 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)                                          |
-| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test)                                                                |
+| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test; rides, quest vehicles, NCART, jumps written: to test)          |
 | 4   | Shared world basics | time, weather, police heat follow the host; tether and regroup on fast travel (time, weather ✓ 2026-11-18)                                                                 |
 | 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot through the host (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18)                              |
 | 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests (step 1 written: freeze, saves, journal, calls, texts, lines, hubs, rewards; to test in game) |
