@@ -614,15 +614,27 @@ struct TimeEffect {
   friend bool operator==(const TimeEffect &, const TimeEffect &) = default;
 };
 
+// A story status effect on the host's V: Johnny's relic glitches
+// (JohnnySickness*), Songbird's overlays, other quest glitch effects
+// (Story.reds decides which). Host to guests (Event channel; the host keeps
+// the ones on now for late joiners); a guest near the host puts the same
+// effect on its own V while the host's lasts.
+struct StoryEffect {
+  PlayerId player{};      // whose V has it (the host)
+  std::uint64_t effect{}; // TweakDB id of the status effect record
+  bool applied{};         // false: it went
+  friend bool operator==(const StoryEffect &, const StoryEffect &) = default;
+};
+
 using Message =
     std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
                  Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
                  NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
                  Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
                  Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward, TimeEffect>;
+                 StoryState, QuestReward, TimeEffect, StoryEffect>;
 
-// A story message (Journal … QuestReward): endpoint.hpp relays these
+// A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.
 bool IsStory(const Message &message);
 

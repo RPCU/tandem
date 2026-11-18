@@ -58,6 +58,15 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_holdGod: Bool;
   private let m_offerShown: Bool;
   private let m_offerOpen: Bool;
+  // The host's story flags (StoryState: 1 braindance, 2 plays as Johnny),
+  // and ours as last sent; story effects of the host's V we wear too.
+  private let m_hostFlags: Int32;
+  private let m_ourFlags: Int32;
+  private let m_lastFlagsCheck: Float;
+  private let m_effects: array<TweakDBID>;
+  // Johnny or Songbird around our V (theirs, or a proxy of the host's).
+  private let m_companions: String;
+  private let m_lastCompanionScan: Float;
 
   // Quest rewards this V got in co-op (its own save keeps them: a quest it
   // was rewarded for with a host pays nothing again in its own story).
@@ -159,6 +168,7 @@ public class TandemStorySystem extends ScriptableSystem {
     }
     this.HandleEvents();
     if this.m_you != 0u && this.m_playing {
+      this.ScanCompanions();
       if this.m_isHost {
         this.HostTick();
       } else {
@@ -288,7 +298,11 @@ public class TandemStorySystem extends ScriptableSystem {
         case 40:
           if event.player == this.m_host && !this.m_isHost {
             this.m_hostTier = event.state;
+            this.OnHostFlags(event.flags);
           }
+          break;
+        case 42:
+          this.OnHostEffect(event.reward, event.flags != 0);
           break;
         case 41:
           this.OnReward(event.reward, event.hash);
@@ -318,6 +332,7 @@ public class TandemStorySystem extends ScriptableSystem {
   }
 
   private func HostTick() -> Void {
+    this.SendFlags();
     if this.m_snapshotOwed {
       this.m_snapshotOwed = false;
       let hashes: array<Uint32>;
@@ -592,6 +607,8 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_phone.Close();
     this.m_dialogue.Close();
     this.ReleaseHolds();
+    this.TakeOffEffects();
+    this.m_hostFlags = 0;
     this.m_hostTier = 0;
     let mismatches = 0;
     if ArraySize(this.m_touched) > 0 {
@@ -663,8 +680,9 @@ public class TandemStorySystem extends ScriptableSystem {
   private func UpdateHolds() -> Void {
     let distance = this.DistanceToHost();
     let near = distance >= 0.0 && distance <= 30.0;
-    let wantCombat = near && this.m_hostTier >= 3;
-    let wantGod = near && this.m_hostTier >= 4;
+    let tier = this.HostSceneTier();
+    let wantCombat = near && tier >= 3;
+    let wantGod = near && tier >= 4;
     let player = GetPlayer(this.GetGameInstance());
     if !IsDefined(player) {
       return;
@@ -689,7 +707,7 @@ public class TandemStorySystem extends ScriptableSystem {
       }
     }
     // Far from a cinematic: offered to join (once per scene).
-    if this.m_hostTier >= 4 && (distance < 0.0 || distance > 100.0) {
+    if tier >= 4 && (distance < 0.0 || distance > 100.0) {
       if !this.m_offerShown {
         this.m_offerShown = true;
         this.m_offerOpen = true;
@@ -697,7 +715,7 @@ public class TandemStorySystem extends ScriptableSystem {
         GetPlayer(this.GetGameInstance()).RegisterInputListener(this, n"Choice1");
         TandemNative.Log("story: join offer shown");
       }
-    } else if this.m_hostTier < 4 {
+    } else if tier < 4 {
       this.CloseOffer();
       this.m_offerShown = false;
     }
@@ -742,11 +760,151 @@ public class TandemStorySystem extends ScriptableSystem {
   public func OnOurTier(tier: Int32) -> Void {
     this.m_ourTier = tier;
     if this.InSession() {
-      TandemStory.SendState(tier, 0);
+      TandemStory.SendState(tier, this.m_ourFlags);
       if this.m_isHost {
         TandemNative.Log(s"story: our scene tier \(tier)");
       }
     }
+  }
+
+  // ---- Johnny, Songbird, braindances (design §2.6, §2.10) ----
+
+  // The host's scene tier as a guest lives it: playing as Johnny (a
+  // takeover, a flashback, "Johnny drives") or in a braindance counts as a
+  // cinematic: weapons down and safe near the host, an offer to join far away.
+  private func HostSceneTier() -> Int32 {
+    if (this.m_hostFlags & 3) != 0 && this.m_hostTier < 4 {
+      return 4;
+    }
+    return this.m_hostTier;
+  }
+
+  // Host: our flags (UI_PlayerStats.isReplacer, final.reds:83411;
+  // Braindance.IsActive, :48378), sent when they change.
+  private func SendFlags() -> Void {
+    if this.Now() - this.m_lastFlagsCheck < 0.5 {
+      return;
+    }
+    this.m_lastFlagsCheck = this.Now();
+    let boards = GameInstance.GetBlackboardSystem(this.GetGameInstance());
+    let flags = 0;
+    if boards.Get(GetAllBlackboardDefs().Braindance).GetBool(GetAllBlackboardDefs().Braindance.IsActive) {
+      flags += 1;
+    }
+    if boards.Get(GetAllBlackboardDefs().UI_PlayerStats).GetBool(GetAllBlackboardDefs().UI_PlayerStats.isReplacer) {
+      flags += 2;
+    }
+    if flags != this.m_ourFlags {
+      this.m_ourFlags = flags;
+      TandemStory.SendState(this.m_ourTier, flags);
+      TandemNative.Log(s"story: our story flags \(flags) (1 braindance, 2 Johnny)");
+    }
+  }
+
+  private func OnHostFlags(flags: Int32) -> Void {
+    let before = this.m_hostFlags;
+    this.m_hostFlags = flags;
+    if (flags & 2) != 0 && (before & 2) == 0 {
+      // TODO: dress the host's puppet as Johnny (Character.Silverhand's
+      // look) for the takeover; until then its V shows, moving as Johnny.
+      this.Notice(s"\(this.NameOf(this.m_host)) is Johnny Silverhand now.");
+      TandemNative.Log("story: the host plays as Johnny");
+    } else if (flags & 2) == 0 && (before & 2) != 0 {
+      TandemNative.Log("story: the host is V again");
+    }
+    if (flags & 1) != 0 && (before & 1) == 0 {
+      this.Notice(s"\(this.NameOf(this.m_host)) is in a braindance.");
+      TandemNative.Log("story: the host is in a braindance");
+    }
+  }
+
+  // Johnny and Songbird are NPCs of the host's world (Character.Silverhand,
+  // final.reds:40624): the host shares them like any NPC near its V, so a
+  // guest near the host sees them where the host does, as proxies (walk and
+  // idle; their scene gestures and voice come with scene replay, design
+  // §2.5). Logged when the set around us changes.
+  private func ScanCompanions() -> Void {
+    if this.Now() - this.m_lastCompanionScan < 2.0 {
+      return;
+    }
+    this.m_lastCompanionScan = this.Now();
+    let player = GetPlayer(this.GetGameInstance());
+    if !IsDefined(player) {
+      return;
+    }
+    let found = "";
+    for npc in player.GetNPCsAroundObject(60.0) {
+      let name = TDBID.ToStringDEBUG(npc.GetRecordID());
+      if StrContains(name, "Silverhand") || StrContains(name, "ongbird") {
+        found += s" \(name)";
+      }
+    }
+    if NotEquals(found, this.m_companions) {
+      this.m_companions = found;
+      if StrLen(found) > 0 {
+        TandemNative.Log(s"story: beside \(this.m_isHost ? "our V, shared with the guests" : "the host, as proxies"):\(found)");
+      } else {
+        TandemNative.Log("story: no Johnny or Songbird around");
+      }
+    }
+  }
+
+  // Status effects of the host's V that are the story's look and feel, not
+  // its rules: Johnny's relic glitches (the JohnnySickness tag,
+  // final.reds:44352), Songbird's and other glitch effects (by record name).
+  public static func IsStoryEffect(record: wref<StatusEffect_Record>) -> Bool {
+    if !IsDefined(record) {
+      return false;
+    }
+    if ArrayContains(record.GameplayTags(), n"JohnnySickness") {
+      return true;
+    }
+    let name = TDBID.ToStringDEBUG(record.GetID());
+    return StrContains(name, "Johnny") || StrContains(name, "SoMi") || StrContains(name, "Songbird")
+      || StrContains(name, "Glitch");
+  }
+
+  // Host: a story effect came onto our V or went (PlayerPuppet wraps below).
+  public func OnOurEffect(effect: TweakDBID, applied: Bool) -> Void {
+    if this.IsHostInSession() {
+      TandemStory.SendEffect(effect, applied);
+      TandemNative.Log(s"story: effect \(TDBID.ToStringDEBUG(effect)) \(applied ? "on" : "off") our V, sent");
+    }
+  }
+
+  // Guest: the host's V glitches; near it (30 m), ours does too, as long as
+  // the host's does.
+  private func OnHostEffect(effect: TweakDBID, applied: Bool) -> Void {
+    if !this.IsGuest() {
+      return;
+    }
+    let player = GetPlayer(this.GetGameInstance());
+    if !IsDefined(player) {
+      return;
+    }
+    if applied {
+      let distance = this.DistanceToHost();
+      if distance < 0.0 || distance > 30.0 || ArrayContains(this.m_effects, effect) {
+        return;
+      }
+      ArrayPush(this.m_effects, effect);
+      StatusEffectHelper.ApplyStatusEffect(player, effect);
+      TandemNative.Log(s"story: effect \(TDBID.ToStringDEBUG(effect)) with the host");
+    } else if ArrayContains(this.m_effects, effect) {
+      ArrayRemove(this.m_effects, effect);
+      StatusEffectHelper.RemoveStatusEffect(player, effect);
+      TandemNative.Log(s"story: effect \(TDBID.ToStringDEBUG(effect)) over");
+    }
+  }
+
+  private func TakeOffEffects() -> Void {
+    let player = GetPlayer(this.GetGameInstance());
+    if IsDefined(player) {
+      for effect in this.m_effects {
+        StatusEffectHelper.RemoveStatusEffect(player, effect);
+      }
+    }
+    ArrayClear(this.m_effects);
   }
 
   // ---- rewards (design §4) ----
@@ -876,6 +1034,34 @@ protected cb func OnRewardEvent(evt: ref<RewardEvent>) -> Bool {
   let result = wrappedMethod(evt);
   if IsDefined(story) {
     story.OnOurReward(evt.rewardName);
+  }
+  return result;
+}
+
+// Story effects of our V (final.reds:43899, :44474): the host's glitches
+// reach the guests near it.
+@wrapMethod(PlayerPuppet)
+protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
+  let result = wrappedMethod(evt);
+  if evt.isNewApplication && TandemStorySystem.IsStoryEffect(evt.staticData) {
+    let story = TandemStorySystem.Get(this.GetGame());
+    let player = GetPlayer(this.GetGame());
+    if IsDefined(story) && IsDefined(player) && this.GetEntityID() == player.GetEntityID() {
+      story.OnOurEffect(evt.staticData.GetID(), true);
+    }
+  }
+  return result;
+}
+
+@wrapMethod(PlayerPuppet)
+protected cb func OnStatusEffectRemoved(evt: ref<RemoveStatusEffect>) -> Bool {
+  let result = wrappedMethod(evt);
+  if evt.isFinalRemoval && TandemStorySystem.IsStoryEffect(evt.staticData) {
+    let story = TandemStorySystem.Get(this.GetGame());
+    let player = GetPlayer(this.GetGame());
+    if IsDefined(story) && IsDefined(player) && this.GetEntityID() == player.GetEntityID() {
+      story.OnOurEffect(evt.staticData.GetID(), false);
+    }
   }
   return result;
 }

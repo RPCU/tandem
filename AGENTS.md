@@ -49,8 +49,9 @@ vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 | -------------------- | ------------------------------------------------------------ |
 | `task build`         | plugin + Linux build                                         |
 | `task build:plugin`  | `build/windows/plugin/tandem.dll` (+ `.pdb`)                 |
-| `task test`          | core tests (unit + loopback UDP)                             |
+| `task test`          | core tests (unit + loopback UDP + through a real relay)      |
 | `task peer -- …`     | run the mock player (`host --mode mirror` by default)        |
+| `task relay:run`     | a local relay open to any host (testing only)                |
 | `task relay:test`    | relay vet + tests with the race detector                     |
 | `task relay:image`   | relay OCI image via Nix (`result-relay-image`)               |
 | `task k8s:check`     | render the kustomize base and validate it (kubeconform)      |
@@ -59,9 +60,23 @@ vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 | `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
 | `task logs`          | follow the plugin's log on the game machine                  |
 
+`tools/remote.sh TASK…` runs a task on the game machine instead (more cores):
+it syncs the working tree to `~/.cache/tandem/src/<worktree>` there, runs
+the task in devenv under that machine's own build lock at low priority, and
+copies `build/windows/plugin/tandem.{dll,pdb}` (and, after `build`,
+`build:linux` or `test`, `build/linux/peer/tandem-peer`) back. Then
+`TANDEM_PREBUILT=1 tools/scenario.sh …` deploys that DLL as is
+(`task deploy:files`) instead of rebuilding it here.
+
 Run the checks your change can break before saying it works: `task test` for
 `core/`, `task build:plugin` for anything compiled into the DLL,
 `task relay:test` for `relay/`, `task k8s:check` for `deploy/`.
+
+Through the relay by hand: `task relay:run`, then `task peer -- host --relay
+127.0.0.1` (it logs `join code K7Q-2M9`) and `task peer -- join --code
+K7Q-2M9 --relay 127.0.0.1`. `task test` does the same (`relay-loopback`,
+`tests/relay_loopback.sh`: it builds the relay with Go and runs the
+`relay` suite of `tandem-tests` against it).
 
 ## Rules
 
@@ -184,8 +199,15 @@ Run the checks your change can break before saying it works: `task test` for
 - Keep the container non-root, read-only, capability-free, with no shell.
 - Keep the NetworkPolicy's egress empty unless a feature needs outbound
   traffic, and say why in the manifest.
-- The relay must never answer an unregistered address and never send a
-  reply larger than the request that caused it; there are tests for both.
+- The relay must never answer an unregistered address's data and never send
+  a reply larger than the request that caused it; there are tests for both.
+  Only registration-type requests (register, resolve a join code), padded
+  to 64 bytes, are answered from an unregistered address.
+- Join codes must stay expensive to guess: keep the per-source and total
+  lookup limits (`TestCodeGuessingIsSlow`, `TestCodeFailuresFromEveryoneAreCapped`)
+  and the code space (6 characters of base32, `crypto/rand`).
+- The relay's wire format (`relay/internal/relay/wire.go`) has a C++ twin in
+  `core/src/relay.cpp`: change both, and only by appending message types.
 
 ### Git
 
@@ -199,7 +221,8 @@ Run the checks your change can break before saying it works: `task test` for
 - **One build at a time** on the laptop: every build or test goes through
   the shared lock, with limited parallelism:
   `CMAKE_BUILD_PARALLEL_LEVEL=8 flock /tmp/tandem-build.lock direnv exec . task test`
-  (same for `task build`, `task check`).
+  (same for `task build`, `task check`). Prefer `tools/remote.sh build:plugin
+test` on anya when the laptop's lock has a queue: anya has its own lock.
 - Vendored dependencies are submodules; don't edit files under `vendor/`.
   Work around upstream issues in our own build (see the `sdk-casefix` link
   in `plugin/CMakeLists.txt`).

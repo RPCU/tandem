@@ -26,11 +26,18 @@ void Runtime::Start(proto::Body body) {
   session.role = m_choice.role;
   session.address = m_choice.address;
   session.port = m_choice.port;
+  session.joinCode = m_choice.joinCode;
+  session.addressSet = m_choice.addressSet;
+  m_body = body;
   m_status = {.state = SessionStatus::State::Starting};
-  log::Info("session: starting as {}{}", NameOf(session.role),
-            session.role == Config::Role::Join
-                ? std::format(" of {}:{}", session.address, session.port)
-                : std::format(" on UDP {}", session.port));
+  std::string what;
+  if (session.role == Config::Role::Host)
+    what = std::format(" on UDP {}", session.port);
+  else if (!session.joinCode.empty())
+    what = std::format(" of code {}", net::DisplayJoinCode(session.joinCode));
+  else
+    what = std::format(" of {}:{}", session.address, session.port);
+  log::Info("session: starting as {}{}", NameOf(session.role), what);
   m_net = std::make_unique<NetThread>(session, body);
 }
 
@@ -42,7 +49,9 @@ void Runtime::Choose(SessionChoice choice) {
   std::lock_guard _(m_lock);
   m_choice = std::move(choice);
   std::string what;
-  if (m_choice.role == Config::Role::Join)
+  if (m_choice.role == Config::Role::Join && !m_choice.joinCode.empty())
+    what = std::format(" code {}", net::DisplayJoinCode(m_choice.joinCode));
+  else if (m_choice.role == Config::Role::Join)
     what = std::format(" {}:{}", m_choice.address, m_choice.port);
   else if (m_choice.role == Config::Role::Host)
     what = std::format(" on UDP {}", m_choice.port);
@@ -51,7 +60,11 @@ void Runtime::Choose(SessionChoice choice) {
 }
 
 void Runtime::ResetChoice() {
-  Choose({.role = config.role, .address = config.address, .port = config.port});
+  Choose({.role = config.role,
+          .address = config.address,
+          .port = config.port,
+          .joinCode = config.joinCode,
+          .addressSet = config.addressSet});
 }
 
 SessionChoice Runtime::Choice() const {
@@ -96,6 +109,53 @@ void Runtime::RememberHost(const hosts::Target &target, std::string name) {
   file << hosts::FormatRecent(list);
   if (!file)
     log::Warn("could not write {}", config.recentFile.filename().string());
+}
+
+void Runtime::SetRelay(std::string code, std::string status) {
+  std::lock_guard _(m_lock);
+  m_relayCode = std::move(code);
+  m_relayStatus = std::move(status);
+}
+
+std::string Runtime::RelayCode() const {
+  std::lock_guard _(m_lock);
+  return m_relayCode;
+}
+
+std::string Runtime::RelayStatus() const {
+  std::lock_guard _(m_lock);
+  return m_relayStatus;
+}
+
+bool Runtime::JoinByCode(std::string_view text) {
+  const auto code = net::NormalizeJoinCode(text);
+  if (!code) {
+    log::Warn("join by code: {} is not a join code", text);
+    return false;
+  }
+  if (config.relay.empty()) {
+    log::Warn("join by code: no relay in tandem.ini");
+    return false;
+  }
+  log::Info("join by code {} through relay {}:{}", net::DisplayJoinCode(*code), config.relay,
+            config.relayPort);
+  bool running = false;
+  proto::Body body{};
+  {
+    std::lock_guard _(m_lock);
+    running = m_net != nullptr;
+    body = m_body;
+  }
+  // The code's host, not tandem.ini's address. Choose stops a running
+  // session; it is started again at once for the code.
+  Choose({.role = Config::Role::Join,
+          .port = config.port,
+          .joinCode = *code,
+          .addressSet = false,
+          .fromMenu = true});
+  if (running)
+    Start(body);
+  return true;
 }
 
 void Runtime::Stop() {

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Run a build or the tests on the game machine (more cores than the laptop).
+#
+#   tools/remote.sh build:plugin      # build tandem.dll there, copy it back
+#   tools/remote.sh test              # run the core tests there
+#   tools/remote.sh TASK...           # any Taskfile task
+#
+# The working tree (tracked and untracked files, submodules, not ignored
+# ones) is synced to ~/.cache/tandem/src/<worktree name> on GAME_HOST, the
+# Windows sysroot to ~/.cache/tandem/xwin (once), and the task runs inside
+# devenv under anya's own build lock, at low priority so a running game
+# keeps its frames. Nothing is written inside the game's directory.
+# build/windows/plugin/tandem.{dll,pdb} come back into this tree, so
+# `task deploy` and tools/scenario.sh pick them up; after build, build:linux
+# or test, so does build/linux/peer/tandem-peer (scenarios run it here).
+set -euo pipefail
+
+host=${GAME_HOST:-anya}
+root=$(git rev-parse --show-toplevel)
+name=$(basename "$root")
+remote=".cache/tandem/src/$name" # relative to the remote home
+xwin=${TANDEM_XWIN:-$HOME/.cache/tandem/xwin}
+[ $# -gt 0 ] || set -- build:plugin
+
+if ! ssh "$host" test -d .cache/tandem/xwin/crt; then
+  echo "remote: copying the Windows sysroot to $host (once)" >&2
+  ssh "$host" mkdir -p .cache/tandem
+  rsync -a --delete "$xwin/" "$host:.cache/tandem/xwin/"
+fi
+
+cd "$root"
+ssh "$host" mkdir -p "$remote"
+{
+  git ls-files -z --cached --recurse-submodules
+  git ls-files -z --others --exclude-standard
+} | rsync -a --from0 --files-from=- --ignore-missing-args . "$host:$remote/"
+
+jobs=${CMAKE_BUILD_PARALLEL_LEVEL:-10}
+# shellcheck disable=SC2029 # expanded here on purpose
+ssh "$host" "cd $remote && CMAKE_BUILD_PARALLEL_LEVEL=$jobs TANDEM_XWIN=\$HOME/.cache/tandem/xwin \
+  flock /tmp/tandem-build.lock nice -n 19 devenv shell -- task $*"
+
+for task in "$@"; do
+  case $task in
+  build | build:plugin)
+    mkdir -p build/windows/plugin
+    rsync -a "$host:$remote/build/windows/plugin/tandem.dll" "$host:$remote/build/windows/plugin/tandem.pdb" \
+      build/windows/plugin/
+    echo "remote: build/windows/plugin/tandem.dll from $host" >&2
+    ;;
+  esac
+  case $task in
+  build | build:linux | test)
+    # Same devenv lock on both machines, so the same store paths: it runs here.
+    mkdir -p build/linux/peer
+    rsync -a "$host:$remote/build/linux/peer/tandem-peer" build/linux/peer/
+    echo "remote: build/linux/peer/tandem-peer from $host" >&2
+    ;;
+  esac
+done

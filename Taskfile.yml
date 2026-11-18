@@ -69,7 +69,13 @@ tasks:
 
   deploy:
     desc: Install the plugin, scripts and tweaks in the game on GAME_HOST (default anya)
-    deps: [build:plugin, natives:check]
+    deps: [build:plugin]
+    cmds:
+      - task: deploy:files
+
+  deploy:files:
+    desc: "deploy without building: the DLL already in build/ (tools/remote.sh brought it)"
+    deps: [natives:check]
     cmds:
       - ssh {{.GAME_HOST}} 'mkdir -p "{{.PLUGIN_DIR}}" "{{.SCRIPTS_DIR}}" "{{.TWEAKS_DIR}}"'
       - rsync --protect-args -t build/windows/plugin/tandem.dll build/windows/plugin/tandem.pdb "{{.GAME_HOST}}:{{.PLUGIN_DIR}}/"

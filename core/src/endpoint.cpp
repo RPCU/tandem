@@ -29,8 +29,9 @@ Endpoint::Endpoint(std::unique_ptr<net::Session> session, Identity identity, Tim
     : m_session(std::move(session)), m_identity(std::move(identity)), m_timing(timing) {}
 
 std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port, std::string &error,
-                                         Timing timing) {
-  auto session = net::Session::Listen(port, kMaxGuests + kSpareConnections, error, timing.timeout);
+                                         Timing timing, std::optional<net::RelayOptions> relay) {
+  auto session = net::Session::Listen(port, kMaxGuests + kSpareConnections, error, timing.timeout,
+                                      relay ? &*relay : nullptr);
   if (!session)
     return nullptr;
   auto endpoint =
@@ -42,10 +43,30 @@ std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port, 
 
 std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const std::string &host,
                                          std::uint16_t port, std::string &error, Timing timing) {
-  auto session = net::Session::Connect(host, port, error, timing.timeout);
-  if (!session)
+  return Join(std::move(identity), JoinTarget{.address = host, .port = port}, error, timing);
+}
+
+std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const JoinTarget &target,
+                                         std::string &error, Timing timing) {
+  std::unique_ptr<net::Session> session;
+  if (!target.address.empty())
+    session =
+        net::Session::Connect(target.address, target.port, error, timing.timeout,
+                              target.relay ? timing.timeout / 2 : std::chrono::milliseconds{});
+  const bool throughRelay = !session && target.relay;
+  if (throughRelay)
+    session = net::Session::ConnectRelay(*target.relay, error, timing.timeout);
+  if (!session) {
+    if (error.empty())
+      error = "no host address and no relay to join through";
     return nullptr;
-  return std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity), timing));
+  }
+  auto endpoint =
+      std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity), timing));
+  endpoint->m_throughRelay = throughRelay;
+  if (!throughRelay)
+    endpoint->m_fallback = target.relay;
+  return endpoint;
 }
 
 std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
@@ -64,6 +85,26 @@ std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
       OnHostEvent(event, out);
     else
       OnGuestEvent(event, out);
+    if (m_tryRelay)
+      break; // the rest is the direct attempt's
+  }
+
+  // The host did not answer directly: through the relay, as if nothing
+  // happened (the guest's game sees one join that took longer).
+  if (m_tryRelay) {
+    m_tryRelay = false;
+    const auto relay = std::move(*m_fallback);
+    m_fallback.reset();
+    std::string error;
+    if (auto session = net::Session::ConnectRelay(relay, error, m_timing.timeout)) {
+      m_session = std::move(session);
+      m_hostPeer = 0;
+      m_throughRelay = true;
+    } else {
+      m_ended = true;
+      out.push_back(events::Ended{error});
+    }
+    return out;
   }
 
   if (!IsHost() && IsJoined()) {
@@ -355,8 +396,14 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
   case Kind::Malformed:
     break; // the host may be newer; Refused will say so
   case Kind::Disconnected:
+    if (!IsJoined() && m_fallback) {
+      m_tryRelay = true;
+      break;
+    }
     m_ended = true;
-    out.push_back(events::Ended{IsJoined() ? "the host is gone" : "could not reach the host"});
+    out.push_back(events::Ended{IsJoined()              ? "the host is gone"
+                                : !event.reason.empty() ? event.reason
+                                                        : "could not reach the host"});
     break;
   case Kind::Received:
     if (proto::IsStory(*event.message)) {
@@ -869,6 +916,8 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
     cursor->player = m_you;
   if (auto *state = std::get_if<proto::StoryState>(&message))
     state->player = m_you;
+  if (auto *effect = std::get_if<proto::StoryEffect>(&message))
+    effect->player = m_you;
   if (const auto *call = std::get_if<proto::PhoneCall>(&message)) {
     m_calls.Update(*call);
     message = *m_calls.Call();

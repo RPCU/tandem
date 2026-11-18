@@ -6,6 +6,10 @@
 //   address = 127.0.0.1  ; join: the host's address
 //   port = 27450
 //   name = V
+//   relay = relay.example.org:27460  ; tandem-relay: NAT fallback, join codes
+//   relay_token = <64 hex>           ; host: one of the relay's host tokens
+//   join = K7Q-2M9       ; join: the host's join code (through the relay;
+//                        ; `address`, when written, is tried first)
 //   puppet_female = Character.TandemPuppetWa
 //   puppet_male = Character.TandemPuppetMa
 //   probe = off          ; on: spawn test bodies and log their animation setup
@@ -22,6 +26,8 @@
 //                        ; its V; full keeps the single-player slow motion on its own
 //                        ; screen, shared NPCs and puppets exempted (experimental)
 
+#include "tandem/relay.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -33,7 +39,14 @@ struct Config {
 
   Role role{Role::Off};
   std::string address{"127.0.0.1"};
+  // `address` was in tandem.ini: a guest with a join code tries it first.
+  bool addressSet{false};
   std::uint16_t port{27450};
+  // tandem-relay ("" none), a host token for it, and (join) the host's code.
+  std::string relay;
+  std::uint16_t relayPort{net::kDefaultRelayPort};
+  net::RelayToken relayToken{};
+  std::string joinCode;
   std::string name{"V"};
   std::string puppetFemale{"Character.TandemPuppetWa"};
   std::string puppetMale{"Character.TandemPuppetMa"};

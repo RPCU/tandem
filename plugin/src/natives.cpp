@@ -82,6 +82,7 @@ struct TandemStatus {
   std::int32_t pingMs{}; // guest: to the host; -1 unknown
   Red::CString detail;   // why the last session ended, or failed
   bool fromMenu{};       // chosen in the co-op menu (else tandem.ini)
+  Red::CString joinCode; // join: the code ("K7Q-2M9"), "" by address
 };
 
 struct TandemPlayer {
@@ -225,6 +226,8 @@ struct TandemNative : Red::IScriptable {
         out.pingMs = player.pingMs;
     out.detail = Red::CString(status.detail.c_str());
     out.fromMenu = choice.fromMenu;
+    out.joinCode =
+        Red::CString(choice.joinCode.empty() ? "" : net::DisplayJoinCode(choice.joinCode).c_str());
     return out;
   }
 
@@ -726,6 +729,20 @@ struct TandemNative : Red::IScriptable {
   }
   // tandem.ini time_host = full: the host keeps its own slow motion whole.
   static bool IsTimeHostFull() { return Runtime::Get().config.timeHostFull; }
+  // Invites through tandem-relay (docs/ARCHITECTURE.md, "Invites"): the
+  // host's join code to show ("K7Q-2M9"; "" until the relay gave one, or
+  // with no relay), what the relay link is doing ("" no relay,
+  // "connecting", "ready", else the problem, in words), and joining the
+  // session a typed code names (false: not a code, or no relay set).
+  static Red::CString RelayCode() { return Red::CString(Runtime::Get().RelayCode().c_str()); }
+
+  static Red::CString RelayStatus() { return Red::CString(Runtime::Get().RelayStatus().c_str()); }
+
+  static bool JoinByCode(Red::CString code) { return Runtime::Get().JoinByCode(code.c_str()); }
+  // The text is a join code (6 characters of base32, a dash optional).
+  static bool IsJoinCode(Red::CString text) {
+    return net::NormalizeJoinCode(text.c_str()).has_value();
+  }
 
   // Host: its NPCs.
   static void SendNpcSpawn(std::uint32_t npc, Red::TweakDBID record, Red::CName appearance,
@@ -1026,6 +1043,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStatus, "TandemStatus", {
   RTTI_PROPERTY(pingMs);
   RTTI_PROPERTY(detail);
   RTTI_PROPERTY(fromMenu);
+  RTTI_PROPERTY(joinCode);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemPlayer, "TandemPlayer", {
@@ -1141,6 +1159,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(TimeFactorOf);
   RTTI_METHOD(TimeBubbleMembers);
   RTTI_METHOD(IsTimeHostFull);
+  RTTI_METHOD(RelayCode);
+  RTTI_METHOD(RelayStatus);
+  RTTI_METHOD(JoinByCode);
+  RTTI_METHOD(IsJoinCode);
   RTTI_METHOD(SendSeat);
   RTTI_METHOD(SendVehicle);
   RTTI_METHOD(RemoteSeatChanges);

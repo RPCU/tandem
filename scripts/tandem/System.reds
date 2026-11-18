@@ -296,8 +296,18 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_inGame;
   }
 
-  // Join "address[:port]" now. False (and nothing changed): not an address.
+  // Join "address[:port]", or a join code (through tandem.ini's relay), now.
+  // False: neither (nothing changed), or a code with no relay set (then out
+  // of the session it was in).
   public func CoopJoin(address: String) -> Bool {
+    if TandemCoop.IsCode(address) {
+      this.EndSession(true);
+      if !TandemNative.JoinByCode(address) {
+        return false;
+      }
+      this.BeginSession();
+      return this.m_inGame;
+    }
     let target = TandemNative.ParseAddress(address);
     if StrLen(target.address) == 0 {
       return false;

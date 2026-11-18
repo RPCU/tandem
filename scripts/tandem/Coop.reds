@@ -19,9 +19,11 @@
 // world, so the menus keep a clock of their own (a looping ink animation:
 // ink animations run in menus, paused or not).
 //
-// Join codes (the relay, milestone 7): TandemCoop.Target is where a typed
-// code would become a host; TandemCoop.InviteText where the host's code
-// would be shown.
+// Join codes (tandem-relay): what the player types to join is a join code
+// (TandemNative.IsJoinCode, no dot or colon) or an address
+// (TandemCoop.Resolve); a code joins through tandem.ini's relay
+// (TandemNative.JoinByCode). The host shows its code (RelayCode) in the
+// status panel and the invite, with the relay's state (RelayStatus).
 
 enum TandemCoopPage {
   Root = 0,
@@ -69,7 +71,7 @@ public class TandemCoop {
   public static func StatusLines() -> array<String> {
     let lines: array<String>;
     let status = TandemNative.SessionStatus();
-    let target = s"\(status.address):\(status.port)";
+    let target = StrLen(status.joinCode) > 0 ? s"code \(status.joinCode)" : s"\(status.address):\(status.port)";
     if status.role == 1 {
       if status.state == 0 {
         ArrayPush(lines, s"You host when your game loads (port \(status.port))");
@@ -77,6 +79,13 @@ public class TandemCoop {
         ArrayPush(lines, s"Could not host: \(status.detail)");
       } else {
         ArrayPush(lines, s"Hosting on port \(status.port)");
+        let code = TandemNative.RelayCode();
+        let relay = TandemNative.RelayStatus();
+        if StrLen(code) > 0 {
+          ArrayPush(lines, s"Join code: \(code)");
+        } else if StrLen(relay) > 0 && !Equals(relay, "ready") {
+          ArrayPush(lines, s"Relay: \(relay)");
+        }
       }
     } else if status.role == 2 {
       if status.state == 0 {
@@ -114,10 +123,12 @@ public class TandemCoop {
     let status = TandemNative.SessionStatus();
     let port = status.role == 1 ? status.port : TandemNative.DefaultPort();
     let addresses = TandemNative.LocalAddresses();
+    let code = TandemNative.RelayCode();
+    let prefix = StrLen(code) > 0 ? s"Join code \(code). " : "";
     if ArraySize(addresses) == 0 {
-      return s"Friends join you on port \(port) (no network address found)";
+      return s"\(prefix)Friends join you on port \(port) (no network address found)";
     }
-    let text = "Friends join you at ";
+    let text = s"\(prefix)Friends on your network join you at ";
     let first = true;
     for address in addresses {
       if !first {
@@ -129,8 +140,35 @@ public class TandemCoop {
     return text;
   }
 
+  // A join code rather than an address (a host name has a dot, or is not
+  // six characters of base32).
+  public static func IsCode(text: String) -> Bool {
+    return TandemNative.IsJoinCode(text) && !StrContains(text, ".") && !StrContains(text, ":");
+  }
+
+  // What the player typed: a join code as typed, else "address:port"; ""
+  // when it is neither.
+  public static func Resolve(text: String) -> String {
+    if TandemCoop.IsCode(text) {
+      return text;
+    }
+    return TandemCoop.Target(text);
+  }
+
+  public static func Shown(target: String) -> String {
+    return TandemCoop.IsCode(target) ? s"code \(StrUpper(target))" : target;
+  }
+
+  // Choose to join it (a code through the relay). False: not possible
+  // (a code with no relay in tandem.ini, or not an address).
+  public static func ChooseJoin(target: String) -> Bool {
+    if TandemCoop.IsCode(target) {
+      return TandemNative.JoinByCode(target);
+    }
+    return TandemNative.Join(target, 0);
+  }
+
   // What the player typed, as "address:port"; "" when it is none.
-  // (Join codes: a code would be looked up here.)
   public static func Target(text: String) -> String {
     let host = TandemNative.ParseAddress(text);
     if StrLen(host.address) == 0 {
@@ -272,7 +310,7 @@ public class TandemCoopMenu {
         let item = this.Add(StrLen(host.name) > 0 ? s"\(host.name) (\(address))" : address, TandemCoopAction.JoinRecent);
         item.target = address;
       }
-      this.Add("Enter an address", TandemCoopAction.EnterAddress);
+      this.Add("Enter a code or an address", TandemCoopAction.EnterAddress);
     } else if this.inGame {
       if inSession {
         if TandemNative.SessionStatus().role == 1 {
@@ -434,9 +472,9 @@ public class TandemCoopMenu {
       if Equals(this.page, TandemCoopPage.Host) {
         ArrayPush(lines, "Choose the save to host");
       } else if Equals(this.page, TandemCoopPage.Save) {
-        ArrayPush(lines, s"Choose the save your V comes from, to join \(this.target)");
+        ArrayPush(lines, s"Choose the save your V comes from, to join \(TandemCoop.Shown(this.target))");
       } else if Equals(this.page, TandemCoopPage.Join) {
-        ArrayPush(lines, "Pick a host, or enter an address");
+        ArrayPush(lines, "Pick a host, or enter their join code or address");
       } else if this.inGame && status.role == 1 && status.state == 3 {
         ArrayPush(lines, TandemCoop.InviteText());
       }
@@ -586,14 +624,18 @@ protected cb func OnTandemTick(proxy: ref<inkAnimProxy>) -> Bool {
   return true;
 }
 
-// The session the page stands for, chosen as its save is picked.
+// The session the page stands for, chosen as its save is picked. False
+// (and said in a popup): it cannot be (a code with no relay set).
 @addMethod(SingleplayerMenuGameController)
-private func TandemChoose() -> Void {
+private func TandemChoose() -> Bool {
   if Equals(this.m_tandem.page, TandemCoopPage.Host) {
-    TandemNative.StartHost(this.m_tandem.port);
-  } else if Equals(this.m_tandem.page, TandemCoopPage.Save) {
-    TandemNative.Join(this.m_tandem.target, 0);
+    return TandemNative.StartHost(this.m_tandem.port);
   }
+  if Equals(this.m_tandem.page, TandemCoopPage.Save) && !TandemCoop.ChooseJoin(this.m_tandem.target) {
+    GenericMessageNotification.Show(this, "Join a game", "Joining by code needs a relay: set relay = host:port in tandem.ini", GenericMessageNotificationType.OK);
+    return false;
+  }
+  return true;
 }
 
 @addMethod(SingleplayerMenuGameController)
@@ -615,13 +657,17 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
     this.m_tandem.target = item.target;
     this.TandemGo(TandemCoopPage.Save);
   } else if Equals(action, TandemCoopAction.Continue) {
-    this.TandemChoose();
+    if !this.TandemChoose() {
+      return true;
+    }
     // The vanilla Continue: the latest save (with its "made with mods" prompt).
     let load = new PauseMenuListItemData();
     load.action = PauseMenuAction.QuickLoad;
     return this.HandleMenuItemActivate(load);
   } else if Equals(action, TandemCoopAction.LoadGame) {
-    this.TandemChoose();
+    if !this.TandemChoose() {
+      return true;
+    }
     // The vanilla Load game: the game's own list of saves.
     this.m_menuEventDispatcher.SpawnEvent(n"OnLoadGame");
   } else if Equals(action, TandemCoopAction.Solo) {
@@ -634,7 +680,7 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
 // The game's message popup with Codeware's text field.
 @addMethod(SingleplayerMenuGameController)
 private func TandemAskAddress() -> Void {
-  this.m_tandem.inputToken = GenericMessageNotification.ShowInput(this, "Join a game", "The host's address, as their Co-op menu shows it (192.168.1.20, or 192.168.1.20:27450)", GenericMessageNotificationType.ConfirmCancel);
+  this.m_tandem.inputToken = GenericMessageNotification.ShowInput(this, "Join a game", "The host's join code (K7Q-2M9) or address (192.168.1.20, or 192.168.1.20:27450), as their Co-op menu shows it", GenericMessageNotificationType.ConfirmCancel);
   this.m_tandem.inputToken.RegisterListener(this, n"OnTandemAddress");
 }
 
@@ -649,10 +695,10 @@ protected cb func OnTandemAddress(data: ref<inkGameNotificationData>) -> Bool {
     this.m_tandem.swallowBack = 2;
     return true;
   }
-  let target = TandemCoop.Target(close.input);
+  let target = TandemCoop.Resolve(close.input);
   TandemNative.Log(s"coop: main menu: typed \(close.input) -> \(target)");
   if StrLen(target) == 0 {
-    GenericMessageNotification.Show(this, "Join a game", s"Not an address: \(close.input)", GenericMessageNotificationType.OK);
+    GenericMessageNotification.Show(this, "Join a game", s"Not a join code or an address: \(close.input)", GenericMessageNotificationType.OK);
     return true;
   }
   this.m_tandem.target = target;
@@ -686,7 +732,7 @@ private func TandemCommand(command: String) -> Void {
     this.m_tandem.port = StringToInt(arg, 0);
     this.TandemGo(TandemCoopPage.Host);
   } else if Equals(verb, "join") {
-    let target = TandemCoop.Target(arg);
+    let target = TandemCoop.Resolve(arg);
     if StrLen(target) == 0 {
       TandemNative.Log(s"coop: main menu: not an address: \(arg)");
     } else {
@@ -861,7 +907,7 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
 
 @addMethod(PauseMenuGameController)
 private func TandemAskAddress() -> Void {
-  this.m_tandem.inputToken = GenericMessageNotification.ShowInput(this, "Join a game", "The host's address, as their Co-op menu shows it (192.168.1.20, or 192.168.1.20:27450)", GenericMessageNotificationType.ConfirmCancel);
+  this.m_tandem.inputToken = GenericMessageNotification.ShowInput(this, "Join a game", "The host's join code (K7Q-2M9) or address (192.168.1.20, or 192.168.1.20:27450), as their Co-op menu shows it", GenericMessageNotificationType.ConfirmCancel);
   this.m_tandem.inputToken.RegisterListener(this, n"OnTandemAddress");
 }
 
@@ -876,14 +922,16 @@ protected cb func OnTandemAddress(data: ref<inkGameNotificationData>) -> Bool {
     this.m_tandem.swallowBack = 2;
     return true;
   }
-  let target = TandemCoop.Target(close.input);
+  let target = TandemCoop.Resolve(close.input);
   let system = this.CoopSystem();
   TandemNative.Log(s"coop: pause menu: typed \(close.input) -> \(target)");
   if StrLen(target) == 0 || !IsDefined(system) {
-    GenericMessageNotification.Show(this, "Join a game", s"Not an address: \(close.input)", GenericMessageNotificationType.OK);
+    GenericMessageNotification.Show(this, "Join a game", s"Not a join code or an address: \(close.input)", GenericMessageNotificationType.OK);
     return true;
   }
-  system.CoopJoin(target);
+  if !system.CoopJoin(target) && TandemCoop.IsCode(target) {
+    GenericMessageNotification.Show(this, "Join a game", "Joining by code needs a relay: set relay = host:port in tandem.ini", GenericMessageNotificationType.OK);
+  }
   this.TandemGo(TandemCoopPage.Coop);
   return true;
 }

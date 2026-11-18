@@ -483,6 +483,39 @@ cyberspace are another place → guests held as spectators or regrouped
 shows on guests' screens as a proxy (decision 10 in §8). Endings and the
 point of no return are host checkpoints; guests keep their own V.
 
+### 2.11 Johnny, Songbird and cutscenes as a guest lives them (decided and built 2026-11-18)
+
+The user asked for these to be handled natively in co-op. Johnny is a
+hallucination in the host's V's head, but in the host's game he is an
+ordinary NPC (`Character.Silverhand`, `final.reds:40624`); Songbird's
+appearances are NPCs too. Her calls are phone calls with
+`questPhoneCallVisuals.Somi`, drawn by her own widget
+(`HudPhoneGameController`, `:389152`, `:389380`). The rule: **a guest beside
+the host lives the host's moment as a witness.** It sees what the host's
+game shows around the host's V, feels its glitches, and never takes over
+the scene. What is built (Story.reds, Phone.reds), cheapest first:
+
+| Moment                                                      | Guest near the host (30 m)                                                                                                                                                                        | Guest far away                                 | State                                                                             |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| Johnny or Songbird beside the host's V                      | seen where the host sees them: the host shares them like any NPC within 60 m (`Npcs.reds`), from their own record and appearance; `story: beside …` logged                                        | not seen (out of the proxy range)              | built; walk and idle only, scene gestures and voice with scene replay (§2.5)      |
+| relic glitches (`JohnnySickness*` status effects, `:44352`) | the same status effect on the guest's V for as long as the host's lasts (`StoryEffect`); also Songbird's and other glitch effects, chosen by record name (`SoMi`, `Songbird`, `Glitch`, `Johnny`) | nothing                                        | built                                                                             |
+| Songbird's calls                                            | her own call widget: the guest's presentation keeps the call's visuals (§3.2)                                                                                                                     | the same (calls reach everyone)                | built                                                                             |
+| cutscene, tier 3                                            | weapons lowered                                                                                                                                                                                   | nothing                                        | built                                                                             |
+| cutscene, tiers 4 and 5                                     | weapons lowered, invulnerable; its own camera and body (no forced camera); the host's V performs through the pose stream; subtitles and hubs                                                      | a notice and the offer to join (regroup: TODO) | built                                                                             |
+| host plays as Johnny (takeover, flashback, "Johnny drives") | counted as a tier 4 cinematic; a notice "… is Johnny Silverhand now"                                                                                                                              | the offer to join                              | built; the host's puppet still wears V's look (TODO: Johnny's look on the puppet) |
+| braindance                                                  | counted as tier 4; a notice                                                                                                                                                                       | the offer                                      | built; the guest's own copy of the braindance is step 5 (§2.6)                    |
+
+How the takeover becomes native next: while the host's `StoryState` says
+replacer, the guest dresses the host's puppet with the replacer's look.
+That means spawning it from `Character.Silverhand` and handing it the
+host's track, the way NPC proxies take theirs, then switching back when
+the flag clears. Johnny's materialise and dematerialise glitches on the
+proxy need the effect names his entity plays (RE: his `.ent` effects).
+Songbird's netrunner sequences (Blackwall, cyberspace) are another place:
+the far rule applies (offer, then regroup). Status effects that are a
+story's rules rather than its look (`SoMi_Q306_BlackwallMark` on NPCs) are
+not mirrored: only effects on the host's V are.
+
 ---
 
 ## 3. Holocalls, phone calls and messages

@@ -81,6 +81,10 @@ struct SessionChoice {
   Config::Role role{Config::Role::Off};
   std::string address; // join: the host
   std::uint16_t port{};
+  // join: the host's join code (through tandem.ini's relay; "" by address),
+  // and whether the address is tried too (Config::addressSet).
+  std::string joinCode;
+  bool addressSet{};
   bool fromMenu{};
 };
 
@@ -135,6 +139,17 @@ public:
   // the game thread, written by the net thread when a host welcomes us.
   std::vector<hosts::Recent> RecentHosts() const;
   void RememberHost(const hosts::Target &target, std::string name);
+
+  // tandem-relay, net thread -> game thread: the host's join code to show
+  // ("K7Q-2M9", "" none yet or no relay) and what the link is doing (""
+  // no relay, "connecting", "ready", else what went wrong).
+  void SetRelay(std::string code, std::string status);
+  std::string RelayCode() const;
+  std::string RelayStatus() const;
+  // Game thread: be the guest of the session `code` names, through
+  // tandem.ini's relay. A running session is left for it at once; else it
+  // starts with the next loaded game. False: not a code, or no relay.
+  bool JoinByCode(std::string_view code);
 
   // Game thread -> net thread: our V, newest only.
   void SubmitLocal(const proto::PlayerState &state);
@@ -317,6 +332,8 @@ private:
   SessionChoice m_choice; // m_lock
   SessionStatus m_status; // m_lock
   mutable std::mutex m_recentLock;
+  proto::Body m_body{};                   // m_lock: the last Start's
+  std::string m_relayCode, m_relayStatus; // m_lock
   std::optional<proto::PlayerState> m_local;
   std::vector<ScriptEvent> m_events;
 

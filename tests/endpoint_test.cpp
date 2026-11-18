@@ -1,24 +1,18 @@
 // A real host and real guests over loopback UDP, in one process.
 
+#include "ports.hpp"
 #include "tandem/endpoint.hpp"
 
 #include <doctest/doctest.h>
 
-#include <atomic>
 #include <functional>
 #include <map>
-
-#include <unistd.h>
 
 using namespace std::chrono_literals;
 using namespace tandem;
 
 namespace {
-std::uint16_t NextPort() {
-  // Apart per process: test runs in other checkouts may be going on.
-  static std::atomic<std::uint16_t> port{static_cast<std::uint16_t>(41000 + (getpid() % 400) * 50)};
-  return port++;
-}
+using test::NextPort;
 
 template <class E> bool Has(const std::vector<SessionEvent> &events) {
   for (const auto &event : events)
