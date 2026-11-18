@@ -715,6 +715,51 @@ TEST_CASE("the first to pick a stack up keeps it; a later claim hears who has it
   CHECK(seen[2].taken.back() == proto::WorldItemTaken{id, 1, proto::kNoPlayer});
 }
 
+TEST_CASE("a quest item one player got reaches every other player, stamped") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  std::vector<proto::SharedItem> seen[3];
+  const auto collect = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::SharedItemFrom>(&event))
+        seen[i].push_back(e->item);
+  };
+
+  // a loots one (claiming to be someone, on a corpse): the host and b get it
+  // as a's loot; a hears nothing back.
+  a->SendSharedItem({.player = 99,
+                     .kind = proto::kSharedOnCorpse,
+                     .npc = 4,
+                     .item = {.record = 0xabc, .quantity = 1}});
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return !seen[0].empty() && !seen[2].empty();
+  }));
+  for (const auto i : {0, 2}) {
+    CHECK(seen[i][0].player == a->You());
+    CHECK(seen[i][0].kind == proto::kSharedLooted);
+    CHECK(seen[i][0].npc == 0);
+    CHECK(seen[i][0].item.record == 0xabc);
+  }
+
+  // The host's corpse holds one: both guests hear it, on npc 7.
+  host->SendSharedItem({.kind = proto::kSharedOnCorpse, .npc = 7, .item = {.record = 0xdef}});
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return !seen[1].empty() && seen[2].size() == 2;
+  }));
+  CHECK(seen[1][0].npc == 7);
+  CHECK(seen[1][0].player == 1);
+  CHECK(seen[0].size() == 1); // the host's own is never reported back
+}
+
 TEST_CASE("a guest that crashes is reported gone within the timeout") {
   const auto port = NextPort();
   std::string error;

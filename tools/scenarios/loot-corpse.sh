@@ -1,4 +1,4 @@
-# As a guest: a proxy we kill is our own corpse to loot (rolled in our game, quest items out), and leaves a bag when the host's body goes
+# As a guest: a proxy we kill is our own corpse to loot (rolled in our game, quest items kept), and leaves a bag when the host's body goes
 # shellcheck shell=bash disable=SC2317
 ensure join
 peer host --mode idle --body male --replay recordings/npcs.rec --remove-corpses 15
@@ -7,7 +7,7 @@ cmd npc punch
 expect 'combat: instant kill on proxy [0-9]+ sent to the host' 10
 expect 'npcs: proxy [0-9]+ died, our kill' 10
 # Its death rolled its loot in our game, from its own record.
-expect 'loot: proxy corpse [A-Za-z_.0-9]+: [0-9]+ item\(s\), [0-9]+ quest item\(s\) taken out' 5
+expect 'loot: proxy corpse [A-Za-z_.0-9]+: [0-9]+ item\(s\), [0-9]+ important' 5
 reject 'loot: proxy corpse .*rolled here'
 cmd loot corpse
 expect 'loot corpse: [A-Za-z_.0-9]+ [0-9.]+ m away, loot rolled true, looted false' 10

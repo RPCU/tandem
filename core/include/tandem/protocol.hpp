@@ -634,13 +634,29 @@ struct WorldItemTaken {
   friend bool operator==(const WorldItemTaken &, const WorldItemTaken &) = default;
 };
 
+// Quest and important items are every player's (docs/ARCHITECTURE.md,
+// Loot): an item tagged Quest, a keycard or an iconic item that came into a
+// V's inventory (kSharedLooted: every other game gives it to its own V,
+// unless it has one; the host's own quests see it), or one on a host NPC's
+// corpse (kSharedOnCorpse, host only: guests put it on their proxy corpse
+// of `npc`). Event channel; a guest's goes to the host, which stamps it and
+// passes it on to the others.
+inline constexpr std::uint8_t kSharedLooted = 0, kSharedOnCorpse = 1;
+struct SharedItem {
+  PlayerId player{}; // who got it: set by the host from the connection
+  std::uint8_t kind{};
+  NpcId npc{}; // kSharedOnCorpse: whose corpse
+  ItemStack item;
+  friend bool operator==(const SharedItem &, const SharedItem &) = default;
+};
+
 using Message =
     std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
                  Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
                  NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
                  Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
                  Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
-                 StoryState, QuestReward, WorldItem, WorldItemTaken>;
+                 StoryState, QuestReward, WorldItem, WorldItemTaken, SharedItem>;
 
 // A story message (Journal … QuestReward): endpoint.hpp relays these
 // through one path.

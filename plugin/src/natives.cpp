@@ -105,7 +105,9 @@ static_assert(alignof(TandemHackEvent) <= 8, "the script VM aligns struct locals
 // Loot (scripts/tandem/Loot.reds): one stack of a shared world item lying
 // in the world (1), or who picked up a stack (2). Plain fields only, as above.
 struct TandemLootEvent {
-  std::int32_t kind{}; // 1 a stack of a world item, 2 a stack taken
+  // 1 a stack of a world item, 2 a stack taken, 3 an important item another
+  // player got (id 0), 4 (guest) one on the host's corpse of NPC `id`
+  std::int32_t kind{};
   std::uint32_t id{};
   std::uint32_t player{}; // 1: the dropper; 2: who has it (0: nobody, it was gone)
   std::uint32_t token{};  // 1: the dropper's own number for it
@@ -795,12 +797,34 @@ struct TandemNative : Red::IScriptable {
               .z = item->position.z,
           });
         }
+      } else if (const auto *shared = std::get_if<proto::SharedItem>(&message)) {
+        out.EmplaceBack(TandemLootEvent{
+            .kind = shared->kind == proto::kSharedOnCorpse ? 4 : 3,
+            .id = shared->npc,
+            .player = shared->player,
+            .record = Red::TweakDBID(shared->item.record),
+            .seed = shared->item.seed,
+            .quantity = static_cast<std::int32_t>(shared->item.quantity),
+        });
       } else if (const auto *taken = std::get_if<proto::WorldItemTaken>(&message)) {
         out.EmplaceBack(TandemLootEvent{
             .kind = 2, .id = taken->id, .player = taken->taker, .stack = taken->stack});
       }
     }
     return out;
+  }
+  // A quest or important item our V got (kind 0), or (host) one on our NPC
+  // `npc`'s corpse (kind 1): every other player gets it.
+  static void SendSharedItem(std::int32_t kind, std::uint32_t npc, Red::TweakDBID record,
+                             std::uint32_t seed, std::int32_t quantity) {
+    if (kind != proto::kSharedLooted && kind != proto::kSharedOnCorpse)
+      return;
+    Runtime::Get().SubmitLoot(
+        proto::SharedItem{.kind = static_cast<std::uint8_t>(kind),
+                          .npc = npc,
+                          .item = {.record = record.value,
+                                   .seed = seed,
+                                   .quantity = static_cast<std::uint32_t>(std::max(quantity, 1))}});
   }
   // Our player id in the session (0: not in one).
   static std::uint32_t You() { return Runtime::Get().You(); }
@@ -961,6 +985,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendWorldItem);
   RTTI_METHOD(TakeWorldItem);
   RTTI_METHOD(TakeLootEvents);
+  RTTI_METHOD(SendSharedItem);
   RTTI_METHOD(You);
   RTTI_METHOD(SendVehicleRadio);
   RTTI_METHOD(RemoteRadioChanges);

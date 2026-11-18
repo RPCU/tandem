@@ -167,6 +167,11 @@ struct WorldItemAppeared {
 struct WorldItemTakenBy {
   proto::WorldItemTaken taken;
 };
+// Another player got a quest or important item (or, guests: one lies on a
+// host NPC's corpse). Never reported for our own.
+struct SharedItemFrom {
+  proto::SharedItem item;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -185,7 +190,7 @@ using SessionEvent =
                  events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness, events::NoiseBy,
                  events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
                  events::HostPlayerHack, events::VehicleHackOn, events::Story,
-                 events::WorldItemAppeared, events::WorldItemTakenBy>;
+                 events::WorldItemAppeared, events::WorldItemTakenBy, events::SharedItemFrom>;
 
 class Endpoint {
 public:
@@ -258,6 +263,9 @@ public:
   // (a claim: the host grants the first one). Each comes back as an event.
   void DropWorldItem(proto::WorldItem item);
   void TakeWorldItem(proto::WorldItemId id, std::uint8_t stack);
+  // Loot: our V got a quest or important item, or (host) one lies on our
+  // NPC's corpse: every other player gets it.
+  void SendSharedItem(proto::SharedItem item);
   // Host: the world items still lying somewhere (taken stacks at quantity 0).
   const std::map<proto::WorldItemId, proto::WorldItem> &WorldItems() const { return m_worldItems; }
 

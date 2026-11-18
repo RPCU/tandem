@@ -755,6 +755,12 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // The host NPC a proxy in our world stands for (0: none; Combat.reds).
+  // The proxy of a host NPC in our world, alive or dead (Loot.reds).
+  public func ProxyOfNpc(npc: Uint32) -> EntityID {
+    let none: EntityID;
+    return IsDefined(this.m_npcs) ? this.m_npcs.ProxyEntity(npc) : none;
+  }
+
   public func NpcOfProxy(id: EntityID) -> Uint32 {
     return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfProxy(id) : 0u;
   }

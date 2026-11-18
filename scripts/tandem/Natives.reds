@@ -101,7 +101,8 @@ public native struct TandemNoise {
 }
 
 public native struct TandemLootEvent {
-  // 1 a stack of a shared world item, 2 a stack taken
+  // 1 a stack of a shared world item, 2 a stack taken, 3 an important item
+  // another player got, 4 (guest) one on the host's corpse of NPC `id`
   native let kind: Int32;
   native let id: Uint32;
   // 1: the dropper; 2: who has it (0: nobody, it was gone)
@@ -183,6 +184,7 @@ public native class TandemNative extends IScriptable {
   public static native func SendWorldItem(token: Uint32, position: Vector4, records: array<TweakDBID>, seeds: array<Uint32>, quantities: array<Int32>)
   public static native func TakeWorldItem(id: Uint32, stack: Int32)
   public static native func TakeLootEvents() -> array<TandemLootEvent>
+  public static native func SendSharedItem(kind: Int32, npc: Uint32, record: TweakDBID, seed: Uint32, quantity: Int32)
   public static native func You() -> Uint32
   public static native func SendVehicleRadio(on: Bool, station: Int32, track: CName, trackStarted: Bool)
   public static native func RemoteRadioChanges(player: Uint32) -> Int32

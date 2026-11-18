@@ -166,6 +166,7 @@ The owner simulates; everyone else displays.
 | time of day, weather, police heat       | host                      | applied (wanted level: open, see below)       |
 | loot: corpses and containers            | each player's game        | rolled per player: each loots their own copy  |
 | items a V drops on purpose              | host                      | lie in every game; the first pickup keeps it  |
+| quest and important items, rewards      | every player's own V      | whoever gets one, every V gets it             |
 
 **Enemy level** (decided 2026-11-18): enemies the host spawns and runs are
 scaled to the **mean of the character levels of the players in the
@@ -458,9 +459,21 @@ redscript natives (UI, events)              ENet socket
   item crosses the network for a corpse. **Weapons** an enemy drops at
   death are part of its loot, so per player too: each game's corpse drops
   what its copy holds (sharing them would make players race for the
-  enemy's gun). **Quest items** follow the story, which is the host's:
-  they stay on the host's corpse for the host to pick up (the quest waits
-  in the host's game) and are taken out of a guest's proxy corpse. When
+  enemy's gun). **Quest and important items are every player's**
+  (decided by the user 2026-11-18: no quest may break): an item tagged
+  `Quest` (quest items, their keys and shards), a keycard
+  (`Gen_Keycard`) or an iconic item (the `IsItemIconic` stat) that comes
+  into a V's inventory, not bought at a vendor, goes into every other V's
+  too (`SharedItem`), by the game's own item-add path and its pickup
+  notification, unless that V has one already. A guest's goes through the
+  host, which gives it to its own V first, so the host's quests see it
+  whoever looted it. The important items on a host NPC's corpse are also
+  put on the guests' proxy corpses (a guest finds them where the host
+  would); a second copy of an item co-op already gave is taken back out
+  when it arrives. **Rewards** (quest and gig rewards: items, money, XP,
+  street cred) are the story's `QuestReward`: the host's game pays its own
+  V as in solo and every guest that took part gets the same reward record
+  through `RPGManager.GiveReward`, once (Story.reds). When
   the host's body goes (streamed out, disposed), a guest's proxy corpse
   leaves what it still holds as a loot bag, as vanilla does for a disposed
   body. **Items a V drops on purpose** (the backpack or inventory menu)
@@ -473,8 +486,8 @@ redscript natives (UI, events)              ENet socket
   the first and tells everyone, who take it out of their copy; the loser
   of a race (two pickups within a ping) gives it back with a notice. When
   a guest's session ends, its copies of the others' drops go. Mock player
-  `--drop-item`, `--take-items`, `--remove-corpses`; scenarios
-  `loot-drop`, `loot-corpse`. **Not yet verified in game**
+  `--drop-item`, `--take-items`, `--remove-corpses`, `--loot-quest`;
+  scenarios `loot-drop`, `loot-corpse`, `loot-quest`. **Not yet verified in game**
   (engine-knowledge §13.17): that a proxy's death rolls its loot and
   drops its weapon (a proxy whose brain went off before it drew its
   weapon may drop none), which class the drop bag is, that a copy from a
@@ -690,7 +703,8 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   (default 10), then lose them; `--camo N` turns "its optical camo" on for
   5 s; as guest, `--shoot N` fires a gunshot (shot and noise) every N s.
   Stealth, noises and the host's awareness of it are logged.
-- Loot (any mode): `--drop-item RECORD` drops one RECORD as a shared world
+- Loot (any mode): `--loot-quest RECORD` has "its V" loot a quest item
+  (every other player gets it); `--drop-item RECORD` drops one RECORD as a shared world
   item 1.5 m in front of the other V; `--take-items N` picks up (claims)
   every stack the others drop N s after it appears; as the host of a
   replay, `--remove-corpses N` takes an NPC a guest killed away N s after

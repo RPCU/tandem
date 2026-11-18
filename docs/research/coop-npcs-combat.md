@@ -1421,8 +1421,9 @@ choiceEvent.activator)` (`22557`); then `OnInventoryEmptyEvent` (`23451`),
 
 **Decided and built 2026-11-18** (ARCHITECTURE.md, Loot;
 `scripts/tandem/Loot.reds`): per-player loot as below; dropped weapons
-per player; quest items stay with the host's corpse (taken out of
-proxies); a removed proxy corpse leaves a loot bag; what a V drops on
+per player; quest and important items (Quest tag, keycards, iconics) go
+to every player's inventory whoever loots them (`SharedItem`, user's rule
+2026-11-18); a removed proxy corpse leaves a loot bag; what a V drops on
 purpose is a shared world item the host arbitrates (`WorldItem`,
 `WorldItemTaken`). Engine facts in engine-knowledge §13.17.
 

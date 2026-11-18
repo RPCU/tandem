@@ -8,8 +8,7 @@
 //   the game's way: NPCPuppet.OnIncapacitated runs ProcessLoot, which rolls
 //   its corpse's loot from its record (the real NPC's) and drops what it
 //   holds, in the guest's world only. Here we check that it did (rolling it
-//   if the death did not), and take out quest items: the story is the
-//   host's, so a quest item on a body is the host's corpse's alone;
+//   if the death did not);
 // - a proxy corpse the host's body takes away (Npcs.reds, Remove) leaves
 //   what it still holds as a loot bag, as vanilla does for a disposed body;
 // - containers have the same contents in every game's copy of the world and
@@ -23,7 +22,19 @@
 // network) and a claim to the host; the rare loser of a race (both picked
 // it up within a ping) gives it back, with a notice.
 //
+// Quest and important items are every player's, so no quest breaks: an item
+// tagged Quest (quest items, their keys and shards), a keycard, or an
+// iconic item (not bought at a vendor) that comes into a V's inventory
+// goes into every other V's too, by the game's own item-add path (its
+// pickup notification), unless that V has one already (SharedItem). The
+// host's own quests see it in the host's inventory whoever looted it. The
+// important items on a host NPC's corpse are put on the guests' proxy
+// corpses too, so a guest finds them where the host would; a second copy
+// of an item co-op already gave is taken back out on arrival. Quest
+// rewards are Story.reds' (QuestReward: GiveReward, items, money, XP).
+//
 // tools/game.sh cmd loot | loot drop RECORD [N] | loot take | loot corpse
+// | loot share RECORD
 
 public class TandemWorldStack {
   public let record: TweakDBID;
@@ -82,6 +93,17 @@ public class TandemCorpseCheck extends DelayCallback {
   }
 }
 
+// A host NPC's corpse, a moment after its death rolled its loot.
+public class TandemHostCorpseCheck extends DelayCallback {
+  public let game: GameInstance;
+  public let id: EntityID;
+  public let npc: Uint32;
+
+  public func Call() -> Void {
+    TandemLoot.CheckHostCorpse(this.game, this.id, this.npc);
+  }
+}
+
 // A proxy corpse that left its loot bag: deleted once the bag is out.
 public class TandemDeleteLater extends DelayCallback {
   public let id: EntityID;
@@ -97,6 +119,9 @@ public class TandemLoot extends ScriptableSystem {
   private let m_nextToken: Uint32;
   private let m_items: array<ref<TandemWorldItem>>;
   private let m_seen: array<ref<TandemLootSeen>>;
+  // Important items co-op gave our V, and those still on their way in.
+  private let m_given: array<TweakDBID>;
+  private let m_giving: array<TweakDBID>;
 
   public static func Get(game: GameInstance) -> ref<TandemLoot> {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemLoot") as TandemLoot;
@@ -169,6 +194,10 @@ public class TandemLoot extends ScriptableSystem {
           this.Appeared(event);
         } else if event.kind == 2 {
           this.Taken(event);
+        } else if event.kind == 3 {
+          this.SharedLooted(event);
+        } else if event.kind == 4 {
+          this.SharedOnCorpse(event);
         }
       }
       this.Bind();
@@ -504,24 +533,17 @@ public class TandemLoot extends ScriptableSystem {
     if !rolled {
       body.GenerateLoot();
     }
-    // Quest items are the story's, and the story is the host's.
-    let ts = GameInstance.GetTransactionSystem(game);
+    // Quest and important items stay: whoever loots one, every V gets it.
     let items: array<wref<gameItemData>>;
-    ts.GetItemList(body, items);
-    let quest = 0;
-    let count = 0;
+    GameInstance.GetTransactionSystem(game).GetItemList(body, items);
+    let important = 0;
     for data in items {
-      if IsDefined(data) {
-        if data.HasTag(n"Quest") {
-          ts.RemoveItem(body, data.GetID(), data.GetQuantity());
-          quest += 1;
-        } else {
-          count += 1;
-        }
+      if TandemLoot.Important(data) {
+        important += 1;
       }
     }
     ScriptedPuppet.EvaluateLootQualityByTask(body);
-    TandemNative.Log(s"loot: proxy corpse \(TDBID.ToStringDEBUG(body.GetRecordID())): \(count) item(s)\(rolled ? "" : " (rolled here: its death rolled none)"), \(quest) quest item(s) taken out");
+    TandemNative.Log(s"loot: proxy corpse \(TDBID.ToStringDEBUG(body.GetRecordID())): \(ArraySize(items)) item(s)\(rolled ? "" : " (rolled here: its death rolled none)"), \(important) important");
   }
 
   // A dead proxy is going (the host's body went): what it still holds is
@@ -538,6 +560,126 @@ public class TandemLoot extends ScriptableSystem {
     GameInstance.GetDelaySystem(game).DelayCallback(later, 1.0, false);
     TandemNative.Log(s"loot: proxy corpse \(TDBID.ToStringDEBUG(body.GetRecordID())) gone, its loot left as a bag");
     return true;
+  }
+
+  // ---- quest and important items: every player's ----
+
+  // Quest items (tag Quest: quest items, their keys and shards), keycards,
+  // and iconic items (the IsItemIconic stat) not bought at a vendor.
+  public static func Important(data: wref<gameItemData>) -> Bool {
+    if !IsDefined(data) || data.HasStatData(gamedataStatType.ItemPurchasedAtVendor) {
+      return false;
+    }
+    return data.HasTag(n"Quest") || Equals(RPGManager.GetItemType(data.GetID()), gamedataItemType.Gen_Keycard) || RPGManager.IsItemIconic(data);
+  }
+
+  // Something came into our V's inventory (PlayerPuppet wrap below).
+  public static func Added(owner: ref<GameObject>, id: ItemID, data: wref<gameItemData>) -> Void {
+    if TandemNative.You() == 0u || !IsDefined(owner) || !TandemLoot.Important(data) {
+      return;
+    }
+    let player = GetPlayer(owner.GetGame());
+    if !IsDefined(player) || owner.GetEntityID() != player.GetEntityID() {
+      return;
+    }
+    let loot = TandemLoot.Get(owner.GetGame());
+    if IsDefined(loot) {
+      loot.OurImportant(id, data.GetQuantity(), false);
+    }
+  }
+
+  private func OurImportant(id: ItemID, quantity: Int32, forced: Bool) -> Void {
+    let record = ItemID.GetTDBID(id);
+    let player = GetPlayer(this.GetGameInstance());
+    // Co-op's own gift arriving.
+    if !forced && ArrayContains(this.m_giving, record) {
+      ArrayRemove(this.m_giving, record);
+      return;
+    }
+    // A second copy of what co-op gave us (the corpse's own, looted later).
+    if !forced && ArrayContains(this.m_given, record) {
+      let owned = new TandemWorldStack();
+      owned.record = record;
+      if this.CountIn(player, owned) > quantity {
+        GameInstance.GetTransactionSystem(this.GetGameInstance()).RemoveItem(player, id, quantity);
+        TandemNative.Log(s"loot: \(TDBID.ToStringDEBUG(record)) is ours already (co-op): the second copy taken out");
+      }
+      return;
+    }
+    let stack = TandemLoot.StackOf(id, quantity);
+    TandemNative.SendSharedItem(0, 0u, stack.record, stack.seed, stack.quantity);
+    TandemNative.Log(s"loot: we got \(TDBID.ToStringDEBUG(record)) x\(quantity): every player gets it");
+  }
+
+  // Another V got an important item: ours too, unless we have one.
+  private func SharedLooted(event: TandemLootEvent) -> Void {
+    let player = GetPlayer(this.GetGameInstance());
+    let owned = new TandemWorldStack();
+    owned.record = event.record;
+    let name = this.NameOf(event.player);
+    if this.CountIn(player, owned) > 0 {
+      TandemNative.Log(s"loot: \(name) looted \(TDBID.ToStringDEBUG(event.record)): we have it already");
+      return;
+    }
+    let stack = new TandemWorldStack();
+    stack.record = event.record;
+    stack.seed = event.seed;
+    stack.quantity = event.quantity;
+    ArrayPush(this.m_given, event.record);
+    ArrayPush(this.m_giving, event.record);
+    let ok = GameInstance.GetTransactionSystem(this.GetGameInstance()).GiveItem(player, TandemLoot.ItemOf(stack), Max(event.quantity, 1));
+    TandemNative.Log(s"loot: \(name) looted \(TDBID.ToStringDEBUG(event.record)) x\(event.quantity): given to our V (\(ok))");
+  }
+
+  // Guest: an important item on the host's corpse of NPC `id`: on our proxy
+  // corpse too, to be looted where the host would.
+  private func SharedOnCorpse(event: TandemLootEvent) -> Void {
+    let system = GameInstance.GetScriptableSystemsContainer(this.GetGameInstance()).Get(n"TandemSystem") as TandemSystem;
+    let body: ref<ScriptedPuppet>;
+    if IsDefined(system) {
+      body = GameInstance.GetDynamicEntitySystem().GetEntity(system.ProxyOfNpc(event.id)) as ScriptedPuppet;
+    }
+    if !IsDefined(body) {
+      TandemNative.Log(s"loot: \(TDBID.ToStringDEBUG(event.record)) on npc \(event.id)'s corpse: no proxy of it here");
+      return;
+    }
+    let owned = new TandemWorldStack();
+    owned.record = event.record;
+    if this.CountIn(body, owned) == 0 {
+      let stack = new TandemWorldStack();
+      stack.record = event.record;
+      stack.seed = event.seed;
+      stack.quantity = event.quantity;
+      GameInstance.GetTransactionSystem(this.GetGameInstance()).GiveItem(body, TandemLoot.ItemOf(stack), Max(event.quantity, 1));
+      ScriptedPuppet.EvaluateLootQualityByTask(body);
+    }
+    TandemNative.Log(s"loot: \(TDBID.ToStringDEBUG(event.record)) put on our proxy corpse of npc \(event.id)");
+  }
+
+  // Host: one of our NPCs died; a moment later, once its loot is rolled,
+  // its important items go on the guests' proxy corpses too.
+  public static func HostCorpse(game: GameInstance, id: EntityID, npc: Uint32) -> Void {
+    let check = new TandemHostCorpseCheck();
+    check.game = game;
+    check.id = id;
+    check.npc = npc;
+    GameInstance.GetDelaySystem(game).DelayCallback(check, 1.5, false);
+  }
+
+  public static func CheckHostCorpse(game: GameInstance, id: EntityID, npc: Uint32) -> Void {
+    let body = GameInstance.FindEntityByID(game, id) as ScriptedPuppet;
+    if !IsDefined(body) {
+      return;
+    }
+    let items: array<wref<gameItemData>>;
+    GameInstance.GetTransactionSystem(game).GetItemList(body, items);
+    for data in items {
+      if TandemLoot.Important(data) {
+        let stack = TandemLoot.StackOf(data.GetID(), data.GetQuantity());
+        TandemNative.SendSharedItem(1, npc, stack.record, stack.seed, stack.quantity);
+        TandemNative.Log(s"loot: npc \(npc)'s corpse holds \(TDBID.ToStringDEBUG(stack.record)): on the guests' proxies too");
+      }
+    }
   }
 
   // ---- (test) tools/game.sh cmd loot ... ----
@@ -575,6 +717,13 @@ public class TandemLoot extends ScriptableSystem {
       ArrayPush(queue, entry);
       let shared = TandemLoot.DropShared(player, queue);
       TandemNative.Log(s"loot drop: \(name) x\(count), shared \(shared)");
+    } else if StrBeginsWith(command, "loot share ") {
+      // As if our V had looted an important item: given here, then shared.
+      let record = TDBID.Create(StrAfterFirst(command, "share "));
+      let id = ItemID.FromTDBID(record);
+      ArrayPush(this.m_giving, record);
+      GameInstance.GetTransactionSystem(game).GiveItem(player, id, 1);
+      this.OurImportant(id, 1, true);
     } else if Equals(command, "loot take") {
       // Take everything from the nearest world item's bag, as "take all".
       let best: ref<TandemWorldItem>;
@@ -774,4 +923,13 @@ protected cb func OnCloseMenu(userData: ref<IScriptable>) -> Bool {
     ArrayClear(logic.m_itemDropQueue);
   }
   return wrappedMethod(userData);
+}
+
+// Everything that comes into our V's inventory: quest and important items
+// go to every player (TandemLoot.Added).
+@wrapMethod(PlayerPuppet)
+protected cb func OnItemAddedToInventory(evt: ref<ItemAddedEvent>) -> Bool {
+  let result = wrappedMethod(evt);
+  TandemLoot.Added(this, evt.itemID, evt.itemData);
+  return result;
 }

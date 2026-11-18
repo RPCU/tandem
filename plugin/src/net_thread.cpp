@@ -235,6 +235,12 @@ struct NetThread::Impl {
                 log::Info("loot: world item {} stack {} taken by player {}", e.taken.id,
                           e.taken.stack, e.taken.taker);
                 runtime.PushLoot(e.taken);
+              } else if constexpr (std::is_same_v<E, events::SharedItemFrom>) {
+                log::Info("loot: player {} shares item {:#x} x{} ({}, npc {})", e.item.player,
+                          e.item.item.record, e.item.item.quantity,
+                          e.item.kind == proto::kSharedOnCorpse ? "on a corpse" : "looted",
+                          e.item.npc);
+                runtime.PushLoot(e.item);
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
@@ -329,6 +335,8 @@ struct NetThread::Impl {
           endpoint->DropWorldItem(std::move(*item));
         else if (const auto *taken = std::get_if<proto::WorldItemTaken>(&message))
           endpoint->TakeWorldItem(taken->id, taken->stack);
+        else if (const auto *shared = std::get_if<proto::SharedItem>(&message))
+          endpoint->SendSharedItem(*shared);
       }
 
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {

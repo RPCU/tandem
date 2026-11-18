@@ -31,7 +31,8 @@
 // Quickhacks: --hack-npcs (as a guest) uploads on the host's NPCs and lands
 // the effect; --hack-player (as the host of a replay) has an NPC hack the
 // guest's V; --hack-car brakes the car another player drives.
-// Loot: --drop-item drops a shared world item in front of your V; --take-items
+// Loot: --loot-quest has "its V" loot a quest item (everyone gets it);
+// --drop-item drops a shared world item in front of your V; --take-items
 // picks up what the others drop; as the host of a replay, --remove-corpses
 // takes the bodies of NPCs a guest killed away (their proxies' loot is left
 // as a bag). The world items and pickups it hears are logged.
@@ -126,6 +127,7 @@ struct Options {
   // pick up the others' world items this long after they appear (-1: never);
   // host of a replay: dead NPCs' bodies go after this long (-1: never).
   std::string dropItem;
+  std::string lootQuest; // "our V" loots one of this record (a quest item), once
   int takeItemsSeconds{-1};
   int removeCorpsesSeconds{-1};
   bool check{}; // parse the options, then exit
@@ -226,6 +228,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --answer N         join: answer the host's ringing call after N seconds\n"
          "  --reply HASH       join: reply to a text with this choice entry (journal hash)\n"
          "  --suggest N        join: suggest option N of every choice hub the host shows\n"
+         "  --loot-quest REC   5 s after another player is there, \"our V\" loots one REC (a\n"
+         "                     quest item): every other player gets it too\n"
          "  --drop-item RECORD drop one RECORD (Items.FirstAidWhiffV0...) as a shared world\n"
          "                     item in front of the other player, 5 s after they are there\n"
          "  --take-items N     pick up every world item the others drop, N seconds after it\n"
@@ -313,6 +317,8 @@ Options Parse(int argc, char **argv) {
       options.hackCarSeconds = Number<int>(value);
     else if (flag == "--drop-item")
       options.dropItem = std::string(value);
+    else if (flag == "--loot-quest")
+      options.lootQuest = std::string(value);
     else if (flag == "--take-items")
       options.takeItemsSeconds = Number<int>(value);
     else if (flag == "--remove-corpses")
@@ -989,6 +995,8 @@ int main(int argc, char **argv) {
   // (--take-items: when), and dead NPCs' bodies to take away (--remove-corpses).
   bool dropped = false;
   std::optional<std::chrono::steady_clock::time_point> dropAt;
+  bool lootedQuest = false;
+  std::optional<std::chrono::steady_clock::time_point> lootQuestAt;
   std::map<tandem::proto::WorldItemId,
            std::pair<std::chrono::steady_clock::time_point, tandem::proto::WorldItem>>
       toTake;
@@ -1190,6 +1198,11 @@ int main(int argc, char **argv) {
                 toTake[item.id] = {std::chrono::steady_clock::now() +
                                        std::chrono::seconds(options.takeItemsSeconds),
                                    item};
+            } else if constexpr (std::is_same_v<E, tandem::events::SharedItemFrom>) {
+              Log("shared item {:#x} x{} from player {} ({}, npc {})", e.item.item.record,
+                  e.item.item.quantity, e.item.player,
+                  e.item.kind == tandem::proto::kSharedOnCorpse ? "on a corpse" : "looted",
+                  e.item.npc);
             } else if constexpr (std::is_same_v<E, tandem::events::WorldItemTakenBy>) {
               Log("world item {} stack {} taken by player {}", e.taken.id, e.taken.stack,
                   e.taken.taker);
@@ -1267,6 +1280,18 @@ int main(int argc, char **argv) {
         endpoint->SetLocalPaused(false);
         pauseStep = PauseStep::Done;
         Log("pause menu closed");
+      }
+    }
+    // --loot-quest: "our V" loots a quest item, once.
+    if (!options.lootQuest.empty() && !lootedQuest && endpoint->IsJoined() &&
+        endpoint->Players().size() > 1) {
+      if (!lootQuestAt)
+        lootQuestAt = now + 5s;
+      if (now >= *lootQuestAt) {
+        lootedQuest = true;
+        endpoint->SendSharedItem({.kind = tandem::proto::kSharedLooted,
+                                  .item = {.record = TweakDBID(options.lootQuest), .quantity = 1}});
+        Log("looted quest item {}: shared", options.lootQuest);
       }
     }
     // --drop-item: one world item 1.5 m in front of the other V, once.

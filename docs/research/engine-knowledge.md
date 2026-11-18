@@ -2217,3 +2217,15 @@ position)` (202210), which presumably moves the items out of `player`'s
   (`OnItemRemoveddEvent` 295221, `OnInventoryEmptyEvent` 295198). "Take
   all" on a corpse is `TransactionSystem.TransferAllItems(body, player)`
   (22557, 52091). [2.5-untested]
+- **Every item our V gets** passes through
+  `PlayerPuppet.OnItemAddedToInventory(evt: ItemAddedEvent)` (41260:
+  `itemID`, `itemData`, `currentQuantity`, `flaggedAsSilent`), which also
+  writes the pickup log; tandem wraps it to share important items. What
+  makes one important: `gameItemData.HasTag(n"Quest")`, item type
+  `gamedataItemType.Gen_Keycard` (`RPGManager.GetItemType`, 36087), or
+  `RPGManager.IsItemIconic` (the `IsItemIconic` stat, 35655); bought ones
+  carry the stat `ItemPurchasedAtVendor` (41291). `TransactionSystem.GiveItem`
+  (52046) adds an item the way loot does (the same event). [2.5-untested]
+- **Rewards**: `RPGManager.GiveReward(gi, rewardID)` (37406) pays a reward
+  record's items, XP (street cred included) and currencies, scaled by the
+  receiving V. [2.5-untested]

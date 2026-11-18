@@ -105,6 +105,10 @@ TEST_CASE("every message survives encoding") {
                        .stacks = {{.record = 0x1122334455ULL, .seed = 77, .quantity = 1},
                                   {.record = 0x66ULL, .seed = 0, .quantity = 0}}});
   RoundTrips(WorldItemTaken{.id = 4, .stack = 1, .taker = 3});
+  RoundTrips(SharedItem{.player = 2,
+                        .kind = kSharedOnCorpse,
+                        .npc = 7,
+                        .item = {.record = 0x0a0b0c0d0eULL, .seed = 5, .quantity = 1}});
 }
 
 TEST_CASE("world items are reliable events, and a bag has a bound") {
@@ -112,6 +116,9 @@ TEST_CASE("world items are reliable events, and a bag has a bound") {
   CHECK(IsReliable(WorldItemTaken{}));
   CHECK(std::string_view(NameOf(WorldItem{})) == "WorldItem");
   CHECK(std::string_view(NameOf(WorldItemTaken{})) == "WorldItemTaken");
+  CHECK(std::string_view(NameOf(SharedItem{})) == "SharedItem");
+  CHECK(IsReliable(SharedItem{}));
+  CHECK(Encode(SharedItem{}).size() < 64);
   WorldItem bag{.id = 1};
   bag.stacks.resize(kMaxWorldItemStacks);
   CHECK(Encode(bag).size() < 1400); // one datagram

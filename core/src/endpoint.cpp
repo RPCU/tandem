@@ -202,6 +202,15 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      out.push_back(events::PauseChanged{relayed});
                    },
                    [&](const proto::WorldItem &item) { AddWorldItem(player, item, out); },
+                   [&](const proto::SharedItem &shared) {
+                     // A guest speaks for its own V, and only of what it got.
+                     auto relayed = shared;
+                     relayed.player = player;
+                     relayed.kind = proto::kSharedLooted;
+                     relayed.npc = 0;
+                     m_session->Broadcast(relayed, event.peer);
+                     out.push_back(events::SharedItemFrom{relayed});
+                   },
                    [&](const proto::WorldItemTaken &taken) {
                      // A claim, in the guest's own name only.
                      ClaimWorldItem(player, taken.id, taken.stack, event.peer, out);
@@ -474,6 +483,10 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
             [&](const proto::WorldItem &item) { out.push_back(events::WorldItemAppeared{item}); },
             [&](const proto::WorldItemTaken &taken) {
               out.push_back(events::WorldItemTakenBy{taken});
+            },
+            [&](const proto::SharedItem &shared) {
+              if (shared.player != m_you)
+                out.push_back(events::SharedItemFrom{shared});
             },
             [&](const proto::Bye &bye) {
               m_ended = true;
@@ -883,6 +896,20 @@ void Endpoint::TakeWorldItem(proto::WorldItemId id, std::uint8_t stack) {
     ClaimWorldItem(m_you, id, stack, std::nullopt, m_pending);
   else
     m_session->Send(m_hostPeer, proto::WorldItemTaken{id, stack, m_you});
+}
+
+void Endpoint::SendSharedItem(proto::SharedItem item) {
+  if (!IsJoined() || m_ended || !item.item.record)
+    return;
+  item.player = m_you;
+  if (IsHost()) {
+    m_session->Broadcast(item);
+  } else {
+    // A guest only tells what its own V got; corpses are the host's.
+    item.kind = proto::kSharedLooted;
+    item.npc = 0;
+    m_session->Send(m_hostPeer, item);
+  }
 }
 
 void Endpoint::AddWorldItem(proto::PlayerId dropper, proto::WorldItem item,

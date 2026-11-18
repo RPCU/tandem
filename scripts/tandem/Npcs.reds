@@ -264,6 +264,8 @@ public class TandemNpcs {
             let killer = this.KillerOf(body, known, player);
             TandemNative.SendNpcGone(known.npc, 1, killer);
             TandemNative.Log(s"npcs: \(known.npc) died (killer: player \(killer))");
+            // Its quest and important items reach the guests' corpses (Loot.reds).
+            TandemLoot.HostCorpse(this.m_game, known.id, known.npc);
           }
           ArrayPush(kept, known);
         } else {
@@ -521,6 +523,13 @@ public class TandemNpcs {
         }
       }
     }
+  }
+
+  // The proxy entity of a host NPC, alive or dead (Loot.reds).
+  public func ProxyEntity(npc: Uint32) -> EntityID {
+    let proxy = this.FindProxy(npc);
+    let none: EntityID;
+    return IsDefined(proxy) ? proxy.id : none;
   }
 
   private func FindProxy(npc: Uint32) -> ref<TandemNpcProxy> {
