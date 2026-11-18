@@ -4,8 +4,13 @@
 #include "log.hpp"
 #include "net_thread.hpp"
 #include "runtime.hpp"
+#include "story.hpp"
 
 #include "tandem/session.hpp"
+
+#include <format>
+#include <fstream>
+#include <sstream>
 
 namespace tandem::plugin {
 Runtime &Runtime::Get() {
@@ -15,10 +20,96 @@ Runtime &Runtime::Get() {
 
 void Runtime::Start(proto::Body body) {
   std::lock_guard _(m_lock);
-  if (m_net || config.role == Config::Role::Off)
+  if (m_net || m_choice.role == Config::Role::Off)
     return;
+  // The net thread runs on its own copy: tandem.ini's settings, the chosen session.
+  auto session = config;
+  session.role = m_choice.role;
+  session.address = m_choice.address;
+  session.port = m_choice.port;
+  session.joinCode = m_choice.joinCode;
+  session.addressSet = m_choice.addressSet;
   m_body = body;
-  m_net = std::make_unique<NetThread>(config, body);
+  m_status = {.state = SessionStatus::State::Starting};
+  std::string what;
+  if (session.role == Config::Role::Host)
+    what = std::format(" on UDP {}", session.port);
+  else if (!session.joinCode.empty())
+    what = std::format(" of code {}", net::DisplayJoinCode(session.joinCode));
+  else
+    what = std::format(" of {}:{}", session.address, session.port);
+  log::Info("session: starting as {}{}", NameOf(session.role), what);
+  m_net = std::make_unique<NetThread>(session, body);
+}
+
+void Runtime::Choose(SessionChoice choice) {
+  if (Started()) {
+    log::Info("session: stopping for the new choice");
+    Stop();
+  }
+  std::lock_guard _(m_lock);
+  m_choice = std::move(choice);
+  std::string what;
+  if (m_choice.role == Config::Role::Join && !m_choice.joinCode.empty())
+    what = std::format(" code {}", net::DisplayJoinCode(m_choice.joinCode));
+  else if (m_choice.role == Config::Role::Join)
+    what = std::format(" {}:{}", m_choice.address, m_choice.port);
+  else if (m_choice.role == Config::Role::Host)
+    what = std::format(" on UDP {}", m_choice.port);
+  log::Info("session: chosen {}{}{}", NameOf(m_choice.role), what,
+            m_choice.fromMenu ? " (co-op menu)" : " (tandem.ini)");
+}
+
+void Runtime::ResetChoice() {
+  Choose({.role = config.role,
+          .address = config.address,
+          .port = config.port,
+          .joinCode = config.joinCode,
+          .addressSet = config.addressSet});
+}
+
+SessionChoice Runtime::Choice() const {
+  std::lock_guard _(m_lock);
+  return m_choice;
+}
+
+Config::Role Runtime::ChosenRole() const {
+  std::lock_guard _(m_lock);
+  return m_choice.role;
+}
+
+void Runtime::SetStatus(SessionStatus status) {
+  std::lock_guard _(m_lock);
+  // Not after Stop took the thread away: its last words are not the state.
+  if (m_net)
+    m_status = std::move(status);
+}
+
+SessionStatus Runtime::Status() const {
+  std::lock_guard _(m_lock);
+  return m_net ? m_status : SessionStatus{};
+}
+
+std::vector<hosts::Recent> Runtime::RecentHosts() const {
+  std::lock_guard _(m_recentLock);
+  if (config.recentFile.empty())
+    return {};
+  std::ifstream file(config.recentFile);
+  std::stringstream text;
+  text << file.rdbuf();
+  return hosts::ParseRecent(text.str());
+}
+
+void Runtime::RememberHost(const hosts::Target &target, std::string name) {
+  auto list = RecentHosts();
+  hosts::Remember(list, target, std::move(name));
+  std::lock_guard _(m_recentLock);
+  if (config.recentFile.empty())
+    return;
+  std::ofstream file(config.recentFile, std::ios::trunc);
+  file << hosts::FormatRecent(list);
+  if (!file)
+    log::Warn("could not write {}", config.recentFile.filename().string());
 }
 
 void Runtime::SetRelay(std::string code, std::string status) {
@@ -47,9 +138,6 @@ bool Runtime::JoinByCode(std::string_view text) {
     log::Warn("join by code: no relay in tandem.ini");
     return false;
   }
-  config.role = Config::Role::Join;
-  config.joinCode = *code;
-  config.addressSet = false; // the code's host, not tandem.ini's address
   log::Info("join by code {} through relay {}:{}", net::DisplayJoinCode(*code), config.relay,
             config.relayPort);
   bool running = false;
@@ -59,10 +147,15 @@ bool Runtime::JoinByCode(std::string_view text) {
     running = m_net != nullptr;
     body = m_body;
   }
-  if (running) {
-    Stop();
+  // The code's host, not tandem.ini's address. Choose stops a running
+  // session; it is started again at once for the code.
+  Choose({.role = Config::Role::Join,
+          .port = config.port,
+          .joinCode = *code,
+          .addressSet = false,
+          .fromMenu = true});
+  if (running)
     Start(body);
-  }
   return true;
 }
 
@@ -91,6 +184,8 @@ void Runtime::Stop() {
     m_npcOutbox.clear();
     m_npcStates.reset();
     m_npcEvents.clear();
+    m_npcReplies.clear();
+    m_actionEvents.clear();
     m_npcDetected.clear();
     m_detectingUs = 0;
     m_npcStatesAtUs = 0;
@@ -101,8 +196,16 @@ void Runtime::Stop() {
     m_stealth.clear();
     m_localNoises.clear();
     m_remoteNoises.clear();
+    m_sharedNpcs.clear();
+    m_roster.clear();
+    m_epochRequest.reset();
+    m_overflows = 0;
     m_hackOutbox.clear();
     m_hackEvents.clear();
+    m_lootOutbox.clear();
+    m_lootInbox.clear();
+    m_npcAnimsIn.clear();
+    m_npcShotsIn.clear();
     m_localPaused.reset();
     // Nobody pauses us any more: the change count moves so scripts let go.
     if (!m_remotePaused.empty()) {
@@ -110,14 +213,38 @@ void Runtime::Stop() {
       ++m_remotePausedChanges;
     }
     m_names.clear();
+    // What the old session said is not for the next one.
+    m_events.clear();
+    m_npcDetected.clear();
+    m_status = {};
     m_localTime.reset();
     // Nobody bends time around us any more: the count moves so scripts let go.
     if (!m_remoteTimes.empty()) {
       m_remoteTimes.clear();
       ++m_remoteTimeChanges;
     }
+    m_regroupOutbox.clear();
+    m_regroupEvents.clear();
+    // Counts keep going (scripts compare them with what they saw).
+    m_localVitals.reset();
+    if (!m_othersLives.empty()) {
+      m_othersLives.clear();
+      ++m_othersLivesChanges;
+    }
+    m_localRevives.clear();
+    m_revives.clear();
   }
   net.reset(); // joins outside the lock: the net thread takes it too
+  m_you.store(0);
+  {
+    std::lock_guard _(m_heldLock);
+    m_heldPuppets.clear();
+  }
+  {
+    // Anything it queued on its way out.
+    std::lock_guard _(m_lock);
+    m_events.clear();
+  }
   {
     std::lock_guard _(m_tracksLock);
     m_tracks.clear();
@@ -258,12 +385,20 @@ void Runtime::PushRemoteShot(const proto::Shot &shot) {
   std::lock_guard _(m_lock);
   // Scripts drain these every frame; a pile-up means nobody is listening.
   if (m_remoteShots.size() < 256)
-    m_remoteShots.push_back(shot);
+    m_remoteShots.push_back({shot, net::NowUs()});
+  else
+    ++m_overflows;
 }
 
 std::vector<proto::Shot> Runtime::TakeRemoteShots() {
   std::lock_guard _(m_lock);
-  return std::exchange(m_remoteShots, {});
+  // A shot half a second old (a loading screen, a stall) is not drawn: a
+  // burst of muzzle flashes at once would be wrong.
+  consistency::DropStale(m_remoteShots, net::NowUs(), 500'000);
+  std::vector<proto::Shot> out;
+  for (const auto &shot : std::exchange(m_remoteShots, {}))
+    out.push_back(shot.value);
+  return out;
 }
 
 void Runtime::SubmitLocalSeat(const proto::Seat &seat) {
@@ -470,6 +605,37 @@ std::string Runtime::PlayerName(proto::PlayerId player) {
   return it == m_names.end() ? std::string{} : it->second;
 }
 
+std::uint32_t Runtime::SubmitRegroup(proto::Regroup offer) {
+  std::lock_guard _(m_lock);
+  offer.offer = ++m_regroupOffers;
+  if (m_regroupOutbox.size() < 16)
+    m_regroupOutbox.push_back(std::move(offer));
+  return m_regroupOffers;
+}
+
+void Runtime::SubmitRegroupAnswer(const proto::RegroupAnswer &answer) {
+  std::lock_guard _(m_lock);
+  if (m_regroupOutbox.size() < 16)
+    m_regroupOutbox.push_back(answer);
+}
+
+std::vector<proto::Message> Runtime::TakeRegroupOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_regroupOutbox, {});
+}
+
+void Runtime::PushRegroupEvent(RegroupEvent event) {
+  std::lock_guard _(m_lock);
+  // Scripts drain these every tick; a pile-up means nobody is listening.
+  if (m_regroupEvents.size() < 32)
+    m_regroupEvents.push_back(std::move(event));
+}
+
+std::vector<RegroupEvent> Runtime::TakeRegroupEvents() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_regroupEvents, {});
+}
+
 void Runtime::SubmitNpcSpawn(const proto::NpcSpawn &spawn) {
   std::lock_guard _(m_lock);
   m_npcOutbox.push_back(spawn);
@@ -503,12 +669,21 @@ void Runtime::SubmitPlayerHit(const proto::PlayerHit &hit) {
 void Runtime::PushPlayerHit(const proto::PlayerHit &hit) {
   std::lock_guard _(m_lock);
   if (m_playerHits.size() < 256)
-    m_playerHits.push_back(hit);
+    m_playerHits.push_back({hit, net::NowUs()});
+  else
+    ++m_overflows;
 }
 
 std::vector<proto::PlayerHit> Runtime::TakePlayerHits() {
   std::lock_guard _(m_lock);
-  return std::exchange(m_playerHits, {});
+  // Hits that waited behind a loading screen or a stall are not applied:
+  // every queued hit at once would kill V the moment the world comes back.
+  if (const auto stale = consistency::DropStale(m_playerHits, net::NowUs(), 1'500'000))
+    log::Info("consistency: {} hit(s) on our V dropped, too old to apply", stale);
+  std::vector<proto::PlayerHit> out;
+  for (const auto &hit : std::exchange(m_playerHits, {}))
+    out.push_back(hit.value);
+  return out;
 }
 
 std::uint8_t Runtime::NpcDetected(proto::NpcId npc) {
@@ -536,11 +711,119 @@ void Runtime::PushNpcEvent(const NpcEvent &event) {
   std::lock_guard _(m_lock);
   if (m_npcEvents.size() < 1024)
     m_npcEvents.push_back(event);
+  else
+    ++m_overflows; // the scripts' checks put the proxies right (SharedNpcs)
 }
 
 std::vector<NpcEvent> Runtime::TakeNpcEvents() {
   std::lock_guard _(m_lock);
   return std::exchange(m_npcEvents, {});
+}
+
+void Runtime::SubmitNpcAction(const proto::NpcAction &action) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(action);
+}
+
+void Runtime::SubmitNpcHold(const proto::NpcHold &hold) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(hold);
+}
+
+void Runtime::SubmitNpcCue(const proto::NpcCue &cue) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(cue);
+}
+
+void Runtime::SubmitNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply) {
+  std::lock_guard _(m_lock);
+  m_npcReplies.emplace_back(player, reply);
+}
+
+std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> Runtime::TakeNpcReplies() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_npcReplies, {});
+}
+
+void Runtime::PushActionEvent(const ActionEvent &event) {
+  std::lock_guard _(m_lock);
+  // Scripts drain these every frame; a pile-up means nobody is listening.
+  if (m_actionEvents.size() < 256)
+    m_actionEvents.push_back(event);
+}
+
+std::vector<ActionEvent> Runtime::TakeActionEvents() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_actionEvents, {});
+}
+
+void Runtime::HoldPuppet(proto::PlayerId player, bool hold) {
+  std::lock_guard _(m_heldLock);
+  if (hold)
+    m_heldPuppets.insert(player);
+  else
+    m_heldPuppets.erase(player);
+}
+
+bool Runtime::IsPuppetHeld(proto::PlayerId player) const {
+  std::lock_guard _(m_heldLock);
+  return m_heldPuppets.contains(player);
+}
+
+void Runtime::SubmitLocalVitals(const proto::Vitals &vitals) {
+  std::lock_guard _(m_lock);
+  m_localVitals = vitals;
+}
+
+std::optional<proto::Vitals> Runtime::TakeLocalVitals() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localVitals, std::nullopt);
+}
+
+void Runtime::SetOthersLives(std::vector<proto::Vitals> others) {
+  std::lock_guard _(m_lock);
+  if (others == m_othersLives)
+    return;
+  m_othersLives = std::move(others);
+  ++m_othersLivesChanges;
+}
+
+std::vector<proto::Vitals> Runtime::OthersLives(std::uint32_t &changes) {
+  std::lock_guard _(m_lock);
+  changes = m_othersLivesChanges;
+  return m_othersLives;
+}
+
+void Runtime::SubmitRevive(const proto::Revive &revive) {
+  std::lock_guard _(m_lock);
+  if (m_localRevives.size() < 32)
+    m_localRevives.push_back(revive);
+}
+
+std::vector<proto::Revive> Runtime::TakeLocalRevives() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localRevives, {});
+}
+
+void Runtime::PushRevive(const proto::Revive &revive) {
+  std::lock_guard _(m_lock);
+  if (m_revives.size() < 32)
+    m_revives.push_back(revive);
+}
+
+std::vector<proto::Revive> Runtime::TakeRevives() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_revives, {});
+}
+
+void Runtime::NoteSessionLost() {
+  std::lock_guard _(m_lock);
+  ++m_sessionLosses;
+}
+
+std::uint32_t Runtime::SessionLosses() {
+  std::lock_guard _(m_lock);
+  return m_sessionLosses;
 }
 
 void Runtime::SubmitHack(const proto::Message &message) {
@@ -557,13 +840,46 @@ std::vector<proto::Message> Runtime::TakeHackOutbox() {
 void Runtime::PushHackEvent(const HackEvent &event) {
   std::lock_guard _(m_lock);
   // Scripts drain these every frame; a pile-up means nobody is listening.
-  if (m_hackEvents.size() < 512)
+  if (m_hackEvents.size() < 512) {
     m_hackEvents.push_back(event);
+    m_hackEvents.back().atUs = net::NowUs();
+  } else {
+    ++m_overflows;
+  }
 }
 
 std::vector<HackEvent> Runtime::TakeHackEvents() {
   std::lock_guard _(m_lock);
+  // An NPC's hack on our V that waited behind a loading screen is void (its
+  // netrunner is likely gone); upload states and effects are state: kept.
+  const auto now = net::NowUs();
+  std::erase_if(m_hackEvents, [&](const HackEvent &event) {
+    return event.kind == HackEvent::Kind::PlayerHack && now > event.atUs &&
+           now - event.atUs > 3'000'000;
+  });
   return std::exchange(m_hackEvents, {});
+}
+
+void Runtime::SubmitLoot(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_lootOutbox.size() < 256)
+    m_lootOutbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeLootOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_lootOutbox, {});
+}
+
+void Runtime::PushLoot(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_lootInbox.size() < 1024)
+    m_lootInbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeLoot() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_lootInbox, {});
 }
 
 void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you) {
@@ -591,6 +907,47 @@ void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you)
     state.orientation = sync::FromYaw(entry.yaw);
     PushRemote(state);
   }
+}
+
+void Runtime::SubmitNpcAnim(const proto::NpcAnim &anim) {
+  std::lock_guard _(m_lock);
+  // Into the outbox's last message when it is a batch with room, so a state
+  // follows its NPC's spawn and the net thread sends one message per batch.
+  if (!m_npcOutbox.empty())
+    if (auto *batch = std::get_if<proto::NpcAnims>(&m_npcOutbox.back());
+        batch && batch->npcs.size() < proto::kMaxNpcAnims) {
+      batch->npcs.push_back(anim);
+      return;
+    }
+  m_npcOutbox.push_back(proto::NpcAnims{.npcs = {anim}});
+}
+
+void Runtime::SubmitNpcShot(const proto::NpcShot &shot) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(shot);
+}
+
+void Runtime::PushNpcAnims(const proto::NpcAnims &anims) {
+  std::lock_guard _(m_lock);
+  for (const auto &anim : anims.npcs)
+    if (m_npcAnimsIn.size() < 1024)
+      m_npcAnimsIn.push_back(anim);
+}
+
+std::vector<proto::NpcAnim> Runtime::TakeNpcAnims() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_npcAnimsIn, {});
+}
+
+void Runtime::PushNpcShot(const proto::NpcShot &shot) {
+  std::lock_guard _(m_lock);
+  if (m_npcShotsIn.size() < 256)
+    m_npcShotsIn.push_back(shot);
+}
+
+std::vector<proto::NpcShot> Runtime::TakeNpcShots() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_npcShotsIn, {});
 }
 
 std::int32_t Runtime::NpcsDetectingUs() {
@@ -672,12 +1029,94 @@ std::vector<proto::Noise> Runtime::TakeLocalNoises() {
 void Runtime::PushRemoteNoise(const proto::Noise &noise) {
   std::lock_guard _(m_lock);
   if (m_remoteNoises.size() < 64)
-    m_remoteNoises.push_back(noise);
+    m_remoteNoises.push_back({noise, net::NowUs()});
 }
 
 std::vector<proto::Noise> Runtime::TakeRemoteNoises() {
   std::lock_guard _(m_lock);
-  return std::exchange(m_remoteNoises, {});
+  // A gunshot a second old is not heard now.
+  consistency::DropStale(m_remoteNoises, net::NowUs(), 1'000'000);
+  std::vector<proto::Noise> out;
+  for (const auto &noise : std::exchange(m_remoteNoises, {}))
+    out.push_back(noise.value);
+  return out;
+}
+
+void Runtime::SetShared(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
+                        const std::map<proto::PlayerId, proto::PlayerInfo> &players) {
+  std::lock_guard _(m_lock);
+  m_sharedNpcs = npcs;
+  m_roster = players;
+}
+
+bool Runtime::IsNpcShared(proto::NpcId npc) {
+  std::lock_guard _(m_lock);
+  return m_sharedNpcs.contains(npc);
+}
+
+std::vector<proto::NpcSpawn> Runtime::SharedNpcs() {
+  std::lock_guard _(m_lock);
+  std::vector<proto::NpcSpawn> out;
+  out.reserve(m_sharedNpcs.size());
+  for (const auto &[id, spawn] : m_sharedNpcs)
+    out.push_back(spawn);
+  return out;
+}
+
+bool Runtime::InRoster(proto::PlayerId player) {
+  std::lock_guard _(m_lock);
+  return m_roster.contains(player);
+}
+
+std::vector<proto::PlayerInfo> Runtime::RosterPlayers() {
+  std::lock_guard _(m_lock);
+  std::vector<proto::PlayerInfo> out;
+  for (const auto &[id, info] : m_roster)
+    out.push_back(info);
+  return out;
+}
+
+void Runtime::RequestEpoch(std::uint8_t reason) {
+  std::lock_guard _(m_lock);
+  m_epochRequest = reason;
+}
+
+std::optional<std::uint8_t> Runtime::TakeEpochRequest() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_epochRequest, std::nullopt);
+}
+
+std::uint32_t Runtime::TakeOverflows() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_overflows, 0);
+}
+
+void Runtime::ResetSession() {
+  {
+    std::lock_guard _(m_lock);
+    m_localShots.clear();
+    m_remoteShots.clear();
+    m_npcOutbox.clear();
+    m_npcStates.reset();
+    m_npcEvents.clear();
+    m_playerHits.clear();
+    m_hackOutbox.clear();
+    m_hackEvents.clear();
+    m_npcDetected.clear();
+    m_detectingUs = 0;
+    m_npcStatesAtUs = 0;
+    m_awarenessOfUs.clear();
+    m_awarenessAtUs = 0;
+    m_localAwareness.reset();
+    m_localNoises.clear();
+    m_remoteNoises.clear();
+    m_sharedNpcs.clear();
+    m_roster.clear();
+    m_epochRequest.reset();
+  }
+  // The NPCs' tracks: the next session's ids are other NPCs.
+  std::lock_guard _(m_tracksLock);
+  std::erase_if(m_tracks, [](const auto &entry) { return entry.first >= kNpcPuppetBase; });
 }
 
 void Runtime::PushRemotePose(const proto::PoseState &pose) {
@@ -686,6 +1125,9 @@ void Runtime::PushRemotePose(const proto::PoseState &pose) {
 }
 
 bool Runtime::PoseOf(proto::PlayerId player, pose::Pose &out) {
+  // A player in a private scene: its puppet shows its own idle (story.hpp).
+  if (Story::Get().PosePaused(player))
+    return false;
   // Drawn as far in the past as the player's position (interpolation.hpp);
   // a loopback pose, with no network, a fixed two frames.
   std::uint64_t delayUs = 33'000;
@@ -808,5 +1250,18 @@ bool Runtime::TakeControllerRequest(proto::PlayerId player) {
       return slot.wantsController.exchange(false);
   }
   return false;
+}
+
+void Runtime::RequestSnap(proto::PlayerId player) {
+  std::lock_guard _(m_snapsLock);
+  m_snaps.insert(player);
+}
+
+bool Runtime::TakeSnap(proto::PlayerId player) {
+  // A held puppet (a grapple, a carrier, an NPC's workspot) is placed by
+  // whoever holds it: a teleport asked for just before is dropped.
+  const bool held = IsPuppetHeld(player);
+  std::lock_guard _(m_snapsLock);
+  return m_snaps.erase(player) != 0 && !held;
 }
 } // namespace tandem::plugin

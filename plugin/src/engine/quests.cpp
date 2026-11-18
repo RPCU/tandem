@@ -46,6 +46,7 @@
 
 #include "../log.hpp"
 #include "quests.hpp"
+#include "scenes.hpp"
 
 #include <RED4ext/DynArray.hpp>
 #include <RED4ext/GameEngine.hpp>
@@ -102,6 +103,7 @@ using ExecutePathFn = std::uint8_t (*)(void *phase, void *context,
 ExecuteNodeFn g_original = nullptr;
 void *g_target = nullptr;
 std::atomic_bool g_active{false};
+bool g_freezeAllowed = false; // tandem.ini quest_freeze = on (set at load)
 std::atomic_bool g_layoutChecked{false}, g_layoutOk{false};
 thread_local bool t_replaying = false;
 
@@ -221,6 +223,8 @@ bool Allowed(std::uintptr_t phase, const Path &path, std::uintptr_t context) {
 }
 
 std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, void *outputs) {
+  // Scene privacy (scenes.cpp): which scene runs, on every game.
+  ObserveSceneNode(node);
   if (!g_active.load(std::memory_order_relaxed) || t_replaying)
     return g_original(phase, node, context, socket, outputs);
 
@@ -312,7 +316,8 @@ std::uint8_t Replay(void *system, void *root, const Held &held) {
 } // namespace
 
 bool InstallQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle,
-                        const std::vector<std::string> &allow) {
+                        const std::vector<std::string> &allow, bool freeze) {
+  g_freezeAllowed = freeze;
   {
     std::lock_guard _(g_lock);
     for (const auto *path : kOpenWorld)
@@ -342,7 +347,7 @@ void RemoveQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle ha
   g_target = nullptr;
 }
 
-bool QuestFreezeAvailable() { return g_target && LayoutOk(); }
+bool QuestFreezeAvailable() { return g_target && g_freezeAllowed && LayoutOk(); }
 
 bool QuestFrozen() { return g_active.load(); }
 

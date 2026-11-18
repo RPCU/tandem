@@ -19,11 +19,12 @@
 #include <vector>
 
 namespace tandem::plugin::engine {
-// At plugin load (tandem.ini quest_freeze = on): hook ExecuteNode. It passes
-// every node through until SetQuestFreeze(true). `allow` are extra
-// open-world phase resources (paths) that keep running.
+// At plugin load (tandem.ini quest_freeze = on, or scene_privacy = on):
+// hook ExecuteNode. It passes every node through (reporting scene nodes to
+// scenes.cpp) until SetQuestFreeze(true), which only `freeze` allows.
+// `allow` are extra open-world phase resources (paths) that keep running.
 bool InstallQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle,
-                        const std::vector<std::string> &allow);
+                        const std::vector<std::string> &allow, bool freeze);
 void RemoveQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
 
 // Game thread. The hook is in and the engine layouts are the measured ones.

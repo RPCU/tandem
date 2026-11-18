@@ -475,11 +475,11 @@ ride along, or regroup on arrival (`SC §6.6`).
 
 ### 2.10 Johnny, flashbacks, cyberspace, endings
 
-Host as Johnny or another replacer (`UI_PlayerStats.isReplacer`,
-`SC §6.1`): the host's puppet must become that replacer (player sync work,
-step 5). Flashbacks, cyberspace and braindances are another place: §2.12
-(built) keeps or hides the body, holds nobody, and leaves spectating for
-later (`SC §6.1`, §6.3). Johnny as an NPC beside the host's V is a host NPC and
+Not in the first version beyond the generic tier rule. Host as Johnny or
+another replacer (`UI_PlayerStats.isReplacer`, `SC §6.1`): the host's
+puppet must become that replacer (player sync work, step 5). Flashbacks,
+cyberspace and braindances are another place: §2.13 (built) keeps or hides
+the body, holds nobody, and leaves spectating for later (`SC §6.1`, §6.3). Johnny as an NPC beside the host's V is a host NPC and
 shows on guests' screens as a proxy (decision 10 in §8). Endings and the
 point of no return are host checkpoints; guests keep their own V.
 
@@ -512,11 +512,68 @@ host's track, the way NPC proxies take theirs, then switching back when
 the flag clears. Johnny's materialise and dematerialise glitches on the
 proxy need the effect names his entity plays (RE: his `.ent` effects).
 Songbird's netrunner sequences (Blackwall, cyberspace) are another place:
-§2.12 (their signal is still to find). Status effects that are a
+§2.13 (their signal is still to find). Status effects that are a
 story's rules rather than its look (`SoMi_Q306_BlackwallMark` on NPCs) are
 not mirrored: only effects on the host's V are.
 
-### 2.12 Other worlds: cyberspace, braindances, flashbacks (decided and built 2026-11-18)
+### 2.12 Private scenes: romance, intimate and minor one-to-one scenes (built 2026-11-18)
+
+Some scenes are not worth a second player's time, and some are not theirs
+to watch: romance and sex scenes, apartment hangouts with a partner, small
+talk with a vendor, a fixer's one-to-one chat. The user's rule: **these do
+not involve the other player.**
+
+**Classification, from the game's own data** (`engine/scenes.cpp`,
+engine-knowledge §13.23). Each game's quest node hook sees the scene node
+it runs (`questSceneNodeDefinition.sceneFile`). The scene's resource
+(`scnSceneResource`, loaded by the scene system while it plays) carries
+the designers' category, `sceneCategoryTag`, and its actors:
+
+| Category                                                                                                                                          | Class                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `chatsOpenWorld`, `dialoguesQuests`, `voiceset`, `streetOpenWorld`, `vendorsOpenWorld`, `dancefloorsOpenWorld`, `cityOpenWorld`, `otherOpenWorld` | private (minor)                                |
+| `sideQuests`, `minorQuests`, `otherQuests` with a romance partner among at most two actors                                                        | private (romance)                              |
+| `minorQuests` with at most one actor                                                                                                              | private (minor)                                |
+| `mainQuests`, `holocalls` (the phone path), `other`, the rest of the side quests                                                                  | important (everyone may watch, the tier rules) |
+
+Romance partners are matched on the scene's actor names (`private_actors`,
+default `judy, panam, river, kerry, meredith`), so Judy in a main quest
+scene stays important. `private_scenes` / `public_scenes` (resource paths)
+override any scene. A mismatched layout turns classification off: every
+scene is then important, so nothing is hidden by mistake. The game has no
+"private" flag on scenes (none in RTTI or the scripts); the category tag
+is the designers' own sorting.
+
+**What each player sees** while a scene of player A is private (A's tier
+is 2 or more and the class is private; it stays private until the scene
+lets A go):
+
+- **A** (in the scene): the other players' puppets within 30 m fade out
+  (`GameObject.ToggleForcedVisibilityInAnimSystemEvent`, 0.5 s) and fade
+  back when it ends. Nobody stands in the scene.
+- **The others**: A's `StoryState` says private (flag 8). They get a small
+  notice, "A is busy.", and no hold, no offer to join and no weapons
+  lowered, even when A is the host in a tier 5 scene. Their own play goes
+  on. A's game sends A standing where the scene began, with no pose, and
+  their game shows A's puppet idling on its own animation graph. If the
+  scene moves A somewhere else, A's puppet still stands at the start
+  spot, so nothing is spoiled.
+- Subtitles and choice hubs of a private scene are not shown to anyone
+  else, even a guest standing next to the host (holocall lines still are:
+  a call is everyone's).
+
+**Facts.** A private scene runs in the game of the player who plays it.
+For the host (the usual case) its facts, romance flags included, are the
+host's world and save, like the rest of the story. A guest's story is
+frozen, so its own romance scenes never run in a session; the open-world
+chats it may play are its own. When the host's romance fact gates a quest
+(Judy's or Panam's later scenes, an ending), the host's story follows the
+host's romance. A guest never gets the host's romance in its own save:
+its journal and facts are put back on leave (§1.4). Later in its own
+story, its own romance facts decide. A guest who romanced someone else
+still sees the host's partner as the host's.
+
+### 2.13 Other worlds: cyberspace, braindances, flashbacks (decided and built 2026-11-18)
 
 The user asked for the moments a V leaves the city (Alt's cyberspace,
 Songbird's, Mikoshi, netrunner dives, braindances, Johnny's flashbacks,

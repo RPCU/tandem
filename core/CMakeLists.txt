@@ -5,12 +5,17 @@ add_library(tandem_core STATIC
   src/protocol.cpp
   src/session.cpp
   src/relay.cpp
+  src/consistency.cpp
   src/endpoint.cpp
   src/story.cpp
+  src/combat.cpp
   src/interpolation.cpp
+  src/movement.cpp
   src/pose.cpp
   src/vehicle.cpp
+  src/hosts.cpp
   src/timebubble.cpp
+  src/shaping.cpp
   src/elsewhere.cpp)
 target_include_directories(tandem_core PUBLIC include)
 target_link_libraries(tandem_core PUBLIC enet zpp_bits)

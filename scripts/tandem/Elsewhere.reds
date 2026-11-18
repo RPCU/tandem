@@ -73,6 +73,14 @@ public class TandemElsewhere {
     return IsDefined(known) && known.place != 0;
   }
 
+  // A player whose body is out of sight here (away, not sitting or lying):
+  // not here to be revived, hit or met.
+  public static func BodyHidden(game: GameInstance, player: Uint32) -> Bool {
+    let away = TandemElsewhere.Get(game);
+    let known = IsDefined(away) ? away.Find(player) : null;
+    return IsDefined(known) && (known.flags & 1) != 0 && (known.flags & 2) == 0;
+  }
+
   public static func IsAwayFromBody(game: GameInstance, player: Uint32) -> Bool {
     let away = TandemElsewhere.Get(game);
     let known = IsDefined(away) ? away.Find(player) : null;
@@ -255,18 +263,19 @@ public class TandemElsewhere {
       let known = this.Known(player);
       let hide = this.m_inside || now - this.m_backAt < 0.75 || now < known.revealAt
         || ((known.flags & 1) != 0 && (known.flags & 2) == 0);
-      let body = system.PuppetOf(player);
+      // The shared set of reasons (PuppetVisibility.reds): a private scene
+      // that hides the same puppet keeps it hidden after we let go.
       if hide {
-        // Every time: what the puppet puts on later is hidden too.
-        TandemElsewhere.HideBody(game, body, true);
+        // Every time: a marker made again (a puppet built again) stays off.
         TandemMarkers.Suppress(game, player, true);
         if !known.hidden {
           known.hidden = true;
+          TandemVisibility.Hide(game, player, n"elsewhere", 0.0);
           TandemNative.Log(s"elsewhere: player \(player)'s puppet hidden");
         }
       } else if known.hidden {
         known.hidden = false;
-        TandemElsewhere.HideBody(game, body, false);
+        TandemVisibility.Show(game, player, n"elsewhere", 0.0);
         TandemMarkers.Suppress(game, player, false);
         TandemNative.Log(s"elsewhere: player \(player)'s puppet shown");
       }
@@ -318,21 +327,14 @@ public class TandemElsewhere {
     }
   }
 
-  // The HUD's warning line (UI_Notifications.WarningMessage), as Story.reds.
+  // The HUD's warning line, as every co-op notice (Coop.reds).
   public static func Notice(game: GameInstance, text: String) -> Void {
-    let message: SimpleScreenMessage;
-    message.isShown = true;
-    message.duration = 5.0;
-    message.message = text;
-    message.type = SimpleMessageType.Neutral;
-    GameInstance
-      .GetBlackboardSystem(game)
-      .Get(GetAllBlackboardDefs().UI_Notifications)
-      .SetVariant(GetAllBlackboardDefs().UI_Notifications.WarningMessage, ToVariant(message), true);
+    TandemCoop.Notice(game, text);
   }
 
   // A puppet out of sight: its own meshes and what it wears and holds
-  // (IVisualComponent.TemporaryHide, final.reds:106206).
+  // (IVisualComponent.TemporaryHide, final.reds:106206). Through
+  // TandemVisibility only: it knows every reason a puppet is hidden for.
   public static func HideBody(game: GameInstance, body: ref<GameObject>, hide: Bool) -> Void {
     if !IsDefined(body) {
       return;
@@ -376,6 +378,7 @@ public class TandemElsewhere {
     for known in this.m_players {
       if known.hidden {
         TandemMarkers.Suppress(this.m_game, known.player, false);
+        TandemVisibility.Show(this.m_game, known.player, n"elsewhere", 0.0);
       }
       if known.place != 0 || known.hidden {
         away += 1;

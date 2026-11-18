@@ -5,8 +5,10 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <functional>
 #include <map>
+#include <type_traits>
 
 using namespace std::chrono_literals;
 using namespace tandem;
@@ -111,6 +113,25 @@ TEST_CASE("a guest joins, both see each other's V") {
   CHECK(atHost->position == proto::Vec3{1.f, 2.f, 3.f});
   CHECK(atGuest->player == 1);
   CHECK(atGuest->position == proto::Vec3{7.f, 8.f, 9.f});
+}
+
+TEST_CASE("each side knows its link to the others (the co-op menu's ping)") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  CHECK(host->LinkStatsOf(a->You()).has_value());
+  CHECK(host->LinkStatsOf(b->You()).has_value());
+  CHECK(a->LinkStatsOf(1).has_value());              // the host
+  CHECK_FALSE(a->LinkStatsOf(b->You()).has_value()); // reached through the host
+  CHECK_FALSE(host->LinkStatsOf(1).has_value());     // ourselves
+  CHECK_FALSE(host->LinkStatsOf(42).has_value());    // nobody
 }
 
 TEST_CASE("the host relays one guest to the other") {
@@ -399,6 +420,64 @@ TEST_CASE("an NPC's hit on a guest reaches that guest only, whole") {
   CHECK(atHost.empty());
 }
 
+TEST_CASE("NPC animation states reach guests and late joiners; shots too; guests can't send them") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  host->SendNpcSpawn({.npc = 8, .record = 1});
+  // Kept before anyone joined; an NPC never announced (9) is dropped.
+  host->SendNpcAnims({.npcs = {{.npc = 7, .highLevel = 2, .upperBody = 0, .weapon = 42},
+                               {.npc = 9, .highLevel = 2}}});
+  host->SendNpcAnims({.npcs = {{.npc = 8, .flags = proto::kNpcAnimInWorkspot, .workspot = 5}}});
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+
+  std::map<proto::NpcId, proto::NpcAnim> heard;
+  std::optional<proto::NpcShot> shot;
+  bool sent = false, hostHeardAnims = false;
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1 && guest->IsJoined() && !sent) {
+      // A guest's NPC messages are refused: it owns no NPC.
+      guest->SendNpcAnims({.npcs = {{.npc = 7, .highLevel = 4}}});
+      sent = true;
+    }
+    if (i == 0 && heard.size() == 2 && !shot)
+      host->SendNpcShot({.npc = 7, .effect = 16});
+    for (const auto &event : events) {
+      if (const auto *a = std::get_if<events::HostNpcAnims>(&event); a && i == 1)
+        for (const auto &anim : a->anims.npcs)
+          heard[anim.npc] = anim;
+      if (const auto *s = std::get_if<events::HostNpcShot>(&event); s && i == 1)
+        shot = s->shot;
+      hostHeardAnims |= i == 0 && Has<events::HostNpcAnims>(events);
+    }
+    return heard.size() == 2 && shot;
+  }));
+  CHECK_FALSE(heard.contains(9));
+  CHECK(heard.at(7).weapon == 42);
+  CHECK(heard.at(7).highLevel == 2);
+  CHECK(heard.at(8).workspot == 5);
+  CHECK(shot->effect == 16);
+  CHECK_FALSE(hostHeardAnims);
+
+  // Gone: its state is not handed to the next joiner.
+  host->SendNpcGone({.npc = 8});
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::map<proto::NpcId, proto::NpcAnim> lateHeard;
+  Pump({host.get(), guest.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *a = std::get_if<events::HostNpcAnims>(&event); a && i == 2)
+        for (const auto &anim : a->anims.npcs)
+          lateHeard[anim.npc] = anim;
+    return false; // the full two seconds: nothing more may arrive
+  });
+  CHECK(lateHeard.size() == 1);
+  CHECK(lateHeard.contains(7));
+}
+
 namespace {
 // The pause changes an endpoint reported, in order.
 void CollectPauses(const std::vector<SessionEvent> &events, std::vector<proto::Pause> &into) {
@@ -569,6 +648,189 @@ TEST_CASE("a driver's car radio reaches everyone, stamped, and late joiners") {
   }));
   CHECK(atLate[a->You()].station == 4);
   CHECK_FALSE(atLate[1].on);
+}
+
+namespace {
+// The world items and takes an endpoint reported.
+struct LootSeen {
+  std::vector<proto::WorldItem> items;
+  std::vector<proto::WorldItemTaken> taken;
+  void Add(const std::vector<SessionEvent> &events) {
+    for (const auto &event : events) {
+      if (const auto *e = std::get_if<events::WorldItemAppeared>(&event))
+        items.push_back(e->item);
+      if (const auto *e = std::get_if<events::WorldItemTakenBy>(&event))
+        taken.push_back(e->taken);
+    }
+  }
+};
+} // namespace
+
+TEST_CASE("a dropped bag is numbered by the host and lies in every game, late joiners' too") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  // a drops two stacks (one empty one is dropped on the way) in someone
+  // else's name: the host stamps it a's, numbers it, and everyone hears it.
+  a->DropWorldItem({.id = 42,
+                    .dropper = 99,
+                    .token = 7,
+                    .position = {1.f, 2.f, 3.f},
+                    .stacks = {{.record = 0xaa, .seed = 5, .quantity = 1},
+                               {.record = 0xbb, .quantity = 0},
+                               {.record = 0xcc, .quantity = 30}}});
+  LootSeen seen[3];
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return !seen[0].items.empty() && !seen[1].items.empty() && !seen[2].items.empty();
+  }));
+  for (const auto &s : seen) {
+    REQUIRE(s.items.size() == 1);
+    CHECK(s.items[0].id != 42);
+    CHECK(s.items[0].dropper == a->You());
+    CHECK(s.items[0].token == 7); // a knows its bag again by it
+    CHECK(s.items[0].position == proto::Vec3{1.f, 2.f, 3.f});
+    REQUIRE(s.items[0].stacks.size() == 2);
+    CHECK(s.items[0].stacks[1].record == 0xcc);
+  }
+  CHECK(host->WorldItems().size() == 1);
+
+  // The host drops one too: its own game hears it, numbered.
+  host->DropWorldItem({.token = 1, .stacks = {{.record = 0xdd, .quantity = 2}}});
+  LootSeen hostOwn;
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      hostOwn.Add(events);
+    return !hostOwn.items.empty();
+  }));
+  CHECK(hostOwn.items[0].dropper == 1);
+  CHECK(hostOwn.items[0].id != seen[0].items[0].id);
+
+  // A player joining later finds both lying there.
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  LootSeen atLate;
+  REQUIRE(Pump({host.get(), a.get(), b.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 3)
+      atLate.Add(events);
+    return atLate.items.size() == 2;
+  }));
+}
+
+TEST_CASE("the first to pick a stack up keeps it; a later claim hears who has it") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  host->DropWorldItem(
+      {.token = 1,
+       .stacks = {{.record = 0xaa, .seed = 3, .quantity = 1}, {.record = 0xbb, .quantity = 10}}});
+  LootSeen seen[3];
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return !seen[1].items.empty() && !seen[2].items.empty();
+  }));
+  const auto id = seen[1].items[0].id;
+
+  // a and b both pick up stack 0; a's claim reaches the host first.
+  a->TakeWorldItem(id, 0);
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return !seen[0].taken.empty();
+  }));
+  b->TakeWorldItem(id, 0);
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return seen[2].taken.size() == 2 && !seen[1].taken.empty();
+  }));
+  // Everyone hears a has it; b, who claimed second, hears it twice (the
+  // broadcast, then the answer to its own claim), never itself.
+  CHECK(seen[0].taken.size() == 1);
+  CHECK(seen[0].taken[0] == proto::WorldItemTaken{id, 0, a->You()});
+  CHECK(seen[1].taken[0].taker == a->You());
+  for (const auto &taken : seen[2].taken)
+    CHECK(taken.taker == a->You());
+  // A claim in someone else's name is the claimer's.
+  REQUIRE(host->WorldItems().contains(id));
+  CHECK(host->WorldItems().at(id).stacks[0].quantity == 0);
+
+  // The host takes the last stack: the bag is gone from the host's record,
+  // and a later claim on it is told nobody has it for the claimer.
+  host->TakeWorldItem(id, 1);
+  LootSeen hostOwn;
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 0)
+      hostOwn.Add(events);
+    else
+      seen[i].Add(events);
+    return !hostOwn.taken.empty() && seen[1].taken.size() == 2 && seen[2].taken.size() == 3;
+  }));
+  CHECK(hostOwn.taken[0] == proto::WorldItemTaken{id, 1, 1});
+  CHECK(host->WorldItems().empty());
+  b->TakeWorldItem(id, 1);
+  const auto before = seen[2].taken.size();
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    seen[i].Add(events);
+    return seen[2].taken.size() == before + 1;
+  }));
+  CHECK(seen[2].taken.back() == proto::WorldItemTaken{id, 1, proto::kNoPlayer});
+}
+
+TEST_CASE("a quest item one player got reaches every other player, stamped") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  std::vector<proto::SharedItem> seen[3];
+  const auto collect = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::SharedItemFrom>(&event))
+        seen[i].push_back(e->item);
+  };
+
+  // a loots one (claiming to be someone, on a corpse): the host and b get it
+  // as a's loot; a hears nothing back.
+  a->SendSharedItem({.player = 99,
+                     .kind = proto::kSharedOnCorpse,
+                     .npc = 4,
+                     .item = {.record = 0xabc, .quantity = 1}});
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return !seen[0].empty() && !seen[2].empty();
+  }));
+  for (const auto i : {0, 2}) {
+    CHECK(seen[i][0].player == a->You());
+    CHECK(seen[i][0].kind == proto::kSharedLooted);
+    CHECK(seen[i][0].npc == 0);
+    CHECK(seen[i][0].item.record == 0xabc);
+  }
+
+  // The host's corpse holds one: both guests hear it, on npc 7.
+  host->SendSharedItem({.kind = proto::kSharedOnCorpse, .npc = 7, .item = {.record = 0xdef}});
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return !seen[1].empty() && seen[2].size() == 2;
+  }));
+  CHECK(seen[1][0].npc == 7);
+  CHECK(seen[1][0].player == 1);
+  CHECK(seen[0].size() == 1); // the host's own is never reported back
 }
 
 TEST_CASE("a guest that crashes is reported gone within the timeout") {
@@ -839,6 +1101,130 @@ TEST_CASE(
   CHECK_FALSE(hostHeardAwareness);
 }
 
+TEST_CASE("a guest's takedown request reaches the host stamped; the answer only the asker") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  a->SendNpcAction({.player = 99, .npc = 7, .kind = proto::NpcActionKind::Grab, .name = 5});
+  std::optional<proto::NpcAction> asked;
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::NpcActionBy>(&event); e && i == 0)
+        asked = e->action;
+    return asked.has_value();
+  }));
+  CHECK(asked->player == a->You()); // a guest acts only in its own name
+  CHECK(asked->kind == proto::NpcActionKind::Grab);
+  CHECK(asked->name == 5);
+
+  host->SendNpcActionReply(asked->player,
+                           {.npc = 7, .kind = proto::NpcActionKind::Grab, .accepted = true});
+  host->SendNpcHold({.npc = 7, .player = a->You(), .how = proto::NpcHoldKind::Grappled});
+  std::optional<proto::NpcActionReply> answered;
+  bool bAnswered = false;
+  std::optional<proto::NpcHold> bHold;
+  Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events) {
+      if (const auto *e = std::get_if<events::NpcActionAnswered>(&event)) {
+        if (i == 1)
+          answered = e->reply;
+        else
+          bAnswered = true;
+      }
+      if (const auto *e = std::get_if<events::HostNpcHold>(&event); e && i == 2)
+        bHold = e->hold;
+    }
+    return false; // the full time: b must hear no answer
+  });
+  REQUIRE(answered);
+  CHECK(answered->accepted);
+  CHECK_FALSE(bAnswered);
+  REQUIRE(bHold);
+  CHECK(bHold->player == a->You());
+  CHECK(host->NpcHolds().size() == 1);
+}
+
+TEST_CASE("holds reach late joiners and end with the NPC or the holder") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto holder = Endpoint::Join({"holder"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(holder, error);
+  REQUIRE(Pump({host.get(), holder.get()},
+               [&](std::size_t, const auto &) { return host->Players().size() == 2; }));
+  host->SendNpcHold({.npc = 7, .player = 2, .how = proto::NpcHoldKind::Carried});
+  host->SendNpcHold({.npc = 8, .player = 1, .how = proto::NpcHoldKind::Grappled});
+  host->SendNpcHold({.npc = 9, .player = 1, .how = proto::NpcHoldKind::Grappled});
+  host->SendNpcGone({.npc = 9, .reason = proto::kGoneDead}); // gone: no longer held
+
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::map<proto::NpcId, proto::NpcHold> lateHeard;
+  REQUIRE(Pump({host.get(), holder.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::HostNpcHold>(&event); e && i == 2)
+        lateHeard[e->hold.npc] = e->hold;
+    return lateHeard.size() == 2;
+  }));
+  CHECK(lateHeard.at(7).how == proto::NpcHoldKind::Carried);
+  CHECK(lateHeard.at(8).player == 1);
+  CHECK_FALSE(lateHeard.contains(9));
+
+  // The holder leaves: what it carried is released for everyone.
+  holder->Leave();
+  bool released = false;
+  REQUIRE(Pump({host.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::HostNpcHold>(&event);
+          e && i == 1 && e->hold.npc == 7 && e->hold.player == proto::kNoPlayer)
+        released = true;
+    return released;
+  }));
+  CHECK(host->NpcHolds().size() == 1);
+  CHECK(late->NpcHolds().size() == 1);
+}
+
+TEST_CASE("an NPC cue reaches only the player it is for") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  host->SendNpcCue({.npc = 7, .player = b->You(), .cue = proto::NpcCueKind::CombatStart});
+  bool aHeard = false;
+  std::optional<proto::NpcCue> bHeard;
+  Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *e = std::get_if<events::HostNpcCue>(&event)) {
+        if (i == 2)
+          bHeard = e->cue;
+        else
+          aHeard = true;
+      }
+    return false;
+  });
+  REQUIRE(bHeard);
+  CHECK(bHeard->cue == proto::NpcCueKind::CombatStart);
+  CHECK_FALSE(aHeard);
+  // A guest cannot answer or announce for the host.
+  a->SendNpcActionReply(b->You(), {.npc = 7, .kind = proto::NpcActionKind::Grab});
+  a->SendNpcHold({.npc = 7, .player = 2});
+  CHECK(a->NpcHolds().empty());
+}
+
 namespace {
 void CollectTimes(const std::vector<SessionEvent> &events, std::vector<proto::TimeEffect> &into) {
   for (const auto &event : events)
@@ -905,6 +1291,275 @@ TEST_CASE("time abilities: stamped, made safe, kept for late joiners, ended when
   CHECK(atLate.front() == proto::TimeEffect{aId, 0, 1.f});
   CHECK_FALSE(host->TimeEffects().contains(aId));
   CHECK_FALSE(late->TimeEffects().contains(aId));
+}
+
+namespace {
+struct DownAndOut {
+  std::vector<proto::Vitals> vitals;
+  std::vector<proto::Revive> revives;
+  std::vector<proto::GameOver> lost;
+  void Collect(const std::vector<SessionEvent> &events) {
+    for (const auto &event : events) {
+      if (const auto *v = std::get_if<events::RemoteVitals>(&event))
+        vitals.push_back(v->vitals);
+      else if (const auto *r = std::get_if<events::ReviveBy>(&event))
+        revives.push_back(r->revive);
+      else if (const auto *l = std::get_if<events::SessionLost>(&event))
+        lost.push_back(l->over);
+    }
+  }
+};
+} // namespace
+
+TEST_CASE("down and out: a guest's life reaches everyone, stamped, and late joiners") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  a->SetLocalVitals({.player = 99, .life = proto::Life::Down}); // never in someone else's name
+  DownAndOut atHost, atA, atB;
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : i == 1 ? atA : atB).Collect(events);
+    return !atHost.vitals.empty() && !atB.vitals.empty();
+  }));
+  CHECK(atHost.vitals.front().player == a->You());
+  CHECK(atHost.vitals.front().life == proto::Life::Down);
+  CHECK(atB.vitals.front().player == a->You());
+  CHECK(atA.vitals.empty()); // never told about its own
+  CHECK(host->LifeOf(a->You()) == proto::Life::Down);
+  CHECK(b->LifeOf(a->You()) == proto::Life::Down);
+  CHECK(atHost.lost.empty()); // two Vs are still up
+
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  DownAndOut atLate;
+  REQUIRE(Pump({host.get(), a.get(), b.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 3)
+      atLate.Collect(events);
+    return !atLate.vitals.empty();
+  }));
+  CHECK(atLate.vitals.front().player == a->You());
+  CHECK(late->LifeOf(a->You()) == proto::Life::Down);
+
+  // A player who leaves is forgotten.
+  const auto aId = a->You();
+  a->Leave();
+  REQUIRE(Pump({host.get(), b.get(), late.get()},
+               [&](std::size_t, const auto &) { return late->Players().size() == 3; }));
+  CHECK(host->LifeOf(aId) == proto::Life::Up);
+  CHECK(late->LifeOf(aId) == proto::Life::Up);
+}
+
+TEST_CASE("down and out: a revive reaches the downed V's game only, and only while it is down") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+
+  // Not down: the host drops it.
+  b->SendRevive({.target = a->You(), .step = proto::ReviveStep::Start});
+  DownAndOut atHost, atA, atB;
+  PumpFor({host.get(), a.get(), b.get()}, 200ms, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : i == 1 ? atA : atB).Collect(events);
+  });
+  CHECK(atA.revives.empty());
+
+  a->SetLocalVitals({.life = proto::Life::Down});
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
+    return host->LifeOf(a->You()) == proto::Life::Down;
+  }));
+  b->SendRevive({.player = 1, .target = a->You(), .step = proto::ReviveStep::Start});
+  b->SendRevive({.target = a->You(), .step = proto::ReviveStep::Done});
+  atA = {};
+  atB = {};
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : i == 1 ? atA : atB).Collect(events);
+    return atA.revives.size() == 2;
+  }));
+  CHECK(atA.revives[0] == proto::Revive{b->You(), a->You(), proto::ReviveStep::Start});
+  CHECK(atA.revives[1] == proto::Revive{b->You(), a->You(), proto::ReviveStep::Done});
+  CHECK(atHost.revives.empty());
+  CHECK(atB.revives.empty());
+
+  // The host revives a guest directly; a guest revives the host.
+  host->SendRevive({.target = a->You(), .step = proto::ReviveStep::Cancel});
+  host->SetLocalVitals({.life = proto::Life::Down});
+  atA = {};
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : i == 1 ? atA : atB).Collect(events);
+    return a->LifeOf(1) == proto::Life::Down;
+  }));
+  a->SendRevive({.target = 1, .step = proto::ReviveStep::Done});
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : i == 1 ? atA : atB).Collect(events);
+    return !atHost.revives.empty() && !atA.revives.empty();
+  }));
+  CHECK(atA.revives.front() == proto::Revive{1, a->You(), proto::ReviveStep::Cancel});
+  CHECK(atHost.revives.front() == proto::Revive{a->You(), 1, proto::ReviveStep::Done});
+}
+
+TEST_CASE("down and out: the session is lost when no V is up, once, and again after a revive") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->Players().size() == 2; }));
+
+  DownAndOut atHost, atA;
+  const auto collect = [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : atA).Collect(events);
+  };
+  host->SetLocalVitals({.life = proto::Life::Down});
+  PumpFor({host.get(), a.get()}, 200ms, collect);
+  CHECK(atHost.lost.empty());
+  CHECK(atA.lost.empty());
+
+  a->SetLocalVitals({.life = proto::Life::Out});
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return !atHost.lost.empty() && !atA.lost.empty();
+  }));
+  CHECK(atHost.lost.front().round == 1);
+  CHECK(atA.lost.front().round == 1);
+  // Nothing more while it stays lost.
+  a->SetLocalVitals({.life = proto::Life::Down});
+  PumpFor({host.get(), a.get()}, 200ms, collect);
+  CHECK(atHost.lost.size() == 1);
+
+  // Up again (the reload), then everyone down again: a second loss.
+  host->SetLocalVitals({.life = proto::Life::Up});
+  PumpFor({host.get(), a.get()}, 100ms, collect);
+  host->SetLocalVitals({.life = proto::Life::Out});
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return atA.lost.size() == 2;
+  }));
+  CHECK(atA.lost.back().round == 2);
+}
+
+TEST_CASE("down and out: the last V up leaving loses the session for the one left down") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->Players().size() == 2; }));
+  host->SetLocalVitals({.life = proto::Life::Down});
+  DownAndOut atHost;
+  PumpFor({host.get(), a.get()}, 200ms,
+          [&](std::size_t i, const auto &events) { i == 0 ? atHost.Collect(events) : void(); });
+  CHECK(atHost.lost.empty());
+  a->Leave();
+  REQUIRE(Pump({host.get()}, [&](std::size_t, const auto &events) {
+    atHost.Collect(events);
+    return !atHost.lost.empty();
+  }));
+}
+
+TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits to their V") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  // Before anyone joined: kept for whoever joins.
+  CHECK(host->SendCombat(proto::Difficulty{.level = 2}));
+  CHECK(host->SendCombat(proto::NpcPoise{.npc = 7, .poise = 0.5f}));
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((a && b));
+  std::map<std::size_t, std::vector<proto::Message>> heard;
+  const auto collect = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+    for (const auto &event : events)
+      if (const auto *combat = std::get_if<events::Combat>(&event))
+        heard[i].push_back(combat->message);
+  };
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  PumpFor({host.get(), a.get(), b.get()}, 200ms, collect);
+  for (const std::size_t guest : {1u, 2u}) {
+    REQUIRE(heard[guest].size() == 2); // the difficulty and the poise, late as they were
+    CHECK(std::ranges::count_if(heard[guest], [](const auto &m) {
+            const auto *d = std::get_if<proto::Difficulty>(&m);
+            return d && d->level == 2;
+          }) == 1);
+  }
+  heard.clear();
+
+  // a strikes NPC 7: the host hears it in a's name, nobody else; the host
+  // cannot strike its own NPC over the wire.
+  CHECK(a->SendCombat(proto::NpcStrike{.player = 99, .npc = 7, .damage = 20.f, .poise = 5.f}));
+  CHECK_FALSE(host->SendCombat(proto::NpcStrike{.npc = 7}));
+  // A guest does not speak for the host's NPCs or rules.
+  CHECK_FALSE(b->SendCombat(proto::NpcWound{.npc = 7}));
+  CHECK_FALSE(b->SendCombat(proto::Difficulty{.level = 3}));
+  // a's grenade on b's V: to b only, from a; on the host's V: to the host.
+  CHECK(a->SendCombat(proto::AreaHit{.from = 42, .player = b->You(), .physical = 30.f}));
+  CHECK(a->SendCombat(proto::AreaHit{.player = host->You(), .physical = 10.f}));
+  CHECK_FALSE(a->SendCombat(proto::AreaHit{.player = a->You(), .physical = 10.f}));
+  // The host's grenade on a's V; and its NPC's wound, to everyone.
+  CHECK(host->SendCombat(proto::AreaHit{.player = a->You(), .physical = 15.f}));
+  CHECK_FALSE(host->SendCombat(proto::AreaHit{.player = 42, .physical = 15.f}));
+  CHECK(host->SendCombat(proto::NpcWound{.npc = 7, .player = a->You(), .part = 4}));
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, collect);
+
+  // Each game's messages, by kind (the order across senders is not fixed).
+  const auto find = [&]<class T>(std::size_t i, std::type_identity<T>) -> const T * {
+    for (const auto &message : heard[i])
+      if (const auto *m = std::get_if<T>(&message))
+        return m;
+    return nullptr;
+  };
+  constexpr std::type_identity<proto::NpcStrike> kStrike;
+  constexpr std::type_identity<proto::AreaHit> kArea;
+  constexpr std::type_identity<proto::NpcWound> kWound;
+  REQUIRE(heard[0].size() == 2);
+  const auto *strike = find(0, kStrike);
+  REQUIRE(strike);
+  CHECK(strike->player == a->You());
+  CHECK(strike->poise == 5.f);
+  const auto *onHost = find(0, kArea);
+  REQUIRE(onHost);
+  CHECK(onHost->from == a->You());
+  CHECK(onHost->physical == 10.f);
+  CHECK_FALSE(find(0, kWound)); // the host's own
+
+  // a: the host's grenade and the wound; b: a's grenade and the wound.
+  REQUIRE(heard[1].size() == 2);
+  REQUIRE(find(1, kArea));
+  CHECK(find(1, kArea)->from == host->You());
+  REQUIRE(find(1, kWound));
+  CHECK(find(1, kWound)->part == 4);
+  REQUIRE(heard[2].size() == 2);
+  const auto *onB = find(2, kArea);
+  REQUIRE(onB);
+  CHECK(onB->from == a->You());
+  CHECK(onB->physical == 30.f);
+  CHECK(find(2, kWound));
+
+  // Gone: its poise is not handed to the next joiner.
+  host->SendNpcGone({.npc = 7, .reason = 2});
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  heard.clear();
+  PumpFor({host.get(), a.get(), b.get(), late.get()}, 600ms, collect);
+  REQUIRE(heard[3].size() == 1);
+  CHECK(std::holds_alternative<proto::Difficulty>(heard[3][0]));
 }
 
 namespace {

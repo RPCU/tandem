@@ -6,7 +6,8 @@
 // that moment, so they move smoothly whatever the network does. The delay
 // adapts per player: a base of 1.5 send intervals plus margin, widened by the
 // measured jitter and transit, capped. Short gaps are extrapolated along the
-// last velocity, then the body holds; when states come back it blends home.
+// last velocity (falling too, when the V is in the air: tandem/movement.hpp),
+// then the body holds; when states come back it blends home.
 // Numbers from NCO's measurements on 2.5 (docs/research/engine-knowledge.md §1).
 //
 // Times are uint64 microseconds on the host clock. Never put one in a float.
@@ -42,6 +43,12 @@ public:
   static constexpr std::uint64_t kMaxDelayUs = 400'000;
   static constexpr std::uint64_t kMaxJitterExtraUs = 100'000;
   static constexpr std::size_t kMaxSamples = 64;
+  // Faster than this between two states is a teleport (fast travel, a
+  // quest, a regroup), not motion: the body is not flown across the map, it
+  // stays until the moment of the jump and is then put there; a velocity
+  // that fast is not extrapolated.
+  static constexpr float kTeleportSpeed = 150.f;   // m/s
+  static constexpr float kTeleportDistance = 20.f; // m
 
   explicit Track(std::uint32_t sendRateHz = 30);
 

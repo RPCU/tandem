@@ -5,6 +5,7 @@
 #include "engine/pose.hpp"
 #include "engine/posestream.hpp"
 #include "engine/quests.hpp"
+#include "engine/scenes.hpp"
 #include "engine/trace.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
@@ -31,9 +32,9 @@ std::filesystem::path PluginDirectory(RED4ext::v1::PluginHandle handle) {
 // Every frame of the running game, on the game thread, also while the world
 // is paused (scripts' delayed callbacks then stand still): the pause script
 // follows the other players' pause menus (scripts/tandem/Pause.reds), and
-// can let go of a pause from there; the time script (scripts/tandem/Time.reds)
-// takes back, within the frame, a time dilation that would slow the shared
-// world.
+// can let go of a pause from there. Only that: this runs outside the script
+// tick, also behind the loading screen (slowed time runs from
+// TandemSystem.Tick instead, scripts/tandem/Time.reds).
 // A script class's static function, found once: a script class's static
 // functions are neither in its member nor its static list, they are
 // registered as global functions under a qualified name
@@ -75,9 +76,7 @@ bool OnRunningUpdate(RED4ext::CGameApplication *) {
     return false;
   Red::ScriptGameInstance game;
   static ScriptFrame pause{"TandemPause", "pause"};
-  static ScriptFrame time{"TandemTime", "time"};
   pause.Call(game);
-  time.Call(game);
   return false; // ignored for the running state
 }
 
@@ -100,23 +99,34 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     auto &runtime = Runtime::Get();
     runtime.config = LoadConfig(PluginDirectory(handle) / "tandem.ini");
     runtime.config.commandFile = PluginDirectory(handle) / "tandem.cmd";
+    runtime.config.recentFile = PluginDirectory(handle) / "recent.txt";
+    runtime.ResetChoice();
     // A command left from an earlier run is not for this one.
     std::error_code ignored;
     std::filesystem::remove(runtime.config.commandFile, ignored);
-    log::Info("role: {}", NameOf(runtime.config.role));
+    log::Info("role: {} (tandem.ini; the co-op menu can pick another)",
+              NameOf(runtime.config.role));
 
     Red::TypeInfoRegistrar::RegisterDiscovered();
     // Installed later, from the game thread (TandemNative.PoseHook).
     engine::SetPoseHookContext(sdk, handle);
-    if (runtime.config.role != Config::Role::Off) {
-      engine::InstallHooks(sdk, handle);
-      sdk->gameStates->Add(handle, RED4ext::EGameStateType::Running, &g_running);
-    }
-    if (runtime.config.role != Config::Role::Off && runtime.config.pose)
+    // Whatever the role: the co-op menu can start a session at any time, and
+    // hooking a running game races its other threads. Without a session the
+    // hooks only pass through (no puppet registered, no pose source).
+    engine::InstallHooks(sdk, handle);
+    sdk->gameStates->Add(handle, RED4ext::EGameStateType::Running, &g_running);
+    if (runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
-    // The guest's quest freeze (engine/quests.cpp): only when asked for.
-    if (runtime.config.role != Config::Role::Off && runtime.config.questFreeze)
-      engine::InstallQuestFreeze(sdk, handle, runtime.config.questFreezeAllow);
+    // The quest node hook (engine/quests.cpp): the guest's quest freeze, only
+    // when asked for, and which scene each game plays (scene privacy).
+    // Whatever the role (a session may be chosen in the co-op menu): it
+    // passes through until a session turns it on.
+    if (runtime.config.questFreeze || runtime.config.scenePrivacy) {
+      engine::SetScenePrivacy({runtime.config.privateActors, runtime.config.privateScenes,
+                               runtime.config.publicScenes});
+      engine::InstallQuestFreeze(sdk, handle, runtime.config.questFreezeAllow,
+                                 runtime.config.questFreeze);
+    }
     if (runtime.config.trace || runtime.config.mirror)
       engine::InstallTrace(sdk, handle, runtime.config.trace);
     // The session starts when scripts report a loaded game (TandemNative.Start).
