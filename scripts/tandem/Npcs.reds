@@ -859,9 +859,16 @@ public class TandemNpcs {
     return now;
   }
 
-  // (tools/game.sh cmd npc count) the host's NPCs the session's record has.
+  // (tools/game.sh cmd npc count) the host's NPCs the session's record has,
+  // as the plugin counts them and as the list the checks walk has them (a
+  // local: an intrinsic on a call's result is not to be trusted).
   public func SharedCount() -> Int32 {
-    return ArraySize(TandemSync.SharedNpcs());
+    return TandemSync.SharedNpcCount();
+  }
+
+  public func SharedListed() -> Int32 {
+    let npcs = TandemSync.SharedNpcs();
+    return ArraySize(npcs);
   }
 
   private func FindProxy(npc: Uint32) -> ref<TandemNpcProxy> {

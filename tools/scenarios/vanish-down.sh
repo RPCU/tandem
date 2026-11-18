@@ -5,6 +5,9 @@ peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')"
 expect 'joined \(player [0-9]+' 20
 expect 'revive: another player is here: our V goes down instead of dying' 20
 pause 12
+# An earlier scenario's revive must not make this fall an "out" (300 s cooldown).
+cmd revive fresh
+expect 'revive fresh: no recent revive' 5
 cmd revive down
 expect 'revive: our V is down \(revivable\)' 10
 expect 'revive: tandem-peer is reviving us' 15

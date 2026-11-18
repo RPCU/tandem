@@ -58,6 +58,9 @@ struct TandemSync : Red::IScriptable {
     return out;
   }
   static bool IsNpcShared(std::uint32_t npc) { return Runtime::Get().IsNpcShared(npc); }
+  static std::int32_t SharedNpcCount() {
+    return static_cast<std::int32_t>(Runtime::Get().SharedNpcs().size());
+  }
 
   // The players in the session (us too).
   static Red::DynArray<TandemSyncPlayer> Players() {
@@ -100,6 +103,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemSyncPlayer, "TandemSyncPlayer", {
 RTTI_DEFINE_CLASS(tandem::plugin::TandemSync, "TandemSync", {
   RTTI_METHOD(SharedNpcs);
   RTTI_METHOD(IsNpcShared);
+  RTTI_METHOD(SharedNpcCount);
   RTTI_METHOD(Players);
   RTTI_METHOD(InSession);
   RTTI_METHOD(WorldRebuilt);
