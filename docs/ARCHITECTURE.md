@@ -551,13 +551,21 @@ redscript natives (UI, events)              ENet socket
   puppet (checked every 2 s), and when V's relation to a group changes (a
   quest), the puppets' follow. A puppet's relation that changed while V's
   did not (a security system turned on that puppet's group) stays its own.
+  Each copy is read back and logged. On top of the groups, each NPC around
+  gets, on the puppet's agent, the attitudes it and V have to each other
+  where the groups do not already give them (first run in game: the group
+  copy did not show, civilians saw the puppet as friendly; and a quest can
+  set one NPC's attitude to V alone): once per NPC and puppet, again when
+  the NPC's attitude to V changes, forgotten 30 s after it leaves range.
   Vs are friends to each other. The puppet record drops what made it Panam:
   her group and faction (Aldecaldos: anim wrappers, the scan's faction),
   her voice, her burning immunity and damage presets, and shows no NPC UI
   (`hideUIElements`, `hideUIDetection`): no detection indicator from the
   senses Body.reds grafts. `tools/game.sh cmd puppet attitude` logs each
   puppet's group and how the NPCs around V see it next to V; scenario
-  `puppet-attitude`. **Not yet verified in game** (engine-knowledge §13.12).
+  `puppet-attitude`. Verified in game: the groups are accepted. Failed on
+  the first run: civilians friendly to the puppet, neutral to V (fixed
+  since, to run again; engine-knowledge §13.17).
 - **Slowed time** (`scripts/tandem/Time.reds`, `core/src/timebubble.cpp`):
   each game sends its V's time abilities when they change (`TimeEffect`:
   Sandevistan, Kerenzikov, slow-motion perks, scanning, and the world speed
@@ -904,8 +912,11 @@ in-game tests still owed; none of it tested in a session yet):
   meter: `UI_Stealth.highestDetectionOnPlayer` (what the detection perks
   listen to), each proxy's detection percentage, and the proxy's sense
   mappin (the indicator over an NPC) while it notices us. What host NPCs
-  know of another V never counts. Not yet verified in game (scenario
-  `stealth-guest`; whether the native meter draws a proxy's level is open).
+  know of another V never counts. Verified 2026-11-18 (scenario
+  `stealth-guest`: in and out of combat, the meter's log); whether the
+  native meter draws a proxy's level is open. Open: player ids grow
+  within a session (players coming back), but `detected` has bits for
+  players 1–8 only, so a guest numbered 9 or more is never detected.
   The other way, **a guest's stealth reaches the host's NPCs**: every game
   sends its V's optical camo (the camo status effect, the relic's fully
   blocking state), its `Visibility` stat and whether it crouches as
