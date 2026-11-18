@@ -31,7 +31,7 @@
 #                              respawn | inspect | bodies | probe | probe stop | despawn |
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
 #                              vehicle ride | vehicle unride | vehicle clear | where | npcs |
-#                              npc count | markers |
+#                              npc count | npc anims | markers |
 #                              teleport home | teleport X Y Z [YAW] |
 #                              proxy test [record] | proxy clear |
 #                              pose hook | pose report | pose watch [3] | pose copy [off] |

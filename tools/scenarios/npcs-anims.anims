@@ -1,0 +1,11 @@
+# NPC animation states for the replayed NPCs (scenario npcs-anims), read by
+# tandem-peer --anims. Seconds from the replay's start; the game joins as
+# player 2. Proxies are handed to the controller 2 s after they spawn.
+# seconds npc high     upper   stance  [key=value...]
+8         *   Alerted  Normal  Stand   weapon=Items.Preset_Lexington_Default target=2
+12        *   Combat   Aim     Stand   weapon=Items.Preset_Lexington_Default target=2
+16        *   Combat   Shoot   Stand   weapon=Items.Preset_Lexington_Default target=2 shoot=5
+20        *   Combat   Aim     Crouch  weapon=Items.Preset_Lexington_Default target=2
+24        *   Combat   Reload  Crouch  weapon=Items.Preset_Lexington_Default target=2
+27        *   Combat   Aim     Cover   weapon=Items.Preset_Lexington_Default target=2
+32        *   Relaxed  Normal  Stand

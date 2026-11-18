@@ -1,8 +1,10 @@
 #include "net_thread.hpp"
+#include "combat.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
 
+#include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
 
 #include <optional>
@@ -46,6 +48,23 @@ struct NetThread::Impl {
     if (status.state == net::RelayStatus::State::Ready)
       return "ready";
     return status.error.empty() ? "connecting" : status.error;
+  }
+
+  std::optional<proto::Vitals> lastVitals;
+
+  // Every other player in the session with its life (up unless it said
+  // otherwise), for the game thread (Revive.reds). Cheap: the runtime keeps
+  // it only when it changed.
+  static void PublishLives(const Endpoint &endpoint) {
+    std::vector<proto::Vitals> others;
+    for (const auto &[id, info] : endpoint.Players()) {
+      if (id == endpoint.You())
+        continue;
+      const auto it = endpoint.Lives().find(id);
+      others.push_back(it != endpoint.Lives().end() ? it->second : proto::Vitals{.player = id});
+      others.back().revision = 0; // only life and flags matter to the scripts
+    }
+    Runtime::Get().SetOthersLives(std::move(others));
   }
 
   // The other players in their pause menu, for the game thread.
@@ -144,6 +163,8 @@ struct NetThread::Impl {
       endpoint->SetLocalPaused(true);
     if (lastTime)
       endpoint->SetLocalTimeEffect(*lastTime);
+    if (lastVitals)
+      endpoint->SetLocalVitals(*lastVitals);
     if (config.role == Config::Role::Host)
       log::Info("hosting on UDP {}{}", config.port,
                 relay ? std::format(", and through relay {}:{}", relay->address, relay->port) : "");
@@ -186,6 +207,7 @@ struct NetThread::Impl {
                 if (const auto secret = endpoint->RelaySessionSecret())
                   relaySecret = secret;
                 runtime.NotePlayerName(e.you, config.name);
+                runtime.SetYou(e.you);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
                 Publish(SessionStatus::State::InSession, {}, endpoint.get());
                 // Joined: worth offering again (the host's name comes with the roster).
@@ -251,12 +273,39 @@ struct NetThread::Impl {
                                         .spawn = {.npc = e.effect.npc, .record = effect},
                                         .player = e.effect.player});
               } else if constexpr (std::is_same_v<E, events::NpcHitBy>) {
-                runtime.PushNpcEvent({.kind = NpcEvent::Kind::Hit,
-                                      .spawn = {.npc = e.hit.npc, .position = e.hit.position},
-                                      .player = e.hit.player,
-                                      .amount = e.hit.damage,
-                                      .flags = e.hit.flags,
-                                      .direction = e.hit.direction});
+                // An older guest's hit: applied as a strike (Outcomes.reds).
+                Combat::Get().PushInbound(combat::FromHit(e.hit));
+              } else if constexpr (std::is_same_v<E, events::Combat>) {
+                Combat::Get().PushInbound(e.message);
+              } else if constexpr (std::is_same_v<E, events::NpcActionBy>) {
+                const auto &a = e.action;
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Request,
+                                         .npc = a.npc,
+                                         .player = a.player,
+                                         .action = static_cast<std::uint8_t>(a.kind),
+                                         .name = a.name,
+                                         .item = a.item,
+                                         .amount = a.amount,
+                                         .direction = a.direction});
+              } else if constexpr (std::is_same_v<E, events::NpcActionAnswered>) {
+                const auto &r = e.reply;
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Reply,
+                                         .npc = r.npc,
+                                         .action = static_cast<std::uint8_t>(r.kind),
+                                         .accepted = r.accepted,
+                                         .reason = r.reason});
+              } else if constexpr (std::is_same_v<E, events::HostNpcHold>) {
+                const auto &h = e.hold;
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Hold,
+                                         .npc = h.npc,
+                                         .player = h.player,
+                                         .action = static_cast<std::uint8_t>(h.how),
+                                         .name = h.name});
+              } else if constexpr (std::is_same_v<E, events::HostNpcCue>) {
+                runtime.PushActionEvent({.kind = ActionEvent::Kind::Cue,
+                                         .npc = e.cue.npc,
+                                         .player = e.cue.player,
+                                         .action = static_cast<std::uint8_t>(e.cue.cue)});
               } else if constexpr (std::is_same_v<E, events::NpcHackBy>) {
                 runtime.PushHackEvent({.kind = HackEvent::Kind::Upload,
                                        .npc = e.hack.npc,
@@ -303,6 +352,10 @@ struct NetThread::Impl {
                 runtime.PushRemoteStealth(e.stealth);
               } else if constexpr (std::is_same_v<E, events::NoiseBy>) {
                 runtime.PushRemoteNoise(e.noise);
+              } else if constexpr (std::is_same_v<E, events::HostNpcAnims>) {
+                runtime.PushNpcAnims(e.anims);
+              } else if constexpr (std::is_same_v<E, events::HostNpcShot>) {
+                runtime.PushNpcShot(e.shot);
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
                 log::Info("player {}: look of {} keys and {} items (revision {})",
                           e.appearance.player, e.appearance.look.size(), e.appearance.items.size(),
@@ -312,6 +365,27 @@ struct NetThread::Impl {
                 log::Info("player {} {} (pause menu)", e.pause.player,
                           e.pause.paused ? "paused" : "resumed");
                 PublishPaused(*endpoint);
+              } else if constexpr (std::is_same_v<E, events::RegroupOffered>) {
+                log::Info("player {} offers to join them (offer {}, reason {}, point {:#x}, at "
+                          "({:.1f}, {:.1f}, {:.1f}))",
+                          e.offer.from, e.offer.offer, static_cast<int>(e.offer.reason),
+                          e.offer.point, e.offer.position.x, e.offer.position.y,
+                          e.offer.position.z);
+                runtime.PushRegroupEvent({.kind = RegroupEvent::Kind::Offer, .offer = e.offer});
+              } else if constexpr (std::is_same_v<E, events::RegroupAnswered>) {
+                log::Info("player {} {} our offer {}", e.answer.from,
+                          e.answer.accepted ? "accepted" : "declined", e.answer.offer);
+                runtime.PushRegroupEvent({.kind = RegroupEvent::Kind::Answer, .answer = e.answer});
+              } else if constexpr (std::is_same_v<E, events::RemoteVitals>) {
+                log::Info("player {}: life {} (flags {:#x})", e.vitals.player,
+                          static_cast<int>(e.vitals.life), e.vitals.flags);
+              } else if constexpr (std::is_same_v<E, events::ReviveBy>) {
+                log::Info("player {} revives our V: step {}", e.revive.player,
+                          static_cast<int>(e.revive.step));
+                runtime.PushRevive(e.revive);
+              } else if constexpr (std::is_same_v<E, events::SessionLost>) {
+                log::Info("session lost: no V is up (loss {})", e.over.round);
+                runtime.NoteSessionLost();
               } else if constexpr (std::is_same_v<E, events::Story>) {
                 Story::Get().PushInbound(
                     {.kind = StoryInbound::Kind::Message, .message = e.message});
@@ -319,10 +393,26 @@ struct NetThread::Impl {
                 log::Info("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
                           e.effect.abilities, e.effect.scale);
                 runtime.PushRemoteTime(e.effect);
+              } else if constexpr (std::is_same_v<E, events::WorldItemAppeared>) {
+                log::Info("loot: world item {} dropped by player {} ({} stacks, token {})",
+                          e.item.id, e.item.dropper, e.item.stacks.size(), e.item.token);
+                runtime.PushLoot(e.item);
+              } else if constexpr (std::is_same_v<E, events::WorldItemTakenBy>) {
+                log::Info("loot: world item {} stack {} taken by player {}", e.taken.id,
+                          e.taken.stack, e.taken.taker);
+                runtime.PushLoot(e.taken);
+              } else if constexpr (std::is_same_v<E, events::SharedItemFrom>) {
+                log::Info("loot: player {} shares item {:#x} x{} ({}, npc {})", e.item.player,
+                          e.item.item.record, e.item.item.quantity,
+                          e.item.kind == proto::kSharedOnCorpse ? "on a corpse" : "looted",
+                          e.item.npc);
+                runtime.PushLoot(e.item);
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
+                runtime.SetYou(0);
                 runtime.SetRemotePaused({});
+                runtime.SetOthersLives({});
                 // The next session's players start afresh (a restarted host
                 // counts its states from the start again).
                 for (const auto &[id, info] : endpoint->Players())
@@ -355,9 +445,11 @@ struct NetThread::Impl {
 
       runtime.SetClockOffset(static_cast<std::int64_t>(endpoint->HostNowUs()) -
                              static_cast<std::int64_t>(net::NowUs()));
-      if (auto local = runtime.TakeLocal())
+      if (auto local = runtime.TakeLocal()) {
+        Story::Get().FilterLocal(*local); // a private scene: held where it began
         endpoint->SendLocalState(*local);
-      if (auto pose = runtime.TakeLocalPose())
+      }
+      if (auto pose = runtime.TakeLocalPose(); pose && !Story::Get().Private())
         endpoint->SendLocalPose(*pose);
       if (auto appearance = runtime.TakeLocalAppearance()) {
         lastAppearance = *appearance;
@@ -402,6 +494,16 @@ struct NetThread::Impl {
           endpoint->SendNpcHit(*hit);
         else if (const auto *effect = std::get_if<proto::NpcEffect>(&message))
           endpoint->SendNpcEffect(*effect);
+        else if (const auto *action = std::get_if<proto::NpcAction>(&message))
+          endpoint->SendNpcAction(*action);
+        else if (const auto *hold = std::get_if<proto::NpcHold>(&message))
+          endpoint->SendNpcHold(*hold);
+        else if (const auto *cue = std::get_if<proto::NpcCue>(&message))
+          endpoint->SendNpcCue(*cue);
+        else if (const auto *anims = std::get_if<proto::NpcAnims>(&message))
+          endpoint->SendNpcAnims(*anims);
+        else if (const auto *shot = std::get_if<proto::NpcShot>(&message))
+          endpoint->SendNpcShot(*shot);
         else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
                  hit && !endpoint->SendPlayerHit(*hit))
           log::Info("hit on player {} dropped: not a guest in the session", hit->player);
@@ -418,6 +520,8 @@ struct NetThread::Impl {
         else if (const auto *car = std::get_if<proto::VehicleHack>(&message))
           endpoint->SendVehicleHack(*car);
       }
+      for (const auto &[player, reply] : runtime.TakeNpcReplies())
+        endpoint->SendNpcActionReply(player, reply);
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
       if (auto awareness = runtime.TakeNpcAwareness())
@@ -430,6 +534,33 @@ struct NetThread::Impl {
         endpoint->SendNoise(noise);
       for (auto &[message, to] : Story::Get().TakeOutbound())
         endpoint->SendStory(std::move(message), to);
+      for (auto &message : runtime.TakeRegroupOutbox()) {
+        if (auto *offer = std::get_if<proto::Regroup>(&message))
+          endpoint->SendRegroup(std::move(*offer));
+        else if (const auto *answer = std::get_if<proto::RegroupAnswer>(&message))
+          endpoint->SendRegroupAnswer(*answer);
+      }
+      for (auto &message : runtime.TakeLootOutbox()) {
+        if (auto *item = std::get_if<proto::WorldItem>(&message))
+          endpoint->DropWorldItem(std::move(*item));
+        else if (const auto *taken = std::get_if<proto::WorldItemTaken>(&message))
+          endpoint->TakeWorldItem(taken->id, taken->stack);
+        else if (const auto *shared = std::get_if<proto::SharedItem>(&message))
+          endpoint->SendSharedItem(*shared);
+      }
+      if (auto vitals = runtime.TakeLocalVitals()) {
+        lastVitals = *vitals;
+        endpoint->SetLocalVitals(*vitals);
+        log::Info("our V: life {} (flags {:#x})", static_cast<int>(vitals->life), vitals->flags);
+      }
+      for (const auto &revive : runtime.TakeLocalRevives())
+        endpoint->SendRevive(revive);
+      if (!ended)
+        PublishLives(*endpoint);
+      for (auto &message : Combat::Get().TakeOutbound())
+        if (!endpoint->SendCombat(message))
+          if (const auto *area = std::get_if<proto::AreaHit>(&message))
+            log::Info("area hit on player {} dropped: not in the session", area->player);
 
       if (const auto now = std::chrono::steady_clock::now(); now >= nextStatus && !ended) {
         nextStatus = now + 500ms;
@@ -456,6 +587,7 @@ struct NetThread::Impl {
         }
       }
     }
+    runtime.SetYou(0);
     // Nobody in this session pauses us any more; its code is gone.
     runtime.SetRemotePaused({});
     runtime.SetRelay("", "");

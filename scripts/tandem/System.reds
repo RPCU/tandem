@@ -33,6 +33,8 @@ public class TandemPuppet {
   // Its attitude group (Attitudes.reds), as read back once set.
   public let grouped: Bool;
   public let group: CName;
+  // Teleports the movement controller asked for (SnapPuppet).
+  public let snaps: Int32;
 }
 
 // A puppet on its way out, removed over several frames: deleting a vehicle
@@ -86,10 +88,15 @@ public class TandemSystem extends ScriptableSystem {
   private let m_pause: ref<TandemPause>;
   private let m_radio: ref<TandemRadio>;
   private let m_time: ref<TandemTime>;
+  private let m_travel: ref<TandemTravel>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
   // Stealth, detection and combat per player, camo, noises (Stealth.reds).
   private let m_stealth: ref<TandemStealth>;
+  // Down, revive, respawn (Revive.reds).
+  private let m_revive: ref<TandemRevive>;
+  // Hit outcomes: strikes, wounds, poise, difficulty, area hits (Outcomes.reds).
+  private let m_outcomes: ref<TandemOutcomes>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
   private let m_testNpcs: array<EntityID>;
   private let m_testHostile: array<EntityID>;
@@ -190,12 +197,16 @@ public class TandemSystem extends ScriptableSystem {
     this.m_radio.Start(this.GetGameInstance());
     this.m_time = new TandemTime();
     this.m_time.Start(this.GetGameInstance());
+    this.m_travel = new TandemTravel();
+    this.m_travel.Start(this.GetGameInstance());
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
     this.m_attitudes = new TandemAttitudes();
     this.m_attitudes.Start(this.GetGameInstance());
     this.m_stealth = new TandemStealth();
     this.m_stealth.Start(this.GetGameInstance());
+    this.m_revive = new TandemRevive();
+    this.m_revive.Start(this.GetGameInstance(), this);
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -206,6 +217,10 @@ public class TandemSystem extends ScriptableSystem {
     let story = TandemStorySystem.Get(this.GetGameInstance());
     if IsDefined(story) {
       story.Begin();
+    }
+    let loot = TandemLoot.Get(this.GetGameInstance());
+    if IsDefined(loot) {
+      loot.Begin();
     }
   }
 
@@ -249,6 +264,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_stealth.End();
     }
     this.m_stealth = null;
+    if IsDefined(this.m_revive) {
+      this.m_revive.Stop();
+    }
+    this.m_revive = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -261,6 +280,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_time) {
       this.m_time.Stop();
       this.m_time = null;
+    }
+    if IsDefined(this.m_travel) {
+      this.m_travel.Stop();
+      this.m_travel = null;
     }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
@@ -290,6 +313,9 @@ public class TandemSystem extends ScriptableSystem {
 
   // Host this game now (port 0: tandem.ini's), out of any session it was in.
   public func CoopHost(port: Int32) -> Bool {
+    if this.CoopHeld() {
+      return false;
+    }
     this.EndSession(true);
     TandemNative.StartHost(port);
     this.BeginSession();
@@ -300,6 +326,9 @@ public class TandemSystem extends ScriptableSystem {
   // False: neither (nothing changed), or a code with no relay set (then out
   // of the session it was in).
   public func CoopJoin(address: String) -> Bool {
+    if this.CoopHeld() {
+      return false;
+    }
     if TandemCoop.IsCode(address) {
       this.EndSession(true);
       if !TandemNative.JoinByCode(address) {
@@ -318,7 +347,20 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_inGame;
   }
 
+  // A V that is down stays in its session: leaving would take away what
+  // stands it up again (Revive.reds).
+  private func CoopHeld() -> Bool {
+    if IsDefined(this.m_revive) && this.m_revive.IsDown() {
+      TandemCoop.Notice(this.GetGameInstance(), "You cannot leave the session while down");
+      return true;
+    }
+    return false;
+  }
+
   public func CoopLeave() -> Void {
+    if this.CoopHeld() {
+      return;
+    }
     this.EndSession(true);
     TandemNative.Leave();
     TandemCoop.Notice(this.GetGameInstance(), "You left the co-op session");
@@ -343,7 +385,7 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_stealth;
   }
 
-  // Slowed time (Time.reds), also driven every frame by the plugin.
+  // Slowed time (Time.reds), driven by Tick.
   public func TimeSync() -> ref<TandemTime> {
     return this.m_time;
   }
@@ -353,6 +395,11 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_you != 0u ? this.m_npcs : null;
   }
 
+  // The world runs (past the loading screen, see Tick).
+  public func IsPlaying() -> Bool {
+    return this.m_playing;
+  }
+
   // The remote players who have a puppet here.
   public func PuppetPlayers() -> array<Uint32> {
     let out: array<Uint32>;
@@ -360,6 +407,15 @@ public class TandemSystem extends ScriptableSystem {
       ArrayPush(out, puppet.player);
     }
     return out;
+  }
+
+  // Fast travel together and regroup (Travel.reds).
+  public func Travel() -> ref<TandemTravel> {
+    return this.m_travel;
+  }
+
+  public func Revive() -> ref<TandemRevive> {
+    return this.m_revive;
   }
 
   public func OnTick(gen: Int32) -> Void {
@@ -402,6 +458,11 @@ public class TandemSystem extends ScriptableSystem {
       this.m_stealth.Tick(this.Now(), this.m_you, this.m_npcs);
     }
     TandemHacks.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
+    // Grapples, takedowns, carried bodies (Takedowns.reds); 0: not in a session.
+    TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
+    if IsDefined(this.m_revive) && this.m_playing {
+      this.m_revive.Tick(this.Now(), this.m_you);
+    }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
     }
@@ -411,6 +472,16 @@ public class TandemSystem extends ScriptableSystem {
     // The car radio (Radio.reds): the driver's for everyone aboard.
     if IsDefined(this.m_radio) && this.m_playing {
       this.m_radio.Tick(this.Now(), this);
+    }
+    if IsDefined(this.m_travel) && this.m_playing {
+      this.m_travel.Tick(this.Now(), this.m_you);
+    }
+    // Slowed time (Time.reds): every frame, in the script tick, once the
+    // world runs and we are in a session. (It ran from the plugin's
+    // per-frame call before: the game crashed there loading a save and froze
+    // right after "playing", 2026-11-18.)
+    if IsDefined(this.m_time) && this.m_playing && this.m_you != 0u {
+      this.m_time.Update();
     }
 
     this.TickAttitudes();
@@ -518,6 +589,8 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.PoseHook();
     } else if Equals(command, "npc count") {
       TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0)");
+    } else if Equals(command, "npc anims") {
+      TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
     } else if Equals(command, "proxy clear") {
       for test in this.m_proxyTests {
         GameInstance.GetDynamicEntitySystem().DeleteEntity(test.id);
@@ -560,6 +633,8 @@ public class TandemSystem extends ScriptableSystem {
         let at = npc.GetWorldPosition();
         TandemNative.Log(s"npcs: \(EntityID.ToDebugStringDecimal(id)) static \(EntityID.IsStatic(id)) \(TDBID.ToStringDEBUG(npc.GetRecordID())) \(NameToString(npc.GetCurrentAppearanceName())) at (\(at.X), \(at.Y), \(at.Z))");
       }
+    } else if StrBeginsWith(command, "loot") {
+      TandemLoot.Command(this.GetGameInstance(), command);
     } else if Equals(command, "puppet attitude") {
       this.ReportAttitudes();
     } else if StrBeginsWith(command, "puppet group") {
@@ -662,6 +737,8 @@ public class TandemSystem extends ScriptableSystem {
         }
       }
       TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
+    } else if StrBeginsWith(command, "takedown") {
+      TandemTakedowns.Get(this.GetGameInstance()).Command(command);
     } else if Equals(command, "vehicle clear") {
       // (experiment) delete the parked car copies: this froze the game
       // (engine-knowledge §13.6); run tools/game.sh bt if it does again.
@@ -691,7 +768,7 @@ public class TandemSystem extends ScriptableSystem {
           yaw = StringToFloat(w);
         }
       }
-      GameInstance.GetTeleportationFacility(this.GetGameInstance()).Teleport(GetPlayer(this.GetGameInstance()), to, new EulerAngles(0.0, 0.0, yaw));
+      GameInstance.GetTeleportationFacility(this.GetGameInstance()).Teleport(GetPlayer(this.GetGameInstance()), to, TandemYawAngles(yaw));
       TandemNative.Log(s"teleport: (\(to.X), \(to.Y), \(to.Z)) yaw \(yaw)");
     } else if Equals(command, "vehicle ride") {
       // (test) our V into the passenger seat of the first remote car copy.
@@ -832,10 +909,19 @@ public class TandemSystem extends ScriptableSystem {
         ArrayPush(this.m_joins, join);
       }
       this.RemoveAllPuppets();
+    } else if Equals(command, "travel") || StrBeginsWith(command, "regroup") {
+      if IsDefined(this.m_travel) {
+        this.m_travel.Command(command);
+      }
     } else if Equals(command, "markers") {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {
       this.RemoveAllPuppets();
+    } else if StrBeginsWith(command, "revive") {
+      // Revive.reds: revive down | hold | report.
+      if IsDefined(this.m_revive) {
+        this.m_revive.Command(command);
+      }
     } else if StrBeginsWith(command, "story") || StrBeginsWith(command, "quest") {
       // Story.reds: story …, quest freeze on|off, quest report.
       TandemStorySystem.Get(this.GetGameInstance()).Command(command);
@@ -960,7 +1046,26 @@ public class TandemSystem extends ScriptableSystem {
     return 0u;
   }
 
+  // Hit outcomes (Outcomes.reds), and the session's NPCs for them.
+  public func Outcomes() -> ref<TandemOutcomes> {
+    if !IsDefined(this.m_outcomes) {
+      this.m_outcomes = new TandemOutcomes();
+      this.m_outcomes.Start(this.GetGameInstance());
+    }
+    return this.m_outcomes;
+  }
+
+  public func Npcs() -> ref<TandemNpcs> {
+    return this.m_you != 0u ? this.m_npcs : null;
+  }
+
   // The host NPC a proxy in our world stands for (0: none; Combat.reds).
+  // The proxy of a host NPC in our world, alive or dead (Loot.reds).
+  public func ProxyOfNpc(npc: Uint32) -> EntityID {
+    let none: EntityID;
+    return IsDefined(this.m_npcs) ? this.m_npcs.ProxyEntity(npc) : none;
+  }
+
   public func NpcOfProxy(id: EntityID) -> Uint32 {
     return IsDefined(this.m_npcs) && this.m_you != 0u ? this.m_npcs.NpcOfProxy(id) : 0u;
   }
@@ -1113,7 +1218,8 @@ public class TandemSystem extends ScriptableSystem {
     let psm = GameInstance.GetBlackboardSystem(game).GetLocalInstanced(player.GetEntityID(), GetAllBlackboardDefs().PlayerStateMachine);
     let locomotion = IsDefined(psm) ? psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Locomotion) : 0;
 
-    TandemNative.SendLocalState(position, player.GetWorldOrientation(), velocity, locomotion, 0);
+    // How we move beyond walking (Movement.reds): the puppet's placement.
+    TandemNative.SendLocalState(position, player.GetWorldOrientation(), velocity, locomotion, TandemMovement.Flags(psm));
 
     // Driving our own car: its transform, for the copies on the other games.
     let car: wref<VehicleObject>;
@@ -1145,6 +1251,9 @@ public class TandemSystem extends ScriptableSystem {
           break;
         case 4:
           this.m_you = event.player;
+          if IsDefined(this.m_revive) {
+            this.m_revive.InSession();
+          }
           this.m_sessionAt = this.Now();
           TandemCoop.NoticeInSession(this.GetGameInstance());
           break;
@@ -1163,6 +1272,9 @@ public class TandemSystem extends ScriptableSystem {
           }
           if IsDefined(this.m_stealth) {
             this.m_stealth.End();
+          }
+          if IsDefined(this.m_revive) {
+            this.m_revive.SessionEnded();
           }
           break;
         default:
@@ -1271,9 +1383,30 @@ public class TandemSystem extends ScriptableSystem {
           puppet.controlled = TandemNative.AttachController(puppet.player, entity);
         }
       }
+      if puppet.controlled && TandemNative.TakeSnap(puppet.player) {
+        this.SnapPuppet(puppet);
+      }
       if !puppet.grouped {
         this.Group(puppet);
       }
+    }
+  }
+
+  // The movement controller could not bring the body where its player is
+  // (a ledge an NPC body does not climb, a move the engine refused): put it
+  // there. The controller faces it the right way; keep its heading.
+  private func SnapPuppet(puppet: ref<TandemPuppet>) -> Void {
+    let game = this.GetGameInstance();
+    let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
+    let position = TandemNative.RemotePosition(puppet.player);
+    if !IsDefined(body) || position.W == 0.0 || GameInstance.GetMountingFacility(game).IsMountedToAnything(puppet.id) {
+      return;
+    }
+    let angles = Quaternion.ToEulerAngles(body.GetWorldOrientation());
+    GameInstance.GetTeleportationFacility(game).Teleport(body, position, angles);
+    puppet.snaps += 1;
+    if puppet.snaps <= 10 {
+      TandemNative.Log(s"player \(puppet.player): body teleported to its player (placement \(TandemNative.RemotePlacement(puppet.player)), \(puppet.snaps) so far)");
     }
   }
 
@@ -1782,4 +1915,13 @@ public class TandemSystem extends ScriptableSystem {
     ArrayClear(this.m_puppets);
   }
 
+}
+
+// A rotation about the vertical axis only. EulerAngles is a native struct
+// whose script definition redscript does not trust: constructing it with
+// arguments may be undefined behaviour (its warning), so set the field.
+public func TandemYawAngles(yaw: Float) -> EulerAngles {
+  let angles: EulerAngles;
+  angles.Yaw = yaw;
+  return angles;
 }

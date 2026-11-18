@@ -1,5 +1,7 @@
 #include "tandem/interpolation.hpp"
 
+#include "tandem/movement.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -11,6 +13,9 @@ constexpr double kAlpha = 1.0 / 16.0;
 constexpr std::uint64_t kIgnoreGapUs = 500'000;
 // The speed shown follows the measured one this fast (per second).
 constexpr float kSpeedFollowPerSecond = 10.f;
+// A V in the air keeps falling while its states are late (m/s², assumed: the
+// game's own value for V was not measured).
+constexpr float kAirGravity = 9.81f;
 
 float WrapAngle(float a) {
   constexpr float pi = std::numbers::pi_v<float>;
@@ -29,6 +34,10 @@ proto::Vec3 Lerp(const proto::Vec3 &a, const proto::Vec3 &b, float t) {
 
 float GroundDistance(const proto::Vec3 &a, const proto::Vec3 &b) {
   return std::hypot(b.x - a.x, b.y - a.y);
+}
+
+float Distance(const proto::Vec3 &a, const proto::Vec3 &b) {
+  return std::hypot(b.x - a.x, b.y - a.y, b.z - a.z);
 }
 
 // Seconds between two host times: only differences become floating point.
@@ -126,6 +135,20 @@ View Track::At(std::uint64_t nowHostUs) {
     const auto &a = m_samples[i];
     const auto &b = m_samples[i + 1];
     const float span = Seconds(a.timeUs, b.timeUs);
+    const float jump = Distance(a.state.position, b.state.position);
+    if (jump > kTeleportDistance && jump > kTeleportSpeed * span) {
+      // A teleport: where it was until then (b takes over once reached).
+      view.position = a.state.position;
+      view.yaw = YawOf(a.state.orientation);
+      view.stance = a.state.stance;
+      view.flags = a.state.flags;
+      const float dt =
+          m_lastViewUs ? std::clamp(Seconds(m_lastViewUs, nowHostUs), 0.f, 0.25f) : 1.f;
+      m_lastViewUs = nowHostUs;
+      m_speed -= m_speed * std::min(1.f, dt * kSpeedFollowPerSecond);
+      view.speed = m_speed;
+      return view;
+    }
     const float t = std::clamp(Seconds(a.timeUs, render) / span, 0.f, 1.f);
     view.position = Lerp(a.state.position, b.state.position, t);
     view.yaw = LerpAngle(YawOf(a.state.orientation), YawOf(b.state.orientation), t);
@@ -134,11 +157,18 @@ View Track::At(std::uint64_t nowHostUs) {
     view.flags = nearest.flags;
     measured = GroundDistance(a.state.position, b.state.position) / span;
   } else {
-    // Past the newest state: carry on along its velocity for a moment, then hold.
+    // Past the newest state: carry on along its velocity for a moment, then
+    // hold. A teleport's velocity (the jump over one sample) is not motion.
+    const auto &sent = last.state.velocity;
+    const bool moving = std::hypot(sent.x, sent.y, sent.z) <= kTeleportSpeed;
+    const proto::Vec3 v = moving ? sent : proto::Vec3{};
     const float ahead = std::min(Seconds(last.timeUs, render), kExtrapolateUs / 1e6f);
-    const auto &v = last.state.velocity;
+    // In the air it keeps falling (not across a teleport).
+    const float fall = moving && movement::PlacementOf(last.state.flags) == movement::Placement::Air
+                           ? 0.5f * kAirGravity * ahead * ahead
+                           : 0.f;
     view.position = {last.state.position.x + v.x * ahead, last.state.position.y + v.y * ahead,
-                     last.state.position.z + v.z * ahead};
+                     last.state.position.z + v.z * ahead - fall};
     view.yaw = YawOf(last.state.orientation);
     view.stance = last.state.stance;
     view.flags = last.state.flags;

@@ -66,6 +66,14 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_effects: array<TweakDBID>;
   // Johnny or Songbird around our V (theirs, or a proxy of the host's).
   private let m_companions: String;
+  // Private scenes (design §2.12): ours (and its class: 2 minor, 3 romance),
+  // the puppets we hid for it, and the other players busy in theirs.
+  private let m_others: array<Uint32>;
+  private let m_inPrivate: Bool;
+  private let m_forcedPrivate: Bool;
+  private let m_lastPrivateCheck: Float;
+  private let m_hiddenPuppets: array<Uint32>;
+  private let m_busy: array<Uint32>;
   private let m_lastCompanionScan: Float;
 
   // Quest rewards this V got in co-op (its own save keeps them: a quest it
@@ -169,6 +177,8 @@ public class TandemStorySystem extends ScriptableSystem {
     this.HandleEvents();
     if this.m_you != 0u && this.m_playing {
       this.ScanCompanions();
+      this.UpdatePrivate();
+      this.SendFlags();
       if this.m_isHost {
         this.HostTick();
       } else {
@@ -202,6 +212,12 @@ public class TandemStorySystem extends ScriptableSystem {
 
   public func HostPlayer() -> Uint32 {
     return this.m_host;
+  }
+
+  // The host is in a private scene (design §2.12): its lines and hubs are
+  // its own.
+  public func HostBusy() -> Bool {
+    return (this.m_hostFlags & 8) != 0;
   }
 
   public func JournalOf() -> wref<JournalManager> {
@@ -261,9 +277,17 @@ public class TandemStorySystem extends ScriptableSystem {
           if !this.m_isHost && this.m_you != 0u {
             this.GuestLeave();
           }
+          this.EndPrivate();
           this.m_you = 0u;
           break;
+        case 4:
+          ArrayRemove(this.m_others, event.player);
+          this.SetBusy(event.player, false);
+          break;
         case 3:
+          if !ArrayContains(this.m_others, event.player) {
+            ArrayPush(this.m_others, event.player);
+          }
           if this.m_isHost {
             // A joiner gets the journal from the plugin's record; our scene
             // tier too. Nothing to do here but say so.
@@ -300,6 +324,9 @@ public class TandemStorySystem extends ScriptableSystem {
             this.m_hostTier = event.state;
             this.OnHostFlags(event.flags);
           }
+          if event.player != this.m_you {
+            this.SetBusy(event.player, (event.flags & 8) != 0);
+          }
           break;
         case 42:
           this.OnHostEffect(event.reward, event.flags != 0);
@@ -332,7 +359,6 @@ public class TandemStorySystem extends ScriptableSystem {
   }
 
   private func HostTick() -> Void {
-    this.SendFlags();
     if this.m_snapshotOwed {
       this.m_snapshotOwed = false;
       let hashes: array<Uint32>;
@@ -773,6 +799,10 @@ public class TandemStorySystem extends ScriptableSystem {
   // takeover, a flashback, "Johnny drives") or in a braindance counts as a
   // cinematic: weapons down and safe near the host, an offer to join far away.
   private func HostSceneTier() -> Int32 {
+    // A private scene is nobody else's: no holds, no offer.
+    if (this.m_hostFlags & 8) != 0 {
+      return 1;
+    }
     if (this.m_hostFlags & 3) != 0 && this.m_hostTier < 4 {
       return 4;
     }
@@ -793,6 +823,9 @@ public class TandemStorySystem extends ScriptableSystem {
     }
     if boards.Get(GetAllBlackboardDefs().UI_PlayerStats).GetBool(GetAllBlackboardDefs().UI_PlayerStats.isReplacer) {
       flags += 2;
+    }
+    if this.m_inPrivate {
+      flags += 8;
     }
     if flags != this.m_ourFlags {
       this.m_ourFlags = flags;
@@ -907,6 +940,97 @@ public class TandemStorySystem extends ScriptableSystem {
     ArrayClear(this.m_effects);
   }
 
+  // ---- private scenes (design §2.12) ----
+
+  // Our V's scene: private when its resource says so (engine/scenes.cpp:
+  // chats, open-world and minor one-to-one scenes, a romance partner alone)
+  // and it holds our V (tier 2 and up). It stays private until the scene
+  // lets go of our V.
+  private func UpdatePrivate() -> Void {
+    if this.Now() - this.m_lastPrivateCheck < 0.5 {
+      return;
+    }
+    this.m_lastPrivateCheck = this.Now();
+    let player = GetPlayer(this.GetGameInstance());
+    if !IsDefined(player) {
+      return;
+    }
+    let tier = PlayerPuppet.GetSceneTier(player);
+    let kind = tier >= 2 ? TandemStory.SceneClass() : 0;
+    let want = this.m_forcedPrivate || (tier >= 2 && (kind >= 2 || (this.m_inPrivate && kind == 0)));
+    if NotEquals(want, this.m_inPrivate) {
+      this.m_inPrivate = want;
+      TandemStory.SetPrivate(want);
+      if want {
+        TandemNative.Log(s"story: private scene (\(kind == 3 ? "romance" : "minor"), tier \(tier)): the others see us busy");
+      } else {
+        this.ShowPuppets();
+        TandemNative.Log("story: private scene over");
+      }
+    }
+    // No other V intrudes: their puppets near us fade out while it lasts.
+    if this.m_inPrivate {
+      this.HidePuppets(player);
+    }
+  }
+
+  private func HidePuppets(player: ref<PlayerPuppet>) -> Void {
+    let hidden = 0;
+    for other in this.m_others {
+      let puppet = this.PuppetOf(other);
+      if IsDefined(puppet) && !ArrayContains(this.m_hiddenPuppets, other)
+        && Vector4.Distance(puppet.GetWorldPosition(), player.GetWorldPosition()) < 30.0 {
+        GameObject.ToggleForcedVisibilityInAnimSystemEvent(puppet, n"tandem_private", false, 0.5);
+        ArrayPush(this.m_hiddenPuppets, other);
+        hidden += 1;
+      }
+    }
+    if hidden > 0 {
+      TandemNative.Log(s"story: private scene: \(hidden) puppet(s) hidden");
+    }
+  }
+
+  private func ShowPuppets() -> Void {
+    for other in this.m_hiddenPuppets {
+      let puppet = this.PuppetOf(other);
+      if IsDefined(puppet) {
+        GameObject.ToggleForcedVisibilityInAnimSystemEvent(puppet, n"tandem_private", true, 0.5);
+      }
+    }
+    ArrayClear(this.m_hiddenPuppets);
+  }
+
+  // Another player is busy in its own private scene: its puppet stands where
+  // the scene began (its game holds it there) and idles on its own; a small
+  // notice, nothing of the scene.
+  private func SetBusy(player: Uint32, busy: Bool) -> Void {
+    if Equals(busy, ArrayContains(this.m_busy, player)) {
+      return;
+    }
+    TandemStory.PausePose(player, busy);
+    if busy {
+      ArrayPush(this.m_busy, player);
+      this.Notice(s"\(this.NameOf(player)) is busy.");
+      TandemNative.Log(s"story: \(this.NameOf(player)) is busy (private scene)");
+    } else {
+      ArrayRemove(this.m_busy, player);
+      TandemNative.Log(s"story: \(this.NameOf(player)) is back");
+    }
+  }
+
+  private func EndPrivate() -> Void {
+    if this.m_inPrivate {
+      this.m_inPrivate = false;
+      TandemStory.SetPrivate(false);
+    }
+    this.ShowPuppets();
+    for player in this.m_busy {
+      TandemStory.PausePose(player, false);
+    }
+    ArrayClear(this.m_busy);
+    ArrayClear(this.m_others);
+  }
+
   // ---- rewards (design §4) ----
 
   // Host: our V got a reward (PlayerPuppet.OnRewardEvent, final.reds:43468).
@@ -931,7 +1055,7 @@ public class TandemStorySystem extends ScriptableSystem {
     ArrayPush(this.m_rewardedQuests, questHash);
     // By our own rules: our level, our perks, our toasts (final.reds:37406).
     RPGManager.GiveReward(this.GetGameInstance(), reward);
-    TandemNative.Log(s"reward: given \(TDBID.ToStringDEBUG(reward)) (quest \(quest))");
+    TandemNative.Log(s"reward: given \(TDBID.ToStringDEBUG(reward)) (quest \(questHash))");
   }
 
   // Our own story pays a reward: not again if co-op already paid it.
@@ -995,6 +1119,11 @@ public class TandemStorySystem extends ScriptableSystem {
         i += 1;
       }
       TandemNative.Log(s"story dump: \(ArraySize(hashes)) entries");
+    } else if Equals(command, "story private on") || Equals(command, "story private off") {
+      // (test) as if our V were in a private scene.
+      this.m_forcedPrivate = Equals(command, "story private on");
+      this.m_lastPrivateCheck = 0.0;
+      TandemNative.Log(s"story: test private scene \(this.m_forcedPrivate ? "on" : "off")");
     } else if Equals(command, "story join") {
       this.AcceptOffer();
     } else if Equals(command, "story state") {

@@ -18,14 +18,14 @@ plugin/        RED4ext plugin (tandem.dll): entry points, config, net thread
 peer/          tandem-peer, the mock player (Linux)
 tests/         doctest tests of core/ (Linux)
 relay/         tandem-relay (Go, stdlib only): cmd/tandem-relay, internal/relay
-nix/           relay package and OCI image; default.nix exposes them
+nix/           relay package and OCI image, redscript (the game's scc, built for Linux); default.nix exposes them
 deploy/        kubernetes/base: kustomize base for the relay
-scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp, StoryNatives.reds story_natives.cpp)
+scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp, StoryNatives.reds story_natives.cpp, CombatNatives.reds combat_natives.cpp)
 tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet records, their attitude groups, the player marker)
 dist/          files installed next to the DLL (tandem.ini)
 cmake/         clang-cl-msvc.cmake: the Windows cross toolchain
 docs/          ARCHITECTURE.md, research/ (engine facts, sources; data/: RTTI and skeleton dumps)
-tools/         game.sh (drive the game), scenario.sh + scenarios/ (in-game tests), check-natives.py, re/ (read-only reverse engineering, see its README)
+tools/         game.sh (drive the game), scenario.sh + scenarios/ (in-game tests), check-natives.py, scripts-check.sh, re/ (read-only reverse engineering, see its README)
 vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 ```
 
@@ -57,6 +57,7 @@ vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 | `task k8s:check`     | render the kustomize base and validate it (kubeconform)      |
 | `task check`         | all of the above                                             |
 | `task natives:check` | `Natives.reds` matches `natives.cpp` (types, struct fields)  |
+| `task scripts:check` | compile `scripts/tandem` as the game does (seconds, no game) |
 | `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
 | `task logs`          | follow the plugin's log on the game machine                  |
 
@@ -70,7 +71,8 @@ copies `build/windows/plugin/tandem.{dll,pdb}` (and, after `build`,
 
 Run the checks your change can break before saying it works: `task test` for
 `core/`, `task build:plugin` for anything compiled into the DLL,
-`task relay:test` for `relay/`, `task k8s:check` for `deploy/`.
+`task relay:test` for `relay/`, `task k8s:check` for `deploy/`,
+`task scripts:check` for `scripts/`.
 
 Through the relay by hand: `task relay:run`, then `task peer -- host --relay
 127.0.0.1` (it logs `join code K7Q-2M9`) and `task peer -- join --code
@@ -114,13 +116,20 @@ K7Q-2M9 --relay 127.0.0.1`. `task test` does the same (`relay-loopback`,
 - Use `__builtin_offsetof` in `static_assert`s: the MSVC CRT's `offsetof` is
   not a constant expression under clang.
 - `scripts/tandem/Natives.reds` must match `plugin/src/natives.cpp` exactly
-  (and `StoryNatives.reds` `story_natives.cpp`; `task natives:check` reads both).
-  A redscript compile error disables **every** script in the game, so check
-  vanilla and Codeware names before using them (NCO's working 2.5 scripts and
-  Codeware's `scripts/` are good references) and read
-  `r6/logs/redscript_rCURRENT.log` after each deploy. `task natives:check`
-  (run by `task deploy`) compares the two; redscript itself never sees the
-  DLL. Native structs hold no `Vector4`/`Quaternion` fields: the script VM
+  (and `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds`
+  `combat_natives.cpp`; `task natives:check` reads every pair).
+  A redscript compile error disables **every** script in the game, so run
+  `task scripts:check` after every `.reds` change (`task deploy`, `reload`
+  and `check` run it too): it compiles `scripts/tandem` with the game's own
+  redscript (scc 0.5.32, `nix/redscript.nix`) against the game's original
+  bundle and the other mods' scripts (Codeware, ArchiveXL…), copied read-only
+  from the game machine into `~/.cache/tandem/redscript-base`, and prints
+  errors as the game's log does. Bump `nix/redscript.nix` when the game's
+  `engine/tools/scc.exe` changes. Still check vanilla and Codeware names
+  before using them (NCO's working 2.5 scripts and Codeware's `scripts/`
+  are good references): a name that compiles can still be the wrong one.
+  `task natives:check` (run by `task deploy`) compares the natives; redscript
+  itself never sees the DLL. Native structs hold no `Vector4`/`Quaternion` fields: the script VM
   aligns struct locals to 8 and a 16-byte aligned field crashes it.
 
 ### In-game testing
@@ -145,8 +154,11 @@ K7Q-2M9 --relay 127.0.0.1`. `task test` does the same (`relay-loopback`,
 - Test without a second player or input: `tandem-peer` modes (`front`
   echoes your V in view; `drive` drives a car round you; `host --time
 --weather` plays the host while the game joins as a guest with
-  `role = join`, `address = <this machine>`), and `tools/game.sh cmd`
-  commands (`teleport home`, `where`, `vehicle ride`, `pose loop`…) that
+  `role = join`, `address = <this machine>`; `--latency`, `--jitter`,
+  `--loss`, `--reorder` put a bad link in between; `--travel-at` and
+  `--offer-regroup` test fast travel together), and `tools/game.sh cmd`
+  commands (`teleport home`, `where`, `vehicle ride`, `pose loop`, `travel`,
+  `regroup accept`…) that
   need no restart. Restart only for script or plugin changes. anya's
   keyboard is AZERTY: simulated keys land on other letters.
 - The game is launched through the Steam already running in anya's Sway

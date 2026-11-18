@@ -12,23 +12,24 @@
 //   TimeDilationSandevistanTimeScale / TimeDilationKerenzikovTimeScale): the
 //   host slows its real NPCs with the per-entity dilation vanilla gives a
 //   single NPC (TimeDilatable.SetIndividualTimeDilation, final.reds:14727;
-//   vanilla slows one NPC to 0.05 for 2.5 s that way, final.reds:525204),
-//   each guest its proxies of them, so they animate at the speed they move.
+//   vanilla slows one NPC to 0.05 for 2.5 s that way, final.reds:525204).
+//   Guests show it through the proxies' motion only: entities that tandem's
+//   own movement controller drives (proxies, puppets) get no per-entity
+//   dilation (see Apply).
 //   Rules of the bubbles (several Vs, overlaps, ends): core's
 //   tandem/timebubble.hpp. Everything outside the bubbles keeps normal
 //   speed, and so does every V: two Vs in a Sandevistan at once each see the
 //   NPCs slowed and the other V at normal speed.
 //   * Its owner: a guest keeps its single-player slow motion on its own
-//     screen (its world is not the shared one), but what the network drives
-//     there (proxies, the other Vs' puppets) is exempted from its global
-//     factor and set to its true shared speed, so motion and animation
-//     agree. The host's world is the shared one: by default (tandem.ini
+//     screen (its world is not the shared one); what the network drives
+//     there moves at its true shared speed (their animations follow the
+//     guest's own factor: not exempted, see Apply). The host's world is the shared one: by default (tandem.ini
 //     time_host = bubble) its global factor is taken back within the frame
 //     (kept "active" at normal speed, so the state machine carries on) and
 //     the bubble alone slows what matters, the enemies around it; with
-//     time_host = full it keeps the whole slow motion and exempts what it
-//     shares, as a guest does (experimental: its projectiles, physics and
-//     clock still slow).
+//     time_host = full it keeps the whole slow motion and exempts the NPCs
+//     it shares (experimental: its projectiles, physics and clock still
+//     slow).
 //   * The others: that V's puppet keeps normal speed among slowed enemies,
 //     with the implant's effect on it (PuppetFx, effect name to confirm).
 // - Scanner and quickhack panel ("focusMode", TimeDilationFocusModeEvents,
@@ -37,12 +38,16 @@
 //   ("berserk", SetTimeDilationEffector final.reds:307231), melee hit stop
 //   ("meleeHit", final.reds:45789) and deflect/one-punch ("deflect",
 //   final.reds:39679): local only, no bubble. A guest keeps them on its
-//   screen (shared things exempted, as above); the host drops their world
-//   part (time_host = bubble). Others see the V as it is: standing, scanning.
+//   screen; the host drops their world part (time_host = bubble). Others see the V as it is: standing, scanning.
 // - Second chance (BaseStatusEffect.SecondChancePerkTimeDilation, its
 //   dilation in TweakDB): its reason is unknown; any other global dilation
 //   left on the host is logged ("an unknown dilation") to find it.
 // - Menus, pause, time skips: not here (Pause.reds; ARCHITECTURE).
+//
+// Runs from TandemSystem.Tick, every frame once the world plays: the script
+// tick is one frame behind a dilation at most. (It ran from the plugin's
+// per-frame call first, outside the script tick: the game crashed there
+// loading a save and froze right after "playing", 2026-11-18.)
 
 public class TandemTimeApplied {
   public let id: EntityID;
@@ -101,17 +106,6 @@ public class TandemTime {
     return IsDefined(system) ? system.TimeSync() : null;
   }
 
-  // Every frame, from the plugin (plugin/src/main.cpp): a dilation that
-  // would slow the shared world is taken back within the frame it began.
-  public static func Frame(game: GameInstance) -> Void {
-    // The plugin hands an empty game instance: the game's own global is the
-    // right one (as TandemPause.Frame).
-    let time = TandemTime.Of(GetGameInstance());
-    if IsDefined(time) {
-      time.Update();
-    }
-  }
-
   private func TandemSys() -> ref<TandemSystem> {
     return GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
   }
@@ -132,7 +126,8 @@ public class TandemTime {
     }
     let player = GetPlayer(this.m_game);
     let system = this.TandemSys();
-    if !IsDefined(player) || !IsDefined(system) || system.You() == 0u {
+    // Never behind the loading screen (TandemSystem.Tick checks it too).
+    if !IsDefined(player) || !IsDefined(system) || system.You() == 0u || !system.IsPlaying() {
       return;
     }
     let times = GameInstance.GetTimeSystem(this.m_game);
@@ -151,9 +146,11 @@ public class TandemTime {
       this.m_lastBubbles = now;
       this.Bubbles(system, player);
     }
-    // Our world runs slower than the network (a guest's Sandevistan, the
-    // host with time_host = full): what the network drives is exempted.
-    let exempt = together && times.GetActiveTimeDilation() < 0.99;
+    // Our world runs slower than the network (the host with time_host =
+    // full): the NPCs we share are exempted. Only while a dilation is
+    // active: what GetActiveTimeDilation answers with none is unknown (0
+    // would exempt everything, every frame).
+    let exempt = together && TandemTime.Dilated(times);
     this.Apply(system, exempt);
     this.Measure(now);
   }
@@ -188,6 +185,15 @@ public class TandemTime {
     TandemNative.Log(s"time: our abilities \(abilities) (world speed \(scale))");
   }
 
+  // Our world runs slowed now: a dilation is active and its factor is one.
+  private static func Dilated(times: ref<TimeSystem>) -> Bool {
+    if !times.IsTimeDilationActive() {
+      return false;
+    }
+    let factor = times.GetActiveTimeDilation();
+    return factor > 0.0 && factor < 0.99;
+  }
+
   // An implant's stat, or the test's scale when there is none (no implant).
   private static func ScaleOf(stat: Float, fallback: Float) -> Float {
     return stat > 0.0 && stat < 1.0 ? stat : fallback;
@@ -212,7 +218,7 @@ public class TandemTime {
     this.Drop(times, n"deflect");
     let left = times.GetActiveTimeDilation();
     let now = this.RealNow();
-    if left < 0.99 && now - this.m_unknownLogged > 5.0 {
+    if TandemTime.Dilated(times) && now - this.m_unknownLogged > 5.0 {
       this.m_unknownLogged = now;
       TandemNative.Log(s"time: an unknown dilation slows the world to \(left) (a menu, or a reason to add)");
     }
@@ -313,27 +319,26 @@ public class TandemTime {
     this.m_bubbleSizes = sizes;
   }
 
-  // Each NPC we share or show at its bubble's speed, ignoring our own global
-  // factor; with `exempt`, everything else the network drives (the other
-  // NPCs, the other Vs' puppets) at normal speed, ignoring it too.
+  // Host: each NPC we share at its bubble's speed, ignoring our own global
+  // factor; with `exempt`, the other shared NPCs at normal speed, ignoring
+  // it too. Only the host's own NPCs, run by the game's AI as vanilla's
+  // per-entity dilations are: proxies and puppets are moved by tandem's own
+  // movement controller (plugin/src/engine/controller.cpp), and a dilation
+  // on those is untried. Suspected in the freeze of 2026-11-18: on the
+  // first frame after "playing" this set a dilation on every puppet and
+  // proxy (`exempt` was likely true with no dilation at all).
   private func Apply(system: ref<TandemSystem>, exempt: Bool) -> Void {
     for applied in this.m_applied {
       applied.seen = false;
     }
     let npcs = system.NpcsSync();
-    if IsDefined(npcs) {
+    if IsDefined(npcs) && TandemNative.IsHost() {
       let shared = npcs.TimeIds();
       let entities = npcs.TimeEntities();
       let i = 0;
       while i < ArraySize(shared) {
         this.Want(entities[i], TandemNative.TimeFactorOf(shared[i]), exempt, shared[i]);
         i += 1;
-      }
-    }
-    for other in system.PuppetPlayers() {
-      let puppet = system.PuppetOf(other);
-      if IsDefined(puppet) {
-        this.Want(puppet.GetEntityID(), 1.0, exempt, 0u);
       }
     }
     // No longer a target (gone, dead, no longer shared): given back, unless
@@ -510,7 +515,7 @@ public class TandemTime {
       }
       TandemNative.Log(s"time: puppet effect \(NameToString(this.m_fx)) played on every puppet");
     } else if Equals(command, "time report") {
-      TandemNative.Log(s"time: world speed here \(times.GetActiveTimeDilation()), our abilities \(this.m_sentAbilities) (\(this.m_sentScale)), \(ArraySize(this.m_applied)) entities set, taken back \(ArraySize(this.m_taken)), neutral \(this.m_neutral), host full \(TandemNative.IsTimeHostFull())");
+      TandemNative.Log(s"time: world speed here \(times.GetActiveTimeDilation()) (a dilation active: \(times.IsTimeDilationActive())), our abilities \(this.m_sentAbilities) (\(this.m_sentScale)), \(ArraySize(this.m_applied)) entities set, taken back \(ArraySize(this.m_taken)), neutral \(this.m_neutral), host full \(TandemNative.IsTimeHostFull())");
       for applied in this.m_applied {
         let body = GameInstance.FindEntityByID(this.m_game, applied.id) as gamePuppet;
         if IsDefined(body) {

@@ -2,6 +2,8 @@
 #include "relay_link.hpp"
 #include "resolve.hpp"
 
+#include "enet_util.hpp"
+
 #include <enet/enet.h>
 
 #include <algorithm>
@@ -12,6 +14,7 @@ namespace tandem::net {
 namespace {
 std::mutex g_enetLock;
 int g_enetUsers = 0;
+} // namespace
 
 bool AcquireEnet() {
   std::lock_guard _(g_enetLock);
@@ -27,6 +30,7 @@ void ReleaseEnet() {
     enet_deinitialize();
 }
 
+namespace {
 // ENet's millisecond clock wraps; its differences do not.
 enet_uint32 Since(enet_uint32 now, enet_uint32 then) { return now - then; }
 bool Reached(enet_uint32 now, enet_uint32 when) {
@@ -332,6 +336,13 @@ std::optional<RelayStatus> Session::Relay() const {
 
 std::optional<RelaySecret> Session::RelaySessionSecret() const {
   return m_impl->relay ? m_impl->relay->Secret() : std::nullopt;
+}
+
+std::uint16_t Session::LocalPort() const {
+  ENetAddress address{};
+  if (enet_socket_get_address(m_impl->host->socket, &address) != 0)
+    return 0;
+  return address.port;
 }
 
 std::vector<PeerId> Session::Peers() const {
