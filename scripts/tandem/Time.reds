@@ -42,6 +42,13 @@
 // - Second chance (BaseStatusEffect.SecondChancePerkTimeDilation, its
 //   dilation in TweakDB): its reason is unknown; any other global dilation
 //   left on the host is logged ("an unknown dilation") to find it.
+// - A ride's own skip (the NCART, a cab: "customFFTimeDilation" at 10 while
+//   the skip is held, PlayerPuppet.OnAction SceneFastForward under a
+//   CustomFastForward effect, final.reds:40298): kept, on the host too. It
+//   compresses a ride its owner runs alone (the others never share that
+//   train: Transit.reds), and the clock moves on by what the ride takes
+//   either way (World.reds brings the guests along). What the network
+//   drives here is exempted from it, as from a slow motion.
 // - Menus, pause, time skips: not here (Pause.reds; ARCHITECTURE).
 
 public class TandemTimeApplied {
@@ -152,8 +159,11 @@ public class TandemTime {
       this.Bubbles(system, player);
     }
     // Our world runs slower than the network (a guest's Sandevistan, the
-    // host with time_host = full): what the network drives is exempted.
-    let exempt = together && times.GetActiveTimeDilation() < 0.99;
+    // host with time_host = full), or faster (a ride's own skip,
+    // customFFTimeDilation at 10, Transit.reds): what the network drives is
+    // exempted, at its true speed.
+    let speed = times.GetActiveTimeDilation();
+    let exempt = together && (speed < 0.99 || speed > 1.01);
     this.Apply(system, exempt);
     this.Measure(now);
   }
