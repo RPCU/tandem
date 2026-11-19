@@ -259,7 +259,7 @@ public class TandemShots {
     if IsDefined(agent) && IsDefined(player.GetAttitudeAgent()) && NotEquals(agent.GetAttitudeTowards(player.GetAttitudeAgent()), EAIAttitude.AIA_Hostile) {
       agent.SetAttitudeTowards(player.GetAttitudeAgent(), EAIAttitude.AIA_Hostile);
     }
-    let aim: Vector4;
+    let aim = new Vector4(0.0, 0.0, 0.0, 0.0);
     let head = IPositionProvider.CreateSlotPositionProvider(player, n"Head");
     if !IsDefined(head) || !head.CalculatePosition(aim) {
       aim = player.GetWorldPosition();
@@ -269,7 +269,7 @@ public class TandemShots {
     let stats = GameInstance.GetStatsSystem(this.m_game);
     let weaponStats = Cast<StatsObjectID>(weapon.GetEntityID());
     let maxSpread = stats.GetStatValue(weaponStats, gamedataStatType.SpreadMaxAI);
-    let offset: Vector4;
+    let offset = new Vector4(0.0, 0.0, 0.0, 0.0);
     let target = player.GetTargetShootComponent();
     if IsDefined(target) {
       offset = target.HandleBeingShot(proxy, weapon, aim, maxSpread, shot.tbh);
@@ -286,7 +286,7 @@ public class TandemShots {
       }
     }
     let perShot = Cast<Int32>(stats.GetStatValue(weaponStats, gamedataStatType.ProjectilesPerShot));
-    let at: WorldPosition;
+    let at: WorldPosition; // assigned on every path: filled whole by WorldPosition.SetVector4 at once
     WorldPosition.SetVector4(at, aim + offset);
     ArrayPush(this.m_firedBy, proxy.GetEntityID());
     ArrayPush(this.m_firedFactor, shot.factor);

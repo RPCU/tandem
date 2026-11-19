@@ -507,7 +507,7 @@ public final func ProcessEffectiveRange(hitEvent: ref<gameHitEvent>) {
 
 @wrapMethod(DamageSystem)
 protected final func GetArmorPenetrationValue(weapon: ref<WeaponObject>, hitEvent: ref<gameHitEvent>) -> Float {
-  let pierce: Float;
+  let pierce = 0.0;
   if TandemCombat.ForwardedPierce(GetGameInstance(), hitEvent, pierce) {
     return pierce;
   }

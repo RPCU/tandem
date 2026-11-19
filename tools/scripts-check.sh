@@ -23,6 +23,9 @@ ours=$(cd "${1:-$root/scripts/tandem}" && pwd)
 
 # What scc lets through and the game dies of: a method defined twice.
 python3 "$root/tools/scripts-duplicates.py" "$ours"
+# And what it lets through and the game misreads: a value-type local read
+# before it was ever set (the VM does not clear it).
+python3 "$root/tools/scripts-uninitialized.py" "$ours"
 
 # True when an ancestor process holds the build lock (flock ... task deploy):
 # taking it again from here would wait forever.

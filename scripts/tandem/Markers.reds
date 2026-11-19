@@ -235,11 +235,11 @@ public class TandemMarkers extends ScriptableSystem {
     data.active = true;
     data.visibleThroughWalls = true;
     let slot = n"vehMappin";
-    let offset: Vector3;
+    let offset = new Vector3(0.0, 0.0, 0.0);
     if !inCar {
       // Above the head: the slot NPC markers use, when the body has it (V's
       // cutscene body may not), else 2 m above its feet.
-      let transform: WorldTransform;
+      let transform: WorldTransform; // assigned on every path: read only when GetSlotTransform filled it
       let slots = target.GetUISlotComponent();
       if IsDefined(slots) && slots.GetSlotTransform(n"roleMappin", transform) {
         slot = n"roleMappin";
@@ -262,7 +262,7 @@ public class TandemMarkers extends ScriptableSystem {
       GameInstance.GetMappinSystem(this.GetGameInstance()).UnregisterMappin(marker.mappin);
     }
     let none: NewMappinID;
-    let nobody: EntityID;
+    let nobody = EntityID.FromHash(0ul);
     marker.mappin = none;
     marker.attachedTo = nobody;
   }

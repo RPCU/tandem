@@ -198,7 +198,7 @@ protected func Activate(context: ScriptExecutionContext) -> Void {
     return;
   }
   let proxy: ref<GameObject>;
-  let position: Vector4;
+  let position = new Vector4(0.0, 0.0, 0.0, 0.0);
   if !UpdateWhistlePosition.TryGetDesiredWhistlePosition(owner, caster.GetWorldPosition(), position, proxy) {
     return;
   }

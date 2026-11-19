@@ -159,8 +159,8 @@ public class TandemTransit {
     let flags = 0;
     let at = 0;
     let next = 0;
-    let vehicleId: EntityID;
-    let seat: CName;
+    let vehicleId = EntityID.FromHash(0ul);
+    let seat = n"None";
     let carrier = 0u;
     let car: wref<VehicleObject>;
     if this.m_carriedBy != 0u {
@@ -362,7 +362,7 @@ public class TandemTransit {
   }
 
   private func OffTrain(puppet: ref<TandemPuppet>, body: ref<GameObject>) -> Void {
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     if puppet.transitMode == 1 && EntityID.IsDefined(puppet.transitTrain) {
       if puppet.seatedIn == puppet.transitTrain {
         TandemVehicles.Unseat(this.m_game, body, puppet.transitTrain, puppet.seatedSlot);
@@ -690,7 +690,7 @@ public class TandemTransit {
         GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, at, TandemYawAngles(yaw));
       }
     }
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     TandemNative.Log(s"ride: out of player \(this.m_carriedBy)'s ride along (\(why))");
     this.m_carriedBy = 0u;
     this.m_carriedCar = none;
@@ -816,7 +816,7 @@ public class TandemTransit {
     let player = GetPlayer(this.m_game);
     let car: wref<VehicleObject>;
     let mounted = IsDefined(player) && VehicleComponent.GetVehicle(this.m_game, player, car) && IsDefined(car);
-    let slot: CName;
+    let slot = n"None";
     if mounted {
       VehicleComponent.GetMountedSlotName(this.m_game, player, slot);
     }
