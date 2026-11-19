@@ -20,6 +20,10 @@ Where things are (`core/`, `plugin/`, `peer/`, `tests/`, `relay/`, `nix/`,
   direnv: `devenv shell -- task <name>`.
 - Entering the shell **runs treefmt over the tree**: files you wrote get
   reformatted (`.clang-format`: LLVM style, 100 columns).
+- Every compile goes through **ccache**, one cache per machine shared by
+  all worktrees (`~/.cache/tandem/ccache`); `TANDEM_CCACHE=0` turns it off.
+  Settings, sizes and the debug-path caveat:
+  `docs/architecture/testing.md`, "The compiler cache".
 
 ## Commands (Taskfile.yml)
 
@@ -45,6 +49,7 @@ Where things are (`core/`, `plugin/`, `peer/`, `tests/`, `relay/`, `nix/`,
 | `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
 | `task logs`          | follow the plugin's log on the game machine                  |
 | `task package`       | the release zip and its symbols zip (`build/package/`)       |
+| `task ccache:stats`  | this machine's compiler cache: size, hits (`:clear` empties) |
 
 Run what your change can break before saying it works: `task test` for
 `core/`, `task build:plugin` for anything compiled into the DLL,

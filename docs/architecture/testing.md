@@ -313,3 +313,47 @@ shoot`, `wheels gun`, `wheels ungun`.
   `task peer -- join --code K7Q-2M9 --relay 127.0.0.1`. `task test` does the
   same (`relay-loopback`, `tests/relay_loopback.sh`: it builds the relay
   with Go and runs the `relay` suite of `tandem-tests` against it).
+
+## The compiler cache
+
+Every compile, Windows and Linux, goes through ccache (from devenv), one
+cache per machine shared by every checkout and worktree: a fresh worktree's
+first build is mostly hits on what another worktree compiled.
+
+- **Off:** `TANDEM_CCACHE=0` (read at each configure, which every
+  `task build*` runs; `tools/remote.sh` passes it on to the game machine).
+- **Where:** `~/.cache/tandem/ccache` (`TANDEM_CCACHE_DIR`). Capped at 6 GB
+  on the laptop and 15 GB on the game machine (`TANDEM_CCACHE_SIZE`; on the
+  game machine `TANDEM_REMOTE_CCACHE_SIZE`). One commit's full build
+  (plugin and Linux) takes 0.4 GB; a change to a widely included header
+  (`protocol.hpp`) misses nearly everything, so each such variant costs
+  that again. 15 GB holds some 35 variants for the game machine's 30-odd
+  worktrees; the laptop builds only when the game machine is busy, and 6 GB
+  (15 variants) of its smaller free disk is enough.
+- **Settings** (environment, `devenv.nix` `enterShell`; no user-wide
+  `ccache.conf`): `base_dir` is the directory holding every checkout (the
+  main checkout on the laptop, its worktrees live inside it;
+  `~/.cache/tandem/src` on the game machine), so paths under it are hashed
+  relative to the build directory; `hash_dir = false`; depend mode (the
+  compiler's own `-MD` or `/showIncludes` list, no second preprocessor run
+  on a miss); `compiler_check = echo %compiler%` (every Nix store file has
+  the same mtime: the compiler's store path stands for its version).
+- **`task ccache:stats`**, **`task ccache:clear`**; `tools/remote.sh
+ccache:stats` for the game machine's.
+- **What the build does for it:** ccache refuses every clang-cl `/clang:`
+  option, so the C++23 flag is `/std:c++23preview`, the depfile is
+  `/showIncludes`, and core's constexpr limit is `-Xclang` (top-level and
+  `core/CMakeLists.txt`). C++ module scanning is off: nothing here is a
+  module, and it compiles with GCC's `-fmodules-ts`, which ccache refuses.
+  The debug info is `/Z7` (in each object;
+  `CMAKE_MSVC_DEBUG_INFORMATION_FORMAT`, `cmake/clang-cl-msvc.cmake`), not
+  cl's uncacheable `/Zi`: clang-cl writes the same objects for both, and
+  lld-link still makes `tandem.pdb` from them (same 21363 publics and 11581
+  procedures as with `/Zi`). The plugin has no precompiled header.
+- **Caveat, debug paths:** a hit is the object another worktree compiled,
+  byte for byte, so its debug info names that worktree's directory
+  (CodeView file names, DWARF `comp_dir`). Recompiling a hit's source in
+  another worktree gives the same code and differs only in those strings.
+  Function names in `tandem.pdb` (`tools/game.sh bt`) are unaffected; a
+  debugger looking for source lines may open the other worktree's file, or
+  none if it is gone.

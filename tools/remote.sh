@@ -51,12 +51,16 @@ slots=${TANDEM_REMOTE_SLOTS:-3}
 # The copy there has no history: the build is named after this commit
 # (core/CMakeLists.txt, TANDEM_COMMIT).
 commit=$(git rev-parse --short=7 HEAD)
+# The compiler cache there (devenv.nix sets it up; TANDEM_CCACHE=0 here
+# turns it off there too): bigger than the laptop's, since most worktrees
+# build there.
+cache="TANDEM_CCACHE=${TANDEM_CCACHE:-1} TANDEM_CCACHE_SIZE=${TANDEM_REMOTE_CCACHE_SIZE:-15G}"
 # A build runs in a systemd scope of its own with a low CPU and IO weight:
 # nice does not reach across cgroups, so niced builds still starved the test
 # games (tools/instance.sh scopes) to 9 fps and pushed them into swap. While
 # a test instance runs, one slot only (memory).
 # shellcheck disable=SC2029 # expanded here on purpose
-ssh "$host" "cd $remote && $jobs TANDEM_XWIN=\$HOME/.cache/tandem/xwin \
+ssh "$host" "cd $remote && $jobs $cache TANDEM_XWIN=\$HOME/.cache/tandem/xwin \
   TANDEM_COMMIT=$commit flock /tmp/tandem-src-$name.lock tools/build-slot.sh \$(pgrep -f '[t]andem-instances/' >/dev/null && echo 1 || echo $slots) \
   systemd-run --user --scope --quiet -p CPUWeight=10 -p IOWeight=10 nice -n 19 devenv shell -- task $*"
 

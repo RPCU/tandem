@@ -44,6 +44,16 @@ tasks:
       - cmake --preset linux
       - cmake --build --preset linux
 
+  ccache:stats:
+    desc: "The compiler cache shared by this machine's worktrees: size, hits, misses (tools/remote.sh ccache:stats for the game machine's)"
+    cmds:
+      - ccache --show-stats --verbose
+
+  ccache:clear:
+    desc: Empty the compiler cache shared by this machine's worktrees, and zero its statistics
+    cmds:
+      - ccache --clear --zero-stats
+
   test:
     desc: Run the tests
     deps: [build:linux]

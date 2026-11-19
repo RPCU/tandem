@@ -50,7 +50,8 @@ target_compile_features(tandem_core PUBLIC cxx_std_23)
 # of its ops limit further on. PUBLIC: what instantiates the encoding needs it.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    target_compile_options(tandem_core PUBLIC /clang:-fconstexpr-steps=33554432)
+    # -Xclang, not /clang: (the same cc1 option): ccache refuses /clang:.
+    target_compile_options(tandem_core PUBLIC "SHELL:-Xclang -fconstexpr-steps=33554432")
   else()
     target_compile_options(tandem_core PUBLIC -fconstexpr-steps=33554432)
   endif()
