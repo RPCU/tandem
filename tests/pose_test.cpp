@@ -164,6 +164,10 @@ TEST_CASE("poses go from a guest through the host, stamped with the guest's id")
   }
   REQUIRE(got);
   CHECK(got->player == guest->You());
-  CHECK(got->rotations == sent.rotations);
+  // Through the delta-coded stream (PoseFrame): the same rotations, within
+  // its 5-byte quantization.
+  for (std::size_t slot = 0; slot < proto::kPoseBones; ++slot)
+    CHECK(pose::Angle(pose::UnpackQuat(got->rotations.data() + slot * 6),
+                      pose::UnpackQuat(sent.rotations.data() + slot * 6)) < 0.0015f);
   CHECK(got->seq != 0); // numbered from the host clock's millisecond (endpoint.cpp)
 }

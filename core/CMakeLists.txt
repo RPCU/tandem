@@ -19,6 +19,9 @@ add_library(tandem_core STATIC
   src/hosts.cpp
   src/timebubble.cpp
   src/shaping.cpp
+  src/traffic.cpp
+  src/netcode.cpp
+  src/lagcomp.cpp
   src/elsewhere.cpp
   src/instance.cpp)
 target_include_directories(tandem_core PUBLIC include)

@@ -5,9 +5,11 @@
 // Remote things are drawn slightly in the past, between the two states around
 // that moment, so they move smoothly whatever the network does. The delay
 // adapts per player: a base of 1.5 send intervals plus margin, widened by the
-// measured jitter and transit, capped. Short gaps are extrapolated along the
-// last velocity (falling too, when the V is in the air: tandem/movement.hpp),
-// then the body holds; when states come back it blends home.
+// measured jitter and transit, capped, and moved towards that at a bounded
+// pace (the drawn timeline never skips). Short gaps are extrapolated along
+// the last velocity (falling too, when the V is in the air:
+// tandem/movement.hpp), then the body holds; when states come back the
+// correction fades out instead of snapping (docs/architecture/netcode.md).
 // Numbers from NCO's measurements on 2.5 (docs/research/engine-knowledge.md §1).
 //
 // Times are uint64 microseconds on the host clock. Never put one in a float.
@@ -16,6 +18,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <optional>
 
 namespace tandem::sync {
 struct View {
@@ -49,6 +52,17 @@ public:
   // that fast is not extrapolated.
   static constexpr float kTeleportSpeed = 150.f;   // m/s
   static constexpr float kTeleportDistance = 20.f; // m
+  // The drawn timeline runs at most 10 % slower while the delay grows, 3 %
+  // faster while it shrinks.
+  static constexpr double kDelayGrow = 0.10;
+  static constexpr double kDelayCatchUp = 0.03;
+  // A correction fades with this time constant; a larger one is a snap.
+  static constexpr float kBlendSeconds = 0.1f;
+  static constexpr float kMaxBlendM = 3.f;
+  static constexpr float kBlendSpeed = 1.5f; // m/s at most: no faster than a walk
+  // Asked again this soon (the scripts and the controller each ask once a
+  // frame): the view already computed.
+  static constexpr std::uint64_t kSameFrameUs = 1'000;
 
   explicit Track(std::uint32_t sendRateHz = 30);
 
@@ -58,6 +72,8 @@ public:
   // Where to draw the player at `nowHostUs` (the delay is applied inside).
   View At(std::uint64_t nowHostUs);
 
+  // The delay drawn with (poses and cars use the same); before the first At,
+  // the target.
   std::uint64_t DelayUs() const;
   TrackStats Stats() const;
   bool Empty() const { return m_samples.empty(); }
@@ -67,6 +83,8 @@ private:
     std::uint64_t timeUs;
     proto::PlayerState state;
   };
+
+  std::uint64_t TargetDelayUs() const;
 
   std::deque<Sample> m_samples;
   std::uint32_t m_lastSeq{};
@@ -83,9 +101,26 @@ private:
 
   float m_speed{};
   std::uint64_t m_lastViewUs{};
+  double m_delayUs{};
+  bool m_haveDelay{};
+  // What is drawn minus the stream (a correction fading out), and the state
+  // last frame's guess went from.
+  proto::Vec3 m_offset{};
+  struct Guess {
+    std::uint64_t timeUs{};
+    std::uint32_t seq{};
+    proto::PlayerState state;
+  };
+  std::optional<Guess> m_guess;
+  View m_lastView; // asked again within kSameFrameUs: the same, not recomputed
+  bool m_pushed{}; // ...unless a state came since
 
   TrackStats m_stats;
 };
+
+// An offset faded for `seconds` with `timeConstant` (corrections), by at
+// most `maxSpeed` m/s.
+proto::Vec3 Fade(const proto::Vec3 &offset, float seconds, float timeConstant, float maxSpeed);
 
 // Yaw (around Z) of a quaternion, and back.
 float YawOf(const proto::Quat &q);

@@ -6,6 +6,7 @@
 
 #include "tandem/protocol.hpp"
 #include "tandem/relay.hpp"
+#include "tandem/traffic.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -94,6 +95,8 @@ public:
   void Flush();
 
   std::optional<Stats> StatsOf(PeerId peer) const;
+  // Everything sent and received since the session began (tandem/traffic.hpp).
+  Traffic TrafficSoFar() const;
   std::vector<PeerId> Peers() const;
   bool IsHost() const { return m_isHost; }
   // The UDP port the socket is bound to (Listen on port 0 picks a free one).

@@ -15,7 +15,7 @@
 
 namespace tandem::proto {
 inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
-inline constexpr std::uint16_t kProtocolVersion = 6;
+inline constexpr std::uint16_t kProtocolVersion = 7;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -1136,15 +1136,93 @@ struct ShotHit {     // Event channel
   friend bool operator==(const ShotHit &, const ShotHit &) = default;
 };
 
-using Message = std::variant<
-    Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
-    Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
-    Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
-    PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle,
-    ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
-    NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
-    Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
-    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit>;
+// ---- Netcode (docs/architecture/netcode.md): compact forms of the two
+// largest streams. Endpoint encodes and decodes them; everything above it
+// (events, recordings, the game) sees PoseState and NpcStates as before.
+
+// A body pose, delta coded (tandem/pose.hpp PoseEncoder). A key frame (key
+// == seq) has every bone whole; the others say per bone (2 bits of `codes`,
+// slot n at bits 2n) whether it is the key's (kBoneKept), a small turn from
+// the key's (kBoneTurn: a rotation vector, 3 signed bytes of
+// kPoseTurnStep rad: up to 0.5 rad), or whole (kBoneWhole: a smallest-three quaternion in
+// 5 bytes), in slot order in `rotations`. State channel.
+inline constexpr std::size_t kPoseFrameRotationBytes = 5;
+inline constexpr std::size_t kPoseTurnBytes = 3;
+inline constexpr float kPoseTurnStep = 1.f / 256.f;
+inline constexpr std::size_t kPoseCodeBytes = (kPoseBones * 2 + 7) / 8;
+inline constexpr std::uint8_t kBoneKept = 0, kBoneTurn = 1, kBoneWhole = 2;
+struct PoseFrame {
+  PlayerId player{};
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  std::uint32_t key{}; // seq of its key frame (== seq: this is one)
+  std::array<std::int16_t, 3> hips{};
+  std::array<std::uint8_t, kPoseCodeBytes> codes{};
+  std::vector<std::uint8_t> rotations;
+  std::uint8_t Code(std::size_t slot) const { return (codes[slot / 4] >> (2 * (slot % 4))) & 3; }
+  friend bool operator==(const PoseFrame &, const PoseFrame &) = default;
+};
+
+// The host's NPC positions, quantized and only those that changed (NpcCoder
+// in tandem/netcode.hpp): each NPC that moved, turned or changed what it
+// detects, and every NPC at least twice a second. The guest fills in the
+// rest from what it last heard, so NpcStates comes out whole as before.
+// Positions are 1/128 m steps from `origin` (±256 m), yaw 1/65536 turn.
+struct NpcMove {
+  NpcId npc{};
+  std::array<std::int16_t, 3> offset{};
+  std::uint16_t yaw{};
+  std::uint8_t detected{};
+  std::uint8_t flags{}; // netcode::kNpcUnlisted: no longer in the host's list
+  friend bool operator==(const NpcMove &, const NpcMove &) = default;
+};
+
+struct NpcMotion { // State channel, ~10 Hz, host only
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  Vec3 origin;
+  std::vector<NpcMove> npcs;
+  friend bool operator==(const NpcMotion &, const NpcMotion &) = default;
+};
+
+// PlayerState, compact (40 bytes, not 60): a V's orientation is its yaw
+// (1/65536 turn), its velocity in cm/s. Endpoint sends this and gives
+// PlayerState to everything above it. State channel.
+struct PlayerMotion {
+  PlayerId player{};
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  Vec3 position;
+  std::uint16_t yaw{};
+  std::array<std::int16_t, 3> velocity{}; // cm/s
+  std::uint8_t stance{};
+  std::uint16_t flags{};
+  friend bool operator==(const PlayerMotion &, const PlayerMotion &) = default;
+};
+
+// VehicleState, compact: the orientation a 5-byte smallest-three
+// quaternion, the velocity in cm/s. State channel.
+struct VehicleMotion {
+  PlayerId player{};
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  Vec3 position;
+  std::array<std::uint8_t, kPoseFrameRotationBytes> orientation{};
+  std::array<std::int16_t, 3> velocity{}; // cm/s
+  friend bool operator==(const VehicleMotion &, const VehicleMotion &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
+                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
+                 Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
+                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
+                 NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
+                 Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise,
+                 Difficulty, AreaHit, Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit,
+                 NpcSeat, NpcShotAt, ShotHit, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.
@@ -1160,4 +1238,6 @@ Channel ChannelOf(const Message &message);
 bool IsReliable(const Message &message);
 
 const char *NameOf(const Message &message);
+// The same by Message index ("?" past the last).
+const char *NameOfKind(std::size_t kind);
 } // namespace tandem::proto

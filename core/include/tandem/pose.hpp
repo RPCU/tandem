@@ -63,6 +63,57 @@ std::optional<Pose> Unpack(const proto::PoseState &state);
 void PackQuat(const proto::Quat &q, std::uint8_t *out);
 proto::Quat UnpackQuat(const std::uint8_t *in);
 
+// The same in 5 bytes (PoseFrame): the index, then 13, 13 and 12 bits.
+// Within 0.0015 rad of the original.
+void PackQuat5(const proto::Quat &q, std::uint8_t *out);
+proto::Quat UnpackQuat5(const std::uint8_t *in);
+
+// A pose stream, delta coded (proto::PoseFrame). One encoder per stream (a
+// sender's broadcast, or the host's relay of one player). A key frame goes
+// at least every kKeyFrames frames and kKeyUs; between keys only the bones
+// further than kThreshold from their key's rotation are sent: as a small
+// turn from the key's (3 bytes) when it is within half a radian, else
+// whole (5 bytes).
+class PoseEncoder {
+public:
+  static constexpr std::uint32_t kKeyFrames = 15;
+  static constexpr std::uint64_t kKeyUs = 500'000;
+  static constexpr float kThreshold = 0.002f; // rad (0.11 degrees)
+
+  // `pose` with its player, seq and timeUs set.
+  proto::PoseFrame Encode(const proto::PoseState &pose);
+  std::uint64_t Keys() const { return m_keys; }
+  std::uint64_t Frames() const { return m_frames; }
+
+private:
+  std::array<proto::Quat, proto::kPoseBones> m_key{};
+  bool m_haveKey{};
+  std::uint32_t m_keySeq{}, m_sinceKey{};
+  std::uint64_t m_keyUs{};
+  std::uint64_t m_keys{}, m_frames{};
+};
+
+// The receiving end: a frame back to a whole PoseState. Keeps the last few
+// keys; a frame whose key was lost takes the bones it leaves out from the
+// newest key it has (they moved little since: within the threshold of
+// theirs), or is dropped when there is none.
+class PoseDecoder {
+public:
+  static constexpr std::size_t kKeys = 4;
+  std::optional<proto::PoseState> Decode(const proto::PoseFrame &frame);
+  std::uint32_t OtherKey() const { return m_otherKey; }
+  std::uint32_t Dropped() const { return m_dropped; }
+
+private:
+  struct Key {
+    std::uint32_t seq{};
+    std::array<proto::Quat, proto::kPoseBones> bones{};
+  };
+  std::array<Key, kKeys> m_keys{};
+  std::size_t m_count{}, m_next{};
+  std::uint32_t m_otherKey{}, m_dropped{};
+};
+
 proto::Quat Normalized(const proto::Quat &q);
 proto::Quat Multiply(const proto::Quat &a, const proto::Quat &b);
 proto::Quat Conjugate(const proto::Quat &q);
@@ -81,6 +132,9 @@ public:
   // The pose at `renderUs` (host clock). False before the first pose.
   bool At(std::uint64_t renderUs, Pose &out) const;
   std::uint32_t Received() const { return m_received; }
+  // How far apart the poses come (sender time), smoothed: a far player's
+  // come less often (netcode.md, relevance), and are drawn that much later.
+  std::uint64_t IntervalUs() const { return static_cast<std::uint64_t>(m_intervalUs); }
 
 private:
   struct Sample {
@@ -91,5 +145,6 @@ private:
   std::uint32_t m_lastSeq{};
   bool m_haveSeq{};
   std::uint32_t m_received{};
+  double m_intervalUs{33'333};
 };
 } // namespace tandem::pose

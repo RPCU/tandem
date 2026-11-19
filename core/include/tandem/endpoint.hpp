@@ -9,6 +9,8 @@
 // game owns its own V (PlayerState); the host's game owns the shared world.
 
 #include "tandem/consistency.hpp"
+#include "tandem/netcode.hpp"
+#include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
 #include "tandem/story.hpp"
@@ -463,8 +465,28 @@ public:
   void SetFaults(const consistency::Faults &faults) { m_faults.Set(faults); }
   const consistency::FaultyLink &FaultStats() const { return m_faults; }
 
-  // Time on the host's clock (the session's shared timeline).
-  std::uint64_t HostNowUs() const { return net::NowUs() + m_clockOffsetUs; }
+  // Time on the host's clock (the session's shared timeline). A better
+  // estimate of the offset is slewed in (kClockSlew), never jumped to: every
+  // remote thing is drawn on this timeline, and a step would be a hitch.
+  std::uint64_t HostNowUs() const;
+  static constexpr double kClockSlew = 0.05;            // at most 50 us per ms
+  static constexpr std::int64_t kClockJumpUs = 250'000; // further off: jump at once
+
+  // What went over the wire so far (tandem/traffic.hpp).
+  net::Traffic Traffic() const { return m_session->TrafficSoFar(); }
+  // Netcode counters (netcode.md): our pose stream's key frames and frames,
+  // frames decoded over another key, states held back while still.
+  struct NetCounters {
+    std::uint64_t poseKeys{}, poseFrames{}, poseSkipped{};
+    std::uint64_t poseOtherKey{}, poseDropped{};
+    std::uint64_t statesHeld{}, statesSkipped{};
+    std::uint64_t npcMotions{}, npcWhole{};
+  };
+  NetCounters Counters() const;
+  // Off: the wire as before netcode.md (every state every frame, whole
+  // poses and NPC lists), for measuring the difference (budget_test.cpp,
+  // tandem-peer --legacy-wire). What we receive is understood either way.
+  void SetCompact(bool compact) { m_compact = compact; }
 
   bool IsHost() const { return m_session->IsHost(); }
   bool IsJoined() const { return m_you != proto::kNoPlayer; }
@@ -551,13 +573,37 @@ private:
   std::map<net::PeerId, proto::PlayerId> m_playerOfPeer;
   proto::PlayerId m_nextPlayer{2};
 
-  // Guest: the host connection, and the clock offset from the best ping.
+  // Guest: the host connection, and the clock offset from the best ping
+  // (slewed from `from` at `since` towards `to`, see HostNowUs).
   net::PeerId m_hostPeer{};
-  std::int64_t m_clockOffsetUs{};
+  std::int64_t m_offsetFromUs{}, m_offsetToUs{};
+  std::uint64_t m_offsetSinceUs{};
+  std::int64_t OffsetAt(std::uint64_t nowUs) const;
+  void SetClockOffset(std::int64_t offsetUs, bool jump);
   std::uint64_t m_bestRttUs{UINT64_MAX};
   std::uint64_t m_lastPingUs{};
   std::uint32_t m_seq{};
   std::uint32_t m_poseSeq{};
+  // Netcode (netcode.md): how often our V's streams go, our pose encoder,
+  // the host's re-encoders of each guest's poses, a decoder per sender;
+  // where each V was last (relevance); the host's NPC coder, a guest's book.
+  bool m_compact{true};
+  netcode::Gate m_poseGate;
+  pose::PoseEncoder m_poseEncoder;
+  std::map<proto::PlayerId, pose::PoseEncoder> m_relayEncoders;
+  std::map<proto::PlayerId, pose::PoseDecoder> m_poseDecoders;
+  std::uint64_t m_poseSkipped{}, m_statesSkipped{}, m_npcMotions{}, m_npcWhole{};
+  netcode::StillGate<proto::PlayerState> m_stateGate;
+  netcode::StillGate<proto::VehicleState> m_vehicleGate;
+  std::optional<proto::Vec3> m_ownPosition;
+  std::map<proto::PlayerId, proto::Vec3> m_positions;
+  float NearestOther() const;
+  void NotePosition(const proto::PlayerState &state);
+  void ForgetStreams(proto::PlayerId player);
+  netcode::NpcCoder m_npcCoder;
+  netcode::NpcBook m_npcBook;
+  void OnRemotePoseFrame(proto::PoseFrame frame, net::PeerId from, std::vector<SessionEvent> &out);
+  void OnHostNpcStates(proto::NpcStates states, std::vector<SessionEvent> &out);
 
   // Our look, and (host) everyone's latest, for late joiners.
   std::optional<proto::Appearance> m_localAppearance;

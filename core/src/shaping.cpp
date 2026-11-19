@@ -18,7 +18,17 @@ LinkModel::LinkModel(LinkShape shape, std::uint64_t seed) : m_shape(shape), m_rn
 
 std::optional<std::uint64_t> LinkModel::Release(std::uint64_t nowUs) {
   std::uniform_real_distribution<float> chance(0.f, 1.f);
-  if (m_shape.loss > 0.f && chance(m_rng) < m_shape.loss) {
+  if (m_shape.burst > 1.f && m_shape.loss > 0.f && m_shape.loss < 1.f) {
+    // Gilbert-Elliott: leave the bad state after `burst` datagrams on
+    // average; enter it as often as keeps the share lost at `loss`.
+    const float leave = 1.f / m_shape.burst;
+    const float enter = m_shape.loss * leave / (1.f - m_shape.loss);
+    m_bad = chance(m_rng) < (m_bad ? 1.f - leave : enter);
+    if (m_bad) {
+      ++m_lost;
+      return std::nullopt;
+    }
+  } else if (m_shape.loss > 0.f && chance(m_rng) < m_shape.loss) {
     ++m_lost;
     return std::nullopt;
   }
@@ -90,6 +100,8 @@ struct Shaper::Impl {
   std::uint64_t order{};
   std::vector<std::uint8_t> buffer = std::vector<std::uint8_t>(kMaxDatagram);
   std::atomic<std::uint64_t> passed{}, lost{}, reordered{};
+  std::atomic<std::uint64_t> bytesUp{}, bytesDown{};
+  std::atomic<bool> outage{};
   std::jthread thread;
 
   Impl(LinkShape shape, std::uint64_t seed) : up(shape, seed), down(shape, seed * 7919 + 1) {}
@@ -110,7 +122,9 @@ struct Shaper::Impl {
   }
 
   // Every datagram waiting on `socket`, through `model`, to go out of `from`.
-  template <class To> void Drain(ENetSocket socket, LinkModel &model, To &&destination) {
+  template <class To>
+  void Drain(ENetSocket socket, LinkModel &model, std::atomic<std::uint64_t> &bytes,
+             To &&destination) {
     for (;;) {
       ENetAddress sender{};
       ENetBuffer chunk; // field order differs between platforms: no braces
@@ -123,6 +137,9 @@ struct Shaper::Impl {
       ENetSocket from{};
       ENetAddress to{};
       if (!destination(sender, from, to))
+        continue;
+      bytes += static_cast<std::uint64_t>(size);
+      if (outage.load())
         continue;
       if (const auto at = model.Release(now))
         queue.push({*at, order++, from, to,
@@ -172,23 +189,25 @@ struct Shaper::Impl {
         continue;
 
       if (ENET_SOCKETSET_CHECK(ready, listen))
-        Drain(listen, up, [&](const ENetAddress &sender, ENetSocket &from, ENetAddress &to) {
-          const auto *client = ClientOf(sender, NowUs());
-          if (!client)
-            return false;
-          from = client->upstream;
-          to = target;
-          return true;
-        });
+        Drain(listen, up, bytesUp,
+              [&](const ENetAddress &sender, ENetSocket &from, ENetAddress &to) {
+                const auto *client = ClientOf(sender, NowUs());
+                if (!client)
+                  return false;
+                from = client->upstream;
+                to = target;
+                return true;
+              });
       // Copies: ClientOf may grow the list while a drain runs.
       const auto known = clients;
       for (const auto &client : known)
         if (ENET_SOCKETSET_CHECK(ready, client.upstream))
-          Drain(client.upstream, down, [&](const ENetAddress &, ENetSocket &from, ENetAddress &to) {
-            from = listen;
-            to = client.address;
-            return true;
-          });
+          Drain(client.upstream, down, bytesDown,
+                [&](const ENetAddress &, ENetSocket &from, ENetAddress &to) {
+                  from = listen;
+                  to = client.address;
+                  return true;
+                });
 
       now = NowUs();
       std::erase_if(clients, [&](const Client &client) {
@@ -238,6 +257,9 @@ std::uint16_t Shaper::Port() const {
 }
 
 Shaper::Counters Shaper::Stats() const {
-  return {m_impl->passed.load(), m_impl->lost.load(), m_impl->reordered.load()};
+  return {m_impl->passed.load(), m_impl->lost.load(), m_impl->reordered.load(),
+          m_impl->bytesUp.load(), m_impl->bytesDown.load()};
 }
+
+void Shaper::SetOutage(bool on) { m_impl->outage = on; }
 } // namespace tandem::net
