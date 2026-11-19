@@ -1004,6 +1004,12 @@ public class TandemNpcs {
     let ours = killer != 0u && killer == this.m_you;
     if IsDefined(body) {
       body.Kill(ours ? GetPlayer(this.m_game) : null, false, false);
+      // Its death animation or ragdoll is the host's NPC's (a brain-off
+      // body plays none of its own: HitReactions.reds).
+      let reactions = TandemReactionsSync.Of(this.m_game);
+      if IsDefined(reactions) {
+        reactions.Died(npc);
+      }
       // Its loot is ours to roll, as any corpse's (Loot.reds).
       TandemLoot.Corpse(this.m_game, proxy.id);
     }
@@ -1141,6 +1147,10 @@ public class TandemNpcs {
     let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
     if IsDefined(body) {
       body.Kill(GetPlayer(this.m_game), false, false);
+      let reactions = TandemReactionsSync.Of(this.m_game);
+      if IsDefined(reactions) {
+        reactions.Died(npc);
+      }
       // Its loot is ours to roll, as for a death the host told us of (Die):
       // Die returns early for a kill we saw first (Loot.reds).
       TandemLoot.Corpse(this.m_game, proxy.id);
