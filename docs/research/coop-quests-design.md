@@ -106,13 +106,14 @@ middle of the host's story, and from being damaged.
 
 ### 1.2 Options weighed
 
-| Option                                                                                        | Cost                                                                                     | Risk to the guest's save                                                                                       | Looks native                                                  | Verdict                                                                                          |
-| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| A. Quest-free guest (new game with an empty gamedef, the fork's and NCO's way)                | archive + lobby; the guest's V must be rebuilt (the fork exported level, perks, items)   | none (a throwaway world)                                                                                       | journal etc. as below; **the guest loses its own V and save** | rejected: contradicts "your V is yours"                                                          |
-| B. Guest's quests keep running, host facts and journal forced in                              | low                                                                                      | **high**: mirrored facts wake the guest's own graph (phases waiting on them start, scenes play, spawns happen) | chaotic (two stories at once)                                 | rejected                                                                                         |
-| C. Journal-only mirror, guest's quests running                                                | low                                                                                      | medium: quest graphs also wait on journal states; the guest's own calls and scenes still fire                  | broken by the guest's own calls and messages                  | rejected                                                                                         |
-| **D. Guest's quests frozen; host state mirrored into the guest's systems; restored on leave** | one native hook (2.5-verified hash) + script mirrors                                     | low, with the rails of §1.4                                                                                    | all UI native; no story voice until replay                    | **chosen**                                                                                       |
-| E. Lockstep: the guest runs the same quest phases, every node gated by the host's trace       | very high (phase instancing on demand, trace protocol, prefab loading, actor duplicates) | medium                                                                                                         | best: everything plays locally                                | not now; D grows towards a limited form of it ("shadow phases", §6 step 5) for presentation only |
+<!-- prettier-ignore -->
+| Option | Cost | Risk to the guest's save | Looks native | Verdict |
+| --- | --- | --- | --- | --- |
+| A. Quest-free guest (new game with an empty gamedef, the fork's and NCO's way) | archive + lobby; the guest's V must be rebuilt (the fork exported level, perks, items) | none (a throwaway world) | journal etc. as below; **the guest loses its own V and save** | rejected: contradicts "your V is yours" |
+| B. Guest's quests keep running, host facts and journal forced in | low | **high**: mirrored facts wake the guest's own graph (phases waiting on them start, scenes play, spawns happen) | chaotic (two stories at once) | rejected |
+| C. Journal-only mirror, guest's quests running | low | medium: quest graphs also wait on journal states; the guest's own calls and scenes still fire | broken by the guest's own calls and messages | rejected |
+| **D. Guest's quests frozen; host state mirrored into the guest's systems; restored on leave** | one native hook (2.5-verified hash) + script mirrors | low, with the rails of §1.4 | all UI native; no story voice until replay | **chosen** |
+| E. Lockstep: the guest runs the same quest phases, every node gated by the host's trace | very high (phase instancing on demand, trace protocol, prefab loading, actor duplicates) | medium | best: everything plays locally | not now; D grows towards a limited form of it ("shadow phases", §6 step 5) for presentation only |
 
 D keeps one story (the host's) and one copy of every world actor (the
 host's NPCs as proxies, ARCHITECTURE authority table), touches the guest's
@@ -318,13 +319,14 @@ isPersistent}` (`SC §4.1`).
 From the host's tier (`PlayerPuppet.OnSceneTierChange`,
 `final.reds:43746` [S]; `SC §1`), sent as part of that player's state:
 
-| Host's tier              | Guest within 30 m of the host                                                                  | Guest further away           |
-| ------------------------ | ---------------------------------------------------------------------------------------------- | ---------------------------- |
-| 1                        | nothing                                                                                        | nothing                      |
-| 2 walk-and-talk          | subtitles, hub; free                                                                           | a one-line HUD notice (§5.1) |
-| 3 seated / limited       | weapons lowered (`GameplayRestriction.NoCombat`, tandem source, ref-counted)                   | notice                       |
+<!-- prettier-ignore -->
+| Host's tier | Guest within 30 m of the host | Guest further away |
+| --- | --- | --- |
+| 1 | nothing | nothing |
+| 2 walk-and-talk | subtitles, hub; free | a one-line HUD notice (§5.1) |
+| 3 seated / limited | weapons lowered (`GameplayRestriction.NoCombat`, tandem source, ref-counted) | notice |
 | 4 first-person cinematic | `NoCombat` + walk speed + invulnerable (god mode, tandem source); no forced camera or teleport | notice + "join" offer (§5.1) |
-| 5 cutscene               | as tier 4                                                                                      | as tier 4                    |
+| 5 cutscene | as tier 4 | as tier 4 |
 
 The host's V puppet plays its scene animation already (the pose stream
 reads V after the animation job, ../architecture/players.md "Body poses" [V]), sitting,
@@ -495,15 +497,16 @@ the host lives the host's moment as a witness.** It sees what the host's
 game shows around the host's V, feels its glitches, and never takes over
 the scene. What is built (Story.reds, Phone.reds), cheapest first:
 
-| Moment                                                      | Guest near the host (30 m)                                                                                                                                                                        | Guest far away                                 | State                                                                             |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------- |
-| Johnny or Songbird beside the host's V                      | seen where the host sees them: the host shares them like any NPC within 60 m (`Npcs.reds`), from their own record and appearance; `story: beside …` logged                                        | not seen (out of the proxy range)              | built; walk and idle only, scene gestures and voice with scene replay (§2.5)      |
-| relic glitches (`JohnnySickness*` status effects, `:44352`) | the same status effect on the guest's V for as long as the host's lasts (`StoryEffect`); also Songbird's and other glitch effects, chosen by record name (`SoMi`, `Songbird`, `Glitch`, `Johnny`) | nothing                                        | built                                                                             |
-| Songbird's calls                                            | her own call widget: the guest's presentation keeps the call's visuals (§3.2)                                                                                                                     | the same (calls reach everyone)                | built                                                                             |
-| cutscene, tier 3                                            | weapons lowered                                                                                                                                                                                   | nothing                                        | built                                                                             |
-| cutscene, tiers 4 and 5                                     | weapons lowered, invulnerable; its own camera and body (no forced camera); the host's V performs through the pose stream; subtitles and hubs                                                      | a notice and the offer to join (regroup: TODO) | built                                                                             |
-| host plays as Johnny (takeover, flashback, "Johnny drives") | counted as a tier 4 cinematic; a notice "… is Johnny Silverhand now"                                                                                                                              | the offer to join                              | built; the host's puppet still wears V's look (TODO: Johnny's look on the puppet) |
-| braindance                                                  | counted as tier 4; a notice                                                                                                                                                                       | the offer                                      | built; the guest's own copy of the braindance is step 5 (§2.6)                    |
+<!-- prettier-ignore -->
+| Moment | Guest near the host (30 m) | Guest far away | State |
+| --- | --- | --- | --- |
+| Johnny or Songbird beside the host's V | seen where the host sees them: the host shares them like any NPC within 60 m (`Npcs.reds`), from their own record and appearance; `story: beside …` logged | not seen (out of the proxy range) | built; walk and idle only, scene gestures and voice with scene replay (§2.5) |
+| relic glitches (`JohnnySickness*` status effects, `:44352`) | the same status effect on the guest's V for as long as the host's lasts (`StoryEffect`); also Songbird's and other glitch effects, chosen by record name (`SoMi`, `Songbird`, `Glitch`, `Johnny`) | nothing | built |
+| Songbird's calls | her own call widget: the guest's presentation keeps the call's visuals (§3.2) | the same (calls reach everyone) | built |
+| cutscene, tier 3 | weapons lowered | nothing | built |
+| cutscene, tiers 4 and 5 | weapons lowered, invulnerable; its own camera and body (no forced camera); the host's V performs through the pose stream; subtitles and hubs | a notice and the offer to join (regroup: TODO) | built |
+| host plays as Johnny (takeover, flashback, "Johnny drives") | counted as a tier 4 cinematic; a notice "… is Johnny Silverhand now" | the offer to join | built; the host's puppet still wears V's look (TODO: Johnny's look on the puppet) |
+| braindance | counted as tier 4; a notice | the offer | built; the guest's own copy of the braindance is step 5 (§2.6) |
 
 How the takeover becomes native next: while the host's `StoryState` says
 replacer, the guest dresses the host's puppet with the replacer's look.
@@ -529,12 +532,13 @@ it runs (`questSceneNodeDefinition.sceneFile`). The scene's resource
 (`scnSceneResource`, loaded by the scene system while it plays) carries
 the designers' category, `sceneCategoryTag`, and its actors:
 
-| Category                                                                                                                                          | Class                                          |
-| ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `chatsOpenWorld`, `dialoguesQuests`, `voiceset`, `streetOpenWorld`, `vendorsOpenWorld`, `dancefloorsOpenWorld`, `cityOpenWorld`, `otherOpenWorld` | private (minor)                                |
-| `sideQuests`, `minorQuests`, `otherQuests` with a romance partner among at most two actors                                                        | private (romance)                              |
-| `minorQuests` with at most one actor                                                                                                              | private (minor)                                |
-| `mainQuests`, `holocalls` (the phone path), `other`, the rest of the side quests                                                                  | important (everyone may watch, the tier rules) |
+<!-- prettier-ignore -->
+| Category | Class |
+| --- | --- |
+| `chatsOpenWorld`, `dialoguesQuests`, `voiceset`, `streetOpenWorld`, `vendorsOpenWorld`, `dancefloorsOpenWorld`, `cityOpenWorld`, `otherOpenWorld` | private (minor) |
+| `sideQuests`, `minorQuests`, `otherQuests` with a romance partner among at most two actors | private (romance) |
+| `minorQuests` with at most one actor | private (minor) |
+| `mainQuests`, `holocalls` (the phone path), `other`, the rest of the side quests | important (everyone may watch, the tier rules) |
 
 Romance partners are matched on the scene's actor names (`private_actors`,
 default `judy, panam, river, kerry, meredith`), so Judy in a main quest
@@ -584,14 +588,15 @@ sees the body, nobody sees the other world.** It applies to every player
 (the host's story dives and a guest's own), so it is player state
 (`Elsewhere`, ../architecture/elsewhere.md "Other worlds"), not a story message.
 
-| Moment                                                                 | The diver's body, for the others                                                                               | The diver                                      | The story                                       |
-| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------- |
-| jacked in from a chair, braindance on a rig                            | stays in the chair as it was (position and pose held), marker on; "… is in cyberspace / a braindance"          | sees no puppet, no marker                      | no holds, no join offer; the guest plays on     |
-| cyberspace or a scene that moves V's body (standing, a flashback jump) | hidden (meshes, clothes, held items), marker off; "… is in cyberspace", "… is living one of Johnny's memories" | the same                                       | the same                                        |
-| Johnny takes over in the city ("Johnny drives", Chippin' In)           | the puppet stays and moves as Johnny; "… is Johnny Silverhand now"                                             | sees the others                                | tier rules as before (§2.11)                    |
-| back                                                                   | shown again where the player really is, 0.75 s after (the puppet moves there first); "… is back"               | the others again                               | holds and offers as the tier says               |
-| the session drops mid-dive, a player leaves                            | its state goes with it; the end of a session clears everyone's                                                 | a new game starts in its body                  | —                                               |
-| fights around the body                                                 | NPCs never hit a player in another world (the host does not send it)                                           | the host away shares no NPCs (the world's own) | a guest in its own world hides none of its NPCs |
+<!-- prettier-ignore -->
+| Moment | The diver's body, for the others | The diver | The story |
+| --- | --- | --- | --- |
+| jacked in from a chair, braindance on a rig | stays in the chair as it was (position and pose held), marker on; "… is in cyberspace / a braindance" | sees no puppet, no marker | no holds, no join offer; the guest plays on |
+| cyberspace or a scene that moves V's body (standing, a flashback jump) | hidden (meshes, clothes, held items), marker off; "… is in cyberspace", "… is living one of Johnny's memories" | the same | the same |
+| Johnny takes over in the city ("Johnny drives", Chippin' In) | the puppet stays and moves as Johnny; "… is Johnny Silverhand now" | sees the others | tier rules as before (§2.11) |
+| back | shown again where the player really is, 0.75 s after (the puppet moves there first); "… is back" | the others again | holds and offers as the tier says |
+| the session drops mid-dive, a player leaves | its state goes with it; the end of a session clears everyone's | a new game starts in its body | — |
+| fights around the body | NPCs never hit a player in another world (the host does not send it) | the host away shares no NPCs (the world's own) | a guest in its own world hides none of its NPCs |
 
 What is open: spectating a host's dive (the guest seeing the host's camera
 or the scene), the signals of Phantom Liberty's cyberspace and Blackwall
@@ -884,16 +889,17 @@ one role, `tandem-peer` in the other, scenarios checking log lines
 (`tools/scenario.sh`; a human only for what must be seen or heard,
 noted per test).
 
-| #   | Step                                                                                                                                  | Value                                              | Cost                                       |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------------ |
-| S1  | spike: the freeze hook (return value, what stops, what keeps working)                                                                 | gates step 1                                       | one evening of RE + a probe                |
-| 1   | **first version**: freeze, save lock and restore; journal, tracker, markers; calls and texts; subtitles and hubs; tier holds; rewards | the story is shared, safely, with native UI        | medium (mostly scripts, one native hook)   |
-| S2  | spike: replay one holocall scene node on a solo game                                                                                  | gates step 3                                       | small                                      |
-| 2   | facts (full, two-way-safe), world nodes (doors, visibility, variants), fades and videos, story restrictions, entity pins, dev points  | doors and HUD follow the story; fewer gaps         | medium (FactManager native, node replay)   |
-| 3   | scene replay: 3a holocalls (voice, holo picture), 3b dialogue scenes (voice, lip-sync, cameras, extras, choice injection)             | the story is **heard**: the biggest immersion gain | high, and gated by S2                      |
-| 4   | quest interiors on guests (phase prefabs)                                                                                             | guests can follow into mission interiors           | unknown (RE of `questQuestPrefabsHandler`) |
-| 5   | braindance copy, replacers (Johnny), flashbacks; "shadow phases" if step 3 needs the phase context                                    | the special sequences                              | high                                       |
-| 6   | solo gigs (with region authority)                                                                                                     | play apart                                         | high (§5.2)                                |
+<!-- prettier-ignore -->
+| # | Step | Value | Cost |
+| --- | --- | --- | --- |
+| S1 | spike: the freeze hook (return value, what stops, what keeps working) | gates step 1 | one evening of RE + a probe |
+| 1 | **first version**: freeze, save lock and restore; journal, tracker, markers; calls and texts; subtitles and hubs; tier holds; rewards | the story is shared, safely, with native UI | medium (mostly scripts, one native hook) |
+| S2 | spike: replay one holocall scene node on a solo game | gates step 3 | small |
+| 2 | facts (full, two-way-safe), world nodes (doors, visibility, variants), fades and videos, story restrictions, entity pins, dev points | doors and HUD follow the story; fewer gaps | medium (FactManager native, node replay) |
+| 3 | scene replay: 3a holocalls (voice, holo picture), 3b dialogue scenes (voice, lip-sync, cameras, extras, choice injection) | the story is **heard**: the biggest immersion gain | high, and gated by S2 |
+| 4 | quest interiors on guests (phase prefabs) | guests can follow into mission interiors | unknown (RE of `questQuestPrefabsHandler`) |
+| 5 | braindance copy, replacers (Johnny), flashbacks; "shadow phases" if step 3 needs the phase context | the special sequences | high |
+| 6 | solo gigs (with region authority) | play apart | high (§5.2) |
 
 ### Spike S1 — the freeze
 
@@ -1097,20 +1103,21 @@ limited lockstep of option E, for presentation only.
 
 ## 7. Risks and safety rails
 
-| Risk                                                                                                                                | Rail                                                                                                                                                                                                                                         |
-| ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A guest save written with the host's journal or facts in it (its own story overwritten)                                             | two save locks (manager reason + `IsSavingLocked` override), queued autosaves dropped, Save/Load hidden, death menu blocked; the only save is the leave save, written after the restore digest matches the baseline (§1.4)                   |
-| The guest's own quests run ahead because of mirrored state                                                                          | freeze before any mirror is applied; a guest whose freeze is unavailable gets no story sync                                                                                                                                                  |
-| A guest's own quest soft-locked after the session (a quest NPC hidden for good, a door left open by the host's quest, a phone fact) | the leave save is followed by a **load**, which drops every non-persistent artifact; persistent levers (prevention lock, fast-travel lock) undone before the save; phone presentation on guests never writes `phonecall_*` facts (§3.2)      |
-| The freeze hook returns the wrong value (a phase takes an output, ends, or the game crashes)                                        | spike S1 before step 1; layout check; hook active only in a session on a guest                                                                                                                                                               |
-| The host's quest soft-locked by a guest's request (an answer to a call no longer ringing, a reply to a closed thread)               | the host applies `PhoneAction` / `PhoneReply` only when its own state still matches (ringing call from that contact; choice entry still an open option); guests never write host facts or journal directly; guests never trigger checkpoints |
-| Host death or host load rewinds the world                                                                                           | host's death menu blocked in a session (revive flow, milestone 8); after a host load, guests restore to their baseline and re-snapshot as on a new join                                                                                      |
-| Different game versions or DLC: journal hashes that do not resolve                                                                  | the handshake refuses (`Hello.gameVersion` + expansion flag); unknown hashes skipped and counted in the log                                                                                                                                  |
-| Double or farmed rewards                                                                                                            | rewards only from the host's `OnRewardEvent`; `(quest, reward)` idempotency per guest per session                                                                                                                                            |
-| The guest's own Songbird-style holocall hanging the game (NCO's 120 s freeze)                                                       | frozen quests never ring; the host's calls reach guests as blackboard presentation, not as the guest's own call scene (until step 3a replays it deliberately)                                                                                |
-| A crash loses the guest's session progress                                                                                          | accepted in step 1 (its quest state is safe); later a periodic safe checkpoint                                                                                                                                                               |
-| Scene replay (step 3): two copies of an actor, a guest V standing in the host's seat, intimate scenes                               | local actor shown, proxy hidden for the scene; the other V placed as an extra; a no-replay list                                                                                                                                              |
-| Solo gigs (step 6): two games finishing one gig, outcomes that conflict                                                             | host-granted claims; gigs only; the host's copy kept frozen; outcome applied by the host only                                                                                                                                                |
+<!-- prettier-ignore -->
+| Risk | Rail |
+| --- | --- |
+| A guest save written with the host's journal or facts in it (its own story overwritten) | two save locks (manager reason + `IsSavingLocked` override), queued autosaves dropped, Save/Load hidden, death menu blocked; the only save is the leave save, written after the restore digest matches the baseline (§1.4) |
+| The guest's own quests run ahead because of mirrored state | freeze before any mirror is applied; a guest whose freeze is unavailable gets no story sync |
+| A guest's own quest soft-locked after the session (a quest NPC hidden for good, a door left open by the host's quest, a phone fact) | the leave save is followed by a **load**, which drops every non-persistent artifact; persistent levers (prevention lock, fast-travel lock) undone before the save; phone presentation on guests never writes `phonecall_*` facts (§3.2) |
+| The freeze hook returns the wrong value (a phase takes an output, ends, or the game crashes) | spike S1 before step 1; layout check; hook active only in a session on a guest |
+| The host's quest soft-locked by a guest's request (an answer to a call no longer ringing, a reply to a closed thread) | the host applies `PhoneAction` / `PhoneReply` only when its own state still matches (ringing call from that contact; choice entry still an open option); guests never write host facts or journal directly; guests never trigger checkpoints |
+| Host death or host load rewinds the world | host's death menu blocked in a session (revive flow, milestone 8); after a host load, guests restore to their baseline and re-snapshot as on a new join |
+| Different game versions or DLC: journal hashes that do not resolve | the handshake refuses (`Hello.gameVersion` + expansion flag); unknown hashes skipped and counted in the log |
+| Double or farmed rewards | rewards only from the host's `OnRewardEvent`; `(quest, reward)` idempotency per guest per session |
+| The guest's own Songbird-style holocall hanging the game (NCO's 120 s freeze) | frozen quests never ring; the host's calls reach guests as blackboard presentation, not as the guest's own call scene (until step 3a replays it deliberately) |
+| A crash loses the guest's session progress | accepted in step 1 (its quest state is safe); later a periodic safe checkpoint |
+| Scene replay (step 3): two copies of an actor, a guest V standing in the host's seat, intimate scenes | local actor shown, proxy hidden for the scene; the other V placed as an extra; a no-replay list |
+| Solo gigs (step 6): two games finishing one gig, outcomes that conflict | host-granted claims; gigs only; the host's copy kept frozen; outcome applied by the host only |
 
 ---
 
@@ -1143,15 +1150,16 @@ limited lockstep of option E, for presentation only.
 
 ## 9. In-game tests owed
 
-| #   | Question                                                                                                                          | How                                               |
-| --- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| T1  | `ExecuteNode`'s result: which value makes a phase wait; does refusing every node freeze cleanly; what systemic content stops      | spike S1                                          |
-| T2  | The leave save then load: does the guest's own story resume exactly (tracker, pending calls, its active mission)                  | `story-guest.sh` + a human checks the journal     |
-| T3  | `ChangeEntryStateByHash` on a frozen guest: tracker entry, toasts, quest map pins created; parents before children                | `story-guest.sh` with real hashes                 |
-| T4  | Mirrored message: is the change type `Direct` (the SMS toast depends on it, `final.reds:408846`)                                  | `story-guest.sh`, a human sees the toast          |
-| T5  | Phone presentation by blackboard only on 2.50: ring, answer key, widget, portrait, ringtone stop on every exit                    | `story-guest.sh`, a human listens                 |
-| T6  | Host side: does a `PickupPhoneRequest` queued by tandem start the host's call scene as a key press does                           | `story-host.sh` with a real pending call (a save) |
-| T7  | Rewards: `GiveReward` amounts on a guest for a quest it never ran (`QW §14` q31); are fixer payments reward records or item nodes | `story-host.sh` + record a gig's end              |
-| T8  | Stand-in dialogue hub on a guest: drawn, caption icons, own cursor and the partner marker, stays up                               | `story-guest.sh`, a human looks                   |
-| T9  | Which mission places are quest prefabs (missing on a frozen guest)                                                                | the freeze probe while walking to them, solo      |
-| T10 | Scene node replay outside its phase: voice, picture, end of scene, V's tier released                                              | spike S2, a human listens                         |
+<!-- prettier-ignore -->
+| # | Question | How |
+| --- | --- | --- |
+| T1 | `ExecuteNode`'s result: which value makes a phase wait; does refusing every node freeze cleanly; what systemic content stops | spike S1 |
+| T2 | The leave save then load: does the guest's own story resume exactly (tracker, pending calls, its active mission) | `story-guest.sh` + a human checks the journal |
+| T3 | `ChangeEntryStateByHash` on a frozen guest: tracker entry, toasts, quest map pins created; parents before children | `story-guest.sh` with real hashes |
+| T4 | Mirrored message: is the change type `Direct` (the SMS toast depends on it, `final.reds:408846`) | `story-guest.sh`, a human sees the toast |
+| T5 | Phone presentation by blackboard only on 2.50: ring, answer key, widget, portrait, ringtone stop on every exit | `story-guest.sh`, a human listens |
+| T6 | Host side: does a `PickupPhoneRequest` queued by tandem start the host's call scene as a key press does | `story-host.sh` with a real pending call (a save) |
+| T7 | Rewards: `GiveReward` amounts on a guest for a quest it never ran (`QW §14` q31); are fixer payments reward records or item nodes | `story-host.sh` + record a gig's end |
+| T8 | Stand-in dialogue hub on a guest: drawn, caption icons, own cursor and the partner marker, stays up | `story-guest.sh`, a human looks |
+| T9 | Which mission places are quest prefabs (missing on a frozen guest) | the freeze probe while walking to them, solo |
+| T10 | Scene node replay outside its phase: voice, picture, end of scene, V's tier released | spike S2, a human listens |

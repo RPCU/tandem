@@ -93,117 +93,118 @@ Type column: I = Int32, B = Bool, F = Float, E = EntityID, V = Variant,
 V4 = Vector4. "Enum" is what the Int carries; `(inferred)` = by name only,
 no script cast seen.
 
-| Field                                            | T   | Enum / meaning                                          | Seen at        |
-| ------------------------------------------------ | --- | ------------------------------------------------------- | -------------- |
-| `Locomotion`                                     | I   | `gamePSMLocomotionStates`                               | 40668          |
-| `LocomotionDetailed`                             | I   | `gamePSMDetailedLocomotionStates`                       | 281168         |
-| `HighLevel`                                      | I   | `gamePSMHighLevel`                                      | 283771, 529018 |
-| `UpperBody`                                      | I   | `gamePSMUpperBodyStates`                                | 129664         |
-| `TimeDilation`                                   | I   | `gamePSMTimeDilation`                                   | 524116+        |
-| `RightWeapon`                                    | I   | `gamePSMRangedWeaponStates` (inferred; 2.50 only)       | —              |
-| `LeftWeapon`                                     | I   | same (inferred; 2.50 only)                              | —              |
-| `EquipmentRight`                                 | I   | equipment state of the right hand (inferred; 2.50 only) | —              |
-| `EquipmentLeft`                                  | I   | same, left hand (inferred; 2.50 only)                   | —              |
-| `WeaponTriggerMode`                              | I   | `gamedataTriggerMode` (inferred; 2.50 only)             | —              |
-| `WeaponLeftTriggerMode`                          | I   | same (inferred; 2.50 only)                              | —              |
-| `ShootState`                                     | I   | `gamePSMShootStates` (inferred; 2.50 only)              | —              |
-| `LatestWeaponReloadTime`                         | F   | sim time of the last reload                             | —              |
-| `Melee`                                          | I   | `gamePSMMelee`                                          | 311300         |
-| `UI`                                             | I   | `gamePSMUIState`                                        | —              |
-| `Crosshair`                                      | I   | `gamePSMCrosshairStates`                                | 268757         |
-| `Reaction`                                       | I   | `gamePSMReaction`                                       | —              |
-| `Zones`                                          | I   | `gamePSMZones`                                          | 311818         |
-| `SecurityZoneData`                               | V   | security zone struct                                    | 39881+         |
-| `Vision`                                         | I   | `gamePSMVision` (1 = scanner)                           | 40549          |
-| `VisionDebug`                                    | I   | `gamePSMVisionDebug`                                    | —              |
-| `SceneTier`                                      | I   | gameplay tier 1–5 (`GameplayTier`)                      | 40009          |
-| `CombatGadget`                                   | I   | `gamePSMCombatGadget`                                   | 520019+        |
-| `LastCombatGadgetUsed`                           | V   | item of the last grenade                                | —              |
-| `Consumable`                                     | I   | consumable state (enum not found)                       | —              |
-| `Vehicle`                                        | I   | `gamePSMVehicle`                                        | 40272          |
-| `MountedToVehicleInDriverSeat`                   | B   | set by `VehicleComponent.OnMountingEvent`               | 90563+         |
-| `MountedToCombatVehicle`                         | B   | vehicle allows combat                                   | 40453          |
-| `MountedToVehicle`                               | B   |                                                         | 40457          |
-| `InArmoredVehicle`                               | B   |                                                         | 40448          |
-| `ZoomLevel`                                      | F   | current zoom factor                                     | 39870          |
-| `MaxZoomLevel`                                   | I   |                                                         | —              |
-| `ToggleFireMode`                                 | B   | pulse                                                   | 239948         |
-| `SwitchWeapon`                                   | B   | pulse                                                   | —              |
-| `IsDoorInteractionActive`                        | B   |                                                         | 104815         |
-| `FinisherTarget`                                 | E   |                                                         | 552947         |
-| `IsInteractingWithDevice`                        | B   |                                                         | 92642          |
-| `IsInteractingViaPersonalLink`                   | B   | jack-in                                                 | 38978          |
-| `IsForceOpeningDoor`                             | B   |                                                         | 134161         |
-| `IsControllingDevice`                            | B   | camera/turret takeover                                  | 154573         |
-| `IsControllingCamera`                            | B   |                                                         | 154342         |
-| `IsUIZoomDevice`                                 | B   |                                                         | 43457          |
-| `UIZoomDeviceID`                                 | E   |                                                         | 154569         |
-| `UseUnarmed`                                     | B   |                                                         | —              |
-| `Berserk`                                        | I   | (enum not found)                                        | —              |
-| `ActiveCyberware`                                | I   | (enum not found)                                        | —              |
-| `Whip`                                           | I   | `gamePSMWhip`                                           | —              |
-| `DEBUG_SilencedWeapon`                           | B   |                                                         | —              |
-| `LeftHandCyberware`                              | I   | `gamePSMLeftHandCyberware`                              | 129668         |
-| `UseLeftHand`                                    | B   |                                                         | —              |
-| `MeleeWeapon`                                    | I   | `gamePSMMeleeWeapon`                                    | 129674         |
-| `Carrying`                                       | B   | carrying a body                                         | 526850         |
-| `CarryingDisposal`                               | B   |                                                         | 92640          |
-| `CurrentElevator`                                | V   |                                                         | 198539         |
-| `IsPlayerInsideElevator`                         | B   |                                                         | 198537         |
-| `IsPlayerInsideMovingElevator`                   | B   |                                                         | —              |
-| `Combat`                                         | I   | `gamePSMCombat`                                         | 240954         |
-| `Stamina`                                        | I   | `gamePSMStamina`                                        | 245137         |
-| `Vitals`                                         | I   | `gamePSMVitals`                                         | 283774         |
-| `Takedown`                                       | I   | `gamePSMTakedown`                                       | 48594          |
-| `TakedownTargetID`                               | E   |                                                         | —              |
-| `Fall`                                           | I   | `gamePSMFallStates`                                     | 310942         |
-| `Landing`                                        | I   | `gamePSMLandingState`                                   | 528757         |
-| `UsingCover`                                     | B   |                                                         | 515685         |
-| `IsInMinigame`                                   | B   | breach protocol                                         | 481065         |
-| `UploadingQuickHackIDs`                          | V   | quickhacks being uploaded                               | 38387          |
-| `CostFreeActionID`                               | V   |                                                         | —              |
-| `AmountOfCostFreeActions`                        | I   |                                                         | —              |
-| `MeleeSpreadableQuickhackActionID`               | V   |                                                         | —              |
-| `EntityIDTargetingPlayer`                        | E   |                                                         | —              |
-| `EntityIDVehicleRemoteControlled`                | E   | remote-driven vehicle                                   | —              |
-| `IsVehicleRemoteControlCameraTPP`                | B   |                                                         | —              |
-| `Swimming`                                       | I   | `gamePSMSwimming`                                       | 240960         |
-| `BodyCarrying`                                   | I   | `gamePSMBodyCarrying`                                   | 95998          |
-| `BodyDisposalDetailed`                           | I   | `gamePSMDetailedBodyDisposal`                           | 92643          |
-| `DisplayDeathMenu`                               | B   | triggers the death screen (§7)                          | 283812         |
-| `OverrideQuickHackPanelDilation`                 | B   |                                                         | —              |
-| `NanoWireLaunchMode`                             | I   | `gamePSMNanoWireLaunchMode`                             | —              |
-| `IsMovingHorizontally`                           | B   |                                                         | 45415          |
-| `IsMovingVertically`                             | B   |                                                         | 45411          |
-| `IsOnGround`                                     | B   |                                                         | —              |
-| `MinElevation`, `MaxElevation`                   | F   |                                                         | —              |
-| `ActionRestriction`                              | V   |                                                         | 39850          |
-| `MeleeLeap`                                      | B   |                                                         | 516840         |
-| `IsInWorkspot`                                   | I   | `gamePSMWorkspotState`                                  | 311077         |
-| `QuestForceShoot`                                | B   |                                                         | 551771         |
-| `LadderCameraParams`                             | I   |                                                         | —              |
-| `DodgeTimeStamp`                                 | F   |                                                         | —              |
-| `CanOnePunch`                                    | B   |                                                         | 22352          |
-| `HasSmartGunLockedOnTarget`                      | B   |                                                         | —              |
-| `SceneAimForced`, `SceneSafeForced`              | B   |                                                         | 44672          |
-| `SceneWeaponLoweringSpeedOverride`               | F   |                                                         | —              |
-| `ScenePreventFirstEquip`                         | B   |                                                         | —              |
-| `MountedPreventFirstEquip`                       | B   |                                                         | 40459          |
-| `IgnoreBarbedWireStateEnterTime`                 | F   |                                                         | —              |
-| `IsInLoreAnimationScene`                         | B   |                                                         | —              |
-| `Felled`                                         | B   |                                                         | 44692          |
-| `IsVehicleInTPP`                                 | B   |                                                         | —              |
-| `IsDriverCombatInTPP`                            | B   |                                                         | 39881+         |
-| `DriverCombatWeaponType`                         | I   | (inferred `gamedataDriverCombatType`)                   | 39881+         |
-| `TrackedTarget`                                  | V   |                                                         | —              |
-| `TPPAimPosition`                                 | V4  | world aim point in third person                         | —              |
-| `BodySlamBump`                                   | I   |                                                         | 556410         |
-| `IsInBodySlamState`                              | B   |                                                         | 556333         |
-| `AimInTimeRemaining`, `AimInTime`                | F   |                                                         | —              |
-| `CanThrowCarriedNPC`                             | B   |                                                         | —              |
-| `IsWeaponFirstEquip`                             | B   |                                                         | 524721         |
-| `IsDualWielding`                                 | B   | (2.50 only)                                             | —              |
-| `IsVisualCustomizationPhotomodeVehicleSlotTaken` | B   |                                                         | —              |
+<!-- prettier-ignore -->
+| Field | T | Enum / meaning | Seen at |
+| --- | --- | --- | --- |
+| `Locomotion` | I | `gamePSMLocomotionStates` | 40668 |
+| `LocomotionDetailed` | I | `gamePSMDetailedLocomotionStates` | 281168 |
+| `HighLevel` | I | `gamePSMHighLevel` | 283771, 529018 |
+| `UpperBody` | I | `gamePSMUpperBodyStates` | 129664 |
+| `TimeDilation` | I | `gamePSMTimeDilation` | 524116+ |
+| `RightWeapon` | I | `gamePSMRangedWeaponStates` (inferred; 2.50 only) | — |
+| `LeftWeapon` | I | same (inferred; 2.50 only) | — |
+| `EquipmentRight` | I | equipment state of the right hand (inferred; 2.50 only) | — |
+| `EquipmentLeft` | I | same, left hand (inferred; 2.50 only) | — |
+| `WeaponTriggerMode` | I | `gamedataTriggerMode` (inferred; 2.50 only) | — |
+| `WeaponLeftTriggerMode` | I | same (inferred; 2.50 only) | — |
+| `ShootState` | I | `gamePSMShootStates` (inferred; 2.50 only) | — |
+| `LatestWeaponReloadTime` | F | sim time of the last reload | — |
+| `Melee` | I | `gamePSMMelee` | 311300 |
+| `UI` | I | `gamePSMUIState` | — |
+| `Crosshair` | I | `gamePSMCrosshairStates` | 268757 |
+| `Reaction` | I | `gamePSMReaction` | — |
+| `Zones` | I | `gamePSMZones` | 311818 |
+| `SecurityZoneData` | V | security zone struct | 39881+ |
+| `Vision` | I | `gamePSMVision` (1 = scanner) | 40549 |
+| `VisionDebug` | I | `gamePSMVisionDebug` | — |
+| `SceneTier` | I | gameplay tier 1–5 (`GameplayTier`) | 40009 |
+| `CombatGadget` | I | `gamePSMCombatGadget` | 520019+ |
+| `LastCombatGadgetUsed` | V | item of the last grenade | — |
+| `Consumable` | I | consumable state (enum not found) | — |
+| `Vehicle` | I | `gamePSMVehicle` | 40272 |
+| `MountedToVehicleInDriverSeat` | B | set by `VehicleComponent.OnMountingEvent` | 90563+ |
+| `MountedToCombatVehicle` | B | vehicle allows combat | 40453 |
+| `MountedToVehicle` | B | | 40457 |
+| `InArmoredVehicle` | B | | 40448 |
+| `ZoomLevel` | F | current zoom factor | 39870 |
+| `MaxZoomLevel` | I | | — |
+| `ToggleFireMode` | B | pulse | 239948 |
+| `SwitchWeapon` | B | pulse | — |
+| `IsDoorInteractionActive` | B | | 104815 |
+| `FinisherTarget` | E | | 552947 |
+| `IsInteractingWithDevice` | B | | 92642 |
+| `IsInteractingViaPersonalLink` | B | jack-in | 38978 |
+| `IsForceOpeningDoor` | B | | 134161 |
+| `IsControllingDevice` | B | camera/turret takeover | 154573 |
+| `IsControllingCamera` | B | | 154342 |
+| `IsUIZoomDevice` | B | | 43457 |
+| `UIZoomDeviceID` | E | | 154569 |
+| `UseUnarmed` | B | | — |
+| `Berserk` | I | (enum not found) | — |
+| `ActiveCyberware` | I | (enum not found) | — |
+| `Whip` | I | `gamePSMWhip` | — |
+| `DEBUG_SilencedWeapon` | B | | — |
+| `LeftHandCyberware` | I | `gamePSMLeftHandCyberware` | 129668 |
+| `UseLeftHand` | B | | — |
+| `MeleeWeapon` | I | `gamePSMMeleeWeapon` | 129674 |
+| `Carrying` | B | carrying a body | 526850 |
+| `CarryingDisposal` | B | | 92640 |
+| `CurrentElevator` | V | | 198539 |
+| `IsPlayerInsideElevator` | B | | 198537 |
+| `IsPlayerInsideMovingElevator` | B | | — |
+| `Combat` | I | `gamePSMCombat` | 240954 |
+| `Stamina` | I | `gamePSMStamina` | 245137 |
+| `Vitals` | I | `gamePSMVitals` | 283774 |
+| `Takedown` | I | `gamePSMTakedown` | 48594 |
+| `TakedownTargetID` | E | | — |
+| `Fall` | I | `gamePSMFallStates` | 310942 |
+| `Landing` | I | `gamePSMLandingState` | 528757 |
+| `UsingCover` | B | | 515685 |
+| `IsInMinigame` | B | breach protocol | 481065 |
+| `UploadingQuickHackIDs` | V | quickhacks being uploaded | 38387 |
+| `CostFreeActionID` | V | | — |
+| `AmountOfCostFreeActions` | I | | — |
+| `MeleeSpreadableQuickhackActionID` | V | | — |
+| `EntityIDTargetingPlayer` | E | | — |
+| `EntityIDVehicleRemoteControlled` | E | remote-driven vehicle | — |
+| `IsVehicleRemoteControlCameraTPP` | B | | — |
+| `Swimming` | I | `gamePSMSwimming` | 240960 |
+| `BodyCarrying` | I | `gamePSMBodyCarrying` | 95998 |
+| `BodyDisposalDetailed` | I | `gamePSMDetailedBodyDisposal` | 92643 |
+| `DisplayDeathMenu` | B | triggers the death screen (§7) | 283812 |
+| `OverrideQuickHackPanelDilation` | B | | — |
+| `NanoWireLaunchMode` | I | `gamePSMNanoWireLaunchMode` | — |
+| `IsMovingHorizontally` | B | | 45415 |
+| `IsMovingVertically` | B | | 45411 |
+| `IsOnGround` | B | | — |
+| `MinElevation`, `MaxElevation` | F | | — |
+| `ActionRestriction` | V | | 39850 |
+| `MeleeLeap` | B | | 516840 |
+| `IsInWorkspot` | I | `gamePSMWorkspotState` | 311077 |
+| `QuestForceShoot` | B | | 551771 |
+| `LadderCameraParams` | I | | — |
+| `DodgeTimeStamp` | F | | — |
+| `CanOnePunch` | B | | 22352 |
+| `HasSmartGunLockedOnTarget` | B | | — |
+| `SceneAimForced`, `SceneSafeForced` | B | | 44672 |
+| `SceneWeaponLoweringSpeedOverride` | F | | — |
+| `ScenePreventFirstEquip` | B | | — |
+| `MountedPreventFirstEquip` | B | | 40459 |
+| `IgnoreBarbedWireStateEnterTime` | F | | — |
+| `IsInLoreAnimationScene` | B | | — |
+| `Felled` | B | | 44692 |
+| `IsVehicleInTPP` | B | | — |
+| `IsDriverCombatInTPP` | B | | 39881+ |
+| `DriverCombatWeaponType` | I | (inferred `gamedataDriverCombatType`) | 39881+ |
+| `TrackedTarget` | V | | — |
+| `TPPAimPosition` | V4 | world aim point in third person | — |
+| `BodySlamBump` | I | | 556410 |
+| `IsInBodySlamState` | B | | 556333 |
+| `AimInTimeRemaining`, `AimInTime` | F | | — |
+| `CanThrowCarriedNPC` | B | | — |
+| `IsWeaponFirstEquip` | B | | 524721 |
+| `IsDualWielding` | B | (2.50 only) | — |
+| `IsVisualCustomizationPhotomodeVehicleSlotTaken` | B | | — |
 
 `PlayerPuppet` itself listens (final.reds:39840–40030) to `ZoomLevel`,
 `Locomotion`, `Combat`, `SecurityZoneData`, `LeftHandCyberware`, `Vision`,
@@ -297,15 +298,16 @@ Felled).
 
 ### 2.1 Position, velocity, movement
 
-| What                  | How                                                                                                                                                                              | Note                                                                               |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| position, rotation    | `entEntity.GetWorldPosition()`, `GetWorldOrientation()`, `GetWorldYaw()`, `GetWorldForward()` [N]                                                                                | already sampled by the plugin                                                      |
-| velocity              | `gamePuppet.GetVelocity() -> Vector4` [N] (final.reds:19380)                                                                                                                     | world space                                                                        |
-| moving                | `PlayerPuppet.IsMoving()` = blackboard `IsMovingHorizontally \|\| IsMovingVertically` (final.reds:45411)                                                                         |                                                                                    |
-| on ground             | blackboard `IsOnGround`; `animAnimFeature_PlayerMovement.inAir`                                                                                                                  |                                                                                    |
-| facing vs. movement   | `animAnimFeature_PlayerMovement` {`facingDirection` Vector4 +0x70, `standingTerrainAngle` +0x80, `verticalSpeed` +0x84, `movementDirectionHorizontalAngle` +0x88, `inAir` +0x8C} | the anim feature the engine applies as `playerLocomotion` (engine-knowledge §12.1) |
-| crouch (persistent)   | `GamePuppetPS.IsCrouch()` [N] (final.reds:24668)                                                                                                                                 | for the player use `Locomotion == Crouch`                                          |
-| standing on a vehicle | `gamePuppet.CheckIsStandingOnVehicle(vehicleID)`, `TryGetVehicleBelow() -> EntityID` [N]                                                                                         | surfing a moving car: send position relative to that vehicle (inferred)            |
+<!-- prettier-ignore -->
+| What | How | Note |
+| --- | --- | --- |
+| position, rotation | `entEntity.GetWorldPosition()`, `GetWorldOrientation()`, `GetWorldYaw()`, `GetWorldForward()` [N] | already sampled by the plugin |
+| velocity | `gamePuppet.GetVelocity() -> Vector4` [N] (final.reds:19380) | world space |
+| moving | `PlayerPuppet.IsMoving()` = blackboard `IsMovingHorizontally \|\| IsMovingVertically` (final.reds:45411) | |
+| on ground | blackboard `IsOnGround`; `animAnimFeature_PlayerMovement.inAir` | |
+| facing vs. movement | `animAnimFeature_PlayerMovement` {`facingDirection` Vector4 +0x70, `standingTerrainAngle` +0x80, `verticalSpeed` +0x84, `movementDirectionHorizontalAngle` +0x88, `inAir` +0x8C} | the anim feature the engine applies as `playerLocomotion` (engine-knowledge §12.1) |
+| crouch (persistent) | `GamePuppetPS.IsCrouch()` [N] (final.reds:24668) | for the player use `Locomotion == Crouch` |
+| standing on a vehicle | `gamePuppet.CheckIsStandingOnVehicle(vehicleID)`, `TryGetVehicleBelow() -> EntityID` [N] | surfing a moving car: send position relative to that vehicle (inferred) |
 
 `moveComponent` (RTTI size 0x2C0) exposes **no script native**; there is no
 "movement input" getter by name. Input is only visible through
@@ -859,25 +861,26 @@ open question 8.
 For each: the signal the owner sends, and what else is needed besides the
 pose.
 
-| Move                       | Signal                                                                                                                                                                                                              | Besides the pose                                                                                                                                                                         |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| crouch                     | `LocomotionDetailed` Crouch=3, CrouchSprint=30                                                                                                                                                                      | collision capsule height on the puppet (inferred)                                                                                                                                        |
-| sprint                     | Sprint=4                                                                                                                                                                                                            | —                                                                                                                                                                                        |
-| slide                      | Slide=5, SlideFall=6                                                                                                                                                                                                | anim event `n"Slide"`; sound                                                                                                                                                             |
-| dodge / dash               | Dodge=7; `DodgeTimeStamp`; status `DodgeBuff`, `PlayerJustDashed`                                                                                                                                                   | effect `n"dash"`                                                                                                                                                                         |
-| air dash                   | DodgeAir=22; status `DodgeAirBuff`                                                                                                                                                                                  |                                                                                                                                                                                          |
-| vault, climb               | Vault=9, Climb=8                                                                                                                                                                                                    | root moves through geometry: interpolate position without ground snapping                                                                                                                |
-| ladder                     | Ladder=10, LadderSprint=11, LadderSlide=12, LadderJump=13; `LadderCameraParams`                                                                                                                                     | same                                                                                                                                                                                     |
-| jump family                | Jump=18, DoubleJump=19, ChargeJump=20, HoverJump=21; `Fall`, `Landing`                                                                                                                                              | landing effects (§4.5)                                                                                                                                                                   |
-| superhero landing          | SuperheroFall=17, SuperheroLand=27, SuperheroLandRecovery=28                                                                                                                                                        | shockwave is a gameplay attack: owner/host decides                                                                                                                                       |
-| swimming                   | `HighLevel == Swimming (6)`; `Swimming` Surface=1, Diving=2, Climbing=3; pool `Oxygen`                                                                                                                              | water splashes                                                                                                                                                                           |
-| carrying a body            | `Carrying`, `BodyCarrying` (PickUp=1 … Throw=6)                                                                                                                                                                     | the carried NPC is **mounted on the player**, slot `n"leftShoulder"`; state machine `n"CarriedObject"` (final.reds:92785); it is a host-owned NPC: needs a host event, not only the pose |
-| takedown / grapple         | `Takedown` (EnteringGrapple=1, Grapple=2, Leap=3, Takedown=4), `TakedownTargetID`; NPC mounted in slot `n"grapple"` (final.reds:21182); status `Grappled`, `PlayerInFinisherWorkspot`, `FinisherActiveStatusEffect` | synchronized two-character animation: the NPC half must be played by its owner (host)                                                                                                    |
-| finisher                   | `FinisherTarget` (EntityID)                                                                                                                                                                                         | same                                                                                                                                                                                     |
-| workspot (sit, use device) | `IsInWorkspot == 1`, `Locomotion == Workspot (9)`, `IsInteractingWithDevice`                                                                                                                                        | see below                                                                                                                                                                                |
-| knockdown / ragdoll        | Knockdown=29, Felled=31 + `Felled` bool; status `Knockdown`, `BikeKnockdown`, `VehicleKnockdown`, `UncontrolledMovement_Default`, `…_RagdollOffLedge`                                                               | a ragdolled V's bones are physics: the pose stream carries them if it samples after physics (open question 3)                                                                            |
-| cover                      | `UsingCover`                                                                                                                                                                                                        | —                                                                                                                                                                                        |
-| emotes                     | none exist for the player in the scripts                                                                                                                                                                            | photo-mode poses are not gameplay                                                                                                                                                        |
+<!-- prettier-ignore -->
+| Move | Signal | Besides the pose |
+| --- | --- | --- |
+| crouch | `LocomotionDetailed` Crouch=3, CrouchSprint=30 | collision capsule height on the puppet (inferred) |
+| sprint | Sprint=4 | — |
+| slide | Slide=5, SlideFall=6 | anim event `n"Slide"`; sound |
+| dodge / dash | Dodge=7; `DodgeTimeStamp`; status `DodgeBuff`, `PlayerJustDashed` | effect `n"dash"` |
+| air dash | DodgeAir=22; status `DodgeAirBuff` | |
+| vault, climb | Vault=9, Climb=8 | root moves through geometry: interpolate position without ground snapping |
+| ladder | Ladder=10, LadderSprint=11, LadderSlide=12, LadderJump=13; `LadderCameraParams` | same |
+| jump family | Jump=18, DoubleJump=19, ChargeJump=20, HoverJump=21; `Fall`, `Landing` | landing effects (§4.5) |
+| superhero landing | SuperheroFall=17, SuperheroLand=27, SuperheroLandRecovery=28 | shockwave is a gameplay attack: owner/host decides |
+| swimming | `HighLevel == Swimming (6)`; `Swimming` Surface=1, Diving=2, Climbing=3; pool `Oxygen` | water splashes |
+| carrying a body | `Carrying`, `BodyCarrying` (PickUp=1 … Throw=6) | the carried NPC is **mounted on the player**, slot `n"leftShoulder"`; state machine `n"CarriedObject"` (final.reds:92785); it is a host-owned NPC: needs a host event, not only the pose |
+| takedown / grapple | `Takedown` (EnteringGrapple=1, Grapple=2, Leap=3, Takedown=4), `TakedownTargetID`; NPC mounted in slot `n"grapple"` (final.reds:21182); status `Grappled`, `PlayerInFinisherWorkspot`, `FinisherActiveStatusEffect` | synchronized two-character animation: the NPC half must be played by its owner (host) |
+| finisher | `FinisherTarget` (EntityID) | same |
+| workspot (sit, use device) | `IsInWorkspot == 1`, `Locomotion == Workspot (9)`, `IsInteractingWithDevice` | see below |
+| knockdown / ragdoll | Knockdown=29, Felled=31 + `Felled` bool; status `Knockdown`, `BikeKnockdown`, `VehicleKnockdown`, `UncontrolledMovement_Default`, `…_RagdollOffLedge` | a ragdolled V's bones are physics: the pose stream carries them if it samples after physics (open question 3) |
+| cover | `UsingCover` | — |
+| emotes | none exist for the player in the scripts | photo-mode poses are not gameplay |
 
 Sent since 2026-11-18 (`core/include/tandem/movement.hpp`, packed in
 `PlayerState::flags`): `LocomotionDetailed`, `Swimming`,
@@ -916,26 +919,27 @@ Current message (protocol.hpp:101): `player`, `seq`, `timeUs`, `position`,
 `orientation` (Quat), `velocity`, `stance` (u8), `flags` (u16). Proposed
 (a change to an existing message: bumps `kProtocolVersion`):
 
-| Field                       | Type          | Bytes    | Source                                                                                                                                                    |
-| --------------------------- | ------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `player`                    | PlayerId      | ≤4       | session                                                                                                                                                   |
-| `seq`                       | u32           | 4        |                                                                                                                                                           |
-| `timeUs`                    | u64           | 8        | host clock                                                                                                                                                |
-| `position`                  | 3 × f32       | 12       | `GetWorldPosition`                                                                                                                                        |
-| `velocity`                  | 3 × i16, cm/s | 6        | `GetVelocity` (±327 m/s)                                                                                                                                  |
-| `yaw`                       | u16           | 2        | `GetWorldYaw`; a full quaternion only matters when mounted or ragdolled, where the vehicle or the pose gives it                                           |
-| `aimPitch`, `aimYaw`        | 2 × i16       | 4        | camera forward relative to the body (§2.2)                                                                                                                |
-| `locomotion`                | u8            | 1        | `LocomotionDetailed`                                                                                                                                      |
-| `upperBody`                 | u8            | 1        | `UpperBody`                                                                                                                                               |
-| `weaponRight`, `weaponLeft` | 2 × u8        | 2        | `RightWeapon`, `LeftWeapon`                                                                                                                               |
-| `melee`                     | u8            | 1        | `MeleeWeapon`                                                                                                                                             |
-| `leftHand`                  | u8            | 1        | high nibble `CombatGadget`, low nibble `LeftHandCyberware`                                                                                                |
-| `vehicle`                   | u8            | 1        | `Vehicle` (gamePSMVehicle)                                                                                                                                |
-| `packed`                    | u16           | 2        | `Combat` (2 bits), `Swimming` (2), `Takedown` (3), `BodyCarrying` (3), `Vitals` (2), `TimeDilation` (2), `Stamina` (2)                                    |
-| `flags`                     | u16           | 2        | on ground, aiming, scanner (`Vision`), in workspot, carrying, dual wielding, cloaked, using cover, felled, safe weapon, in menu/paused, in scene tier ≥ 3 |
-| `zoom`                      | u8            | 1        | `ZoomLevel` quantised                                                                                                                                     |
-| `health`                    | u8            | 1        | Health percent (0–200 steps of 0.5 %)                                                                                                                     |
-| **total**                   |               | **≤ 55** |                                                                                                                                                           |
+<!-- prettier-ignore -->
+| Field | Type | Bytes | Source |
+| --- | --- | --- | --- |
+| `player` | PlayerId | ≤4 | session |
+| `seq` | u32 | 4 | |
+| `timeUs` | u64 | 8 | host clock |
+| `position` | 3 × f32 | 12 | `GetWorldPosition` |
+| `velocity` | 3 × i16, cm/s | 6 | `GetVelocity` (±327 m/s) |
+| `yaw` | u16 | 2 | `GetWorldYaw`; a full quaternion only matters when mounted or ragdolled, where the vehicle or the pose gives it |
+| `aimPitch`, `aimYaw` | 2 × i16 | 4 | camera forward relative to the body (§2.2) |
+| `locomotion` | u8 | 1 | `LocomotionDetailed` |
+| `upperBody` | u8 | 1 | `UpperBody` |
+| `weaponRight`, `weaponLeft` | 2 × u8 | 2 | `RightWeapon`, `LeftWeapon` |
+| `melee` | u8 | 1 | `MeleeWeapon` |
+| `leftHand` | u8 | 1 | high nibble `CombatGadget`, low nibble `LeftHandCyberware` |
+| `vehicle` | u8 | 1 | `Vehicle` (gamePSMVehicle) |
+| `packed` | u16 | 2 | `Combat` (2 bits), `Swimming` (2), `Takedown` (3), `BodyCarrying` (3), `Vitals` (2), `TimeDilation` (2), `Stamina` (2) |
+| `flags` | u16 | 2 | on ground, aiming, scanner (`Vision`), in workspot, carrying, dual wielding, cloaked, using cover, felled, safe weapon, in menu/paused, in scene tier ≥ 3 |
+| `zoom` | u8 | 1 | `ZoomLevel` quantised |
+| `health` | u8 | 1 | Health percent (0–200 steps of 0.5 %) |
+| **total** | | **≤ 55** | |
 
 The pose stream is its own message (pose-streaming.md), as is the vehicle
 state (§8.9). When V is mounted, `position` is still sent (cheap) but the
@@ -943,21 +947,22 @@ receiver places the puppet by its seat.
 
 ### 6.2 Reliable events (Event channel)
 
-| Event                      | Fields                                               | Trigger on the owner                                   |
-| -------------------------- | ---------------------------------------------------- | ------------------------------------------------------ |
-| `WeaponSlot`               | slot, item TDBID, part TDBIDs, drawn                 | attachment-slot listener (§3.1)                        |
-| `Shot`                     | slot, attack TDBID, origin, direction, charge, count | wrap `ShootEvents.OnEnter` / `ShootState`              |
-| `Reload`                   | slot, start/finish/interrupted                       | weapon state                                           |
-| `Throw`                    | item TDBID, origin, velocity, kind                   | `CombatGadgetTransitions.Throw`, melee throw, launcher |
-| `UseConsumable`            | item TDBID                                           | `ConsumableUseEvents.OnEnter`                          |
-| `StatusEffects`            | added / removed TDBIDs                               | status effect listener                                 |
-| `Appearance` / `Equipment` | (engine-knowledge §5, §13.4)                         | equipment change, incl. arm cyberware                  |
-| `Mount` / `Unmount`        | vehicle id, seat CName hash, instant                 | `gamemountingMountingEvent` on the player (§8.2)       |
-| `Workspot`                 | device id, on/off                                    | `IsInWorkspot`                                         |
-| `CarryBody` / `Takedown`   | NPC id, phase                                        | `BodyCarrying`, `Takedown` (host-mediated)             |
-| `Vitals`                   | alive / downed / dead, cause                         | §7                                                     |
-| `Teleport`                 | position, yaw, reason                                | fast travel, regroup (§9)                              |
-| `Ping`                     | position or entity, kind                             | §10.3                                                  |
+<!-- prettier-ignore -->
+| Event | Fields | Trigger on the owner |
+| --- | --- | --- |
+| `WeaponSlot` | slot, item TDBID, part TDBIDs, drawn | attachment-slot listener (§3.1) |
+| `Shot` | slot, attack TDBID, origin, direction, charge, count | wrap `ShootEvents.OnEnter` / `ShootState` |
+| `Reload` | slot, start/finish/interrupted | weapon state |
+| `Throw` | item TDBID, origin, velocity, kind | `CombatGadgetTransitions.Throw`, melee throw, launcher |
+| `UseConsumable` | item TDBID | `ConsumableUseEvents.OnEnter` |
+| `StatusEffects` | added / removed TDBIDs | status effect listener |
+| `Appearance` / `Equipment` | (engine-knowledge §5, §13.4) | equipment change, incl. arm cyberware |
+| `Mount` / `Unmount` | vehicle id, seat CName hash, instant | `gamemountingMountingEvent` on the player (§8.2) |
+| `Workspot` | device id, on/off | `IsInWorkspot` |
+| `CarryBody` / `Takedown` | NPC id, phase | `BodyCarrying`, `Takedown` (host-mediated) |
+| `Vitals` | alive / downed / dead, cause | §7 |
+| `Teleport` | position, yaw, reason | fast travel, regroup (§9) |
+| `Ping` | position or entity, kind | §10.3 |
 
 `Shot` may go unreliable-sequenced if full-auto floods the reliable
 channel: a lost muzzle flash is harmless, a late one is ugly.
@@ -1275,8 +1280,8 @@ Remote control (the netrunner quickhack and the Twin-Tone-style remote
 driving): `IsVehicleRemoteControlled()`,
 `SetVehicleRemoteControlled(enable, shouldUnseatPassengers,
 shouldModifyInteractionState)`, `ToggleVehicleRemoteControlCamera()`,
-`ActivateNetrunnerQuickhack(vehicleVehicleNetrunnerQuickhackType)`
-(ForceBrakes=0, Explode=1, Accelerate=2, NONE=3),
+`ActivateNetrunnerQuickhack(vehicleVehicleNetrunnerQuickhackType)` (ForceBrakes=0,
+Explode=1, Accelerate=2, NONE=3),
 `IsVehicleAccelerateQuickhackActive()`,
 `IsVehicleForceBrakesQuickhackActive()`.
 
@@ -1305,27 +1310,28 @@ Weapons: `IsArmedVehicle()`, `CanSwitchWeapons()`, `GetActiveWeapons(out
 
 ### 8.4 The vehicle blackboard (`VehicleDef`, `vehicle.GetBlackboard()`)
 
-| Field                                                       | Type        | Meaning                                                    |
-| ----------------------------------------------------------- | ----------- | ---------------------------------------------------------- |
-| `SpeedValue`                                                | Float       | speed (sign = reverse)                                     |
-| `GearValue`                                                 | Int         | current gear                                               |
-| `RPMValue`, `RPMMax`                                        | Float       | engine speed                                               |
-| `BikeTilt`                                                  | Float       | lean angle                                                 |
-| `SuspensionTransversalForce`, `SuspensionLongitudinalForce` | Float       |                                                            |
-| `MeanSlipRatio`                                             | Float       | tyre slip                                                  |
-| `IsHandbraking`                                             | Int         |                                                            |
-| `HandlingPenalty`, `DeclutchTimer`, `EngineTemp`            | Float       |                                                            |
-| `IsAutopilotOn`                                             | Bool        |                                                            |
-| `HeadLightMode`                                             | Int         | `vehicleELightMode`                                        |
-| `VehicleState`                                              | Int         | `vehicleEState` (Default=1, On=2, Disabled=3, Destroyed=4) |
-| `VehicleReady`                                              | Bool        |                                                            |
-| `VehRadioState`, `VehRadioStationName`                      | Bool, CName |                                                            |
-| `IsCrowd`, `IsUIActive`, `Collision`, `IsInWater`           | Bool        |                                                            |
-| `DamageState`                                               | Int         | damage level 0–3                                           |
-| `GameTime`, `RaceTimer`                                     | String      | UI                                                         |
-| `IsTargetingFriendly`, `UseCarAlarmStim`                    | Bool        |                                                            |
-| `Chase…`, `MinimapMappinDeleteAnim`                         |             | AI/UI                                                      |
-| `VehicleCustomization…` (6 fields)                          |             | CrystalCoat state                                          |
+<!-- prettier-ignore -->
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `SpeedValue` | Float | speed (sign = reverse) |
+| `GearValue` | Int | current gear |
+| `RPMValue`, `RPMMax` | Float | engine speed |
+| `BikeTilt` | Float | lean angle |
+| `SuspensionTransversalForce`, `SuspensionLongitudinalForce` | Float | |
+| `MeanSlipRatio` | Float | tyre slip |
+| `IsHandbraking` | Int | |
+| `HandlingPenalty`, `DeclutchTimer`, `EngineTemp` | Float | |
+| `IsAutopilotOn` | Bool | |
+| `HeadLightMode` | Int | `vehicleELightMode` |
+| `VehicleState` | Int | `vehicleEState` (Default=1, On=2, Disabled=3, Destroyed=4) |
+| `VehicleReady` | Bool | |
+| `VehRadioState`, `VehRadioStationName` | Bool, CName | |
+| `IsCrowd`, `IsUIActive`, `Collision`, `IsInWater` | Bool | |
+| `DamageState` | Int | damage level 0–3 |
+| `GameTime`, `RaceTimer` | String | UI |
+| `IsTargetingFriendly`, `UseCarAlarmStim` | Bool | |
+| `Chase…`, `MinimapMappinDeleteAnim` | | AI/UI |
+| `VehicleCustomization…` (6 fields) | | CrystalCoat state |
 
 There is **no steering angle, throttle or brake input** on the blackboard
 or as a native: wheel steering and suspension travel on a puppet car must
@@ -1529,23 +1535,24 @@ native by name on the vehicle (SDK struct, or finite difference).
 **A puppet vehicle on another game** must not simulate. By-name tools
 found, weakest claims marked:
 
-| Need                                             | By name                                                                                                                                                                                                                                                                                                                                                   | Status                                                                                                                      |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| place the vehicle                                | `gameTeleportationFacility.Teleport(obj, position: Vector4, orientation: EulerAngles)` [N]                                                                                                                                                                                                                                                                | works for any `GameObject` by signature; per-frame use on a vehicle is untested and takes Euler angles (inferred)           |
-|                                                  | `entEntity.SetWorldTransform(WorldTransform)`                                                                                                                                                                                                                                                                                                             | in 2.50's RTTI **without a handler**: a Codeware addition, not vanilla                                                      |
-|                                                  | `vehicleTeleportEvent` (RTTI, 0x70, no script properties)                                                                                                                                                                                                                                                                                                 | exists; fields unknown                                                                                                      |
-| stop physics                                     | `gameQuestOrSceneSetVehiclePhysicsActive` (redEvent, 0x48, one hidden 8-byte field) + `vehicle.IsInQuestOrScenePhysicsState()` [N]                                                                                                                                                                                                                        | the quest/scene way to freeze a vehicle's physics: the best by-name lead for "kinematic"; payload unknown (open question 6) |
-|                                                  | `entPhysicalBodyInterface.SetIsKinematic(Bool)`, `ToggleKinematic`, `SetTransform(Transform)`, `IsKinematic()` [N], obtained from `entColliderComponent.CreatePhysicalBodyInterface(bodyIndex)` / `entPhysicalMeshComponent.CreatePhysicalBodyInterface`                                                                                                  | generic physics bodies; whether a vehicle's chassis is reachable this way is unknown                                        |
-|                                                  | hash 1585713002 `SetKinematic`, 2933986803 `ForceMoveTo`, `vehicleMoveSystem` vtable +0x1F0 `SetSimpleMovement` (2599754135)                                                                                                                                                                                                                              | engine-knowledge §6, §13.5: not by name                                                                                     |
-| wake / sleep                                     | `vehicle.PhysicsWakeUp()` [N]                                                                                                                                                                                                                                                                                                                             | by name                                                                                                                     |
-| no AI driver                                     | no driver NPC is mounted on the copy; `GetAIComponent() -> AIVehicleAgent`; `IsExecutingAnyCommand()`; AI commands are `AIVehicleCommand` subclasses (`AIVehicleOnSplineCommand`, `…FollowCommand`, `…ToNodeCommand`, `…ChaseCommand`, `…DriveToPointAutonomousCommand`, `…JoinTrafficCommand`, `…PanicCommand`, `…RacingCommand`, `…DrivePatrolCommand`) | nothing to disable if nothing is issued; a traffic copy must first be taken out of traffic (host-owned anyway)              |
-| not player-controlled                            | hash 4039776020 `SetIsPlayerControlled` (engine-knowledge §6)                                                                                                                                                                                                                                                                                             | not by name; needed when the local player sits in the driver-less copy as a passenger                                       |
-| hold still when idle                             | `ForceBrakesFor(seconds)`, `ForceBrakesUntilStoppedOrFor`, `TurnEngineOn(false)`                                                                                                                                                                                                                                                                          | by name; a stop-gap, not a kinematic mode                                                                                   |
-| engine sound and lights follow                   | `TurnVehicleOn(true)`, `TurnEngineOn(true)`; RPM/gear have **no setter by name**                                                                                                                                                                                                                                                                          | engine audio on a copy will not match without one (open question 7)                                                         |
-| no autodrive                                     | `gameNativeAutodriveSystem.SetAutodriveEnabled(enabled, isDelamain)` [N]                                                                                                                                                                                                                                                                                  | by name                                                                                                                     |
-| passengers                                       | §8.2                                                                                                                                                                                                                                                                                                                                                      |                                                                                                                             |
-| no local damage                                  | `GodModeSystem.AddGodMode(vehicleID, Immortal \| Invulnerable, reason)`                                                                                                                                                                                                                                                                                   | by name                                                                                                                     |
-| no "enter as driver" prompt while someone drives | `SetDoorInteractionState(seat_front_left, Reserved \| Locked)`                                                                                                                                                                                                                                                                                            | by name (inferred use)                                                                                                      |
+<!-- prettier-ignore -->
+| Need | By name | Status |
+| --- | --- | --- |
+| place the vehicle | `gameTeleportationFacility.Teleport(obj, position: Vector4, orientation: EulerAngles)` [N] | works for any `GameObject` by signature; per-frame use on a vehicle is untested and takes Euler angles (inferred) |
+| | `entEntity.SetWorldTransform(WorldTransform)` | in 2.50's RTTI **without a handler**: a Codeware addition, not vanilla |
+| | `vehicleTeleportEvent` (RTTI, 0x70, no script properties) | exists; fields unknown |
+| stop physics | `gameQuestOrSceneSetVehiclePhysicsActive` (redEvent, 0x48, one hidden 8-byte field) + `vehicle.IsInQuestOrScenePhysicsState()` [N] | the quest/scene way to freeze a vehicle's physics: the best by-name lead for "kinematic"; payload unknown (open question 6) |
+| | `entPhysicalBodyInterface.SetIsKinematic(Bool)`, `ToggleKinematic`, `SetTransform(Transform)`, `IsKinematic()` [N], obtained from `entColliderComponent.CreatePhysicalBodyInterface(bodyIndex)` / `entPhysicalMeshComponent.CreatePhysicalBodyInterface` | generic physics bodies; whether a vehicle's chassis is reachable this way is unknown |
+| | hash 1585713002 `SetKinematic`, 2933986803 `ForceMoveTo`, `vehicleMoveSystem` vtable +0x1F0 `SetSimpleMovement` (2599754135) | engine-knowledge §6, §13.5: not by name |
+| wake / sleep | `vehicle.PhysicsWakeUp()` [N] | by name |
+| no AI driver | no driver NPC is mounted on the copy; `GetAIComponent() -> AIVehicleAgent`; `IsExecutingAnyCommand()`; AI commands are `AIVehicleCommand` subclasses (`AIVehicleOnSplineCommand`, `…FollowCommand`, `…ToNodeCommand`, `…ChaseCommand`, `…DriveToPointAutonomousCommand`, `…JoinTrafficCommand`, `…PanicCommand`, `…RacingCommand`, `…DrivePatrolCommand`) | nothing to disable if nothing is issued; a traffic copy must first be taken out of traffic (host-owned anyway) |
+| not player-controlled | hash 4039776020 `SetIsPlayerControlled` (engine-knowledge §6) | not by name; needed when the local player sits in the driver-less copy as a passenger |
+| hold still when idle | `ForceBrakesFor(seconds)`, `ForceBrakesUntilStoppedOrFor`, `TurnEngineOn(false)` | by name; a stop-gap, not a kinematic mode |
+| engine sound and lights follow | `TurnVehicleOn(true)`, `TurnEngineOn(true)`; RPM/gear have **no setter by name** | engine audio on a copy will not match without one (open question 7) |
+| no autodrive | `gameNativeAutodriveSystem.SetAutodriveEnabled(enabled, isDelamain)` [N] | by name |
+| passengers | §8.2 | |
+| no local damage | `GodModeSystem.AddGodMode(vehicleID, Immortal \| Invulnerable, reason)` | by name |
+| no "enter as driver" prompt while someone drives | `SetDoorInteractionState(seat_front_left, Reserved \| Locked)` | by name (inferred use) |
 
 `EnableHighPriorityPanelStreaming` does not exist in 2.50's RTTI (the
 nearest name is `EnableHighPriorityPanicDriving`, an AI panic toggle).

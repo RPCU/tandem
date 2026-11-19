@@ -51,12 +51,13 @@ Sizes from the live RTTI match the 2.5 SDK: `gameuiCharacterCustomizationSystem`
 Vtable slots (instance vtables from `data/rtti-vtables-2.50.tsv`, the slot's
 function decompiled): [2.5-static]
 
-| Slot                                          | Function on 2.50 (hash)    | What it does there                                                                                      | Verdict                                      |
-| --------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `vehicleWheeledBaseObject` +0x328             | `0x1421BBE60` (3954780831) | `(this, out handle)`: resolves a weak handle through its own slot +0x318                                | **not** "engine on (bool)": do not call      |
-| `vehicleBaseObject` +0x280                    | `0x1421BBAA0` (1485377386) | `*(this + 0x6B4) = 0`                                                                                   | **not** `ResetWithNewTransform`: do not call |
-| `vehicleMoveSystem` +0x1F0 (vt `0x1432803D8`) | `0x142BA87C8` (2599754135) | `(this, EntityID*, bool)`: finds the vehicle's record and sets its field +0x9D4 to 2 (true) / 3 (false) | consistent with `SetSimpleMovement`          |
-| `gamePlayerManager` +0x200 (vt `0x1430CF520`) | `0x1419543B0` (1062672294) | returns `[this + 0x58]`                                                                                 | consistent with "local player" getter        |
+<!-- prettier-ignore -->
+| Slot | Function on 2.50 (hash) | What it does there | Verdict |
+| --- | --- | --- | --- |
+| `vehicleWheeledBaseObject` +0x328 | `0x1421BBE60` (3954780831) | `(this, out handle)`: resolves a weak handle through its own slot +0x318 | **not** "engine on (bool)": do not call |
+| `vehicleBaseObject` +0x280 | `0x1421BBAA0` (1485377386) | `*(this + 0x6B4) = 0` | **not** `ResetWithNewTransform`: do not call |
+| `vehicleMoveSystem` +0x1F0 (vt `0x1432803D8`) | `0x142BA87C8` (2599754135) | `(this, EntityID*, bool)`: finds the vehicle's record and sets its field +0x9D4 to 2 (true) / 3 (false) | consistent with `SetSimpleMovement` |
+| `gamePlayerManager` +0x200 (vt `0x1430CF520`) | `0x1419543B0` (1062672294) | returns `[this + 0x58]` | consistent with "local player" getter |
 
 By name instead of the first slot: `vehicleBaseObject.TurnEngineOn(on: Bool)`
 and `TurnVehicleOn(on: Bool)` are script natives (handlers `0x1414CE088`,

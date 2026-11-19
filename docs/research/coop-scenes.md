@@ -64,12 +64,13 @@ cinematic.
 - **Quest/scene graphs**, natively. Node types (RTTI, all
   `questISceneManagerNodeType` inside a `questSceneManagerNodeDefinition`):
 
-  | Node                           | Fields                                                                                                                                                                  |
-  | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-  | `questSetTier_NodeType`        | `tier`, `usePlayerWorkspot`, `useEnterAnim`, `useExitAnim`, `forceEmptyHands`, `motionConstrainedTierDataParams`                                                        |
-  | `questSetTier2Params_NodeType` | `playerWalkType`, `usePlayerWorkspot`, enter/exit anim flags                                                                                                            |
-  | `questSetTier3Params_NodeType` | yaw/pitch limits and speed multipliers, `objectRef`, `slotName`, `offsetPos`, `rotationTime`, `rotateHeadOnly`, workspot flags                                          |
-  | `questSetTier4Params_NodeType` | `objectRef: NodeRef`, `adjustTime`, workspot flags                                                                                                                      |
+  <!-- prettier-ignore -->
+  | Node | Fields |
+  | --- | --- |
+  | `questSetTier_NodeType` | `tier`, `usePlayerWorkspot`, `useEnterAnim`, `useExitAnim`, `forceEmptyHands`, `motionConstrainedTierDataParams` |
+  | `questSetTier2Params_NodeType` | `playerWalkType`, `usePlayerWorkspot`, enter/exit anim flags |
+  | `questSetTier3Params_NodeType` | yaw/pitch limits and speed multipliers, `objectRef`, `slotName`, `offsetPos`, `rotationTime`, `rotateHeadOnly`, workspot flags |
+  | `questSetTier4Params_NodeType` | `objectRef: NodeRef`, `adjustTime`, workspot flags |
   | `questUseWorkspotPlayerParams` | `tier: questUseWorkspotTier {Tier3 0, Tier4 1}`, `cameraSettings: gameTier3CameraSettings`, `emptyHands`, … — a quest "use workspot" on the player also raises the tier |
 
 - The native **`gameTierSystem`** (RTTI, size 0xf0, **no script functions**)
@@ -111,15 +112,16 @@ cameraSettings: Tier3CameraSettings }`, `SceneTier4Data`, `SceneTier5Data`
 
 ### 1.4 Reading it and being notified
 
-| How                                                                                                                                      | Notes                                                                               |
-| ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `PlayerPuppet.GetSceneTier(player) -> Int32` (static, `:44340`)                                                                          | reads `HighLevel`; 0 if no player                                                   |
-| `player.GetPlayerStateMachineBlackboard().GetInt(GetAllBlackboardDefs().PlayerStateMachine.HighLevel)`                                   | 1–6                                                                                 |
-| `RegisterListenerInt(PlayerStateMachine.SceneTier, obj, n"OnSceneTierChange")`                                                           | what `PlayerPuppet` does (`:40009`), callback `OnSceneTierChange(Int32)` (`:43746`) |
-| wrap `PlayerPuppet.OnSceneTierChange(newState: Int32)`                                                                                   | what the campaign fork did (§7 of engine-knowledge)                                 |
-| blackboard getter from the plugin                                                                                                        | the PSM blackboard is _local instanced_ per player entity (`:278077`)               |
-| `PlayerStateMachine.SceneAimForced`, `SceneSafeForced`, `SceneWeaponLoweringSpeedOverride`, `ScenePreventFirstEquip` (`:53777-53780`)    | scene weapon overrides                                                              |
-| `PlayerStateMachine.IsInLoreAnimationScene`, `IsInWorkspot`, `Vehicle == 7 (Scene)`, `IsPlayerInsideElevator`, `Takedown`, `Vitals` (§6) | related flags                                                                       |
+<!-- prettier-ignore -->
+| How | Notes |
+| --- | --- |
+| `PlayerPuppet.GetSceneTier(player) -> Int32` (static, `:44340`) | reads `HighLevel`; 0 if no player |
+| `player.GetPlayerStateMachineBlackboard().GetInt(GetAllBlackboardDefs().PlayerStateMachine.HighLevel)` | 1–6 |
+| `RegisterListenerInt(PlayerStateMachine.SceneTier, obj, n"OnSceneTierChange")` | what `PlayerPuppet` does (`:40009`), callback `OnSceneTierChange(Int32)` (`:43746`) |
+| wrap `PlayerPuppet.OnSceneTierChange(newState: Int32)` | what the campaign fork did (§7 of engine-knowledge) |
+| blackboard getter from the plugin | the PSM blackboard is _local instanced_ per player entity (`:278077`) |
+| `PlayerStateMachine.SceneAimForced`, `SceneSafeForced`, `SceneWeaponLoweringSpeedOverride`, `ScenePreventFirstEquip` (`:53777-53780`) | scene weapon overrides |
+| `PlayerStateMachine.IsInLoreAnimationScene`, `IsInWorkspot`, `Vehicle == 7 (Scene)`, `IsPlayerInsideElevator`, `Takedown`, `Vitals` (§6) | related flags |
 
 Two fields, two meanings: `HighLevel` is what the script state machine has
 entered; `SceneTier` is what native code requested. They can differ for a
@@ -128,13 +130,14 @@ frame or more (the state machine re-syncs `HighLevel` in `OnUpdate`,
 
 ### 1.5 What each tier restricts (from scripts)
 
-| Tier | Movement                                                                                                                                                             | Weapons                                                                                                                      | Camera                                                                                                                            | UI / other                                                                                                                                                            |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | free                                                                                                                                                                 | free                                                                                                                         | free                                                                                                                              | everything                                                                                                                                                            |
-| 2    | walk only, speed capped by `walkType` through status effects `GameplayRestriction.Tier2Locomotion[Slow\|Fast]` and a `MaxSpeed` stat modifier (`:283640`, `:530120`) | `ForceSafeState`; `emptyHands` from the tier data → `ForceEmptyHands` (`:529835`); "safe tier" = `HighLevel` 2–5 (`:245890`) | free (special `SpaceShuttleInterior` params, `:247051`)                                                                           | quick-slot wheels disabled from `SceneTier >= 2` (`:527993`); pocket radio blocked (`:43750`); stamina bar hidden unless needed (`:322872`)                           |
-| 3    | none: `LocomotionTier3`, usually in a workspot                                                                                                                       | as tier 2                                                                                                                    | limited: `SetCameraParamsWithOverridesEvent`, `paramsName n"Tier3Scene"`, yaw/pitch limits from `Tier3CameraSettings` (`:247063`) | inventory/hub blocked for `HighLevel` 3–5 (`:278075`); phone blocked 3–5 (`:241033`); vehicle state machine enters `Scene` (`:551688`); oxygen bar hidden (`:322357`) |
-| 4    | none: `LocomotionTier4` (animation-driven, first person)                                                                                                             | as tier 2                                                                                                                    | `SetCameraParamsEvent n"Tier4Scene"` (`:247003`): the scene animates the head, small look-around                                  | as tier 3; stamina bar always hidden (`:322900`)                                                                                                                      |
-| 5    | none: `LocomotionTier5`                                                                                                                                              | as tier 2                                                                                                                    | scene camera, not V's head                                                                                                        | as tier 4; fast-forward unavailable (`:519821`, `:519880`); breathing effects removed (`:532487`)                                                                     |
+<!-- prettier-ignore -->
+| Tier | Movement | Weapons | Camera | UI / other |
+| --- | --- | --- | --- | --- |
+| 1 | free | free | free | everything |
+| 2 | walk only, speed capped by `walkType` through status effects `GameplayRestriction.Tier2Locomotion[Slow\|Fast]` and a `MaxSpeed` stat modifier (`:283640`, `:530120`) | `ForceSafeState`; `emptyHands` from the tier data → `ForceEmptyHands` (`:529835`); "safe tier" = `HighLevel` 2–5 (`:245890`) | free (special `SpaceShuttleInterior` params, `:247051`) | quick-slot wheels disabled from `SceneTier >= 2` (`:527993`); pocket radio blocked (`:43750`); stamina bar hidden unless needed (`:322872`) |
+| 3 | none: `LocomotionTier3`, usually in a workspot | as tier 2 | limited: `SetCameraParamsWithOverridesEvent`, `paramsName n"Tier3Scene"`, yaw/pitch limits from `Tier3CameraSettings` (`:247063`) | inventory/hub blocked for `HighLevel` 3–5 (`:278075`); phone blocked 3–5 (`:241033`); vehicle state machine enters `Scene` (`:551688`); oxygen bar hidden (`:322357`) |
+| 4 | none: `LocomotionTier4` (animation-driven, first person) | as tier 2 | `SetCameraParamsEvent n"Tier4Scene"` (`:247003`): the scene animates the head, small look-around | as tier 3; stamina bar always hidden (`:322900`) |
+| 5 | none: `LocomotionTier5` | as tier 2 | scene camera, not V's head | as tier 4; fast-forward unavailable (`:519821`, `:519880`); breathing effects removed (`:532487`) |
 
 Other tier consumers: crosshair hidden outside tier 1 (`:419816`), mappins
 have `VisibleInTier[]` / `ShowInTier3` / `NameplateVisibleInTier[]` flags in
@@ -161,13 +164,14 @@ The scene can also drive V's weapon: events `SceneForceWeaponAim`,
   `NoWeapons`…), which is also what the campaign fork used.
 - **Proposed rule**
 
-  | Host tier | Guests                                                                                                                                           |
-  | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-  | 1         | nothing                                                                                                                                          |
-  | 2         | free; weapons lowered near the scene (`ForceSafeState`-like), subtitles and choices mirrored; no tether                                          |
-  | 3         | free to move; `NoCombat` near the host; host's puppet shown in its workspot pose; choices mirrored                                               |
-  | 4         | brought next to the host if far; `NoCombat` + invulnerable; kept out of the actors' way; choices, subtitles, fades mirrored                      |
-  | 5         | spectator: guest camera follows the host's active camera (§2.4), own V hidden or parked, input reduced to "skip vote"; fades and videos mirrored |
+  <!-- prettier-ignore -->
+  | Host tier | Guests |
+  | --- | --- |
+  | 1 | nothing |
+  | 2 | free; weapons lowered near the scene (`ForceSafeState`-like), subtitles and choices mirrored; no tether |
+  | 3 | free to move; `NoCombat` near the host; host's puppet shown in its workspot pose; choices mirrored |
+  | 4 | brought next to the host if far; `NoCombat` + invulnerable; kept out of the actors' way; choices, subtitles, fades mirrored |
+  | 5 | spectator: guest camera follows the host's active camera (§2.4), own V hidden or parked, input reduced to "skip vote"; fades and videos mirrored |
 
 ---
 
@@ -184,19 +188,20 @@ The scene can also drive V's weapon: events `SceneForceWeaponAim`,
 
 `SceneSystemInterface` (`:193095`; RTTI `scnScriptInterface`):
 
-| Function                                                                  | Handler                   |
-| ------------------------------------------------------------------------- | ------------------------- |
-| `IsEntityInScene(entity: EntityID) -> Bool`                               | 0x140378688               |
-| `IsEntityInDialogue(entity: EntityID) -> Bool`                            | 0x1403772b4               |
-| `AreEntitiesInDialogue(first: EntityID, second: EntityID) -> Bool`        | 0x142cde53c               |
-| `IsFastForwardingAllowed(ffMode: scnFastForwardMode) -> Bool`             | 0x140bf7a8c               |
-| `IsFastForwardingActive(ffMode) -> Bool`                                  | 0x140dbd7c8               |
-| `FastForwardingActivate(ffMode)` / `FastForwardingDeactivate()`           | 0x1413557f8 / 0x141355864 |
-| `SetSceneSystemCameraControlEnabled(enabled: Bool, opt blendTime: Float)` | 0x14184281c               |
-| `GetSceneSystemCameraControlEnabled() -> Bool`                            | 0x14134f9ec               |
-| `GetSceneSystemCameraLastCameraPosition() -> WorldPosition`               | 0x141906ac4               |
-| `GetSceneSystemCameraLastCameraOrientation() -> Quaternion`               | 0x141916fec               |
-| rewindable-section functions                                              | see §5                    |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `IsEntityInScene(entity: EntityID) -> Bool` | 0x140378688 |
+| `IsEntityInDialogue(entity: EntityID) -> Bool` | 0x1403772b4 |
+| `AreEntitiesInDialogue(first: EntityID, second: EntityID) -> Bool` | 0x142cde53c |
+| `IsFastForwardingAllowed(ffMode: scnFastForwardMode) -> Bool` | 0x140bf7a8c |
+| `IsFastForwardingActive(ffMode) -> Bool` | 0x140dbd7c8 |
+| `FastForwardingActivate(ffMode)` / `FastForwardingDeactivate()` | 0x1413557f8 / 0x141355864 |
+| `SetSceneSystemCameraControlEnabled(enabled: Bool, opt blendTime: Float)` | 0x14184281c |
+| `GetSceneSystemCameraControlEnabled() -> Bool` | 0x14134f9ec |
+| `GetSceneSystemCameraLastCameraPosition() -> WorldPosition` | 0x141906ac4 |
+| `GetSceneSystemCameraLastCameraOrientation() -> Quaternion` | 0x141916fec |
+| rewindable-section functions | see §5 |
 
 `scnFastForwardMode { Default 0, GameplayReview 1 }`.
 
@@ -311,26 +316,27 @@ newTransform: Transform)` (`:49995`; @ 0x14279090c, @ 0x142e68a4c) — a
 
 ### 2.5 Workspots (sitting, leaning, using, synced animations)
 
-`GameInstance.GetWorkspotSystem(game) -> WorkspotGameSystem`
-(`final.reds:53211`; RTTI `gameWorkspotGameSystem`). Useful subset:
+`GameInstance.GetWorkspotSystem(game) -> WorkspotGameSystem` (`final.reds:53211`;
+RTTI `gameWorkspotGameSystem`). Useful subset:
 
-| Function                                                                                                                                                                   | Handler                                  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| `IsActorInWorkspot(actor: GameObject) -> Bool`                                                                                                                             | 0x1409ef4ac                              |
-| `GetExtendedInfo(actor) -> ExtendedWorkspotInfo { isActive, entering, exiting, playingSyncAnim, inReaction, inMotion }`                                                    | 0x142a850a0                              |
-| `IsWorkspotEnabled(actor) -> Bool`                                                                                                                                         | 0x140ac6fa4                              |
-| `GetDeviceUser(deviceID: EntityID) -> GameObject`                                                                                                                          | 0x142a84f44                              |
-| `PlayInDevice(device, actor, opt flavour, opt actorDataCompName, opt deviceDataCompName, opt syncSlotName, opt slideTime, opt slideBehaviour, opt callbackEventRecipient)` | (RTTI)                                   |
-| `PlayInDeviceSimple(device, actor, allowCameraMov, …)`, `StopInDevice(actor, opt posDelta, opt orientDelta)`                                                               | 0x142a869ac (Stop)                       |
-| `PlayNpcInWorkspot(npc, master, referenceEntity, actorDataCompName, syncSlotName, slideTime, syncOffsetSourceCompName)`                                                    | 0x142a85978                              |
-| `StopNpcInWorkspot(actor)`                                                                                                                                                 | 0x14191a774                              |
-| `MountToVehicle(parent, child, slideTime, animDelay, workspotResourceContainer, slotName, opt syncronizedObjects, opt entrySlotName, opt animVariables) -> Bool`           | (RTTI)                                   |
-| `UnmountFromVehicle(parent, child, opt instant, …)`, `SwitchSeatVehicle(…)`, `IsInVehicleWorkspot(vehicle, child, slotName)`                                               | 0x1413a3984, –, 0x142a85378              |
-| `SendJumpToAnimEnt(actor, animName, instant)`, `SendJumpToTagCommandEnt(actor, entryTag, instant, opt deviceId)`, `SendJumpCommandEnt(actor, entryId, instant)`            | 0x142a864cc, 0x142a8662c, 0x142a86370    |
-| `SendFastExitSignal(actor, …)`, `SendSlowExitSignal(actor, animationName, dontWait…)`                                                                                      | 0x142a860d8, 0x142a8685c                 |
-| `SendDynamicSyncBindSignal(actor, master)`, `SendDynamicSyncUnbindSignal(actor)`                                                                                           | 0x142a84d84, 0x142a84eb4                 |
-| `ResetPlaybackToStart(actor)`, `HardResetPlaybackToStart(actor)`                                                                                                           | 0x14157d3a4, 0x142a852e8                 |
-| `GetWorkspotInstance(actorID) -> workWorkspotInstance { tree, resource, animName @+0x110, idleAnim @+0x118, entryId @+0x120 }`                                             | registered without a handler in the dump |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `IsActorInWorkspot(actor: GameObject) -> Bool` | 0x1409ef4ac |
+| `GetExtendedInfo(actor) -> ExtendedWorkspotInfo { isActive, entering, exiting, playingSyncAnim, inReaction, inMotion }` | 0x142a850a0 |
+| `IsWorkspotEnabled(actor) -> Bool` | 0x140ac6fa4 |
+| `GetDeviceUser(deviceID: EntityID) -> GameObject` | 0x142a84f44 |
+| `PlayInDevice(device, actor, opt flavour, opt actorDataCompName, opt deviceDataCompName, opt syncSlotName, opt slideTime, opt slideBehaviour, opt callbackEventRecipient)` | (RTTI) |
+| `PlayInDeviceSimple(device, actor, allowCameraMov, …)`, `StopInDevice(actor, opt posDelta, opt orientDelta)` | 0x142a869ac (Stop) |
+| `PlayNpcInWorkspot(npc, master, referenceEntity, actorDataCompName, syncSlotName, slideTime, syncOffsetSourceCompName)` | 0x142a85978 |
+| `StopNpcInWorkspot(actor)` | 0x14191a774 |
+| `MountToVehicle(parent, child, slideTime, animDelay, workspotResourceContainer, slotName, opt syncronizedObjects, opt entrySlotName, opt animVariables) -> Bool` | (RTTI) |
+| `UnmountFromVehicle(parent, child, opt instant, …)`, `SwitchSeatVehicle(…)`, `IsInVehicleWorkspot(vehicle, child, slotName)` | 0x1413a3984, –, 0x142a85378 |
+| `SendJumpToAnimEnt(actor, animName, instant)`, `SendJumpToTagCommandEnt(actor, entryTag, instant, opt deviceId)`, `SendJumpCommandEnt(actor, entryId, instant)` | 0x142a864cc, 0x142a8662c, 0x142a86370 |
+| `SendFastExitSignal(actor, …)`, `SendSlowExitSignal(actor, animationName, dontWait…)` | 0x142a860d8, 0x142a8685c |
+| `SendDynamicSyncBindSignal(actor, master)`, `SendDynamicSyncUnbindSignal(actor)` | 0x142a84d84, 0x142a84eb4 |
+| `ResetPlaybackToStart(actor)`, `HardResetPlaybackToStart(actor)` | 0x14157d3a4, 0x142a852e8 |
+| `GetWorkspotInstance(actorID) -> workWorkspotInstance { tree, resource, animName @+0x110, idleAnim @+0x118, entryId @+0x120 }` | registered without a handler in the dump |
 
 Events on the actor: `WorkspotStartedEvent { nodeId: GlobalNodeID, tags:
 [CName] }`, `WorkspotFinishedEvent { nodeId, tags }` (`:250074`, `:250282`;
@@ -405,15 +411,16 @@ up), never a local time dilation on a guest.
 
 Blackboard `UIInteractions` (`final.reds:195335`, auto-created, global):
 
-| Field                                                                                                  | Type                                 | Meaning                                          |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------ | ------------------------------------------------ |
-| `DialogChoiceHubs`                                                                                     | Variant `DialogChoiceHubs`           | all dialogue hubs on screen                      |
-| `ActiveChoiceHubID`                                                                                    | Int                                  | focused hub, `-1` none                           |
-| `SelectedIndex`                                                                                        | Int                                  | highlighted option in the active hub             |
-| `LastAttemptedChoice`                                                                                  | Variant `InteractionAttemptedChoice` | **the choice the player just confirmed**         |
-| `InteractionChoiceHub`                                                                                 | Variant `InteractionChoiceHubData`   | world interactions (doors, loot…) — not dialogue |
-| `VisualizersInfo`                                                                                      | Variant `{ activeVisId, visIds }`    | which visualizers exist                          |
-| `IsQuestNotificationUp`, `HasScrollableInteraction`, `LookAtTargetVisualizerID`, `NameplateOwnerID`, … |                                      |                                                  |
+<!-- prettier-ignore -->
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `DialogChoiceHubs` | Variant `DialogChoiceHubs` | all dialogue hubs on screen |
+| `ActiveChoiceHubID` | Int | focused hub, `-1` none |
+| `SelectedIndex` | Int | highlighted option in the active hub |
+| `LastAttemptedChoice` | Variant `InteractionAttemptedChoice` | **the choice the player just confirmed** |
+| `InteractionChoiceHub` | Variant `InteractionChoiceHubData` | world interactions (doors, loot…) — not dialogue |
+| `VisualizersInfo` | Variant `{ activeVisId, visIds }` | which visualizers exist |
+| `IsQuestNotificationUp`, `HasScrollableInteraction`, `LookAtTargetVisualizerID`, `NameplateOwnerID`, … | | |
 
 Structures (scripts + RTTI offsets):
 
@@ -702,15 +709,16 @@ queues `SetIsInBraindance { newState }` to `BraindanceSystem`, and calls
 
 ### 5.2 State you can read
 
-| What                                                      | Where                                                                                                                                                                                                                                 |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| in a braindance?                                          | `SceneSystemInterface.IsRewindableSectionActive()` (@ 0x14037ede0) — the ground truth; `PlayerNotInBraindancePrereq` uses it (`:319756`)                                                                                              |
-| same, script copy                                         | `BraindanceSystem.GetIsInBraindance()` (`:247774`, persistent, also locks saving); PSM `scriptInterface.IsPlayerInBraindance()` (@ 0x14037ed7c)                                                                                       |
-| progress 0–1, time, duration                              | `GetRewindableSectionProgress()` (@ 0x14037f0b8), `…TimeInSec()` (@ 0x142cde6b0), `…DurationInSec()` (@ 0x1418c5718)                                                                                                                  |
-| direction, speed                                          | `Get/SetRewindableSectionPlayDirection` (`scnPlayDirection { Forward 0, Backward 1 }`), `Get/SetRewindableSectionPlaySpeed` (`scnPlaySpeed { Pause 0, Slow 1, Normal 2, Fast 3, VeryFast 4 }`)                                        |
-| paused, resetting                                         | `IsRewindableSectionPaused()`, `IsRewindableSectionResetting()`                                                                                                                                                                       |
-| restart / jump                                            | `ResetRewindableSection(resetSpeed, postDir, postSpeed)`, `JumpRewindableSection(resetSpeed, jumpTime, postDir, postSpeed) -> Bool`; quest node `questRewindableSectionTimeJump_NodeType { sceneFile, jumpTargetTime, jumpSpeed, … }` |
-| playback (first person, on rails) vs editor (free camera) | `GetSceneSystemCameraControlEnabled()`: true = playback; `IsInEditorMode = !that` (`:520744`)                                                                                                                                         |
+<!-- prettier-ignore -->
+| What | Where |
+| --- | --- |
+| in a braindance? | `SceneSystemInterface.IsRewindableSectionActive()` (@ 0x14037ede0) — the ground truth; `PlayerNotInBraindancePrereq` uses it (`:319756`) |
+| same, script copy | `BraindanceSystem.GetIsInBraindance()` (`:247774`, persistent, also locks saving); PSM `scriptInterface.IsPlayerInBraindance()` (@ 0x14037ed7c) |
+| progress 0–1, time, duration | `GetRewindableSectionProgress()` (@ 0x14037f0b8), `…TimeInSec()` (@ 0x142cde6b0), `…DurationInSec()` (@ 0x1418c5718) |
+| direction, speed | `Get/SetRewindableSectionPlayDirection` (`scnPlayDirection { Forward 0, Backward 1 }`), `Get/SetRewindableSectionPlaySpeed` (`scnPlaySpeed { Pause 0, Slow 1, Normal 2, Fast 3, VeryFast 4 }`) |
+| paused, resetting | `IsRewindableSectionPaused()`, `IsRewindableSectionResetting()` |
+| restart / jump | `ResetRewindableSection(resetSpeed, postDir, postSpeed)`, `JumpRewindableSection(resetSpeed, jumpTime, postDir, postSpeed) -> Bool`; quest node `questRewindableSectionTimeJump_NodeType { sceneFile, jumpTargetTime, jumpSpeed, … }` |
+| playback (first person, on rails) vs editor (free camera) | `GetSceneSystemCameraControlEnabled()`: true = playback; `IsInEditorMode = !that` (`:520744`) |
 
 Blackboard `Braindance` (`BraindanceBlackboardDef`, `:48378`, global):
 `IsActive` (Bool), `IsFPP` (Bool), `Progress` (Float), `SectionTime`
@@ -983,14 +991,15 @@ below is the fuller picture.
 
 ### 7.3 Tags scripts test (`ObjectHasStatusEffectWithTag(player, n"…")`)
 
-| Area     | Tags                                                                                                                                                                                                                                                                                                                                          |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| combat   | `NoCombat`, `NoWeapons`, `Fists`, `Melee`, `Firearms`, `FirearmsNoUnequip`, `FirearmsNoSwitch`, `FirearmsNoUnequipNoSwitch`, `OneHandedFirearms`, `NoArmsCW`, `NoQuickMelee`, `NoQuickHacks`, `ForceAim`, `FistFight`, `InfiniteAmmo`, `TrainingGuns`, `TrainingMelee`                                                                        |
-| movement | `NoMovement`, `NoJump`, `NoSlide`, `NoLadder`, `ForceCrouch`, `ForceStand`, `NoEncumbrance`                                                                                                                                                                                                                                                   |
-| vehicle  | `VehicleScene`, `VehicleCombat`, `VehicleCombatBlockExit`, `VehicleCombatNoInterruptions`, `VehicleBlockExit`, `VehicleOnlyForward`, `VehicleFPP`, `VehicleBlockRadioInput`, `VehicleSummoning`, `NoDriving`, `BlockMountVehicle`, `BlockTrafficInteractions`, `DriverCombatFirearms`, `DriverCombatBikeWeapons`, `MetroRide`, `DelamainTaxi` |
-| UI/menus | `LockInHubMenu`, `BlockAllHubMenu`, `BlockAllMenu`, `BlockFastTravel`, `NoRadialMenus`, `NoWeaponWheel`, `NoCrafting`, `NoScanning`, `NoZooming`, `NoTimeSkip`, `NoTimeDisplay`, `NoWorldInteractions`, `DeviceControlZoomLock`                                                                                                               |
-| phone    | `PhoneCall`, `PhoneNoCalling`, `PhoneNoTexting`, `PhoneInterrupted`, `NoPhone`                                                                                                                                                                                                                                                                |
-| story    | `Braindance`, `Cyberspace`, `FastForward`, `FastForwardHintActive`, `AllowFastForwardInVehicle`, `LoreAnim`, `SpaceShuttleInterior`, `Sleep`, `AllowTracingInTier2…5`, `PreventLowHealthOverlay`, `KeepState`                                                                                                                                 |
+<!-- prettier-ignore -->
+| Area | Tags |
+| --- | --- |
+| combat | `NoCombat`, `NoWeapons`, `Fists`, `Melee`, `Firearms`, `FirearmsNoUnequip`, `FirearmsNoSwitch`, `FirearmsNoUnequipNoSwitch`, `OneHandedFirearms`, `NoArmsCW`, `NoQuickMelee`, `NoQuickHacks`, `ForceAim`, `FistFight`, `InfiniteAmmo`, `TrainingGuns`, `TrainingMelee` |
+| movement | `NoMovement`, `NoJump`, `NoSlide`, `NoLadder`, `ForceCrouch`, `ForceStand`, `NoEncumbrance` |
+| vehicle | `VehicleScene`, `VehicleCombat`, `VehicleCombatBlockExit`, `VehicleCombatNoInterruptions`, `VehicleBlockExit`, `VehicleOnlyForward`, `VehicleFPP`, `VehicleBlockRadioInput`, `VehicleSummoning`, `NoDriving`, `BlockMountVehicle`, `BlockTrafficInteractions`, `DriverCombatFirearms`, `DriverCombatBikeWeapons`, `MetroRide`, `DelamainTaxi` |
+| UI/menus | `LockInHubMenu`, `BlockAllHubMenu`, `BlockAllMenu`, `BlockFastTravel`, `NoRadialMenus`, `NoWeaponWheel`, `NoCrafting`, `NoScanning`, `NoZooming`, `NoTimeSkip`, `NoTimeDisplay`, `NoWorldInteractions`, `DeviceControlZoomLock` |
+| phone | `PhoneCall`, `PhoneNoCalling`, `PhoneNoTexting`, `PhoneInterrupted`, `NoPhone` |
+| story | `Braindance`, `Cyberspace`, `FastForward`, `FastForwardHintActive`, `AllowFastForwardInVehicle`, `LoreAnim`, `SpaceShuttleInterior`, `Sleep`, `AllowTracingInTier2…5`, `PreventLowHealthOverlay`, `KeepState` |
 
 `IsNoCombatActionsForced` = `NoCombat && !FastForward || VehicleScene`
 (`:246203`).
@@ -1037,29 +1046,30 @@ state → host.
 
 ## 8. Summary table
 
-| Moment                  | Detect on the host                                                                   | Send                                        | Guest behaviour (proposal)                                    |
-| ----------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------------------- |
-| tier 2 walk-and-talk    | PSM `SceneTier`/`HighLevel`                                                          | tier, walk type, empty hands                | free; weapons lowered nearby; subtitles + choices             |
-| tier 3 seated/limited   | same + `IsInWorkspot`, `WorkspotStartedEvent`                                        | tier, workspot node + anim                  | free, `NoCombat` nearby; host puppet posed                    |
-| tier 4 FPP cinematic    | same + `IsSceneAnimationActive`                                                      | tier, V pose/transform                      | brought close, protected, kept out of the way                 |
-| tier 5 cutscene         | same + camera system                                                                 | tier, camera transform + FOV                | spectator of the host's camera, own V parked                  |
-| scene start/end, actors | quest node hook (`questSceneNodeDefinition.sceneFile`), `IsEntityInScene`            | scene hash, marker, actor ids               | no local copy; actors are host proxies flagged "in scene"     |
-| subtitles               | `UIGameData.ShowDialogLine` / `HideDialogLine*`                                      | line data                                   | write the same blackboard                                     |
-| VO / lipsync            | nothing found                                                                        | ?                                           | open                                                          |
-| dialogue hub            | `UIInteractions.DialogChoiceHubs`, `ActiveChoiceHubID`, `SelectedIndex`              | hubs, options, timer, hover                 | mirrored hub; vote                                            |
-| choice made             | `UIInteractions.LastAttemptedChoice`                                                 | hub id, index                               | close hub; outcome arrives as facts/scene                     |
-| fast-forward            | `IsFastForwardingActive`, tag `FastForward`                                          | on/off                                      | consent or host-only; never local dilation                    |
-| fade                    | quest node hook (`questSetFadeInOut_NodeType`)                                       | colour, duration, direction                 | same fade (node or own overlay)                               |
-| video                   | `gameuiHUDVideoStartEvent` / node                                                    | path hash, flags                            | play the same bink                                            |
-| braindance              | `scnRewindableSectionEvent`, `IsRewindableSectionActive`, `Braindance` blackboard    | time, speed, direction, mode, layer, camera | spectate first; own slaved copy later                         |
-| Johnny / replacer       | `UI_PlayerStats.isReplacer`, record id, fact `isPlayerPossessedByJohnny`             | replacer record                             | swap that player's puppet; follow as spectators in flashbacks |
-| cyberspace              | tags `Cyberspace`, district                                                          | host teleport                               | regroup                                                       |
-| vehicle scene           | PSM `Vehicle == 7`, tag `VehicleScene`                                               | vehicle id, seats                           | mounted in free seats, no combat                              |
-| elevator                | PSM `IsPlayerInsideElevator`, `CurrentElevator`                                      | device state                                | ride, or regroup on arrival                                   |
-| sleep / time skip       | `TimeSkip*` events, `TimeSkipFinishedEvent`                                          | new time                                    | applied; guest requests go to the host                        |
-| takedown / finisher     | PSM `Takedown`, `FinisherTarget`, workspot tags                                      | actor, target, kind                         | own half local; NPC half by the host                          |
-| death / checkpoint      | PSM `Vitals`, `DisplayDeathMenu`                                                     | downed; host reload                         | guest never reloads; host reload = re-snapshot                |
-| restrictions            | `OnGameplayRestrictionAdded/Removed`, tags, facts `ForceEmptyHands`/`ForceSafeState` | story restrictions only                     | applied with a tandem source, ref-counted                     |
+<!-- prettier-ignore -->
+| Moment | Detect on the host | Send | Guest behaviour (proposal) |
+| --- | --- | --- | --- |
+| tier 2 walk-and-talk | PSM `SceneTier`/`HighLevel` | tier, walk type, empty hands | free; weapons lowered nearby; subtitles + choices |
+| tier 3 seated/limited | same + `IsInWorkspot`, `WorkspotStartedEvent` | tier, workspot node + anim | free, `NoCombat` nearby; host puppet posed |
+| tier 4 FPP cinematic | same + `IsSceneAnimationActive` | tier, V pose/transform | brought close, protected, kept out of the way |
+| tier 5 cutscene | same + camera system | tier, camera transform + FOV | spectator of the host's camera, own V parked |
+| scene start/end, actors | quest node hook (`questSceneNodeDefinition.sceneFile`), `IsEntityInScene` | scene hash, marker, actor ids | no local copy; actors are host proxies flagged "in scene" |
+| subtitles | `UIGameData.ShowDialogLine` / `HideDialogLine*` | line data | write the same blackboard |
+| VO / lipsync | nothing found | ? | open |
+| dialogue hub | `UIInteractions.DialogChoiceHubs`, `ActiveChoiceHubID`, `SelectedIndex` | hubs, options, timer, hover | mirrored hub; vote |
+| choice made | `UIInteractions.LastAttemptedChoice` | hub id, index | close hub; outcome arrives as facts/scene |
+| fast-forward | `IsFastForwardingActive`, tag `FastForward` | on/off | consent or host-only; never local dilation |
+| fade | quest node hook (`questSetFadeInOut_NodeType`) | colour, duration, direction | same fade (node or own overlay) |
+| video | `gameuiHUDVideoStartEvent` / node | path hash, flags | play the same bink |
+| braindance | `scnRewindableSectionEvent`, `IsRewindableSectionActive`, `Braindance` blackboard | time, speed, direction, mode, layer, camera | spectate first; own slaved copy later |
+| Johnny / replacer | `UI_PlayerStats.isReplacer`, record id, fact `isPlayerPossessedByJohnny` | replacer record | swap that player's puppet; follow as spectators in flashbacks |
+| cyberspace | tags `Cyberspace`, district | host teleport | regroup |
+| vehicle scene | PSM `Vehicle == 7`, tag `VehicleScene` | vehicle id, seats | mounted in free seats, no combat |
+| elevator | PSM `IsPlayerInsideElevator`, `CurrentElevator` | device state | ride, or regroup on arrival |
+| sleep / time skip | `TimeSkip*` events, `TimeSkipFinishedEvent` | new time | applied; guest requests go to the host |
+| takedown / finisher | PSM `Takedown`, `FinisherTarget`, workspot tags | actor, target, kind | own half local; NPC half by the host |
+| death / checkpoint | PSM `Vitals`, `DisplayDeathMenu` | downed; host reload | guest never reloads; host reload = re-snapshot |
+| restrictions | `OnGameplayRestrictionAdded/Removed`, tags, facts `ForceEmptyHands`/`ForceSafeState` | story restrictions only | applied with a tandem source, ref-counted |
 
 Authority-table rows this implies (to add when implemented): _scene
 playback and camera — host_; _dialogue choice — host (guests vote)_;

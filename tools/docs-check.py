@@ -2,7 +2,8 @@
 """Check that editing the docs lost nothing.
 
     tools/docs-check.py                      links, then facts against HEAD
-    tools/docs-check.py links                every doc path and link resolves
+    tools/docs-check.py links                every doc path, link and index row resolves;
+                                             no line the mdsh hook chokes on
     tools/docs-check.py facts [--base REV] [FILE...]
     tools/docs-check.py split --base REV --old PATH... --new PATH...
     tools/docs-check.py tokens [FILE...]     size of the docs, in tokens (~bytes/4)
@@ -288,6 +289,12 @@ def check_links():
         for m in re.finditer(r"^#+ (\d+(?:\.\d+[a-z]?)?)\.? ", text, re.M):
             if (m.group(1), os.path.basename(f)) not in rows:
                 bad.append(f"{f}: §{m.group(1)} is not in the index ({INDEX})")
+    # mdsh (a commit hook) takes an unindented line that is only a code span
+    # for a command, and panics
+    for f, text in docs.items():
+        for n, line in enumerate(FENCE.sub(lambda m: "\n" * m.group(0).count("\n"), text).splitlines(), 1):
+            if re.match(r"^`[^`]+`$", line):
+                bad.append(f"{f}:{n}: a line that is only a code span stops the mdsh hook: reflow it")
     for b in bad:
         print(b)
     print(f"links: {len(bad)} broken", file=sys.stderr)

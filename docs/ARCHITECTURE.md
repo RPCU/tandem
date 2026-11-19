@@ -62,17 +62,18 @@ several games render**. Every design choice below follows from that.
    └───────────────────────────┘            └─────────────────────────────┘
 ```
 
-| Path                  | What                                                         | Built by                    |
-| --------------------- | ------------------------------------------------------------ | --------------------------- |
-| `core/`               | protocol, transport (ENet), session (`Endpoint`)             | both CMake presets          |
-| `plugin/`             | the RED4ext plugin, Windows x64 DLL                          | `windows` preset (clang-cl) |
-| `peer/`               | `tandem-peer`, the mock player                               | `linux` preset              |
-| `tests/`              | doctest unit and loopback tests of `core/`                   | `linux` preset              |
-| `relay/`              | `tandem-relay`, NAT fallback (Go, stdlib only)               | Go / `nix/relay.nix`        |
-| `nix/`, `default.nix` | relay package and OCI image                                  | `nix-build -A relayImage`   |
-| `deploy/kubernetes/`  | kustomize base for the relay                                 | `task k8s:check`            |
-| `docs/research/`      | engine facts from earlier projects, with sources             | —                           |
-| `vendor/`             | git submodules: RED4ext.SDK, RedLib, ENet, zpp_bits, doctest | —                           |
+<!-- prettier-ignore -->
+| Path | What | Built by |
+| --- | --- | --- |
+| `core/` | protocol, transport (ENet), session (`Endpoint`) | both CMake presets |
+| `plugin/` | the RED4ext plugin, Windows x64 DLL | `windows` preset (clang-cl) |
+| `peer/` | `tandem-peer`, the mock player | `linux` preset |
+| `tests/` | doctest unit and loopback tests of `core/` | `linux` preset |
+| `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only) | Go / `nix/relay.nix` |
+| `nix/`, `default.nix` | relay package and OCI image | `nix-build -A relayImage` |
+| `deploy/kubernetes/` | kustomize base for the relay | `task k8s:check` |
+| `docs/research/` | engine facts from earlier projects, with sources | — |
+| `vendor/` | git submodules: RED4ext.SDK, RedLib, ENet, zpp_bits, doctest | — |
 
 The build is Linux-only: the plugin is cross-compiled with clang-cl and
 lld-link against the MSVC CRT and Windows SDK that `xwin` downloads. No
@@ -102,26 +103,27 @@ a reason. Decoding is strict: trailing or missing bytes reject the packet.
 
 The owner simulates; everyone else displays.
 
-| State                                                        | Owner                     | Others                                                             |
-| ------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------ |
-| a V: transform, stance, aim, animation                       | that player's game        | puppet, interpolated                                               |
-| a V: appearance, equipment, cyberware                        | that player's game        | applied on the puppet when it changes                              |
-| a V: health, death, downed                                   | that player's game        | shown; revives are requests to the owner                           |
-| a V: level, XP, perks, inventory, money                      | that player's game (save) | not shared: each player keeps their own level                      |
-| a vehicle someone drives                                     | the driver's game         | puppet vehicle, passengers mounted                                 |
-| a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game        | copy, riders and NPCs seated; host's scene: a seat or a ride along |
-| an NCART train (scripted transit)                            | each rider's own game     | never shared: puppet in a train of ours, else hidden               |
-| a parked or AI vehicle                                       | host                      | proxy                                                              |
-| NPCs: AI, position, health, death                            | host                      | **proxy with its AI off**, driven by the host                      |
-| spawns: crowds, traffic, encounters                          | host                      | guests' own spawning is suppressed                                 |
-| quests: facts, journal, phases, scenes                       | host                      | followed, never run on their own                                   |
-| time of day, weather, police heat                            | host                      | applied (wanted level: open, `architecture/world.md`)              |
-| a V's time abilities (Sandevistan…)                          | that player's game        | shown on the puppet; never slow anyone's world                     |
-| an NPC's speed in a time bubble                              | host                      | proxies animated at the same speed                                 |
-| NPC shots at a V                                             | the V's game              | host's NPC decides to fire; `architecture/time.md`                 |
-| loot: corpses and containers                                 | each player's game        | rolled per player: each loots their own copy                       |
-| items a V drops on purpose                                   | host                      | lie in every game; the first pickup keeps it                       |
-| quest and important items, rewards                           | every player's own V      | whoever gets one, every V gets it                                  |
+<!-- prettier-ignore -->
+| State | Owner | Others |
+| --- | --- | --- |
+| a V: transform, stance, aim, animation | that player's game | puppet, interpolated |
+| a V: appearance, equipment, cyberware | that player's game | applied on the puppet when it changes |
+| a V: health, death, downed | that player's game | shown; revives are requests to the owner |
+| a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level |
+| a vehicle someone drives | the driver's game | puppet vehicle, passengers mounted |
+| a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game | copy, riders and NPCs seated; host's scene: a seat or a ride along |
+| an NCART train (scripted transit) | each rider's own game | never shared: puppet in a train of ours, else hidden |
+| a parked or AI vehicle | host | proxy |
+| NPCs: AI, position, health, death | host | **proxy with its AI off**, driven by the host |
+| spawns: crowds, traffic, encounters | host | guests' own spawning is suppressed |
+| quests: facts, journal, phases, scenes | host | followed, never run on their own |
+| time of day, weather, police heat | host | applied (wanted level: open, `architecture/world.md`) |
+| a V's time abilities (Sandevistan…) | that player's game | shown on the puppet; never slow anyone's world |
+| an NPC's speed in a time bubble | host | proxies animated at the same speed |
+| NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
+| loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
+| items a V drops on purpose | host | lie in every game; the first pickup keeps it |
+| quest and important items, rewards | every player's own V | whoever gets one, every V gets it |
 
 **Combat** follows from the table. A shot is decided by the shooter's game,
 on what that player sees, so aiming feels local. A guest hitting an NPC sends
@@ -213,17 +215,18 @@ in game, `[broken-on-2.5]` must not be used.
 
 Each milestone ends with something visible in game.
 
-| #   | Milestone           | Done when                                                                                                                                                                                                       |
-| --- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0   | Toolchain           | DLL built on Linux loads in the game and logs; mock player; relay image ✓                                                                                                                                       |
-| 1   | A second V          | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig)                                                                                                   |
-| 2   | Player presence     | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18)                                                                               |
-| 3   | Vehicles            | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test; rides, quest vehicles, NCART written: to test)                                                      |
-| 4   | Shared world basics | time, weather, police heat follow the host; fast travel together, no tether (time, weather ✓ 2026-11-18; regroup built, untested)                                                                               |
-| 5   | One set of enemies  | NPC proxies with AI off on guests; hits, damage, deaths, loot (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18; loot built)                                                                        |
-| 6   | Story               | quest facts and journal follow the host; dialogue choices; scenes for guests (step 1 written: freeze, saves, journal, calls, texts, lines, hubs, rewards; to test in game)                                      |
-| 7   | Anywhere            | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join (relay and codes ✓ 2026-11-18, loopback; menus written: main and pause menu, runtime start/stop, to test) |
-| 8   | Co-op features      | revive, pings and shared markers, and what we add as we play (down, revive, respawn, shared game over written; to test in game)                                                                                 |
+<!-- prettier-ignore -->
+| # | Milestone | Done when |
+| --- | --- | --- |
+| 0 | Toolchain | DLL built on Linux loads in the game and logs; mock player; relay image ✓ |
+| 1 | A second V | a puppet follows the other player smoothly (✓ 2026-11-17: engine controller, 0.01 m, walk animation, NPC rig) |
+| 2 | Player presence | appearance, equipment, locomotion and aim animations, weapons drawn (pose, look, clothes, held weapon, shot effects ✓ 2026-11-18) |
+| 3 | Vehicles | drive together, ride as a passenger (copy, seated driver, get out, leave: ✓ 2026-11-18; passengers to test; rides, quest vehicles, NCART written: to test) |
+| 4 | Shared world basics | time, weather, police heat follow the host; fast travel together, no tether (time, weather ✓ 2026-11-18; regroup built, untested) |
+| 5 | One set of enemies | NPC proxies with AI off on guests; hits, damage, deaths, loot (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18; loot built) |
+| 6 | Story | quest facts and journal follow the host; dialogue choices; scenes for guests (step 1 written: freeze, saves, journal, calls, texts, lines, hubs, rewards; to test in game) |
+| 7 | Anywhere | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join (relay and codes ✓ 2026-11-18, loopback; menus written: main and pause menu, runtime start/stop, to test) |
+| 8 | Co-op features | revive, pings and shared markers, and what we add as we play (down, revive, respawn, shared game over written; to test in game) |
 
 Alongside every milestone from 2 on: the simulated second game (record,
 replay, scripted players, network shaping) covers what that milestone
@@ -265,13 +268,14 @@ Research for them, gathered from the 2.50 game's scripts and live RTTI
 (facts with line references, a proposed co-op rule per case, and the
 in-game tests still owed; none of it tested in a session yet):
 
-| File                               | Covers                                                                          |
-| ---------------------------------- | ------------------------------------------------------------------------------- |
-| `research/pose-streaming.md`       | the remote V's body: pose read/write points, retargeting, measured stream sizes |
-| `research/coop-player-vehicles.md` | player state fields, weapons and shots, death/downed, mounting, vehicles, HUD   |
-| `research/coop-npcs-combat.md`     | NPC proxies, hit/damage/death pipeline, identity, loot, takedowns, quickhacks   |
-| `research/coop-scenes.md`          | scene tiers, cutscenes, dialogue choices, braindance, Johnny, restrictions      |
-| `research/coop-time.md`            | every time dilation, pause and time skip, and the game clock                    |
-| `research/coop-quests-world.md`    | facts, journal, persistent state, weather, police, crowds, saves, rewards       |
-| `research/coop-perks.md`           | every perk tree, relic, cyberware ability and quickhack, by co-op risk          |
-| `research/coop-regions.md`         | players apart: per-player regions, NPC hand-over, world ledger, staged plan     |
+<!-- prettier-ignore -->
+| File | Covers |
+| --- | --- |
+| `research/pose-streaming.md` | the remote V's body: pose read/write points, retargeting, measured stream sizes |
+| `research/coop-player-vehicles.md` | player state fields, weapons and shots, death/downed, mounting, vehicles, HUD |
+| `research/coop-npcs-combat.md` | NPC proxies, hit/damage/death pipeline, identity, loot, takedowns, quickhacks |
+| `research/coop-scenes.md` | scene tiers, cutscenes, dialogue choices, braindance, Johnny, restrictions |
+| `research/coop-time.md` | every time dilation, pause and time skip, and the game clock |
+| `research/coop-quests-world.md` | facts, journal, persistent state, weather, police, crowds, saves, rewards |
+| `research/coop-perks.md` | every perk tree, relic, cyberware ability and quickhack, by co-op risk |
+| `research/coop-regions.md` | players apart: per-player regions, NPC hand-over, world ledger, staged plan |

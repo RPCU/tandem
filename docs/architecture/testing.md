@@ -1,18 +1,19 @@
 # Testing without a second player
 
-| Level       | What                                                                                    | Command                           |
-| ----------- | --------------------------------------------------------------------------------------- | --------------------------------- |
-| unit        | protocol round trips, strict decoding, sizes                                            | `task test`                       |
-| loopback    | real host + guests over UDP in one process: join, relay, clock, leave                   | `task test`                       |
-| bad link    | smoothing and reliable channels through a shaped link (loss, jitter)                    | `task test`                       |
-| relay       | protocol, codes, limits, amplification, real sockets, race detector                     | `task relay:test`                 |
-| via relay   | a real relay process: join by code, fallback from direct, mock players                  | `task test` (`relay-loopback`)    |
-| mock player | `tandem-peer` as host or guest against the real game                                    | `task peer -- host --mode mirror` |
-| consistency | digests, resyncs, epochs, dedupe; convergence with a third lost; vanishing              | `task test`                       |
-| natives     | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere) | `task natives:check`              |
-| scripts     | `scripts/tandem` compiles with the game's redscript, bundle and mods                    | `task scripts:check`              |
-| scenarios   | the real game against the mock player, checked on the game's log                        | `task scenario -- all`            |
-| in game     | deploy the DLL, read its log                                                            | `task deploy`, `task logs`        |
+<!-- prettier-ignore -->
+| Level | What | Command |
+| --- | --- | --- |
+| unit | protocol round trips, strict decoding, sizes | `task test` |
+| loopback | real host + guests over UDP in one process: join, relay, clock, leave | `task test` |
+| bad link | smoothing and reliable channels through a shaped link (loss, jitter) | `task test` |
+| relay | protocol, codes, limits, amplification, real sockets, race detector | `task relay:test` |
+| via relay | a real relay process: join by code, fallback from direct, mock players | `task test` (`relay-loopback`) |
+| mock player | `tandem-peer` as host or guest against the real game | `task peer -- host --mode mirror` |
+| consistency | digests, resyncs, epochs, dedupe; convergence with a third lost; vanishing | `task test` |
+| natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere) | `task natives:check` |
+| scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods | `task scripts:check` |
+| scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
+| in game | deploy the DLL, read its log | `task deploy`, `task logs` |
 
 **Scenarios** (`tools/scenario.sh`, `tools/scenarios/*.sh`) are the
 in-game regression suite: each one puts the game in a role, drives the

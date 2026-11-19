@@ -26,10 +26,11 @@ quest-free gamedef (`zz_CampaignCoop_GuestStart.archive`, from NCO `9e1832f`)
 
 **Running quest nodes on a guest (QuestMirror)** (`code/client/App/World/QuestMirror.cpp`, `7f88bec`)
 
-| Hash           | Use                                                                                   | Signature                                                                                                                        | Tag                                                                                     |
-| -------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+<!-- prettier-ignore -->
+| Hash | Use | Signature | Tag |
+| --- | --- | --- | --- |
 | **3227858325** | `QuestPhaseInstance::ExecuteNode` — hooked on host (record), called on guest (replay) | `u8 (PhaseInstance*, questNodeDefinition*, QuestContext&, const QuestNodeSocket& in, DynArray<QuestNodeSocket>& out)` (`:67-72`) | [2.5-verified] = CW `QuestPhaseInstance_ExecuteNode`, `CW Red/QuestsSystem.hpp:286-292` |
-| **3144298192** | `QuestsSystem::CreateContext`                                                         | `void* (QuestsSystem*, QuestContext*, i32, i8, i32, i32)`, called `(sys,&ctx,1,0,-1,-1)` (`:63-65,348`)                          | [2.5-verified] same call in `CW App/Quest/QuestPhaseExecutor.hpp:31`                    |
+| **3144298192** | `QuestsSystem::CreateContext` | `void* (QuestsSystem*, QuestContext*, i32, i8, i32, i32)`, called `(sys,&ctx,1,0,-1,-1)` (`:63-65,348`) | [2.5-verified] same call in `CW App/Quest/QuestPhaseExecutor.hpp:31` |
 
 - Layouts (identical to CW, [2.5-verified]): `QuestsSystem+0x60` SharedSpinLock (hold while executing),
   `+0x68` `Handle<questPhaseInstance>` root phase, (CW: `+0x78` NodePathHash map, `+0xF8` `FactManager*`);
