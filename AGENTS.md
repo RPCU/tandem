@@ -12,7 +12,10 @@ section number in `docs/research/engine-knowledge.md`.
 
 Where things are (`core/`, `plugin/`, `peer/`, `tests/`, `relay/`, `nix/`,
 `deploy/`, `scripts/`, `tweaks/`, `dist/`, `cmake/`, `docs/`, `tools/`,
-`vendor/`) and the toolchain: ARCHITECTURE.md, Components.
+`vendor/`, `.github/workflows/`) and the toolchain: ARCHITECTURE.md,
+Components. The repository is published (MIT, `LICENSE`): keep personal data,
+real addresses and credentials out of it (tests use documentation
+addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 
 ## Environment
 
@@ -246,9 +249,11 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 
 ### Git
 
-- The repository is local only. **Commit locally** (small, focused commits,
-  hooks passing: treefmt, shellcheck); **never push or create a remote**
-  unless the user asks.
+- The public repository is `RPCU/tandem` on GitHub; the user pushes to it.
+  **Commit locally** (small, focused commits, hooks passing: treefmt,
+  shellcheck); **never push, open a pull request or add a remote** unless
+  the user asks. CI (`.github/workflows/`) runs on pushes and pull requests
+  to `main`.
 - Parallel work: independent tasks (research, reverse engineering, a
   feature that needs no game) can run in separate agents, each in its own
   git worktree; the game machine is one shared resource, so in-game testing
