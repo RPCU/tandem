@@ -17,7 +17,9 @@ namespace tandem::proto {
 inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 7: Hello.flags (Phantom Liberty), NpcCueKind::OutOfSight, kTimeScanning
 // in kTimeBubbleAbilities (a TimeEffect means more), and the compact wire
-// forms of the netcode (PoseFrame, NpcMotion, PlayerMotion, VehicleMotion).
+// forms of the netcode (PoseFrame, NpcMotion, PlayerMotion, VehicleMotion);
+// the record hints of Held, Appearance, Seat and NpcSpawn (mod-compat.md),
+// added before protocol 7 left the developers' machines.
 inline constexpr std::uint16_t kProtocolVersion = 7;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
@@ -151,6 +153,18 @@ struct PoseState {
   friend bool operator==(const PoseState &, const PoseState &) = default;
 };
 
+// What kind of thing a record is, said next to its TweakDB id, so a game
+// that does not have the record (a mod it lacks) shows a similar vanilla one
+// (tandem/mods.hpp, docs/architecture/mod-compat.md). The game's own enum
+// names, as CName hashes: the same in every copy of the game, modded or not.
+struct RecordHint {
+  std::uint64_t type{}; // gamedataItemType ("Wea_Handgun"), gamedataVehicleType ("Car"),
+                        // gamedataNPCType ("Human")
+  std::uint64_t tag{};  // an item's gamedataItemCategory ("Weapon"); an NPC's gender ("Female")
+  std::uint8_t size{};  // a vehicle's seats
+  friend bool operator==(const RecordHint &, const RecordHint &) = default;
+};
+
 // One part of a V's look: what the game's appearance changer takes
 // (world::EntityAppearanceChangeParameter::Key): a resource path hash and a
 // name hash, the same in every copy of the game.
@@ -173,6 +187,7 @@ struct Appearance {
   Body body{};
   std::vector<AppearanceKey> look;
   std::vector<std::uint64_t> items;
+  std::vector<RecordHint> hints; // items[i]'s (fewer: the rest have none)
   friend bool operator==(const Appearance &, const Appearance &) = default;
 };
 
@@ -185,6 +200,8 @@ struct Held {
   std::uint32_t revision{};
   std::uint64_t right{};
   std::uint64_t left{};
+  RecordHint rightHint;
+  RecordHint leftHint;
   friend bool operator==(const Held &, const Held &) = default;
 };
 
@@ -214,6 +231,7 @@ struct Seat {
   std::uint64_t vehicle{};
   std::uint64_t seat{};
   PlayerId owner{};
+  RecordHint hint; // the vehicle's type and seats
   friend bool operator==(const Seat &, const Seat &) = default;
 };
 
@@ -253,6 +271,7 @@ struct NpcSpawn { // Event channel; kept by the host for late joiners
   std::uint64_t appearance{}; // CName hash of its appearance
   Vec3 position;
   float yaw{};
+  RecordHint hint; // its NPC type and gender
   friend bool operator==(const NpcSpawn &, const NpcSpawn &) = default;
 };
 
@@ -2515,6 +2534,40 @@ struct BreachResult {
   friend bool operator==(const BreachResult &, const BreachResult &) = default;
 };
 
+// ---- Other mods (docs/architecture/mod-compat.md) ----
+
+// A game's other mods, each by the hash of its name and what it adds
+// (tandem/mods.hpp), said once by each side after Install (never relayed,
+// like Install). Names travel only when asked for: kModNamesAsked carries
+// the hashes whose names one side wants, kModNames the answer (names of
+// those of the answerer's own mods only). Event channel.
+inline constexpr std::uint8_t kModListed = 0, kModNamesAsked = 1, kModNames = 2;
+inline constexpr std::size_t kMaxModEntries = 512;
+inline constexpr std::size_t kMaxModName = 64;
+struct ModEntry {
+  std::uint64_t hash{};
+  std::uint8_t categories{}; // mods::k*
+  std::string name;          // kModNames only
+  friend bool operator==(const ModEntry &, const ModEntry &) = default;
+};
+struct ModList {
+  std::uint8_t kind{}; // kMod*
+  std::vector<ModEntry> mods;
+  friend bool operator==(const ModList &, const ModList &) = default;
+};
+
+// A game shows substitutes for some of `owner`'s records (a mod that game
+// lacks): one per kind it first replaced, said so `owner`'s player knows
+// what their partner sees. The seer's game sends it to the host, which
+// stamps `seer` and passes it to `owner` only. Event channel.
+struct Substitutes {
+  PlayerId owner{};
+  PlayerId seer{};
+  std::uint16_t kinds{}; // bit (mods::Kind)
+  std::uint16_t count{}; // records replaced so far
+  friend bool operator==(const Substitutes &, const Substitutes &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -2532,7 +2585,7 @@ using Message = std::variant<
     TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
-    BreachResult, NpcVendor>;
+    BreachResult, NpcVendor, ModList, Substitutes>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions):

@@ -99,6 +99,29 @@ TEST_CASE("every message survives encoding") {
   CHECK(IsReliable(Install{}));
   CHECK_FALSE(Decode(Encode(Install{.build = std::string(kMaxInstallText + 1, 'x')})).has_value());
   CHECK(Encode(NpcShotAt{}).size() < 64);
+  // Other mods (mod-compat.md): the lists, their names on request, the
+  // substitutes told back; the hints next to records.
+  RoundTrips(ModList{.kind = kModListed, .mods = {{.hash = 1, .categories = 2}, {.hash = 3}}});
+  RoundTrips(ModList{.kind = kModNames, .mods = {{.hash = 1, .categories = 2, .name = "Hair2K"}}});
+  RoundTrips(Substitutes{.owner = 2, .seer = 3, .kinds = 0x9, .count = 4});
+  RoundTrips(Held{.player = 2,
+                  .revision = 3,
+                  .right = 0x1122334455,
+                  .rightHint = {.type = 7, .tag = 8},
+                  .leftHint = {.size = 2}});
+  RoundTrips(
+      Seat{.player = 2, .vehicle = 5, .seat = 6, .owner = 2, .hint = {.type = 9, .size = 4}});
+  RoundTrips(Appearance{.player = 2, .items = {1, 2}, .hints = {{.type = 3}}});
+  RoundTrips(NpcSpawn{.npc = 7, .record = 8, .hint = {.type = 1, .tag = 2}});
+  CHECK(std::string(NameOf(ModList{})) == "ModList");
+  CHECK(std::string(NameOf(Substitutes{})) == "Substitutes");
+  CHECK(IsReliable(ModList{}));
+  CHECK(IsReliable(Substitutes{}));
+  CHECK_FALSE(Decode(Encode(ModList{.kind = 3})).has_value());
+  CHECK_FALSE(
+      Decode(Encode(ModList{.mods = {{.name = std::string(kMaxModName + 1, 'x')}}})).has_value());
+  CHECK_FALSE(
+      Decode(Encode(ModList{.mods = std::vector<ModEntry>(kMaxModEntries + 1)})).has_value());
   // Netcode (netcode.md): the compact pose and NPC streams.
   PoseFrame frame{.player = 2, .seq = 40, .timeUs = 1'800'000'000'000'000, .key = 31};
   frame.hips = {1, -2, 3};

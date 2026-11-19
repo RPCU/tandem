@@ -165,6 +165,11 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
       install &&
       (install->build.size() > kMaxInstallText || install->game.size() > kMaxInstallText))
     return std::nullopt;
+  if (const auto *mods = std::get_if<ModList>(&message);
+      mods && (mods->kind > kModNames || mods->mods.size() > kMaxModEntries ||
+               std::ranges::any_of(
+                   mods->mods, [](const ModEntry &mod) { return mod.name.size() > kMaxModName; })))
+    return std::nullopt;
   if (const auto *thrown = std::get_if<Throw>(&message); thrown && thrown->kind > ThrowKind::Smart)
     return std::nullopt;
   if (const auto *end = std::get_if<ThrowEnd>(&message); end && end->how > ThrowEndKind::Gone)
@@ -473,7 +478,9 @@ const char *NameOfKind(std::size_t kind) {
                                    "NpcScale",
                                    "Breach",
                                    "BreachResult",
-                                   "NpcVendor"};
+                                   "NpcVendor",
+                                   "ModList",
+                                   "Substitutes"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

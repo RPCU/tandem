@@ -678,6 +678,8 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               out.push_back(events::RemoteInstall{
                   player, name, install, compat::Differences(m_identity.install, install, name)});
             },
+            [&](const proto::ModList &list) { OnModList(player, list, out); },
+            [&](const proto::Substitutes &substitutes) { OnSubstitutes(player, substitutes, out); },
             [&](const proto::Pause &pause) {
               // A guest only pauses in its own name.
               const proto::Pause relayed{player, pause.paused};
@@ -1034,6 +1036,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     }
     BroadcastRoster();
     Send(peer, m_identity.install);
+    SendModsTo(peer);
     SendSessionTo(peer);
     return;
   }
@@ -1058,6 +1061,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
   BroadcastRoster();
   // After the roster: the guest names us when it says what differs.
   Send(peer, m_identity.install);
+  SendModsTo(peer);
   SendSessionTo(peer);
   CheckLost(out); // a V up again
 }
@@ -1449,6 +1453,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 static_cast<std::uint32_t>(welcome.hostTimeUs / 1000);
             out.push_back(events::Joined{m_you, m_host});
             Send(m_hostPeer, m_identity.install);
+            SendModsTo(m_hostPeer);
             SendLocalAppearanceNow();
             SendLocalHeldNow();
             SendLocalSeatNow();
@@ -1485,6 +1490,8 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             out.push_back(events::RemoteInstall{
                 m_host, name, install, compat::Differences(m_identity.install, install, name)});
           },
+          [&](const proto::ModList &list) { OnModList(m_host, list, out); },
+          [&](const proto::Substitutes &substitutes) { OnSubstitutes(m_host, substitutes, out); },
           [&](const proto::Pong &pong) {
             const auto now = net::NowUs();
             const auto rtt = now - pong.pingSentUs;
@@ -2238,6 +2245,95 @@ void Endpoint::SendNpcAction(const proto::NpcAction &action) {
     if (const auto owner = NpcOwner(mine.npc); owner != proto::kNoPlayer && owner != m_you)
       m_askers[mine.npc].push_back(m_you);
   AskOwner(mine.npc, mine);
+}
+
+// ---- Other mods (docs/architecture/mod-compat.md) ----
+
+void Endpoint::SendModsTo(net::PeerId peer) {
+  if (!m_identity.tellsMods)
+    return;
+  // Hashes and categories: the names stay here until asked for.
+  proto::ModList list{.kind = proto::kModListed};
+  for (const auto &mod : m_identity.mods)
+    if (list.mods.size() < proto::kMaxModEntries)
+      list.mods.push_back({.hash = mod.hash, .categories = mod.categories});
+  Send(peer, list);
+}
+
+void Endpoint::OnModList(proto::PlayerId player, const proto::ModList &list,
+                         std::vector<SessionEvent> &out) {
+  const auto found = m_players.find(player);
+  const std::string name = found != m_players.end() && !found->second.name.empty()
+                               ? found->second.name
+                               : std::string(player == m_host ? "The host" : "A player");
+  switch (list.kind) {
+  case proto::kModListed: {
+    // Theirs against ours; a game that does not say its own compares nothing.
+    m_theirMods[player] = list.mods;
+    if (m_identity.tellsMods)
+      out.push_back(events::RemoteMods{player, name, mods::Compare(m_identity.mods, list.mods)});
+    break;
+  }
+  case proto::kModNamesAsked: {
+    // Only the names of our own mods, only those asked for.
+    proto::ModList names{.kind = proto::kModNames};
+    for (const auto &asked : list.mods)
+      for (const auto &mod : m_identity.mods)
+        if (mod.hash == asked.hash && names.mods.size() < proto::kMaxModEntries)
+          names.mods.push_back(mod);
+    if (const auto peer = IsHost() ? PeerOf(player) : std::optional(m_hostPeer))
+      Send(*peer, names);
+    break;
+  }
+  case proto::kModNames:
+    out.push_back(events::ModNamesFrom{player, name, list.mods});
+    break;
+  default:
+    break;
+  }
+}
+
+void Endpoint::AskModNames(proto::PlayerId player) {
+  if (!IsJoined() || m_ended)
+    return;
+  const auto theirs = m_theirMods.find(player);
+  if (theirs == m_theirMods.end())
+    return;
+  proto::ModList ask{.kind = proto::kModNamesAsked};
+  for (const auto hash : mods::Compare(m_identity.mods, theirs->second).theirsOnlyHashes)
+    ask.mods.push_back({.hash = hash});
+  if (ask.mods.empty())
+    return;
+  // Guests compare with the host only (like Install): a guest asks the host.
+  if (!IsHost())
+    Send(m_hostPeer, ask);
+  else if (const auto peer = PeerOf(player))
+    Send(*peer, ask);
+}
+
+void Endpoint::SendSubstitutes(proto::Substitutes substitutes) {
+  if (!IsJoined() || m_ended || substitutes.owner == m_you)
+    return;
+  substitutes.seer = m_you;
+  if (!IsHost())
+    Send(m_hostPeer, substitutes);
+  else if (const auto peer = PeerOf(substitutes.owner))
+    Send(*peer, substitutes);
+}
+
+void Endpoint::OnSubstitutes(proto::PlayerId player, proto::Substitutes substitutes,
+                             std::vector<SessionEvent> &out) {
+  // The host stamps who sees them and passes them to their owner only.
+  if (IsHost())
+    substitutes.seer = player;
+  if (substitutes.owner == m_you) {
+    const auto seer = m_players.find(substitutes.seer);
+    out.push_back(events::SubstitutesFrom{substitutes, seer != m_players.end() ? seer->second.name
+                                                                               : std::string()});
+  } else if (IsHost()) {
+    if (const auto peer = PeerOf(substitutes.owner))
+      Send(*peer, substitutes);
+  }
 }
 
 void Endpoint::SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply) {

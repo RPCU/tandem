@@ -89,6 +89,17 @@ float TimeBubbles::BubbleScale(std::uint8_t abilities, float scale) {
   return std::clamp(scale, 0.05f, 1.f);
 }
 
+float TimeBubbles::UnexplainedSlow(float global, float explained, bool local) {
+  // A known reason's own factor, read a frame apart from the whole one,
+  // may differ by a little: only a clearly slower world is another's.
+  constexpr float kSlack = 0.02f;
+  if (local || !std::isfinite(global) || !(global > 0.f) || !(global < 0.99f))
+    return 1.f;
+  if (std::isfinite(explained) && explained > 0.f && global >= explained - kSlack)
+    return 1.f;
+  return std::clamp(global, 0.05f, 1.f);
+}
+
 float TimeBubbles::FactorOf(proto::NpcId npc) const {
   const auto it = m_factors.find(npc);
   return it == m_factors.end() ? 1.f : it->second;
