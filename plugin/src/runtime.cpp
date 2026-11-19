@@ -4,6 +4,8 @@
 #include "log.hpp"
 #include "net_thread.hpp"
 #include "runtime.hpp"
+
+#include "presence.hpp"
 #include "story.hpp"
 
 #include "tandem/session.hpp"
@@ -1016,6 +1018,11 @@ void Runtime::SubmitNpcShot(const proto::NpcShot &shot) {
   m_npcOutbox.push_back(shot);
 }
 
+void Runtime::SubmitNpcReaction(const proto::NpcReaction &reaction) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(reaction);
+}
+
 void Runtime::PushNpcAnims(const proto::NpcAnims &anims) {
   std::lock_guard _(m_lock);
   for (const auto &anim : anims.npcs)
@@ -1181,6 +1188,7 @@ std::uint32_t Runtime::TakeOverflows() {
 }
 
 void Runtime::ResetSession() {
+  PresenceState::Get().Reset();
   {
     std::lock_guard _(m_lock);
     m_localShots.clear();
@@ -1233,9 +1241,16 @@ bool Runtime::PoseOf(proto::PlayerId player, pose::Pose &out) {
       delayUs = it->second.DelayUs();
   }
   const auto now = HostNowUs();
-  std::lock_guard _(m_posesLock);
-  const auto it = m_poses.find(player);
-  return it != m_poses.end() && it->second.At(now > delayUs ? now - delayUs : 0, out);
+  {
+    std::lock_guard _(m_posesLock);
+    const auto it = m_poses.find(player);
+    if (it == m_poses.end() || !it->second.At(now > delayUs ? now - delayUs : 0, out))
+      return false;
+  }
+  // A puppet that was just hit flinches over whatever it does (presence.hpp).
+  const auto lean = PresenceState::Get().LeanOf(player, now);
+  pose::LeanSpine(out, lean.pitch, lean.roll);
+  return true;
 }
 
 std::uint32_t Runtime::PosesReceived(proto::PlayerId player) {
@@ -1277,6 +1292,7 @@ void Runtime::ForgetRemote(proto::PlayerId player) {
     m_tracks.erase(player);
     m_vehicles.erase(player);
   }
+  PresenceState::Get().Forget(player);
   std::lock_guard _(m_posesLock);
   m_poses.erase(player);
 }

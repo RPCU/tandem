@@ -397,6 +397,9 @@ public:
   // spawns) and shots. Guest, net -> game: both queued for the scripts.
   void SubmitNpcAnim(const proto::NpcAnim &anim);
   void SubmitNpcShot(const proto::NpcShot &shot);
+  // Host, game -> net: a shared NPC's hit reaction, in order with the rest
+  // of the NPC outbox (presence.hpp keeps the guests' side).
+  void SubmitNpcReaction(const proto::NpcReaction &reaction);
   void PushNpcAnims(const proto::NpcAnims &anims);
   std::vector<proto::NpcAnim> TakeNpcAnims();
   void PushNpcShot(const proto::NpcShot &shot);

@@ -161,6 +161,19 @@ struct Bearing {
 Bearing BearingOf(const proto::Vec3 &camera, const proto::Vec3 &forward, float halfFov,
                   const proto::Vec3 &target);
 
+// Where a point of the world falls on the screen, for a widget drawn over
+// it (the nameplate): x and y from the top left corner, 0..1. `right` is
+// the camera's right (any length), `halfFov` half its field of view in
+// radians, horizontal or `vertical`, `aspect` the frame's width / height.
+struct ScreenPoint {
+  float x{}, y{};
+  bool visible{}; // in front of the camera and inside the frame
+  friend bool operator==(const ScreenPoint &, const ScreenPoint &) = default;
+};
+ScreenPoint ProjectOf(const proto::Vec3 &camera, const proto::Vec3 &forward,
+                      const proto::Vec3 &right, float halfFov, bool vertical, float aspect,
+                      const proto::Vec3 &target);
+
 // "12 m", "1.2 km": as the game's own markers write a distance.
 std::uint32_t RoundedMetres(float distance);
 

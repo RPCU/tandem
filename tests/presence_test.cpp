@@ -300,6 +300,47 @@ TEST_SUITE("presence") {
     CHECK(tilted.angle == doctest::Approx(kPi / 2.f));
   }
 
+  TEST_CASE("a point of the world on the screen, for the nameplate") {
+    const proto::Vec3 camera{0.f, 0.f, 1.7f};
+    const proto::Vec3 north{0.f, 2.f, 0.f}, east{3.f, 0.f, 0.f};
+    const float half = 45.f * kPi / 180.f; // horizontal: the frame's edge is at 45°
+    const float aspect = 16.f / 9.f;
+
+    const auto centre =
+        presence::ProjectOf(camera, north, east, half, false, aspect, {0.f, 10.f, 1.7f});
+    CHECK(centre.visible);
+    CHECK(centre.x == doctest::Approx(0.5f));
+    CHECK(centre.y == doctest::Approx(0.5f));
+
+    // To the right and above: right of the centre, and nearer the top.
+    const auto upRight =
+        presence::ProjectOf(camera, north, east, half, false, aspect, {5.f, 10.f, 3.7f});
+    CHECK(upRight.visible);
+    CHECK(upRight.x == doctest::Approx(0.75f));
+    CHECK(upRight.y < 0.5f);
+    // The right edge of the frame is 45° off the axis.
+    CHECK(presence::ProjectOf(camera, north, east, half, false, aspect, {10.f, 10.f, 1.7f}).x ==
+          doctest::Approx(1.f));
+    CHECK_FALSE(
+        presence::ProjectOf(camera, north, east, half, false, aspect, {11.f, 10.f, 1.7f}).visible);
+    // Behind the camera: never drawn (no mirrored plate).
+    CHECK_FALSE(
+        presence::ProjectOf(camera, north, east, half, false, aspect, {0.f, -10.f, 1.7f}).visible);
+
+    // The same half angle read as vertical makes the frame wider.
+    const auto wide =
+        presence::ProjectOf(camera, north, east, half, true, aspect, {5.f, 10.f, 1.7f});
+    CHECK(wide.x < 0.75f);
+    CHECK(wide.x > 0.5f);
+    // The top edge of a vertical 45° half angle.
+    CHECK(presence::ProjectOf(camera, north, east, half, true, aspect, {0.f, 10.f, 11.7f}).y ==
+          doctest::Approx(0.f).epsilon(0.001));
+
+    // A camera with no direction draws nothing.
+    CHECK_FALSE(
+        presence::ProjectOf(camera, {}, east, half, false, aspect, {0.f, 10.f, 1.7f}).visible);
+  }
+
   TEST_CASE("distances and the nameplate's fade") {
     CHECK(presence::RoundedMetres(12.4f) == 12);
     CHECK(presence::RoundedMetres(999.4f) == 999);

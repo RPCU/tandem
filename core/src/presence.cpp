@@ -252,6 +252,35 @@ Bearing BearingOf(const proto::Vec3 &camera, const proto::Vec3 &forward, float h
   return out;
 }
 
+ScreenPoint ProjectOf(const proto::Vec3 &camera, const proto::Vec3 &forward,
+                      const proto::Vec3 &right, float halfFov, bool vertical, float aspect,
+                      const proto::Vec3 &target) {
+  const auto length = [](const proto::Vec3 &v) {
+    return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+  };
+  const float fl = length(forward), rl = length(right);
+  if (fl < 1e-4f || rl < 1e-4f || aspect <= 0.f || halfFov <= 0.f)
+    return {};
+  const proto::Vec3 f{forward.x / fl, forward.y / fl, forward.z / fl};
+  const proto::Vec3 r{right.x / rl, right.y / rl, right.z / rl};
+  // Up, in a right-handed world: right × forward.
+  const proto::Vec3 u{r.y * f.z - r.z * f.y, r.z * f.x - r.x * f.z, r.x * f.y - r.y * f.x};
+  const proto::Vec3 d{target.x - camera.x, target.y - camera.y, target.z - camera.z};
+  const float depth = d.x * f.x + d.y * f.y + d.z * f.z;
+  if (depth < 0.05f)
+    return {}; // behind the camera, or in its lens
+  const float tangent = std::tan(halfFov);
+  const float tanH = vertical ? tangent * aspect : tangent;
+  const float tanV = vertical ? tangent : tangent / aspect;
+  const float nx = (d.x * r.x + d.y * r.y + d.z * r.z) / (depth * tanH);
+  const float ny = (d.x * u.x + d.y * u.y + d.z * u.z) / (depth * tanV);
+  ScreenPoint out;
+  out.x = 0.5f + nx * 0.5f;
+  out.y = 0.5f - ny * 0.5f;
+  out.visible = std::abs(nx) <= 1.f && std::abs(ny) <= 1.f;
+  return out;
+}
+
 std::uint32_t RoundedMetres(float distance) {
   if (!(distance > 0.f))
     return 0;

@@ -20,7 +20,7 @@ tests/         doctest tests of core/ (Linux)
 relay/         tandem-relay (Go, stdlib only): cmd/tandem-relay, internal/relay
 nix/           relay package and OCI image, redscript (the game's scc, built for Linux); default.nix exposes them
 deploy/        kubernetes/base: kustomize base for the relay
-scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp, StoryNatives.reds story_natives.cpp, CombatNatives.reds combat_natives.cpp, SyncNatives.reds sync_natives.cpp, ElsewhereNatives.reds elsewhere_natives.cpp)
+scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp, StoryNatives.reds story_natives.cpp, CombatNatives.reds combat_natives.cpp, SyncNatives.reds sync_natives.cpp, ElsewhereNatives.reds elsewhere_natives.cpp, PresenceNatives.reds presence_natives.cpp)
 tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet records, their attitude groups, the player marker)
 dist/          files installed next to the DLL (tandem.ini)
 cmake/         clang-cl-msvc.cmake: the Windows cross toolchain

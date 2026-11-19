@@ -1,6 +1,8 @@
 #include "net_thread.hpp"
+
 #include "combat.hpp"
 #include "log.hpp"
+#include "presence.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
 
@@ -126,6 +128,7 @@ struct NetThread::Impl {
   }
 
   std::optional<proto::Vitals> lastVitals;
+  std::optional<proto::Presence> lastPresence;
 
   // Every other player in the session with its life (up unless it said
   // otherwise), for the game thread (Revive.reds). Cheap: the runtime keeps
@@ -248,6 +251,8 @@ struct NetThread::Impl {
       endpoint->SetLocalElsewhere(*lastElsewhere);
     if (lastVitals)
       endpoint->SetLocalVitals(*lastVitals);
+    if (lastPresence)
+      endpoint->SetLocalPresence(*lastPresence);
     if (config.role == Config::Role::Host)
       log::Info("hosting on UDP {}{}", config.port,
                 relay ? std::format(", and through relay {}:{}", relay->address, relay->port) : "");
@@ -460,6 +465,12 @@ struct NetThread::Impl {
                 runtime.PushNpcAnims(e.anims);
               } else if constexpr (std::is_same_v<E, events::HostNpcShot>) {
                 runtime.PushNpcShot(e.shot);
+              } else if constexpr (std::is_same_v<E, events::HostNpcReaction>) {
+                PresenceState::Get().PushReaction(e.reaction);
+              } else if constexpr (std::is_same_v<E, events::RemotePresence>) {
+                PresenceState::Get().PushRemote(e.presence);
+              } else if constexpr (std::is_same_v<E, events::RemoteCue>) {
+                PresenceState::Get().PushCue(e.cue, net::NowUs());
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
                 log::Info("player {}: look of {} keys and {} items (revision {})",
                           e.appearance.player, e.appearance.look.size(), e.appearance.items.size(),
@@ -657,6 +668,8 @@ struct NetThread::Impl {
           endpoint->SendNpcAnims(*anims);
         else if (const auto *shot = std::get_if<proto::NpcShot>(&message))
           endpoint->SendNpcShot(*shot);
+        else if (const auto *reaction = std::get_if<proto::NpcReaction>(&message))
+          endpoint->SendNpcReaction(*reaction);
         else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
                  hit && !endpoint->SendPlayerHit(*hit))
           log::Info("hit on player {} dropped: not a guest in the session", hit->player);
@@ -713,6 +726,12 @@ struct NetThread::Impl {
       }
       for (const auto &revive : runtime.TakeLocalRevives())
         endpoint->SendRevive(revive);
+      if (auto presence = PresenceState::Get().TakeLocal()) {
+        lastPresence = *presence;
+        endpoint->SetLocalPresence(*presence);
+      }
+      for (const auto &cue : PresenceState::Get().TakeLocalCues())
+        endpoint->SendLocalCue(cue);
       if (!ended)
         PublishLives(*endpoint);
       for (auto &message : Combat::Get().TakeOutbound())
