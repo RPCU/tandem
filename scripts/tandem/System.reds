@@ -1725,6 +1725,19 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   private func SpawnPuppet(player: Uint32, name: String, body: Int32) -> Void {
+    // A body built again (a stand-in, their V back) while its player drives
+    // keeps the copy of their car: parking it and spawning another put two
+    // cars in one place (2026-11-19, vanish-drive: the game stopped right
+    // after). The new body is seated in it as soon as it is dressed.
+    let none = EntityID.FromHash(0ul);
+    let keptCar = EntityID.FromHash(0ul);
+    for old in this.m_puppets {
+      if old.player == player && EntityID.IsDefined(old.car) && TandemNative.RemoteSeatOwner(player) == player
+        && TDBID.IsValid(TandemNative.RemoteSeatVehicle(player)) {
+        keptCar = old.car;
+        old.car = none;
+      }
+    }
     this.RemovePuppet(player);
     let game = this.GetGameInstance();
     let local = GetPlayer(game);
@@ -1769,6 +1782,10 @@ public class TandemSystem extends ScriptableSystem {
     puppet.id = id;
     puppet.record = record;
     puppet.body = body;
+    puppet.car = keptCar;
+    if EntityID.IsDefined(keptCar) {
+      TandemNative.Log(s"player \(player): the new body keeps the copy of their car");
+    }
     ArrayPush(this.m_puppets, puppet);
     TandemNative.RegisterPuppet(player, id);
     TandemNative.Log(s"spawning \(name) (player \(player), \(TandemNative.PuppetRecord(body)))");
