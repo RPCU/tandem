@@ -827,9 +827,14 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
           Send(peer, proto::NpcSeat{.npc = npc});
   }
   // The story so far: journal, tracked entry, call, choice hub, story states.
-  if (domains & proto::kDomainStory)
+  if (domains & proto::kDomainStory) {
     for (const auto &message : m_story.ForJoiner())
       Send(peer, message);
+    // A resync also says what is not: no scene plays (a guest that missed
+    // its end lets its proxies go).
+    if (resync && !m_story.SceneOn())
+      Send(peer, proto::SceneState{});
+  }
 }
 
 void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &out) {
@@ -1038,6 +1043,14 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               return !m_npcs.contains(entry.npc);
             });
             out.push_back(events::HostNpcStates{std::move(live)});
+          },
+          [&](const proto::ActorPose &pose) {
+            // As NPC states: none of the host's old world, none for an NPC
+            // we do not know (a pose that overtook its NpcGone).
+            if (m_firstNpcSeq != 0 && static_cast<std::int32_t>(pose.seq - m_firstNpcSeq) < 0)
+              return;
+            if (m_npcs.contains(pose.npc))
+              out.push_back(events::HostActorPose{pose});
           },
           [&](const proto::NpcGone &gone) {
             m_npcHolds.erase(gone.npc);
@@ -1400,6 +1413,14 @@ void Endpoint::SendNpcStates(proto::NpcStates states) {
       it->second.yaw = entry.yaw;
     }
   Broadcast(states);
+}
+
+void Endpoint::SendActorPose(proto::ActorPose pose) {
+  if (!IsHost() || m_ended || !m_npcs.contains(pose.npc))
+    return;
+  pose.seq = ++m_npcSeq;
+  pose.timeUs = HostNowUs();
+  Broadcast(pose);
 }
 
 void Endpoint::SendNpcGone(const proto::NpcGone &gone) {

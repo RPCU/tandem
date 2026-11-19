@@ -268,6 +268,7 @@ plugin") and its open problems.
 - `loot.md`: per-player loot, dropped items, quest items.
 - `revive.md`: down, revive, respawn, shared game over.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, rewards; open: scenes for guests, story decisions, quests together.
+- `scene-replay.md`: a guest watches the host's scenes: the stage, the cast, lines and actor poses (`scene_replay = on`, off by default).
 - `quest-carryover.md`: (proposal) what a guest brings home: the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
 - `activities.md`: the rule table for activities outside combat and quests (time skips asked of everyone, workspots on puppets, minigames and screens, shops, mirror and wardrobe looks, photo mode, contests, clubs and joytoys), its decisions and what is built.

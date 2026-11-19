@@ -206,7 +206,7 @@ decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
   environment). Read `red4ext/logs/tandem-*.log` for the outcome.
 - `tools/remote.sh TASK…` runs a task on the game machine instead (more
   cores): it syncs the working tree to `~/.cache/tandem/src/<worktree>`
-  there, runs the task in devenv under that machine's own build lock at low
+  there, runs the task in devenv in one of that machine's three build slots at low
   priority, and copies `build/windows/plugin/tandem.{dll,pdb}` (and, after
   `build`, `build:linux` or `test`, `build/linux/peer/tandem-peer`) back.
   Then `TANDEM_PREBUILT=1 tools/scenario.sh …` deploys that DLL as is
