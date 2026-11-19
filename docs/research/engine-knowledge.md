@@ -89,6 +89,7 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.27 | The NCART metro, rides and quest vehicles                       | `transit.md`      |
 | 13.28 | Firing an NPC's shot from a proxy                               | `combat.md`       |
 | 13.29 | What a quest's completion is made of, and what quests test      | `story.md`        |
+| 13.30 | Pings, tags, reveals and waypoints, for comms                   | `ui.md`           |
 
 ## Top traps (one line each)
 

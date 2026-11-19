@@ -66,8 +66,8 @@ task touches ([Topic files](#topic-files)).
 | `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
 | `deploy/kubernetes/base` | kustomize base for the relay | `task k8s:check` |
-| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp` | `task scripts:check`, `task natives:check` |
-| `tweaks/` | TweakXL records, installed to `r6/tweaks/tandem` (the puppet records, their attitude groups, the player marker) | — |
+| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `CommsNatives.reds` `comms_natives.cpp` | `task scripts:check`, `task natives:check` |
+| `tweaks/` | TweakXL records, installed to `r6/tweaks/tandem` (the puppet records, their attitude groups, the player marker, the ping marker) | — |
 | `dist/` | files installed next to the DLL (`tandem.ini`) | — |
 | `cmake/` | `clang-cl-msvc.cmake`: the Windows cross toolchain | — |
 | `docs/` | this core; `architecture/`: one file per subsystem; `research/`: engine facts with sources, design research, `data/` (RTTI and skeleton dumps) | `task docs:check` |
@@ -137,6 +137,7 @@ The owner simulates; everyone else displays.
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
 | items a V drops on purpose | host | lie in every game; the first pickup keeps it |
+| a V's pings, tags, link consent, waypoint | that player's game | shown; tags only to players linked with it (`architecture/comms.md`) |
 | quest and important items, rewards | every player's own V | whoever gets one, every V gets it |
 
 Enemy level (the mean of the players' levels): `architecture/npcs.md`.
@@ -241,7 +242,7 @@ Each milestone ends with something visible in game.
 | 5 | One set of enemies | NPC proxies with AI off on guests; hits, damage, deaths, loot (proxies follow the host's NPCs, hits and deaths ✓ 2026-11-18; loot built) |
 | 6 | Story | quest facts and journal follow the host; dialogue choices; scenes for guests (step 1 written: freeze, saves, journal, calls, texts, lines, hubs, rewards; to test in game) |
 | 7 | Anywhere | relay fallback in the plugin, invites (join codes), co-op in the main menu: host or pick whom to join (relay and codes ✓ 2026-11-18, loopback; menus written: main and pause menu, runtime start/stop, to test) |
-| 8 | Co-op features | revive, pings and shared markers, and what we add as we play (down, revive, respawn, shared game over written; to test in game) |
+| 8 | Co-op features | revive, pings and shared markers, and what we add as we play (down, revive, respawn, shared game over written; pings, the link with shared tags and Ping reveals, waypoints written; to test in game) |
 
 Alongside every milestone from 2 on: the simulated second game (record,
 replay, scripted players, network shaping) covers what that milestone
@@ -270,6 +271,7 @@ plugin") and its open problems.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
 - `coop-menu.md`: the co-op menu, invites and join codes in game.
 - `travel.md`: fast travel together, regroup; open: region authority.
+- `comms.md`: pings (the tag key outside the scanner), the link and what it shares (scanner tags, Ping reveals; `link = auto|ask|off`), waypoints, the danger callout; why no emotes nor text chat yet; the consistency of each.
 - `relay.md`: the relay's sessions, join codes, abuse limits, wire format, deployment, the game side.
 - `testing.md`: test levels, scenarios, every `tandem-peer` mode and flag.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.
