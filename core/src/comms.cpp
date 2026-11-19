@@ -32,6 +32,8 @@ std::uint8_t LifeOf(proto::MarkKind kind, std::uint8_t asked) {
     return 15; // it moves: it follows the NPC, but an old one misleads
   case proto::MarkKind::Danger:
     return 10;
+  case proto::MarkKind::Target:
+    return 60; // until it dies, is cleared or replaced; this is the backstop
   case proto::MarkKind::Device:
   case proto::MarkKind::Loot:
     return 30;
@@ -60,8 +62,8 @@ std::optional<proto::Mark> Pinger::Ping(proto::MarkKind kind, const proto::Targe
   Prune(nowUs);
   proto::Mark next{.kind = kind, .target = target, .position = position};
   for (auto it = m_live.begin(); it != m_live.end(); ++it) {
-    if (!SameThing(it->mark, next))
-      continue;
+    if (it->mark.kind == proto::MarkKind::Target || !SameThing(it->mark, next))
+      continue; // (a team target is not a ping: never toggled by one)
     if (nowUs - it->sentUs < kDangerWindowUs && it->mark.kind != proto::MarkKind::Danger) {
       // Twice in a row: careful. The same mark, now a danger.
       it->mark.kind = proto::MarkKind::Danger;
@@ -85,9 +87,46 @@ std::optional<proto::Mark> Pinger::Ping(proto::MarkKind kind, const proto::Targe
   next.seconds = LifeOf(kind, 0);
   m_live.push_back({next, nowUs, nowUs + std::uint64_t{next.seconds} * 1'000'000});
   // Our oldest goes past the receivers' cap, as it does on their boards.
-  if (m_live.size() > kMarksPerPlayer)
-    m_live.erase(m_live.begin());
+  const auto ping = [](const Live &live) { return live.mark.kind != proto::MarkKind::Target; };
+  if (static_cast<std::size_t>(std::ranges::count_if(m_live, ping)) > kMarksPerPlayer)
+    m_live.erase(std::ranges::find_if(m_live, ping));
   return next;
+}
+
+std::optional<proto::Mark> Pinger::Target(const proto::TargetRef &target,
+                                          const proto::Vec3 &position, std::uint64_t nowUs) {
+  Prune(nowUs);
+  const proto::Mark next{.kind = proto::MarkKind::Target, .target = target, .position = position};
+  const auto live = std::ranges::find_if(
+      m_live, [](const Live &l) { return l.mark.kind == proto::MarkKind::Target; });
+  if (live != m_live.end() && SameThing(live->mark, next)) {
+    // Chosen again on the same target: cleared.
+    proto::Mark gone = live->mark;
+    gone.kind = proto::MarkKind::None;
+    m_live.erase(live);
+    return gone;
+  }
+  if (!m_limiter.Allow(nowUs))
+    return std::nullopt;
+  if (live != m_live.end())
+    m_live.erase(live); // replaced: the receivers drop it on the new one
+  auto mark = next;
+  mark.id = ++m_next;
+  mark.seconds = LifeOf(proto::MarkKind::Target, 0);
+  m_live.push_back({mark, nowUs, nowUs + std::uint64_t{mark.seconds} * 1'000'000});
+  return mark;
+}
+
+std::optional<proto::Mark> Pinger::ClearTarget(std::uint64_t nowUs) {
+  Prune(nowUs);
+  const auto live = std::ranges::find_if(
+      m_live, [](const Live &l) { return l.mark.kind == proto::MarkKind::Target; });
+  if (live == m_live.end())
+    return std::nullopt;
+  proto::Mark gone = live->mark;
+  gone.kind = proto::MarkKind::None;
+  m_live.erase(live);
+  return gone;
 }
 
 std::optional<proto::Mark> Pinger::Withdraw(std::uint32_t id, std::uint64_t nowUs) {
@@ -116,23 +155,30 @@ std::vector<Change> Board::Add(const proto::Mark &mark, std::uint64_t nowUs) {
     out.push_back({Change::Kind::Hide, it->mark});
     return m_shown.erase(it);
   };
-  // The same mark (replaced or withdrawn), or the sender's older mark of the
-  // same thing: off first.
+  // The same mark (replaced or withdrawn), the sender's older ping of the
+  // same thing, or (a team target) its last team target: off first. Pings
+  // and team targets never replace each other.
+  const auto isTarget = [](const proto::Mark &m) { return m.kind == proto::MarkKind::Target; };
+  const bool target = isTarget(mark);
   for (auto it = m_shown.begin(); it != m_shown.end();) {
-    if (SameMark(it->mark, mark) || (mark.kind != proto::MarkKind::None &&
-                                     it->mark.from == mark.from && SameThing(it->mark, mark)))
+    const bool sameSender = mark.kind != proto::MarkKind::None && it->mark.from == mark.from;
+    if (SameMark(it->mark, mark) || (sameSender && target && isTarget(it->mark)) ||
+        (sameSender && !target && !isTarget(it->mark) && SameThing(it->mark, mark)))
       it = hide(it);
     else
       ++it;
   }
   if (mark.kind == proto::MarkKind::None)
     return out;
-  // At most kMarksPerPlayer of one sender: its oldest goes.
-  const auto count = std::ranges::count_if(
-      m_shown, [&](const Shown &shown) { return shown.mark.from == mark.from; });
-  if (count >= static_cast<std::ptrdiff_t>(kMarksPerPlayer)) {
+  // At most kMarksPerPlayer pings of one sender (its team target apart):
+  // its oldest goes.
+  const auto ping = [&](const Shown &shown) {
+    return shown.mark.from == mark.from && !isTarget(shown.mark);
+  };
+  if (!target &&
+      std::ranges::count_if(m_shown, ping) >= static_cast<std::ptrdiff_t>(kMarksPerPlayer)) {
     const auto oldest = std::ranges::min_element(m_shown, [&](const Shown &a, const Shown &b) {
-      const bool aOurs = a.mark.from == mark.from, bOurs = b.mark.from == mark.from;
+      const bool aOurs = ping(a), bOurs = ping(b);
       if (aOurs != bOurs)
         return aOurs;
       return a.sinceUs < b.sinceUs;

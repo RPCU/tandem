@@ -65,6 +65,12 @@ public:
   // made a danger, 3 taken back.
   std::int32_t Ping(proto::MarkKind kind, const proto::TargetRef &target,
                     const proto::Vec3 &position, std::uint64_t nowUs);
+  // Our team target (the "Mark target" quickhack): 0 not sent (too fast, no
+  // session), 1 marked, 3 cleared (the same target again). ClearTarget: it
+  // died or was destroyed (false: none).
+  std::int32_t Target(const proto::TargetRef &target, const proto::Vec3 &position,
+                      std::uint64_t nowUs);
+  bool ClearTarget(std::uint64_t nowUs);
   // Our tag or reveal of one target (sent with the others of this tick).
   void Tag(proto::TagReason reason, bool on, std::uint8_t seconds, const proto::TargetRef &target);
   // We link with `player` (on) or break it.

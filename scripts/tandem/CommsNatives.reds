@@ -9,7 +9,8 @@ public native struct TandemCommsEvent {
   native let player: Uint32;
   // pings: the sender's id for it
   native let id: Uint32;
-  // pings: 1 spot, 2 enemy, 3 device, 4 loot, 5 vehicle, 6 danger; tags: 0
+  // pings: 1 spot, 2 enemy, 3 device, 4 loot, 5 vehicle, 6 danger, 7 team
+  // target; tags: 0
   // scan, 1 reveal; links: 0 none, 1 we asked, 2 they ask, 3 linked (before:
   // the state it was); waypoints: 0 none, 1 a map pin, 2 a tracked point
   native let type: Int32;
@@ -34,6 +35,10 @@ public native class TandemCommsNative extends IScriptable {
   // 0 not sent (too fast, pings off, no session), 1 marked, 2 made a danger,
   // 3 taken back.
   public static native func Ping(kind: Int32, npc: Uint32, player: Uint32, entity: EntityID, position: Vector4) -> Int32
+  // Our team target ("Mark target"): 0 not sent, 1 marked, 3 cleared (the
+  // same target again); ClearTarget: it died (false: none).
+  public static native func MarkTarget(npc: Uint32, player: Uint32, entity: EntityID, position: Vector4) -> Int32
+  public static native func ClearTarget() -> Bool
   // Our scan tag (reason 0) or reveal (1) of a shared NPC or a static
   // entity, to linked players.
   public static native func Tag(reason: Int32, on: Bool, seconds: Int32, npc: Uint32, entity: EntityID)

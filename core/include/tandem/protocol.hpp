@@ -1158,6 +1158,9 @@ enum class MarkKind : std::uint8_t {
   Loot = 4,
   Vehicle = 5,
   Danger = 6, // the same place or target, pinged twice in a row: "careful"
+  // The team target ("focus this one"): the "Mark target" quickhack of a
+  // linked player. One per sender; it replaces that sender's last one.
+  Target = 7,
 };
 
 // The sender's game sends it to the host, which stamps `from`, holds each

@@ -83,6 +83,16 @@ struct TandemCommsNative : Red::IScriptable {
                              {position.X, position.Y, position.Z}, net::NowUs());
   }
 
+  // Our team target (the "Mark target" quickhack) at a shared NPC, a player
+  // or a static entity: 0 not sent, 1 marked, 3 cleared. ClearTarget: ours
+  // died or was destroyed (false: we had none).
+  static std::int32_t MarkTarget(std::uint32_t npc, std::uint32_t player, Red::EntityID entity,
+                                 Red::Vector4 position) {
+    return Comms::Get().Target(TargetOf(npc, player, entity), {position.X, position.Y, position.Z},
+                               net::NowUs());
+  }
+  static bool ClearTarget() { return Comms::Get().ClearTarget(net::NowUs()); }
+
   // Our scanner tag (reason 0) or a reveal (1, for `seconds`) of one target,
   // on or off: to the players linked with us.
   static void Tag(std::int32_t reason, bool on, std::int32_t seconds, std::uint32_t npc,
@@ -137,6 +147,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemCommsEvent, "TandemCommsEvent", {
 RTTI_DEFINE_CLASS(tandem::plugin::TandemCommsNative, "TandemCommsNative", {
   RTTI_METHOD(Update);
   RTTI_METHOD(Ping);
+  RTTI_METHOD(MarkTarget);
+  RTTI_METHOD(ClearTarget);
   RTTI_METHOD(Tag);
   RTTI_METHOD(SetLink);
   RTTI_METHOD(LinkState);

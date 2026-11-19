@@ -173,6 +173,71 @@ TEST_CASE("a receiver's board: shown, replaced, capped, expired, forgotten") {
   }
 }
 
+TEST_CASE("the team target: one per player, cleared by choosing it again, apart from pings") {
+  const std::uint64_t t = 300 * kSecond;
+  const proto::TargetRef turret{TargetKind::Entity, 0x7E44E7ull}, npc{TargetKind::Npc, 12};
+  comms::Pinger pinger;
+  const auto first = pinger.Target(turret, {1, 0, 0}, t);
+  REQUIRE(first);
+  CHECK(first->kind == MarkKind::Target);
+  CHECK(first->seconds == 60);
+  // Another target: a new mark (the receivers drop the old on it).
+  const auto second = pinger.Target(npc, {5, 0, 0}, t + kSecond);
+  REQUIRE(second);
+  CHECK(second->id != first->id);
+  CHECK(second->target == npc);
+  // A ping of the same NPC is a ping: it does not touch the target.
+  const auto ping = pinger.Ping(MarkKind::Enemy, npc, {5, 0, 0}, t + 3 * kSecond);
+  REQUIRE(ping);
+  CHECK(ping->kind == MarkKind::Enemy);
+  CHECK(ping->id != second->id);
+  // Chosen again on the same target: cleared.
+  const auto cleared = pinger.Target(npc, {5, 0, 0}, t + 4 * kSecond);
+  REQUIRE(cleared);
+  CHECK(cleared->id == second->id);
+  CHECK(cleared->kind == MarkKind::None);
+  CHECK_FALSE(pinger.ClearTarget(t + 4 * kSecond));
+  // It died: taken back; then after 60 s there is nothing to take back.
+  const auto third = pinger.Target(turret, {1, 0, 0}, t + 30 * kSecond);
+  REQUIRE(third);
+  const auto dead = pinger.ClearTarget(t + 31 * kSecond);
+  REQUIRE(dead);
+  CHECK(dead->id == third->id);
+  CHECK(dead->kind == MarkKind::None);
+  // Three pings of ours never push our target out.
+  const auto fourth = pinger.Target(turret, {1, 0, 0}, t + 200 * kSecond);
+  REQUIRE(fourth);
+  for (int i = 0; i < 4; ++i)
+    pinger.Ping(MarkKind::Spot, {}, {100.f * static_cast<float>(i + 1), 0, 0},
+                t + 210 * kSecond + static_cast<std::uint64_t>(i) * 3 * kSecond);
+  CHECK(std::ranges::count_if(pinger.Alive(t + 225 * kSecond), [](const proto::Mark &m) {
+          return m.kind == MarkKind::Target;
+        }) == 1);
+
+  comms::Board board;
+  board.Add(MarkOf(2, 1, MarkKind::Target, turret), t);
+  board.Add(MarkOf(2, 2, MarkKind::Enemy, turret), t); // a ping of it: both shown
+  CHECK(board.Size() == 2);
+  // Its next target replaces its last; another player's stays.
+  board.Add(MarkOf(3, 1, MarkKind::Target, turret), t);
+  auto changes = board.Add(MarkOf(2, 3, MarkKind::Target, npc), t + kSecond);
+  REQUIRE(changes.size() == 2);
+  CHECK(changes[0].kind == comms::Change::Kind::Hide);
+  CHECK(changes[0].mark.id == 1);
+  CHECK(changes[1].mark.seconds == 60);
+  CHECK(board.Size() == 3);
+  // Three pings of player 2 more: its target stays (not in the cap).
+  for (std::uint32_t i = 0; i < 3; ++i)
+    board.Add(MarkOf(2, 10 + i, MarkKind::Spot, {}, {50.f * static_cast<float>(i + 1), 0, 0}),
+              t + 2 * kSecond);
+  CHECK(Count(board.Forget(2), comms::Change::Kind::Hide) == 4); // 3 pings + its target
+  // Cleared (withdrawn) and expired (60 s).
+  CHECK(Count(board.Add(MarkOf(3, 1, MarkKind::None), t), comms::Change::Kind::Hide) == 1);
+  board.Add(MarkOf(3, 2, MarkKind::Target, npc), t);
+  CHECK(board.Expire(t + 59 * kSecond).empty());
+  CHECK(board.Expire(t + 60 * kSecond).size() == 1);
+}
+
 TEST_CASE("links: consent both ways, auto and ask, broken by either side") {
   using proto::LinkMode;
   const proto::Link everyone{.player = 1, .mode = LinkMode::Everyone};
@@ -390,6 +455,22 @@ TEST_CASE("comms in a session: pings to everyone, tags to the linked only, state
     CHECK(heard[0].marks.size() <= static_cast<std::size_t>(comms::kHostMarkBurst) + 1);
     CHECK(heard[0].marks.size() >= 3);
     CHECK(host->CommsDropped() > 0);
+  }
+  SUBCASE("a team target reaches every other player; its marker vanishing ends it") {
+    b->SendMark({.id = 4, .kind = MarkKind::Target, .target = {TargetKind::Entity, 0x7E44E7}});
+    Run(all, heard, [&] { return !heard[0].marks.empty() && !heard[1].marks.empty(); });
+    REQUIRE(heard[1].marks.size() == 1);
+    CHECK(heard[1].marks[0].kind == MarkKind::Target);
+    CHECK(heard[1].marks[0].from == 3);
+    // Each game's board drops it on the marker's PlayerLeft.
+    comms::Board board;
+    board.Add(heard[1].marks[0], 1);
+    all.pop_back();
+    b.reset();
+    std::vector<Heard> after;
+    Run(all, after, [&] { return !after[1].left.empty(); });
+    REQUIRE(after[1].left.size() == 1);
+    CHECK(Count(board.Forget(after[1].left[0]), comms::Change::Kind::Hide) == 1);
   }
   SUBCASE("a tag reaches the linked players only, in both directions") {
     const proto::Tag tag{

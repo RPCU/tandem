@@ -85,7 +85,7 @@ are the user's to confirm.
    input, delivered as the HUD's on-screen message on the others' screens
    ("NAME: text", 120 characters, rate-limited like pings): one appended
    message, no log. Build it only on request.
-7. **The party HUD** (`presence` branch, `docs/architecture/presence.md`
+7. **The party HUD** (`presence` branch, its design file
    there) is not duplicated. Pings and waypoints are mappins: their
    direction off screen is the mappin's own clamping at the screen's edge,
    so no second arrow; names come from the same `TandemNative.PlayerName`.
@@ -95,18 +95,74 @@ are the user's to confirm.
    flag could hold back a ping's sound for a player in a menu; neither is
    needed for this to work.
 
+## The team target: "Mark target"
+
+"Tell team mates to target a specific target", from the game's own
+quickhack panel. Built 2026-11-19, not run in game.
+
+- **An extra entry in the quickhack panel**, "Mark target", on whatever
+  the panel opens on: NPCs, devices (cameras, turrets...), vehicles. It is
+  offered only while we are linked with at least one partner. It never
+  takes a cyberdeck slot. Every target builds its panel list
+  (`ScriptedPuppet`, `Device`, `VehicleObject`'s `SendQuickhackCommands`)
+  and hands it to the panel in one event (`RevealInteractionWheel`).
+  `QuickhacksListGameController.OnQuickhackStarted` is wrapped to append
+  our `QuickhackData` after the deck's programs. The player's equipped
+  programs are never touched.
+  - Its look: the Ping program's icon and category, read from
+    `QuickHack.FreePingHack`. Cost 0, instant. Its label is "Clear the
+    team mark" on our own current target.
+  - **No TweakXL record and no action behind it.** Choosing it goes
+    through `ApplyQuickHack`, wrapped: the game's own accept animation
+    plays, then our mark. No `QuickSlotCommandUsed` reaches the target, so
+    there is no upload, no RAM, no trace, no combat start, no alert and no
+    reveal on our side. `ApplyQuickhackSelection` is skipped for it: it
+    would hand the target an entry with no action.
+  - A record cloned from a vanilla quickhack would have needed an action
+    class to neutralize every one of those effects. Leaving the action out
+    is the cleaner path.
+- **Without a cyberdeck** (no program at all), the panel shows its own "no
+  quickhacks" page and hides the list. Our entry is not added: the scanner
+  key's ping, and the shared scanner tag, remain the way to point at
+  something. With a deck whose programs do not apply to this target (all
+  locked), the entry is still offered.
+- **The mark**: a new `Mark` kind, `Target` (7; unreleased, so no version
+  bump). Every partner sees "NAME: Target" on the entity (world, minimap,
+  map; tooltip "NAME's target: focus it"), with its own icon and sound.
+  The target is outlined for as long as the mark lasts, as a shared tag is
+  drawn (a `RevealObjectEvent`, reason `TandemTeamTarget`). Our own side
+  shows the mark only.
+- **Lifetime**: one team target per player. It lasts until:
+  - the target dies or is destroyed (our game watches it twice a second:
+    `IsDead`, a vehicle's `IsDestroyed`, or gone from our world);
+  - we choose it again on the same target (cleared);
+  - we mark another target (replaced: receivers drop a sender's last
+    target on its next one);
+  - 60 s pass;
+  - we vanish (`PlayerLeft`: every board forgets our marks).
+
+  Pings and team targets never replace each other, and a team target is
+  not counted in the three pings a player may show. `pings = off` does not
+  hide a team target (it is an order, not chatter).
+
+- Only shared things can be marked: a shared NPC, a static entity, a
+  player. An entity that exists in one game only (a car copy, a body) is
+  refused with a notice.
+- Test command: `tools/game.sh cmd comms target` marks what V looks at.
+  The mock player: `--mark-target ID|nearest`. Scenario `comms-target`.
+
 ## Protocol
 
 Four messages, appended after `ShotHit` (no version bump; the `presence`
 branch appends its own three: whichever merges second goes after the
 other's, before either ships). All on the Event channel.
 
-| Message    | Kind     | Size  | Carries                                                                                                                |
-| ---------- | -------- | ----- | ---------------------------------------------------------------------------------------------------------------------- |
-| `Mark`     | one-shot | < 40  | a ping: sender, its id, kind (spot, enemy, device, loot, vehicle, danger; none: taken back), target, position, seconds |
-| `Tag`      | one-shot | < 200 | a scan tag (until off) or a reveal (seconds) of up to 16 targets, on or off                                            |
-| `Link`     | state    | small | whom a player consents to share tags with: nobody, the listed players, everyone but the listed                         |
-| `Waypoint` | state    | < 32  | a player's waypoint: none, a map pin, a tracked map point; where                                                       |
+| Message    | Kind     | Size  | Carries                                                                                                                             |
+| ---------- | -------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `Mark`     | one-shot | < 40  | a ping: sender, its id, kind (spot, enemy, device, loot, vehicle, danger, team target; none: taken back), target, position, seconds |
+| `Tag`      | one-shot | < 200 | a scan tag (until off) or a reveal (seconds) of up to 16 targets, on or off                                                         |
+| `Link`     | state    | small | whom a player consents to share tags with: nobody, the listed players, everyone but the listed                                      |
+| `Waypoint` | state    | < 32  | a player's waypoint: none, a map pin, a tracked map point; where                                                                    |
 
 A target (`TargetRef`) is named the same in every game: a shared NPC by
 its `NpcId` (its proxy on a guest), a placed entity by its static

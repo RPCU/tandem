@@ -228,3 +228,31 @@ ignoreTransparent)` and `GetLookAtPosition` (`:108382`); the camera's
   `ui_hacking_access_granted`, `ui_hacking_close`, `ui_phone_sms`,
   `ui_jingle_chip_malfunction` all occur in vanilla calls; how each sounds
   as a ping is for the ear.
+- **The quickhack panel's list** (for "Mark target", 2026-11-19, read, not
+  run). Each target builds its own list in `SendQuickhackCommands`:
+  - `ScriptedPuppet` (`:23719`: `GetAllChoices`, then
+    `TranslateChoicesIntoQuickSlotCommands` against
+    `RPGManager.GetPlayerQuickHackListWithQuality`, the deck's programs);
+  - `VehicleObject` (`:88238`) and `Device` (`:100092`): `GetRemoteActions`,
+    then `QuickHackableHelper.TranslateActionsIntoQuickSlotCommands`.
+
+  Each sends one `RevealInteractionWheel` (`:118949`: `lookAtObject`,
+  `commands: [QuickhackData]`, `shouldReveal`) to the UI. There
+  `QuickhacksListGameController.OnQuickhackStarted` (`:206512` class)
+  populates the list from `commands` (`PopulateData`). If `commands[0]`
+  has `m_noQuickhackData` (no program at all: `LocKey#42171`), the list is
+  hidden for the "no quickhacks" page.
+
+  `QuickhackData` (`:106119`) is a plain script class. The list item reads
+  `m_title`, `m_icon` (a TweakDB id, through `RequestSetImage`),
+  `m_category` (guarded by `IsDefined`), `m_cost`, `m_costRaw`, `m_type`.
+  Choosing an entry calls `ApplyQuickHack(shouldUseUI)`: the accept
+  animation, then `QuickSlotCommandUsed { action = m_action }` queued to
+  `m_actionOwner`. That action is what uploads, costs RAM and can trace.
+  `ApplyQuickhackSelection` sends the target a `QHackWheelItemChangedEvent`
+  carrying the entry, whose `m_action` the target reads for area-hack
+  previews (`:105969`). An entry with no action is safe once those two are
+  bypassed.
+
+  The Ping program's own record, for an icon: `QuickHack.FreePingHack`
+  (`ObjectActionUI().CaptionIcon().TexturePartID()`, `HackCategory()`).

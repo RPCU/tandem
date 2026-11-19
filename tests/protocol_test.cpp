@@ -594,7 +594,9 @@ TEST_CASE("comms: pings, tags, links and waypoints survive encoding, small, reli
   CHECK(Encode(squad).size() < 200);
 
   // Kinds this version does not know, lists past their caps: refused.
-  CHECK_FALSE(Decode(Encode(Mark{.kind = static_cast<MarkKind>(7)})).has_value());
+  CHECK_FALSE(Decode(Encode(Mark{.kind = static_cast<MarkKind>(8)})).has_value());
+  RoundTrips(Mark{
+      .from = 2, .id = 9, .kind = MarkKind::Target, .target = {TargetKind::Entity, 0xC0FFEEull}});
   CHECK_FALSE(Decode(Encode(Mark{.target = {static_cast<TargetKind>(4), 1}})).has_value());
   CHECK_FALSE(Decode(Encode(Tag{.reason = static_cast<TagReason>(2)})).has_value());
   squad.targets.push_back({TargetKind::Npc, 2});

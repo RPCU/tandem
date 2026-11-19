@@ -89,7 +89,7 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   // Comms: kinds the receiver does not know, lists past their caps.
   const auto target = [](const TargetRef &ref) { return ref.kind <= TargetKind::Player; };
   if (const auto *mark = std::get_if<Mark>(&message);
-      mark && (mark->kind > MarkKind::Danger || !target(mark->target)))
+      mark && (mark->kind > MarkKind::Target || !target(mark->target)))
     return std::nullopt;
   if (const auto *tag = std::get_if<Tag>(&message);
       tag && (tag->reason > TagReason::Reveal || tag->targets.size() > kMaxTagTargets ||

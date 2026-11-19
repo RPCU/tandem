@@ -57,6 +57,13 @@ public:
                                   const proto::Vec3 &position, std::uint64_t nowUs);
   // Withdraw our mark `id` (nullopt: none such alive).
   std::optional<proto::Mark> Withdraw(std::uint32_t id, std::uint64_t nowUs);
+  // Our team target (the "Mark target" quickhack): a new one replaces our
+  // last (receivers do the same: one per sender), the same target again
+  // takes it back. Rate-limited with the pings, not counted in their cap.
+  std::optional<proto::Mark> Target(const proto::TargetRef &target, const proto::Vec3 &position,
+                                    std::uint64_t nowUs);
+  // Take our team target back (it died, was destroyed); nullopt: none.
+  std::optional<proto::Mark> ClearTarget(std::uint64_t nowUs);
   // Our marks alive now.
   std::vector<proto::Mark> Alive(std::uint64_t nowUs) const;
   void Clear() { m_live.clear(); }
@@ -80,7 +87,9 @@ struct Change {
   proto::Mark mark;
 };
 
-// A receiver's marks on show.
+// A receiver's marks on show. A sender's team target (MarkKind::Target)
+// replaces its last one and is not counted in its kMarksPerPlayer; pings and
+// team targets never replace each other.
 class Board {
 public:
   std::vector<Change> Add(const proto::Mark &mark, std::uint64_t nowUs);

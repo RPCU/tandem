@@ -248,6 +248,9 @@ struct Options {
   int revealSeconds{0};
   std::optional<Vec3> waypoint;
   int waypointClearSeconds{-1};
+  // A team target (the "Mark target" quickhack) 5 s in: a shared NPC's id,
+  // or "nearest" (empty: never).
+  std::string markTarget;
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -417,6 +420,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     the Ping quickhack (linked players only)\n"
          "  --waypoint X,Y,Z   our waypoint (a map pin) there, once another player is in\n"
          "  --waypoint-clear N take the waypoint away N seconds after setting it\n"
+         "  --mark-target ID   5 seconds after another player is in, make the shared NPC\n"
+         "                     ID (or \"nearest\") our team target, as the Mark target\n"
+         "                     quickhack does\n"
          "  --latency MS       a bad network: MS added each way\n"
          "  --jitter MS        up to MS more at random, each way (the order kept)\n"
          "  --loss PERCENT     PERCENT of the datagrams lost, each way\n"
@@ -729,7 +735,11 @@ Options Parse(int argc, char **argv) {
       options.waypoint = Point(flag, value);
     else if (flag == "--waypoint-clear")
       options.waypointClearSeconds = Number<int>(value);
-    else if (flag == "--regroup-answer") {
+    else if (flag == "--mark-target") {
+      if (value != "nearest")
+        Number<std::uint32_t>(value); // a number, or the usage
+      options.markTarget = std::string(value);
+    } else if (flag == "--regroup-answer") {
       if (value == "yes")
         options.regroupAnswer = Options::Answer::Yes;
       else if (value == "no")
@@ -2397,7 +2407,8 @@ int main(int argc, char **argv) {
   int pingStep = 0;
   tandem::proto::TargetRef lastPing;
   Vec3 lastPingAt{};
-  bool tagOn = false, linkAsked = false, waypointSet = false, waypointCleared = false;
+  bool tagOn = false, linkAsked = false, waypointSet = false, waypointCleared = false,
+       targetMarked = false;
   auto nextPing = std::chrono::steady_clock::now(), nextTag = nextPing, nextReveal = nextPing,
        waypointSetAt = nextPing;
 
@@ -3309,6 +3320,27 @@ int main(int argc, char **argv) {
       if (!reveal.targets.empty()) {
         Log("revealed {} npc(s) for 10 s (ping quickhack)", reveal.targets.size());
         endpoint->SendTag(std::move(reveal));
+      }
+    }
+    if (!options.markTarget.empty() && !targetMarked && together(5)) {
+      targetMarked = true;
+      std::optional<tandem::proto::NpcSpawn> npc;
+      if (options.markTarget == "nearest")
+        npc = nearestNpc();
+      else if (const auto it =
+                   endpoint->SharedNpcs().find(Number<std::uint32_t>(options.markTarget));
+               it != endpoint->SharedNpcs().end())
+        npc = it->second;
+      const tandem::proto::NpcId id =
+          npc ? npc->npc
+              : (options.markTarget == "nearest" ? 0 : Number<std::uint32_t>(options.markTarget));
+      if (id == 0) {
+        Log("team target: no shared NPC to mark");
+      } else if (const auto mark =
+                     pinger.Target({tandem::proto::TargetKind::Npc, id},
+                                   npc ? npc->position : Vec3{}, tandem::net::NowUs())) {
+        endpoint->SendMark(*mark);
+        Log("team target: mark {} on npc {}", mark->id, id);
       }
     }
     if (options.waypoint && !waypointSet && endpoint->IsJoined() && togetherSince) {

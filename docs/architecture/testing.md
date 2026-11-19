@@ -151,7 +151,8 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   as an enemy and at once again as a danger, then taken back), `--tag N`
   (scan tag on and off of the nearest shared NPC), `--reveal N` (up to 4
   shared NPCs for 10 s, as the Ping quickhack), `--waypoint X,Y,Z` and
-  `--waypoint-clear N`. It logs every mark, tag, link and waypoint heard.
+  `--waypoint-clear N`, `--mark-target ID|nearest` (a team target, as the
+  "Mark target" quickhack). It logs every mark, tag, link and waypoint heard.
 - **A bad network** (any mode): `--latency MS`, `--jitter MS`,
   `--loss PERCENT`, `--reorder PERCENT`, each way. A UDP relay with a link
   model on each direction (`net::Shaper`, `core/src/shaping.cpp`) sits

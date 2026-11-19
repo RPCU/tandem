@@ -80,7 +80,9 @@ void Comms::Queue(const std::vector<comms::LinkChange> &changes) {
 
 void Comms::Apply(const proto::Message &message, std::uint64_t nowUs) {
   if (const auto *mark = std::get_if<proto::Mark>(&message)) {
-    if (!m_pings || mark->from == m_you)
+    // pings = off silences pings; a team target is an order: always shown.
+    if (mark->from == m_you ||
+        (!m_pings && mark->kind != proto::MarkKind::Target && mark->kind != proto::MarkKind::None))
       return;
     ++m_heardMarks;
     Queue(m_board.Add(*mark, nowUs));
@@ -170,6 +172,32 @@ std::int32_t Comms::Ping(proto::MarkKind kind, const proto::TargetRef &target,
   if (mark->kind == proto::MarkKind::None)
     return 3;
   return mark->kind == proto::MarkKind::Danger && kind != proto::MarkKind::Danger ? 2 : 1;
+}
+
+std::int32_t Comms::Target(const proto::TargetRef &target, const proto::Vec3 &position,
+                           std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  if (m_you == proto::kNoPlayer || target.kind == proto::TargetKind::None)
+    return 0;
+  auto mark = m_pinger.Target(target, position, nowUs);
+  if (!mark)
+    return 0;
+  mark->from = m_you;
+  ++m_sentMarks;
+  m_outbound.push_back(*mark);
+  Queue(m_board.Add(*mark, nowUs));
+  return mark->kind == proto::MarkKind::None ? 3 : 1;
+}
+
+bool Comms::ClearTarget(std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  auto mark = m_pinger.ClearTarget(nowUs);
+  if (!mark || m_you == proto::kNoPlayer)
+    return false;
+  mark->from = m_you;
+  m_outbound.push_back(*mark);
+  Queue(m_board.Add(*mark, nowUs));
+  return true;
 }
 
 void Comms::Tag(proto::TagReason reason, bool on, std::uint8_t seconds,

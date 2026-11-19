@@ -58,6 +58,9 @@ public class TandemComms {
   private let m_offerAt: Float;
   private let m_offerListening: Bool;
   private let m_offerHeld: Bool;
+  // Our team target (none: no hash), and when we last looked at it.
+  public let m_ownTarget: EntityID;
+  private let m_ownTargetSeen: Float;
 
   public static func Of(game: GameInstance) -> ref<TandemComms> {
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
@@ -112,6 +115,8 @@ public class TandemComms {
         return n"car";
       case 6:
         return n"failed_crossing";
+      case 7:
+        return n"Aim";
       default:
         return n"dynamic_event";
     }
@@ -129,13 +134,123 @@ public class TandemComms {
         return "Vehicle";
       case 6:
         return "Danger";
+      case 7:
+        return "Target";
       default:
         return "Here";
     }
   }
 
   public static func SoundOf(kind: Int32) -> CName {
+    if kind == 7 {
+      return n"ui_hacking_access_granted";
+    }
     return kind == 6 ? n"ui_jingle_chip_malfunction" : n"ui_menu_map_pin_created";
+  }
+
+  // ---- the team target: the "Mark target" quickhack ----
+
+  // Offered on top of the panel's own programs (never in a cyberdeck slot)
+  // while we are linked with someone: the wrap of
+  // QuickhacksListGameController.OnQuickhackStarted, below.
+  public static func OfferMarkTarget(value: ref<RevealInteractionWheel>) -> Void {
+    let comms = TandemComms.Of(GetGameInstance());
+    if !IsDefined(comms) || comms.m_you == 0u || !TandemCommsNative.AnyLinked() {
+      return;
+    }
+    let target = value.lookAtObject;
+    let owner = n"";
+    for command in value.commands {
+      if command.m_tandemMarkTarget {
+        return; // offered already
+      }
+      if command.m_noQuickhackData {
+        // No cyberdeck program at all: the panel shows its own "no
+        // quickhacks" page and hides the list; the ping key stays the way.
+        return;
+      }
+      owner = command.m_actionOwnerName;
+    }
+    let data = new QuickhackData();
+    data.m_tandemMarkTarget = true;
+    data.m_actionOwner = target.GetEntityID();
+    data.m_actionOwnerName = owner;
+    let clears = comms.m_ownTarget == target.GetEntityID();
+    data.m_title = clears ? "Clear the team mark" : "Mark target";
+    data.m_description = clears
+      ? "Take this target's mark off your partners' HUDs."
+      : "Show your linked partners this target to focus: marked on their HUD and outlined, until it goes down, you mark another or you choose it again. No RAM, no trace.";
+    // The Ping program's look (an icon of the game's own, its category).
+    let ping = TweakDBInterface.GetObjectActionRecord(t"QuickHack.FreePingHack");
+    if IsDefined(ping) {
+      if IsDefined(ping.ObjectActionUI()) && IsDefined(ping.ObjectActionUI().CaptionIcon()) && IsDefined(ping.ObjectActionUI().CaptionIcon().TexturePartID()) {
+        data.m_icon = ping.ObjectActionUI().CaptionIcon().TexturePartID().GetID();
+      }
+      data.m_category = ping.HackCategory();
+      if IsDefined(ping.GameplayCategory()) {
+        data.m_iconCategory = ping.GameplayCategory().IconName();
+      }
+    }
+    data.m_type = IsDefined(target as ScriptedPuppet) ? gamedataObjectActionType.PuppetQuickHack : gamedataObjectActionType.DeviceQuickHack;
+    data.m_isLocked = false;
+    data.m_actionState = EActionInactivityReson.Ready;
+    data.m_isInstant = true;
+    data.m_cost = 0;
+    data.m_costRaw = 0;
+    data.m_uploadTime = 0.0;
+    data.m_duration = 0.0;
+    data.m_ICELevelVisible = false;
+    ArrayPush(value.commands, data);
+  }
+
+  // The panel ran it: our team target is what the panel aimed at.
+  public static func MarkTargetFromPanel(game: GameInstance, id: EntityID) -> Void {
+    let comms = TandemComms.Of(game);
+    let target = GameInstance.FindEntityByID(game, id) as GameObject;
+    if IsDefined(comms) && IsDefined(target) {
+      comms.MarkTarget(target);
+    }
+  }
+
+  public func MarkTarget(target: ref<GameObject>) -> Int32 {
+    if this.m_you == 0u || !IsDefined(target) {
+      return 0;
+    }
+    let npc = this.NpcOf(target);
+    let player = IsDefined(this.m_system) ? this.m_system.PlayerOfPuppet(target.GetEntityID()) : 0u;
+    let entity = EntityID.FromHash(0ul);
+    if npc == 0u && player == 0u {
+      if !EntityID.IsStatic(target.GetEntityID()) {
+        TandemNative.Log("comms: team target not marked: this game's own entity, nobody else has it");
+        this.Notice("Only shared targets can be marked");
+        return 0;
+      }
+      entity = target.GetEntityID();
+    }
+    let result = TandemCommsNative.MarkTarget(npc, player, entity, target.GetWorldPosition());
+    if result == 1 {
+      this.m_ownTarget = target.GetEntityID();
+      this.m_ownTargetSeen = this.m_now;
+    } else if result == 3 {
+      this.m_ownTarget = EntityID.FromHash(0ul);
+    }
+    TandemNative.Log(s"comms: team target (npc \(npc), static \(EntityID.IsDefined(entity))): \(result == 1 ? "marked" : result == 3 ? "cleared" : "not sent")");
+    return result;
+  }
+
+  // Ours went down (dead, destroyed) or out of this world: taken back.
+  private func WatchOwnTarget() -> Void {
+    if !EntityID.IsDefined(this.m_ownTarget) {
+      return;
+    }
+    let target = GameInstance.FindEntityByID(this.m_game, this.m_ownTarget) as GameObject;
+    let car = target as VehicleObject;
+    let gone = !IsDefined(target) || target.IsDead() || (IsDefined(car) && car.IsDestroyed());
+    if gone {
+      this.m_ownTarget = EntityID.FromHash(0ul);
+      let cleared = TandemCommsNative.ClearTarget();
+      TandemNative.Log(s"comms: our team target went down or away: \(cleared ? "cleared" : "already gone")");
+    }
   }
 
   public func Start(game: GameInstance, system: ref<TandemSystem>) -> Void {
@@ -181,6 +296,10 @@ public class TandemComms {
     if now - this.m_lastWaypointPoll >= 1.0 || now < this.m_lastWaypointPoll {
       this.m_lastWaypointPoll = now;
       this.PollWaypoint();
+    }
+    if now - this.m_ownTargetSeen >= 0.5 || now < this.m_ownTargetSeen {
+      this.m_ownTargetSeen = now;
+      this.WatchOwnTarget();
     }
     if this.m_offerFrom != 0u && now - this.m_offerAt > 15.0 {
       TandemNative.Log(s"comms: link request of \(this.NameOf(this.m_offerFrom)) left unanswered");
@@ -331,6 +450,9 @@ public class TandemComms {
     data.icon = TandemComms.Icon(e.type);
     data.label = ours ? TandemComms.Word(e.type) : s"\(this.NameOf(e.player)): \(TandemComms.Word(e.type))";
     data.description = ours ? "Your ping" : s"\(this.NameOf(e.player))'s ping";
+    if e.type == 7 {
+      data.description = ours ? "Your team target" : s"\(this.NameOf(e.player))'s target: focus it";
+    }
     let mark = new TandemCommsMark();
     mark.player = e.player;
     mark.id = e.id;
@@ -345,6 +467,11 @@ public class TandemComms {
       mark.mappin = this.RegisterAt(at, data);
     }
     ArrayPush(this.m_marks, mark);
+    // A partner's team target is outlined too, the way a shared tag is
+    // (ours: the mark alone, nothing revealed on our side).
+    if e.type == 7 && !ours && IsDefined(target) && EntityID.IsDefined(mark.target) {
+      this.RevealTarget(target, true, e.seconds);
+    }
     let player = GetPlayer(this.m_game);
     if IsDefined(player) {
       GameObject.PlaySoundEvent(player, TandemComms.SoundOf(e.type));
@@ -358,12 +485,34 @@ public class TandemComms {
     for mark in this.m_marks {
       if mark.player == player && mark.id == id {
         this.Unregister(mark.mappin);
+        if mark.kind == 7 && player == this.m_you {
+          this.m_ownTarget = EntityID.FromHash(0ul); // expired, replaced, cleared
+        }
+        if mark.kind == 7 && player != this.m_you && EntityID.IsDefined(mark.target) {
+          let body = GameInstance.FindEntityByID(this.m_game, mark.target) as GameObject;
+          if IsDefined(body) {
+            this.RevealTarget(body, false, 0.0);
+          }
+        }
         TandemNative.Log(s"comms: hid ping \(id) of player \(player)");
       } else {
         ArrayPush(kept, mark);
       }
     }
     this.m_marks = kept;
+  }
+
+  // As a linked player's reveal (Outline), under its own reason.
+  private func RevealTarget(target: ref<GameObject>, on: Bool, seconds: Float) -> Void {
+    let evt = new RevealObjectEvent();
+    evt.reveal = on;
+    evt.reason.reason = n"TandemTeamTarget";
+    let player = GetPlayer(this.m_game);
+    if IsDefined(player) {
+      evt.reason.sourceEntityId = player.GetEntityID();
+    }
+    evt.lifetime = on ? seconds : 0.0;
+    target.QueueEvent(evt);
   }
 
   private func Data(data: ref<TandemCommsMappinData>) -> MappinData {
@@ -708,9 +857,19 @@ public class TandemComms {
   }
 
   // tools/game.sh cmd: comms report | comms ping | comms link [NAME] |
-  // comms unlink [NAME] | comms accept | comms tag
+  // comms unlink [NAME] | comms accept | comms tag | comms target
   public func Command(command: String) -> Void {
-    if Equals(command, "comms report") {
+    if Equals(command, "comms target") {
+      // As the "Mark target" quickhack on what V looks at (the panel itself
+      // is checked by hand: scenario comms-target).
+      let player = GetPlayer(this.m_game);
+      let target = IsDefined(player) ? GameInstance.GetTargetingSystem(this.m_game).GetLookAtObject(player, true, true) : null;
+      if !IsDefined(target) {
+        TandemNative.Log("comms: no target to mark");
+      } else {
+        this.MarkTarget(target);
+      }
+    } else if Equals(command, "comms report") {
       TandemNative.Log(TandemCommsNative.Report());
       TandemNative.Log(s"comms: \(ArraySize(this.m_marks)) ping marker(s), \(ArraySize(this.m_waypoints)) waypoint marker(s) here");
       for mark in this.m_marks {
@@ -841,4 +1000,45 @@ protected func UpdateIcon() {
   if NotEquals(icon, n"") {
     inkImageRef.SetTexturePart(this.iconWidget, icon);
   }
+}
+
+// ---- the "Mark target" quickhack in the panel ----
+
+// Our entry, apart from the cyberdeck's programs: no action behind it.
+@addField(QuickhackData)
+public let m_tandemMarkTarget: Bool;
+
+// The panel's list as the target built it, with ours added on top of the
+// equipped programs (never a slot of the deck) while we are linked.
+@wrapMethod(QuickhacksListGameController)
+protected cb func OnQuickhackStarted(value: ref<RevealInteractionWheel>) -> Bool {
+  if IsDefined(value) && value.shouldReveal && IsDefined(value.lookAtObject) {
+    TandemComms.OfferMarkTarget(value);
+  }
+  return wrappedMethod(value);
+}
+
+// Ours, chosen: the game's own accept animation, then our mark. Nothing is
+// uploaded (no RAM, no upload, no trace, no alert: no action reaches the
+// target).
+@wrapMethod(QuickhacksListGameController)
+private final func ApplyQuickHack(shouldUseUI: Bool) -> Bool {
+  if IsDefined(this.m_selectedData) && this.m_selectedData.m_tandemMarkTarget {
+    if shouldUseUI {
+      this.PlayChoiceAnimation();
+    }
+    TandemComms.MarkTargetFromPanel(this.m_gameInstance, this.m_selectedData.m_actionOwner);
+    return true;
+  }
+  return wrappedMethod(shouldUseUI);
+}
+
+// The target hears of the selection to preview area hacks from its action:
+// ours has none.
+@wrapMethod(QuickhacksListGameController)
+private final func ApplyQuickhackSelection() {
+  if IsDefined(this.m_selectedData) && this.m_selectedData.m_tandemMarkTarget {
+    return;
+  }
+  wrappedMethod();
 }
