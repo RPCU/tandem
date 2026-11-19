@@ -147,6 +147,22 @@ Config LoadConfig(const std::filesystem::path &path) {
         config.timeHostFull = true;
       else
         log::Warn("tandem.ini:{}: time_host is bubble or full", number);
+    } else if (key == "link") {
+      if (value == "auto")
+        config.link = Config::Link::Auto;
+      else if (value == "ask")
+        config.link = Config::Link::Ask;
+      else if (value == "off")
+        config.link = Config::Link::Off;
+      else
+        log::Warn("tandem.ini:{}: link is auto, ask or off", number);
+    } else if (key == "pings") {
+      if (value == "on" || value == "true")
+        config.pings = true;
+      else if (value == "off" || value == "false")
+        config.pings = false;
+      else
+        log::Warn("tandem.ini:{}: pings is on or off", number);
     } else if (key == "trace") {
       config.trace = value == "on" || value == "true";
     } else if (key == "port") {

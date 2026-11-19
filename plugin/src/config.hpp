@@ -35,6 +35,11 @@
 //                        ; the single-player slow motion whole on its own game (the
 //                        ; NPCs it shares follow the bubbles' rules); bubble puts its
 //                        ; world back to normal speed and slows only the NPCs
+//   link = auto          ; who sees your scanner tags and Ping reveals
+//                        ; (docs/architecture/comms.md): auto, every partner
+//                        ; (until you break it); ask, the partners you link with
+//                        ; (a request they accept); off, nobody
+//   pings = on           ; off: you neither send nor see pings
 
 #include "tandem/relay.hpp"
 
@@ -80,6 +85,10 @@ struct Config {
   // bubbles only (false), or the whole single-player slow motion with what
   // is shared exempted (true).
   bool timeHostFull{true};
+  // Comms (docs/architecture/comms.md): the link's default, and pings.
+  enum class Link { Auto, Ask, Off };
+  Link link{Link::Auto};
+  bool pings{true};
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;
