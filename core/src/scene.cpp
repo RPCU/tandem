@@ -161,6 +161,11 @@ std::optional<proto::SceneLine> Stage::Hide(std::uint64_t line, std::uint64_t ho
 
 // ---- guest ----
 
+bool Stage::Casts(proto::NpcId npc) const {
+  return On() &&
+         std::ranges::any_of(m_cast.actors, [&](const auto &actor) { return actor.npc == npc; });
+}
+
 bool Replay::Acts(proto::NpcId npc) const {
   return std::ranges::any_of(m_cast, [&](const auto &actor) { return actor.npc == npc; });
 }

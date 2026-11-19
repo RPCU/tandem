@@ -878,6 +878,9 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     // its end lets its proxies go).
     if (resync && !m_story.SceneOn())
       Send(peer, proto::SceneState{});
+    // And no restriction is on (a guest that missed the lift frees its V).
+    if (resync && !m_story.RestrictionsOn())
+      Send(peer, proto::StoryRestrictions{.player = m_you});
   }
 }
 
@@ -2075,6 +2078,20 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
     state->player = m_you;
   if (auto *effect = std::get_if<proto::StoryEffect>(&message))
     effect->player = m_you;
+  if (auto *restrictions = std::get_if<proto::StoryRestrictions>(&message)) {
+    restrictions->player = m_you;
+    // One set, said one way (Decode refuses any other on the guest's side).
+    auto &effects = restrictions->effects;
+    std::ranges::sort(effects);
+    effects.erase(std::unique(effects.begin(), effects.end()), effects.end());
+    if (effects.size() > proto::kMaxStoryRestrictions)
+      effects.resize(proto::kMaxStoryRestrictions);
+    // A repeat of the set the guests have is not sent again.
+    if (!m_story.Note(message))
+      return;
+    Broadcast(message);
+    return;
+  }
   if (const auto *call = std::get_if<proto::PhoneCall>(&message)) {
     m_calls.Update(*call);
     message = *m_calls.Call();

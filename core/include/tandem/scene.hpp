@@ -60,6 +60,8 @@ public:
   bool On() const { return m_state.scene != 0; }
   std::uint32_t Play() const { return m_play; }
   const proto::SceneState &State() const { return m_state; }
+  // `npc` acts in the scene announced now (its cast as last sent).
+  bool Casts(proto::NpcId npc) const;
 
 private:
   bool Speaking(std::uint64_t hostNowUs) const;
