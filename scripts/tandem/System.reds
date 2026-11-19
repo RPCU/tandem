@@ -854,6 +854,7 @@ public class TandemSystem extends ScriptableSystem {
     }
     TandemNative.PerfMark(4);
     TandemHacks.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
+    TandemBreach.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
     TandemNative.PerfMark(5);
     // Grapples, takedowns, carried bodies (Takedowns.reds); 0: not in a session.
     TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
@@ -1348,6 +1349,13 @@ public class TandemSystem extends ScriptableSystem {
         }
       }
       TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
+    } else if StrBeginsWith(command, "breach") {
+      // (test, Breach.reds) "breach": counts; "breach ap|npc [PROGRAMS]",
+      // "breach fail ap|npc": a breach of the nearest access point or
+      // proxy, its outcome faked as a minigame-skipping mod does.
+      let breacher = GetPlayer(this.GetGameInstance());
+      let near = IsDefined(this.m_npcs) && IsDefined(breacher) ? this.m_npcs.NearestProxy(breacher.GetWorldPosition()) : null;
+      TandemBreach.Get(this.GetGameInstance()).Command(command, near);
     } else if StrBeginsWith(command, "takedown") {
       TandemTakedowns.Get(this.GetGameInstance()).Command(command);
     } else if Equals(command, "test reset") {
