@@ -1,0 +1,69 @@
+# Down, revive, respawn
+
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md).
+
+### 13.20 Down, revive, respawn: the levers (2026-11-18, read in final.reds, not run)
+
+Used by `scripts/tandem/Revive.reds`; every line is [2.5-untested] until
+the `revive-*` scenarios pass.
+
+- Second Heart keeps V alive with a god-mode **override**, not a source:
+  `SecondHeartStatListener.OnStatChanged` (243476) calls
+  `GodModeSystem.EnableOverride(V, Immortal, n"SecondHeart")` /
+  `DisableOverride(V, n"SecondHeart")` (natives at 87686-87688). A plain
+  `AddGodMode` on V did not protect it (§13.11): tandem uses its own
+  override source. [2.5-untested]
+- With that health floor, `DeathDecisions.EnterCondition` (528038) enters
+  the death state when `HasSecondHeart` and health <= 1.1 % (and V is not
+  Invulnerable); otherwise only at the minimum or `GetIsDead`. Wrapping it
+  lets a co-op floor enter the same way. [2.5-untested]
+- `DeathEvents.OnEnter` (527754) → `HighLevelTransition.StartDeathEffects`
+  (283766): custom death animation, `ForceTemporaryUnequip`, `Vitals = 1`,
+  `global_death_enter` / `ui_death` sounds, then
+  `SetIsResurrectionAllowedBasedOnState` (283786): Second Heart allowed
+  (`ForcePreventResurrect == 0`, `HasSecondHeart`, not `DeathLand`, no
+  `BaseStatusEffect.ForceKill`) sets the permanent parameter
+  `isResurrectionAllowed`; else `DisplayDeathMenu = true` (unless the
+  `block_death_menu` fact) and health to 0. [2.5-untested]
+- `DeathDecisionsWithResurrection.ToResurrect` (528472): allowed and
+  3 s (`stateDuration`) in the state. Holding it false keeps V in the
+  death state with no menu; letting it go runs `ResurrectEvents` (529013:
+  applies `BaseStatusEffect.SecondHeart`, `Vitals = 2`, `PlayerResurrect`
+  anim event; on exit a `ResurrectEvent` → `PlayerPuppet.OnResurrected`
+  45083, health 100 %, or 20 % `IsMultiplayer()`). `ResurrectDecisions`
+  (528747) leaves when the `SecondHeart` effect has run out. Whether that
+  effect also starts the cyberware's cooldown is unknown. [2.5-untested]
+- No `gameDeathEvent` while Immortal, so none of `PlayerPuppet.OnDeath`
+  (45314: `BlockAllMenu`, autosaves invalidated) happens to a downed V.
+  [2.5-untested]
+- Vanilla multiplayer's downed player: `PlayerPuppet.OnIncapacitated`
+  (45051) enables the `Revive` interaction layer (on the player entity:
+  our NPC-template puppet has none) and makes it a `Deadbody` to senses;
+  `RefreshCPOVisionAppearance` (45061) outlines another client's
+  incapacitated player through walls (`VisionAppearance{fill 1, outline
+4, showThroughWalls}`, `VisionModeSystem.ForceVisionAppearance` /
+  `CancelForceVisionAppearance`, 49958). The `Revive` choice handler is
+  `ScriptedPuppet.OnInteraction` (22542). [2.5-untested]
+- An interaction prompt without an interaction component: write
+  `UIInteractions.InteractionChoiceHub` (`InteractionChoiceHubData{id,
+active, title, choices}`, 243011; `InteractionChoiceData{inputAction,
+isHoldAction, localizedName}`, 390126) and `VisualizersInfo{activeVisId,
+visIds}` (390208): the interaction widget (394589) shows the buttons
+  only while `activeVisId` is the hub's id. Input: `GameObject.
+RegisterInputListener(listener, n"Choice1")` (11423) and the listener's
+  `OnAction(ListenerAction, ListenerActionConsumer)` with
+  `IsButtonJustPressed` / `IsButtonJustReleased` (192853). [2.5-untested]
+- The HUD progress bar: `UI_HUDProgressBar` (195213) `Header`,
+  `BottomText`, `CompletedText`, `MessageType` (a `SimpleMessageType`
+  variant), `Progress` 0..1, `Active` (the Twintone scan drives it so,
+  451258). [2.5-untested]
+- Getting out of the death state for good is `ExplorationEvents.OnEnter`
+  (525154): `Vitals = 0`, the vitals and death anim features reset,
+  `global_death_exit`; `GroundDeathEvents.OnEnter` (528540) blocks movement
+  and sets the death camera's parameters first. The `dying` screen effect
+  is started only when V enters the death state already dead (527775) and
+  stopped by its exit; `GameObjectEffectHelper.BreakEffectLoopEvent(V,
+n"dying")` (106053) ends it by hand. [2.5-untested]
+- `BaseStatusEffect.PlayerInvulnerable` is what Bloodswell puts on V
+  (307839). `PlayerPuppet.SetInvisible` (43505) toggles V's visible object
+  (what NPC senses see). [2.5-untested]
