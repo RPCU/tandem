@@ -22,6 +22,12 @@ remote=".cache/tandem/src/$name" # relative to the remote home
 xwin=${TANDEM_XWIN:-$HOME/.cache/tandem/xwin}
 [ $# -gt 0 ] || set -- build:plugin
 
+# Never while someone plays there: a build takes the game's frames.
+if ssh "$host" 'pgrep -f "[C]yberpunk2077.exe" >/dev/null' && [ -z "${TANDEM_REMOTE_WHILE_PLAYING:-}" ]; then
+  echo "remote: the game runs on $host: build here instead (tools/build.sh picks)" >&2
+  exit 1
+fi
+
 if ! ssh "$host" test -d .cache/tandem/xwin/crt; then
   echo "remote: copying the Windows sysroot to $host (once)" >&2
   ssh "$host" mkdir -p .cache/tandem
