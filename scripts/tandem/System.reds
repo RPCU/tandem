@@ -683,6 +683,13 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0)");
     } else if Equals(command, "npc anims") {
       TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
+    } else if StrBeginsWith(command, "npc seek") {
+      // (test) "npc seek [RANGE]": the nearest NPC in a workspot within
+      // RANGE m (150), V moved within sharing range of it.
+      let range = StrLen(command) > 9 ? StringToFloat(StrAfterFirst(command, "seek ")) : 150.0;
+      if IsDefined(this.m_npcs) {
+        this.m_npcs.SeekWorkspot(range > 0.0 ? range : 150.0);
+      }
     } else if Equals(command, "proxy clear") {
       for test in this.m_proxyTests {
         GameInstance.GetDynamicEntitySystem().DeleteEntity(test.id);
