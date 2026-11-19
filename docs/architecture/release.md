@@ -110,6 +110,33 @@ logs what it found, and keeps it in `Runtime::installation`.
 
 ArchiveXL is read and reported, never required: tandem ships no archive.
 
+**Phantom Liberty is required on every game** (a user decision,
+2026-11-19). A V carries into the other games what it owns: items,
+cyberware, vehicles, perks. With the expansion those include records that
+only exist in a TweakDB with EP1 loaded, and the Relic tree; a game
+without them has nothing to show or apply for what the other one sends,
+and the shared world would differ between a game with EP1's content and
+one without. Rather than handle every such case, tandem requires it.
+
+- It cannot be read when the plugin loads: the game says so itself, later.
+  `TandemCoop.ReportExpansion` (Coop.reds) asks the game's own check, the
+  one its main menu uses for the expansion banner and logo:
+  `inkISystemRequestsHandler.IsAdditionalContentEnabled(n"EP1")` (owned,
+  installed and enabled), else `IsAdditionalContentOwned(n"EP1")`, and
+  tells the plugin (`TandemNative.SetExpansion`: 1 enabled, 2 owned but
+  not installed or not enabled, 3 not owned). It runs when either menu's
+  co-op pages are created and when a V enters a game, before any session
+  starts.
+- Without it `Runtime::Blocked` is true like for a startup problem, with
+  its own sentence in `Runtime::Problems` (`compat::ExpansionProblem`):
+  the Co-op page's popup says it, a session `tandem.ini` had chosen is
+  dropped (with a notice in game), nothing can be hosted or joined. The
+  hooks installed at load stay, passing through as in any solo game.
+- Until the game has said (`Expansion::Unknown`) nothing is blocked; no
+  session can start before a menu or a V exists, and both report first.
+- `versions.txt` of a report says what the game said, and whether
+  `archive/pc/ep1` holds files (all `tandem-report.exe` can know).
+
 **Co-op off** (`Runtime::Blocked`) means: no hook is installed (the game
 runs as without tandem), `Runtime::Choose` refuses any session (so
 `TandemNative.IsConfigured()` stays false and `TandemSystem` stays idle),
@@ -133,13 +160,14 @@ explain it (INSTALL.md, with the real message).
 
 ### At a join
 
-| Compared                          | Carried by                                | Outcome                                       |
-| --------------------------------- | ----------------------------------------- | --------------------------------------------- |
-| protocol version                  | `Hello.version`                           | **refused**; both players read why; no retry  |
-| tandem build                      | `Install.build` (and `Hello.gameVersion`) | warning                                       |
-| game version                      | `Install.game`                            | warning                                       |
-| tandem's scripts, tandem's tweaks | `Install.scripts`, `Install.tweaks`       | warning (not repeated when the builds differ) |
-| the other mods                    | `Install.mods`, `Install.modCount`        | warning; never blocks                         |
+| Compared                          | Carried by                                        | Outcome                                       |
+| --------------------------------- | ------------------------------------------------- | --------------------------------------------- |
+| protocol version                  | `Hello.version`                                   | **refused**; both players read why; no retry  |
+| Phantom Liberty, on both games    | `Hello.flags` (`kHelloExpansion`), the host's own | **refused**; both players read why; no retry  |
+| tandem build                      | `Install.build` (and `Hello.gameVersion`)         | warning                                       |
+| game version                      | `Install.game`                                    | warning                                       |
+| tandem's scripts, tandem's tweaks | `Install.scripts`, `Install.tweaks`               | warning (not repeated when the builds differ) |
+| the other mods                    | `Install.mods`, `Install.modCount`                | warning; never blocks                         |
 
 - **`proto::Install`** (appended, Event channel) is sent once by each side
   after the `Welcome`: guest → host, host → guest (after the roster, so the
@@ -159,13 +187,29 @@ version 5, the host runs 6`, nothing on the guest's screen (a session
   shows "Could not join: your tandem speaks protocol 5, the host's (…)
   protocol 6: both players need the same tandem release", the host "NAME
   could not join: their tandem (…) speaks protocol 5, yours (…) protocol
-  6: …", and the guest's net thread stops (`compat::IsVersionRefusal`,
+  6: …", and the guest's net thread stops (`compat::IsFinalRefusal`,
   status `Failed`). A `Hello` with another magic is refused as "not a
   tandem game".
-- **`kProtocolVersion` was not bumped** for `Install`: appending a message
-  never bumps it by the rule. Mind what that means in practice: a build
-  from before `Install` drops the connection of one that sends it (an
-  unknown message is malformed). No such build was ever released.
+- **Phantom Liberty at a join.** A game without it never gets this far by
+  itself (co-op is off), but the host does not take a guest's word for it:
+  `Hello.flags` says whether the guest's game has it, and a host refuses a
+  guest without it ("your game has no Phantom Liberty: tandem needs the
+  expansion on every player's game"; the host reads "NAME could not join:
+  their game has no Phantom Liberty …"). A host whose own game lacks it
+  (only possible with `compat = off`) refuses everyone, with the words the
+  other way round. Final, like a version refusal.
+- **`kProtocolVersion` is 7** since `Hello` got its `flags` (2026-11-19):
+  a change to an existing message. `Install`, appended the same day, would
+  not have bumped it by the rule; builds of protocol 6 never left the
+  developers' machines.
+- **A `Hello` whose layout changed is still refused in words.** Decoding
+  is strict, so a `Hello` of another version with another layout does not
+  decode at all (protocol 6's is one byte shorter). The first two fields of
+  `Hello`, magic and version, never move: `proto::PeekHelloVersion` reads
+  them from the raw packet, `net::Event::helloVersion` carries the version
+  of a malformed packet that is a `Hello`, and the host refuses it like
+  any other version mismatch (it knows no name: "A player could not
+  join…"). Keep those two fields first.
 - **The files' fingerprint** (`compat::HashTree`) is FNV-1a over the
   sorted, lower-cased relative names and the contents without carriage
   returns, so a checkout with other line endings is the same install.
@@ -244,3 +288,9 @@ Everything above was built and unit-tested; the game has not run it.
 7. What a game without the DLL does with tandem's scripts installed (the
    case the runtime-independent load avoids, but a player can still delete
    the DLL alone).
+8. Phantom Liberty: the log says `Phantom Liberty: enabled` on a game that
+   has it, as soon as the main menu shows. On a game without it (or with
+   the DLC unticked in the store's client): `not owned` or `owned, not
+installed or not enabled`, the Co-op popup, and no session from
+   `role = host`. `IsAdditionalContentEnabled` is trusted to be right in
+   the main menu already (the game's own menu calls it there).

@@ -25,6 +25,8 @@ compat::Facts GatherFacts(const std::filesystem::path &game,
                           const std::filesystem::path &executable);
 // versions.txt: everything above in lines, with what the startup check
 // said and `notes` (what differed from the other players, this run).
+// `expansion`: Phantom Liberty as the game said (Unknown outside the game).
 std::string VersionsText(const compat::Facts &facts, const compat::Startup &startup,
-                         const proto::Install &install, const std::vector<std::string> &notes);
+                         compat::Expansion expansion, const proto::Install &install,
+                         const std::vector<std::string> &notes);
 } // namespace tandem::plugin

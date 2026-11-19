@@ -19,6 +19,8 @@ template <class T> void RoundTrips(const T &value) {
 
 TEST_CASE("every message survives encoding") {
   RoundTrips(Hello{.name = "V", .gameVersion = "2.50", .body = Body::Male});
+  RoundTrips(Hello{.name = "V", .gameVersion = "0.2.0+2fa03ca", .flags = 0});
+  CHECK(Hello{}.flags == kHelloExpansion);
   RoundTrips(Welcome{.you = 2, .host = 1, .hostTimeUs = 123456789});
   RoundTrips(Refused{"full"});
   RoundTrips(Ping{42});

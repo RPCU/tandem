@@ -53,8 +53,7 @@ void Runtime::Choose(SessionChoice choice) {
   // Nothing to choose while a startup problem keeps co-op off: the menu
   // says why (CompatProblems), and the game stays the single-player one.
   if (choice.role != Config::Role::Off && Blocked()) {
-    log::Warn("session: {} not chosen, co-op is off: {}", NameOf(choice.role),
-              installation.startup.problems.front());
+    log::Warn("session: {} not chosen, co-op is off: {}", NameOf(choice.role), Problems().front());
     choice = {.fromMenu = choice.fromMenu};
   }
   std::lock_guard _(m_lock);
@@ -68,6 +67,34 @@ void Runtime::Choose(SessionChoice choice) {
     what = std::format(" on UDP {}", m_choice.port);
   log::Info("session: chosen {}{}{}", NameOf(m_choice.role), what,
             m_choice.fromMenu ? " (co-op menu)" : " (tandem.ini)");
+}
+
+std::vector<std::string> Runtime::Problems() const {
+  auto problems = installation.startup.problems;
+  if (auto expansion = compat::ExpansionProblem(Expansion()); !expansion.empty())
+    problems.push_back(std::move(expansion));
+  return problems;
+}
+
+void Runtime::SetExpansion(compat::Expansion state) {
+  if (m_expansion.exchange(static_cast<std::int32_t>(state)) == static_cast<std::int32_t>(state))
+    return;
+  constexpr const char *names[] = {"not known", "enabled", "owned, not installed or not enabled",
+                                   "not owned"};
+  const auto index = static_cast<std::size_t>(state);
+  log::Info("Phantom Liberty: {}", index < std::size(names) ? names[index] : "?");
+  const auto problem = compat::ExpansionProblem(state);
+  if (problem.empty())
+    return;
+  log::Error("startup check: {}", problem);
+  if (!config.compat) {
+    log::Warn("startup check: ignored (compat = off in tandem.ini)");
+    return;
+  }
+  // A session tandem.ini or the menu had chosen before the game said so.
+  const auto choice = Choice();
+  if (choice.role != Config::Role::Off)
+    Choose({.fromMenu = choice.fromMenu});
 }
 
 void Runtime::NoteDifference(std::string line) {
@@ -94,7 +121,7 @@ std::string Runtime::WriteReport(std::string &error) {
   const auto result =
       report::Write({.game = installation.game,
                      .out = installation.game / "red4ext" / "plugins" / "tandem" / "reports",
-                     .versions = VersionsText(installation.facts, installation.startup,
+                     .versions = VersionsText(installation.facts, installation.startup, Expansion(),
                                               installation.install, Differences())});
   if (result.zip.empty()) {
     error = result.error;

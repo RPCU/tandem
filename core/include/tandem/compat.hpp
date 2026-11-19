@@ -70,6 +70,9 @@ struct Facts {
   bool redscript{true};
   bool scripts{true}; // r6/scripts/tandem has files
   bool tweaks{true};  // r6/tweaks/tandem has files
+  // archive/pc/ep1 has files: Phantom Liberty's data is on the disk. Only
+  // reported: whether it is owned and enabled is the game's to say (Expansion).
+  bool expansionFiles{};
 };
 struct Startup {
   // Co-op stays off, with these words for the player.
@@ -102,11 +105,32 @@ proto::Install LocalInstall(const std::filesystem::path &game, std::optional<Ver
 std::vector<std::string> Differences(const proto::Install &ours, const proto::Install &theirs,
                                      std::string_view who);
 
+// Phantom Liberty, as the game itself says once its menus run (scripts:
+// inkISystemRequestsHandler.IsAdditionalContentEnabled / Owned of EP1).
+// tandem needs it enabled on every player's game: a V carries items, perks
+// of the Relic tree and vehicles whose records only exist with it, and a
+// game without them cannot show or apply what the other one sends.
+enum class Expansion : std::int32_t {
+  Unknown = 0,  // the game has not said yet (before its first menu)
+  Enabled = 1,  // owned, installed and enabled
+  Disabled = 2, // owned, but not installed or turned off
+  Missing = 3,  // not owned
+};
+// Why co-op is off for it, for the player; "" when it is not.
+std::string ExpansionProblem(Expansion state);
+
 // A guest whose protocol version is not the host's: what the guest reads
 // (after "refused: ") and what the host is told.
 std::string RefusalForGuest(std::uint16_t theirProtocol);
 std::string RefusalForHost(std::string_view who, std::uint16_t theirProtocol,
                            std::string_view theirBuild);
-// True for a refusal trying again cannot cure (RefusalForGuest's words).
-bool IsVersionRefusal(std::string_view reason);
+// A join refused for Phantom Liberty: what the guest reads when its game
+// lacks it, or the host's does, and what the host is told.
+inline constexpr std::string_view kExpansionGuestLacks =
+    "your game has no Phantom Liberty: tandem needs the expansion on every player's game";
+inline constexpr std::string_view kExpansionHostLacks =
+    "the host's game has no Phantom Liberty: tandem needs the expansion on every player's game";
+std::string ExpansionRefusalForHost(std::string_view who, bool oursLacks);
+// True for a refusal trying again cannot cure (the words above).
+bool IsFinalRefusal(std::string_view reason);
 } // namespace tandem::compat

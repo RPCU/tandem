@@ -248,7 +248,33 @@ std::string RefusalForHost(std::string_view who, std::uint16_t theirProtocol,
                      theirProtocol, Build(), proto::kProtocolVersion, kSameRelease);
 }
 
-bool IsVersionRefusal(std::string_view reason) {
-  return reason.find(kSameRelease) != std::string_view::npos;
+std::string ExpansionProblem(Expansion state) {
+  switch (state) {
+  case Expansion::Disabled:
+    return "Phantom Liberty is owned but not installed or not enabled in this game. tandem "
+           "needs it on every player's game (the items, vehicles and Relic perks a V brings "
+           "only exist with it). Install and enable it. Co-op is off.";
+  case Expansion::Missing:
+    return "This game does not have the Phantom Liberty expansion. tandem needs it on every "
+           "player's game (the items, vehicles and Relic perks a V brings only exist with "
+           "it). Co-op is off.";
+  case Expansion::Unknown:
+  case Expansion::Enabled:
+    break;
+  }
+  return {};
+}
+
+std::string ExpansionRefusalForHost(std::string_view who, bool oursLacks) {
+  return std::format("{} could not join: {} game has no Phantom Liberty (tandem needs the "
+                     "expansion on every player's game)",
+                     who.empty() ? std::string_view("A player") : who,
+                     oursLacks ? "your" : "their");
+}
+
+bool IsFinalRefusal(std::string_view reason) {
+  return reason.find(kSameRelease) != std::string_view::npos ||
+         reason.find(kExpansionGuestLacks) != std::string_view::npos ||
+         reason.find(kExpansionHostLacks) != std::string_view::npos;
 }
 } // namespace tandem::compat

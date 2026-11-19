@@ -194,8 +194,8 @@ TEST_CASE("a protocol mismatch is worded for both players and is final") {
   const auto guest = compat::RefusalForGuest(5);
   CHECK(guest.find("your tandem speaks protocol 5") == 0);
   CHECK(guest.find(std::format("protocol {}", proto::kProtocolVersion)) != std::string::npos);
-  CHECK(compat::IsVersionRefusal("refused: " + guest));
-  CHECK_FALSE(compat::IsVersionRefusal("refused: the session is full"));
+  CHECK(compat::IsFinalRefusal("refused: " + guest));
+  CHECK_FALSE(compat::IsFinalRefusal("refused: the session is full"));
   const auto host = compat::RefusalForHost("Jackie", 5, "0.1.0+abc");
   CHECK(host.find("Jackie could not join: their tandem (0.1.0+abc) speaks protocol 5") == 0);
 }
@@ -231,7 +231,7 @@ TEST_CASE("a game with another protocol is refused in words, and the host is tol
   REQUIRE(refusal);
   REQUIRE(notice);
   CHECK_FALSE(welcomed);
-  CHECK(compat::IsVersionRefusal(*refusal));
+  CHECK(compat::IsFinalRefusal(*refusal));
   CHECK(notice->find("Jackie could not join: their tandem (0.1.0+0ld)") == 0);
   CHECK(host->Players().size() == 1);
 }
@@ -288,4 +288,108 @@ TEST_CASE("games that say nothing but their build have nothing to differ in") {
   REQUIRE(atHost);
   CHECK(atHost->install.build == compat::Build());
   CHECK(atHost->differences.empty());
+}
+
+TEST_CASE("Phantom Liberty missing is worded for the player; known or enabled is no problem") {
+  CHECK(compat::ExpansionProblem(compat::Expansion::Unknown).empty());
+  CHECK(compat::ExpansionProblem(compat::Expansion::Enabled).empty());
+  CHECK(compat::ExpansionProblem(compat::Expansion::Missing).find("does not have the Phantom") !=
+        std::string::npos);
+  CHECK(compat::ExpansionProblem(compat::Expansion::Disabled).find("not installed or not") !=
+        std::string::npos);
+  CHECK(compat::IsFinalRefusal("refused: " + std::string(compat::kExpansionGuestLacks)));
+  CHECK(compat::IsFinalRefusal("refused: " + std::string(compat::kExpansionHostLacks)));
+  CHECK(compat::ExpansionRefusalForHost("Jackie", false) ==
+        "Jackie could not join: their game has no Phantom Liberty (tandem needs the expansion "
+        "on every player's game)");
+}
+
+namespace {
+// The end of a guest's join and what the host was told meanwhile.
+struct Refusal {
+  std::optional<std::string> guest, host;
+};
+Refusal JoinRefusal(Endpoint &host, Endpoint &guest) {
+  Refusal out;
+  const auto deadline = std::chrono::steady_clock::now() + 3s;
+  while (!(out.guest && out.host) && std::chrono::steady_clock::now() < deadline) {
+    for (const auto &event : host.Update(1ms))
+      if (const auto *refused = std::get_if<events::JoinRefused>(&event))
+        out.host = refused->notice;
+    for (const auto &event : guest.Update(1ms))
+      if (const auto *ended = std::get_if<events::Ended>(&event))
+        out.guest = ended->reason;
+  }
+  return out;
+}
+} // namespace
+
+TEST_CASE("a guest without Phantom Liberty is refused in words, and the host is told") {
+  const auto port = test::NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"Vee"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto guest = Endpoint::Join({.name = "Jackie", .expansion = false}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  const auto refusal = JoinRefusal(*host, *guest);
+  REQUIRE(refusal.guest);
+  REQUIRE(refusal.host);
+  CHECK(*refusal.guest == "refused: " + std::string(compat::kExpansionGuestLacks));
+  CHECK(compat::IsFinalRefusal(*refusal.guest));
+  CHECK(*refusal.host == compat::ExpansionRefusalForHost("Jackie", false));
+  CHECK(host->Players().size() == 1);
+}
+
+TEST_CASE("a host without Phantom Liberty takes nobody, and both are told") {
+  const auto port = test::NextPort();
+  std::string error;
+  auto host = Endpoint::Host({.name = "Vee", .expansion = false}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto guest = Endpoint::Join({"Jackie"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  const auto refusal = JoinRefusal(*host, *guest);
+  REQUIRE(refusal.guest);
+  REQUIRE(refusal.host);
+  CHECK(*refusal.guest == "refused: " + std::string(compat::kExpansionHostLacks));
+  CHECK(*refusal.host == compat::ExpansionRefusalForHost("Jackie", true));
+  CHECK(host->Players().size() == 1);
+}
+
+TEST_CASE("a Hello of another version is recognised even when its layout is not ours") {
+  // The first fields never move: the version is read without decoding.
+  const auto ours = proto::Encode(proto::Hello{.name = "V"});
+  CHECK(proto::PeekHelloVersion(ours) == proto::kProtocolVersion);
+  CHECK_FALSE(proto::PeekHelloVersion(proto::Encode(proto::Welcome{})));
+  CHECK_FALSE(proto::PeekHelloVersion(std::span(ours).first(4)));
+
+  // Protocol 6's Hello: the same without the last field (flags).
+  auto old = proto::Encode(proto::Hello{.version = 6, .name = "Jackie"});
+  old.pop_back();
+  REQUIRE_FALSE(proto::Decode(old));
+  CHECK(proto::PeekHelloVersion(old) == 6);
+
+  const auto port = test::NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto raw = net::Session::Connect("127.0.0.1", port, error);
+  REQUIRE_MESSAGE(raw, error);
+  std::optional<std::string> refusal, notice;
+  const auto deadline = std::chrono::steady_clock::now() + 3s;
+  while (!(refusal && notice) && std::chrono::steady_clock::now() < deadline) {
+    for (const auto &event : raw->Poll(1ms)) {
+      if (event.kind == net::Event::Kind::Connected)
+        raw->SendBytes(event.peer, old);
+      if (event.kind == net::Event::Kind::Received)
+        if (const auto *refused = std::get_if<proto::Refused>(&*event.message))
+          refusal = refused->reason;
+    }
+    for (const auto &event : host->Update(1ms))
+      if (const auto *refused = std::get_if<events::JoinRefused>(&event))
+        notice = refused->notice;
+  }
+  REQUIRE(refusal);
+  REQUIRE(notice);
+  CHECK(refusal->find("your tandem speaks protocol 6") == 0);
+  CHECK(notice->find("A player could not join: their tandem speaks protocol 6") == 0);
 }

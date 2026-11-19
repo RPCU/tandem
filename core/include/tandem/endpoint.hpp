@@ -276,8 +276,9 @@ struct RemoteInstall {
   proto::Install install;
   std::vector<std::string> differences;
 };
-// Host only: a game was refused for its protocol version, with the words
-// for our player (the guest got its own with the refusal).
+// Host only: a game was refused for its protocol version, or because it
+// or ours lacks Phantom Liberty, with the words for our player (the guest
+// got its own with the refusal).
 struct JoinRefused {
   std::string name;
   std::string notice;
@@ -290,6 +291,10 @@ struct Identity {
   std::string name;
   proto::Body body{};
   proto::Install install{};
+  // The game has Phantom Liberty installed and enabled (the mock player
+  // and the tests: yes). A host without it takes nobody; a guest without
+  // it is refused (compat::kExpansion*).
+  bool expansion{true};
 };
 
 // Where a guest finds its host: directly, through a relay, or directly

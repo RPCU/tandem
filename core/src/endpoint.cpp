@@ -260,6 +260,13 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
   case Kind::Connected:
     break; // nothing until a valid Hello
   case Kind::Malformed:
+    // A Hello of another protocol version whose layout we cannot read: its
+    // version is all we know. Refused in words, like one we can read.
+    if (event.helloVersion && *event.helloVersion != proto::kProtocolVersion &&
+        !m_playerOfPeer.contains(event.peer)) {
+      Send(event.peer, proto::Refused{compat::RefusalForGuest(*event.helloVersion)});
+      out.push_back(events::JoinRefused{{}, compat::RefusalForHost({}, *event.helloVersion, {})});
+    }
     m_session->Disconnect(event.peer);
     break;
   case Kind::Disconnected:
@@ -623,6 +630,17 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
         hello.name, compat::RefusalForHost(hello.name, hello.version, hello.gameVersion)});
     return;
   }
+  // Phantom Liberty on every game: the records and the Relic tree a V
+  // brings must exist where it is shown. Ours first: we take nobody.
+  if (!m_identity.expansion || !(hello.flags & proto::kHelloExpansion)) {
+    const bool ours = !m_identity.expansion;
+    Send(peer, proto::Refused{
+                   std::string(ours ? compat::kExpansionHostLacks : compat::kExpansionGuestLacks)});
+    m_session->Disconnect(peer);
+    out.push_back(
+        events::JoinRefused{hello.name, compat::ExpansionRefusalForHost(hello.name, ours)});
+    return;
+  }
 
   // A player back on a new connection (its game crashed and restarted, or
   // its link dropped) while the old one has not timed out yet: if the old one
@@ -814,7 +832,9 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
     m_hostPeer = event.peer;
     Send(m_hostPeer, proto::Hello{.name = m_identity.name,
                                   .gameVersion = m_identity.install.build,
-                                  .body = m_identity.body});
+                                  .body = m_identity.body,
+                                  .flags = static_cast<std::uint8_t>(
+                                      m_identity.expansion ? proto::kHelloExpansion : 0)});
     break;
   case Kind::Malformed:
     break; // the host may be newer; Refused will say so

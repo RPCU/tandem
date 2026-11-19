@@ -9,14 +9,25 @@ cannot join, and two different releases refuse each other with a message.
 
 ## Requirements
 
-| What                    | Version                  | Notes                                                                                        |
-| ----------------------- | ------------------------ | -------------------------------------------------------------------------------------------- |
-| Cyberpunk 2077 (PC)     | patch **2.50** exactly   | the executable's file version is `3.0.88.46235`                                              |
-| [RED4ext][red4ext]      | **1.31.0** or newer      | loads `tandem.dll`                                                                           |
-| [redscript][redscript]  | **0.5.32** or newer      | compiles tandem's scripts                                                                    |
-| [Codeware][codeware]    | **1.21.2** or newer      | tandem's scripts and menus use it                                                            |
-| [TweakXL][tweakxl]      | **1.12.0** or newer      | loads the records of the other players' bodies                                               |
-| Windows 10/11, or Linux | Linux: Steam with Proton | Steam launch option `WINEDLLOVERRIDES="winmm,version=n,b" %command%`, as for any RED4ext mod |
+| What                    | Version                   | Notes                                                                                        |
+| ----------------------- | ------------------------- | -------------------------------------------------------------------------------------------- |
+| Cyberpunk 2077 (PC)     | patch **2.50** exactly    | the executable's file version is `3.0.88.46235`                                              |
+| **Phantom Liberty**     | owned, installed, enabled | the expansion is required on **every** player's game (see below)                             |
+| [RED4ext][red4ext]      | **1.31.0** or newer       | loads `tandem.dll`                                                                           |
+| [redscript][redscript]  | **0.5.32** or newer       | compiles tandem's scripts                                                                    |
+| [Codeware][codeware]    | **1.21.2** or newer       | tandem's scripts and menus use it                                                            |
+| [TweakXL][tweakxl]      | **1.12.0** or newer       | loads the records of the other players' bodies                                               |
+| Windows 10/11, or Linux | Linux: Steam with Proton  | Steam launch option `WINEDLLOVERRIDES="winmm,version=n,b" %command%`, as for any RED4ext mod |
+
+**Phantom Liberty is required, for the host and for every guest.** A V
+brings what it owns into the other players' games: its weapons, clothes
+and cyberware, its vehicles, its perks. With the expansion a V has items
+and vehicles whose records only exist in a game that has it, and the Relic
+skill tree. A game without it could not show or apply what the other one
+sends, and the two would fall out of step. So tandem does not try: without
+Phantom Liberty installed and enabled (the game's main menu shows it as
+part of the game), co-op stays off and your game is the single-player one;
+a player who lacks it cannot join, and both players are told why.
 
 ArchiveXL is **not** needed: tandem ships no archive. Cyber Engine Tweaks is
 not needed either.
@@ -26,7 +37,8 @@ moved together for patch 2.5). The end of this file, written when the
 release was packaged, lists the exact build.
 
 tandem checks all of this when the game starts. If the game is another
-patch, or a mod above is missing or too old, tandem turns itself off (your
+patch, has no Phantom Liberty, or a mod above is missing or too old, tandem
+turns itself off (your
 game runs as if it were not installed) and the **Co-op** entry of the main
 menu tells you what to fix.
 
@@ -196,12 +208,14 @@ All under the game's folder:
 The first lines of tandem's log say what it found:
 
 ```
-tandem 0.2.0+2fa03ca loaded (protocol 6)
+tandem 0.2.0+2fa03ca loaded (protocol 7)
 game 3.0.88.46235 (built for patch 2.50, 3.0.88.46235)
 RED4ext: 1.31.0
 Codeware: 1.21.2
 TweakXL: 1.12.0
 ```
+
+and, once the main menu is up, `Phantom Liberty: enabled`.
 
 ### There is no Co-op entry in the main menu
 
@@ -243,6 +257,12 @@ The startup check found a problem and says which in a popup, for example:
   Codeware, TweakXL **and** tandem to be updated.
 - _Codeware 1.20.5 is too old: tandem needs 1.21.2 or newer._ Update it.
 - _TweakXL is not installed._ Install it.
+- _This game does not have the Phantom Liberty expansion._ tandem needs
+  it on every player's game; there is no setting to play without it.
+- _Phantom Liberty is owned but not installed or not enabled in this
+  game._ Install it from your store's library (Steam: the game's
+  properties → DLC; GOG and Epic: the game's add-ons), start the game and
+  check the main menu shows it.
 - _tandem's tweaks are missing (r6/tweaks/tandem)._ Extract the whole zip
   again.
 
@@ -265,11 +285,16 @@ unaffected.
 
 ### Version mismatches between players
 
+- **One player has no Phantom Liberty**: they are refused. They read
+  _Could not join: your game has no Phantom Liberty: tandem needs the
+  expansion on every player's game_ and the host _NAME could not join:
+  their game has no Phantom Liberty_. (Normally it does not come to that:
+  a game without it keeps co-op off from its own menu.)
 - **Different tandem releases** (another protocol): the guest is refused
-  and reads _Could not join: your tandem speaks protocol 5, the host's
-  (0.2.0+2fa03ca) protocol 6: both players need the same tandem release_;
-  the host reads _NAME could not join: their tandem (…) speaks protocol 5,
-  yours (…) protocol 6_. Install the same release on both games.
+  and reads _Could not join: your tandem speaks protocol 6, the host's
+  (0.2.0+2fa03ca) protocol 7: both players need the same tandem release_;
+  the host reads _NAME could not join: their tandem (…) speaks protocol 6,
+  yours (…) protocol 7_. Install the same release on both games.
 - **Same protocol, something else differs**: the session goes on, and each
   player is told once what differs: the tandem build, the game's version,
   tandem's scripts or tweaks (extract the whole release again, on both

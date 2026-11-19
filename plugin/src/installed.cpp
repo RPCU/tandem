@@ -70,13 +70,15 @@ compat::Facts GatherFacts(const std::filesystem::path &game,
   }
   std::error_code ec;
   facts.redscript = std::filesystem::exists(Under(game, compat::kRedscript), ec);
+  facts.expansionFiles = HasFiles(game / "archive" / "pc" / "ep1");
   facts.scripts = HasFiles(game / "r6" / "scripts" / "tandem");
   facts.tweaks = HasFiles(game / "r6" / "tweaks" / "tandem");
   return facts;
 }
 
 std::string VersionsText(const compat::Facts &facts, const compat::Startup &startup,
-                         const proto::Install &install, const std::vector<std::string> &notes) {
+                         compat::Expansion expansion, const proto::Install &install,
+                         const std::vector<std::string> &notes) {
   std::string out;
   const auto line = [&](std::string text) { out += text + "\r\n"; };
   line(std::format("written: {:%Y-%m-%d %H:%M:%S} UTC",
@@ -93,6 +95,12 @@ std::string VersionsText(const compat::Facts &facts, const compat::Startup &star
     line(std::format("{}: {} ({} {})", need.name, state,
                      need.needed ? "needs" : "optional, made with", compat::Format(need.minimum)));
   }
+  constexpr const char *said[] = {"the game has not said (it does in its menus)", "enabled",
+                                  "owned, not installed or not enabled", "not owned"};
+  const auto index = static_cast<std::size_t>(expansion);
+  line(std::format("Phantom Liberty: {}; its files are {} (needed on every game)",
+                   index < std::size(said) ? said[index] : "?",
+                   facts.expansionFiles ? "in archive/pc/ep1" : "not in archive/pc/ep1"));
   line(std::format("redscript: {} (made with {})", facts.redscript ? "installed" : "not installed",
                    compat::kRedscriptVersion));
   line(std::format("tandem scripts: {} (hash {:016x})", facts.scripts ? "installed" : "missing",
@@ -102,9 +110,13 @@ std::string VersionsText(const compat::Facts &facts, const compat::Startup &star
   line(std::format("other mods: {} (hash {:016x}; names are not reported)", install.modCount,
                    install.mods));
   line("");
-  line(startup.Blocked() ? "startup check: co-op is off" : "startup check: passed");
+  const auto missing = compat::ExpansionProblem(expansion);
+  line(startup.Blocked() || !missing.empty() ? "startup check: co-op is off"
+                                             : "startup check: passed");
   for (const auto &problem : startup.problems)
     line(std::format("  problem: {}", problem));
+  if (!missing.empty())
+    line(std::format("  problem: {}", missing));
   for (const auto &warning : startup.warnings)
     line(std::format("  warning: {}", warning));
   if (!notes.empty()) {

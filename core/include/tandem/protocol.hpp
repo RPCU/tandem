@@ -15,7 +15,7 @@
 
 namespace tandem::proto {
 inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
-inline constexpr std::uint16_t kProtocolVersion = 6;
+inline constexpr std::uint16_t kProtocolVersion = 7;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -48,7 +48,14 @@ struct Quat {
   friend bool operator==(const Quat &, const Quat &) = default;
 };
 
-// Guest -> host, first message.
+// Hello::flags. The game has the Phantom Liberty expansion installed and
+// enabled: tandem needs it on every game (tandem/compat.hpp), so a host
+// refuses a guest without it.
+inline constexpr std::uint8_t kHelloExpansion = 1 << 0;
+
+// Guest -> host, first message. Its first two fields never move: a host of
+// any version reads them from a Hello it cannot decode (PeekHelloVersion)
+// and refuses it in words.
 struct Hello {
   std::uint32_t magic{kMagic};
   std::uint16_t version{kProtocolVersion};
@@ -57,6 +64,7 @@ struct Hello {
   // refuses the protocol version can say which release that was.
   std::string gameVersion;
   Body body{};
+  std::uint8_t flags{kHelloExpansion}; // kHello*
   friend bool operator==(const Hello &, const Hello &) = default;
 };
 
@@ -1170,6 +1178,9 @@ bool IsCombat(const Message &message);
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);
+// The protocol version of a packet that is a tandem Hello, also one Decode
+// refuses (another version's layout); none: not a Hello.
+std::optional<std::uint16_t> PeekHelloVersion(std::span<const std::byte> bytes);
 
 // The channel a message travels on, and whether ENet must deliver it.
 Channel ChannelOf(const Message &message);

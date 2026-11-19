@@ -56,10 +56,10 @@ int wmain(int argc, wchar_t **argv) {
   const auto facts = plugin::GatherFacts(game, executable);
   const auto startup = compat::Check(facts);
   const auto install = compat::LocalInstall(game, facts.game);
-  const auto result =
-      report::Write({.game = game,
-                     .out = game / "red4ext" / "plugins" / "tandem" / "reports",
-                     .versions = plugin::VersionsText(facts, startup, install, {})});
+  const auto result = report::Write(
+      {.game = game,
+       .out = game / "red4ext" / "plugins" / "tandem" / "reports",
+       .versions = plugin::VersionsText(facts, startup, compat::Expansion::Unknown, install, {})});
   if (result.zip.empty()) {
     std::printf("No report written: %s\n", result.error.c_str());
     return Finish(1, wait);

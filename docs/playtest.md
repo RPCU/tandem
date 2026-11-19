@@ -17,9 +17,10 @@ aloud what they see: half of the list is "does G see what H does".
 
 On **both** machines:
 
-- [ ] Cyberpunk 2077 patch 2.50, RED4ext, redscript, Codeware and TweakXL
-      at the versions of [INSTALL.md](../dist/INSTALL.md); the game starts
-      and loads a save without tandem.
+- [ ] Cyberpunk 2077 patch 2.50 **with Phantom Liberty installed and
+      enabled**, RED4ext, redscript, Codeware and TweakXL at the versions
+      of [INSTALL.md](../dist/INSTALL.md); the game starts and loads a save
+      without tandem.
 - [ ] Write down the other mods installed. For the first session, as few
       as possible, and the same on both; gameplay mods off.
 - [ ] A copy of the save folder
@@ -52,7 +53,7 @@ Each player, without the other:
       found, and has **no** `startup check:` line:
 
       ```
-      tandem 0.2.0+… loaded (protocol 6)
+      tandem 0.2.0+… loaded (protocol 7)
       game 3.0.88.46235 (built for patch 2.50, 3.0.88.46235)
       RED4ext: 1.31.0
       Codeware: 1.21.2
@@ -60,6 +61,7 @@ Each player, without the other:
       ```
 
       Read both players' first line to each other: **the same build**.
+      A line `Phantom Liberty: enabled` follows once the main menu is up.
 
 - [ ] `tandem.ini` appeared next to `tandem.dll`.
 - [ ] Load a save _without_ touching Co-op and play ten minutes as usual:

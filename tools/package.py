@@ -103,7 +103,7 @@ def versions():
 
 def check_install_md(text, v):
     """INSTALL.md is written by hand: it must say what the plugin enforces."""
-    wanted = [v["patch"], v["game"], v["redscript"]] + [
+    wanted = ["Phantom Liberty", v["patch"], v["game"], v["redscript"]] + [
         version for _, version, needed in v["needs"] if needed
     ]
     missing = [w for w in wanted if w not in text]
@@ -123,7 +123,7 @@ def build_section(v, build, commit_date):
         "| What | Version |",
         "| --- | --- |",
         f"| tandem | `{build}` (protocol {v['protocol']}), commit of {commit_date} |",
-        f"| Built for | Cyberpunk 2077 patch {v['patch']} (`{v['game']}`) |",
+        f"| Built for | Cyberpunk 2077 patch {v['patch']} (`{v['game']}`), with Phantom Liberty |",
     ]
     for name, version, needed in v["needs"]:
         lines.append(

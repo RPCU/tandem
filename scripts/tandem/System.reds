@@ -203,6 +203,13 @@ public class TandemSystem extends ScriptableSystem {
     }
     this.m_attached = true;
     this.m_leftDown = false;
+    // Before anything starts: without Phantom Liberty the plugin drops the
+    // session tandem.ini chose, and the player is told why nothing starts.
+    let wanted = TandemNative.IsConfigured();
+    TandemCoop.ReportExpansion();
+    if wanted && !TandemNative.IsConfigured() {
+      TandemCoop.Notice(this.GetGameInstance(), "Co-op is off: tandem needs Phantom Liberty on every player's game");
+    }
     if TandemNative.IsConfigured() {
       this.BeginSession();
     } else {

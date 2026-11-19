@@ -185,8 +185,9 @@ struct NetThread::Impl {
         Publish(SessionStatus::State::Failed, ended);
         return;
       }
-      // Another tandem release than the host's: trying again changes nothing.
-      if (compat::IsVersionRefusal(ended)) {
+      // Another tandem release than the host's, or no Phantom Liberty on
+      // one side: trying again changes nothing.
+      if (compat::IsFinalRefusal(ended)) {
         log::Warn("not joining again: {}", ended);
         Publish(SessionStatus::State::Failed, ended);
         return;
@@ -212,7 +213,11 @@ struct NetThread::Impl {
     // Nothing queued for or from the last session reaches this one.
     runtime.ResetSession();
     std::string error;
-    const Identity identity{config.name, body, runtime.installation.install};
+    // (Without Phantom Liberty no session starts, unless compat = off: then
+    // the other side refuses us, in words.)
+    const Identity identity{config.name, body, runtime.installation.install,
+                            runtime.Expansion() != compat::Expansion::Disabled &&
+                                runtime.Expansion() != compat::Expansion::Missing};
     runtime.ClearDifferences();
     report::SessionSummary summary{
         .build = runtime.installation.install.build,
@@ -580,9 +585,10 @@ struct NetThread::Impl {
                   if (id != endpoint->You())
                     runtime.ForgetRemote(id);
                 runtime.PushEvent({ScriptEvent::Kind::SessionEnded, 0, e.reason, {}});
-                // Refused for our version: said on screen (the session's
-                // end is only said to a player who was in it).
-                if (compat::IsVersionRefusal(e.reason)) {
+                // Refused for our version or for Phantom Liberty: said on
+                // screen (the session's end is only said to a player who
+                // was in it).
+                if (compat::IsFinalRefusal(e.reason)) {
                   const std::string_view words = e.reason;
                   const auto text =
                       "Could not join: " +

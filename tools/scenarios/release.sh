@@ -11,6 +11,8 @@ if remote "cd '$dir'; grep -q 'startup check: ' '$mark_file'"; then
   remote "cd '$dir'; grep 'startup check: ' '$mark_file'" >&2
   fail "the startup check found something on the test game"
 fi
+# The game said it has Phantom Liberty (the test game does), so it hosts.
+grep_log 'Phantom Liberty: enabled'
 cmd coop status
 expect 'coop: Hosting on port 27450' 10
 reject 'coop: off:'

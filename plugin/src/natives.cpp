@@ -367,9 +367,17 @@ struct TandemNative : Red::IScriptable {
   static Red::DynArray<Red::CString> CompatProblems() {
     Red::DynArray<Red::CString> out;
     if (Runtime::Get().Blocked())
-      for (const auto &problem : Runtime::Get().installation.startup.problems)
+      for (const auto &problem : Runtime::Get().Problems())
         out.EmplaceBack(problem.c_str());
     return out;
+  }
+
+  // Phantom Liberty as the game's own menus know it (Coop.reds asks
+  // inkISystemRequestsHandler): 1 enabled, 2 owned but not installed or
+  // not enabled, 3 not owned. Without it co-op is off (CompatProblems).
+  static void SetExpansion(std::int32_t state) {
+    if (state >= 1 && state <= 3)
+      Runtime::Get().SetExpansion(static_cast<compat::Expansion>(state));
   }
 
   // What differs between our game and the other players' (their tandem
@@ -1769,6 +1777,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(LocalAddresses);
   RTTI_METHOD(DefaultPort);
   RTTI_METHOD(CompatProblems);
+  RTTI_METHOD(SetExpansion);
   RTTI_METHOD(CompatWarnings);
   RTTI_METHOD(WriteReport);
   RTTI_METHOD(SendLocalState);

@@ -15,7 +15,8 @@
 // session at once (TandemSystem.CoopHost / CoopJoin / CoopLeave).
 //
 // Compatibility (tandem/compat.hpp): when the plugin's startup check found
-// a problem (another game version, a missing or old mod) co-op is off: the
+// a problem (another game version, a missing or old mod), or the game has
+// no Phantom Liberty (TandemCoop.ReportExpansion), co-op is off: the
 // Co-op page says why in a popup and only offers the bug report. What
 // differs between the players' games is said on screen at the join (the
 // plugin's notices) and counted in the status panel. "Write a bug report"
@@ -76,8 +77,25 @@ public class TandemCoop {
     return "";
   }
 
-  // Co-op is off (the game's version, a missing or old mod): why, as one
-  // text for a popup; "" when it is not.
+  // Phantom Liberty, by the game's own check (the one its main menu uses
+  // for the expansion banner): told to the plugin, which keeps co-op off
+  // without it. Called when a menu opens and when a V enters a game.
+  public static func ReportExpansion() -> Void {
+    let handler = GameInstance.GetSystemRequestsHandler();
+    if !IsDefined(handler) {
+      return;
+    }
+    let state = 3;
+    if handler.IsAdditionalContentEnabled(n"EP1") {
+      state = 1;
+    } else if handler.IsAdditionalContentOwned(n"EP1") {
+      state = 2;
+    }
+    TandemNative.SetExpansion(state);
+  }
+
+  // Co-op is off (the game's version, a missing or old mod, no Phantom
+  // Liberty): why, as one text for a popup; "" when it is not.
   public static func ProblemsText() -> String {
     let text = "";
     for problem in TandemNative.CompatProblems() {
@@ -287,6 +305,7 @@ public class TandemCoopMenu {
   public let swallowBack: Int32;
 
   public static func Create(inGame: Bool) -> ref<TandemCoopMenu> {
+    TandemCoop.ReportExpansion();
     let menu = new TandemCoopMenu();
     menu.inGame = inGame;
     menu.page = TandemCoopPage.Root;

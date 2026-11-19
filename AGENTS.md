@@ -98,6 +98,11 @@ K7Q-2M9 --relay 127.0.0.1`. `task test` does the same (`relay-loopback`,
   `kProtocolVersion`. Add the message to `NameOf`, decide its channel in
   `ChannelOf`, and add a round-trip case to `tests/protocol_test.cpp`.
 - High-rate messages stay small (`PlayerState` < 64 bytes is tested).
+- `Hello`'s first two fields (magic, version) never move: a host reads them
+  from a `Hello` it cannot decode and refuses it in words
+  (`PeekHelloVersion`).
+- Phantom Liberty is required on every game, checked at startup and at a
+  join; why and how: `docs/architecture/release.md`.
 - Shared state stays consistent (`docs/ARCHITECTURE.md`, Consistency): a
   state message must be idempotent (the receiver drops a repeat), and a new
   domain of host-owned state goes into the host's digests and its resync

@@ -163,10 +163,18 @@ public:
     proto::Install install; // what the other players are told
   };
   Installation installation;
+  // Phantom Liberty, as the game's menus report it (scripts:
+  // TandemCoop.ReportExpansion -> TandemNative.SetExpansion; game thread).
+  // Unknown until the first menu. Without it a chosen session is dropped.
+  void SetExpansion(compat::Expansion state);
+  compat::Expansion Expansion() const { return static_cast<compat::Expansion>(m_expansion.load()); }
   // Co-op stays off: a startup problem (the game's version, a missing or
-  // old mod), unless tandem.ini says compat = off. No session is chosen or
-  // started, and the co-op menu says why (TandemNative.CompatProblems).
-  bool Blocked() const { return config.compat && installation.startup.Blocked(); }
+  // old mod) or no Phantom Liberty, unless tandem.ini says compat = off. No
+  // session is chosen or started, and the co-op menu says why
+  // (TandemNative.CompatProblems).
+  bool Blocked() const { return config.compat && !Problems().empty(); }
+  // Why, one sentence each for the player (whatever compat says).
+  std::vector<std::string> Problems() const;
   // What differs between our game and another player's (net thread writes,
   // one line each; kept for the menu and the report until the next session).
   void NoteDifference(std::string line);
@@ -560,6 +568,7 @@ private:
   std::vector<proto::NpcShot> m_npcShotsIn;                                             // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
+  std::atomic<std::int32_t> m_expansion{0}; // compat::Expansion
   std::uint32_t m_loopSeq{};
   mutable std::mutex m_posesLock;
   std::map<proto::PlayerId, pose::PoseTrack> m_poses;
