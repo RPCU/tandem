@@ -108,6 +108,10 @@ PLACE [moved] [settled]`, its body held where the mock player was;
   `tools/scenarios/story-host.story`, `story-worlds.story`); as a
   guest, `--answer N`, `--reply HASH`, `--suggest N` act on the host's
   calls, texts and hubs, and every story message heard is logged.
+  `host --restrict REC[,REC]` (`--restrict-at S`, default 2; `--restrict-for
+S`, lifted after S, default never; or the story verb `restrict
+REC[,REC]|off`): the host's story restrictions on its V, which a guest in
+  its moment wears (`story.md`, "Restrictions").
 - **quickhacks**: `join --hack-npcs N` uploads `--hack-action` on one of
   the host's NPCs every N s (1.5 s) and then lands `--hack-effect`;
   `host --replay FILE --hack-player N` has a replayed NPC hack the guest's

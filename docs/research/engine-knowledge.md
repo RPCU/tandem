@@ -94,6 +94,7 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.32 | Traffic and world vehicles                                      | `traffic-police.md` |
 | 13.33 | Police: the prevention system                                   | `traffic-police.md` |
 | 13.34 | Traffic and police: open questions (need the game)              | `traffic-police.md` |
+| 13.45 | Gameplay restrictions, and a guest wearing the host's           | `story.md`          |
 
 ## Top traps (one line each)
 
