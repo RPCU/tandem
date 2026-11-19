@@ -44,8 +44,8 @@ scenario. A scenario that needs another spot teleports after it.
 `tandem-peer` modes:
 
 - **mirror** — copies your V back as a second player, offset and optionally
-  delayed: you watch your own movements on a puppet, through the whole
-  network path. The main tool for puppet, animation and vehicle sync.
+  delayed: your own movements on a puppet, through the whole network path.
+  The main tool for puppet, animation and vehicle sync.
 - **ghost** — circles around your V at walking speed.
 - **front** — stands 3 m in front of your V, facing it, and echoes your
   look, held weapon, shots, pose (with `--pose FILE`, a recorded pose).
@@ -165,3 +165,41 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   every stack the others drop N s after it appears; as the host of a
   replay, `--remove-corpses N` takes an NPC a guest killed away N s after
   its death (`NpcGone` reason 0).
+
+## Driving the game and the builds
+
+- `tools/scenario.sh` deploys first. Scripts alone would be hot-reloaded
+  with RedHotTools, which is not installed on anya: a script change restarts
+  the game too. A failure's evidence is kept under `.cache/scenarios/`.
+  After a fresh start the reset runs as `ensure`; it also clears test
+  abilities and the revive cooldown.
+- `task deploy` installs the DLL, scripts and tweaks on the game machine. A
+  test `tandem.ini` with `role = host` and `autoload = true` loads the last
+  save on its own; run `task peer -- join anya --mode mirror` here.
+- The other way round: `tandem-peer` `host --time --weather` plays the host
+  while the game joins as a guest with `role = join`,
+  `address = <this machine>`.
+- `tools/game.sh cmd` commands (`teleport home`, `where`, `vehicle ride`,
+  `pose loop`, `travel`, `regroup accept`…) need no restart. Restart only
+  for script or plugin changes.
+- Real play instead of synthetic motion: the game records its own V
+  (`tools/game.sh cmd record start NAME`, `record stop`; `fetch-play NAME`
+  copies it to `recordings/play/NAME.tplay`), `tandem-peer --play FILE`
+  replays it, and a scenario's `play NAME ARGS…` uses it when it exists (the
+  synthetic ARGS otherwise). What to record: `recordings.md`, "Gameplay
+  recordings".
+- The game is launched through the Steam already running in anya's Sway
+  session (`steam steam://rungameid/1091500` with that session's
+  environment). Read `red4ext/logs/tandem-*.log` for the outcome.
+- `tools/remote.sh TASK…` runs a task on the game machine instead (more
+  cores): it syncs the working tree to `~/.cache/tandem/src/<worktree>`
+  there, runs the task in devenv under that machine's own build lock at low
+  priority, and copies `build/windows/plugin/tandem.{dll,pdb}` (and, after
+  `build`, `build:linux` or `test`, `build/linux/peer/tandem-peer`) back.
+  Then `TANDEM_PREBUILT=1 tools/scenario.sh …` deploys that DLL as is
+  (`task deploy:files`) instead of rebuilding it here.
+- Through the relay by hand: `task relay:run`, then
+  `task peer -- host --relay 127.0.0.1` (it logs `join code K7Q-2M9`) and
+  `task peer -- join --code K7Q-2M9 --relay 127.0.0.1`. `task test` does the
+  same (`relay-loopback`, `tests/relay_loopback.sh`: it builds the relay
+  with Go and runs the `relay` suite of `tandem-tests` against it).

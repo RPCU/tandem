@@ -289,6 +289,19 @@ def check_links():
         for m in re.finditer(r"^#+ (\d+(?:\.\d+[a-z]?)?)\.? ", text, re.M):
             if (m.group(1), os.path.basename(f)) not in rows:
                 bad.append(f"{f}: §{m.group(1)} is not in the index ({INDEX})")
+    # the core's index lists every topic file, and only files that exist
+    core = docs.get("docs/ARCHITECTURE.md", "")
+    topics = core.partition("## Topic files")[2].partition("\n## ")[0]
+    listed = set(re.findall(r"^- `([\w\-]+\.md)`", topics, re.M))
+    have = {os.path.basename(f) for f in docs if f.startswith("docs/architecture/")}
+    for name in sorted(listed - have):
+        bad.append(f"docs/ARCHITECTURE.md: topic file {name} does not exist")
+    for name in sorted(have - listed):
+        bad.append(f"docs/ARCHITECTURE.md: docs/architecture/{name} is not in Topic files")
+    rows = [x for x in core.partition("## Research")[2].splitlines() if x.startswith("|")]
+    for name in re.findall(r"`([\w\-]+\.md)`", "\n".join(rows)):
+        if f"docs/research/{name}" not in docs:
+            bad.append(f"docs/ARCHITECTURE.md: research file {name} does not exist")
     # mdsh (a commit hook) takes an unindented line that is only a code span
     # for a command, and panics
     for f, text in docs.items():
