@@ -418,4 +418,176 @@ bool Moved(const proto::Waypoint &a, const proto::Waypoint &b) {
     return true;
   return a.kind != proto::WaypointKind::None && Distance(a.position, b.position) > 1.f;
 }
+
+HackChange HackBoard::ChangeOf(const Running &running, bool show, std::uint64_t nowUs) const {
+  using K = HackChange::Kind;
+  HackChange change{.kind = running.upload ? (show ? K::ShowUpload : K::HideUpload)
+                                           : (show ? K::ShowEffect : K::HideEffect),
+                    .npc = running.npc,
+                    .player = running.player,
+                    .action = running.action,
+                    .effect = running.effect};
+  if (show && running.untilUs > nowUs)
+    change.seconds = static_cast<float>(running.untilUs - nowUs) / 1e6f;
+  return change;
+}
+
+std::size_t HackBoard::Shown() const {
+  return static_cast<std::size_t>(std::ranges::count_if(
+      m_running, [&](const Running &running) { return m_linked.contains(running.player); }));
+}
+
+std::vector<HackChange> HackBoard::Upload(proto::NpcId npc, proto::PlayerId player,
+                                          std::uint64_t action, float seconds,
+                                          std::uint64_t nowUs) {
+  std::vector<HackChange> out;
+  if (player == proto::kNoPlayer)
+    return out;
+  m_lastAction[{npc, player}] = action;
+  // One upload of a player on an NPC at a time on screen (the game's own
+  // indicator shows one too): a new one replaces it.
+  for (auto it = m_running.begin(); it != m_running.end();)
+    if (it->upload && it->npc == npc && it->player == player) {
+      if (m_linked.contains(player))
+        out.push_back(ChangeOf(*it, false, nowUs));
+      it = m_running.erase(it);
+    } else {
+      ++it;
+    }
+  if (m_running.size() >= kMaxShown)
+    return out;
+  const auto length = static_cast<std::uint64_t>(std::max(seconds, 0.f) * 1e6f);
+  // A second more than its length: the end the host says comes first.
+  const Running running{npc, player, true, action, 0, nowUs + length + 1'000'000};
+  m_running.push_back(running);
+  if (m_linked.contains(player)) {
+    auto shown = ChangeOf(running, true, nowUs);
+    shown.seconds = std::max(seconds, 0.f);
+    out.push_back(shown);
+  }
+  return out;
+}
+
+std::vector<HackChange> HackBoard::UploadEnded(proto::NpcId npc, proto::PlayerId player,
+                                               std::uint64_t action) {
+  std::vector<HackChange> out;
+  for (auto it = m_running.begin(); it != m_running.end();)
+    if (it->upload && it->npc == npc && it->player == player &&
+        (action == 0 || it->action == action)) {
+      if (m_linked.contains(player))
+        out.push_back(ChangeOf(*it, false, 0));
+      it = m_running.erase(it);
+    } else {
+      ++it;
+    }
+  return out;
+}
+
+std::vector<HackChange> HackBoard::Effect(proto::NpcId npc, proto::PlayerId player,
+                                          std::uint64_t effect, bool applied, float seconds,
+                                          std::uint64_t nowUs) {
+  std::vector<HackChange> out;
+  const auto hide = [&](auto it) {
+    if (m_linked.contains(it->player))
+      out.push_back(ChangeOf(*it, false, nowUs));
+    return m_running.erase(it);
+  };
+  if (!applied) {
+    for (auto it = m_running.begin(); it != m_running.end();)
+      it = !it->upload && it->npc == npc && it->effect == effect &&
+                   (player == proto::kNoPlayer || it->player == player)
+               ? hide(it)
+               : std::next(it);
+    return out;
+  }
+  if (player == proto::kNoPlayer)
+    return out; // an NPC's own, or nobody's: not a partner's hack
+  // The same effect again (refreshed): replaced.
+  for (auto it = m_running.begin(); it != m_running.end();)
+    it = !it->upload && it->npc == npc && it->player == player && it->effect == effect
+             ? hide(it)
+             : std::next(it);
+  if (m_running.size() >= kMaxShown)
+    return out;
+  const auto last = m_lastAction.find({npc, player});
+  const std::uint64_t length =
+      seconds > 0.f ? static_cast<std::uint64_t>(seconds * 1e6f) : kUnknownEffectUs;
+  const Running running{npc,    player,        false, last == m_lastAction.end() ? 0 : last->second,
+                        effect, nowUs + length};
+  m_running.push_back(running);
+  if (m_linked.contains(player)) {
+    auto shown = ChangeOf(running, true, nowUs);
+    shown.seconds = std::max(seconds, 0.f);
+    out.push_back(shown);
+  }
+  return out;
+}
+
+std::vector<HackChange> HackBoard::ForgetNpc(proto::NpcId npc) {
+  std::vector<HackChange> out;
+  for (auto it = m_running.begin(); it != m_running.end();)
+    if (it->npc == npc) {
+      if (m_linked.contains(it->player))
+        out.push_back(ChangeOf(*it, false, 0));
+      it = m_running.erase(it);
+    } else {
+      ++it;
+    }
+  std::erase_if(m_lastAction, [&](const auto &entry) { return entry.first.first == npc; });
+  return out;
+}
+
+std::vector<HackChange> HackBoard::SetLinked(proto::PlayerId player, bool linked,
+                                             std::uint64_t nowUs) {
+  std::vector<HackChange> out;
+  if (linked == m_linked.contains(player))
+    return out;
+  if (linked)
+    m_linked.insert(player);
+  else
+    m_linked.erase(player);
+  for (const auto &running : m_running)
+    if (running.player == player && running.untilUs > nowUs)
+      out.push_back(ChangeOf(running, linked, nowUs));
+  return out;
+}
+
+std::vector<HackChange> HackBoard::Forget(proto::PlayerId player) {
+  std::vector<HackChange> out;
+  for (auto it = m_running.begin(); it != m_running.end();)
+    if (it->player == player) {
+      if (m_linked.contains(player))
+        out.push_back(ChangeOf(*it, false, 0));
+      it = m_running.erase(it);
+    } else {
+      ++it;
+    }
+  m_linked.erase(player);
+  std::erase_if(m_lastAction, [&](const auto &entry) { return entry.first.second == player; });
+  return out;
+}
+
+std::vector<HackChange> HackBoard::Expire(std::uint64_t nowUs) {
+  std::vector<HackChange> out;
+  for (auto it = m_running.begin(); it != m_running.end();)
+    if (it->untilUs <= nowUs) {
+      if (m_linked.contains(it->player))
+        out.push_back(ChangeOf(*it, false, nowUs));
+      it = m_running.erase(it);
+    } else {
+      ++it;
+    }
+  return out;
+}
+
+std::vector<HackChange> HackBoard::Clear() {
+  std::vector<HackChange> out;
+  for (const auto &running : m_running)
+    if (m_linked.contains(running.player))
+      out.push_back(ChangeOf(running, false, 0));
+  m_running.clear();
+  m_linked.clear();
+  m_lastAction.clear();
+  return out;
+}
 } // namespace tandem::comms

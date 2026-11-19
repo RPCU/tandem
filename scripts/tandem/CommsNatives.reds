@@ -27,6 +27,10 @@ public native struct TandemCommsEvent {
   native let z: Float;
   // pings: how long it shows; reveals: how long (0: until off)
   native let seconds: Float;
+  // hacks (kind 7 show an upload, 8 hide it, 9 show an effect, 10 hide it):
+  // the program, the status effect
+  native let record: TweakDBID;
+  native let effect: TweakDBID;
 }
 
 public native class TandemCommsNative extends IScriptable {
@@ -39,6 +43,11 @@ public native class TandemCommsNative extends IScriptable {
   // same target again); ClearTarget: it died (false: none).
   public static native func MarkTarget(npc: Uint32, player: Uint32, entity: EntityID, position: Vector4) -> Int32
   public static native func ClearTarget() -> Bool
+  // Another player's quickhack on a shared NPC (Hacks.reds): an upload (step
+  // 0 started for `seconds`, 1 done, 2 failed), an effect applied (seconds
+  // left) or removed. Shown while linked.
+  public static native func PartnerUpload(npc: Uint32, player: Uint32, action: TweakDBID, step: Int32, seconds: Float)
+  public static native func PartnerEffect(npc: Uint32, player: Uint32, effect: TweakDBID, applied: Bool, seconds: Float)
   // Our scan tag (reason 0) or reveal (1) of a shared NPC or a static
   // entity, to linked players.
   public static native func Tag(reason: Int32, on: Bool, seconds: Int32, npc: Uint32, entity: EntityID)

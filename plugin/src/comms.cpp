@@ -72,10 +72,45 @@ void Comms::Queue(const std::vector<comms::LinkChange> &changes) {
                         .player = change.player,
                         .type = static_cast<std::int32_t>(change.after),
                         .before = static_cast<std::int32_t>(change.before)});
-    // No longer linked: what they had outlined here goes.
+    // No longer linked: what they had outlined here goes, and their
+    // quickhacks' indicators; linked: what of theirs runs shows.
     if (change.before == comms::LinkState::Linked)
       Queue(m_tags.Forget(change.player));
+    Queue(m_hacks.SetLinked(change.player, change.after == comms::LinkState::Linked, m_nowUs));
   }
+}
+
+void Comms::Queue(const std::vector<comms::HackChange> &changes) {
+  using K = comms::HackChange::Kind;
+  for (const auto &change : changes)
+    m_events.push_back({.kind = change.kind == K::ShowUpload   ? CommsEvent::Kind::ShowUpload
+                                : change.kind == K::HideUpload ? CommsEvent::Kind::HideUpload
+                                : change.kind == K::ShowEffect ? CommsEvent::Kind::ShowEffect
+                                                               : CommsEvent::Kind::HideEffect,
+                        .player = change.player,
+                        .target = {proto::TargetKind::Npc, change.npc},
+                        .seconds = change.seconds,
+                        .record = change.action,
+                        .effect = change.effect});
+}
+
+void Comms::PartnerUpload(proto::NpcId npc, proto::PlayerId player, std::uint64_t action,
+                          std::int32_t step, float seconds, std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  m_nowUs = nowUs;
+  if (player == m_you || player == proto::kNoPlayer || m_you == proto::kNoPlayer)
+    return; // ours are the game's own
+  Queue(step == 0 ? m_hacks.Upload(npc, player, action, seconds, nowUs)
+                  : m_hacks.UploadEnded(npc, player, action));
+}
+
+void Comms::PartnerEffect(proto::NpcId npc, proto::PlayerId player, std::uint64_t effect,
+                          bool applied, float seconds, std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  m_nowUs = nowUs;
+  if ((applied && player == m_you) || m_you == proto::kNoPlayer)
+    return;
+  Queue(m_hacks.Effect(npc, player, effect, applied, seconds, nowUs));
 }
 
 void Comms::Apply(const proto::Message &message, std::uint64_t nowUs) {
@@ -111,6 +146,7 @@ void Comms::Apply(const proto::Message &message, std::uint64_t nowUs) {
 
 std::vector<CommsEvent> Comms::Update(std::uint64_t nowUs) {
   std::lock_guard _(m_lock);
+  m_nowUs = nowUs;
   for (auto &inbound : std::exchange(m_inbound, {})) {
     switch (inbound.kind) {
     case CommsInbound::Kind::InSession:
@@ -125,12 +161,14 @@ std::vector<CommsEvent> Comms::Update(std::uint64_t nowUs) {
       Queue(m_board.Forget(inbound.player));
       Queue(m_links.Forget(inbound.player));
       Queue(m_tags.Forget(inbound.player));
+      Queue(m_hacks.Forget(inbound.player));
       if (m_waypointsShown.erase(inbound.player) > 0)
         m_events.push_back({.kind = CommsEvent::Kind::Waypoint, .player = inbound.player});
       break;
     case CommsInbound::Kind::Ended: {
       Queue(m_board.Clear());
       Queue(m_tags.Clear());
+      Queue(m_hacks.Clear());
       for (const auto player : std::vector(m_links.Players().begin(), m_links.Players().end()))
         Queue(m_links.Forget(player));
       m_links.Clear();
@@ -152,6 +190,7 @@ std::vector<CommsEvent> Comms::Update(std::uint64_t nowUs) {
   }
   Queue(m_board.Expire(nowUs));
   Queue(m_tags.Expire(nowUs));
+  Queue(m_hacks.Expire(nowUs));
   FlushTags();
   return std::exchange(m_events, {});
 }

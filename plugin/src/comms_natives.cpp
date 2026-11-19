@@ -31,6 +31,8 @@ struct TandemCommsEvent {
   Red::EntityID entity;      // Entity: the placed entity
   float x{}, y{}, z{};
   float seconds{};
+  Red::TweakDBID record; // hacks: the program (ObjectAction)
+  Red::TweakDBID effect; // hacks: the status effect
 };
 static_assert(alignof(TandemCommsEvent) <= 8, "the script VM aligns struct locals to 8");
 
@@ -68,8 +70,22 @@ struct TandemCommsNative : Red::IScriptable {
           .x = event.position.x,
           .y = event.position.y,
           .z = event.position.z,
-          .seconds = event.seconds});
+          .seconds = event.seconds,
+          .record = Red::TweakDBID(event.record),
+          .effect = Red::TweakDBID(event.effect)});
     return out;
+  }
+
+  // Another player's quickhack on a shared NPC, as Hacks.reds learns it: an
+  // upload (step 0 started, for `seconds`; 1 done, 2 failed), an effect
+  // applied (with what is left of it) or removed. Shown while linked.
+  static void PartnerUpload(std::uint32_t npc, std::uint32_t player, Red::TweakDBID action,
+                            std::int32_t step, float seconds) {
+    Comms::Get().PartnerUpload(npc, player, action.value, step, seconds, net::NowUs());
+  }
+  static void PartnerEffect(std::uint32_t npc, std::uint32_t player, Red::TweakDBID effect,
+                            bool applied, float seconds) {
+    Comms::Get().PartnerEffect(npc, player, effect.value, applied, seconds, net::NowUs());
   }
 
   // Our ping (kind: proto::MarkKind 1..6) at a target (a shared NPC, a
@@ -142,6 +158,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemCommsEvent, "TandemCommsEvent", {
   RTTI_PROPERTY(y);
   RTTI_PROPERTY(z);
   RTTI_PROPERTY(seconds);
+  RTTI_PROPERTY(record);
+  RTTI_PROPERTY(effect);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemCommsNative, "TandemCommsNative", {
@@ -149,6 +167,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemCommsNative, "TandemCommsNative", {
   RTTI_METHOD(Ping);
   RTTI_METHOD(MarkTarget);
   RTTI_METHOD(ClearTarget);
+  RTTI_METHOD(PartnerUpload);
+  RTTI_METHOD(PartnerEffect);
   RTTI_METHOD(Tag);
   RTTI_METHOD(SetLink);
   RTTI_METHOD(LinkState);

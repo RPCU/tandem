@@ -151,6 +151,66 @@ quickhack panel. Built 2026-11-19, not run in game.
 - Test command: `tools/game.sh cmd comms target` marks what V looks at.
   The mock player: `--mark-target ID|nearest`. Scenario `comms-target`.
 
+## A partner's quickhacks, in their colour
+
+"Each player should have a corresponding quickhack colour, so that other
+players see who ran a quickhack on each enemy or other thing; other
+players' quickhacks are visible only if the players decided to link."
+Built 2026-11-19, not run in game.
+
+- **One colour per player, everywhere** (`TandemMarkers.ColorOf`, by
+  player id: cyan, yellow, green, pink, orange, violet, red, then white).
+  It tints a player's pings, waypoint, team target and quickhacks. The
+  palette and its order are those of the `polish` branch, which colours
+  the player's marker with the same function name. Polish is not merged
+  into integration yet, so `Markers.reds` here has a copy: **on merging,
+  keep one** (`scripts:check` will say the function is defined twice).
+- **What is shown.** A linked partner's quickhack on a shared NPC is drawn
+  with the game's own quickhack indicator over its target:
+  - the `QuickHackMappinController` widget a vehicle uses for an upload
+    (`VehicleComponent.CreateQuickHackMappin`), with the program's icon,
+    its bar filling over the upload;
+  - then the effect it left, the same widget in its duration state, the
+    bar emptying over the effect's remaining time.
+
+  Both are tinted with the partner's colour (icon and bar). Our own
+  quickhacks keep the game's colours and go through vanilla, untouched.
+  An unlinked partner's quickhacks show nothing new. Their effects on the
+  NPC stay as they are: the proxy wears the same status effects as the
+  host's NPC, as before (`Hacks.reds`; a burning NPC burns for everyone).
+
+- **No new message.** What already crosses games says who hacked what:
+  - a guest learns every upload on a host NPC from `NpcHackState` (player,
+    program, upload time, done or failed) and every effect from
+    `NpcStatus` (player, status effect; its remaining time is read on the
+    proxy, which wears it);
+  - the host learns its guests' uploads from `NpcHack` and their ends
+    from its own upload records, and the effects from the status effects
+    landing on its NPCs.
+
+  `Hacks.reds` hands each of these to `TandemCommsNative.PartnerUpload` /
+  `PartnerEffect`.
+
+- **The rules** are core's (`comms::HackBoard`). One upload indicator per
+  player and NPC (a new upload replaces it); an effect's indicator carries
+  the program that left it. Indicators are shown only for linked players:
+  - a link made shows what still runs;
+  - a link broken hides everything of that player at once (kept, in case
+    the link comes back);
+  - a vanished hacker leaves nothing (`PlayerLeft`);
+  - an effect the host says has ended goes, whoever's it was;
+  - everything expires (the upload's length and a second; the effect's
+    remaining time, or 120 s when unknown); at most 64 shown.
+- **Devices** are not covered yet. Their quickhacks cross games on the
+  `devices` branch (`DeviceUse` with `kDeviceHacked`); once that branch is
+  merged, the same `PartnerUpload` / `PartnerEffect` calls on a device's
+  entity give it the same indicators.
+- Our game drives the indicator's bar itself (`TandemProgress`, every
+  tick). The widget's own driver is a stat pool of the upload on the
+  target, which exists only in the hacker's game.
+- Test command: `tools/game.sh cmd comms hacks`. The mock player, as host:
+  `--hack-npc ID|nearest`. Scenario `comms-hacks`.
+
 ## Protocol
 
 Four messages, appended after `ShotHit` (no version bump; the `presence`

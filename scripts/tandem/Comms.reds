@@ -27,6 +27,30 @@ public class TandemCommsMappinData extends MappinScriptData {
   public let icon: CName;
   public let label: String;
   public let description: String;
+  // Whose it is: its icon takes that player's colour (Markers' ColorOf).
+  public let player: Uint32;
+}
+
+// A linked partner's quickhack on a shared NPC, drawn with the game's own
+// quickhack indicator (QuickHackMappinController, as a vehicle's upload:
+// VehicleComponent.CreateQuickHackMappin), tinted with that partner's
+// colour. The controller is kept here once it draws it, so our tick drives
+// its bar (no stat pool of the upload exists on our side).
+public class TandemHackMappinData extends GameplayRoleMappinData {
+  public let player: Uint32;
+  public let upload: Bool;
+  public let startedAt: Float;
+  public let length: Float;
+  public let controller: wref<QuickHackMappinController>;
+}
+
+public class TandemHackIndicator {
+  public let npc: Uint32;
+  public let player: Uint32;
+  public let upload: Bool;
+  public let effect: TweakDBID;
+  public let mappin: NewMappinID;
+  public let data: ref<TandemHackMappinData>;
 }
 
 public class TandemCommsMark {
@@ -61,6 +85,8 @@ public class TandemComms {
   // Our team target (none: no hash), and when we last looked at it.
   public let m_ownTarget: EntityID;
   private let m_ownTargetSeen: Float;
+  // Linked partners' quickhacks on our NPCs (proxies on a guest).
+  private let m_hacks: array<ref<TandemHackIndicator>>;
 
   public static func Of(game: GameInstance) -> ref<TandemComms> {
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
@@ -281,6 +307,7 @@ public class TandemComms {
       this.Unregister(waypoint.mappin);
     }
     ArrayClear(this.m_waypoints);
+    this.ClearHacks();
   }
 
   public static func LinkWord(setting: Int32) -> String {
@@ -301,6 +328,7 @@ public class TandemComms {
       this.m_ownTargetSeen = now;
       this.WatchOwnTarget();
     }
+    this.DriveHacks();
     if this.m_offerFrom != 0u && now - this.m_offerAt > 15.0 {
       TandemNative.Log(s"comms: link request of \(this.NameOf(this.m_offerFrom)) left unanswered");
       this.HideOffer();
@@ -327,6 +355,18 @@ public class TandemComms {
           break;
         case 6:
           this.WaypointOf(e);
+          break;
+        case 7:
+          this.ShowHack(e, true);
+          break;
+        case 8:
+          this.HideHack(e.npc, e.player, true, TDBID.None());
+          break;
+        case 9:
+          this.ShowHack(e, false);
+          break;
+        case 10:
+          this.HideHack(e.npc, e.player, false, e.effect);
           break;
         default:
           break;
@@ -448,6 +488,7 @@ public class TandemComms {
     let ours = e.player == this.m_you;
     let data = new TandemCommsMappinData();
     data.icon = TandemComms.Icon(e.type);
+    data.player = e.player;
     data.label = ours ? TandemComms.Word(e.type) : s"\(this.NameOf(e.player)): \(TandemComms.Word(e.type))";
     data.description = ours ? "Your ping" : s"\(this.NameOf(e.player))'s ping";
     if e.type == 7 {
@@ -804,6 +845,7 @@ public class TandemComms {
     waypoint.kind = e.type;
     waypoint.position = new Vector4(e.x, e.y, e.z, 1.0);
     let data = new TandemCommsMappinData();
+    data.player = e.player;
     data.icon = e.type == 1 ? n"dynamic_event" : n"quest";
     data.label = s"\(name)'s waypoint";
     data.description = e.type == 1 ? s"The map pin \(name) placed" : s"The place \(name) tracks";
@@ -814,6 +856,110 @@ public class TandemComms {
       this.Sound(n"ui_menu_map_pin_on");
     }
     TandemNative.Log(s"comms: waypoint of \(name) (kind \(e.type)) at (\(e.x), \(e.y), \(e.z)), registered \(waypoint.mappin.value != 0ul)");
+  }
+
+  // ---- a linked partner's quickhacks ----
+
+  // The colour a comms mappin's icon takes: its player's (none: white).
+  public static func ColorOfMappin(mappin: wref<IMappin>) -> HDRColor {
+    let data = TandemComms.DataOf(mappin);
+    return TandemMarkers.ColorOf(IsDefined(data) ? data.player : 0u);
+  }
+
+  // What is left of a status effect on a target (0: not there, or no end).
+  public static func EffectSeconds(target: ref<GameObject>, effect: TweakDBID) -> Float {
+    if !IsDefined(target) {
+      return 0.0;
+    }
+    for applied in StatusEffectHelper.GetAppliedEffects(target) {
+      if IsDefined(applied) && applied.GetRecord().GetID() == effect {
+        return MaxF(applied.GetRemainingDuration(), 0.0);
+      }
+    }
+    return 0.0;
+  }
+
+  // The program's own icon (its caption icon), as the game's indicator
+  // shows for an upload.
+  private static func ProgramIcon(action: TweakDBID) -> TweakDBID {
+    let record = TweakDBInterface.GetObjectActionRecord(action);
+    if IsDefined(record) && IsDefined(record.ObjectActionUI()) && IsDefined(record.ObjectActionUI().CaptionIcon()) && IsDefined(record.ObjectActionUI().CaptionIcon().TexturePartID()) {
+      return record.ObjectActionUI().CaptionIcon().TexturePartID().GetID();
+    }
+    return TDBID.None();
+  }
+
+  private func ShowHack(e: TandemCommsEvent, upload: Bool) -> Void {
+    this.HideHack(e.npc, e.player, upload, upload ? TDBID.None() : e.effect);
+    let npcs = IsDefined(this.m_system) ? this.m_system.NpcsSync() : null;
+    let target = IsDefined(npcs) ? GameInstance.FindEntityByID(this.m_game, npcs.EntityOfNpc(e.npc)) as GameObject : null;
+    let what = upload ? "upload" : "effect";
+    if !IsDefined(target) {
+      TandemNative.Log(s"comms: \(this.NameOf(e.player))'s \(what) on npc \(e.npc): not here");
+      return;
+    }
+    let data = new TandemHackMappinData();
+    data.player = e.player;
+    data.upload = upload;
+    data.startedAt = this.m_now;
+    data.length = e.seconds;
+    data.m_mappinVisualState = EMappinVisualState.Default;
+    data.m_progressBarType = upload ? EProgressBarType.UPLOAD : EProgressBarType.DURATION;
+    data.m_progressBarContext = EProgressBarContext.QuickHack;
+    data.m_duration = e.seconds;
+    data.m_visibleThroughWalls = true;
+    data.m_textureID = TandemComms.ProgramIcon(e.record);
+    let mappin: MappinData;
+    mappin.mappinType = t"Mappins.InteractionMappinDefinition";
+    mappin.variant = gamedataMappinVariant.QuickHackVariant;
+    mappin.active = true;
+    mappin.visibleThroughWalls = true;
+    mappin.scriptData = data;
+    let hack = new TandemHackIndicator();
+    hack.npc = e.npc;
+    hack.player = e.player;
+    hack.upload = upload;
+    hack.effect = e.effect;
+    hack.data = data;
+    hack.mappin = GameInstance.GetMappinSystem(this.m_game).RegisterMappinWithObject(mappin, target, target.GetQuickHackIndicatorSlotName());
+    ArrayPush(this.m_hacks, hack);
+    TandemNative.Log(s"comms: showing \(this.NameOf(e.player))'s \(what) of \(TDBID.ToStringDEBUG(upload ? e.record : e.effect)) on npc \(e.npc) (\(e.seconds) s), registered \(hack.mappin.value != 0ul)");
+  }
+
+  // Off: a player's upload on an NPC, or an effect (none: all of theirs).
+  private func HideHack(npc: Uint32, player: Uint32, upload: Bool, effect: TweakDBID) -> Void {
+    let kept: array<ref<TandemHackIndicator>>;
+    for hack in this.m_hacks {
+      let match = hack.npc == npc && hack.player == player && Equals(hack.upload, upload) && (upload || !TDBID.IsValid(effect) || hack.effect == effect);
+      if match {
+        if hack.mappin.value != 0ul {
+          GameInstance.GetMappinSystem(this.m_game).UnregisterMappin(hack.mappin);
+        }
+        TandemNative.Log(s"comms: hid \(this.NameOf(player))'s \(upload ? "upload" : "effect") on npc \(npc)");
+      } else {
+        ArrayPush(kept, hack);
+      }
+    }
+    this.m_hacks = kept;
+  }
+
+  // Every tick: each drawn indicator's bar, as its own stat pool would.
+  private func DriveHacks() -> Void {
+    for hack in this.m_hacks {
+      let data = hack.data;
+      if IsDefined(data.controller) && data.length > 0.0 {
+        data.controller.TandemProgress(ClampF((this.m_now - data.startedAt) / data.length, 0.0, 1.0));
+      }
+    }
+  }
+
+  private func ClearHacks() -> Void {
+    for hack in this.m_hacks {
+      if hack.mappin.value != 0ul {
+        GameInstance.GetMappinSystem(this.m_game).UnregisterMappin(hack.mappin);
+      }
+    }
+    ArrayClear(this.m_hacks);
   }
 
   // ---- helpers ----
@@ -859,7 +1005,13 @@ public class TandemComms {
   // tools/game.sh cmd: comms report | comms ping | comms link [NAME] |
   // comms unlink [NAME] | comms accept | comms tag | comms target
   public func Command(command: String) -> Void {
-    if Equals(command, "comms target") {
+    if Equals(command, "comms hacks") {
+      TandemNative.Log(s"comms: \(ArraySize(this.m_hacks)) partner quickhack indicator(s)");
+      for hack in this.m_hacks {
+        let left = MaxF(hack.data.length - (this.m_now - hack.data.startedAt), 0.0);
+        TandemNative.Log(s"comms: \(hack.upload ? "upload" : "effect") of \(this.NameOf(hack.player)) on npc \(hack.npc), \(left) s left, drawn \(IsDefined(hack.data.controller))");
+      }
+    } else if Equals(command, "comms target") {
       // As the "Mark target" quickhack on what V looks at (the panel itself
       // is checked by hand: scenario comms-target).
       let player = GetPlayer(this.m_game);
@@ -981,6 +1133,7 @@ protected func UpdateIcon() {
   let icon = TandemComms.IconOf(this.GetMappin());
   if NotEquals(icon, n"") {
     inkImageRef.SetTexturePart(this.iconWidget, icon);
+    inkWidgetRef.SetTintColor(this.iconWidget, TandemComms.ColorOfMappin(this.GetMappin()));
   }
 }
 
@@ -990,6 +1143,7 @@ protected final func UpdateIcon() {
   let icon = TandemComms.IconOf(this.GetMappin());
   if NotEquals(icon, n"") {
     inkImageRef.SetTexturePart(this.iconWidget, icon);
+    inkWidgetRef.SetTintColor(this.iconWidget, TandemComms.ColorOfMappin(this.GetMappin()));
   }
 }
 
@@ -999,6 +1153,7 @@ protected func UpdateIcon() {
   let icon = TandemComms.IconOf(this.GetMappin());
   if NotEquals(icon, n"") {
     inkImageRef.SetTexturePart(this.iconWidget, icon);
+    inkWidgetRef.SetTintColor(this.iconWidget, TandemComms.ColorOfMappin(this.GetMappin()));
   }
 }
 
@@ -1041,4 +1196,54 @@ private final func ApplyQuickhackSelection() {
     return;
   }
   wrappedMethod();
+}
+
+// ---- a partner's quickhack, on the game's own indicator ----
+
+@addMethod(QuickHackMappinController)
+public final func TandemData() -> ref<TandemHackMappinData> {
+  return IsDefined(this.GetMappin()) ? this.GetMappin().GetScriptData() as TandemHackMappinData : null;
+}
+
+// Its icon and bar in the partner's colour (ours keep the game's).
+@addMethod(QuickHackMappinController)
+public final func TandemTint(player: Uint32) -> Void {
+  let color = TandemMarkers.ColorOf(player);
+  inkWidgetRef.SetTintColor(this.iconWidget, color);
+  inkWidgetRef.SetTintColor(this.m_iconWidgetActive, color);
+  inkWidgetRef.SetTintColor(this.m_bar, color);
+}
+
+@addMethod(QuickHackMappinController)
+public final func TandemProgress(progress: Float) -> Void {
+  this.OnStatsDataUpdated(progress);
+}
+
+@wrapMethod(QuickHackMappinController)
+protected cb func OnIntro() -> Bool {
+  let result = wrappedMethod();
+  let data = this.TandemData();
+  if IsDefined(data) {
+    data.controller = this;
+    this.TandemTint(data.player);
+  }
+  return result;
+}
+
+// Ours has no action behind it (the partner's runs in another game): the
+// view vanilla gives an upload or an effect, without reading one.
+@wrapMethod(QuickHackMappinController)
+private final func UpdateView() {
+  let data = this.TandemData();
+  if !IsDefined(data) {
+    wrappedMethod();
+    return;
+  }
+  if data.upload {
+    inkWidgetRef.SetVisible(this.m_header, false);
+    this.m_rootWidget.SetState(n"Upload");
+  } else {
+    this.m_rootWidget.SetState(n"Default");
+  }
+  this.TandemTint(data.player);
 }

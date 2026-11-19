@@ -56,6 +56,23 @@ public class TandemMarkers extends ScriptableSystem {
     return Equals(variant, gamedataMappinVariant.CPO_RemotePlayerVariant);
   }
 
+  // Each player's colour, by id (the same in every game): their marker,
+  // pings, team target and quickhacks (Comms.reds) share it. The palette
+  // and order are the `polish` branch's TandemMarkers.ColorOf, the same
+  // function: on merging the two, keep one.
+  public static func ColorOf(player: Uint32) -> HDRColor {
+    switch player {
+      case 1u: return new HDRColor(0.369, 0.965, 1.0, 1.0); // cyan
+      case 2u: return new HDRColor(1.0, 0.882, 0.31, 1.0); // yellow
+      case 3u: return new HDRColor(0.369, 1.0, 0.565, 1.0); // green
+      case 4u: return new HDRColor(1.0, 0.38, 0.75, 1.0); // pink
+      case 5u: return new HDRColor(1.0, 0.56, 0.2, 1.0); // orange
+      case 6u: return new HDRColor(0.66, 0.5, 1.0, 1.0); // violet
+      case 7u: return new HDRColor(1.0, 0.33, 0.33, 1.0); // red
+      default: return new HDRColor(1.0, 1.0, 1.0, 1.0);
+    }
+  }
+
   // Ours or a ping's or a waypoint's (Comms.reds): drawn the same way.
   public static func IsTandem(variant: gamedataMappinVariant) -> Bool {
     return TandemMarkers.IsOurs(variant) || TandemComms.IsOurs(variant);

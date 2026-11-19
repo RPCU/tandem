@@ -251,6 +251,10 @@ struct Options {
   // A team target (the "Mark target" quickhack) 5 s in: a shared NPC's id,
   // or "nearest" (empty: never).
   std::string markTarget;
+  // host: our V "quickhacks" a shared NPC (an id, or "nearest") every 20 s:
+  // --hack-action's upload for 3 s, then --hack-effect on it for 10 s, as
+  // the host's game says it (NpcHackState, NpcStatus). Empty: never.
+  std::string hackNpc;
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -423,6 +427,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --mark-target ID   5 seconds after another player is in, make the shared NPC\n"
          "                     ID (or \"nearest\") our team target, as the Mark target\n"
          "                     quickhack does\n"
+         "  --hack-npc ID      host: every 20 s our V quickhacks the shared NPC ID (or\n"
+         "                     \"nearest\"): --hack-action uploads for 3 s, then\n"
+         "                     --hack-effect is on it for 10 s, as a host's game says\n"
          "  --latency MS       a bad network: MS added each way\n"
          "  --jitter MS        up to MS more at random, each way (the order kept)\n"
          "  --loss PERCENT     PERCENT of the datagrams lost, each way\n"
@@ -735,7 +742,11 @@ Options Parse(int argc, char **argv) {
       options.waypoint = Point(flag, value);
     else if (flag == "--waypoint-clear")
       options.waypointClearSeconds = Number<int>(value);
-    else if (flag == "--mark-target") {
+    else if (flag == "--hack-npc") {
+      if (value != "nearest")
+        Number<std::uint32_t>(value);
+      options.hackNpc = std::string(value);
+    } else if (flag == "--mark-target") {
       if (value != "nearest")
         Number<std::uint32_t>(value); // a number, or the usage
       options.markTarget = std::string(value);
@@ -2409,6 +2420,9 @@ int main(int argc, char **argv) {
   Vec3 lastPingAt{};
   bool tagOn = false, linkAsked = false, waypointSet = false, waypointCleared = false,
        targetMarked = false;
+  int hackStep = 0;
+  tandem::proto::NpcId hackedNpc = 0;
+  auto nextHackNpc = std::chrono::steady_clock::now();
   auto nextPing = std::chrono::steady_clock::now(), nextTag = nextPing, nextReveal = nextPing,
        waypointSetAt = nextPing;
 
@@ -3341,6 +3355,50 @@ int main(int argc, char **argv) {
                                    npc ? npc->position : Vec3{}, tandem::net::NowUs())) {
         endpoint->SendMark(*mark);
         Log("team target: mark {} on npc {}", mark->id, id);
+      }
+    }
+    if (!options.hackNpc.empty() && options.host && togetherSince && now >= nextHackNpc) {
+      namespace proto = tandem::proto;
+      const auto t = now - *togetherSince;
+      const auto step = static_cast<int>((t % 20s) / 1s);
+      if (hackStep == 0 && step < 3) {
+        hackStep = 1;
+        hackedNpc = 0;
+        if (options.hackNpc == "nearest") {
+          if (const auto npc = nearestNpc())
+            hackedNpc = npc->npc;
+        } else {
+          hackedNpc = Number<std::uint32_t>(options.hackNpc);
+        }
+        if (hackedNpc != 0) {
+          endpoint->SendNpcHackState({.npc = hackedNpc,
+                                      .player = endpoint->You(),
+                                      .action = TweakDBID(options.hackAction),
+                                      .step = proto::HackStep::Started,
+                                      .uploadMs = 3000});
+          Log("hack: uploading {} on npc {} (3 s)", options.hackAction, hackedNpc);
+        }
+      } else if (hackStep == 1 && step >= 3) {
+        hackStep = 2;
+        if (hackedNpc != 0) {
+          endpoint->SendNpcHackState({.npc = hackedNpc,
+                                      .player = endpoint->You(),
+                                      .action = TweakDBID(options.hackAction),
+                                      .step = proto::HackStep::Done});
+          endpoint->SendNpcStatus({.npc = hackedNpc,
+                                   .player = endpoint->You(),
+                                   .effect = TweakDBID(options.hackEffect),
+                                   .applied = true});
+          Log("hack: {} on npc {} (10 s)", options.hackEffect, hackedNpc);
+        }
+      } else if (hackStep == 2 && step >= 13) {
+        hackStep = 0;
+        if (hackedNpc != 0) {
+          endpoint->SendNpcStatus(
+              {.npc = hackedNpc, .effect = TweakDBID(options.hackEffect), .applied = false});
+          Log("hack: {} off npc {}", options.hackEffect, hackedNpc);
+        }
+        nextHackNpc = now + 2s; // the rest of the round
       }
     }
     if (options.waypoint && !waypointSet && endpoint->IsJoined() && togetherSince) {

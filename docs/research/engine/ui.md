@@ -256,3 +256,27 @@ ignoreTransparent)` and `GetLookAtPosition` (`:108382`); the camera's
 
   The Ping program's own record, for an icon: `QuickHack.FreePingHack`
   (`ObjectActionUI().CaptionIcon().TexturePartID()`, `HackCategory()`).
+
+- **The quickhack indicator over a target** (for a partner's quickhacks,
+  2026-11-19, read, not run).
+  - A device's upload and duration are role mappins of its
+    `GameplayRoleComponent`: `QuickHackVariant` (`Mappins.DeviceMappinDefinition`)
+    and `Zzz15_QuickHackDurationVariant` (`Mappins.DeviceMappinHackDurationDefinition`,
+    `:102631`). They are toggled from `UploadProgramProgressEvent`
+    (`:102495`: state, `progressBarType` UPLOAD or DURATION, `duration`,
+    the action's interaction icon).
+  - A vehicle registers one itself (`VehicleComponent.CreateQuickHackMappin`,
+    `:94765`): `Mappins.InteractionMappinDefinition`, `QuickHackVariant`,
+    a `GameplayRoleMappinData` as script data (`m_textureID`,
+    `m_duration`, `m_progressBarType`, `m_progressBarContext` QuickHack,
+    `m_visibleThroughWalls`), on `GetQuickHackIndicatorSlotName()`, which
+    every `GameObject` has (`:13308`).
+  - The widget is `QuickHackMappinController` (`:398821`): `OnIntro` sets
+    the icon on `iconWidget` and `m_iconWidgetActive`; `UpdateView` reads
+    `m_data.m_action.m_IsAppliedByMonowire` for the upload state, so an
+    entry with no action must not reach it; the bar `m_bar` is scaled by
+    the private `OnStatsDataUpdated(progress)`, which a stat pool listener
+    calls. An added method can call it to drive the bar from elsewhere.
+- **Player colours on ink** (for the identity colour):
+  `inkWidgetRef.SetTintColor(widget, HDRColor)`, as `polish` does for the
+  marker's icon.

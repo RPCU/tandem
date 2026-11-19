@@ -67,6 +67,15 @@
   distance text, rewritten after each native update: watch for flicker)
   and on the map tooltip, and that the marker follows a seated player's car
   copy.
+- **Identity colour** (`TandemMarkers.ColorOf`): one colour per player id,
+  the same in every game. In order from id 1: cyan, yellow, green, pink,
+  orange, violet, red, then white. It tints a player's pings, waypoint,
+  team target and quickhack indicators ([`comms.md`](comms.md)). The
+  `polish` branch gives the marker the same function and palette; on
+  merging, keep one. To check in game: readability against the game's own
+  reds and cyans, and colour-blind pairs. Red/green (ids 3 and 7) and
+  yellow/green (2 and 3) are the risky pairs, which is why the name always
+  comes with the colour.
 
 ## Open problems
 

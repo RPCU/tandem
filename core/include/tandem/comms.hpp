@@ -187,6 +187,61 @@ private:
   std::vector<TagChange> Release(const Key &key, proto::PlayerId player);
 };
 
+// A partner's quickhacks, shown on what they hack (docs/architecture/comms.md,
+// "A partner's quickhacks"): the upload, then the effect it left, for the
+// players linked with us only. Fed by what already crosses games (the
+// host's NpcHackState and NpcStatus; on the host, its guests' NpcHack and
+// the effects landing on its NPCs); our own are vanilla's and never here.
+struct HackChange {
+  enum class Kind { ShowUpload, HideUpload, ShowEffect, HideEffect };
+  Kind kind{};
+  proto::NpcId npc{};
+  proto::PlayerId player{};
+  std::uint64_t action{}; // the program (ObjectAction record): its icon
+  std::uint64_t effect{}; // effects: the status effect record
+  float seconds{};        // Show*: how long from now (0: unknown)
+};
+
+class HackBoard {
+public:
+  static constexpr std::uint64_t kUnknownEffectUs = 120'000'000; // a backstop
+  static constexpr std::size_t kMaxShown = 64;
+  // An upload started (seconds: its length), or ended (done or failed).
+  std::vector<HackChange> Upload(proto::NpcId npc, proto::PlayerId player, std::uint64_t action,
+                                 float seconds, std::uint64_t nowUs);
+  std::vector<HackChange> UploadEnded(proto::NpcId npc, proto::PlayerId player,
+                                      std::uint64_t action);
+  // An effect came onto the NPC from `player` (seconds: what is left of it,
+  // 0 unknown) or left it (player kNoPlayer: whoever's it was).
+  std::vector<HackChange> Effect(proto::NpcId npc, proto::PlayerId player, std::uint64_t effect,
+                                 bool applied, float seconds, std::uint64_t nowUs);
+  // The NPC is gone (dead, no longer shared): everything on it.
+  std::vector<HackChange> ForgetNpc(proto::NpcId npc);
+  // Shown only for linked players: a link made shows what is running, a
+  // link broken hides it at once (kept, in case it comes back).
+  std::vector<HackChange> SetLinked(proto::PlayerId player, bool linked, std::uint64_t nowUs);
+  // The hacker vanished: nothing of theirs stays.
+  std::vector<HackChange> Forget(proto::PlayerId player);
+  std::vector<HackChange> Expire(std::uint64_t nowUs);
+  std::vector<HackChange> Clear();
+  bool Linked(proto::PlayerId player) const { return m_linked.contains(player); }
+  std::size_t Shown() const;
+
+private:
+  struct Running {
+    proto::NpcId npc{};
+    proto::PlayerId player{};
+    bool upload{}; // else an effect
+    std::uint64_t action{}, effect{};
+    std::uint64_t untilUs{};
+  };
+  HackChange ChangeOf(const Running &running, bool show, std::uint64_t nowUs) const;
+  std::vector<Running> m_running;
+  std::set<proto::PlayerId> m_linked;
+  // The program each player last uploaded on each NPC: the effect's icon.
+  std::map<std::pair<proto::NpcId, proto::PlayerId>, std::uint64_t> m_lastAction;
+};
+
 // A waypoint worth sending again: another kind, or moved more than 1 m.
 bool Moved(const proto::Waypoint &a, const proto::Waypoint &b);
 } // namespace tandem::comms
