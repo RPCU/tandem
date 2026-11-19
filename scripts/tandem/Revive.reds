@@ -108,6 +108,12 @@ public class TandemRevive {
     return this.m_life != 0 || this.m_dying;
   }
 
+  // The revive prompt is up, or a revive is under way: the interaction key
+  // is ours (Trade.reds keeps its own prompt off meanwhile).
+  public func Prompting() -> Bool {
+    return this.m_target != 0u || this.m_holding != 0u;
+  }
+
   // We leave the session, or it ends under us, while our V is down or out:
   // it dies the game's normal way (death screen, the last save), so leaving
   // is never a way out of being down. True if it was down.

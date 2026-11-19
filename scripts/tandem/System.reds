@@ -176,6 +176,11 @@ public class TandemSystem extends ScriptableSystem {
   private let m_lastPuppetCheck: Float;
   private let m_missingPlayers: array<Uint32>;
   private let m_missingSince: array<Float>;
+  // A guest's saves: locked in a session, and the way back to its own
+  // (Saves.reds).
+  private let m_saves: ref<TandemSaves>;
+  // Trade with the player beside us (Trade.reds).
+  private let m_trade: ref<TandemTradeTable>;
 
   private func OnAttach() -> Void {
     if TandemNative.IsConfigured() {
@@ -203,6 +208,8 @@ public class TandemSystem extends ScriptableSystem {
     }
     this.m_attached = true;
     this.m_leftDown = false;
+    this.m_saves = new TandemSaves();
+    this.m_saves.Start(this.GetGameInstance(), this);
     if TandemNative.IsConfigured() {
       this.BeginSession();
     } else {
@@ -258,6 +265,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_stealth.Start(this.GetGameInstance());
     this.m_revive = new TandemRevive();
     this.m_revive.Start(this.GetGameInstance(), this);
+    this.m_trade = new TandemTradeTable();
+    this.m_trade.Start(this.GetGameInstance(), this);
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -278,6 +287,9 @@ public class TandemSystem extends ScriptableSystem {
   private final func OnPlayerDetach(request: ref<PlayerDetachRequest>) -> Void {
     this.m_attached = false;
     this.m_tickGen += 1;
+    if IsDefined(this.m_saves) {
+      this.m_saves.Stop();
+    }
     if !this.m_inGame {
       return;
     }
@@ -309,6 +321,10 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     this.m_npcs = null;
+    // Our own weather and clock back (not for a world that is going away).
+    if IsDefined(this.m_world) && worldStays {
+      this.m_world.End(true);
+    }
     this.m_world = null;
     this.m_attitudes = null;
     if IsDefined(this.m_stealth) {
@@ -324,6 +340,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_revive.Stop();
     }
     this.m_revive = null;
+    if IsDefined(this.m_trade) {
+      this.m_trade.End();
+    }
+    this.m_trade = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -394,7 +414,39 @@ public class TandemSystem extends ScriptableSystem {
     if this.m_inGame && this.m_you != 0u && !TandemNative.IsHost() {
       return true;
     }
+    // Out of a session, until our own world is back (Saves.reds).
+    if IsDefined(this.m_saves) && this.m_saves.Locked() {
+      return true;
+    }
     return IsDefined(this.m_outcomes) && this.m_outcomes.FollowsHost();
+  }
+
+  // What a session left in our game (the bits are core/progress.hpp's
+  // kLeft*): while any is set, no save. Parked car copies are not counted:
+  // they are never deleted (deleting one froze the game) and never saved
+  // (persistState off).
+  public func LeftOver() -> Int32 {
+    let left = 0;
+    let story = TandemStorySystem.Get(this.GetGameInstance());
+    if IsDefined(story) {
+      left += story.LeftOver();
+    }
+    if IsDefined(this.m_outcomes) && this.m_outcomes.FollowsHost() {
+      left += 2;
+    }
+    if ArraySize(this.m_puppets) > 0 || ArraySize(this.m_leaving) > 0 || (IsDefined(this.m_npcs) && this.m_npcs.Count() > 0) {
+      left += 4;
+    }
+    if IsDefined(this.m_npcs) && this.m_npcs.Levels().On() > 0 {
+      left += 8;
+    }
+    if (IsDefined(this.m_world) && this.m_world.Borrowed()) || (IsDefined(this.m_npcs) && this.m_npcs.Quiet()) {
+      left += 32;
+    }
+    if this.m_leftDown || (IsDefined(this.m_revive) && this.m_revive.IsDown()) {
+      left += 64;
+    }
+    return left;
   }
 
   // ---- the co-op menu, in game (Coop.reds) ----
@@ -441,6 +493,9 @@ public class TandemSystem extends ScriptableSystem {
   // V that is down or out when it leaves dies the game's way (EndSession):
   // leaving is no way out of being down.
   public func CoopLeave() -> Void {
+    if IsDefined(this.m_saves) {
+      this.m_saves.Chosen();
+    }
     this.EndSession(true);
     TandemNative.Leave();
     TandemCoop.Notice(this.GetGameInstance(), "You left the co-op session");
@@ -510,6 +565,10 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_travel;
   }
 
+  public func Trade() -> ref<TandemTradeTable> {
+    return this.m_trade;
+  }
+
   public func Revive() -> ref<TandemRevive> {
     return this.m_revive;
   }
@@ -524,6 +583,9 @@ public class TandemSystem extends ScriptableSystem {
       // (tools/game.sh cmd coop ...).
       this.ProcessLeaving();
       this.HandleCommand();
+      if IsDefined(this.m_saves) {
+        this.m_saves.Tick();
+      }
       this.Schedule(0.25);
       return;
     }
@@ -596,6 +658,13 @@ public class TandemSystem extends ScriptableSystem {
       this.m_time.Update();
     }
 
+    if IsDefined(this.m_saves) {
+      this.m_saves.Tick();
+    }
+    // Trade with the player beside us (0: not in a session, nothing open).
+    if IsDefined(this.m_trade) && this.m_playing {
+      this.m_trade.Tick(this.Now(), this.m_you);
+    }
     this.TickAttitudes();
     this.ProcessLeaving();
     this.DrawShots();
@@ -636,9 +705,28 @@ public class TandemSystem extends ScriptableSystem {
   // Also from the pause menu (Coop.reds), which takes the commands while the
   // world, and so our tick, is paused.
   public func RunCommand(command: String) -> Void {
+    if StrBeginsWith(command, "trade") {
+      if IsDefined(this.m_trade) {
+        this.m_trade.Command(command);
+      } else {
+        TandemNative.Log("trade: not in a session");
+      }
+      return;
+    }
     if StrBeginsWith(command, "time ") {
       if IsDefined(this.m_time) {
         this.m_time.Command(command);
+      }
+      return;
+    }
+    if Equals(command, "progress") {
+      // Levels and saves, as they stand (docs/architecture/progression.md).
+      let player = GetPlayer(this.GetGameInstance());
+      TandemNative.Log(IsDefined(this.m_saves) ? this.m_saves.Report() : "saves: no world");
+      if IsDefined(this.m_npcs) {
+        TandemNative.Log(this.m_npcs.Levels().Report());
+      } else if IsDefined(player) {
+        TandemNative.Log(s"levels: ours \(RoundF(TandemLevels.LevelOf(this.GetGameInstance(), player.GetEntityID()))), not in a session");
       }
       return;
     }
@@ -1606,6 +1694,11 @@ public class TandemSystem extends ScriptableSystem {
           this.m_you = 0u;
           if IsDefined(this.m_time) {
             this.m_time.End();
+          }
+          // Our weather is the game's again (the clock waits: the host may
+          // be back in a moment).
+          if IsDefined(this.m_world) {
+            this.m_world.End(false);
           }
           // Riding along: out, while the copy is still where it was.
           if IsDefined(this.m_transit) {

@@ -697,12 +697,25 @@ public class TandemStorySystem extends ScriptableSystem {
       SaveLocksManager.RequestSaveLockRemove(this.GetGameInstance(), n"tandem");
       TandemNative.Log("save: unlocked");
     }
-    // TODO (design §1.4 step 4): write one save ("back from co-op") and load
-    // it, so session artifacts (hidden own NPCs, proxies' leftovers) are gone
-    // and the world is rebuilt from our own save. Until it is tested in game
-    // the guest goes on in place; its next save keeps its V's gains and the
+    // Our story is ours again. What follows (go on in place, one save, a
+    // reload: tandem.ini `leave`) is Saves.reds', once nothing else of the
+    // session is left either; the next save keeps our V's gains and the
     // co-op reward ledger.
-    TandemNative.Log("save: back from co-op (TODO: save and reload; continuing in place)");
+    TandemNative.Log("save: our story is back as it was");
+  }
+
+  // What of the host's story is still in our game (Saves.reds; the bits are
+  // core/progress.hpp's): 1 its journal, our story on hold or our lock;
+  // 16 what we hold for its scenes (combat, god mode, story effects).
+  public func LeftOver() -> Int32 {
+    let left = 0;
+    if this.m_saveLocked || this.m_frozen || ArraySize(this.m_touched) > 0 || this.m_ownTrackedKept {
+      left += 1;
+    }
+    if this.m_holdCombat || this.m_holdGod || ArraySize(this.m_effects) > 0 {
+      left += 16;
+    }
+    return left;
   }
 
   // ---- the host's scenes, near or far (design §2.3, §5.1) ----
