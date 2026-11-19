@@ -196,16 +196,19 @@ REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
 - **Activities** (any mode; `activities.md`): `--ask-skip N` asks the
   others to skip `--skip-hours H` (default 3) N s after another player is
   there, `--skip-reason wait|sleep|quest` (quest, as host: said, never
-  asked); requests it hears are answered by `--skip-answer yes|no|ignore`;
-  an applied skip moves the clock it sends as host. `--activity KIND`
+  asked); requests it hears are answered by `--skip-answer
+yes|no|ignore|sleep` (sleep: it goes to bed too, a sleep of its own to
+  the same hour, which the host counts as its yes: two beds at once); an
+  applied skip moves the clock it sends as host. `--activity KIND`
   (`workspot`, `sleep`, `screen`, `minigame`, `shop`, `menu`, `photo`,
   `contest`) makes it busy `--activity-at N` s (default 3) after another
   player is there, anchored where it stands, for `--activity-for S` s
   (default 15; 0: for good). A host story's `activity KIND [anchored]
 [lying] [frozen]` and `skip HOURS [wait|sleep|quest]` do the same.
   The game side: `tools/game.sh cmd skip ask HOURS`, `skip accept`, `skip
-decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
-  `skip-asked`, `busy-puppet`, `look-mirror`.
+decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
+  `skip-wheel`, `skip-asked`, `busy-puppet`, `look-mirror`,
+  `apartment-shower`, `apartment-bed`, `apartment-tour`.
 - **Comms** (any mode, `comms.md`): `--link auto|ask|off` (its consent;
   ask: every request accepted), `--link-at N` (asks everyone N s in),
   `--unlink-at N` (breaks every link N s in: the party HUD's entry goes,

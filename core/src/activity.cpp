@@ -96,6 +96,11 @@ std::optional<proto::TimeSkipResult> SkipArbiter::Ask(const proto::TimeSkip &ski
   return std::nullopt;
 }
 
+bool SkipArbiter::Joins(const proto::TimeSkip &skip) const {
+  return m_open && skip.reason == proto::SkipReason::Sleep && skip.from != m_open->from &&
+         m_waiting.contains(skip.from);
+}
+
 std::optional<proto::TimeSkipResult> SkipArbiter::Vote(const proto::TimeSkipVote &vote) {
   if (!m_open || vote.asker != m_open->from || vote.request != m_open->request)
     return std::nullopt;

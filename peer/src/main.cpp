@@ -287,7 +287,9 @@ struct Options {
   Vec3 travelTo{-915.f, 1879.5f, 36.3f}; // the game's "teleport home" spot
   std::string travelPoint;
   int offerRegroupSeconds{-1};
-  enum class Answer { Yes, No, Ignore } regroupAnswer{Answer::Yes};
+  // Sleep: --skip-answer only, go to bed too (a sleep of our own, to the
+  // same hour: the host counts it as our yes).
+  enum class Answer { Yes, No, Ignore, Sleep } regroupAnswer{Answer::Yes};
   // Activities: when to ask for a time skip (-1: never), of how long, why,
   // how to answer the others' requests; what to be busy with, from when, for
   // how long (0: until the end).
@@ -671,7 +673,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     skip --skip-hours of game time\n"
          "  --skip-hours H     --ask-skip: how many hours (default 3)\n"
          "  --skip-reason R    wait | sleep | quest (host only: said, never asked)\n"
-         "  --skip-answer A    yes | no | ignore: how to answer a time skip (default yes)\n"
+         "  --skip-answer A    yes | no | ignore | sleep: how to answer a time skip (default\n"
+         "                     yes; sleep: ask a sleep of our own, two beds at once)\n"
          "  --activity KIND    busy for a while: workspot, sleep, screen, minigame, shop,\n"
          "                     menu, photo, contest\n"
          "  --activity-at N    --activity: N s after another player is there (default 3)\n"
@@ -1448,8 +1451,10 @@ Options Parse(int argc, char **argv) {
         options.skipAnswer = Options::Answer::No;
       else if (value == "ignore")
         options.skipAnswer = Options::Answer::Ignore;
+      else if (value == "sleep")
+        options.skipAnswer = Options::Answer::Sleep;
       else
-        Usage(std::format("--skip-answer: yes, no or ignore, not {}", value));
+        Usage(std::format("--skip-answer: yes, no, ignore or sleep, not {}", value));
     } else if (flag == "--activity") {
       if (!ActivityNamed(std::string(value)))
         Usage(std::format("--activity: workspot, sleep, screen, minigame, shop, menu, photo or "
@@ -4610,6 +4615,13 @@ int main(int argc, char **argv) {
                   k.request, static_cast<int>(k.reason));
               if (options.skipAnswer == Options::Answer::Ignore) {
                 Log("time skip {} of player {}: not answered", k.request, k.from);
+              } else if (options.skipAnswer == Options::Answer::Sleep) {
+                // Two beds at once: our own sleep, which the host counts as
+                // our yes to theirs.
+                const auto ours = endpoint->AskTimeSkip(tandem::proto::SkipReason::Sleep,
+                                                        k.fromSeconds, k.toSeconds);
+                Log("time skip {} of player {}: we go to bed too (request {})", k.request, k.from,
+                    ours);
               } else {
                 const bool yes = options.skipAnswer == Options::Answer::Yes;
                 endpoint->AnswerTimeSkip(k.from, k.request, yes);

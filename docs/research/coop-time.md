@@ -792,7 +792,8 @@ No script sets the time for a bed: the bed interaction is quest/scene data
 (inferred from the absence of any caller; the only script
 `SetGameTimeByHMS` call is the wheel, `383727`, and
 `SetGameTimeBySeconds` has none). The time change is one of the quest
-nodes of §4.4 and the buff is a status effect (`Sleep`, `Rested` tags).
+nodes of §4.4 and the buff is a status effect (`Sleep`, `Rested` tags;
+engine-knowledge §13.85: of type `Housing`, given by the apartment scene).
 **Rule (proposed):** as quest-driven time, host only; a guest using a bed
 gets the animation and the buff, not the time change.
 

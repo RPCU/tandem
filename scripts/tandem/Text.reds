@@ -468,6 +468,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Activities-Elsewhere", "{1} is somewhere else");
     this.Text("Tandem-Activities-Paused", "{1} paused the game");
     this.Text("Tandem-Activities-CantSkip", "Time can't be skipped now");
+    this.Text("Tandem-Activities-SleepWith", "You go to sleep too: waiting for {1}'s answer");
     this.Text("Tandem-Breach-Already", "{1} breached this network first");
     this.Text("Tandem-Breach-AlreadyWorld", "This network was breached already");
     this.Text("Tandem-Trade-Prompt", "Trade");
@@ -809,6 +810,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Activities-Elsewhere", "{1} est ailleurs");
     this.Text("Tandem-Activities-Paused", "{1} a mis le jeu en pause");
     this.Text("Tandem-Activities-CantSkip", "Impossible de passer le temps maintenant");
+    this.Text("Tandem-Activities-SleepWith", "Vous allez dormir aussi : en attente de la réponse de {1}");
     this.Text("Tandem-Breach-Already", "{1} a piraté ce réseau en premier");
     this.Text("Tandem-Breach-AlreadyWorld", "Ce réseau était déjà piraté");
     this.Text("Tandem-Trade-Prompt", "Échanger");
