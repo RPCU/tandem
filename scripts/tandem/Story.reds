@@ -252,16 +252,9 @@ public class TandemStorySystem extends ScriptableSystem {
     return IsDefined(system) ? system.PuppetOf(player) : null;
   }
 
-  public func Notice(text: String) -> Void {
-    let message: SimpleScreenMessage;
-    message.isShown = true;
-    message.duration = 5.0;
-    message.message = text;
-    message.type = SimpleMessageType.Neutral;
-    GameInstance
-      .GetBlackboardSystem(this.GetGameInstance())
-      .Get(GetAllBlackboardDefs().UI_Notifications)
-      .SetVariant(GetAllBlackboardDefs().UI_Notifications.WarningMessage, ToVariant(message), true);
+  // The HUD's warning line (Text.reds).
+  public func Notice(key: String, opt a: String, opt b: String) -> Void {
+    TandemText.Notice(this.GetGameInstance(), key, a, b);
   }
 
   public func NameOf(player: Uint32) -> String {
@@ -706,7 +699,7 @@ public class TandemStorySystem extends ScriptableSystem {
       // Never a save that differs from our own story: saving stays locked;
       // the way out is our last save.
       TandemNative.Log("save: stays locked (our story could not be put back exactly): load your last save");
-      this.Notice("Co-op: your story could not be restored exactly. Load your last save.");
+      this.Notice("Story-NotRestored");
       return;
     }
     if this.m_saveLocked {
@@ -758,7 +751,9 @@ public class TandemStorySystem extends ScriptableSystem {
       if !this.m_offerShown {
         this.m_offerShown = true;
         this.m_offerOpen = true;
-        this.Notice(s"\(this.NameOf(this.m_host)) started a scene. Join them: press Interact.");
+        this.Notice("Story-SceneStarted", this.NameOf(this.m_host));
+        // The hint bar draws the player's own binding for Choice1.
+        TandemText.Hint(this.GetGameInstance(), n"TandemScene", n"Choice1", true, TandemText.F("Story-Join", this.NameOf(this.m_host)), inkInputHintHoldIndicationType.Press);
         GetPlayer(this.GetGameInstance()).RegisterInputListener(this, n"Choice1");
         TandemNative.Log("story: join offer shown");
       }
@@ -771,6 +766,7 @@ public class TandemStorySystem extends ScriptableSystem {
   private func CloseOffer() -> Void {
     if this.m_offerOpen {
       this.m_offerOpen = false;
+      TandemText.Hint(this.GetGameInstance(), n"TandemScene", n"Choice1", false, "", inkInputHintHoldIndicationType.Press);
       GetPlayer(this.GetGameInstance()).UnregisterInputListener(this, n"Choice1");
     }
   }
@@ -1034,7 +1030,8 @@ public class TandemStorySystem extends ScriptableSystem {
     TandemStory.PausePose(player, busy);
     if busy {
       ArrayPush(this.m_busy, player);
-      this.Notice(s"\(this.NameOf(player)) is busy.");
+      this.Notice("Story-Busy", this.NameOf(player));
+
       TandemNative.Log(s"story: \(this.NameOf(player)) is busy (private scene)");
     } else {
       ArrayRemove(this.m_busy, player);

@@ -33,9 +33,10 @@ Where things are (`core/`, `plugin/`, `peer/`, `tests/`, `relay/`, `nix/`,
 | `task relay:test`    | relay vet + tests with the race detector                     |
 | `task relay:image`   | relay OCI image via Nix (`result-relay-image`)               |
 | `task k8s:check`     | render the kustomize base and validate it (kubeconform)      |
-| `task check`         | all of the above, and the three checks below                 |
+| `task check`         | all of the above, and the four checks below                  |
 | `task natives:check` | each `*Natives.reds` matches its `.cpp` (types, fields)      |
 | `task scripts:check` | compile `scripts/tandem` as the game does (seconds, no game) |
+| `task strings:check` | player-facing texts only from `Text.reds`, English + French  |
 | `task docs:check`    | doc links and § numbers resolve; no fact lost since HEAD     |
 | `task scenario -- …` | in-game scenarios against the mock player (NAME, all, list)  |
 | `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
@@ -116,6 +117,11 @@ build lock) and copies the DLL, `.pdb` and `tandem-peer` back; then
   `tools/scripts-uninitialized.py`). A local assigned on every path before
   any read may keep its bare declaration with the comment
   `// assigned on every path` on that line.
+- **No player-facing literal**: every text the player sees is a key of
+  `scripts/tandem/Text.reds` (English and French), shown through
+  `TandemText` (notices, hints with the player's own binding, never a key
+  name); `task strings:check` (run by `scripts:check`) refuses the rest
+  (`docs/architecture/strings.md`).
 - Each `scripts/tandem/*Natives.reds` must match its `plugin/src/*natives.cpp`
   exactly (pairs in Layout): `task natives:check` (run by `task deploy`)
   reads every pair; redscript itself never sees the DLL.

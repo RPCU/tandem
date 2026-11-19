@@ -160,9 +160,9 @@ public class TandemPause {
       if !ArrayContains(this.m_paused, player) {
         let name = this.NameOf(player);
         TandemNative.Log(s"pause: \(name) paused the game");
-        // TODO: a localized string, and a notice that shows while paused if
-        // this one waits for the world (to check in game).
-        this.Notice(s"\(name) paused the game");
+        // TODO: a notice that shows while paused if this one waits for the
+        // world (to check in game).
+        TandemText.Notice(this.m_game, "Pause-By", name);
       }
     }
     for player in this.m_paused {
@@ -178,18 +178,6 @@ public class TandemPause {
     return StrLen(name) > 0 ? name : s"player \(player)";
   }
 
-  // The game's own simple on-screen message (as vanilla's SetWarningMessage).
-  private func Notice(text: String) -> Void {
-    let message: SimpleScreenMessage;
-    message.isShown = true;
-    message.duration = 5.0;
-    message.message = text;
-    message.type = SimpleMessageType.Neutral;
-    GameInstance
-      .GetBlackboardSystem(this.m_game)
-      .Get(GetAllBlackboardDefs().UI_Notifications)
-      .SetVariant(GetAllBlackboardDefs().UI_Notifications.WarningMessage, ToVariant(message), true);
-  }
 }
 
 // Where vanilla pauses for the pause menu (final.reds,

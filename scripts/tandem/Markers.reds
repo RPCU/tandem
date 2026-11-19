@@ -350,7 +350,7 @@ protected cb func OnUpdate() -> Bool {
       inkTextRef.SetText(this.displayName, name);
       inkWidgetRef.SetVisible(this.displayName, true);
     } else if inkWidgetRef.IsValid(this.distanceText) {
-      inkTextRef.SetText(this.distanceText, s"\(name)  \(RoundF(this.GetDistanceToPlayer())) M");
+      inkTextRef.SetText(this.distanceText, TandemText.F("Marker-Distance", name, s"\(RoundF(this.GetDistanceToPlayer()))"));
       inkWidgetRef.SetVisible(this.distanceText, true);
     }
   }
@@ -392,5 +392,6 @@ public final func TandemTitle(title: String) -> Void {
 @addMethod(WorldMapTooltipController)
 public final func TandemTitle(title: String) -> Void {
   inkTextRef.SetText(this.m_titleText, title);
-  inkTextRef.SetText(this.m_descText, "Another V, in your city");
+  inkTextRef.SetText(this.m_descText, TandemText.Get("Marker-Description"));
+
 }

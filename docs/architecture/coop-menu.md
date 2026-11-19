@@ -85,5 +85,6 @@ shipped by default (today `relay =` is set by hand).
   menu. Still open: testing a host before loading (today a guest learns in
   game that the host is unreachable), options (name, max players), a lobby
   list, the entry's place in the list (appended after the menu's own
-  items: an insertion would need a wrap of the overloaded `AddMenuItem`),
-  localized labels.
+  items: an insertion would need a wrap of the overloaded `AddMenuItem`).
+  Labels are keyed texts (`strings.md`, done 2026-11-19); `coop pick TEXT`
+  matches a label in the game's language or in English.

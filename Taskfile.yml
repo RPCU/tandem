@@ -71,6 +71,11 @@ tasks:
     cmds:
       - GAME_HOST="{{.GAME_HOST}}" GAME_DIR="{{.GAME_DIR}}" tools/scripts-check.sh {{.CLI_ARGS}}
 
+  strings:check:
+    desc: "Every player-facing text comes from Text.reds, in English and French (also run by scripts:check)"
+    cmds:
+      - python3 tools/check-strings.py
+
   scenario:
     desc: "In-game scenarios against the mock player (task scenario -- NAME... | all | list)"
     deps: [build]
@@ -168,6 +173,7 @@ tasks:
       - task: relay:test
       - task: build:plugin
       - task: natives:check
+      - task: strings:check
       - task: scripts:check
       - task: k8s:check
       - task: docs:check

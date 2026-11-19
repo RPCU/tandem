@@ -358,11 +358,11 @@ public class TandemRevive {
     this.SendOurs(player);
     TandemNative.Log(s"revive: our V is \(life == 1 ? "down" : "out") (\(why))");
     if life == 1 {
-      this.Notice(s"You are down. \(this.UpNames()) can revive you.", SimpleMessageType.Negative);
+      this.Notice(SimpleMessageType.Negative, this.UpOthers() > 0 ? "Revive-Down" : "Revive-DownAlone", this.UpNames());
     } else if this.UpOthers() > 0 {
-      this.Notice(s"You are out. You will get up beside \(this.UpNames()).", SimpleMessageType.Negative);
+      this.Notice(SimpleMessageType.Negative, "Revive-Out", this.UpNames());
     } else {
-      this.Notice("Everyone is down.", SimpleMessageType.Negative);
+      this.Notice(SimpleMessageType.Negative, "Revive-AllDown");
     }
   }
 
@@ -423,7 +423,7 @@ public class TandemRevive {
     if step == 0 {
       this.m_reviver = reviver;
       this.m_reviverAt = this.m_now;
-      this.ShowBar(2, s"\(name) is reviving you", "Stay down");
+      this.ShowBar(2, TandemText.F("Revive-RevivingYou", name), TandemText.Get("Revive-StayDown"));
       TandemNative.Log(s"revive: \(name) is reviving us");
     } else if step == 1 {
       if reviver == this.m_reviver {
@@ -441,7 +441,7 @@ public class TandemRevive {
       this.m_revivedAt = this.m_now;
       this.HideBar(true);
       TandemNative.Log(s"revive: revived by \(name) (\(distance) m away)");
-      this.Notice(s"\(name) revived you", SimpleMessageType.Neutral);
+      this.Notice(SimpleMessageType.Neutral, "Revive-RevivedBy", name);
       this.Release(player);
     }
   }
@@ -487,7 +487,7 @@ public class TandemRevive {
     GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, TandemYawAngles(yaw * 57.29578));
     this.m_lost = false;
     TandemNative.Log(s"revive: respawn beside \(this.NameOf(partner)) (\(why))");
-    this.Notice(s"Back beside \(this.NameOf(partner))", SimpleMessageType.Neutral);
+    this.Notice(SimpleMessageType.Neutral, "Revive-BackBeside", this.NameOf(partner));
     this.Release(player);
   }
 
@@ -582,7 +582,7 @@ public class TandemRevive {
     } else {
       this.m_lost = true;
       this.m_backInSession = false;
-      this.Notice(s"Everyone is down. Waiting for \(this.NameOf(1u)) to load the last checkpoint.", SimpleMessageType.Negative);
+      this.Notice(SimpleMessageType.Negative, "Revive-WaitHost", this.NameOf(1u));
     }
   }
 
@@ -712,7 +712,7 @@ public class TandemRevive {
     this.m_holdHealth = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
     TandemNative.SendRevive(target, 0);
     this.HidePrompt();
-    this.ShowBar(1, s"Reviving \(this.NameOf(target))", "Hold to revive");
+    this.ShowBar(1, TandemText.F("Revive-Reviving", this.NameOf(target)), TandemText.Get("Revive-KeepHolding"));
     TandemNative.Log(s"revive: reviving \(this.NameOf(target))\(test ? " (test hold)" : "")");
   }
 
@@ -739,7 +739,7 @@ public class TandemRevive {
     let choice: InteractionChoiceData;
     choice.inputAction = n"Choice1";
     choice.isHoldAction = true;
-    choice.localizedName = "Revive";
+    choice.localizedName = TandemText.Get("Revive-Prompt");
     let hub: InteractionChoiceHubData;
     hub.id = TandemRevive.HubId();
     hub.active = true;
@@ -820,11 +820,11 @@ public class TandemRevive {
     let name = this.NameOf(p);
     TandemNative.Log(s"revive: \(name) is \(life == 0 ? "up" : life == 1 ? "down" : "out")");
     if life == 1 {
-      this.Notice(s"\(name) is down", SimpleMessageType.Negative);
+      this.Notice(SimpleMessageType.Negative, "Revive-PlayerDown", name);
     } else if life == 2 && was != 2 {
-      this.Notice(s"\(name) is out", SimpleMessageType.Negative);
+      this.Notice(SimpleMessageType.Negative, "Revive-PlayerOut", name);
     } else if life == 0 && was != 0 {
-      this.Notice(s"\(name) is back up", SimpleMessageType.Neutral);
+      this.Notice(SimpleMessageType.Neutral, "Revive-PlayerUp", name);
     }
     if IsDefined(body) {
       if life == 0 {
@@ -865,14 +865,15 @@ public class TandemRevive {
     return up;
   }
 
+  // Who is up to revive us: "A", "A or B", "A, B or C".
   private func UpNames() -> String {
-    let names = "";
+    let names: array<String>;
     for p in this.Others() {
       if TandemNative.RemoteLife(p) == 0 {
-        names += StrLen(names) > 0 ? s" or \(this.NameOf(p))" : this.NameOf(p);
+        ArrayPush(names, this.NameOf(p));
       }
     }
-    return StrLen(names) > 0 ? names : "Nobody";
+    return TandemText.AnyOf(names);
   }
 
   private func PuppetOf(p: Uint32) -> ref<GameObject> {
@@ -884,17 +885,9 @@ public class TandemRevive {
     return StrLen(name) > 0 ? name : s"player \(p)";
   }
 
-  // TODO: localized strings.
-  private func Notice(text: String, kind: SimpleMessageType) -> Void {
-    let message: SimpleScreenMessage;
-    message.isShown = true;
-    message.duration = 5.0;
-    message.message = text;
-    message.type = kind;
-    GameInstance
-      .GetBlackboardSystem(this.m_game)
-      .Get(GetAllBlackboardDefs().UI_Notifications)
-      .SetVariant(GetAllBlackboardDefs().UI_Notifications.WarningMessage, ToVariant(message), true);
+  // The HUD's warning line (Text.reds).
+  private func Notice(kind: SimpleMessageType, key: String, opt a: String) -> Void {
+    TandemText.NoticeAs(this.m_game, kind, 5.0, key, a);
   }
 
   // The HUD's progress bar (what quest uploads and the Twintone scan use).
@@ -906,7 +899,8 @@ public class TandemRevive {
     this.m_bar = owner;
     board.SetString(GetAllBlackboardDefs().UI_HUDProgressBar.Header, header, true);
     board.SetString(GetAllBlackboardDefs().UI_HUDProgressBar.BottomText, bottom, true);
-    board.SetString(GetAllBlackboardDefs().UI_HUDProgressBar.CompletedText, "Revived", true);
+    board.SetString(GetAllBlackboardDefs().UI_HUDProgressBar.CompletedText, TandemText.Get("Revive-Done"), true);
+
     board.SetString(GetAllBlackboardDefs().UI_HUDProgressBar.FailedText, "", true);
     board.SetVariant(GetAllBlackboardDefs().UI_HUDProgressBar.MessageType, ToVariant(SimpleMessageType.Neutral), true);
     board.SetFloat(GetAllBlackboardDefs().UI_HUDProgressBar.Progress, 0.0, true);

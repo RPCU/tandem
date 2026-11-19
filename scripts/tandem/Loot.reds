@@ -346,7 +346,7 @@ public class TandemLoot extends ScriptableSystem {
       stack.taken = true;
       let name = this.NameOf(event.player);
       TandemNative.Log(s"loot: world item \(item.id) stack \(event.stack) (\(what)) went to \(event.player == 0u ? "nobody (it was gone)" : name) first: \(back) given back");
-      this.Notice(event.player == 0u ? "Someone already took it" : s"\(name) picked it up first");
+      TandemText.NoticeAs(this.GetGameInstance(), SimpleMessageType.Neutral, 4.0, event.player == 0u ? "Loot-Taken" : "Loot-TakenBy", name);
       // Nobody: the host has no such bag any more (every stack taken, the
       // news of it lost). The rest of our copy goes too: no ghost bag.
       if event.player == 0u {
@@ -965,18 +965,6 @@ public class TandemLoot extends ScriptableSystem {
     return StrLen(name) > 0 ? name : s"player \(player)";
   }
 
-  // The game's own simple on-screen message (as Pause.reds).
-  private func Notice(text: String) -> Void {
-    let message: SimpleScreenMessage;
-    message.isShown = true;
-    message.duration = 4.0;
-    message.message = text;
-    message.type = SimpleMessageType.Neutral;
-    GameInstance
-      .GetBlackboardSystem(this.GetGameInstance())
-      .Get(GetAllBlackboardDefs().UI_Notifications)
-      .SetVariant(GetAllBlackboardDefs().UI_Notifications.WarningMessage, ToVariant(message), true);
-  }
 }
 
 // What a V drops from the backpack or the inventory: vanilla drops the
