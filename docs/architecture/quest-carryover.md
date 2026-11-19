@@ -30,11 +30,12 @@ save**.
 
 ## Tiers
 
-| Tier | What                                                                                                                                                        | In the guest's own save                                                                                                                       | Risk                                             |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| 1    | XP, level, street cred, skill progress, perk points, money, loot, crafting parts, ammo, non-quest reward items (iconics included), achievements             | kept: they are in the V's running game and reach the save with the first save after the session                                               | low                                              |
-| 2    | gigs (`StreetStory`, `Contract`), cyberpsycho sightings, courier jobs, NCPD scanner hustles                                                                 | **credited** now (recorded, never paid twice); **completed in the guest's world** only after spike C1 proves each type (stage B)              | medium to high: a half-set completion soft-locks |
-| 3    | main, side and minor quests; quests that unlock a vehicle or an apartment (`VehicleQuest`, `ApartmentQuest`); everything a quest decides (romance, endings) | recorded ("done in co-op with NAME"); nothing applied; quest props removed on leave; an optional skip offer much later, never for main quests | low as proposed                                  |
+<!-- prettier-ignore -->
+| Tier | What | In the guest's own save | Risk |
+| --- | --- | --- | --- |
+| 1 | XP, level, street cred, skill progress, perk points, money, loot, crafting parts, ammo, non-quest reward items (iconics included), achievements | kept: they are in the V's running game and reach the save with the first save after the session | low |
+| 2 | gigs (`StreetStory`, `Contract`), cyberpsycho sightings, courier jobs, NCPD scanner hustles | **credited** now (recorded, never paid twice); **completed in the guest's world** only after spike C1 proves each type (stage B) | medium to high: a half-set completion soft-locks |
+| 3 | main, side and minor quests; quests that unlock a vehicle or an apartment (`VehicleQuest`, `ApartmentQuest`); everything a quest decides (romance, endings) | recorded ("done in co-op with NAME"); nothing applied; quest props removed on leave; an optional skip offer much later, never for main quests | low as proposed |
 
 The tier of a quest comes from the game's own sorting, the journal's
 quest type (`JournalManager.GetQuestType`, `E§13.29`); `carry::TierOf` is
@@ -67,11 +68,12 @@ own copy when it gets there.
 
 How each type's completion is stored (`E§13.29`):
 
-| Type                                | Stored as                                                                                                                                                                            | Setting it from outside                                                                                                                                                                |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| NCPD hustle                         | a child phase of `open_world_minor_activities`; its point-of-interest mappin's phase (`CompletedPhase`); its community and loot containers; facts                                    | Codeware models all of it and can _reset_ one (`OpenWorldSystem`); marking one done is the same list the other way. No script API for the mappin phase (`SetPoiMappinPhase` is native) |
-| gig, cyberpsycho, courier           | a quest: its phase graph's position, journal entries (quest, objectives), its `*_done` facts, fixer counters (facts the fixer's phase counts), the district bar (`GetMetaQuestData`) | journal and facts have script setters; **the phase graph does not**: a gig marked done in the journal still sits at its start node and starts when the guest walks in                  |
-| fixer reputation, calls, reward car | driven by the fixer's own phase from the counters above                                                                                                                              | follows if the counters are right; a wrong counter gives the fixer's reward twice or never                                                                                             |
+<!-- prettier-ignore -->
+| Type | Stored as | Setting it from outside |
+| --- | --- | --- |
+| NCPD hustle | a child phase of `open_world_minor_activities`; its point-of-interest mappin's phase (`CompletedPhase`); its community and loot containers; facts | Codeware models all of it and can _reset_ one (`OpenWorldSystem`); marking one done is the same list the other way. No script API for the mappin phase (`SetPoiMappinPhase` is native) |
+| gig, cyberpsycho, courier | a quest: its phase graph's position, journal entries (quest, objectives), its `*_done` facts, fixer counters (facts the fixer's phase counts), the district bar (`GetMetaQuestData`) | journal and facts have script setters; **the phase graph does not**: a gig marked done in the journal still sits at its start node and starts when the guest walks in |
+| fixer reputation, calls, reward car | driven by the fixer's own phase from the counters above | follows if the counters are right; a wrong counter gives the fixer's reward twice or never |
 
 So tier 2 completion by writing state is **not safe today**. The journal
 and the facts alone leave the quest graph where it was, and a quest graph
@@ -114,6 +116,133 @@ Liberty) is credited but never applied.
   provably self-contained: a later stage, behind its own spike, and never
   for main quests or anything with a choice.
 
+## Whose gig is it
+
+The user's follow-up (2026-11-19): _a gig done by a guest is a gig less
+for the host: its reward and its story are gone for the host, who neither
+saw nor chose it._ The players may split up and do gigs apart (decided
+earlier), so the question is which world a gig done apart belongs to.
+
+<!-- prettier-ignore -->
+| Rule | For the host | For the guest | Verdict |
+| --- | --- | --- | --- |
+| (a) a gig belongs to the world of the player who starts it | its own gig untouched, still there to play | done in its own save natively: no carry-over | **recommended** |
+| (b) a guest can never start a host's gig alone (needs the host near) | nothing lost | cannot play gigs apart: contradicts "gigs apart" | the fallback until (a) is built: it is what the freeze does today |
+| (c) it completes in the host's world; the host is paid too | paid for content it never saw; the gig is gone from its map | needs the outcome merged into the host's quest graph | rejected: the user's complaint exactly, and the riskiest engineering (`coop-quests-design.md` §5.2) |
+
+### Rule (a), worked out
+
+**Ownership.** One world owns each run of a gig: the world of the game
+that runs its quest phase.
+
+- **Apart** (each game owns the region around its V, the `regions`
+  branch's design): a gig is started by the game whose V walks into it or
+  takes its fixer's call. A guest alone starts **its own world's** gig; a
+  host alone starts its own, as today. Symmetric.
+- **Together at the start**: the game that owns the region owns the gig:
+  the host's when the players are grouped (one owner per region, the core
+  authority rule). The other player is a helper from the first second. No
+  prompt: a prompt at every gig door would not feel like the game. A guest
+  who wants the gig to be _theirs_ walks in first, alone, or the players
+  swap who hosts.
+- **A partner arriving later** joins the owner's run. It becomes a helper
+  when it enters the owner's region: it sees the owner's gig NPCs (the
+  owner's game shares them, as the host shares its NPCs today), its own
+  copy of that gig is held (below), and it is paid once by the existing
+  rule (`QuestReward`, "took part", the ledger).
+- **The helper's own copy** stays as it was in its own world: tier 2
+  credit in its ledger ("done with NAME"), playable at home, not paid
+  twice. For the host helping a guest this is the answer to the user's
+  worry: the host's gig is still there.
+
+**What each sees.**
+
+<!-- prettier-ignore -->
+| Thing | Owner | Helper |
+| --- | --- | --- |
+| fixer's call, texts | its own phone, its own fixer phase | hears nothing of it apart; near the owner, the owner's call is shared like the host's calls today (`Phone.reds`) |
+| journal and tracker | its own entries | the owner's entries for that gig while helping, then back |
+| map | its own gig pin, gone when done | its own world's pin for that gig stays (its copy is not done) |
+| gig NPCs, doors, loot | its own game's, shared to the helper | proxies of the owner's; per-player loot; quest props as session items |
+| reward | the game's own | the same record through its own game, once |
+| district and fixer progress | counts in its world | unchanged in its world |
+
+**Does this make tier 2 carry-over unnecessary?** For a gig the guest
+owns: yes. It ran in the guest's own quest graph and lands in the guest's
+save like any solo gig, with no state written from outside. Tier 2 credit
+remains only for the helper's copy, and stage B (applying completion
+elsewhere) becomes optional comfort rather than a need. That is the main
+reason to prefer (a): it replaces the riskiest stage with the game's own
+code.
+
+### Feasibility
+
+How gigs start (`E§13.29`, and the freeze's first run in game): a gig is
+a quest phase that waits on a trigger area around its place or on a
+fixer's call; the fixer's calls and counters come from
+`open_world_fixers`, which already keeps running on a frozen guest. In
+that first run the frozen phases had **no resource of their own**
+(`resource 0x0`, depth 9 to 11): they are embedded in a parent's file, so
+a gig cannot be recognised by its resource path alone.
+
+What must change:
+
+1. **The freeze, from "story phases" to "phases this game does not
+   own".** Today everything but the open-world list waits. A guest's own
+   gigs must run while it is apart, and be held while it is helping.
+   - _Which phases are gigs._ Proposed: by the journal. A gig's phase
+     graph holds journal nodes (`questJournalNodeDefinition`) naming its
+     journal quest, and the journal gives the quest's type
+     (`StreetStory`, `Contract`, `CyberPsycho`, courier). The freeze
+     classifies a phase once, by the first journal node found in it or
+     its ancestors, and caches it by node path. Fallback and override:
+     a list of gig resource paths in `tandem.ini`
+     (`quest_freeze_allow` exists). Needs a spike (C2): log, for ten
+     known gigs, the phase chain and its journal nodes.
+   - _When they run._ Gig phases run when the guest is **apart** from the
+     host (its own region) and wait when it is **grouped** (the owner's
+     run is the one being played). The held signals are given back when
+     the guest is apart again, as the freeze does on leave. Main, side
+     and minor quests wait for the whole session, as now.
+   - A gig the guest started and then leaves half done, to regroup with
+     the host, waits and resumes: the freeze already does that.
+2. **The journal mirror** (`Story.reds`) hides the guest's own entries
+   and shows the host's. Entries of the guest's own gigs (by quest type)
+   must stay visible and trackable; the host's gig entries reach a guest
+   only while it helps.
+3. **The phone mirror** must tell the guest's own fixer call (its own
+   phase, apart) from a mirrored one: it already does by a flag while a
+   mirrored call is up; the rule to add is that a mirrored call does not
+   start while the guest's own is up, and the other way round.
+4. **Rewards and the ledger**: unchanged. `OwnState::Done` already stops
+   a second payment when the host later runs a gig the guest finished at
+   home, and the other way round through the host's game.
+
+What the `regions` work must provide (no `regions.md` exists yet;
+`../research/coop-regions.md` is its research):
+
+- **grouped or apart**, per player, as one fact both the freeze and the
+  mirrors can read, with hysteresis (a gig must not flip owner at a
+  doorway);
+- the guest's game **owning the NPCs around its V while apart**: no
+  hiding of its own NPCs there, so its gig's enemies exist; and sharing
+  them to a partner who arrives (the host's NPC sharing, run by a guest);
+- the owner of a region staying its owner while a gig phase of its world
+  is active there, even if the other player arrives first at the next
+  room;
+- quest NPCs never handed over between games (its research says so
+  already).
+
+Risks: the classification spike may show that some gigs share phases
+with side quests (then those stay held: rule (b) for them); a gig whose
+area the two worlds disagree about (a door one world already opened) is
+the owner's as its world has it, and the helper sees proxies.
+
+**Until regions and the classification exist, rule (b) is what happens**:
+a frozen guest starts nothing of its own, and gigs run in the host's
+world with the guest as helper. Nothing in today's build takes a gig from
+the host.
+
 ## The ledger
 
 `core/include/tandem/carryover.hpp`, tested in `tests/carryover_test.cpp`.
@@ -143,16 +272,17 @@ Liberty) is credited but never applied.
 Natives on `TandemStory` (plugin, game thread), all thin calls into one
 `carry::Ledger`:
 
-| Native                                | When                                                                                                                              |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `CarryLoad(words: array<Uint64>)`     | the story system attaches (a load): the save's ledger                                                                             |
-| `CarryWords() -> array<Uint64>`       | after any change: stored back into the persistent field                                                                           |
-| `CarryQuest(quest, kind, own, host)`  | a guest takes part in a quest's step (`QuestReward`, or a journal change of the host's quest while near): `own` from the baseline |
-| `CarryCompleted(quest)`               | the host's quest reaches Succeeded with the guest near                                                                            |
-| `CarryPay(quest, reward) -> Int32`    | before `GiveReward` on a guest: 0 pay, 1 already paid, 2 done alone                                                               |
-| `CarryOwnPays(quest, reward) -> Bool` | the `OnRewardEvent` wrap in the guest's own story                                                                                 |
-| `CarrySessionItem(record, quantity)`  | `Loot.reds` gives a guest a shared item tagged `Quest` or a keycard                                                               |
-| `CarryTakeSessionItems() -> array<…>` | the guest's leave, before the story is "back as it was": remove these from the inventory                                          |
+<!-- prettier-ignore -->
+| Native | When |
+| --- | --- |
+| `CarryLoad(words: array<Uint64>)` | the story system attaches (a load): the save's ledger |
+| `CarryWords() -> array<Uint64>` | after any change: stored back into the persistent field |
+| `CarryQuest(quest, kind, own, host)` | a guest takes part in a quest's step (`QuestReward`, or a journal change of the host's quest while near): `own` from the baseline |
+| `CarryCompleted(quest)` | the host's quest reaches Succeeded with the guest near |
+| `CarryPay(quest, reward) -> Int32` | before `GiveReward` on a guest: 0 pay, 1 already paid, 2 done alone |
+| `CarryOwnPays(quest, reward) -> Bool` | the `OnRewardEvent` wrap in the guest's own story |
+| `CarrySessionItem(record, quantity)` | `Loot.reds` gives a guest a shared item tagged `Quest` or a keycard |
+| `CarryTakeSessionItems() -> array<…>` | the guest's leave, before the story is "back as it was": remove these from the inventory |
 
 Order on leave (inside `TandemStorySystem.GuestLeave`, so the
 `progression` branch's `LeftOver` bit 1 still covers it): close the
@@ -162,21 +292,22 @@ rules.
 
 ## Edge cases, ruled
 
-| Case                                                      | Rule                                                                                                                                                                                        | Why                                                                                                                                                                             |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| host further ahead                                        | the guest is told before joining ("NAME is further in the story: spoilers") when the host has 3 or more main quests more (`carry::NoteFor`); it may join                                    | spoilers are the player's call; nothing of the host's story is applied to the guest anyway                                                                                      |
-| items and vehicles from quests the guest has not reached  | reward items (iconics) are kept: tier 1. Quest props are removed on leave. Vehicles and apartments are unlocked by the host's quest graph for the host only; the guest gets none            | a vehicle unlock is world state of a tier 3 quest (`VehicleSystem.EnablePlayerVehicle` from a quest node, not a reward record)                                                  |
-| the host is past the point of no return                   | told before joining ("NAME is playing the ending"); it may join and watch; tier 1 only; the ending's reward screen is the host's                                                            | the ending is one save's (`inkSaveType.PointOfNoReturn`); a guest's V returns to its own world as it was                                                                        |
-| Phantom Liberty on one side only                          | host with, guest without: the join is refused ("needs Phantom Liberty") until the handshake can say which content is in play; guest with, host without: fine                                | journal hashes, reward and item records of the expansion do not exist in a game without it (`IsEP1`, `IsEp1Entry`); needs a flag in `Hello` (a protocol bump, the integrator's) |
-| host behind: the guest already did the quest              | no quest reward (`Pay::DoneAlone`: its own journal had it Succeeded at join); kills, loot and their XP are still its own                                                                    | "once per quest" in both directions; helping is still worth the loot                                                                                                            |
-| divergent choices, romance, lifepath                      | never carried: tier 3. A choice made in the host's world is the host's                                                                                                                      | `story.md`, private scenes                                                                                                                                                      |
-| a quest failed or missed in the guest's world             | credited, never applied (`OwnState::Failed` is not "available")                                                                                                                             | reviving a failed quest is writing quest state                                                                                                                                  |
-| the same gig with two hosts                               | paid once (the ledger outlives the host); the first host's name stays                                                                                                                       | keyed on the quest, not the session                                                                                                                                             |
-| unique rewards later given again by the guest's own story | reward records: skipped, they were paid. Items a quest hands over without a reward record: a second copy arrives; proposed: accept it for now, detect and drop iconic duplicates in stage B | duplicates are harmless to quests; dropping needs the list of which quests give items by node                                                                                   |
-| leaving mid-quest, the host vanishes                      | what was paid is kept; the quest is "taken part in"; session items removed; the save follows the leave flow                                                                                 | the ledger's commit is the save                                                                                                                                                 |
-| a crash                                                   | the session's gains and its ledger entries are lost together (the last save is from before)                                                                                                 | accepted in `story.md`; a periodic safe checkpoint is the later fix, and it would write both                                                                                    |
-| farming by rejoining                                      | nothing to farm: (quest, reward) pays once per character, ever; repeatable content pays as the game repeats it                                                                              | the ledger is in the save, so deleting a file does not reset it                                                                                                                 |
-| three or more players                                     | each guest has its own ledger and its own "took part"; nothing is shared between guests                                                                                                     | no cross-guest state                                                                                                                                                            |
+<!-- prettier-ignore -->
+| Case | Rule | Why |
+| --- | --- | --- |
+| host further ahead | the guest is told before joining ("NAME is further in the story: spoilers") when the host has 3 or more main quests more (`carry::NoteFor`); it may join | spoilers are the player's call; nothing of the host's story is applied to the guest anyway |
+| items and vehicles from quests the guest has not reached | reward items (iconics) are kept: tier 1. Quest props are removed on leave. Vehicles and apartments are unlocked by the host's quest graph for the host only; the guest gets none | a vehicle unlock is world state of a tier 3 quest (`VehicleSystem.EnablePlayerVehicle` from a quest node, not a reward record) |
+| the host is past the point of no return | told before joining ("NAME is playing the ending"); it may join and watch; tier 1 only; the ending's reward screen is the host's | the ending is one save's (`inkSaveType.PointOfNoReturn`); a guest's V returns to its own world as it was |
+| Phantom Liberty on one side only | host with, guest without: the join is refused ("needs Phantom Liberty") until the handshake can say which content is in play; guest with, host without: fine | journal hashes, reward and item records of the expansion do not exist in a game without it (`IsEP1`, `IsEp1Entry`); needs a flag in `Hello` (a protocol bump, the integrator's) |
+| host behind: the guest already did the quest | no quest reward (`Pay::DoneAlone`: its own journal had it Succeeded at join); kills, loot and their XP are still its own | "once per quest" in both directions; helping is still worth the loot |
+| divergent choices, romance, lifepath | never carried: tier 3. A choice made in the host's world is the host's | `story.md`, private scenes |
+| a quest failed or missed in the guest's world | credited, never applied (`OwnState::Failed` is not "available") | reviving a failed quest is writing quest state |
+| the same gig with two hosts | paid once (the ledger outlives the host); the first host's name stays | keyed on the quest, not the session |
+| unique rewards later given again by the guest's own story | reward records: skipped, they were paid. Items a quest hands over without a reward record: a second copy arrives; proposed: accept it for now, detect and drop iconic duplicates in stage B | duplicates are harmless to quests; dropping needs the list of which quests give items by node |
+| leaving mid-quest, the host vanishes | what was paid is kept; the quest is "taken part in"; session items removed; the save follows the leave flow | the ledger's commit is the save |
+| a crash | the session's gains and its ledger entries are lost together (the last save is from before) | accepted in `story.md`; a periodic safe checkpoint is the later fix, and it would write both |
+| farming by rejoining | nothing to farm: (quest, reward) pays once per character, ever; repeatable content pays as the game repeats it | the ledger is in the save, so deleting a file does not reset it |
+| three or more players | each guest has its own ledger and its own "took part"; nothing is shared between guests | no cross-guest state |
 
 ## Differences from the starting proposal, and from other branches
 
@@ -200,14 +331,16 @@ rules.
 
 ## Stages
 
-| Stage | What                                                                                                                                  | Needs                                                |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| A0    | the ledger and its rules (`core/carryover`) with tests                                                                                | done                                                 |
-| A1    | natives and script: ledger in the save, pay rules through it, session items removed on leave, "done with NAME" list in the co-op menu | after `progression`'s leave flow merges (same files) |
-| A2    | join notes: the host's story mark in the handshake or a story message, the spoiler and ending notices, the Phantom Liberty refusal    | a protocol change                                    |
-| C1    | spikes on a solo game: mark a hustle done from outside (C1a); finish a gig through its own end facts (C1b)                            | the game machine, a day                              |
-| B     | apply `Pending()` in the guest's world for the types that passed C1; drop duplicate iconics                                           | C1                                                   |
-| C     | skip offers for self-contained side content                                                                                           | B, and a per-quest allow-list                        |
+<!-- prettier-ignore -->
+| Stage | What | Needs |
+| --- | --- | --- |
+| A0 | the ledger and its rules (`core/carryover`) with tests | done |
+| A1 | natives and script: ledger in the save, pay rules through it, session items removed on leave, "done with NAME" list in the co-op menu | after `progression`'s leave flow merges (same files) |
+| A2 | join notes: the host's story mark in the handshake or a story message, the spoiler and ending notices, the Phantom Liberty refusal | a protocol change |
+| C2 | spike on a solo game: gig phases by their journal nodes (log the chain for ten gigs); then the freeze by ownership (gig phases run apart, wait grouped), own gig entries kept in the journal mirror | the game machine; `regions` for grouped or apart |
+| C1 | spikes on a solo game: mark a hustle done from outside (C1a); finish a gig through its own end facts (C1b) | the game machine, a day |
+| B | apply `Pending()` in the guest's world for the types that passed C1; drop duplicate iconics | C1 |
+| C | skip offers for self-contained side content | B, and a per-quest allow-list |
 
 ## Decisions for the user
 
@@ -225,5 +358,11 @@ rules.
    mismatch, which cannot work).
 5. **Duplicate unique items from the guest's own story later: accept a
    second copy for now?** Recommended: accept; revisit in stage B.
-6. **Skip offers (stage C) at all?** Recommended: not for main quests;
+6. **Whose gig: the world of the player who starts it (rule (a))?**
+   Recommended: yes. Grouped at the start, it is the region owner's (the
+   host's), with no prompt. Until per-player regions exist, guests start
+   no gigs of their own (rule (b)).
+7. **A helper's own copy of a gig stays playable at home, paying nothing
+   again?** Recommended: yes (tier 2 credit).
+8. **Skip offers (stage C) at all?** Recommended: not for main quests;
    decide after stage B for the rest.
