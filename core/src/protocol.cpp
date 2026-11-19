@@ -85,6 +85,17 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *transit = std::get_if<Transit>(&message);
       transit && transit->kind > TransitKind::Along)
     return std::nullopt;
+  if (const auto *activity = std::get_if<Activity>(&message);
+      activity && activity->kind > ActivityKind::Contest)
+    return std::nullopt;
+  if (const auto *skip = std::get_if<TimeSkip>(&message); skip && skip->reason > SkipReason::Quest)
+    return std::nullopt;
+  if (const auto *vote = std::get_if<TimeSkipVote>(&message); vote && vote->why > kSkipWhyMax)
+    return std::nullopt;
+  if (const auto *result = std::get_if<TimeSkipResult>(&message);
+      result && (result->reason > SkipReason::Quest || result->outcome > SkipOutcome::Refused ||
+                 result->why > kSkipWhyMax))
+    return std::nullopt;
   return message;
 }
 
@@ -134,7 +145,8 @@ const char *NameOf(const Message &message) {
       "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",    "NpcWound",
       "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",       "ResyncRequest",
       "NpcSet",         "Epoch",          "Elsewhere",    "Transit",      "NpcSeat",
-      "NpcShotAt",      "ShotHit"};
+      "NpcShotAt",      "ShotHit",        "Activity",     "TimeSkip",     "TimeSkipVote",
+      "TimeSkipResult"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

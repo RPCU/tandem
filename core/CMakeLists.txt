@@ -20,6 +20,7 @@ add_library(tandem_core STATIC
   src/timebubble.cpp
   src/shaping.cpp
   src/elsewhere.cpp
+  src/activity.cpp
   src/instance.cpp)
 target_include_directories(tandem_core PUBLIC include)
 target_link_libraries(tandem_core PUBLIC enet zpp_bits)

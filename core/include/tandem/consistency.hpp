@@ -60,6 +60,8 @@ struct PlayersView {
   const std::map<proto::PlayerId, proto::Vitals> &lives;
   // Who is in another world (a V in the city counts like one never heard of).
   const std::map<proto::PlayerId, proto::Elsewhere> &elsewhere;
+  // Who is busy (a V doing nothing counts like one never heard of).
+  const std::map<proto::PlayerId, proto::Activity> &activities;
 };
 std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self);
 

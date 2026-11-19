@@ -1022,7 +1022,9 @@ struct NpcSet {
 // until then the host drops that guest's hits, effects, uploads and noises
 // (they aimed at the old world). A guest's own goes to the host, which
 // stamps and relays it.
-inline constexpr std::uint8_t kEpochJoin = 0, kEpochLoading = 1, kEpochFastTravel = 2;
+inline constexpr std::uint8_t kEpochJoin = 0, kEpochLoading = 1, kEpochFastTravel = 2,
+                              kEpochTimeSkip = 3, // the clock jumped: the crowd is new
+    kEpochFrozen = 4;                             // our game stood still (photo mode) and is back
 struct Epoch {
   PlayerId player{};           // whose world: set by the host from the connection
   std::uint32_t epoch{};       // that game's world epoch (1 at the start of a session)
@@ -1136,15 +1138,119 @@ struct ShotHit {     // Event channel
   friend bool operator==(const ShotHit &, const ShotHit &) = default;
 };
 
-using Message = std::variant<
-    Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
-    Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
-    Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
-    PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle,
-    ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
-    NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
-    Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
-    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit>;
+// What a V is busy with outside combat and quests (docs/architecture/
+// activities.md; core activity.hpp): a workspot (a chair, a bar stool, a
+// bed, a shower, an arcade machine), a screen it reads, a minigame, a shop
+// or the ripperdoc's chair, a menu that stops its own game, photo mode. Sent
+// by that player's game when it changes (Event channel); the host stamps the
+// sender, keeps everyone's for late joiners (a player who leaves, or comes
+// back from a crash, does nothing) and relays it. The pose stream still
+// carries the body's animation; this says where the body must stay
+// (kActivityAnchored: the others hold the puppet exactly there, so it never
+// floats or slides off its seat), which workspot it plays (so a puppet with
+// no pose stream plays the same one) and whether that game stands still
+// (kActivityFrozen: its poses stop mid-step, so the others let the puppet
+// idle on its own graph instead). Part of the players domain of the host's
+// digests.
+enum class ActivityKind : std::uint8_t {
+  None = 0,
+  Workspot = 1, // sitting, leaning, using a device: `workspot`, `entry`, `anim`
+  Sleep = 2,    // lying in a bed (a workspot too)
+  Screen = 3,   // reading a computer, a terminal, a shard
+  Minigame = 4, // breach protocol, an arcade game
+  Shop = 5,     // a vendor, the ripperdoc, the wardrobe, the mirror
+  Menu = 6,     // the hub menus, the map, the time skip wheel
+  Photo = 7,    // photo mode
+  Contest = 8,  // a duel or a contest the others must leave alone (`device`: its id)
+};
+inline constexpr std::uint8_t kActivityAnchored = 1; // `anchor`, `yaw`: hold the body there
+inline constexpr std::uint8_t kActivityLying = 2;    // lying, not sitting or standing
+inline constexpr std::uint8_t kActivityFrozen = 4;   // that game stands still meanwhile
+inline constexpr std::uint8_t kActivityFlags = 7;
+struct Activity {
+  PlayerId player{};
+  ActivityKind kind{};
+  std::uint8_t flags{};     // kActivity*
+  std::uint64_t device{};   // the device used: its EntityID hash (0: none)
+  std::uint64_t workspot{}; // the workspot resource's path hash (0: unknown)
+  std::uint32_t entry{};    // its tree entry
+  std::uint64_t anim{};     // the animation playing (CName hash)
+  Vec3 anchor;              // kActivityAnchored: where the body is
+  float yaw{};              // its heading (radians, sync::YawOf)
+  friend bool operator==(const Activity &, const Activity &) = default;
+};
+
+// Skipping time (docs/architecture/activities.md, "Time skips"; core
+// activity.hpp): the world clock is the host's and shared, so a skip is
+// never one player's alone. A game asks (TimeSkip, to the host, which stamps
+// `from` and relays it to every other player as a prompt), each other
+// player answers (TimeSkipVote, to the host, relayed to the asker), and the
+// host says how it ended (TimeSkipResult, to everyone): applied when every
+// other player accepted, else nothing moves. One request at a time; it
+// lapses unanswered. Event channel, one-shots (not state, in no digest: the
+// clock itself is in the world digest).
+enum class SkipReason : std::uint8_t {
+  Wait = 0,  // the time skip wheel
+  Sleep = 1, // a bed
+  Quest = 2, // the host's story moved the clock: said, not asked
+};
+struct TimeSkip {
+  PlayerId from{};
+  std::uint32_t request{}; // the asker's count of requests: votes and the result name it
+  SkipReason reason{};
+  std::int32_t fromSeconds{}; // the asker's clock when it asked (GameTime seconds, as World)
+  std::int32_t toSeconds{};   // the game time asked for
+  friend bool operator==(const TimeSkip &, const TimeSkip &) = default;
+};
+
+// Why a skip is declined or refused (TimeSkipVote::why, TimeSkipResult::why).
+inline constexpr std::uint8_t kSkipNoReason = 0, kSkipBusy = 1, // another request is open
+    kSkipCombat = 2,      // that player's V cannot skip now (the game's own conditions)
+    kSkipDown = 3,        // a V is down or out
+    kSkipTimeAbility = 4, // a Sandevistan (or the like) is on
+    kSkipElsewhere = 5,   // a V is in cyberspace, a braindance, a flashback
+    kSkipPaused = 6,      // someone is in the pause menu
+    kSkipNotHost = 7,     // only the host's story moves the clock unasked
+    kSkipWhyMax = 7;
+struct TimeSkipVote {
+  PlayerId from{};         // the voter: set by the host from the connection
+  PlayerId asker{};        // whose request
+  std::uint32_t request{}; // which one
+  bool accepted{};         // the asker's own `false` withdraws the request
+  std::uint8_t why{};      // kSkip*: why not
+  friend bool operator==(const TimeSkipVote &, const TimeSkipVote &) = default;
+};
+
+enum class SkipOutcome : std::uint8_t {
+  Applied = 0,   // the host's clock is at `toSeconds`: every game fast-forwards its V
+  Declined = 1,  // `by` said no
+  Lapsed = 2,    // `by` never answered
+  Withdrawn = 3, // the asker took it back, or left
+  Refused = 4,   // never asked around: `why`
+};
+struct TimeSkipResult {
+  PlayerId asker{};
+  std::uint32_t request{};
+  SkipReason reason{};
+  SkipOutcome outcome{};
+  PlayerId by{};              // who declined, never answered or blocks it (kNoPlayer: nobody)
+  std::uint8_t why{};         // kSkip*
+  std::int32_t fromSeconds{}; // the asker's clock when it asked
+  std::int32_t toSeconds{};   // the time asked for: each game moves its clock by the difference
+  friend bool operator==(const TimeSkipResult &, const TimeSkipResult &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
+                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
+                 Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
+                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
+                 NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
+                 Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise,
+                 Difficulty, AreaHit, Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit,
+                 NpcSeat, NpcShotAt, ShotHit, Activity, TimeSkip, TimeSkipVote, TimeSkipResult>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.

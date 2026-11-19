@@ -118,6 +118,18 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
           .Add(e.anchor.x)
           .Add(e.anchor.y)
           .Add(e.anchor.z);
+  hash.Add(std::uint64_t{0xA9});
+  for (const auto &[id, a] : players.activities)
+    if (id != self && a.kind != proto::ActivityKind::None)
+      hash.Add(std::uint64_t{id})
+          .Add(std::uint64_t{static_cast<std::uint8_t>(a.kind)})
+          .Add(std::uint64_t{a.flags})
+          .Add(a.device)
+          .Add(a.workspot)
+          .Add(std::uint64_t{a.entry})
+          .Add(a.anchor.x)
+          .Add(a.anchor.y)
+          .Add(a.anchor.z);
   return hash.Value();
 }
 
@@ -194,7 +206,11 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<NpcShotAt>(message) || std::holds_alternative<ShotHit>(message) ||
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
          std::holds_alternative<NpcStrike>(message) || std::holds_alternative<NpcWound>(message) ||
-         std::holds_alternative<AreaHit>(message);
+         std::holds_alternative<AreaHit>(message) ||
+         // A time skip asked, answered or concluded: each one counts.
+         std::holds_alternative<TimeSkip>(message) ||
+         std::holds_alternative<TimeSkipVote>(message) ||
+         std::holds_alternative<TimeSkipResult>(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

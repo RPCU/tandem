@@ -1,5 +1,6 @@
 #include "tandem/endpoint.hpp"
 
+#include "tandem/activity.hpp"
 #include "tandem/elsewhere.hpp"
 #include "tandem/play.hpp"
 
@@ -64,7 +65,9 @@ bool AimsAtWorld(const proto::Message &message) {
 
 Endpoint::Endpoint(std::unique_ptr<net::Session> session, Identity identity, Timing timing)
     : m_session(std::move(session)), m_identity(std::move(identity)), m_timing(timing),
-      m_checker(Us(timing.resyncCooldown)) {}
+      m_checker(Us(timing.resyncCooldown)) {
+  m_skips.SetAnswerTime(Us(timing.skipAnswer));
+}
 
 std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port, std::string &error,
                                          Timing timing, std::optional<net::RelayOptions> relay) {
@@ -159,6 +162,15 @@ std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
     return out;
   }
 
+  // Host: a time skip request that something now blocks, or that nobody
+  // answered in time.
+  if (IsHost() && m_skips.Open()) {
+    if (const auto ended = m_skips.Block(SkipBlocker()))
+      EndTimeSkip(*ended, true, out);
+    else if (const auto lapsed = m_skips.Tick(net::NowUs()))
+      EndTimeSkip(*lapsed, true, out);
+  }
+
   if (!IsHost() && IsJoined()) {
     const auto now = net::NowUs();
     if (now - m_lastPingUs >= kPingIntervalUs) {
@@ -194,10 +206,10 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
       .world = consistency::WorldDigest(m_world, m_difficulty),
       .npcs = consistency::NpcDigest(m_npcs, m_npcHealth, m_npcHolds),
       .story = m_story.Digest(),
-      .players =
-          consistency::PlayersDigest({m_players, m_appearances, m_held, m_seats, m_radios,
-                                      m_stealth, m_paused, m_timeEffects, m_lives, m_elsewheres},
-                                     self),
+      .players = consistency::PlayersDigest({m_players, m_appearances, m_held, m_seats, m_radios,
+                                             m_stealth, m_paused, m_timeEffects, m_lives,
+                                             m_elsewheres, m_activities},
+                                            self),
       .npcCount = static_cast<std::uint16_t>(std::min<std::size_t>(m_npcs.size(), 0xFFFF)),
   };
 }
@@ -432,6 +444,26 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      Broadcast(relayed, event.peer);
                      out.push_back(events::RemoteElsewhere{relayed});
                    },
+                   [&](const proto::Activity &busy) {
+                     // A guest is only busy in its own name.
+                     auto relayed = activity::Sanitized(busy);
+                     relayed.player = player;
+                     if (!NoteActivity(relayed))
+                       return;
+                     Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteActivity{relayed});
+                   },
+                   [&](const proto::TimeSkip &skip) {
+                     // A guest only asks in its own name.
+                     auto asked = skip;
+                     asked.from = player;
+                     OnTimeSkip(asked, out);
+                   },
+                   [&](const proto::TimeSkipVote &vote) {
+                     auto mine = vote;
+                     mine.from = player;
+                     OnTimeSkipVote(mine, out);
+                   },
                    [&](const proto::Regroup &offer) {
                      // A guest only offers to come to itself.
                      auto relayed = offer;
@@ -578,6 +610,11 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   // Gone from another world: back in the city for everyone (nothing of it
   // stays hidden anywhere).
   EndElsewhereOf(player, out, true);
+  // Gone while busy: its puppet is free again everywhere; its time skip
+  // request is withdrawn, its say in another's is gone.
+  EndActivityOf(player, out, true);
+  if (const auto ended = m_skips.Left(player))
+    EndTimeSkip(*ended, true, out);
   m_lives.erase(player);
   // It may have been reviving someone (it cannot say it stopped: a player
   // can vanish at any moment): every downed V hears its revive is off.
@@ -634,6 +671,10 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     EndTimeOf(player, out, true);
     // ...in its body, in the city, until it says otherwise...
     EndElsewhereOf(player, out, true);
+    // ...doing nothing, with no time skip asked or owed...
+    EndActivityOf(player, out, true);
+    if (const auto ended = m_skips.Left(player))
+      EndTimeSkip(*ended, true, out);
     // ...and its V is up until it says otherwise.
     if (LifeOf(player) != proto::Life::Up) {
       const proto::Vitals up{.player = player, .revision = m_lives[player].revision + 1};
@@ -710,6 +751,10 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     for (const auto &[id, away] : m_elsewheres)
       if (id != them)
         Send(peer, away);
+    // What everyone is busy with; in a resync, who is not.
+    for (const auto &[id, busy] : m_activities)
+      if (id != them)
+        Send(peer, busy);
     if (resync)
       for (const auto &[id, info] : m_players) {
         if (id == them)
@@ -720,6 +765,8 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
           Send(peer, proto::TimeEffect{.player = id});
         if (!m_elsewheres.contains(id))
           Send(peer, proto::Elsewhere{.player = id});
+        if (!m_activities.contains(id))
+          Send(peer, proto::Activity{.player = id});
         if (LifeOf(id) == proto::Life::Up)
           Send(peer, proto::Vitals{.player = id});
         if (!m_transits.contains(id))
@@ -879,6 +926,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             SendLocalStealthNow();
             SendLocalTimeNow();
             SendLocalElsewhereNow();
+            SendLocalActivityNow();
             SendLocalVitalsNow();
             SendLocalTransitNow();
             // What overtook the Welcome, in the order it came.
@@ -917,6 +965,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                   out.push_back(events::PauseChanged{{id, false}});
                 EndTimeOf(id, out, false);
                 EndElsewhereOf(id, out, false);
+                EndActivityOf(id, out, false);
                 // Its state goes with it: a namesake joining later starts afresh.
                 m_appearances.erase(id);
                 m_held.erase(id);
@@ -1096,6 +1145,24 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (safe.player != m_you && NoteElsewhere(safe))
               out.push_back(events::RemoteElsewhere{safe});
           },
+          [&](const proto::Activity &busy) {
+            const auto safe = activity::Sanitized(busy);
+            if (safe.player != m_you && NoteActivity(safe))
+              out.push_back(events::RemoteActivity{safe});
+          },
+          [&](const proto::TimeSkip &skip) {
+            if (skip.from != m_you)
+              out.push_back(events::TimeSkipAsked{skip});
+          },
+          [&](const proto::TimeSkipVote &vote) {
+            if (vote.asker == m_you)
+              out.push_back(events::TimeSkipVoted{vote});
+          },
+          [&](const proto::TimeSkipResult &result) {
+            if (m_ourSkip && result.asker == m_you && result.request == m_ourSkip->request)
+              m_ourSkip.reset();
+            out.push_back(events::TimeSkipEnded{result});
+          },
           [&](const proto::Regroup &offer) {
             if (offer.from != m_you && (offer.to == m_you || offer.to == proto::kNoPlayer))
               out.push_back(events::RegroupOffered{offer});
@@ -1216,6 +1283,11 @@ void Endpoint::SetLocalAppearance(proto::Appearance appearance) {
   Record(appearance);
   if (m_tap)
     m_tap(appearance);
+  // The same look again (a mirror or a wardrobe left without a change): the
+  // others would only redress the puppet.
+  if (m_localAppearance && m_localAppearance->body == appearance.body &&
+      m_localAppearance->look == appearance.look && m_localAppearance->items == appearance.items)
+    return;
   appearance.revision = ++m_appearanceRevision;
   m_localAppearance = std::move(appearance);
   SendLocalAppearanceNow();
@@ -2140,6 +2212,167 @@ std::vector<proto::Message> Endpoint::LocalSnapshot() const {
     out.emplace_back(*m_localVitals);
   if (m_localElsewhere != proto::Elsewhere{})
     out.emplace_back(m_localElsewhere);
+  if (m_localActivity.kind != proto::ActivityKind::None)
+    out.emplace_back(m_localActivity);
   return out;
+}
+
+void Endpoint::SetLocalActivity(proto::Activity state) {
+  Record(state);
+  if (m_tap)
+    m_tap(state);
+  state = activity::Sanitized(state);
+  state.player = proto::kNoPlayer;
+  if (state == m_localActivity)
+    return;
+  m_localActivity = state;
+  SendLocalActivityNow();
+}
+
+void Endpoint::SendLocalActivityNow() {
+  if (!IsJoined() || m_ended)
+    return;
+  auto mine = m_localActivity;
+  mine.player = m_you;
+  if (!NoteActivity(mine))
+    return;
+  if (IsHost())
+    Broadcast(mine);
+  else
+    Send(m_hostPeer, mine);
+}
+
+bool Endpoint::NoteActivity(const proto::Activity &state) {
+  const auto it = m_activities.find(state.player);
+  if (state.kind == proto::ActivityKind::None) {
+    if (it == m_activities.end())
+      return false;
+    m_activities.erase(it);
+    return true;
+  }
+  if (it != m_activities.end() && it->second == state)
+    return false;
+  m_activities[state.player] = state;
+  return true;
+}
+
+void Endpoint::EndActivityOf(proto::PlayerId player, std::vector<SessionEvent> &out,
+                             bool broadcast) {
+  const proto::Activity idle{.player = player};
+  if (!NoteActivity(idle))
+    return;
+  if (broadcast)
+    Broadcast(idle);
+  out.push_back(events::RemoteActivity{idle});
+}
+
+std::uint32_t Endpoint::AskTimeSkip(proto::SkipReason reason, std::int32_t fromSeconds,
+                                    std::int32_t toSeconds) {
+  if (!IsJoined() || m_ended)
+    return 0;
+  const proto::TimeSkip skip{.from = m_you,
+                             .request = ++m_skipRequests,
+                             .reason = reason,
+                             .fromSeconds = fromSeconds,
+                             .toSeconds = toSeconds};
+  Record(skip);
+  if (IsHost()) {
+    OnTimeSkip(skip, m_pending);
+  } else {
+    m_ourSkip = skip;
+    Send(m_hostPeer, skip);
+  }
+  return skip.request;
+}
+
+void Endpoint::AnswerTimeSkip(proto::PlayerId asker, std::uint32_t request, bool accepted,
+                              std::uint8_t why) {
+  if (!IsJoined() || m_ended)
+    return;
+  const proto::TimeSkipVote vote{.from = m_you,
+                                 .asker = asker,
+                                 .request = request,
+                                 .accepted = accepted,
+                                 .why = accepted ? proto::kSkipNoReason : why};
+  if (IsHost())
+    OnTimeSkipVote(vote, m_pending);
+  else
+    Send(m_hostPeer, vote);
+}
+
+void Endpoint::WithdrawTimeSkip() {
+  if (IsHost()) {
+    if (const auto &open = m_skips.Open(); open && open->from == m_you)
+      AnswerTimeSkip(m_you, open->request, false);
+  } else if (m_ourSkip) {
+    AnswerTimeSkip(m_you, m_ourSkip->request, false);
+  }
+}
+
+activity::Blocker Endpoint::SkipBlocker() const {
+  // Everyone must be free to let the hours pass: nobody down, nobody in a
+  // time ability (its bubble's NPCs would jump hours), in another world or
+  // in the pause menu.
+  for (const auto &[id, vitals] : m_lives)
+    if (vitals.life != proto::Life::Up)
+      return {proto::kSkipDown, id};
+  for (const auto &[id, time] : m_timeEffects)
+    if (time.abilities & proto::kTimeBubbleAbilities)
+      return {proto::kSkipTimeAbility, id};
+  for (const auto &[id, away] : m_elsewheres)
+    if (away.place != proto::Place::City)
+      return {proto::kSkipElsewhere, id};
+  if (!m_paused.empty())
+    return {proto::kSkipPaused, *m_paused.begin()};
+  return {};
+}
+
+void Endpoint::OnTimeSkip(proto::TimeSkip skip, std::vector<SessionEvent> &out) {
+  std::set<proto::PlayerId> voters;
+  for (const auto &[id, info] : m_players)
+    if (id != skip.from)
+      voters.insert(id);
+  const bool fromHost = skip.from == m_you;
+  const auto blocker =
+      skip.reason == proto::SkipReason::Quest ? activity::Blocker{} : SkipBlocker();
+  if (const auto ended = m_skips.Ask(skip, fromHost, std::move(voters), blocker, net::NowUs())) {
+    EndTimeSkip(*ended, false, out);
+    return;
+  }
+  // Open: everyone else is asked (the host's own game too).
+  for (const auto &[peer, player] : m_playerOfPeer)
+    if (player != skip.from)
+      Send(peer, skip);
+  if (!fromHost)
+    out.push_back(events::TimeSkipAsked{skip});
+}
+
+void Endpoint::OnTimeSkipVote(const proto::TimeSkipVote &vote, std::vector<SessionEvent> &out) {
+  const auto &open = m_skips.Open();
+  if (!open || open->from != vote.asker || open->request != vote.request)
+    return;
+  // The asker hears each answer (not its own way out).
+  if (vote.from != vote.asker) {
+    if (vote.asker == m_you)
+      out.push_back(events::TimeSkipVoted{vote});
+    else if (const auto peer = PeerOf(vote.asker))
+      Send(*peer, vote);
+  }
+  if (const auto ended = m_skips.Vote(vote))
+    EndTimeSkip(*ended, true, out);
+}
+
+void Endpoint::EndTimeSkip(const proto::TimeSkipResult &result, bool asked,
+                           std::vector<SessionEvent> &out) {
+  if (asked || result.outcome == proto::SkipOutcome::Applied) {
+    Broadcast(result);
+    out.push_back(events::TimeSkipEnded{result});
+    return;
+  }
+  // Refused at once: the others never heard of it.
+  if (result.asker == m_you)
+    out.push_back(events::TimeSkipEnded{result});
+  else if (const auto peer = PeerOf(result.asker))
+    Send(*peer, result);
 }
 } // namespace tandem
