@@ -10,7 +10,8 @@
 | via relay | a real relay process: join by code, fallback from direct, mock players | `task test` (`relay-loopback`) |
 | mock player | `tandem-peer` as host or guest against the real game | `task peer -- host --mode mirror` |
 | consistency | digests, resyncs, epochs, dedupe; convergence with a third lost; vanishing | `task test` |
-| natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere) | `task natives:check` |
+| regions | links, owners, hand-over (also with a third lost), a vanishing owner, digests both ways; two mock players meeting | `task test` |
+| natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere, region) | `task natives:check` |
 | scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods | `task scripts:check` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
@@ -66,6 +67,16 @@ scenario. A scenario that needs another spot teleports after it.
 - **metro** — stands beside your V, then rides the NCART (`--metro-at`,
   `--metro-for`): a straight line 8 m up at 20 m/s, skipping (ten times
   faster) for 3 s halfway, then off at the end. Scenario `metro`.
+- **region** — a player with a region of its own (`regions.md`): it
+  stands `--region-far M` (default 1000) from your V, or around
+  `--region-at X,Y,Z`, with `--region-npcs N` (default 3) NPCs of
+  `--region-record R` it runs itself (announced, moved, hurt by your hits,
+  killed); it walks up to your V at `--region-walk-at S` (default 10; -1:
+  stays away) and off again at `--region-leave-at S` (default -1: never),
+  leaving its NPCs with you, at `--region-speed` m/s (default 25). It gives
+  and takes NPCs as a game would and logs every step (`region: …`).
+  Scenarios `regions-apart`, `regions-meet`, `regions-vanish`; two of them
+  meet in `tests/peer_regions.sh`.
 - **course** — runs a scripted course ahead of your V with every way a V
   moves, each with the state machine's own values: jumps, a double jump, a
   1.5 m ledge climb, a drop, a 4 m ladder, swimming and diving, an
