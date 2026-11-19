@@ -37,6 +37,9 @@ public class TandemShots {
   private let m_boostFactor: array<Float>;
   private let m_logged: array<CName>;
   private let m_handed: Bool;
+  // Guest: why the last shot is still waiting, and the shots fired.
+  private let m_waitingFor: String;
+  private let m_fired: Int32;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -206,7 +209,7 @@ public class TandemShots {
           ArrayPush(this.m_waiting, waiting[i]);
           ArrayPush(this.m_waitingSince, since[i]);
         } else {
-          this.Once(n"lost", s"shots: npc \(waiting[i].npc)'s shot at us lost (no proxy or no weapon in its hand)");
+          TandemNative.Log(s"shots: npc \(waiting[i].npc)'s shot at us lost (waited 3 s: \(this.m_waitingFor))");
         }
       }
       i += 1;
@@ -230,10 +233,12 @@ public class TandemShots {
     let npcs = IsDefined(system) ? system.NpcsSync() : null;
     let player = GetPlayer(this.m_game);
     if !IsDefined(npcs) || !IsDefined(player) {
-      return true;
+      this.m_waitingFor = "no session";
+      return false;
     }
     let proxy = GameInstance.FindEntityByID(this.m_game, npcs.EntityOfNpc(shot.npc)) as ScriptedPuppet;
     if !IsDefined(proxy) {
+      this.m_waitingFor = "no proxy";
       return false;
     }
     let slot = t"AttachmentSlots.WeaponRight";
@@ -248,9 +253,15 @@ public class TandemShots {
         TandemNative.Log(s"shots: npc \(shot.npc)'s proxy has nothing in its hand: given \(TDBID.ToStringDEBUG(shot.weapon))");
       }
       TandemWeapons.Hold(proxy, slot, shot.weapon);
+      this.m_waitingFor = "an empty hand";
       return false;
     }
-    if !IsDefined(weapon) || !weapon.IsAttached() {
+    if !IsDefined(weapon) {
+      this.m_waitingFor = "no weapon given";
+      return false;
+    }
+    if !weapon.IsAttached() {
+      this.m_waitingFor = s"its \(TDBID.ToStringDEBUG(ItemID.GetTDBID(weapon.GetItemID()))) not attached";
       return false;
     }
     // The host's NPC is shooting at us: so is its proxy here, whatever its
@@ -298,7 +309,11 @@ public class TandemShots {
     weapon.AI_ShootAt(IPositionProvider.CreateStaticPositionProvider(at), null, proxy, Cast<Uint16>(0), params, Cast<Uint8>(Max(perShot, 1)), 0.0, maxSpread);
     WeaponObject.TriggerWeaponEffects(weapon, gamedataFxAction.Shoot);
     AnimationControllerComponent.PushEventToReplicate(weapon, n"Shoot");
-    this.Once(n"fired", s"shots: npc \(shot.npc)'s shot at us fired from its proxy (speed \(shot.factor), catching up x\(shot.boost) for \(shot.boostSeconds) s)");
+    this.m_fired += 1;
+    // The first of each session, then every tenth.
+    if this.m_fired == 1 || this.m_fired % 10 == 0 {
+      TandemNative.Log(s"shots: npc \(shot.npc)'s shot at us fired from its proxy (\(this.m_fired) so far; speed \(shot.factor), catching up x\(shot.boost) for \(shot.boostSeconds) s)");
+    }
     return true;
   }
 
@@ -375,6 +390,10 @@ public class TandemShots {
   }
 
   public func End() -> Void {
+    // A new session logs its firsts again.
+    ArrayClear(this.m_logged);
+    this.m_handed = false;
+    this.m_fired = 0;
     ArrayClear(this.m_announcedBy);
     ArrayClear(this.m_announcedAt);
     ArrayClear(this.m_announcedTime);

@@ -3,6 +3,7 @@
 
 #include "log.hpp"
 #include "net_thread.hpp"
+#include "recording.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
 
@@ -19,8 +20,18 @@ Runtime &Runtime::Get() {
 }
 
 void Runtime::Start(proto::Body body) {
+  bool guest = false;
+  {
+    std::lock_guard _(m_lock);
+    if (m_net || m_choice.role == Config::Role::Off)
+      return;
+    guest = m_choice.role == Config::Role::Join;
+  }
+  // Outside our lock: the recorder's solo drain takes it under its own.
+  // (Start and Stop only run on the game thread.)
+  Recording::Get().SessionStarting(guest);
   std::lock_guard _(m_lock);
-  if (m_net || m_choice.role == Config::Role::Off)
+  if (m_net)
     return;
   // The net thread runs on its own copy: tandem.ini's settings, the chosen session.
   auto session = config;
@@ -238,7 +249,10 @@ void Runtime::Stop() {
     m_localRevives.clear();
     m_revives.clear();
   }
+  const bool hadSession = net != nullptr;
   net.reset(); // joins outside the lock: the net thread takes it too
+  if (hadSession)
+    Recording::Get().SessionStopped();
   m_you.store(0);
   {
     std::lock_guard _(m_heldLock);

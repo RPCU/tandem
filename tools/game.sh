@@ -11,7 +11,7 @@
 #                              (physical key codes; anya is AZERTY: 31 walked back,
 #                              46 crouched, 17 opened the radio menu)
 #   tools/game.sh log [N]      the last N lines of tandem's log (default 40)
-#   tools/game.sh role [host | join [ADDRESS] | player]
+#   tools/game.sh role [host | join [ADDRESS] | off | player]
 #                              which tandem.ini the game reads (the player's
 #                              own is kept as tandem.ini.player; player puts
 #                              it back)
@@ -33,6 +33,8 @@
 #   tools/game.sh reload       hot-reload scripts and tweaks (RedHotTools)
 #   tools/game.sh fetch-play NAME  a gameplay recording made in game (cmd record
 #                              start NAME ... record stop) to recordings/play/NAME.tplay
+#   tools/game.sh fetch-recordings [--since YYYYMMDD]  the recorder's segments
+#                              (recorder = on) and their index to recordings/auto/
 #   tools/game.sh cmd TEXT     a command for tandem in the running game:
 #                              respawn | inspect | bodies | probe | probe stop | despawn |
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
@@ -244,6 +246,32 @@ fetch_play() {
   build/linux/peer/tandem-peer play-info "recordings/play/$name.tplay" 2>/dev/null || true
 }
 
+# The recorder's segments (plugin/src/recording.hpp), newer than those we
+# have (or than --since YYYYMMDD), and its index, to recordings/auto/.
+fetch_recordings() {
+  local since=''
+  if [ "${1:-}" = --since ]; then since=${2:?--since YYYYMMDD}; fi
+  mkdir -p recordings/auto
+  local from="$dir/red4ext/plugins/tandem/recordings/auto"
+  local have newest=''
+  have=$(find recordings/auto -maxdepth 1 \( -name '*.tsession' -o -name '*.tplay' \) -printf '%f\n' | sort | tail -1)
+  [ -n "$have" ] && newest=${have%%.*}
+  [ -n "$since" ] && newest=$since
+  local list
+  list=$(remote "cd '$from' 2>/dev/null && ls -1 *.tsession *.tplay 2>/dev/null | sort" || true)
+  local copied=0
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    # Names are times: newer than what we have (the newest again: it may
+    # have grown since).
+    if [ -z "$newest" ] || [[ ${name%%.*} > $newest ]] || [ "${name%%.*}" = "$newest" ]; then
+      scp -q "$host:$from/$name" "recordings/auto/$name" && copied=$((copied + 1))
+    fi
+  done <<<"$list"
+  scp -q "$host:$from/index.jsonl" recordings/auto/index.jsonl 2>/dev/null || true
+  echo "recordings/auto: $copied segment(s) copied, $(find recordings/auto -maxdepth 1 -name '*.ts*' -o -name '*.tplay' | wc -l) here"
+}
+
 log() {
   remote "cd '$dir'; tail -n ${1:-40} \"\$(ls -t red4ext/logs/tandem-*.log | head -1)\""
 }
@@ -285,6 +313,7 @@ role() {
   local ini="$dir/red4ext/plugins/tandem/tandem.ini" text
   case ${1:-} in
   host) text=$'role = host\nport = 27450\nname = V\n' ;;
+  off) text=$'role = off\nport = 27450\nname = V\n' ;;
   join)
     local address=${2:-}
     [ -n "$address" ] || address=$(here)
@@ -299,7 +328,7 @@ role() {
     return
     ;;
   *)
-    echo "role: host | join [ADDRESS] | player" >&2
+    echo "role: host | join [ADDRESS] | off | player" >&2
     exit 1
     ;;
   esac
@@ -414,6 +443,10 @@ healthy) healthy && echo healthy ;;
 test-reset) test_reset ;;
 reload) reload ;;
 fetch-play) fetch_play "${2:-}" ;;
+fetch-recordings)
+  shift
+  fetch_recordings "$@"
+  ;;
 peer)
   shift
   peer "$@"

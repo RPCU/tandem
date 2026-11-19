@@ -249,7 +249,7 @@ struct Options {
   std::vector<DeviceOrder> devices;
   std::string deviceAnswer;
   int deviceAfterSeconds{3};
-  // Faults on what we send (docs/ARCHITECTURE.md, Consistency).
+  // Faults on what we send (docs/architecture/consistency.md, Consistency).
   float drop{}, dup{};
   int vanishAtSeconds{-1}; // end without a goodbye this long into the session (-1: never)
 };
@@ -2261,6 +2261,10 @@ int main(int argc, char **argv) {
   std::set<tandem::proto::NpcId> grabRefused;
   std::set<tandem::proto::NpcId> bodies; // join: the host's NPCs that died, still lying there
   std::optional<tandem::proto::NpcId> hitTarget;
+  // --hit-npcs: strikes on each NPC since its health last changed; NPCs
+  // that never change (invulnerable) are left alone.
+  std::map<tandem::proto::NpcId, int> unanswered;
+  std::set<tandem::proto::NpcId> unhurt;
   std::set<tandem::proto::NpcId> burnt;
   std::map<tandem::proto::NpcId, std::uint8_t> detection;
   // Stealth: --npc's NPC (where the guest was first heard), the NPCs last
@@ -2303,6 +2307,8 @@ int main(int argc, char **argv) {
   auto nextShootYou =
       std::chrono::steady_clock::now() + std::chrono::seconds(options.shootYouSeconds);
   std::set<tandem::proto::NpcId> replayedNpcs; // host: the replay's live NPCs
+  // host: what each NPC holds as its animation state last said (--shoot-you)
+  std::map<tandem::proto::NpcId, std::uint64_t> npcWeapons;
   // Quickhacks: our upload's effect to land, the host's uploads to finish,
   // the NPCs a replay spawned, who drives a car.
   struct Pending {
@@ -2556,6 +2562,8 @@ int main(int argc, char **argv) {
       if (anims.Size() == 0) {
         std::erase_if(recorded->npcs,
                       [&](const auto &anim) { return deadNpcs.contains(anim.npc); });
+        for (const auto &anim : recorded->npcs)
+          npcWeapons[anim.npc] = anim.weapon;
         endpoint->SendNpcAnims(*recorded);
       }
     } else if (const auto *shot = std::get_if<tandem::proto::NpcShot>(&message)) {
@@ -2824,6 +2832,7 @@ int main(int argc, char **argv) {
                   e.hit.npc, e.hit.physical, e.hit.thermal, e.hit.electric, e.hit.chemical,
                   e.hit.attackType, e.hit.flags, e.hit.attack);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcHealth>) {
+              unanswered[e.health.npc] = 0;
               if (options.hitNpcsSeconds)
                 Log("npc {} health {:.0f}%", e.health.npc, e.health.health * 100.f);
               if (!options.recordFile.empty())
@@ -3465,8 +3474,22 @@ int main(int argc, char **argv) {
     if (options.hitNpcsSeconds && !options.host && endpoint->IsJoined() && !liveNpcs.empty() &&
         now >= nextHit) {
       nextHit = now + std::chrono::seconds(options.hitNpcsSeconds);
-      if (!hitTarget || !liveNpcs.contains(*hitTarget))
-        hitTarget = *liveNpcs.begin();
+      // An NPC whose health no strike moves (a quest NPC, invulnerable) is
+      // given up after a few; the newest NPCs first (a scenario's spawns).
+      if (hitTarget && unanswered[*hitTarget] >= 4 && unhurt.insert(*hitTarget).second)
+        Log("npc {}: no health change after 4 hits, trying another", *hitTarget);
+      if (!hitTarget || !liveNpcs.contains(*hitTarget) || unhurt.contains(*hitTarget)) {
+        hitTarget.reset();
+        for (auto it = liveNpcs.rbegin(); it != liveNpcs.rend() && !hitTarget; ++it)
+          if (!unhurt.contains(*it))
+            hitTarget = *it;
+        if (!hitTarget) {
+          unhurt.clear(); // all tried: start over
+          hitTarget = *liveNpcs.rbegin();
+        }
+        unanswered[*hitTarget] = 0;
+      }
+      ++unanswered[*hitTarget];
       const auto strike = StrikeOf(options.strike, *hitTarget);
       endpoint->SendCombat(strike);
       Log("hit npc {} ({}): {:.0f} health, {:.0f} poise, flags {:#x}", *hitTarget, options.strike,
@@ -3723,17 +3746,34 @@ int main(int argc, char **argv) {
     // guest's game fires the shot from its proxy and decides the hit.
     if (options.shootYouSeconds && options.host && now >= nextShootYou) {
       nextShootYou = now + std::chrono::seconds(options.shootYouSeconds);
+      // A live NPC with a weapon drawn, as a real host's shooter has; else
+      // the first live one, made to draw --shot-weapon first (its animation
+      // state says so, as a real host's would: the guest's proxy is armed
+      // from it, NpcAnims.reds).
       tandem::proto::NpcId shooter = 0;
       for (const auto npc : replayedNpcs)
-        if (!deadNpcs.contains(npc)) {
+        if (!deadNpcs.contains(npc) && npcWeapons[npc] != 0) {
           shooter = npc;
           break;
         }
+      if (!shooter)
+        for (const auto npc : replayedNpcs)
+          if (!deadNpcs.contains(npc)) {
+            shooter = npc;
+            npcWeapons[npc] = TweakDBID(options.shotWeapon);
+            endpoint->SendNpcAnims({.npcs = {{.npc = npc,
+                                              .highLevel = 2, // Combat
+                                              .upperBody = 0, // Aim
+                                              .flags = tandem::proto::kNpcAnimWeaponDrawn,
+                                              .weapon = npcWeapons[npc]}}});
+            Log("npc {} draws {} to fire", npc, options.shotWeapon);
+            break;
+          }
       for (const auto &[id, info] : endpoint->Players())
         if (shooter && id != endpoint->You() &&
             endpoint->SendNpcShotAt({.player = id,
                                      .npc = shooter,
-                                     .weapon = TweakDBID(options.shotWeapon),
+                                     .weapon = npcWeapons[shooter],
                                      .tbh = 1.f,
                                      .trigger = 4, // SemiAuto
                                      .factor = 1.f}))
@@ -3929,6 +3969,7 @@ int main(int argc, char **argv) {
           auto anim = line.anim;
           anim.npc = npc;
           batch.npcs.push_back(anim);
+          npcWeapons[npc] = anim.weapon;
           if (line.shots > 0)
             bursts[npc] = {line.shots, nowUs};
         }

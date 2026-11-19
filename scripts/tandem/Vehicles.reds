@@ -1,4 +1,4 @@
-// Vehicles between players (docs/ARCHITECTURE.md, milestone 3). The driver's
+// Vehicles between players (docs/architecture/vehicles.md, milestone 3). The driver's
 // game owns its car: it sends where its V sits (Seat) and, while driving,
 // the car's transform (VehicleState). The other games spawn a copy of that
 // car, move it every frame by teleport to where the driver's game says it is

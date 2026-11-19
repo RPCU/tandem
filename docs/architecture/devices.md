@@ -59,7 +59,7 @@ their state (on, off, friendly, destroyed, the alarm) is the host's.
 | Radios, TVs (`MediaDeviceControllerPS`)                                           | on, off; the station or channel                                                                                                          | host                                                                                                                                                    |
 | Lights, fuse boxes, generators, fans, vending machines, any other device          | status (on, off, unpowered, disabled), broken, hacked, distracting (a glitch: on the host a real distraction, so its NPCs come and look) | host. A vending machine's sale: the buyer's own game (money and item are that V's)                                                                      |
 | Glass, covers, breakable scenery                                                  | **nothing yet**: physics destruction, with no script state                                                                               | each game (open: see the end)                                                                                                                           |
-| Loot containers                                                                   | nothing (per player: `ARCHITECTURE.md`, Loot)                                                                                            | each player's game                                                                                                                                      |
+| Loot containers                                                                   | nothing (per player: `loot.md`)                                                                                                          | each player's game                                                                                                                                      |
 | Spawned devices (dynamic ids), vehicles                                           | nothing here (not the same entity in two games; vehicles have their own sync)                                                            | —                                                                                                                                                       |
 
 A device is **named** by its entity's static id (64 bits, from the world
@@ -187,7 +187,7 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
 ## Open
 
 - **Not run in game.** Every engine call in `Devices.reds` is read from the
-  2.50 scripts and compiles; the list to verify is §5 of the research file.
+  2.50 scripts and compiles; the list to verify is §13.30, "To verify in game", of the research file.
 - **Glass and breakable scenery** have no script state. A remote shot is
   drawn but does not break the other game's glass. Lever to try: replaying
   the hit as a real physics hit at the glass, or the destruction

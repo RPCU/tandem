@@ -1,4 +1,8 @@
-# Devices and world objects — engine facts (game 2.50)
+# Devices and world objects
+
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
+
+### 13.30 Devices and world objects (2026-11-19, 2.50 scripts and RTTI dump read, not run)
 
 What tandem's device sync (`docs/architecture/devices.md`,
 `scripts/tandem/Devices.reds`) relies on. Read offline on 2026-11-19 from
@@ -10,7 +14,7 @@ Tags, as in `engine-knowledge.md`: [2.5-untested] = read from the 2.50
 game's own scripts, not yet run in game; [2.5-static] = read from the 2.50
 RTTI dump (types, fields, sizes); _(inferred)_ = our reading, to confirm.
 
-## 1. Identity
+#### Identity
 
 - `gamePersistentID` is `{entityHash: Uint64 @0, componentName: CName @8}`,
   16 bytes; `entEntityID` is `{hash: Uint64}`. [2.5-static]
@@ -39,7 +43,7 @@ array:gamePersistentID`, `DoorControllerPS.openingTokens: [EntityID]`,
 - Spawned devices (dynamic ids) are not the same in two games: left out
   (`TandemDevices.Follows`).
 
-## 2. Where a device's state lives
+#### Where a device's state lives
 
 - `gamePersistentState` → `gameComponentPS` → `gameDeviceComponentPS`
   (native; `markAsQuest`, `isScanned`, `exposeQuickHacks`…) →
@@ -74,7 +78,7 @@ array:gamePersistentID`, `DoorControllerPS.openingTokens: [EntityID]`,
   Whether `GetConstAccessToPSObject` returns a state for a device the save
   has never seen is not known. [2.5-untested]
 
-## 3. How a device changes
+#### How a device changes
 
 - Everything done to a device is a `DeviceAction` event handled by its
   state in `On<ActionClass>(evt) -> EntityNotificationType` (26111;
@@ -157,7 +161,7 @@ isTilted}` (`: gameDeviceReplicatedState`). Nothing drives them, but they
   whether to play the change — tandem's `DeviceState` and its `how`.
   [2.5-static]
 
-## 4. Not devices
+#### Not devices
 
 - Glass, covers and other breakable scenery are physics destruction
   (`gameDestructionPersistencySystem`: no script functions, no properties),
@@ -167,9 +171,9 @@ isTilted}` (`: gameDeviceReplicatedState`). Nothing drives them, but they
 - Vehicles have a `ScriptableDeviceComponentPS` too (`VehicleComponentPS`):
   left to the vehicle sync.
 
-## 5. To verify in game (nothing below has run)
+#### To verify in game (nothing below has run)
 
-1. The same id on two machines (§1).
+1. The same id on two machines (Identity, above).
 2. `GetConstAccessToPSObject` on a streamed-out, and on a never-visited,
    device; `QueuePSDeviceEvent` of a quest action on a streamed-out door
    (state changes, the door is open when walked up to).

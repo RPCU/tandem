@@ -310,6 +310,16 @@ public native class TandemNative extends IScriptable {
   public static native func RecentHosts() -> array<TandemHost>
   public static native func LocalAddresses() -> array<String>
   public static native func DefaultPort() -> Int32
+  // The recorder (tandem.ini recorder = on): independent of the session.
+  public static native func RecorderOn() -> Bool
+  public static native func Recording() -> Bool
+  public static native func RecorderPose() -> Bool
+  public static native func RecorderStart(body: Int32)
+  public static native func RecorderLeft()
+  public static native func RecorderTick(begin: Bool)
+  public static native func RecorderCut()
+  public static native func RecorderSet(on: Bool)
+  public static native func RecorderStatus() -> String
   public static native func SendLocalState(position: Vector4, orientation: Quaternion, velocity: Vector4, locomotion: Int32, flags: Int32)
   public static native func TakeEvents() -> array<TandemEvent>
   public static native func RegisterPuppet(player: Uint32, id: EntityID)

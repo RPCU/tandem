@@ -404,7 +404,7 @@ struct Noise {
   friend bool operator==(const Noise &, const Noise &) = default;
 };
 
-// Quickhacks (docs/ARCHITECTURE.md, "Quickhacks from two players on one
+// Quickhacks (docs/architecture/combat.md, "Quickhacks from two players on one
 // target"). `action` is always the TweakDB id of an ObjectAction record
 // (QuickHack.*, AIQuickHack.*), `effect` that of a status effect record.
 
@@ -604,7 +604,7 @@ struct QuestReward {
   friend bool operator==(const QuestReward &, const QuestReward &) = default;
 };
 
-// A V's time ability (docs/ARCHITECTURE.md, slowed and stopped time): what
+// A V's time ability (docs/architecture/time.md, slowed and stopped time): what
 // is active now and the world speed it asks for (Event channel, sent by that
 // player's game when it starts, changes or ends). The host stamps the sender
 // from the connection, keeps the latest of each player for late joiners
@@ -762,7 +762,7 @@ struct RegroupAnswer {
   friend bool operator==(const RegroupAnswer &, const RegroupAnswer &) = default;
 };
 
-// Loot (docs/ARCHITECTURE.md, "Loot"). Corpses and containers are per
+// Loot (docs/architecture/loot.md, "Loot"). Corpses and containers are per
 // player: every game rolls its own loot, nothing is sent. What a V drops
 // from its inventory on purpose is a shared world item, the host's: it lies
 // in every game, and the first player to pick a stack up keeps it.
@@ -801,7 +801,7 @@ struct WorldItemTaken {
   friend bool operator==(const WorldItemTaken &, const WorldItemTaken &) = default;
 };
 
-// Quest and important items are every player's (docs/ARCHITECTURE.md,
+// Quest and important items are every player's (docs/architecture/loot.md,
 // Loot): an item tagged Quest, a keycard or an iconic item that came into a
 // V's inventory (kSharedLooted: every other game gives it to its own V,
 // unless it has one; the host's own quests see it), or one on a host NPC's
@@ -817,7 +817,7 @@ struct SharedItem {
   friend bool operator==(const SharedItem &, const SharedItem &) = default;
 };
 
-// ---- Down and out (milestone 8, docs/ARCHITECTURE.md "Down, revive, respawn") ----
+// ---- Down and out (milestone 8, docs/architecture/revive.md "Down, revive, respawn") ----
 
 // A V's life, owned and sent by that player's game when it changes (Event
 // channel; the host stamps the player, keeps everyone's latest for late
@@ -898,7 +898,7 @@ struct NpcShot {
   friend bool operator==(const NpcShot &, const NpcShot &) = default;
 };
 
-// ---- Hit outcomes (docs/ARCHITECTURE.md, "Game rules hold for every hit") ----
+// ---- Hit outcomes (docs/architecture/combat.md, "Game rules hold for every hit") ----
 
 // A guest's hit on one of the host's NPCs (its proxy) with its whole outcome
 // as the guest's game computed it: health and poise lost, the rules that
@@ -980,7 +980,7 @@ struct AreaHit {     // Event channel
   friend bool operator==(const AreaHit &, const AreaHit &) = default;
 };
 
-// ---- Consistency (docs/ARCHITECTURE.md, "Consistency") ----
+// ---- Consistency (docs/architecture/consistency.md, "Consistency") ----
 // The shared state the host's digests cover, as bits.
 inline constexpr std::uint8_t kDomainWorld = 1;   // World: time, weather
 inline constexpr std::uint8_t kDomainNpcs = 2;    // the NPCs the host shares, their health
@@ -1035,7 +1035,7 @@ struct Epoch {
   friend bool operator==(const Epoch &, const Epoch &) = default;
 };
 
-// A V in another world (docs/ARCHITECTURE.md, other worlds; core
+// A V in another world (docs/architecture/elsewhere.md, other worlds; core
 // elsewhere.hpp): cyberspace, a braindance, playing as Johnny or someone
 // else. Sent by that player's game when it changes (Event channel); the host
 // stamps the sender, keeps everyone's for late joiners (a player who leaves,
@@ -1056,7 +1056,7 @@ struct Elsewhere {
   friend bool operator==(const Elsewhere &, const Elsewhere &) = default;
 };
 
-// A ride a player's own game runs for its V (docs/ARCHITECTURE.md,
+// A ride a player's own game runs for its V (docs/architecture/transit.md,
 // "Scripted transit and quest vehicles"), sent by that game when it starts,
 // changes or ends (Event channel; the host stamps the sender, keeps the
 // latest of each player for late joiners and relays it).
