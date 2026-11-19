@@ -309,7 +309,7 @@ public:
   void PushHostWorld(const proto::World &world);
   std::optional<proto::World> HostWorld(std::uint32_t &changes);
 
-  // The pause menu (docs/ARCHITECTURE.md): ours open or closed, game -> net
+  // The pause menu (docs/architecture/time.md): ours open or closed, game -> net
   // (newest only); the other players in theirs, net -> game (latest + a
   // count of changes, 0: none yet). Names, from the roster, for the notice.
   void SubmitLocalPaused(bool paused);
@@ -379,7 +379,7 @@ public:
   // Guest: `you` is our player id (whose detection counts for our V).
   void PushNpcStates(const proto::NpcStates &states, proto::PlayerId you);
 
-  // Each player is detected on their own (docs/ARCHITECTURE.md). Guest: how
+  // Each player is detected on their own (docs/architecture/stealth.md). Guest: how
   // many of the host's NPCs have detected our V (0 once the host's states
   // are 3 s old), and how far an NPC is in noticing it (0..1; 0 once 1 s
   // old). Host: its NPCs' awareness of the guests, game -> net (newest).
@@ -460,7 +460,7 @@ public:
   void SetYou(proto::PlayerId you) { m_you.store(you); }
   proto::PlayerId You() const { return m_you.load(); }
 
-  // Consistency (docs/ARCHITECTURE.md). Net thread -> game thread: the NPCs
+  // Consistency (docs/architecture/consistency.md). Net thread -> game thread: the NPCs
   // the host shares as our session's record has them (guest: what our game
   // must show as proxies, no more, no less) and the players in the session
   // (roster), so scripts can find orphans and what is missing.

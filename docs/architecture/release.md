@@ -122,7 +122,7 @@ one without. Rather than handle every such case, tandem requires it.
   `TandemCoop.ReportExpansion` (Coop.reds) asks the game's own check, the
   one its main menu uses for the expansion banner and logo:
   `inkISystemRequestsHandler.IsAdditionalContentEnabled(n"EP1")` (owned,
-  installed and enabled), else `IsAdditionalContentOwned(n"EP1")`, and
+  installed and enabled; engine facts §13.30), else `IsAdditionalContentOwned(n"EP1")`, and
   tells the plugin (`TandemNative.SetExpansion`: 1 enabled, 2 owned but
   not installed or not enabled, 3 not owned). It runs when either menu's
   co-op pages are created and when a V enters a game, before any session
@@ -141,8 +141,9 @@ one without. Rather than handle every such case, tandem requires it.
 runs as without tandem), `Runtime::Choose` refuses any session (so
 `TandemNative.IsConfigured()` stays false and `TandemSystem` stays idle),
 the Co-op page lists only "Write a bug report" and opens with a popup of
-the problems (`TandemNative.CompatProblems`, `TandemCoop.ProblemsText`).
-`compat = off` in `tandem.ini` (developers) ignores the check.
+the problems (`TandemNative.CompatProblems`, `TandemCoop.ProblemsText`),
+and the recorder (`recorder = on`, `recordings.md`) stays off: its natives
+refuse to start it and the menu hides its switch. `compat = off` in `tandem.ini` (developers) ignores the check.
 
 **Why the plugin declares itself runtime-independent.** With
 `info->runtime` set to the SDK's latest version, RED4ext refuses to load

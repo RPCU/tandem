@@ -1,4 +1,4 @@
-// Co-op in the game's own menus (docs/ARCHITECTURE.md, milestone 7).
+// Co-op in the game's own menus (docs/architecture/coop-menu.md, milestone 7).
 //
 // Main menu (SingleplayerMenuGameController): a "Co-op" entry. Its pages
 // live in the menu's own list, the way the menu shows its items:
@@ -56,6 +56,7 @@ enum TandemCoopAction {
   Invite = 10,
   Leave = 11,
   Report = 12,
+  Recorder = 13,
 }
 
 // One of our entries in a menu's list: the vanilla item data (its label is
@@ -175,6 +176,9 @@ public class TandemCoop {
     let differences = ArraySize(TandemNative.CompatWarnings());
     if differences > 0 {
       ArrayPush(lines, s"\(differences) difference(s) between your games: see tandem's log");
+    }
+    if TandemNative.RecorderOn() {
+      ArrayPush(lines, s"Recorder: \(TandemNative.RecorderStatus())");
     }
     return lines;
   }
@@ -406,6 +410,11 @@ public class TandemCoopMenu {
         this.Add(GetLocalizedText("UI-ScriptExports-Continue0"), TandemCoopAction.Continue);
       }
       this.Add(GetLocalizedText("UI-ScriptExports-LoadGame0"), TandemCoopAction.LoadGame);
+    }
+    // The recorder's switch (until the game closes; tandem.ini's recorder
+    // key is the lasting one). Not while co-op is off: tandem does nothing.
+    if Equals(this.page, TandemCoopPage.Coop) && ArraySize(TandemNative.CompatProblems()) == 0 {
+      this.Add(TandemNative.RecorderOn() ? "Recorder: on" : "Recorder: off", TandemCoopAction.Recorder);
     }
     this.Add("Back", TandemCoopAction.Back);
   }
@@ -752,6 +761,9 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
   } else if Equals(action, TandemCoopAction.Solo) {
     TandemNative.Leave();
     this.TandemGo(TandemCoopPage.Root);
+  } else if Equals(action, TandemCoopAction.Recorder) {
+    TandemNative.RecorderSet(!TandemNative.RecorderOn());
+    this.TandemGo(TandemCoopPage.Coop);
   }
   return true;
 }
@@ -988,6 +1000,9 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
     GenericMessageNotification.Show(this, "Invite", TandemCoop.InviteText(), GenericMessageNotificationType.OK);
   } else if Equals(action, TandemCoopAction.Leave) {
     system.CoopLeave();
+    this.TandemGo(TandemCoopPage.Coop);
+  } else if Equals(action, TandemCoopAction.Recorder) {
+    TandemNative.RecorderSet(!TandemNative.RecorderOn());
     this.TandemGo(TandemCoopPage.Coop);
   }
 }

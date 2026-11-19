@@ -47,7 +47,6 @@ task package:files               # build/package/tandem-<build>.zip + symbols zi
 - [Releases](docs/architecture/release.md) — packaging, compatibility checks, bug reports
 - [First two-player session](docs/playtest.md) — the checklist
 - [NOTICE](NOTICE) — third-party code and credits
-
-- [Architecture](docs/ARCHITECTURE.md) — authority model, sync, threading, roadmap
-- [Engine knowledge](docs/research/engine-knowledge.md) — what earlier projects learned about the engine, with sources
+- [Architecture](docs/ARCHITECTURE.md) — authority model, threading, roadmap, and the index of the topic files in `docs/architecture/`
+- [Engine knowledge](docs/research/engine-knowledge.md) — what earlier projects learned about the engine, with sources: the index of `docs/research/engine/`
 - [AGENTS.md](AGENTS.md) — rules for AI agents working on this repository

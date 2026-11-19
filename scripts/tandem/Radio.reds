@@ -1,4 +1,4 @@
-// The radio (docs/ARCHITECTURE.md, "Radio: each V's own on foot, the
+// The radio (docs/architecture/vehicles.md, "Radio: each V's own on foot, the
 // driver's in a car"). On foot each V hears only their own pocket radio:
 // nothing is sent, and no remote player's radio plays here (a puppet is an
 // NPC, with no pocket radio; a car copy's radio is kept off). In a car the

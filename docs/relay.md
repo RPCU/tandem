@@ -4,7 +4,7 @@
 forward. It forwards opaque UDP datagrams between a session's host and its
 guests, and hands the host a short **join code** to give to friends. It
 never parses game traffic and keeps nothing on disk. How it works inside is
-in [ARCHITECTURE.md, "The relay"](ARCHITECTURE.md#the-relay); this page is
+in [architecture/relay.md](architecture/relay.md); this page is
 for whoever runs one.
 
 You need a machine players can reach on **one UDP port**: a small VPS, a

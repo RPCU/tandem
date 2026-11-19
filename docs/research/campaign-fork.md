@@ -49,10 +49,11 @@ File: `code/client/App/World/QuestMirror.cpp` (481 lines), `.h`. Commit `7f88bec
 
 ### Hashes and signatures
 
-| Hash         | Use                                                                                  | Signature as used                                                                                                                                    | Tag                                                                                                                         |
-| ------------ | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `3227858325` | `QuestPhaseInstance::ExecuteNode` — hooked (host records) and called (guest replays) | `uint8_t (PhaseInstance*, questNodeDefinition*, QuestContext&, const QuestNodeSocket& in, DynArray<QuestNodeSocket>& out)` (`QuestMirror.cpp:67-72`) | [2.5-verified] identical in `CW:Red/QuestsSystem.hpp:286-292`, `CW:Red/Shared/AddressLib.hpp:289`                           |
-| `3144298192` | `QuestsSystem::CreateContext`                                                        | `void* (QuestsSystem*, QuestContext*, int32 a3, int8 a4, int32 a5, int32 a6)`; called `(sys, &ctx, 1, 0, -1, -1)` (`QuestMirror.cpp:63-65,348`)      | [2.5-verified] same call in `CW:App/Quest/QuestPhaseExecutor.hpp:31` (Codeware comments a5 default "1000000" but passes -1) |
+<!-- prettier-ignore -->
+| Hash | Use | Signature as used | Tag |
+| --- | --- | --- | --- |
+| `3227858325` | `QuestPhaseInstance::ExecuteNode` — hooked (host records) and called (guest replays) | `uint8_t (PhaseInstance*, questNodeDefinition*, QuestContext&, const QuestNodeSocket& in, DynArray<QuestNodeSocket>& out)` (`QuestMirror.cpp:67-72`) | [2.5-verified] identical in `CW:Red/QuestsSystem.hpp:286-292`, `CW:Red/Shared/AddressLib.hpp:289` |
+| `3144298192` | `QuestsSystem::CreateContext` | `void* (QuestsSystem*, QuestContext*, int32 a3, int8 a4, int32 a5, int32 a6)`; called `(sys, &ctx, 1, 0, -1, -1)` (`QuestMirror.cpp:63-65,348`) | [2.5-verified] same call in `CW:App/Quest/QuestPhaseExecutor.hpp:31` (Codeware comments a5 default "1000000" but passes -1) |
 
 Related Codeware 2.5 hashes (not used by the fork, all present in 2.50 list): `QuestPhaseInstance_ExecuteGraph 779107884`,
 `QuestPhaseInstance_Initialize 3423879019`, `QuestsSystem_OnGameRestored 2048921710`; Codeware also has
@@ -182,12 +183,13 @@ Server table `sceneKey=right:forward:up:yaw|...` (m, deg, relative to V where V 
 Files: `code/client/App/World/ChoiceInput.cpp` (206 lines), `CampaignDialog.reds`. Commit `7a287c1`.
 Technique credited to `VedalAI/neuro-cyberpunk` via `alphanin9/SharedPunk` (MIT) `Raw/Ink/InkSystem.hpp`, `Raw/Player/Player.hpp`.
 
-| Item                        | Value                                                                                                                                                                                                                                                                                                                      | Tag                                                                                                                                                                                                             |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Player::ProcessInput` hash | `3535541945` → `void (cpPlayer*, RawInputBuffer&)` (`ChoiceInput.cpp:66-70`)                                                                                                                                                                                                                                               | [2.5-present] hash exists in 2.50 list; not used by Codeware, signature unverified                                                                                                                              |
-| local cpPlayer              | `gamePlayerManager` vtable slot **`+0x200`** returns `cpPlayer*` (`ChoiceInput.cpp:72-82`)                                                                                                                                                                                                                                 | [unverified] (SharedPunk-derived, 2.31-era)                                                                                                                                                                     |
-| `RawInputData` (fork)       | size **0x40**: `key EInputKey@00`, `action EInputAction@04`, `value float@08`, `mouseX u32@0C`, `mouseY u32@10`, `unk14@14`, `unk18 u32@18` (input processing checks it == 1), `unk20..unk38` u64 (`ChoiceInput.cpp:12-26`)                                                                                                | **[broken-on-2.5]**: Codeware 2.5 `CW:Red/Input.hpp:17-32` has the same fields but an extra `uint64 unk40` → size **0x48**. A 0x40-stride DynArray (filter/RemoveAt, pushed synthetic entries) is wrong on 2.5. |
-| `RawInputBuffer`            | vtable: `+0x00` dtor, `+0x08` `DynArray<RawInputData>& GetInputs()`; synthetic subclass fills vfuncs `+0x10..+0x88` with no-ops and `+0x90` returning 0; allocator `Memory::InputInternalAllocator` (`ChoiceInput.cpp:28-64`). Codeware: `RawInputBuffer{vtbl; DynArray<RawInputData> inputs;}` (`CW:Red/Input.hpp:34-40`) | [unverified]                                                                                                                                                                                                    |
+<!-- prettier-ignore -->
+| Item | Value | Tag |
+| --- | --- | --- |
+| `Player::ProcessInput` hash | `3535541945` → `void (cpPlayer*, RawInputBuffer&)` (`ChoiceInput.cpp:66-70`) | [2.5-present] hash exists in 2.50 list; not used by Codeware, signature unverified |
+| local cpPlayer | `gamePlayerManager` vtable slot **`+0x200`** returns `cpPlayer*` (`ChoiceInput.cpp:72-82`) | [unverified] (SharedPunk-derived, 2.31-era) |
+| `RawInputData` (fork) | size **0x40**: `key EInputKey@00`, `action EInputAction@04`, `value float@08`, `mouseX u32@0C`, `mouseY u32@10`, `unk14@14`, `unk18 u32@18` (input processing checks it == 1), `unk20..unk38` u64 (`ChoiceInput.cpp:12-26`) | **[broken-on-2.5]**: Codeware 2.5 `CW:Red/Input.hpp:17-32` has the same fields but an extra `uint64 unk40` → size **0x48**. A 0x40-stride DynArray (filter/RemoveAt, pushed synthetic entries) is wrong on 2.5. |
+| `RawInputBuffer` | vtable: `+0x00` dtor, `+0x08` `DynArray<RawInputData>& GetInputs()`; synthetic subclass fills vfuncs `+0x10..+0x88` with no-ops and `+0x90` returning 0; allocator `Memory::InputInternalAllocator` (`ChoiceInput.cpp:28-64`). Codeware: `RawInputBuffer{vtbl; DynArray<RawInputData> inputs;}` (`CW:Red/Input.hpp:34-40`) | [unverified] |
 
 Alternative present in 2.5: Codeware `InkSystem_ProcessInputEvents 673454961` = `void (InkSystem*, uint64, RawInputBuffer&)` (`CW:Red/InkSystem.hpp:42-44`, `AddressLib.hpp:184`) [2.5-verified].
 
@@ -271,50 +273,51 @@ Only the 3 campaign hashes are new in the campaign commits; the rest are Cyberpu
 from `addr.tsv` exist only for 2 (marked); others named from the fork's variable names.
 (`1048576` in `code/common/System/Log.cpp:28` and `8121320` in `code/common/Reverse/Memory.h:19` are constants, not hashes.)
 
-| Hash       | Fork name / use                                          | File:line                                          | 2.50                               | Codeware 2.5                                             |
-| ---------- | -------------------------------------------------------- | -------------------------------------------------- | ---------------------------------- | -------------------------------------------------------- |
-| 3227858325 | QuestPhaseInstance::ExecuteNode (hook+call)              | App/World/QuestMirror.cpp:71                       | present                            | same (`QuestPhaseInstance_ExecuteNode`) → [2.5-verified] |
-| 3144298192 | QuestsSystem::CreateContext                              | QuestMirror.cpp:64                                 | present                            | same (`QuestsSystem_CreateContext`) → [2.5-verified]     |
-| 3535541945 | Player::ProcessInput (hook+call)                         | App/World/ChoiceInput.cpp:69                       | present                            | not used → [2.5-present], struct broken (see §6)         |
-| 386815609  | ScheduleSynchronizedAppearanceChanges                    | Game/CharacterCustomizationSystem.h:63             | present                            | `AppearanceChangeSystem_ChangeAppearance2` (same hash)   |
-| 633871992  | MorphTargetManager SetTargetWeightWithNormalize          | Game/MorphTargetManagerComponent.h:11              | present                            | `MorphTargetManager_ApplyMorphTarget` (same hash)        |
-| 898639042  | ScriptValidator::Validate (RPC validation hook)          | App/Network/Rpc/RpcValidator.cpp:185               | present                            | `ScriptValidator_Validate` (same)                        |
-| 2468877568 | CRenderNode_Present_DoInternal / RelocPtr                | Game/Rendering.h:16,34                             | present `GpuApi::Present`          | —                                                        |
-| 239671909  | CRenderGlobal_Resize                                     | Game/Rendering.h:38                                | present `GpuApi::ResizeBackbuffer` | —                                                        |
-| 3192982283 | CRenderGlobal_Shutdown                                   | Game/Rendering.h:42                                | present                            | —                                                        |
-| 1054086242 | MorphTarget ResetWeights                                 | Game/MorphTargetManagerComponent.h:14              | present                            | —                                                        |
-| 108403442  | CharacterCustomizationState_Serialize                    | Game/CharacterCustomizationSystem.h:22             | present                            | —                                                        |
-| 2710710832 | CreateHandle_CharacterCustomizationState                 | CharacterCustomizationSystem.h:15                  | present                            | —                                                        |
-| 1993027039 | CharacterCustomizationState_InitFromPreset               | :19                                                | present                            | —                                                        |
-| 56564470   | (commented) gameTransactionSystem_AddItemToSlot          | :25                                                | present                            | —                                                        |
-| 394336209  | GetGameSettings                                          | :28                                                | present                            | —                                                        |
-| 1713639304 | (commented) ItemID_SetUniqueCounterValue                 | :31                                                | present                            | —                                                        |
-| 3020231866 | ItemID_Create                                            | :33                                                | present                            | —                                                        |
-| 3236045910 | GetItemRecord                                            | :35                                                | present                            | —                                                        |
-| 1934369954 | GetPlacementSlot                                         | :38                                                | present                            | —                                                        |
-| 523315084  | EvalArrayTweakDBID                                       | :41                                                | present                            | —                                                        |
-| 3648983380 | EvalCName                                                | :44                                                | present                            | —                                                        |
-| 4124714348 | ResolveSuffix                                            | :47                                                | present                            | —                                                        |
-| 1337337421 | ResolveVisualTags                                        | :50                                                | present                            | —                                                        |
-| 3029088864 | GetItemAppearanceName                                    | :53                                                | present                            | —                                                        |
-| 2624990479 | RegisterRemotePlayerMappin                               | Game/MappinSystem.h:8                              | present                            | —                                                        |
-| 3577160229 | RegisterMappin                                           | Game/MappinSystem.h:12                             | present                            | —                                                        |
-| 2268141838 | IdleController_SetAnimation                              | Game/Entity.h:25                                   | present                            | —                                                        |
-| 2624656810 | AnimationDriver::Attach                                  | Game/Animation/AnimationDriver.cpp:11              | present                            | —                                                        |
-| 2385973466 | AnimationDriver::Detach                                  | :17                                                | present                            | —                                                        |
-| 2132808949 | AnimationDriver::SendParameters                          | :23                                                | present                            | —                                                        |
-| 3750304414 | AnimationController get float param                      | :29                                                | present                            | —                                                        |
-| 316482401  | ApplyFeature (AnimationControllerComponent, AnimFeature) | Game/Animation/MultiMovementController.cpp:11      | present                            | —                                                        |
-| 2933986803 | vehicle ForceMoveTo                                      | App/World/InterpolationSystem.cpp:131              | present                            | —                                                        |
-| 457775029  | vehicle ForceTransform                                   | InterpolationSystem.cpp:132                        | present                            | —                                                        |
-| 2592348558 | vehicle EnablePhysics                                    | InterpolationSystem.cpp:133                        | present                            | —                                                        |
-| 3713079867 | (comment only) DriveToPoint::OnUpdate_Internal reference | InterpolationSystem.cpp:137                        | present                            | —                                                        |
-| 4018412273 | move::Component AttachController                         | InterpolationSystem.cpp:263, VehicleSystem.cpp:268 | present                            | —                                                        |
-| 4039776020 | vehicle SetIsPlayerControlled                            | App/World/VehicleSystem.cpp:269                    | present                            | —                                                        |
-| 1620777158 | vehicle SetFlags                                         | VehicleSystem.cpp:270                              | present                            | —                                                        |
-| 1585713002 | vehicle SetKinematic                                     | VehicleSystem.cpp:271                              | present                            | —                                                        |
-| 1160782872 | MountingFacility IsMountedToObject                       | App/World/NetworkWorldSystem.cpp:294               | present                            | —                                                        |
-| 3120376212 | MountingFacility GetMountingInfo                         | NetworkWorldSystem.cpp:298                         | present                            | —                                                        |
+<!-- prettier-ignore -->
+| Hash | Fork name / use | File:line | 2.50 | Codeware 2.5 |
+| --- | --- | --- | --- | --- |
+| 3227858325 | QuestPhaseInstance::ExecuteNode (hook+call) | App/World/QuestMirror.cpp:71 | present | same (`QuestPhaseInstance_ExecuteNode`) → [2.5-verified] |
+| 3144298192 | QuestsSystem::CreateContext | QuestMirror.cpp:64 | present | same (`QuestsSystem_CreateContext`) → [2.5-verified] |
+| 3535541945 | Player::ProcessInput (hook+call) | App/World/ChoiceInput.cpp:69 | present | not used → [2.5-present], struct broken (see §6) |
+| 386815609 | ScheduleSynchronizedAppearanceChanges | Game/CharacterCustomizationSystem.h:63 | present | `AppearanceChangeSystem_ChangeAppearance2` (same hash) |
+| 633871992 | MorphTargetManager SetTargetWeightWithNormalize | Game/MorphTargetManagerComponent.h:11 | present | `MorphTargetManager_ApplyMorphTarget` (same hash) |
+| 898639042 | ScriptValidator::Validate (RPC validation hook) | App/Network/Rpc/RpcValidator.cpp:185 | present | `ScriptValidator_Validate` (same) |
+| 2468877568 | CRenderNode_Present_DoInternal / RelocPtr | Game/Rendering.h:16,34 | present `GpuApi::Present` | — |
+| 239671909 | CRenderGlobal_Resize | Game/Rendering.h:38 | present `GpuApi::ResizeBackbuffer` | — |
+| 3192982283 | CRenderGlobal_Shutdown | Game/Rendering.h:42 | present | — |
+| 1054086242 | MorphTarget ResetWeights | Game/MorphTargetManagerComponent.h:14 | present | — |
+| 108403442 | CharacterCustomizationState_Serialize | Game/CharacterCustomizationSystem.h:22 | present | — |
+| 2710710832 | CreateHandle_CharacterCustomizationState | CharacterCustomizationSystem.h:15 | present | — |
+| 1993027039 | CharacterCustomizationState_InitFromPreset | :19 | present | — |
+| 56564470 | (commented) gameTransactionSystem_AddItemToSlot | :25 | present | — |
+| 394336209 | GetGameSettings | :28 | present | — |
+| 1713639304 | (commented) ItemID_SetUniqueCounterValue | :31 | present | — |
+| 3020231866 | ItemID_Create | :33 | present | — |
+| 3236045910 | GetItemRecord | :35 | present | — |
+| 1934369954 | GetPlacementSlot | :38 | present | — |
+| 523315084 | EvalArrayTweakDBID | :41 | present | — |
+| 3648983380 | EvalCName | :44 | present | — |
+| 4124714348 | ResolveSuffix | :47 | present | — |
+| 1337337421 | ResolveVisualTags | :50 | present | — |
+| 3029088864 | GetItemAppearanceName | :53 | present | — |
+| 2624990479 | RegisterRemotePlayerMappin | Game/MappinSystem.h:8 | present | — |
+| 3577160229 | RegisterMappin | Game/MappinSystem.h:12 | present | — |
+| 2268141838 | IdleController_SetAnimation | Game/Entity.h:25 | present | — |
+| 2624656810 | AnimationDriver::Attach | Game/Animation/AnimationDriver.cpp:11 | present | — |
+| 2385973466 | AnimationDriver::Detach | :17 | present | — |
+| 2132808949 | AnimationDriver::SendParameters | :23 | present | — |
+| 3750304414 | AnimationController get float param | :29 | present | — |
+| 316482401 | ApplyFeature (AnimationControllerComponent, AnimFeature) | Game/Animation/MultiMovementController.cpp:11 | present | — |
+| 2933986803 | vehicle ForceMoveTo | App/World/InterpolationSystem.cpp:131 | present | — |
+| 457775029 | vehicle ForceTransform | InterpolationSystem.cpp:132 | present | — |
+| 2592348558 | vehicle EnablePhysics | InterpolationSystem.cpp:133 | present | — |
+| 3713079867 | (comment only) DriveToPoint::OnUpdate_Internal reference | InterpolationSystem.cpp:137 | present | — |
+| 4018412273 | move::Component AttachController | InterpolationSystem.cpp:263, VehicleSystem.cpp:268 | present | — |
+| 4039776020 | vehicle SetIsPlayerControlled | App/World/VehicleSystem.cpp:269 | present | — |
+| 1620777158 | vehicle SetFlags | VehicleSystem.cpp:270 | present | — |
+| 1585713002 | vehicle SetKinematic | VehicleSystem.cpp:271 | present | — |
+| 1160782872 | MountingFacility IsMountedToObject | App/World/NetworkWorldSystem.cpp:294 | present | — |
+| 3120376212 | MountingFacility GetMountingInfo | NetworkWorldSystem.cpp:298 | present | — |
 
 Core uses `Core::RawFunc<hash, sig>` / `Red::UniversalRelocPtr` (address library via RED4ext); hook via `Core::HookingAgent::Hook<RawFunc>` (`code/client/Core/Hooking/HookingAgent.hpp`).
 

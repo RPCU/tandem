@@ -61,6 +61,11 @@ tasks:
     cmds:
       - python3 tools/check-natives.py
 
+  docs:check:
+    desc: "Docs: links and section numbers resolve, no fact lost since HEAD (task docs:check -- facts --base REV)"
+    cmds:
+      - python3 tools/docs-check.py {{.CLI_ARGS}}
+
   scripts:check:
     desc: "Compile scripts/tandem as the game does (its redscript, bundle and other mods' scripts); task scripts:check -- DIR for another copy"
     cmds:
@@ -177,6 +182,7 @@ tasks:
       - task: natives:check
       - task: scripts:check
       - task: k8s:check
+      - task: docs:check
 
   fmt:
     desc: Format everything

@@ -8,10 +8,12 @@ add_library(tandem_core STATIC
   src/consistency.cpp
   src/endpoint.cpp
   src/story.cpp
+  src/carryover.cpp
   src/combat.cpp
   src/interpolation.cpp
   src/movement.cpp
   src/play.cpp
+  src/recorder.cpp
   src/pose.cpp
   src/vehicle.cpp
   src/hosts.cpp
@@ -19,7 +21,8 @@ add_library(tandem_core STATIC
   src/shaping.cpp
   src/elsewhere.cpp
   src/compat.cpp
-  src/report.cpp)
+  src/report.cpp
+  src/instance.cpp)
 target_include_directories(tandem_core PUBLIC include)
 target_link_libraries(tandem_core PUBLIC enet zpp_bits)
 target_compile_features(tandem_core PUBLIC cxx_std_23)

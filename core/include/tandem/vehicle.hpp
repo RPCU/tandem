@@ -4,7 +4,7 @@
 // Drawn in the past by the driver's own delay (the same as their body, so
 // the driver stays in the seat), interpolated between the two states around
 // that moment; short gaps are extrapolated along the velocity (500 ms, as
-// ARCHITECTURE says for vehicles), then the car holds.
+// docs/architecture/smoothing.md says for vehicles), then the car holds.
 
 #include "tandem/protocol.hpp"
 

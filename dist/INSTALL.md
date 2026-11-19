@@ -169,24 +169,28 @@ directly on its port too.
 `red4ext/plugins/tandem/tandem.ini`, read when the game starts. Unknown
 keys and bad values are reported in tandem's log and ignored.
 
-| Key                  | Default                               | What                                                                                                                                 |
-| -------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `name`               | `V`                                   | The name the other players see.                                                                                                      |
-| `role`               | `off`                                 | `off`: solo until you start a session in the Co-op menu. `host`: host at every load. `join`: join `address` or `join` at every load. |
-| `port`               | `27450`                               | UDP port the host listens on, and the port a guest calls when none is typed.                                                         |
-| `address`            | none                                  | `role = join`: the host's address.                                                                                                   |
-| `relay`              | none                                  | A tandem-relay, `host` or `host:port` (default port 27460).                                                                          |
-| `relay_token`        | none                                  | A host token of that relay (64 hex digits). Hosts only. Keep it to yourself.                                                         |
-| `join`               | none                                  | `role = join`: the host's join code.                                                                                                 |
-| `pose`               | `on`                                  | Exact body poses of the other players. `off`: stock animations only.                                                                 |
-| `story`              | `on`                                  | Share the host's story (journal, calls, texts, subtitles, choices, rewards). `off`: each game keeps its own.                         |
-| `quest_freeze`       | `off`                                 | Guest: your own story waits while you play in the host's. Experimental.                                                              |
-| `quest_freeze_allow` | none                                  | More open-world quest phases that keep running while frozen (resource paths, comma-separated).                                       |
-| `scene_privacy`      | `on`                                  | Romance and private one-to-one scenes are yours alone; the others see you busy. `off`: every scene can be watched.                   |
-| `private_actors`     | `judy, panam, river, kerry, meredith` | Whose scenes are private.                                                                                                            |
-| `private_scenes`     | none                                  | Scenes to treat as private (resource paths, comma-separated).                                                                        |
-| `public_scenes`      | none                                  | Scenes to treat as watchable, whoever is in them.                                                                                    |
-| `time_host`          | `full`                                | Host's own Sandevistan: `full` slows the host's game as in single player; `bubble` slows only the NPCs around the host.              |
+| Key                        | Default                               | What                                                                                                                                 |
+| -------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`                     | `V`                                   | The name the other players see.                                                                                                      |
+| `role`                     | `off`                                 | `off`: solo until you start a session in the Co-op menu. `host`: host at every load. `join`: join `address` or `join` at every load. |
+| `port`                     | `27450`                               | UDP port the host listens on, and the port a guest calls when none is typed.                                                         |
+| `address`                  | none                                  | `role = join`: the host's address.                                                                                                   |
+| `relay`                    | none                                  | A tandem-relay, `host` or `host:port` (default port 27460).                                                                          |
+| `relay_token`              | none                                  | A host token of that relay (64 hex digits). Hosts only. Keep it to yourself.                                                         |
+| `join`                     | none                                  | `role = join`: the host's join code.                                                                                                 |
+| `pose`                     | `on`                                  | Exact body poses of the other players. `off`: stock animations only.                                                                 |
+| `story`                    | `on`                                  | Share the host's story (journal, calls, texts, subtitles, choices, rewards). `off`: each game keeps its own.                         |
+| `quest_freeze`             | `off`                                 | Guest: your own story waits while you play in the host's. Experimental.                                                              |
+| `quest_freeze_allow`       | none                                  | More open-world quest phases that keep running while frozen (resource paths, comma-separated).                                       |
+| `scene_privacy`            | `on`                                  | Romance and private one-to-one scenes are yours alone; the others see you busy. `off`: every scene can be watched.                   |
+| `private_actors`           | `judy, panam, river, kerry, meredith` | Whose scenes are private.                                                                                                            |
+| `private_scenes`           | none                                  | Scenes to treat as private (resource paths, comma-separated).                                                                        |
+| `public_scenes`            | none                                  | Scenes to treat as watchable, whoever is in them.                                                                                    |
+| `time_host`                | `full`                                | Host's own Sandevistan: `full` slows the host's game as in single player; `bubble` slows only the NPCs around the host.              |
+| `recorder`                 | `off`                                 | `on`: record your play in `recordings/auto/` next to `tandem.ini`, for tandem's developers. Changes nothing in game.                 |
+| `recorder_max_mb`          | `2048`                                | Megabytes of recordings kept; the oldest go first.                                                                                   |
+| `recorder_segment_minutes` | `10`                                  | Minutes per recorded segment.                                                                                                        |
+| `recorder_pose`            | `off`                                 | Also record body poses.                                                                                                              |
 
 Developer keys, not needed to play (they can crash the game or flood the
 log): `puppet_female`, `puppet_male` (the records puppets are spawned
