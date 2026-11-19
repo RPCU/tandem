@@ -235,7 +235,7 @@ public class TandemDialogue {
       // A guest's suggestion, for the host to see (its hover: TODO, a marker
       // on the option through a wrap of UpdateDialogsData).
       if event.state == 1 && event.index >= 0 && event.index < ArraySize(this.m_sentTexts) {
-        this.m_story.Notice(s"\(this.m_story.NameOf(event.player)) suggests: \(this.m_sentTexts[event.index])");
+        this.m_story.Notice("Dialogue-Suggests", this.m_story.NameOf(event.player), this.m_sentTexts[event.index]);
         TandemNative.Log(s"choice: player \(event.player) suggests \(event.index)");
       }
       return;
@@ -445,7 +445,7 @@ public class TandemDialogue {
     } else if Equals(name, n"ChoiceApply") && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_RELEASED)
       && this.m_cursor >= 0 && this.m_cursor < count {
       TandemStory.SendCursor(this.m_shownHub, this.m_cursor, 1);
-      this.m_story.Notice(s"Suggested: \(this.m_pendingTexts[this.m_cursor])");
+      this.m_story.Notice("Dialogue-Suggested", this.m_pendingTexts[this.m_cursor]);
       TandemNative.Log(s"choice: suggested \(this.m_cursor)");
     }
   }
@@ -473,10 +473,10 @@ public class TandemDialogue {
       let line: scnDialogLineData;
       this.m_testLine += Cast<Uint64>(1);
       line.id = TandemStory.LineId(Cast<Uint64>(990000) + this.m_testLine);
-      line.text = StrLen(command) > 11 ? StrAfterFirst(command, "story line ") : "Test line.";
+      line.text = StrLen(command) > 11 ? StrAfterFirst(command, "story line ") : "Test line."; // text: test only
       line.type = scnDialogLineType.Regular;
       line.speaker = player;
-      line.speakerName = "V";
+      line.speakerName = "V"; // text: test only
       line.duration = 3.0;
       let lines: array<scnDialogLineData>;
       ArrayPush(lines, line);
@@ -492,12 +492,13 @@ public class TandemDialogue {
       let data: ListChoiceHubData;
       data.id = 4242;
       data.activityState = EVisualizerActivityState.Active;
-      data.title = "Test";
+      data.title = "Test"; // text: test only
       let yes: ListChoiceData;
-      yes.localizedName = "Yes.";
+      yes.localizedName = TandemText.Vanilla("UI-UserActions-Yes");
       yes.inputActionName = n"ChoiceApply";
       let no: ListChoiceData;
-      no.localizedName = "No.";
+      no.localizedName = TandemText.Vanilla("UI-UserActions-No");
+
       no.inputActionName = n"ChoiceApply";
       ArrayPush(data.choices, yes);
       ArrayPush(data.choices, no);

@@ -80,16 +80,16 @@ public class TandemPhone {
       audio.Play(n"ui_phone_initiation_call_stop");
     }
     if phase == 1 && answered {
-      let who = event.player == this.m_story.You() ? "you" : this.m_story.NameOf(event.player);
+      let who = this.m_story.NameOf(event.player);
       if (event.flags & 16) != 0 {
         TandemNative.Log(s"phone: call rejected by player \(event.player)");
         if event.player != this.m_story.You() {
-          this.m_story.Notice(s"\(who) declined the call.");
+          this.m_story.Notice("Phone-Declined", who);
         }
       } else {
         TandemNative.Log(s"phone: call answered by player \(event.player)");
         if event.player != this.m_story.You() {
-          this.m_story.Notice(s"\(who) answered the call.");
+          this.m_story.Notice("Phone-Answered", who);
         }
       }
       // The widget stays until the host's call starts or ends.
@@ -157,7 +157,8 @@ public class TandemPhone {
     let reject = event.index == 2;
     if IsDefined(phone) && phone.TandemAnswerFor(event.contact, reject) {
       TandemNative.Log(s"phone: \(reject ? "rejected" : "answered") by player \(event.player)");
-      this.m_story.Notice(s"\(this.m_story.NameOf(event.player)) \(reject ? "declined" : "answered") the call.");
+      this.m_story.Notice(reject ? "Phone-Declined" : "Phone-Answered", this.m_story.NameOf(event.player));
+
     } else {
       TandemNative.Log(s"phone: player \(event.player)'s answer came too late");
     }

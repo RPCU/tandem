@@ -56,7 +56,9 @@
   profile (`WorldMappinUIProfile.Vehicle`, spawned at any distance), the
   minimap with its point-of-interest widget, both with the `fixer` icon of
   the mappin atlas; the world map shows it whatever the zoom and filters.
-  The player's name is the world label and the world map tooltip's title.
+  The player's name is the world label and the world map tooltip's title;
+  the icon has the player's colour (`TandemMarkers.ColorOf`, by id: the
+  same in every game, so four players tell their markers apart).
   Its definition, `Mappins.TandemPlayerMappin`, is the game's remote player
   definition with `showInWorld`, `showOnMinimap`, `showOnMap` forced on.
   `tools/game.sh cmd markers` logs the definition's flags and where each

@@ -487,7 +487,10 @@ public class TandemScenes {
     if offer && !this.m_watchShown {
       this.m_watchShown = true;
       this.m_watchOpen = true;
-      this.m_story.Notice(s"\(this.m_story.NameOf(this.m_story.HostPlayer())) is in a scene. Watch it: press Interact.");
+      let host = this.m_story.NameOf(this.m_story.HostPlayer());
+      this.m_story.Notice("Scene-InScene", host);
+      // The hint bar draws the player's own binding for Choice1.
+      TandemText.Hint(this.m_game, n"TandemWatch", n"Choice1", true, TandemText.Get("Scene-Watch"), inkInputHintHoldIndicationType.Press);
       player.RegisterInputListener(this, n"Choice1");
       TandemNative.Log("scene: watch offer shown");
     } else if !offer && this.m_watchOpen {
@@ -498,7 +501,9 @@ public class TandemScenes {
   private func CloseWatch() -> Void {
     if this.m_watchOpen {
       this.m_watchOpen = false;
+      TandemText.Hint(this.m_game, n"TandemWatch", n"Choice1", false, "", inkInputHintHoldIndicationType.Press);
       let player = GetPlayer(this.m_game);
+
       if IsDefined(player) {
         player.UnregisterInputListener(this, n"Choice1");
       }

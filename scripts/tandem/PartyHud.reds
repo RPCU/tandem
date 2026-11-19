@@ -392,7 +392,7 @@ public class TandemPartyHud {
       let metres = TandemPresence.RoundedMetres(bearing.distance);
       if off {
         entry.arrow.SetRotation(Rad2Deg(bearing.angle));
-        entry.distance.SetText(metres < 1000 ? s"\(metres) m" : s"\(metres / 1000).\((metres % 1000) / 100) km");
+        entry.distance.SetText(metres < 1000 ? TandemText.F("Party-Metres", s"\(metres)") : TandemText.F("Party-Kilometres", s"\(metres / 1000).\((metres % 1000) / 100)"));
       }
 
       // The nameplate, over the head, up close.

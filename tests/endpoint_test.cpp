@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <functional>
 #include <map>
+#include <set>
+#include <string>
 #include <type_traits>
 
 using namespace std::chrono_literals;
@@ -947,7 +949,7 @@ TEST_CASE("a guest back from a crash gets in at once, under its old id, even in 
   auto newcomer = Endpoint::Join({"d"}, "127.0.0.1", port, error, kFast);
   REQUIRE(newcomer);
   const auto refused = EndOf({host.get(), a.get(), b.get(), c.get(), newcomer.get()}, 4);
-  CHECK(refused.value_or("(still waiting)") == "refused: the session is full");
+  CHECK(refused.value_or("(still waiting)") == "refused: " + std::string(kSessionFull));
 
   // a's latest state reaches b; then a's game crashes.
   a->SendLocalState(proto::PlayerState{.position = {1.f, 0.f, 0.f}});
@@ -999,6 +1001,110 @@ TEST_CASE("a guest back from a crash gets in at once, under its old id, even in 
   CHECK_FALSE(left);
   CHECK(host->Players().size() == 4);
   CHECK(back->IsJoined());
+}
+
+TEST_CASE("four players: everyone sees everyone, one guest reaches all, the fifth is refused") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error, kFast);
+  auto c = Endpoint::Join({"c"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((host && a && b && c));
+  const std::vector<Endpoint *> four{host.get(), a.get(), b.get(), c.get()};
+  REQUIRE(Pump(four, [&](std::size_t, const auto &) {
+    return std::ranges::all_of(four, [](const Endpoint *e) { return e->Players().size() == 4; });
+  }));
+  // One roster everywhere, four ids, each one bit of a byte.
+  std::set<proto::PlayerId> ids;
+  for (const auto *e : four) {
+    CHECK(e->HostPlayer() == 1);
+    CHECK((e->You() >= 1 && e->You() <= proto::kMaxPlayerId));
+    ids.insert(e->You());
+    for (const auto &[id, info] : e->Players())
+      CHECK(host->Players().at(id).name == info.name);
+  }
+  CHECK(ids.size() == 4);
+
+  // c's V reaches the host and both other guests, stamped with c's id.
+  c->SendLocalState(proto::PlayerState{.position = {3.f, 0.f, 0.f}});
+  std::set<std::size_t> heard;
+  REQUIRE(Pump(four, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *remote = std::get_if<events::RemoteState>(&event);
+          remote && remote->state.player == c->You())
+        heard.insert(i);
+    return heard.size() == 3;
+  }));
+  CHECK_FALSE(heard.contains(3));
+
+  // The host's NPC has detected the last guest: its bit is there for it.
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  REQUIRE(Pump(four, [&](std::size_t, const auto &) { return c->SharedNpcs().contains(7); }));
+  const auto bit = static_cast<std::uint8_t>(1u << (c->You() - 1));
+  host->SendNpcStates({.npcs = {{.npc = 7, .detected = bit}}});
+  std::optional<proto::NpcStates> states;
+  REQUIRE(Pump(four, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *s = std::get_if<events::HostNpcStates>(&event); s && i == 3)
+        states = s->states;
+    return states.has_value();
+  }));
+  REQUIRE(states->npcs.size() == 1);
+  CHECK(states->npcs[0].detected == bit);
+
+  // A fifth player is refused, and told why; nobody else notices.
+  auto fifth = Endpoint::Join({"e"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(fifth);
+  bool joined = false;
+  const auto refused = EndOf({host.get(), a.get(), b.get(), c.get(), fifth.get()}, 4);
+  CHECK(refused.value_or("(still waiting)") == "refused: " + std::string(kSessionFull));
+  PumpFor(four, 100ms,
+          [&](std::size_t, const auto &events) { joined |= Has<events::PlayerJoined>(events); });
+  CHECK_FALSE(joined);
+  CHECK(host->Players().size() == 4);
+}
+
+TEST_CASE("player ids are handed out again, never two at once, never one just freed") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  auto stays = Endpoint::Join({"stays"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((host && stays));
+  REQUIRE(Pump({host.get(), stays.get()}, [&](std::size_t, const auto &) {
+    return stays->IsJoined() && host->Players().size() == 2;
+  }));
+  // Players come and go beside the one who stays, past a full round: the
+  // ids go round 2..8 (one bit each in NpcEntry::detected), skip the one in
+  // use, and the id that just left is not the next one handed out.
+  proto::PlayerId last = proto::kNoPlayer;
+  std::set<proto::PlayerId> given;
+  for (int i = 0; i < 12; ++i) {
+    CAPTURE(i);
+    auto guest = Endpoint::Join({"guest " + std::to_string(i)}, "127.0.0.1", port, error, kFast);
+    REQUIRE(guest);
+    REQUIRE(Pump({host.get(), stays.get(), guest.get()}, [&](std::size_t, const auto &) {
+      return guest->IsJoined() && stays->Players().size() == 3;
+    }));
+    const auto id = guest->You();
+    CHECK(id >= 2);
+    CHECK(id <= proto::kMaxPlayerId);
+    CHECK(id != stays->You());
+    CHECK(id != last);
+    // Everyone's roster names the newcomer, not someone who held the id before.
+    CHECK(stays->Players().at(id).name == "guest " + std::to_string(i));
+    last = id;
+    given.insert(id);
+    guest->Leave();
+    REQUIRE(Pump({host.get(), stays.get()}, [&](std::size_t, const auto &) {
+      return host->Players().size() == 2 && stays->Players().size() == 2;
+    }));
+    // One process plays every game here: the leaver's disconnect is never
+    // acknowledged, so its connection idles out on the host (the timeout).
+    // Room for the next ones: the spare connections, a few at a time.
+    PumpFor({host.get(), stays.get()}, kFast.timeout / 3);
+  }
+  CHECK(given.size() == proto::kMaxPlayerId - 2); // every id but the host's and stays'
 }
 
 TEST_CASE("a live player cannot be replaced by a namesake") {

@@ -22,6 +22,12 @@ type Config struct {
 	AllowAnyHost bool
 
 	MaxSessions int
+	// Guests registered in one session at once: the host's game takes 3
+	// players (4 with the host) and keeps 2 spare connections, for a player
+	// coming back while its old one is still open and one to tell the
+	// session is full. A guest the host refused stays registered here until
+	// it is idle, so the relay leaves the limit to the host and counts
+	// those too.
 	MaxGuests   int
 	IdleTimeout time.Duration
 	// Per client, over one-second windows.
@@ -48,7 +54,7 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		MaxSessions:         256,
-		MaxGuests:           3,
+		MaxGuests:           5,
 		IdleTimeout:         2 * time.Minute,
 		MaxPacketsPerSecond: 2000,
 		MaxBytesPerSecond:   4 << 20,

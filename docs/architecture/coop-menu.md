@@ -39,6 +39,45 @@
   **Not yet verified in game** (scenario `coop` for the runtime switches;
   the menus by hand or with `coop menu` / `coop pick`).
 
+### Settings
+
+- **The page** (`scripts/tandem/Settings.reds`, both menus' Co-op page →
+  Settings, the game's own `UI-Labels-Settings`): one item per setting,
+  "Name: V". Picking an on/off or a choice moves to the next value; a
+  typed one (name, relay, relay host token: never shown, "set" or "not
+  set") opens the message popup with Codeware's text field. Each change
+  goes through `TandemNative.SetSetting(key, value)`: the plugin checks it
+  with tandem.ini's own parser (`ApplySetting`, `plugin/src/config.cpp`),
+  saves that one line (`tandem::settings::SetKey`, `core/`, tested: the
+  other keys, the comments and the line endings stay; a key only in a
+  comment is appended, not uncommented; a value with a line break, `;` or
+  `#` is refused) through a file written aside, and applies it.
+  `TandemNative.Setting(key)` reads one back.
+- **When it applies**: at once for `recorder`, `friendly_fire`, `notices`,
+  `markers`, `nameplates` (the scripts read them as they need them);
+  `name`, `relay`, `relay_token`, `story`, `time_host` are what a running
+  session was set up with, so a change during one waits for its end (the
+  label says "from the next session"); `quest_freeze` and `scene_privacy`
+  choose hooks installed at launch ("after a restart").
+- **What they do**: `friendly_fire = off` makes our game spare our V from
+  another V's area hit (`AreaHit`, `Outcomes.reds`: the target's game owns
+  its V's health); `notices = important` hides news (rides, calls, pauses,
+  players elsewhere, loot), `minimal` keeps only what asks for an answer or
+  went wrong (`TandemText.Importance`); every notice is logged either way.
+  `markers = off` takes the other players' markers off (HUD, minimap, map);
+  `nameplates = off` hides the name over them.
+- **Only the page's keys** (`settings::IsEditable`): never `role`,
+  `address`, `port` or `join`, which the co-op menu chooses, nor the test
+  harness's keys; `TANDEM_PORT` and `TANDEM_CONFIG` keep working (the page
+  writes the file the game read, `Config::file`). The harness's
+  `tools/game.sh role` files swap around it: a setting changed while a test
+  `tandem.ini` is in place lands in that one. Tests: `coop settings` logs
+  them all, `coop set KEY VALUE` changes one (scenario `settings`).
+- Not yet verified in game. Not done: the Mod Settings mod's page (it keeps
+  its own saved values, which would compete with tandem.ini's: one source of
+  truth was kept), a session-wide friendly fire (the host's rule for
+  everyone would need an appended message).
+
 ### Invites: the in-game flow (for the main menu)
 
 The co-op main menu (another piece of milestone 7) builds on three natives
@@ -85,5 +124,6 @@ shipped by default (today `relay =` is set by hand).
   menu. Still open: testing a host before loading (today a guest learns in
   game that the host is unreachable), options (name, max players), a lobby
   list, the entry's place in the list (appended after the menu's own
-  items: an insertion would need a wrap of the overloaded `AddMenuItem`),
-  localized labels.
+  items: an insertion would need a wrap of the overloaded `AddMenuItem`).
+  Labels are keyed texts (`strings.md`, done 2026-11-19); `coop pick TEXT`
+  matches a label in the game's language or in English.

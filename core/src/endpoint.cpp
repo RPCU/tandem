@@ -768,13 +768,13 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     return;
   }
 
-  if (m_playerOfPeer.size() >= kMaxGuests) {
-    Send(peer, proto::Refused{"the session is full"});
+  const auto player = m_playerOfPeer.size() < kMaxGuests ? NextFreePlayer() : proto::kNoPlayer;
+  if (player == proto::kNoPlayer) {
+    Send(peer, proto::Refused{std::string(kSessionFull)});
     m_session->Disconnect(peer);
     return;
   }
 
-  const auto player = m_nextPlayer++;
   m_playerOfPeer[peer] = player;
   m_seenHost[player] = m_epoch;
   m_players[player] = {player, hello.name, hello.body};
@@ -785,6 +785,16 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
   Send(peer, m_identity.install);
   SendSessionTo(peer);
   CheckLost(out); // a V up again
+}
+
+proto::PlayerId Endpoint::NextFreePlayer() {
+  for (proto::PlayerId tries = 1; tries < proto::kMaxPlayerId; ++tries) {
+    const auto id = m_nextPlayer;
+    m_nextPlayer = m_nextPlayer >= proto::kMaxPlayerId ? 2 : m_nextPlayer + 1;
+    if (id != m_you && !m_players.contains(id))
+      return id;
+  }
+  return proto::kNoPlayer;
 }
 
 // Everyone already here, as they look now, and the world: what a player

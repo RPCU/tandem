@@ -23,11 +23,18 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
 namespace tandem {
+// The supported session: the host and three guests (4 players).
 inline constexpr std::size_t kMaxGuests = 3;
+inline constexpr std::size_t kMaxPlayers = kMaxGuests + 1;
+static_assert(kMaxPlayers < proto::kMaxPlayerId, "ids to spare: a freed id is not reused at once");
+// The reason a guest past kMaxGuests is refused with (the scripts translate it).
+inline constexpr std::string_view kSessionFull = "the session is full (4 players at most)";
+static_assert(kMaxPlayers == 4, "kSessionFull names the maximum");
 // Connections beyond kMaxGuests: a player coming back while its old
 // connection is still open, or one to tell that the session is full.
 inline constexpr std::size_t kSpareConnections = 2;
@@ -739,6 +746,9 @@ private:
   void OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &out);
   void OnHello(net::PeerId peer, const proto::Hello &hello, std::vector<SessionEvent> &out);
   void RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out);
+  // Host: the id for a new guest, the next free one after the last handed
+  // out (2..kMaxPlayerId, round), so an id is reused only after the others.
+  proto::PlayerId NextFreePlayer();
   void SendSessionTo(net::PeerId peer);
   // Host: these domains (kDomain*) as they are now, to one guest. `resync`:
   // its copy may hold what we no longer have (NpcSet first).

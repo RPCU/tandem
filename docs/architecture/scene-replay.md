@@ -216,8 +216,9 @@ and invulnerable near a tier 4+ one, as before (`Story.reds`,
 
 - **A place to watch from.** A staged scene the host cannot walk away from
   (tier 3 and up), our V within 60 m but not at it (more than 4 m beyond
-  its actors): a notice, once per scene, "NAME is in a scene. Watch it:
-  press Interact." On accept (`Scenes.reds`, `Watch`; `scene::WatchSpot`):
+  its actors): a notice, once per scene, "NAME is in a scene", and a
+  "Watch the scene" hint on `Choice1` (the player's own binding,
+  `strings.md`). On accept (`Scenes.reds`, `Watch`; `scene::WatchSpot`):
   a spot on a ring 1.6 m beyond the actors (2.2 to 7 m from the middle),
   on the host's side of the scene but at least 25° off its line of sight
   to the actors, first within 80° of it, at least 1.1 m from every actor,

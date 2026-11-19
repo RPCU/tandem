@@ -331,10 +331,10 @@ public class TandemTravel {
     let name = this.NameOf(e.player);
     if e.accepted {
       TandemNative.Log(s"travel: \(name) is on the way (offer \(e.offer))");
-      this.Notice(s"\(name) is on the way", 4.0);
+      this.Notice("Travel-OnTheWay", 4.0, name);
     } else {
       TandemNative.Log(s"travel: \(name) stays where they are (offer \(e.offer))");
-      this.Notice(s"\(name) stays where they are", 4.0);
+      this.Notice("Travel-Stays", 4.0, name);
     }
   }
 
@@ -360,30 +360,35 @@ public class TandemTravel {
     this.Hide();
     this.m_offer = offer;
     let name = this.NameOf(offer.player);
-    let text: String;
+    let key: String;
+    let b = "";
     switch offer.reason {
       case 0:
-        text = TDBID.IsValid(offer.point) ? name + " fast travelled to " + this.PointName(offer.point) : name + " fast travelled";
+        key = TDBID.IsValid(offer.point) ? "Travel-FastTravelledTo" : "Travel-FastTravelled";
+        b = TDBID.IsValid(offer.point) ? this.PointName(offer.point) : "";
         break;
       case 2:
-        text = StrLen(offer.label) > 0 ? name + ": " + offer.label : name + " is starting a scene";
+        key = StrLen(offer.label) > 0 ? "Travel-Labelled" : "Travel-Scene";
+        b = offer.label;
         break;
       case 3:
-        text = s"\(name) was taken somewhere else";
+        key = "Travel-Taken";
         break;
       default:
-        text = s"\(name) asks you to join them";
+        key = "Travel-Asks";
         break;
     }
-    this.Notice(text, TandemTravel.OfferSeconds());
-    this.Hint(true, s"Join \(name)");
+    // A label came over the wire: a key of ours (each game its own
+    // language), else a title shown as it came.
+    TandemText.NoticeAs(this.m_game, SimpleMessageType.Neutral, TandemTravel.OfferSeconds(), key, name, TandemText.OfWire(b));
+    this.Hint(true, TandemText.F("Travel-Join", name));
     let local = GetPlayer(this.m_game);
     if IsDefined(local) && !this.m_listening {
       local.RegisterInputListener(this, n"PhoneInteract");
       this.m_listening = true;
       this.m_held = false;
     }
-    TandemNative.Log(s"travel: showing offer \(offer.offer) of \(name): \(text)");
+    TandemNative.Log(s"travel: showing offer \(offer.offer) of \(name): \(TandemText.FE(true, key, name, b))");
   }
 
   private func Hide() -> Void {
@@ -462,7 +467,7 @@ public class TandemTravel {
     let name = this.NameOf(player);
     // The game's own locks (combat, a vehicle, a quest) hold for us too.
     if !travel.IsFastTravelEnabled() {
-      this.Notice("You can't fast travel right now", 4.0);
+      this.Notice("Travel-Blocked", 4.0);
       TandemNative.Log(s"travel: cannot join \(name): fast travel is locked here");
       return false;
     }
@@ -648,33 +653,14 @@ public class TandemTravel {
     return Equals(call.callPhase, questPhoneCallPhase.IncomingCall);
   }
 
-  // As Pause.reds: the HUD's simple on-screen message.
-  // TODO: localized strings (like the pause notice).
-  private func Notice(text: String, seconds: Float) -> Void {
-    let message: SimpleScreenMessage;
-    message.isShown = true;
-    message.duration = seconds;
-    message.message = text;
-    message.type = SimpleMessageType.Neutral;
-    GameInstance
-      .GetBlackboardSystem(this.m_game)
-      .Get(GetAllBlackboardDefs().UI_Notifications)
-      .SetVariant(GetAllBlackboardDefs().UI_Notifications.WarningMessage, ToVariant(message), true);
+  // The HUD's warning line (Text.reds).
+  private func Notice(key: String, seconds: Float, opt a: String) -> Void {
+    TandemText.NoticeAs(this.m_game, SimpleMessageType.Neutral, seconds, key, a);
   }
 
+  // The hint bar draws the player's own binding for PhoneInteract.
   private func Hint(show: Bool, label: String) -> Void {
-    let data: InputHintData;
-    data.action = n"PhoneInteract";
-    data.source = n"TandemRegroup";
-    data.localizedLabel = label;
-    data.queuePriority = 10;
-    data.sortingPriority = 10;
-    data.holdIndicationType = inkInputHintHoldIndicationType.Press;
-    let evt = new UpdateInputHintEvent();
-    evt.data = data;
-    evt.show = show;
-    evt.targetHintContainer = n"GameplayInputHelper";
-    GameInstance.GetUISystem(this.m_game).QueueEvent(evt);
+    TandemText.Hint(this.m_game, n"TandemRegroup", n"PhoneInteract", show, label, inkInputHintHoldIndicationType.Press);
   }
 
   // tools/game.sh cmd: regroup [PLAYER] | regroup accept | regroup decline |
@@ -700,9 +686,9 @@ public class TandemTravel {
   }
 
   // A player by id or name; none given: the last one who made us an offer or
-  // answered ours, else the first with a puppet here. Ids are the host's
-  // count of joins (a host that saw others come and go hands out 24), so
-  // tests name players rather than guess their id. 0: nobody.
+  // answered ours, else the first with a puppet here. Ids go round 2..8 as
+  // players come and go, so tests name players rather than guess their id.
+  // 0: nobody.
   private func PlayerNamed(text: String) -> Uint32 {
     let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
     let players: array<Uint32>;
@@ -778,7 +764,8 @@ private final func RefreshInputHints() -> Void {
   let data: InputHintData;
   data.action = n"world_map_menu_fast_travel";
   data.source = n"TandemRegroup";
-  data.localizedLabel = ours ? "Join " + name : "";
+  data.localizedLabel = ours ? TandemText.F("Travel-Join", name) : "";
+
   data.queuePriority = 0;
   data.sortingPriority = 0;
   data.holdIndicationType = inkInputHintHoldIndicationType.Hold;

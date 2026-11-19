@@ -26,6 +26,8 @@ python3 "$root/tools/scripts-duplicates.py" "$ours"
 # And what it lets through and the game misreads: a value-type local read
 # before it was ever set (the VM does not clear it).
 python3 "$root/tools/scripts-uninitialized.py" "$ours"
+# And a player-facing text that is not in Text.reds (docs/architecture/strings.md).
+python3 "$root/tools/check-strings.py" "$ours"
 
 # True when an ancestor process holds the build lock (flock ... task deploy):
 # taking it again from here would wait forever.

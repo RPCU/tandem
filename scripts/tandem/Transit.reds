@@ -197,7 +197,9 @@ public class TandemTransit {
     // to join us (Travel.reds shows it only to the far ones).
     let scene = kind == 3 && (flags & 2) != 0;
     if this.m_sceneSent && !scene {
-      TandemTravel.OfferRegroup(this.m_game, 0u, 2, "the ride is over");
+      // The label goes over the wire as a key; each game shows it in its language.
+      TandemTravel.OfferRegroup(this.m_game, 0u, 2, "Transit-RideOver");
+
       TandemNative.Log("ride: our scene ride is over, the far ones are offered to join");
     }
     this.m_sceneSent = scene;
@@ -386,7 +388,7 @@ public class TandemTransit {
     }
     TandemVisibility.Show(this.m_game, puppet.player, n"metro", 0.3);
     let station = TandemTransit.StationName(puppet.transitAt);
-    TandemTransit.Notice(this.m_game, StrLen(station) > 0 ? s"\(puppet.name) got off the NCART at \(station)" : s"\(puppet.name) got off the NCART");
+    TandemTransit.Notice(this.m_game, StrLen(station) > 0 ? "Transit-GotOffAt" : "Transit-GotOff", puppet.name, station);
     TandemNative.Log(s"player \(puppet.player): off the NCART (station \(puppet.transitAt))");
     puppet.transitMode = 0;
     puppet.transitNoticed = false;
@@ -403,8 +405,8 @@ public class TandemTransit {
     let skipping = (TandemNative.RemoteTransitFlags(puppet.player) & 1) != 0;
     if !puppet.transitNoticed || (skipping && !puppet.transitSkipNoticed) {
       let toward = TandemTransit.StationName(next);
-      let text = StrLen(toward) > 0 ? s"\(puppet.name) is riding the NCART toward \(toward)" : s"\(puppet.name) is riding the NCART";
-      TandemTransit.Notice(this.m_game, skipping ? s"\(puppet.name) is skipping the NCART ride" : text);
+      let key = StrLen(toward) > 0 ? "Transit-RidingToward" : "Transit-Riding";
+      TandemTransit.Notice(this.m_game, skipping ? "Transit-Skipping" : key, puppet.name, toward);
       puppet.transitNoticed = true;
       puppet.transitSkipNoticed = skipping;
     }
@@ -506,9 +508,9 @@ public class TandemTransit {
     this.m_askedAt = this.m_now;
     this.m_held = false;
     let name = this.NameOf(player);
-    TandemTransit.Notice(this.m_game, s"\(name)'s ride is leaving: ride along, or follow");
-    this.Hint(n"PhoneInteract", true, s"Ride with \(name)", inkInputHintHoldIndicationType.Press);
-    this.Hint(n"PhoneReject", true, "Follow", inkInputHintHoldIndicationType.Hold);
+    TandemTransit.Notice(this.m_game, "Transit-Leaving", name);
+    this.Hint(n"PhoneInteract", true, TandemText.F("Transit-RideWith", name), inkInputHintHoldIndicationType.Press);
+    this.Hint(n"PhoneReject", true, TandemText.Get("Transit-Follow"), inkInputHintHoldIndicationType.Hold);
     if IsDefined(local) {
       local.RegisterInputListener(this, n"PhoneInteract");
       local.RegisterInputListener(this, n"PhoneReject");
@@ -560,7 +562,7 @@ public class TandemTransit {
     this.Answer(asker);
     this.Ask(0u);
     let name = this.NameOf(asker);
-    TandemTransit.Notice(this.m_game, s"Following \(name): join them when the ride is over");
+    TandemTransit.Notice(this.m_game, "Transit-Following", name);
     TandemNative.Log(s"ride: following player \(asker) (\(why))");
   }
 
@@ -581,7 +583,7 @@ public class TandemTransit {
       this.m_seatedBy = asker;
       this.m_seatedCar = carId;
       this.m_seatedSlot = slot;
-      TandemTransit.Notice(this.m_game, s"You ride with \(name)");
+      TandemTransit.Notice(this.m_game, "Transit-YouRide", name);
       TandemNative.Log(s"ride: seated in \(NameToString(slot)) of player \(asker)'s scene ride");
       return;
     }
@@ -613,7 +615,7 @@ public class TandemTransit {
     this.m_carryMountAt = this.m_now + 0.05;
     this.m_carryCheckAt = 0.0;
     let name = this.NameOf(asker);
-    TandemTransit.Notice(this.m_game, s"Riding along with \(name)");
+    TandemTransit.Notice(this.m_game, "Transit-RidingAlong", name);
     TandemNative.Log(s"ride: no free seat in player \(asker)'s scene ride: riding along, carried with its copy");
   }
 
@@ -735,18 +737,7 @@ public class TandemTransit {
   }
 
   private func Hint(action: CName, show: Bool, label: String, hold: inkInputHintHoldIndicationType) -> Void {
-    let data: InputHintData;
-    data.action = action;
-    data.source = n"TandemRide";
-    data.localizedLabel = label;
-    data.queuePriority = 10;
-    data.sortingPriority = 10;
-    data.holdIndicationType = hold;
-    let evt = new UpdateInputHintEvent();
-    evt.data = data;
-    evt.show = show;
-    evt.targetHintContainer = n"GameplayInputHelper";
-    GameInstance.GetUISystem(this.m_game).QueueEvent(evt);
+    TandemText.Hint(this.m_game, n"TandemRide", action, show, label, hold);
   }
 
   // ---- helpers ----
@@ -798,18 +789,11 @@ public class TandemTransit {
     return GetLocalizedText(key);
   }
 
-  // The game's own simple on-screen message (as Pause.reds).
-  public static func Notice(game: GameInstance, text: String) -> Void {
-    let message: SimpleScreenMessage;
-    message.isShown = true;
-    message.duration = 5.0;
-    message.message = text;
-    message.type = SimpleMessageType.Neutral;
-    GameInstance
-      .GetBlackboardSystem(game)
-      .Get(GetAllBlackboardDefs().UI_Notifications)
-      .SetVariant(GetAllBlackboardDefs().UI_Notifications.WarningMessage, ToVariant(message), true);
+  // The HUD's warning line (Text.reds).
+  public static func Notice(game: GameInstance, key: String, opt a: String, opt b: String) -> Void {
+    TandemText.Notice(game, key, a, b);
   }
+
 
   // (tools/game.sh cmd ride) what we ride and what the others ride, for the log.
   public func Report(system: ref<TandemSystem>, puppets: array<ref<TandemPuppet>>) -> Void {

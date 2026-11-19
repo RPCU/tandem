@@ -244,7 +244,7 @@ public class TandemSystem extends ScriptableSystem {
     let wanted = TandemNative.IsConfigured();
     TandemCoop.ReportExpansion();
     if wanted && !TandemNative.IsConfigured() {
-      TandemCoop.Notice(this.GetGameInstance(), "Co-op is off: tandem needs Phantom Liberty on every player's game");
+      TandemCoop.Notice(this.GetGameInstance(), "Session-NeedsExpansion");
     }
     // The recorder (its own key, solo or not) learns a game is loaded: it
     // starts if it is on (now, or when the co-op menu switches it on).
@@ -518,7 +518,7 @@ public class TandemSystem extends ScriptableSystem {
   public func CoopLeave() -> Void {
     this.EndSession(true);
     TandemNative.Leave();
-    TandemCoop.Notice(this.GetGameInstance(), "You left the co-op session");
+    TandemCoop.Notice(this.GetGameInstance(), "Session-YouLeft");
   }
 
   // ---- the recorder, solo (plugin/src/recording.hpp) ----
@@ -1404,8 +1404,9 @@ public class TandemSystem extends ScriptableSystem {
     return Equals(command, "where") || StrBeginsWith(command, "teleport") || StrBeginsWith(command, "god ");
   }
 
-  // coop status | coop host [PORT] | coop join ADDRESS[:PORT] | coop leave:
-  // what the pause menu's co-op page does, without the menu. The menu
+  // coop status | coop host [PORT] | coop join ADDRESS[:PORT] | coop leave |
+  // coop settings | coop set KEY VALUE: what the pause menu's co-op page
+  // does, without the menu. The menu
   // pages themselves (coop menu, coop pick) are the menus' own (Coop.reds).
   private func CoopCommand(command: String) -> Void {
     let words = StrSplit(command, " ");
@@ -1430,6 +1431,8 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log("coop: left the session");
     } else if Equals(verb, "report") {
       TandemNative.Log(s"coop: report: \(TandemNative.WriteReport())");
+    } else if TandemSettings.Command(command) {
+      return;
     } else {
       TandemNative.Log(s"coop: \(verb) needs the co-op menu open (the pause menu's or the main menu's)");
     }
@@ -1802,7 +1805,7 @@ public class TandemSystem extends ScriptableSystem {
           ArrayPush(this.m_joins, join);
           // Those already there when we came in are not news.
           if this.m_you != 0u && this.Now() - this.m_sessionAt > 3.0 {
-            TandemCoop.Notice(this.GetGameInstance(), s"\(event.name) joined the session");
+            TandemCoop.Notice(this.GetGameInstance(), "Session-PlayerJoined", event.name);
           }
           break;
         case 2:
@@ -1830,7 +1833,7 @@ public class TandemSystem extends ScriptableSystem {
         case 3:
           TandemNative.Log(s"session ended: \(event.name)");
           if this.m_you != 0u {
-            TandemCoop.Notice(this.GetGameInstance(), s"Co-op session ended: \(event.name)");
+            TandemText.NoticeReason(this.GetGameInstance(), "Session-Ended", event.name);
           }
           this.m_you = 0u;
           // Guest: the devices the session changed, back as our own save
@@ -1872,7 +1875,7 @@ public class TandemSystem extends ScriptableSystem {
           break;
         case 5:
           // Something serious, said once (the plugin keeps it rare).
-          TandemCoop.Notice(this.GetGameInstance(), event.name);
+          TandemText.NoticeReason(this.GetGameInstance(), "", event.name);
           break;
         default:
           break;
@@ -2636,7 +2639,8 @@ public class TandemSystem extends ScriptableSystem {
   private func NoticeLeft(player: Uint32) -> Void {
     for puppet in this.m_puppets {
       if puppet.player == player {
-        TandemCoop.Notice(this.GetGameInstance(), s"\(puppet.name) left the session");
+        TandemCoop.Notice(this.GetGameInstance(), "Session-PlayerLeft", puppet.name);
+
       }
     }
   }

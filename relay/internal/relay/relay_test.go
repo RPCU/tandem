@@ -112,14 +112,14 @@ func TestSessionFullAndTaken(t *testing.T) {
 	s := newServer(t)
 	now := time.Now()
 	s.handle(hostA, RegisterHost(secret, token), now)
-	for i := range 3 {
+	for i := range s.cfg.MaxGuests {
 		addr := netip.AddrPortFrom(netip.MustParseAddr("203.0.113.20"), uint16(7000+i))
 		if r := mustHandle(t, s, addr, RegisterGuest(secret), now); !r.Registered {
 			t.Fatalf("guest %d: %+v", i, r)
 		}
 	}
 	if r := mustHandle(t, s, guestA, RegisterGuest(secret), now); r.Error != ErrSessionFull {
-		t.Fatalf("fourth guest: %+v", r)
+		t.Fatalf("guest past the limit: %+v", r)
 	}
 	if r := mustHandle(t, s, nobody, RegisterHost(secret, token), now); r.Error != ErrSessionTaken {
 		t.Fatalf("second host: %+v", r)

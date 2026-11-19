@@ -764,6 +764,11 @@ public class TandemOutcomes {
     if !IsDefined(player) {
       return;
     }
+    // Friendly fire off (the settings page): our V is spared by its own game.
+    if !TandemSettings.FriendlyFire() {
+      TandemNative.Log(s"outcomes: player \(event.player)'s area hit on our V spared (friendly_fire = off)");
+      return;
+    }
     let record = TweakDBInterface.GetAttackRecord(event.attack);
     if !IsDefined(record) {
       record = TweakDBInterface.GetAttackRecord(t"Attacks.REMOVE_BulletWithDamage");

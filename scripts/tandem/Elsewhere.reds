@@ -318,12 +318,12 @@ public class TandemElsewhere {
         known.revealAt = now + 0.75;
       }
       if wasMoved || known.place == 1 || known.place == 2 {
-        TandemElsewhere.Notice(this.m_game, s"\(name) is back.");
+        TandemText.Notice(this.m_game, "Elsewhere-Back", name);
       }
       TandemNative.Log(s"elsewhere: player \(known.player) is back from \(TandemElsewhere.PlaceName(known.place))");
     } else {
       if place != known.place || NotEquals(moved, wasMoved) {
-        TandemElsewhere.Notice(this.m_game, TandemElsewhere.NoticeOf(name, place, moved));
+        TandemText.Notice(this.m_game, TandemElsewhere.NoticeOf(place, moved), name);
       }
       let body = "in place";
       if moved {
@@ -335,23 +335,20 @@ public class TandemElsewhere {
     known.flags = flags;
   }
 
-  public static func NoticeOf(name: String, place: Int32, moved: Bool) -> String {
+  // The notice's key (Text.reds) for a player's world.
+  public static func NoticeOf(place: Int32, moved: Bool) -> String {
     switch place {
       case 1:
-        return s"\(name) is in cyberspace.";
+        return "Elsewhere-Cyberspace";
       case 2:
-        return s"\(name) is in a braindance.";
+        return "Elsewhere-Braindance";
       case 3:
-        return moved ? s"\(name) is living one of Johnny's memories." : s"\(name) is Johnny Silverhand now.";
+        return moved ? "Elsewhere-JohnnyMemory" : "Elsewhere-Johnny";
       default:
-        return moved ? s"\(name) is somewhere else for now." : s"\(name) is someone else for now.";
+        return moved ? "Elsewhere-Somewhere" : "Elsewhere-Someone";
     }
   }
 
-  // The HUD's warning line, as every co-op notice (Coop.reds).
-  public static func Notice(game: GameInstance, text: String) -> Void {
-    TandemCoop.Notice(game, text);
-  }
 
   // A puppet out of sight: its own meshes and what it wears and holds
   // (IVisualComponent.TemporaryHide, final.reds:106206). Through

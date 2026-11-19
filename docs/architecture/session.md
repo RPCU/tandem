@@ -19,7 +19,9 @@ they are judged. A goodbye (`Refused`, `Bye`) is delivered before the
 disconnect that follows it, and a guest's `Bye` removes it at once.
 
 **Slots and returning players**: the host takes up to `kMaxGuests` (3)
-welcomed guests and refuses the next ("the session is full"), but keeps
+welcomed guests, 4 players in all (`kMaxPlayers`), and refuses the next
+with "the session is full (4 players at most)" (`kSessionFull`, shown as
+the end notice), but keeps
 `kSpareConnections` (2) more ENet connections open, so a returning player
 can always reach it. A `Hello` under the name of a player whose connection
 has been silent for **2 s** replaces that connection at once: the player
@@ -29,6 +31,18 @@ its look, held items and seat. A live player (heard within 2 s) cannot be
 replaced: a namesake joins as another player. A guest numbers its states
 from the host clock's millisecond at its `Welcome`, so what it sends after
 coming back is newer than what it sent before.
+
+**Player ids** are 1 (the host) to 8 (`proto::kMaxPlayerId`): the host
+hands guests the next free id after the last one it gave, 2..8 in turn
+(`Endpoint::NextFreePlayer`), so an id that just left is not handed out
+again at once (a guest's game is still taking its puppet down) and every
+id is one bit of a byte (`NpcEntry::detected`, the stealth masks) however
+many players came and went. Everything kept per player is dropped when it
+leaves, on the host (`RemovePlayer`), on guests (the roster) and in the
+plugin (`Runtime::ForgetRemote`), so a recycled id starts afresh. Tests:
+"four players: …", "player ids are handed out again, …"
+(`tests/endpoint_test.cpp`); scenario `three-players` (two mock players
+and the game).
 
 **Reaching each other**: direct first (LAN, Tailscale/NetBird — already on
 every nixbook machine), then the relay when NAT blocks UDP. A host with a
@@ -64,7 +78,9 @@ idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
   private_actors, private_scenes, public_scenes, time_host; `relay`,
   `relay_token`, `join` for the relay and join codes; `recorder`,
   `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`, see
-  `recordings.md`): the defaults, and the test harness's session. The
+  `recordings.md`; `friendly_fire`, `notices`, `markers`, `nameplates`,
+  which the co-op menu's Settings page changes with some of the others,
+  `coop-menu.md`): the defaults, and the test harness's session. The
   default is solo. Every key with its default is in `dist/tandem.ini`
   (shipped as `tandem.default.ini`) and `dist/INSTALL.md`; releases,
   startup and join-time compatibility checks, bug reports: `release.md`.

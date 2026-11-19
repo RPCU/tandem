@@ -23,6 +23,9 @@ only when the build or the role changed (one restart per role for a whole
 run), so a run takes minutes. A failure keeps its evidence (logs,
 a screenshot, every thread's backtrace when the plugin's watchdog saw the
 game thread stop). Each feature verified in game gets a scenario.
+More than two players: `peer2 ARGS…` starts a second mock player beside
+the first (`expect_peer2` reads its log, `.cache/peer2.log`); scenario
+`three-players`.
 Every scenario starts from one known state, `tools/game.sh test-reset`
 (`cmd test reset`, `scripts/tandem/TestReset.reds`), run after the last
 scenario's mock player is stopped and after any fresh start: the save
