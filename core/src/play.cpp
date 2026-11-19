@@ -67,6 +67,7 @@ bool Writer::Open(const std::filesystem::path &path, const Header &header, std::
   m_header = header;
   m_count = 0;
   m_lastUs = 0;
+  m_bytes = 26; // the header
   Put(m_out, kMagic);
   Put(m_out, header.version);
   Put(m_out, header.protocol);
@@ -90,7 +91,15 @@ void Writer::Add(std::uint64_t hostUs, const proto::Message &message) {
   Put(m_out, size);
   m_out.write(reinterpret_cast<const char *>(bytes.data()), size);
   m_lastUs = at;
+  m_bytes += 12 + size;
   ++m_count;
+}
+
+bool Writer::Flush() {
+  if (!m_out.is_open())
+    return false;
+  m_out.flush();
+  return m_out.good();
 }
 
 void Writer::Close() {
@@ -129,11 +138,20 @@ std::optional<Recording> Load(const std::filesystem::path &path, std::string &er
   for (;;) {
     std::uint64_t at = 0;
     std::uint32_t size = 0;
-    if (!Get(in, at) || !Get(in, size) || size > (1u << 20))
+    if (!Get(in, at)) {
+      // A clean end, or a few bytes of an entry a crash cut short.
+      recording.truncated = in.gcount() != 0;
       break;
+    }
+    if (!Get(in, size) || size > (1u << 20)) {
+      recording.truncated = true;
+      break;
+    }
     std::vector<std::byte> bytes(size);
-    if (!in.read(reinterpret_cast<char *>(bytes.data()), size))
+    if (!in.read(reinterpret_cast<char *>(bytes.data()), size)) {
+      recording.truncated = true;
       break;
+    }
     if (auto message = proto::Decode(bytes))
       recording.entries.push_back({at, std::move(*message)});
     else
@@ -285,7 +303,11 @@ bool KeepsSession(const proto::Message &message) {
                  std::is_same_v<M, proto::NpcActionReply> ||
                  std::is_same_v<M, proto::RegroupAnswer> || std::is_same_v<M, proto::GameOver> ||
                  std::is_same_v<M, proto::WorldItemTaken> ||
-                 std::is_same_v<M, proto::PhoneAction> || std::is_same_v<M, proto::PhoneReply>);
+                 // Devices: the host's words are kept; the rest is the old
+                 // session's bookkeeping.
+                 std::is_same_v<M, proto::DeviceUse> || std::is_same_v<M, proto::DeviceSet> ||
+                 std::is_same_v<M, proto::DeviceDigest> || std::is_same_v<M, proto::PhoneAction> ||
+                 std::is_same_v<M, proto::PhoneReply>);
       },
       message);
 }
@@ -399,6 +421,14 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
           return host(m.dropper);
         } else if constexpr (std::is_same_v<M, proto::SharedItem>) {
           return host(m.player);
+        } else if constexpr (std::is_same_v<M, proto::DeviceState>) {
+          // The host's word on a device (never a guest's question): ours
+          // to say again, by whoever of this session did it.
+          if (m.how == proto::kDeviceAsk)
+            return false;
+          if (!player(m.by))
+            m.by = proto::kNoPlayer;
+          return true;
         } else if constexpr (std::is_same_v<M, proto::World> ||
                              std::is_same_v<M, proto::NpcSpawn> ||
                              std::is_same_v<M, proto::NpcHealth> ||
@@ -479,6 +509,8 @@ void ApplyHost(Endpoint &endpoint, const proto::Message &message, proto::PlayerI
           endpoint.DropWorldItem(m);
         else if constexpr (std::is_same_v<M, proto::SharedItem>)
           endpoint.SendSharedItem(m);
+        else if constexpr (std::is_same_v<M, proto::DeviceState>)
+          endpoint.ReportDevice(m);
       },
       message);
 }

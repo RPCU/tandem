@@ -215,6 +215,19 @@ public:
   bool PoseOf(proto::PlayerId player, pose::Pose &out);
   std::uint32_t PosesReceived(proto::PlayerId player);
 
+  // Scene replay (docs/architecture/scene-replay.md): the body poses of a
+  // scene's actors. Host: animation job threads -> net thread, the newest of
+  // each NPC. Guest: the net thread writes, animation job threads read, drawn
+  // as far in the past as the proxy's position; nothing once the stream has
+  // stopped for kActorPoseStaleUs (the proxy's own animation shows again).
+  static constexpr std::uint64_t kActorPoseStaleUs = 1'000'000;
+  void SubmitActorPose(proto::NpcId npc, const proto::PoseState &pose);
+  std::vector<proto::ActorPose> TakeActorPoses();
+  void PushActorPose(const proto::ActorPose &pose);
+  bool ActorPoseOf(proto::NpcId npc, pose::Pose &out);
+  void ForgetActorPoses();
+  std::uint32_t ActorPosesReceived();
+
   // Game thread -> net thread: our V's look, newest only (the endpoint keeps it
   // and sends it again to whoever joins).
   void SubmitLocalAppearance(proto::Appearance appearance);
@@ -425,6 +438,17 @@ public:
   void PushLoot(proto::Message message);
   std::vector<proto::Message> TakeLoot();
 
+  // Devices (scripts/tandem/Devices.reds). Game -> net: what a device of
+  // ours is now (host: DeviceState), what our V made one (guest: DeviceUse),
+  // one that came into our world (guest: DeviceState, kDeviceAsk). Net ->
+  // game: the host's word (DeviceState), a guest's question (DeviceState,
+  // kDeviceAsk) or request (DeviceUse), the record sent again (DeviceSet).
+  // Both queued, bounded.
+  void SubmitDevice(proto::Message message);
+  std::vector<proto::Message> TakeDeviceOutbox();
+  void PushDevice(proto::Message message);
+  std::vector<proto::Message> TakeDevices();
+
   // Our player id while in a session (0: none), set by the net thread.
   void SetYou(proto::PlayerId you) { m_you.store(you); }
   proto::PlayerId You() const { return m_you.load(); }
@@ -528,8 +552,9 @@ private:
   std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> m_npcReplies;       // m_lock
   std::vector<ActionEvent> m_actionEvents;                                           // m_lock
   mutable std::mutex m_heldLock;
-  std::set<proto::PlayerId> m_heldPuppets;               // m_heldLock
-  std::vector<proto::Message> m_lootOutbox, m_lootInbox; // m_lock
+  std::set<proto::PlayerId> m_heldPuppets;                   // m_heldLock
+  std::vector<proto::Message> m_lootOutbox, m_lootInbox;     // m_lock
+  std::vector<proto::Message> m_deviceOutbox, m_deviceInbox; // m_lock
   std::atomic<proto::PlayerId> m_you{0};
   std::vector<proto::NpcAnim> m_npcAnimsIn;                                             // m_lock
   std::vector<proto::NpcShot> m_npcShotsIn;                                             // m_lock
@@ -538,19 +563,22 @@ private:
   std::uint32_t m_loopSeq{};
   mutable std::mutex m_posesLock;
   std::map<proto::PlayerId, pose::PoseTrack> m_poses;
+  std::map<proto::NpcId, pose::PoseTrack> m_actorPoses; // m_posesLock
+  std::map<proto::NpcId, proto::PoseState> m_actorOut;  // m_posesLock
+  std::uint32_t m_actorPosesIn{};                       // m_posesLock
 
   mutable std::mutex m_tracksLock;
   std::map<proto::PlayerId, sync::Track> m_tracks;
 
   std::atomic<std::int64_t> m_clockOffsetUs{0};
   std::atomic<std::uint64_t> m_lastFrameUs{0};
-  std::map<proto::NpcId, std::uint8_t> m_npcDetected;  // under m_lock
-  std::int32_t m_detectingUs{};                        // m_lock
-  std::uint64_t m_npcStatesAtUs{};                     // m_lock (host clock)
-  std::map<proto::NpcId, float> m_awarenessOfUs;       // m_lock
-  std::uint64_t m_awarenessAtUs{};                     // m_lock (host clock)
-  std::optional<proto::NpcAwareness> m_localAwareness; // m_lock
-  std::optional<proto::Stealth> m_localStealth;        // m_lock
+  // Each NPC's word with when it came (host clock): every owner lists only
+  // its own NPCs, so an entry ends by going stale, not by being left out.
+  std::map<proto::NpcId, std::pair<std::uint8_t, std::uint64_t>> m_npcDetected;  // m_lock
+  proto::PlayerId m_detectedFor{};                                               // m_lock
+  std::map<proto::NpcId, std::pair<float, std::uint64_t>> m_awarenessOfUs;       // m_lock
+  std::optional<proto::NpcAwareness> m_localAwareness;                           // m_lock
+  std::optional<proto::Stealth> m_localStealth;                                  // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Stealth>> m_stealth; // m_lock
   std::vector<proto::Noise> m_localNoises;                                       // m_lock
   std::vector<consistency::Timed<proto::Noise>> m_remoteNoises;                  // m_lock

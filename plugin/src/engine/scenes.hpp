@@ -32,4 +32,7 @@ void ObserveSceneNode(void *node);
 // Game thread: the scene whose node ran within the last `maxAgeMs`.
 SceneClass ClassifyRecentScene(std::uint32_t maxAgeMs, std::string &why);
 std::uint64_t RecentScenePath();
+// Any thread: the same, only if its node ran within the last `maxAgeMs` (0:
+// none plays). The engine wakes a scene's node again and again while it plays.
+std::uint64_t ScenePlaying(std::uint32_t maxAgeMs);
 } // namespace tandem::plugin::engine

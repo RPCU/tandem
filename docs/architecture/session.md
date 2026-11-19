@@ -41,8 +41,28 @@ within half the timeout (2.5 s), without reporting an end in between
 
 ## Inside the plugin
 
+- **Solo is vanilla** (decided by the user, 2026-11-19). Installed with no
+  session (the default `role = off`, or after the co-op menu's Leave),
+  tandem does nothing to the game: no socket, no immortality or god mode,
+  no crowd, attitude, quest freeze, save lock, time or pause change, no
+  puppets, nothing on the HUD but the co-op menu's entry. What is
+  installed stays idle: the engine hooks pass through (the idle
+  controller's finds no puppet, the pose stream reads only with a source,
+  the quest node hook only notes which scene runs, its freeze off), the
+  running-state frame call needs a session, and every script wrap checks
+  a session before it departs from vanilla (audited 2026-11-19, every wrap
+  and system handler; fixed then: the fast travel's epoch and map hint,
+  the reward ledger and the story's listeners after a Leave, and a V's
+  own limbs). The startup line says so: `tandem: solo, passive (hooks
+idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
+  only reads `tandem.cmd` (developer commands: `where`, `teleport`,
+  `god`, `coop …`, `recorder …`). Starting a session (the co-op menu, `coop-menu.md`, or
+  `role = host|join`) turns co-op on; leaving gives everything back.
+  Scenario `solo`.
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name,
   pose, story, quest_freeze, quest_freeze_allow, scene_privacy,
   private_actors, private_scenes, public_scenes, time_host; `relay`,
-  `relay_token`, `join` for the relay and join codes): the defaults, and
-  the test harness's session.
+  `relay_token`, `join` for the relay and join codes; `recorder`,
+  `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`, see
+  `recordings.md`): the defaults, and the test harness's session. The
+  default is solo.

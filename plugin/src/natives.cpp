@@ -14,6 +14,7 @@
 #include "engine/posestream.hpp"
 #include "engine/trace.hpp"
 #include "log.hpp"
+#include "recording.hpp"
 #include "runtime.hpp"
 
 #include "tandem/movement.hpp"
@@ -26,10 +27,26 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <format>
 #include <fstream>
 
 namespace tandem::plugin {
 namespace {
+// A device as a script names it, checked: a placed entity, a known status,
+// known state bits (anything else is a script bug, never sent).
+std::optional<proto::DeviceState> DeviceOf(Red::EntityID entity, Red::CName cls,
+                                           std::int32_t status, std::int32_t flags,
+                                           std::int32_t value) {
+  if (!entity.hash || !cls.hash || status < proto::kDeviceDisabled || status > proto::kDeviceOn ||
+      flags < 0 || (flags & ~static_cast<std::int32_t>(proto::kDeviceStateBits)) != 0)
+    return std::nullopt;
+  return proto::DeviceState{.entity = entity.hash,
+                            .cls = cls.hash,
+                            .status = static_cast<std::int8_t>(status),
+                            .flags = static_cast<std::uint16_t>(flags),
+                            .value = value};
+}
+
 proto::Body BodyOf(std::int32_t body) {
   switch (body) {
   case 1:
@@ -219,6 +236,22 @@ struct TandemLootEvent {
   float x{}, y{}, z{};     // 1: where it lies
 };
 static_assert(alignof(TandemLootEvent) <= 8, "the script VM aligns struct locals to 8");
+// Devices (scripts/tandem/Devices.reds): the session's word on a device, a
+// guest's question or request about one, or the record being sent again.
+// Plain fields only, as above.
+struct TandemDeviceEvent {
+  // 1 (guest) the host's word, 2 (host) a guest asks what it is, 3 (host) a
+  // guest made it this, 4 (guest) the host sends its record again
+  std::int32_t kind{};
+  Red::EntityID entity;
+  Red::CName cls;         // its persistent state's class
+  std::int32_t status{};  // EDeviceStatus
+  std::int32_t flags{};   // proto::kDevice* state bits
+  std::int32_t value{};   // floor, station, security state (-1: none)
+  std::uint32_t player{}; // 1: who changed it last (0: the world); 2, 3: who asks
+  bool quiet{};           // 1: a record to set, not a change to play
+};
+static_assert(alignof(TandemDeviceEvent) <= 8, "the script VM aligns struct locals to 8");
 
 // Down and out (scripts/tandem/Revive.reds): someone reviving our V.
 struct TandemReviveEvent {
@@ -360,6 +393,30 @@ struct TandemNative : Red::IScriptable {
   }
 
   static std::int32_t DefaultPort() { return Runtime::Get().config.port; }
+
+  // ---- the recorder (recording.hpp), whatever the role ----
+  // tandem.ini's recorder (or the co-op menu's switch) is on.
+  static bool RecorderOn() { return plugin::Recording::Get().Enabled(); }
+  // Recording now (on, a game loaded, no error).
+  static bool Recording() { return plugin::Recording::Get().Active(); }
+  static bool RecorderPose() { return Runtime::Get().config.recorderPose; }
+  // A game is loaded / its world is gone.
+  static void RecorderStart(std::int32_t body) {
+    plugin::Recording::Get().GameLoaded(BodyOf(body));
+  }
+  static void RecorderLeft() { plugin::Recording::Get().GameLeft(); }
+  // Around the scripts' recording work of a frame (its cost, per segment).
+  static void RecorderTick(bool begin) {
+    if (begin)
+      plugin::Recording::Get().TickBegin();
+    else
+      plugin::Recording::Get().TickEnd();
+  }
+  static void RecorderCut() { plugin::Recording::Get().Cut(); }
+  static void RecorderSet(bool on) { plugin::Recording::Get().SetEnabled(on); }
+  static Red::CString RecorderStatus() {
+    return Red::CString(plugin::Recording::Get().Status().c_str());
+  }
 
   static void SendLocalState(Red::Vector4 position, Red::Quaternion orientation,
                              Red::Vector4 velocity, std::int32_t locomotion, std::int32_t flags) {
@@ -1343,6 +1400,67 @@ struct TandemNative : Red::IScriptable {
     }
     return out;
   }
+  // Devices: what one of ours is now (host: the session's record follows
+  // it; `by`: the player whose request made it so, 0: our world), what our V
+  // made one (guest: a request to the host), or one that came into our
+  // world (guest: the host says what it is when it differs).
+  // An entity's id as the logs and tandem-peer write it (hex).
+  static Red::CString EntityHex(Red::EntityID entity) {
+    return Red::CString(std::format("{:x}", entity.hash).c_str());
+  }
+  static void ReportDevice(Red::EntityID entity, Red::CName cls, std::int32_t status,
+                           std::int32_t flags, std::int32_t value, std::uint32_t by) {
+    if (auto state = DeviceOf(entity, cls, status, flags, value)) {
+      state->by = by;
+      Runtime::Get().SubmitDevice(*state);
+    }
+  }
+  static void UseDevice(Red::EntityID entity, Red::CName cls, std::int32_t status,
+                        std::int32_t flags, std::int32_t value) {
+    if (const auto state = DeviceOf(entity, cls, status, flags, value))
+      Runtime::Get().SubmitDevice(proto::DeviceUse{.entity = state->entity,
+                                                   .cls = state->cls,
+                                                   .status = state->status,
+                                                   .flags = state->flags,
+                                                   .value = state->value});
+  }
+  static void AskDevice(Red::EntityID entity, Red::CName cls, std::int32_t status,
+                        std::int32_t flags, std::int32_t value) {
+    if (auto state = DeviceOf(entity, cls, status, flags, value)) {
+      state->how = proto::kDeviceAsk;
+      Runtime::Get().SubmitDevice(*state);
+    }
+  }
+  static Red::DynArray<TandemDeviceEvent> TakeDeviceEvents() {
+    Red::DynArray<TandemDeviceEvent> out;
+    for (const auto &message : Runtime::Get().TakeDevices()) {
+      if (const auto *state = std::get_if<proto::DeviceState>(&message)) {
+        out.EmplaceBack(TandemDeviceEvent{
+            .kind = state->how == proto::kDeviceAsk ? 2 : 1,
+            .entity = Red::EntityID(state->entity),
+            .cls = Red::CName(state->cls),
+            .status = state->status,
+            .flags = state->flags,
+            .value = state->value,
+            .player = state->by,
+            .quiet = state->how == proto::kDeviceQuiet,
+        });
+      } else if (const auto *use = std::get_if<proto::DeviceUse>(&message)) {
+        out.EmplaceBack(TandemDeviceEvent{
+            .kind = 3,
+            .entity = Red::EntityID(use->entity),
+            .cls = Red::CName(use->cls),
+            .status = use->status,
+            .flags = use->flags,
+            .value = use->value,
+            .player = use->player,
+        });
+      } else if (std::holds_alternative<proto::DeviceSet>(message)) {
+        out.EmplaceBack(TandemDeviceEvent{.kind = 4});
+      }
+    }
+    return out;
+  }
   // A quest or important item our V got (kind 0), or (host) one on our NPC
   // `npc`'s corpse (kind 1): every other player gets it.
   static void SendSharedItem(std::int32_t kind, std::uint32_t npc, Red::TweakDBID record,
@@ -1682,6 +1800,17 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemLootEvent, "TandemLootEvent", {
   RTTI_PROPERTY(z);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemDeviceEvent, "TandemDeviceEvent", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(entity);
+  RTTI_PROPERTY(cls);
+  RTTI_PROPERTY(status);
+  RTTI_PROPERTY(flags);
+  RTTI_PROPERTY(value);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(quiet);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemReviveEvent, "TandemReviveEvent", {
   RTTI_PROPERTY(player);
   RTTI_PROPERTY(step);
@@ -1741,6 +1870,15 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RecentHosts);
   RTTI_METHOD(LocalAddresses);
   RTTI_METHOD(DefaultPort);
+  RTTI_METHOD(RecorderOn);
+  RTTI_METHOD(Recording);
+  RTTI_METHOD(RecorderPose);
+  RTTI_METHOD(RecorderStart);
+  RTTI_METHOD(RecorderLeft);
+  RTTI_METHOD(RecorderTick);
+  RTTI_METHOD(RecorderCut);
+  RTTI_METHOD(RecorderSet);
+  RTTI_METHOD(RecorderStatus);
   RTTI_METHOD(SendLocalState);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(RegisterPuppet);
@@ -1810,6 +1948,11 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(TakeWorldItem);
   RTTI_METHOD(TakeLootEvents);
   RTTI_METHOD(SendSharedItem);
+  RTTI_METHOD(EntityHex);
+  RTTI_METHOD(ReportDevice);
+  RTTI_METHOD(UseDevice);
+  RTTI_METHOD(AskDevice);
+  RTTI_METHOD(TakeDeviceEvents);
   RTTI_METHOD(You);
   RTTI_METHOD(SendVitals);
   RTTI_METHOD(OtherPlayers);

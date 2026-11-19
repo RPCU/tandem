@@ -27,6 +27,13 @@
 //           --metro-for): the train is never shared, so your game shows the
 //           puppet hidden with a notice (or in your train if you ride one
 //           there), skipping halfway, and back where the ride ends
+//   region  a player with a region of its own (docs/architecture/regions.md):
+//           stands --region-far metres from your V with --region-npcs NPCs it
+//           runs itself (announced, moved, hurt and killed by this process),
+//           walks up to your V --region-walk-at seconds in (its NPCs with
+//           it), and off again at --region-leave-at, leaving them with you:
+//           the host then hands them over. It gives and takes NPCs as a game
+//           would, and logs every step ("region: ...")
 //   course  runs a scripted course ahead of your V, every way a V moves:
 //           jumps, a double jump, a ledge climb, a drop, a ladder, swimming
 //           and diving, an elevator, a slide and a dodge, then back to the
@@ -65,6 +72,11 @@
 // seconds into the session for --sandevistan-for seconds, at
 // --sandevistan-scale: the host slows the NPCs around its V (time bubble);
 // the time abilities it hears are logged.
+// Devices (docs/architecture/devices.md): --device ENTITY:CLASS:WORDS[@S]
+// operates one by its id (a guest asks the host; a host says what its own
+// is), --device-answer WORDS changes back, --device-after seconds later,
+// every device another player just changed. A host has no world of its
+// own: a guest's request is taken as said. What it hears is logged.
 // Loot: --loot-quest has "its V" loot a quest item (everyone gets it);
 // --drop-item drops a shared world item in front of your V; --take-items
 // picks up what the others drop; as the host of a replay, --remove-corpses
@@ -96,9 +108,12 @@
 #include "tandem/movement.hpp"
 #include "tandem/play.hpp"
 #include "tandem/pose.hpp"
+#include "tandem/scene.hpp"
 #include "tandem/shaping.hpp"
 #include "tandem/sim/game.hpp"
 #include "tandem/sim/referee.hpp"
+
+#include "tandem/regions.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -127,7 +142,7 @@ using tandem::proto::Vec3;
 
 volatile std::sig_atomic_t g_stop = 0;
 
-enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Metro, Watch, Idle };
+enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Metro, Watch, Region, Idle };
 
 struct Options {
   bool host{};
@@ -229,12 +244,32 @@ struct Options {
   std::string lootQuest; // "our V" loots one of this record (a quest item), once
   int takeItemsSeconds{-1};
   int removeCorpsesSeconds{-1};
+  // region: how far from the other V we start, how many NPCs of which
+  // record we run, when we walk up to it and when we leave them there.
+  float regionFar{1000.f};
+  std::optional<Vec3> regionAt;
+  int regionNpcs{3};
+  std::string regionRecord{"Character.kab_tyger_claws_biker1_ranged1_saratoga_ma"};
+  int regionWalkAtSeconds{10};
+  int regionLeaveAtSeconds{-1};
+  float regionSpeed{25.f};
   bool check{}; // parse the options, then exit
   // Down and out: our V goes down (revivable) or out N s after another player
   // is there (-1: never); a downed other V is revived after N s (-1: never).
   int goDownSeconds{-1};
   int goOutSeconds{-1};
   int reviveSeconds{-1};
+  // Devices: the ones to operate by id (--device), and what every device
+  // another player changes is made this long after (--device-answer).
+  struct DeviceOrder {
+    std::uint64_t entity{}, cls{};
+    std::string words;
+    int atSeconds{5};
+    bool done{};
+  };
+  std::vector<DeviceOrder> devices;
+  std::string deviceAnswer;
+  int deviceAfterSeconds{3};
   // Faults on what we send (docs/architecture/consistency.md, Consistency).
   float drop{}, dup{};
   int vanishAtSeconds{-1}; // end without a goodbye this long into the session (-1: never)
@@ -296,7 +331,16 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --relay-token HEX  host: one of the relay's host tokens (tandem-relay token)\n"
          "  --code CODE        join: the host's join code (needs --relay)\n"
          "  --mode M           mirror | ghost | front | drive | course | path | metro |\n"
-         "                     watch | idle (default mirror)\n"
+         "                     watch | region | idle (default mirror)\n"
+         "  --region-far M     region: start this far from the other V (default 1000)\n"
+         "  --region-at X,Y,Z  region: around this point instead of where the other V\n"
+         "                     first stood (so two mock players can meet)\n"
+         "  --region-npcs N    region: run this many NPCs of our own (default 3)\n"
+         "  --region-record R  region: their character record\n"
+         "  --region-walk-at S region: walk up to the other V this long in (default 10;\n"
+         "                     -1: stay away)\n"
+         "  --region-leave-at S region: walk off again, leaving the NPCs (default -1: never)\n"
+         "  --region-speed V   region: how fast it walks, m/s (default 25)\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
          "  --look L           random | echo: random clothes of its own (default), on a\n"
@@ -400,6 +444,16 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --jitter MS        up to MS more at random, each way (the order kept)\n"
          "  --loss PERCENT     PERCENT of the datagrams lost, each way\n"
          "  --reorder PERCENT  PERCENT of the datagrams held back behind later ones\n"
+         "  --device SPEC      operate a device by its id, SPEC = ENTITY:CLASS:WORDS[@SECONDS]:\n"
+         "                     ENTITY in hex (tools/game.sh cmd device near), CLASS its state's\n"
+         "                     class (DoorControllerPS...), WORDS a comma list of on off\n"
+         "                     unpowered disabled open closed locked unlocked sealed unsealed\n"
+         "                     broken exploded hacked friendly hostile exposed breached\n"
+         "                     glitching value=N floor=N station=N; SECONDS into the session\n"
+         "                     (5). A guest asks the host; a host says its own device is that\n"
+         "  --device-answer W  every device another player changes is made WORDS (as above)\n"
+         "                     --device-after seconds later\n"
+         "  --device-after N   see --device-answer (3)\n"
          "  --loot-quest REC   5 s after another player is there, \"our V\" loots one REC (a\n"
          "                     quest item): every other player gets it too\n"
          "  --drop-item RECORD drop one RECORD (Items.FirstAidWhiffV0...) as a shared world\n"
@@ -442,6 +496,100 @@ template <class T> T Number(std::string_view text) {
   if (ec != std::errc{} || end != text.data() + text.size())
     Usage(std::format("not a number: {}", text));
   return value;
+}
+
+// A device's state changed by words ("open", "locked,off", "floor=3"):
+// false for a word nobody knows.
+bool DeviceWords(std::string_view words, tandem::devices::What &what) {
+  using namespace tandem::proto;
+  const auto set = [&](std::uint16_t bit, bool on) {
+    what.flags = static_cast<std::uint16_t>(on ? what.flags | bit : what.flags & ~bit);
+  };
+  while (!words.empty()) {
+    const auto comma = words.find(',');
+    const auto word = words.substr(0, comma);
+    words = comma == std::string_view::npos ? std::string_view{} : words.substr(comma + 1);
+    if (word == "on")
+      what.status = kDeviceOn;
+    else if (word == "off")
+      what.status = kDeviceOff;
+    else if (word == "unpowered")
+      what.status = kDeviceUnpowered;
+    else if (word == "disabled")
+      what.status = kDeviceDisabled;
+    else if (word == "open") {
+      set(kDeviceOpen, true);
+      set(kDeviceLocked | kDeviceSealed, false);
+    } else if (word == "closed")
+      set(kDeviceOpen, false);
+    else if (word == "locked") {
+      set(kDeviceLocked, true);
+      set(kDeviceOpen, false);
+    } else if (word == "unlocked")
+      set(kDeviceLocked, false);
+    else if (word == "sealed") {
+      set(kDeviceSealed, true);
+      set(kDeviceOpen, false);
+    } else if (word == "unsealed")
+      set(kDeviceSealed, false);
+    else if (word == "broken")
+      set(kDeviceBroken, true);
+    else if (word == "exploded")
+      set(kDeviceExploded, true);
+    else if (word == "hacked")
+      set(kDeviceHacked, true);
+    else if (word == "friendly")
+      set(kDeviceFriendly, true);
+    else if (word == "hostile")
+      set(kDeviceFriendly, false);
+    else if (word == "exposed")
+      set(kDeviceExposed, true);
+    else if (word == "breached")
+      set(kDeviceBreached | kDeviceExposed, true);
+    else if (word == "glitching")
+      set(kDeviceGlitching, true);
+    else if (word.starts_with("value=") || word.starts_with("floor=") ||
+             word.starts_with("station="))
+      what.value = Number<std::int32_t>(word.substr(word.find('=') + 1));
+    else
+      return false;
+  }
+  return true;
+}
+
+// --device ENTITY:CLASS:WORDS[@SECONDS]
+Options::DeviceOrder DeviceOrderOf(std::string_view spec) {
+  Options::DeviceOrder order;
+  const auto first = spec.find(':');
+  const auto second = first == std::string_view::npos ? first : spec.find(':', first + 1);
+  if (second == std::string_view::npos)
+    Usage("--device is ENTITY:CLASS:WORDS[@SECONDS]");
+  auto entity = spec.substr(0, first);
+  if (entity.starts_with("0x"))
+    entity.remove_prefix(2);
+  if (std::from_chars(entity.data(), entity.data() + entity.size(), order.entity, 16).ptr !=
+          entity.data() + entity.size() ||
+      order.entity == 0)
+    Usage(std::format("--device: {} is not an entity id in hex", entity));
+  const auto cls = spec.substr(first + 1, second - first - 1);
+  // A class by name, or by its hash as the logs print it.
+  if (cls.starts_with("0x")) {
+    if (std::from_chars(cls.data() + 2, cls.data() + cls.size(), order.cls, 16).ptr !=
+        cls.data() + cls.size())
+      Usage(std::format("--device: {} is not a class hash", cls));
+  } else {
+    order.cls = CName(cls);
+  }
+  auto words = spec.substr(second + 1);
+  if (const auto at = words.find('@'); at != std::string_view::npos) {
+    order.atSeconds = Number<int>(words.substr(at + 1));
+    words = words.substr(0, at);
+  }
+  order.words = std::string(words);
+  tandem::devices::What probe;
+  if (order.words.empty() || !DeviceWords(order.words, probe))
+    Usage(std::format("--device: unknown state in {}", words));
+  return order;
 }
 
 Vec3 Point(std::string_view flag, std::string_view value) {
@@ -561,6 +709,15 @@ Options Parse(int argc, char **argv) {
       options.sandevistanForSeconds = Number<int>(value);
     else if (flag == "--sandevistan-scale")
       options.sandevistanScale = Number<float>(value);
+    else if (flag == "--device")
+      options.devices.push_back(DeviceOrderOf(value));
+    else if (flag == "--device-answer") {
+      tandem::devices::What probe;
+      if (!DeviceWords(value, probe))
+        Usage(std::format("--device-answer: unknown state in {}", value));
+      options.deviceAnswer = std::string(value);
+    } else if (flag == "--device-after")
+      options.deviceAfterSeconds = Number<int>(value);
     else if (flag == "--drop-item")
       options.dropItem = std::string(value);
     else if (flag == "--loot-quest")
@@ -600,6 +757,20 @@ Options Parse(int argc, char **argv) {
       options.areaHitSeconds = Number<int>(value);
     else if (flag == "--npc")
       options.npcRecord = std::string(value);
+    else if (flag == "--region-far")
+      options.regionFar = Number<float>(value);
+    else if (flag == "--region-at")
+      options.regionAt = Point(flag, value);
+    else if (flag == "--region-npcs")
+      options.regionNpcs = std::clamp(Number<int>(value), 0, 32);
+    else if (flag == "--region-record")
+      options.regionRecord = std::string(value);
+    else if (flag == "--region-walk-at")
+      options.regionWalkAtSeconds = Number<int>(value);
+    else if (flag == "--region-leave-at")
+      options.regionLeaveAtSeconds = Number<int>(value);
+    else if (flag == "--region-speed")
+      options.regionSpeed = std::max(0.1f, Number<float>(value));
     else if (flag == "--detect-at")
       options.detectAtSeconds = Number<int>(value);
     else if (flag == "--detect-for")
@@ -656,6 +827,8 @@ Options Parse(int argc, char **argv) {
         options.mode = Mode::Metro;
       else if (value == "watch")
         options.mode = Mode::Watch;
+      else if (value == "region")
+        options.mode = Mode::Region;
       else
         Usage(std::format("unknown mode {}", value));
     } else if (flag == "--metro-at")
@@ -1094,6 +1267,20 @@ private:
 //   replacer on|off              the host plays as Johnny (StoryState flag)
 //   private on|off               the host is in a private scene (romance,
 //                                a minor one-to-one chat: StoryState flag)
+//   scene NAME [TIER]            a story scene plays on the host (scene
+//                                replay; NAME: its resource path or a
+//                                number; TIER: the host's, 4 by default);
+//                                scene off: it is over; scene private: it
+//                                is one nobody watches
+//   cast NPC[:ghost][:hidden] ...  its actors among the NPCs the host shares
+//                                (own: the --npc NPC), standing in front of
+//                                the mock player; with --pose or in mirror
+//                                and front modes, each takes the pose the
+//                                mock player sends (ActorPose)
+//   skip on|off                  the host fast-forwards the scene
+//   voice ID SPEAKER [SECONDS] [call]  a voiced line begins (ID: its string
+//                                id; SPEAKER: host, an NPC id or own)
+//   cut ID                       it is cut before its end
 //   world PLACE [moved] [settled] the host's V in another world (Elsewhere):
 //                                cyberspace, braindance, johnny, other, or
 //                                city to come back; moved: the scene took it
@@ -1157,6 +1344,99 @@ const char *PlaceName(tandem::proto::Place place) {
                                    "another body"};
   const auto index = static_cast<std::size_t>(place);
   return index < std::size(names) ? names[index] : "?";
+}
+
+// The scene the scripted host plays (scene replay): what its game would
+// sample, said through the same Stage as the game's (core/scene.hpp).
+struct SceneScript {
+  tandem::scene::Stage stage;
+  tandem::scene::HostSample sample;
+  tandem::proto::NpcId own{}; // "own" in a .story file: the --npc NPC
+};
+
+// A scene step (scene, cast, skip, voice, cut): what the host sends for it.
+// nullopt: not a scene step.
+std::optional<std::vector<tandem::proto::Message>>
+SceneMessages(const StoryStep &step, SceneScript &script, const tandem::proto::Vec3 &host,
+              float hostYaw, tandem::proto::PlayerId hostPlayer, std::uint64_t hostNowUs) {
+  namespace proto = tandem::proto;
+  const auto &a = step.args;
+  const auto npcOf = [&](const std::string &word) -> proto::NpcId {
+    return word == "own" ? script.own : static_cast<proto::NpcId>(std::stoul(word, nullptr, 0));
+  };
+  try {
+    if (step.verb == "scene" && !a.empty()) {
+      script.sample.host = host;
+      script.sample.hostYaw = hostYaw;
+      script.sample.isPrivate = a[0] == "private";
+      if (a[0] == "off") {
+        script.sample = {};
+      } else {
+        // A number, or a resource path hashed as the game hashes it (FNV-1a).
+        const bool number = a[0].find_first_not_of("0123456789abcdefxABCDEFX") == std::string::npos;
+        script.sample.scene = number ? std::stoull(a[0], nullptr, 0) : CName(a[0]);
+        script.sample.tier = static_cast<std::uint8_t>(a.size() > 1 ? std::stoi(a[1]) : 4);
+        script.sample.rate = 1.f;
+      }
+      return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "cast") {
+      script.sample.host = host;
+      script.sample.hostYaw = hostYaw;
+      script.sample.actors.clear();
+      // In an arc 2.5 m in front of the mock player, facing it.
+      const float spread = 0.7f;
+      for (std::size_t i = 0; i < a.size(); ++i) {
+        tandem::scene::ActorSample actor;
+        auto word = a[i];
+        actor.flags = proto::kActorPosed;
+        for (auto colon = word.rfind(':'); colon != std::string::npos; colon = word.rfind(':')) {
+          const auto flag = word.substr(colon + 1);
+          if (flag == "ghost")
+            actor.flags |= proto::kActorGhost;
+          else if (flag == "hidden")
+            actor.flags |= proto::kActorHidden;
+          word.resize(colon);
+        }
+        actor.npc = npcOf(word);
+        const float angle =
+            hostYaw + (static_cast<float>(i) - static_cast<float>(a.size() - 1) / 2.f) * spread;
+        actor.position = {host.x - std::sin(angle) * 2.5f, host.y + std::cos(angle) * 2.5f, host.z};
+        script.sample.actors.push_back(actor);
+      }
+      return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "skip" && !a.empty()) {
+      script.sample.rate = a[0] == "on" ? 4.f : 1.f;
+      return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "voice" && a.size() >= 2) {
+      std::uint8_t flags = 0;
+      float seconds = 4.f;
+      for (std::size_t i = 2; i < a.size(); ++i) {
+        if (a[i] == "call")
+          flags |= proto::kVoiceHolocall;
+        else
+          seconds = std::stof(a[i]);
+      }
+      const bool byHost = a[1] == "host";
+      std::vector<proto::Message> out;
+      if (auto line =
+              script.stage.Line(std::stoull(a[0], nullptr, 0), byHost ? 0 : npcOf(a[1]),
+                                byHost ? hostPlayer : proto::kNoPlayer, seconds, flags, hostNowUs))
+        out.push_back(*line);
+      return out;
+    }
+    if (step.verb == "cut" && !a.empty()) {
+      std::vector<proto::Message> out;
+      if (auto line = script.stage.Hide(std::stoull(a[0], nullptr, 0), hostNowUs))
+        out.push_back(*line);
+      return out;
+    }
+  } catch (const std::exception &) {
+    return std::vector<proto::Message>{};
+  }
+  return std::nullopt;
 }
 
 // One story step as the host's game would send it.
@@ -1284,6 +1564,32 @@ std::string Describe(const tandem::proto::Message &message) {
   if (const auto *effect = std::get_if<proto::StoryEffect>(&message))
     return std::format("story effect: {:#x} {} on player {}", effect->effect,
                        effect->applied ? "on" : "off", effect->player);
+  if (const auto *scene = std::get_if<proto::SceneState>(&message))
+    return scene->scene == 0
+               ? std::format("scene: play {} over{}", scene->play,
+                             scene->flags & proto::kSceneInterrupted ? " (interrupted)" : "")
+               : std::format("scene: {:#x} play {} tier {} rate {:.1f} flags {:#x}{}", scene->scene,
+                             scene->play, scene->tier, scene->rate, scene->flags,
+                             scene->flags & proto::kSceneStaged
+                                 ? std::format(" staged at {:.1f} {:.1f} {:.1f} ({:.1f} m)",
+                                               scene->anchor.x, scene->anchor.y, scene->anchor.z,
+                                               scene->radius)
+                                 : "");
+  if (const auto *cast = std::get_if<proto::SceneCast>(&message)) {
+    std::string who;
+    for (const auto &actor : cast->actors)
+      who += std::format(" {}{}", actor.npc,
+                         actor.flags & proto::kActorGhost
+                             ? (actor.flags & proto::kActorHidden ? " (ghost, hidden)" : " (ghost)")
+                             : "");
+    return std::format("scene cast: play {}, {} actor(s):{}", cast->play, cast->actors.size(), who);
+  }
+  if (const auto *line = std::get_if<proto::SceneLine>(&message))
+    return std::format("scene line: {} {} by {} ({:.1f} s, play {})", line->line,
+                       line->flags & proto::kVoiceStop ? "cut" : "voiced",
+                       line->speakerPlayer ? std::format("player {}", line->speakerPlayer)
+                                           : std::format("npc {}", line->speaker),
+                       line->duration, line->play);
   return "story: ?";
 }
 
@@ -1439,6 +1745,152 @@ private:
   std::vector<Line> m_lines;
 };
 
+// --mode region: the NPCs this mock player runs itself, as a game does for the
+// NPCs around its V (docs/architecture/regions.md): announced once in the
+// session, moved ten times a second, hurt and killed by the others' strikes,
+// given away when the host asks and taken over when it says so.
+class RegionNpcs {
+public:
+  explicit RegionNpcs(const Options &options) : m_options(options) {}
+
+  void Tick(tandem::Endpoint &endpoint, std::uint64_t nowUs, const Vec3 &at, bool follow) {
+    namespace proto = tandem::proto;
+    if (!endpoint.IsJoined())
+      return;
+    if (!m_announced) {
+      m_announced = true;
+      for (int i = 0; i < m_options.regionNpcs; ++i) {
+        const auto id =
+            tandem::regions::MakeNpcId(endpoint.You(), static_cast<std::uint32_t>(i + 1));
+        m_npcs[id] = {.position = Around(at, i), .slot = i};
+        endpoint.SendNpcSpawn({.npc = id,
+                               .record = TweakDBID(m_options.regionRecord),
+                               .position = m_npcs[id].position});
+        endpoint.SendNpcHealth({.npc = id, .health = 1.f});
+      }
+      Log("region: running {} NPC(s) of our own ({}), ids from {}", m_options.regionNpcs,
+          m_options.regionRecord, tandem::regions::MakeNpcId(endpoint.You(), 1));
+    }
+    if (nowUs - m_lastStatesUs < 100'000)
+      return;
+    m_lastStatesUs = nowUs;
+    proto::NpcStates states;
+    for (auto &[id, npc] : m_npcs) {
+      // With us while we walk up; where they are once we leave them, and
+      // the ones we took over stay where they were handed to us.
+      if (follow && npc.slot >= 0)
+        npc.position = Around(at, npc.slot);
+      states.npcs.push_back({.npc = id, .position = npc.position});
+    }
+    endpoint.SendNpcStates(std::move(states));
+  }
+
+  // True: the event was about the NPCs we run, and is dealt with.
+  bool On(const tandem::SessionEvent &event, tandem::Endpoint &endpoint) {
+    namespace proto = tandem::proto;
+    namespace events = tandem::events;
+    if (const auto *linked = std::get_if<events::RegionsChanged>(&event)) {
+      std::string who;
+      for (const auto player : linked->linked)
+        who += (who.empty() ? "" : ", ") + std::to_string(player);
+      Log("region: linked with {}", who.empty() ? "nobody" : "player " + who);
+      return true;
+    }
+    if (const auto *give = std::get_if<events::NpcGive>(&event)) {
+      const auto it = m_npcs.find(give->npc);
+      if (it == m_npcs.end()) {
+        endpoint.RefuseNpc(give->npc);
+        return true;
+      }
+      endpoint.GiveNpc({.npc = give->npc,
+                        .to = give->to,
+                        .position = it->second.position,
+                        .health = it->second.health,
+                        .flags = proto::kHandoverCombat,
+                        .target = give->to,
+                        .hostileTo = static_cast<std::uint8_t>(1u << ((give->to - 1) & 7)),
+                        .highLevel = 2});
+      Log("region: handed npc {} over to player {} (health {:.2f})", give->npc, give->to,
+          it->second.health);
+      m_npcs.erase(it);
+      return true;
+    }
+    if (const auto *take = std::get_if<events::NpcTake>(&event)) {
+      const auto &state = take->state;
+      auto &npc = m_npcs[state.npc];
+      npc.slot = -1;
+      if ((state.flags & proto::kHandoverBlind) == 0)
+        npc.position = state.position;
+      else if (const auto known = endpoint.SharedNpcs().find(state.npc);
+               known != endpoint.SharedNpcs().end())
+        npc.position = known->second.position;
+      npc.health = state.health >= 0.f ? state.health : 1.f;
+      endpoint.AdoptNpc(state.npc, true);
+      Log("region: took npc {} over from player {} (health {:.2f}, {} effect(s), target "
+          "player {}{})",
+          state.npc, state.from, npc.health, state.effects.size(), state.target,
+          state.flags & proto::kHandoverInherited ? ", inherited" : "");
+      return true;
+    }
+    if (const auto *owner = std::get_if<events::NpcOwnerChanged>(&event)) {
+      if (owner->was == endpoint.You() && m_npcs.erase(owner->npc) > 0)
+        Log("region: npc {} is no longer ours (now player {}'s)", owner->npc, owner->owner);
+      else
+        Log("region: npc {} is now run by player {} (was {})", owner->npc, owner->owner,
+            owner->was);
+      return true;
+    }
+    // Strikes and hits on the NPCs we run: health down, dead at zero.
+    proto::NpcId hit = 0;
+    proto::PlayerId by = 0;
+    float damage = 0.f;
+    if (const auto *plain = std::get_if<events::NpcHitBy>(&event)) {
+      hit = plain->hit.npc;
+      by = plain->hit.player;
+      damage = plain->hit.damage;
+    } else if (const auto *combat = std::get_if<events::Combat>(&event)) {
+      if (const auto *strike = std::get_if<proto::NpcStrike>(&combat->message)) {
+        hit = strike->npc;
+        by = strike->player;
+        damage = strike->damage;
+      }
+    }
+    const auto it = m_npcs.find(hit);
+    if (hit == 0 || it == m_npcs.end())
+      return false;
+    it->second.health = std::max(0.f, it->second.health - damage / 100.f);
+    Log("region: player {} hit our npc {}: {:.0f} damage, health {:.2f}", by, hit, damage,
+        it->second.health);
+    if (it->second.health <= 0.f) {
+      endpoint.SendNpcGone({.npc = hit, .reason = proto::kGoneDead, .killer = by});
+      Log("region: our npc {} died (killer: player {})", hit, by);
+      m_npcs.erase(it);
+    } else {
+      endpoint.SendNpcHealth({.npc = hit, .health = it->second.health});
+    }
+    return true;
+  }
+
+  std::size_t Running() const { return m_npcs.size(); }
+
+private:
+  struct Npc {
+    Vec3 position;
+    float health{1.f};
+    int slot{-1}; // where it stands around us (-1: taken over, it stays put)
+  };
+  // A ring 3 m around our V.
+  static Vec3 Around(const Vec3 &at, int slot) {
+    const float angle = 0.9f * static_cast<float>(slot);
+    return {at.x + 3.f * std::cos(angle), at.y + 3.f * std::sin(angle), at.z};
+  }
+
+  const Options &m_options;
+  std::map<tandem::proto::NpcId, Npc> m_npcs;
+  bool m_announced{};
+  std::uint64_t m_lastStatesUs{};
+};
+
 // What the mock player does with the states it hears.
 class Puppeteer {
 public:
@@ -1484,6 +1936,10 @@ public:
       return std::nullopt;
     return m_heard.back().second.position;
   }
+  std::optional<Vec3> m_regionAnchor;
+  std::uint64_t m_regionStartUs{}, m_regionLastUs{};
+  float m_regionX{};
+  bool m_regionLeaving{};
   // --path: the saved states to replay.
   void SetPath(std::vector<PlayerState> path) { m_path = std::move(path); }
 
@@ -1521,9 +1977,46 @@ public:
       return Metro(nowUs);
     case Mode::Watch:
       return Watch();
+    case Mode::Region:
+      return Region(nowUs);
     }
     return std::nullopt;
   }
+
+  // region: far from the other V (where it first stood), then up to it, then
+  // off again. A straight walk along X at --region-speed.
+  std::optional<PlayerState> Region(std::uint64_t nowUs) {
+    if (m_heard.empty() && !m_options.regionAt)
+      return std::nullopt;
+    if (!m_regionAnchor) {
+      m_regionAnchor = m_options.regionAt ? *m_options.regionAt : m_heard.back().second.position;
+      m_regionStartUs = m_regionLastUs = nowUs;
+      m_regionX = m_options.regionFar;
+    }
+    const auto seconds = static_cast<double>(nowUs - m_regionStartUs) / 1e6;
+    m_regionLeaving =
+        m_options.regionLeaveAtSeconds >= 0 && seconds >= m_options.regionLeaveAtSeconds;
+    const bool near = !m_regionLeaving && m_options.regionWalkAtSeconds >= 0 &&
+                      seconds >= m_options.regionWalkAtSeconds;
+    const float goal = near ? std::min(8.f, m_options.regionFar) : m_options.regionFar;
+    const float step = m_options.regionSpeed * static_cast<float>(nowUs - m_regionLastUs) / 1e6f;
+    m_regionLastUs = nowUs;
+    const float before = m_regionX;
+    if (m_regionX > goal)
+      m_regionX = std::max(goal, m_regionX - step);
+    else
+      m_regionX = std::min(goal, m_regionX + step);
+    PlayerState out;
+    out.position = {m_regionAnchor->x + m_regionX, m_regionAnchor->y, m_regionAnchor->z};
+    if (m_regionX != before)
+      out.velocity = {m_regionX < before ? -m_options.regionSpeed : m_options.regionSpeed, 0.f,
+                      0.f};
+    // Facing the other V (-X).
+    out.orientation = tandem::sync::FromYaw(std::numbers::pi_v<float> / 2.f);
+    return out;
+  }
+  // region: we are walking off (our NPCs stay where they are).
+  bool RegionLeaving() const { return m_regionLeaving; }
 
   // watch: where the other V is, 30 m under it (or --offset): out of
   // sight, out of every NPC's reach, never in anyone's way, while the host
@@ -2235,6 +2728,9 @@ int main(int argc, char **argv) {
   std::size_t storyNext = 0;
   std::optional<std::chrono::steady_clock::time_point> storyStart;
   std::uint64_t storyLine = 0;
+  SceneScript sceneScript;
+  sceneScript.own = kOwnNpc;
+  std::uint64_t actorPoses = 0;
   if (!options.storyFile.empty()) {
     story = LoadStory(options.storyFile, error);
     if (!error.empty()) {
@@ -2249,6 +2745,9 @@ int main(int argc, char **argv) {
   std::optional<std::chrono::steady_clock::time_point> joinedAt;
 
   Puppeteer puppeteer(options);
+  std::optional<RegionNpcs> regionNpcs;
+  if (options.mode == Mode::Region)
+    regionNpcs.emplace(options);
   // --play: when it began, recorded NPCs as this session's, where our V is.
   std::optional<std::uint64_t> playStartUs;
   std::map<tandem::proto::NpcId, tandem::proto::NpcId> playNpcs;
@@ -2340,6 +2839,57 @@ int main(int argc, char **argv) {
   const auto distance = [](const Vec3 &a, const Vec3 &b) {
     return std::hypot(a.x - b.x, a.y - b.y, a.z - b.z);
   };
+  // Devices: when the session began for us (--device counts from it), and
+  // the devices to change back (--device-answer: when, from what).
+  std::optional<std::chrono::steady_clock::time_point> devicesFrom;
+  std::map<tandem::devices::Key,
+           std::pair<std::chrono::steady_clock::time_point, tandem::devices::What>>
+      deviceAnswers;
+  // "device 1a2b (0x3c4d): on, open+hacked, value -1", as the game's log has it.
+  const auto describeDevice = [](const tandem::devices::Key &key,
+                                 const tandem::devices::What &what) {
+    using namespace tandem::proto;
+    constexpr std::pair<std::uint16_t, std::string_view> kBits[] = {
+        {kDeviceOpen, "open"},          {kDeviceLocked, "locked"},
+        {kDeviceSealed, "sealed"},      {kDeviceBroken, "broken"},
+        {kDeviceExploded, "exploded"},  {kDeviceHacked, "hacked"},
+        {kDeviceFriendly, "friendly"},  {kDeviceExposed, "exposed"},
+        {kDeviceBreached, "breached"},  {kDeviceMoving, "moving"},
+        {kDeviceGlitching, "glitching"}};
+    std::string bits;
+    for (const auto &[bit, word] : kBits)
+      if (what.flags & bit)
+        bits += (bits.empty() ? "" : "+") + std::string(word);
+    constexpr std::string_view kStatus[] = {"disabled", "unpowered", "off", "on"};
+    return std::format("device {:x} ({:#x}): {}, {}, value {}", key.entity, key.cls,
+                       kStatus[std::clamp<int>(what.status + 2, 0, 3)],
+                       bits.empty() ? "plain" : bits, what.value);
+  };
+  // Makes a device something: a guest asks the host, a host says its own is.
+  const auto operateDevice = [&](const tandem::devices::Key &key, const tandem::devices::What &what,
+                                 std::string_view why) {
+    if (endpoint->IsHost())
+      endpoint->ReportDevice({.entity = key.entity,
+                              .cls = key.cls,
+                              .status = what.status,
+                              .flags = what.flags,
+                              .value = what.value,
+                              .by = endpoint->You()});
+    else
+      endpoint->UseDevice({.entity = key.entity,
+                           .cls = key.cls,
+                           .status = what.status,
+                           .flags = what.flags,
+                           .value = what.value});
+    Log("{} {} ({})", endpoint->IsHost() ? "our" : "asked the host for", describeDevice(key, what),
+        why);
+  };
+  const auto answerDevice = [&](const tandem::devices::Key &key, tandem::devices::What what) {
+    if (options.deviceAnswer.empty() || !DeviceWords(options.deviceAnswer, what))
+      return;
+    deviceAnswers[key] = {
+        std::chrono::steady_clock::now() + std::chrono::seconds(options.deviceAfterSeconds), what};
+  };
   // Loot: our drop (--drop-item), the others' world items to pick up
   // (--take-items: when), and dead NPCs' bodies to take away (--remove-corpses).
   bool dropped = false;
@@ -2409,6 +2959,9 @@ int main(int argc, char **argv) {
 
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
+      // region: what concerns the NPCs we run.
+      if (regionNpcs && regionNpcs->On(event, *endpoint))
+        continue;
       std::visit(
           [&](const auto &e) {
             using E = std::decay_t<decltype(e)>;
@@ -2757,6 +3310,10 @@ int main(int argc, char **argv) {
                   e.answer.accepted ? (e.answer.offer ? "accepted: on the way" : "is on the way")
                                     : "declined: stays",
                   e.answer.offer);
+            } else if constexpr (std::is_same_v<E, tandem::events::HostActorPose>) {
+              // Scene replay: the host's actors' bodies, counted.
+              if (++actorPoses % 100 == 1)
+                Log("scene: {} actor pose(s) heard (npc {})", actorPoses, e.pose.npc);
             } else if constexpr (std::is_same_v<E, tandem::events::Story>) {
               Log("{}", Describe(e.message));
               if (!options.recordFile.empty())
@@ -2868,6 +3425,34 @@ int main(int argc, char **argv) {
               }
             } else if constexpr (std::is_same_v<E, tandem::events::SessionLost>) {
               Log("session lost: no V is up (loss {})", e.over.round);
+            } else if constexpr (std::is_same_v<E, tandem::events::HostDevice>) {
+              const auto key = tandem::devices::KeyOf(e.state);
+              const auto what = tandem::devices::WhatOf(e.state);
+              Log("{} by player {}, {}", describeDevice(key, what), e.state.by,
+                  e.state.how == tandem::proto::kDeviceQuiet ? "set" : "played");
+              // Another player's doing, just now: ours to change back.
+              if (e.state.how == tandem::proto::kDeviceLive &&
+                  e.state.by != tandem::proto::kNoPlayer && e.state.by != endpoint->You())
+                answerDevice(key, what);
+            } else if constexpr (std::is_same_v<E, tandem::events::DeviceAsked>) {
+              Log("{} asked by player {}: no world of ours, no answer",
+                  describeDevice(tandem::devices::KeyOf(e.state), tandem::devices::WhatOf(e.state)),
+                  e.state.by);
+            } else if constexpr (std::is_same_v<E, tandem::events::DeviceRequested>) {
+              // No world of ours: the device is what the guest made it.
+              const auto key = tandem::devices::KeyOf(e.use);
+              const auto what = tandem::devices::WhatOf(e.use);
+              endpoint->ReportDevice({.entity = key.entity,
+                                      .cls = key.cls,
+                                      .status = what.status,
+                                      .flags = what.flags,
+                                      .value = what.value,
+                                      .by = e.use.player});
+              Log("{} operated by player {}: taken as said", describeDevice(key, what),
+                  e.use.player);
+              answerDevice(key, what);
+            } else if constexpr (std::is_same_v<E, tandem::events::DevicesReset>) {
+              Log("devices: the host sends its record again");
             } else if constexpr (std::is_same_v<E, tandem::events::Resync>) {
               if (e.player == endpoint->You())
                 Log("resync: asked the host for domains {:#x}", e.domains);
@@ -3035,9 +3620,22 @@ int main(int argc, char **argv) {
       if (state) {
         endpoint->SendLocalState(*state);
         lastSent = state->position;
+        if (regionNpcs)
+          regionNpcs->Tick(*endpoint, tandem::net::NowUs(), state->position,
+                           !puppeteer.RegionLeaving());
       }
-      if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip))
+      if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip)) {
         endpoint->SendLocalPose(*pose);
+        // --story: the scene's actors take the same pose (ActorPose), so a
+        // game shows the stream on its proxies.
+        if (options.host && sceneScript.stage.On())
+          for (const auto &actor : sceneScript.sample.actors)
+            if (actor.flags & tandem::proto::kActorPosed) {
+              endpoint->SendActorPose(tandem::pose::ForActor(actor.npc, *pose));
+              if (++actorPoses % 300 == 1)
+                Log("scene: {} actor pose(s) sent", actorPoses);
+            }
+      }
       // metro: board, skip halfway, get off; the ride as the game sends it
       // (no seat: the train is never shared).
       if (options.mode == Mode::Metro && endpoint->IsJoined()) {
@@ -3212,6 +3810,30 @@ int main(int argc, char **argv) {
                                   .item = {.record = TweakDBID(options.lootQuest), .quantity = 1}});
         Log("looted quest item {}: shared", options.lootQuest);
       }
+    }
+    // --device: each one at its time into the session. --device-answer:
+    // what another player changed, changed back when its time comes.
+    if (endpoint->IsJoined() && !devicesFrom)
+      devicesFrom = now;
+    for (auto &order : options.devices) {
+      if (order.done || !devicesFrom || now < *devicesFrom + std::chrono::seconds(order.atSeconds))
+        continue;
+      order.done = true;
+      const tandem::devices::Key key{order.entity, order.cls};
+      // From what the session has of it (unknown: on, closed).
+      tandem::devices::What what{.status = tandem::proto::kDeviceOn};
+      if (const auto *record = endpoint->Devices().Find(key))
+        what = tandem::devices::WhatOf(*record);
+      DeviceWords(order.words, what);
+      operateDevice(key, what, "--device");
+    }
+    for (auto it = deviceAnswers.begin(); it != deviceAnswers.end();) {
+      if (now < it->second.first) {
+        ++it;
+        continue;
+      }
+      operateDevice(it->first, it->second.second, "--device-answer");
+      it = deviceAnswers.erase(it);
     }
     // --drop-item: one world item 1.5 m in front of the other V, once.
     if (!options.dropItem.empty() && !dropped && endpoint->IsJoined() && otherV) {
@@ -3410,7 +4032,16 @@ int main(int argc, char **argv) {
              now >= *storyStart + std::chrono::milliseconds(
                                       static_cast<std::int64_t>(story[storyNext].at * 1000))) {
         const auto &step = story[storyNext++];
-        if (auto message = StoryMessage(step, storyLine, endpoint->You())) {
+        const auto here = lastState.value_or(PlayerState{});
+        if (auto scene = SceneMessages(step, sceneScript, here.position,
+                                       tandem::sync::YawOf(here.orientation), endpoint->You(),
+                                       endpoint->HostNowUs())) {
+          for (const auto &message : *scene) {
+            endpoint->SendStory(message);
+            Log("{}", Describe(message));
+          }
+          Log("story step: {} {}", step.verb, step.rest);
+        } else if (auto message = StoryMessage(step, storyLine, endpoint->You())) {
           // Another world is ours, not the story's: our own state.
           if (auto *away = std::get_if<tandem::proto::Elsewhere>(&*message)) {
             const bool moved = away->flags & tandem::proto::kElsewhereMoved;

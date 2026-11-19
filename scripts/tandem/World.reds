@@ -27,6 +27,15 @@ public class TandemWorld {
     }
   }
 
+  // The recorder, solo (System.reds RecordTick): what a host would share.
+  public func RecordTick(now: Float) -> Void {
+    if now - this.m_lastCheck < 2.0 {
+      return;
+    }
+    this.m_lastCheck = now;
+    this.Share(now);
+  }
+
   public static func GameSeconds(game: GameInstance) -> Int32 {
     return GameTime.GetSeconds(GameInstance.GetTimeSystem(game).GetGameTime());
   }

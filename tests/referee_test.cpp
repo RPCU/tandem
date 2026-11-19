@@ -2,6 +2,7 @@
 // breaks none (docs/architecture/sim.md).
 
 #include "ports.hpp"
+#include "tandem/regions.hpp"
 #include "tandem/sim/coverage.hpp"
 #include "tandem/sim/referee.hpp"
 
@@ -59,7 +60,22 @@ TEST_CASE("referee: a guest may not say what is the host's") {
   referee.Received(2, proto::World{}, kSecond);
   referee.Received(2, proto::QuestReward{.reward = 1}, kSecond);
   referee.Received(2, proto::NpcHold{.npc = 7, .player = 2}, kSecond);
-  CHECK(Rules(referee) == std::vector<std::string>(4, "authority.host-only"));
+  CHECK(Rules(referee) == std::vector<std::string>{"authority.not-owner", "authority.host-only",
+                                                   "authority.host-only", "authority.not-owner"});
+  // Since regions a guest runs NPCs of its own, in its range of ids.
+  const auto ours = regions::MakeNpcId(2, 1);
+  referee.Received(2, proto::NpcSpawn{.npc = ours, .record = 3}, kSecond);
+  referee.Received(2, proto::NpcHealth{.npc = ours, .health = 0.5f}, kSecond);
+  referee.Received(2, proto::NpcStrike{.npc = ours, .damage = 1.f}, kSecond);
+  CHECK(Rules(referee).empty());
+  referee.Received(3, proto::NpcHealth{.npc = ours, .health = 0.4f}, kSecond);
+  referee.Received(3, proto::NpcSpawn{.npc = regions::MakeNpcId(2, 2)}, kSecond);
+  CHECK(Rules(referee) == std::vector<std::string>(2, "authority.not-owner"));
+  // ...until the host gives it to another.
+  referee.Sent(0, proto::NpcOwner{.npc = ours, .owner = 3}, kSecond);
+  referee.Received(3, proto::NpcHealth{.npc = ours, .health = 0.4f}, kSecond);
+  referee.Received(2, proto::NpcHealth{.npc = ours, .health = 0.3f}, kSecond);
+  CHECK(Rules(referee) == std::vector<std::string>{"authority.not-owner"});
   // ...nor speak for another player.
   referee.Received(2, proto::PlayerState{.player = 3, .seq = 1}, kSecond);
   referee.Received(2, proto::Vitals{.player = 1, .life = proto::Life::Down}, kSecond);
@@ -72,9 +88,16 @@ TEST_CASE("referee: a guest may not say what is the host's") {
 
 TEST_CASE("referee: the host may not say what only a guest asks") {
   auto referee = Guest();
-  referee.Received(1, proto::NpcStrike{.npc = 1}, kSecond);
   referee.Received(1, proto::ResyncRequest{1}, kSecond);
+  referee.Received(1, proto::DeviceUse{}, kSecond);
   CHECK(Rules(referee) == std::vector<std::string>(2, "authority.guest-only"));
+  // A request comes to us only for an NPC our game runs.
+  referee.Received(1, proto::NpcStrike{.npc = 1}, kSecond);
+  CHECK(Rules(referee) == std::vector<std::string>{"authority.not-owner"});
+  referee.Sent(1, proto::NpcSpawn{.npc = regions::MakeNpcId(2, 1)}, kSecond);
+  referee.Received(1, proto::NpcStrike{.npc = regions::MakeNpcId(2, 1)}, kSecond);
+  referee.Received(1, proto::NpcHealth{.npc = regions::MakeNpcId(2, 1)}, kSecond);
+  CHECK(Rules(referee) == std::vector<std::string>{"authority.not-owner"});
   // Our own state never comes back; what is another's is never ours to get.
   referee.Received(1, proto::Held{.player = 2}, kSecond);
   referee.Received(1, proto::PlayerHit{.player = 3}, kSecond);

@@ -1019,7 +1019,7 @@ std::string HostWorld::Check(const Endpoint &endpoint) const {
                          id, npc.holder, holder);
   }
   for (const auto &[id, spawn] : shared)
-    if (!m_npcs.contains(id))
+    if (endpoint.NpcOwner(id) == endpoint.You() && !m_npcs.contains(id))
       return std::format("npc {} is in the session's record and not in the world", id);
   return {};
 }

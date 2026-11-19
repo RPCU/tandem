@@ -987,6 +987,9 @@ inline constexpr std::uint8_t kDomainNpcs = 2;    // the NPCs the host shares, t
 inline constexpr std::uint8_t kDomainStory = 4;   // journal, tracked entry, call, hub, effects
 inline constexpr std::uint8_t kDomainPlayers = 8; // roster, looks, held items, seats, radios...
 inline constexpr std::uint8_t kAllDomains = 15;
+// The devices (DeviceDigest, DeviceSet): a domain of its own messages, named
+// here for the reports of a resync only; never a bit of Digest or ResyncRequest.
+inline constexpr std::uint8_t kDomainDevices = 16;
 
 // Host to each guest every few seconds (Event channel: it falls in the
 // reliable stream after everything the host sent before it, so the guest
@@ -1136,6 +1139,272 @@ struct ShotHit {     // Event channel
   friend bool operator==(const ShotHit &, const ShotHit &) = default;
 };
 
+// ---- Devices and world objects (docs/architecture/devices.md) ----
+//
+// A placed device is named by its entity's static id and the class of its
+// persistent state (its PersistentID's component is "controller"): the same
+// in every game. The host's session keeps one record per device anyone
+// touched or asked about: what it is now, and who changed it last.
+
+// What a device is, class by class (the bits a class has no use for stay 0).
+inline constexpr std::uint16_t kDeviceOpen = 1;         // door, gate
+inline constexpr std::uint16_t kDeviceLocked = 2;       // door
+inline constexpr std::uint16_t kDeviceSealed = 4;       // door
+inline constexpr std::uint16_t kDeviceBroken = 8;       // durability: broken or destroyed
+inline constexpr std::uint16_t kDeviceExploded = 16;    // explosive: barrel, mine, trap
+inline constexpr std::uint16_t kDeviceHacked = 32;      // a quickhack was done on it
+inline constexpr std::uint16_t kDeviceFriendly = 64;    // camera, turret: turned by a player
+inline constexpr std::uint16_t kDeviceExposed = 128;    // its quickhacks are open (a breach)
+inline constexpr std::uint16_t kDeviceBreached = 256;   // access point: the network is breached
+inline constexpr std::uint16_t kDeviceMoving = 512;     // lift: on its way to `value`
+inline constexpr std::uint16_t kDeviceGlitching = 1024; // distracting (a glitch, a malfunction)
+inline constexpr std::uint16_t kDeviceStateBits = 2047;
+// How a DeviceState travels (not part of what the device is):
+inline constexpr std::uint8_t kDeviceLive = 0; // it just changed: shown the game's way
+inline constexpr std::uint8_t kDeviceQuiet =
+    1; // a record (a join, a resync, an answer): set, not played
+inline constexpr std::uint8_t kDeviceAsk = 2; // guest to host: mine is this, what is yours?
+
+// The status of a device: the game's EDeviceStatus.
+inline constexpr std::int8_t kDeviceDisabled = -2, kDeviceUnpowered = -1, kDeviceOff = 0,
+                             kDeviceOn = 1;
+inline constexpr std::int32_t kDeviceNoValue = -1;
+
+// A device as the session has it (Event channel). Host to guests: its word,
+// kept for late joiners and hashed in DeviceDigest; a guest applies it to
+// its own copy, loaded or not, and remembers what its own save had. Guest
+// to host (kDeviceAsk): this device came into my world like this; the host
+// answers with its own when they differ.
+struct DeviceState {
+  std::uint64_t entity{};             // the entity's static id
+  std::uint64_t cls{};                // its persistent state's class name
+  std::int8_t status{};               // kDeviceDisabled .. kDeviceOn
+  std::uint16_t flags{};              // kDevice* state bits
+  std::int32_t value{kDeviceNoValue}; // lift: floor; radio, TV: station; security system: state
+  std::uint32_t revision{}; // the host's count of its changes (a guest's: the one it has seen)
+  PlayerId by{};            // who changed it last (kNoPlayer: the host's world)
+  std::uint8_t how{};       // kDeviceLive, kDeviceQuiet, kDeviceAsk
+  friend bool operator==(const DeviceState &, const DeviceState &) = default;
+};
+
+// A guest operated a device (Event channel; guest to host, never relayed):
+// it is this in my game now. The guest's own copy changed at once; the host
+// brings its own to the same state the game's way and its DeviceState is
+// the answer for everyone. `seen` fences it: when someone else changed the
+// device since the revision the guest had seen, the request is void and
+// the guest gets the host's state back.
+struct DeviceUse {
+  std::uint64_t entity{};
+  std::uint64_t cls{};
+  std::int8_t status{};
+  std::uint16_t flags{};
+  std::int32_t value{kDeviceNoValue};
+  std::uint32_t seen{};
+  PlayerId player{}; // set by the host from the connection
+  friend bool operator==(const DeviceUse &, const DeviceUse &) = default;
+};
+
+// Host to one guest, opening a resync of the devices: forget the record,
+// `count` DeviceStates follow (what is not among them goes back to what the
+// guest's own save had). Guest to host: send me the record again.
+struct DeviceSet {
+  std::uint32_t count{};
+  friend bool operator==(const DeviceSet &, const DeviceSet &) = default;
+};
+
+// Host to each guest with its Digest (Event channel): the hash of the
+// device record (tandem/devices.hpp). A guest whose copy differs twice in a
+// row asks for it again (DeviceSet).
+struct DeviceDigest {
+  std::uint32_t count{};
+  std::uint32_t hash{};
+  friend bool operator==(const DeviceDigest &, const DeviceDigest &) = default;
+};
+
+// ---- Scene replay (docs/architecture/scene-replay.md) ----
+// A story scene of the host's game as its guests watch it. The scene runs
+// on the host only (authority table: quests and scenes are the host's); a
+// guest never plays its own copy. What travels is what the scene shows: that
+// one is on and where (SceneState), which of the host's NPCs act in it
+// (SceneCast), each actor's body pose (ActorPose) and each voiced line with
+// its start time (SceneLine). All host to guests. A private scene
+// (kStoryPrivate) is never announced.
+
+// SceneState::flags.
+inline constexpr std::uint8_t kSceneSkipping = 1, // the host fast-forwards (rate > 1)
+    kSceneHeld = 2,                               // its time waits (a choice hub, a pause)
+    kSceneInterrupted = 4,                        // with scene 0: it ended before its end
+    kSceneStaged = 8;                             // anchor, yaw and radius are known
+inline constexpr float kMaxSceneRate = 16.f;
+// The host's scene, on every change (Event channel; kept while one is on,
+// for late joiners: they join at host clock - startUs). `scene` 0: none.
+struct SceneState {
+  std::uint64_t scene{};   // the scnSceneResource's path hash (0: no scene)
+  std::uint32_t play{};    // counts the host's scenes in this session: a scene
+                           // played again is another play
+  std::uint32_t section{}; // the scnNodeId playing (0: not known)
+  std::uint64_t startUs{}; // host clock at the scene's (or the section's) time 0
+  float rate{1.f};         // how fast its time runs (fast-forward: > 1; held: 0;
+                           // at most kMaxSceneRate)
+  std::uint8_t tier{};     // GameplayTier it puts the host's V in
+  std::uint8_t flags{};    // kScene*
+  Vec3 anchor;             // kSceneStaged: the middle of its actors,
+  float yaw{};             // the way the host's V faces them
+  float radius{};          // and how far from the middle they stand
+  friend bool operator==(const SceneState &, const SceneState &) = default;
+};
+
+// SceneActor::flags.
+inline constexpr std::uint8_t kActorGhost = 1, // only there through the Relic (Johnny): comes
+                                               // and goes with its glitch
+    kActorHidden = 2,                          // in the cast, not shown now
+    kActorPosed = 4;                           // its pose is streamed (ActorPose)
+struct SceneActor {
+  NpcId npc{}; // as the host shares it (NpcSpawn)
+  std::uint8_t flags{};
+  friend bool operator==(const SceneActor &, const SceneActor &) = default;
+};
+inline constexpr std::size_t kMaxSceneActors = 32;
+
+// Who acts in play `play`, whole on every change (Event channel; kept with
+// the SceneState). The host's V is always in it and not listed.
+struct SceneCast {
+  std::uint32_t play{};
+  std::vector<SceneActor> actors;
+  friend bool operator==(const SceneCast &, const SceneCast &) = default;
+};
+
+// SceneLine::flags.
+inline constexpr std::uint8_t kVoiceStop = 1, // the line was cut (a skip, an interruption)
+    kVoiceHolocall = 2,                       // heard through the phone: no place in the world
+    kVoiceOverhead = 4;                       // a bark or a chatter, not the scene's dialogue
+// A voiced line begins (or is cut): the same id as its Subtitle. A guest
+// plays the line's voice-over itself, in its own language, on the speaker's
+// proxy or puppet, from host clock - startUs (Event channel; kept while it
+// lasts, for late joiners).
+struct SceneLine {
+  std::uint32_t play{};     // 0: outside a scene (a bark)
+  std::uint64_t line{};     // the line's string id (scnDialogLineData.id, a CRUID)
+  NpcId speaker{};          // the NPC (0: none or a player)
+  PlayerId speakerPlayer{}; // a V's line: whose
+  std::uint64_t startUs{};  // host clock when it began
+  float duration{};         // seconds (0: unknown)
+  std::uint8_t flags{};     // kVoice*
+  friend bool operator==(const SceneLine &, const SceneLine &) = default;
+};
+
+// A scene actor's body pose (State channel, up to 30 Hz, host only): a
+// PoseState for one of the host's NPCs, same encoding (tandem/pose.hpp: the
+// body rig's bones by name, which every humanoid NPC rig has).
+struct ActorPose {
+  NpcId npc{};
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  std::array<std::int16_t, 3> hips{};
+  std::array<std::uint8_t, kPoseBones * kPoseRotationBytes> rotations{};
+  friend bool operator==(const ActorPose &, const ActorPose &) = default;
+};
+
+// ---- Per-player regions (docs/architecture/regions.md) ----
+// Each game runs the NPCs around its own V; players whose Vs are near each
+// other are linked and see each other's NPCs as proxies. "The host's NPCs"
+// in the messages above reads "the owner's NPCs": the endpoint routes by
+// owner (tandem/regions.hpp, Endpoint::NpcOwner).
+
+// Which players are linked (host to everyone, Event channel, on change; kept
+// for late joiners): `pairs` holds two player ids per link, lower id first.
+inline constexpr std::size_t kMaxRegionPairs = 32;
+struct Regions {
+  std::uint32_t revision{};
+  std::vector<PlayerId> pairs;
+  friend bool operator==(const Regions &, const Regions &) = default;
+};
+
+// Who runs an NPC, when it is not the game that announced it (host to every
+// player that sees the NPC; kept for late joiners). From an owner to the
+// host, with kNpcPinned: this NPC of mine never changes owner (a quest or
+// story NPC, a police unit).
+inline constexpr std::uint8_t kNpcPinned = 1;
+struct NpcOwner {
+  NpcId npc{};
+  PlayerId owner{};
+  std::uint8_t flags{}; // kNpc*
+  friend bool operator==(const NpcOwner &, const NpcOwner &) = default;
+};
+
+// Host to an NPC's owner: hand it over to `to` (its V is leaving the NPC,
+// `to`'s is near). The owner answers with NpcHandoverState, or refuses with
+// NpcHandoverDone.
+struct NpcHandover {
+  NpcId npc{};
+  PlayerId to{};
+  friend bool operator==(const NpcHandover &, const NpcHandover &) = default;
+};
+
+struct NpcEffectState {
+  std::uint64_t record{}; // TweakDB id of the status effect record
+  float remaining{};      // seconds left (0: no duration, or unknown)
+  std::uint8_t stacks{1};
+  friend bool operator==(const NpcEffectState &, const NpcEffectState &) = default;
+};
+
+// The NPC as its owner leaves it (giver to host, host to the new owner): the
+// giver has switched its brain off and keeps its body as a proxy; the
+// receiver switches its proxy's brain on and applies this. Also what the
+// host sends the heir of an owner that vanished, built from the session's
+// record (kHandoverBlind: nobody read the NPC, no target).
+inline constexpr std::uint8_t kHandoverCombat = 1, kHandoverDefeated = 2, kHandoverUnconscious = 4,
+                              kHandoverBlind = 8, kHandoverInherited = 16;
+struct NpcHandoverState {
+  NpcId npc{};
+  PlayerId from{}; // set by the host from the connection
+  PlayerId to{};
+  Vec3 position;
+  float yaw{};
+  float health{-1.f};       // fraction of its maximum (negative: unknown, keep the proxy's)
+  float poise{-1.f};        // the same for its guard
+  std::uint8_t flags{};     // kHandover*
+  PlayerId target{};        // the V it fights (kNoPlayer: none)
+  std::uint8_t hostileTo{}; // bit (player - 1): hostile to that V
+  std::uint8_t highLevel{}; // gamedataNPCHighLevelState
+  std::vector<NpcEffectState> effects; // at most kMaxNpcEffects
+  friend bool operator==(const NpcHandoverState &, const NpcHandoverState &) = default;
+};
+
+// The new owner to the host: I run it (accepted), or I cannot (no body: it
+// is gone). The giver to the host, accepted false: it stays mine for now (a
+// quest NPC, held, seated, mid-takedown).
+struct NpcHandoverDone {
+  NpcId npc{};
+  bool accepted{};
+  friend bool operator==(const NpcHandoverDone &, const NpcHandoverDone &) = default;
+};
+
+// Host to one guest, with each round of digests: the NPCs that guest owns as
+// the host's record has them (tandem/consistency.hpp, NpcDigest). The guest
+// hashes its own list; when they differ twice in a row it sends its set again
+// (NpcSet, then each spawn, health and hold).
+struct OwnedDigest {
+  std::uint32_t seq{};
+  std::uint32_t npcs{};
+  std::uint16_t count{};
+  friend bool operator==(const OwnedDigest &, const OwnedDigest &) = default;
+};
+
+// A player's world has a quest of its own running where its V stands (a gig
+// it started: docs/architecture/quest-carryover.md, "Whose gig is it"): it
+// keeps its region. While held, it ranks first where regions overlap (the
+// others' games hold back there, the host's too), none of its NPCs is handed
+// over, and it leads its group: its world's quests are the ones played.
+// Sent by that player's game when it changes (Event channel); the host
+// stamps the player, keeps who holds for late joiners (a player who leaves
+// holds nothing) and relays it.
+struct RegionHold {
+  PlayerId player{};
+  bool held{};
+  friend bool operator==(const RegionHold &, const RegionHold &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -1144,10 +1413,12 @@ using Message = std::variant<
     ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
     NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
     Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
-    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit>;
+    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit,
+    SceneState, SceneCast, SceneLine, ActorPose, DeviceState, DeviceUse, DeviceSet, DeviceDigest,
+    Regions, NpcOwner, NpcHandover, NpcHandoverState, NpcHandoverDone, OwnedDigest, RegionHold>;
 
-// A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
-// through one path.
+// A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine):
+// endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit): one path in endpoint.hpp too.
 bool IsCombat(const Message &message);

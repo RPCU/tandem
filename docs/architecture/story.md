@@ -69,10 +69,38 @@
     `story::Participation`); each guest gives its own V the reward
     (`RPGManager.GiveReward`) once, and keeps it in a persistent ledger so
     its own story pays nothing again for it.
+  - _Scene replay_ (the scene's actors, voices and Johnny for a guest; `scene_replay = on`): [`scene-replay.md`](scene-replay.md).
+  - _Whose phases wait_ (`quest-carryover.md`, "Whose gig is it"): the
+    freeze holds the phases this game does not own. Story phases are the
+    host's for the whole session. A gig's phase (one under a resource of
+    `quest_freeze_gigs`, until spike C2 gives a better test) waits while
+    the guest is grouped with the host and runs while it is apart, when
+    the gig signals held meanwhile are given back. **Always grouped
+    today** (`TandemStorySystem.SetApart` is for the regions work; the
+    test commands `quest apart` / `quest grouped` flip it), so nothing
+    changes yet. Apart, the journal mirror leaves the guest's own gig
+    entries alone and does not show the host's (going apart gives them
+    back as they were; grouped again, the host's come back as last
+    heard). Apart, one phone, one call: the host's call waits while the
+    guest's own is up, and the guest's own waits (retried every 5 s)
+    while the host's is on its phone. Grouped, as before.
+    `tools/game.sh cmd quest trace on` logs every phase met (its chain of
+    resources) and every journal node in it: the spike's tool.
+  - _Session items_ (decided 2026-11-19): the host's quest props (tag
+    `Quest`, keycards) that come into a guest's inventory are noted (a
+    persistent list) and removed at the top of its leave, whether it chose
+    to go or the host vanished, or at the next load of a save that holds
+    the list. Iconics and rewards stay.
   - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`,
-    `story-private`, `story-private-host`.
+    `story-private`, `story-private-host`, `story-session-items`,
+    `story-gigs-apart`.
 
 ## Open problems
+
+- **What a guest brings home** (proposal 2026-11-19): `quest-carryover.md`.
+  The ledger of what a guest did and earned (`core/src/carryover.cpp`,
+  tested) is written; its natives and script, the removal of quest props
+  on leave and the join notes are staged there.
 
 - **Scenes for guests.** Replaying the host's quest-scene nodes in a guest's
   game (the campaign fork's approach) is unproven: nodes run outside their
@@ -92,7 +120,13 @@
   declining leaves it the subtitles and journal); a guest earns a quest's
   rewards when it was near the host (150 m) as the quest completed or
   advanced, **only once**: a quest it was rewarded for in co-op pays
-  nothing again when it later plays it in its own save. Provisional (the
+  nothing again when it later plays it in its own save. Decided
+  2026-11-19 (`quest-carryover.md`): **a gig belongs to the world of the
+  player who starts it** (grouped at the start: the host's, no prompt);
+  **a helper's own copy of a gig stays playable at home and pays nothing
+  again**; **a guest gives the host's quest props back when it leaves**
+  (items tagged `Quest`, keycards; iconics and rewards stay);
+  **Phantom Liberty is required for every player**. Provisional (the
   design's proposals, to confirm): romance and intimate scenes are never
   replayed for guests; leaving reloads the guest's game; subtitles in the
   host's language for now; shards and the codex stay per player; Johnny's

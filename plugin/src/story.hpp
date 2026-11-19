@@ -5,6 +5,7 @@
 // apart from Runtime: the story has its own messages and its own script.
 
 #include "tandem/protocol.hpp"
+#include "tandem/scene.hpp"
 #include "tandem/story.hpp"
 
 #include <array>
@@ -60,8 +61,23 @@ public:
   void PausePose(proto::PlayerId player, bool paused);
   bool PosePaused(proto::PlayerId player) const;
 
+  // Scene replay (docs/architecture/scene-replay.md), game thread. Host:
+  // what its game samples becomes what its guests are told. Guest: what the
+  // host says becomes cues for the script.
+  scene::Stage &Stage() { return m_stage; }
+  scene::Replay &Replay() { return m_replay; }
+  // The bodies around a scene, as the script lists them (actors, the host's
+  // V, the other watchers), for WatchSpot and KeepOut.
+  std::vector<proto::Vec3> &Bodies() { return m_bodies; }
+  std::vector<scene::ActorSample> &Actors() { return m_actors; }
+
 private:
   std::vector<proto::PlayerId> GuestsNear(const proto::Vec3 &host) const;
+
+  scene::Stage m_stage;
+  scene::Replay m_replay;
+  std::vector<proto::Vec3> m_bodies;
+  std::vector<scene::ActorSample> m_actors;
 
   std::atomic_bool m_private{false};
   std::optional<proto::PlayerState> m_held; // net thread

@@ -23,6 +23,16 @@
 //   sampled pose: +0x00 bone count, +0x30 transforms.
 // Both functions run on animation job threads: nothing here touches the
 // engine beyond these buffers, and every read of them is guarded.
+//
+// Scene replay (docs/architecture/scene-replay.md) uses the same two places
+// for the actors of the host's story scene: on the host an actor NPC's pose
+// is read after its entity job, as V's is; on a guest it is written into its
+// proxy's root instance at the commit, as a remote player's is on a puppet.
+// The humanoid NPC rigs carry the body rig's bones under the same names (the
+// man and woman base rigs are the very rigs V's third-person body uses:
+// docs/research/data/skeletons-2.50.txt), so the wire pose is the same; an
+// NPC whose skeleton lacks one of them is not read, and its proxy keeps its
+// own animation. Not yet verified in game on NPCs.
 
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
@@ -89,6 +99,17 @@ struct Binding {
 };
 std::array<Binding, Runtime::kMaxPuppets> g_bindings;
 
+// Scene actors: NPCs read (host), proxies written (guest).
+constexpr std::size_t kMaxActors = 16;
+std::array<Binding, kMaxActors> g_actorBindings; // `player` holds the NPC's id
+
+std::uint32_t BoundActor(std::uintptr_t instance) {
+  for (const auto &binding : g_actorBindings)
+    if (binding.instance.load(std::memory_order_acquire) == instance)
+      return binding.player.load(std::memory_order_acquire);
+  return 0;
+}
+
 std::uint32_t BoundPlayer(std::uintptr_t instance) {
   for (const auto &binding : g_bindings)
     if (binding.instance.load(std::memory_order_acquire) == instance)
@@ -99,6 +120,7 @@ std::uint32_t BoundPlayer(std::uintptr_t instance) {
 // ---- counters ----
 
 std::atomic_uint64_t g_reads{0}, g_readSkips{0}, g_writes{0}, g_writeMisses{0};
+std::atomic_uint64_t g_actorReads{0}, g_actorSkips{0}, g_actorWrites{0}, g_actorMisses{0};
 // (g_writeMisses: no pose for the player yet, or a reduced level of detail)
 
 template <class... Args>
@@ -224,11 +246,79 @@ void ReadSource(std::uintptr_t object) {
   g_reads.fetch_add(1, std::memory_order_relaxed);
 }
 
+// ---- the read side, scene actors: an NPC's skeleton, mapped the same way ----
+
+struct ActorSource {
+  std::atomic<std::uintptr_t> object{0};
+  std::atomic<std::uint32_t> npc{0};
+  std::mutex lock; // the rest: job threads
+  SourceMap map;
+  std::chrono::steady_clock::time_point lastSend{};
+};
+std::array<ActorSource, kMaxActors> g_actorSources;
+std::atomic_int g_actorSourceCount{0}; // 0: the job detour looks at no table
+
+void ReadActor(ActorSource &source, std::uintptr_t object) {
+  const auto npc = source.npc.load(std::memory_order_acquire);
+  const auto now = std::chrono::steady_clock::now();
+  std::uintptr_t skeleton = 0, poseObject = 0, transforms = 0;
+  std::uint64_t signature = 0;
+  if (npc == 0 || !ReadAt(object + kObjectSkeleton, skeleton) ||
+      !ReadAt(object + kObjectPose, poseObject) || !ReadAt(poseObject, transforms) ||
+      !ReadAt(skeleton + kSkeletonSignature, signature))
+    return;
+
+  std::array<std::uint32_t, pose::kBones> index{};
+  float referenceHips = 1.f;
+  {
+    std::lock_guard _(source.lock);
+    if (now - source.lastSend < kSendInterval)
+      return;
+    if (source.map.skeleton != skeleton || source.map.signature != signature) {
+      source.map = {};
+      source.map.skeleton = skeleton;
+      source.map.signature = signature;
+      source.map.usable = MapSource(skeleton, source.map);
+      log::Info("pose stream: actor {}'s skeleton {:#x} ({}), {}", npc, skeleton, signature,
+                source.map.usable ? "mapped" : "not a body the stream knows: not sent");
+    }
+    if (!source.map.usable) {
+      g_actorSkips.fetch_add(1, std::memory_order_relaxed);
+      return;
+    }
+    source.lastSend = now;
+    index = source.map.index;
+    referenceHips = source.map.referenceHips;
+  }
+
+  std::array<proto::Quat, pose::kBones> model{};
+  proto::Vec3 hips{};
+  for (std::size_t bone = 0; bone < pose::kBones; ++bone) {
+    Transform t{};
+    if (!ReadAt(transforms + index[bone] * sizeof(Transform), t)) {
+      g_actorSkips.fetch_add(1, std::memory_order_relaxed);
+      return;
+    }
+    model[bone] = {t.rotation[0], t.rotation[1], t.rotation[2], t.rotation[3]};
+    if (bone == pose::kHips)
+      hips = {t.translation[0], t.translation[1], t.translation[2]};
+  }
+  Runtime::Get().SubmitActorPose(npc, pose::Pack(pose::FromModel(model, hips, referenceHips)));
+  g_actorReads.fetch_add(1, std::memory_order_relaxed);
+}
+
 void DetourJob(void *object, void *params) {
   g_originalJob(object, params);
+  const auto address = reinterpret_cast<std::uintptr_t>(object);
   const auto source = g_sourceObject.load(std::memory_order_acquire);
-  if (source != 0 && reinterpret_cast<std::uintptr_t>(object) == source)
+  if (source != 0 && address == source)
     ReadSource(source);
+  else if (g_actorSourceCount.load(std::memory_order_acquire) > 0)
+    for (auto &actor : g_actorSources)
+      if (actor.object.load(std::memory_order_acquire) == address) {
+        ReadActor(actor, address);
+        break;
+      }
 }
 
 // ---- the write side: a puppet's rig ----
@@ -294,19 +384,16 @@ bool CheckSampled(const TargetMap &map, const Transform *bones, std::uint32_t co
 
 std::atomic_bool g_warnedTarget{false};
 
-void WritePuppet(std::uint32_t player, std::uintptr_t instance, void *sampled) {
-  pose::Pose remote;
-  if (!Runtime::Get().PoseOf(player, remote)) {
-    g_writeMisses.fetch_add(1, std::memory_order_relaxed);
-    return;
-  }
+// `remote` written into the sampled pose of a body rig's root instance.
+// False: not written (the rig does not take poses, or a lower level of detail).
+bool WritePose(const pose::Pose &remote, std::uintptr_t instance, void *sampled) {
   std::uintptr_t rig = 0, bonesAddress = 0;
   std::uint32_t count = 0;
   const auto base = reinterpret_cast<std::uintptr_t>(sampled);
   if (!ReadAt(instance + kInstanceRig, rig) || !ReadAt(base + kSampledCount, count) ||
       !ReadAt(base + kSampledBones, bonesAddress) || count == 0 || count > kMaxBones ||
       (bonesAddress & 0xF) != 0)
-    return;
+    return false;
   auto *bones = reinterpret_cast<Transform *>(bonesAddress);
 
   TargetMap map;
@@ -331,12 +418,10 @@ void WritePuppet(std::uint32_t player, std::uintptr_t instance, void *sampled) {
   }
   if (!map.usable) {
     Once(g_warnedTarget, "pose stream: a puppet's rig does not take poses (see above)");
-    return;
+    return false;
   }
-  if (!map.checked || count != map.count) {
-    g_writeMisses.fetch_add(1, std::memory_order_relaxed); // a lower level of detail
-    return;
-  }
+  if (!map.checked || count != map.count)
+    return false; // a lower level of detail
 
   for (std::size_t bone = 0; bone < pose::kBones; ++bone) {
     if (!pose::IsSent(bone))
@@ -352,12 +437,32 @@ void WritePuppet(std::uint32_t player, std::uintptr_t instance, void *sampled) {
   hips[0] = remote.hips.x * map.referenceHips;
   hips[1] = remote.hips.y * map.referenceHips;
   hips[2] = remote.hips.z * map.referenceHips;
-  g_writes.fetch_add(1, std::memory_order_relaxed);
+  return true;
+}
+
+void WritePuppet(std::uint32_t player, std::uintptr_t instance, void *sampled) {
+  pose::Pose remote;
+  if (Runtime::Get().PoseOf(player, remote) && WritePose(remote, instance, sampled))
+    g_writes.fetch_add(1, std::memory_order_relaxed);
+  else // no pose for the player yet, or a reduced level of detail
+    g_writeMisses.fetch_add(1, std::memory_order_relaxed);
+}
+
+// A scene actor's proxy: the host's pose of that NPC while its stream lasts.
+void WriteActor(std::uint32_t npc, std::uintptr_t instance, void *sampled) {
+  pose::Pose remote;
+  if (Runtime::Get().ActorPoseOf(npc, remote) && WritePose(remote, instance, sampled))
+    g_actorWrites.fetch_add(1, std::memory_order_relaxed);
+  else
+    g_actorMisses.fetch_add(1, std::memory_order_relaxed);
 }
 
 void DetourCommit(void *instance, void *params, void *sampled, std::uint32_t lod) {
-  if (const auto player = BoundPlayer(reinterpret_cast<std::uintptr_t>(instance)))
-    WritePuppet(player, reinterpret_cast<std::uintptr_t>(instance), sampled);
+  const auto address = reinterpret_cast<std::uintptr_t>(instance);
+  if (const auto player = BoundPlayer(address))
+    WritePuppet(player, address, sampled);
+  else if (const auto npc = BoundActor(address))
+    WriteActor(npc, address, sampled);
   g_originalCommit(instance, params, sampled, lod);
 }
 
@@ -418,6 +523,7 @@ void RemovePoseStream(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle han
   g_sourceObject = 0;
   for (auto &binding : g_bindings)
     binding.instance = 0;
+  ClearPoseActors();
   if (g_commitTarget)
     sdk->hooking->Detach(handle, g_commitTarget);
   if (g_jobTarget)
@@ -467,6 +573,91 @@ void BindPosePuppet(std::uint32_t player, const RED4ext::Handle<RED4ext::ent::En
   slot->instance.store(instance, std::memory_order_release);
   if (instance)
     log::Info("pose stream: player {} drawn on graph instance {:#x}", player, instance);
+}
+
+void SetPoseActorSource(std::uint32_t npc, const RED4ext::Handle<RED4ext::ent::Entity> &entity) {
+  std::uintptr_t object = 0;
+  if (npc != 0 && entity && LayoutOk())
+    if (const auto component = RootComponent(entity))
+      ReadAt(component + kComponentObject, object);
+  ActorSource *slot = nullptr;
+  for (auto &source : g_actorSources)
+    if (source.npc.load() == npc && source.object.load() != 0)
+      slot = &source;
+  if (!slot && object != 0)
+    for (auto &source : g_actorSources)
+      if (source.object.load() == 0) {
+        slot = &source;
+        break;
+      }
+  if (!slot) {
+    if (object != 0)
+      log::Warn("pose stream: no room to read actor {}", npc);
+    return;
+  }
+  if (slot->object.load() == object && slot->npc.load() == npc)
+    return;
+  // Off first: a job thread never reads a slot half changed.
+  if (slot->object.exchange(0) != 0)
+    g_actorSourceCount.fetch_sub(1);
+  slot->npc.store(npc, std::memory_order_release);
+  if (object != 0) {
+    slot->object.store(object, std::memory_order_release);
+    g_actorSourceCount.fetch_add(1);
+    log::Info("pose stream: reading actor {} (animated object {:#x})", npc, object);
+  } else
+    log::Info("pose stream: actor {} no longer read", npc);
+}
+
+void BindPoseActor(std::uint32_t npc, const RED4ext::Handle<RED4ext::ent::Entity> &entity) {
+  std::uintptr_t instance = 0;
+  if (npc != 0 && entity && LayoutOk())
+    if (const auto component = RootComponent(entity))
+      ReadAt(component + kComponentInstance, instance);
+  Binding *slot = nullptr;
+  for (auto &binding : g_actorBindings)
+    if (binding.player.load() == npc && binding.instance.load() != 0)
+      slot = &binding;
+  if (!slot && instance != 0)
+    for (auto &binding : g_actorBindings)
+      if (binding.instance.load() == 0) {
+        slot = &binding;
+        break;
+      }
+  if (!slot) {
+    if (instance != 0)
+      log::Warn("pose stream: no room to bind actor {}", npc);
+    return;
+  }
+  if (slot->instance.load() == instance && slot->player.load() == npc)
+    return;
+  slot->instance.store(0, std::memory_order_release);
+  slot->player.store(npc, std::memory_order_release);
+  slot->instance.store(instance, std::memory_order_release);
+  log::Info("pose stream: actor {} {}", npc,
+            instance ? std::format("drawn on graph instance {:#x}", instance)
+                     : std::string("released: its own animation again"));
+}
+
+void ClearPoseActors() {
+  for (auto &source : g_actorSources)
+    if (source.object.exchange(0) != 0)
+      g_actorSourceCount.fetch_sub(1);
+  for (auto &binding : g_actorBindings)
+    binding.instance.store(0, std::memory_order_release);
+}
+
+std::string PoseActorsReport() {
+  int sources = 0, bound = 0;
+  for (const auto &source : g_actorSources)
+    sources += source.object.load() != 0;
+  for (const auto &binding : g_actorBindings)
+    bound += binding.instance.load() != 0;
+  return std::format("{} actor(s) read ({} poses, {} skipped), {} proxy(ies) posed ({} writes, {} "
+                     "without a pose), {} poses heard",
+                     sources, g_actorReads.exchange(0), g_actorSkips.exchange(0), bound,
+                     g_actorWrites.exchange(0), g_actorMisses.exchange(0),
+                     Runtime::Get().ActorPosesReceived());
 }
 
 void PoseStreamReport() {

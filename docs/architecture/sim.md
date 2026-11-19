@@ -41,7 +41,8 @@ the end, `referee-suite:`; tests break rules on purpose, so it is a report;
 <!-- prettier-ignore -->
 | Rules | Checks |
 | --- | --- |
-| `authority.host-only`, `authority.guest-only` | a guest sending what only the host says (spawns, world, rewards, holds…), the host sending what only a guest asks (strikes, resync requests…) |
+| `authority.host-only`, `authority.guest-only` | a guest sending what only the host says (the session, the world, the story, scenes, the region arbitration: `Regions`, `NpcHandover`, an unpinned `NpcOwner`, digests), the host sending what only a guest asks (pings, noises, resync requests, `DeviceUse`…) |
+| `authority.not-owner` | since per-player regions (`regions.md`) an NPC's owner speaks for it: a guest's spawn outside its range of ids (`regions::Announcer`), a guest's health, hold, hit or reply for an NPC another game runs (`NpcOwner` moves it), the host passing us a request, a hand-over or another's word on an NPC our game does not run, or on one it does |
 | `authority.not-yours`, `authority.own-state-back`, `authority.misdelivered` | a guest speaking in another player's name; the host sending us our own state; a hit, hack, revive or answer meant for another player |
 | `authority.acting-while-down`, `authority.revive-self`, `authority.revive-not-down` | firing, grabbing or uploading while down or out (after 1.5 s of grace); reviving oneself, or a V that is not down |
 | `authority.vehicle-not-yours`, `authority.accepted-on-dead`, `authority.state-after-gone` (hint) | moving a car while riding in someone else's; the host accepting a takedown on an NPC it said dead; an NPC still in the host's states 3 s after it went |
@@ -173,6 +174,8 @@ the default quest, leaves every 45 s).
 
 ## Open
 
+- Regions: the simulated guest owns no NPCs (`tandem-peer --mode region`
+  does); its referee checks ownership both ways.
 - A real host recorded (`.tsession`) as the world model's training data:
   the sim's NPCs keep the game's enums and rules, not its pacing.
 - The pose stream: the simulated V sends no `PoseState`.

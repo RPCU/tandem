@@ -1,8 +1,15 @@
 #pragma once
 
-// tandem.ini, next to tandem.dll:
+// tandem.ini, next to tandem.dll (or where TANDEM_CONFIG says; TANDEM_PORT
+// overrides its port: tandem/instance.hpp, for several games on a machine):
 //
-//   role = join          ; off | host | join (the co-op menu can pick another)
+//   role = join          ; off (solo, the default) | host | join; the co-op menu
+//                        ; can pick another. Solo: tandem does nothing to the game.
+//   recorder = off       ; on: record what this game plays, solo or in a session
+//                        ; (tandem/recorder.hpp), in recordings/auto/
+//   recorder_max_mb = 2048        ; the oldest segments go beyond this
+//   recorder_segment_minutes = 10
+//   recorder_pose = on   ; off: no body poses in the recordings
 //   address = 127.0.0.1  ; join: the host's address
 //   port = 27450
 //   name = V
@@ -20,8 +27,13 @@
 //   quest_freeze = off   ; on: a guest's own story phases wait while it is in a
 //                        ; session (engine/quests.cpp); off: the hook stays out
 //   scene_privacy = on   ; off: every scene is watched (no private scenes)
+//   scene_replay = off   ; on: a host's story scenes play for its guests (their
+//                        ; cast, voices and, with pose = on, the actors' bodies:
+//                        ; docs/architecture/scene-replay.md); poses: only the
+//                        ; actors' bodies are left out
 //   private_actors = judy, panam, river, kerry, meredith  ; romance partners
 //   private_scenes = , public_scenes =  ; scene resource paths, comma-separated
+//   quest_freeze_gigs =  ; gig phase resources: they wait only while grouped
 //   quest_freeze_allow = ; more open-world phase resources that keep running
 //                        ; on a frozen guest (resource paths, comma-separated)
 //   time_host = full     ; host's Sandevistan (scripts/tandem/Time.reds): full keeps
@@ -58,10 +70,18 @@ struct Config {
   bool mirror{false};
   bool pose{true};
   bool story{true};
+  // The recorder (docs/ARCHITECTURE.md, "Recorder"): independent of the role.
+  bool recorder{false};
+  std::uint64_t recorderMaxMb{2048};
+  std::uint32_t recorderSegmentMinutes{10};
+  bool recorderPose{true};
   bool questFreeze{false};
   std::vector<std::string> questFreezeAllow;
+  std::vector<std::string> questFreezeGigs; // gig phase resources (ours while apart)
   // Scene privacy (engine/scenes.cpp): private scenes are not watched.
   bool scenePrivacy{true};
+  bool sceneReplay{false};
+  bool scenePoses{true}; // with sceneReplay
   std::vector<std::string> privateActors{"judy", "panam", "river", "kerry", "meredith"};
   std::vector<std::string> privateScenes, publicScenes;
   // How the host's own time dilations are played (Time.reds): its world in

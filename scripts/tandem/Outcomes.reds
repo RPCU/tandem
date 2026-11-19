@@ -48,8 +48,9 @@ public class TandemStrike {
 
 public class TandemOutcomes {
   private let m_game: GameInstance;
-  // Guest: our strikes waiting for their pipeline to end. Host: the hits
-  // made of guests' strikes, in our damage system now.
+  // Our strikes on proxies waiting for their pipeline to end (player 0),
+  // and the hits made of other players' strikes on the NPCs we run, in our
+  // damage system now (player: whose).
   private let m_hits: array<ref<gameHitEvent>>;
   private let m_strikes: array<ref<TandemStrike>>;
   // Host: the difficulty last sent (-1 none), when we last looked.
@@ -84,19 +85,20 @@ public class TandemOutcomes {
           TandemNative.Log(s"outcomes: the session plays at our difficulty \(level)");
         }
       }
-    } else {
-      // A strike whose pipeline has not ended by the next frame (it should
-      // not happen): sent as it is.
-      let i = 0;
-      while i < ArraySize(this.m_strikes) {
-        if this.m_strikes[i].stale {
-          this.SendStrike(this.m_strikes[i], 0.0);
-          ArrayErase(this.m_strikes, i);
-          ArrayErase(this.m_hits, i);
-        } else {
-          this.m_strikes[i].stale = true;
-          i += 1;
-        }
+    }
+    // A strike of ours on a proxy whose pipeline has not ended by the next
+    // frame (it should not happen): sent as it is.
+    let i = 0;
+    while i < ArraySize(this.m_strikes) {
+      if this.m_strikes[i].player != 0u {
+        i += 1;
+      } else if this.m_strikes[i].stale {
+        this.SendStrike(this.m_strikes[i], 0.0);
+        ArrayErase(this.m_strikes, i);
+        ArrayErase(this.m_hits, i);
+      } else {
+        this.m_strikes[i].stale = true;
+        i += 1;
       }
     }
     for event in TandemFight.TakeEvents() {
@@ -240,7 +242,7 @@ public class TandemOutcomes {
   // Its pipeline ended: the poise it took, and off it goes.
   public func Ended(hitEvent: ref<gameHitEvent>, poiseBefore: Float) -> Void {
     let i = ArrayFindFirst(this.m_hits, hitEvent);
-    if i < 0 {
+    if i < 0 || this.m_strikes[i].player != 0u {
       return;
     }
     let after = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(hitEvent.target.GetEntityID()), gamedataStatPoolType.Poise, false);
@@ -256,13 +258,15 @@ public class TandemOutcomes {
 
   // ---- host: guests' strikes on our NPCs ----
 
+  // Another player's strike on an NPC we run (not one of ours on a proxy).
   public func IsStrike(hitEvent: ref<gameHitEvent>) -> Bool {
-    return TandemNative.IsHost() && ArrayContains(this.m_hits, hitEvent);
+    let i = ArrayFindFirst(this.m_hits, hitEvent);
+    return i >= 0 && this.m_strikes[i].player != 0u;
   }
 
   public func Forget(hitEvent: ref<gameHitEvent>) -> Void {
     let i = ArrayFindFirst(this.m_hits, hitEvent);
-    if i >= 0 {
+    if i >= 0 && this.m_strikes[i].player != 0u {
       ArrayErase(this.m_hits, i);
       ArrayErase(this.m_strikes, i);
     }
@@ -476,7 +480,8 @@ public class TandemOutcomes {
     if !IsDefined(system) || system.You() == 0u {
       return true;
     }
-    if TandemNative.IsHost() {
+    let own = system.Npcs();
+    if IsDefined(own) && own.OwnsEntity(obj.GetEntityID()) {
       let npc = system.SharedNpcOf(obj.GetEntityID());
       if npc != 0u {
         let by = 0u;
@@ -497,9 +502,8 @@ public class TandemOutcomes {
       }
       return true;
     }
-    // Guest: a proxy's limbs are the host's to cut.
-    let npcs = system.Npcs();
-    return this.m_replaying || !IsDefined(npcs) || !npcs.IsProxyEntity(obj.GetEntityID());
+    // A proxy's limbs are its owner's to cut.
+    return this.m_replaying || !IsDefined(own) || !own.IsProxyEntity(obj.GetEntityID());
   }
 
   private func Wound(event: TandemFightEvent, you: Uint32, npcs: ref<TandemNpcs>) -> Void {
@@ -599,7 +603,8 @@ public class TandemOutcomes {
       return false;
     }
     if obj.IsPlayer() {
-      return true;
+      // Solo is vanilla: our V's limbs are ours to keep only in a session.
+      return TandemNative.IsStarted();
     }
     let player = TandemCombat.PuppetPlayer(obj.GetGame(), obj);
     if player == 0u {
@@ -726,7 +731,8 @@ public class TandemOutcomes {
   // that is not one of its strikes: an effect, an explosion or a collision
   // the guest's game computed too, and sends us as strikes. Dropped.
   public static func IsGuestComputed(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
-    if !TandemNative.IsHost() {
+    // The host, as before; any game for a hit on an NPC it runs.
+    if !TandemNative.IsHost() && !(IsDefined(hitEvent.target) && TandemOwn.Entity(game, hitEvent.target.GetEntityID())) {
       return false;
     }
     let instigator = hitEvent.attackData.GetInstigator();
@@ -747,7 +753,7 @@ public class TandemOutcomes {
   // that attacks, and its hits come as PlayerHit. Dropped.
   public static func IsProxyComputed(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
     let player = GetPlayer(game);
-    if TandemNative.IsHost() || !IsDefined(player) || !IsDefined(hitEvent.target) || hitEvent.target.GetEntityID() != player.GetEntityID() {
+    if !IsDefined(player) || !IsDefined(hitEvent.target) || hitEvent.target.GetEntityID() != player.GetEntityID() {
       return false;
     }
     let system = TandemCombat.System(game);

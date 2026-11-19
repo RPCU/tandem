@@ -2,6 +2,8 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
+
 #include <string_view>
 
 using namespace tandem::proto;
@@ -557,4 +559,136 @@ TEST_CASE("a V in another world: survives encoding, small, reliable, not a story
   CHECK(Encode(Elsewhere{}).size() < 32);
   // A place this version does not know is refused.
   CHECK_FALSE(Decode(Encode(Elsewhere{.place = static_cast<Place>(5)})).has_value());
+}
+
+TEST_CASE("scene replay: survive encoding, story messages but the poses, bounded") {
+  RoundTrips(SceneState{.scene = 0x1234567890abcdefull,
+                        .play = 3,
+                        .section = 17,
+                        .startUs = 1'700'000'000'000'123ull,
+                        .rate = 4.f,
+                        .tier = 4,
+                        .flags = kSceneSkipping | kSceneStaged,
+                        .anchor = {-1500.5f, 1200.25f, 30.f},
+                        .yaw = 1.25f,
+                        .radius = 2.5f});
+  RoundTrips(SceneState{.play = 3, .flags = kSceneInterrupted});
+  RoundTrips(SceneCast{.play = 3, .actors = {{12, kActorPosed}, {70000, kActorGhost}}});
+  RoundTrips(SceneLine{.play = 3,
+                       .line = 0xfedcba9876543210ull,
+                       .speaker = 12,
+                       .startUs = 1'700'000'000'500'000ull,
+                       .duration = 3.5f,
+                       .flags = kVoiceHolocall});
+  ActorPose pose{.npc = 12, .seq = 9, .timeUs = 1'700'000'000'000'000ull, .hips = {1, -2, 8192}};
+  pose.rotations[5] = 77;
+  RoundTrips(pose);
+  for (const Message message :
+       {Message{SceneState{}}, Message{SceneCast{}}, Message{SceneLine{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(IsStory(message));
+  }
+  // A pose is state: late is worthless; it is not the story's path.
+  CHECK(ChannelOf(ActorPose{}) == Channel::State);
+  CHECK_FALSE(IsStory(ActorPose{}));
+  CHECK_FALSE(IsStory(ShotHit{}));
+  CHECK(std::string(NameOf(SceneState{})) == "SceneState");
+  CHECK(std::string(NameOf(SceneCast{})) == "SceneCast");
+  CHECK(std::string(NameOf(SceneLine{})) == "SceneLine");
+  CHECK(std::string(NameOf(ActorPose{})) == "ActorPose");
+  // Sent on changes, a few a second at most; a pose as big as a player's.
+  CHECK(Encode(SceneState{}).size() < 64);
+  CHECK(Encode(SceneLine{}).size() < 48);
+  CHECK(Encode(ActorPose{}).size() <= Encode(PoseState{}).size() + 4);
+
+  SceneCast crowd;
+  crowd.actors.resize(kMaxSceneActors + 1);
+  CHECK_FALSE(Decode(Encode(crowd)).has_value());
+  crowd.actors.resize(kMaxSceneActors);
+  CHECK(Decode(Encode(crowd)).has_value());
+  CHECK_FALSE(Decode(Encode(SceneState{.rate = -1.f})).has_value());
+  CHECK_FALSE(Decode(Encode(SceneState{.rate = 1000.f})).has_value());
+  CHECK_FALSE(Decode(Encode(SceneState{.rate = std::nanf("")})).has_value());
+}
+
+TEST_CASE("devices: survive encoding, small, reliable, and only known states pass") {
+  RoundTrips(DeviceState{.entity = 0x1122334455667788ULL,
+                         .cls = 0x99AABBCCDDEEFF00ULL,
+                         .status = kDeviceUnpowered,
+                         .flags = kDeviceOpen | kDeviceHacked | kDeviceGlitching,
+                         .value = 12,
+                         .revision = 7,
+                         .by = 3,
+                         .how = kDeviceQuiet});
+  RoundTrips(DeviceState{.entity = 1, .cls = 2, .status = kDeviceDisabled, .how = kDeviceAsk});
+  RoundTrips(DeviceUse{.entity = 0x1122334455667788ULL,
+                       .cls = 0x99AABBCCDDEEFF00ULL,
+                       .status = kDeviceOn,
+                       .flags = kDeviceLocked,
+                       .value = -1,
+                       .seen = 4,
+                       .player = 2});
+  RoundTrips(DeviceSet{.count = 300});
+  RoundTrips(DeviceDigest{.count = 300, .hash = 0xDEADBEEF});
+  for (const Message &message : {Message{DeviceState{}}, Message{DeviceUse{}}, Message{DeviceSet{}},
+                                 Message{DeviceDigest{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(IsReliable(message));
+    CHECK_FALSE(IsStory(message));
+    CHECK_FALSE(IsCombat(message));
+  }
+  CHECK(std::string(NameOf(DeviceState{})) == "DeviceState");
+  CHECK(std::string(NameOf(DeviceUse{})) == "DeviceUse");
+  CHECK(std::string(NameOf(DeviceSet{})) == "DeviceSet");
+  CHECK(std::string(NameOf(DeviceDigest{})) == "DeviceDigest");
+  // A whole record goes to a late joiner: each device is a few dozen bytes.
+  CHECK(Encode(DeviceState{}).size() <= 36);
+  CHECK(Encode(DeviceUse{}).size() <= 36);
+  CHECK(Encode(DeviceDigest{}).size() <= 12);
+  // A status, a state bit or a way of travelling this version does not know.
+  CHECK_FALSE(Decode(Encode(DeviceState{.status = 2})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceState{.status = -3})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceState{.flags = 0x800})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceState{.how = 3})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceUse{.flags = 0x8000})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceUse{.status = 5})).has_value());
+}
+
+TEST_CASE("region messages survive encoding, are reliable and bounded") {
+  RoundTrips(Regions{.revision = 4, .pairs = {1, 2, 2, 3}});
+  RoundTrips(NpcOwner{.npc = 0x01000007, .owner = 3, .flags = kNpcPinned});
+  RoundTrips(NpcHandover{.npc = 9, .to = 2});
+  RoundTrips(NpcHandoverState{.npc = 9,
+                              .from = 1,
+                              .to = 2,
+                              .position = {1.f, 2.f, 3.f},
+                              .yaw = 0.5f,
+                              .health = 0.4f,
+                              .poise = 0.9f,
+                              .flags = kHandoverCombat,
+                              .target = 2,
+                              .hostileTo = 3,
+                              .highLevel = 2,
+                              .effects = {{.record = 77, .remaining = 3.5f, .stacks = 2}}});
+  RoundTrips(NpcHandoverDone{.npc = 9, .accepted = true});
+  RoundTrips(OwnedDigest{.seq = 5, .npcs = 0xABCDEF01, .count = 12});
+  RoundTrips(RegionHold{.player = 3, .held = true});
+  for (const Message message : {Message{Regions{}}, Message{NpcOwner{}}, Message{NpcHandover{}},
+                                Message{NpcHandoverState{}}, Message{NpcHandoverDone{}},
+                                Message{OwnedDigest{}}, Message{RegionHold{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK_FALSE(IsStory(message));
+    CHECK_FALSE(IsCombat(message));
+  }
+  CHECK(std::string(NameOf(Regions{})) == "Regions");
+  CHECK(std::string(NameOf(NpcHandoverState{})) == "NpcHandoverState");
+  CHECK(std::string(NameOf(OwnedDigest{})) == "OwnedDigest");
+  // An odd list is not pairs; a state carries a bounded list of effects.
+  CHECK_FALSE(Decode(Encode(Regions{.pairs = {1, 2, 3}})).has_value());
+  NpcHandoverState big;
+  big.effects.resize(kMaxNpcEffects + 1);
+  CHECK_FALSE(Decode(Encode(big)).has_value());
+  // Appended: the protocol version did not move.
+  CHECK(kProtocolVersion == 6);
+  CHECK(Message(Regions{}).index() == Message(DeviceDigest{}).index() + 1);
 }

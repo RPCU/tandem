@@ -1,6 +1,7 @@
 #include "tandem/sim/referee.hpp"
 
 #include "tandem/consistency.hpp"
+#include "tandem/regions.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -15,20 +16,62 @@ template <class... Ts> constexpr bool IsAny(const p::Message &message) {
   return (std::holds_alternative<Ts>(message) || ...);
 }
 
-// What only the host may say.
+// What only the host may say: the session, the story, the world, the
+// arbitration (docs/architecture/regions.md, "What stays host-only").
 bool HostOnly(const p::Message &m) {
-  return IsAny<p::Welcome, p::Refused, p::Pong, p::Roster, p::World, p::NpcSpawn, p::NpcStates,
-               p::NpcGone, p::NpcHealth, p::PlayerHit, p::NpcAwareness, p::NpcHackState,
-               p::NpcStatus, p::PlayerHack, p::Journal, p::Tracked, p::PhoneCall, p::Subtitle,
-               p::ChoiceHub, p::QuestReward, p::StoryEffect, p::NpcActionReply, p::NpcHold,
-               p::NpcCue, p::GameOver, p::NpcAnims, p::NpcShot, p::NpcWound, p::NpcPoise,
-               p::Difficulty, p::Digest, p::NpcSet, p::NpcSeat, p::NpcShotAt>(m);
+  return IsAny<p::Welcome, p::Refused, p::Pong, p::Roster, p::World, p::Journal, p::Tracked,
+               p::PhoneCall, p::Subtitle, p::ChoiceHub, p::QuestReward, p::StoryEffect, p::GameOver,
+               p::Difficulty, p::Digest, p::Regions, p::NpcHandover, p::OwnedDigest,
+               p::DeviceDigest, p::SceneState, p::SceneCast, p::SceneLine, p::ActorPose>(m);
 }
 
 // What only a guest sends, and the host never passes on.
 bool GuestOnly(const p::Message &m) {
-  return IsAny<p::Hello, p::Ping, p::NpcHit, p::NpcEffect, p::Noise, p::NpcHack, p::PhoneAction,
-               p::PhoneReply, p::NpcAction, p::NpcStrike, p::ResyncRequest, p::ShotHit>(m);
+  return IsAny<p::Hello, p::Ping, p::Noise, p::PhoneAction, p::PhoneReply, p::ResyncRequest,
+               p::DeviceUse>(m);
+}
+
+// What an NPC's owner says about it (the host, or since regions the guest
+// whose game runs it): the NPCs it names.
+std::vector<p::NpcId> OwnedBy(const p::Message &m) {
+  return std::visit(
+      [](const auto &x) -> std::vector<p::NpcId> {
+        using M = std::decay_t<decltype(x)>;
+        if constexpr (std::is_same_v<M, p::NpcSpawn> || std::is_same_v<M, p::NpcGone> ||
+                      std::is_same_v<M, p::NpcHealth> || std::is_same_v<M, p::NpcHold> ||
+                      std::is_same_v<M, p::NpcSeat> || std::is_same_v<M, p::NpcPoise> ||
+                      std::is_same_v<M, p::NpcWound> || std::is_same_v<M, p::NpcHackState> ||
+                      std::is_same_v<M, p::NpcStatus> || std::is_same_v<M, p::PlayerHit> ||
+                      std::is_same_v<M, p::PlayerHack> || std::is_same_v<M, p::NpcCue> ||
+                      std::is_same_v<M, p::NpcShotAt> || std::is_same_v<M, p::NpcActionReply>)
+          return {x.npc};
+        else if constexpr (std::is_same_v<M, p::SharedItem>)
+          return x.kind == p::kSharedOnCorpse ? std::vector<p::NpcId>{x.npc}
+                                              : std::vector<p::NpcId>{};
+        else if constexpr (std::is_same_v<M, p::NpcAnims>) {
+          std::vector<p::NpcId> ids;
+          for (const auto &anim : x.npcs)
+            ids.push_back(anim.npc);
+          return ids;
+        } else
+          return {};
+      },
+      m);
+}
+
+// A request to an NPC's owner (through the host, which stamps the sender).
+bool AsksOwner(const p::Message &m) {
+  return IsAny<p::NpcHit, p::NpcStrike, p::NpcEffect, p::NpcHack, p::NpcAction, p::ShotHit>(m);
+}
+p::NpcId NpcOf(const p::Message &m) {
+  return std::visit(
+      [](const auto &x) -> p::NpcId {
+        if constexpr (requires { x.npc; })
+          return static_cast<p::NpcId>(x.npc);
+        else
+          return 0;
+      },
+      m);
 }
 
 // The field of a message a game sends in its own name (nullptr: none).
@@ -37,7 +80,7 @@ p::PlayerId *SenderOf(p::Message &message) {
       [](auto &m) -> p::PlayerId * {
         using M = std::decay_t<decltype(m)>;
         if constexpr (std::is_same_v<M, p::AreaHit> || std::is_same_v<M, p::Regroup> ||
-                      std::is_same_v<M, p::RegroupAnswer>)
+                      std::is_same_v<M, p::RegroupAnswer> || std::is_same_v<M, p::NpcHandoverState>)
           return &m.from;
         else if constexpr (std::is_same_v<M, p::WorldItem>)
           return &m.dropper;
@@ -57,7 +100,8 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::ShotHit> || std::is_same_v<M, p::VehicleHack> ||
                            std::is_same_v<M, p::SharedItem> || std::is_same_v<M, p::Epoch> ||
                            std::is_same_v<M, p::PhoneAction> || std::is_same_v<M, p::PhoneReply> ||
-                           std::is_same_v<M, p::ChoiceCursor> || std::is_same_v<M, p::StoryState>)
+                           std::is_same_v<M, p::ChoiceCursor> || std::is_same_v<M, p::StoryState> ||
+                           std::is_same_v<M, p::RegionHold> || std::is_same_v<M, p::DeviceUse>)
           return &m.player;
         else
           return nullptr;
@@ -179,6 +223,11 @@ void Referee::NeedPlayer(p::PlayerId player, const char *what) {
         std::format("{} names player {}, who was never in the session", what, player));
 }
 
+p::PlayerId Referee::OwnerOf(p::NpcId npc) const {
+  const auto it = m_owners.find(npc);
+  return it == m_owners.end() ? regions::Announcer(npc) : it->second;
+}
+
 void Referee::Sent(p::PlayerId to, const p::Message &message, std::uint64_t nowUs) {
   m_nowUs = nowUs;
   ++m_sent[message.index()];
@@ -241,11 +290,29 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
   const char *name = p::NameOf(message);
 
   if (m_host) {
-    if (HostOnly(message)) {
+    if (HostOnly(message) ||
+        (std::holds_alternative<p::DeviceState>(message) &&
+         std::get<p::DeviceState>(message).how != p::kDeviceAsk) ||
+        (std::holds_alternative<p::NpcOwner>(message) &&
+         !(std::get<p::NpcOwner>(message).flags & p::kNpcPinned))) {
       Add("authority.host-only",
           std::format("player {} sent {}: only the host says that", from, name));
       return;
     }
+    // A guest speaks for the NPCs its game runs, and no others. (States may
+    // lag a hand-over by a datagram: the endpoint drops those.)
+    if (p::ChannelOf(message) != p::Channel::State)
+      for (const auto npc : OwnedBy(message)) {
+        const bool spawn = std::holds_alternative<p::NpcSpawn>(message);
+        const auto owner = spawn ? regions::Announcer(npc) : OwnerOf(npc);
+        if (owner != from) {
+          Add("authority.not-owner",
+              std::format("player {} sent {} about npc {}, which {}", from, name, npc,
+                          spawn ? "is not in its range of ids"
+                                : std::format("player {} runs", owner)));
+          break;
+        }
+      }
     // A guest speaks in its own name only.
     auto stamped = message;
     if (auto *sender = SenderOf(stamped)) {
@@ -273,10 +340,28 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
     m_lastDigestUs = nowUs;
     return;
   }
-  if (GuestOnly(message)) {
+  if (GuestOnly(message) || (std::holds_alternative<p::DeviceState>(message) &&
+                             std::get<p::DeviceState>(message).how == p::kDeviceAsk)) {
     Add("authority.guest-only", std::format("the host sent {}: only a guest sends that", name));
     return;
   }
+  // A request reaches us only for an NPC our game runs; what is said of an
+  // NPC is said by its owner, never of ours by another.
+  if (AsksOwner(message) && OwnerOf(NpcOf(message)) != m_self)
+    Add("authority.not-owner", std::format("the host passed us {} for npc {}, which player {} runs",
+                                           name, NpcOf(message), OwnerOf(NpcOf(message))));
+  if (p::ChannelOf(message) != p::Channel::State)
+    for (const auto npc : OwnedBy(message))
+      if (OwnerOf(npc) == m_self && !std::holds_alternative<p::NpcSpawn>(message)) {
+        Add("authority.not-owner",
+            std::format("the host sent {} about npc {}, which our game runs", name, npc));
+        break;
+      }
+  if (const auto *handover = std::get_if<p::NpcHandover>(&message);
+      handover && OwnerOf(handover->npc) != m_self)
+    Add("authority.not-owner", std::format("the host asks us to hand over npc {}, which player {} "
+                                           "runs",
+                                           handover->npc, OwnerOf(handover->npc)));
   from = m_hostPlayer;
   CheckValues(message, hostUs);
   CheckRate(from, message, bytes.size());
@@ -345,6 +430,19 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           inRange = m.action >= p::kPhoneAnswer && m.action <= p::kPhoneDial;
         } else if constexpr (std::is_same_v<M, p::StoryState>) {
           inRange = m.tier <= 5;
+        } else if constexpr (std::is_same_v<M, p::SceneState>) {
+          finite = std::isfinite(m.rate) && Finite(m.anchor) && std::isfinite(m.yaw) &&
+                   std::isfinite(m.radius);
+          inRange = !finite || (m.rate >= 0.f && m.rate <= p::kMaxSceneRate && m.tier <= 5);
+        } else if constexpr (std::is_same_v<M, p::NpcHandoverState>) {
+          finite = Finite(m.position) && std::isfinite(m.yaw) && std::isfinite(m.health) &&
+                   std::isfinite(m.poise);
+          inRange = !finite || (m.health <= 1.001f && m.poise <= 1.001f &&
+                                m.effects.size() <= p::kMaxNpcEffects);
+        } else if constexpr (std::is_same_v<M, p::SceneCast>) {
+          inRange = m.actors.size() <= p::kMaxSceneActors;
+        } else if constexpr (std::is_same_v<M, p::ActorPose>) {
+          timeUs = m.timeUs;
         }
       },
       message);
@@ -719,6 +817,18 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           health = m.health;
         } else if constexpr (std::is_same_v<M, p::NpcPoise>) {
           NeedNpc(m.npc, name);
+        } else if constexpr (std::is_same_v<M, p::SceneCast>) {
+          for (const auto &actor : m.actors)
+            NeedNpc(actor.npc, name);
+        } else if constexpr (std::is_same_v<M, p::SceneLine>) {
+          if (m.speaker != 0)
+            NeedNpc(m.speaker, name);
+          NeedPlayer(m.speakerPlayer, name);
+        } else if constexpr (std::is_same_v<M, p::NpcHandoverState>) {
+          forUs(m.to);
+          NeedNpc(m.npc, name);
+        } else if constexpr (std::is_same_v<M, p::RegionHold>) {
+          notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::NpcAnims>) {
           for (const auto &anim : m.npcs)
             NeedNpc(anim.npc, name);
@@ -896,11 +1006,12 @@ void Referee::Note(const p::Message &message, bool sent) {
           m_players = std::move(next);
           m_everPlayers.insert(m_players.begin(), m_players.end());
         } else if constexpr (std::is_same_v<M, p::NpcSpawn>) {
-          if (hostsWord)
-            m_npcs[m.npc] = Npc{.record = m.record, .appearance = m.appearance, .live = true};
+          // Whoever runs it announces it (the host, or a guest since regions).
+          m_npcs[m.npc] = Npc{.record = m.record, .appearance = m.appearance, .live = true};
+        } else if constexpr (std::is_same_v<M, p::NpcOwner>) {
+          if (!(m.flags & p::kNpcPinned) || m.owner != OwnerOf(m.npc))
+            m_owners[m.npc] = m.owner;
         } else if constexpr (std::is_same_v<M, p::NpcGone>) {
-          if (!hostsWord)
-            return;
           auto &npc = m_npcs[m.npc];
           npc.live = false;
           npc.dead = npc.dead || m.reason == p::kGoneDead || m.reason == p::kGoneDisposed;
@@ -908,19 +1019,20 @@ void Referee::Note(const p::Message &message, bool sent) {
           npc.goneUs = m_nowUs;
           m_holds.erase(m.npc);
         } else if constexpr (std::is_same_v<M, p::NpcSet>) {
-          if (!hostsWord)
+          // A guest's record only: the host's set is what it shares with us
+          // (ours stay); ours (regions) is the NPCs our game runs. A host's
+          // set goes to one guest and changes nothing of the session.
+          if (m_host)
             return;
           const std::set<p::NpcId> shared(m.npcs.begin(), m.npcs.end());
           for (auto &[id, npc] : m_npcs)
-            if (npc.live && !shared.contains(id)) {
+            if (npc.live && !shared.contains(id) && (OwnerOf(id) == m_self) == sent) {
               npc.live = false;
               npc.goneReason = p::kGoneAway;
               npc.goneUs = m_nowUs;
               m_holds.erase(id);
             }
         } else if constexpr (std::is_same_v<M, p::NpcHold>) {
-          if (!hostsWord)
-            return;
           if (m.player == p::kNoPlayer) {
             m_holds.erase(m.npc);
           } else if (const auto held = m_holds.find(m.npc); held == m_holds.end() ||

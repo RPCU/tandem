@@ -37,14 +37,14 @@ public final static func Fire(
   // At a guest's puppet: that guest's game fires it and decides the hit
   // (Shots.reds). The cosmetic shot below then skips that guest (its proxy
   // fires for real): the endpoint leaves it out.
-  if IsDefined(weaponOwner) && IsDefined(target) && TandemNative.IsStarted() && TandemNative.IsHost() {
+  if IsDefined(weaponOwner) && IsDefined(target) && TandemNative.IsStarted() && TandemOwn.Entity(weaponOwner.GetGame(), weaponOwner.GetEntityID()) {
     let shots = TandemShots.Of(weaponOwner.GetGame());
     if IsDefined(shots) {
       shots.Announce(weaponOwner, weapon, target, tbhCoefficient, requestedTriggerMode, rangedAttack);
     }
   }
   wrappedMethod(weaponOwner, weapon, timeStamp, tbhCoefficient, requestedTriggerMode, targetPosition, target, rangedAttack, maxSpreadOverride, aimingDelay, offset, shouldTrackTarget, predictionTime, posProviderOverride, muzzleOffset, weaponCustomEvent);
-  if TandemNative.IsStarted() && TandemNative.IsHost() && IsDefined(weaponOwner) && IsDefined(weapon) && weapon.IsAttached() {
+  if TandemNative.IsStarted() && IsDefined(weaponOwner) && IsDefined(weapon) && weapon.IsAttached() && TandemOwn.Entity(weaponOwner.GetGame(), weaponOwner.GetEntityID()) {
     let at = targetPosition;
     if Vector4.IsZero(at) && IsDefined(target) {
       at = target.GetWorldPosition();

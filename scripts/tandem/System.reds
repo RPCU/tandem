@@ -166,6 +166,14 @@ public class TandemSystem extends ScriptableSystem {
   private let m_attached: Bool;
   // The current tick chain (TandemTick.gen).
   private let m_tickGen: Int32;
+  // The recorder, solo (RecordTick): its own world and NPC senders, set up
+  // on the first tick of a game; when the pose source was last set; our
+  // V's life as last recorded.
+  private let m_recordReady: Bool;
+  private let m_recordWorld: ref<TandemWorld>;
+  private let m_recordNpcs: ref<TandemNpcs>;
+  private let m_recordPoseAt: Float;
+  private let m_recordLife: Int32;
   // When we got into the current session (join notices come after it).
   private let m_sessionAt: Float;
   // Our V was down or out when we left a session: it is dying the game's
@@ -203,10 +211,17 @@ public class TandemSystem extends ScriptableSystem {
     }
     this.m_attached = true;
     this.m_leftDown = false;
+    // The recorder (its own key, solo or not) learns a game is loaded: it
+    // starts if it is on (now, or when the co-op menu switches it on).
+    this.m_recordReady = false;
+    this.m_playing = false;
+    this.m_attachedAt = this.Now();
+    TandemNative.RecorderStart(Equals(player.GetResolvedGenderName(), n"Male") ? 2 : 1);
     if TandemNative.IsConfigured() {
       this.BeginSession();
     } else {
-      // No session yet: only listen for commands (the co-op menu needs nothing).
+      // No session: commands only (the co-op menu needs nothing), and the
+      // recorder's senders when it is on (RecordTick).
       this.m_tickGen += 1;
       this.Schedule(0.25);
     }
@@ -273,11 +288,18 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(loot) {
       loot.Begin();
     }
+    // Devices and world objects (Devices.reds).
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.Begin();
+    }
   }
 
   private final func OnPlayerDetach(request: ref<PlayerDetachRequest>) -> Void {
     this.m_attached = false;
     this.m_tickGen += 1;
+    this.EndRecording();
+    TandemNative.RecorderLeft();
     if !this.m_inGame {
       return;
     }
@@ -294,6 +316,12 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     TandemNative.PoseSource(null);
+    // Guest: every device the session changed, back as our own save had it
+    // (before the plugin stops: nothing of this goes to anyone).
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.End(worldStays);
+    }
     this.m_inGame = false;
     this.m_you = 0u;
     this.RemoveAllPuppets();
@@ -446,6 +474,66 @@ public class TandemSystem extends ScriptableSystem {
     TandemCoop.Notice(this.GetGameInstance(), "You left the co-op session");
   }
 
+  // ---- the recorder, solo (plugin/src/recording.hpp) ----
+
+  // What this game would tell a guest, written by the recorder instead of
+  // sent: our V (sampled as in a session: SampleLocal and the senders after
+  // it), the world's time and weather, the NPCs around V, our V's life.
+  // Reads only: nothing in the game changes.
+  private func RecordTick() -> Void {
+    let game = this.GetGameInstance();
+    let player = GetPlayer(game);
+    if !IsDefined(player) {
+      return;
+    }
+    TandemNative.RecorderTick(true);
+    let now = this.Now();
+    if !this.m_recordReady {
+      this.m_recordReady = true;
+      this.m_haveLast = false;
+      this.m_sentAppearance = false;
+      this.m_sentHeld = false;
+      this.m_sentSeat = false;
+      this.m_recordLife = -1;
+      this.m_recordPoseAt = -10.0;
+      this.m_recordWorld = new TandemWorld();
+      this.m_recordWorld.Start(game);
+      this.m_recordNpcs = new TandemNpcs();
+      this.m_recordNpcs.Start(game);
+      TandemNative.Log("recorder: recording solo play");
+    }
+    this.SampleLocal();
+    this.SendAppearance();
+    this.SendHeld();
+    this.SendSeat();
+    this.m_recordWorld.RecordTick(now);
+    this.m_recordNpcs.RecordTick(now);
+    // Down or dead is a death for the index (0 up, 2 out: proto::Life).
+    let life = player.IsDead() ? 2 : 0;
+    if life != this.m_recordLife {
+      this.m_recordLife = life;
+      TandemNative.SendVitals(life, 0);
+    }
+    // The pose stream reads our V's body only while it is the source.
+    if now - this.m_recordPoseAt >= 0.5 || now < this.m_recordPoseAt {
+      this.m_recordPoseAt = now;
+      TandemNative.PoseSource(TandemNative.RecorderPose() ? player : null);
+    }
+    TandemNative.RecorderTick(false);
+  }
+
+  private func EndRecording() -> Void {
+    if !this.m_recordReady {
+      return;
+    }
+    this.m_recordReady = false;
+    this.m_recordWorld = null;
+    this.m_recordNpcs = null;
+    if !this.m_inGame {
+      TandemNative.PoseSource(null);
+    }
+  }
+
   // delay 0 s: the next frame.
   private func Schedule(delay: Float) -> Void {
     let tick = new TandemTick();
@@ -481,7 +569,7 @@ public class TandemSystem extends ScriptableSystem {
 
   // Guest: our hit takes the last of this proxy's health (Combat.reds).
   public func PredictKill(npc: Uint32) -> Void {
-    if IsDefined(this.m_npcs) && this.m_you != 0u && !TandemNative.IsHost() {
+    if IsDefined(this.m_npcs) && this.m_you != 0u {
       this.m_npcs.PredictKill(npc);
     }
   }
@@ -520,12 +608,29 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     if !this.m_inGame {
-      // No session: bodies of the last one on their way out, and commands
-      // (tools/game.sh cmd coop ...).
+      // No session: bodies of the last one on their way out, commands
+      // (tools/game.sh cmd coop ...), and the recorder's senders, every
+      // frame while it records.
       this.ProcessLeaving();
       this.HandleCommand();
-      this.Schedule(0.25);
+      // As in a session (tools/game.sh waits for this line).
+      if !this.m_playing && this.Now() - this.m_attachedAt > 2.0 {
+        this.m_playing = true;
+        TandemNative.Log("playing (solo)");
+      }
+      if TandemNative.Recording() {
+        this.RecordTick();
+        this.Schedule(0.0);
+      } else {
+        this.EndRecording();
+        this.Schedule(0.25);
+      }
       return;
+    }
+    // In a session the recorder hears what the session sends: the solo
+    // senders stand down (the session's own run instead).
+    if this.m_recordReady {
+      this.EndRecording();
     }
     // The world's clock stands still behind the loading screen: two seconds
     // of it mean the player is in (tools/game.sh waits for this line).
@@ -560,6 +665,11 @@ public class TandemSystem extends ScriptableSystem {
     TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
     if IsDefined(this.m_revive) && this.m_playing {
       this.m_revive.Tick(this.Now(), this.m_you);
+    }
+    // Devices (Devices.reds); 0: not in a session yet, or the world loads.
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this.m_playing ? this.m_you : 0u);
     }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
@@ -642,8 +752,19 @@ public class TandemSystem extends ScriptableSystem {
       }
       return;
     }
-    if StrBeginsWith(command, "coop") {
+    if StrBeginsWith(command, "recorder") {
+      // recorder status | recorder cut | recorder on | recorder off
+      if Equals(command, "recorder cut") {
+        TandemNative.RecorderCut();
+      } else if Equals(command, "recorder on") || Equals(command, "recorder off") {
+        TandemNative.RecorderSet(Equals(command, "recorder on"));
+      }
+      TandemNative.Log(s"recorder: \(TandemNative.RecorderStatus()), solo senders \(this.m_recordReady)");
+    } else if StrBeginsWith(command, "coop") {
       this.CoopCommand(command);
+    } else if Equals(command, "test reset") && !this.m_inGame {
+      // Solo there is nothing of ours to put back (tools/scenario.sh asks).
+      TandemNative.Log("test reset: ready (solo: nothing to reset)");
     } else if !this.m_inGame && !TandemSystem.SoloCommand(command) {
       TandemNative.Log(s"not in a session: \(command)");
     } else if Equals(command, "probe") {
@@ -712,8 +833,16 @@ public class TandemSystem extends ScriptableSystem {
       }
     } else if Equals(command, "pose hook") {
       TandemNative.PoseHook();
+    } else if Equals(command, "region hold on") || Equals(command, "region hold off") {
+      // (test) what the quest work says when a gig of our own world starts
+      // or ends where our V stands: we keep our region meanwhile.
+      TandemRegions.Hold(Equals(command, "region hold on"));
+      TandemNative.Log(s"\(command)");
+    } else if Equals(command, "region") {
+      let linked = TandemRegions.Linked();
+      TandemNative.Log(s"region: \(TandemRegions.IsApart() ? "apart" : "grouped"), leader player \(TandemRegions.Leader()), linked with \(ArraySize(linked)) player(s), area \(TandemRegions.OwnsArea() ? "ours" : s"player \(TandemRegions.AreaOwner(this.m_you))'s"), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
     } else if Equals(command, "npc count") {
-      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed)");
+      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
     } else if Equals(command, "npc anims") {
       TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
     } else if StrBeginsWith(command, "npc seek") {
@@ -1144,6 +1273,9 @@ public class TandemSystem extends ScriptableSystem {
     } else if StrBeginsWith(command, "elsewhere") && IsDefined(this.m_elsewhere) {
       // Elsewhere.reds: elsewhere test PLACE|off, elsewhere state.
       this.m_elsewhere.Command(command);
+    } else if StrBeginsWith(command, "device") {
+      // Devices.reds: device, device near [KIND], device open|close|... [KIND].
+      TandemDevices.Get(this.GetGameInstance()).Command(command);
     } else if StrBeginsWith(command, "story") || StrBeginsWith(command, "quest") {
       // Story.reds: story …, quest freeze on|off, quest report.
       TandemStorySystem.Get(this.GetGameInstance()).Command(command);
@@ -1604,6 +1736,12 @@ public class TandemSystem extends ScriptableSystem {
             TandemCoop.Notice(this.GetGameInstance(), s"Co-op session ended: \(event.name)");
           }
           this.m_you = 0u;
+          // Guest: the devices the session changed, back as our own save
+          // had them (Devices.reds); the world stays.
+          let ended = TandemDevices.Get(this.GetGameInstance());
+          if IsDefined(ended) {
+            ended.End(true);
+          }
           if IsDefined(this.m_time) {
             this.m_time.End();
           }

@@ -19,9 +19,11 @@ task touches ([Topic files](#topic-files)).
 2. **Your own V is yours.** Movement, aiming, shooting and menus never wait
    for the network. Responsiveness of your own character beats strict
    consistency; corrections arrive as gentle blends, never snaps.
-3. **The host's game runs the world.** Quests, NPC AI, spawns, time,
-   weather, police. Guests' games stop doing those things themselves and
-   follow.
+3. **The host's game runs the shared rules; each game runs the city
+   around its V.** Quests, time, weather and the session are the host's.
+   NPCs are owned per NPC by the game that runs them: each game keeps the
+   crowd around its own V, and players near each other see each other's
+   NPCs as proxies (`architecture/regions.md`).
 4. **Facts over guesses.** Engine access goes by name (RTTI, scripts,
    Codeware) or by address-library hash. A hand-measured offset or vtable
    slot is used only behind a layout check
@@ -66,7 +68,7 @@ task touches ([Topic files](#topic-files)).
 | `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
 | `deploy/kubernetes/base` | kustomize base for the relay | `task k8s:check` |
-| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp` | `task scripts:check`, `task natives:check` |
+| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `RegionNatives.reds` `region_natives.cpp` | `task scripts:check`, `task natives:check` |
 | `tweaks/` | TweakXL records, installed to `r6/tweaks/tandem` (the puppet records, their attitude groups, the player marker) | — |
 | `dist/` | files installed next to the DLL (`tandem.ini`) | — |
 | `cmake/` | `clang-cl-msvc.cmake`: the Windows cross toolchain | — |
@@ -128,26 +130,28 @@ The owner simulates; everyone else displays.
 | a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game | copy, riders and NPCs seated; host's scene: a seat or a ride along |
 | an NCART train (scripted transit) | each rider's own game | never shared: puppet in a train of ours, else hidden |
 | a parked or AI vehicle | host | proxy |
-| NPCs: AI, position, health, death | host | **proxy with its AI off**, driven by the host |
-| spawns: crowds, traffic, encounters | host | guests' own spawning is suppressed |
+| NPCs: AI, position, health, death | the game that runs it (spawned it, or took it over; quest NPCs: host) | **proxy with its AI off** in the linked games, driven by its owner (`architecture/regions.md`) |
+| spawns: crowds, encounters | each game around its own V | held back only where a higher-ranked linked player's region covers it |
+| traffic (`Endpoint::AreaOwner`) | the owner of the player's area | proxy |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
 | time of day, weather, police heat | host | applied (wanted level: open, `architecture/world.md`) |
 | a V's time abilities (Sandevistan…) | that player's game | shown on the puppet; never slow anyone's world |
-| an NPC's speed in a time bubble | host | proxies animated at the same speed |
+| an NPC's speed in a time bubble | the NPC's owner | proxies animated at the same speed |
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
 | items a V drops on purpose | host | lie in every game; the first pickup keeps it |
-| quest and important items, rewards | every player's own V | whoever gets one, every V gets it |
+| quest and important items, rewards | every player's own V | whoever gets one, every V gets it; a guest gives the host's quest props (tag `Quest`, keycards) back when it leaves, and keeps iconics and rewards |
+| devices: doors, lifts, cameras, turrets, barrels, the alarm | host | own copy first, then the host's word; `architecture/devices.md` |
 
 Enemy level (the mean of the players' levels): `architecture/npcs.md`.
 
 **Combat** follows from the table. A shot is decided by the shooter's game,
 on what that player sees, so aiming feels local. A guest hitting an NPC sends
-a hit event to the host; the host applies it to the real NPC and the result
-(health, death, stagger) comes back to everyone. An NPC firing at a guest's
-puppet on the host's game sends that guest a damage event, applied to the
-guest's own V. Kills are final in every game because only the host's NPC is
-real.
+a hit event to the NPC's owner (through the host); the owner applies it to
+the real NPC and the result (health, death, stagger) comes back to everyone.
+An NPC firing at a player's puppet on its owner's game sends that player a
+damage event, applied to its own V. Kills are final in every game because
+only the owner's NPC is real.
 
 **Region limits: players anywhere on the map, one world.** Each player
 must be free to play on their own anywhere in Night City: one at a gig in
@@ -168,13 +172,17 @@ health, its target and its status effects). What outlives a region (deaths,
 loot taken, destroyed objects, quest facts, heat) goes to the host's record
 of the world (the host's save), so it is still true when anyone comes back.
 
-The first version shares the host's NPCs only near the host and never
-tethers anyone: a player who fast travels offers the others to join
+Nobody is tethered: a player who fast travels offers the others to join
 (accepted or not, each stays free), and anyone can regroup with another
-player at any time (`architecture/travel.md`); per-player regions are the
-step after it (`research/coop-regions.md`). Until then a guest far from the
-host plays in a quiet world: its own crowd is off and the host's NPCs are
-shared only around the host.
+player at any time (`architecture/travel.md`). **Per-player regions**
+(`architecture/regions.md`; research: `research/coop-regions.md`; built and
+tested without the game, not yet run in it): each game runs the NPCs
+around its own V, players closer than 150 m are linked (190 m to unlink)
+and show each other's NPCs as proxies, an NPC is handed over with its state
+when its owner walks away from it with another player near, and the NPCs
+of a player who vanishes go to the players near them. Apart, a guest's city
+is alive; before regions its crowd was off and the host's NPCs were shared
+only around the host.
 
 ## Identity: naming the same thing in every game
 
@@ -183,8 +191,10 @@ Two games must agree on which NPC, car or object a message is about.
 - **Placed entities** (from world sectors, communities, quest prefabs) have
   the same static `EntityID` hash in every game: that hash is their name.
 - **Spawned entities** (crowds, traffic, encounter waves, quest spawns) get
-  a `NetId` from the host when they appear. Guests do not spawn these
-  themselves: they create a proxy from the host's announcement. Matching by
+  a `NetId` from the game that announces them when they appear (its
+  player id minus one in the top 8 bits: `regions::MakeNpcId`). The other
+  games do not spawn these themselves: they create a proxy from the
+  owner's announcement. Matching by
   "nearest NPC of the same record" is never used: it mismatches waves.
 - **Players**: `PlayerId` from the session (host is 1).
 
@@ -252,7 +262,7 @@ syncs, so it can be tested without a second PC.
 In `docs/architecture/`. Each holds the subsystem as built ("Inside the
 plugin") and its open problems.
 
-- `session.md`: handshake, liveness, slots and returning players, reaching each other (direct, relay fallback), `tandem.ini` keys. For connection and session code.
+- `session.md`: handshake, liveness, slots and returning players, reaching each other (direct, relay fallback), solo is vanilla (nothing acts without a session), `tandem.ini` keys. For connection and session code.
 - `smoothing.md`: the host clock, interpolation delay, extrapolation, teleports, movement flags and puppet placement, rates. For anything that draws a remote V, NPC or vehicle.
 - `consistency.md`: digests, resync, idempotent application, epochs, the audit of every synced state with its guard, unplanned disconnects. For any new or changed state message.
 - `players.md`: body poses, weapons, looks, player markers; open: linking up, every way a V moves, cyberware and perks.
@@ -261,17 +271,22 @@ plugin") and its open problems.
 - `world.md`: time of day and weather; open: the guest acting on the world, NCPD chases, saves.
 - `time.md`: the pause menu, slowed time (time bubbles); open: every time dilation, other timeline and menu, NPC shots simulated by the target's game.
 - `npcs.md`: enemy level, NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
+- `regions.md`: per-player regions: links and their hysteresis, who owns an NPC, hand-over without a pop, what travels where, crowd density in the overlap, late joiners and vanishing owners, grouped or apart and holding a region for gigs, the area owner (traffic). For anything about an NPC's owner.
 - `combat.md`: hits, outcomes, game rules for every hit, quickhacks.
 - `stealth.md`: takedowns, finishers, carried bodies, "the player" reactions, per-player detection.
 - `loot.md`: per-player loot, dropped items, quest items.
+- `devices.md`: doors, lifts, cameras, turrets, the alarm, access points, computers, barrels, media and other devices: the host's word, a guest's own copy first, revisions, digest, a guest's world put back after; open: glass, a device's shots drawn for the others.
 - `revive.md`: down, revive, respawn, shared game over.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, rewards; open: scenes for guests, story decisions, quests together.
+- `scene-replay.md`: a guest watches the host's scenes: the stage, the cast, lines and actor poses (`scene_replay = on`, off by default).
+- `quest-carryover.md`: (proposal) what a guest brings home: the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
 - `coop-menu.md`: the co-op menu, invites and join codes in game.
-- `travel.md`: fast travel together, regroup; open: region authority.
+- `travel.md`: fast travel together, regroup; region authority: `regions.md`.
 - `relay.md`: the relay's sessions, join codes, abuse limits, wire format, deployment, the game side.
 - `testing.md`: test levels, scenarios, every `tandem-peer` mode and flag.
-- `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the planned simulated second game.
+- `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.
+- `two-instances.md`: two real games on the game machine (planned, untried there): findings, the setup (`tools/instance.sh`: a game folder and a prefix per instance, outside Steam, sandboxed off the player's files), the first-try checklist; the plugin's `TANDEM_CONFIG`, `TANDEM_CMD`, `TANDEM_PORT`, `TANDEM_LOG` (`core/include/tandem/instance.hpp`).
 - `sim.md`: the simulated second game: the referee on every peer's wire, the host world, story director, simulated V and personas, `tandem-peer sim`, `sim-fuzz`, coverage.
 
 ## Research

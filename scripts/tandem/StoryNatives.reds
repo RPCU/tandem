@@ -22,7 +22,16 @@ public native struct TandemStoryEvent {
   // 2 replacer 4 in a call);
   // 41 a quest reward for our V (reward, hash: its quest);
   // 42 a story effect on the host's V (reward: the status effect, flags 1:
-  // on, 0: gone)
+  // on, 0: gone);
+  // scene replay (a guest; docs/architecture/scene-replay.md):
+  // 50 the host's scene begins (line: the scene, hash: its play, state: the
+  // host's tier, flags: 1 skipping 2 held 8 staged, duration: seconds it has
+  // played), 51 it changed (the same), 52 it is over (flags 4: interrupted);
+  // 53 an NPC acts in it (npc, flags: 1 a ghost, Johnny; 2 not shown now;
+  // 4 its body is streamed), 54 it no longer does (npc);
+  // 55 a voiced line begins (line, npc or player: the speaker, duration:
+  // seconds into it, index: its length in ms, flags: 2 holocall 4 a bark,
+  // hash: its play), 56 it stops (line, npc, player)
   native let kind: Int32;
   native let player: Uint32;
   native let hash: Uint32;
@@ -47,6 +56,9 @@ public native class TandemStory extends IScriptable {
   public static native func FreezeHeld() -> Uint32;
   public static native func FreezeLost() -> Bool;
   public static native func FreezeReport() -> String;
+  public static native func Grouped(grouped: Bool) -> Void;
+  public static native func IsGrouped() -> Bool;
+  public static native func QuestTrace(on: Bool) -> Void;
   public static native func TakeEvents() -> array<TandemStoryEvent>;
   public static native func You() -> Uint32;
   public static native func HostId() -> Uint32;
@@ -65,6 +77,25 @@ public native class TandemStory extends IScriptable {
   public static native func SceneClass() -> Int32;
   public static native func SetPrivate(on: Bool) -> Void;
   public static native func PausePose(player: Uint32, paused: Bool) -> Void;
+  public static native func SceneReplay() -> Int32;
+  public static native func SceneActor(npc: Uint32, x: Float, y: Float, z: Float, flags: Int32) -> Void;
+  public static native func SceneSample(playing: Bool, isPrivate: Bool, tier: Int32, rate: Float, held: Bool, x: Float, y: Float, z: Float, yaw: Float) -> Int32;
+  public static native func SceneVoice(line: Uint64, speakerNpc: Uint32, speakerPlayer: Uint32, duration: Float, flags: Int32) -> Bool;
+  public static native func SceneVoiceHide(line: Uint64) -> Bool;
+  public static native func ScenePlaying() -> Uint64;
+  public static native func SceneAnchor() -> Vector4;
+  public static native func SceneYaw() -> Float;
+  public static native func SceneSeconds() -> Float;
+  public static native func SceneActs(npc: Uint32) -> Bool;
+  public static native func SceneBodies() -> Void;
+  public static native func SceneBody(x: Float, y: Float, z: Float) -> Void;
+  public static native func WatchSpot(hostX: Float, hostY: Float, hostZ: Float, x: Float, y: Float, z: Float) -> Vector4;
+  public static native func KeepOut(x: Float, y: Float, z: Float, radius: Float, maxStep: Float) -> Vector4;
+  public static native func ActorSource(npc: Uint32, entity: ref<Entity>) -> Void;
+  public static native func ActorBind(npc: Uint32, entity: ref<Entity>) -> Void;
+  public static native func ActorsClear() -> Void;
+  public static native func SceneReport() -> String;
   public static native func LineId(line: Uint64) -> CRUID;
   public static native func LineValue(id: CRUID) -> Uint64;
+  public static native func StandInLine(line: Uint64) -> Uint64;
 }

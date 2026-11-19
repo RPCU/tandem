@@ -31,6 +31,10 @@ declare -A value=(
   ["--go-down"]=10 ["--go-out"]=10 ["--revive"]=3
   ["--path"]=x.path ["--save-path"]=x.path
   ["--drop"]=0.2 ["--dup"]=0.2 ["--vanish-at"]=20
+  ["--device"]="1a2b3c4d5e6f7788:DoorControllerPS:open,unlocked@8" ["--device-answer"]=closed ["--device-after"]=2
+  ["--region-far"]=1000 ["--region-npcs"]=3 ["--region-record"]=Character.x ["--region-walk-at"]=10
+  ["--region-leave-at"]=20 ["--region-speed"]=25
+  ["--region-at"]="1,2,3"
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true
 [ -n "$flags" ] || {

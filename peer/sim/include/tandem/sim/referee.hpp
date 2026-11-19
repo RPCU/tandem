@@ -159,6 +159,8 @@ private:
   void Note(const proto::Message &message, bool sent);
   void NeedNpc(proto::NpcId npc, const char *what);
   void NeedPlayer(proto::PlayerId player, const char *what);
+  // Who runs an NPC: its announcer, until the host says otherwise.
+  proto::PlayerId OwnerOf(proto::NpcId npc) const;
   void Moved(proto::PlayerId subject);
 
   bool m_host{};
@@ -176,6 +178,7 @@ private:
   // The record.
   std::set<proto::PlayerId> m_players, m_everPlayers;
   std::map<proto::NpcId, Npc> m_npcs;
+  std::map<proto::NpcId, proto::PlayerId> m_owners; // NpcOwner said so
   std::map<proto::NpcId, Held> m_holds;
   std::map<proto::PlayerId, LifeOf> m_lives;
   std::map<proto::PlayerId, Since> m_time;

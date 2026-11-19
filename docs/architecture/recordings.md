@@ -85,7 +85,8 @@ host` records alone). Everything the game asks its `Endpoint` to send
   and seats; hits and hacks on us; the world (time, weather), the story
   (journal, tracked quest, calls, lines, hubs, scene tiers, story effects,
   rewards), time abilities, stealth, awareness, fast travel and regroup
-  offers, loot, life and revives, rides, epochs. `watch` keeps the
+  offers, loot, life and revives, rides, epochs, devices (the host's word
+  on each; replayed by whoever of this session did it). `watch` keeps the
   recording guest 30 m under the host's V (or `--offset`): out of sight, out
   of every NPC's reach, in nobody's way (the host shares the NPCs around
   its own V, wherever its guests are). No plugin change: exactly what a
@@ -152,3 +153,34 @@ host` records alone). Everything the game asks its `Endpoint` to send
     regression scenarios, with checks on what the real game reports back;
   - **network shaping** in the peer (latency, jitter, loss, reordering):
     done (`testing.md`, "A bad network").
+
+## The recorder: play recorded as it happens
+
+The recorder (`tandem.ini` `recorder = on`; `plugin/src/recording.*`,
+`core/src/recorder.cpp`): what this game plays, recorded for later
+replays and tests, solo or in a session, without changing anything.
+Solo, `TandemSystem.RecordTick` runs a host's senders as if a guest were
+there (our V sampled as in a session, its look, held items, seat, car,
+shots, pose stream; the world's time and weather; the NPCs around V
+with `TandemNpcs.Share`; V's death) and a writer thread of the
+recorder's own takes Runtime's outboxes, as the net thread would; in a
+session the net thread's Endpoint hands it everything it says
+(`Endpoint::SetRecordTap`). Segments of 10 minutes
+(`recorder_segment_minutes`) in `recordings/auto/`, named by local time,
+in the recordings' format (`tandem/play.hpp` version 2): solo or as
+host a `.tsession` (`Kind::Session`, host 1, no guest), as a guest a
+`.tplay` of its own V. Flushed every second, so a crash leaves at most
+one segment, readable up to its last whole entry and indexed at the next
+start. `recordings/auto/index.jsonl`: one line per segment, with where
+(first and last position, metres moved), what happened (tags combat,
+driving, scene, call, fast travel, death, loot, quest, and counts) and
+the cost (the scripts' recording work per frame, average and maximum;
+the writing time). Over `recorder_max_mb` (2048) the oldest go. Any
+file error turns it off for the run (logged once), nothing else; it
+writes only in its folder and never touches saves. The co-op menu shows
+its state and switches it until the game closes. `tools/game.sh
+fetch-recordings [--since YYYYMMDD]` brings segments and the index
+here; `tools/game.sh cmd recorder status|cut|on|off`; scenario
+`recorder`. Not yet run in game. Not recorded solo yet (they only run in
+a session): the story, time effects, fast travels as regroups, loot,
+devices.
