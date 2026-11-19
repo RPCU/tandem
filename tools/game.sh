@@ -60,7 +60,9 @@
 #                              coop status | coop host [PORT] | coop join ADDRESS[:PORT] |
 #                              coop leave | coop menu PAGE | coop pick TEXT
 #                              (the co-op menu: in game any time; menu and pick drive
-#                              an open main or pause menu, pages root coop host join save)
+#                              an open main or pause menu, pages root coop host join save) |
+#                              coop name [reset] (the name; reset: the menu asks again) |
+#                              coop name answer TEXT | coop name cancel (the open name popup)
 #
 # The game machine runs Steam in a Sway session (headless output for Sunshine)
 # and ydotoold for input; GAME_HOST and GAME_DIR override the defaults.

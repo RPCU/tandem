@@ -74,5 +74,8 @@ public native class TandemPresence extends IScriptable {
   public static native func Bearing(camera: Vector4, forward: Vector4, halfFov: Float, target: Vector4) -> TandemBearing;
   public static native func Project(camera: Vector4, forward: Vector4, right: Vector4, halfFov: Float, vertical: Bool, aspect: Float, target: Vector4) -> TandemScreenPoint;
   public static native func RoundedMetres(distance: Float) -> Int32;
-  public static native func NameplateOpacity(distance: Float) -> Float;
+  // The nameplate at `distance`, by tandem.ini nameplates (0 near, 1 always,
+  // 2 off): its opacity (0: not shown) and its scale.
+  public static native func NameplateOpacity(distance: Float, mode: Int32) -> Float;
+  public static native func NameplateScale(distance: Float, mode: Int32) -> Float;
 }

@@ -2,7 +2,8 @@
 // signature that differs from the C++ side fails at load.
 
 public native struct TandemEvent {
-  // 1 joined, 2 left, 3 session ended, 4 we are in the session
+  // 1 joined, 2 left, 3 session ended, 4 we are in the session, 5 a notice,
+  // 6 the session shows us as `name` (another player has ours)
   native let kind: Int32;
   native let player: Uint32;
   native let name: String;
@@ -330,6 +331,9 @@ public native class TandemNative extends IScriptable {
   public static native func RecorderSet(on: Bool)
   public static native func Setting(key: String) -> String
   public static native func SetSetting(key: String, value: String) -> Bool
+  public static native func NameToAsk() -> Bool
+  public static native func NameAsked(asked: Bool)
+  public static native func NameProblem(typed: String) -> String
   public static native func RecorderStatus() -> String
   public static native func SendLocalState(position: Vector4, orientation: Quaternion, velocity: Vector4, locomotion: Int32, flags: Int32)
   public static native func TakeEvents() -> array<TandemEvent>

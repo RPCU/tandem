@@ -2278,6 +2278,11 @@ public class TandemSystem extends ScriptableSystem {
           // Something serious, said once (the plugin keeps it rare).
           TandemText.NoticeReason(this.GetGameInstance(), "", event.name);
           break;
+        case 6:
+          // Another player has our name: the host shows us as "V (2)".
+          let asked = TandemNative.Setting("name");
+          TandemCoop.Notice(this.GetGameInstance(), "Session-Renamed", asked, event.name);
+          break;
         default:
           break;
       }

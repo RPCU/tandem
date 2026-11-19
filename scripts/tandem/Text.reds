@@ -264,6 +264,16 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Status-Ping", "{1} - {2} ms");
     this.Text("Tandem-Party-Metres", "{1} m");
     this.Text("Tandem-Party-Kilometres", "{1} km");
+    this.Text("Tandem-Party-Down", "Down");
+    this.Text("Tandem-Party-Reviving", "Reviving {1}");
+    this.Text("Tandem-Party-Out", "Out");
+    this.Text("Tandem-Party-Scene", "In a scene");
+    this.Text("Tandem-Party-Menu", "In a menu");
+    this.Text("Tandem-Party-Cyberspace", "Cyberspace");
+    this.Text("Tandem-Party-Braindance", "Braindance");
+    this.Text("Tandem-Party-Johnny", "As Johnny");
+    this.Text("Tandem-Party-OtherBody", "As someone else");
+    this.Text("Tandem-Party-Elsewhere", "Elsewhere");
     this.Text("Tandem-Status-Recorder", "Recorder: {1}");
     this.Text("Tandem-Common-On", "on");
     this.Text("Tandem-Common-Off", "off");
@@ -303,6 +313,11 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Reason-RelayThrottled", "too many join attempts: try again in a minute");
     this.Text("Tandem-Reason-RelaySocket", "could not open a socket to the relay");
     this.Text("Tandem-Player-Unnamed", "Player {1}");
+    // Names (the co-op menu's prompt; the host's (2), (3)).
+    this.Text("Tandem-Name-Title", "Your co-op name");
+    this.Text("Tandem-Name-Ask", "The name the other players see over your V and in their party list: 1 to 16 characters (cancel: V for now)");
+    this.Text("Tandem-Name-Invalid", "Not a name: {1}. 1 to 16 characters, without ; or #");
+    this.Text("Tandem-Session-Renamed", "{1} is taken in this session: the others see you as {2}");
     this.Text("Tandem-List-Or", " or ");
     // Players elsewhere, pausing, on the phone.
     this.Text("Tandem-Elsewhere-Back", "{1} is back");
@@ -483,6 +498,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-Notices-Minimal", "questions and problems");
     this.Text("Tandem-Settings-Markers", "Player markers");
     this.Text("Tandem-Settings-Nameplates", "Names over players");
+    this.Text("Tandem-Settings-Nameplates-Near", "close by");
+    this.Text("Tandem-Settings-Nameplates-Always", "at any distance");
     this.Text("Tandem-Settings-Recorder", "Recorder");
     this.Text("Tandem-Settings-Relay", "Relay");
     this.Text("Tandem-Settings-RelayToken", "Relay host token");
@@ -528,6 +545,16 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Status-Ping", "{1} - {2} ms");
     this.Text("Tandem-Party-Metres", "{1} m");
     this.Text("Tandem-Party-Kilometres", "{1} km");
+    this.Text("Tandem-Party-Down", "À terre");
+    this.Text("Tandem-Party-Reviving", "Réanimation {1}");
+    this.Text("Tandem-Party-Out", "Hors combat");
+    this.Text("Tandem-Party-Scene", "Dans une scène");
+    this.Text("Tandem-Party-Menu", "Dans un menu");
+    this.Text("Tandem-Party-Cyberspace", "Cyberespace");
+    this.Text("Tandem-Party-Braindance", "Danse sensorielle");
+    this.Text("Tandem-Party-Johnny", "Dans la peau de Johnny");
+    this.Text("Tandem-Party-OtherBody", "Dans la peau d'un autre");
+    this.Text("Tandem-Party-Elsewhere", "Ailleurs");
     this.Text("Tandem-Status-Recorder", "Enregistreur : {1}");
     this.Text("Tandem-Common-On", "activé");
     this.Text("Tandem-Common-Off", "désactivé");
@@ -566,6 +593,10 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Reason-RelayThrottled", "trop de tentatives : réessayez dans une minute");
     this.Text("Tandem-Reason-RelaySocket", "impossible d'ouvrir une connexion vers le relais");
     this.Text("Tandem-Player-Unnamed", "Joueur {1}");
+    this.Text("Tandem-Name-Title", "Votre nom en coop");
+    this.Text("Tandem-Name-Ask", "Le nom que les autres joueurs voient au-dessus de votre V et dans leur liste d'équipe : 1 à 16 caractères (annuler : V pour l'instant)");
+    this.Text("Tandem-Name-Invalid", "Nom refusé : {1}. 1 à 16 caractères, sans ; ni #");
+    this.Text("Tandem-Session-Renamed", "{1} est déjà pris dans cette session : les autres vous voient comme {2}");
     this.Text("Tandem-List-Or", " ou ");
     this.Text("Tandem-Elsewhere-Back", "{1} est de retour");
     this.Text("Tandem-Elsewhere-Cyberspace", "{1} est dans le cyberespace");
@@ -740,6 +771,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-Notices-Minimal", "questions et problèmes");
     this.Text("Tandem-Settings-Markers", "Marqueurs des joueurs");
     this.Text("Tandem-Settings-Nameplates", "Noms au-dessus des joueurs");
+    this.Text("Tandem-Settings-Nameplates-Near", "de près");
+    this.Text("Tandem-Settings-Nameplates-Always", "à toute distance");
     this.Text("Tandem-Settings-Recorder", "Enregistreur");
     this.Text("Tandem-Settings-Relay", "Relais");
     this.Text("Tandem-Settings-RelayToken", "Jeton d'hôte du relais");

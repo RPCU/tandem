@@ -111,12 +111,14 @@ the HUD layer (`scripts/tandem/PartyHud.reds`).
 <!-- prettier-ignore -->
 | About the partner | Today | After | Needs eyes |
 | --- | --- | --- | --- |
-| name | on the world marker and the map tooltip | an entry under V's own health bar: the name in the HUD's font | place and size on screen (`cmd presence hud at X Y`) |
-| health | not shown | a bar under the name (`Presence`, a byte) | colours |
+| who has an entry | — | **linked partners only** (both consent, [`comms.md`](comms.md): `TandemCommsNative.LinkState` 3, `link = auto` links everyone from the start); a link broken or a partner gone (`PlayerLeft`) takes it away at the next frame. An unlinked partner keeps its marker and a nameplate with its name alone | that a break is seen at once |
+| name | on the world marker and the map tooltip | an entry under V's own health bar: the name in the HUD's font, in the partner's colour (`TandemMarkers.ColorOf`) | place and size on screen (`cmd presence hud at X Y`) |
+| health | not shown | a bar under the name (`Presence`, a byte), in the partner's colour on a dim track of it | colours against the HUD's |
 | down / out | a notice, the outline, the revive prompt | "Down", "Reviving 7" while we hold the revive (its countdown), "Out"; the bar empties | — |
-| distance and direction off screen | the world marker | under the bar when the camera does not see them: an arrow turned their way and "124 m" / "1.2 km" | the arrow's sense |
-| in a scene, elsewhere, in a menu | notices only | one line: "In a scene" (their tier 3 and up), "Cyberspace" / "Braindance"…, "In a menu" (the pause menu or any full-screen menu); most important first | — |
-| nameplate | only the game's own, when aimed at | the name and a thin health line over the puppet's head, full to 12 m, gone at 20 m, hidden with the body | its place over the head (the camera's field of view: see research) |
+| distance and direction off screen | the world marker | under the bar when the camera does not see them: an arrow turned their way and "124 m" / "1.2 km", in their colour | the arrow's sense |
+| in a scene, elsewhere, in a menu | notices only | one line in the HUD's red: "In a scene" (their tier 3 and up), "Cyberspace" / "Braindance"…, "In a menu" (the pause menu or any full-screen menu); most important first; keyed texts (`Party-*`, English in the log) | — |
+| nameplate | only the game's own, when aimed at | the name over the puppet's head in their colour, with a thin health line only when linked; hidden with the body. `nameplates = near` (default): full to 12 m, gone at 20 m; `always`: at any distance in view, full to 12 m then smaller and fainter to a floor at 150 m (55 % size, 50 % opacity, `NameplateLookOf`), only the near ones while our V talks (scene tier 2); `off`: none | its place over the head (the camera's field of view: see research); `always` in a crowded street |
+| the marker's name | its world label | one name over a player: the marker's label hides while the nameplate shows (`TandemPartyHud.PlateShown`), and with `nameplates = off` | no flicker at 20 m |
 | photo mode, cinematics | — | all of it hidden in photo mode, when our own scene tier is 3 or more, in a braindance, with no session | hidden in both |
 
 ### 5. Small presence details
@@ -131,6 +133,36 @@ the HUD layer (`scripts/tandem/PartyHud.reds`).
 | swimming, ladders | Placement done by the movement work; now a ladder is heard rung by rung and water is silent. Swim strokes and splashes: **open** |
 | holstering | Seen through `Held` (the hand empties); now heard |
 
+### 6. Names
+
+- **A pseudo for everyone** (`tandem.ini name`, default `V`): the co-op
+  menu asks for one in the game's own text popup (Codeware's
+  `GenericMessageNotification.ShowInput`, as the settings page's typed
+  values) the first time a player hosts or joins while the name is still
+  `V` (or empty), once a game run (`TandemNative.NameToAsk`, `NameAsked`):
+  main menu Host a game / Join a game, pause menu Host this game / Join a
+  game. A refused name asks again with the reason; cancel plays as `V`
+  for now (asked again at the next launch); then the page picked goes on.
+  Saved through the settings native (`SetSetting`), so the settings page
+  changes it too.
+- **What a name is** (`core/include/tandem/names.hpp`): 1 to 16
+  characters (code points: "Hélène" is 6), trimmed of spaces, valid UTF-8,
+  no control or invisible format character (C0, C1, DEL, zero widths,
+  direction overrides, line separators, the byte order mark), no `;` or `#`
+  (tandem.ini's comment signs: `names::Problem`). `tandem.ini`'s parser
+  refuses any other (`ApplySetting`, `plugin/src/config.cpp`).
+- **Unique in a session**, by the host: a guest whose name another player
+  has (the same but for ASCII case) is shown as "V (2)", "V (3)", the first
+  free number (`names::Unique`); whatever a guest sent is sanitized first
+  (`names::Sanitize`: controls dropped, cut to 16 characters, nothing left
+  is `V`). The roster carries the shown name, so every game names the
+  player the same way; **no protocol change** (`Hello::name` and
+  `PlayerInfo::name` keep their meaning: asked, and shown). A guest learns
+  its own from the roster (`events::NamedAs`, the notice "V is taken in this
+  session: the others see you as V (2)", `Session-Renamed`). A returning
+  player (`session.md`) is matched by the name it asked for, so it keeps
+  "V (2)". A name freed by a player leaving is given again.
+
 ## Tests
 
 - `tests/presence_test.cpp`: strides and gaits, a mock player with no
@@ -139,7 +171,15 @@ the HUD layer (`scripts/tandem/PartyHud.reds`).
   dashes, pain from health (not from a gain or a tick), draws and holsters,
   down, abilities, health in a byte, the send gate, the HUD's status
   priority, the bearing and its arrow, the screen projection, distances,
-  the nameplate's fade, the flinch.
+  the nameplate's fade, near / always / off (size and opacity by
+  distance), the flinch.
+- `tests/names_test.cpp`: typed names (trim, length in characters, UTF-8,
+  controls, comment signs), the default, what a host shows for anything
+  sent, unique names.
+- `tests/endpoint_test.cpp`, over loopback: three Vs and a "v" are shown
+  as V, V (2), v (3), each guest told its own once; the name freed by a
+  leaver is given again; a namesake of a live player is "a (2)"; a
+  returning player keeps its shown name.
 - `tests/pose_test.cpp`: the flinch leans the upper body about the body's
   axes and leaves hips and legs alone.
 - `tests/protocol_test.cpp`, `tests/endpoint_test.cpp`: the three messages
@@ -157,16 +197,23 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | `presence-audio` | footsteps (their source), the shot and its bullet, pain and the flinch, holster and draw |
 | `presence-moves` | jump, landing, climb, the blade's swing and its impact |
 | `presence-hud` | the entry, health, menu, down, off screen with its arrow, the nameplate; logs the camera's projection |
+| `hud-linked` | a linked partner's entry and plate with health; the link broken from its side: no entry, the name alone; `nameplates = always`; a vanish takes plate and marker |
+| `names-prompt` | the pause menu's Host this game asks for a name while it is V; a bad one asked again; a good one saved, then hosting |
+| `names-duplicate` | two mock players named V and v beside our V: shown as V (2) and v (3), each told its own, markers and HUD entries under those names |
 | `presence-reactions` | as a guest: impact, stagger, knockdown, ragdoll and its end on a proxy |
 | `presence-reactions-host` | as host: a guest's hits make our NPCs react, and each reaction goes out |
 
 By hand: `tools/game.sh cmd presence report | steps auto|on|off | vo NAME |
 sound NAME | fx NAME | flinch | bullet | hud [at X Y | fov h|v | camera] |
-react TYPE`.
+react TYPE`; `coop name` (the name, and whether the menu would ask),
+`coop name reset` (ask again), `coop name answer TEXT` / `coop name
+cancel` (answer the open name popup), `coop set nameplates
+near|always|off`.
 
 The mock player: `--hold RECORD`, `--holster-at N`, `--shoot N` (now also
 as host, with the bullet's end), `--melee N`, `--hurt N`, `--menu-at N`,
-`--react-npcs N` (host).
+`--react-npcs N` (host), `--unlink-at N` (breaks its links), `--name NAME`
+(logs `the session shows us as …` when the host renamed it).
 
 ## Open
 
@@ -177,4 +224,9 @@ as host, with the bullet's end), `--melee N`, `--hurt N`, `--menu-at N`,
 - The world marker and the party entry both say where the partner is: once
   both are seen in game, decide whether the entry's arrow replaces the
   marker's distance text.
-- Localized strings for the entry's state line.
+- The name popup answered by `coop name answer` calls the token's
+  callback: whether the popup also closes (else the command must close it
+  as Codeware's `Close` does) is to see in game.
+- Codeware's text field draws what is typed in capitals: whether its
+  `GetText` gives the case typed (what is saved and shown) is to see in
+  game.

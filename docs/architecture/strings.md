@@ -146,6 +146,32 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Status-ChooseJoinSave` | Choose the save your V comes from, to join {1} | Choisissez la sauvegarde de votre V pour rejoindre {1} | Coop.reds |
 | `Status-PickHost` | Pick a host, or enter their join code or address | Choisissez un hôte, ou saisissez son code d'invitation ou son adresse | Coop.reds |
 
+### The party HUD
+
+<!-- prettier-ignore -->
+| Key | English | French | Shown by |
+| --- | --- | --- | --- |
+| `Party-Down` | Down | À terre | PartyHud.reds |
+| `Party-Reviving` | Reviving {1} | Réanimation {1} | PartyHud.reds |
+| `Party-Out` | Out | Hors combat | PartyHud.reds |
+| `Party-Scene` | In a scene | Dans une scène | PartyHud.reds |
+| `Party-Menu` | In a menu | Dans un menu | PartyHud.reds |
+| `Party-Cyberspace` | Cyberspace | Cyberespace | PartyHud.reds |
+| `Party-Braindance` | Braindance | Danse sensorielle | PartyHud.reds |
+| `Party-Johnny` | As Johnny | Dans la peau de Johnny | PartyHud.reds |
+| `Party-OtherBody` | As someone else | Dans la peau d'un autre | PartyHud.reds |
+| `Party-Elsewhere` | Elsewhere | Ailleurs | PartyHud.reds |
+
+### Names
+
+<!-- prettier-ignore -->
+| Key | English | French | Shown by |
+| --- | --- | --- | --- |
+| `Name-Title` | Your co-op name | Votre nom en coop | Coop.reds |
+| `Name-Ask` | The name the other players see over your V and in their party list: 1 to 16 characters (cancel: V for now) | Le nom que les autres joueurs voient au-dessus de votre V et dans leur liste d'équipe : 1 à 16 caractères (annuler : V pour l'instant) | Coop.reds, Settings.reds |
+| `Name-Invalid` | Not a name: {1}. 1 to 16 characters, without ; or # | Nom refusé : {1}. 1 à 16 caractères, sans ; ni # | Coop.reds, Settings.reds |
+| `Session-Renamed` | {1} is taken in this session: the others see you as {2} | {1} est déjà pris dans cette session : les autres vous voient comme {2} | System.reds |
+
 ### Shared words
 
 <!-- prettier-ignore -->
@@ -463,6 +489,8 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Settings-Notices-Minimal` | questions and problems | questions et problèmes | Settings.reds |
 | `Settings-Markers` | Player markers | Marqueurs des joueurs | Settings.reds |
 | `Settings-Nameplates` | Names over players | Noms au-dessus des joueurs | Settings.reds |
+| `Settings-Nameplates-Near` | close by | de près | Settings.reds |
+| `Settings-Nameplates-Always` | at any distance | à toute distance | Settings.reds |
 | `Settings-Recorder` | Recorder | Enregistreur | Settings.reds |
 | `Settings-Relay` | Relay | Relais | Settings.reds |
 | `Settings-RelayToken` | Relay host token | Jeton d'hôte du relais | Settings.reds |
