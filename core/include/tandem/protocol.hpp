@@ -1586,6 +1586,23 @@ struct Crime {                                   // Event channel
   friend bool operator==(const Crime &, const Crime &) = default;
 };
 
+// ---- Story restrictions (docs/architecture/story.md, "Restrictions") ----
+//
+// The gameplay restrictions the host's story has on the host's V now: the
+// TweakDB ids of its GameplayRestriction status effects (no weapons, no
+// sprint, no jump, forced walk...) that a quest put on, not the ones a
+// static zone or tandem itself applied (Restrictions.reds decides). Host to
+// guests, the whole set on every change (sorted; empty: none), a story
+// message: kept by the host for late joiners and in the story digest. A
+// guest in the host's story moment (story::InMoment) puts the same effects
+// on its own V while the set has them.
+inline constexpr std::size_t kMaxStoryRestrictions = 32;
+struct StoryRestrictions {
+  PlayerId player{}; // whose V (the host): set by the host's endpoint
+  std::vector<std::uint64_t> effects;
+  friend bool operator==(const StoryRestrictions &, const StoryRestrictions &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -1598,9 +1615,10 @@ using Message = std::variant<
     SceneState, SceneCast, SceneLine, ActorPose, DeviceState, DeviceUse, DeviceSet, DeviceDigest,
     Regions, NpcOwner, NpcHandover, NpcHandoverState, NpcHandoverDone, OwnedDigest, RegionHold,
     TrafficSpawn, TrafficStates, TrafficGone, TrafficStatus, TrafficHit, TrafficClaim, TrafficSet,
-    Heat, Crime>;
+    Heat, Crime, StoryRestrictions>;
 
-// A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine):
+// A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
+// StoryRestrictions):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit): one path in endpoint.hpp too.

@@ -365,7 +365,7 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                       std::is_same_v<M, proto::TimeEffect> || std::is_same_v<M, proto::Elsewhere> ||
                       std::is_same_v<M, proto::Vitals> || std::is_same_v<M, proto::Pause> ||
                       std::is_same_v<M, proto::Epoch> || std::is_same_v<M, proto::StoryEffect> ||
-                      std::is_same_v<M, proto::Heat>)
+                      std::is_same_v<M, proto::Heat> || std::is_same_v<M, proto::StoryRestrictions>)
           return host(m.player);
         else if constexpr (std::is_same_v<M, proto::VehicleRadio>) {
           later(m.trackStartUs);

@@ -571,6 +571,23 @@ TEST_CASE("a story effect survives encoding and is a story message") {
   CHECK(std::string(NameOf(StoryEffect{})) == "StoryEffect");
 }
 
+TEST_CASE("story restrictions survive encoding, are a story message, and say one set one way") {
+  RoundTrips(StoryRestrictions{.player = 1, .effects = {0x10, 0x15e213846eULL}});
+  RoundTrips(StoryRestrictions{.player = 1});
+  CHECK(IsStory(StoryRestrictions{}));
+  CHECK(ChannelOf(StoryRestrictions{}) == Channel::Event);
+  CHECK(std::string(NameOf(StoryRestrictions{})) == "StoryRestrictions");
+  // Unsorted, repeated or too many: refused.
+  CHECK_FALSE(Decode(Encode(StoryRestrictions{.effects = {2, 1}})).has_value());
+  CHECK_FALSE(Decode(Encode(StoryRestrictions{.effects = {1, 1}})).has_value());
+  StoryRestrictions many;
+  for (std::uint64_t i = 0; i <= kMaxStoryRestrictions; ++i)
+    many.effects.push_back(i + 1);
+  CHECK_FALSE(Decode(Encode(many)).has_value());
+  many.effects.pop_back();
+  CHECK(Decode(Encode(many)).has_value());
+}
+
 TEST_CASE("down-and-out messages survive encoding, reliably, and refuse what is out of range") {
   RoundTrips(Vitals{.player = 2, .revision = 7, .life = Life::Down, .flags = kVitalsInCombat});
   RoundTrips(Vitals{.player = 1, .revision = 1, .life = Life::Out});

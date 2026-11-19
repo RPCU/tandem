@@ -2,6 +2,9 @@
 
 #include <zpp_bits.h>
 
+#include <algorithm>
+#include <functional>
+
 namespace tandem::proto {
 std::vector<std::byte> Encode(const Message &message) {
   std::vector<std::byte> bytes;
@@ -120,6 +123,12 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *crime = std::get_if<Crime>(&message);
       crime && (crime->kind < CrimeKind::Witness || crime->kind > CrimeKind::Kill))
     return std::nullopt;
+  // At most the bound, sorted and without repeats: one set, said one way.
+  if (const auto *restrictions = std::get_if<StoryRestrictions>(&message);
+      restrictions && (restrictions->effects.size() > kMaxStoryRestrictions ||
+                       std::ranges::adjacent_find(restrictions->effects, std::greater_equal<>{}) !=
+                           restrictions->effects.end()))
+    return std::nullopt;
   return message;
 }
 
@@ -147,6 +156,7 @@ bool IsStory(const Message &message) {
   return (message.index() >= Message(Journal{}).index() &&
           message.index() <= Message(QuestReward{}).index()) ||
          std::holds_alternative<StoryEffect>(message) ||
+         std::holds_alternative<StoryRestrictions>(message) ||
          (message.index() >= Message(SceneState{}).index() &&
           message.index() <= Message(SceneLine{}).index());
 }
@@ -254,7 +264,8 @@ const char *NameOf(const Message &message) {
                                    "TrafficClaim",
                                    "TrafficSet",
                                    "Heat",
-                                   "Crime"};
+                                   "Crime",
+                                   "StoryRestrictions"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }
