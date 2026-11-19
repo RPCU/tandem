@@ -66,7 +66,7 @@ task touches ([Topic files](#topic-files)).
 | `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
 | `deploy/kubernetes/base` | kustomize base for the relay | `task k8s:check` |
-| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp` | `task scripts:check`, `task natives:check` |
+| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `StreetNatives.reds` `street_natives.cpp`, `WheelsNatives.reds` `wheels_natives.cpp` | `task scripts:check`, `task natives:check` |
 | `tweaks/` | TweakXL records, installed to `r6/tweaks/tandem` (the puppet records, their attitude groups, the player marker) | — |
 | `dist/` | files installed next to the DLL (`tandem.ini`) | — |
 | `cmake/` | `clang-cl-msvc.cmake`: the Windows cross toolchain | — |
@@ -142,6 +142,8 @@ The owner simulates; everyone else displays.
 Enemy level (the mean of the players' levels): `architecture/npcs.md`.
 
 Traffic, parked cars and wrecks, and police heat (per player), are designed in [`architecture/traffic.md`](architecture/traffic.md) and [`architecture/police.md`](architecture/police.md): they replace the rows "a parked or AI vehicle" and "police heat" above.
+
+Vehicle combat follows the same rule, the game that simulates a vehicle owns it, its damage included (a car its driver left is still that driver's; a gunner seat is given by the vehicle's owner): [`architecture/vehicle-combat.md`](architecture/vehicle-combat.md).
 
 **Combat** follows from the table. A shot is decided by the shooter's game,
 on what that player sees, so aiming feels local. A guest hitting an NPC sends
@@ -260,6 +262,9 @@ plugin") and its open problems.
 - `players.md`: body poses, weapons, looks, player markers; open: linking up, every way a V moves, cyberware and perks.
 - `vehicles.md`: driven vehicles, seats, the radio; open: getting in and out, combat in vehicles.
 - `transit.md`: rides a game runs (cabs, AVs, quest vehicles), the NCART metro.
+- `traffic.md`: (built, not yet run in game) one street for everyone: traffic, parked and police cars, wrecks shared by the owner of their area (`AreaOwner`), collisions, a car a player takes.
+- `police.md`: (built, not yet run in game) police heat per player, crimes seen by another game, the owner's units after a remote V.
+- `vehicle-combat.md`: vehicle damage and destruction, shooting from vehicles and mounted weapons, a guest on another player's gun, collisions (players' cars, rams on NPCs), NPC vehicle chases, bikes, bailing out and being thrown out.
 - `world.md`: time of day and weather; open: the guest acting on the world, NCPD chases, saves.
 - `time.md`: the pause menu, slowed time (time bubbles); open: every time dilation, other timeline and menu, NPC shots simulated by the target's game.
 - `npcs.md`: enemy level, NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.

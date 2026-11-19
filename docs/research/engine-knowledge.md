@@ -89,8 +89,24 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.27 | The NCART metro, rides and quest vehicles                       | `transit.md`      |
 | 13.28 | Firing an NPC's shot from a proxy                               | `combat.md`       |
 | 13.29 | What a quest's completion is made of, and what quests test      | `story.md`        |
+| 13.30 | Vehicle combat: the hooks and setters                           | `vehicles.md`     |
 
-Traffic, parked cars and the prevention system (2026-11-19, scripts and RTTI only): [`engine/traffic-police.md`](engine/traffic-police.md).
+Traffic, parked cars and the prevention system (2026-11-19, scripts and RTTI only): [`engine/traffic-police.md`](engine/traffic-police.md), numbered on its own (its "§1.2" is that file's):
+
+| §   | Title                               | File                |
+| --- | ----------------------------------- | ------------------- |
+| 1   | Traffic                             | `traffic-police.md` |
+| 1.1 | What traffic is                     | `traffic-police.md` |
+| 1.2 | Finding the vehicles of the world   | `traffic-police.md` |
+| 1.3 | Collisions, hits, explosions        | `traffic-police.md` |
+| 1.4 | Getting in, stealing                | `traffic-police.md` |
+| 1.5 | Moving a vehicle we do not simulate | `traffic-police.md` |
+| 2   | Police                              | `traffic-police.md` |
+| 2.1 | How a crime is attributed           | `traffic-police.md` |
+| 2.2 | The score and the stars             | `traffic-police.md` |
+| 2.3 | Who the police are hostile to       | `traffic-police.md` |
+| 2.4 | Spawning                            | `traffic-police.md` |
+| 3   | Open questions (need the game)      | `traffic-police.md` |
 
 ## Top traps (one line each)
 

@@ -209,3 +209,78 @@ stationName, songName)` (149608, no script caller) asks a station for a
 - Volumes are each player's own settings (`/audio/volume`
   `CarRadioVolume`, `RadioportVolume`, read by the popup): not synced.
   [2.5-untested]
+
+### 13.30 Vehicle combat: the hooks and setters (2026-11-19, 2.50 scripts read)
+
+Read from the 2.50 game's own scripts (`final.reds` of the game's bundle,
+line numbers of that dump); none of it run in game yet: every line is
+[2.5-untested]. Used by `scripts/tandem/Wheels.reds`
+(`docs/architecture/vehicle-combat.md`).
+
+- **Damage of a car, read**: health pool `Health` on the vehicle's id (as
+  traffic, `Traffic.reds`); the damage stage `VehicleDef.DamageState`
+  (0–3, `final.reds:182365`; 3 taken as burning); `IsDestroyed()`
+  (`:87959`, the PS's `GetIsDestroyed`); `VehicleComponentPS.GetIsSubmerged`
+  (`:95483`); `WheeledObject.GetFlatTireIndex() -> Int32` (`:160886`, one
+  index: tandem keeps the bits it has seen). [2.5-untested]
+- **Dents**: `VehicleComponent.OnGridDestruction(evt:
+VehicleGridDestructionEvent)` (`:92968`) gets the grid's `state: [Float;
+16]` on every impact. Setting it: `VehicleObject.SetDestructionGridPointValues(layer:
+Uint32, values: [Float; 15], accumulate: Bool)` (`:87949`); vanilla's own
+  `VehicleComponent.OnVehicleQuestVisualDestructionEvent` (`:91447`) fills
+  layer 0 with 15 body points and layer 1 with the roof value: tandem maps
+  the event's cells 0–14 to layer 0 and cell 15 to layer 1 (inferred from
+  that function; check the look of a copy in game). [2.5-untested]
+- **Parts**: `VehicleComponent.OnVehicleOnPartDetached(evt:
+VehicleOnPartDetachedEvent { partName: CName })` (`:93487`; names seen:
+  `Trunk`, `Hood`, `HoodLeft`, `HoodRight`, `DoorFrontLeft`… with `_A`,
+  `_B`, `_C`, `BumperFront`, `BumperBack`); `VehicleObject.DetachPart(partName)`
+  (`:87787`). [2.5-untested]
+- **Tyres**: `WheeledObject.ToggleBrokenTire(tireID: Uint32, toggle: Bool)
+-> Bool` (`:160884`). [2.5-untested]
+- **Explosion on a copy**: the game's own, by setting the health pool to its
+  minimum (`RequestSettingStatPoolMinValue`, as `Traffic.reds` does for a
+  proxy); a wreck put there: `VehicleComponentPS.SetIsDestroyed(true)` and
+  the record's `DestroyedAppearance()`. [2.5-untested]
+- **A vehicle running into anything**: `GameObject.OnVehicleHit(evt:
+gameVehicleHitEvent { vehicleVelocity, preyVelocity })` (`:12386`) builds
+  the `Attacks.VehicleCollision` hit and queues it; its source is the
+  vehicle. The game's kill rule (`ProcessVehicleHit`, `:85677`): relative
+  speed ≥ `AIGeneralSettings.vehicleHitKillThreshold` (25) kills, crowd or
+  civilian ≥ `vehicleHitCrowdKillThreshold` (20). [2.5-untested]
+- **Knocking an NPC down**: `CreateForceRagdollEvent(debugSourceName)`
+  (`:188095`), `CreateRagdollApplyImpulseEvent(worldPos, impulse, radius)`
+  (`:188128`), queued on the puppet. The impulse scale (tandem: the car's
+  velocity × 70) is a guess to tune. [2.5-untested]
+- **Pushing a car**: `PhysicalImpulseEvent { bodyIndex, worldPosition:
+Vector3, worldImpulse: Vector3, radius }` (`:293073`) queued on the
+  vehicle, as vanilla's bike knock-over does (`:550686`); with
+  `PhysicsWakeUp()`. [2.5-untested]
+- **Bumps**: `VehicleObject.OnVehicleBumpEvent(evt: VehicleBumpEvent {
+impactVelocityChange, hitVehicle, hitNormal })` (`:88458`, `:218437`), the
+  one `Traffic.reds` uses. [2.5-untested]
+- **Mounted weapons**: `VehicleComponent.OnWeaponShootEvent(evt:
+VehicleMountedWeaponShootEvent { weaponID, slotID })` (`:90549`) runs for
+  every shot of the vehicle's own weapons (vanilla broadcasts the gunshot
+  stim there); `VehicleObject.NPCShoot(target: Vector4, projectiles:
+Uint32)` (`:87931`) fires them at a point; `GetActiveWeapons`,
+  `IsArmedVehicle` (`:87925`). No call found that turns a turret to an
+  aim, or plays a mounted weapon's muzzle without a real shot.
+  [2.5-untested]
+- **Seat states of the V** (`PlayerStateMachine.Vehicle`): `GunnerEvents`
+  (`:548570`) sets it to 2 and equips a ranged weapon; Turret 5 and
+  DriverCombat 6 are the enum's (`coop-player-vehicles.md` §8.8). Vanilla's
+  gunner seats are a scene's (`PuppetVehicleState.GunnerSlot`, `:3483`): no
+  seat name says "gunner". [2.5-untested]
+- **The hard exits** run on the player's state machine, for the local V
+  only: `SpeedExitingEvents.OnEnter` (`:551283`, jumping out on the move,
+  `VehicleExitKnockdownProtection`), `ImmediateExitWithForceEvents.OnEnter`
+  (`:550633`) which `CollisionExitingEvents` (`:550742`, applies
+  `BikeKnockdown`) and `DeathExitingEvents` (`:551214`) run through `super`.
+  [2.5-untested]
+- **Chases**: `InVehicleCombatDecorator` (`:473704`) drives a vehicle after
+  its driver's `CombatTarget` (`ChaseNewTarget` sends an
+  `AIVehicleChaseCommand { target, distanceMin 3, distanceMax 10 }` to the
+  mounted vehicle; `Deactivate` interrupts it). Prevention and the dynamic
+  spawn system chase `GetLocalPlayerMainGameObject()` directly
+  (`:142449`, `:189618`). [2.5-untested]

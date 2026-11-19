@@ -166,6 +166,21 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   replay, `--remove-corpses N` takes an NPC a guest killed away N s after
   its death (`NpcGone` reason 0).
 
+- **Vehicle combat** (`vehicle-combat.md`; `tests/peer_wheels.sh`):
+  `--mode drive --car-damage N` dents our car N s after it sits (a flat
+  tyre, the front bumper off), burns it 4 s later and blows it up 4 s after
+  that; `--exit-at N --exit-kind bail|thrown|knocked|dead|exploded` leaves
+  the car the hard way (it rolls on to a stop, its state still sent);
+  `--bump N` pushes the car another player drives; `--shoot-cars N`
+  (any mode) shoots it (every other shot a tyre); `--gunner N
+[--gunner-seat SLOT]` takes the gun of another player's car, aims and
+  fires for 20 s; `join --ram-npcs N` runs into one of the host's NPCs at
+  12 m/s; `host --traffic N --chase N` has the first car chase the guest
+  for 20 s. As the owner of a car it applies the hits it gets (1000 health
+  points a car) and says how the car stands; everything heard is logged.
+  The game side's test commands: `tools/game.sh cmd wheels`, `wheels
+shoot`, `wheels gun`, `wheels ungun`.
+
 ## Driving the game and the builds
 
 - `tools/scenario.sh` deploys first. Scripts alone would be hot-reloaded
