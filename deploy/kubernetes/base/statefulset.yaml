@@ -65,6 +65,20 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            # Several regions (docs/relay.md): every region's entrance, and
+            # this fleet's index. None: one region.
+            - name: TANDEM_RELAY_REGIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: tandem-relay-peers
+                  key: regions
+                  optional: true
+            - name: TANDEM_RELAY_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: tandem-relay-peers
+                  key: region
+                  optional: true
           ports:
             - name: game
               containerPort: 27460

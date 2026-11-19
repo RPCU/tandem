@@ -78,7 +78,8 @@
 // Replicas (see Config.Peers): each relay of a fleet owns its sessions, and a
 // code names its owner (shardOf). A request for another replica's session,
 // or a new session on a replica that is draining, is answered with a
-// Redirect to the replica that takes it; a client follows one at most.
+// Redirect to the replica that takes it; a client follows two at most (one
+// within a fleet, one more across regions).
 // RejoinGuest is RegisterGuest asking for the channel the guest had, and
 // ReclaimCode a registered host asking for the code it had, both after the
 // relay restarted and forgot them (granted when free).

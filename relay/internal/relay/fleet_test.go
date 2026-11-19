@@ -120,7 +120,8 @@ func TestNoReplicaRedirectsToItself(t *testing.T) {
 	}
 }
 
-// A client follows one redirect at most (core/src/relay.cpp): replicas that
+// A client follows a bounded number of redirects (core/src/relay.cpp: one
+// within a fleet, one more across regions; here one): replicas that
 // disagree on the fleet cannot bounce it around.
 func TestMisconfiguredReplicasCannotLoop(t *testing.T) {
 	now := time.Now()

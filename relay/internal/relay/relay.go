@@ -767,16 +767,23 @@ func (s *Server) keptCode(token [TokenSize]byte, salt uint32) string {
 	return string(raw[:])
 }
 
-// bindKept gives the session its kept code; one another session holds
-// (the same host hosting twice) leaves it a code of its own.
+// bindKept gives the session its kept code. The newest session of the
+// token takes it from an older one (a host back from a crash or a reload
+// before its old session idled out; a second game of the same host gets
+// the next code it asks for); one of another token (a hash collision)
+// keeps it.
 func (s *Server) bindKept(sess *session, now time.Time) {
 	code := s.keptCode(sess.token, sess.salt)
 	if other := s.codes[code]; other != nil && other != sess {
-		sess.kept = false
-		if sess.code == "" || !now.Before(sess.codeExpires) {
-			s.issueCode(sess, now)
+		if !other.keep || subtle.ConstantTimeCompare(other.token[:], sess.token[:]) != 1 {
+			sess.kept = false
+			if sess.code == "" || !now.Before(sess.codeExpires) {
+				s.issueCode(sess, now)
+			}
+			return
 		}
-		return
+		delete(s.codes, code)
+		other.code, other.kept = "", false
 	}
 	if sess.code != "" && sess.code != code {
 		delete(s.codes, sess.code)

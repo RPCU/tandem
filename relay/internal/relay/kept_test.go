@@ -55,14 +55,21 @@ func TestKeptCodesNeedATokenAndStayApart(t *testing.T) {
 	if r := mustHandle(t, s, hostA, RegisterHostKeep(secret, [TokenSize]byte{9}, 1), now); r.Error != ErrBadToken {
 		t.Fatalf("no token: %+v", r)
 	}
-	// The same token hosting twice at once: the second session gets a code of
-	// its own, the first keeps the kept one.
+	// The same token again before its old session idled out (a game back
+	// from a crash): the newest session takes the kept code, the old one
+	// gets a code of its own the next time it asks.
 	mustHandle(t, s, hostA, RegisterHostKeep(secret, token, 1), now)
 	kept := mustHandle(t, s, hostA, RequestCode(secret, false), now).Code
 	other := [SecretSize]byte{43}
 	mustHandle(t, s, nobody, RegisterHostKeep(other, token, 1), now)
-	if r := mustHandle(t, s, nobody, RequestCode(other, false), now); r.Code == kept || r.CodeLeft == KeptCodeLeft {
-		t.Fatalf("second session: %+v", r)
+	if r := mustHandle(t, s, nobody, RequestCode(other, false), now); r.Code != kept || r.CodeLeft != KeptCodeLeft {
+		t.Fatalf("newest session: %+v", r)
+	}
+	if r := mustHandle(t, s, hostA, RequestCode(secret, false), now); r.Code == kept || r.CodeLeft == KeptCodeLeft {
+		t.Fatalf("old session: %+v", r)
+	}
+	if r := mustHandle(t, s, guestA, ResolveCode(kept), now); r.Secret != other {
+		t.Fatalf("the code leads to %+v", r)
 	}
 	// Another token, another code.
 	tokenB := [TokenSize]byte{5, 5}
