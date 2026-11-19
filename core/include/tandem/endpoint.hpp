@@ -498,6 +498,21 @@ public:
   // Session recording (tandem/play.hpp): as a guest, every message the host
   // sent us, as it arrives, before it is acted on. Empty: off.
   void SetReceivedTap(Tap tap) { m_receivedTap = std::move(tap); }
+  // The referee (docs/architecture/sim.md): every message as it crosses the
+  // wire, either way, before anything is filtered, stamped or applied. In:
+  // `peer` is who sent it (host: the guest of that connection; guest: the
+  // host). Out: whom it goes to (kNoPlayer: everyone, or nobody known yet),
+  // whatever the fault layer then does to it. Empty: off, one check a message.
+  enum class Wire : std::uint8_t { In, Out };
+  using WireTap = std::function<void(Wire, proto::PlayerId peer, const proto::Message &)>;
+  void SetWireTap(WireTap tap) { m_wireTap = std::move(tap); }
+  // Each domain's hash as this game has it now: what a guest compares with
+  // the host's Digest at that point of the stream.
+  proto::Digest LocalDigest() const { return DigestFor(m_you); }
+  const Timing &Timings() const { return m_timing; }
+  // Tests: called with every endpoint made from now on (empty: off), so a
+  // whole suite can run under one observer.
+  static void SetCreationHook(std::function<void(Endpoint &)> hook);
   // Our V as it stands now (look, held items, seat, radio, stealth, time
   // ability, ride, life, elsewhere): what a recording begins with.
   std::vector<proto::Message> LocalSnapshot() const;
@@ -516,6 +531,7 @@ private:
   void SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync);
   // Every send goes through these (faults injected here).
   bool Send(net::PeerId peer, const proto::Message &message);
+  bool Transmit(net::PeerId peer, const proto::Message &message);
   void Broadcast(const proto::Message &message, net::PeerId except = 0);
   void OnGuestMessage(const proto::Message &message, std::vector<SessionEvent> &out);
   // Each domain's hash as `self` sees it (consistency.hpp).
@@ -532,6 +548,7 @@ private:
   Identity m_identity;
   Tap m_tap;
   Tap m_receivedTap;
+  WireTap m_wireTap;
   Timing m_timing;
 
   proto::PlayerId m_you{proto::kNoPlayer};

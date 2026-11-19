@@ -97,6 +97,7 @@
 #include "tandem/play.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/shaping.hpp"
+#include "tandem/sim/referee.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -2059,6 +2060,11 @@ int main(int argc, char **argv) {
     Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice",
         options.drop * 100, options.dup * 100);
   }
+  // The referee (docs/architecture/sim.md), in every mode: what the other
+  // games send us, checked against the protocol and the authority table;
+  // each breach is a `referee:` line, which scenarios reject.
+  tandem::sim::Referee referee(options.host, {.faulty = options.drop > 0.f || options.dup > 0.f});
+  referee.Attach(*endpoint);
   // --look random: the same clothes all session; its body keys from the
   // cache, or as soon as a look of its body is heard.
   const auto lookKeysDir = LookKeysDir(options.lookKeys);
@@ -2868,11 +2874,15 @@ int main(int argc, char **argv) {
                   e.epoch.reason, e.epoch.epoch);
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
+              referee.End();
               g_stop = 1;
             }
           },
           event);
     }
+    referee.Tick();
+    for (const auto &finding : referee.Take())
+      Log("{}", finding.Line());
     if (auto relay = endpoint->Relay()) {
       relay->codeSecondsLeft = 0; // not a change worth a line
       if (relay != relayShown) {
@@ -3786,7 +3796,9 @@ int main(int argc, char **argv) {
         static_cast<double>(savedPlay.LastUs()) / 1e6);
     savedPlay.Close();
   }
+  referee.End();
   endpoint->Leave("tandem-peer stopped");
+  Log("referee summary: {} violation(s), {} hint(s)", referee.Violations(), referee.Hints());
   if (!options.recordFile.empty()) {
     if (recording.Finish())
       Log("recording saved: {} NPC messages, {} spawns, in {}", recording.Count(),

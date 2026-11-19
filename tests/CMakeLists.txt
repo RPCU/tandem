@@ -1,5 +1,5 @@
-add_executable(tandem-tests main.cpp protocol_test.cpp endpoint_test.cpp interpolation_test.cpp movement_test.cpp play_test.cpp pose_test.cpp vehicle_test.cpp story_test.cpp hosts_test.cpp timebubble_test.cpp relay_test.cpp shaping_test.cpp regroup_test.cpp combat_test.cpp consistency_test.cpp vanish_test.cpp elsewhere_test.cpp)
-target_link_libraries(tandem-tests PRIVATE tandem_core)
+add_executable(tandem-tests main.cpp protocol_test.cpp endpoint_test.cpp interpolation_test.cpp movement_test.cpp play_test.cpp pose_test.cpp vehicle_test.cpp story_test.cpp hosts_test.cpp timebubble_test.cpp relay_test.cpp shaping_test.cpp regroup_test.cpp combat_test.cpp consistency_test.cpp vanish_test.cpp elsewhere_test.cpp referee_test.cpp)
+target_link_libraries(tandem-tests PRIVATE tandem_core tandem_sim)
 target_include_directories(tandem-tests SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/vendor/doctest")
 add_test(NAME tandem-tests COMMAND tandem-tests)
 add_test(NAME peer-flags COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_flags.sh" $<TARGET_FILE:tandem-peer>)

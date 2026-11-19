@@ -30,6 +30,12 @@ proto::TimeEffect Sanitized(proto::TimeEffect effect) {
   return effect;
 }
 
+// Tests: told of every endpoint made (Endpoint::SetCreationHook).
+std::function<void(Endpoint &)> &CreationHook() {
+  static std::function<void(Endpoint &)> hook;
+  return hook;
+}
+
 template <class... Ts> struct Overloaded : Ts... {
   using Ts::operator()...;
 };
@@ -76,7 +82,13 @@ std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port, 
       std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity), timing));
   endpoint->m_you = endpoint->m_host = 1;
   endpoint->m_players[1] = {1, endpoint->m_identity.name, endpoint->m_identity.body};
+  if (CreationHook())
+    CreationHook()(*endpoint);
   return endpoint;
+}
+
+void Endpoint::SetCreationHook(std::function<void(Endpoint &)> hook) {
+  CreationHook() = std::move(hook);
 }
 
 std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const std::string &host,
@@ -104,6 +116,8 @@ std::unique_ptr<Endpoint> Endpoint::Join(Identity identity, const JoinTarget &ta
   endpoint->m_throughRelay = throughRelay;
   if (!throughRelay)
     endpoint->m_fallback = target.relay;
+  if (CreationHook())
+    CreationHook()(*endpoint);
   return endpoint;
 }
 
@@ -203,6 +217,18 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
 }
 
 bool Endpoint::Send(net::PeerId peer, const proto::Message &message) {
+  if (m_wireTap) {
+    proto::PlayerId to = m_host;
+    if (IsHost()) {
+      const auto known = m_playerOfPeer.find(peer);
+      to = known == m_playerOfPeer.end() ? proto::kNoPlayer : known->second;
+    }
+    m_wireTap(Wire::Out, to, message);
+  }
+  return Transmit(peer, message);
+}
+
+bool Endpoint::Transmit(net::PeerId peer, const proto::Message &message) {
   switch (m_faults.Decide(message)) {
   case consistency::FaultyLink::Action::Drop:
     return true; // as far as anyone here knows, it went
@@ -216,6 +242,17 @@ bool Endpoint::Send(net::PeerId peer, const proto::Message &message) {
 }
 
 void Endpoint::Broadcast(const proto::Message &message, net::PeerId except) {
+  if (m_wireTap)
+    m_wireTap(Wire::Out, proto::kNoPlayer, message);
+  // Only to the players in the session: a connection that has not said
+  // Hello yet hears nothing until its Welcome (the referee caught a late
+  // joiner hearing of player 2's epoch before the roster that brings it).
+  if (IsHost()) {
+    for (const auto &[peer, player] : m_playerOfPeer)
+      if (peer != except)
+        Transmit(peer, message);
+    return;
+  }
   if (!m_faults.Active()) {
     m_session->Broadcast(message, except);
     return;
@@ -223,7 +260,7 @@ void Endpoint::Broadcast(const proto::Message &message, net::PeerId except) {
   // Each recipient's own fate.
   for (const auto peer : m_session->Peers())
     if (peer != except)
-      Send(peer, message);
+      Transmit(peer, message);
 }
 
 void Endpoint::BumpEpoch(std::uint8_t reason) {
@@ -274,6 +311,8 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
     if (known == m_playerOfPeer.end())
       return;
     const auto player = known->second;
+    if (m_wireTap)
+      m_wireTap(Wire::In, player, message);
     if (proto::IsStory(message)) {
       OnGuestStory(event.peer, player, message, out);
       return;
@@ -826,6 +865,8 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
 void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<SessionEvent> &out) {
   if (m_receivedTap)
     m_receivedTap(message);
+  if (m_wireTap)
+    m_wireTap(Wire::In, m_host, message);
   if (proto::IsStory(message)) {
     // Only the host speaks for the story; our own relayed states are ours.
     if (const auto *state = std::get_if<proto::StoryState>(&message);
