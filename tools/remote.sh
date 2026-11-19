@@ -75,9 +75,9 @@ in_slot() {
   local pool=$1 count=$2
   shift 2
   # shellcheck disable=SC2029 # expanded here on purpose
-  ssh "$host" "cd $remote && $jobs $cache TANDEM_XWIN=\$HOME/.cache/tandem/xwin TANDEM_COMMIT=$commit TANDEM_SLOT_POOL=$pool \
+  ssh "$host" "cd $remote && $jobs $cache TANDEM_XWIN=\$HOME/.cache/tandem/xwin TANDEM_COMMIT=$commit TANDEM_SLOT_POOL=$pool TANDEM_SCOPE=low \
     flock /tmp/tandem-src-$name.lock tools/build-slot.sh $count \
-    systemd-run --user --scope --quiet -p CPUWeight=10 -p IOWeight=10 nice -n 19 devenv shell -- task $*"
+    devenv shell -- task $*"
 }
 if [ ${#builds[@]} -gt 0 ]; then
   in_slot build "\$(pgrep -f '[t]andem-instances/' >/dev/null && echo 1 || echo $slots)" "${builds[@]}"
