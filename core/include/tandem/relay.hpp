@@ -12,6 +12,13 @@
 // characters of Crockford's base32, shown as "K7Q-2M9", valid 10 minutes,
 // renewed when it expires); a guest trades it for the session's secret and
 // joins with that, and joins again with the secret after the code expired.
+//
+// A relay may be one replica of a fleet (docs/relay.md): it then sends a
+// client on to the replica holding its session or its code (one redirect at
+// most). A relay that goes silent (restarted, or the path to it broke) is
+// asked again every half second while the session holds its relayed players
+// (RelayLink::kHoldMs): the host gets its session and code back, the guests
+// their channels, and play goes on where it stopped.
 
 #include <array>
 #include <cstdint>
@@ -50,7 +57,8 @@ struct RelayOptions {
 
 struct RelayStatus {
   enum class State {
-    Connecting, // registering (guest: resolving the code first)
+    Connecting, // registering (guest: resolving the code first; both: the
+                // relay went silent and is asked again, `error` says so)
     Ready,      // registered: traffic flows
     Failed,     // `error` says why (a host keeps trying)
   };
@@ -59,6 +67,9 @@ struct RelayStatus {
   std::string code;
   std::uint32_t codeSecondsLeft{};
   std::string error;
+  // The relay replica in use, "ip:port" (another than the one configured
+  // after a redirect): a guest joins again there by the session's secret.
+  std::string at;
 
   bool operator==(const RelayStatus &) const = default;
 };

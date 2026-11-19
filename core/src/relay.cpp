@@ -28,6 +28,9 @@ enum : std::uint8_t {
   kCode = 8,
   kResolveCode = 9,
   kSecret = 10,
+  kRedirect = 11,
+  kRejoinGuest = 12,
+  kReclaimCode = 13,
 };
 
 constexpr enet_uint32 kResendMs = 500;
@@ -36,6 +39,15 @@ constexpr enet_uint32 kResendMs = 500;
 constexpr enet_uint32 kRefreshMs = 20'000;
 constexpr enet_uint32 kKeepaliveMs = 10'000; // the relay forgets a client after 2 min
 constexpr enet_uint32 kCodeRetryMs = 1'000;
+// Registered: a relay silent this long is asked again (our registration,
+// answered at once); silent this long, it is lost and the session holds
+// its relayed players. A session's ENet pings each way every half second,
+// so a live relay is not silent for a second.
+// A host with no relayed guest hears only the answers to its probes: it
+// asks every few seconds (its code comes back as soon after a restart).
+constexpr enet_uint32 kProbeMs = 1'000;
+constexpr enet_uint32 kIdleProbeMs = 5'000;
+constexpr enet_uint32 kLostAfterProbeMs = 2'000;
 // Host: a relayed guest's socket closes after this long without traffic.
 constexpr enet_uint32 kChannelIdleMs = 60'000;
 constexpr std::size_t kMaxChannels = 8;
@@ -60,6 +72,18 @@ std::vector<std::uint8_t> Header(std::uint8_t type) {
 std::vector<std::uint8_t> Padded(std::vector<std::uint8_t> bytes) {
   bytes.resize(kRegisterSize);
   return bytes;
+}
+
+void AppendBe16(std::vector<std::uint8_t> &bytes, std::uint16_t value) {
+  bytes.push_back(static_cast<std::uint8_t>(value >> 8));
+  bytes.push_back(static_cast<std::uint8_t>(value));
+}
+
+std::string Text(const ENetAddress &address) {
+  const auto ip = ENET_NET_TO_HOST_32(address.host);
+  return std::to_string(ip >> 24) + "." + std::to_string((ip >> 16) & 0xFF) + "." +
+         std::to_string((ip >> 8) & 0xFF) + "." + std::to_string(ip & 0xFF) + ":" +
+         std::to_string(address.port);
 }
 
 ENetSocket OpenSocket(const ENetAddress *bindTo) {
@@ -174,6 +198,7 @@ RelayLink::RelayLink(Role role, RelayOptions options, std::uint16_t enetPort,
     return;
   }
   m_relay.port = m_options.port;
+  m_home = m_relay;
   m_outer = OpenSocket(nullptr);
   if (m_outer == ENET_SOCKET_NULL) {
     Fail("could not open a socket to the relay");
@@ -226,6 +251,7 @@ RelayLink::~RelayLink() {
 
 void RelayLink::Fail(std::string error) {
   m_phase = Phase::Failed;
+  m_lost = false;
   m_status.error = std::move(error);
 }
 
@@ -243,12 +269,47 @@ void RelayLink::SendRequest(enet_uint32 now) {
     bytes = Header(kRegisterHost);
     bytes.insert(bytes.end(), m_secret.begin(), m_secret.end());
     bytes.insert(bytes.end(), m_options.token.begin(), m_options.token.end());
+  } else if (m_channel != 0) {
+    // Back on a relay that may have restarted: our old channel, so the
+    // host's proxy (and its ENet) knows us as before.
+    bytes = Header(kRejoinGuest);
+    bytes.insert(bytes.end(), m_secret.begin(), m_secret.end());
+    AppendBe16(bytes, m_channel);
   } else {
     bytes = Header(kRegisterGuest);
     bytes.insert(bytes.end(), m_secret.begin(), m_secret.end());
   }
   ToRelay(Padded(std::move(bytes)), now);
   m_requestMs = now;
+}
+
+void RelayLink::StartOver(enet_uint32 now) {
+  m_relay = m_home;
+  m_redirected = false;
+  m_lost = false;
+  m_phase = Phase::Registering;
+  m_startMs = now;
+  m_status.code.clear(); // that replica's: another gives another
+  SendRequest(now);
+}
+
+void RelayLink::RequestCode(enet_uint32 now) {
+  // With a code still live, ask for that one: the relay keeps it, or gives
+  // it back after it restarted (ReclaimCode), so the code players were
+  // given goes on working.
+  std::vector<std::uint8_t> bytes;
+  if (!m_status.code.empty() && !Reached(now, m_codeExpiresMs)) {
+    bytes = Header(kReclaimCode);
+    bytes.insert(bytes.end(), m_secret.begin(), m_secret.end());
+    bytes.insert(bytes.end(), m_status.code.begin(), m_status.code.end());
+    AppendBe16(bytes, static_cast<std::uint16_t>(
+                          std::min<enet_uint32>((m_codeExpiresMs - now) / 1000, 0xFFFF)));
+  } else {
+    bytes = Header(kRequestCode);
+    bytes.insert(bytes.end(), m_secret.begin(), m_secret.end());
+  }
+  ToRelay(Padded(std::move(bytes)), now);
+  m_codeRequestMs = now;
 }
 
 void RelayLink::Pump() {
@@ -303,15 +364,31 @@ void RelayLink::Pump() {
 void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 now) {
   if (size < kHeader || std::memcmp(data, kMagic, 4) != 0)
     return;
+  const auto quiet = Since(now, m_heardMs);
+  m_heardMs = now;
   const auto *body = data + kHeader;
   const auto length = size - kHeader;
   switch (data[4]) {
   case kRegistered:
+    if (length != 2)
+      return;
+    if (m_phase == Phase::Ready) {
+      // Our probe answered: the relay is there (again). It may have
+      // restarted, our code with it: asked for at once.
+      m_lost = false;
+      if (m_role == Role::Guest)
+        m_channel = Be16(body);
+      else if (quiet >= kProbeMs)
+        m_codeRequestMs = now - kRefreshMs;
+      return;
+    }
     // A guest that gave up stays given up; a host takes a late answer.
-    if (length != 2 || m_phase == Phase::Ready || m_phase == Phase::Resolving ||
-        (m_role == Role::Guest && m_phase == Phase::Failed))
+    if (m_phase == Phase::Resolving || (m_role == Role::Guest && m_phase == Phase::Failed))
       return;
     m_phase = Phase::Ready;
+    m_lost = false;
+    if (m_role == Role::Guest)
+      m_channel = Be16(body);
     m_status.error.clear();
     for (const auto &datagram : m_pending)
       SendTo(m_outer, m_relay, datagram.data(), datagram.size());
@@ -319,8 +396,14 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
     m_sentMs = now;
     break;
   case kError:
-    if (length == 1)
+    // Registered, a refusal answers a probe of a relay that restarted and
+    // does not have our session yet (its host is not back): asked again
+    // until the hold ends.
+    if (length == 1 && m_phase != Phase::Ready)
       OnError(body[0]);
+    break;
+  case kRedirect:
+    OnRedirect(body, length, now);
     break;
   case kData: {
     if (length < 2)
@@ -359,6 +442,30 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
   }
 }
 
+// A replica sends us to the one holding our code or session, or taking new
+// sessions while it shuts down. One hop at most: replicas that disagree on
+// who owns what cannot send us round in circles.
+void RelayLink::OnRedirect(const std::uint8_t *body, std::size_t length, enet_uint32 now) {
+  if (m_phase != Phase::Resolving && m_phase != Phase::Registering)
+    return;
+  if (m_redirected) {
+    Fail("the relay's replicas sent us on twice (their peers lists disagree)");
+    return;
+  }
+  if (length != 1 + 4 + 2 || body[0] != 4) {
+    Fail("the relay sent us to an address we cannot reach (IPv6)");
+    return;
+  }
+  ENetAddress to{};
+  std::uint32_t ip{};
+  std::memcpy(&ip, body + 1, 4); // network order already
+  to.host = ip;
+  to.port = Be16(body + 5);
+  m_relay = to;
+  m_redirected = true;
+  SendRequest(now);
+}
+
 void RelayLink::OnError(std::uint8_t code) {
   switch (code) {
   case 1:
@@ -371,6 +478,8 @@ void RelayLink::OnError(std::uint8_t code) {
       m_secretGiven = m_haveSecret = false;
       m_options.code = *NormalizeJoinCode(m_options.code);
       m_phase = Phase::Resolving;
+      m_relay = m_home;
+      m_redirected = false;
       SendRequest(enet_time_get());
     } else {
       Fail("the session is not on the relay (the host left)");
@@ -391,6 +500,9 @@ void RelayLink::OnError(std::uint8_t code) {
   case 7:
     Fail("too many join attempts: try again in a minute");
     break;
+  case 8:
+    Fail("the relay is restarting: try again in a moment");
+    break;
   default:
     Fail("the relay refused us (error " + std::to_string(code) + ")");
     break;
@@ -409,13 +521,51 @@ RelayLink::Channel *RelayLink::ChannelFor(std::uint16_t id, enet_uint32 now) {
   }
   ENetAddress local{};
   local.host = Loopback();
-  const auto socket = OpenSocket(&local);
+  auto socket = OpenSocket(&local);
   if (socket == ENET_SOCKET_NULL)
     return nullptr;
-  return &m_channels.emplace(id, Channel{socket, now}).first->second;
+  if (enet_socket_get_address(socket, &local) < 0) {
+    Close(socket);
+    return nullptr;
+  }
+  return &m_channels.emplace(id, Channel{socket, now, local.port}).first->second;
+}
+
+bool RelayLink::Carries(const ENetAddress &address) const {
+  if (address.host != Loopback())
+    return false;
+  if (m_role == Role::Guest)
+    return Same(address, m_innerAddress);
+  return std::ranges::any_of(m_channels,
+                             [&](const auto &entry) { return entry.second.port == address.port; });
 }
 
 void RelayLink::Timers(enet_uint32 now) {
+  // Registered: a silent relay is asked again, then waited for.
+  if (m_phase == Phase::Ready) {
+    const bool relaying =
+        m_role == Role::Guest || std::ranges::any_of(m_channels, [&](const auto &entry) {
+          return Since(now, entry.second.lastMs) < kIdleProbeMs;
+        });
+    const auto probeMs = relaying ? kProbeMs : kIdleProbeMs;
+    const auto silent = Since(now, m_heardMs);
+    if (silent >= probeMs + kLostAfterProbeMs && !m_lost) {
+      m_lost = true;
+      m_lostMs = now;
+    }
+    if (m_lost && Since(now, m_lostMs) >= kHoldMs) {
+      if (m_role == Role::Guest) {
+        Fail("lost the relay");
+        return;
+      }
+      m_status.error = "lost the relay";
+      StartOver(now);
+      return;
+    }
+    if (silent >= probeMs && Since(now, m_requestMs) >= kResendMs)
+      SendRequest(now);
+  }
+
   if (m_role == Role::Guest) {
     if (m_phase == Phase::Resolving || m_phase == Phase::Registering) {
       if (Since(now, m_startMs) >= m_timeoutMs)
@@ -438,24 +588,23 @@ void RelayLink::Timers(enet_uint32 now) {
     }
   } else if (Since(now, m_requestMs) >= kRefreshMs) {
     if (m_phase == Phase::Failed) {
-      m_phase = Phase::Registering; // the error stays shown until it works
-      m_startMs = now;
+      // The error stays shown until it works; from the configured address,
+      // which sends us to a replica that takes us.
+      const auto error = m_status.error;
+      StartOver(now);
+      m_status.error = error;
+    } else {
+      SendRequest(now);
     }
-    SendRequest(now);
   }
 
   // The code: asked until given, then again as often as the registration
-  // (its time left, or a new one from a relay that restarted).
-  if (m_phase == Phase::Ready) {
-    if (!m_status.code.empty() && Reached(now, m_codeExpiresMs))
-      m_status.code.clear();
-    const bool wanted = m_status.code.empty() || Since(now, m_codeRequestMs) >= kRefreshMs;
-    if (wanted && Since(now, m_codeRequestMs) >= kCodeRetryMs) {
-      auto bytes = Header(kRequestCode);
-      bytes.insert(bytes.end(), m_secret.begin(), m_secret.end());
-      ToRelay(Padded(std::move(bytes)), now);
-      m_codeRequestMs = now;
-    }
+  // (its time left, or back from a relay that restarted).
+  if (m_phase == Phase::Ready && !m_lost) {
+    const bool wanted = m_status.code.empty() || Reached(now, m_codeExpiresMs) ||
+                        Since(now, m_codeRequestMs) >= kRefreshMs;
+    if (wanted && Since(now, m_codeRequestMs) >= kCodeRetryMs)
+      RequestCode(now);
   }
 
   for (auto it = m_channels.begin(); it != m_channels.end();) {
@@ -495,7 +644,9 @@ RelayStatus RelayLink::Status() const {
     status.state = RelayStatus::State::Connecting;
     break;
   case Phase::Ready:
-    status.state = RelayStatus::State::Ready;
+    status.state = m_lost ? RelayStatus::State::Connecting : RelayStatus::State::Ready;
+    if (m_lost)
+      status.error = "the relay went silent: reconnecting";
     break;
   case Phase::Failed:
     status.state = RelayStatus::State::Failed;
@@ -505,6 +656,8 @@ RelayStatus RelayLink::Status() const {
     const auto left = static_cast<std::int32_t>(m_codeExpiresMs - enet_time_get());
     status.codeSecondsLeft = left > 0 ? static_cast<std::uint32_t>(left) / 1000 : 0;
   }
+  if (m_relay.host != 0)
+    status.at = Text(m_relay);
   return status;
 }
 

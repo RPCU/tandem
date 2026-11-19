@@ -9,8 +9,16 @@
 
 #include <algorithm>
 #include <cctype>
+#include <csignal>
 #include <cstdlib>
 #include <functional>
+#include <thread>
+
+#include <fcntl.h>
+#include <spawn.h>
+#include <sys/wait.h>
+
+extern char **environ;
 
 using namespace std::chrono_literals;
 using namespace tandem;
@@ -62,6 +70,77 @@ std::optional<net::RelayOptions> TestRelay() {
     MESSAGE("TANDEM_RELAY unset: skipped (tests/relay_loopback.sh runs it)");                      \
     return;                                                                                        \
   }
+
+// A fleet of two relays and its entrance (tests/relay_loopback.sh):
+// TANDEM_RELAY_FLEET="ip:port,ip:port", TANDEM_RELAY_FRONT="ip:port".
+struct Fleet {
+  net::RelayOptions replicas[2];
+  net::RelayOptions front;
+};
+
+std::optional<Fleet> TestFleet() {
+  const char *fleet = std::getenv("TANDEM_RELAY_FLEET");
+  const char *front = std::getenv("TANDEM_RELAY_FRONT");
+  if (!fleet || !front)
+    return std::nullopt;
+  const std::string_view text(fleet);
+  const auto comma = text.find(',');
+  Fleet out;
+  if (comma == std::string_view::npos ||
+      !net::ParseRelayAddress(text.substr(0, comma), out.replicas[0].address,
+                              out.replicas[0].port) ||
+      !net::ParseRelayAddress(text.substr(comma + 1), out.replicas[1].address,
+                              out.replicas[1].port) ||
+      !net::ParseRelayAddress(front, out.front.address, out.front.port))
+    return std::nullopt;
+  return out;
+}
+
+std::string AddressOf(const net::RelayOptions &relay) {
+  return relay.address + ":" + std::to_string(relay.port);
+}
+
+// A relay process of our own (TANDEM_RELAY_BIN), to stop and start again.
+class RelayProcess {
+public:
+  RelayProcess(std::string binary, std::uint16_t port)
+      : m_binary(std::move(binary)), m_port(port) {}
+  ~RelayProcess() { Kill(); }
+
+  bool Start() {
+    const auto udp = "127.0.0.1:" + std::to_string(m_port);
+    // Every flag its environment could set (TANDEM_RELAY_FRONT is the
+    // fleet's, tests/relay_loopback.sh), given here.
+    std::vector<std::string> args{
+        m_binary,  "serve", "--allow-any-host", "--udp", udp,         "--http", "127.0.0.1:0",
+        "--peers", udp,     "--shard",          "0",     "--readers", "2",      "--front="};
+    std::vector<char *> argv;
+    for (auto &arg : args)
+      argv.push_back(arg.data());
+    argv.push_back(nullptr);
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0);
+    const bool ok =
+        posix_spawn(&m_pid, m_binary.c_str(), &actions, nullptr, argv.data(), environ) == 0;
+    posix_spawn_file_actions_destroy(&actions);
+    return ok;
+  }
+  // A crash: no drain, every session forgotten.
+  void Kill() {
+    if (m_pid <= 0)
+      return;
+    ::kill(m_pid, SIGKILL);
+    waitpid(m_pid, nullptr, 0);
+    m_pid = 0;
+  }
+  net::RelayOptions Options() const { return {.address = "127.0.0.1", .port = m_port}; }
+
+private:
+  std::string m_binary;
+  std::uint16_t m_port;
+  pid_t m_pid{};
+};
 
 // The host's join code, once the relay gave it.
 std::string CodeOf(Endpoint &host) {
@@ -288,5 +367,103 @@ TEST_SUITE("relay") {
     REQUIRE_MESSAGE(again, error);
     REQUIRE(AllJoined({host.get(), direct.get(), again.get()}));
     CHECK(again->ThroughRelay());
+  }
+
+  TEST_CASE("a fleet of relays: the entrance and a replica send players on to the owner") {
+    const auto fleet = TestFleet();
+    if (!fleet) {
+      MESSAGE("TANDEM_RELAY_FLEET unset: skipped (tests/relay_loopback.sh runs it)");
+      return;
+    }
+    std::string error;
+    // A host at the entrance is sent to a replica, which owns its session.
+    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, fleet->front);
+    REQUIRE_MESSAGE(host, error);
+    const auto code = CodeOf(*host);
+    REQUIRE(code.size() == net::kJoinCodeSize);
+    const auto owner = host->Relay()->at;
+    const int ownerIndex = owner == AddressOf(fleet->replicas[0]) ? 0 : 1;
+    REQUIRE(owner == AddressOf(fleet->replicas[ownerIndex]));
+
+    // A guest asking the other replica is sent to the owner, once.
+    auto byCode = fleet->replicas[1 - ownerIndex];
+    byCode.code = code;
+    auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error);
+    REQUIRE_MESSAGE(guest, error);
+    REQUIRE(AllJoined({host.get(), guest.get()}));
+    CHECK(guest->Relay()->at == owner);
+
+    // And one at the entrance too.
+    auto atFront = fleet->front;
+    atFront.code = code;
+    auto third = Endpoint::Join({"third"}, JoinTarget{.relay = atFront}, error);
+    REQUIRE_MESSAGE(third, error);
+    REQUIRE(AllJoined({host.get(), guest.get(), third.get()}));
+    CHECK(third->Relay()->at == owner);
+  }
+
+  TEST_CASE("a relay that restarts within the hold: the session goes on, the code too") {
+    const char *binary = std::getenv("TANDEM_RELAY_BIN");
+    if (!binary) {
+      MESSAGE("TANDEM_RELAY_BIN unset: skipped (tests/relay_loopback.sh runs it)");
+      return;
+    }
+    RelayProcess relay(binary, NextPort());
+    REQUIRE(relay.Start());
+    std::this_thread::sleep_for(300ms);
+    std::string error;
+    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, relay.Options());
+    REQUIRE_MESSAGE(host, error);
+    auto byCode = relay.Options();
+    byCode.code = CodeOf(*host);
+    REQUIRE_FALSE(byCode.code.empty());
+    auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error);
+    REQUIRE_MESSAGE(guest, error);
+    REQUIRE(AllJoined({host.get(), guest.get()}));
+    const auto you = guest->You();
+
+    // Down for longer than the session's timeout (5 s), as a pod being
+    // replaced: nobody leaves.
+    relay.Kill();
+    bool ended = false, left = false;
+    const auto watch = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+      for (const auto &event : events) {
+        ended |= std::holds_alternative<events::Ended>(event);
+        left |= i == 0 && std::holds_alternative<events::PlayerLeft>(event);
+      }
+      return ended || left;
+    };
+    Pump({host.get(), guest.get()}, watch, 8s);
+    REQUIRE_FALSE(ended);
+    REQUIRE_FALSE(left);
+    CHECK(host->Relay()->state == net::RelayStatus::State::Connecting);
+
+    REQUIRE(relay.Start());
+    // The host's code is back on the relay, and play goes on.
+    std::optional<proto::PlayerState> seen;
+    REQUIRE(Pump(
+        {host.get(), guest.get()},
+        [&](std::size_t i, const auto &events) {
+          watch(i, events);
+          guest->SendLocalState(proto::PlayerState{.position = {3.f, 2.f, 1.f}});
+          for (const auto &event : events)
+            if (const auto *remote = std::get_if<events::RemoteState>(&event); remote && i == 0)
+              seen = remote->state;
+          return seen.has_value() || ended || left;
+        },
+        10s));
+    CHECK_FALSE(ended);
+    CHECK_FALSE(left);
+    REQUIRE(seen);
+    CHECK(seen->player == you);
+    CHECK(guest->You() == you);
+    CHECK(host->Relay()->state == net::RelayStatus::State::Ready);
+
+    // The code players were given still leads into the session.
+    auto late = byCode;
+    auto third = Endpoint::Join({"late"}, JoinTarget{.relay = late}, error);
+    REQUIRE_MESSAGE(third, error);
+    REQUIRE(AllJoined({host.get(), guest.get(), third.get()}));
+    CHECK(host->Relay()->code == byCode.code);
   }
 }

@@ -47,6 +47,9 @@ struct NetThread::Impl {
   // Guest through a relay: the session's secret, to join again after the
   // code expired.
   std::optional<net::RelaySecret> relaySecret;
+  // ...and the relay replica holding the session ("ip:port"): the secret
+  // does not say which one of a fleet it is.
+  std::string relayAt;
   // Consistency: what the player is told (never twice in a short while),
   // and whether our last session was lost (to say we are back).
   consistency::NoticeGate notices;
@@ -131,11 +134,14 @@ struct NetThread::Impl {
   std::optional<net::RelayOptions> RelayOf() const {
     if (config.relay.empty())
       return std::nullopt;
-    return net::RelayOptions{.address = config.relay,
-                             .port = config.relayPort,
-                             .token = config.relayToken,
-                             .secret = relaySecret,
-                             .code = relaySecret ? std::string() : config.joinCode};
+    net::RelayOptions options{.address = config.relay,
+                              .port = config.relayPort,
+                              .token = config.relayToken,
+                              .secret = relaySecret,
+                              .code = relaySecret ? std::string() : config.joinCode};
+    if (relaySecret && !relayAt.empty())
+      net::ParseRelayAddress(relayAt, options.address, options.port);
+    return options;
   }
 
   // The relay link's state for scripts (Runtime::RelayStatus).
@@ -349,8 +355,11 @@ struct NetThread::Impl {
               if constexpr (std::is_same_v<E, events::Joined>) {
                 log::Info("in the session as player {} (host {}{})", e.you, e.host,
                           endpoint->ThroughRelay() ? ", through the relay" : "");
-                if (const auto secret = endpoint->RelaySessionSecret())
+                if (const auto secret = endpoint->RelaySessionSecret()) {
                   relaySecret = secret;
+                  if (const auto relay = endpoint->Relay())
+                    relayAt = relay->at;
+                }
                 wasIn = true;
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.SetYou(e.you);
@@ -808,8 +817,8 @@ struct NetThread::Impl {
         status->codeSecondsLeft = 0; // not a change worth a line
         if (status != relayShown) {
           if (!status->code.empty() && (!relayShown || relayShown->code != status->code))
-            log::Info("join code {} (relay {}:{})", net::DisplayJoinCode(status->code),
-                      config.relay, config.relayPort);
+            log::Info("join code {} (relay {}:{}, replica {})", net::DisplayJoinCode(status->code),
+                      config.relay, config.relayPort, status->at);
           if (!status->error.empty() && (!relayShown || relayShown->error != status->error))
             log::Warn("relay: {}", status->error);
           else if (status->state == net::RelayStatus::State::Ready &&
