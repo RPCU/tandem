@@ -85,6 +85,12 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *transit = std::get_if<Transit>(&message);
       transit && transit->kind > TransitKind::Along)
     return std::nullopt;
+  if (const auto *regions = std::get_if<Regions>(&message);
+      regions && (regions->pairs.size() > 2 * kMaxRegionPairs || regions->pairs.size() % 2 != 0))
+    return std::nullopt;
+  if (const auto *given = std::get_if<NpcHandoverState>(&message);
+      given && given->effects.size() > kMaxNpcEffects)
+    return std::nullopt;
   return message;
 }
 
@@ -119,22 +125,85 @@ bool IsCombat(const Message &message) {
 bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::State; }
 
 const char *NameOf(const Message &message) {
-  constexpr const char *names[] = {
-      "Hello",          "Welcome",        "Refused",      "Ping",         "Pong",
-      "Roster",         "PlayerState",    "Bye",          "PoseState",    "Appearance",
-      "Held",           "Shot",           "Seat",         "VehicleState", "World",
-      "NpcSpawn",       "NpcStates",      "NpcGone",      "NpcHit",       "NpcHealth",
-      "NpcEffect",      "Pause",          "VehicleRadio", "PlayerHit",    "NpcAwareness",
-      "Stealth",        "Noise",          "NpcHack",      "NpcHackState", "NpcStatus",
-      "PlayerHack",     "VehicleHack",    "Journal",      "Tracked",      "PhoneCall",
-      "PhoneAction",    "PhoneReply",     "Subtitle",     "ChoiceHub",    "ChoiceCursor",
-      "StoryState",     "QuestReward",    "TimeEffect",   "StoryEffect",  "NpcAction",
-      "NpcActionReply", "NpcHold",        "NpcCue",       "Regroup",      "RegroupAnswer",
-      "WorldItem",      "WorldItemTaken", "SharedItem",   "Vitals",       "Revive",
-      "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",    "NpcWound",
-      "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",       "ResyncRequest",
-      "NpcSet",         "Epoch",          "Elsewhere",    "Transit",      "NpcSeat",
-      "NpcShotAt",      "ShotHit"};
+  constexpr const char *names[] = {"Hello",
+                                   "Welcome",
+                                   "Refused",
+                                   "Ping",
+                                   "Pong",
+                                   "Roster",
+                                   "PlayerState",
+                                   "Bye",
+                                   "PoseState",
+                                   "Appearance",
+                                   "Held",
+                                   "Shot",
+                                   "Seat",
+                                   "VehicleState",
+                                   "World",
+                                   "NpcSpawn",
+                                   "NpcStates",
+                                   "NpcGone",
+                                   "NpcHit",
+                                   "NpcHealth",
+                                   "NpcEffect",
+                                   "Pause",
+                                   "VehicleRadio",
+                                   "PlayerHit",
+                                   "NpcAwareness",
+                                   "Stealth",
+                                   "Noise",
+                                   "NpcHack",
+                                   "NpcHackState",
+                                   "NpcStatus",
+                                   "PlayerHack",
+                                   "VehicleHack",
+                                   "Journal",
+                                   "Tracked",
+                                   "PhoneCall",
+                                   "PhoneAction",
+                                   "PhoneReply",
+                                   "Subtitle",
+                                   "ChoiceHub",
+                                   "ChoiceCursor",
+                                   "StoryState",
+                                   "QuestReward",
+                                   "TimeEffect",
+                                   "StoryEffect",
+                                   "NpcAction",
+                                   "NpcActionReply",
+                                   "NpcHold",
+                                   "NpcCue",
+                                   "Regroup",
+                                   "RegroupAnswer",
+                                   "WorldItem",
+                                   "WorldItemTaken",
+                                   "SharedItem",
+                                   "Vitals",
+                                   "Revive",
+                                   "GameOver",
+                                   "NpcAnims",
+                                   "NpcShot",
+                                   "NpcStrike",
+                                   "NpcWound",
+                                   "NpcPoise",
+                                   "Difficulty",
+                                   "AreaHit",
+                                   "Digest",
+                                   "ResyncRequest",
+                                   "NpcSet",
+                                   "Epoch",
+                                   "Elsewhere",
+                                   "Transit",
+                                   "NpcSeat",
+                                   "NpcShotAt",
+                                   "ShotHit",
+                                   "Regions",
+                                   "NpcOwner",
+                                   "NpcHandover",
+                                   "NpcHandoverState",
+                                   "NpcHandoverDone",
+                                   "OwnedDigest",
+                                   "RegionHold"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

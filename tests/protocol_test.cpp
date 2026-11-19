@@ -558,3 +558,42 @@ TEST_CASE("a V in another world: survives encoding, small, reliable, not a story
   // A place this version does not know is refused.
   CHECK_FALSE(Decode(Encode(Elsewhere{.place = static_cast<Place>(5)})).has_value());
 }
+
+TEST_CASE("region messages survive encoding, are reliable and bounded") {
+  RoundTrips(Regions{.revision = 4, .pairs = {1, 2, 2, 3}});
+  RoundTrips(NpcOwner{.npc = 0x01000007, .owner = 3, .flags = kNpcPinned});
+  RoundTrips(NpcHandover{.npc = 9, .to = 2});
+  RoundTrips(NpcHandoverState{.npc = 9,
+                              .from = 1,
+                              .to = 2,
+                              .position = {1.f, 2.f, 3.f},
+                              .yaw = 0.5f,
+                              .health = 0.4f,
+                              .poise = 0.9f,
+                              .flags = kHandoverCombat,
+                              .target = 2,
+                              .hostileTo = 3,
+                              .highLevel = 2,
+                              .effects = {{.record = 77, .remaining = 3.5f, .stacks = 2}}});
+  RoundTrips(NpcHandoverDone{.npc = 9, .accepted = true});
+  RoundTrips(OwnedDigest{.seq = 5, .npcs = 0xABCDEF01, .count = 12});
+  RoundTrips(RegionHold{.player = 3, .held = true});
+  for (const Message message : {Message{Regions{}}, Message{NpcOwner{}}, Message{NpcHandover{}},
+                                Message{NpcHandoverState{}}, Message{NpcHandoverDone{}},
+                                Message{OwnedDigest{}}, Message{RegionHold{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK_FALSE(IsStory(message));
+    CHECK_FALSE(IsCombat(message));
+  }
+  CHECK(std::string(NameOf(Regions{})) == "Regions");
+  CHECK(std::string(NameOf(NpcHandoverState{})) == "NpcHandoverState");
+  CHECK(std::string(NameOf(OwnedDigest{})) == "OwnedDigest");
+  // An odd list is not pairs; a state carries a bounded list of effects.
+  CHECK_FALSE(Decode(Encode(Regions{.pairs = {1, 2, 3}})).has_value());
+  NpcHandoverState big;
+  big.effects.resize(kMaxNpcEffects + 1);
+  CHECK_FALSE(Decode(Encode(big)).has_value());
+  // Appended: the protocol version did not move.
+  CHECK(kProtocolVersion == 6);
+  CHECK(Message(Regions{}).index() == Message(ShotHit{}).index() + 1);
+}
