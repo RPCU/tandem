@@ -20,6 +20,8 @@ Statements marked _(inferred)_ are deductions, not something read in a
 source. Co-op rules are **proposals**, consistent with `ARCHITECTURE.md`:
 the host's game runs the story, guests follow.
 
+Since 2026-11-19: how a scene drives its actors, and what a guest can replay of it, is in [`engine/scene-replay.md`](engine/scene-replay.md).
+
 ## Contents
 
 1. [Scene tiers](#1-scene-tiers)
