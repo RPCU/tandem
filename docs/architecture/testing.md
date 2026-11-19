@@ -261,6 +261,15 @@ decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
   logged as the game logs it. `tests/peer_devices.sh`; scenarios
   `devices-door`, `devices-lift`, `devices-camera`, `devices-barrel`,
   `devices-guest` (`architecture/devices.md`, Testing).
+- **Breach Protocol** (any mode): `--breach ENTITY[:CLASS][@SECONDS]`
+  (an access point by id, its class `AccessPointControllerPS` unless
+  named) or `--breach npc=N[@SECONDS]` (the quickhack on NPC N) sends a won
+  breach SECONDS into the session (5) with `--programs LIST`
+  (`MinigameAction` records by name or hex), or a lost one with
+  `--breach-failed`. The host's answer and every other player's breach it
+  would apply are logged (it has no world: taken as run).
+  `tests/peer_breach.sh`; scenarios `breach-guest`, `breach-host`
+  (`architecture/devices.md`, "Breach Protocol").
 
 - **Vehicle combat** (`vehicle-combat.md`; `tests/peer_wheels.sh`):
   `--mode drive --car-damage N` dents our car N s after it sits (a flat

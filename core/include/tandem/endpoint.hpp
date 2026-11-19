@@ -330,6 +330,19 @@ struct DeviceRequested {
 // Guest: the host is sending its device record again: what it does not
 // name again is no longer the session's.
 struct DevicesReset {};
+// Breach Protocol (docs/architecture/devices.md, "Breach Protocol"). Another
+// player's breach for our game to apply: the host, a network's devices and
+// our NPCs in it (kBreachApply); any other game, our NPCs in it
+// (kBreachApply), or the NPC breached through the quickhack, ours
+// (`breach.npc`). Its daemons run from the breacher's puppet; its rewards
+// were the breacher's, never ours. Never our own breach back.
+struct BreachBy {
+  proto::Breach breach;
+};
+// The host's answer to our own breach (the host's game: at once).
+struct BreachAnswered {
+  proto::BreachResult result;
+};
 // Regions (docs/architecture/regions.md). The players our region is linked
 // with changed: we see their NPCs, they see ours.
 struct RegionsChanged {
@@ -537,7 +550,7 @@ using SessionEvent = std::variant<
     events::RemoteLink, events::RemoteWaypoint, events::RemoteVehicleDamage, events::VehicleHitBy,
     events::RemoteVehicleExit, events::RemoteVehicleCombat, events::RemoteMountedFire,
     events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
-    events::ChaseChanged, events::NamedAs>;
+    events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered>;
 
 class Endpoint {
 public:
@@ -809,6 +822,16 @@ public:
   // Guest: a device came into our world like this. Known to the session and
   // different: our game hears the host's word again; unknown: the host is asked.
   void AskDevice(proto::DeviceState state);
+  // Breach Protocol: our V breached a network or an NPC (its minigame won,
+  // or lost: kBreachFailed); the programs are what the game's minigame
+  // blackboard had. Guest: to the host, which answers (BreachAnswered).
+  // Host: judged here, and passed on when it stands. Host only: `player`
+  // may name another player, whose breach of an NPC our game resolved to
+  // its network (that player's, not ours: our game applies it too).
+  void SendBreach(proto::Breach breach);
+  // Host: breaches granted, and refused because someone was first.
+  const devices::Breaches &BreachRecord() const { return m_breaches; }
+  std::uint64_t BreachesRefused() const { return m_breachesRefused; }
   // The session's device record: host, the authority; guest, its copy.
   const devices::Ledger &Devices() const { return m_devices; }
   const devices::DigestCheck &DeviceChecks() const { return m_deviceCheck; }
@@ -1455,6 +1478,13 @@ private:
   std::uint64_t m_deviceStale{};
   void OnDeviceUse(net::PeerId peer, proto::PlayerId player, const proto::DeviceUse &use,
                    std::vector<SessionEvent> &out);
+  // Breach Protocol. Host: who breached what; a breach from `player` (us:
+  // no peer), judged, answered and passed on. Guest: our breaches the host
+  // has not answered yet.
+  devices::Breaches m_breaches;
+  std::uint64_t m_breachesRefused{};
+  void OnBreach(std::optional<net::PeerId> peer, proto::PlayerId player, proto::Breach breach,
+                std::vector<SessionEvent> &out);
   void SendDevicesTo(net::PeerId peer, bool resync);
   proto::DeviceDigest DeviceDigestNow() const;
   consistency::FaultyLink m_faults;

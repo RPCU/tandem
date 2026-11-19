@@ -553,3 +553,101 @@ perc)` and `RequestSettingStatPoolValue(…, perc)` read and set a share;
   Normal 3, Officer 4, Rare 5, Trash 6, Weak 7), `IsBoss` (`:20825`). No
   separate "named" flag in the scripts: a named enemy is a record of its
   own, usually Elite, Officer or Boss. [R]
+
+### 13.60 Breach Protocol: where a breach's outcome becomes effects (2026-11-19, read in final.reds, not run)
+
+What tandem's Breach Protocol between players (`architecture/devices.md`,
+"Breach Protocol") rests on. Line numbers are `final.reds` of 2.50.
+
+- **Every breach ends in one event.** The minigame's end queues
+  `AccessPointMiniGameStatus{minigameState}` (a native event, `:215004`)
+  for the entity named by `NetworkBlackboard.DeviceID`
+  (`NetworkInkGameController.CloseGame`, `:481325-481336`; the shipped
+  screen is native, `gameuiHackingMinigame*`, inferred to do the same).
+  The won programs are on the `HackingMinigame` blackboard,
+  `ActivePrograms` and `ActiveTraps` (`array<TweakDBID>` variants,
+  `:47186`), written before the event. A mod that skips the minigame
+  (AccessPointSkip: `Device.PerformDive` wrapped) sets that blackboard and
+  queues the same event: hooking the event covers it. [2.5-static]
+- **Its handlers.** `Device.OnAccessPointMiniGameStatus` (`:100932`; the
+  access point's override calls super, `:316738`) →
+  `ScriptableDeviceComponentPS.HackingMinigameEnded` (`:32864`) →
+  `SetMinigameState` (persistent `m_hackingMinigameState`, `:29208`) and
+  `FinalizeNetrunnerDive` (`:32888`) → `ResolveDive` (`:32822`):
+  `SetExposeQuickHacks` (with `isRemote` from
+  `NetworkBlackboard.RemoteBreach`) to the device's backdoor access point,
+  or, a remote breach of a device with no backdoor, to every one of its
+  access points (`GetAccessPoints`, `:29104`). A failure raises the
+  security system's alarm with the local player as culprit (`:100941`).
+  The NPC's handler, `ScriptedPuppet.OnAccessPointMiniGameStatus`
+  (`:23041`), asks its `PuppetDeviceLinkPS` (`AcquirePuppetDeviceLink`
+  by entity id) for `PerformNPCBreach` (`:113261`): an `NPCBreachEvent` to
+  its parent link, passed on to the access points
+  (`CommunityProxyPS.OnNPCBreachEvent`, `:208784`), whose
+  `OnNPCBreachEvent` (`:119726`) breaches and refreshes the network, or
+  counts a failed attempt and alerts its NPCs. An NPC with no link (a
+  spawned one, a proxy) does nothing there. [2.5-static]
+- **Programs become effects in `AccessPointControllerPS.RefreshSlaves`**
+  (`:119138`), reached from `OnSetExposeQuickHacks` (`:119753`) and
+  `OnNPCBreachEvent` through `RefreshSlaves_Event` (`:113014`, the lazy
+  children). It reads the blackboard **of the game it runs on**: loot
+  (`NetworkDataMineLootAll*`, `NetworkLootQ003`, `minigame_v2.FindAnna`'s
+  fact), then `ProcessMinigameNetworkActions` (`:119626`) for the access
+  point and each child, and `SetExposeQuickHacks` to each child;
+  `RewardMoney` (`:119451`, once per network: `m_moneyAwarded`, from the
+  local player's cyberdeck quality) and `RPGActionRewards.Hacking`. The
+  money and the XP go to `GetPlayerMainObject`. [2.5-static]
+- `ProcessMinigameNetworkActions`: traps first (`MinigameTraps.MaterialBonus`:
+  a material to the local player; `IncreaseAwareness`: a
+  `SetDetectionMultiplier` of 10 to the device's `SensorDevice`), then each
+  program whose `<record>.targetClass` CName is the device's class or
+  `None`: the device's own minigame action of that name
+  (`GetMinigameActionByName`, `:30113`), else a bare `PuppetAction` set up
+  on it, `RegisterAsRequester(device)`, `SetExecutor(GetPlayer)`,
+  `SetObjectActionID(program)`, `ProcessRPGAction`.
+  `FilterRedundantPrograms` keeps `NetworkTurretFriendly` over
+  `NetworkTurretShutdown`. [2.5-static]
+- **NPCs' daemons**: `ScriptedPuppetPS.OnSetExposeQuickHacks` (`:25602`)
+  reads the same blackboard and runs each program its character record
+  lists (`ObjectActions`) as a `PuppetAction` from `GetPlayerMainObject`;
+  `MinigameTraps.SquadBuff` puts `MinigameAction.BuffDamageReductionMinigame`
+  on it; `NetworkLootShard`, `NetworkLootMaterials`, `NetworkLootMoney`
+  pay the local player; perks of the local player read the program count
+  (`ThreeOrMoreProgramsMemoryRegPerk`, `MinigameNextInstanceBufferExtensionPerk`).
+  Daemon effects seen in scripts: `MinigameAction.ICEBrokenMinigameMinor`,
+  `…Medium`, `…Major`, `…Placide` (`:12254`), `VulnerabilityMinigame`
+  (`:85452`). Whether any of them carries the `Quickhack` gameplay tag is
+  TweakDB. [2.5-static]
+- **Running a daemon from someone else**: `BaseScriptableAction
+.ProcessRPGAction` (`:26605`) pays the executor's cost unless
+  `SetCanSkipPayCost(true)` (`:27838`, `CanSkipPayCost` `:26943` reads the
+  executor as a `PlayerPuppet`); `CompleteAction` gives the record's
+  `Rewards` (to the requester's stats) and quickhack XP to the executor as
+  a `PlayerPuppet` (none for a puppet). [2.5-static]
+- **A second breach is the game's to refuse**: the jack-in is offered while
+  `!WasHackingMinigameSucceeded()` (`:29580`, `:98834`, `:32689`), which
+  reads `m_hackingMinigameState`, not the network's `m_isBreached`;
+  `IsBreached` prereqs (`:310042`) and the device's `IsBreached`
+  (`:29052`: any of its access points `IsNetworkBreached`) lock the
+  quickhack. `BreachAccessPointEvent` (`:119812`) sets `m_isBreached` and
+  exposes the access point's quickhacks, nothing else;
+  `ResetNetworkBreachState` undoes it. An `@addMethod` on
+  `ScriptableDeviceComponentPS` can set `m_hackingMinigameState`
+  (protected). [2.5-static]
+- **Trap: `SetExposeQuickHacks` on an access point runs `RefreshSlaves`**
+  (`OnSetExposeQuickHacks` → `RefreshSlaves_Event`): the daemons of
+  whatever the local blackboard last held, and `RewardMoney` to the local
+  V if the network never paid. Never send it to an access point to say
+  "exposed"; `BreachAccessPointEvent` does that. [2.5-static]
+
+To verify in game (none has run):
+
+1. The shipped breach screen queues `AccessPointMiniGameStatus` with the
+   blackboard written first (the hook reads it in the event's handler).
+2. A daemon run on the host from a guest's puppet (`SetExecutor(puppet)`,
+   `SetCanSkipPayCost`): a camera shuts down, a turret turns friendly to
+   the players, an NPC gets its ICE broken; nothing is paid by the host's V.
+3. Whether the Breach Protocol quickhack is offered on a proxy (it has no
+   device link: `SQUAD_NETWORK`), and which effects it leaves there.
+4. The daemon effects' tags, so the list in `Breach.reds`
+   (`IsDaemonEffect`) can be the record's instead.

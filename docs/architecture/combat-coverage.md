@@ -68,7 +68,7 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 | Covert quickhacks: Ping, Sonic Shock, Reboot Optics, Memory Wipe, Request Backup, Whistle | W vanilla | – | – | U as above; U Whistle walks the NPC to the guest (Reactions.reds); D Ping's highlights are the caster's only | – | – | U |
 | Control quickhacks: Cripple Movement, Weapon Glitch, Cyberware Malfunction | W vanilla | – | – | U | – | – | U |
 | Ultimate quickhacks: Suicide, Cyberpsychosis, System Collapse, Blackwall Gateway | W vanilla | – | – | U the kill or madness on the host's NPC; D System Collapse's trace and cost buffs (`SystemCollapseModifyRevealBarEffector`) go to the host's V (coop-perks §6.2) | – | – | U |
-| Breach Protocol | W vanilla | – | – | B its daemons and the breached state are the host's devices: not built (combat.md, devices) | – | – | – |
+| Breach Protocol | W vanilla | – | – | U the minigame and its rewards on the guest's game; its outcome a `Breach` to the host: the network breached once for everyone (the access point's record), its daemons run by the host on the network's devices and its NPCs from the guest's puppet, by every other game on the NPCs it runs (`breach-guest`, devices.md); U the quickhack on a host NPC: that NPC by its owner, its network by the host; U a mod that skips the minigame (AccessPointSkip) through the same outcome | – | – | U the puppet busy in its minigame (activities.md); the daemons' effects on proxies (`NpcStatus`), the devices through their state (`breach-host`) |
 | Operating systems: cyberdeck (RAM, queue, Overclock), Sandevistan, Berserk | W vanilla | – | – | W the caster's own game (RAM, cooldowns, queue on the proxy: coop-perks §6.1) | – | – | – |
 | Vehicle combat (mounted guns, missiles, rams) | W vanilla | W off / U on | – | U hits from the driver's game on proxies; D missiles not shown (vehicles.md) | W off / U on | – | D |
 | Environment: explosive barrels and devices, turrets, electrified floors | W vanilla | W off / U on | W vanilla | D a barrel the guest shoots explodes on its game only (devices are the host's: devices branch); its strikes count | W off / U on | W vanilla | D |
@@ -242,6 +242,7 @@ the guest's game, as shots were (time.md), was weighed and not done:
   `combat-defend`, `combat-melee-guest`, then `npcs-shoot-guest` again (its
   hits were dropped) and the `outcomes-*` ones.
 - Gorilla arms' one-punch slow motion and System Collapse's buffs on the
-  host for a guest's hit (coop-perks §5.3, §6.2); Breach Protocol;
+  host for a guest's hit (coop-perks §5.3, §6.2); Breach Protocol in game
+  (`breach-guest`, `breach-host`; built, not run);
   smart-weapon NPCs firing guided rounds at a guest; NPC knives and
   launchers shown on guests; tracers for the Vs' shots.

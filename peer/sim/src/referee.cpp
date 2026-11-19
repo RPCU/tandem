@@ -27,7 +27,9 @@ bool HostOnly(const p::Message &m) {
                // trades' commits, a time skip's end, a quest's vehicle, the
                // story's restrictions, the host's compact NPC states.
                p::Rules, p::SessionLevel, p::NpcLevel, p::TradeCommit, p::TimeSkipResult,
-               p::VehicleUnlock, p::StoryRestrictions, p::NpcMotion>(m);
+               p::VehicleUnlock, p::StoryRestrictions, p::NpcMotion,
+               // Breach Protocol: the host's answer to a breach.
+               p::BreachResult>(m);
 }
 
 // What only a guest sends, and the host never passes on.
@@ -138,7 +140,7 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::ThrowEnd> || std::is_same_v<M, p::Activity> ||
                            std::is_same_v<M, p::CarLend> || std::is_same_v<M, p::Link> ||
                            std::is_same_v<M, p::Waypoint> || std::is_same_v<M, p::Defended> ||
-                           std::is_same_v<M, p::TradeOffer>)
+                           std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::Breach>)
           return &m.player;
         else
           return nullptr;
@@ -304,6 +306,10 @@ void Referee::Sent(p::PlayerId to, const p::Message &message, std::uint64_t nowU
     return;
   }
   if (!m_host) {
+    // Our breach: the host answers it (unless the minigame was lost).
+    if (const auto *breach = std::get_if<p::Breach>(&message);
+        breach && !(breach->flags & p::kBreachFailed))
+      ++m_breachesAsked[{breach->entity, breach->cls, breach->npc}];
     if (const auto *action = std::get_if<p::NpcAction>(&message)) {
       const std::pair key{action->npc, action->kind};
       ++m_asked[key];
@@ -678,6 +684,16 @@ void Referee::FromGuest(p::PlayerId from, const p::Message &message) {
 
   if (const auto *hit = std::get_if<p::NpcHit>(&message)) {
     NeedNpc(hit->npc, name);
+  } else if (const auto *breach = std::get_if<p::Breach>(&message)) {
+    // Granting a breach and passing it on is the host's word.
+    if (breach->flags & p::kBreachApply)
+      Add("authority.host-only",
+          std::format("player {} sent a granted breach: only the host passes breaches on", from));
+    if (breach->npc != 0)
+      NeedNpc(breach->npc, name);
+    if (breach->entity == 0 && breach->npc == 0)
+      Add("value.range", std::format("player {} breached nothing (no network, no NPC)", from));
+    whileDown("breaches a network");
   } else if (const auto *strike = std::get_if<p::NpcStrike>(&message)) {
     NeedNpc(strike->npc, name);
   } else if (const auto *effect = std::get_if<p::NpcEffect>(&message)) {
@@ -787,7 +803,46 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
   std::visit(
       [&](const auto &m) {
         using M = std::decay_t<decltype(m)>;
-        if constexpr (std::is_same_v<M, p::Roster>) {
+        if constexpr (std::is_same_v<M, p::Breach>) {
+          // Another player's breach, granted, for the NPCs our game runs:
+          // of its network, or the one it breached (ours).
+          notOurs(m.player);
+          if (!(m.flags & p::kBreachApply))
+            Add("breach.ungranted",
+                std::format("the host passed on player {}'s breach without granting it", m.player));
+          if (m.entity == 0 && m.npc != 0 && OwnerOf(m.npc) != m_self)
+            Add("authority.not-owner",
+                std::format("the host passed us a breach of npc {}, which player {} runs", m.npc,
+                            OwnerOf(m.npc)));
+          if (m.entity != 0 && !(m.flags & p::kBreachFailed)) {
+            const auto [first, fresh] = m_breached.emplace(std::pair{m.entity, m.cls}, m.player);
+            if (!fresh && first->second != m.player)
+              Add("oneshot.breach-twice",
+                  std::format("network {:x} breached by player {} and by player {}", m.entity,
+                              first->second, m.player));
+          }
+        } else if constexpr (std::is_same_v<M, p::BreachResult>) {
+          const std::tuple key{m.entity, m.cls, m.npc};
+          auto asked = m_breachesAsked.find(key);
+          if (asked == m_breachesAsked.end() || asked->second == 0) {
+            Add("reply.unasked", std::format("the host answered a breach of {:x} (npc {}) that we "
+                                             "never made",
+                                             m.entity, m.npc));
+            return;
+          }
+          if (--asked->second == 0)
+            m_breachesAsked.erase(asked);
+          if (m.verdict == p::BreachVerdict::Granted && m.by != m_self)
+            Add("authority.not-yours",
+                std::format("the host granted our breach in the name of player {}", m.by));
+          if (m.verdict == p::BreachVerdict::Granted && m.entity != 0) {
+            const auto [first, fresh] = m_breached.emplace(std::pair{m.entity, m.cls}, m_self);
+            if (!fresh && first->second != m_self)
+              Add("oneshot.breach-twice",
+                  std::format("network {:x} breached by player {} and by us", m.entity,
+                              first->second));
+          }
+        } else if constexpr (std::is_same_v<M, p::Roster>) {
           std::set<p::PlayerId> ids;
           for (const auto &player : m.players)
             if (!ids.insert(player.id).second)

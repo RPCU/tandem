@@ -183,10 +183,22 @@
   which applies them to its car (`ForceBrakesUntilStoppedOrFor`,
   `ActivateNetrunnerQuickhack`); taking control of such a car is refused
   for now (it needs the car handed over to the hacker). Not yet verified
-  in game (scenarios `hacks-upload`, `hacks-guest`, `hacks-car`). Open:
-  Breach Protocol (`Breach{access point, programs}` to the host, which
-  runs the daemons with the puppet as executor and sets the breached flag;
-  the loot stays the guest's), an upload of the same hack by another
+  in game (scenarios `hacks-upload`, `hacks-guest`, `hacks-car`).
+  **Breach Protocol** (`scripts/tandem/Breach.reds`, devices.md "Breach
+  Protocol"; built as planned, `Breach{access point, programs}` to the
+  host, not yet run in game): the minigame is the breacher's, with its
+  rewards (the loot stays the guest's); its outcome (`AccessPointMiniGameStatus`
+  and the `HackingMinigame` blackboard, so a mod that skips the minigame is
+  covered) goes to the host, which breaches the network once for everyone
+  and refuses a second breach; the host runs the daemons on the network's
+  devices and its NPCs with the breacher's puppet as executor
+  (`ProcessMinigameNetworkActions`, `ScriptedPuppetPS.OnSetExposeQuickHacks`,
+  the game's own program actions), every other game on the NPCs of it that
+  it runs, and the Breach Protocol quickhack on an NPC goes to that NPC's
+  owner (`Breach` with its NPC). The daemons' effects come back as
+  `NpcStatus` (Hacks.reds forwards them with the quickhack ones), so
+  proxies look weakened and linked partners see them tinted (comms.md).
+  Open: an upload of the same hack by another
   player shown as locked in the menu while it runs, the host NPC
   netrunner's own AI not told how its forwarded hack ended, take control.
 

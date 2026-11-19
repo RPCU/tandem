@@ -876,6 +876,42 @@ TEST_CASE("devices: survive encoding, small, reliable, and only known states pas
   CHECK_FALSE(Decode(Encode(DeviceUse{.status = 5})).has_value());
 }
 
+TEST_CASE("breaches: survive encoding, reliable one-shots, bounded, known flags only") {
+  RoundTrips(Breach{.player = 2,
+                    .entity = 0x1122334455667788ULL,
+                    .cls = 0x99AABBCCDDEEFF00ULL,
+                    .npc = 7,
+                    .programs = {1, 2, 3},
+                    .traps = {4},
+                    .flags = kBreachRemote | kBreachApply});
+  RoundTrips(Breach{.entity = 1, .cls = 2, .flags = kBreachFailed});
+  RoundTrips(
+      BreachResult{.entity = 1, .cls = 2, .npc = 3, .verdict = BreachVerdict::Breached, .by = 4});
+  for (const Message &message : {Message{Breach{}}, Message{BreachResult{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(IsReliable(message));
+    CHECK_FALSE(IsStory(message));
+    CHECK_FALSE(IsCombat(message));
+    CHECK_FALSE(IsVehicleCombat(message));
+  }
+  CHECK(std::string(NameOf(Breach{})) == "Breach");
+  CHECK(std::string(NameOf(BreachResult{})) == "BreachResult");
+  // A full grid of daemons is still a small message.
+  Breach full{.entity = 1, .cls = 2};
+  full.programs.assign(kMaxBreachPrograms, 0xFFFFFFFFFFull);
+  CHECK(Encode(full).size() <= 200);
+  CHECK(Encode(BreachResult{}).size() <= 32);
+  // Past the bounds, a flag or a verdict this version does not know.
+  auto many = full;
+  many.programs.push_back(1);
+  CHECK_FALSE(Decode(Encode(many)).has_value());
+  auto traps = full;
+  traps.traps.assign(kMaxBreachPrograms + 1, 1);
+  CHECK_FALSE(Decode(Encode(traps)).has_value());
+  CHECK_FALSE(Decode(Encode(Breach{.flags = 8})).has_value());
+  CHECK_FALSE(Decode(Encode(BreachResult{.verdict = BreachVerdict{3}})).has_value());
+}
+
 TEST_CASE("region messages survive encoding, are reliable and bounded") {
   RoundTrips(Regions{.revision = 4, .pairs = {1, 2, 2, 3}});
   RoundTrips(NpcOwner{.npc = 0x01000007, .owner = 3, .flags = kNpcPinned});

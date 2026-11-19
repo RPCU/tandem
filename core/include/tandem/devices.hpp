@@ -74,6 +74,35 @@ private:
   std::map<Key, proto::DeviceState> m_devices;
 };
 
+// Host: who breached what (Breach Protocol, devices.md). A network is
+// breached once for everyone, and so is an NPC through the quickhack: the
+// first breach of each is granted, any later one refused, whoever asks.
+// The device record has the last word on a network: an access point it
+// holds as breached by someone else (the host's world, another player) is
+// refused too.
+class Breaches {
+public:
+  using Verdict = proto::BreachVerdict;
+  Verdict Judge(const Key &network, proto::PlayerId player, const Ledger &record) const;
+  Verdict JudgeNpc(proto::NpcId npc) const;
+  // Granted: remembered for good (a breach outlives its breacher).
+  void Note(const Key &network, proto::PlayerId player) { m_networks.emplace(network, player); }
+  void NoteNpc(proto::NpcId npc, proto::PlayerId player) { m_npcs.emplace(npc, player); }
+  // Who breached it first (kNoPlayer: nobody, or the host's world).
+  proto::PlayerId By(const Key &network, const Ledger &record) const;
+  proto::PlayerId ByNpc(proto::NpcId npc) const;
+  std::size_t Size() const { return m_networks.size() + m_npcs.size(); }
+
+private:
+  std::map<Key, proto::PlayerId> m_networks;
+  std::map<proto::NpcId, proto::PlayerId> m_npcs;
+};
+
+// What a granted breach makes of its access point's record: breached and
+// open, by the breacher (from what the record has, else on).
+proto::DeviceState BreachedState(const Key &network, proto::PlayerId player,
+                                 const proto::DeviceState *record);
+
 // Guest: when to ask for the record again. As for the other domains
 // (consistency::Checker): it must differ twice in a row, and is asked for at
 // most once per cooldown.

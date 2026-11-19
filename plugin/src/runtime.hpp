@@ -627,6 +627,14 @@ public:
   void PushDevice(proto::Message message);
   std::vector<proto::Message> TakeDevices();
 
+  // Breach Protocol (scripts/tandem/Breach.reds). Game -> net: our V's
+  // breach (proto::Breach). Net -> game: another player's breach to apply
+  // (Breach), the host's answer to ours (BreachResult). Both bounded.
+  void SubmitBreach(proto::Breach breach);
+  std::vector<proto::Breach> TakeBreachOutbox();
+  void PushBreach(proto::Message message);
+  std::vector<proto::Message> TakeBreaches();
+
   // Our player id while in a session (0: none), set by the net thread.
   void SetYou(proto::PlayerId you) { m_you.store(you); }
   proto::PlayerId You() const { return m_you.load(); }
@@ -771,6 +779,8 @@ private:
   std::set<proto::PlayerId> m_heldPuppets;                   // m_heldLock
   std::vector<proto::Message> m_lootOutbox, m_lootInbox;     // m_lock
   std::vector<proto::Message> m_deviceOutbox, m_deviceInbox; // m_lock
+  std::vector<proto::Breach> m_breachOutbox;                 // m_lock
+  std::vector<proto::Message> m_breachInbox;                 // m_lock
   std::atomic<proto::PlayerId> m_you{0};
   std::vector<proto::NpcAnim> m_npcAnimsIn;                                             // m_lock
   std::vector<proto::NpcShot> m_npcShotsIn;                                             // m_lock

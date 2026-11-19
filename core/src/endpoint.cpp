@@ -808,6 +808,7 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               out.push_back(events::DeviceAsked{mine});
             },
             [&](const proto::DeviceUse &use) { OnDeviceUse(event.peer, player, use, out); },
+            [&](const proto::Breach &breach) { OnBreach(event.peer, player, breach, out); },
             [&](const proto::DeviceSet &) {
               // At most one per cooldown and guest, as for ResyncRequest.
               const auto now = net::NowUs();
@@ -1884,6 +1885,13 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (news || answer)
               out.push_back(events::HostDevice{state});
           },
+          [&](const proto::Breach &breach) {
+            // Another player's breach, granted: our NPCs of its network,
+            // or the NPC it breached (ours). Never our own back.
+            if (breach.player != m_you)
+              out.push_back(events::BreachBy{breach});
+          },
+          [&](const proto::BreachResult &result) { out.push_back(events::BreachAnswered{result}); },
           [&](const proto::DeviceSet &) {
             m_devices.Clear();
             m_deviceAsked.clear();
@@ -3324,6 +3332,107 @@ void Endpoint::AskDevice(proto::DeviceState state) {
   state.revision = 0;
   state.by = m_you;
   Send(m_hostPeer, state);
+}
+
+void Endpoint::SendBreach(proto::Breach breach) {
+  Record(breach);
+  if (!IsJoined() || m_ended || (breach.entity == 0 && breach.npc == 0))
+    return;
+  if (breach.programs.size() > proto::kMaxBreachPrograms)
+    breach.programs.resize(proto::kMaxBreachPrograms);
+  if (breach.traps.size() > proto::kMaxBreachPrograms)
+    breach.traps.resize(proto::kMaxBreachPrograms);
+  breach.flags &= proto::kBreachRemote | proto::kBreachFailed;
+  if (!IsHost()) {
+    breach.player = m_you;
+    Send(m_hostPeer, breach);
+    return;
+  }
+  // Our game's word: ours, or (an NPC's network) the player who breached.
+  const auto player = breach.player == proto::kNoPlayer ? m_you : breach.player;
+  std::vector<SessionEvent> out;
+  OnBreach(std::nullopt, player, std::move(breach), out);
+  m_pending.insert(m_pending.end(), std::make_move_iterator(out.begin()),
+                   std::make_move_iterator(out.end()));
+}
+
+// Host: a breach. The first of a network (or of an NPC) stands, the record
+// of its access point says breached for everyone, every other game hears
+// it for the NPCs of that network it runs; any later one is refused.
+// `peer`: the breacher's connection (none: our own game said it).
+void Endpoint::OnBreach(std::optional<net::PeerId> peer, proto::PlayerId player,
+                        proto::Breach breach, std::vector<SessionEvent> &out) {
+  breach.player = player;
+  breach.flags &= proto::kBreachRemote | proto::kBreachFailed;
+  if (breach.entity == 0 && breach.npc == 0)
+    return;
+  const devices::Key network{breach.entity, breach.cls};
+  // Our own game ran this breach already (the minigame was ours): it is
+  // not ours to apply again. Our game's word for another player is.
+  const bool ranHere = !peer && player == m_you;
+  const auto answer = [&](proto::BreachVerdict verdict, proto::PlayerId by) {
+    const proto::BreachResult result{.entity = breach.entity,
+                                     .cls = breach.cls,
+                                     .npc = breach.npc,
+                                     .verdict = verdict,
+                                     .by = by};
+    if (peer)
+      Send(*peer, result);
+    else if (player == m_you)
+      out.push_back(events::BreachAnswered{result});
+  };
+  // The owner of the NPC breached through the quickhack, when not the
+  // breacher's own game (which ran it).
+  const auto npcOwner = breach.npc != 0 ? NpcOwnerOrAnnouncer(breach.npc) : proto::kNoPlayer;
+  const bool npcElsewhere = breach.npc != 0 && npcOwner != player;
+  auto applied = breach;
+  applied.flags |= proto::kBreachApply;
+  // Every game but the breacher's applies a network's breach to its own
+  // NPCs of it; an NPC alone goes to its owner.
+  const auto passOn = [&] {
+    if (breach.entity != 0) {
+      for (const auto &[to, other] : m_playerOfPeer)
+        if (other != player)
+          Send(to, applied);
+      if (!ranHere)
+        out.push_back(events::BreachBy{applied});
+    } else if (npcElsewhere && RouteToOwner(breach.npc, applied, player) && !ranHere) {
+      out.push_back(events::BreachBy{applied});
+    }
+  };
+  if (breach.flags & proto::kBreachFailed) {
+    // A lost minigame: nothing is breached; whose NPCs they are alert them.
+    passOn();
+    return;
+  }
+  auto verdict = proto::BreachVerdict::Granted;
+  auto by = player;
+  if (breach.entity != 0) {
+    verdict = m_breaches.Judge(network, player, m_devices);
+    by = m_breaches.By(network, m_devices);
+  }
+  if (verdict == proto::BreachVerdict::Granted && npcElsewhere) {
+    verdict = m_breaches.JudgeNpc(breach.npc);
+    by = m_breaches.ByNpc(breach.npc);
+  }
+  if (verdict != proto::BreachVerdict::Granted) {
+    ++m_breachesRefused;
+    answer(verdict, by);
+    return;
+  }
+  if (breach.entity != 0) {
+    m_breaches.Note(network, player);
+    // Breached once, for everyone: the access point's record says so (its
+    // late joiners and the device digest included), whatever our game
+    // reports of it later.
+    if (const auto changed =
+            m_devices.Report(devices::BreachedState(network, player, m_devices.Find(network))))
+      Broadcast(*changed);
+  }
+  if (npcElsewhere)
+    m_breaches.NoteNpc(breach.npc, player);
+  passOn();
+  answer(proto::BreachVerdict::Granted, player);
 }
 
 // Host: a guest operated a device. First come, first served, by the

@@ -785,6 +785,18 @@ struct NetThread::Impl {
                           e.use.player, e.use.entity, e.use.cls, static_cast<int>(e.use.status),
                           e.use.flags, e.use.value);
                 runtime.PushDevice(e.use);
+              } else if constexpr (std::is_same_v<E, events::BreachBy>) {
+                log::Info("breach: player {}'s of network {:x} ({:#x}), npc {}: {} daemon(s), "
+                          "{} trap(s), flags {:#x}: ours to apply",
+                          e.breach.player, e.breach.entity, e.breach.cls, e.breach.npc,
+                          e.breach.programs.size(), e.breach.traps.size(), e.breach.flags);
+                runtime.PushBreach(e.breach);
+              } else if constexpr (std::is_same_v<E, events::BreachAnswered>) {
+                log::Info("breach: the host's answer on network {:x}, npc {}: verdict {}, by "
+                          "player {}",
+                          e.result.entity, e.result.npc, static_cast<int>(e.result.verdict),
+                          e.result.by);
+                runtime.PushBreach(e.result);
               } else if constexpr (std::is_same_v<E, events::DevicesReset>) {
                 log::Info("devices: the host sends its record again");
                 runtime.PushDevice(proto::DeviceSet{});
@@ -1233,6 +1245,13 @@ struct NetThread::Impl {
         } else if (const auto *use = std::get_if<proto::DeviceUse>(&message)) {
           endpoint->UseDevice(*use);
         }
+      }
+      for (auto &breach : runtime.TakeBreachOutbox()) {
+        log::Info("breach: ours of network {:x} ({:#x}), npc {}: {} daemon(s), {} trap(s), "
+                  "flags {:#x}",
+                  breach.entity, breach.cls, breach.npc, breach.programs.size(),
+                  breach.traps.size(), breach.flags);
+        endpoint->SendBreach(std::move(breach));
       }
       for (auto &message : runtime.TakeLootOutbox()) {
         if (auto *item = std::get_if<proto::WorldItem>(&message))
