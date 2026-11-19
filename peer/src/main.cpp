@@ -2174,6 +2174,8 @@ int main(int argc, char **argv) {
   auto nextShootYou =
       std::chrono::steady_clock::now() + std::chrono::seconds(options.shootYouSeconds);
   std::set<tandem::proto::NpcId> replayedNpcs; // host: the replay's live NPCs
+  // host: what each NPC holds as its animation state last said (--shoot-you)
+  std::map<tandem::proto::NpcId, std::uint64_t> npcWeapons;
   // Quickhacks: our upload's effect to land, the host's uploads to finish,
   // the NPCs a replay spawned, who drives a car.
   struct Pending {
@@ -2376,6 +2378,8 @@ int main(int argc, char **argv) {
       if (anims.Size() == 0) {
         std::erase_if(recorded->npcs,
                       [&](const auto &anim) { return deadNpcs.contains(anim.npc); });
+        for (const auto &anim : recorded->npcs)
+          npcWeapons[anim.npc] = anim.weapon;
         endpoint->SendNpcAnims(*recorded);
       }
     } else if (const auto *shot = std::get_if<tandem::proto::NpcShot>(&message)) {
@@ -3491,17 +3495,34 @@ int main(int argc, char **argv) {
     // guest's game fires the shot from its proxy and decides the hit.
     if (options.shootYouSeconds && options.host && now >= nextShootYou) {
       nextShootYou = now + std::chrono::seconds(options.shootYouSeconds);
+      // A live NPC with a weapon drawn, as a real host's shooter has; else
+      // the first live one, made to draw --shot-weapon first (its animation
+      // state says so, as a real host's would: the guest's proxy is armed
+      // from it, NpcAnims.reds).
       tandem::proto::NpcId shooter = 0;
       for (const auto npc : replayedNpcs)
-        if (!deadNpcs.contains(npc)) {
+        if (!deadNpcs.contains(npc) && npcWeapons[npc] != 0) {
           shooter = npc;
           break;
         }
+      if (!shooter)
+        for (const auto npc : replayedNpcs)
+          if (!deadNpcs.contains(npc)) {
+            shooter = npc;
+            npcWeapons[npc] = TweakDBID(options.shotWeapon);
+            endpoint->SendNpcAnims({.npcs = {{.npc = npc,
+                                              .highLevel = 2, // Combat
+                                              .upperBody = 0, // Aim
+                                              .flags = tandem::proto::kNpcAnimWeaponDrawn,
+                                              .weapon = npcWeapons[npc]}}});
+            Log("npc {} draws {} to fire", npc, options.shotWeapon);
+            break;
+          }
       for (const auto &[id, info] : endpoint->Players())
         if (shooter && id != endpoint->You() &&
             endpoint->SendNpcShotAt({.player = id,
                                      .npc = shooter,
-                                     .weapon = TweakDBID(options.shotWeapon),
+                                     .weapon = npcWeapons[shooter],
                                      .tbh = 1.f,
                                      .trigger = 4, // SemiAuto
                                      .factor = 1.f}))
@@ -3697,6 +3718,7 @@ int main(int argc, char **argv) {
           auto anim = line.anim;
           anim.npc = npc;
           batch.npcs.push_back(anim);
+          npcWeapons[npc] = anim.weapon;
           if (line.shots > 0)
             bursts[npc] = {line.shots, nowUs};
         }
