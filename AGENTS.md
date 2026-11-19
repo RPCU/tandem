@@ -269,8 +269,11 @@ natives:check` reads every pair).
 - **One build at a time** on the laptop: every build or test goes through
   the shared lock, with limited parallelism:
   `CMAKE_BUILD_PARALLEL_LEVEL=8 flock /tmp/tandem-build.lock direnv exec . task test`
-  (same for `task build`, `task check`). Prefer `tools/remote.sh build:plugin
-test` on anya when the laptop's lock has a queue: anya has its own lock.
+  (same for `task build`, `task check`). **Use `tools/build.sh TASK…`**: it
+  runs the task on anya (`tools/remote.sh`, anya's own lock) when nobody plays
+  there, and here through the laptop's lock otherwise. `tools/remote.sh`
+  refuses while the game runs on anya (our own scenario runs set
+  `TANDEM_REMOTE_WHILE_PLAYING=1` if they must build).
 - Vendored dependencies are submodules; don't edit files under `vendor/`.
   Work around upstream issues in our own build (see the `sdk-casefix` link
   in `plugin/CMakeLists.txt`).
