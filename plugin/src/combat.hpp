@@ -40,7 +40,7 @@ public:
   proto::Lend LendOf(proto::PlayerId player);
 
 private:
-private:
+  std::map<proto::PlayerId, proto::Lend> m_lends;
   struct Inbound {
     proto::Message message;
     std::uint64_t arrivalUs{};
