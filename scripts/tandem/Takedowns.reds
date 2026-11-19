@@ -161,7 +161,7 @@ public class TandemTakedowns extends ScriptableSystem {
     if npc == 0u {
       return;
     }
-    if TandemNative.IsHost() {
+    if this.Owns(npc) {
       this.HostOwnAction(npc, kind, name);
       return;
     }
@@ -215,7 +215,7 @@ public class TandemTakedowns extends ScriptableSystem {
   // plays: the proxy dies the game's way once the animation is over
   // (TandemNpcs.Die asks).
   public func DefersDeath(npc: Uint32, killer: Uint32) -> Bool {
-    if this.m_flushing || TandemNative.IsHost() {
+    if this.m_flushing || this.Owns(npc) {
       return false;
     }
     let held = this.Find(npc);
@@ -258,11 +258,15 @@ public class TandemTakedowns extends ScriptableSystem {
         TandemReactions.OnCue(this.GetGameInstance(), event.npc, event.action);
       }
     }
-    if TandemNative.IsHost() {
-      this.HostTick();
-    } else {
-      this.GuestTick();
-    }
+    // The NPCs we run, then the proxies we show (each skips the other's).
+    this.HostTick();
+    this.GuestTick();
+  }
+
+  // We run this shared NPC (regions): its owner's part is ours.
+  private func Owns(npc: Uint32) -> Bool {
+    let npcs = this.Npcs();
+    return IsDefined(npcs) && npcs.Owns(npc);
   }
 
   private func EndSession() -> Void {
@@ -307,7 +311,9 @@ public class TandemTakedowns extends ScriptableSystem {
     // and death follow.
     let kept: array<ref<TandemHeldNpc>>;
     for held in this.m_held {
-      if !EntityID.IsDefined(TandemTakedowns.ProxyEntity(this.GetGameInstance(), held.npc)) {
+      if this.Owns(held.npc) {
+        ArrayPush(kept, held); // ours: HostTick's
+      } else if !EntityID.IsDefined(TandemTakedowns.ProxyEntity(this.GetGameInstance(), held.npc)) {
         // Its proxy is gone (disposed of, out of range).
         TandemNative.HoldPuppet(TandemNative.NpcPuppetId(held.npc), false);
       } else if held.player == this.m_you && (held.how == 3 || held.how == 4) && this.m_now - held.since > 6.0 {
@@ -347,7 +353,8 @@ public class TandemTakedowns extends ScriptableSystem {
   private func HostTick() -> Void {
     let kept: array<ref<TandemHeldNpc>>;
     for held in this.m_held {
-      if this.HostKeep(held) {
+      // A proxy's hold is its owner's to end (GuestTick).
+      if !this.Owns(held.npc) || this.HostKeep(held) {
         ArrayPush(kept, held);
       }
     }
@@ -768,6 +775,9 @@ public class TandemTakedowns extends ScriptableSystem {
     if event.player == this.m_you {
       return; // ours: our V already plays it
     }
+    if this.Owns(event.npc) {
+      return; // an NPC we run: HostKeep frees it when its holder is gone
+    }
     let game = this.GetGameInstance();
     let proxy = this.BodyOf(event.npc);
     let held = this.Find(event.npc);
@@ -830,7 +840,7 @@ public class TandemTakedowns extends ScriptableSystem {
     }
     let player = GetPlayer(this.GetGameInstance());
     let npcs = this.Npcs();
-    let target = IsDefined(npcs) && !TandemNative.IsHost() ? npcs.NearestProxy(player.GetWorldPosition()) : null;
+    let target = IsDefined(npcs) ? npcs.NearestProxy(player.GetWorldPosition()) : null;
     if !IsDefined(target) {
       TandemNative.Log("takedown: no proxy");
       return;

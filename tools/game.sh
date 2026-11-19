@@ -40,6 +40,8 @@
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
 #                              vehicle ride | vehicle unride | vehicle clear | where | npcs |
 #                              npc count | npc anims | npc seek [range] | markers |
+#                              region (apart or grouped, leader, area owner) |
+#                              region hold on | region hold off (a gig of ours here) |
 #                              ride (our ride, the vehicle's seats, the others' rides) |
 #                              ride hide | ride show (every puppet out of sight and back) |
 #                              ride npc [RECORD] (an NPC into a free seat of our vehicle) |

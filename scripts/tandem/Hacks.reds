@@ -186,7 +186,7 @@ public class TandemHacks extends ScriptableSystem {
     if !started && !Equals(evt.state, EUploadProgramState.COMPLETED) {
       return;
     }
-    if TandemNative.IsHost() {
+    if TandemOwn.Npc(game, npc) {
       TandemNative.SendNpcHackState(npc, hacks.You(), action.GetObjectActionID(), started ? 0 : 1, started ? evt.duration : 0.0);
       return;
     }
@@ -253,7 +253,6 @@ public class TandemHacks extends ScriptableSystem {
   // Uploads whose time is up, in the order they arrived (host: the real
   // NPC's; guest: the others' shown on our proxies).
   private func EndUploads(game: GameInstance) -> Void {
-    let host = TandemNative.IsHost();
     let kept: array<ref<TandemUpload>>;
     let ended: array<ref<TandemUpload>>;
     for upload in this.m_uploads {
@@ -266,7 +265,7 @@ public class TandemHacks extends ScriptableSystem {
     this.m_uploads = kept;
     for upload in ended {
       let npc = TandemHacks.NpcEntity(game, upload.npc);
-      if host {
+      if TandemOwn.Npc(game, upload.npc) {
         let alive = IsDefined(npc) && !npc.IsDead();
         TandemNative.SendNpcHackState(upload.npc, upload.player, upload.action, alive ? 1 : 2, 0.0);
         TandemNative.Log(s"hacks: player \(upload.player)'s upload of \(TDBID.ToStringDEBUG(upload.action)) on npc \(upload.npc) \(alive ? "done" : "failed")");
@@ -332,7 +331,7 @@ public class TandemHacks extends ScriptableSystem {
   // Host: a status effect came onto one of our NPCs (NPCPuppet
   // .OnStatusEffectApplied, below).
   public static func EffectApplied(npc: ref<NPCPuppet>, evt: ref<ApplyStatusEffectEvent>) -> Void {
-    if !TandemNative.IsHost() || !evt.isNewApplication || evt.isAppliedOnSpawn || !IsDefined(evt.staticData) {
+    if !TandemOwn.Entity(npc.GetGame(), npc.GetEntityID()) || !evt.isNewApplication || evt.isAppliedOnSpawn || !IsDefined(evt.staticData) {
       return;
     }
     let effect = evt.staticData.GetID();
@@ -358,7 +357,7 @@ public class TandemHacks extends ScriptableSystem {
   }
 
   public static func EffectRemoved(npc: ref<NPCPuppet>, evt: ref<RemoveStatusEffect>) -> Void {
-    if !TandemNative.IsHost() || !evt.isFinalRemoval || !IsDefined(evt.staticData) {
+    if !TandemOwn.Entity(npc.GetGame(), npc.GetEntityID()) || !evt.isFinalRemoval || !IsDefined(evt.staticData) {
       return;
     }
     if !ArrayContains(evt.staticData.GameplayTags(), n"Quickhack") {
@@ -446,7 +445,7 @@ public class TandemHacks extends ScriptableSystem {
   // NPC-to-NPC path, since a puppet is no PlayerPuppet). It is that
   // player's: their game runs it on their V. True: handled, not to land here.
   public static func ForwardToGuest(target: ref<ScriptedPuppet>, evt: ref<HackTargetEvent>) -> Bool {
-    if !TandemNative.IsHost() || !IsDefined(target) {
+    if !IsDefined(target) {
       return false;
     }
     let game = target.GetGame();

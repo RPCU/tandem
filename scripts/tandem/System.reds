@@ -558,7 +558,7 @@ public class TandemSystem extends ScriptableSystem {
 
   // Guest: our hit takes the last of this proxy's health (Combat.reds).
   public func PredictKill(npc: Uint32) -> Void {
-    if IsDefined(this.m_npcs) && this.m_you != 0u && !TandemNative.IsHost() {
+    if IsDefined(this.m_npcs) && this.m_you != 0u {
       this.m_npcs.PredictKill(npc);
     }
   }
@@ -817,8 +817,16 @@ public class TandemSystem extends ScriptableSystem {
       }
     } else if Equals(command, "pose hook") {
       TandemNative.PoseHook();
+    } else if Equals(command, "region hold on") || Equals(command, "region hold off") {
+      // (test) what the quest work says when a gig of our own world starts
+      // or ends where our V stands: we keep our region meanwhile.
+      TandemRegions.Hold(Equals(command, "region hold on"));
+      TandemNative.Log(s"\(command)");
+    } else if Equals(command, "region") {
+      let linked = TandemRegions.Linked();
+      TandemNative.Log(s"region: \(TandemRegions.IsApart() ? "apart" : "grouped"), leader player \(TandemRegions.Leader()), linked with \(ArraySize(linked)) player(s), area \(TandemRegions.OwnsArea() ? "ours" : s"player \(TandemRegions.AreaOwner(this.m_you))'s"), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
     } else if Equals(command, "npc count") {
-      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed)");
+      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
     } else if Equals(command, "npc anims") {
       TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
     } else if StrBeginsWith(command, "npc seek") {
