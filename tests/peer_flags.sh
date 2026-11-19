@@ -31,6 +31,8 @@ declare -A value=(
   ["--go-down"]=10 ["--go-out"]=10 ["--revive"]=3
   ["--path"]=x.path ["--save-path"]=x.path
   ["--drop"]=0.2 ["--dup"]=0.2 ["--vanish-at"]=20
+  ["--traffic"]=4 ["--traffic-vehicle"]=Vehicle.x ["--wreck-at"]=10 ["--ram-traffic"]=3 ["--steal-at"]=12
+  ["--heat"]=3 ["--heat-at"]=5 ["--heat-for"]=20 ["--crime-at"]=8
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true
 [ -n "$flags" ] || {
