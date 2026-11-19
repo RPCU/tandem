@@ -638,10 +638,11 @@ public:
   // host keeps everyone's and tells all the session's level when their mean
   // changes: SessionLevel, never a game's to say); NpcLevel is the host's
   // word on one of its NPCs, kept for late joiners until the NPC goes.
-  // CarLend too: ours, kept and said as soon as we are in; the host stamps
-  // who, keeps everyone's (late joiners, resyncs) and tells all. False when
-  // nothing was sent (not ours to say, nobody to send to, refused by the
-  // rules).
+  // NpcScale is an owner's word on an NPC it runs (tandem/scaling.hpp; one
+  // whose spawn has not reached us yet is said right after it), to everyone
+  // who sees that NPC, kept for late joiners until it goes. CarLend too: ours, kept and said as
+  // soon as we are in; the host stamps who, keeps everyone's (late joiners, resyncs) and tells all.
+  // False when nothing was sent (not ours to say, nobody to send to, refused by the rules).
   bool SendCombat(proto::Message message);
   // The session's rules as this game knows them (the host's own; a guest's,
   // what the host said; none yet: every flag off).
@@ -657,6 +658,8 @@ public:
   // host's level for each NPC it shares.
   const std::optional<proto::SessionLevel> &SessionLevel() const { return m_sessionLevel; }
   const std::map<proto::NpcId, proto::NpcLevel> &NpcLevels() const { return m_npcLevels; }
+  // How many players each NPC we know of is scaled for, as its owner said.
+  const std::map<proto::NpcId, proto::NpcScale> &NpcScales() const { return m_npcScale; }
   // Who may drive each player's cars, as they said (a guest's own is not
   // kept here; the host's is).
   const std::map<proto::PlayerId, proto::CarLend> &CarLends() const { return m_lends; }
@@ -1350,6 +1353,10 @@ private:
   std::optional<proto::Rules> m_rules;
   bool FriendlyFire() const { return (Rules().flags & proto::kRuleFriendlyFire) != 0; }
   std::map<proto::NpcId, proto::NpcPoise> m_npcPoise;
+  // How many players each NPC is scaled for (NpcScale: its owner's word),
+  // as this game knows it; and ours said before their spawn reached us.
+  std::map<proto::NpcId, proto::NpcScale> m_npcScale;
+  std::map<proto::NpcId, proto::NpcScale> m_npcScaleEarly;
   void OnGuestCombat(proto::PlayerId player, const proto::Message &message,
                      std::vector<SessionEvent> &out);
   // Levels: ours (kept until we are in the session); host: each player's,

@@ -433,6 +433,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Garage-LendAboard", "{1}'s car: only with them aboard");
     this.Text("Tandem-Garage-LendKept", "{1}'s car: they keep it to themselves");
     this.Text("Tandem-Levels-Scaled", "Co-op: enemies are scaled to level {1}");
+    this.Text("Tandem-Scaling-On", "Co-op: enemies near more than one of you are tougher");
     this.Text("Tandem-Saves-Failed", "Co-op: the game could not be saved. Save it yourself to keep what your V earned.");
     this.Text("Tandem-Saves-WhenYouCan", "Co-op: save your game when you can, to keep what your V earned.");
     this.Text("Tandem-Saves-NotRestored", "Co-op: your game could not be put back as it was. Load your last save.");
@@ -479,6 +480,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-TokenSet", "set");
     this.Text("Tandem-Settings-Name", "Name");
     this.Text("Tandem-Settings-FriendlyFire", "Friendly fire");
+    this.Text("Tandem-Settings-EnemyScaling", "Tougher enemies for each extra player");
     this.Text("Tandem-Settings-Notices", "Notices");
     this.Text("Tandem-Settings-Notices-All", "all");
     this.Text("Tandem-Settings-Notices-Important", "important only");
@@ -693,6 +695,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Garage-LendAboard", "Voiture de {1} : seulement avec lui à bord");
     this.Text("Tandem-Garage-LendKept", "Voiture de {1} : il la garde pour lui");
     this.Text("Tandem-Levels-Scaled", "Coop : les ennemis sont ajustés au niveau {1}");
+    this.Text("Tandem-Scaling-On", "Coop : les ennemis proches de plusieurs d'entre vous sont plus coriaces");
     this.Text("Tandem-Saves-Failed", "Coop : la partie n'a pas pu être sauvegardée. Sauvegardez vous-même pour garder ce que votre V a gagné.");
     this.Text("Tandem-Saves-WhenYouCan", "Coop : sauvegardez dès que possible, pour garder ce que votre V a gagné.");
     this.Text("Tandem-Saves-NotRestored", "Coop : votre partie n'a pas pu être remise comme avant. Chargez votre dernière sauvegarde.");
@@ -738,6 +741,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-TokenSet", "défini");
     this.Text("Tandem-Settings-Name", "Nom");
     this.Text("Tandem-Settings-FriendlyFire", "Tirs alliés");
+    this.Text("Tandem-Settings-EnemyScaling", "Ennemis plus coriaces à chaque joueur en plus");
     this.Text("Tandem-Settings-Notices", "Notifications");
     this.Text("Tandem-Settings-Notices-All", "toutes");
     this.Text("Tandem-Settings-Notices-Important", "importantes seulement");

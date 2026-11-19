@@ -488,3 +488,68 @@ muzzleOffset)` (54056), then the weapon effects. Its aiming needs the
   (`IsAgentVisible`) and no cooldown runs: `MemoryWipeOnDodge` on the NPC,
   the sound, the dilation removed, `DodgeOutOfSightCooldown` and
   `SecondChancePerkCooldown` on V (`:39682-39696`). [2.5-untested]
+
+### 13.50 Enemy scaling: the stats and how modifiers stack (2026-11-19, read in final.reds, not run)
+
+What `scripts/tandem/Scaling.reds` relies on (`architecture/npcs.md`,
+"Enemy scaling").
+
+- **Modifier types** (`gameStatModifierType`, `:510`): `Additive` 0,
+  `AdditiveMultiplier` 1, `Multiplier` 2. The game's scripts use a
+  `Multiplier` of 0 to switch a stat off whatever else it has
+  (`StunApplicationRate`, `:556144`; `RollForPlusOnMaxQuality` on an item,
+  `:131085-131092`) and one of `1 / x` to undo a perk's factor
+  (`Deceleration`, `:553270-553285`): a `Multiplier` multiplies the stat's
+  final value. [R] The whole formula, (Σ additive) × (1 + Σ additive
+  multipliers) × Π multipliers, is native. [I]
+- **Where the difficulty, the level and the rarity come in**: an NPC's
+  stats come from its record's modifiers, mostly curves of its
+  `PowerLevel` (`puppet_powerLevelToHealth`; the rarity presets
+  `puppet_preset_*_mods` read with its `PowerLevel`,
+  `RPGManager.GetRarityMultiplier`, `:35335-35360`); a curve takes an
+  optional `gameDifficulty` (`StatsDataSystem.GetValueFromCurve`,
+  `:73095-73101`). Our `PowerLevel` modifier (§13.38.1) moves that base;
+  a `Multiplier` of ours multiplies the result once. [R] Which NPC stat
+  reads the difficulty is TweakDB. [I]
+- **The stats** (`gamedataStatType`): `Health` 787 (`:2159`: an NPC's
+  maximum health, read as such by `SendDamageRequestToPreventionSystem`,
+  `:85856`), `Armor` 33 (`:1405`), `Poise` 1139 (`:2511`),
+  `StaggerDamageThreshold` 1480 and `…InCover` 1482 (`:2852`, `:2854`),
+  `KnockdownDamageThreshold` 938 and `…InCover` 940 (`:2310`, `:2312`),
+  `HitShapeArmor` 820 (`:2192`). Stat pools (`gamedataStatPoolType`,
+  `:3602`): `Health` 17, `Poise` 27. [R] That the `Poise` stat is the poise
+  pool's maximum is TweakDB (`BaseStatPools.Poise`): `tools/game.sh cmd npc
+scale` logs the stat and the pool's maximum side by side. [I]
+- **Armour** (`DamageSystem.ProcessArmor`, `:86621`): the target's `Armor`
+  (or its `HitShapeArmor`, when a player's hit lands on an armoured hit
+  shape and that is more), less the weapon's armour penetration, times
+  `StatsDataSystem.GetArmorEffectivenessValue`, divides each damage value
+  (never below 1); it runs on the game that computes the target's side of
+  the hit: for a guest's hit on a proxy, the guest's, against the proxy's
+  stats. [R]
+- **Poise** is drained by a player's hit in `DamageSystem` (`:85845`,
+  `RequestChangingStatPoolValue` on `Poise`, an amount the attack decides,
+  never a share of the maximum): a larger pool takes more hits to break.
+  [R]
+- **Hit reaction thresholds** (`HitReactionComponent`, `:183465`): the
+  component reads the NPC's `Health` **once**, as `m_totalHealth`
+  (`GetDBParameters`, `:183600-183603`, a task queued when it is attached,
+  `:184409`); the impact, stagger and knockdown thresholds are
+  `m_totalHealth × stat / 100` (`SetHitReactionThresholds`,
+  `:185085-185110`), the stats followed through a stats listener
+  (`:187866-187876`). A health change later reaches only its current health
+  (`NPCHealthListener`, `:187800-187805`). So a `Health` modifier added
+  after the attach leaves the thresholds in points as they were; ours on the
+  threshold stats is ×poise × unscaled health ÷ `m_totalHealth`, read
+  through an added method (`TandemTotalHealth`). [R] The wound,
+  dismemberment and defeat thresholds are shares of the same total (`:183629-183750`):
+  unscaled, as vanilla's. [R]
+- **Pools** (`StatPoolsSystem`, `:83541-83577`): `GetStatPoolValue(…,
+perc)` and `RequestSettingStatPoolValue(…, perc)` read and set a share;
+  `GetStatPoolMaxPointValue` the maximum; `IsStatPoolAdded`. A pool's own
+  answer to its maximum changing is native: we set the share back. [R] / [I]
+- **Bosses and named enemies**: `ScriptedPuppet.GetNPCRarity()` (native,
+  `:19424`), `gamedataNPCRarity` (`:4950`: Boss 0, Elite 1, MaxTac 2,
+  Normal 3, Officer 4, Rare 5, Trash 6, Weak 7), `IsBoss` (`:20825`). No
+  separate "named" flag in the scripts: a named enemy is a record of its
+  own, usually Elite, Officer or Boss. [R]

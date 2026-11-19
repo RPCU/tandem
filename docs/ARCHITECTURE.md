@@ -147,7 +147,8 @@ The owner simulates; everyone else displays.
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | NPC melee at a V: whether it is blocked, parried, dodged | the V's game, at its proxy's swing | host's NPC decides to attack and recoils; `architecture/combat-coverage.md` |
 | a thrown object (grenade, knife, launcher round, smart round) | the thrower's game | a copy from the puppet that hurts nobody, ended where the real one ended |
-| the session's rules (friendly fire) | host (`tandem.ini`) | followed |
+| the session's rules (friendly fire, enemy scaling) | host (`tandem.ini`) | followed |
+| an NPC's scaling for the players near it (health, poise, armour) | the NPC's owner, by the host's rule | proxies carry the same modifiers (`NpcScale`; `architecture/npcs.md`) |
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
 | items a V drops on purpose | host | lie in every game; the first pickup keeps it |
 | a V's pings, tags, link consent, waypoint | that player's game | shown; tags only to players linked with it (`architecture/comms.md`) |
@@ -155,7 +156,8 @@ The owner simulates; everyone else displays.
 | devices: doors, lifts, cameras, turrets, barrels, the alarm | host | own copy first, then the host's word; `architecture/devices.md` |
 | what a guest did in co-op (the ledger) | the guest's game (save) | never shared: quests taken part in, rewards paid once, vehicles earned |
 
-Enemy level (the mean of the players' levels): `architecture/npcs.md`.
+Enemy level (the mean of the players' levels) and enemy scaling (tougher
+for each extra player near, its damage never): `architecture/npcs.md`.
 
 Vehicle combat follows the same rule, the game that simulates a vehicle owns it, its damage included (a car its driver left is still that driver's; a gunner seat is given by the vehicle's owner): [`architecture/vehicle-combat.md`](architecture/vehicle-combat.md).
 
@@ -288,7 +290,7 @@ plugin") and its open problems.
 - `vehicle-combat.md`: vehicle damage and destruction, shooting from vehicles and mounted weapons, a guest on another player's gun, collisions (players' cars, rams on NPCs), NPC vehicle chases, bikes, bailing out and being thrown out.
 - `world.md`: time of day and weather; open: the guest acting on the world, NCPD chases, saves.
 - `time.md`: the pause menu, slowed time (time bubbles, the scanner's bubble); open: what the partner lives with when a V scans (mitigations to decide), every time dilation, other timeline and menu, NPC shots simulated by the target's game.
-- `npcs.md`: enemy level, NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
+- `npcs.md`: enemy level, enemy scaling (the count of players near, the multipliers, the host's rule), NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
 - `regions.md`: per-player regions: links and their hysteresis, who owns an NPC, hand-over without a pop, what travels where, crowd density in the overlap, late joiners and vanishing owners, grouped or apart and holding a region for gigs, the area owner (traffic). For anything about an NPC's owner.
 - `combat.md`: hits, outcomes, game rules for every hit, quickhacks.
 - `combat-coverage.md`: every way of fighting (weapon classes, melee, block and parry, throwables, grenades, launchers, cyberware, quickhacks, environment, finishers) by attacker and target, with its state and evidence; thrown objects' copies, friendly fire, NPC melee at a guest, companions.

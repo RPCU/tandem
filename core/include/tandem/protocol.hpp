@@ -1744,10 +1744,16 @@ struct ThrowEnd {
 // kRuleFriendlyFire: a V's hits (shots, blades, explosions) hurt the other
 // Vs (AreaHit carries every one); off, they never do (the default: as
 // vanilla's companions, a partner is never hurt by V).
-inline constexpr std::uint8_t kRuleFriendlyFire = 1;
-inline constexpr std::uint8_t kRuleFlags = kRuleFriendlyFire;
+// kRuleEnemyScaling: hostile NPCs are tougher for each extra player near
+// them (tandem/scaling.hpp, NpcScale; docs/architecture/npcs.md, "Enemy
+// scaling"), their health by `enemyHealth` percent per extra player.
+// (enemyHealth was added before Rules was released: no version bump.)
+inline constexpr std::uint8_t kRuleFriendlyFire = 1, kRuleEnemyScaling = 2;
+inline constexpr std::uint8_t kRuleFlags = kRuleFriendlyFire | kRuleEnemyScaling;
+inline constexpr std::uint8_t kMaxEnemyHealth = 250; // percent per extra player
 struct Rules {
-  std::uint8_t flags{}; // kRule*
+  std::uint8_t flags{};         // kRule*
+  std::uint8_t enemyHealth{60}; // kRuleEnemyScaling: health percent per extra player
   friend bool operator==(const Rules &, const Rules &) = default;
 };
 
@@ -2431,6 +2437,21 @@ struct VehicleMotion {
   friend bool operator==(const VehicleMotion &, const VehicleMotion &) = default;
 };
 
+// ---- Enemy scaling (docs/architecture/npcs.md, "Enemy scaling") ----
+// How many players an NPC's owner counts near it (tandem/scaling.hpp:
+// within 100 m, fighting it or its target, with hysteresis): its owner's
+// game scales its health, poise and armour by that count under the host's
+// Rules, keeping its health and poise fractions; every proxy of it takes
+// the same modifiers, so each game computes a hit against the same armour
+// and the same health. Owner to everyone who sees it (a guest's through the
+// host), when it changes; kept for late joiners until the NPC is gone; in
+// the NPC digest.
+struct NpcScale { // Event channel
+  NpcId npc{};
+  std::uint8_t players{}; // 1..kMaxPlayerId
+  friend bool operator==(const NpcScale &, const NpcScale &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -2447,15 +2468,15 @@ using Message = std::variant<
     TimeSkip, TimeSkipVote, TimeSkipResult, PlayerLevel, SessionLevel, NpcLevel, Trade, TradeOffer,
     TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
-    Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion>;
+    Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended), a level
-// (PlayerLevel … NpcLevel) or a car's lending (CarLend): one path in
-// endpoint.hpp too.
+// (PlayerLevel … NpcLevel), a car's lending (CarLend) or an NPC's scale
+// (NpcScale): one path in endpoint.hpp too.
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);

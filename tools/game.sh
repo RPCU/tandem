@@ -52,7 +52,8 @@
 #                              respawn | inspect | bodies | probe | probe stop | despawn |
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
 #                              vehicle ride | vehicle unride | vehicle clear | where | npcs |
-#                              npc count | npc anims | npc seek [range] | markers |
+#                              npc count | npc anims | npc seek [range] | npc scale |
+#                              markers |
 #                              region (apart or grouped, leader, area owner) |
 #                              region hold on | region hold off (a gig of ours here) |
 #                              ride (our ride, the vehicle's seats, the others' rides) |

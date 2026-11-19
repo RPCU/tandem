@@ -76,7 +76,8 @@ idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name,
   pose, story, quest_freeze, quest_freeze_allow, scene_privacy,
   private_actors, private_scenes, public_scenes, time_host, friendly_fire
-  (the host's session rule, `combat-coverage.md`); `link`,
+  (the host's session rule, `combat-coverage.md`); `enemy_scaling`,
+  `enemy_scaling_health` (the host's too, `npcs.md`); `link`,
   `pings` (`comms.md`); `relay`,
   `relay_token`, `join` for the relay and join codes; `recorder`,
   `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`, see

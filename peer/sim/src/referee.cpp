@@ -52,7 +52,7 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
                       std::is_same_v<M, p::NpcStatus> || std::is_same_v<M, p::PlayerHit> ||
                       std::is_same_v<M, p::PlayerHack> || std::is_same_v<M, p::NpcCue> ||
                       std::is_same_v<M, p::NpcShotAt> || std::is_same_v<M, p::NpcActionReply> ||
-                      std::is_same_v<M, p::NpcReaction>)
+                      std::is_same_v<M, p::NpcReaction> || std::is_same_v<M, p::NpcScale>)
           return {x.npc};
         else if constexpr (std::is_same_v<M, p::SharedItem>)
           return x.kind == p::kSharedOnCorpse ? std::vector<p::NpcId>{x.npc}

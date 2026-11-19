@@ -38,6 +38,7 @@ add_library(tandem_core STATIC
   src/settings.cpp
   src/activity.cpp
   src/progress.cpp
+  src/scaling.cpp
   src/trade.cpp
   src/comms.cpp)
 target_include_directories(tandem_core PUBLIC include)

@@ -11,24 +11,24 @@ public class TandemSettings {
   // once, 1 from the next session, 2 after a restart.
   public static func Keys() -> array<String> {
     return [
-      "name", "friendly_fire", "notices", "markers", "nameplates", "recorder",
+      "name", "friendly_fire", "enemy_scaling", "notices", "markers", "nameplates", "recorder",
       "relay", "relay_token", "story", "quest_freeze", "scene_privacy", "time_host"
     ];
   }
 
   private static func Labels() -> array<String> {
     return [
-      "Settings-Name", "Settings-FriendlyFire", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-Recorder",
+      "Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-Recorder",
       "Settings-Relay", "Settings-RelayToken", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost"
     ];
   }
 
   private static func Kinds() -> array<Int32> {
-    return [2, 0, 1, 0, 0, 0, 2, 2, 0, 0, 0, 1];
+    return [2, 0, 0, 1, 0, 0, 0, 2, 2, 0, 0, 0, 1];
   }
 
   private static func Whens() -> array<Int32> {
-    return [1, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 1];
+    return [1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 1];
   }
 
   private static func IndexOf(key: String) -> Int32 {
@@ -69,16 +69,25 @@ public class TandemSettings {
     return ["Common-On", "Common-Off"];
   }
 
-  // Friendly fire is the host's rule for the whole session (proto::Rules,
-  // docs/architecture/combat.md): a guest's page shows the host's and
-  // cannot change it; its own tandem.ini's counts when it hosts.
+  // Friendly fire and enemy scaling are the host's rules for the whole
+  // session (proto::Rules, docs/architecture/combat.md, npcs.md): a guest's
+  // page shows the host's and cannot change them; its own tandem.ini's
+  // count when it hosts.
   public static func IsHostsRule(key: String) -> Bool {
-    return Equals(key, "friendly_fire") && TandemNative.IsStarted() && !TandemNative.IsHost();
+    return (Equals(key, "friendly_fire") || Equals(key, "enemy_scaling")) && TandemNative.IsStarted() && !TandemNative.IsHost();
+  }
+
+  // The host's value of one of its rules, as tandem.ini writes it.
+  private static func HostsValue(key: String) -> String {
+    if Equals(key, "enemy_scaling") {
+      return TandemProgress.EnemyScaling() ? "on" : "off";
+    }
+    return TandemFight.FriendlyFire() ? "on" : "off";
   }
 
   // What the value is, in words.
   public static func ValueText(key: String) -> String {
-    let value = TandemSettings.IsHostsRule(key) ? (TandemFight.FriendlyFire() ? "on" : "off") : TandemNative.Setting(key);
+    let value = TandemSettings.IsHostsRule(key) ? TandemSettings.HostsValue(key) : TandemNative.Setting(key);
     if TandemSettings.Kind(key) == 2 {
       if StrLen(value) == 0 {
         return TandemText.Get("Settings-NotSet");
@@ -175,7 +184,7 @@ public class TandemSettings {
       for key in TandemSettings.Keys() {
         let value = Equals(key, "relay_token") ? (StrLen(TandemNative.Setting(key)) > 0 ? "set" : "") : TandemNative.Setting(key);
         if TandemSettings.IsHostsRule(key) {
-          value = s"\(TandemFight.FriendlyFire() ? "on" : "off") (the host's)";
+          value = s"\(TandemSettings.HostsValue(key)) (the host's)";
         }
         TandemNative.Log(s"coop: setting \(key) = \(value)");
       }

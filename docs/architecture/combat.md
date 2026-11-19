@@ -101,7 +101,8 @@
   attacker's side only and goes as `AreaHit`, through the host, to that
   V's game, which runs it on its V from our puppet by its own rules; so do
   its shots and blades, all of it only while the session's rules allow
-  friendly fire (`Rules`, the host's `friendly_fire`, off by default:
+  friendly fire (`Rules`, the host's `friendly_fire`, off by default; `Rules`
+  also carries enemy scaling, `npcs.md`:
   combat-coverage.md). It is one rule for every hit and every game: the
   host's settings page changes it live, a guest's shows it and cannot (the
   per-player setting the `polish` branch had, decided by the target's own

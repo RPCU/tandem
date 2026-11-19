@@ -17,7 +17,7 @@ declare -A value=(
   ["--hack-player"]=6 ["--npc-hack"]=AIQuickHack.HackRevealPosition ["--hack-car"]=5
   ["--npc"]=Character.x ["--detect-at"]=15 ["--detect-for"]=10 ["--camo"]=10 ["--shoot"]=3
   ["--strike"]=nonlethal ["--difficulty"]=veryhard ["--area-hit"]=5
-  ["--friendly-fire"]=on ["--throw"]=5 ["--throw-item"]=Items.x ["--smart"]=5 ["--defend"]=5
+  ["--friendly-fire"]=on ["--enemy-scaling"]=on ["--enemy-scaling-health"]=0.8 ["--near-npc"]=--check ["--throw"]=5 ["--throw-item"]=Items.x ["--smart"]=5 ["--defend"]=5
   ["--hit-you-melee"]=on
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
   ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5

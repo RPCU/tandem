@@ -53,7 +53,7 @@
   comment is appended, not uncommented; a value with a line break, `;` or
   `#` is refused) through a file written aside, and applies it.
   `TandemNative.Setting(key)` reads one back.
-- **When it applies**: at once for `recorder`, `friendly_fire`, `notices`,
+- **When it applies**: at once for `recorder`, `friendly_fire`, `enemy_scaling`, `notices`,
   `markers`, `nameplates` (the scripts read them as they need them);
   `name`, `relay`, `relay_token`, `story`, `time_host` are what a running
   session was set up with, so a change during one waits for its end (the
@@ -64,7 +64,11 @@
   changes the rule at once (the host sends `Rules` again, every game
   follows); on a guest's page in a session it shows the host's value,
   "(the host's rule)", and cannot be changed there (its own tandem.ini's
-  value counts when it hosts). `notices = important` hides news (rides, calls, pauses,
+  value counts when it hosts). `enemy_scaling` (on by default; `npcs.md`,
+  "Enemy scaling") is the host's rule the same way: hostile NPCs tougher for
+  each extra player near them; its health per player,
+  `enemy_scaling_health`, is not on the page (tandem.ini only).
+  `notices = important` hides news (rides, calls, pauses,
   players elsewhere, loot), `minimal` keeps only what asks for an answer or
   went wrong (`TandemText.Importance`); every notice is logged either way.
   `markers = off` takes the other players' markers off (HUD, minimap, map);
