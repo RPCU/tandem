@@ -1223,10 +1223,154 @@ void Runtime::ResetSession() {
     m_revives.clear();
     m_regroupOutbox.clear();
     m_regroupEvents.clear();
+    // The street: the next session's ids are other vehicles, and nobody is
+    // wanted in it until its game says so.
+    m_streetOutbox.clear();
+    m_trafficStates.reset();
+    m_streetEvents.clear();
+    m_sharedTraffic.clear();
+    m_trafficStatus.clear();
+    m_heat.clear();
   }
   // The NPCs' tracks: the next session's ids are other NPCs.
   std::lock_guard _(m_tracksLock);
   std::erase_if(m_tracks, [](const auto &entry) { return entry.first >= kNpcPuppetBase; });
+  m_trafficTracks.clear();
+}
+
+void Runtime::SubmitStreet(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_streetOutbox.size() < 2048)
+    m_streetOutbox.push_back(std::move(message));
+  else
+    ++m_overflows;
+}
+
+std::vector<proto::Message> Runtime::TakeStreetOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_streetOutbox, {});
+}
+
+void Runtime::SubmitTrafficCars(std::span<const traffic::Car> cars,
+                                std::span<const proto::Vec3> viewers) {
+  proto::TrafficStates states;
+  states.cars = m_trafficBudget.Pick(cars, viewers);
+  if (states.cars.empty())
+    return;
+  std::lock_guard _(m_lock);
+  m_trafficStates = std::move(states);
+}
+
+std::optional<proto::TrafficStates> Runtime::TakeTrafficStates() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_trafficStates, std::nullopt);
+}
+
+void Runtime::PushStreetEvent(StreetEvent event) {
+  event.atUs = net::NowUs();
+  std::lock_guard _(m_lock);
+  if (m_streetEvents.size() < 2048)
+    m_streetEvents.push_back(std::move(event));
+  else
+    ++m_overflows; // the scripts' checks put the proxies right (SharedTraffic)
+}
+
+std::vector<StreetEvent> Runtime::TakeStreetEvents() {
+  std::lock_guard _(m_lock);
+  // A hit or a crime that waited behind a loading screen is worth nothing:
+  // a pile of them at once would wreck a car, or cost five stars, the
+  // moment the world comes back. What is shared is state: always applied.
+  const auto now = net::NowUs();
+  const auto before = m_streetEvents.size();
+  std::erase_if(m_streetEvents, [&](const StreetEvent &event) {
+    const bool timed =
+        event.kind == StreetEvent::Kind::Hit || event.kind == StreetEvent::Kind::Crime;
+    return timed && now > event.atUs && now - event.atUs > 3'000'000;
+  });
+  if (const auto stale = before - m_streetEvents.size())
+    log::Info("consistency: {} vehicle hit(s) or crime(s) dropped, too old to apply", stale);
+  return std::exchange(m_streetEvents, {});
+}
+
+void Runtime::PushTrafficStates(const proto::TrafficStates &states) {
+  std::lock_guard _(m_tracksLock);
+  for (const auto &entry : states.cars) {
+    const auto car = traffic::Unpack(entry);
+    m_trafficTracks[entry.id].Push({.seq = states.seq,
+                                    .timeUs = states.timeUs,
+                                    .position = car.position,
+                                    .orientation = car.orientation,
+                                    .velocity = car.velocity});
+  }
+}
+
+void Runtime::ForgetTraffic(proto::TrafficId id) {
+  std::lock_guard _(m_tracksLock);
+  m_trafficTracks.erase(id);
+}
+
+sync::VehicleView Runtime::TrafficOf(proto::TrafficId id) {
+  // Drawn 200 ms in the past: two states of a 10 Hz stream around it even
+  // when one is late, and half a second of extrapolation when a far
+  // vehicle only gets every third packet (traffic::Budget).
+  constexpr std::uint64_t kDelayUs = 200'000;
+  const auto now = HostNowUs();
+  std::lock_guard _(m_tracksLock);
+  const auto car = m_trafficTracks.find(id);
+  if (car == m_trafficTracks.end())
+    return {};
+  return car->second.At(now > kDelayUs ? now - kDelayUs : 0);
+}
+
+void Runtime::SetSharedTraffic(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
+                               const std::map<proto::TrafficId, proto::TrafficStatus> &status) {
+  std::lock_guard _(m_lock);
+  m_sharedTraffic = traffic;
+  m_trafficStatus = status;
+}
+
+std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> Runtime::SharedTraffic() {
+  std::lock_guard _(m_lock);
+  std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> out;
+  out.reserve(m_sharedTraffic.size());
+  for (const auto &[id, spawn] : m_sharedTraffic) {
+    // Without a status it stands as it was announced.
+    proto::TrafficStatus status{
+        .id = id, .flags = static_cast<std::uint16_t>(spawn.flags & proto::kTrafficStatusMask)};
+    if (const auto it = m_trafficStatus.find(id); it != m_trafficStatus.end())
+      status = it->second;
+    out.emplace_back(spawn, status);
+  }
+  return out;
+}
+
+bool Runtime::IsTrafficShared(proto::TrafficId id) {
+  std::lock_guard _(m_lock);
+  return m_sharedTraffic.contains(id);
+}
+
+void Runtime::SubmitLocalHeat(const proto::Heat &heat) {
+  std::lock_guard _(m_lock);
+  m_localHeat = heat;
+}
+
+std::optional<proto::Heat> Runtime::TakeLocalHeat() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localHeat, std::nullopt);
+}
+
+void Runtime::PushRemoteHeat(const proto::Heat &heat) {
+  std::lock_guard _(m_lock);
+  if (heat.stage == 0)
+    m_heat.erase(heat.player);
+  else
+    m_heat[heat.player] = heat;
+}
+
+proto::Heat Runtime::HeatOf(proto::PlayerId player) {
+  std::lock_guard _(m_lock);
+  const auto it = m_heat.find(player);
+  return it == m_heat.end() ? proto::Heat{.player = player} : it->second;
 }
 
 void Runtime::PushRemotePose(const proto::PoseState &pose) {

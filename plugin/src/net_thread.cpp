@@ -29,6 +29,7 @@ struct NetThread::Impl {
   bool lastPaused{};
   std::optional<proto::TimeEffect> lastTime;
   std::optional<proto::Transit> lastTransit;
+  std::optional<proto::Heat> lastHeat;
   std::optional<proto::Elsewhere> lastElsewhere;
   // Guest through a relay: the session's secret, to join again after the
   // code expired.
@@ -249,6 +250,8 @@ struct NetThread::Impl {
       endpoint->SetLocalTimeEffect(*lastTime);
     if (lastTransit)
       endpoint->SetLocalTransit(*lastTransit);
+    if (lastHeat)
+      endpoint->SetLocalHeat(*lastHeat);
     if (lastElsewhere)
       endpoint->SetLocalElsewhere(*lastElsewhere);
     if (lastVitals)
@@ -288,6 +291,7 @@ struct NetThread::Impl {
       // 2 ms: states go out within a frame of the game handing them over.
       // `shared`: what the scripts' checks compare with changed.
       bool shared = false;
+      bool street = false;
       for (const auto &event : endpoint->Update(2ms)) {
         std::visit(
             [&](const auto &e) {
@@ -452,6 +456,50 @@ struct NetThread::Impl {
                 runtime.PushShotAt(e.shot);
               } else if constexpr (std::is_same_v<E, events::ShotHitBy>) {
                 runtime.PushShotHit(e.hit);
+              } else if constexpr (std::is_same_v<E, events::TrafficSpawned>) {
+                street = true;
+                runtime.PushStreetEvent(
+                    {.kind = StreetEvent::Kind::Spawn, .spawn = e.spawn, .flags = e.spawn.flags});
+              } else if constexpr (std::is_same_v<E, events::TrafficMoved>) {
+                runtime.PushTrafficStates(e.states);
+              } else if constexpr (std::is_same_v<E, events::TrafficLeft>) {
+                street = true;
+                if (e.gone.reason == proto::kTrafficTaken)
+                  log::Info("street: vehicle {:#x} is player {}'s car now", e.gone.id,
+                            e.gone.player);
+                runtime.PushStreetEvent({.kind = StreetEvent::Kind::Gone,
+                                         .spawn = {.id = e.gone.id},
+                                         .reason = e.gone.reason,
+                                         .player = e.gone.player});
+                runtime.ForgetTraffic(e.gone.id);
+              } else if constexpr (std::is_same_v<E, events::TrafficChanged>) {
+                street = true;
+                runtime.PushStreetEvent({.kind = StreetEvent::Kind::Status,
+                                         .spawn = {.id = e.status.id},
+                                         .flags = e.status.flags,
+                                         .amount = e.status.health});
+              } else if constexpr (std::is_same_v<E, events::TrafficHitBy>) {
+                runtime.PushStreetEvent({.kind = StreetEvent::Kind::Hit,
+                                         .spawn = {.id = e.hit.id, .position = e.hit.position},
+                                         .flags = e.hit.flags,
+                                         .player = e.hit.player,
+                                         .amount = e.hit.damage,
+                                         .vector = e.hit.impulse});
+              } else if constexpr (std::is_same_v<E, events::RemoteHeat>) {
+                log::Info("player {}: wanted level {} (state {})", e.heat.player, e.heat.stage,
+                          static_cast<int>(e.heat.state));
+                runtime.PushRemoteHeat(e.heat);
+              } else if constexpr (std::is_same_v<E, events::CrimeReported>) {
+                log::Info("police: our V's crime seen by the area's owner (kind {}, npc {})",
+                          static_cast<int>(e.crime.kind), e.crime.npc);
+                runtime.PushStreetEvent(
+                    {.kind = StreetEvent::Kind::Crime,
+                     .spawn = {.id = e.crime.traffic, .position = e.crime.position},
+                     .flags = e.crime.flags,
+                     .reason = static_cast<std::int32_t>(e.crime.kind),
+                     .amount = e.crime.amount,
+                     .npc = e.crime.npc,
+                     .attack = e.crime.attackType});
               } else if constexpr (std::is_same_v<E, events::HostNpcStates>) {
                 runtime.PushNpcStates(e.states, endpoint->You());
               } else if constexpr (std::is_same_v<E, events::HostNpcAwareness>) {
@@ -559,6 +607,8 @@ struct NetThread::Impl {
       }
       if (shared && !ended)
         runtime.SetShared(endpoint->SharedNpcs(), endpoint->Players());
+      if (street && !ended)
+        runtime.SetSharedTraffic(endpoint->SharedTraffic(), endpoint->TrafficStatuses());
       if (const auto lost = runtime.TakeOverflows())
         log::Warn("consistency: {} event(s) dropped, a queue was full (the game was not taking "
                   "them); its checks put the proxies right",
@@ -688,6 +738,39 @@ struct NetThread::Impl {
         endpoint->SendNpcActionReply(player, reply);
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
+      // The street: what its owner says of its vehicles, then where they are.
+      bool streetSaid = false;
+      for (const auto &message : runtime.TakeStreetOutbox()) {
+        if (const auto *spawn = std::get_if<proto::TrafficSpawn>(&message)) {
+          endpoint->SendTrafficSpawn(*spawn);
+          streetSaid = true;
+        } else if (const auto *gone = std::get_if<proto::TrafficGone>(&message)) {
+          endpoint->SendTrafficGone(*gone);
+          runtime.ForgetTraffic(gone->id);
+          streetSaid = true;
+        } else if (const auto *status = std::get_if<proto::TrafficStatus>(&message)) {
+          endpoint->SendTrafficStatus(*status);
+          streetSaid = true;
+        } else if (const auto *hit = std::get_if<proto::TrafficHit>(&message)) {
+          endpoint->SendTrafficHit(*hit);
+        } else if (const auto *claim = std::get_if<proto::TrafficClaim>(&message)) {
+          endpoint->ClaimTraffic(claim->id, claim->seat);
+        } else if (const auto *crime = std::get_if<proto::Crime>(&message);
+                   crime && !endpoint->SendCrime(*crime)) {
+          log::Info("crime of player {} dropped: not a guest in the session", crime->player);
+        }
+      }
+      if (streetSaid)
+        runtime.SetSharedTraffic(endpoint->SharedTraffic(), endpoint->TrafficStatuses());
+      if (auto cars = runtime.TakeTrafficStates())
+        endpoint->SendTrafficStates(std::move(*cars));
+      if (auto heat = runtime.TakeLocalHeat()) {
+        lastHeat = heat;
+        if (heat->stage == 0)
+          lastHeat.reset();
+        endpoint->SetLocalHeat(*heat);
+        log::Info("our wanted level {} (state {})", heat->stage, static_cast<int>(heat->state));
+      }
       if (auto awareness = runtime.TakeNpcAwareness())
         endpoint->SendNpcAwareness(std::move(*awareness));
       if (auto stealth = runtime.TakeLocalStealth()) {

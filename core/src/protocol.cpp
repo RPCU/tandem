@@ -85,6 +85,19 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *transit = std::get_if<Transit>(&message);
       transit && transit->kind > TransitKind::Along)
     return std::nullopt;
+  if (const auto *cars = std::get_if<TrafficStates>(&message);
+      cars && cars->cars.size() > kMaxTrafficPerState)
+    return std::nullopt;
+  if (const auto *set = std::get_if<TrafficSet>(&message); set && set->ids.size() > kMaxTrafficSet)
+    return std::nullopt;
+  if (const auto *gone = std::get_if<TrafficGone>(&message); gone && gone->reason > kTrafficRemoved)
+    return std::nullopt;
+  if (const auto *heat = std::get_if<Heat>(&message);
+      heat && (heat->stage > kMaxHeat || heat->state > HeatState::Blinking))
+    return std::nullopt;
+  if (const auto *crime = std::get_if<Crime>(&message);
+      crime && (crime->kind < CrimeKind::Witness || crime->kind > CrimeKind::Kill))
+    return std::nullopt;
   return message;
 }
 
@@ -97,7 +110,9 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<VehicleState>(message) ||
                  std::holds_alternative<NpcStates>(message) ||
                  std::holds_alternative<NpcAwareness>(message) ||
-                 std::holds_alternative<Noise>(message) || std::holds_alternative<NpcShot>(message)
+                 std::holds_alternative<Noise>(message) ||
+                 std::holds_alternative<NpcShot>(message) ||
+                 std::holds_alternative<TrafficStates>(message)
              ? Channel::State
              // Everything else is reliable and ordered, the consistency
              // messages too (Digest, ResyncRequest, NpcSet, Epoch): a digest
@@ -120,21 +135,23 @@ bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::
 
 const char *NameOf(const Message &message) {
   constexpr const char *names[] = {
-      "Hello",          "Welcome",        "Refused",      "Ping",         "Pong",
-      "Roster",         "PlayerState",    "Bye",          "PoseState",    "Appearance",
-      "Held",           "Shot",           "Seat",         "VehicleState", "World",
-      "NpcSpawn",       "NpcStates",      "NpcGone",      "NpcHit",       "NpcHealth",
-      "NpcEffect",      "Pause",          "VehicleRadio", "PlayerHit",    "NpcAwareness",
-      "Stealth",        "Noise",          "NpcHack",      "NpcHackState", "NpcStatus",
-      "PlayerHack",     "VehicleHack",    "Journal",      "Tracked",      "PhoneCall",
-      "PhoneAction",    "PhoneReply",     "Subtitle",     "ChoiceHub",    "ChoiceCursor",
-      "StoryState",     "QuestReward",    "TimeEffect",   "StoryEffect",  "NpcAction",
-      "NpcActionReply", "NpcHold",        "NpcCue",       "Regroup",      "RegroupAnswer",
-      "WorldItem",      "WorldItemTaken", "SharedItem",   "Vitals",       "Revive",
-      "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",    "NpcWound",
-      "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",       "ResyncRequest",
-      "NpcSet",         "Epoch",          "Elsewhere",    "Transit",      "NpcSeat",
-      "NpcShotAt",      "ShotHit"};
+      "Hello",          "Welcome",        "Refused",      "Ping",          "Pong",
+      "Roster",         "PlayerState",    "Bye",          "PoseState",     "Appearance",
+      "Held",           "Shot",           "Seat",         "VehicleState",  "World",
+      "NpcSpawn",       "NpcStates",      "NpcGone",      "NpcHit",        "NpcHealth",
+      "NpcEffect",      "Pause",          "VehicleRadio", "PlayerHit",     "NpcAwareness",
+      "Stealth",        "Noise",          "NpcHack",      "NpcHackState",  "NpcStatus",
+      "PlayerHack",     "VehicleHack",    "Journal",      "Tracked",       "PhoneCall",
+      "PhoneAction",    "PhoneReply",     "Subtitle",     "ChoiceHub",     "ChoiceCursor",
+      "StoryState",     "QuestReward",    "TimeEffect",   "StoryEffect",   "NpcAction",
+      "NpcActionReply", "NpcHold",        "NpcCue",       "Regroup",       "RegroupAnswer",
+      "WorldItem",      "WorldItemTaken", "SharedItem",   "Vitals",        "Revive",
+      "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",     "NpcWound",
+      "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",        "ResyncRequest",
+      "NpcSet",         "Epoch",          "Elsewhere",    "Transit",       "NpcSeat",
+      "NpcShotAt",      "ShotHit",        "TrafficSpawn", "TrafficStates", "TrafficGone",
+      "TrafficStatus",  "TrafficHit",     "TrafficClaim", "TrafficSet",    "Heat",
+      "Crime"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

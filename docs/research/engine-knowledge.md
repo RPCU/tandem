@@ -90,6 +90,8 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.28 | Firing an NPC's shot from a proxy                               | `combat.md`       |
 | 13.29 | What a quest's completion is made of, and what quests test      | `story.md`        |
 
+Traffic, parked cars and the prevention system (2026-11-19, scripts and RTTI only): [`engine/traffic-police.md`](engine/traffic-police.md).
+
 ## Top traps (one line each)
 
 1. Hand offsets/vtable slots from 2.31 broke silently on 2.5 (ccSystem+0x78, ITransactionSystem 0x250+,

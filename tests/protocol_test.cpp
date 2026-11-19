@@ -104,6 +104,42 @@ TEST_CASE("every message survives encoding") {
   RoundTrips(NpcSeat{.npc = 7, .owner = 1, .seat = 0xb000b1d029d0cea0ULL});
   RoundTrips(NpcSeat{.npc = 7});
   CHECK(std::string_view(NameOf(NpcSeat{})) == "NpcSeat");
+  // World vehicles and police.
+  RoundTrips(TrafficSpawn{.id = MakeTrafficId(1, 9),
+                          .record = 0x1122334455,
+                          .appearance = 0x99,
+                          .entity = 0xABCDEF,
+                          .position = {1, 2, 3},
+                          .orientation = {0, 0, 0.6f, 0.8f},
+                          .flags = kTrafficPolice | kTrafficSiren});
+  RoundTrips(TrafficStates{
+      .seq = 4,
+      .timeUs = 5'000'000,
+      .cars = {
+          {.id = 9, .position = {1, 2, 3}, .orientation = {1, -2, 3}, .velocity = {-4, 5, 6}}}});
+  RoundTrips(TrafficGone{.id = 9, .reason = kTrafficTaken, .player = 2});
+  RoundTrips(TrafficStatus{.id = 9, .health = 0.25f, .flags = kTrafficBurning});
+  RoundTrips(TrafficHit{.player = 2,
+                        .id = 9,
+                        .damage = 120.f,
+                        .flags = kTrafficHitCollision,
+                        .position = {1, 2, 3},
+                        .impulse = {4, 5, 6}});
+  RoundTrips(TrafficClaim{.player = 2, .id = 9, .seat = 0xb000b1d029d0cea0ULL});
+  RoundTrips(TrafficSet{.ids = {1, 2, 3}});
+  RoundTrips(Heat{.player = 2, .revision = 3, .stage = 4, .state = HeatState::Searching});
+  RoundTrips(Crime{.player = 2,
+                   .kind = CrimeKind::Damage,
+                   .flags = kCrimePolice,
+                   .attackType = 10,
+                   .amount = 0.3f,
+                   .npc = 7,
+                   .traffic = 9,
+                   .position = {1, 2, 3}});
+  CHECK(std::string_view(NameOf(TrafficSpawn{})) == "TrafficSpawn");
+  CHECK(std::string_view(NameOf(TrafficSet{})) == "TrafficSet");
+  CHECK(std::string_view(NameOf(Heat{})) == "Heat");
+  CHECK(std::string_view(NameOf(Crime{.kind = CrimeKind::Witness})) == "Crime");
   RoundTrips(NpcHack{
       .player = 2, .npc = 7, .action = 0x1122334455, .uploadMs = 1500, .flags = kUploadTraceable});
   RoundTrips(NpcHackState{
@@ -359,6 +395,45 @@ TEST_CASE("an appearance past its limits is refused") {
   CHECK(ChannelOf(NpcSeat{}) == Channel::Event);
   CHECK(IsReliable(NpcSeat{}));
   CHECK_FALSE(IsStory(NpcSeat{}));
+  // World vehicles: transforms are state (newest wins), the rest changes
+  // what every game shows and is never dropped.
+  CHECK(ChannelOf(TrafficStates{}) == Channel::State);
+  CHECK_FALSE(IsReliable(TrafficStates{}));
+  CHECK(ChannelOf(TrafficSpawn{}) == Channel::Event);
+  CHECK(ChannelOf(TrafficGone{}) == Channel::Event);
+  CHECK(ChannelOf(TrafficStatus{}) == Channel::Event);
+  CHECK(ChannelOf(TrafficHit{}) == Channel::Event);
+  CHECK(ChannelOf(TrafficClaim{}) == Channel::Event);
+  CHECK(ChannelOf(TrafficSet{}) == Channel::Event);
+  CHECK(ChannelOf(Heat{}) == Channel::Event);
+  CHECK(ChannelOf(Crime{}) == Channel::Event);
+  CHECK_FALSE(IsStory(Heat{}));
+  CHECK_FALSE(IsCombat(Crime{}));
+  // A full packet of moving vehicles stays small: 32 of them under 1 kB.
+  {
+    TrafficStates full;
+    full.cars.resize(kMaxTrafficPerState);
+    CHECK(Encode(full).size() <= 28 * kMaxTrafficPerState + 24);
+    full.cars.resize(kMaxTrafficPerState + 1);
+    CHECK_FALSE(Decode(Encode(full)).has_value());
+    TrafficSet set;
+    set.ids.resize(kMaxTrafficSet + 1);
+    CHECK_FALSE(Decode(Encode(set)).has_value());
+  }
+  // Heat beyond five stars, a state or a crime we do not know: refused.
+  CHECK(Decode(Encode(Heat{.stage = kMaxHeat, .state = HeatState::Blinking})).has_value());
+  CHECK_FALSE(Decode(Encode(Heat{.stage = kMaxHeat + 1})).has_value());
+  CHECK_FALSE(Decode(Encode(Heat{.state = static_cast<HeatState>(4)})).has_value());
+  CHECK_FALSE(Decode(Encode(Crime{})).has_value());
+  CHECK_FALSE(Decode(Encode(Crime{.kind = static_cast<CrimeKind>(5)})).has_value());
+  CHECK_FALSE(Decode(Encode(TrafficGone{.reason = 3})).has_value());
+  // Ids: the owner in the top byte, and a seat in a shared vehicle is told
+  // from a seat in a player's car.
+  CHECK(TrafficOwner(MakeTrafficId(3, 77)) == 3);
+  CHECK(MakeTrafficId(1, 0x1FFFFFF) == MakeTrafficId(1, 0xFFFFFF));
+  CHECK(IsTrafficSeat(TrafficSeatOwner(MakeTrafficId(1, 5))));
+  CHECK(TrafficOfSeat(TrafficSeatOwner(MakeTrafficId(1, 5))) == MakeTrafficId(1, 5));
+  CHECK_FALSE(IsTrafficSeat(PlayerId{4}));
   // A ride of a kind we do not know is refused, not guessed at.
   CHECK(Decode(Encode(Transit{.kind = TransitKind::Along})).has_value());
   Transit unknown{.kind = static_cast<TransitKind>(9)};

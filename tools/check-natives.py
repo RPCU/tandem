@@ -23,6 +23,7 @@ CPP = [
     ROOT / "plugin/src/combat_natives.cpp",
     ROOT / "plugin/src/sync_natives.cpp",
     ROOT / "plugin/src/elsewhere_natives.cpp",
+    ROOT / "plugin/src/street_natives.cpp",
 ]
 REDS = [
     ROOT / "scripts/tandem/Natives.reds",
@@ -30,6 +31,7 @@ REDS = [
     ROOT / "scripts/tandem/CombatNatives.reds",
     ROOT / "scripts/tandem/SyncNatives.reds",
     ROOT / "scripts/tandem/ElsewhereNatives.reds",
+    ROOT / "scripts/tandem/StreetNatives.reds",
 ]
 
 SCALARS = {

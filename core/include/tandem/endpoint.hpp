@@ -267,6 +267,36 @@ struct RemoteTransit {
 struct HostNpcSeat {
   proto::NpcSeat seat;
 };
+// World vehicles (docs/architecture/traffic.md). One the area's owner shares
+// appeared, moved, changed (health, wreck, siren) or is no longer shared.
+// TrafficLeft with reason taken is for every game, the owner's too: that
+// player got in, and it is that player's car from now on.
+struct TrafficSpawned {
+  proto::TrafficSpawn spawn;
+};
+struct TrafficMoved {
+  proto::TrafficStates states;
+};
+struct TrafficLeft {
+  proto::TrafficGone gone;
+};
+struct TrafficChanged {
+  proto::TrafficStatus status;
+};
+// Another player's game hit one of the vehicles we own (stamped by the host).
+struct TrafficHitBy {
+  proto::TrafficHit hit;
+};
+// Police (docs/architecture/police.md). Another player's wanted level
+// changed (stage 0: no longer wanted, or it left). Never our own.
+struct RemoteHeat {
+  proto::Heat heat;
+};
+// The owner of the area our V is in saw our puppet commit a crime: for our
+// own prevention system.
+struct CrimeReported {
+  proto::Crime crime;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -301,7 +331,9 @@ using SessionEvent = std::variant<
     events::WorldItemTakenBy, events::SharedItemFrom, events::RemoteVitals, events::ReviveBy,
     events::SessionLost, events::HostNpcAnims, events::HostNpcShot, events::Combat, events::Resync,
     events::EpochChanged, events::RemoteElsewhere, events::RemoteTransit, events::HostNpcSeat,
-    events::ShotAtUs, events::ShotHitBy>;
+    events::ShotAtUs, events::ShotHitBy, events::TrafficSpawned, events::TrafficMoved,
+    events::TrafficLeft, events::TrafficChanged, events::TrafficHitBy, events::RemoteHeat,
+    events::CrimeReported>;
 
 class Endpoint {
 public:
@@ -418,6 +450,39 @@ public:
   // Host only: one of our NPCs got into (owner set) or out of a player's
   // vehicle; kept while it sits, for late joiners.
   void SendNpcSeat(const proto::NpcSeat &seat);
+  // The game that runs the world around `player`: its NPCs, its traffic, its
+  // police (docs/architecture/traffic.md, "Who owns an area"). The host's
+  // today; with per-player regions, the owner of that player's group. What
+  // is written against this needs no change then.
+  proto::PlayerId AreaOwner(proto::PlayerId /*player*/) const { return m_host; }
+  bool OwnsArea() const { return IsJoined() && AreaOwner(m_you) == m_you; }
+  // Area owner only: the world vehicles it shares. Spawns and statuses are
+  // kept for late joiners until the vehicle is gone; a spawn's position
+  // follows the states. Ids come from proto::MakeTrafficId(You(), n).
+  void SendTrafficSpawn(const proto::TrafficSpawn &spawn);
+  void SendTrafficStates(proto::TrafficStates states);
+  void SendTrafficGone(const proto::TrafficGone &gone);
+  void SendTrafficStatus(const proto::TrafficStatus &status);
+  // We hit a vehicle another game owns (its proxy here): to its owner.
+  void SendTrafficHit(const proto::TrafficHit &hit);
+  // Our V gets into a shared vehicle: the first claim wins and comes back
+  // to every game as TrafficLeft{taken, player}.
+  void ClaimTraffic(proto::TrafficId id, std::uint64_t seat);
+  // The world vehicles shared now: owner, its record; others, their copy.
+  const std::map<proto::TrafficId, proto::TrafficSpawn> &SharedTraffic() const { return m_traffic; }
+  const std::map<proto::TrafficId, proto::TrafficStatus> &TrafficStatuses() const {
+    return m_trafficStatus;
+  }
+  // Our V's wanted level (stage 0: none). Kept: sent now if we are in the
+  // session, else as soon as we are; the host hands everyone's to late
+  // joiners. The same level and state again is not sent.
+  void SetLocalHeat(proto::Heat heat);
+  // Every wanted player this game knows of (us included), by player.
+  const std::map<proto::PlayerId, proto::Heat> &Heats() const { return m_heat; }
+  // Area owner only: `crime.player`'s puppet committed a crime here. To that
+  // player's game alone; false when it is not a guest in the session (our
+  // own V's crimes are our game's).
+  bool SendCrime(const proto::Crime &crime);
   // Offer `offer.to` (kNoPlayer: everyone else) to come to us, or answer an
   // offer. `from` is filled in; nothing is kept.
   void SendRegroup(proto::Regroup offer);
@@ -622,6 +687,23 @@ private:
   void NoteTransit(const proto::Transit &transit);
   // Host: our NPCs seated in a player's vehicle.
   std::map<proto::NpcId, proto::NpcSeat> m_npcSeats;
+  // World vehicles shared now and how each stands (owner: its record, for
+  // late joiners; others: their copy).
+  std::map<proto::TrafficId, proto::TrafficSpawn> m_traffic;
+  std::map<proto::TrafficId, proto::TrafficStatus> m_trafficStatus;
+  // A shared vehicle is no longer shared: what was kept of it goes.
+  void ForgetTraffic(proto::TrafficId id);
+  // Host: `player` gets into a vehicle we share; the first claim wins.
+  void TakeTraffic(proto::PlayerId player, proto::TrafficId id, std::vector<SessionEvent> &out);
+  // Our wanted level, and everyone's above 0 (host: the session's record).
+  std::optional<proto::Heat> m_localHeat;
+  std::uint32_t m_heatRevision{};
+  std::map<proto::PlayerId, proto::Heat> m_heat;
+  void SendLocalHeatNow();
+  // Records a player's wanted level; false when it did not change.
+  bool NoteHeat(const proto::Heat &heat);
+  // A player is gone (or back from a crash): no longer wanted, for everyone.
+  void EndHeatOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
   // Host: the story for late joiners, and who answered the call first.
   story::Record m_story;
   story::CallArbiter m_calls;

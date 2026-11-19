@@ -20,7 +20,18 @@ add_library(tandem_core STATIC
   src/timebubble.cpp
   src/shaping.cpp
   src/elsewhere.cpp
-  src/instance.cpp)
+  src/instance.cpp
+  src/traffic.cpp)
 target_include_directories(tandem_core PUBLIC include)
 target_link_libraries(tandem_core PUBLIC enet zpp_bits)
 target_compile_features(tandem_core PUBLIC cxx_std_23)
+# zpp_bits checks at compile time that the ids of the message variant are
+# unique, by recursion over every pair of alternatives: past some 75 messages
+# clang runs out of its default constexpr steps (GCC's limit is higher).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    target_compile_options(tandem_core PRIVATE /clang:-fconstexpr-steps=33554432)
+  else()
+    target_compile_options(tandem_core PRIVATE -fconstexpr-steps=33554432)
+  endif()
+endif()

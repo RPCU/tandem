@@ -141,6 +141,8 @@ The owner simulates; everyone else displays.
 
 Enemy level (the mean of the players' levels): `architecture/npcs.md`.
 
+Traffic, parked cars and wrecks, and police heat (per player), are designed in [`architecture/traffic.md`](architecture/traffic.md) and [`architecture/police.md`](architecture/police.md): they replace the rows "a parked or AI vehicle" and "police heat" above.
+
 **Combat** follows from the table. A shot is decided by the shooter's game,
 on what that player sees, so aiming feels local. A guest hitting an NPC sends
 a hit event to the host; the host applies it to the real NPC and the result

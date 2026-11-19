@@ -54,6 +54,20 @@ std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
   return hash.Value();
 }
 
+std::uint32_t TrafficDigest(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
+                            const std::map<proto::TrafficId, proto::TrafficStatus> &status) {
+  Hasher hash;
+  for (const auto &[id, spawn] : traffic) {
+    hash.Add(std::uint64_t{id}).Add(spawn.record).Add(spawn.appearance).Add(spawn.entity);
+    // Without a status it stands as it was announced.
+    if (const auto it = status.find(id); it != status.end())
+      hash.Add(it->second.health).Add(std::uint64_t{it->second.flags});
+    else
+      hash.Add(std::uint64_t{0xE1}).Add(std::uint64_t{spawn.flags});
+  }
+  return hash.Value();
+}
+
 std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
   Hasher hash;
   for (const auto &[id, info] : players.roster)
@@ -118,6 +132,12 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
           .Add(e.anchor.x)
           .Add(e.anchor.y)
           .Add(e.anchor.z);
+  hash.Add(std::uint64_t{0xA9});
+  for (const auto &[id, h] : players.heat)
+    if (id != self && h.stage != 0)
+      hash.Add(std::uint64_t{id})
+          .Add(std::uint64_t{h.stage})
+          .Add(std::uint64_t{static_cast<std::uint8_t>(h.state)});
   return hash.Value();
 }
 
@@ -194,7 +214,10 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<NpcShotAt>(message) || std::holds_alternative<ShotHit>(message) ||
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
          std::holds_alternative<NpcStrike>(message) || std::holds_alternative<NpcWound>(message) ||
-         std::holds_alternative<AreaHit>(message);
+         std::holds_alternative<AreaHit>(message) ||
+         // A hit on a shared vehicle, a claim on one, a crime: each counts.
+         std::holds_alternative<TrafficHit>(message) ||
+         std::holds_alternative<TrafficClaim>(message) || std::holds_alternative<Crime>(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

@@ -43,6 +43,10 @@ std::uint32_t WorldDigest(const std::optional<proto::World> &world,
 std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
                         const std::map<proto::NpcId, proto::NpcHealth> &health,
                         const std::map<proto::NpcId, proto::NpcHold> &holds = {});
+// The shared world vehicles and how each stands (part of the NPC domain: a
+// difference is resynced with it).
+std::uint32_t TrafficDigest(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
+                            const std::map<proto::TrafficId, proto::TrafficStatus> &status);
 
 // The players as `self` sees them: everyone's look, held items, seat, radio,
 // stealth, pause menu and time ability but its own (a game is never sent
@@ -60,6 +64,8 @@ struct PlayersView {
   const std::map<proto::PlayerId, proto::Vitals> &lives;
   // Who is in another world (a V in the city counts like one never heard of).
   const std::map<proto::PlayerId, proto::Elsewhere> &elsewhere;
+  // Who is wanted (a V with no heat counts like one never heard of).
+  const std::map<proto::PlayerId, proto::Heat> &heat;
 };
 std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self);
 
