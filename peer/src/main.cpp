@@ -87,6 +87,10 @@
 // until another V comes to it) and offers the others to join it, as a game
 // does on arriving; --offer-regroup N asks them to come to it; the offers it
 // gets are answered as --regroup-answer says (yes: it goes there).
+// Activities (docs/architecture/activities.md): --ask-skip N asks the others
+// to skip --skip-hours (as the time skip wheel or a bed does), each request
+// heard is answered as --skip-answer says, and --activity KIND makes the
+// mock player busy (a workspot, photo mode...) for --activity-for seconds.
 // A bad network: --latency, --jitter, --loss and --reorder put a shaped link
 // (tandem/shaping.hpp) between the mock player and the others, both ways.
 
@@ -219,6 +223,16 @@ struct Options {
   std::string travelPoint;
   int offerRegroupSeconds{-1};
   enum class Answer { Yes, No, Ignore } regroupAnswer{Answer::Yes};
+  // Activities: when to ask for a time skip (-1: never), of how long, why,
+  // how to answer the others' requests; what to be busy with, from when, for
+  // how long (0: until the end).
+  int askSkipSeconds{-1};
+  int skipHours{3};
+  tandem::proto::SkipReason skipReason{tandem::proto::SkipReason::Wait};
+  Answer skipAnswer{Answer::Yes};
+  std::string activity;
+  int activityAtSeconds{3};
+  int activityForSeconds{15};
   tandem::net::LinkShape link; // a bad network, both ways (none: direct)
   // Loot: drop one of this record in front of the other V (empty: never);
   // pick up the others' world items this long after they appear (-1: never);
@@ -392,6 +406,13 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     to come to us\n"
          "  --regroup-answer A yes | no | ignore: how to answer an offer to join (default\n"
          "                     yes: go there)\n"
+         "  --ask-skip N       N seconds after another player is in the session, ask to\n"
+         "                     skip --skip-hours (default 3) of game time\n"
+         "  --skip-reason R    wait | sleep | quest (host only: said, never asked)\n"
+         "  --skip-answer A    yes | no | ignore: how to answer a time skip (default yes)\n"
+         "  --activity KIND    busy --activity-at N s (default 3) after another player is\n"
+         "                     there, for --activity-for S s (default 15; 0: for good):\n"
+         "                     workspot, sleep, screen, minigame, shop, menu, photo, contest\n"
          "  --latency MS       a bad network: MS added each way\n"
          "  --jitter MS        up to MS more at random, each way (the order kept)\n"
          "  --loss PERCENT     PERCENT of the datagrams lost, each way\n"
@@ -458,6 +479,44 @@ float Percent(std::string_view flag, std::string_view value) {
   if (percent < 0.f || percent > 100.f)
     Usage(std::format("{} is a percentage, 0 to 100", flag));
   return percent / 100.f;
+}
+
+std::optional<tandem::proto::ActivityKind> ActivityNamed(const std::string &name) {
+  using tandem::proto::ActivityKind;
+  static const std::pair<const char *, ActivityKind> kinds[] = {
+      {"none", ActivityKind::None},         {"workspot", ActivityKind::Workspot},
+      {"sleep", ActivityKind::Sleep},       {"screen", ActivityKind::Screen},
+      {"minigame", ActivityKind::Minigame}, {"shop", ActivityKind::Shop},
+      {"menu", ActivityKind::Menu},         {"photo", ActivityKind::Photo},
+      {"contest", ActivityKind::Contest}};
+  for (const auto &[n, kind] : kinds)
+    if (name == n)
+      return kind;
+  return std::nullopt;
+}
+
+const char *ActivityName(tandem::proto::ActivityKind kind) {
+  static const char *names[] = {"nothing", "a workspot", "a bed",      "a screen", "a minigame",
+                                "a shop",  "a menu",     "photo mode", "a contest"};
+  const auto i = static_cast<std::size_t>(kind);
+  return i < std::size(names) ? names[i] : "?";
+}
+
+std::optional<tandem::proto::SkipReason> SkipReasonNamed(std::string_view name) {
+  using tandem::proto::SkipReason;
+  if (name == "wait")
+    return SkipReason::Wait;
+  if (name == "sleep")
+    return SkipReason::Sleep;
+  if (name == "quest")
+    return SkipReason::Quest;
+  return std::nullopt;
+}
+
+const char *SkipOutcomeName(tandem::proto::SkipOutcome outcome) {
+  static const char *names[] = {"applied", "declined", "lapsed", "withdrawn", "refused"};
+  const auto i = static_cast<std::size_t>(outcome);
+  return i < std::size(names) ? names[i] : "?";
 }
 
 Options Parse(int argc, char **argv) {
@@ -692,7 +751,35 @@ Options Parse(int argc, char **argv) {
         options.regroupAnswer = Options::Answer::Ignore;
       else
         Usage(std::format("--regroup-answer: yes, no or ignore, not {}", value));
-    } else if (flag == "--latency")
+    } else if (flag == "--ask-skip")
+      options.askSkipSeconds = Number<int>(value);
+    else if (flag == "--skip-hours")
+      options.skipHours = Number<int>(value);
+    else if (flag == "--skip-reason") {
+      if (const auto reason = SkipReasonNamed(value))
+        options.skipReason = *reason;
+      else
+        Usage(std::format("--skip-reason: wait, sleep or quest, not {}", value));
+    } else if (flag == "--skip-answer") {
+      if (value == "yes")
+        options.skipAnswer = Options::Answer::Yes;
+      else if (value == "no")
+        options.skipAnswer = Options::Answer::No;
+      else if (value == "ignore")
+        options.skipAnswer = Options::Answer::Ignore;
+      else
+        Usage(std::format("--skip-answer: yes, no or ignore, not {}", value));
+    } else if (flag == "--activity") {
+      if (!ActivityNamed(std::string(value)))
+        Usage(std::format("--activity: workspot, sleep, screen, minigame, shop, menu, photo or "
+                          "contest, not {}",
+                          value));
+      options.activity = std::string(value);
+    } else if (flag == "--activity-at")
+      options.activityAtSeconds = Number<int>(value);
+    else if (flag == "--activity-for")
+      options.activityForSeconds = Number<int>(value);
+    else if (flag == "--latency")
       options.link.latencyMs = Number<std::uint32_t>(value);
     else if (flag == "--jitter")
       options.link.jitterMs = Number<std::uint32_t>(value);
@@ -1095,6 +1182,12 @@ private:
 //                                city to come back; moved: the scene took it
 //                                away from its body, which stays where the
 //                                mock player was (settled: sitting, lying)
+//   activity KIND [anchored] [lying] [frozen]  the host's V busy
+//                                (docs/architecture/activities.md): workspot,
+//                                sleep, screen, minigame, shop, menu, photo,
+//                                contest, or none; anchored where it stands
+//   skip HOURS [wait|sleep|quest] the host asks the others to skip HOURS
+//                                (quest: its story moved the clock: said)
 // Lines starting with # are comments.
 struct StoryStep {
   double at{};
@@ -1233,6 +1326,27 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
           away.flags |= proto::kElsewhereSettled;
       }
       return away;
+    }
+    if (step.verb == "activity" && !a.empty()) {
+      const auto kind = ActivityNamed(a[0]);
+      if (!kind)
+        return std::nullopt;
+      proto::Activity busy{.kind = *kind};
+      for (std::size_t i = 1; i < a.size(); ++i) {
+        if (a[i] == "anchored")
+          busy.flags |= proto::kActivityAnchored;
+        else if (a[i] == "lying")
+          busy.flags |= proto::kActivityLying;
+        else if (a[i] == "frozen")
+          busy.flags |= proto::kActivityFrozen;
+      }
+      return busy;
+    }
+    if (step.verb == "skip" && !a.empty()) {
+      const auto reason = a.size() > 1 ? SkipReasonNamed(a[1]) : proto::SkipReason::Wait;
+      if (!reason)
+        return std::nullopt;
+      return proto::TimeSkip{.reason = *reason, .toSeconds = std::stoi(a[0]) * 3600};
     }
     if (step.verb == "reward" && !a.empty())
       return proto::QuestReward{.reward = TweakDBID(a[0]),
@@ -2324,6 +2438,14 @@ int main(int argc, char **argv) {
   // Fast travel together: done yet, our offers so far, where we last stood.
   bool travelled = false, offeredRegroup = false;
   std::uint32_t offers = 0;
+  // Activities: our time skip asked yet; the game time skipped so far (host:
+  // added to the clock it sends); the host's clock as last heard (guest);
+  // our activity's start and end.
+  bool askedSkip = false;
+  std::int64_t skippedSeconds = 0;
+  std::optional<std::int32_t> hostClock;
+  bool busySet = false, busyDone = false;
+  std::optional<std::chrono::steady_clock::time_point> busySince;
   std::optional<Vec3> lastSent;
   const auto distance = [](const Vec3 &a, const Vec3 &b) {
     return std::hypot(a.x - b.x, a.y - b.y, a.z - b.z);
@@ -2809,6 +2931,47 @@ int main(int argc, char **argv) {
                                                                                     : "left",
                                       away.anchor.x, away.anchor.y, away.anchor.z)
                         : std::string(" (in place)"));
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteActivity>) {
+              const auto &busy = e.state;
+              if (busy.kind == tandem::proto::ActivityKind::None)
+                Log("player {} is free again", busy.player);
+              else
+                Log("player {} is busy: {} (flags {:#x}, workspot {:#x}, entry {}, device "
+                    "{:#x}){}",
+                    busy.player, ActivityName(busy.kind), busy.flags, busy.workspot, busy.entry,
+                    busy.device,
+                    busy.flags & tandem::proto::kActivityAnchored
+                        ? std::format(" at ({:.1f}, {:.1f}, {:.1f})", busy.anchor.x, busy.anchor.y,
+                                      busy.anchor.z)
+                        : std::string());
+            } else if constexpr (std::is_same_v<E, tandem::events::TimeSkipAsked>) {
+              const auto &k = e.skip;
+              const auto hours = (k.toSeconds - k.fromSeconds) / 3600.0;
+              Log("player {} asks to skip {:.1f} h (request {}, reason {})", k.from, hours,
+                  k.request, static_cast<int>(k.reason));
+              if (options.skipAnswer == Options::Answer::Ignore) {
+                Log("time skip {} of player {}: not answered", k.request, k.from);
+              } else {
+                const bool yes = options.skipAnswer == Options::Answer::Yes;
+                endpoint->AnswerTimeSkip(k.from, k.request, yes);
+                Log("time skip {} of player {}: {}", k.request, k.from,
+                    yes ? "accepted" : "declined");
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::TimeSkipVoted>) {
+              Log("player {} {} our time skip {}", e.vote.from,
+                  e.vote.accepted ? "accepted" : "declined", e.vote.request);
+            } else if constexpr (std::is_same_v<E, tandem::events::TimeSkipEnded>) {
+              const auto &r = e.result;
+              Log("time skip {} of player {}: {} (by {}, why {}), {:.1f} h", r.request, r.asker,
+                  SkipOutcomeName(r.outcome), r.by, r.why, (r.toSeconds - r.fromSeconds) / 3600.0);
+              if (r.outcome == tandem::proto::SkipOutcome::Applied && options.host &&
+                  r.reason != tandem::proto::SkipReason::Quest) {
+                // Our clock moves by what was asked; the World goes out now.
+                skippedSeconds += r.toSeconds - r.fromSeconds;
+                nextWorld = std::chrono::steady_clock::now();
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::HostWorld>) {
+              hostClock = e.world.gameTimeSeconds;
             } else if constexpr (std::is_same_v<E, tandem::events::WorldItemAppeared>) {
               const auto &item = e.item;
               Log("world item {} from player {}: {} stack(s), first {:#x} x{} (token {})", item.id,
@@ -3110,7 +3273,8 @@ int main(int argc, char **argv) {
       // Day 1 at the given time, running about 8 game seconds a second.
       const auto elapsed = static_cast<int>((tandem::net::NowUs() - startUs) / 1'000'000);
       tandem::proto::World world;
-      world.gameTimeSeconds = 86400 + options.timeOfDayMinutes.value_or(12 * 60) * 60 + elapsed * 8;
+      world.gameTimeSeconds = static_cast<std::int32_t>(
+          86400 + options.timeOfDayMinutes.value_or(12 * 60) * 60 + elapsed * 8 + skippedSeconds);
       world.weather = options.weather.empty() ? 0 : CName(options.weather);
       endpoint->SetWorld(world);
     }
@@ -3141,6 +3305,49 @@ int main(int argc, char **argv) {
           {.offer = ++offers, .reason = tandem::proto::RegroupReason::Asked, .position = at});
       Log("asked the others to come to ({:.1f}, {:.1f}, {:.1f}) (offer {})", at.x, at.y, at.z,
           offers);
+    }
+    // --ask-skip: ask the others to let the hours pass, on our clock (the
+    // host's: the one we send; a guest's: the host's as last heard).
+    if (!askedSkip && together(options.askSkipSeconds)) {
+      askedSkip = true;
+      const auto elapsed = static_cast<std::int64_t>((tandem::net::NowUs() - startUs) / 1'000'000);
+      const auto clock =
+          options.host
+              ? static_cast<std::int32_t>(86400 + options.timeOfDayMinutes.value_or(12 * 60) * 60 +
+                                          elapsed * 8 + skippedSeconds)
+              : hostClock.value_or(86400 + 12 * 3600);
+      const auto request =
+          endpoint->AskTimeSkip(options.skipReason, clock, clock + options.skipHours * 3600);
+      Log("asked to skip {} h (request {}, reason {})", options.skipHours, request,
+          static_cast<int>(options.skipReason));
+      if (options.host && options.skipReason == tandem::proto::SkipReason::Quest) {
+        skippedSeconds += options.skipHours * 3600;
+        nextWorld = now;
+      }
+    }
+    // --activity: busy for a while, standing where we are.
+    if (!options.activity.empty() && !busySet && together(options.activityAtSeconds)) {
+      busySet = true;
+      busySince = now;
+      const auto kind = *ActivityNamed(options.activity);
+      tandem::proto::Activity busy{.kind = kind};
+      if (lastSent && kind != tandem::proto::ActivityKind::Photo &&
+          kind != tandem::proto::ActivityKind::Menu) {
+        busy.flags |= tandem::proto::kActivityAnchored;
+        busy.anchor = *lastSent;
+      }
+      if (kind == tandem::proto::ActivityKind::Sleep)
+        busy.flags |= tandem::proto::kActivityLying;
+      if (kind == tandem::proto::ActivityKind::Photo || kind == tandem::proto::ActivityKind::Menu)
+        busy.flags |= tandem::proto::kActivityFrozen;
+      endpoint->SetLocalActivity(busy);
+      Log("busy: {} (flags {:#x})", ActivityName(kind), busy.flags);
+    }
+    if (busySet && !busyDone && options.activityForSeconds > 0 && busySince &&
+        now >= *busySince + std::chrono::seconds(options.activityForSeconds)) {
+      busyDone = true;
+      endpoint->SetLocalActivity({});
+      Log("free again");
     }
     // Someone came to where we stand: back to the mode's motion.
     if (const auto station = puppeteer.Station()) {
@@ -3408,6 +3615,24 @@ int main(int argc, char **argv) {
               away->yaw = tandem::sync::YawOf(heldBody->orientation);
             }
             endpoint->SetLocalElsewhere(*away);
+          } else if (auto *busy = std::get_if<tandem::proto::Activity>(&*message)) {
+            // Our V busy: our own state too, where it stands.
+            if ((busy->flags & tandem::proto::kActivityAnchored) && lastState) {
+              busy->anchor = lastState->position;
+              busy->yaw = tandem::sync::YawOf(lastState->orientation);
+            }
+            endpoint->SetLocalActivity(*busy);
+          } else if (auto *skip = std::get_if<tandem::proto::TimeSkip>(&*message)) {
+            const auto elapsed =
+                static_cast<std::int64_t>((tandem::net::NowUs() - startUs) / 1'000'000);
+            const auto clock =
+                static_cast<std::int32_t>(86400 + options.timeOfDayMinutes.value_or(12 * 60) * 60 +
+                                          elapsed * 8 + skippedSeconds);
+            endpoint->AskTimeSkip(skip->reason, clock, clock + skip->toSeconds);
+            if (skip->reason == tandem::proto::SkipReason::Quest) {
+              skippedSeconds += skip->toSeconds;
+              nextWorld = now;
+            }
           } else if (std::holds_alternative<tandem::proto::QuestReward>(*message)) {
             // A reward goes to every guest, one by one.
             for (const auto &[id, info] : endpoint->Players())
