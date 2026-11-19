@@ -859,7 +859,7 @@ public class TandemTakedowns extends ScriptableSystem {
       TandemNative.Log(s"takedown: unknown \(what)");
       return;
     }
-    let none: TweakDBID;
+    let none = TDBID.None();
     let noEntity: EntityID;
     let forward = player.GetWorldForward();
     let health = GameInstance.GetStatPoolsSystem(this.GetGameInstance()).GetStatPoolValue(Cast<StatsObjectID>(target.GetEntityID()), gamedataStatPoolType.Health, true) / 100.0;
@@ -889,7 +889,7 @@ public final static func FillTakedownData(executionOwner: wref<GameObject>, acti
       kind = 0; // the break free sends the release
     }
     if kind != 0 {
-      let none: TweakDBID;
+      let none = TDBID.None();
       let noEntity: EntityID;
       TandemTakedowns.Get(activator.GetGame()).OurAction(activator, target, kind, effectTag, none, noEntity, 0.0, new Vector4(0.0, 0.0, 0.0, 0.0));
     }
@@ -913,7 +913,7 @@ public func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateG
   wrappedMethod(stateContext, scriptInterface);
   let takedowns = TandemTakedowns.Get(scriptInterface.GetGame());
   if !takedowns.ClearRefused(this.stateMachineInitData.target) {
-    let none: TweakDBID;
+    let none = TDBID.None();
     let noEntity: EntityID;
     takedowns.OurAction(scriptInterface.executionOwner, this.stateMachineInitData.target, 2, n"BreakFree", none, noEntity, 0.0, new Vector4(0.0, 0.0, 0.0, 0.0));
   }
@@ -925,7 +925,7 @@ public func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateG
   wrappedMethod(stateContext, scriptInterface);
   let takedowns = TandemTakedowns.Get(scriptInterface.GetGame());
   if takedowns.IsOurs(this.stateMachineInitData.target, 1) {
-    let none: TweakDBID;
+    let none = TDBID.None();
     let noEntity: EntityID;
     takedowns.OurAction(scriptInterface.executionOwner, this.stateMachineInitData.target, 2, n"ReleasePrey", none, noEntity, 0.0, new Vector4(0.0, 0.0, 0.0, 0.0));
   }
@@ -952,7 +952,7 @@ public final func PlayFinisherGameEffect(const targetPuppet: ref<GameObject>, in
 @wrapMethod(ScriptedPuppet)
 private final func TriggerNewPerkFinisherBluntHold(playerPuppet: ref<PlayerPuppet>, npcPuppet: ref<NPCPuppet>) -> Void {
   wrappedMethod(playerPuppet, npcPuppet);
-  let none: TweakDBID;
+  let none = TDBID.None();
   let noEntity: EntityID;
   TandemTakedowns.Get(this.GetGame()).OurAction(playerPuppet, npcPuppet, 6, n"tandem_blunt_hold", none, noEntity, 1.0, new Vector4(0.0, 0.0, 0.0, 0.0));
 }
@@ -963,7 +963,7 @@ private final func TriggerNewPerkFinisherBluntHold(playerPuppet: ref<PlayerPuppe
 @wrapMethod(PickUpEvents)
 protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
-  let none: TweakDBID;
+  let none = TDBID.None();
   let noEntity: EntityID;
   TandemTakedowns.Get(scriptInterface.GetGame()).OurAction(scriptInterface.executionOwner, scriptInterface.owner, 7, n"None", none, noEntity, 0.0, new Vector4(0.0, 0.0, 0.0, 0.0));
 }
@@ -973,7 +973,7 @@ protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<Sta
   wrappedMethod(stateContext, scriptInterface);
   let takedowns = TandemTakedowns.Get(scriptInterface.GetGame());
   if takedowns.IsOurs(scriptInterface.owner, 2) {
-    let none: TweakDBID;
+    let none = TDBID.None();
     let noEntity: EntityID;
     takedowns.OurAction(scriptInterface.executionOwner, scriptInterface.owner, 8, n"None", none, noEntity, 0.0, new Vector4(0.0, 0.0, 0.0, 0.0));
   }
@@ -984,7 +984,7 @@ protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<Sta
   wrappedMethod(stateContext, scriptInterface);
   let takedowns = TandemTakedowns.Get(scriptInterface.GetGame());
   if takedowns.IsOurs(scriptInterface.owner, 2) {
-    let none: TweakDBID;
+    let none = TDBID.None();
     let noEntity: EntityID;
     takedowns.OurAction(scriptInterface.executionOwner, scriptInterface.owner, 8, n"None", none, noEntity, 0.0, new Vector4(0.0, 0.0, 0.0, 0.0));
   }
@@ -995,7 +995,7 @@ protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<Sta
   wrappedMethod(stateContext, scriptInterface);
   let forward = Transform.GetForward(scriptInterface.GetCameraWorldTransform());
   let impulse = forward * this.GetStaticFloatParameterDefault("ragdollMaxImpulse", 100.0);
-  let none: TweakDBID;
+  let none = TDBID.None();
   let noEntity: EntityID;
   TandemTakedowns.Get(scriptInterface.GetGame()).OurAction(scriptInterface.executionOwner, scriptInterface.owner, 9, n"None", none, noEntity, 0.0, impulse);
 }
@@ -1026,7 +1026,7 @@ protected cb func OnNonlethalTakedownAndDisposeBody(evt: ref<NonlethalTakedownAn
 public abstract class TandemDisposal {
   public static func Sent(device: ref<DisposalDevice>, body: wref<NPCPuppet>, how: CName) -> Void {
     let game = device.GetGame();
-    let none: TweakDBID;
+    let none = TDBID.None();
     TandemTakedowns.Get(game).OurAction(GetPlayer(game), body, 10, how, none, device.GetEntityID(), 0.0, new Vector4(0.0, 0.0, 0.0, 0.0));
   }
 }

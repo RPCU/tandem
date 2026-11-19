@@ -1622,6 +1622,14 @@ TakeNpcEvents()`) 8-byte aligned and runs the type's constructor there.
   floats; `tools/check-natives.py` (`task natives:check`, run before every
   deploy) rejects such fields. Vector4 and Quaternion **parameters and
   return values** of native functions are fine. [2.5-verified]
+- **A `TweakDBID` local left unset is not None.** `let record:
+TweakDBID;` then `SendSeat(record, …)` on foot sent
+  `NewPerks.Intelligence_Left_Milestone_2.preventInQueueAgain` (whatever
+  the VM's slot held) in every session of 2026-11-18: guests and the mock
+  player saw the host "driving" that record, and a puppet whose seat was
+  echoed back sat in a phantom car, its controller holding still (the
+  `takedowns-host` grabs were all refused as too far). Write
+  `let record = TDBID.None();`. [2.5-verified]
 - **A native declared with other types than the DLL's breaks the VM.**
   redscript never sees the DLL: `SendNpcSpawn(…, orientation: Quaternion)`
   against a C++ `float yaw` compiled with 0 errors and stopped the game on
