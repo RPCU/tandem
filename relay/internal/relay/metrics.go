@@ -79,6 +79,8 @@ type Metrics struct {
 	redirects [redirectKinds]atomic.Uint64
 	// Guests and hosts introduced to each other for a direct path.
 	introductions atomic.Uint64
+	// Probes answered (round trips, connection checks).
+	probes atomic.Uint64
 }
 
 func (m *Metrics) codeIssued() { m.codes.Add(1) }
@@ -86,6 +88,8 @@ func (m *Metrics) codeIssued() { m.codes.Add(1) }
 func (m *Metrics) codeReclaimed() { m.reclaimed.Add(1) }
 
 func (m *Metrics) introduced() { m.introductions.Add(1) }
+
+func (m *Metrics) probed() { m.probes.Add(1) }
 
 func (m *Metrics) lookup(result lookupResult) { m.lookups[result].Add(1) }
 
@@ -113,6 +117,7 @@ type Snapshot struct {
 	Refusals          map[string]uint64
 	Redirects         map[string]uint64
 	Introductions     uint64
+	Probes            uint64
 }
 
 // Snapshot reads the counters, with the live session and client counts.
@@ -121,7 +126,7 @@ func (s *Server) Snapshot() Snapshot {
 	sessions, clients := s.Counts()
 	out := Snapshot{
 		Sessions: sessions, Clients: clients, Draining: s.Draining(),
-		CodesIssued: m.codes.Load(), CodesReclaimed: m.reclaimed.Load(), Introductions: m.introductions.Load(),
+		CodesIssued: m.codes.Load(), CodesReclaimed: m.reclaimed.Load(), Introductions: m.introductions.Load(), Probes: m.probes.Load(),
 		Drops: map[string]uint64{}, Lookups: map[string]uint64{},
 		Refusals: map[string]uint64{}, Redirects: map[string]uint64{},
 	}
@@ -173,6 +178,7 @@ func (s *Server) WriteMetrics(w io.Writer) {
 	counter("tandem_relay_codes_reclaimed_total", "Join codes given back to their host after a restart.", snap.CodesReclaimed)
 	labelled("tandem_relay_code_lookups_total", "Join code lookups, by result.", "result", lookupNames[:], snap.Lookups)
 	labelled("tandem_relay_refused_total", "Registrations refused, by reason.", "reason", refusalNames[:], snap.Refusals)
+	counter("tandem_relay_probes_total", "Probes answered (round trips, connection checks).", snap.Probes)
 	counter("tandem_relay_introductions_total", "Guests introduced to their host for a direct path.", snap.Introductions)
 	labelled("tandem_relay_redirects_total", "Registrations sent to another replica (or from the entrance to us).", "kind", redirectNames[:], snap.Redirects)
 }

@@ -26,6 +26,28 @@
 //	Addresses     (14) flags (1) | count (1) | count x (IPv4 (4) | port (2)) | zero padding to 64 bytes
 //	Introduce     (15) channel (2) | nonce (4) | flags (1) | public IPv4 (4) | port (2) | LAN IPv4 (4) | port (2)  relay -> client
 //	Punch         (16) nonce (4) | channel (2) | ack (1)  client <-> client, never to the relay
+//	Probe         (17) nonce (4) | zero padding to 64 bytes
+//	Observed      (18) nonce (4) | family (1) | address (4 or 16) | port (2)  relay -> client
+//	RegisterHostKeep (19) secret (16) | host token (32) | salt (4) | zero padding to 64 bytes
+//
+// Kept codes: RegisterHostKeep registers like RegisterHost and gives the
+// session its host token's kept code (keptCode: derived from the token and
+// the salt, so the same every session until the host asks for another by
+// changing the salt). It lives while its host is registered (Code's
+// seconds left 0xFFFF) and dies with the session. Every kept code of a
+// token belongs to one replica (keepOwner): the others redirect there.
+// Sent again with another salt by the registered host, it changes the code
+// at once.
+//
+// Probe is answered to anyone, on every port (at most 28 bytes for 64): a
+// client measures its round trip to each relay it may host on, and learns
+// its public address and port as each relay port sees them (the connection
+// check: one mapping for every destination, or one per destination).
+//
+// Regions (Config.Regions): independent fleets, sharing nothing but each
+// other's entrance addresses. A code names its region too (shardOf); a
+// lookup in the wrong region is redirected to the right region's entrance,
+// which redirects to the owner: two redirects at most.
 //
 // Direct paths (hole punching): a registered client tells the relay its LAN
 // addresses (Addresses: up to 3, private or loopback only) and its NAT's
@@ -84,23 +106,30 @@ const (
 type msgType byte
 
 const (
-	typeRegisterHost  msgType = 1
-	typeRegisterGuest msgType = 2
-	typeRegistered    msgType = 3
-	typeData          msgType = 4
-	typeKeepalive     msgType = 5
-	typeError         msgType = 6
-	typeRequestCode   msgType = 7
-	typeCode          msgType = 8
-	typeResolveCode   msgType = 9
-	typeSecret        msgType = 10
-	typeRedirect      msgType = 11
-	typeRejoinGuest   msgType = 12
-	typeReclaimCode   msgType = 13
-	typeAddresses     msgType = 14
-	typeIntroduce     msgType = 15
-	typePunch         msgType = 16
+	typeRegisterHost     msgType = 1
+	typeRegisterGuest    msgType = 2
+	typeRegistered       msgType = 3
+	typeData             msgType = 4
+	typeKeepalive        msgType = 5
+	typeError            msgType = 6
+	typeRequestCode      msgType = 7
+	typeCode             msgType = 8
+	typeResolveCode      msgType = 9
+	typeSecret           msgType = 10
+	typeRedirect         msgType = 11
+	typeRejoinGuest      msgType = 12
+	typeReclaimCode      msgType = 13
+	typeAddresses        msgType = 14
+	typeIntroduce        msgType = 15
+	typePunch            msgType = 16
+	typeProbe            msgType = 17
+	typeObserved         msgType = 18
+	typeRegisterHostKeep msgType = 19
 )
+
+// KeptCodeLeft is a kept code's seconds left in a Code: it lives while its
+// host is registered.
+const KeptCodeLeft = 0xFFFF
 
 // Addresses' flags: what the client learnt of its NAT (the connection
 // check): how its public port is chosen.
@@ -188,6 +217,10 @@ type datagram struct {
 	// Addresses.
 	flags byte
 	lan   [MaxLAN]netip.AddrPort
+	// Probe.
+	nonce uint32
+	// RegisterHostKeep.
+	salt uint32
 }
 
 func parse(b []byte) (datagram, error) {
@@ -198,12 +231,13 @@ func parse(b []byte) (datagram, error) {
 	d.kind = msgType(b[4])
 	body := b[headerSize:]
 	switch d.kind {
-	case typeRegisterHost:
+	case typeRegisterHost, typeRegisterHostKeep:
 		if len(b) != registerSize {
 			return d, errMalformed
 		}
 		copy(d.secret[:], body[:SecretSize])
 		copy(d.token[:], body[SecretSize:SecretSize+TokenSize])
+		d.salt = binary.BigEndian.Uint32(body[SecretSize+TokenSize:])
 	case typeRegisterGuest:
 		if len(b) != registerSize {
 			return d, errMalformed
@@ -254,6 +288,11 @@ func parse(b []byte) (datagram, error) {
 				d.lan[i] = a
 			}
 		}
+	case typeProbe:
+		if len(b) != registerSize {
+			return d, errMalformed
+		}
+		d.nonce = binary.BigEndian.Uint32(body)
 	default:
 		return d, errMalformed
 	}
@@ -272,6 +311,15 @@ func RegisterHost(secret [SecretSize]byte, token [TokenSize]byte) []byte {
 	b := header(typeRegisterHost, registerSize)
 	b = append(b, secret[:]...)
 	b = append(b, token[:]...)
+	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+// RegisterHostKeep builds a host's registration asking for its kept code.
+func RegisterHostKeep(secret [SecretSize]byte, token [TokenSize]byte, salt uint32) []byte {
+	b := header(typeRegisterHostKeep, registerSize)
+	b = append(b, secret[:]...)
+	b = append(b, token[:]...)
+	b = binary.BigEndian.AppendUint32(b, salt)
 	return append(b, make([]byte, registerSize-len(b))...)
 }
 
@@ -348,6 +396,25 @@ func Addresses(flags byte, lan []netip.AddrPort) []byte {
 		b = binary.BigEndian.AppendUint16(append(b, raw[:]...), a.Port())
 	}
 	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+// Probe builds a client's probe: answered with what the relay sees of it.
+func Probe(nonce uint32) []byte {
+	b := binary.BigEndian.AppendUint32(header(typeProbe, registerSize), nonce)
+	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+// At most 28 bytes (an IPv6 address).
+func appendObserved(b []byte, nonce uint32, seen netip.AddrPort) []byte {
+	b = binary.BigEndian.AppendUint32(appendHeader(b, typeObserved), nonce)
+	if a := seen.Addr().Unmap(); a.Is4() {
+		raw := a.As4()
+		b = append(append(b, 4), raw[:]...)
+	} else {
+		raw := a.As16()
+		b = append(append(b, 6), raw[:]...)
+	}
+	return binary.BigEndian.AppendUint16(b, seen.Port())
 }
 
 // Punch builds a punch datagram (client to client).
@@ -432,6 +499,8 @@ type Reply struct {
 	PeerFlags  byte
 	Peer       netip.AddrPort
 	PeerLAN    netip.AddrPort
+	// Observed: the client's address as the relay saw it (Nonce: the probe's).
+	Observed netip.AddrPort
 }
 
 // ParseReply decodes a relay -> client datagram.
@@ -477,6 +546,20 @@ func ParseReply(b []byte) (Reply, error) {
 			return Reply{}, errMalformed
 		}
 		return Reply{Redirect: netip.AddrPortFrom(addr, binary.BigEndian.Uint16(body[len(body)-2:]))}, nil
+	case typeObserved:
+		var addr netip.Addr
+		switch {
+		case len(body) == 4+1+4+2 && body[4] == 4:
+			addr = netip.AddrFrom4([4]byte(body[5:9]))
+		case len(body) == 4+1+16+2 && body[4] == 6:
+			addr = netip.AddrFrom16([16]byte(body[5:21]))
+		default:
+			return Reply{}, errMalformed
+		}
+		return Reply{
+			Nonce:    binary.BigEndian.Uint32(body),
+			Observed: netip.AddrPortFrom(addr, binary.BigEndian.Uint16(body[len(body)-2:])),
+		}, nil
 	case typeIntroduce:
 		if len(b) != introduceSize {
 			return Reply{}, errMalformed

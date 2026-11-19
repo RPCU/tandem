@@ -73,6 +73,9 @@ func serve(args []string) error {
 		"every replica's public address (ip:port), in shard order, comma-separated")
 	shard := fs.String("shard", env("TANDEM_RELAY_SHARD", "0"),
 		"this replica's index in --peers, or a name ending in it (a StatefulSet pod's: tandem-relay-1)")
+	regions := fs.String("regions", env("TANDEM_RELAY_REGIONS", ""),
+		"every region's entrance (ip:port), in region order, comma-separated (none: one region)")
+	region := fs.Int("region", 0, "this replica's region, an index in --regions (TANDEM_RELAY_REGION)")
 	readers := fs.Int("readers", min(runtime.NumCPU(), 8), "sockets reading the UDP port at once (SO_REUSEPORT)")
 	drain := fs.Duration("drain-timeout", 60*time.Second,
 		"on SIGTERM, how long running sessions may go on (no new ones) before the relay exits")
@@ -94,6 +97,15 @@ func serve(args []string) error {
 	}
 	if cfg.Shard, err = parseShard(*shard); err != nil {
 		return err
+	}
+	if cfg.Regions, err = parsePeers(*regions); err != nil {
+		return err
+	}
+	cfg.Region = *region
+	if v, ok := os.LookupEnv("TANDEM_RELAY_REGION"); ok && !flagSet(fs, "region") {
+		if cfg.Region, err = strconv.Atoi(v); err != nil {
+			return fmt.Errorf("TANDEM_RELAY_REGION: %q is not an index", v)
+		}
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -196,6 +208,9 @@ func serve(args []string) error {
 	if len(cfg.Peers) > 0 {
 		attrs = append(attrs, "shard", cfg.Shard, "replicas", len(cfg.Peers), "self", cfg.Peers[cfg.Shard].String())
 	}
+	if len(cfg.Regions) > 0 {
+		attrs = append(attrs, "region", cfg.Region, "regions", len(cfg.Regions))
+	}
 	if len(front) > 0 {
 		attrs = append(attrs, "front", front[0].LocalAddr().String())
 	}
@@ -206,6 +221,12 @@ func serve(args []string) error {
 	defer cancel()
 	_ = web.Shutdown(shutdown)
 	return err
+}
+
+func flagSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
 }
 
 func parsePeers(text string) ([]netip.AddrPort, error) {

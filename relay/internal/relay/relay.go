@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
@@ -62,6 +63,11 @@ type Config struct {
 	// a relay on its own, owning every code.
 	Peers []netip.AddrPort
 	Shard int
+	// Several regions, each a fleet of its own: Regions[i] is region i's
+	// entrance (its --front, public), and Region is ours. Empty: one region.
+	// The fleet-wide failure budget is then the whole world's.
+	Regions []netip.AddrPort
+	Region  int
 }
 
 // DefaultConfig suits a small group's relay.
@@ -86,6 +92,22 @@ func DefaultConfig() Config {
 
 // Validate checks the fleet's description.
 func (c Config) Validate() error {
+	if len(c.Regions) == 0 && c.Region != 0 {
+		return errors.New("a region index needs the regions' entrances")
+	}
+	if len(c.Regions) > 0 {
+		if len(c.Regions) > 16 {
+			return errors.New("at most 16 regions")
+		}
+		if c.Region < 0 || c.Region >= len(c.Regions) {
+			return errors.New("the region index is not one of the regions")
+		}
+		for i, p := range c.Regions {
+			if !p.IsValid() || p.Port() == 0 || p.Addr().IsUnspecified() {
+				return fmt.Errorf("region %d (%v) is not an address and port", i, p)
+			}
+		}
+	}
 	if len(c.Peers) == 0 {
 		if c.Shard != 0 {
 			return errors.New("a shard index needs the replicas' addresses (peers)")
@@ -143,6 +165,13 @@ type session struct {
 	code        string
 	codeIssued  time.Time
 	codeExpires time.Time
+	// A host that asked for its kept code (RegisterHostKeep): its token and
+	// salt, and whether `code` is that code (another session of the same
+	// token may hold it: this one then has a code of its own).
+	keep  bool
+	token [TokenSize]byte
+	salt  uint32
+	kept  bool
 }
 
 func (sess *session) guest(channel uint16) *client {
@@ -260,14 +289,16 @@ type Server struct {
 }
 
 func NewServer(cfg Config, log *slog.Logger) *Server {
-	replicas := max(len(cfg.Peers), 1)
+	// Our share of the budget: the world's, over its regions and ours over
+	// its replicas.
+	shares := max(len(cfg.Peers), 1) * max(len(cfg.Regions), 1)
 	now := time.Now()
 	s := &Server{
 		cfg:      cfg,
 		log:      log,
 		epoch:    now,
 		started:  now,
-		failCap:  (cfg.MaxCodeFailuresPerMinute + replicas - 1) / replicas,
+		failCap:  (cfg.MaxCodeFailuresPerMinute + shares - 1) / shares,
 		sessions: map[[SecretSize]byte]*session{},
 		codes:    map[string]*session{},
 		lookups:  map[netip.Prefix]*lookupBucket{},
@@ -333,6 +364,10 @@ func (s *Server) process(w *worker, p port, from netip.AddrPort, b []byte, now t
 	out := w.out[:0]
 	w.extra, w.extraTo = w.extra[:0], netip.AddrPort{}
 	switch {
+	case d.kind == typeProbe:
+		// Anyone, either port: what we see of it, smaller than its probe.
+		s.Metrics.probed()
+		out, ok = appendObserved(out, d.nonce, from), true
 	case p == portFront:
 		out, ok = s.front(out, from, d, now)
 	case d.kind == typeAddresses:
@@ -385,7 +420,7 @@ func (s *Server) control(out []byte, from netip.AddrPort, d datagram, size int, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch d.kind {
-	case typeRegisterHost:
+	case typeRegisterHost, typeRegisterHostKeep:
 		return s.registerHost(out, from, d, now), true
 	case typeRegisterGuest, typeRejoinGuest:
 		return s.registerGuest(out, from, d, now), true
@@ -403,6 +438,14 @@ func (s *Server) front(out []byte, from netip.AddrPort, d datagram, now time.Tim
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch d.kind {
+	case typeRegisterHostKeep:
+		// To the replica holding the token's kept codes, unless that is us
+		// and we are draining.
+		if owner := s.keepOwner(d.token); owner != s.cfg.Shard || !s.draining.Load() {
+			s.Metrics.redirect(redirectHost)
+			return appendRedirect(out, s.cfg.Peers[owner]), true
+		}
+		fallthrough
 	case typeRegisterHost:
 		if to, ok := s.takerOfNewSessions(); ok {
 			s.Metrics.redirect(redirectHost)
@@ -447,15 +490,30 @@ func (s *Server) takerOfNewSessions() (netip.AddrPort, bool) {
 	return s.cfg.Peers[(s.cfg.Shard+1)%len(s.cfg.Peers)], true
 }
 
-// shardOf is the replica owning a code: its 30 bits modulo the fleet's size.
-// Replicas hold disjoint sets of codes and every one reads the same owner
-// from a code, with nothing shared but the list of peers.
-func shardOf(code string, replicas int) int {
+func codeValue(code string) int {
 	v := 0
 	for i := 0; i < len(code); i++ {
 		v = v<<5 | strings.IndexByte(codeAlphabet, code[i])
 	}
-	return v % replicas
+	return v
+}
+
+// shardOf is the replica owning a code in a region of one: its 30 bits
+// modulo the fleet's size. Replicas hold disjoint sets of codes and every
+// one reads the same owner from a code, with nothing shared but the list of
+// peers.
+func shardOf(code string, replicas int) int { return codeValue(code) % replicas }
+
+// ownerOf is a code's region (its value modulo the regions) and, in it, its
+// replica (the rest modulo the region's replicas). One region: shardOf.
+func (s *Server) ownerOf(code string) (region, shard int) {
+	v, regions := codeValue(code), max(len(s.cfg.Regions), 1)
+	return v % regions, (v / regions) % s.replicas()
+}
+
+func (s *Server) owns(code string) bool {
+	region, shard := s.ownerOf(code)
+	return region == s.cfg.Region && shard == s.cfg.Shard
 }
 
 // overRate counts a datagram against its client's one-second window.
@@ -490,6 +548,8 @@ func (s *Server) requestCode(out []byte, from netip.AddrPort, d datagram, size i
 	sess := c.session
 	live := sess.code != "" && now.Before(sess.codeExpires)
 	switch {
+	case sess.kept && live:
+		// Kept: a new one comes with another salt (RegisterHostKeep).
 	case d.kind == typeReclaimCode && !live && s.reclaim(sess, d, now):
 	case !live || (d.kind == typeRequestCode && d.renew && now.Sub(sess.codeIssued) >= s.cfg.CodeRenewInterval):
 		s.issueCode(sess, now)
@@ -503,8 +563,7 @@ func (s *Server) requestCode(out []byte, from netip.AddrPort, d datagram, size i
 // our start (a code we issued since, we know).
 func (s *Server) reclaim(sess *session, d datagram, now time.Time) bool {
 	code, ok := NormalizeCode(string(bytes.TrimRight(d.code[:], "\x00")))
-	if !ok || d.left == 0 || now.Sub(s.started) >= s.cfg.CodeTTL ||
-		shardOf(code, s.replicas()) != s.cfg.Shard || s.codes[code] != nil {
+	if !ok || d.left == 0 || now.Sub(s.started) >= s.cfg.CodeTTL || !s.owns(code) || s.codes[code] != nil {
 		return false
 	}
 	if sess.code != "" {
@@ -530,7 +589,7 @@ func (s *Server) issueCode(sess *session, now time.Time) {
 			raw[i] = codeAlphabet[raw[i]&31]
 		}
 		code = string(raw[:])
-		if shardOf(code, s.replicas()) == s.cfg.Shard && s.codes[code] == nil {
+		if s.owns(code) && s.codes[code] == nil {
 			break
 		}
 	}
@@ -600,9 +659,15 @@ func (s *Server) resolveCode(out []byte, from netip.AddrPort, d datagram, front 
 	var sess *session
 	code, ok := NormalizeCode(string(bytes.TrimRight(d.code[:], "\x00")))
 	if ok {
-		if owner := shardOf(code, s.replicas()); owner != s.cfg.Shard {
+		// Another region's code: to its entrance (which sends it to the
+		// owner); another replica's: to it.
+		switch region, shard := s.ownerOf(code); {
+		case region != s.cfg.Region:
 			s.Metrics.lookup(lookupRedirected)
-			return appendRedirect(out, s.cfg.Peers[owner]), true
+			return appendRedirect(out, s.cfg.Regions[region]), true
+		case shard != s.cfg.Shard:
+			s.Metrics.lookup(lookupRedirected)
+			return appendRedirect(out, s.cfg.Peers[shard]), true
 		}
 		sess = s.codes[code]
 	}
@@ -625,13 +690,25 @@ func (s *Server) registerHost(out []byte, from netip.AddrPort, d datagram, now t
 		s.Metrics.dropped(dropBadToken)
 		return appendError(out, ErrBadToken)
 	}
+	keep := d.kind == typeRegisterHostKeep
 	if sess := s.sessions[d.secret]; sess != nil {
 		if sess.host.addr != from {
 			s.Metrics.refused(refusedTaken)
 			return appendError(out, ErrSessionTaken)
 		}
 		sess.host.lastSeen.Store(s.mono(now)) // a retry
+		// Another salt: the host asked for another kept code, at once.
+		if keep && sess.keep && d.salt != sess.salt {
+			sess.salt = d.salt
+			s.bindKept(sess, now)
+		}
 		return appendRegistered(out, 0)
+	}
+	// A kept code lives on one replica: the host goes there (unless that is
+	// us, draining: then it gets a code of its own elsewhere).
+	if owner := s.keepOwner(d.token); keep && owner != s.cfg.Shard {
+		s.Metrics.redirect(redirectHost)
+		return appendRedirect(out, s.cfg.Peers[owner])
 	}
 	if s.draining.Load() {
 		// Running sessions stay; a new one goes to another replica.
@@ -654,8 +731,60 @@ func (s *Server) registerHost(out []byte, from netip.AddrPort, d datagram, now t
 	sess.host = host
 	s.sessions[d.secret] = sess
 	s.clients.put(host)
-	s.log.Info("session opened", "host", from, "sessions", len(s.sessions))
+	if keep {
+		sess.keep, sess.token, sess.salt = true, d.token, d.salt
+		s.bindKept(sess, now)
+	}
+	s.log.Info("session opened", "host", from, "sessions", len(s.sessions), "kept_code", sess.kept)
 	return appendRegistered(out, 0)
+}
+
+// keepOwner is the replica (of our region) holding a token's kept codes:
+// the same whatever the salt, so a new one is given at once.
+func (s *Server) keepOwner(token [TokenSize]byte) int {
+	h := sha256.Sum256(append([]byte("tandem-kept-owner\x00"), token[:]...))
+	return int(binary.BigEndian.Uint32(h[:]) % uint32(s.replicas()))
+}
+
+// keptCode is a token's kept code for a salt: 30 bits of a hash of both,
+// moved into our region and the token's replica (ownerOf), so as random as
+// any other code and in the same space.
+func (s *Server) keptCode(token [TokenSize]byte, salt uint32) string {
+	in := append([]byte("tandem-kept-code\x00"), token[:]...)
+	h := sha256.Sum256(binary.BigEndian.AppendUint32(in, salt))
+	const space = 1 << (5 * CodeSize)
+	regions := max(len(s.cfg.Regions), 1)
+	m := regions * s.replicas()
+	v := int(binary.BigEndian.Uint32(h[:]) % space)
+	v = v - v%m + s.keepOwner(token)*regions + s.cfg.Region
+	if v >= space {
+		v -= m
+	}
+	var raw [CodeSize]byte
+	for i := range raw {
+		raw[CodeSize-1-i] = codeAlphabet[(v>>(5*i))&31]
+	}
+	return string(raw[:])
+}
+
+// bindKept gives the session its kept code; one another session holds
+// (the same host hosting twice) leaves it a code of its own.
+func (s *Server) bindKept(sess *session, now time.Time) {
+	code := s.keptCode(sess.token, sess.salt)
+	if other := s.codes[code]; other != nil && other != sess {
+		sess.kept = false
+		if sess.code == "" || !now.Before(sess.codeExpires) {
+			s.issueCode(sess, now)
+		}
+		return
+	}
+	if sess.code != "" && sess.code != code {
+		delete(s.codes, sess.code)
+	}
+	sess.code, sess.codeIssued, sess.codeExpires, sess.kept = code, now, now.Add(100*365*24*time.Hour), true
+	s.codes[code] = sess
+	s.Metrics.codeIssued()
+	s.log.Info("kept join code", "host", sess.host.addr)
 }
 
 // registerGuest: a RejoinGuest gets the channel it asks for when it is free
