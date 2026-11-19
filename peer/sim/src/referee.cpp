@@ -22,13 +22,21 @@ bool HostOnly(const p::Message &m) {
   return IsAny<p::Welcome, p::Refused, p::Pong, p::Roster, p::World, p::Journal, p::Tracked,
                p::PhoneCall, p::Subtitle, p::ChoiceHub, p::QuestReward, p::StoryEffect, p::GameOver,
                p::Difficulty, p::Digest, p::Regions, p::NpcHandover, p::OwnedDigest,
-               p::DeviceDigest, p::SceneState, p::SceneCast, p::SceneLine, p::ActorPose>(m);
+               p::DeviceDigest, p::SceneState, p::SceneCast, p::SceneLine, p::ActorPose,
+               // Merged after the referee: the session's rules, levels and
+               // trades' commits, a time skip's end, a quest's vehicle, the
+               // story's restrictions, the host's compact NPC states.
+               p::Rules, p::SessionLevel, p::NpcLevel, p::TradeCommit, p::TimeSkipResult,
+               p::VehicleUnlock, p::StoryRestrictions, p::NpcMotion>(m);
 }
 
 // What only a guest sends, and the host never passes on.
 bool GuestOnly(const p::Message &m) {
   // (Noise goes to every linked player since regions: each owner's NPCs hear it.)
-  return IsAny<p::Hello, p::Ping, p::PhoneAction, p::PhoneReply, p::ResyncRequest, p::DeviceUse>(m);
+  return IsAny<p::Hello, p::Ping, p::PhoneAction, p::PhoneReply, p::ResyncRequest, p::DeviceUse,
+               // A V's own level (the host's never travels), a defence for the
+               // host's NPC.
+               p::PlayerLevel, p::Defended>(m);
 }
 
 // What an NPC's owner says about it (the host, or since regions the guest
@@ -97,7 +105,10 @@ p::PlayerId *SenderOf(p::Message &message) {
       [](auto &m) -> p::PlayerId * {
         using M = std::decay_t<decltype(m)>;
         if constexpr (std::is_same_v<M, p::AreaHit> || std::is_same_v<M, p::Regroup> ||
-                      std::is_same_v<M, p::RegroupAnswer> || std::is_same_v<M, p::NpcHandoverState>)
+                      std::is_same_v<M, p::RegroupAnswer> ||
+                      std::is_same_v<M, p::NpcHandoverState> || std::is_same_v<M, p::Mark> ||
+                      std::is_same_v<M, p::Tag> || std::is_same_v<M, p::TimeSkip> ||
+                      std::is_same_v<M, p::TimeSkipVote> || std::is_same_v<M, p::Trade>)
           return &m.from;
         else if constexpr (std::is_same_v<M, p::WorldItem>)
           return &m.dropper;
@@ -121,7 +132,13 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::RegionHold> || std::is_same_v<M, p::DeviceUse> ||
                            std::is_same_v<M, p::Heat> || std::is_same_v<M, p::Presence> ||
                            std::is_same_v<M, p::Cue> || std::is_same_v<M, p::TrafficHit> ||
-                           std::is_same_v<M, p::TrafficClaim>)
+                           std::is_same_v<M, p::TrafficClaim> || std::is_same_v<M, p::PoseFrame> ||
+                           std::is_same_v<M, p::PlayerMotion> ||
+                           std::is_same_v<M, p::VehicleMotion> || std::is_same_v<M, p::Throw> ||
+                           std::is_same_v<M, p::ThrowEnd> || std::is_same_v<M, p::Activity> ||
+                           std::is_same_v<M, p::CarLend> || std::is_same_v<M, p::Link> ||
+                           std::is_same_v<M, p::Waypoint> || std::is_same_v<M, p::Defended> ||
+                           std::is_same_v<M, p::TradeOffer>)
           return &m.player;
         else
           return nullptr;
