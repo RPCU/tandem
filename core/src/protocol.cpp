@@ -197,6 +197,15 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *waypoint = std::get_if<Waypoint>(&message);
       waypoint && waypoint->kind > WaypointKind::Point)
     return std::nullopt;
+  if (const auto *damage = std::get_if<VehicleDamage>(&message);
+      damage && damage->parts.size() > kMaxDetachedParts)
+    return std::nullopt;
+  if (const auto *exit = std::get_if<VehicleExit>(&message);
+      exit && exit->kind > ExitKind::Exploded)
+    return std::nullopt;
+  if (const auto *combat = std::get_if<VehicleCombat>(&message);
+      combat && combat->mode > SeatCombat::Gunner)
+    return std::nullopt;
   return message;
 }
 
@@ -229,8 +238,10 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<NpcAwareness>(message) ||
                  std::holds_alternative<Noise>(message) ||
                  std::holds_alternative<NpcShot>(message) ||
-                 std::holds_alternative<ActorPose>(message) ||
-                 std::holds_alternative<TrafficStates>(message)
+                 std::holds_alternative<TrafficStates>(message) ||
+                 std::holds_alternative<MountedFire>(message) ||
+                 std::holds_alternative<GunnerAim>(message) ||
+                 std::holds_alternative<ActorPose>(message)
              ? Channel::State
              // Everything else is reliable and ordered, the consistency
              // messages too (Digest, ResyncRequest, NpcSet, Epoch): a digest
@@ -260,6 +271,11 @@ bool IsCombat(const Message &message) {
 bool IsTrade(const Message &message) {
   return std::holds_alternative<Trade>(message) || std::holds_alternative<TradeOffer>(message) ||
          std::holds_alternative<TradeCommit>(message);
+}
+
+bool IsVehicleCombat(const Message &message) {
+  return message.index() >= Message(VehicleDamage{}).index() &&
+         message.index() <= Message(Chase{}).index();
 }
 
 bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::State; }
@@ -384,7 +400,18 @@ const char *NameOf(const Message &message) {
                                    "Mark",
                                    "Tag",
                                    "Link",
-                                   "Waypoint"};
+                                   "Waypoint",
+                                   "VehicleDamage",
+                                   "VehicleHit",
+                                   "VehicleExit",
+                                   "VehicleCombat",
+                                   "MountedFire",
+                                   "GunnerRequest",
+                                   "Gunner",
+                                   "GunnerAim",
+                                   "VehicleBump",
+                                   "NpcRam",
+                                   "Chase"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

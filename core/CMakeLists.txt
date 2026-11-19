@@ -25,9 +25,11 @@ add_library(tandem_core STATIC
   src/compat.cpp
   src/report.cpp
   src/instance.cpp
+  src/traffic.cpp
+  src/vehicle_combat.cpp
+  src/endpoint_vehicles.cpp
   src/devices.cpp
   src/regions.cpp
-  src/traffic.cpp
   src/presence.cpp
   src/settings.cpp
   src/activity.cpp

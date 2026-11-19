@@ -154,6 +154,70 @@ TEST_CASE("every message survives encoding") {
   CHECK(std::string_view(NameOf(TrafficSet{})) == "TrafficSet");
   CHECK(std::string_view(NameOf(Heat{})) == "Heat");
   CHECK(std::string_view(NameOf(Crime{.kind = CrimeKind::Witness})) == "Crime");
+  RoundTrips(VehicleDamage{.vehicle = StreetCar(MakeTrafficId(1, 3)),
+                           .revision = 7,
+                           .record = 0x1122334455ULL,
+                           .health = 0.25f,
+                           .flags = kDamageBurning,
+                           .tyres = 0b1010,
+                           .windows = 0b11,
+                           .grid = {1, 2, 3, 255},
+                           .parts = {0xabcdefULL, 0x123456ULL},
+                           .explodedUs = 123'456'789'012ULL,
+                           .instigator = 2});
+  RoundTrips(VehicleHit{.player = 2,
+                        .vehicle = PlayerCar(3),
+                        .damage = 40.f,
+                        .flags = kVehicleHitTyre,
+                        .tyre = 3,
+                        .position = {1, 2, 3},
+                        .direction = {0, 1, 0}});
+  RoundTrips(VehicleExit{.player = 2,
+                         .vehicle = PlayerCar(2),
+                         .kind = ExitKind::Knocked,
+                         .flags = kExitRolling | kExitDriver,
+                         .velocity = {9, 1, 0}});
+  RoundTrips(VehicleCombat{
+      .player = 2, .revision = 4, .mode = SeatCombat::Gunner, .vehicle = 1, .weapon = 0x99});
+  RoundTrips(MountedFire{
+      .player = 2, .seq = 5, .vehicle = 1, .weapon = 0x10, .slot = 0x20, .target = {4, 5, 6}});
+  RoundTrips(GunnerRequest{.player = 2, .vehicle = 1, .seat = 0xfeedULL, .leave = true});
+  RoundTrips(Gunner{.vehicle = 1, .gunner = 2, .seat = 0xfeedULL, .revision = 3});
+  RoundTrips(GunnerAim{.player = 2,
+                       .seq = 8,
+                       .timeUs = 99'000'000ULL,
+                       .vehicle = 1,
+                       .yaw = 0.5f,
+                       .pitch = -0.1f,
+                       .flags = kAimFiring});
+  RoundTrips(VehicleBump{
+      .player = 2, .other = 3, .impulse = {0, 4, 0}, .position = {1, 1, 1}, .atUs = 42});
+  RoundTrips(NpcRam{.player = 2,
+                    .npc = 7,
+                    .velocity = {20, 0, 0},
+                    .position = {1, 2, 3},
+                    .flags = kRamKnockdown | kRamLethal});
+  RoundTrips(Chase{.vehicle = MakeTrafficId(1, 4), .target = 2, .flags = kChaseShooting});
+  CHECK(std::string_view(NameOf(VehicleDamage{})) == "VehicleDamage");
+  CHECK(std::string_view(NameOf(Chase{})) == "Chase");
+  CHECK(IsVehicleCombat(VehicleDamage{}));
+  CHECK(IsVehicleCombat(Chase{}));
+  CHECK_FALSE(IsVehicleCombat(Crime{.kind = CrimeKind::Witness}));
+  CHECK(ChannelOf(GunnerAim{}) == Channel::State);
+  CHECK(ChannelOf(MountedFire{}) == Channel::State);
+  CHECK(ChannelOf(VehicleDamage{}) == Channel::Event);
+  // One name covers both kinds of vehicle, and says whose it is.
+  CHECK(OwnerOfVehicle(PlayerCar(3)) == 3);
+  CHECK(OwnerOfVehicle(StreetCar(MakeTrafficId(2, 5))) == 2);
+  CHECK(IsStreetCar(StreetCar(MakeTrafficId(1, 1))));
+  CHECK_FALSE(IsStreetCar(PlayerCar(1)));
+  {
+    VehicleDamage many;
+    many.parts.resize(kMaxDetachedParts + 1);
+    CHECK_FALSE(Decode(Encode(many)).has_value());
+    CHECK_FALSE(Decode(Encode(VehicleExit{.kind = static_cast<ExitKind>(9)})).has_value());
+    CHECK_FALSE(Decode(Encode(VehicleCombat{.mode = static_cast<SeatCombat>(9)})).has_value());
+  }
   RoundTrips(NpcHack{
       .player = 2, .npc = 7, .action = 0x1122334455, .uploadMs = 1500, .flags = kUploadTraceable});
   RoundTrips(NpcHackState{

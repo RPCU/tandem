@@ -30,9 +30,10 @@ add_library(tandem SHARED
   src/combat.cpp
   src/combat_natives.cpp
   src/sync_natives.cpp
+  src/street_natives.cpp
+  src/wheels_natives.cpp
   src/regions.cpp
   src/region_natives.cpp
-  src/street_natives.cpp
   src/progress_natives.cpp
   src/trade.cpp
   src/trade_natives.cpp

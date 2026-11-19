@@ -156,6 +156,8 @@ The owner simulates; everyone else displays.
 
 Enemy level (the mean of the players' levels): `architecture/npcs.md`.
 
+Vehicle combat follows the same rule, the game that simulates a vehicle owns it, its damage included (a car its driver left is still that driver's; a gunner seat is given by the vehicle's owner): [`architecture/vehicle-combat.md`](architecture/vehicle-combat.md).
+
 **Combat** follows from the table. A shot is decided by the shooter's game,
 on what that player sees, so aiming feels local. A guest hitting an NPC sends
 a hit event to the NPC's owner (through the host); the owner applies it to
@@ -281,6 +283,7 @@ plugin") and its open problems.
 - `transit.md`: rides a game runs (cabs, AVs, quest vehicles), the NCART metro.
 - `traffic.md`: traffic, parked cars and wrecks shared by the owner of their area (untested in game): the budget, collisions, a car a player takes, occupants, explosions; who owns an area (`AreaOwner`).
 - `police.md`: police heat per player (untested in game): how a crime finds its V, a wanted V in an area another game owns, what a follower no longer spawns.
+- `vehicle-combat.md`: vehicle damage and destruction, shooting from vehicles and mounted weapons, a guest on another player's gun, collisions (players' cars, rams on NPCs), NPC vehicle chases, bikes, bailing out and being thrown out.
 - `world.md`: time of day and weather; open: the guest acting on the world, NCPD chases, saves.
 - `time.md`: the pause menu, slowed time (time bubbles, the scanner's bubble); open: what the partner lives with when a V scans (mitigations to decide), every time dilation, other timeline and menu, NPC shots simulated by the target's game.
 - `npcs.md`: enemy level, NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.

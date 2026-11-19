@@ -2116,6 +2116,227 @@ struct Waypoint {
   friend bool operator==(const Waypoint &, const Waypoint &) = default;
 };
 
+// ---- Vehicle combat (docs/architecture/vehicle-combat.md) ----
+//
+// One rule for every vehicle: the game that simulates it owns it, its
+// damage included. A player's car is its driver's game's (it stays so once
+// parked: the last driver's); a shared world vehicle is its area owner's.
+// The others show copies and send what they see happen to them (hits,
+// bumps) to the owner, which applies it and says how the vehicle stands.
+//
+// A vehicle named across games: a player's car by that player's id, a
+// shared world vehicle by kSeatInTraffic | its TrafficId (the NpcSeat
+// encoding, so one number names either everywhere).
+using VehicleRef = std::uint32_t;
+constexpr VehicleRef PlayerCar(PlayerId player) { return player & ~kSeatInTraffic; }
+constexpr VehicleRef StreetCar(TrafficId id) { return TrafficSeatOwner(id); }
+constexpr bool IsStreetCar(VehicleRef vehicle) { return IsTrafficSeat(vehicle); }
+// The game that owns a vehicle: its player, or its area owner.
+constexpr PlayerId OwnerOfVehicle(VehicleRef vehicle) {
+  return IsStreetCar(vehicle) ? TrafficOwner(TrafficOfSeat(vehicle)) : vehicle;
+}
+
+// How a vehicle is damaged, sent by its owner when it changes (Event
+// channel; the host keeps the latest of each vehicle for late joiners until
+// it goes, in the digests: player cars with the players, shared ones with
+// the NPCs). Every copy is put in the same state: health (the game's damage
+// stages: smoke, then fire, follow from it), the destruction grid (dents),
+// the parts that came off, flat tyres, broken windows; destroyed with the
+// time it blew up, so a copy that hears it at once blows up the game's way
+// and one that hears it later (a late joiner, a resync) is put there as a
+// wreck. For a shared world vehicle health and the wreck stay
+// TrafficStatus's; this adds what TrafficStatus does not say.
+inline constexpr std::uint8_t kDamageBurning = 1;   // on fire (health in its last stage)
+inline constexpr std::uint8_t kDamageDestroyed = 2; // a wreck
+inline constexpr std::uint8_t kDamageSubmerged = 4; // drowned
+inline constexpr std::size_t kDamageGrid = 16;      // VehicleGridDestructionEvent.state
+inline constexpr std::size_t kMaxDetachedParts = 16;
+struct VehicleDamage {
+  VehicleRef vehicle{};
+  std::uint32_t revision{}; // the owner's count: an older one is never applied
+  std::uint64_t record{};   // TweakDB id of the vehicle record (a check: the copy is that car)
+  float health{1.f};        // fraction of its maximum, 0..1
+  std::uint8_t flags{};     // kDamage*
+  std::uint8_t tyres{};     // bit n: tyre n is flat (WheeledObject.ToggleBrokenTire index)
+  std::uint8_t windows{};   // bit n: vehicleQuestWindowDestruction n is broken
+  std::array<std::uint8_t, kDamageGrid> grid{}; // each cell 0..1 in 1/255
+  std::vector<std::uint64_t> parts;             // CName hashes of the parts that came off
+  std::uint64_t explodedUs{};                   // host clock when it blew up (0: it did not)
+  PlayerId instigator{}; // whose doing its destruction was (kNoPlayer: none, an NPC's)
+  friend bool operator==(const VehicleDamage &, const VehicleDamage &) = default;
+};
+
+// A player's game hit a vehicle another game owns (its copy or proxy
+// there): bullets, a blast, a blade, a quickhack's damage. That game
+// computed the damage and where it landed; the owner applies it to the real
+// vehicle and answers everyone with VehicleDamage. To the owner through the
+// host (which stamps the hitter), never relayed to anyone else. A ram on a
+// shared world vehicle stays TrafficHit; this adds tyres and player cars.
+inline constexpr std::uint8_t kVehicleHitExplosion = 1;
+inline constexpr std::uint8_t kVehicleHitMelee = 2;
+inline constexpr std::uint8_t kVehicleHitTyre = 4;   // `tyre` was shot out
+inline constexpr std::uint8_t kVehicleHitWindow = 8; // `window` broke
+struct VehicleHit {                                  // Event channel
+  PlayerId player{}; // the hitter: set by the host from the connection
+  VehicleRef vehicle{};
+  float damage{};         // health points
+  std::uint8_t flags{};   // kVehicleHit*
+  std::int8_t tyre{-1};   // the tyre index (kVehicleHitTyre)
+  std::int8_t window{-1}; // vehicleQuestWindowDestruction (kVehicleHitWindow)
+  Vec3 position;          // where it landed (world)
+  Vec3 direction;         // the way it went
+  friend bool operator==(const VehicleHit &, const VehicleHit &) = default;
+};
+
+// How a V left a vehicle when it was not a plain exit: jumped out of a car
+// on the move, thrown out by a crash or off a bike, died in the seat, or the
+// vehicle blew up under it. Sent by that V's game (Event channel; the host
+// stamps and relays; not kept: it is of the moment), before its Seat says
+// it is on foot. With kExitRolling the car went on without a driver: its
+// game (the one simulating it) keeps sending its VehicleState until it
+// stops, and the others keep their copy following instead of parking it.
+enum class ExitKind : std::uint8_t {
+  Normal = 0,
+  Bail = 1,     // jumped out of a moving car (SpeedExitingEvents)
+  Thrown = 2,   // ejected by a crash (CollisionExitingEvents, a car)
+  Knocked = 3,  // thrown off a bike
+  Dead = 4,     // died in the seat (DeathExitingEvents)
+  Exploded = 5, // the vehicle blew up with the V in it
+};
+inline constexpr std::uint8_t kExitRolling = 1; // the vehicle rolls on: its state keeps coming
+inline constexpr std::uint8_t kExitDriver = 2;  // the V was its driver
+struct VehicleExit {
+  PlayerId player{};
+  VehicleRef vehicle{}; // the vehicle left (a player's car, or a shared one)
+  ExitKind kind{};
+  std::uint8_t flags{}; // kExit*
+  Vec3 velocity;        // the V's when it left (the throw, the roll)
+  friend bool operator==(const VehicleExit &, const VehicleExit &) = default;
+};
+
+// What a V does with weapons in a vehicle (the game's vehicle states:
+// driver combat, a passenger leaning out, the vehicle's own weapons, a
+// turret). Sent by that V's game when it changes (Event channel; the host
+// stamps, keeps the latest of each player for late joiners, a player's goes
+// with it, and relays; in the players digest). Its shots are Shot (its
+// hands) and MountedFire (the vehicle's weapons); its hits are its own, as
+// on foot.
+enum class SeatCombat : std::uint8_t {
+  None = 0,
+  Driver = 1,    // driver combat with a gun (DriverCombatFirearmsEvents)
+  Passenger = 2, // a passenger shooting out of the window (vehicle state Combat)
+  Mounted = 3,   // the driver on the vehicle's own weapons (DriverCombatMountedWeaponsEvents)
+  Gunner = 4,    // a turret or gunner seat (GunnerEvents, the Basilisk's gun)
+};
+struct VehicleCombat {
+  PlayerId player{};
+  std::uint32_t revision{};
+  SeatCombat mode{};
+  VehicleRef vehicle{};   // the vehicle it is in
+  std::uint64_t weapon{}; // TweakDB id of the weapon in use (a gun, a mounted weapon; 0: none)
+  friend bool operator==(const VehicleCombat &, const VehicleCombat &) = default;
+};
+
+// One shot of a vehicle's own weapon (a mounted gun, a missile pod, the
+// Basilisk's cannon), fired by the V who uses it (the driver, or the
+// gunner of someone else's vehicle on its copy). State channel, as Shot: a
+// late one is worth nothing. The others play it on their copy for its
+// effects; what it hits is the shooter's game's to say, as for any shot.
+struct MountedFire {
+  PlayerId player{}; // the shooter: set by the host from the connection
+  std::uint32_t seq{};
+  VehicleRef vehicle{};
+  std::uint64_t weapon{}; // VehicleMountedWeaponShootEvent.weaponID
+  std::uint64_t slot{};   // VehicleMountedWeaponShootEvent.slotID
+  Vec3 target;            // where it was aimed (world; zero: unknown)
+  friend bool operator==(const MountedFire &, const MountedFire &) = default;
+};
+
+// A V asks for the gunner seat of another player's vehicle (the turret of
+// a Basilisk, a mounted gun): to the vehicle's owner, through the host
+// (which stamps the asker). The owner gives the seat to the first who asks
+// and answers everyone with Gunner. `leave`: let it go.
+struct GunnerRequest { // Event channel
+  PlayerId player{};   // the asker: set by the host from the connection
+  VehicleRef vehicle{};
+  std::uint64_t seat{}; // the slot's CName hash
+  bool leave{};
+  friend bool operator==(const GunnerRequest &, const GunnerRequest &) = default;
+};
+
+// Who holds a vehicle's gunner seat, said by the vehicle's owner (Event
+// channel; the host keeps it while held, for late joiners, frees it when
+// the gunner or the owner goes, and relays it; in the players digest).
+// The gunner's game aims and fires from its copy (GunnerAim, MountedFire)
+// and decides its hits; the owner turns its real turret the same way.
+struct Gunner {
+  VehicleRef vehicle{};
+  PlayerId gunner{};    // kNoPlayer: free
+  std::uint64_t seat{}; // the slot's CName hash
+  std::uint32_t revision{};
+  friend bool operator==(const Gunner &, const Gunner &) = default;
+};
+
+// Where the gunner aims, relative to the vehicle (State channel, ~20 Hz,
+// from the gunner's game only; the host relays it while the seat is that
+// player's). Every game turns its copy's turret, the owner its real one.
+inline constexpr std::uint8_t kAimFiring = 1; // the trigger is held
+struct GunnerAim {
+  PlayerId player{}; // set by the host from the connection
+  std::uint32_t seq{};
+  std::uint64_t timeUs{}; // host clock
+  VehicleRef vehicle{};
+  float yaw{};   // radians, from the vehicle's forward, left positive
+  float pitch{}; // radians, up positive
+  std::uint8_t flags{};
+  friend bool operator==(const GunnerAim &, const GunnerAim &) = default;
+};
+
+// Two players' cars touched. Each driver's game runs its own car's side
+// against the other's copy (which stands like a wall for the instant); the
+// push our car gave goes to the other driver's game, which applies it to
+// its real car unless it felt the same contact itself (vehicle_combat.hpp,
+// BumpLedger). To `other` through the host, which stamps `player`.
+struct VehicleBump {    // Event channel
+  PlayerId player{};    // whose car bumped: set by the host from the connection
+  PlayerId other{};     // whose car was hit
+  Vec3 impulse;         // the velocity change our car gave theirs, m/s
+  Vec3 position;        // where they touched
+  std::uint64_t atUs{}; // host clock of the contact
+  friend bool operator==(const VehicleBump &, const VehicleBump &) = default;
+};
+
+// A player's car ran into one of the area owner's NPCs (its proxy): the
+// driver's game ran the hit (the damage, as NpcStrike); this is its
+// physical half, for the real NPC: knocked down and thrown along the car's
+// velocity, or killed by the game's own rule (a car this fast kills). To
+// the area owner through the host; never relayed.
+inline constexpr std::uint8_t kRamKnockdown = 1; // fast enough to knock it down
+inline constexpr std::uint8_t kRamLethal = 2;    // fast enough to kill it outright
+struct NpcRam {                                  // Event channel
+  PlayerId player{};                             // the driver: set by the host from the connection
+  NpcId npc{};
+  Vec3 velocity; // the car's, m/s
+  Vec3 position; // where it hit
+  std::uint8_t flags{};
+  friend bool operator==(const NpcRam &, const NpcRam &) = default;
+};
+
+// One of the area owner's vehicles is chasing a player (its NPCs are in
+// combat with that V, the game's own InVehicleCombatDecorator drives after
+// it). Sent by the owner when the chase starts, changes target or ends
+// (kNoPlayer); the host keeps it while it lasts, for late joiners, with the
+// NPCs (digest), and it ends when the vehicle or the target goes. The
+// target's game treats the proxy as a hostile vehicle.
+inline constexpr std::uint8_t kChaseRamming = 1;  // it rams (aggressiveRamming)
+inline constexpr std::uint8_t kChaseShooting = 2; // its passengers fire
+struct Chase {
+  TrafficId vehicle{};
+  PlayerId target{}; // kNoPlayer: over
+  std::uint8_t flags{};
+  friend bool operator==(const Chase &, const Chase &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -2130,7 +2351,9 @@ using Message = std::variant<
     TrafficSpawn, TrafficStates, TrafficGone, TrafficStatus, TrafficHit, TrafficClaim, TrafficSet,
     Heat, Crime, Presence, Cue, NpcReaction, Install, Throw, ThrowEnd, Rules, Defended, Activity,
     TimeSkip, TimeSkipVote, TimeSkipResult, PlayerLevel, SessionLevel, NpcLevel, Trade, TradeOffer,
-    TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint>;
+    TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
+    VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
+    Chase>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock):
@@ -2142,6 +2365,8 @@ bool IsStory(const Message &message);
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);
+// A vehicle combat message (VehicleDamage … Chase): one path in endpoint.hpp too.
+bool IsVehicleCombat(const Message &message);
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

@@ -62,7 +62,8 @@
   station and song reach the passengers. Not possible with the game's scripts: the same point of
   a song (no playback position to read or seek; the song is asked for by
   name) and the driver's volume (a per-player setting, left alone).
-- **Getting in and out of a car, every way.** Today a puppet is mounted
+- **Getting in and out of a car, every way.** (The hard exits and the car
+  rolling on with nobody at the wheel: `vehicle-combat.md`.) Today a puppet is mounted
   and unmounted instantly, so it pops in and out of the seat. It must look
   like the game: the enter and exit animations, and every way out:
   - jumping out of a moving car (the bail-out roll), and the car rolling on
@@ -77,7 +78,10 @@
   it, the car (still moving) belongs to the host, which simulates it to a
   stop and syncs it like a parked car.
 
-- **Combat in and around vehicles.** Everything that happens in a car must
+- **Combat in and around vehicles.** Built (2026-11-19, not yet run in
+  game): [`vehicle-combat.md`](vehicle-combat.md), with the hard ways out
+  (bail, thrown, knocked off a bike, dead, blown out) and the car rolling
+  on. The problem as it was stated: everything that happens in a car must
   work with several players, seen and heard by all: shooting from a seat
   (driver combat with a one-handed weapon, passengers leaning out, aiming
   and the seat's own animations), weaponized vehicles (mounted guns and

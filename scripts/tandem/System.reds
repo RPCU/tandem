@@ -122,6 +122,8 @@ public class TandemSystem extends ScriptableSystem {
   // every vehicle of our world) and police heat (Police.reds).
   private let m_traffic: ref<TandemTraffic>;
   private let m_police: ref<TandemPolice>;
+  // Vehicle combat (Wheels.reds: damage, hits, exits, guns, collisions, chases).
+  private let m_wheels: ref<TandemWheelsSync>;
   // Our V and the others in other worlds (Elsewhere.reds), and why each
   // puppet is hidden (PuppetVisibility.reds: private scenes, other worlds).
   private let m_elsewhere: ref<TandemElsewhere>;
@@ -166,6 +168,9 @@ public class TandemSystem extends ScriptableSystem {
   private let m_wheel: EntityID;
   private let m_wheelRefused: EntityID;
   private let m_refusedDrivers: array<Uint32>;
+  // Whose car each parked copy was (Wheels.reds: a parked car is still its
+  // last driver's, its damage included).
+  private let m_parkedOwners: array<Uint32>;
   private let m_playing: Bool;
   // Our look as last sent.
   private let m_sentItems: array<TweakDBID>;
@@ -218,6 +223,12 @@ public class TandemSystem extends ScriptableSystem {
     this.m_traffic.Start(this.GetGameInstance());
     this.m_police = new TandemPolice();
     this.m_police.Start(this.GetGameInstance());
+    this.m_wheels = new TandemWheelsSync();
+    this.m_wheels.Start(this.GetGameInstance());
+  }
+
+  public func Wheels() -> ref<TandemWheelsSync> {
+    return this.m_wheels;
   }
 
   public func Traffic() -> ref<TandemTraffic> {
@@ -235,6 +246,9 @@ public class TandemSystem extends ScriptableSystem {
     }
     if IsDefined(this.m_police) {
       this.m_police.End();
+    }
+    if IsDefined(this.m_wheels) {
+      this.m_wheels.End();
     }
   }
 
@@ -850,6 +864,9 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_police) {
         this.m_police.Tick(this.Now(), this.m_you, this);
       }
+      if IsDefined(this.m_wheels) {
+        this.m_wheels.Tick(this.Now(), this.m_you, this);
+      }
     }
     this.DrivePuppets();
     // What the puppets are heard doing, their flinches, the party HUD
@@ -1061,6 +1078,13 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log(s"region: \(TandemRegions.IsApart() ? "apart" : "grouped"), leader player \(TandemRegions.Leader()), linked with \(ArraySize(linked)) player(s), area \(TandemRegions.OwnsArea() ? "ours" : s"player \(TandemRegions.AreaOwner(this.m_you))'s"), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
     } else if Equals(command, "npc count") {
       TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
+    } else if StrBeginsWith(command, "wheels") {
+      // (test, Wheels.reds) "wheels": vehicle combat as we have it; "wheels
+      // shoot": our shot on the first remote car copy; "wheels gun": our V
+      // on the gun of the first remote car copy.
+      if IsDefined(this.m_wheels) {
+        this.m_wheels.Command(command, this);
+      }
     } else if Equals(command, "street count") {
       // (test) the world vehicles shared in the session, as we have them.
       TandemNative.Log(s"street \(IsDefined(this.m_traffic) ? this.m_traffic.Report() : "count: no vehicles")");
@@ -1279,6 +1303,7 @@ public class TandemSystem extends ScriptableSystem {
       }
       ArrayClear(this.m_parked);
       ArrayClear(this.m_parkedOwner);
+      ArrayClear(this.m_parkedOwners);
       TandemNative.Log("vehicle clear: done");
     } else if Equals(command, "where") {
       let player = GetPlayer(this.GetGameInstance());
@@ -1802,6 +1827,7 @@ public class TandemSystem extends ScriptableSystem {
     }
     ArrayClear(this.m_parked);
     ArrayClear(this.m_parkedOwner);
+    ArrayClear(this.m_parkedOwners);
     this.m_rideCar = EntityID.FromHash(0ul);
     TandemNative.Log(s"test reset: \(deleted) car copies deleted");
   }
@@ -1994,6 +2020,46 @@ public class TandemSystem extends ScriptableSystem {
     }
     let none = EntityID.FromHash(0ul);
     return none;
+  }
+
+  // Whose car a copy is, driven or parked (0: ours or the world's).
+  public func LastCarOwnerOf(id: EntityID) -> Uint32 {
+    let owner = this.CarOwner(id);
+    if owner != 0u {
+      return owner;
+    }
+    for leaving in this.m_leaving {
+      if EntityID.IsDefined(leaving.car) && leaving.car == id {
+        return leaving.player;
+      }
+    }
+    let i = ArrayFindFirst(this.m_parked, id);
+    return i >= 0 && i < ArraySize(this.m_parkedOwners) ? this.m_parkedOwners[i] : 0u;
+  }
+
+  // The copy of a player's car here: the one it drives, else the last it
+  // left parked (none: no copy).
+  public func LastCarOf(player: Uint32) -> EntityID {
+    let car = this.CarOf(player);
+    if EntityID.IsDefined(car) {
+      return car;
+    }
+    for leaving in this.m_leaving {
+      if leaving.player == player && EntityID.IsDefined(leaving.car) {
+        car = leaving.car;
+      }
+    }
+    if EntityID.IsDefined(car) {
+      return car;
+    }
+    let i = ArraySize(this.m_parked) - 1;
+    while i >= 0 {
+      if i < ArraySize(this.m_parkedOwners) && this.m_parkedOwners[i] == player {
+        return this.m_parked[i];
+      }
+      i -= 1;
+    }
+    return car;
   }
 
   public func CarCopies() -> array<EntityID> {
@@ -3075,6 +3141,7 @@ public class TandemSystem extends ScriptableSystem {
         ArrayPush(this.m_parked, leaving.car);
         // Still theirs while they are in the session (a partner may drive it).
         ArrayPush(this.m_parkedOwner, IsDefined(this.PuppetOf(leaving.player)) ? leaving.player : 0u);
+        ArrayPush(this.m_parkedOwners, leaving.player);
         TandemNative.Log(s"player \(leaving.player): car left parked");
       } else {
         TandemNative.Log(s"removed player \(leaving.player)");
