@@ -636,6 +636,7 @@ redscript natives (UI, events)              ENet socket
   Open: police (`PreventionSpawnSystem`), quest NPCs the guest needs to
   talk to (milestone 6), hit reactions and ragdolls from other players'
   hits (below).
+- **Presence** (`scripts/tandem/Presence.reds`, `PartyHud.reds`, `HitReactions.reds`): a puppet's sounds, hit reactions, drawn bullets and the party HUD are in [`architecture/presence.md`](architecture/presence.md).
 - **NPC animation** (`scripts/tandem/NpcAnims.reds`, engine-knowledge
   §13.21): the pose stream is too heavy for dozens of NPCs, so the host
   sends what an NPC's animation graph reads and the proxy's own graph
