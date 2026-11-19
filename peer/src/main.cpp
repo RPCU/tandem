@@ -311,6 +311,13 @@ struct Options {
   // said), and (host) a vehicle our quest "gives" while the guests take part.
   int lend{-1};
   std::string unlockVehicle;
+  // Vendors (docs/architecture/progression.md): (host) one vendor NPC of
+  // this record standing there, announced with that placed entity (0: none),
+  // and when it dies after a guest is there (-1: never).
+  std::string vendorRecord;
+  Vec3 vendorAt{};
+  std::uint64_t vendorEntity{};
+  int vendorDiesSeconds{-1};
   // Trade (docs/architecture/trade.md): ask the first other player (again
   // every 20 s until one trade is done); accept whoever asks; what we put
   // on the table (RECORD[:N],...), the eddies we give and ask for. We agree
@@ -648,6 +655,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     owner (only with us aboard), never\n"
          "  --unlock-vehicle REC host: 5 s after a guest is there, our garage \"gets\" REC:\n"
          "                     each guest is told it earned it with us (VehicleUnlock)\n"
+         "  --vendor REC@X,Y,Z#ENTITY host: a vendor NPC of REC standing at X,Y,Z, said to be\n"
+         "                     the placed vendor ENTITY (hex, as `vendor near` logs it):\n"
+         "                     a guest opens its own game's vendor of it (NpcVendor)\n"
+         "  --vendor-dies N    host, --vendor: it dies N s after a guest is there (every\n"
+         "                     game hears that vendor died)\n"
          "  --trade-offer      ask the first other player to trade, every 20 s until one\n"
          "                     trade is done; we agree once they do\n"
          "  --trade-accept     accept whoever asks us to trade; we agree once they do\n"
@@ -1017,6 +1029,23 @@ Options Parse(int argc, char **argv) {
       options.lend = static_cast<int>(named - std::begin(names));
     } else if (flag == "--unlock-vehicle")
       options.unlockVehicle = std::string(value);
+    else if (flag == "--vendor") {
+      // REC@X,Y,Z#ENTITY
+      const auto at = value.find('@');
+      const auto hash = value.find('#');
+      if (at == std::string_view::npos || hash == std::string_view::npos || hash < at || at == 0)
+        Usage("--vendor is REC@X,Y,Z#ENTITY");
+      options.vendorRecord = std::string(value.substr(0, at));
+      options.vendorAt = Point(flag, value.substr(at + 1, hash - at - 1));
+      auto entity = value.substr(hash + 1);
+      if (entity.starts_with("0x"))
+        entity.remove_prefix(2);
+      if (std::from_chars(entity.data(), entity.data() + entity.size(), options.vendorEntity, 16)
+                  .ptr != entity.data() + entity.size() ||
+          options.vendorEntity == 0)
+        Usage(std::format("--vendor: {} is not an entity id in hex", entity));
+    } else if (flag == "--vendor-dies")
+      options.vendorDiesSeconds = Number<int>(value);
     else if (flag == "--trade-give")
       options.tradeGive = std::string(value);
     else if (flag == "--trade-money")
@@ -2922,6 +2951,10 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
     return std::format("the session's level is {} ({} players)", s->level, s->players);
   if (const auto *n = std::get_if<proto::NpcLevel>(&message))
     return std::format("npc {} is level {:.1f}", n->npc, n->level);
+  if (const auto *v = std::get_if<proto::NpcVendor>(&message))
+    return (v->flags & proto::kVendorDead) != 0
+               ? std::format("the vendor {:x} died in the session", v->entity)
+               : std::format("npc {} is the placed vendor {:x}", v->npc, v->entity);
   if (const auto *l = std::get_if<proto::CarLend>(&message)) {
     constexpr const char *names[] = {"crew", "owner", "never"};
     return std::format("player {} lends its cars: {}", l->player,
@@ -3271,6 +3304,12 @@ int main(int argc, char **argv) {
   bool lendSent = false;
   std::optional<std::chrono::steady_clock::time_point> unlockAt;
   std::set<tandem::proto::PlayerId> unlockedFor;
+  // --vendor: when a guest was first there, whether it is shared and dead,
+  // and its next standing still (the guest's proxy follows it).
+  constexpr tandem::proto::NpcId kVendorNpc = 50'003;
+  std::optional<std::chrono::steady_clock::time_point> vendorSince;
+  bool vendorShared = false, vendorDead = false;
+  auto nextVendorState = std::chrono::steady_clock::now();
   // Trade: our seat at the table, when we ask next, the trades done.
   tandem::trade::Seat tradeSeat;
   auto nextTradeAsk = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -5540,6 +5579,35 @@ int main(int argc, char **argv) {
             Log("vehicle {} unlocked in our garage: player {} earned it with us",
                 options.unlockVehicle, id);
           }
+    }
+    // --vendor: shared once a guest is there, standing still; --vendor-dies.
+    if (!options.vendorRecord.empty() && options.host && endpoint->IsJoined() &&
+        endpoint->Players().size() > 1 && !vendorDead) {
+      namespace proto = tandem::proto;
+      if (!vendorSince)
+        vendorSince = now;
+      if (!vendorShared) {
+        endpoint->SendNpcSpawn({.npc = kVendorNpc,
+                                .record = TweakDBID(options.vendorRecord),
+                                .position = options.vendorAt});
+        vendorShared = endpoint->SendCombat(
+            proto::NpcVendor{.npc = kVendorNpc, .entity = options.vendorEntity});
+        Log("vendor npc {}: {} at {:.1f} {:.1f} {:.1f}, the placed vendor {:x}{}", kVendorNpc,
+            options.vendorRecord, options.vendorAt.x, options.vendorAt.y, options.vendorAt.z,
+            options.vendorEntity, vendorShared ? "" : " (not said: nobody to tell)");
+        vendorShared = true;
+      }
+      if (now >= nextVendorState) {
+        nextVendorState = now + 500ms;
+        endpoint->SendNpcStates({.npcs = {{.npc = kVendorNpc, .position = options.vendorAt}}});
+      }
+      if (options.vendorDiesSeconds >= 0 &&
+          now - *vendorSince >= std::chrono::seconds(options.vendorDiesSeconds)) {
+        endpoint->SendNpcGone(
+            {.npc = kVendorNpc, .reason = proto::kGoneDead, .killer = endpoint->You()});
+        vendorDead = true;
+        Log("vendor npc {} died (--vendor-dies)", kVendorNpc);
+      }
     }
     // --npc-level: every NPC we share, once.
     if (options.npcLevel > 0.f && options.host && endpoint->IsJoined())

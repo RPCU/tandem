@@ -47,7 +47,7 @@ declare -A value=(
   ["--heat"]=3 ["--heat-at"]=5 ["--heat-for"]=20 ["--crime-at"]=8
   ["--hurt"]=4 ["--melee"]=5 ["--menu-at"]=10 ["--react-npcs"]=3
   ["--hold"]=Items.x ["--holster-at"]=10
-  ["--level"]=30 ["--npc-level"]=25 ["--lend"]=owner ["--unlock-vehicle"]=Vehicle.x ["--trade-offer"]=--check ["--trade-accept"]=--check
+  ["--level"]=30 ["--npc-level"]=25 ["--lend"]=owner ["--unlock-vehicle"]=Vehicle.x ["--vendor"]="Character.x@1,2,3#1a2b3c4d5e6f7788" ["--vendor-dies"]=10 ["--trade-offer"]=--check ["--trade-accept"]=--check
   ["--trade-give"]=Items.CommonMaterial1:2 ["--trade-money"]=100 ["--trade-asks"]=50
   ["--link"]=ask ["--link-at"]=5 ["--unlink-at"]=9 ["--ping"]=4 ["--tag"]=6 ["--reveal"]=8 ["--waypoint"]="-915,1879.5,36.3" ["--waypoint-clear"]=20 ["--mark-target"]=nearest ["--hack-npc"]=nearest
 )
