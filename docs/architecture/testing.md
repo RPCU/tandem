@@ -16,6 +16,7 @@
 | regions | links, owners, hand-over (also with a third lost), a vanishing owner, digests both ways; two mock players meeting | `task test` |
 | natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere, region, street, presence, activity) | `task natives:check` |
 | scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods | `task scripts:check` |
+| other mods | every method another mod's redscript or CET Lua wraps, replaces or observes, against the ones tandem wraps: conflicts, order-sensitive, harmless chains (`tools/mods-check.py`, on any game folder or copy) | `task mods:check DIR=…` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
 
