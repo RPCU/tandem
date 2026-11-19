@@ -1096,6 +1096,14 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_travel) {
         this.m_travel.Command(command);
       }
+    } else if Equals(command, "puppet limbs") {
+      // (test, Outcomes.reds) every way to cut or cripple a V, on the first
+      // remote player's puppet: all refused.
+      let first: ref<GameObject>;
+      if ArraySize(this.m_puppets) > 0 {
+        first = GameInstance.GetDynamicEntitySystem().GetEntity(this.m_puppets[0].id) as GameObject;
+      }
+      TandemOutcomes.TestLimbs(this.GetGameInstance(), first);
     } else if Equals(command, "markers") {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {

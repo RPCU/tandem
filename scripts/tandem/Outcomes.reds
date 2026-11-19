@@ -412,7 +412,51 @@ public class TandemOutcomes {
       pools.RequestChangingStatPoolValue(id, gamedataStatPoolType.Poise, -strike.poise, instigator, false, false);
     }
     TandemNative.Log(s"outcomes: \(strike.npc) struck by player \(strike.player): \(loss) of \(health) health, \(strike.poise) poise, flags \(strike.flags), zone \(strike.zone)");
+    // A lethal strike kills, as the guest's game measured it: the health
+    // pool alone stops at the defeat mechanic's 0.1 % (NPCDeathListener),
+    // and the hit reaction that kills a defeated NPC in vanilla's own hit
+    // did not for a strike (2026-11-19: one more hit was needed). A
+    // non-lethal one leaves it to the defeat mechanic: knocked out.
+    let lethal = !immortal && (strike.flags & 16) == 0 && ((strike.flags & 8) != 0 || (loss > 0.0 && loss >= health - 0.001));
+    if lethal {
+      if !body.IsDead() {
+        body.Kill(instigator, false, false);
+      }
+      this.Dismember(body, strike, instigator);
+    }
     return loss;
+  }
+
+  // The limb a killing strike cuts off, by the rules of the game's hit
+  // reaction (HitReactionComponent.ProcessWoundsAndDismemberment,
+  // GetDismembermentWoundType, DismembermentConditions): a forced
+  // dismemberment, an explosion, or a blade's melee kill cuts the part the
+  // strike landed on (not the torso, but by an explosion); a blade's wound
+  // is clean, other melee a hole, the rest coarse. Through the wrapped
+  // RequestDismemberment, so every proxy loses it too (NpcWound).
+  private func Dismember(body: ref<ScriptedPuppet>, strike: ref<TandemStrike>, instigator: wref<GameObject>) -> Void {
+    if strike.part < 0 || strike.part > 5 {
+      return;
+    }
+    let attackType = IntEnum<gamedataAttackType>(strike.attackType);
+    let melee = (strike.flags & 4) != 0;
+    let explosion = AttackData.IsDismembermentCause(attackType);
+    let clean = false;
+    let weapon = IsDefined(instigator) ? ScriptedPuppet.GetWeaponRight(instigator) : null;
+    if IsDefined(weapon) && IsDefined(weapon.GetWeaponRecord()) {
+      let kind = weapon.GetWeaponRecord().ItemType().Type();
+      clean = Equals(kind, gamedataItemType.Cyb_NanoWires) || Equals(kind, gamedataItemType.Cyb_MantisBlades) || Equals(kind, gamedataItemType.Wea_Katana) || Equals(kind, gamedataItemType.Wea_ShortBlade) || Equals(kind, gamedataItemType.Wea_LongBlade) || Equals(kind, gamedataItemType.Wea_Axe) || Equals(kind, gamedataItemType.Wea_Chainsword) || Equals(kind, gamedataItemType.Wea_Machete) || Equals(kind, gamedataItemType.Wea_Sword);
+    }
+    let forced = (strike.flags & 256) != 0;
+    if !forced && !explosion && !(melee && clean) {
+      return;
+    }
+    if strike.part == 5 && !explosion {
+      return; // the torso: only an explosion takes it apart
+    }
+    let wound = clean ? gameDismWoundType.CLEAN : melee ? gameDismWoundType.HOLE : gameDismWoundType.COARSE;
+    DismembermentComponent.RequestDismemberment(body, IntEnum<gameDismBodyPart>(strike.part), wound, strike.position);
+    TandemNative.Log(s"outcomes: \(strike.npc)'s killing strike cuts part \(strike.part) (wound \(EnumInt(wound)), weapon \(IsDefined(weapon) ? TDBID.ToStringDEBUG(ItemID.GetTDBID(weapon.GetItemID())) : "none"))");
   }
 
   // ---- wounds: the host decides, every proxy shows ----
@@ -466,6 +510,60 @@ public class TandemOutcomes {
       proxy.QueueEvent(cut);
     }
     TandemNative.Log(s"outcomes: proxy \(event.npc) loses part \(event.part) (wound \(event.shape), player \(event.player)'s hit)");
+  }
+
+  // ---- a V keeps its limbs (the wraps at the end) ----
+
+  // Whether `obj` is a V (ours, or a remote player's puppet): it is never
+  // cut or crippled. Logged as `why` for a puppet.
+  public static func KeepsLimbs(obj: wref<GameObject>, why: String) -> Bool {
+    if !IsDefined(obj) {
+      return false;
+    }
+    if obj.IsPlayer() {
+      return true;
+    }
+    let player = TandemCombat.PuppetPlayer(obj.GetGame(), obj);
+    if player == 0u {
+      return false;
+    }
+    TandemNative.Log(s"outcomes: player \(player)'s puppet keeps its limbs (\(why))");
+    return true;
+  }
+
+  // A crippled or dismembered status effect (HitReactionComponent's
+  // BaseStatusEffect.Crippled*, Dismembered*): never on a V.
+  public static func IsLimbEffect(record: wref<StatusEffect_Record>) -> Bool {
+    if !IsDefined(record) {
+      return false;
+    }
+    if IsDefined(record.StatusEffectType()) && Equals(record.StatusEffectType().Type(), gamedataStatusEffectType.Crippled) {
+      return true;
+    }
+    let name = TDBID.ToStringDEBUG(record.GetID());
+    return StrBeginsWith(name, "BaseStatusEffect.Crippled") || StrBeginsWith(name, "BaseStatusEffect.Dismembered");
+  }
+
+  // (test, tools/game.sh cmd puppet limbs) every way a limb could go, on
+  // a remote player's puppet: each one must be refused.
+  public static func TestLimbs(game: GameInstance, puppet: ref<GameObject>) -> Void {
+    if !IsDefined(puppet) {
+      TandemNative.Log("puppet limbs: no puppet");
+      return;
+    }
+    let at = puppet.GetWorldPosition();
+    DismembermentComponent.RequestDismemberment(puppet, gameDismBodyPart.LEFT_ARM, gameDismWoundType.CLEAN, at);
+    let cut = new DismembermentEvent();
+    cut.m_bodyPart = gameDismBodyPart.RIGHT_LEG;
+    cut.m_woundType = gameDismWoundType.COARSE;
+    cut.m_strength = 8.0;
+    puppet.QueueEvent(cut);
+    let blast = new DismembermentExplosionEvent();
+    blast.m_epicentrum = at;
+    blast.m_strength = 50.0;
+    puppet.QueueEvent(blast);
+    StatusEffectHelper.ApplyStatusEffect(puppet, t"BaseStatusEffect.CrippledLegLeft");
+    TandemNative.Log("puppet limbs: dismemberment request, event, explosion and a crippled leg sent to the puppet");
   }
 
   // ---- area effects: the attacker's game, once ----
@@ -588,6 +686,9 @@ public class TandemOutcomes {
 // The host's limbs and wounds for every proxy (TandemOutcomes.OnDismember).
 @wrapMethod(DismembermentComponent)
 public final static func RequestDismemberment(obj: ref<GameObject>, bodyPart: gameDismBodyPart, woundType: gameDismWoundType, opt hitPosition: Vector4, opt isCritical: Bool, opt debrisPath: String, opt debrisStrength: Float) {
+  if TandemOutcomes.KeepsLimbs(obj, s"request, part \(EnumInt(bodyPart))") {
+    return;
+  }
   let outcomes = IsDefined(obj) ? TandemOutcomes.Of(obj.GetGame()) : null;
   if IsDefined(outcomes) && !outcomes.OnDismember(obj, bodyPart, woundType, hitPosition) {
     return;
@@ -638,4 +739,45 @@ private final func CheckForQuickExit(hitEvent: ref<gameHitEvent>, cache: ref<Cac
     hitEvent.attackData.AddFlag(hitFlag.FriendlyFire, n"tandem_area_hit");
   }
   return wrappedMethod(hitEvent, cache);
+}
+
+// ---- a V keeps its limbs ----
+// Vanilla's V cannot lose a limb or be crippled: PlayerPuppet has neither a
+// HitReactionComponent nor a DismembermentComponent. A remote player's
+// puppet is built on an NPC body, which has both, and no record field or
+// stat turns them off (none in the 2.50 scripts). So every way in is shut
+// for a V here: the hit reaction's wounds and dismemberment, the
+// dismemberment requests and events (and their explosion and guts), and
+// the crippled and dismembered status effects (Combat.reds).
+
+@wrapMethod(HitReactionComponent)
+protected final func ProcessWoundsAndDismemberment() {
+  if TandemOutcomes.KeepsLimbs(this.GetOwner(), "hit reaction") {
+    return;
+  }
+  wrappedMethod();
+}
+
+@wrapMethod(DismembermentComponent)
+protected cb func OnDismemberment(evt: ref<DismembermentEvent>) -> Bool {
+  if TandemOutcomes.KeepsLimbs(this.GetEntity() as GameObject, "event") {
+    return true;
+  }
+  return wrappedMethod(evt);
+}
+
+@wrapMethod(DismembermentComponent)
+protected cb func OnDismembermentExplosion(evt: ref<DismembermentExplosionEvent>) -> Bool {
+  if TandemOutcomes.KeepsLimbs(this.GetEntity() as GameObject, "explosion") {
+    return true;
+  }
+  return wrappedMethod(evt);
+}
+
+@wrapMethod(DismembermentComponent)
+protected cb func OnDismembermentDebris(evt: ref<DismembermentDebrisEvent>) -> Bool {
+  if TandemOutcomes.KeepsLimbs(this.GetEntity() as GameObject, "debris") {
+    return true;
+  }
+  return wrappedMethod(evt);
 }

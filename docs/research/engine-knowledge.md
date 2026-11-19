@@ -2747,6 +2747,25 @@ visible, transitionTime)` (final.reds:14006, a
 
 Line numbers are the 2.50 `final.reds` dump's. All [2.5-untested].
 
+- In game (2026-11-19, scenario `outcomes-blade`, host): a strike's hit of
+  the guest's puppet (attack type Melee, a built hit shape on the left
+  arm, the puppet holding `Items.Preset_Katana_Default`,
+  `hitFlag.ForceDismember`) taking the last health left the NPC at
+  0.078 of 78 (the 0.1 % custom limit) instead of killing it, and never
+  reached `RequestDismemberment`; the next strike killed it. So a lethal
+  strike now calls `Kill` and cuts the limb itself. [2.5-verified]
+- What keeps V whole: `PlayerPuppet` has no `HitReactionComponent` (it
+  extends `AIMandatoryComponents`, NPC-only) and no
+  `DismembermentComponent` (`ScriptedPuppet` requests `Dismemberment0701`,
+  `:19751`, found only on NPC bodies). No record field or stat turns
+  dismemberment off (none in the 2.50 scripts). Ways a limb goes:
+  `HitReactionComponent.ProcessWoundsAndDismemberment` (`:185481`: crippled
+  `BaseStatusEffect.Crippled<zone>`, `Dismembered*`, the requests below),
+  `DismembermentComponent.RequestDismemberment` (static, `:188532`),
+  `RequestDismembermentEvent` → `ScriptedPuppet.OnRequestDismemberment`
+  (`:21481`), and the component's own `OnDismemberment`,
+  `OnDismembermentExplosion`, `OnDismembermentDebris` callbacks (`:188580`).
+  [2.5-untested]
 - The pipeline (`DamageSystem.ProcessPipeline` `:84290`): `PreProcess`
   (`ConvertDPSToHitDamage`, `CheckForQuickExit`, invulnerability,
   immortality, death checks, `ModifyHitData`: resistances, localized
