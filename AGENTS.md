@@ -48,7 +48,7 @@ Run what your change can break before saying it works: `task test` for
 
 `tools/build.sh TASK…` builds where there is room (Git, below).
 `tools/remote.sh TASK…` runs a task on the game machine (more cores, its own
-build lock) and copies the DLL, `.pdb` and `tandem-peer` back; then
+build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
 `TANDEM_PREBUILT=1 tools/scenario.sh …` deploys that DLL as is. Details:
 `docs/architecture/testing.md`.
 
@@ -218,14 +218,15 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   feature that needs no game) can run in separate agents, each in its own
   git worktree; the game machine is one shared resource, so in-game testing
   (deploys, `tools/scenario.sh`) stays with one agent at a time.
-- **One build at a time** on the laptop: every build or test goes through
-  the shared lock, with limited parallelism:
-  `CMAKE_BUILD_PARALLEL_LEVEL=8 flock /tmp/tandem-build.lock direnv exec . task test`
-  (same for `task build`, `task check`). **Use `tools/build.sh TASK…`**: it
-  runs the task on anya (`tools/remote.sh`, anya's own lock) when nobody
-  plays there, and here through the laptop's lock otherwise.
-  `tools/remote.sh` refuses while the game runs on anya (our own scenario
-  runs set `TANDEM_REMOTE_WHILE_PLAYING=1` if they must build).
+- **Builds go through build slots** (`tools/build-slot.sh`): one on the
+  laptop (14 GB of RAM, `-j8`), three on anya (`-j5` each, niced; one task
+  at a time per worktree). Slot 0 is `/tmp/tandem-build.lock`. **Use
+  `tools/build.sh TASK…`**: it runs the task on anya (`tools/remote.sh`)
+  when nobody plays there and a slot is free, and here otherwise. Our own
+  test instances (`tools/instance.sh`, under `tandem-instances/`) are not
+  someone playing. `tools/remote.sh` refuses while the user's game runs on
+  anya (our own scenario runs set `TANDEM_REMOTE_WHILE_PLAYING=1` if they
+  must build).
 - Vendored dependencies are submodules; don't edit files under `vendor/`.
   Work around upstream issues in our own build (see the `sdk-casefix` link
   in `plugin/CMakeLists.txt`).

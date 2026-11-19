@@ -96,6 +96,7 @@
 #include "tandem/movement.hpp"
 #include "tandem/play.hpp"
 #include "tandem/pose.hpp"
+#include "tandem/scene.hpp"
 #include "tandem/shaping.hpp"
 #include "tandem/traffic.hpp"
 #include "tandem/vehicle_combat.hpp"
@@ -1205,6 +1206,20 @@ private:
 //   replacer on|off              the host plays as Johnny (StoryState flag)
 //   private on|off               the host is in a private scene (romance,
 //                                a minor one-to-one chat: StoryState flag)
+//   scene NAME [TIER]            a story scene plays on the host (scene
+//                                replay; NAME: its resource path or a
+//                                number; TIER: the host's, 4 by default);
+//                                scene off: it is over; scene private: it
+//                                is one nobody watches
+//   cast NPC[:ghost][:hidden] ...  its actors among the NPCs the host shares
+//                                (own: the --npc NPC), standing in front of
+//                                the mock player; with --pose or in mirror
+//                                and front modes, each takes the pose the
+//                                mock player sends (ActorPose)
+//   skip on|off                  the host fast-forwards the scene
+//   voice ID SPEAKER [SECONDS] [call]  a voiced line begins (ID: its string
+//                                id; SPEAKER: host, an NPC id or own)
+//   cut ID                       it is cut before its end
 //   world PLACE [moved] [settled] the host's V in another world (Elsewhere):
 //                                cyberspace, braindance, johnny, other, or
 //                                city to come back; moved: the scene took it
@@ -1268,6 +1283,99 @@ const char *PlaceName(tandem::proto::Place place) {
                                    "another body"};
   const auto index = static_cast<std::size_t>(place);
   return index < std::size(names) ? names[index] : "?";
+}
+
+// The scene the scripted host plays (scene replay): what its game would
+// sample, said through the same Stage as the game's (core/scene.hpp).
+struct SceneScript {
+  tandem::scene::Stage stage;
+  tandem::scene::HostSample sample;
+  tandem::proto::NpcId own{}; // "own" in a .story file: the --npc NPC
+};
+
+// A scene step (scene, cast, skip, voice, cut): what the host sends for it.
+// nullopt: not a scene step.
+std::optional<std::vector<tandem::proto::Message>>
+SceneMessages(const StoryStep &step, SceneScript &script, const tandem::proto::Vec3 &host,
+              float hostYaw, tandem::proto::PlayerId hostPlayer, std::uint64_t hostNowUs) {
+  namespace proto = tandem::proto;
+  const auto &a = step.args;
+  const auto npcOf = [&](const std::string &word) -> proto::NpcId {
+    return word == "own" ? script.own : static_cast<proto::NpcId>(std::stoul(word, nullptr, 0));
+  };
+  try {
+    if (step.verb == "scene" && !a.empty()) {
+      script.sample.host = host;
+      script.sample.hostYaw = hostYaw;
+      script.sample.isPrivate = a[0] == "private";
+      if (a[0] == "off") {
+        script.sample = {};
+      } else {
+        // A number, or a resource path hashed as the game hashes it (FNV-1a).
+        const bool number = a[0].find_first_not_of("0123456789abcdefxABCDEFX") == std::string::npos;
+        script.sample.scene = number ? std::stoull(a[0], nullptr, 0) : CName(a[0]);
+        script.sample.tier = static_cast<std::uint8_t>(a.size() > 1 ? std::stoi(a[1]) : 4);
+        script.sample.rate = 1.f;
+      }
+      return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "cast") {
+      script.sample.host = host;
+      script.sample.hostYaw = hostYaw;
+      script.sample.actors.clear();
+      // In an arc 2.5 m in front of the mock player, facing it.
+      const float spread = 0.7f;
+      for (std::size_t i = 0; i < a.size(); ++i) {
+        tandem::scene::ActorSample actor;
+        auto word = a[i];
+        actor.flags = proto::kActorPosed;
+        for (auto colon = word.rfind(':'); colon != std::string::npos; colon = word.rfind(':')) {
+          const auto flag = word.substr(colon + 1);
+          if (flag == "ghost")
+            actor.flags |= proto::kActorGhost;
+          else if (flag == "hidden")
+            actor.flags |= proto::kActorHidden;
+          word.resize(colon);
+        }
+        actor.npc = npcOf(word);
+        const float angle =
+            hostYaw + (static_cast<float>(i) - static_cast<float>(a.size() - 1) / 2.f) * spread;
+        actor.position = {host.x - std::sin(angle) * 2.5f, host.y + std::cos(angle) * 2.5f, host.z};
+        script.sample.actors.push_back(actor);
+      }
+      return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "skip" && !a.empty()) {
+      script.sample.rate = a[0] == "on" ? 4.f : 1.f;
+      return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "voice" && a.size() >= 2) {
+      std::uint8_t flags = 0;
+      float seconds = 4.f;
+      for (std::size_t i = 2; i < a.size(); ++i) {
+        if (a[i] == "call")
+          flags |= proto::kVoiceHolocall;
+        else
+          seconds = std::stof(a[i]);
+      }
+      const bool byHost = a[1] == "host";
+      std::vector<proto::Message> out;
+      if (auto line =
+              script.stage.Line(std::stoull(a[0], nullptr, 0), byHost ? 0 : npcOf(a[1]),
+                                byHost ? hostPlayer : proto::kNoPlayer, seconds, flags, hostNowUs))
+        out.push_back(*line);
+      return out;
+    }
+    if (step.verb == "cut" && !a.empty()) {
+      std::vector<proto::Message> out;
+      if (auto line = script.stage.Hide(std::stoull(a[0], nullptr, 0), hostNowUs))
+        out.push_back(*line);
+      return out;
+    }
+  } catch (const std::exception &) {
+    return std::vector<proto::Message>{};
+  }
+  return std::nullopt;
 }
 
 // One story step as the host's game would send it.
@@ -1395,6 +1503,32 @@ std::string Describe(const tandem::proto::Message &message) {
   if (const auto *effect = std::get_if<proto::StoryEffect>(&message))
     return std::format("story effect: {:#x} {} on player {}", effect->effect,
                        effect->applied ? "on" : "off", effect->player);
+  if (const auto *scene = std::get_if<proto::SceneState>(&message))
+    return scene->scene == 0
+               ? std::format("scene: play {} over{}", scene->play,
+                             scene->flags & proto::kSceneInterrupted ? " (interrupted)" : "")
+               : std::format("scene: {:#x} play {} tier {} rate {:.1f} flags {:#x}{}", scene->scene,
+                             scene->play, scene->tier, scene->rate, scene->flags,
+                             scene->flags & proto::kSceneStaged
+                                 ? std::format(" staged at {:.1f} {:.1f} {:.1f} ({:.1f} m)",
+                                               scene->anchor.x, scene->anchor.y, scene->anchor.z,
+                                               scene->radius)
+                                 : "");
+  if (const auto *cast = std::get_if<proto::SceneCast>(&message)) {
+    std::string who;
+    for (const auto &actor : cast->actors)
+      who += std::format(" {}{}", actor.npc,
+                         actor.flags & proto::kActorGhost
+                             ? (actor.flags & proto::kActorHidden ? " (ghost, hidden)" : " (ghost)")
+                             : "");
+    return std::format("scene cast: play {}, {} actor(s):{}", cast->play, cast->actors.size(), who);
+  }
+  if (const auto *line = std::get_if<proto::SceneLine>(&message))
+    return std::format("scene line: {} {} by {} ({:.1f} s, play {})", line->line,
+                       line->flags & proto::kVoiceStop ? "cut" : "voiced",
+                       line->speakerPlayer ? std::format("player {}", line->speakerPlayer)
+                                           : std::format("npc {}", line->speaker),
+                       line->duration, line->play);
   return "story: ?";
 }
 
@@ -2338,6 +2472,9 @@ int main(int argc, char **argv) {
   std::size_t storyNext = 0;
   std::optional<std::chrono::steady_clock::time_point> storyStart;
   std::uint64_t storyLine = 0;
+  SceneScript sceneScript;
+  sceneScript.own = kOwnNpc;
+  std::uint64_t actorPoses = 0;
   if (!options.storyFile.empty()) {
     story = LoadStory(options.storyFile, error);
     if (!error.empty()) {
@@ -2911,6 +3048,10 @@ int main(int argc, char **argv) {
                   e.answer.accepted ? (e.answer.offer ? "accepted: on the way" : "is on the way")
                                     : "declined: stays",
                   e.answer.offer);
+            } else if constexpr (std::is_same_v<E, tandem::events::HostActorPose>) {
+              // Scene replay: the host's actors' bodies, counted.
+              if (++actorPoses % 100 == 1)
+                Log("scene: {} actor pose(s) heard (npc {})", actorPoses, e.pose.npc);
             } else if constexpr (std::is_same_v<E, tandem::events::Story>) {
               Log("{}", Describe(e.message));
               if (!options.recordFile.empty())
@@ -3323,8 +3464,18 @@ int main(int argc, char **argv) {
         endpoint->SendLocalState(*state);
         lastSent = state->position;
       }
-      if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip))
+      if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip)) {
         endpoint->SendLocalPose(*pose);
+        // --story: the scene's actors take the same pose (ActorPose), so a
+        // game shows the stream on its proxies.
+        if (options.host && sceneScript.stage.On())
+          for (const auto &actor : sceneScript.sample.actors)
+            if (actor.flags & tandem::proto::kActorPosed) {
+              endpoint->SendActorPose(tandem::pose::ForActor(actor.npc, *pose));
+              if (++actorPoses % 300 == 1)
+                Log("scene: {} actor pose(s) sent", actorPoses);
+            }
+      }
       // metro: board, skip halfway, get off; the ride as the game sends it
       // (no seat: the train is never shared).
       if (options.mode == Mode::Metro && endpoint->IsJoined()) {
@@ -3905,7 +4056,16 @@ int main(int argc, char **argv) {
              now >= *storyStart + std::chrono::milliseconds(
                                       static_cast<std::int64_t>(story[storyNext].at * 1000))) {
         const auto &step = story[storyNext++];
-        if (auto message = StoryMessage(step, storyLine, endpoint->You())) {
+        const auto here = lastState.value_or(PlayerState{});
+        if (auto scene = SceneMessages(step, sceneScript, here.position,
+                                       tandem::sync::YawOf(here.orientation), endpoint->You(),
+                                       endpoint->HostNowUs())) {
+          for (const auto &message : *scene) {
+            endpoint->SendStory(message);
+            Log("{}", Describe(message));
+          }
+          Log("story step: {} {}", step.verb, step.rest);
+        } else if (auto message = StoryMessage(step, storyLine, endpoint->You())) {
           // Another world is ours, not the story's: our own state.
           if (auto *away = std::get_if<tandem::proto::Elsewhere>(&*message)) {
             const bool moved = away->flags & tandem::proto::kElsewhereMoved;

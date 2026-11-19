@@ -58,6 +58,41 @@ bool Record::Note(const proto::Message &message) {
     }
     return m_effects.erase(effect->effect) > 0;
   }
+  if (const auto *scene = std::get_if<proto::SceneState>(&message)) {
+    std::optional<proto::SceneState> next;
+    if (scene->scene != 0)
+      next = *scene;
+    // Another play, or none: the old one's cast and lines went with it.
+    if (!next || !m_scene || m_scene->play != next->play) {
+      m_cast.reset();
+      std::erase_if(m_lines, [](const proto::SceneLine &line) { return line.play != 0; });
+    }
+    // An end always says so (the guest lets its proxies go).
+    const bool changed = next != m_scene || !next;
+    m_scene = next;
+    return changed;
+  }
+  if (const auto *cast = std::get_if<proto::SceneCast>(&message)) {
+    if (!m_scene || m_scene->play != cast->play)
+      return false; // of a play that is over
+    const bool changed = m_cast != *cast;
+    m_cast = *cast;
+    return changed;
+  }
+  if (const auto *line = std::get_if<proto::SceneLine>(&message)) {
+    const auto same = [&](const proto::SceneLine &kept) { return kept.line == line->line; };
+    if (line->flags & proto::kVoiceStop)
+      return std::erase_if(m_lines, same) > 0;
+    if (line->play != 0 && (!m_scene || m_scene->play != line->play))
+      return false;
+    if (std::ranges::find(m_lines, *line) != m_lines.end())
+      return false;
+    std::erase_if(m_lines, same);
+    m_lines.push_back(*line);
+    if (m_lines.size() > kKeptLines)
+      m_lines.erase(m_lines.begin());
+    return true;
+  }
   return true; // nothing kept: every one counts
 }
 
@@ -67,6 +102,12 @@ std::uint32_t Record::Digest() const {
   for (const auto &[key, entry] : m_journal)
     hash.Add(std::uint64_t{key}).Add(std::uint64_t{entry.state});
   hash.Add(std::uint64_t{m_tracked ? m_tracked->hash + 1ull : 0ull});
+  // The scene: which one and who is in it (its staging moves too often).
+  hash.Add(std::uint64_t{m_scene ? m_scene->scene : 0u})
+      .Add(std::uint64_t{m_scene ? m_scene->play : 0u});
+  if (m_cast)
+    for (const auto &actor : m_cast->actors)
+      hash.Add(std::uint64_t{actor.npc}).Add(std::uint64_t{actor.flags});
   return hash.Value();
 }
 
@@ -93,6 +134,13 @@ std::vector<proto::Message> Record::ForJoiner() const {
     out.push_back(*m_hub);
   for (const auto &[id, effect] : m_effects)
     out.push_back(effect);
+  if (m_scene) {
+    out.push_back(*m_scene);
+    if (m_cast)
+      out.push_back(*m_cast);
+  }
+  for (const auto &line : m_lines)
+    out.push_back(line);
   return out;
 }
 

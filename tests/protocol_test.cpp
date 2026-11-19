@@ -2,6 +2,8 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
+
 #include <string_view>
 
 using namespace tandem::proto;
@@ -696,4 +698,54 @@ TEST_CASE("a V in another world: survives encoding, small, reliable, not a story
   CHECK(Encode(Elsewhere{}).size() < 32);
   // A place this version does not know is refused.
   CHECK_FALSE(Decode(Encode(Elsewhere{.place = static_cast<Place>(5)})).has_value());
+}
+
+TEST_CASE("scene replay: survive encoding, story messages but the poses, bounded") {
+  RoundTrips(SceneState{.scene = 0x1234567890abcdefull,
+                        .play = 3,
+                        .section = 17,
+                        .startUs = 1'700'000'000'000'123ull,
+                        .rate = 4.f,
+                        .tier = 4,
+                        .flags = kSceneSkipping | kSceneStaged,
+                        .anchor = {-1500.5f, 1200.25f, 30.f},
+                        .yaw = 1.25f,
+                        .radius = 2.5f});
+  RoundTrips(SceneState{.play = 3, .flags = kSceneInterrupted});
+  RoundTrips(SceneCast{.play = 3, .actors = {{12, kActorPosed}, {70000, kActorGhost}}});
+  RoundTrips(SceneLine{.play = 3,
+                       .line = 0xfedcba9876543210ull,
+                       .speaker = 12,
+                       .startUs = 1'700'000'000'500'000ull,
+                       .duration = 3.5f,
+                       .flags = kVoiceHolocall});
+  ActorPose pose{.npc = 12, .seq = 9, .timeUs = 1'700'000'000'000'000ull, .hips = {1, -2, 8192}};
+  pose.rotations[5] = 77;
+  RoundTrips(pose);
+  for (const Message message :
+       {Message{SceneState{}}, Message{SceneCast{}}, Message{SceneLine{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(IsStory(message));
+  }
+  // A pose is state: late is worthless; it is not the story's path.
+  CHECK(ChannelOf(ActorPose{}) == Channel::State);
+  CHECK_FALSE(IsStory(ActorPose{}));
+  CHECK_FALSE(IsStory(ShotHit{}));
+  CHECK(std::string(NameOf(SceneState{})) == "SceneState");
+  CHECK(std::string(NameOf(SceneCast{})) == "SceneCast");
+  CHECK(std::string(NameOf(SceneLine{})) == "SceneLine");
+  CHECK(std::string(NameOf(ActorPose{})) == "ActorPose");
+  // Sent on changes, a few a second at most; a pose as big as a player's.
+  CHECK(Encode(SceneState{}).size() < 64);
+  CHECK(Encode(SceneLine{}).size() < 48);
+  CHECK(Encode(ActorPose{}).size() <= Encode(PoseState{}).size() + 4);
+
+  SceneCast crowd;
+  crowd.actors.resize(kMaxSceneActors + 1);
+  CHECK_FALSE(Decode(Encode(crowd)).has_value());
+  crowd.actors.resize(kMaxSceneActors);
+  CHECK(Decode(Encode(crowd)).has_value());
+  CHECK_FALSE(Decode(Encode(SceneState{.rate = -1.f})).has_value());
+  CHECK_FALSE(Decode(Encode(SceneState{.rate = 1000.f})).has_value());
+  CHECK_FALSE(Decode(Encode(SceneState{.rate = std::nanf("")})).has_value());
 }

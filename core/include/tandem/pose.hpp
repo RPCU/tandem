@@ -58,6 +58,11 @@ std::array<proto::Quat, kBones> ToModel(const Pose &pose);
 proto::PoseState Pack(const Pose &pose);
 std::optional<Pose> Unpack(const proto::PoseState &state);
 
+// A scene actor's pose travels like a player's (scene replay): the same
+// bones by name, on the NPC's own rig.
+proto::ActorPose ForActor(proto::NpcId npc, const proto::PoseState &state);
+proto::PoseState FromActor(const proto::ActorPose &pose);
+
 // Smallest-three quaternion in 6 bytes: index of the largest component (2
 // bits) and the other three at 15 bits each.
 void PackQuat(const proto::Quat &q, std::uint8_t *out);
@@ -81,6 +86,8 @@ public:
   // The pose at `renderUs` (host clock). False before the first pose.
   bool At(std::uint64_t renderUs, Pose &out) const;
   std::uint32_t Received() const { return m_received; }
+  // Host clock of the newest pose (0: none).
+  std::uint64_t NewestUs() const { return m_samples.empty() ? 0 : m_samples.back().timeUs; }
 
 private:
   struct Sample {

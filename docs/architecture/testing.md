@@ -109,7 +109,7 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   scenarios `desync-npcs`, `desync-rejoin`). Resyncs and epochs are logged.
 - `--vanish-at N` (any mode): N s after another player is in the session
   the peer ends with no goodbye, as a killed game does (scenarios
-  `vanish-down`, `vanish-drive`, `vanish-story`).
+  `vanish-down`, `vanish-drive`, `vanish-story`, `story-session-items`).
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
 - **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s
@@ -208,7 +208,7 @@ shoot`, `wheels gun`, `wheels ungun`.
   environment). Read `red4ext/logs/tandem-*.log` for the outcome.
 - `tools/remote.sh TASK…` runs a task on the game machine instead (more
   cores): it syncs the working tree to `~/.cache/tandem/src/<worktree>`
-  there, runs the task in devenv under that machine's own build lock at low
+  there, runs the task in devenv in one of that machine's three build slots at low
   priority, and copies `build/windows/plugin/tandem.{dll,pdb}` (and, after
   `build`, `build:linux` or `test`, `build/linux/peer/tandem-peer`) back.
   Then `TANDEM_PREBUILT=1 tools/scenario.sh …` deploys that DLL as is

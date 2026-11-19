@@ -1136,6 +1136,90 @@ struct ShotHit {     // Event channel
   friend bool operator==(const ShotHit &, const ShotHit &) = default;
 };
 
+// ---- Scene replay (docs/architecture/scene-replay.md) ----
+// A story scene of the host's game as its guests watch it. The scene runs
+// on the host only (authority table: quests and scenes are the host's); a
+// guest never plays its own copy. What travels is what the scene shows: that
+// one is on and where (SceneState), which of the host's NPCs act in it
+// (SceneCast), each actor's body pose (ActorPose) and each voiced line with
+// its start time (SceneLine). All host to guests. A private scene
+// (kStoryPrivate) is never announced.
+
+// SceneState::flags.
+inline constexpr std::uint8_t kSceneSkipping = 1, // the host fast-forwards (rate > 1)
+    kSceneHeld = 2,                               // its time waits (a choice hub, a pause)
+    kSceneInterrupted = 4,                        // with scene 0: it ended before its end
+    kSceneStaged = 8;                             // anchor, yaw and radius are known
+inline constexpr float kMaxSceneRate = 16.f;
+// The host's scene, on every change (Event channel; kept while one is on,
+// for late joiners: they join at host clock - startUs). `scene` 0: none.
+struct SceneState {
+  std::uint64_t scene{};   // the scnSceneResource's path hash (0: no scene)
+  std::uint32_t play{};    // counts the host's scenes in this session: a scene
+                           // played again is another play
+  std::uint32_t section{}; // the scnNodeId playing (0: not known)
+  std::uint64_t startUs{}; // host clock at the scene's (or the section's) time 0
+  float rate{1.f};         // how fast its time runs (fast-forward: > 1; held: 0;
+                           // at most kMaxSceneRate)
+  std::uint8_t tier{};     // GameplayTier it puts the host's V in
+  std::uint8_t flags{};    // kScene*
+  Vec3 anchor;             // kSceneStaged: the middle of its actors,
+  float yaw{};             // the way the host's V faces them
+  float radius{};          // and how far from the middle they stand
+  friend bool operator==(const SceneState &, const SceneState &) = default;
+};
+
+// SceneActor::flags.
+inline constexpr std::uint8_t kActorGhost = 1, // only there through the Relic (Johnny): comes
+                                               // and goes with its glitch
+    kActorHidden = 2,                          // in the cast, not shown now
+    kActorPosed = 4;                           // its pose is streamed (ActorPose)
+struct SceneActor {
+  NpcId npc{}; // as the host shares it (NpcSpawn)
+  std::uint8_t flags{};
+  friend bool operator==(const SceneActor &, const SceneActor &) = default;
+};
+inline constexpr std::size_t kMaxSceneActors = 32;
+
+// Who acts in play `play`, whole on every change (Event channel; kept with
+// the SceneState). The host's V is always in it and not listed.
+struct SceneCast {
+  std::uint32_t play{};
+  std::vector<SceneActor> actors;
+  friend bool operator==(const SceneCast &, const SceneCast &) = default;
+};
+
+// SceneLine::flags.
+inline constexpr std::uint8_t kVoiceStop = 1, // the line was cut (a skip, an interruption)
+    kVoiceHolocall = 2,                       // heard through the phone: no place in the world
+    kVoiceOverhead = 4;                       // a bark or a chatter, not the scene's dialogue
+// A voiced line begins (or is cut): the same id as its Subtitle. A guest
+// plays the line's voice-over itself, in its own language, on the speaker's
+// proxy or puppet, from host clock - startUs (Event channel; kept while it
+// lasts, for late joiners).
+struct SceneLine {
+  std::uint32_t play{};     // 0: outside a scene (a bark)
+  std::uint64_t line{};     // the line's string id (scnDialogLineData.id, a CRUID)
+  NpcId speaker{};          // the NPC (0: none or a player)
+  PlayerId speakerPlayer{}; // a V's line: whose
+  std::uint64_t startUs{};  // host clock when it began
+  float duration{};         // seconds (0: unknown)
+  std::uint8_t flags{};     // kVoice*
+  friend bool operator==(const SceneLine &, const SceneLine &) = default;
+};
+
+// A scene actor's body pose (State channel, up to 30 Hz, host only): a
+// PoseState for one of the host's NPCs, same encoding (tandem/pose.hpp: the
+// body rig's bones by name, which every humanoid NPC rig has).
+struct ActorPose {
+  NpcId npc{};
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  std::array<std::int16_t, 3> hips{};
+  std::array<std::uint8_t, kPoseBones * kPoseRotationBytes> rotations{};
+  friend bool operator==(const ActorPose &, const ActorPose &) = default;
+};
+
 // ---- World vehicles (docs/architecture/traffic.md) ----
 //
 // The traffic, the parked cars and the police cars around the players are
@@ -1538,21 +1622,23 @@ struct Chase {
   friend bool operator==(const Chase &, const Chase &) = default;
 };
 
-using Message = std::variant<
-    Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
-    Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
-    Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
-    PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle,
-    ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
-    NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
-    Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
-    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit,
-    TrafficSpawn, TrafficStates, TrafficGone, TrafficStatus, TrafficHit, TrafficClaim, TrafficSet,
-    Heat, Crime, VehicleDamage, VehicleHit, VehicleExit, VehicleCombat, MountedFire, GunnerRequest,
-    Gunner, GunnerAim, VehicleBump, NpcRam, Chase>;
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
+                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
+                 Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
+                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
+                 NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
+                 Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise,
+                 Difficulty, AreaHit, Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit,
+                 NpcSeat, NpcShotAt, ShotHit, SceneState, SceneCast, SceneLine, ActorPose,
+                 TrafficSpawn, TrafficStates, TrafficGone, TrafficStatus, TrafficHit, TrafficClaim,
+                 TrafficSet, Heat, Crime, VehicleDamage, VehicleHit, VehicleExit, VehicleCombat,
+                 MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam, Chase>;
 
-// A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
-// through one path.
+// A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine):
+// endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit): one path in endpoint.hpp too.
 bool IsCombat(const Message &message);
