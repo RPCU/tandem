@@ -60,6 +60,10 @@ public class TandemOutcomes {
   private let m_haveOwn: Bool;
   // Guest: a host wound being put on a proxy (not to be suppressed).
   private let m_replaying: Bool;
+  // Host: one-punch slow motions on their way to our V for guests' punches
+  // (Relic), until when.
+  private let m_slowMoDrops: Int32;
+  private let m_slowMoDropUntil: Float;
 
   // In a session only (null outside: single player is left alone).
   public static func Of(game: GameInstance) -> ref<TandemOutcomes> {
@@ -525,6 +529,79 @@ public class TandemOutcomes {
     TandemNative.Log(s"outcomes: proxy \(event.npc) loses part \(event.part) (wound \(event.shape), player \(event.player)'s hit)");
   }
 
+  // ---- the Relic tree (docs/research/coop-perks.md §4) ----
+
+  // Status effects the Relic's arm attacks put on their target without
+  // naming an instigator: the Mantis Blades' leap dismemberment
+  // (DamageSystem, final.reds 85964), the Gorilla Arms' and the Mantis
+  // Blades' grand finale marks (NPCPuppet.OnApplyRelicMeleewareDamageOnNPCEvent,
+  // 128094, 128101). On a guest they land on a proxy and reach the host's
+  // NPC like any effect of our hit (Combat.reds). The marks act on a dead
+  // or defeated NPC (NPCPuppet.OnStatusEffectApplied, 126466-126475: the
+  // one-punch ragdoll, the grand finale's dismemberment), so the host puts
+  // them on its NPC dead or not (Npcs.reds ApplyEffect).
+  public static func IsRelicMark(effect: TweakDBID) -> Bool {
+    return effect == t"BaseStatusEffect.MantisBladesRelicDismemberment" || effect == t"BaseStatusEffect.GorillaArmsOnePunchNPCMark" || effect == t"BaseStatusEffect.MantisBladesGrandFinaleNPCMark";
+  }
+
+  // Guest: the session NPC a proxy stands for, dead (our hit killed it
+  // ahead of the host, Npcs.reds PredictKill) or alive.
+  public static func ProxyEvenDead(game: GameInstance, proxy: ref<GameObject>) -> Uint32 {
+    let system = TandemCombat.System(game);
+    let npcs = IsDefined(system) && system.You() != 0u ? system.Npcs() : null;
+    return IsDefined(npcs) && !TandemNative.IsHost() ? npcs.NpcOf(proxy.GetEntityID()) : 0u;
+  }
+
+  // Host: a guest's one-punch mark landing on a dead or defeated NPC of
+  // ours, which sends the one-punch slow motion to "the player"
+  // (126466-126472): our V, for a punch that is not ours. The guest's own
+  // game gave it to its V already (a local slow motion, Time.reds).
+  public static func IsGuestsOnePunch(npc: ref<NPCPuppet>, evt: ref<ApplyStatusEffectEvent>) -> Bool {
+    if !TandemNative.IsHost() || !IsDefined(evt.staticData) || !evt.staticData.GameplayTagsContains(n"OnePunchedMark") {
+      return false;
+    }
+    if !npc.IsDead() && !ScriptedPuppet.IsDefeated(npc) && !npc.IsAboutToDieOrDefeated() {
+      return false;
+    }
+    let system = TandemCombat.System(npc.GetGame());
+    return IsDefined(system) && system.PlayerOfPuppet(evt.instigatorEntityID) != 0u;
+  }
+
+  public func DropOnePunchSlowMo() -> Void {
+    let now = EngineTime.ToFloat(GameInstance.GetSimTime(this.m_game));
+    if now > this.m_slowMoDropUntil {
+      this.m_slowMoDrops = 0;
+    }
+    this.m_slowMoDrops += 1;
+    this.m_slowMoDropUntil = now + TDB.GetFloat(t"Items.StrongArms.slowMoDelay") + 1.0;
+  }
+
+  public func DropsOnePunchSlowMo() -> Bool {
+    let now = EngineTime.ToFloat(GameInstance.GetSimTime(this.m_game));
+    if this.m_slowMoDrops <= 0 || now > this.m_slowMoDropUntil {
+      this.m_slowMoDrops = 0;
+      return false;
+    }
+    this.m_slowMoDrops -= 1;
+    return true;
+  }
+
+  // Host: an instant dismemberment (StatusEffectManagerComponent, 321244:
+  // any effect tagged Dismember, as the grand finale's) whose V is a guest:
+  // the effect named them, or their hit was the NPC's last.
+  public static func IsGuestsDismemberment(owner: ref<GameObject>, instigator: EntityID) -> Bool {
+    let system = TandemNative.IsHost() && IsDefined(owner) ? TandemCombat.System(owner.GetGame()) : null;
+    if !IsDefined(system) || system.You() == 0u {
+      return false;
+    }
+    if EntityID.IsDefined(instigator) {
+      return system.PlayerOfPuppet(instigator) != 0u;
+    }
+    let npc = owner as NPCPuppet;
+    let hitter = IsDefined(npc) ? npc.GetLastHitInstigator() : null;
+    return IsDefined(hitter) && system.PlayerOfPuppet(hitter.GetEntityID()) != 0u;
+  }
+
   // ---- limbs on the wire ----
   // gameDismBodyPart and gameDismWoundType are native enums whose values
   // are not the scripts' 0..5 (LEFT_ARM is 14, 2026-11-19): NpcWound carries
@@ -859,4 +936,39 @@ protected cb func OnDismembermentDebris(evt: ref<DismembermentDebrisEvent>) -> B
     return true;
   }
   return wrappedMethod(evt);
+}
+
+// ---- the Relic tree on the host (coop-perks.md §4) ----
+
+// A guest's one-punch (Combat.reds marks it): its slow motion was theirs.
+@wrapMethod(PlayerPuppet)
+protected cb func OnSetSlowMoForOnePunchAttackEvent(evt: ref<SetSlowMoForOnePunchAttackEvent>) -> Bool {
+  let outcomes = TandemOutcomes.Of(this.GetGame());
+  if IsDefined(outcomes) && outcomes.DropsOnePunchSlowMo() {
+    TandemNative.Log("outcomes: a guest's one-punch slow motion kept off our V");
+    return true;
+  }
+  return wrappedMethod(evt);
+}
+
+// An instant dismemberment (the Relic's Mantis Blades): never on a V; on
+// the host, for a guest's kill, the blood it puts on "the player's" screen
+// (the local player, 321266) is not ours.
+@wrapMethod(StatusEffectManagerComponent)
+protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
+  let owner = this.GetOwner();
+  let dismember = IsDefined(evt.staticData) && evt.staticData.GameplayTagsContains(n"Dismember");
+  if dismember && TandemOutcomes.KeepsLimbs(owner, s"instant dismemberment \(TDBID.ToStringDEBUG(evt.staticData.GetID()))") {
+    return true;
+  }
+  let guests = dismember && TandemOutcomes.IsGuestsDismemberment(owner, evt.instigatorEntityID);
+  let result = wrappedMethod(evt);
+  if guests {
+    let player = GetPlayer(owner.GetGame());
+    if IsDefined(player) {
+      GameObjectEffectHelper.StopEffectEvent(player, n"blood_onscreen");
+    }
+    TandemNative.Log(s"outcomes: a guest's instant dismemberment (\(TDBID.ToStringDEBUG(evt.staticData.GetID()))): no blood on our screen");
+  }
+  return result;
 }

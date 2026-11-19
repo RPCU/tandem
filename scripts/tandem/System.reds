@@ -953,6 +953,17 @@ public class TandemSystem extends ScriptableSystem {
         gods.RemoveGodMode(player.GetEntityID(), gameGodModeType.Immortal, n"Default");
       }
       TandemNative.Log(s"\(command)");
+    } else if Equals(command, "relic mark") {
+      // (test, coop-perks.md §4) the Relic's Gorilla Arms mark on the
+      // nearest proxy, put as the game does it: with no instigator.
+      let marker = GetPlayer(this.GetGameInstance());
+      let marked = IsDefined(this.m_npcs) ? this.m_npcs.NearestProxy(marker.GetWorldPosition()) : null;
+      if IsDefined(marked) {
+        StatusEffectHelper.ApplyStatusEffect(marked, t"BaseStatusEffect.GorillaArmsOnePunchNPCMark");
+        TandemNative.Log("relic mark: on the nearest proxy");
+      } else {
+        TandemNative.Log("relic mark: no proxy");
+      }
     } else if StrBeginsWith(command, "npc punch") {
       // (test) a hit from our V on the nearest proxy, through the game's
       // damage pipeline as a real one would go (Combat.reds): lethal

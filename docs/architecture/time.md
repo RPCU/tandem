@@ -95,7 +95,10 @@
   - _Scanner and quickhack panel, Focus, Deadeye's reload, Berserk, melee
     hit stop, deflect_: local only, no bubble. A guest keeps them on its
     screen; the host drops their world part. Others see the V as it is
-    (standing, scanning).
+    (standing, scanning). The Relic's Gorilla Arms one-punch slow motion
+    is a deflect: the puncher's alone (a guest's mark on the host's NPC
+    would slow the host's V; the host drops it, `research/coop-perks.md`
+    §4).
   - _Second chance_ (its dilation is in TweakDB, reason unknown): any
     other dilation left on the host is logged to find it.
   - Breach timers and network dive: not handled yet (owner-local, real

@@ -103,6 +103,8 @@ public class TandemStealth {
   private let m_sentFlags: Int32;
   private let m_sentVisibility: Float;
   private let m_sentCamo: TweakDBID;
+  // Guest: our V cloaked (fully blocking) while in combat, not out of it yet.
+  private let m_cloakedInCombat: Bool;
   private let m_lastSample: Float;
   // Each remote player's stealth on their puppet. By player, not by index:
   // ids keep growing in a session (players coming back, mock players).
@@ -265,6 +267,14 @@ public class TandemStealth {
   // ---- every game: our stealth to the others ----
 
   private func SendOurs(player: ref<PlayerPuppet>) -> Void {
+    if this.m_cloakedInCombat && !player.IsInCombat() {
+      this.m_cloakedInCombat = false;
+      GameObject.PlaySoundEvent(player, n"ui_gmpl_stealth_avoid_combat");
+      TandemNative.Log("stealth: emergency cloaking: the host's NPCs lost us, out of combat");
+    }
+    if this.m_cloakedInCombat && !player.IsInvisible() {
+      this.m_cloakedInCombat = false;
+    }
     let flags = 0;
     let camo = TDBID.None();
     for effect in StatusEffectHelper.GetAppliedEffects(player) {
@@ -287,6 +297,13 @@ public class TandemStealth {
     let visibility = GameInstance.GetStatsSystem(this.m_game).GetStatValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatType.Visibility);
     if this.m_sent && flags == this.m_sentFlags && AbsF(visibility - this.m_sentVisibility) < 0.01 && camo == this.m_sentCamo {
       return;
+    }
+    // Guest, the Relic's Emergency Cloaking: vanilla plays its "combat
+    // avoided" sound from the NPCs our V's tracker held (PlayerPuppet
+    // .OnActivateOpticalCamoToExitCombatEvent, final.reds 44034); proxies
+    // are no threats there, so it is played when the host's NPCs let go.
+    if !TandemNative.IsHost() && (flags & 2) != 0 && (this.m_sentFlags & 2) == 0 {
+      this.m_cloakedInCombat = player.IsInCombat();
     }
     TandemNative.SendStealth(flags, visibility, camo);
     TandemNative.Log(s"stealth: ours sent: camo \((flags & 1) != 0) (\(TDBID.ToStringDEBUG(camo))), blocking \((flags & 2) != 0), crouch \((flags & 4) != 0), visibility \(visibility)");
@@ -365,15 +382,29 @@ public class TandemStealth {
       StatusEffectHelper.ApplyStatusEffect(puppet, camo, puppet.GetEntityID());
       state.camo = camo;
     }
-    // Fully blocking (the relic): the NPCs hunting them lose them, as
-    // vanilla drops V from its hostile NPCs' trackers.
+    // Fully blocking (the Relic's Emergency Cloaking): the NPCs hunting them
+    // lose them, as vanilla drops V from its hostile NPCs' trackers
+    // (final.reds 44034-44048), and forget having seen them (what keeps
+    // them detected here, Npcs.reds Detected); the NPCs' memory wipe that
+    // follows in vanilla would free every V, so it is left out. The NPCs
+    // around our V (those we share) and around theirs.
     if (flags & 2) != 0 && (state.flags & 2) == 0 && TandemNative.IsHost() {
       let dropped = 0;
-      for npc in player.GetNPCsAroundObject(TandemNpcs.Range()) {
+      let around = player.GetNPCsAroundObject(TandemNpcs.Range());
+      for near in puppet.GetNPCsAroundObject(TandemNpcs.Range()) {
+        if !ArrayContains(around, near) {
+          ArrayPush(around, near);
+        }
+      }
+      for npc in around {
         let tracker = npc.GetTargetTrackerComponent();
         let threat: TrackedLocation;
         if IsDefined(tracker) && tracker.ThreatFromEntity(puppet, threat) {
           tracker.DeactivateThreat(puppet);
+          let senses = npc.GetSensesComponent();
+          if IsDefined(senses) {
+            senses.ResetDetection(puppet.GetEntityID());
+          }
           dropped += 1;
         }
       }
@@ -384,6 +415,55 @@ public class TandemStealth {
     }
     TandemNative.Log(s"stealth: player \(p): visibility \(visibility), crouch \((flags & 4) != 0)");
     state.flags = flags;
+  }
+
+  // ---- host: a V getting out of combat lets only that V go ----
+
+  // The memory wipes that take a V out of combat in single player:
+  // Emergency Cloaking's (PlayerPuppet.OnActivateOpticalCamoToExitCombatEvent,
+  // final.reds 39730, passed on to the NPC's squad, 126490-126503) and the
+  // second chance's (OnDodgeToAvoidCombatEvent, 39689; a guest's comes as a
+  // request, Reactions.reds). Their ClearThreats (NPCPuppet
+  // .OnStatusEffectApplied, 126486) empties the NPC's whole tracker, the
+  // other Vs it hunts with it: those are kept (OthersHunted before the
+  // effect, HuntAgain after), so only the V who got away is out of combat.
+  public static func IsWayOut(effect: TweakDBID) -> Bool {
+    return effect == t"BaseStatusEffect.MemoryWipeExitCombat" || effect == t"BaseStatusEffect.MemoryWipeOnDodge";
+  }
+
+  public static func OthersHunted(npc: ref<NPCPuppet>, evt: ref<ApplyStatusEffectEvent>) -> array<wref<GameObject>> {
+    let others: array<wref<GameObject>>;
+    if !TandemNative.IsHost() || !IsDefined(evt.staticData) || !TandemStealth.IsWayOut(evt.staticData.GetID()) {
+      return others;
+    }
+    let system = TandemCombat.System(npc.GetGame());
+    let tracker = npc.GetTargetTrackerComponent();
+    let player = GetPlayer(npc.GetGame());
+    if !IsDefined(system) || system.You() == 0u || !IsDefined(tracker) || !IsDefined(player) {
+      return others;
+    }
+    // Who got away: the guest whose puppet the effect names, else our V
+    // (vanilla puts these on for the local player only).
+    let away = evt.instigatorEntityID;
+    if !EntityID.IsDefined(away) || system.PlayerOfPuppet(away) == 0u {
+      away = player.GetEntityID();
+    }
+    for threat in tracker.GetHostileThreats(false) {
+      let v = threat.entity as GameObject;
+      if IsDefined(v) && v.GetEntityID() != away && (v.IsPlayer() || system.PlayerOfPuppet(v.GetEntityID()) != 0u) {
+        ArrayPush(others, v);
+      }
+    }
+    return others;
+  }
+
+  public static func HuntAgain(npc: ref<NPCPuppet>, others: array<wref<GameObject>>) -> Void {
+    for v in others {
+      if IsDefined(v) && !TargetTrackingExtension.IsThreatInThreatList(npc, v, false, true) {
+        TargetTrackingExtension.InjectThreat(npc, v);
+        TandemNative.Log(s"stealth: \(EntityID.ToDebugStringDecimal(npc.GetEntityID())) forgot one V, still hunts \(EntityID.ToDebugStringDecimal(v.GetEntityID()))");
+      }
+    }
   }
 
   // ---- noises ----

@@ -32,10 +32,14 @@
   combat with a guest's puppet gives the host's V no second chance or gag;
   a guard a guest broke offers the host's V no finisher; both go to that
   guest's game as `NpcCue`, which runs them on its own V with its proxy (the
-  second chance's memory wipe comes back as an `NpcEffect`; the proxy's
-  missing senses are replaced by the host's detection bit). A guest's
-  Bait/Whistle walks the NPC to that guest's puppet. TODO list in
-  `research/engine-knowledge.md` §13.17.
+  second chance's memory wipe comes back as an `NpcEffect` request, which
+  the host applies only if its NPC does not see the puppet, and answers
+  with the `OutOfSight` cue for the sound and cooldowns). A memory wipe
+  that takes one V out of combat (Emergency Cloaking's, the second
+  chance's) empties the NPC's whole tracker; the host puts the other Vs it
+  hunted back, so only that V gets away (`TandemStealth.OthersHunted`,
+  `research/coop-perks.md` §4). A guest's Bait/Whistle walks the NPC to
+  that guest's puppet. TODO list in `research/engine-knowledge.md` §13.17.
 
 ## Open problems
 
@@ -72,7 +76,8 @@
   puppet where its NPC senses look (camo: the grafted visible object off,
   and the camo effect itself, which every game also shows; the visibility
   as the detection multiplier; crouch height for the visible point; fully
-  blocking: its NPCs drop the puppet as a threat). A guest's noises (every
+  blocking, the Relic's Emergency Cloaking: the NPCs around either V drop
+  the puppet as a threat and forget its detection, with no memory wipe). A guest's noises (every
   stimulus its V broadcasts: gunshots, silenced shots…) go to the host as
   `Noise` and are broadcast again from its puppet. Grenade and other
   projectile explosions are broadcast by the projectile, not the V: still
