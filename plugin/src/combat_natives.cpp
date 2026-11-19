@@ -41,7 +41,15 @@ struct TandemFightEvent {
 static_assert(alignof(TandemFightEvent) <= 8, "the script VM aligns struct locals to 8");
 
 namespace {
-enum Kind : std::int32_t { kStrike = 1, kWound = 2, kPoise = 3, kDifficulty = 4, kAreaHit = 5 };
+enum Kind : std::int32_t {
+  kStrike = 1,
+  kWound = 2,
+  kPoise = 3,
+  kDifficulty = 4,
+  kAreaHit = 5,
+  kSessionLevel = 6,
+  kNpcLevel = 7
+};
 
 proto::Vec3 Vec(const Red::Vector4 &v) { return {v.X, v.Y, v.Z}; }
 
@@ -82,6 +90,10 @@ TandemFightEvent EventOf(const proto::Message &message) {
            .chemical = a->chemical};
     out.x = a->position.x, out.y = a->position.y, out.z = a->position.z;
     out.dx = a->direction.x, out.dy = a->direction.y, out.dz = a->direction.z;
+  } else if (const auto *s = std::get_if<proto::SessionLevel>(&message)) {
+    out = {.kind = kSessionLevel, .player = s->players, .level = s->level};
+  } else if (const auto *n = std::get_if<proto::NpcLevel>(&message)) {
+    out = {.kind = kNpcLevel, .npc = n->npc, .damage = n->level};
   }
   return out;
 }

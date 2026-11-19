@@ -9,7 +9,10 @@ public native struct TandemFightEvent {
   // part: gameDismBodyPart, shape: gameDismWoundType, x y z); 3 a host NPC's
   // poise (npc, poise 0..1); 4 the session's difficulty (level:
   // gameDifficulty); 5 another V's area effect on our V (player: whose,
-  // physical..chemical, attackType, flags: proto::kHit*, attack, weapon).
+  // physical..chemical, attackType, flags: proto::kHit*, attack, weapon);
+  // 6 the session's level (level: the mean of its players' levels; player:
+  // how many they are); 7 (guest) a host NPC's power level (npc; damage:
+  // the level). Levels.reds takes the last two.
   native let kind: Int32;
   native let npc: Uint32;
   native let player: Uint32;

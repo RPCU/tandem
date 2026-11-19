@@ -28,7 +28,14 @@
 //                        ; the single-player slow motion whole on its own game (the
 //                        ; NPCs it shares follow the bubbles' rules); bubble puts its
 //                        ; world back to normal speed and slows only the NPCs
+//   leave = stay         ; a guest out of a session, once its own world is back
+//                        ; (docs/architecture/progression.md): stay goes on in
+//                        ; place; save also makes one quick save; reload then
+//                        ; loads that save (only when you chose to leave)
+//   trade = off          ; on: trade items and eddies with the player beside you
+//                        ; (docs/architecture/trade.md); off: requests are refused
 
+#include "tandem/progress.hpp"
 #include "tandem/relay.hpp"
 
 #include <cstdint>
@@ -68,6 +75,10 @@ struct Config {
   // bubbles only (false), or the whole single-player slow motion with what
   // is shared exempted (true).
   bool timeHostFull{true};
+  // What a guest's game does once it is out of a session (Saves.reds).
+  progress::LeaveMode leave{progress::LeaveMode::Stay};
+  // Trade between players (Trade.reds): off until checked in game.
+  bool trade{false};
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;

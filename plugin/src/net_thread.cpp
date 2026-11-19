@@ -3,6 +3,7 @@
 #include "log.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
+#include "trade.hpp"
 
 #include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
@@ -377,6 +378,8 @@ struct NetThread::Impl {
                 Combat::Get().PushInbound(combat::FromHit(e.hit));
               } else if constexpr (std::is_same_v<E, events::Combat>) {
                 Combat::Get().PushInbound(e.message);
+              } else if constexpr (std::is_same_v<E, events::Trade>) {
+                TradeLink::Get().PushInbound(e.message);
               } else if constexpr (std::is_same_v<E, events::NpcActionBy>) {
                 const auto &a = e.action;
                 runtime.PushActionEvent({.kind = ActionEvent::Kind::Request,
@@ -715,6 +718,8 @@ struct NetThread::Impl {
         endpoint->SendRevive(revive);
       if (!ended)
         PublishLives(*endpoint);
+      for (auto &message : TradeLink::Get().TakeOutbound())
+        endpoint->SendTrade(message);
       for (auto &message : Combat::Get().TakeOutbound())
         if (!endpoint->SendCombat(message))
           if (const auto *area = std::get_if<proto::AreaHit>(&message))
