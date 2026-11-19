@@ -88,9 +88,18 @@ public class TandemTravel {
   private let m_lastArrival: Vector4;
   // The last player who made us an offer or answered ours (test commands).
   private let m_partner: Uint32;
+  // The fast travel's loading screen (blackboard FastTRavelSystem): our
+  // listener, and whether it has ended since our trip began, and when.
+  private let m_loadingListener: ref<CallbackHandle>;
+  private let m_loadingEnded: Bool;
+  private let m_loadingEndedAt: Float;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
+    let blackboard = this.TravelBoard();
+    if IsDefined(blackboard) && !IsDefined(this.m_loadingListener) {
+      this.m_loadingListener = blackboard.RegisterListenerBool(GetAllBlackboardDefs().FastTRavelSystem.FastTravelLoadingScreenFinished, this, n"OnLoadingScreenFinished");
+    }
   }
 
   public func Stop() -> Void {
@@ -98,6 +107,26 @@ public class TandemTravel {
     this.m_trip = false;
     this.m_joining = 0u;
     ArrayClear(this.m_arrivals);
+    let blackboard = this.TravelBoard();
+    if IsDefined(blackboard) && IsDefined(this.m_loadingListener) {
+      blackboard.UnregisterListenerBool(GetAllBlackboardDefs().FastTRavelSystem.FastTravelLoadingScreenFinished, this.m_loadingListener);
+    }
+    this.m_loadingListener = null;
+  }
+
+  private func TravelBoard() -> ref<IBlackboard> {
+    return GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().FastTRavelSystem);
+  }
+
+  // The fast travel's loading screen is over (vanilla's FastTravelSystem
+  // waits for the same before its autosave): the game is drawn again.
+  protected cb func OnLoadingScreenFinished(value: Bool) -> Bool {
+    if value && this.m_trip {
+      this.m_loadingEnded = true;
+      this.m_loadingEndedAt = EngineTime.ToFloat(GameInstance.GetSimTime(this.m_game));
+      TandemNative.Log("travel: the fast travel's loading screen is over");
+    }
+    return false;
   }
 
   public static func Of(game: GameInstance) -> ref<TandemTravel> {
@@ -199,14 +228,17 @@ public class TandemTravel {
     this.m_tripPoint = point;
     this.m_tripMarker = marker;
     this.m_landedAt = 0.0;
+    this.m_loadingEnded = false;
     this.m_joining = joining;
     this.Hide();
     let whom = joining != 0u ? " (joining " + this.NameOf(joining) + ")" : "";
     TandemNative.Log(s"travel: fast travel to \(this.PointName(point)) under way\(whom)");
   }
 
-  // The jump, then a moment of the world running behind it (the loading
-  // screen stops our tick): we are there.
+  // The jump, then the end of the fast travel's loading screen and a moment
+  // of the world running behind it: we are there. Nothing moves V before
+  // that: a teleport (the hop) while the fast travel was still fading in
+  // left the screen black for good in game (2026-11-19).
   private func FollowTrip() -> Void {
     if !this.m_trip {
       return;
@@ -225,8 +257,16 @@ public class TandemTravel {
       }
       return;
     }
-    if this.m_now - this.m_landedAt < 1.5 {
-      return;
+    if this.m_loadingEnded {
+      let since = EngineTime.ToFloat(GameInstance.GetSimTime(this.m_game)) - this.m_loadingEndedAt;
+      if since < 1.5 || this.m_now - this.m_landedAt < 1.5 {
+        return;
+      }
+      TandemNative.Log("travel: screen restored (the loading screen ended)");
+    } else if this.m_now - this.m_landedAt < 30.0 {
+      return; // the loading screen's end may not have reached us yet
+    } else {
+      TandemNative.Log("travel: still black? no end of the fast travel's loading screen in 30 s since the jump");
     }
     this.m_trip = false;
     let at = local.GetWorldPosition();
@@ -463,6 +503,7 @@ public class TandemTravel {
     request.pointData = point;
     request.player = local;
     this.FastTravel().QueueRequest(request);
+    this.FastTravelLoadingScreen();
   }
 
   // What FastTravelSystem.PerformFastTravel does, to a point that is not on
@@ -477,7 +518,19 @@ public class TandemTravel {
     local.GetFPPCameraComponent().ResetPitch();
     TandemSync.WorldRebuilt(2);
     GameInstance.GetTeleportationFacility(this.m_game).TeleportToNode(local, TandemNative.NodeRefOf(marker));
+    this.FastTravelLoadingScreen();
     GameInstance.GetUISystem(this.m_game).NotifyFastTravelStart();
+  }
+
+  // What the world map does with its fast travel request
+  // (WorldMapMenuGameController.FastTravel): the next loading screen is the
+  // fast travel one, which fades the game back in when it ends. Without it
+  // the game ran on behind a black screen (2026-11-19, a travel from the
+  // `travel` command: the screen stayed black after the loading screen).
+  private func FastTravelLoadingScreen() -> Void {
+    let next = new inkSetNextLoadingScreenEvent();
+    next.SetNextLoadingScreenType(inkLoadingScreenType.FastTravel);
+    GameInstance.GetUISystem(this.m_game).QueueEvent(next);
   }
 
   // The last metres: two behind them, facing the way they face.

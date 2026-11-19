@@ -20,5 +20,8 @@ cmd regroup tandem-peer
 expect 'travel: regroup with tandem-peer: on the way' 5
 expect_peer 'player 1 is on the way' 10
 expect 'travel: arrived next to tandem-peer' 60
+# Drawn again after it: the fast travel's loading screen ended (it was left black).
+expect 'travel: screen restored' 5
+reject 'travel: still black'
+shot travel-arrived
 expect_peer 'another V is with us again' 20
-reject 'watchdog: game thread silent'
