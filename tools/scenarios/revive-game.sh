@@ -3,6 +3,9 @@
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female --go-down 10
 expect 'joined \(player [0-9]+' 20
+# An earlier scenario's revive must not make this fall an "out" (300 s cooldown).
+cmd revive fresh
+expect 'revive fresh: no recent revive' 5
 expect_peer 'our V is down \(--go-down\)' 20
 expect 'revive: tandem-peer is down' 5
 cmd revive hold

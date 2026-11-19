@@ -951,9 +951,23 @@ cmd puppet limbs`). So the real NPC
   (`TandemSystem.IsSavingLocked`), so a game killed there reloads from
   before the fight like any death. A reviver that vanishes takes its revive
   with it (bar gone); a downed player that vanishes is removed with the
-  usual "NAME left the session". `tools/game.sh cmd
-revive down|hold|report`; scenarios `revive-peer`, `revive-game`,
-  `revive-out`, `revive-lost`. **Not yet verified in game.**
+  usual "NAME left the session". **Up is one state** (fixed 2026-11-19,
+  after a run left the screen dark): getting up (a revive, a respawn, the
+  game's stand-up after Second Heart) clears in one place everything of
+  being down, out or dying: the life sent to the others, the hold on the
+  state machine, a pending death after leaving (`TandemSystem.LeftDown`,
+  which also locks saving), the HUD bar, NPC senses, the death state's
+  `dying` screen effect; 2 s later the state machine must be past its
+  death state (`Vitals` 0), else its death effects are ended by hand. The
+  leave-while-down death looks at the state at that moment and does
+  nothing for a V that is up or being stood up; the god-mode floor stays
+  on while V is being stood up, so a partner leaving then takes nothing
+  from under it. Loopback test: down, out, up, the partner leaves (no
+  loss), a partner joins (finds it up). `tools/game.sh cmd
+revive down|hold|fresh|report` (`fresh` forgets the 5-minute cooldown of
+  an earlier test and stands a downed V up); scenarios `revive-peer`,
+  `revive-game`, `revive-out` (also: the mock player leaving an up V
+  changes nothing), `revive-lost`. **Not yet verified in game.**
 - **Looks** (`engine/look.cpp`, `scripts/tandem/Outfit.reds`): a V's face
   and body travel as the appearance keys the game's appearance changer takes
   (a resource path hash and a name hash each: the same in every copy of the

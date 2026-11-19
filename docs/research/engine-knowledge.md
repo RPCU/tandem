@@ -2580,6 +2580,13 @@ RegisterInputListener(listener, n"Choice1")` (11423) and the listener's
   `BottomText`, `CompletedText`, `MessageType` (a `SimpleMessageType`
   variant), `Progress` 0..1, `Active` (the Twintone scan drives it so,
   451258). [2.5-untested]
+- Getting out of the death state for good is `ExplorationEvents.OnEnter`
+  (525154): `Vitals = 0`, the vitals and death anim features reset,
+  `global_death_exit`; `GroundDeathEvents.OnEnter` (528540) blocks movement
+  and sets the death camera's parameters first. The `dying` screen effect
+  is started only when V enters the death state already dead (527775) and
+  stopped by its exit; `GameObjectEffectHelper.BreakEffectLoopEvent(V,
+n"dying")` (106053) ends it by hand. [2.5-untested]
 - `BaseStatusEffect.PlayerInvulnerable` is what Bloodswell puts on V
   (307839). `PlayerPuppet.SetInvisible` (43505) toggles V's visible object
   (what NPC senses see). [2.5-untested]
