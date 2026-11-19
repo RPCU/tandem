@@ -11,11 +11,11 @@
   driver's and passengers' puppets in its seats with the mounting facility
   (no AI). A player riding in someone else's car sits in that game's copy;
   a puppet riding in ours sits in our real car. The puppet's movement
-  controller keeps still while it is seated and is re-attached when the
-  player gets out. Copies are never deleted while the game runs (deleting
-  one that had someone seated in it froze the game): a car someone got out
-  of stays parked. Puppets leave in steps over several frames (out of the
-  seat, then the body).
+  controller keeps still while seated and is re-attached when the player
+  gets out. Copies are never deleted while the game runs (deleting one that
+  had someone seated in it froze the game): a car someone got out of stays
+  parked. Puppets leave in steps over several frames (out of the seat, then
+  the body).
 - **Radio** (`scripts/tandem/Radio.reds`, engine-knowledge §13.12): the
   driver owns the car's radio. While our V drives its own car, our game
   reads the car's receiver four times a second (on, station as an
@@ -23,11 +23,11 @@
   (reliable, kept by the host for late joiners) when it changes and when
   a remote player gets in; a song that changes on a station we have been
   on for a while is stamped with its start on the host clock. A passenger
-  riding in a remote player's car (our copy of it) sets the copy to the
-  driver's radio the game's way (a `VehicleRadioEvent` on the car, as the
-  radio popup does), checks a second later and falls back to the
-  receiver natives (twice at most), and asks its own copy of the station
-  for the driver's song when another plays
+  in a remote player's car (our copy of it) sets the copy to the driver's
+  radio the game's way (a `VehicleRadioEvent` on the car, as the radio
+  popup does), checks a second later and falls back to the receiver
+  natives (twice at most), and asks its own copy of the station for the
+  driver's song when another plays
   (`AudioSystem.RequestSongOnRadioStation`). The game exposes no playback
   position, so the target is the same station and, best effort, the same
   song: it lines up when the driver's song has just begun, otherwise it
@@ -43,21 +43,15 @@
 
 - **Radio: each V's own on foot, the driver's in a car.** On foot every
   player listens to their own pocket radio, which nobody else hears. In a
-  car everyone aboard hears the car's radio, and the driver owns it: their
-  station, their volume and their track position are what the passengers
-  hear, in sync. A passenger's own radio goes quiet while they ride. To
-  sync: the driver's station and the track's start time (host clock), so
-  each passenger's game plays the same song at the same point, and changes
-  when the driver changes station. Getting out gives each player their own
-  radio back as it was. Done (2026-11-18, to verify in game with scenario
-  `radio`; see Inside the plugin): the driver's on/off, station and song
-  reach the passengers, who hear them on their copy of the car with their
-  own pocket radio held off, and get it back on the way out; copies and
-  puppets play nothing. Not possible with the game's scripts: the same
-  point of a song (no playback position to read or seek; the song is
-  asked for by name and lines up only when it has just begun on the
-  driver's side) and the driver's volume (a per-player setting, left
-  alone).
+  car everyone aboard hears the car's radio, owned by the driver: their
+  station, volume and track position, in sync, changing when the driver
+  changes station; a passenger's own radio goes quiet while they ride and
+  comes back as it was on getting out. To sync: the driver's station and
+  the track's start time (host clock). Done (2026-11-18, to verify in game
+  with scenario `radio`; see Inside the plugin): the driver's on/off,
+  station and song reach the passengers. Not possible with the game's scripts: the same point of
+  a song (no playback position to read or seek; the song is asked for by
+  name) and the driver's volume (a per-player setting, left alone).
 - **Getting in and out of a car, every way.** Today a puppet is mounted
   and unmounted instantly, so it pops in and out of the seat. It must look
   like the game: the enter and exit animations, and every way out:

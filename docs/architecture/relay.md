@@ -28,8 +28,8 @@ between a session's host and guests; it never parses game traffic.
   everyone; past that every lookup waits for the next minute, so many
   sources together are no faster). Even with 256 live sessions and the
   total cap saturated, one hit takes ~24 days on average, against codes that
-  change every 10 minutes. The cost is that a flood of wrong codes delays
-  honest joins by up to a minute; sources tracked are capped (4096).
+  change every 10 minutes. Cost: a flood of wrong codes delays honest joins
+  by up to a minute; sources tracked are capped (4096).
 - **Abuse limits**: unknown addresses never get an answer to data (no
   reflection); only registration-type requests (register, resolve a code),
   padded to 64 bytes, are answered from an unregistered address, and every
@@ -64,8 +64,8 @@ Wire format (`relay/internal/relay/wire.go`, big-endian, `TNR1` + type):
   addresses. The host-token Secret comes from the overlay's secret store.
 
 **On the game side** (`core/src/relay.cpp`, `tandem/relay.hpp`) the session
-talks to the relay through a small UDP proxy on 127.0.0.1, so ENet itself
-never knows the relay exists. A guest's ENet connects to the proxy's local
+talks to the relay through a small UDP proxy on 127.0.0.1, so ENet never
+knows the relay exists. A guest's ENet connects to the proxy's local
 socket; the proxy wraps what it sends in `Data` and unwraps what comes back
 (datagrams ENet sends before the relay registered it wait, a few at most).
 A host's ENet keeps listening on its port for direct guests; the proxy opens

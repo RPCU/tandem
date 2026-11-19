@@ -53,16 +53,16 @@
       copy (`PlayInDevice` plays the player in a vehicle's workspots only
       for the parked trunk sequences; a component added at runtime needs
       Codeware's builder at assembly and nothing says a device workspot
-      follows a moving parent), and a transform binding (`entHardTransformBinding`
-      binds components inside one entity, not the player to another). It sends `Transit`
-      `Along` (the carrier), so every game hides its puppet (there is no
-      seat to show it in) and puts its map marker on the car that carries
-      it (the carrier's real car on the host, its copy elsewhere), and sends no `Seat` (the trunk slot is no
-      one's seat). The game lends no camera to a V without a seat:
-      a vehicle's cameras and its scene camera mode belong to the seated
-      V's state machine (vehicle states Passenger, Scene), and only photo
-      mode has a free camera; V's own eyes, carried, are the passenger's
-      view.
+      follows a moving parent), and a transform binding
+      (`entHardTransformBinding` binds components inside one entity, not
+      the player to another). It sends `Transit` `Along` (the carrier), so
+      every game hides its puppet (there is no seat to show it in) and puts
+      its map marker on the car that carries it (the carrier's real car on
+      the host, its copy elsewhere), and sends no `Seat` (the trunk slot is
+      no one's seat). The game lends no camera to a V without a seat: a
+      vehicle's cameras and its scene camera mode belong to the seated V's
+      state machine (vehicle states Passenger, Scene), and only photo mode
+      has a free camera; V's own eyes, carried, are the passenger's view.
     - _Follow_: nothing is done to the guest's V. The host's marker sits
       on its car (Markers.reds); when the host's scene ride ends, the host
       offers everyone far from it to join (the regroup offer, "Join NAME",

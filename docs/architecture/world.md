@@ -23,11 +23,10 @@
   Physics objects (crates, bodies, cars hit) need an owner and a sync of
   their transform like vehicles; which ones (all props, or only those a
   player touched) is to decide. Done for takedowns, grapples, finishers
-  and carried, thrown and disposed bodies (see `stealth.md`; to
-  verify in game with scenarios `takedowns-host` and `takedowns-guest`).
-  Still open there: the disposal container's own state (door, light,
-  "used") stays the actor's until devices are synced, and loot from a
-  disposed body.
+  and carried, thrown and disposed bodies (see `stealth.md`; to verify in
+  game with scenarios `takedowns-host` and `takedowns-guest`). Still open
+  there: the disposal container's own state (door, light, "used") stays the
+  actor's until devices are synced, and loot from a disposed body.
 - **NCPD chases.** The authority table gives police heat to the host, but a
   chase is about one player: who committed the crime, whom the units hunt,
   who escapes. The game's prevention system only knows its own V
@@ -45,11 +44,11 @@
   time of day) is recorded by the host's game in the host's save. A guest's
   game neither saves that world nor brings its own: its world-state saving
   is locked while in a session, and leaving puts it back in its own world
-  as its save had it. What stays the guest's own, in its own save: its V
-  (level, XP, perks, inventory, money, appearance, as the authority table
-  says). Open: what a guest keeps of a session it played (loot it picked
-  up, XP it earned: yes; quest progress: no, unless it plays that quest in
-  its own game), and rejoining a host's save later.
+  as its save had it. The guest's own, in its own save: its V (level, XP,
+  perks, inventory, money, appearance, as the authority table says). Open:
+  what a guest keeps of a session it played (loot it picked up, XP it
+  earned: yes; quest progress: no, unless it plays that quest in its own
+  game), and rejoining a host's save later.
 
   Option for later, when players play apart (region limits): **a world
   ledger on the server.** The simulation cannot leave the players' games

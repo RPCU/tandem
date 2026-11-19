@@ -98,15 +98,14 @@
   host's language for now; shards and the codex stay per player; Johnny's
   appearances beside the host are shown to guests later; after the first
   version: scene voice, then quest-only interiors, then solo gigs.
-- **Quests together, gigs apart.** A quest or gig the players finish
-  together rewards both: each game gives its own V the rewards (XP,
-  street cred, money, items, the fixer's message) by the game's own
-  rules, the guest's game told by the host when it completes with them
-  taking part. Players may also split up and do gigs on their own (fixer
-  jobs, side gigs, NCPD hustles) while the other does something else: the
-  game of the player doing it runs that gig's quest and NPCs in its region
-  (Region limits) and reports the outcome (gig done, NPCs dead, items
-  taken) to the host's record of the world, so it stays one world. Main
-  story quests stay the host's, played together. Solo gigs come after the
-  first story version if they prove too costly; design in
+- **Quests together, gigs apart.** A quest or gig finished together rewards
+  both: each game gives its own V the rewards (XP, street cred, money,
+  items, the fixer's message) by the game's own rules, the guest's game
+  told by the host when it completes with them taking part. Players may
+  also split up and do gigs on their own (fixer jobs, side gigs, NCPD
+  hustles): the game of the player doing it runs that gig's quest and NPCs
+  in its region (Region limits) and reports the outcome (gig done, NPCs
+  dead, items taken) to the host's record of the world, so it stays one
+  world. Main story quests stay the host's, played together. Solo gigs come
+  after the first story version if they prove too costly; design in
   `research/coop-quests-design.md`.

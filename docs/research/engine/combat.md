@@ -81,8 +81,8 @@ health‰;state;hostile` — key `EntityID.ToHash`, `EntityID.IsStatic`, record 
 - `DamageSystem.DealDamages(hitEvent)` is where a hit takes health away:
   `StatPoolsManager.ApplyDamage(hitEvent, forReal, out lost)` with
   `forReal = !IsClient()`. With `forReal` false it measures the loss (the
-  `SDamageDealt` list, per stat pool) without applying it; vanilla's own
-  client path. Wrapping it (`@wrapMethod`, private is fine) catches every
+  `SDamageDealt` list, per stat pool) without applying it: vanilla's own
+  client path. A wrap (`@wrapMethod`, private is fine) catches every
   ordinary hit after armour, mitigation and the ±10 % variance: 40
   physical became 9.65 on a ganger proxy. [2.5-verified]
 - Hits with `hitFlag.Kill` never reach `DealDamages`:
@@ -104,8 +104,8 @@ instigator, false, false)` kills an NPC at 0 like any death: the next
   pipeline: safe on a proxy from inside a damage hook. [2.5-tested]
 - Status effects a hit carries (`AttackData.GetStatusEffects()`, the
   attack record's `ApplyImmediately` effects) are queued by
-  `DamageSystem.ProcessStatusEffects` and applied **a frame later**: they
-  are not in `StatusEffectHelper.GetAppliedEffects` right after the call.
+  `DamageSystem.ProcessStatusEffects` and applied **a frame later**: not
+  in `StatusEffectHelper.GetAppliedEffects` right after the call.
   The target's `NPCPuppet.OnStatusEffectApplied(ApplyStatusEffectEvent)`
   sees each one (`isNewApplication`, `instigatorEntityID`, `staticData`),
   whatever applied it (hits, buildup, quickhacks). [2.5-verified]
@@ -145,9 +145,10 @@ puppets' attitude group. With the mock player in front mode:
   as "no damage" before `DealDamages`). And it still hurts V, even set
   neutral to V. Likely cause: the puppet's entity (V's TPP cutscene
   template) lacks what NPC senses and hits need (visible object,
-  targeting, hit representation shapes). Next: compare the components of a puppet and of an NPC
-  (`tools/game.sh cmd inspect`), then spawn puppets from a template that
-  has them, or add them at assembly (Codeware). [2.5-verified]
+  targeting, hit representation shapes). Next: compare a puppet's
+  components with an NPC's (`tools/game.sh cmd inspect`), then spawn
+  puppets from a template that has them, or add them at assembly
+  (Codeware). [2.5-verified]
 - Injected into combat while hostile to V, the ganger shot V: ranged
   hits of type 10, 29.6 physical each. [2.5-verified]
 - `GodModeSystem.AddGodMode(V, Invulnerable|Immortal, n"Default")`

@@ -21,7 +21,7 @@ game (whether health, damage and loot follow the stat).
   (`GetNPCsAroundObject`, skipping our own puppets, copies and the dead),
   announces each new one (`NpcSpawn`: a session id, record, appearance,
   transform), sends where all of them are (`NpcStates`) and which left
-  (`NpcGone`). A guest spawns a proxy of each one with the dynamic entity
+  (`NpcGone`). A guest spawns a proxy of each with the dynamic entity
   system, switches its brain off at once (`TandemProxies.Pacify`), and two
   seconds later, once its rig has loaded, hands it to tandem's movement
   controller as puppet `0x10000 + id`, drawn like a remote player.
@@ -107,10 +107,10 @@ game (whether health, damage and loot follow the stat).
   `player`, hostility to one V spreads to every V (§13.11). What a single
   V does (provoking a gang, crimes) changes that NPC's attitude to that V
   only, per NPC and per player, by the game's own rules. Done (2026-11-18,
-  to verify in game with scenario `puppet-attitude`): one group per puppet,
-  relations copied from V's at runtime (see Inside the plugin). Known
-  limits: a group seen only on devices (a turret's security system with no
-  NPC of its faction near) keeps the record's default attitude; a group
-  relation V's own deeds change (if a provocation or a security breach by
-  V changes a group relation, not a per-NPC attitude) reaches the puppets
-  too; per-NPC attitudes a quest sets towards V are not copied.
+  to verify in game with scenario `puppet-attitude`): see Inside the
+  plugin. Known limits: a group seen only on devices (a turret's security
+  system with no NPC of its faction near) keeps the record's default
+  attitude; a group relation V's own deeds change (if a provocation or a
+  security breach by V changes a group relation, not a per-NPC attitude)
+  reaches the puppets too; per-NPC attitudes a quest sets towards V are
+  not copied.

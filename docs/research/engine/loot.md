@@ -15,11 +15,10 @@ Read from the 2.50 scripts (`final.reds` line numbers), used by
   (default 2 s, 22251). So a guest's proxy killed by the host's word rolls
   its own loot, from its record (the real NPC's: the proxy is spawned from
   it), in the guest's game only. `WasLootGenerated()` (19436) says whether
-  it did; `GenerateLoot()` (19406) is what a corpse loaded from a save
-  runs (`NPCPuppet.OnGameAttached`, 125562). Quality and quest flags are
-  worked out from the inventory afterwards (`EvaluateLootQuality` 23381:
-  items tagged `Quest` set `m_hasQuestItems`).
-  [2.5-untested]
+  it did; a corpse loaded from a save runs `GenerateLoot()` (19406,
+  `NPCPuppet.OnGameAttached`, 125562). Quality and quest flags come from
+  the inventory afterwards (`EvaluateLootQuality` 23381: items tagged
+  `Quest` set `m_hasQuestItems`). [2.5-untested]
 - **Weapons**: `ScriptedPuppet.DropHeldItems` (22027, private, no script
   caller: presumably called by `ProcessLoot`) drops the items in
   `AttachmentSlots.WeaponRight` / `WeaponLeft` when the record's

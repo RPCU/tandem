@@ -1,13 +1,13 @@
 # Session and transport
 
 **Handshake** (`core/src/endpoint.cpp`): `Hello` (magic, version, name) →
-`Welcome` (your player id, host id, host clock) or `Refused`. The host then
+`Welcome` (your player id, host id, host clock) or `Refused`; the host then
 broadcasts the `Roster`. A guest's messages count only after its `Welcome`,
 and the host stamps every relayed `PlayerState` with the sender's own id: a
 guest cannot speak for someone else.
 
 **Liveness** (`core/src/session.cpp`, `Timing` in `endpoint.hpp`): a
-connection that acknowledges nothing for **5 s** is dead, on either side:
+connection that acknowledges nothing for **5 s** is dead, on either side.
 ENet pings an idle peer every 0.5 s, so a live one is heard from several
 times a second and a hiccup of 1–2 s passes. `Session::Poll` checks it
 itself (time since the peer's last acknowledgement) because ENet's own
@@ -20,15 +20,15 @@ disconnect that follows it, and a guest's `Bye` removes it at once.
 
 **Slots and returning players**: the host takes up to `kMaxGuests` (3)
 welcomed guests and refuses the next ("the session is full"), but keeps
-`kSpareConnections` (2) more ENet connections open, so a player coming back
+`kSpareConnections` (2) more ENet connections open, so a returning player
 can always reach it. A `Hello` under the name of a player whose connection
 has been silent for **2 s** replaces that connection at once: the player
-keeps its id, so the others keep its puppet and seat (no `PlayerLeft`,
-no `PlayerJoined`; the host sees `PlayerReturned`), and the new game sends
-its look, held items and seat again. A live player (heard within 2 s)
-cannot be replaced: a namesake joins as another player. A guest numbers
-its states from the host clock's millisecond at its `Welcome`, so what it
-sends after coming back is newer than what it sent before.
+keeps its id, so the others keep its puppet and seat (no `PlayerLeft`, no
+`PlayerJoined`; the host sees `PlayerReturned`), and the new game resends
+its look, held items and seat. A live player (heard within 2 s) cannot be
+replaced: a namesake joins as another player. A guest numbers its states
+from the host clock's millisecond at its `Welcome`, so what it sends after
+coming back is newer than what it sent before.
 
 **Reaching each other**: direct first (LAN, Tailscale/NetBird — already on
 every nixbook machine), then the relay when NAT blocks UDP. A host with a

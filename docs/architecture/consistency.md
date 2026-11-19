@@ -14,14 +14,13 @@ others stay on what was decided, and what happens when they do not.
   their records and health; positions are state and left out), story (the
   journal and tracked entry: what lasts), players (roster, looks, held
   items, seats, radios, stealth, pause menus, time abilities, places in
-  other worlds, all but the
-  guest's own). The guest's endpoint keeps the same record of what it
-  received and hashes it the same way. Being on the reliable ordered
-  channel, the digest is compared at the exact point of the stream where
-  it was made. A domain that differs **twice in a row** (the first may race
-  the journal snapshot on the bulk channel) is asked for again
-  (`ResyncRequest`, at most once per 5 s per domain; the host answers at
-  most every 2.5 s per guest).
+  other worlds, all but the guest's own). The guest's endpoint keeps the
+  same record of what it received and hashes it the same way. On the
+  reliable ordered channel, the digest is compared at the exact point of
+  the stream where it was made. A domain that differs **twice in a row**
+  (the first may race the journal snapshot on the bulk channel) is asked
+  for again (`ResyncRequest`, at most once per 5 s per domain; the host
+  answers at most every 2.5 s per guest).
 - **Resync.** The host sends that guest the domain whole, as a late joiner
   gets it: for NPCs an `NpcSet` first (the guest drops what the host no
   longer shares), then every spawn and health; for players the roster and,
@@ -134,8 +133,8 @@ not merged yet).
   and puppets, gets its crowd back, and tries to join again every 5 s; on
   its return the guest's look, held items and seat go to the new session.
   Done (2026-11-18, loopback tests in `tests/endpoint_test.cpp`, see
-  [Session and transport](session.md)): a guest or host that
-  dies without a goodbye is noticed in 5 s (it was ~30 s, and dead mock
+  [Session and transport](session.md)): a guest or host that dies
+  without a goodbye is noticed in 5 s (it was ~30 s, and dead mock
   players filled the guest slots: "could not reach the host"); a player
   back on a new connection while its old one is silent takes its place at
   once, with its id, puppet and seat, even in a full session; a live
@@ -146,9 +145,9 @@ not merged yet).
   of silence. Still open: a grace time **after** the timeout (a link down
   for more than 5 s comes back as a new player, its puppet respawned; a
   crashed game takes longer than that to restart anyway). When a session
-  ends, the plugin now forgets every remote player's tracks, so a
+  ends, the plugin forgets every remote player's tracks, so a
   restarted host's states (counted from the start again) are not dropped
   as old; the NPC proxies' tracks and every queue of the old session go
-  too (Consistency). Not yet checked in game. Each case gets a
-  scripted test with the mock player (kill it mid-drive, mid-fight, while
-  seated in our car; host vanishes while a guest is in a cutscene).
+  too (Mechanisms, above). Not yet checked in game. Each case gets a scripted
+  test with the mock player (kill it mid-drive, mid-fight, while seated in
+  our car; host vanishes while a guest is in a cutscene).

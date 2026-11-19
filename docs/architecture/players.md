@@ -43,7 +43,7 @@
 - **Player markers** (`scripts/tandem/Markers.reds`,
   `tweaks/tandem/markers.tweak`): every remote player has a marker in the
   world, on the minimap and on the world map, the way the game marks your
-  car. It is a mappin registered with `MappinSystem.RegisterMappinWithObject`
+  car: a mappin registered with `MappinSystem.RegisterMappinWithObject`
   on the puppet as soon as it exists (the `roleMappin` slot if the body has
   one, else 2 m above its feet), moved to the car the puppet sits in (the
   vehicle's `vehMappin` slot, as for your car's marker) and back, and
@@ -72,13 +72,12 @@
 
 - **Players linking up (later).** One V can send the other a request to
   connect, in the game's own style (a neural link, like jacking in with a
-  partner); once the other accepts, the two share what a linked crew
-  would: the Ping quickhack's highlights and what each one scans or tags
-  shows on both HUDs, and later more (shared marks, a netrunner seeing
-  through the other's optics, quickhacks relayed through a partner's
-  link). Either side can break the link at any time. The link is a
-  per-pair state the host relays; what it shares is decided feature by
-  feature.
+  partner); once accepted, the two share what a linked crew would: the Ping
+  quickhack's highlights and what each one scans or tags shows on both
+  HUDs, and later more (shared marks, a netrunner seeing through the
+  other's optics, quickhacks relayed through a partner's link). Either side
+  can break the link at any time. The link is a per-pair state the host
+  relays; what it shares is decided feature by feature.
 - **Every way a V moves, on the puppet.** Walking on flat ground works; the
   rest must too: stairs and slopes, ladders, climbing and vaulting
   (mantling ledges), jumps and double jumps, falls and landings, sliding,
@@ -106,11 +105,11 @@
   What the engine does with the controller's delta (kinematic, or a
   character controller with gravity and collisions) is not known: the
   health line (`puppet N: … m from target, …, <placement>, K teleports`)
-  and the `teleport #` lines tell. To check in game: `tandem-peer join
-<game> --mode course` (scenario `movement-course`), then `--save-path`
-  a real jump/ladder/swim session and replay it with `--mode path`.
-  Open: elevators (the cab is each game's own device), being carried
-  (scenes), landing and splash effects, the collision capsule.
+  and the `teleport #` lines tell. To check in game:
+  `tandem-peer join <game> --mode course` (scenario `movement-course`),
+  then `--save-path` a real jump/ladder/swim session and replay it with
+  `--mode path`. Open: elevators (the cab is each game's own device), being
+  carried (scenes), landing and splash effects, the collision capsule.
 - **Cyberware, skills and perks in a shared world.** Every ability a V has
   must work in co-op, on real enemies and on the other players' screens,
   with the game's own sound and visual feedback ("seen and heard"): arm

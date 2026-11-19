@@ -13,13 +13,12 @@
   weapon, target, shots, workspot; e.g. `tools/scenarios/npcs-anims.anims`).
   `tools/game.sh cmd npc seek [RANGE]` finds the nearest NPC sitting,
   leaning or smoking (in a workspot) within RANGE m of V and moves V within
-  sharing range of it (scenario `npcs-anims-host`).
-  A recording
-  with no `NpcSpawn` (an empty street: rain or night) is not saved and
-  the previous file stays, since its replay gives a guest no proxies at
-  all (on 2026-11-18 that broke every guest scenario); a replay without
-  spawns says so in its log. The `npcs-host` scenario spawns its own
-  gangers first (`tools/game.sh cmd npc spawn [N]`). Tested on Linux by
+  sharing range of it (scenario `npcs-anims-host`). A recording with no
+  `NpcSpawn` (an empty street: rain or night) is not saved and the previous
+  file stays, since its replay gives a guest no proxies (on 2026-11-18 that
+  broke every guest scenario); a replay without spawns says so in its log.
+  The `npcs-host` scenario spawns its own gangers first
+  (`tools/game.sh cmd npc spawn [N]`). Tested on Linux by
   `tests/peer_replay.sh` (part of `task test`).
 - **Gameplay recordings** (`core/include/tandem/play.hpp`): so the second
   player in a scenario is real play, not a figure circling and floating
@@ -89,8 +88,8 @@ host` records alone). Everything the game asks its `Endpoint` to send
   offers, loot, life and revives, rides, epochs. `watch` keeps the
   recording guest 30 m under the host's V (or `--offset`): out of sight, out
   of every NPC's reach, in nobody's way (the host shares the NPCs around
-  its own V, wherever its guests are). No plugin change: it is exactly what
-  a real host sends. `tandem-peer host --play-session FILE [--play-loop]`
+  its own V, wherever its guests are). No plugin change: exactly what a
+  real host sends. `tandem-peer host --play-session FILE [--play-loop]`
   then is that host for the guest that joins: its V on its body, its NPCs,
   its story, at the recorded pace; the recorded guest's messages (a hit, a
   hack, detection bits, a reward) go to the real guest, other players'
@@ -150,4 +149,4 @@ host` records alone). Everything the game asks its `Endpoint` to send
     in a car, shoot an NPC, join late, disconnect mid-fight) as repeatable
     regression scenarios, with checks on what the real game reports back;
   - **network shaping** in the peer (latency, jitter, loss, reordering):
-    done, see above.
+    done (`testing.md`, "A bad network").

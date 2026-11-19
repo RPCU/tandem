@@ -40,8 +40,8 @@
 ## Open problems
 
 - **Each player is detected on their own.** Stealth, detection and
-  combat are per player, never shared. A host NPC can be hunting one V
-  while another sneaks past it unseen: each player has their own stealth
+  combat are per player, never shared: a host NPC can hunt one V while
+  another sneaks past it unseen, each player with their own stealth
   meter, detection, "in combat" state and combat music. The host's game
   measures each NPC's detection of every V (its own, and each guest's
   puppet: `SenseComponent.GetDetection`, the NPC's threats) and sends it
@@ -76,8 +76,8 @@
   stimulus its V broadcasts: gunshots, silenced shots…) go to the host as
   `Noise` and are broadcast again from its puppet. Grenade and other
   projectile explosions are broadcast by the projectile, not the V: still
-  open. Not yet verified in game (scenario `stealth-host`). Puppets keep
-  an attitude group of their own (in `player`, hostility to one V becomes
-  hostility to all): each puppet has one (`tandem_player_N`,
-  Attitudes.reds), so hostility to one guest's V reaches neither the
-  host's V nor another guest's.
+  open. Not yet verified in game (scenario `stealth-host`). Each puppet
+  has an attitude group of its own (`tandem_player_N`, Attitudes.reds),
+  because in `player` hostility to one V becomes hostility to all: so
+  hostility to one guest's V reaches neither the host's V nor another
+  guest's.

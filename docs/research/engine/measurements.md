@@ -8,15 +8,15 @@ Measured in this project; each line says how.
 
 - **Movement-controller footprint**: right after `AttachController` (4018412273)
   the engine writes the 32-bit value `1` at controller **+0x20** and nothing
-  else in +0x20..+0x7F (filled with zeros before attach, dumped at the first
+  else in +0x20..+0x7F (zero-filled before attach, dumped at the first
   `SendAnimationParameters`, same on every run). Anything stored at +0x20 is
   lost: an id placed there read back as 1. NCO's layout had its target
   position there, masked by rewriting it from the main thread every frame.
   [2.5-verified]
 - **The engine-attached controller works on 2.5** with the 19-slot layout of
   §3, a `kType` marker at +0x08 and the `IdleController::SetAnimation` hook
-  skipping our own controllers: the body is moved by `GetDeltaTransform`'s
-  delta to within **0.01 m** of the target at ~60 frames/s, with the engine's
+  skipping our own controllers: `GetDeltaTransform`'s delta moves the body
+  to within **0.01 m** of the target at ~60 frames/s, with the engine's
   walk animation (`MotionAction::Move`, `LocomotionStyle::Walk`, clip time,
   speed). No crash in ~10 minutes over 5 runs. [2.5-verified]
 - **Clip lengths** (`GetAnimLength` 3750304414): `Character.Panam`'s rig:

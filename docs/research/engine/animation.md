@@ -45,12 +45,11 @@ All offsets measured on the local V and checked on every live
   deformations, face rig, shadow…), +0x250/+0x258 a weak handle to itself,
   **+0x270 its graph instance**, +0x288 `controlBinding`. [2.5-verified]
 - **Graph instance** (`GI = [component+0x270]`, one per animated component,
-  ≥ 0x25C8 bytes): +0x20 the `animAnimGraph`, +0x28 the instance data (what
-  a node's sample function receives as third argument), +0x40 the `animRig`,
-  +0x2510 root motion of the last sample (48-byte transform), +0x2540 /
-  +0x2544 update / sample counters (≈ frames). `[GI+0x40]` is the
-  component's rig on 757 of 758 components, `[GI+0x20]` its graph likewise.
-  [2.5-verified]
+  ≥ 0x25C8 bytes): +0x20 the `animAnimGraph`, +0x28 the instance data (third
+  argument of a node's sample function), +0x40 the `animRig`, +0x2510 root
+  motion of the last sample (48-byte transform), +0x2540 / +0x2544 update /
+  sample counters (≈ frames). `[GI+0x40]` is the component's rig on 757 of
+  758 components, `[GI+0x20]` its graph likewise. [2.5-verified]
 - **Animated object** (`obj = [root component+0x178]`, one per entity, stable
   while the entity lives; no vtable): +0x00 a 32-bit id (-1 = unusable),
   **+0x08 the merged skeleton**, **+0x18 the pose**, +0x60 the root
@@ -69,8 +68,8 @@ All offsets measured on the local V and checked on every live
 - **Pose** (`[obj+0x18]`): +0x00 → transforms, 48 bytes each (translation,
   rotation quaternion, scale: 3 × 4 floats), one per skeleton entry, count at
   +0x08; +0x18 → float tracks (count at +0x20); +0x28 / +0x38 extra named
-  tracks and transforms (64-byte entries, name first). The arrays stay at the
-  same address from frame to frame and are rewritten in place. They hold
+  tracks and transforms (64-byte entries, name first). The arrays keep their
+  address from frame to frame and are rewritten in place. They hold
   **model space** except for a short window each frame (≈3 % of 700
   samples): the graph's local-space result is copied in, then converted in
   place, parents first. Hips of a standing male V: z = 0.95–0.98 m.

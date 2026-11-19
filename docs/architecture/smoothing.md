@@ -6,11 +6,11 @@
 - **Absolute times are integers.** A float can't hold an epoch timestamp
   (one earlier project froze every remote player that way); only
   differences become float.
-- **Remote things are drawn slightly in the past** and interpolated between
+- **Remote things are drawn slightly in the past**, interpolated between
   the two samples around that time: 65 ms behind at 30 Hz, widened per
-  player by measured jitter and transit, capped at 400 ms (numbers measured
-  on 2.5 by NCO, see the research file). Short gaps are extrapolated (250 ms
-  for players, falling when the V is in the air; 500 ms for vehicles), then
+  player by measured jitter and transit, capped at 400 ms (measured on 2.5
+  by NCO, see the research file). Short gaps are extrapolated (250 ms for
+  players, falling when the V is in the air; 500 ms for vehicles), then
   held; recovery blends back.
 - **Teleports are put, not flown.** Two states further apart than 20 m and
   faster than 150 m/s (a fast travel, a quest teleport, a regroup) are not
@@ -30,7 +30,7 @@
   (15; NPC states and older senders leave it clear: placed as walking).
   The puppet's controller turns it into a placement (ground, air, climb,
   ladder, swim, platform, down) and asks `movement::Placer` each frame how
-  far to move the body: everywhere but on the ground exactly where the
+  far to move the body: everywhere but on the ground, exactly where the
   stream says; on landing the height left is eased back; a body left
   behind (≥ 0.75 m for 0.2 s off the ground, a ledge ≥ 0.6 m above for
   0.3 s, ≥ 2.5 m for 0.5 s, ≥ 8 m at once; one per second) is teleported

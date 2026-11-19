@@ -83,17 +83,15 @@ revive down|hold|fresh|report` (`fresh` forgets the 5-minute cooldown of
   penalty; until then it watches from where it lies. (5) The session is
   **lost only when every V is down or out at once**: then the normal death
   runs (the host's game shows the death screen and reloads its
-  checkpoint; guests follow the host's reload). Authority: each game owns
-  its V's life (`Vitals`), the reviver's game sends the revive request
-  (`Revive`), the host arbitrates the loss (`GameOver`). Done (2026-11-18,
-  not yet verified in game; see Inside the plugin): all five, with
-  loopback tests (`tests/endpoint_test.cpp`) and scenarios. Choices made
-  for the user's open points: 40 % on a revive or respawn; Second Heart at
-  20 % in a session (vanilla's multiplayer branch, research/coop-perks.md
-  §5.5); out also when killed outright (`BaseStatusEffect.ForceKill`);
-  respawn 3 s after the partner leaves combat, or after 30 s out; the last
-  V up leaving the session loses it for whoever is left down (host) or
-  leaves the guest's V down until it is alone for 30 s. Open: the puppet
+  checkpoint; guests follow the host's reload). Done (2026-11-18, not yet
+  verified in game; see Inside the plugin, authority included): all five,
+  with loopback tests (`tests/endpoint_test.cpp`) and scenarios. Choices
+  made for the user's open points: 40 % on a revive or respawn; Second
+  Heart at 20 % in a session (research/coop-perks.md §5.5); out also when
+  killed outright (`BaseStatusEffect.ForceKill`); respawn 3 s after the
+  partner leaves combat, or after 30 s out; the last V up leaving the
+  session loses it for whoever is left down (host) or leaves the guest's
+  V down until it is alone for 30 s. Open: the puppet
   of a downed V shows what the owner's third-person body does in its death
   state (pose stream: to check; a downed animation on the puppet is the
   fallback); a V downed in a car; the reviver's own kneeling animation;

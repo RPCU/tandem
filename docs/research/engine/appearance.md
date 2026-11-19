@@ -118,8 +118,8 @@ holstered_strong…, character_customization, personal_link_*, *_launcher, *_man
 `entGarmentSkinnedMeshComponent` named after the mesh with a 4-digit suffix
 (`t2_206_pma_jacket__tw3_coat1761`, `t0_000_pma_base__full`, …), next to
 `entSkinnedMeshComponent`s `legs`, `shoes`, `torso` and
-`entMorphTargetSkinnedMeshComponent`s for head and nails. The entity also
-carries `gameAttachmentSlots` "AttachmentSlots", `gameInventory`
+`entMorphTargetSkinnedMeshComponent`s for head and nails. Also on the
+entity: `gameAttachmentSlots` "AttachmentSlots", `gameInventory`
 "Inventory", `entVisualControllerComponent`, `gameTPPRepresentationComponent`
 and the customization controllers. For the open clothes problem (12.1): a
 puppet that shows clothes needs these garment components on its entity,
@@ -143,16 +143,16 @@ alive on the puppet — a listener nobody holds is dropped):
   written at +0x18/+0x58) but **no item object ever spawns and no slot event
   fires**. A pistol (`GiveItem` + `AddItemToSlot(WeaponRight)`) on the same
   puppet spawns at once (`OnItemEquipped`, `OnItemEquippedVisual`, object
-  at +0x08). The refusal is specific to garments on this body. [2.5-verified]
+  at +0x08): the refusal is specific to garments on this body. [2.5-verified]
 - **The cause: the record's `genders`.** `Character.Panam`'s single entry
-  is female with `panam.ent`; the puppet records inherited it. Giving each
-  puppet record its own entry (`genders = [{ initial = true; gender =
-"Gender.Male"; entity = <its template>; }]`, as NCO's records did) makes
-  the same preview items equip at once: `OnItemEquipped` and
+  is female with `panam.ent`; the puppet records inherited it. With its own
+  entry per puppet record (`genders = [{ initial = true; gender =
+"Gender.Male"; entity = <its template>; }]`, as NCO's records did) the
+  same preview items equip at once: `OnItemEquipped` and
   `OnItemEquippedVisual` for coat, shirt, pants and boots, and the puppet
   is drawn dressed in V's clothes, face and hair from the look, pose from
-  the stream. (The items are placed twice in the first 2 s: once by our
-  call, once again by the engine's refresh; harmless.) [2.5-verified]
+  the stream. (The items are placed twice in the first 2 s: by our call,
+  then by the engine's refresh; harmless.) [2.5-verified]
 
 **How the game itself dresses a puppet of V** (vanilla scripts, decompiled
 reference `~/.cache/tandem/ref/gamescripts/vanilla/final.reds`; natives and

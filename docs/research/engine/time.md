@@ -8,7 +8,7 @@ Read from the 2.50 RTTI natives (`docs/research/data/rtti-natives-2.50.tsv`)
 and the script dump; used by `scripts/tandem/Time.reds`, **not yet run in
 game**. Research behind it: `coop-time.md` §1-2.
 
-- The time system has exactly three scopes and no render-only one: global
+- Exactly three scopes, no render-only one: global
   (`gameTimeSystem.SetTimeDilation` / `UnsetTimeDilation` /
   `GetActiveTimeDilation` / `IsTimeDilationActive`), the local player's
   own (`SetTimeDilationOnLocalPlayerZero`, the exemption flag
@@ -20,7 +20,7 @@ duration, easeIn, easeOut, ignoreGlobalDilation, useRealTime)`,
   14724-14744). Besides them only attacks
   (`gameAttack_GameEffect.OverrideTimeDilationDriver(timeDilatable)`,
   effector drivers `Source`/`Target`, final.reds 299725-299729) follow an
-  entity's time. A host therefore cannot show its own NPCs slowed while
+  entity's time. So a host cannot show its own NPCs slowed while
   simulating them at normal speed. [2.5-untested]
 - A per-entity dilation is a single slot (`UnsetIndividualTimeDilation`
   takes no reason): setting ours replaces an NPC's own (hit reactions
@@ -59,11 +59,11 @@ duration, easeIn, easeOut, ignoreGlobalDilation, useRealTime)`,
   [2.5-untested]
 - **First run, 2026-11-18: the game broke twice** while Time.reds ran from
   the plugin's per-frame call (RED4ext running-state update,
-  `OnRunningUpdate`), outside the script tick. Once it crashed loading a
-  save as host, in the script VM about three calls deep under
-  `TandemTime.Frame`, before "playing". Once it froze right after
-  "playing", when the work began (no backtrace). Suspects, most likely
-  first, all found by reading the code (none confirmed):
+  `OnRunningUpdate`), outside the script tick: a crash loading a save as
+  host, in the script VM about three calls deep under `TandemTime.Frame`,
+  before "playing"; and a freeze right after "playing", when the work
+  began (no backtrace). Suspects, most likely first, all from reading the
+  code (none confirmed):
   1. `GetActiveTimeDilation()` with no dilation active answers something
      below 0.99 (0, say): `exempt` was then true on every frame, and the
      first frame set a per-entity dilation (unset, then set) on every
@@ -74,13 +74,13 @@ duration, easeIn, easeOut, ignoreGlobalDilation, useRealTime)`,
   2. Engine calls made outside the script tick, and behind the loading
      screen: time system queries, `FindEntityByID`, per-entity dilation and
      effect events, while the world is being built. Fixed: the work runs
-     from `TandemSystem.Tick` once the world plays. The plugin's per-frame
+     from `TandemSystem.Tick` once the world plays; the plugin's per-frame
      call is back to `TandemPause.Frame` alone.
   3. Something else that started at "playing" on the same frame (stealth,
      takedowns): not Time.reds.
 
   No deadlock found: the time natives each take `Runtime::m_lock` once and
-  release it before returning. They never call the engine or the network
-  while holding it, and nothing holds it while waiting on the game thread.
-  No loop in Time.reds or `TimeBubbles::Update` can run forever.
+  release it before returning, never call the engine or the network while
+  holding it, and nothing holds it while waiting on the game thread. No
+  loop in Time.reds or `TimeBubbles::Update` can run forever.
   [2.5-untested]

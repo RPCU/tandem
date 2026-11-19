@@ -220,16 +220,15 @@ Read in the 2.50 exe with `tools/re/decompile` (offline, no game). Feeds
   any other node queues its output sockets; **2**: finished, outputs
   queued; **1 or 3**: nothing queued, the pass goes on with the other
   queued nodes. [2.5-verified offline]
-- So a hook that returns **1 without calling the original** makes a node
-  do what a disabled node does: nothing, no outputs, the phase stays
-  active. The engine keeps no trace of that signal: tandem holds it
-  (phase `NodePath` `+0x70`, node id, input socket CName) and gives it
-  back at the end of the freeze with the root phase's `ExecutePath`
-  (vfunc `+0x120`, under the quests system's lock `+0x60`, after
-  `QuestsSystem::CreateContext` 3144298192 `(sys, ctx, 1, 0, -1, -1)`:
-  Codeware's `QuestPhaseExecutor::ExecutePath`, used by its
-  `OpenWorldSystem`). [I] — whether every node resumes cleanly that way
-  is the in-game check.
+- So a hook returning **1 without calling the original** makes a node act
+  as a disabled one: nothing, no outputs, the phase stays active. The
+  engine keeps no trace of that signal: tandem holds it (phase `NodePath`
+  `+0x70`, node id, input socket CName) and gives it back when the freeze
+  ends with the root phase's `ExecutePath` (vfunc `+0x120`, under the
+  quests system's lock `+0x60`, after `QuestsSystem::CreateContext`
+  3144298192 `(sys, ctx, 1, 0, -1, -1)`: Codeware's
+  `QuestPhaseExecutor::ExecutePath`, used by its `OpenWorldSystem`). [I] —
+  whether every node resumes cleanly that way is the in-game check.
 - Per-phase filter: a phase is open-world when its resource
   (`phase+0x30` → `CResource.path` `+0x30`) or an ancestor's on
   `ctx.phaseStack` is one of Codeware's open-world phases
@@ -251,8 +250,8 @@ pass.
 - A guest presents the host's call through its own
   `PhoneSystem.TriggerCall` (`final.reds:240618`, private: reached from an
   `@addMethod`), which writes `UI_ComDevice.PhoneCallInformation` and the
-  `phonecall_*` fact; the fact is held back by a wrap of `SetPhoneFact`
-  (`:240841`) while a mirrored call is up. The HUD's answer goes through
+  `phonecall_*` fact; a wrap of `SetPhoneFact` (`:240841`) holds the fact
+  back while a mirrored call is up. The HUD's answer goes through
   `PickupPhoneRequest` → `OnPickupPhone` (`:240662`), wrapped to send it to
   the host. The incoming widget finds the contact by journal id
   (`GetIncomingContact`, `:409000`): a contact the guest's journal lacks
@@ -315,13 +314,13 @@ For private scenes (`plugin/src/engine/scenes.cpp`,
   property offset, logged at the first use: `scenes: sceneFile +…`]
 - No scene, node or resource field says "private", "romance" or
   "intimate", and the vanilla scripts never mention romance: the category
-  tag and the actors are the data there is. Romance state lives in quest
+  tag and the actors are the only data. Romance state lives in quest
   facts the scripts do not name. [2.5-verified offline: final.reds has no
   match]
 - A loaded resource by path: `ResourceLoader::FindToken` (address hash
   0xC86F39B7 = `res::ResourceLoader::TryAcquireResourceToken_NoLock` at
   0x14027d834 on 2.50; the SDK takes the loader's token lock around it).
-  Called from the game thread only. [2.5-verified offline]
+  Game thread only. [2.5-verified offline]
 - Hiding a puppet with a fade:
   `GameObject.ToggleForcedVisibilityInAnimSystemEvent(owner, source,
 visible, transitionTime)` (final.reds:14006, a

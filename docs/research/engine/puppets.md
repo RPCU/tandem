@@ -203,7 +203,7 @@ and `scripts/tandem/Movement.reds`.
   Knockdown 558466); values are `gamePSMDetailedLocomotionStates`
   (6855, 0..31: fits 5 bits). `Fall` (282014–282037) and `Landing`
   (558037–558115) are written too. [2.5-untested]
-- **Swimming** runs a separate high-level state (`gamePSMHighLevel.Swimming
+- **Swimming** is a separate high-level state (`gamePSMHighLevel.Swimming
 = 6`), with `Swimming` = `gamePSMSwimming` (6965: Surface 1, Diving 2,
   Climbing 3 = getting out); vanilla treats `Swimming <= 1` as at the
   surface (21410). `LocomotionDetailed` is then stale: the swim value wins.
@@ -213,20 +213,20 @@ and `scripts/tandem/Movement.reds`.
   198545). `IsInWorkspot` is an Int set to 1/0 on workspot enter/exit
   (549017, 549035); `Felled` a Bool set from the felled status (44692).
   [2.5-untested]
-- **`IsOnGround` has no script writer** (only listeners, 313710): if the
-  engine fills it is unknown, so it is not sent; the PSM scripts ask
+- **`IsOnGround` has no script writer** (only listeners, 313710): whether
+  the engine fills it is unknown, so it is not sent; the PSM scripts ask
   `StateGameScriptInterface.IsOnGround()` instead (247352, with
   `IsOnMovingPlatform()`, only inside a state). [2.5-untested]
-- **NPC bodies in water.** No NPC swimming exists in the scripts: an NPC
-  in water is a ragdoll or a corpse. `NPCPuppet.KillIfUnderwater` (128196)
+- **NPC bodies in water.** The scripts have no NPC swimming: an NPC in
+  water is a ragdoll or a corpse. `NPCPuppet.KillIfUnderwater` (128196)
   force-kills an NPC whose head slot is below
   `AIGeneralSettings.underwaterDepthKillThreshold` under the water level
   (`AIScriptUtils.GetWaterLevel`, 158907); it runs from the AI ragdoll
   behaviour (`AIRagdollDelegate.DoCheckWaterLevel`, 471005). Puppets are
   spared it (wrapped in Movement.reds). With the pose stream on, a puppet
   gets V's own swim and dive pose (every body bone and the hips' height),
-  so placement is the whole job; without it, no swim animation exists for
-  the body (the controller plays idle). Whether the engine lets an
+  so placement is the whole job; without it, the body has no swim
+  animation (the controller plays idle). Whether the engine lets an
   NPC-record body sit below the water surface (buoyancy, a character
   controller) is what the `movement-course` scenario will show. [2.5-untested]
 - **What the engine does with `GetDeltaTransform`** is not traced yet. The
