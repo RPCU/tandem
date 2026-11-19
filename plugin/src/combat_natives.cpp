@@ -238,13 +238,19 @@ struct TandemFight : Red::IScriptable {
   static std::int32_t StaleThrows() {
     return static_cast<std::int32_t>(Combat::Get().StaleThrows());
   }
-  // What the session said about hits since the last call.
+  // What the session said about hits since the last call (vendors and
+  // lending are kept for their own natives instead).
   static Red::DynArray<TandemFightEvent> TakeEvents() {
     Red::DynArray<TandemFightEvent> out;
     for (const auto &message : Combat::Get().TakeInbound()) {
       // Who may drive whose cars: kept here for the vehicle scripts.
       if (const auto *lend = std::get_if<proto::CarLend>(&message)) {
         Combat::Get().NoteLend(*lend);
+        continue;
+      }
+      // The session's vendors: kept here for Vendors.reds (TandemProgress).
+      if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
+        Combat::Get().NoteVendor(*vendor);
         continue;
       }
       if (auto event = EventOf(message); event.kind != 0)
