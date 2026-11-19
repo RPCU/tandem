@@ -83,7 +83,12 @@ game (whether health, damage and loot follow the stat).
   provoked it). An NPC that appears near a puppet sees it as friendly
   (our groups' default) for up to 2 s. The persistent setter would set
   the real group relations but writes the host's save: not used.
-  Vs are friends to each other. The puppet record drops what made it Panam:
+  Vs are friends to each other. Companions (the host's V's followers:
+  Jackie, Panam, Judy, Takemura) see a guest as V does, and on the host
+  take on whoever fights a guest (`TandemReactions.RallyCompanions`: an
+  NPC hitting a guest's puppet or hit by a guest becomes a threat to every
+  companion hostile to it); they follow the host's V only
+  (combat-coverage.md "Companions and allies"). The puppet record drops what made it Panam:
   her group and faction (Aldecaldos: anim wrappers, the scan's faction),
   her voice, her burning immunity and damage presets, and shows no NPC UI
   (`hideUIElements`, `hideUIDetection`): no detection indicator from the

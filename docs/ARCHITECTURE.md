@@ -135,6 +135,9 @@ The owner simulates; everyone else displays.
 | a V's time abilities (Sandevistan…) | that player's game | shown on the puppet; never slow anyone's world |
 | an NPC's speed in a time bubble | host | proxies animated at the same speed |
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
+| NPC melee at a V: whether it is blocked, parried, dodged | the V's game, at its proxy's swing | host's NPC decides to attack and recoils; `architecture/combat-coverage.md` |
+| a thrown object (grenade, knife, launcher round, smart round) | the thrower's game | a copy from the puppet that hurts nobody, ended where the real one ended |
+| the session's rules (friendly fire) | host (`tandem.ini`) | followed |
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
 | items a V drops on purpose | host | lie in every game; the first pickup keeps it |
 | quest and important items, rewards | every player's own V | whoever gets one, every V gets it |
@@ -262,6 +265,7 @@ plugin") and its open problems.
 - `time.md`: the pause menu, slowed time (time bubbles); open: every time dilation, other timeline and menu, NPC shots simulated by the target's game.
 - `npcs.md`: enemy level, NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
 - `combat.md`: hits, outcomes, game rules for every hit, quickhacks.
+- `combat-coverage.md`: every way of fighting (weapon classes, melee, block and parry, throwables, grenades, launchers, cyberware, quickhacks, environment, finishers) by attacker and target, with its state and evidence; thrown objects' copies, friendly fire, NPC melee at a guest, companions.
 - `stealth.md`: takedowns, finishers, carried bodies, "the player" reactions, per-player detection.
 - `loot.md`: per-player loot, dropped items, quest items.
 - `revive.md`: down, revive, respawn, shared game over.

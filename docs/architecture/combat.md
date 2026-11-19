@@ -82,10 +82,20 @@
   a guest's puppet or a guest's car copy and is not a strike (the guest's
   effects, explosions, collisions, computed there already) is dropped
   before its pipeline; on a guest, a proxy's own hit on our V (a death
-  explosion) is dropped (the host's NPC attacks, as `PlayerHit`). Our V's
+  explosion) is dropped (the host's NPC attacks, as `PlayerHit`); on every
+  game, a remote V's puppet deals no damage but through a strike or an
+  `AreaHit` (`TandemOutcomes.IsRemoteComputed`: the copies of its thrown
+  objects too), and on a guest a proxy deals none but the shots the host
+  asked it to fire at our V (`IsProxyComputed`, `TandemShots.IsSimulatedHit`;
+  until 2026-11-19 those were dropped too). Our V's
   explosion or pressure wave on another V's puppet (on any game) runs the
   attacker's side only and goes as `AreaHit`, through the host, to that
-  V's game, which runs it on its V from our puppet by its own rules.
+  V's game, which runs it on its V from our puppet by its own rules; so do
+  its shots and blades, all of it only while the session's rules allow
+  friendly fire (`Rules`, the host's `friendly_fire`, off by default:
+  combat-coverage.md). Every way of fighting, by attacker and target, with
+  its state: [combat-coverage.md](combat-coverage.md); thrown objects
+  (`Throw`, `ThrowEnd`) are there too.
   **Difficulty**: the host sends its `gameDifficulty` (`Difficulty`, kept
   for late joiners); a guest switches to it
   (`StatsDataSystem.SetDifficulty`) and back when the session ends. NPC
@@ -115,8 +125,12 @@
   `ProcessEffectiveRange`; armour penetration is the host's) and runs the
   rest by its own rules: armour, resistances, dodge, block and deflect,
   perks, difficulty, god mode, death, the attack record's status effects,
-  hit reaction, direction indicator and sounds. Not yet verified in game
-  (scenario `npcs-hurt-guest`). A hostile NPC a guest hits turns on that
+  hit reaction, direction indicator and sounds. A melee hit waits until the
+  NPC's proxy is drawn landing it (`TandemFight.MeleeHold`,
+  `combat::MeleeHoldUs`), so a block or parry is timed to the swing on the
+  guest's screen; one blocked or parried there makes the host's NPC recoil
+  (`Defended`). Not yet verified in game
+  (scenarios `npcs-hurt-guest`, `combat-melee-guest`, `combat-defend`). A hostile NPC a guest hits turns on that
   guest's puppet (`TargetTrackingExtension.InjectThreat`,
   `scripts/tandem/Reactions.reds`). Open: aggro of NPCs not yet hostile to
   them, loot, the proxy's own weapon (armour needs an attacking weapon
