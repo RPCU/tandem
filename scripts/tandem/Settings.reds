@@ -11,24 +11,24 @@ public class TandemSettings {
   // once, 1 from the next session, 2 after a restart.
   public static func Keys() -> array<String> {
     return [
-      "name", "friendly_fire", "notices", "markers", "nameplates", "recorder",
+      "name", "friendly_fire", "notices", "markers", "nameplates", "party_hud", "recorder",
       "relay", "relay_token", "story", "quest_freeze", "scene_privacy", "time_host"
     ];
   }
 
   private static func Labels() -> array<String> {
     return [
-      "Settings-Name", "Settings-FriendlyFire", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-Recorder",
+      "Settings-Name", "Settings-FriendlyFire", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud", "Settings-Recorder",
       "Settings-Relay", "Settings-RelayToken", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost"
     ];
   }
 
   private static func Kinds() -> array<Int32> {
-    return [2, 0, 1, 0, 1, 0, 2, 2, 0, 0, 0, 1];
+    return [2, 0, 1, 0, 1, 0, 0, 2, 2, 0, 0, 0, 1];
   }
 
   private static func Whens() -> array<Int32> {
-    return [1, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 1];
+    return [1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 1];
   }
 
   private static func IndexOf(key: String) -> Int32 {
@@ -180,6 +180,12 @@ public class TandemSettings {
       return 1;
     }
     return Equals(value, "off") ? 2 : 0;
+  }
+
+  // Off: no party list on the HUD (PartyHud.reds); the nameplates are
+  // `nameplates`' own. Read every frame.
+  public static func PartyHud() -> Bool {
+    return NotEquals(TandemNative.Setting("party_hud"), "off");
   }
 
   // The least important notice shown (TandemText.Importance): 0 all, 1 no

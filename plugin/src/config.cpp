@@ -99,12 +99,14 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
     } else
       return Bad("bad {} {}", key, value);
   } else if (key == "story" || key == "quest_freeze" || key == "recorder" ||
-             key == "recorder_pose" || key == "friendly_fire" || key == "markers") {
+             key == "recorder_pose" || key == "friendly_fire" || key == "markers" ||
+             key == "party_hud") {
     auto &flag = key == "story"           ? config.story
                  : key == "quest_freeze"  ? config.questFreeze
                  : key == "recorder"      ? config.recorder
                  : key == "friendly_fire" ? config.friendlyFire
                  : key == "markers"       ? config.markers
+                 : key == "party_hud"     ? config.partyHud
                                           : config.recorderPose;
     if (value == "on" || value == "true")
       flag = true;
@@ -253,6 +255,8 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return config.notices;
   if (key == "markers")
     return OnOff(config.markers);
+  if (key == "party_hud")
+    return OnOff(config.partyHud);
   if (key == "nameplates")
     return config.nameplates == presence::Nameplates::Always ? "always"
            : config.nameplates == presence::Nameplates::Off  ? "off"

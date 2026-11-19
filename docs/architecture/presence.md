@@ -121,7 +121,65 @@ the HUD layer (`scripts/tandem/PartyHud.reds`).
 | the marker's name | its world label | one name over a player: the marker's label hides while the nameplate shows (`TandemPartyHud.PlateShown`), and with `nameplates = off` | no flicker at 20 m |
 | photo mode, cinematics | — | all of it hidden in photo mode, when our own scene tier is 3 or more, in a braindance, with no session | hidden in both |
 
-### 5. Small presence details
+### 5. Layout: where the list sits, what it yields to
+
+"Make sure it doesn't overlap with holo call or anything else" (the user,
+2026-11-19). The list is ours on the game's HUD layer, not one of its
+modules, so it follows the game's own signals itself
+(`TandemPartyHud.Layout`, every frame). **Nothing here is measured on
+screen yet**: the places are first picks from the vanilla scripts and the
+HUD as it is played; scenario `hud-layout` screenshots every case for a
+person to check, and `presence hud at X Y` / `call-at X Y` move the two
+places without a rebuild.
+
+**Units.** The HUD layer's virtual window, in the HUD's own units: the
+window at the UI scale (`UISystem.GetCurrentWindowSize()` x
+`GetInverseUIScale()`): 3840 x 2160 at 16:9, wider at 21:9 (5160 x 2160 at
+3440 x 1440), taller at 16:10. The list is anchored top left, as the
+health bar is, so it keeps to the left edge at every aspect and scales with
+the UI. The nameplates are placed in the same units with the screen's own
+aspect (they assumed 16:9 before).
+
+**The vanilla widgets, by place, and the rule for each** (2.50 scripts:
+the controllers named, `inkHUDGameController.ShowRequest` / `HideRequest`
+toggling their root's visibility):
+
+<!-- prettier-ignore -->
+| Vanilla widget | Where | Shares space with the list? | Rule |
+| --- | --- | --- | --- |
+| health bar, buffs, cyberware cooldowns (`healthbarWidgetGameController`, `inkCooldownGameController`) | top left | the list sits under them (96, 340) | fixed: the list starts below them |
+| holocall / audio call portrait (`NewHudPhoneGameController`, `HoloAudioCallLogicController`) | left column, under the health bar | **yes** | while `UI_ComDevice.PhoneCallInformation` is in its `IncomingCall` or `StartCall` phase: the list moves below the portrait (96, 1080) and turns compact |
+| dialogue choice hub (`dialogWidgetGameController`), subtitles | right of centre; bottom centre | no | while `UIInteractions.DialogChoiceHubs` has a hub: compact in place (a conversation needs no arrow or distance) |
+| boss health bar (`BossHealthBarGameController`) | top centre | no, at any aspect from 16:10 to 32:9 | nothing to yield: logged (its root's visibility), the partners' health stays whole in a boss fight |
+| minimap, wanted level, quest tracker and objectives, district name (`MinimapContainerController`, `WantedBarGameController`, `QuestTrackerGameController`) | top right | no | none |
+| ammo and weapon (`WeaponRosterGameController`), input hints (`InputHintManagerGameController`, ours too) | bottom right | no | none |
+| hotkeys (phone, consumable, grenade, `HotkeysWidgetController`), radio toast (`HotkeyCustomRadioWidgetController`) | bottom left | below the list | the list never goes into the bottom 420 units (`BottomClear`): with more entries than fit, it hides ("no room"; 3 partners always fit) |
+| item, XP, level, journal, zone-alert toasts (`ItemsNotificationQueue`, `JournalNotificationQueue`, `LevelUpNotificationQueue`, `ZoneAlertNotificationQueue`) | right side, top centre | no | none |
+| our notices (the warning line) | top centre | no | none |
+| interaction prompts (`InteractionsHubGameController`), stealth indicator (`StealthIndicatorGameController`) | around the crosshair | no | none |
+| vehicle HUD (`hudCarController`: speed, gear) | bottom centre / right | no | none |
+| the whole HUD hidden (cinematic camera, the `Empty` UI context, a taxi ride: `DelamainTaxiSystem` pushes `UIGameContext.DelamainTaxi`) | — | — | when every module we follow (health bar, minimap, quest tracker, found on the HUD layer with Codeware's `GetGameControllers`, again every 2 s) is hidden, the list and the nameplates hide too; one module turned off in the game's settings does not count |
+
+**Compact**: the name, the bar, and the state line when there is one
+(Down, Reviving…); no arrow or distance; 12 units between entries instead
+of 28.
+
+**The setting**: `party_hud = on|off` (default `on`, the settings page,
+applied at once): off hides the list alone; nameplates are `nameplates`'
+own. **No input to toggle it in game**: every free action is a chord or a
+debug binding, the tag key already pings and links (`comms.md`), the phone
+key answers offers; and the vanilla HUD has no "hide HUD" key of its own to
+follow (2.50 hides it by context, which the list follows). The settings
+page is the toggle.
+
+**Test commands**: `presence hud holocall|boss|choices|hudhidden
+on|off|auto` force a case (auto: the game's word), `presence hud at X Y`,
+`presence hud call-at X Y`, `presence report` (the layout and why the list
+is hidden), `coop set party_hud on|off`. Each change of layout is logged:
+`hud: layout below the holocall (compact) at 96 1080, HUD 3840 x 2160,
+holocall up`; `hud: party list hidden (party_hud off)`.
+
+### 6. Small presence details
 
 <!-- prettier-ignore -->
 | Detail | Verdict |
@@ -133,7 +191,7 @@ the HUD layer (`scripts/tandem/PartyHud.reds`).
 | swimming, ladders | Placement done by the movement work; now a ladder is heard rung by rung and water is silent. Swim strokes and splashes: **open** |
 | holstering | Seen through `Held` (the hand empties); now heard |
 
-### 6. Names
+### 7. Names
 
 - **A pseudo for everyone** (`tandem.ini name`, default `V`): the co-op
   menu asks for one in the game's own text popup (Codeware's
@@ -197,6 +255,7 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | `presence-audio` | footsteps (their source), the shot and its bullet, pain and the flinch, holster and draw |
 | `presence-moves` | jump, landing, climb, the blade's swing and its impact |
 | `presence-hud` | the entry, health, menu, down, off screen with its arrow, the nameplate; logs the camera's projection |
+| `hud-layout` | screenshots of each case: the list under the health bar, below a holocall (compact), with the boss bar, with the choice hub (compact), the game's HUD hidden, `party_hud = off` |
 | `hud-linked` | a linked partner's entry with health, its plate the name alone; the link broken from its side: no entry, the plate stays; `nameplates = always`; a vanish takes plate and marker |
 | `names-prompt` | the pause menu's Host this game asks for a name while it is V; a bad one asked again; a good one saved, then hosting |
 | `names-duplicate` | two mock players named V and v beside our V: shown as V (2) and v (3), each told its own, markers and HUD entries under those names |

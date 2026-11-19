@@ -502,6 +502,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-Nameplates", "Names over players");
     this.Text("Tandem-Settings-Nameplates-Near", "close by");
     this.Text("Tandem-Settings-Nameplates-Always", "at any distance");
+    this.Text("Tandem-Settings-PartyHud", "Party list (linked partners' health)");
     this.Text("Tandem-Settings-Recorder", "Recorder");
     this.Text("Tandem-Settings-Relay", "Relay");
     this.Text("Tandem-Settings-RelayToken", "Relay host token");
@@ -777,6 +778,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-Nameplates", "Noms au-dessus des joueurs");
     this.Text("Tandem-Settings-Nameplates-Near", "de près");
     this.Text("Tandem-Settings-Nameplates-Always", "à toute distance");
+    this.Text("Tandem-Settings-PartyHud", "Liste du groupe (santé des partenaires liés)");
     this.Text("Tandem-Settings-Recorder", "Enregistreur");
     this.Text("Tandem-Settings-Relay", "Relais");
     this.Text("Tandem-Settings-RelayToken", "Jeton d'hôte du relais");

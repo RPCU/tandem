@@ -61,8 +61,8 @@
   `#` is refused) through a file written aside, and applies it.
   `TandemNative.Setting(key)` reads one back.
 - **When it applies**: at once for `recorder`, `friendly_fire`, `notices`,
-  `markers`, `nameplates` (the scripts read them as they need them; the
-  nameplates every frame);
+  `markers`, `nameplates`, `party_hud` (the scripts read them as they need
+  them; the nameplates and the party list every frame);
   `name`, `relay`, `relay_token`, `story`, `time_host` are what a running
   session was set up with, so a change during one waits for its end (the
   label says "from the next session"); `quest_freeze` and `scene_privacy`
@@ -77,7 +77,8 @@
   went wrong (`TandemText.Importance`); every notice is logged either way.
   `markers = off` takes the other players' markers off (HUD, minimap, map);
   `nameplates` cycles near (to 12 m), always (any distance, smaller and
-  fainter) and off (no name over them, the marker's label neither); a
+  fainter) and off (no name over them, the marker's label neither);
+  `party_hud = off` hides the party list (`presence.md`, Layout); a
   tandem.ini of before with `on` reads as near. The name's popup says its
   rules ("1 to 16 characters…", `Name-Ask`) and a refusal why
   (`Name-Invalid`); `tandem.ini`'s parser checks it (`names::Clean`) and

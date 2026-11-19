@@ -23,7 +23,14 @@
 // ones while our V talks, scene tier 2), off.
 //
 // Hidden in photo mode, in cinematic scenes (our tier 3 and up), in a
-// braindance and when we are not in a session.
+// braindance, when the game hides its own HUD and when we are not in a
+// session; the list alone with party_hud = off.
+//
+// The list's place (presence.md, Layout): top left under the game's health
+// bar and buffs; below the holocall, compact, while a call is up; compact
+// while the dialogue choice hub is up; hidden when there is no room. The
+// HUD's units are the window's at the UI scale, so the list keeps to the
+// left edge at any aspect, as the health bar does.
 
 public class TandemPartyEntry {
   public let player: Uint32;
@@ -65,6 +72,26 @@ public class TandemPartyHud {
   private let m_now: Float;
   // Our V's scene tier, as Hidden read it.
   private let m_tier: Int32;
+  // Below a holocall (HUD units, top left).
+  private let m_callLeft: Float;
+  private let m_callTop: Float;
+  // What the list yields to now (Layout), as last logged; shown or why not.
+  private let m_layout: String;
+  private let m_compact: Bool;
+  private let m_listOn: Bool;
+  private let m_listWhy: String;
+  // The test commands' cases (presence hud holocall|boss|choices|hudhidden
+  // on|off|auto): -1 auto, 0 off, 1 on.
+  private let m_force: array<Int32>;
+  // The game's HUD modules (Scan).
+  private let m_scannedAt: Float;
+  private let m_boss: wref<inkWidget>;
+  private let m_modules: array<wref<inkWidget>>;
+  private let m_modulesLogged: Int32;
+  // The HUD in its own units, and the screen's aspect (Measure).
+  private let m_width: Float;
+  private let m_height: Float;
+  private let m_aspect: Float;
 
   public static func BarWidth() -> Float {
     return 420.0;
@@ -76,7 +103,17 @@ public class TandemPartyHud {
     // 3840 x 2160 whatever the screen).
     this.m_left = 96.0;
     this.m_top = 340.0;
+    // Below the holo portrait, which takes the left column under the
+    // health bar (a first pick: presence.md, Layout, to check on screen).
+    this.m_callLeft = 96.0;
+    this.m_callTop = 1080.0;
     this.m_why = "no session";
+    this.m_listOn = true;
+    this.m_modulesLogged = -1;
+    this.m_force = [-1, -1, -1, -1];
+    this.m_width = 3840.0;
+    this.m_height = 2160.0;
+    this.m_aspect = 16.0 / 9.0;
   }
 
   public func Stop() -> Void {
@@ -351,13 +388,160 @@ public class TandemPartyHud {
     }
   }
 
+  // ---- where the list sits, and what it yields to (presence.md, Layout) ----
+
+  // The space kept free above the bottom left corner: the game's hotkeys
+  // (phone, consumable, grenade) and its radio toast.
+  public static func BottomClear() -> Float {
+    return 420.0;
+  }
+
+  // How tall an entry is, full (name, bar, state, where) or compact (name,
+  // bar, and the state when there is one).
+  public static func EntryHeight(compact: Bool) -> Float {
+    return compact ? 110.0 : 170.0;
+  }
+
+  // A test command's answer for case `i` (0 holocall, 1 boss bar, 2 choice
+  // hub, 3 the game's HUD hidden), else what the game says.
+  private func Forced(i: Int32, auto: Bool) -> Bool {
+    let forced = this.m_force[i];
+    return forced < 0 ? auto : forced == 1;
+  }
+
+  // A holocall or an audio call is up (the phone's own blackboard: the
+  // phase NewHudPhoneGameController shows its holo for).
+  private func HoloCall() -> Bool {
+    let board = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().UI_ComDevice);
+    if !IsDefined(board) {
+      return false;
+    }
+    let value = board.GetVariant(GetAllBlackboardDefs().UI_ComDevice.PhoneCallInformation);
+    if !IsDefined(value) {
+      return false;
+    }
+    let call = FromVariant<PhoneCallInformation>(value);
+    return Equals(call.callPhase, questPhoneCallPhase.IncomingCall) || Equals(call.callPhase, questPhoneCallPhase.StartCall);
+  }
+
+  // The dialogue choice hub is up (dialogWidgetGameController's blackboard).
+  private func Choices() -> Bool {
+    let board = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().UIInteractions);
+    if !IsDefined(board) {
+      return false;
+    }
+    let value = board.GetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs);
+    if !IsDefined(value) {
+      return false;
+    }
+    let hubs = FromVariant<DialogChoiceHubs>(value);
+    return ArraySize(hubs.choiceHubs) > 0;
+  }
+
+  // The game's HUD modules on the HUD layer (Codeware's controllers), found
+  // again every 2 s: the boss bar, and the health bar, minimap and quest
+  // tracker whose visibility says whether the game shows its HUD.
+  private func Scan(now: Float) -> Void {
+    if this.m_scannedAt > 0.0 && now >= this.m_scannedAt && now - this.m_scannedAt < 2.0 {
+      return;
+    }
+    this.m_scannedAt = now;
+    this.m_boss = null;
+    ArrayClear(this.m_modules);
+    let layer = GameInstance.GetInkSystem().GetLayer(n"inkHUDLayer");
+    if !IsDefined(layer) {
+      return;
+    }
+    for controller in layer.GetGameControllers() {
+      let module = controller as inkGameController;
+      if IsDefined(module) {
+        if IsDefined(module as BossHealthBarGameController) {
+          this.m_boss = module.GetRootWidget();
+        } else if IsDefined(module as healthbarWidgetGameController) || IsDefined(module as MinimapContainerController) || IsDefined(module as QuestTrackerGameController) {
+          ArrayPush(this.m_modules, module.GetRootWidget());
+        }
+      }
+    }
+    if this.m_modulesLogged != ArraySize(this.m_modules) {
+      this.m_modulesLogged = ArraySize(this.m_modules);
+      TandemNative.Log(s"hud: the game's HUD modules followed: \(ArraySize(this.m_modules)) (health bar, minimap, quest tracker), boss bar \(IsDefined(this.m_boss) ? "found" : "not found")");
+    }
+  }
+
+  // The game hides its whole HUD (cinematic camera, the empty context, a
+  // taxi ride...): every module we follow is hidden. One module turned off
+  // in the game's settings does not count.
+  private func GameHudHidden() -> Bool {
+    if ArraySize(this.m_modules) == 0 {
+      return false;
+    }
+    for module in this.m_modules {
+      if IsDefined(module) && module.IsVisible() {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // The HUD's size in its own units (the window at the UI scale: 3840 x
+  // 2160 at 16:9, wider at 21:9, taller at 16:10) and the screen's aspect.
+  private func Measure() -> Void {
+    let ui = GameInstance.GetUISystem(this.m_game);
+    let window = ui.GetCurrentWindowSize();
+    let inverse = ui.GetInverseUIScale();
+    if window.X > 0.0 && window.Y > 0.0 && inverse > 0.0 {
+      this.m_aspect = window.X / window.Y;
+      this.m_width = window.X * inverse;
+      this.m_height = window.Y * inverse;
+    } else {
+      this.m_aspect = 16.0 / 9.0;
+      this.m_width = 3840.0;
+      this.m_height = 2160.0;
+    }
+  }
+
+  // Where the list goes this frame, compact or not, shown or not.
+  private func Layout(linked: Int32) -> Void {
+    this.Measure();
+    let call = this.Forced(0, this.HoloCall());
+    let boss = this.Forced(1, IsDefined(this.m_boss) && this.m_boss.IsVisible());
+    let choices = this.Forced(2, this.Choices());
+    let compact = call || choices;
+    let left = call ? this.m_callLeft : this.m_left;
+    let top = call ? this.m_callTop : this.m_top;
+    let why = "";
+    if !TandemSettings.PartyHud() {
+      why = "party_hud off";
+    } else if top + Cast<Float>(linked) * TandemPartyHud.EntryHeight(compact) > this.m_height - TandemPartyHud.BottomClear() {
+      why = "no room";
+    }
+    this.m_compact = compact;
+    this.m_listOn = Equals(why, "");
+    this.m_root.SetMargin(new inkMargin(left, top, 0.0, 0.0));
+    let place = call ? "below the holocall" : "under the health bar";
+    let yields = (call ? ", holocall up" : "") + (choices ? ", choice hub up" : "") + (boss ? ", boss bar up (top centre: nothing to yield)" : "");
+    let layout = s"\(place) (\(compact ? "compact" : "full")) at \(left) \(top), HUD \(RoundF(this.m_width)) x \(RoundF(this.m_height))\(yields)";
+    if NotEquals(layout, this.m_layout) {
+      this.m_layout = layout;
+      TandemNative.Log(s"hud: layout \(layout)");
+    }
+    if NotEquals(why, this.m_listWhy) {
+      this.m_listWhy = why;
+      TandemNative.Log(Equals(why, "") ? "hud: party list shown" : s"hud: party list hidden (\(why))");
+    }
+  }
+
   // ---- every frame of the session ----
 
   // Why the HUD of ours is hidden now ("": it is shown).
-  private func Hidden(you: Uint32, count: Int32) -> String {
+  private func Hidden(you: Uint32, count: Int32, now: Float) -> String {
     this.m_tier = 0;
     if you == 0u || count == 0 {
       return "no session";
+    }
+    this.Scan(now);
+    if this.Forced(3, this.GameHudHidden()) {
+      return "the game's HUD is hidden";
     }
     let presence = TandemPresenceSync.Of(this.m_game);
     if GameInstance.GetPhotoModeSystem(this.m_game).IsPhotoModeActive() || (IsDefined(presence) && presence.InPhotoMode()) {
@@ -391,14 +575,14 @@ public class TandemPartyHud {
       photo = true;
     }
     let show = this.m_visible && !photo;
-    this.m_root.SetVisible(show);
+    this.m_root.SetVisible(show && this.m_listOn);
     this.m_plates.SetVisible(show);
   }
 
   public func Tick(now: Float, system: ref<TandemSystem>, you: Uint32) -> Void {
     this.m_now = now;
     let players = system.PuppetPlayers();
-    let why = this.Hidden(you, ArraySize(players));
+    let why = this.Hidden(you, ArraySize(players), now);
     if NotEquals(why, this.m_why) {
       this.m_why = why;
       TandemNative.Log(Equals(why, "") ? s"hud: party shown (\(ArraySize(players)) partners)" : s"hud: party hidden (\(why))");
@@ -408,6 +592,13 @@ public class TandemPartyHud {
       this.Apply();
       return;
     }
+    let linkedCount = 0;
+    for player in players {
+      if TandemCommsNative.LinkState(player) == 3 {
+        linkedCount += 1;
+      }
+    }
+    this.Layout(linkedCount);
     this.Apply();
     if !this.m_visible {
       return;
@@ -446,6 +637,7 @@ public class TandemPartyHud {
       // name over the head alone.
       let linked = TandemCommsNative.LinkState(player) == 3;
       entry.root.SetVisible(linked);
+      entry.root.SetMargin(new inkMargin(0.0, 0.0, 0.0, this.m_compact ? 12.0 : 28.0));
       let left = IsDefined(revive) ? revive.HoldLeft(player) : -1.0;
       entry.name.SetText(TandemPartyHud.NameOf(player));
       entry.bar.SetSize(new Vector2(TandemPartyHud.BarWidth() * ClampF(health, 0.0, 1.0), 10.0));
@@ -459,7 +651,7 @@ public class TandemPartyHud {
       let bearing = TandemPresence.Bearing(camera, forward, half, where);
       let hiddenBody = TandemVisibility.IsHidden(this.m_game, player);
       let off = !bearing.inView || hiddenBody;
-      entry.where.SetVisible(linked && off);
+      entry.where.SetVisible(linked && off && !this.m_compact);
       let metres = TandemPresence.RoundedMetres(bearing.distance);
       if linked && off {
         entry.arrow.SetRotation(Rad2Deg(bearing.angle));
@@ -470,7 +662,7 @@ public class TandemPartyHud {
       // while our V talks), or off.
       let head = where;
       head.Z += 2.0;
-      let point = TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, 16.0 / 9.0, head);
+      let point = TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, this.m_aspect, head);
       let mode = plates;
       if mode == 1 && this.m_tier >= 2 {
         mode = 0;
@@ -481,7 +673,7 @@ public class TandemPartyHud {
       entry.plateNow = plateOn;
       if plateOn {
         let scale = TandemPresence.NameplateScale(bearing.distance, mode);
-        entry.plate.SetMargin(new inkMargin(point.x * 3840.0, point.y * 2160.0, 0.0, 0.0));
+        entry.plate.SetMargin(new inkMargin(point.x * this.m_width, point.y * this.m_height, 0.0, 0.0));
         entry.plate.SetOpacity(opacity);
         entry.plate.SetScale(new Vector2(scale, scale));
         entry.plateName.SetText(TandemPartyHud.NameOf(player));
@@ -547,6 +739,14 @@ public class TandemPartyHud {
     } else if Equals(command, "fov v") || Equals(command, "fov h") {
       this.m_fovVertical = Equals(command, "fov v");
       TandemNative.Log(s"hud: the camera's field of view read as \(this.m_fovVertical ? "vertical" : "horizontal")");
+    } else if StrBeginsWith(command, "call-at ") {
+      // presence hud call-at X Y: where the list goes below a holocall.
+      let rest = StrAfterFirst(command, "call-at ");
+      this.m_callLeft = StringToFloat(StrBeforeFirst(rest, " "));
+      this.m_callTop = StringToFloat(StrAfterFirst(rest, " "));
+      TandemNative.Log(s"hud: below a holocall, the list goes at \(this.m_callLeft) \(this.m_callTop)");
+    } else if this.ForceCommand(command) {
+      return;
     } else if Equals(command, "camera") {
       // What the engine's own projection says of each puppet's head, next
       // to ours: one run settles the field of view's convention.
@@ -570,7 +770,25 @@ public class TandemPartyHud {
     }
   }
 
+  // presence hud holocall|boss|choices|hudhidden on|off|auto: force a case
+  // the list yields to (scenario hud-layout screenshots each).
+  private func ForceCommand(command: String) -> Bool {
+    let cases = ["holocall", "boss", "choices", "hudhidden"];
+    let i = 0;
+    while i < ArraySize(cases) {
+      if StrBeginsWith(command, cases[i] + " ") {
+        let value = StrAfterFirst(command, " ");
+        this.m_force[i] = Equals(value, "on") ? 1 : (Equals(value, "off") ? 0 : -1);
+        TandemNative.Log(s"hud: \(cases[i]) forced \(Equals(value, "on") || Equals(value, "off") ? value : "auto")");
+        return true;
+      }
+      i += 1;
+    }
+    return false;
+  }
+
   public func Report() -> Void {
+    TandemNative.Log(s"hud: layout \(this.m_layout); list \(this.m_listOn ? "shown" : s"hidden (\(this.m_listWhy))")");
     let modes = ["near", "always", "off"];
     TandemNative.Log(s"hud: party \(this.m_visible ? "shown" : s"hidden (\(this.m_why))"), \(ArraySize(this.m_entries)) entries, widget \(IsDefined(this.m_root) ? "built" : "not built"), at \(this.m_left) \(this.m_top), nameplates \(modes[TandemSettings.NameplateMode()])");
     for entry in this.m_entries {

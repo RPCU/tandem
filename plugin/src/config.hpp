@@ -52,6 +52,7 @@
 //   nameplates = near    ; the name over the other players: near (to 12 m, gone at
 //                        ; 20 m), always (any distance in view, smaller and fainter
 //                        ; far away), off (on: near)
+//   party_hud = on       ; off: no party list (linked partners' health) on the HUD
 // The settings page (scripts/tandem/Coop.reds) changes some of them while the
 // game runs and saves them here (TandemNative.SetSetting, tandem/settings.hpp).
 //   leave = stay         ; a guest out of a session, once its own world is back
@@ -125,6 +126,7 @@ struct Config {
   std::string notices{"all"};
   bool markers{true};
   presence::Nameplates nameplates{presence::Nameplates::Near};
+  bool partyHud{true};
   // Where it was read from (the settings page writes there).
   std::filesystem::path file;
   // What a guest's game does once it is out of a session (Saves.reds).

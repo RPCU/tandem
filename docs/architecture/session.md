@@ -93,7 +93,7 @@ idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
   `pings` (`comms.md`); `relay`,
   `relay_token`, `join` for the relay and join codes; `recorder`,
   `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`, see
-  `recordings.md`; `friendly_fire`, `notices`, `markers`, `nameplates`,
+  `recordings.md`; `friendly_fire`, `notices`, `markers`, `nameplates`, `party_hud`,
   which the co-op menu's Settings page changes with some of the others,
   `coop-menu.md`): the defaults, and the test harness's session. The
   default is solo. Every key with its default is in `dist/tandem.ini`

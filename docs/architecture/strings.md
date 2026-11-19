@@ -493,6 +493,7 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Settings-Nameplates` | Names over players | Noms au-dessus des joueurs | Settings.reds |
 | `Settings-Nameplates-Near` | close by | de près | Settings.reds |
 | `Settings-Nameplates-Always` | at any distance | à toute distance | Settings.reds |
+| `Settings-PartyHud` | Party list (linked partners' health) | Liste du groupe (santé des partenaires liés) | Settings.reds |
 | `Settings-Recorder` | Recorder | Enregistreur | Settings.reds |
 | `Settings-Relay` | Relay | Relais | Settings.reds |
 | `Settings-RelayToken` | Relay host token | Jeton d'hôte du relais | Settings.reds |
