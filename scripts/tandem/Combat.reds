@@ -351,6 +351,11 @@ private final func ProcessInstantKill(hitEvent: ref<gameHitEvent>) {
 @wrapMethod(NPCPuppet)
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
   let result = wrappedMethod(evt);
+  // A V is never crippled or dismembered (Outcomes.reds KeepsLimbs).
+  if IsDefined(evt.staticData) && TandemOutcomes.IsLimbEffect(evt.staticData) && TandemOutcomes.KeepsLimbs(this, s"status effect \(TDBID.ToStringDEBUG(evt.staticData.GetID()))") {
+    StatusEffectHelper.RemoveStatusEffect(this, evt.staticData.GetID());
+    return result;
+  }
   if evt.isNewApplication && !evt.isAppliedOnSpawn && IsDefined(evt.staticData) {
     let player = GetPlayer(this.GetGame());
     if IsDefined(player) && evt.instigatorEntityID == player.GetEntityID() {

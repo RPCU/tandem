@@ -713,7 +713,19 @@ redscript natives (UI, events)              ENet socket
   (`StrikeLoss`: instant kill, 1 HP left of the host's health, the
   minimum health, 1 % for an immortal; the poise as vanilla's
   `PostProcess` does) and sends the game's `gameDamageReceivedEvent`. The
-  host's invulnerability and death checks still run. So the real NPC
+  host's invulnerability and death checks still run. A lethal strike
+  kills the NPC (`Kill`, the guest's puppet as killer: the health pool
+  alone stops at the defeat mechanic's 0.1 %, and the strike's hit
+  reaction did not finish it off, 2026-11-19), and its limb is cut by the
+  hit reaction's own rules (a forced dismemberment, an explosion, or a
+  blade's melee kill on the part it landed on; clean for blades). **A V
+  keeps its limbs**: vanilla's V has no hit reaction or dismemberment
+  component, but a puppet is an NPC body with both and no record field or
+  stat to turn them off, so on every game a V (ours, a puppet) refuses the
+  hit reaction's wounds and dismemberment, every dismemberment request and
+  event (explosion, guts) and the crippled and dismembered status effects
+  (`TandemOutcomes.KeepsLimbs`; scenario `outcomes-limbs`, `tools/game.sh
+cmd puppet limbs`). So the real NPC
   plays its own hit reaction by body part, weak spot and strength (frame
   damage from the puppet's weapon's factors), its wounds and
   dismemberment, its damage history names the guest's puppet (kill
