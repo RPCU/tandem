@@ -48,6 +48,7 @@ func mustReply(t *testing.T, out outgoing, ok bool) Reply {
 
 func TestHostNeedsAToken(t *testing.T) {
 	s := newServer(t)
+	s.cfg.Open = false // --require-token
 	r := mustHandle(t, s, hostA, RegisterHost(secret, [TokenSize]byte{}), time.Now())
 	if r.Error != ErrBadToken {
 		t.Fatalf("got %+v", r)

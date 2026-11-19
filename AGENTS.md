@@ -240,6 +240,10 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   answered from an unregistered address (a redirect is such an answer). An
   introduction (two answers to one request) goes only to members of the
   requester's own session, both together smaller than the request.
+- Open by default: a host with no token pays a proof of work per session
+  (a stateless challenge, answered smaller than its request) and is capped
+  (sessions per source and in all, bandwidth per guest link); a token
+  bypasses it, `--require-token` closes the relay (`relay/internal/relay/open.go`).
 - Behind a PROXY v2 tunnel (`--proxy-protocol`, playit.gg): only
   `--trusted-proxies` speak for clients, and every rule about a player
   (lookup limits, `Observed`, `Introduce`) uses the header's address, the

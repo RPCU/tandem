@@ -1,14 +1,23 @@
 # tandem-relay on a home server or a small VPS (docs/relay.md).
 #
 #   install -m 0755 tandem-relay /usr/local/bin/tandem-relay
-#   install -d -m 0700 /etc/tandem-relay
-#   tandem-relay token > /etc/tandem-relay/host-tokens   # one line per host
-#   chmod 0600 /etc/tandem-relay/host-tokens
 #   install -m 0644 tandem-relay.service /etc/systemd/system/
 #   systemctl daemon-reload && systemctl enable --now tandem-relay
 #
-# The token file is read once, at start: `systemctl restart tandem-relay`
-# after changing it (running sessions end; games reconnect by themselves).
+# Open to anyone, with the open mode's limits (docs/relay.md). Host tokens
+# (optional: their holders bypass the limits; required with
+# --require-token) come with a drop-in, `systemctl edit tandem-relay`:
+#
+#   [Service]
+#   ExecStart=
+#   ExecStart=/usr/local/bin/tandem-relay serve --udp=:27460 \
+#     --http=127.0.0.1:8080 --host-tokens=%d/host-tokens
+#   LoadCredential=host-tokens:/etc/tandem-relay/host-tokens
+#
+# after `install -d -m 0700 /etc/tandem-relay; tandem-relay token >
+# /etc/tandem-relay/host-tokens; chmod 0600 /etc/tandem-relay/host-tokens`.
+# The token file is read once, at start: restart the relay after changing
+# it (running sessions are held and come back by themselves).
 [Unit]
 Description=tandem-relay: UDP relay for tandem co-op sessions
 Documentation=https://github.com/Banh-Canh/tandem
@@ -21,14 +30,13 @@ Wants=network-online.target
 ExecStart=/usr/local/bin/tandem-relay serve \
   --udp=:27460 \
   --http=127.0.0.1:8080 \
-  --host-tokens=%d/host-tokens
-# The tokens stay root's: the service gets its own read-only copy.
-LoadCredential=host-tokens:/etc/tandem-relay/host-tokens
+  --host-tokens=
 Restart=on-failure
 RestartSec=2
 
 # No user to create, nothing to write, nothing to gain: the relay needs a
-# UDP socket, a TCP socket and its token file.
+# UDP socket, a TCP socket and (with the drop-in) its token file, the
+# service's own read-only copy of root's.
 DynamicUser=yes
 NoNewPrivileges=yes
 CapabilityBoundingSet=
