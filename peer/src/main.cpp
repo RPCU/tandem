@@ -2338,7 +2338,16 @@ int main(int argc, char **argv) {
            std::pair<std::chrono::steady_clock::time_point, tandem::proto::WorldItem>>
       toTake;
   std::map<tandem::proto::NpcId, std::chrono::steady_clock::time_point> corpses;
-  std::optional<PlayerState> otherV; // the last state heard of another player
+  std::optional<PlayerState> otherV; // the last state heard of the player we follow
+  // The one other player mirror and front copy, and otherV is of: the
+  // lowest id but ours (a guest follows the host), so a second mock player
+  // in the session is not copied too.
+  const auto followed = [&] {
+    for (const auto &[id, info] : endpoint->Players())
+      if (id != endpoint->You())
+        return id;
+    return tandem::proto::kNoPlayer;
+  };
 
   // The NPC world of a replay (--replay) or a recorded session
   // (--play-session) as this host sends it: an NPC a guest killed is out of
@@ -2427,8 +2436,10 @@ int main(int argc, char **argv) {
               Log("= player {} ({}) is back", e.player.id, e.player.name);
             else if constexpr (std::is_same_v<E, tandem::events::RemoteState>) {
               ++heard;
-              puppeteer.Heard(e.state);
-              otherV = e.state;
+              if (e.state.player == followed()) {
+                puppeteer.Heard(e.state);
+                otherV = e.state;
+              }
               if (!options.savePathFile.empty())
                 savedPath.Add(e.state);
               if (!firstRemote)
@@ -2689,11 +2700,13 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteShot>) {
               ++heardShots;
               Log("player {}: weapon event {}", e.shot.player, e.shot.effect);
-              if (options.mode == Mode::Mirror || options.mode == Mode::Front)
+              if ((options.mode == Mode::Mirror || options.mode == Mode::Front) &&
+                  e.shot.player == followed())
                 endpoint->SendLocalShot(e.shot);
             } else if constexpr (std::is_same_v<E, tandem::events::RemotePose>) {
               ++heardPoses;
-              puppeteer.HeardPose(e.pose);
+              if (e.pose.player == followed())
+                puppeteer.HeardPose(e.pose);
             } else if constexpr (std::is_same_v<E, tandem::events::NpcHackBy>) {
               // As the host of a replay: the NPC is being hacked for that long.
               Log("player {} uploads {:#x} on npc {} ({} ms)", e.hack.player, e.hack.action,

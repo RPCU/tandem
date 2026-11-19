@@ -30,6 +30,10 @@ inline constexpr std::size_t kChannelCount = 3;
 
 using PlayerId = std::uint32_t;
 inline constexpr PlayerId kNoPlayer = 0;
+// Player ids are 1 (the host) to kMaxPlayerId: the host hands guests 2..8
+// in turn, skipping the ones in use, so every id is one bit of a byte
+// (NpcEntry::detected) however many players came and went.
+inline constexpr PlayerId kMaxPlayerId = 8;
 
 // A V's body type: it picks the puppet's rig, so it is known before spawning.
 enum class Body : std::uint8_t {

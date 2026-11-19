@@ -16,6 +16,8 @@
 #                          with these extra tandem.ini keys (restarts
 #                          only when needed: tools/game.sh ensure)
 #   peer ARGS...           (re)start the mock player
+#   peer2 ARGS...          a second mock player beside the first (more than
+#                          two players; its log .cache/peer2.log)
 #   play NAME ARGS...      the mock player joins and replays a real V's play,
 #                          recordings/play/NAME.tplay (tools/game.sh
 #                          fetch-play), our V first teleported beside where it
@@ -32,6 +34,7 @@
 #                          30 s); fails at once if the watchdog reports a
 #                          silent game thread
 #   expect_peer REGEX [SECS]  the same in the mock player's log
+#   expect_peer2 REGEX [SECS] the same in the second mock player's log
 #   reject REGEX           no such game log line so far
 #   pause SECS             let time pass (still watching for a stall)
 #   shot NAME              a screenshot kept with the results
@@ -108,6 +111,11 @@ peer() {
   $game peer "$@" | sed 's/^/  /'
   peer_mark=0
 }
+peer2() {
+  mkdir -p .cache
+  nohup build/linux/peer/tandem-peer "$@" >.cache/peer2.log 2>&1 &
+  echo "  second mock player: $* (.cache/peer2.log)"
+}
 cmd() { $game cmd "$*" >/dev/null || fail "command not taken: $*"; }
 reset() {
   local result status=0
@@ -183,16 +191,17 @@ expect() {
   fail "no '$pattern' in the game log within $timeout s"
 }
 expect_peer() {
-  local pattern=$1 timeout=${2:-30} start=$SECONDS
+  local pattern=$1 timeout=${2:-30} start=$SECONDS log=${3:-.cache/peer.log} from=${4:-$peer_mark}
   while ((SECONDS - start < timeout)); do
-    if tail -n +$((peer_mark + 1)) .cache/peer.log 2>/dev/null | grep -qE "$pattern"; then
-      echo "  ok (peer): $pattern"
+    if tail -n +$((from + 1)) "$log" 2>/dev/null | grep -qE "$pattern"; then
+      echo "  ok ($(basename "$log" .log)): $pattern"
       return 0
     fi
     sleep 1
   done
-  fail "no '$pattern' in the mock player's log within $timeout s"
+  fail "no '$pattern' in $log within $timeout s"
 }
+expect_peer2() { expect_peer "$1" "${2:-30}" .cache/peer2.log 0; }
 reject() {
   if since | grep -qE "$1"; then
     fail "unexpected: $(since | grep -E "$1" | head -1 | cut -c1-160)"

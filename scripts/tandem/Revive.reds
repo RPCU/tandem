@@ -58,9 +58,13 @@ public class TandemRevive {
   private let m_lost: Bool;
   private let m_lossesSeen: Int32;
   private let m_backInSession: Bool;
-  // Someone reviving us, since when.
+  // Someone reviving us, since when: the one our bar shows. With more
+  // players, everyone reviving us (the bar goes to the next when its
+  // reviver stops), and since when.
   private let m_reviver: Uint32;
   private let m_reviverAt: Float;
+  private let m_revivers: array<Uint32>;
+  private let m_reviverStarts: array<Float>;
   // Out: since when the partner we respawn beside has been out of combat.
   private let m_calmSince: Float;
   // Since when nobody else is in the session.
@@ -261,7 +265,7 @@ public class TandemRevive {
     this.CancelHold("the session ended");
     this.HidePrompt();
     this.HideBar(false);
-    this.m_reviver = 0u;
+    this.ClearRevivers();
     if !this.m_lost {
       this.DieIfDown("the session ended");
     }
@@ -342,7 +346,7 @@ public class TandemRevive {
     this.m_downAt = this.m_now;
     this.m_release = false;
     this.m_ours = false;
-    this.m_reviver = 0u;
+    this.ClearRevivers();
     this.m_calmSince = -1.0;
     this.m_aloneSince = -1.0;
     this.m_backInSession = false;
@@ -371,10 +375,13 @@ public class TandemRevive {
       this.RevivedBy(player, revive.player, revive.step);
     }
     // Our reviver vanished (no word from it: it left, crashed, was cut off).
-    if this.m_reviver != 0u && !ArrayContains(others, this.m_reviver) {
-      TandemNative.Log(s"revive: our reviver (player \(this.m_reviver)) is gone");
-      this.m_reviver = 0u;
-      this.HideBar(false);
+    let r = ArraySize(this.m_revivers) - 1;
+    while r >= 0 {
+      if !ArrayContains(others, this.m_revivers[r]) {
+        TandemNative.Log(s"revive: our reviver (player \(this.m_revivers[r])) is gone");
+        this.StopReviver(this.m_revivers[r]);
+      }
+      r -= 1;
     }
     if this.m_reviver != 0u && this.m_bar == 2 {
       this.SetBar((this.m_now - this.m_reviverAt) / 10.0);
@@ -421,16 +428,22 @@ public class TandemRevive {
       return;
     }
     if step == 0 {
-      this.m_reviver = reviver;
-      this.m_reviverAt = this.m_now;
-      this.ShowBar(2, TandemText.F("Revive-RevivingYou", name), TandemText.Get("Revive-StayDown"));
+      let known = ArrayFindFirst(this.m_revivers, reviver);
+      if known >= 0 {
+        this.m_reviverStarts[known] = this.m_now;
+      } else {
+        ArrayPush(this.m_revivers, reviver);
+        ArrayPush(this.m_reviverStarts, this.m_now);
+      }
+      if this.m_reviver == 0u || this.m_reviver == reviver {
+        this.ShowReviver(reviver, this.m_now);
+      }
       TandemNative.Log(s"revive: \(name) is reviving us");
     } else if step == 1 {
-      if reviver == this.m_reviver {
-        this.m_reviver = 0u;
-        this.HideBar(false);
+      if ArrayContains(this.m_revivers, reviver) {
         TandemNative.Log(s"revive: \(name) stopped reviving us");
       }
+      this.StopReviver(reviver);
     } else if step == 2 {
       let at = TandemNative.RemotePosition(reviver);
       let distance = at.W > 0.0 ? Vector4.Distance(new Vector4(at.X, at.Y, at.Z, 1.0), player.GetWorldPosition()) : -1.0;
@@ -444,6 +457,38 @@ public class TandemRevive {
       this.Notice(SimpleMessageType.Neutral, "Revive-RevivedBy", name);
       this.Release(player);
     }
+  }
+
+  // Our bar shows `reviver`'s revive, begun at `at`.
+  private func ShowReviver(reviver: Uint32, at: Float) -> Void {
+    this.m_reviver = reviver;
+    this.m_reviverAt = at;
+    this.ShowBar(2, TandemText.F("Revive-RevivingYou", this.NameOf(reviver)), TandemText.Get("Revive-StayDown"));
+  }
+
+  // `reviver` stopped (or is gone): the bar goes to whoever else is reviving
+  // us, else away.
+  private func StopReviver(reviver: Uint32) -> Void {
+    let at = ArrayFindFirst(this.m_revivers, reviver);
+    if at >= 0 {
+      ArrayErase(this.m_revivers, at);
+      ArrayErase(this.m_reviverStarts, at);
+    }
+    if reviver != this.m_reviver {
+      return;
+    }
+    this.m_reviver = 0u;
+    if ArraySize(this.m_revivers) > 0 {
+      this.ShowReviver(this.m_revivers[0], this.m_reviverStarts[0]);
+    } else {
+      this.HideBar(false);
+    }
+  }
+
+  private func ClearRevivers() -> Void {
+    this.m_reviver = 0u;
+    ArrayClear(this.m_revivers);
+    ArrayClear(this.m_reviverStarts);
   }
 
   // Out: up beside a partner once it is out of combat (3 s), or after 30 s
@@ -496,7 +541,7 @@ public class TandemRevive {
     this.m_release = true;
     this.m_ours = true;
     this.m_life = 0;
-    this.m_reviver = 0u;
+    this.ClearRevivers();
     this.SendOurs(player);
   }
 
@@ -530,7 +575,7 @@ public class TandemRevive {
     this.m_ours = false;
     this.m_dying = false;
     this.m_lost = false;
-    this.m_reviver = 0u;
+    this.ClearRevivers();
     this.m_calmSince = -1.0;
     this.m_aloneSince = -1.0;
     this.HideBar(false);
