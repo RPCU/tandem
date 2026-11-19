@@ -26,6 +26,7 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_journal: wref<JournalManager>;
   private let m_phone: ref<TandemPhone>;
   private let m_dialogue: ref<TandemDialogue>;
+  private let m_scenes: ref<TandemScenes>;
 
   // Host: the journal snapshot is owed (sent once the world plays), and the
   // changes since the last tick, sent together.
@@ -125,6 +126,8 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_phone.Start(this.GetGameInstance(), this);
     this.m_dialogue = new TandemDialogue();
     this.m_dialogue.Start(this.GetGameInstance(), this);
+    this.m_scenes = new TandemScenes();
+    this.m_scenes.Start(this.GetGameInstance(), this);
     // Journal changes: the host sends them; every game keeps the last quest
     // that moved (rewards, below).
     this.Listen();
@@ -220,6 +223,11 @@ public class TandemStorySystem extends ScriptableSystem {
     return (this.m_hostFlags & 8) != 0;
   }
 
+  // Scene replay (Scenes.reds): the host's scenes for its guests.
+  public func Scenes() -> ref<TandemScenes> {
+    return this.m_scenes;
+  }
+
   public func JournalOf() -> wref<JournalManager> {
     return this.m_journal;
   }
@@ -276,6 +284,9 @@ public class TandemStorySystem extends ScriptableSystem {
         case 2:
           if !this.m_isHost && this.m_you != 0u {
             this.GuestLeave();
+          }
+          if this.m_isHost {
+            this.m_scenes.HostEnd();
           }
           this.EndPrivate();
           this.m_you = 0u;
@@ -334,6 +345,17 @@ public class TandemStorySystem extends ScriptableSystem {
         case 42:
           this.OnHostEffect(event.reward, event.flags != 0);
           break;
+        case 50:
+        case 51:
+        case 52:
+        case 53:
+        case 54:
+        case 55:
+        case 56:
+          if !this.m_isHost {
+            this.m_scenes.OnEvent(event);
+          }
+          break;
         case 41:
           this.OnReward(event.reward, event.hash);
           break;
@@ -391,6 +413,8 @@ public class TandemStorySystem extends ScriptableSystem {
       let tracked = this.m_journal.GetTrackedEntry();
       TandemStory.SendTracked(IsDefined(tracked) ? Cast<Uint32>(this.m_journal.GetEntryHash(tracked)) : 0u);
     }
+    // The scene our game plays, for the guests to watch (Scenes.reds).
+    this.m_scenes.HostTick(this.Now(), this.m_ourTier, this.m_inPrivate, this.m_dialogue.HubOpen());
   }
 
   // JournalManager callbacks (signature of JournalNotificationQueue's,
@@ -545,6 +569,7 @@ public class TandemStorySystem extends ScriptableSystem {
     }
     this.UpdateHolds();
     this.m_dialogue.GuestTick();
+    this.m_scenes.GuestTick(this.Now());
   }
 
   // The journal entry's state before the mirror first changed it.
@@ -636,6 +661,7 @@ public class TandemStorySystem extends ScriptableSystem {
     TandemNative.Log("story: leaving the host's story");
     this.m_phone.Close();
     this.m_dialogue.Close();
+    this.m_scenes.Leave();
     this.ReleaseHolds();
     this.TakeOffEffects();
     this.m_hostFlags = 0;
@@ -1131,6 +1157,8 @@ public class TandemStorySystem extends ScriptableSystem {
       this.m_forcedPrivate = Equals(command, "story private on");
       this.m_lastPrivateCheck = 0.0;
       TandemNative.Log(s"story: test private scene \(this.m_forcedPrivate ? "on" : "off")");
+    } else if StrBeginsWith(command, "story scene") {
+      this.m_scenes.Command(command);
     } else if Equals(command, "story join") {
       this.AcceptOffer();
     } else if Equals(command, "story state") {

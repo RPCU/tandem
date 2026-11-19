@@ -38,6 +38,12 @@ public class TandemDialogue {
   private let m_shownHub: Int32;
   private let m_cursor: Int32;
   private let m_lines: array<Uint64>;
+  // Guest: our own subtitle board, to never show a line twice (the game may
+  // show a line itself when its voice plays here: scene replay), and the
+  // lines it showed.
+  private let m_ownListening: Bool;
+  private let m_cbOwn: ref<CallbackHandle>;
+  private let m_native: array<Uint64>;
 
   public func Start(game: GameInstance, story: ref<TandemStorySystem>) -> Void {
     this.m_game = game;
@@ -58,7 +64,16 @@ public class TandemDialogue {
       interactionsBoard.UnregisterListenerVariant(interactions.LastAttemptedChoice, this.m_cbAttempt);
       this.m_hostListening = false;
     }
+    if this.m_ownListening {
+      this.Board(true).UnregisterListenerVariant(GetAllBlackboardDefs().UIGameData.ShowDialogLine, this.m_cbOwn);
+      this.m_ownListening = false;
+    }
     this.Close();
+  }
+
+  // The host's hub is up: its scene waits for the choice (Scenes.reds).
+  public func HubOpen() -> Bool {
+    return this.m_sentOpen;
   }
 
   // UIGameData (true) or UIInteractions (false).
@@ -123,6 +138,9 @@ public class TandemDialogue {
         }
         TandemStory.SendLine(TandemStory.LineValue(line.id), kind, line.isPersistent ? 2 : 0, line.duration, speaker, line.speakerName, line.text);
         TandemNative.Log(s"subtitle: sent (type \(kind))");
+        // Its voice (scene replay): after the subtitle, so a guest has the
+        // text when the voice starts.
+        this.m_story.Scenes().HostLine(TandemStory.LineValue(line.id), kind, line.speaker, speaker, line.duration);
       }
     }
   }
@@ -134,6 +152,7 @@ public class TandemDialogue {
     let ids = FromVariant<array<CRUID>>(value);
     for id in ids {
       TandemStory.SendLine(TandemStory.LineValue(id), 0, 1, 0.0, 0u, "", "");
+      this.m_story.Scenes().HostLineHidden(TandemStory.LineValue(id));
     }
   }
 
@@ -234,13 +253,22 @@ public class TandemDialogue {
       return;
     }
     let board = this.Board(true);
+    if !this.m_ownListening {
+      this.m_cbOwn = board.RegisterListenerVariant(GetAllBlackboardDefs().UIGameData.ShowDialogLine, this, n"OnOwnLine");
+      this.m_ownListening = true;
+    }
     if (event.flags & 1) != 0 {
       if ArrayContains(this.m_lines, event.line) {
         ArrayRemove(this.m_lines, event.line);
         let ids: array<CRUID>;
-        ArrayPush(ids, TandemStory.LineId(event.line));
+        ArrayPush(ids, TandemStory.LineId(TandemStory.StandInLine(event.line)));
         board.SetVariant(GetAllBlackboardDefs().UIGameData.HideDialogLine, ToVariant(ids), true);
       }
+      return;
+    }
+    // Our game shows this line itself (its voice plays here): once is enough.
+    if ArrayContains(this.m_native, event.line) {
+      TandemNative.Log("subtitle: not shown twice (the game shows it itself)");
       return;
     }
     // Holocall lines: everyone on the call. The rest: within earshot, and
@@ -253,7 +281,8 @@ public class TandemDialogue {
       return;
     }
     let line: scnDialogLineData;
-    line.id = TandemStory.LineId(event.line);
+    // Under an id of our own: a line our game shows itself has the real one.
+    line.id = TandemStory.LineId(TandemStory.StandInLine(event.line));
     line.text = event.text;
     line.speakerName = event.name;
     line.duration = event.duration;
@@ -273,6 +302,30 @@ public class TandemDialogue {
       ArrayErase(this.m_lines, 0);
     }
     TandemNative.Log("subtitle: shown");
+  }
+
+  // Our own subtitle board: a line the host's game sent us that our game now
+  // shows itself, under its real id (in our language: the better one). Ours
+  // goes; no line is ever on screen twice.
+  protected cb func OnOwnLine(value: Variant) -> Bool {
+    if !this.m_story.IsGuest() {
+      return false;
+    }
+    let lines = FromVariant<array<scnDialogLineData>>(value);
+    for line in lines {
+      let id = TandemStory.LineValue(line.id);
+      if ArrayContains(this.m_lines, id) {
+        ArrayRemove(this.m_lines, id);
+        let ids: array<CRUID>;
+        ArrayPush(ids, TandemStory.LineId(TandemStory.StandInLine(id)));
+        this.Board(true).SetVariant(GetAllBlackboardDefs().UIGameData.HideDialogLine, ToVariant(ids), true);
+        ArrayPush(this.m_native, id);
+        if ArraySize(this.m_native) > 64 {
+          ArrayErase(this.m_native, 0);
+        }
+        TandemNative.Log("subtitle: the game shows it itself: ours hidden");
+      }
+    }
   }
 
   private func OnHostHub(event: TandemStoryEvent) -> Void {
@@ -401,7 +454,7 @@ public class TandemDialogue {
     if ArraySize(this.m_lines) > 0 {
       let ids: array<CRUID>;
       for line in this.m_lines {
-        ArrayPush(ids, TandemStory.LineId(line));
+        ArrayPush(ids, TandemStory.LineId(TandemStory.StandInLine(line)));
       }
       this.Board(true).SetVariant(GetAllBlackboardDefs().UIGameData.HideDialogLine, ToVariant(ids), true);
       ArrayClear(this.m_lines);
