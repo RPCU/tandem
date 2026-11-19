@@ -194,7 +194,9 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<NpcShotAt>(message) || std::holds_alternative<ShotHit>(message) ||
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
          std::holds_alternative<NpcStrike>(message) || std::holds_alternative<NpcWound>(message) ||
-         std::holds_alternative<AreaHit>(message);
+         std::holds_alternative<AreaHit>(message) ||
+         // Presence: a cue is of the moment, a reaction is played once.
+         std::holds_alternative<Cue>(message) || std::holds_alternative<NpcReaction>(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

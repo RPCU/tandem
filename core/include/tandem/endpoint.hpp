@@ -203,6 +203,20 @@ struct RemoteVehicleRadio {
 struct RemoteStealth {
   proto::Stealth stealth;
 };
+// Another player's health or menu state changed (the party HUD; a fall of
+// health is also their puppet's pain).
+struct RemotePresence {
+  proto::Presence presence;
+};
+// Something another player's V did at one moment (a shot's end, a melee
+// swing landing): seen and heard on its puppet.
+struct RemoteCue {
+  proto::Cue cue;
+};
+// How one of the host's NPCs reacts to a hit (guests only): played on its proxy.
+struct HostNpcReaction {
+  proto::NpcReaction reaction;
+};
 // How far the host's NPCs are in noticing each guest (guests only).
 struct HostNpcAwareness {
   proto::NpcAwareness awareness;
@@ -301,7 +315,8 @@ using SessionEvent = std::variant<
     events::WorldItemTakenBy, events::SharedItemFrom, events::RemoteVitals, events::ReviveBy,
     events::SessionLost, events::HostNpcAnims, events::HostNpcShot, events::Combat, events::Resync,
     events::EpochChanged, events::RemoteElsewhere, events::RemoteTransit, events::HostNpcSeat,
-    events::ShotAtUs, events::ShotHitBy>;
+    events::ShotAtUs, events::ShotHitBy, events::RemotePresence, events::RemoteCue,
+    events::HostNpcReaction>;
 
 class Endpoint {
 public:
@@ -328,6 +343,11 @@ public:
   // What we hold (kept and handed to late joiners like the look), and shots.
   void SetLocalHeld(proto::Held held);
   void SendLocalShot(proto::Shot shot);
+  // What the others' party HUD shows of our V (kept and handed to late
+  // joiners), and one-off cues of what it does (presence.hpp).
+  void SetLocalPresence(proto::Presence presence);
+  void SendLocalCue(proto::Cue cue);
+  const std::map<proto::PlayerId, proto::Presence> &Presences() const { return m_presences; }
   // Where we sit (kept and handed to late joiners), and the car we drive.
   void SetLocalSeat(proto::Seat seat);
   void SendLocalVehicle(proto::VehicleState vehicle);
@@ -346,6 +366,8 @@ public:
   // for late joiners until gone), and one of their shots.
   void SendNpcAnims(const proto::NpcAnims &anims);
   void SendNpcShot(const proto::NpcShot &shot);
+  // Host only: a shared NPC's hit reaction, for the guests' proxies.
+  void SendNpcReaction(const proto::NpcReaction &reaction);
   // Guest only: we hit one of the host's NPCs.
   void SendNpcHit(const proto::NpcHit &hit);
   void SendNpcEffect(const proto::NpcEffect &effect);
@@ -603,6 +625,13 @@ private:
   std::uint32_t m_stealthRevision{};
   std::map<proto::PlayerId, proto::Stealth> m_stealth;
   void SendLocalStealthNow();
+  // Our presence (health, menu), and everyone's latest: the host hands them
+  // to late joiners; every game's party HUD reads them.
+  std::optional<proto::Presence> m_localPresence;
+  std::uint32_t m_presenceRevision{};
+  std::map<proto::PlayerId, proto::Presence> m_presences;
+  void SendLocalPresenceNow();
+  std::uint32_t m_cueSeq{};
   std::uint32_t m_awarenessSeq{};
   // Our ride, and everyone's (host: the session's record, for late joiners;
   // only rides that are on).

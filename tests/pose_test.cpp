@@ -167,3 +167,37 @@ TEST_CASE("poses go from a guest through the host, stamped with the guest's id")
   CHECK(got->rotations == sent.rotations);
   CHECK(got->seq != 0); // numbered from the host clock's millisecond (endpoint.cpp)
 }
+
+TEST_CASE("a flinch leans the upper body and leaves the hips and legs alone") {
+  pose::Pose pose;
+  // Hips turned a quarter to the left and a spine already bent: the lean is
+  // about the body's own axes whatever the pose.
+  pose.local[pose::kHips] = {0.f, 0.f, std::sin(0.4f), std::cos(0.4f)};
+  const auto spine = static_cast<std::size_t>(pose::BoneIndex("Spine"));
+  const auto spine1 = static_cast<std::size_t>(pose::BoneIndex("Spine1"));
+  const auto head = static_cast<std::size_t>(pose::BoneIndex("Head"));
+  const auto leg = static_cast<std::size_t>(pose::BoneIndex("LeftLeg"));
+  pose.local[spine] = {std::sin(0.1f), 0.f, 0.f, std::cos(0.1f)};
+  const auto before = pose::ToModel(pose);
+
+  auto leaned = pose;
+  pose::LeanSpine(leaned, 0.3f, 0.f);
+  const auto after = pose::ToModel(leaned);
+  CHECK(pose::Angle(before[pose::kHips], after[pose::kHips]) < 1e-4f);
+  CHECK(pose::Angle(before[spine], after[spine]) < 1e-4f);
+  CHECK(pose::Angle(before[leg], after[leg]) < 1e-4f);
+  CHECK(pose::Angle(before[spine1], after[spine1]) == doctest::Approx(0.3f).epsilon(0.01));
+  CHECK(pose::Angle(before[head], after[head]) == doctest::Approx(0.3f).epsilon(0.01));
+  // Forward: the model-space turn is about X, the way that takes up (Z)
+  // toward forward (Y).
+  const auto turn = pose::Multiply(after[head], pose::Conjugate(before[head]));
+  CHECK(std::abs(turn.i) == doctest::Approx(std::sin(0.15f)).epsilon(0.01));
+  CHECK(turn.i * turn.r < 0.f);
+  CHECK(std::abs(turn.j) < 1e-3f);
+  CHECK(std::abs(turn.k) < 1e-3f);
+
+  // No lean: the pose is untouched, bit for bit.
+  auto same = pose;
+  pose::LeanSpine(same, 0.f, 0.f);
+  CHECK(same.local == pose.local);
+}
