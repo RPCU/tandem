@@ -65,6 +65,11 @@
 // seconds into the session for --sandevistan-for seconds, at
 // --sandevistan-scale: the host slows the NPCs around its V (time bubble);
 // the time abilities it hears are logged.
+// Devices (docs/architecture/devices.md): --device ENTITY:CLASS:WORDS[@S]
+// operates one by its id (a guest asks the host; a host says what its own
+// is), --device-answer WORDS changes back, --device-after seconds later,
+// every device another player just changed. A host has no world of its
+// own: a guest's request is taken as said. What it hears is logged.
 // Loot: --loot-quest has "its V" loot a quest item (everyone gets it);
 // --drop-item drops a shared world item in front of your V; --take-items
 // picks up what the others drop; as the host of a replay, --remove-corpses
@@ -233,6 +238,17 @@ struct Options {
   int goDownSeconds{-1};
   int goOutSeconds{-1};
   int reviveSeconds{-1};
+  // Devices: the ones to operate by id (--device), and what every device
+  // another player changes is made this long after (--device-answer).
+  struct DeviceOrder {
+    std::uint64_t entity{}, cls{};
+    std::string words;
+    int atSeconds{5};
+    bool done{};
+  };
+  std::vector<DeviceOrder> devices;
+  std::string deviceAnswer;
+  int deviceAfterSeconds{3};
   // Faults on what we send (docs/ARCHITECTURE.md, Consistency).
   float drop{}, dup{};
   int vanishAtSeconds{-1}; // end without a goodbye this long into the session (-1: never)
@@ -396,6 +412,16 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --jitter MS        up to MS more at random, each way (the order kept)\n"
          "  --loss PERCENT     PERCENT of the datagrams lost, each way\n"
          "  --reorder PERCENT  PERCENT of the datagrams held back behind later ones\n"
+         "  --device SPEC      operate a device by its id, SPEC = ENTITY:CLASS:WORDS[@SECONDS]:\n"
+         "                     ENTITY in hex (tools/game.sh cmd device near), CLASS its state's\n"
+         "                     class (DoorControllerPS...), WORDS a comma list of on off\n"
+         "                     unpowered disabled open closed locked unlocked sealed unsealed\n"
+         "                     broken exploded hacked friendly hostile exposed breached\n"
+         "                     glitching value=N floor=N station=N; SECONDS into the session\n"
+         "                     (5). A guest asks the host; a host says its own device is that\n"
+         "  --device-answer W  every device another player changes is made WORDS (as above)\n"
+         "                     --device-after seconds later\n"
+         "  --device-after N   see --device-answer (3)\n"
          "  --loot-quest REC   5 s after another player is there, \"our V\" loots one REC (a\n"
          "                     quest item): every other player gets it too\n"
          "  --drop-item RECORD drop one RECORD (Items.FirstAidWhiffV0...) as a shared world\n"
@@ -438,6 +464,100 @@ template <class T> T Number(std::string_view text) {
   if (ec != std::errc{} || end != text.data() + text.size())
     Usage(std::format("not a number: {}", text));
   return value;
+}
+
+// A device's state changed by words ("open", "locked,off", "floor=3"):
+// false for a word nobody knows.
+bool DeviceWords(std::string_view words, tandem::devices::What &what) {
+  using namespace tandem::proto;
+  const auto set = [&](std::uint16_t bit, bool on) {
+    what.flags = static_cast<std::uint16_t>(on ? what.flags | bit : what.flags & ~bit);
+  };
+  while (!words.empty()) {
+    const auto comma = words.find(',');
+    const auto word = words.substr(0, comma);
+    words = comma == std::string_view::npos ? std::string_view{} : words.substr(comma + 1);
+    if (word == "on")
+      what.status = kDeviceOn;
+    else if (word == "off")
+      what.status = kDeviceOff;
+    else if (word == "unpowered")
+      what.status = kDeviceUnpowered;
+    else if (word == "disabled")
+      what.status = kDeviceDisabled;
+    else if (word == "open") {
+      set(kDeviceOpen, true);
+      set(kDeviceLocked | kDeviceSealed, false);
+    } else if (word == "closed")
+      set(kDeviceOpen, false);
+    else if (word == "locked") {
+      set(kDeviceLocked, true);
+      set(kDeviceOpen, false);
+    } else if (word == "unlocked")
+      set(kDeviceLocked, false);
+    else if (word == "sealed") {
+      set(kDeviceSealed, true);
+      set(kDeviceOpen, false);
+    } else if (word == "unsealed")
+      set(kDeviceSealed, false);
+    else if (word == "broken")
+      set(kDeviceBroken, true);
+    else if (word == "exploded")
+      set(kDeviceExploded, true);
+    else if (word == "hacked")
+      set(kDeviceHacked, true);
+    else if (word == "friendly")
+      set(kDeviceFriendly, true);
+    else if (word == "hostile")
+      set(kDeviceFriendly, false);
+    else if (word == "exposed")
+      set(kDeviceExposed, true);
+    else if (word == "breached")
+      set(kDeviceBreached | kDeviceExposed, true);
+    else if (word == "glitching")
+      set(kDeviceGlitching, true);
+    else if (word.starts_with("value=") || word.starts_with("floor=") ||
+             word.starts_with("station="))
+      what.value = Number<std::int32_t>(word.substr(word.find('=') + 1));
+    else
+      return false;
+  }
+  return true;
+}
+
+// --device ENTITY:CLASS:WORDS[@SECONDS]
+Options::DeviceOrder DeviceOrderOf(std::string_view spec) {
+  Options::DeviceOrder order;
+  const auto first = spec.find(':');
+  const auto second = first == std::string_view::npos ? first : spec.find(':', first + 1);
+  if (second == std::string_view::npos)
+    Usage("--device is ENTITY:CLASS:WORDS[@SECONDS]");
+  auto entity = spec.substr(0, first);
+  if (entity.starts_with("0x"))
+    entity.remove_prefix(2);
+  if (std::from_chars(entity.data(), entity.data() + entity.size(), order.entity, 16).ptr !=
+          entity.data() + entity.size() ||
+      order.entity == 0)
+    Usage(std::format("--device: {} is not an entity id in hex", entity));
+  const auto cls = spec.substr(first + 1, second - first - 1);
+  // A class by name, or by its hash as the logs print it.
+  if (cls.starts_with("0x")) {
+    if (std::from_chars(cls.data() + 2, cls.data() + cls.size(), order.cls, 16).ptr !=
+        cls.data() + cls.size())
+      Usage(std::format("--device: {} is not a class hash", cls));
+  } else {
+    order.cls = CName(cls);
+  }
+  auto words = spec.substr(second + 1);
+  if (const auto at = words.find('@'); at != std::string_view::npos) {
+    order.atSeconds = Number<int>(words.substr(at + 1));
+    words = words.substr(0, at);
+  }
+  order.words = std::string(words);
+  tandem::devices::What probe;
+  if (order.words.empty() || !DeviceWords(order.words, probe))
+    Usage(std::format("--device: unknown state in {}", words));
+  return order;
 }
 
 Vec3 Point(std::string_view flag, std::string_view value) {
@@ -557,6 +677,15 @@ Options Parse(int argc, char **argv) {
       options.sandevistanForSeconds = Number<int>(value);
     else if (flag == "--sandevistan-scale")
       options.sandevistanScale = Number<float>(value);
+    else if (flag == "--device")
+      options.devices.push_back(DeviceOrderOf(value));
+    else if (flag == "--device-answer") {
+      tandem::devices::What probe;
+      if (!DeviceWords(value, probe))
+        Usage(std::format("--device-answer: unknown state in {}", value));
+      options.deviceAnswer = std::string(value);
+    } else if (flag == "--device-after")
+      options.deviceAfterSeconds = Number<int>(value);
     else if (flag == "--drop-item")
       options.dropItem = std::string(value);
     else if (flag == "--loot-quest")
@@ -2322,6 +2451,57 @@ int main(int argc, char **argv) {
   const auto distance = [](const Vec3 &a, const Vec3 &b) {
     return std::hypot(a.x - b.x, a.y - b.y, a.z - b.z);
   };
+  // Devices: when the session began for us (--device counts from it), and
+  // the devices to change back (--device-answer: when, from what).
+  std::optional<std::chrono::steady_clock::time_point> devicesFrom;
+  std::map<tandem::devices::Key,
+           std::pair<std::chrono::steady_clock::time_point, tandem::devices::What>>
+      deviceAnswers;
+  // "device 1a2b (0x3c4d): on, open+hacked, value -1", as the game's log has it.
+  const auto describeDevice = [](const tandem::devices::Key &key,
+                                 const tandem::devices::What &what) {
+    using namespace tandem::proto;
+    constexpr std::pair<std::uint16_t, std::string_view> kBits[] = {
+        {kDeviceOpen, "open"},          {kDeviceLocked, "locked"},
+        {kDeviceSealed, "sealed"},      {kDeviceBroken, "broken"},
+        {kDeviceExploded, "exploded"},  {kDeviceHacked, "hacked"},
+        {kDeviceFriendly, "friendly"},  {kDeviceExposed, "exposed"},
+        {kDeviceBreached, "breached"},  {kDeviceMoving, "moving"},
+        {kDeviceGlitching, "glitching"}};
+    std::string bits;
+    for (const auto &[bit, word] : kBits)
+      if (what.flags & bit)
+        bits += (bits.empty() ? "" : "+") + std::string(word);
+    constexpr std::string_view kStatus[] = {"disabled", "unpowered", "off", "on"};
+    return std::format("device {:x} ({:#x}): {}, {}, value {}", key.entity, key.cls,
+                       kStatus[std::clamp<int>(what.status + 2, 0, 3)],
+                       bits.empty() ? "plain" : bits, what.value);
+  };
+  // Makes a device something: a guest asks the host, a host says its own is.
+  const auto operateDevice = [&](const tandem::devices::Key &key, const tandem::devices::What &what,
+                                 std::string_view why) {
+    if (endpoint->IsHost())
+      endpoint->ReportDevice({.entity = key.entity,
+                              .cls = key.cls,
+                              .status = what.status,
+                              .flags = what.flags,
+                              .value = what.value,
+                              .by = endpoint->You()});
+    else
+      endpoint->UseDevice({.entity = key.entity,
+                           .cls = key.cls,
+                           .status = what.status,
+                           .flags = what.flags,
+                           .value = what.value});
+    Log("{} {} ({})", endpoint->IsHost() ? "our" : "asked the host for", describeDevice(key, what),
+        why);
+  };
+  const auto answerDevice = [&](const tandem::devices::Key &key, tandem::devices::What what) {
+    if (options.deviceAnswer.empty() || !DeviceWords(options.deviceAnswer, what))
+      return;
+    deviceAnswers[key] = {
+        std::chrono::steady_clock::now() + std::chrono::seconds(options.deviceAfterSeconds), what};
+  };
   // Loot: our drop (--drop-item), the others' world items to pick up
   // (--take-items: when), and dead NPCs' bodies to take away (--remove-corpses).
   bool dropped = false;
@@ -2847,6 +3027,34 @@ int main(int argc, char **argv) {
               }
             } else if constexpr (std::is_same_v<E, tandem::events::SessionLost>) {
               Log("session lost: no V is up (loss {})", e.over.round);
+            } else if constexpr (std::is_same_v<E, tandem::events::HostDevice>) {
+              const auto key = tandem::devices::KeyOf(e.state);
+              const auto what = tandem::devices::WhatOf(e.state);
+              Log("{} by player {}, {}", describeDevice(key, what), e.state.by,
+                  e.state.how == tandem::proto::kDeviceQuiet ? "set" : "played");
+              // Another player's doing, just now: ours to change back.
+              if (e.state.how == tandem::proto::kDeviceLive &&
+                  e.state.by != tandem::proto::kNoPlayer && e.state.by != endpoint->You())
+                answerDevice(key, what);
+            } else if constexpr (std::is_same_v<E, tandem::events::DeviceAsked>) {
+              Log("{} asked by player {}: no world of ours, no answer",
+                  describeDevice(tandem::devices::KeyOf(e.state), tandem::devices::WhatOf(e.state)),
+                  e.state.by);
+            } else if constexpr (std::is_same_v<E, tandem::events::DeviceRequested>) {
+              // No world of ours: the device is what the guest made it.
+              const auto key = tandem::devices::KeyOf(e.use);
+              const auto what = tandem::devices::WhatOf(e.use);
+              endpoint->ReportDevice({.entity = key.entity,
+                                      .cls = key.cls,
+                                      .status = what.status,
+                                      .flags = what.flags,
+                                      .value = what.value,
+                                      .by = e.use.player});
+              Log("{} operated by player {}: taken as said", describeDevice(key, what),
+                  e.use.player);
+              answerDevice(key, what);
+            } else if constexpr (std::is_same_v<E, tandem::events::DevicesReset>) {
+              Log("devices: the host sends its record again");
             } else if constexpr (std::is_same_v<E, tandem::events::Resync>) {
               if (e.player == endpoint->You())
                 Log("resync: asked the host for domains {:#x}", e.domains);
@@ -3187,6 +3395,30 @@ int main(int argc, char **argv) {
                                   .item = {.record = TweakDBID(options.lootQuest), .quantity = 1}});
         Log("looted quest item {}: shared", options.lootQuest);
       }
+    }
+    // --device: each one at its time into the session. --device-answer:
+    // what another player changed, changed back when its time comes.
+    if (endpoint->IsJoined() && !devicesFrom)
+      devicesFrom = now;
+    for (auto &order : options.devices) {
+      if (order.done || !devicesFrom || now < *devicesFrom + std::chrono::seconds(order.atSeconds))
+        continue;
+      order.done = true;
+      const tandem::devices::Key key{order.entity, order.cls};
+      // From what the session has of it (unknown: on, closed).
+      tandem::devices::What what{.status = tandem::proto::kDeviceOn};
+      if (const auto *record = endpoint->Devices().Find(key))
+        what = tandem::devices::WhatOf(*record);
+      DeviceWords(order.words, what);
+      operateDevice(key, what, "--device");
+    }
+    for (auto it = deviceAnswers.begin(); it != deviceAnswers.end();) {
+      if (now < it->second.first) {
+        ++it;
+        continue;
+      }
+      operateDevice(it->first, it->second.second, "--device-answer");
+      it = deviceAnswers.erase(it);
     }
     // --drop-item: one world item 1.5 m in front of the other V, once.
     if (!options.dropItem.empty() && !dropped && endpoint->IsJoined() && otherV) {
