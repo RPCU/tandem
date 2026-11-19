@@ -278,8 +278,7 @@ TEST_CASE("over a shaped UDP link, reliable events arrive whole and in order") {
     pump(2ms, [] { return false; });
   }
   REQUIRE(pump(10s, [&] { return heldAtHost.size() >= 200 && worldsAtGuest.size() >= 200; }));
-  pump(500ms, [] { return false; });  // nothing more, nothing twice
-  pump(1200ms, [] { return false; }); // a few pings more for the clock
+  pump(500ms, [] { return false; }); // nothing more, nothing twice
   CHECK_FALSE(ended);
   REQUIRE(heldAtHost.size() == 200);
   REQUIRE(worldsAtGuest.size() == 200);
@@ -295,10 +294,21 @@ TEST_CASE("over a shaped UDP link, reliable events arrive whole and in order") {
           " held back; states ", states, "/200, ", olderStates, " overtaken");
   CHECK(link.lost > 0);
   CHECK(link.reordered > 0);
-  // The guest's idea of the host clock: off by no more than the link's
-  // asymmetry (both sides share this process's clock). It stayed the
-  // Welcome's, a one-way latency off, until the best-ping filter was fixed.
-  const auto skew =
-      static_cast<std::int64_t>(guest->HostNowUs()) - static_cast<std::int64_t>(host->HostNowUs());
-  CHECK(std::abs(skew) < 30'000);
+  // The guest's idea of the host clock (both sides share this process's
+  // clock). It stayed the Welcome's until the best-ping filter was fixed:
+  // off by a whole one-way trip, at least the link's 40 ms. A fixed one is
+  // off by half the asymmetry of its best ping, a few ms on a quiet machine;
+  // on a loaded one (other builds, a game) a stalled thread delays one way
+  // more than the other, and the error grows until a cleaner ping lands. So:
+  // the best of several seconds of pings, under 35 ms (still short of the
+  // 40 ms the old bug can never get under).
+  std::int64_t best = INT64_MAX;
+  for (int i = 0; i < 40 && best > 10'000; ++i) {
+    pump(100ms, [] { return false; });
+    const auto skew = static_cast<std::int64_t>(guest->HostNowUs()) -
+                      static_cast<std::int64_t>(host->HostNowUs());
+    best = std::min(best, std::abs(skew));
+  }
+  MESSAGE("clock: the guest's host clock within ", best / 1000, " ms");
+  CHECK(best < 35'000);
 }
