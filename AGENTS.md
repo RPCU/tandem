@@ -24,7 +24,7 @@ scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors p
 tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet records, their attitude groups, the player marker)
 dist/          files installed next to the DLL (tandem.ini)
 cmake/         clang-cl-msvc.cmake: the Windows cross toolchain
-docs/          ARCHITECTURE.md, research/ (engine facts, sources; data/: RTTI and skeleton dumps)
+docs/          ARCHITECTURE.md, architecture/ (progression.md, trade.md), research/ (engine facts, sources; data/: RTTI and skeleton dumps)
 tools/         game.sh (drive the game), scenario.sh + scenarios/ (in-game tests), check-natives.py, scripts-check.sh, re/ (read-only reverse engineering, see its README)
 vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 ```
