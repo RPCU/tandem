@@ -27,6 +27,8 @@ public class TandemBusyPuppet {
   public let state: TandemBusyState;
   public let held: Bool;
   public let placed: Bool;
+  // When it was put at its anchor (its workspot starts once it is there).
+  public let placedAt: Float;
   public let spot: ref<TandemSpot>;
   // Still to release: the state ended, its workspot exit is playing.
   public let ending: Bool;
@@ -78,6 +80,9 @@ public class TandemActivities {
   private let m_anchor: Vector4;
   private let m_facing: Quaternion;
   private let m_test: Int32;
+  // Since when our V is in a workspot: told once it has settled into it
+  // (its entry carries the body into the seat first).
+  private let m_spotSince: Float;
 
   // ---- the clock ----
   private let m_clockReady: Bool;
@@ -195,6 +200,10 @@ public class TandemActivities {
     let anim = n"None";
     let spots = GameInstance.GetWorkspotSystem(this.m_game);
     let inSpot = spots.IsActorInWorkspot(player);
+    if inSpot && !this.m_wasInSpot {
+      this.m_spotSince = this.m_now;
+    }
+    let settled = inSpot && this.m_now - this.m_spotSince >= 1.0;
     if this.m_test != 0 {
       kind = this.m_test;
       flags = 1;
@@ -204,11 +213,11 @@ public class TandemActivities {
     } else if this.m_menu != 0 {
       kind = this.m_menu;
       flags = 1;
-    } else if inSpot {
+    } else if settled {
       kind = 1;
       flags = 1;
     }
-    if inSpot && (kind == 1 || kind == 4 || kind == 5) {
+    if settled && (kind == 1 || kind == 4 || kind == 5) {
       let instance = spots.GetWorkspotInstance(player.GetEntityID());
       if IsDefined(instance) && IsDefined(instance.resource) {
         let path = instance.resource.path;
@@ -654,6 +663,12 @@ public class TandemActivities {
       let at = new Vector4(busy.state.x, busy.state.y, busy.state.z, 1.0);
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(body, at, TandemYawAngles(Rad2Deg(busy.state.yaw)));
       busy.placed = true;
+      busy.placedAt = this.m_now;
+    }
+    // The teleport lands within a frame or two: the workspot is placed
+    // where the body then stands.
+    if anchored && this.m_now - busy.placedAt < 0.5 && !busy.ending {
+      return true;
     }
     let want = busy.state.kind == 1 || busy.state.kind == 4 || busy.state.kind == 5 ? busy.state.workspot : 0ul;
     busy.spot.Step(this.m_game, body, 0u, want, busy.state.entry, this.m_now, s"activities: puppet \(busy.player)");
