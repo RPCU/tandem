@@ -258,7 +258,7 @@ public class TandemNpcs {
     if EntityID.IsDefined(proxy.seatedIn) && IsDefined(body) {
       TandemVehicles.Unseat(this.m_game, body, proxy.seatedIn, proxy.seatedSlot);
     }
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     proxy.seatedIn = none;
   }
 
@@ -431,8 +431,8 @@ public class TandemNpcs {
   // there while it sits in that vehicle here, our V in it or not (the copy
   // is parked where we left it, and so is the car here).
   private func ShareSeat(known: ref<TandemNpcKnown>, npc: ref<ScriptedPuppet>, carrier: ref<VehicleObject>) -> Void {
-    let none: EntityID;
-    let slot: CName;
+    let none = EntityID.FromHash(0ul);
+    let slot = n"None";
     if EntityID.IsDefined(known.seatVehicle) {
       let was = GameInstance.FindEntityByID(this.m_game, known.seatVehicle) as VehicleObject;
       if IsDefined(was) && VehicleComponent.IsMountedToProvidedVehicle(this.m_game, known.id, was) {
@@ -699,7 +699,7 @@ public class TandemNpcs {
     if !IsDefined(npc) {
       return;
     }
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     if EntityID.IsDefined(proxy.seatedIn) {
       TandemVehicles.Unseat(game, npc, proxy.seatedIn, proxy.seatedSlot);
       proxy.seatedIn = none;
@@ -755,7 +755,7 @@ public class TandemNpcs {
   // The proxy entity of a host NPC, alive or dead (Loot.reds).
   public func ProxyEntity(npc: Uint32) -> EntityID {
     let proxy = this.FindProxy(npc);
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     return IsDefined(proxy) ? proxy.id : none;
   }
 
@@ -1064,7 +1064,7 @@ public class TandemNpcs {
         return proxy.id;
       }
     }
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     return none;
   }
 

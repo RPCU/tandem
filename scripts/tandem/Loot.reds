@@ -458,7 +458,7 @@ public class TandemLoot extends ScriptableSystem {
         }
         // Streamed out with nothing picked up: found again when it returns.
         if !IsDefined(object) && !near {
-          let none: EntityID;
+          let none = EntityID.FromHash(0ul);
           item.entity = none;
         }
       }

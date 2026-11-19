@@ -123,6 +123,14 @@ K7Q-2M9 --relay 127.0.0.1`. `task test` does the same (`relay-loopback`,
   class with two definitions of one method silently, and the game then dies
   in the script VM (frozen after the loading screen) at its first call.
   `task scripts:check` refuses it (`tools/scripts-duplicates.py`).
+- Give every value-type local a value where it is declared
+  (`let id = TDBID.None();`, `n"None"`, `EntityID.FromHash(0ul)`, `0.0`,
+  `new Vector4(…)`): the script VM does not clear `let x: TweakDBID;`, and a
+  path that reads it before assigning it gets whatever the slot held (a
+  perk's record sent as V's car, 2026-11-18). `task scripts:check` refuses
+  bare ones (`tools/scripts-uninitialized.py`); a local assigned on every
+  path before any read may keep its bare declaration with the comment
+  `// assigned on every path` on that line.
 - Use `__builtin_offsetof` in `static_assert`s: the MSVC CRT's `offsetof` is
   not a constant expression under clang.
 - `scripts/tandem/Natives.reds` must match `plugin/src/natives.cpp` exactly

@@ -1629,7 +1629,19 @@ TweakDBID;` then `SendSeat(record, …)` on foot sent
   player saw the host "driving" that record, and a puppet whose seat was
   echoed back sat in a phantom car, its controller holding still (the
   `takedowns-host` grabs were all refused as too far). Write
-  `let record = TDBID.None();`. [2.5-verified]
+  `let record = TDBID.None();`. [2.5-verified] Which other types the VM
+  leaves as they were is not measured: an unset `CName` local read back
+  as `None` in the same function (one sample, so possibly luck), and
+  struct and class locals are run through their type's constructor at
+  frame set-up (above). Whether `Bool`, `Int32`, `Float` and enums are
+  cleared is unknown, so `tools/scripts-uninitialized.py` (run by
+  `task scripts:check`) treats every value type alike: fundamental
+  numbers, `Bool`, `CName`, `TweakDBID`, `EntityID`, `ItemID`, vectors,
+  `Quaternion`, `EulerAngles`, `WorldPosition`/`WorldTransform` and enums
+  need an initializer or the comment `// assigned on every path`. To
+  measure later: a script function reading a bare `Int32` and `Bool`
+  right after another left non-zero values in the same frame slots.
+  [2.5-untested]
 - **A native declared with other types than the DLL's breaks the VM.**
   redscript never sees the DLL: `SendNpcSpawn(…, orientation: Quaternion)`
   against a C++ `float yaw` compiled with 0 errors and stopped the game on
