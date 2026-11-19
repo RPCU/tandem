@@ -526,10 +526,10 @@ using SessionEvent = std::variant<
     events::CrimeReported, events::RemotePresence, events::RemoteCue, events::HostNpcReaction,
     events::RemoteInstall, events::JoinRefused, events::RemoteActivity, events::TimeSkipAsked,
     events::TimeSkipVoted, events::TimeSkipEnded, events::Trade, events::MarkFrom, events::TagFrom,
-    events::RemoteLink, events::RemoteWaypoint, events::CrimeReported, events::RemoteVehicleDamage,
-    events::VehicleHitBy, events::RemoteVehicleExit, events::RemoteVehicleCombat,
-    events::RemoteMountedFire, events::GunnerChanged, events::RemoteGunnerAim,
-    events::VehicleBumpBy, events::NpcRamBy, events::ChaseChanged>;
+    events::RemoteLink, events::RemoteWaypoint, events::RemoteVehicleDamage, events::VehicleHitBy,
+    events::RemoteVehicleExit, events::RemoteVehicleCombat, events::RemoteMountedFire,
+    events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
+    events::ChaseChanged>;
 
 class Endpoint {
 public:
