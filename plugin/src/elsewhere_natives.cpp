@@ -66,9 +66,18 @@ struct TandemAway : Red::IScriptable {
                       .place = PlaceOf(place)});
     if (body.holdPoseFrom) {
       runtime.HoldLocalPose(*body.holdPoseFrom);
-      log::Info("elsewhere: our body stays at ({:.1f}, {:.1f}, {:.1f}), its pose held{}",
-                body.position.x, body.position.y, body.position.z,
-                runtime.LocalPoseHeld() ? "" : " (none yet: live)");
+      // A world with it: the body stays. A jump alone (a teleport, a fast
+      // travel, often through a loading screen): held only until it is
+      // clear no world comes with it.
+      if (tracker.State().flags & proto::kElsewhereMoved)
+        log::Info("elsewhere: our body stays at ({:.1f}, {:.1f}, {:.1f}), its pose held{}",
+                  body.position.x, body.position.y, body.position.z,
+                  runtime.LocalPoseHeld() ? "" : " (none yet: live)");
+      else
+        log::Info("elsewhere: a teleport: our body held at ({:.1f}, {:.1f}, {:.1f}) for {} s "
+                  "unless another world comes with it",
+                  body.position.x, body.position.y, body.position.z,
+                  elsewhere::kTeleportUs / 1'000'000);
     }
     if (body.releasePose) {
       runtime.ReleaseLocalPose();
