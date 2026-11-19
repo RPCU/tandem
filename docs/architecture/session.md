@@ -82,7 +82,7 @@ idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
   `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`, see
   `recordings.md`; `friendly_fire`, `notices`, `markers`, `nameplates`,
   which the co-op menu's Settings page changes with some of the others,
-  `coop-menu.md`): the defaults, and the test harness's session. The
+  `coop-menu.md`; `log = warn|info|debug`, see `netcode.md`): the defaults, and the test harness's session. The
   default is solo. Every key with its default is in `dist/tandem.ini`
   (shipped as `tandem.default.ini`) and `dist/INSTALL.md`; releases,
   startup and join-time compatibility checks, bug reports: `release.md`.

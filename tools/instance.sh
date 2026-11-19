@@ -395,6 +395,9 @@ role_file() {
   text="role = $role"$'\n'
   [ "$role" != join ] || text+="address = $address"$'\n'
   text+="port = ${INSTANCE_PORT:-27450}"$'\n'"name = $name"$'\n'
+  # log = debug, as tools/game.sh role writes: scenarios read per-puppet,
+  # per-hit lines (plugin/src/log.hpp); a KEY=VALUE below can change it.
+  text+="log = debug"$'\n'
   for extra in "$@"; do
     [[ $extra == *=* ]] || die "not KEY=VALUE: $extra"
     text+="${extra%%=*} = ${extra#*=}"$'\n'

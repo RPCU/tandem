@@ -218,6 +218,175 @@ proto::Quat UnpackQuat(const std::uint8_t *in) {
   return Normalized({c[0], c[1], c[2], c[3]});
 }
 
+void PackQuat5(const proto::Quat &qIn, std::uint8_t *out) {
+  auto q = Normalized(qIn);
+  const float c[4] = {q.i, q.j, q.k, q.r};
+  int largest = 0;
+  for (int i = 1; i < 4; ++i)
+    if (std::abs(c[i]) > std::abs(c[largest]))
+      largest = i;
+  const float sign = c[largest] < 0.f ? -1.f : 1.f;
+  constexpr int kBits[3] = {13, 13, 12};
+  std::uint64_t bits = static_cast<std::uint64_t>(largest);
+  int shift = 2, n = 0;
+  for (int i = 0; i < 4; ++i) {
+    if (i == largest)
+      continue;
+    const auto max = (1u << kBits[n]) - 1;
+    const float unit = std::clamp((c[i] * sign / kInvSqrt2 + 1.f) * 0.5f, 0.f, 1.f);
+    bits |= static_cast<std::uint64_t>(std::lround(unit * static_cast<float>(max))) << shift;
+    shift += kBits[n++];
+  }
+  for (std::size_t byte = 0; byte < proto::kPoseFrameRotationBytes; ++byte)
+    out[byte] = static_cast<std::uint8_t>(bits >> (8 * byte));
+}
+
+proto::Quat UnpackQuat5(const std::uint8_t *in) {
+  std::uint64_t bits = 0;
+  for (std::size_t byte = 0; byte < proto::kPoseFrameRotationBytes; ++byte)
+    bits |= static_cast<std::uint64_t>(in[byte]) << (8 * byte);
+  constexpr int kBits[3] = {13, 13, 12};
+  const int largest = static_cast<int>(bits & 3);
+  float c[4]{};
+  float sum = 0.f;
+  int shift = 2, n = 0;
+  for (int i = 0; i < 4; ++i) {
+    if (i == largest)
+      continue;
+    const auto max = (1u << kBits[n]) - 1;
+    const auto value = static_cast<float>((bits >> shift) & max) / static_cast<float>(max);
+    c[i] = (value * 2.f - 1.f) * kInvSqrt2;
+    sum += c[i] * c[i];
+    shift += kBits[n++];
+  }
+  c[largest] = std::sqrt(std::max(0.f, 1.f - sum));
+  return Normalized({c[0], c[1], c[2], c[3]});
+}
+
+namespace {
+// A small turn from `from` to `to` as a rotation vector, in kPoseTurnStep
+// steps; false when it does not fit a byte each way.
+bool TurnOf(const proto::Quat &from, const proto::Quat &to, std::int8_t *out) {
+  auto d = Multiply(Conjugate(from), to);
+  if (d.r < 0.f)
+    d = {-d.i, -d.j, -d.k, -d.r};
+  const float s = std::sqrt(d.i * d.i + d.j * d.j + d.k * d.k);
+  const float scale = s < 1e-7f ? 2.f : 2.f * std::atan2(s, d.r) / s;
+  const float v[3] = {d.i * scale, d.j * scale, d.k * scale};
+  for (int axis = 0; axis < 3; ++axis) {
+    const float steps = std::round(v[axis] / proto::kPoseTurnStep);
+    if (std::abs(steps) > 127.f)
+      return false;
+    out[axis] = static_cast<std::int8_t>(steps);
+  }
+  return true;
+}
+
+proto::Quat Turned(const proto::Quat &from, const std::int8_t *turn) {
+  const float v[3] = {turn[0] * proto::kPoseTurnStep, turn[1] * proto::kPoseTurnStep,
+                      turn[2] * proto::kPoseTurnStep};
+  const float angle = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+  if (angle < 1e-9f)
+    return from;
+  const float s = std::sin(angle / 2.f) / angle;
+  return Normalized(Multiply(from, {v[0] * s, v[1] * s, v[2] * s, std::cos(angle / 2.f)}));
+}
+
+void SetCode(proto::PoseFrame &frame, std::size_t slot, std::uint8_t code) {
+  frame.codes[slot / 4] |= static_cast<std::uint8_t>(code << (2 * (slot % 4)));
+}
+} // namespace
+
+proto::PoseFrame PoseEncoder::Encode(const proto::PoseState &pose) {
+  proto::PoseFrame frame{
+      .player = pose.player, .seq = pose.seq, .timeUs = pose.timeUs, .hips = pose.hips};
+  const bool key = !m_haveKey || m_sinceKey + 1 >= kKeyFrames || pose.timeUs < m_keyUs ||
+                   pose.timeUs - m_keyUs >= kKeyUs;
+  frame.key = key ? pose.seq : m_keySeq;
+  frame.rotations.reserve(proto::kPoseBones * proto::kPoseFrameRotationBytes);
+  std::uint8_t packed[proto::kPoseFrameRotationBytes];
+  std::int8_t turn[3];
+  for (std::size_t slot = 0; slot < proto::kPoseBones; ++slot) {
+    const auto q = UnpackQuat(pose.rotations.data() + slot * proto::kPoseRotationBytes);
+    if (!key && Angle(q, m_key[slot]) <= kThreshold)
+      continue; // kBoneKept
+    if (!key && TurnOf(m_key[slot], q, turn)) {
+      SetCode(frame, slot, proto::kBoneTurn);
+      frame.rotations.insert(frame.rotations.end(), reinterpret_cast<std::uint8_t *>(turn),
+                             reinterpret_cast<std::uint8_t *>(turn) + proto::kPoseTurnBytes);
+      continue;
+    }
+    PackQuat5(q, packed);
+    if (key)
+      m_key[slot] = UnpackQuat5(packed); // what the receiver will have
+    SetCode(frame, slot, proto::kBoneWhole);
+    frame.rotations.insert(frame.rotations.end(), packed, packed + sizeof packed);
+  }
+  ++m_frames;
+  if (key) {
+    m_haveKey = true;
+    m_keySeq = pose.seq;
+    m_keyUs = pose.timeUs;
+    m_sinceKey = 0;
+    ++m_keys;
+  } else {
+    ++m_sinceKey;
+  }
+  return frame;
+}
+
+std::optional<proto::PoseState> PoseDecoder::Decode(const proto::PoseFrame &frame) {
+  const Key *base = nullptr;
+  const bool key = frame.key == frame.seq;
+  if (!key) {
+    // Its own key, else the newest we have (by sequence, wrap-safe).
+    for (std::size_t i = 0; i < m_count; ++i)
+      if (m_keys[i].seq == frame.key)
+        base = &m_keys[i];
+    if (!base) {
+      for (std::size_t i = 0; i < m_count; ++i)
+        if (!base || static_cast<std::int32_t>(m_keys[i].seq - base->seq) > 0)
+          base = &m_keys[i];
+      if (!base) {
+        ++m_dropped;
+        return std::nullopt;
+      }
+      ++m_otherKey;
+    }
+  }
+  Key decoded{.seq = frame.seq};
+  std::size_t at = 0;
+  for (std::size_t slot = 0; slot < proto::kPoseBones; ++slot) {
+    const auto code = frame.Code(slot);
+    if (code == proto::kBoneWhole) {
+      if (at + proto::kPoseFrameRotationBytes > frame.rotations.size())
+        return std::nullopt;
+      decoded.bones[slot] = UnpackQuat5(frame.rotations.data() + at);
+      at += proto::kPoseFrameRotationBytes;
+    } else if (!base) {
+      return std::nullopt; // a key with a bone missing: not ours to guess
+    } else if (code == proto::kBoneTurn) {
+      if (at + proto::kPoseTurnBytes > frame.rotations.size())
+        return std::nullopt;
+      decoded.bones[slot] = Turned(
+          base->bones[slot], reinterpret_cast<const std::int8_t *>(frame.rotations.data() + at));
+      at += proto::kPoseTurnBytes;
+    } else {
+      decoded.bones[slot] = base->bones[slot];
+    }
+  }
+  proto::PoseState state{
+      .player = frame.player, .seq = frame.seq, .timeUs = frame.timeUs, .hips = frame.hips};
+  for (std::size_t slot = 0; slot < proto::kPoseBones; ++slot)
+    PackQuat(decoded.bones[slot], state.rotations.data() + slot * proto::kPoseRotationBytes);
+  if (key) {
+    m_keys[m_next] = decoded;
+    m_next = (m_next + 1) % kKeys;
+    m_count = std::min(m_count + 1, kKeys);
+  }
+  return state;
+}
+
 proto::PoseState Pack(const Pose &pose) {
   proto::PoseState state;
   state.hips = {ToFixed(pose.hips.x), ToFixed(pose.hips.y), ToFixed(pose.hips.z)};
@@ -300,6 +469,9 @@ void PoseTrack::Push(const proto::PoseState &state) {
   ++m_received;
   if (!m_samples.empty() && state.timeUs <= m_samples.back().timeUs)
     m_samples.clear(); // the sender's clock jumped: start over
+  if (!m_samples.empty() && state.timeUs - m_samples.back().timeUs < 2'000'000)
+    m_intervalUs +=
+        (static_cast<double>(state.timeUs - m_samples.back().timeUs) - m_intervalUs) / 8.0;
   m_samples.push_back({state.timeUs, *pose});
   while (m_samples.size() > kMaxSamples)
     m_samples.pop_front();

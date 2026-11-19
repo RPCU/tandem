@@ -495,6 +495,10 @@ public native class TandemNative extends IScriptable {
   public static native func NodeRefHash(node: NodeRef) -> Uint64
   public static native func NodeRefOf(hash: Uint64) -> NodeRef
   public static native func Log(text: String)
+  public static native func LogDebug(text: String)
+  public static native func PerfMark(section: Int32)
+  public static native func PerfReport()
+  public static native func InReach(player: Uint32, npc: Uint32, puppetAt: Vector4, npcAt: Vector4, limit: Float) -> Bool
   // Invites through tandem-relay: the host's join code ("K7Q-2M9", "" none
   // yet or no relay), the relay link's state ("" no relay, "connecting",
   // "ready", else the problem), and joining by a typed code (false: not a

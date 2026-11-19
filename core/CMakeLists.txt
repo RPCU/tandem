@@ -21,6 +21,10 @@ add_library(tandem_core STATIC
   src/hosts.cpp
   src/timebubble.cpp
   src/shaping.cpp
+  src/traffic.cpp
+  src/netcode.cpp
+  src/net_traffic.cpp
+  src/lagcomp.cpp
   src/elsewhere.cpp
   src/compat.cpp
   src/report.cpp

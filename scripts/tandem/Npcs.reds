@@ -715,7 +715,7 @@ public class TandemNpcs {
         if !Equals(slot, known.seat) {
           known.seat = slot;
           TandemNative.SendNpcSeat(known.npc, known.seatOwner, slot);
-          TandemNative.Log(s"npcs: \(known.npc) moved to \(NameToString(slot))");
+          TandemNative.LogDebug(s"npcs: \(known.npc) moved to \(NameToString(slot))");
         }
         return;
       }
@@ -888,7 +888,7 @@ public class TandemNpcs {
       return true;
     }
     StatusEffectHelper.ApplyStatusEffect(body, event.record, instigator.GetEntityID());
-    TandemNative.Log(s"npcs: \(event.npc) gets \(TDBID.ToStringDEBUG(event.record)) from player \(event.player)");
+    TandemNative.LogDebug(s"npcs: \(event.npc) gets \(TDBID.ToStringDEBUG(event.record)) from player \(event.player)");
     return true;
   }
 

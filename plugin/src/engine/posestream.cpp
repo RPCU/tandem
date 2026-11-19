@@ -38,6 +38,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "../perf.hpp"
 #include "../runtime.hpp"
 #include "posestream.hpp"
 
@@ -311,9 +312,10 @@ void DetourJob(void *object, void *params) {
   g_originalJob(object, params);
   const auto address = reinterpret_cast<std::uintptr_t>(object);
   const auto source = g_sourceObject.load(std::memory_order_acquire);
-  if (source != 0 && address == source)
+  if (source != 0 && address == source) {
+    const Perf::Scope timed(Work::PoseRead);
     ReadSource(source);
-  else if (g_actorSourceCount.load(std::memory_order_acquire) > 0)
+  } else if (g_actorSourceCount.load(std::memory_order_acquire) > 0)
     for (auto &actor : g_actorSources)
       if (actor.object.load(std::memory_order_acquire) == address) {
         ReadActor(actor, address);
@@ -362,8 +364,8 @@ bool MapTarget(std::uintptr_t rigAddress, TargetMap &map) {
   const auto &a = reference[forearm].Translation, &b = reference[hand].Translation;
   map.forearm =
       std::sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y) + (a.Z - b.Z) * (a.Z - b.Z));
-  log::Info("pose stream: puppet rig {:#x}: {} bones, {} of {} body bones, hips {:.3f} m",
-            rigAddress, names.Size(), mapped, pose::kBones, map.referenceHips);
+  log::Debug("pose stream: puppet rig {:#x}: {} bones, {} of {} body bones, hips {:.3f} m",
+             rigAddress, names.Size(), mapped, pose::kBones, map.referenceHips);
   return mapped == static_cast<int>(pose::kBones) && map.referenceHips > 0.3f;
 }
 
@@ -459,9 +461,10 @@ void WriteActor(std::uint32_t npc, std::uintptr_t instance, void *sampled) {
 
 void DetourCommit(void *instance, void *params, void *sampled, std::uint32_t lod) {
   const auto address = reinterpret_cast<std::uintptr_t>(instance);
-  if (const auto player = BoundPlayer(address))
+  if (const auto player = BoundPlayer(address)) {
+    const Perf::Scope timed(Work::PoseWrite);
     WritePuppet(player, address, sampled);
-  else if (const auto npc = BoundActor(address))
+  } else if (const auto npc = BoundActor(address))
     WriteActor(npc, address, sampled);
   g_originalCommit(instance, params, sampled, lod);
 }

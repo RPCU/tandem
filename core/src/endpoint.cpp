@@ -84,6 +84,104 @@ bool AimsAtWorld(const proto::Message &message) {
 }
 } // namespace
 
+std::int64_t Endpoint::OffsetAt(std::uint64_t nowUs) const {
+  const auto gap = m_offsetToUs - m_offsetFromUs;
+  if (gap == 0)
+    return m_offsetToUs;
+  const auto moved =
+      static_cast<std::int64_t>(static_cast<double>(nowUs - m_offsetSinceUs) * kClockSlew);
+  if (moved >= std::abs(gap))
+    return m_offsetToUs;
+  return m_offsetFromUs + (gap > 0 ? moved : -moved);
+}
+
+std::uint64_t Endpoint::HostNowUs() const {
+  const auto now = net::NowUs();
+  return static_cast<std::uint64_t>(static_cast<std::int64_t>(now) + OffsetAt(now));
+}
+
+void Endpoint::SetClockOffset(std::int64_t offsetUs, bool jump) {
+  const auto now = net::NowUs();
+  const auto current = OffsetAt(now);
+  if (jump || std::abs(offsetUs - current) > kClockJumpUs)
+    m_offsetFromUs = offsetUs;
+  else
+    m_offsetFromUs = current;
+  m_offsetToUs = offsetUs;
+  m_offsetSinceUs = now;
+}
+
+float Endpoint::NearestOther() const {
+  if (!m_ownPosition)
+    return netcode::kNearest;
+  float nearest = -1.f;
+  for (const auto &[player, at] : m_positions) {
+    if (player == m_you)
+      continue;
+    const float d =
+        std::hypot(at.x - m_ownPosition->x, at.y - m_ownPosition->y, at.z - m_ownPosition->z);
+    if (nearest < 0.f || d < nearest)
+      nearest = d;
+  }
+  return nearest < 0.f ? netcode::kNearest : nearest;
+}
+
+void Endpoint::NotePosition(const proto::PlayerState &state) {
+  if (state.player != proto::kNoPlayer && state.player != m_you)
+    m_positions[state.player] = state.position;
+}
+
+void Endpoint::ForgetStreams(proto::PlayerId player) {
+  m_positions.erase(player);
+  m_poseDecoders.erase(player);
+  m_relayEncoders.erase(player);
+}
+
+Endpoint::NetCounters Endpoint::Counters() const {
+  NetCounters counters{
+      .poseKeys = m_poseEncoder.Keys(),
+      .poseFrames = m_poseEncoder.Frames(),
+      .poseSkipped = m_poseSkipped,
+      .statesHeld = m_stateGate.Held() + m_vehicleGate.Held(),
+      .statesSkipped = m_statesSkipped,
+      .npcMotions = m_npcMotions,
+      .npcWhole = m_npcWhole,
+  };
+  for (const auto &[player, decoder] : m_poseDecoders) {
+    counters.poseOtherKey += decoder.OtherKey();
+    counters.poseDropped += decoder.Dropped();
+  }
+  return counters;
+}
+
+// A pose frame from `from` (host: a guest's, stamped; guest: anyone's, from
+// the host): back to a whole pose for our game, and on to the others.
+void Endpoint::OnRemotePoseFrame(proto::PoseFrame frame, net::PeerId from,
+                                 std::vector<SessionEvent> &out) {
+  if (frame.player == m_you || frame.player == proto::kNoPlayer)
+    return;
+  const auto pose = m_poseDecoders[frame.player].Decode(frame);
+  if (!pose)
+    return;
+  if (!IsHost() && m_receivedTap)
+    m_receivedTap(*pose);
+  if (IsHost() && m_playerOfPeer.size() > 1)
+    Broadcast(m_relayEncoders[frame.player].Encode(*pose), from);
+  out.push_back(events::RemotePose{*pose});
+}
+
+// Guest: the host's NPC states, whole (from NpcStates, or NpcMotion filled
+// in by our book).
+void Endpoint::OnHostNpcStates(proto::NpcStates states, std::vector<SessionEvent> &out) {
+  if (m_receivedTap)
+    m_receivedTap(states);
+  // Only NPCs we know: a state that overtook its NpcGone on the other
+  // channel must not bring a track back.
+  std::erase_if(states.npcs,
+                [&](const proto::NpcEntry &entry) { return !m_npcs.contains(entry.npc); });
+  out.push_back(events::HostNpcStates{std::move(states)});
+}
+
 Endpoint::Endpoint(std::unique_ptr<net::Session> session, Identity identity, Timing timing)
     : m_session(std::move(session)), m_identity(std::move(identity)), m_timing(timing),
       m_checker(Us(timing.resyncCooldown)), m_deviceCheck(Us(timing.resyncCooldown)) {
@@ -441,7 +539,18 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               auto relayed = state;
               relayed.player = player;
               m_places[player] = {.position = relayed.position, .known = true};
-              Broadcast(relayed, event.peer);
+              NotePosition(relayed);
+              Broadcast(m_compact ? proto::Message(netcode::Compact(relayed))
+                                  : proto::Message(relayed),
+                        event.peer);
+              out.push_back(events::RemoteState{relayed});
+            },
+            [&](const proto::PlayerMotion &motion) {
+              auto relayed = netcode::Whole(motion);
+              relayed.player = player;
+              m_places[player] = {.position = relayed.position, .known = true};
+              NotePosition(relayed);
+              Broadcast(netcode::Compact(relayed), event.peer);
               out.push_back(events::RemoteState{relayed});
             },
             [&](const proto::PoseState &pose) {
@@ -449,6 +558,11 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               relayed.player = player;
               Broadcast(relayed, event.peer);
               out.push_back(events::RemotePose{relayed});
+            },
+            [&](const proto::PoseFrame &frame) {
+              auto stamped = frame;
+              stamped.player = player;
+              OnRemotePoseFrame(std::move(stamped), event.peer, out);
             },
             [&](const proto::Appearance &appearance) {
               auto relayed = appearance;
@@ -477,7 +591,15 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
             [&](const proto::VehicleState &vehicle) {
               auto relayed = vehicle;
               relayed.player = player;
-              Broadcast(relayed, event.peer);
+              Broadcast(m_compact ? proto::Message(netcode::Compact(relayed))
+                                  : proto::Message(relayed),
+                        event.peer);
+              out.push_back(events::RemoteVehicle{relayed});
+            },
+            [&](const proto::VehicleMotion &motion) {
+              auto relayed = netcode::Whole(motion);
+              relayed.player = player;
+              Broadcast(netcode::Compact(relayed), event.peer);
               out.push_back(events::RemoteVehicle{relayed});
             },
             [&](const proto::VehicleRadio &radio) {
@@ -768,6 +890,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
     it = m_npcSeats.erase(it);
   }
   m_story.Forget(player);
+  ForgetStreams(player);
   m_seenHost.erase(player);
   m_guestEpoch.erase(player);
   m_resyncAtUs.erase(player);
@@ -870,6 +993,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     // ran are not in it, and where it is we do not know yet.
     InheritNpcsOf(player, true, out);
     m_places[player] = {};
+    ForgetStreams(player);
     m_seenHost[player] = m_epoch;
     m_guestEpoch.erase(player);
     Send(peer, proto::Welcome{player, m_host, HostNowUs()});
@@ -1164,8 +1288,23 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
 }
 
 void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<SessionEvent> &out) {
-  if (m_receivedTap)
+  // A session recording keeps what the host said in full: compact forms are
+  // tapped once decoded (PoseState, NpcStates).
+  if (m_receivedTap && !std::holds_alternative<proto::PoseFrame>(message) &&
+      !std::holds_alternative<proto::NpcMotion>(message) &&
+      !std::holds_alternative<proto::NpcStates>(message) &&
+      !std::holds_alternative<proto::PlayerMotion>(message) &&
+      !std::holds_alternative<proto::VehicleMotion>(message))
     m_receivedTap(message);
+  // Compact states read back whole.
+  if (const auto *motion = std::get_if<proto::PlayerMotion>(&message)) {
+    OnGuestMessage(netcode::Whole(*motion), out);
+    return;
+  }
+  if (const auto *motion = std::get_if<proto::VehicleMotion>(&message)) {
+    OnGuestMessage(netcode::Whole(*motion), out);
+    return;
+  }
   if (m_wireTap)
     m_wireTap(Wire::In, m_host, message);
   if (proto::IsStory(message)) {
@@ -1255,8 +1394,9 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           [&](const proto::Welcome &welcome) {
             m_you = welcome.you;
             m_host = welcome.host;
-            m_clockOffsetUs = static_cast<std::int64_t>(welcome.hostTimeUs) -
-                              static_cast<std::int64_t>(net::NowUs());
+            SetClockOffset(static_cast<std::int64_t>(welcome.hostTimeUs) -
+                               static_cast<std::int64_t>(net::NowUs()),
+                           true);
             // Sequences start at the host clock's millisecond: a player
             // back under its old id (after a crash) is newer than
             // everything it sent before, which receivers already hold.
@@ -1311,8 +1451,9 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (rtt <= m_bestRttUs) {
               m_bestRttUs = rtt;
               const auto midpoint = pong.pingSentUs + rtt / 2;
-              m_clockOffsetUs =
-                  static_cast<std::int64_t>(pong.hostTimeUs) - static_cast<std::int64_t>(midpoint);
+              SetClockOffset(static_cast<std::int64_t>(pong.hostTimeUs) -
+                                 static_cast<std::int64_t>(midpoint),
+                             false);
             }
           },
           [&](const proto::Roster &roster) {
@@ -1347,20 +1488,23 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 m_story.Forget(id);
                 m_commsLinks.erase(id);
                 m_waypoints.erase(id);
+                ForgetStreams(id);
                 out.push_back(events::PlayerLeft{id});
               }
             m_players = std::move(next);
           },
           [&](const proto::PlayerState &state) {
-            if (state.player != m_you) {
-              m_places[state.player] = {.position = state.position, .known = true};
-              out.push_back(events::RemoteState{state});
-            }
+            if (state.player == m_you)
+              return;
+            m_places[state.player] = {.position = state.position, .known = true};
+            NotePosition(state);
+            out.push_back(events::RemoteState{state});
           },
           [&](const proto::PoseState &pose) {
             if (pose.player != m_you)
               out.push_back(events::RemotePose{pose});
           },
+          [&](const proto::PoseFrame &frame) { OnRemotePoseFrame(frame, m_hostPeer, out); },
           [&](const proto::Appearance &appearance) {
             if (appearance.player != m_you && Keep(m_appearances, appearance))
               out.push_back(events::RemoteAppearance{appearance});
@@ -1401,19 +1545,26 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (known)
               return;
             m_corpses.erase(spawn.npc);
+            m_npcBook.Seed(spawn);
             out.push_back(events::HostNpcSpawn{spawn});
           },
           [&](const proto::NpcStates &states) {
             // The old world's states (before the host's last epoch) are void.
             if (m_firstNpcSeq != 0 && static_cast<std::int32_t>(states.seq - m_firstNpcSeq) < 0)
               return;
-            // Only NPCs we know: a state that overtook its NpcGone on the
-            // other channel must not bring a track back.
-            auto live = states;
-            std::erase_if(live.npcs, [&](const proto::NpcEntry &entry) {
-              return !m_npcs.contains(entry.npc) || OwnsNpc(entry.npc);
-            });
-            out.push_back(events::HostNpcStates{std::move(live)});
+            m_npcBook.Note(states);
+            OnHostNpcStates(states, out);
+          },
+          [&](const proto::NpcMotion &motion) {
+            if (m_firstNpcSeq != 0 && static_cast<std::int32_t>(motion.seq - m_firstNpcSeq) < 0)
+              return;
+            // The host compacts only its own NPCs' states (regions: another
+            // owner's come whole): the book fills in the host's alone.
+            std::map<proto::NpcId, proto::NpcSpawn> hosts;
+            for (const auto &[npc, spawn] : m_npcs)
+              if (NpcOwner(npc) == m_host)
+                hosts.emplace(npc, spawn);
+            OnHostNpcStates(m_npcBook.Apply(motion, hosts), out);
           },
           [&](const proto::ActorPose &pose) {
             // As NPC states: none of the host's old world, none for an NPC
@@ -1435,6 +1586,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             m_npcHolds.erase(gone.npc);
             m_npcOwner.erase(gone.npc);
             m_given.erase(gone.npc);
+            m_npcBook.Forget(gone.npc);
             if (m_npcs.erase(gone.npc) > 0) {
               m_npcHealth.erase(gone.npc);
               m_npcLevels.erase(gone.npc);
@@ -1466,6 +1618,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               m_npcLevels.erase(it->first);
               m_npcHolds.erase(it->first);
               m_npcOwner.erase(it->first);
+              m_npcBook.Forget(it->first);
               out.push_back(events::HostNpcGone{{.npc = it->first, .reason = 0}});
               it = m_npcs.erase(it);
             }
@@ -1765,12 +1918,21 @@ void Endpoint::SendLocalState(proto::PlayerState state) {
     return;
   m_places[m_you] = {.position = state.position, .known = true};
   state.player = m_you;
-  state.seq = ++m_seq;
   state.timeUs = HostNowUs();
-  if (IsHost())
-    Broadcast(state);
-  else
-    Send(m_hostPeer, state);
+  m_ownPosition = state.position;
+  // A still V 5 times a second, a far one less often (netcode.md).
+  const auto due = m_compact ? m_stateGate.Offer(state, netcode::StateIntervalUs(NearestOther()))
+                             : std::vector<proto::PlayerState>{state};
+  if (due.empty())
+    ++m_statesSkipped;
+  for (auto send : due) {
+    send.seq = ++m_seq;
+    const auto wire = m_compact ? proto::Message(netcode::Compact(send)) : proto::Message(send);
+    if (IsHost())
+      Broadcast(wire);
+    else
+      Send(m_hostPeer, wire);
+  }
 }
 
 void Endpoint::SendLocalPose(proto::PoseState pose) {
@@ -1779,13 +1941,20 @@ void Endpoint::SendLocalPose(proto::PoseState pose) {
     m_tap(pose);
   if (!IsJoined() || m_ended)
     return;
+  // Far from everyone, fewer poses (netcode.md); delta coded.
+  if (m_compact && !m_poseGate.Due(net::NowUs(), netcode::PoseIntervalUs(NearestOther()))) {
+    ++m_poseSkipped;
+    return;
+  }
   pose.player = m_you;
   pose.seq = ++m_poseSeq;
   pose.timeUs = HostNowUs();
+  const proto::Message frame =
+      m_compact ? proto::Message(m_poseEncoder.Encode(pose)) : proto::Message(pose);
   if (IsHost())
-    Broadcast(pose);
+    Broadcast(frame);
   else
-    Send(m_hostPeer, pose);
+    Send(m_hostPeer, frame);
 }
 
 void Endpoint::SetLocalAppearance(proto::Appearance appearance) {
@@ -1939,8 +2108,21 @@ void Endpoint::SendNpcStates(proto::NpcStates states) {
       it->second.yaw = entry.yaw;
     }
   // Linked with nobody: nobody shows them.
-  if (IsHost() || !Linked().empty())
-    SayNpc(states);
+  if (!IsHost()) {
+    if (!Linked().empty())
+      SayNpc(states);
+    return;
+  }
+  // Ours, as the host: only what changed, quantized (netcode.md); whole when
+  // out of range. The owners' own (regions) are relayed whole.
+  if (const auto motion = m_compact ? m_npcCoder.Encode(states) : std::nullopt) {
+    ++m_npcMotions;
+    ShareNpc(*motion, m_you);
+  } else {
+    ++m_npcWhole;
+    m_npcCoder.Reset();
+    ShareNpc(states, m_you);
+  }
 }
 
 void Endpoint::SendActorPose(proto::ActorPose pose) {
@@ -1956,6 +2138,7 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
   if (!IsJoined() || m_ended || !SpeaksFor(gone.npc))
     return;
   ForgetNpc(gone.npc);
+  m_npcCoder.Forget(gone.npc);
   m_npcLevels.erase(gone.npc);
   m_npcLevelsEarly.erase(gone.npc);
   if (gone.reason == proto::kGoneAway)
@@ -2208,12 +2391,18 @@ void Endpoint::SendLocalVehicle(proto::VehicleState vehicle) {
   if (!IsJoined() || m_ended)
     return;
   vehicle.player = m_you;
-  vehicle.seq = ++m_vehicleSeq;
   vehicle.timeUs = HostNowUs();
-  if (IsHost())
-    Broadcast(vehicle);
-  else
-    Send(m_hostPeer, vehicle);
+  const auto due = m_compact
+                       ? m_vehicleGate.Offer(vehicle, netcode::StateIntervalUs(NearestOther()))
+                       : std::vector<proto::VehicleState>{vehicle};
+  for (auto send : due) {
+    send.seq = ++m_vehicleSeq;
+    const auto wire = m_compact ? proto::Message(netcode::Compact(send)) : proto::Message(send);
+    if (IsHost())
+      Broadcast(wire);
+    else
+      Send(m_hostPeer, wire);
+  }
 }
 
 void Endpoint::SendLocalShot(proto::Shot shot) {

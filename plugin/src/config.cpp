@@ -201,6 +201,15 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.pings = false;
     else
       return Bad("pings is on or off");
+  } else if (key == "log") {
+    if (value == "warn" || value == "quiet")
+      config.logLevel = 1;
+    else if (value == "info")
+      config.logLevel = 2;
+    else if (value == "debug")
+      config.logLevel = 3;
+    else
+      return Bad("log is warn, info or debug");
   } else if (key == "compat") {
     // Developers only: off lets a session start whatever the startup check
     // found (another game version, an older Codeware or TweakXL).

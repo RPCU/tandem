@@ -507,7 +507,7 @@ public class TandemNpcAnims {
     this.m_applied += 1;
     if !proxy.applied {
       proxy.applied = true;
-      TandemNative.Log(s"npc anims: proxy \(proxy.npc) follows (high \(anim.highLevel), upper \(anim.upperBody), stance \(anim.stance), weapon \(TDBID.ToStringDEBUG(anim.weapon)), workspot \(anim.workspot))");
+      TandemNative.LogDebug(s"npc anims: proxy \(proxy.npc) follows (high \(anim.highLevel), upper \(anim.upperBody), stance \(anim.stance), weapon \(TDBID.ToStringDEBUG(anim.weapon)), workspot \(anim.workspot))");
     }
   }
 

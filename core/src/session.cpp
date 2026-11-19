@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <mutex>
+#include <utility>
 
 namespace tandem::net {
 namespace {
@@ -57,6 +58,16 @@ struct Session::Impl {
   // silent: it is judged again only after a moment to hear from it.
   enet_uint32 lastPollMs{};
   std::optional<enet_uint32> judgeFromMs;
+  // What went through (tandem/net_traffic.hpp); ENet's own counters are 32-bit
+  // and moved in here as they grow.
+  Traffic traffic;
+
+  void CollectWire() {
+    traffic.wire[kSent].bytes += std::exchange(host->totalSentData, 0);
+    traffic.wire[kSent].messages += std::exchange(host->totalSentPackets, 0);
+    traffic.wire[kReceived].bytes += std::exchange(host->totalReceivedData, 0);
+    traffic.wire[kReceived].messages += std::exchange(host->totalReceivedPackets, 0);
+  }
 
   ~Impl() {
     relay.reset();
@@ -82,6 +93,29 @@ struct Session::Impl {
     enet_peer_timeout(peer, 0, timeoutMs, 2 * timeoutMs);
   }
 
+  // ENet doubles a reliable resend's wait at each try, without bound: after
+  // an outage of half the timeout the next try came seconds after the link
+  // was back, and a live peer was judged silent (reliability_test.cpp). The
+  // wait is capped at a tenth of the timeout (100 to 500 ms).
+  void CapResends() const {
+    const auto cap = std::clamp<enet_uint32>(timeoutMs / 10, 100, 500);
+    for (std::size_t i = 0; i < host->peerCount; ++i) {
+      auto *peer = &host->peers[i];
+      if (peer->state != ENET_PEER_STATE_CONNECTED || enet_list_empty(&peer->sentReliableCommands))
+        continue;
+      for (auto it = enet_list_begin(&peer->sentReliableCommands);
+           it != enet_list_end(&peer->sentReliableCommands); it = enet_list_next(it)) {
+        auto *command = reinterpret_cast<ENetOutgoingCommand *>(it);
+        command->roundTripTimeout = (std::min)(command->roundTripTimeout, cap);
+      }
+      const auto *first =
+          reinterpret_cast<ENetOutgoingCommand *>(enet_list_begin(&peer->sentReliableCommands));
+      const auto due = first->sentTime + first->roundTripTimeout;
+      if (static_cast<std::int32_t>(peer->nextTimeout - due) > 0)
+        peer->nextTimeout = due;
+    }
+  }
+
   static enet_uint32 QuietMs(const ENetPeer *peer) {
     // lastReceiveTime is when the peer last acknowledged something.
     return peer->lastReceiveTime == 0 ? 0 : Since(enet_time_get(), peer->lastReceiveTime);
@@ -105,6 +139,9 @@ struct Session::Impl {
                             event.packet->dataLength);
       auto message = proto::Decode(bytes);
       const auto kind = message ? Event::Kind::Received : Event::Kind::Malformed;
+      if (message)
+        traffic.Count(message->index(), static_cast<proto::Channel>(event.channelID), kReceived,
+                      bytes.size());
       events.push_back({kind, IdOf(event.peer), std::move(message)});
       if (kind == Event::Kind::Malformed)
         events.back().helloVersion = proto::PeekHelloVersion(bytes);
@@ -122,6 +159,14 @@ struct Session::Impl {
       return nullptr;
     const auto flags = proto::IsReliable(message) ? ENET_PACKET_FLAG_RELIABLE : 0u;
     return enet_packet_create(bytes.data(), bytes.size(), flags);
+  }
+
+  bool SendPacket(ENetPeer *peer, const proto::Message &message, ENetPacket *packet) {
+    const auto channel = proto::ChannelOf(message);
+    if (enet_peer_send(peer, static_cast<enet_uint8>(channel), packet) != 0)
+      return false;
+    traffic.Count(message.index(), channel, kSent, packet->dataLength);
+    return true;
   }
 };
 
@@ -229,6 +274,7 @@ std::unique_ptr<Session> Session::ConnectRelay(const RelayOptions &relay, std::s
 std::vector<Event> Session::Poll(std::chrono::milliseconds timeout) {
   std::vector<Event> events;
   ENetEvent event;
+  m_impl->CapResends();
   const auto service = [&](enet_uint32 wait) {
     while (enet_host_service(m_impl->host, &event, wait) > 0) {
       wait = 0;
@@ -260,6 +306,7 @@ std::vector<Event> Session::Poll(std::chrono::milliseconds timeout) {
   else if (m_impl->judgeFromMs && Reached(now, *m_impl->judgeFromMs))
     m_impl->judgeFromMs.reset();
   m_impl->lastPollMs = now;
+  m_impl->CollectWire();
   for (std::size_t i = 0; i < host->peerCount && !m_impl->judgeFromMs; ++i) {
     auto *peer = &host->peers[i];
     const bool open = peer->state == ENET_PEER_STATE_CONNECTED ||
@@ -289,7 +336,7 @@ bool Session::Send(PeerId id, const proto::Message &message) {
   auto *packet = peer ? Impl::PacketOf(message) : nullptr;
   if (!packet)
     return false;
-  if (enet_peer_send(peer, static_cast<enet_uint8>(proto::ChannelOf(message)), packet) != 0) {
+  if (!m_impl->SendPacket(peer, message, packet)) {
     enet_packet_destroy(packet);
     return false;
   }
@@ -310,10 +357,18 @@ bool Session::SendBytes(PeerId id, std::span<const std::byte> bytes) {
 }
 
 void Session::Broadcast(const proto::Message &message, PeerId except) {
+  // Encoded once: ENet counts the packet's users and frees it after the last.
+  ENetPacket *packet = nullptr;
+  bool sent = false;
   for (auto id : Peers()) {
-    if (id != except)
-      Send(id, message);
+    if (id == except)
+      continue;
+    if (!packet && !(packet = Impl::PacketOf(message)))
+      return;
+    sent |= m_impl->SendPacket(m_impl->PeerOf(id), message, packet);
   }
+  if (packet && !sent)
+    enet_packet_destroy(packet);
 }
 
 void Session::Disconnect(PeerId id) {
@@ -341,6 +396,11 @@ std::optional<Stats> Session::StatsOf(PeerId id) const {
           static_cast<float>(peer->packetLoss) / static_cast<float>(ENET_PEER_PACKET_LOSS_SCALE),
       .quietMs = Impl::QuietMs(peer),
   };
+}
+
+Traffic Session::TrafficSoFar() const {
+  m_impl->CollectWire();
+  return m_impl->traffic;
 }
 
 std::optional<RelayStatus> Session::Relay() const {

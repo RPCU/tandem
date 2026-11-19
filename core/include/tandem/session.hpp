@@ -4,6 +4,7 @@
 // connected to a host. Single-threaded: call Poll() regularly from one thread
 // (the plugin runs it on its network thread, the mock player in its main loop).
 
+#include "tandem/net_traffic.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/relay.hpp"
 
@@ -100,6 +101,8 @@ public:
   void Flush();
 
   std::optional<Stats> StatsOf(PeerId peer) const;
+  // Everything sent and received since the session began (tandem/net_traffic.hpp).
+  Traffic TrafficSoFar() const;
   std::vector<PeerId> Peers() const;
   bool IsHost() const { return m_isHost; }
   // The UDP port the socket is bound to (Listen on port 0 picks a free one).

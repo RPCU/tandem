@@ -97,6 +97,26 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *difficulty = std::get_if<Difficulty>(&message);
       difficulty && difficulty->level > 3)
     return std::nullopt;
+  if (const auto *frame = std::get_if<PoseFrame>(&message)) {
+    // Codes 0-2 only, none past the last bone, the rotations exactly what
+    // the codes say; a key whole.
+    std::size_t bytes = 0;
+    const bool key = frame->key == frame->seq;
+    for (std::size_t slot = 0; slot < kPoseCodeBytes * 4; ++slot) {
+      const auto code = frame->Code(slot);
+      if (code == 3 || (slot >= kPoseBones && code != 0) ||
+          (key && slot < kPoseBones && code != kBoneWhole))
+        return std::nullopt;
+      bytes += code == kBoneTurn    ? kPoseTurnBytes
+               : code == kBoneWhole ? kPoseFrameRotationBytes
+                                    : 0;
+    }
+    if (frame->rotations.size() != bytes)
+      return std::nullopt;
+  }
+  if (const auto *motion = std::get_if<NpcMotion>(&message);
+      motion && motion->npcs.size() > kMaxNpcsPerState)
+    return std::nullopt;
   if (const auto *transit = std::get_if<Transit>(&message);
       transit && transit->kind > TransitKind::Along)
     return std::nullopt;
@@ -249,7 +269,11 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<TrafficStates>(message) ||
                  std::holds_alternative<MountedFire>(message) ||
                  std::holds_alternative<GunnerAim>(message) ||
-                 std::holds_alternative<ActorPose>(message)
+                 std::holds_alternative<ActorPose>(message) ||
+                 std::holds_alternative<PoseFrame>(message) ||
+                 std::holds_alternative<NpcMotion>(message) ||
+                 std::holds_alternative<PlayerMotion>(message) ||
+                 std::holds_alternative<VehicleMotion>(message)
              ? Channel::State
              // Everything else is reliable and ordered, the consistency
              // messages too (Digest, ResyncRequest, NpcSet, Epoch): a digest
@@ -289,7 +313,9 @@ bool IsVehicleCombat(const Message &message) {
 
 bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::State; }
 
-const char *NameOf(const Message &message) {
+const char *NameOf(const Message &message) { return NameOfKind(message.index()); }
+
+const char *NameOfKind(std::size_t kind) {
   constexpr const char *names[] = {"Hello",
                                    "Welcome",
                                    "Refused",
@@ -421,8 +447,12 @@ const char *NameOf(const Message &message) {
                                    "VehicleBump",
                                    "NpcRam",
                                    "Chase",
-                                   "StoryRestrictions"};
+                                   "StoryRestrictions",
+                                   "PoseFrame",
+                                   "NpcMotion",
+                                   "PlayerMotion",
+                                   "VehicleMotion"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
-  return names[message.index()];
+  return kind < std::size(names) ? names[kind] : "?";
 }
 } // namespace tandem::proto

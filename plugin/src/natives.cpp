@@ -14,6 +14,7 @@
 #include "engine/posestream.hpp"
 #include "engine/trace.hpp"
 #include "log.hpp"
+#include "perf.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
 
@@ -491,7 +492,10 @@ struct TandemNative : Red::IScriptable {
 
   static void RegisterPuppet(std::uint32_t player, Red::EntityID id) {
     Runtime::Get().RegisterPuppet(player, id.hash);
-    log::Info("puppet for player {} is entity {:x}", player, id.hash);
+    if (player >= kNpcPuppetBase)
+      log::Debug("puppet for player {} is entity {:x}", player, id.hash);
+    else
+      log::Info("puppet for player {} is entity {:x}", player, id.hash);
   }
 
   static void UnregisterPuppet(std::uint32_t player) { Runtime::Get().UnregisterPuppet(player); }
@@ -1699,6 +1703,27 @@ struct TandemNative : Red::IScriptable {
   static Red::NodeRef NodeRefOf(std::uint64_t hash) { return Red::NodeRef(hash); }
 
   static void Log(Red::CString text) { log::Info("[script] {}", text.c_str()); }
+  // A detail for `log = debug` only (log.hpp): per hit, shot, proxy.
+  static void LogDebug(Red::CString text) { log::Debug("[script] {}", text.c_str()); }
+
+  // ---- frame cost and fairness (docs/architecture/netcode.md) ----
+  // The script tick's section `section` begins (perf.hpp kTickSections; 0:
+  // the tick begins, -1: it ends).
+  static void PerfMark(std::int32_t section) { Perf::Get().Mark(section); }
+  // tools/game.sh cmd perf: the frame cost, queues and traffic now.
+  static void PerfReport() { Runtime::Get().RequestPerfReport(); }
+  // Host: is guest `player`'s V within `limit` metres of our NPC `npc`, as
+  // that guest saw them when it asked (tandem/lagcomp.hpp)? `puppetAt` and
+  // `npcAt` are where they are here now.
+  static bool InReach(std::uint32_t player, std::uint32_t npc, Red::Vector4 puppetAt,
+                      Red::Vector4 npcAt, float limit) {
+    const auto reach = Runtime::Get().ReachOf(player, npc, {puppetAt.X, puppetAt.Y, puppetAt.Z},
+                                              {npcAt.X, npcAt.Y, npcAt.Z}, limit);
+    log::Debug(
+        "reach: player {} to npc {}: {:.2f} m now, {:.2f} m as it saw them, limit {:.1f}: {}",
+        player, npc, reach.now, reach.seen, limit, reach.ok ? "in reach" : "too far");
+    return reach.ok;
+  }
 
   RTTI_IMPL_TYPEINFO(TandemNative);
   RTTI_IMPL_ALLOCATOR();
@@ -2103,4 +2128,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(NodeRefHash);
   RTTI_METHOD(NodeRefOf);
   RTTI_METHOD(Log);
+  RTTI_METHOD(LogDebug);
+  RTTI_METHOD(PerfMark);
+  RTTI_METHOD(PerfReport);
+  RTTI_METHOD(InReach);
 });

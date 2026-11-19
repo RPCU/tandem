@@ -217,9 +217,9 @@ Owner OwnerOf(std::uintptr_t phase, const Path &path, std::uintptr_t context) {
     if (std::ranges::find(prefixes, candidatePath) == prefixes.end()) {
       prefixes.push_back(candidatePath);
       g_byPhase.clear(); // earlier verdicts may have been its children
-      log::Info("quest: {} phase {:#x} (resource {:#x})",
-                isOpen ? "open-world phase keeps running:" : "gig", HashOf(candidatePath),
-                resource);
+      log::Debug("quest: {} phase {:#x} (resource {:#x})",
+                 isOpen ? "open-world phase keeps running:" : "gig", HashOf(candidatePath),
+                 resource);
     }
     (isOpen ? open : gig) = true;
   };
@@ -357,8 +357,8 @@ std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, 
     std::lock_guard _(g_lock);
     ++g_refused;
     if (g_frozenPhases.insert(HashOf(path)).second)
-      log::Info("quest: freezing {} phase {:#x} (resource {:#x}, depth {})", gig ? "gig" : "story",
-                HashOf(path), ResourceOf(phaseAddress), path.size());
+      log::Debug("quest: freezing {} phase {:#x} (resource {:#x}, depth {})", gig ? "gig" : "story",
+                 HashOf(path), ResourceOf(phaseAddress), path.size());
     // Kept once per signal: the engine wakes some nodes (scenes, phones)
     // again and again while they wait.
     auto key = std::make_tuple(path, nodeId, socketName);

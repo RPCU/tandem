@@ -24,6 +24,10 @@ struct LinkShape {
   std::uint32_t jitterMs{};  // up to this much more, at random (the order kept)
   float loss{};              // 0..1: the chance a datagram is lost
   float reorder{};           // 0..1: the chance one is held back behind later ones
+  // Losses come in bursts of this many datagrams on average (0 or 1: each
+  // one on its own). The share lost stays `loss` (a Gilbert-Elliott model:
+  // a bad state that loses everything, entered and left at random).
+  float burst{};
   bool Active() const { return latencyMs || jitterMs || loss > 0.f || reorder > 0.f; }
 };
 
@@ -46,6 +50,7 @@ public:
 private:
   LinkShape m_shape;
   std::mt19937_64 m_rng;
+  bool m_bad{}; // in a loss burst
   std::uint64_t m_lastUs{};
   std::uint64_t m_passed{}, m_lost{}, m_reordered{};
 };
@@ -54,6 +59,8 @@ class Shaper {
 public:
   struct Counters {
     std::uint64_t passed{}, lost{}, reordered{};
+    // UDP payload bytes that entered the link, towards the target and back.
+    std::uint64_t bytesUp{}, bytesDown{};
   };
 
   // Listens on UDP `listenPort` (0: any free port) and relays every datagram
@@ -70,6 +77,9 @@ public:
   std::uint16_t Port() const;
   // Both directions together.
   Counters Stats() const;
+  // An outage (a cable pulled, a Wi-Fi drop): while on, every datagram both
+  // ways is lost, whatever the shape says.
+  void SetOutage(bool on);
 
 private:
   struct Impl;

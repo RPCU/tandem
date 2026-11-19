@@ -176,6 +176,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
                                                ? tandem::plugin::Comms::LinkDefault::Ask
                                                : tandem::plugin::Comms::LinkDefault::Off,
                                            runtime.config.pings);
+    log::SetLevel(static_cast<log::Level>(runtime.config.logLevel));
     if (const auto text = Environment(tandem::instance::kPortVariable); !text.empty()) {
       // Digits are ASCII; anything else is refused by ParsePort.
       std::string narrow;

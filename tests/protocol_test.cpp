@@ -99,6 +99,58 @@ TEST_CASE("every message survives encoding") {
   CHECK(IsReliable(Install{}));
   CHECK_FALSE(Decode(Encode(Install{.build = std::string(kMaxInstallText + 1, 'x')})).has_value());
   CHECK(Encode(NpcShotAt{}).size() < 64);
+  // Netcode (netcode.md): the compact pose and NPC streams.
+  PoseFrame frame{.player = 2, .seq = 40, .timeUs = 1'800'000'000'000'000, .key = 31};
+  frame.hips = {1, -2, 3};
+  frame.codes[0] = kBoneWhole | kBoneTurn << 4; // bone 0 whole, bone 2 turned
+  frame.rotations.assign(kPoseFrameRotationBytes + kPoseTurnBytes, 7);
+  RoundTrips(frame);
+  CHECK(frame.Code(0) == kBoneWhole);
+  CHECK(frame.Code(1) == kBoneKept);
+  CHECK(frame.Code(2) == kBoneTurn);
+  CHECK(std::string(NameOf(PoseFrame{})) == "PoseFrame");
+  CHECK(ChannelOf(PoseFrame{}) == Channel::State);
+  // The rotations must be exactly what the codes say, no code past the last
+  // bone, no code 3, a key whole.
+  auto lying = frame;
+  lying.codes[0] |= kBoneWhole << 2;
+  CHECK_FALSE(Decode(Encode(lying)));
+  lying = frame;
+  lying.codes[kPoseCodeBytes - 1] = 0x40;
+  CHECK_FALSE(Decode(Encode(lying)));
+  lying = frame;
+  lying.codes[1] = 3;
+  CHECK_FALSE(Decode(Encode(lying)));
+  lying = frame;
+  lying.key = lying.seq;
+  CHECK_FALSE(Decode(Encode(lying)));
+  RoundTrips(PlayerMotion{.player = 2,
+                          .seq = 9,
+                          .timeUs = 1'800'000'000'000'000,
+                          .position = {-900.5f, 1880.25f, 36.f},
+                          .yaw = 40000,
+                          .velocity = {150, -20, 0},
+                          .stance = 3,
+                          .flags = 0x8001});
+  CHECK(Encode(PlayerMotion{}).size() == 40);
+  CHECK(Encode(PlayerMotion{}).size() < Encode(PlayerState{}).size() * 2 / 3 + 1);
+  RoundTrips(VehicleMotion{.player = 2,
+                           .seq = 9,
+                           .timeUs = 1'800'000'000'000'000,
+                           .position = {1, 2, 3},
+                           .orientation = {1, 2, 3, 4, 5},
+                           .velocity = {2000, 0, -5}});
+  CHECK(ChannelOf(PlayerMotion{}) == Channel::State);
+  CHECK(ChannelOf(VehicleMotion{}) == Channel::State);
+  RoundTrips(NpcMotion{.seq = 5,
+                       .timeUs = 1'800'000'000'000'000,
+                       .origin = {-900, 1880, 36},
+                       .npcs = {{.npc = 7, .offset = {128, -256, 3}, .yaw = 16384, .detected = 2},
+                                {.npc = 9, .flags = 1}}});
+  CHECK(std::string(NameOf(NpcMotion{})) == "NpcMotion");
+  CHECK(ChannelOf(NpcMotion{}) == Channel::State);
+  CHECK(Encode(NpcMotion{.npcs = {NpcMove{}}}).size() - Encode(NpcMotion{}).size() == 14);
+  CHECK(std::string(NameOfKind(9999)) == "?");
   RoundTrips(TimeEffect{.player = 3, .abilities = kTimeScanning | kTimeSlowMo, .scale = 1.f});
   CHECK(std::string(NameOf(TimeEffect{})) == "TimeEffect");
   RoundTrips(Transit{.player = 2,

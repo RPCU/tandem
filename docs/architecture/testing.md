@@ -6,6 +6,7 @@
 | unit | protocol round trips, strict decoding, sizes | `task test` |
 | loopback | real host + guests over UDP in one process: join, relay, clock, leave | `task test` |
 | bad link | smoothing and reliable channels through a shaped link (loss, jitter) | `task test` |
+| netcode | bandwidth budget of typical sessions, smoothness metrics at 30/80/150 ms, fragments, outages (`netcode.md`) | `task test` |
 | relay | protocol, codes, limits, amplification, real sockets, race detector | `task relay:test` |
 | via relay | a real relay process: join by code, fallback from direct, mock players | `task test` (`relay-loopback`) |
 | mock player | `tandem-peer` as host or guest against the real game | `task peer -- host --mode mirror` |
@@ -209,7 +210,8 @@ decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
   `--hack-action` on that NPC for 3 s, then `--hack-effect` is on it for
   10 s, every 20 s). It logs every mark, tag, link and waypoint heard.
 - **A bad network** (any mode): `--latency MS`, `--jitter MS`,
-  `--loss PERCENT`, `--reorder PERCENT`, each way. A UDP relay with a link
+  `--loss PERCENT` (`--burst N`: in bursts of N datagrams on average),
+  `--reorder PERCENT`, each way. A UDP relay with a link
   model on each direction (`net::Shaper`, `core/src/shaping.cpp`) sits
   between the mock player's endpoint and the others (host: on the port the
   game joins; guest: a local port its endpoint joins), so ENet itself
@@ -232,6 +234,11 @@ decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
   `Presence`); `host --react-npcs N` has one of the NPCs it sends play a
   hit reaction every N s (twitch, impact, stagger, knockdown, ragdoll, its
   end). Presence, cues and non-twitch reactions it hears are logged.
+- **Traffic** (any mode): each report has a `traffic:` line (kbit/s each
+  way with headers, datagrams/s, the largest message types), `--traffic-report`
+  the whole table, the exit the whole run's; `--legacy-wire` sends as
+  before the netcode work. `tandem-peer traffic FILE...` measures what a
+  recording takes on the wire, legacy and compact (`netcode.md`).
 - Loot (any mode): `--loot-quest RECORD` has "its V" loot a quest item
   (every other player gets it); `--drop-item RECORD` drops one RECORD as a shared world
   item 1.5 m in front of the other V; `--take-items N` picks up (claims)

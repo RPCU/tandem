@@ -4,6 +4,7 @@
 #include "installed.hpp"
 #include "log.hpp"
 #include "net_thread.hpp"
+#include "perf.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
 
@@ -583,6 +584,7 @@ std::vector<proto::Shot> Runtime::TakeRemoteShots() {
   // burst of muzzle flashes at once would be wrong.
   consistency::DropStale(m_remoteShots, net::NowUs(), 500'000);
   std::vector<proto::Shot> out;
+  NoteDepth(13, m_remoteShots.size());
   for (const auto &shot : std::exchange(m_remoteShots, {}))
     out.push_back(shot.value);
   return out;
@@ -857,6 +859,7 @@ void Runtime::PushRegroupEvent(RegroupEvent event) {
 
 std::vector<RegroupEvent> Runtime::TakeRegroupEvents() {
   std::lock_guard _(m_lock);
+  NoteDepth(12, m_regroupEvents.size());
   return std::exchange(m_regroupEvents, {});
 }
 
@@ -910,6 +913,7 @@ std::vector<proto::PlayerHit> Runtime::TakePlayerHits() {
   if (const auto stale = consistency::DropStale(m_playerHits, net::NowUs(), 1'500'000))
     log::Info("consistency: {} hit(s) on our V dropped, too old to apply", stale);
   std::vector<proto::PlayerHit> out;
+  NoteDepth(14, m_playerHits.size());
   for (const auto &hit : std::exchange(m_playerHits, {}))
     out.push_back(hit.value);
   return out;
@@ -928,6 +932,7 @@ void Runtime::PushShotAt(const proto::NpcShotAt &shot) {
 
 std::vector<proto::NpcShotAt> Runtime::TakeShotsAt() {
   std::lock_guard _(m_lock);
+  NoteDepth(10, m_shotsAt.size());
   return std::exchange(m_shotsAt, {});
 }
 
@@ -944,6 +949,7 @@ void Runtime::PushShotHit(const proto::ShotHit &hit) {
 
 std::vector<proto::ShotHit> Runtime::TakeShotHits() {
   std::lock_guard _(m_lock);
+  NoteDepth(11, m_shotHits.size());
   return std::exchange(m_shotHits, {});
 }
 
@@ -954,12 +960,33 @@ std::uint8_t Runtime::NpcDetected(proto::NpcId npc) {
 }
 
 void Runtime::SubmitNpcStates(const proto::NpcStates &states) {
+  {
+    // Where our NPCs were, for judging the guests' requests (ReachOf).
+    const auto now = HostNowUs();
+    std::lock_guard _(m_reachLock);
+    for (const auto &entry : states.npcs)
+      m_reach.Push(kNpcPuppetBase + entry.npc, now, entry.position);
+  }
   std::lock_guard _(m_lock);
   m_npcStates = states;
 }
 
+lagcomp::Reach Runtime::ReachOf(proto::PlayerId player, proto::NpcId npc,
+                                const proto::Vec3 &puppetAt, const proto::Vec3 &npcAt,
+                                float limit) {
+  std::uint32_t rttMs = 0;
+  for (const auto &info : Status().players)
+    if (info.id == player && info.pingMs > 0)
+      rttMs = static_cast<std::uint32_t>(info.pingMs);
+  const auto now = HostNowUs();
+  std::lock_guard _(m_reachLock);
+  return lagcomp::Check(m_reach.Of(player), m_reach.Of(kNpcPuppetBase + npc), puppetAt, npcAt, now,
+                        rttMs, limit);
+}
+
 std::vector<proto::Message> Runtime::TakeNpcOutbox() {
   std::lock_guard _(m_lock);
+  NoteDepth(6, m_npcOutbox.size());
   return std::exchange(m_npcOutbox, {});
 }
 
@@ -978,6 +1005,7 @@ void Runtime::PushNpcEvent(const NpcEvent &event) {
 
 std::vector<NpcEvent> Runtime::TakeNpcEvents() {
   std::lock_guard _(m_lock);
+  NoteDepth(1, m_npcEvents.size());
   return std::exchange(m_npcEvents, {});
 }
 
@@ -1015,6 +1043,7 @@ void Runtime::PushActionEvent(const ActionEvent &event) {
 
 std::vector<ActionEvent> Runtime::TakeActionEvents() {
   std::lock_guard _(m_lock);
+  NoteDepth(3, m_actionEvents.size());
   return std::exchange(m_actionEvents, {});
 }
 
@@ -1029,6 +1058,20 @@ void Runtime::HoldPuppet(proto::PlayerId player, bool hold) {
 bool Runtime::IsPuppetHeld(proto::PlayerId player) const {
   std::lock_guard _(m_heldLock);
   return m_heldPuppets.contains(player);
+}
+
+Runtime::Placement Runtime::PlacementOf(proto::PlayerId player) const {
+  Placement placement;
+  {
+    std::lock_guard _(m_lock);
+    if (const auto seat = m_seats.find(player); seat != m_seats.end())
+      placement.seated = seat->second.second.vehicle != 0;
+    if (const auto ride = m_transits.find(player); ride != m_transits.end())
+      placement.riding = ride->second.second.kind == proto::TransitKind::Metro ||
+                         ride->second.second.kind == proto::TransitKind::Along;
+  }
+  placement.held = IsPuppetHeld(player);
+  return placement;
 }
 
 void Runtime::SubmitLocalVitals(const proto::Vitals &vitals) {
@@ -1095,6 +1138,7 @@ void Runtime::SubmitHack(const proto::Message &message) {
 
 std::vector<proto::Message> Runtime::TakeHackOutbox() {
   std::lock_guard _(m_lock);
+  NoteDepth(7, m_hackOutbox.size());
   return std::exchange(m_hackOutbox, {});
 }
 
@@ -1118,6 +1162,7 @@ std::vector<HackEvent> Runtime::TakeHackEvents() {
     return event.kind == HackEvent::Kind::PlayerHack && now > event.atUs &&
            now - event.atUs > 3'000'000;
   });
+  NoteDepth(4, m_hackEvents.size());
   return std::exchange(m_hackEvents, {});
 }
 
@@ -1129,6 +1174,7 @@ void Runtime::SubmitLoot(proto::Message message) {
 
 std::vector<proto::Message> Runtime::TakeLootOutbox() {
   std::lock_guard _(m_lock);
+  NoteDepth(8, m_lootOutbox.size());
   return std::exchange(m_lootOutbox, {});
 }
 
@@ -1140,6 +1186,7 @@ void Runtime::PushLoot(proto::Message message) {
 
 std::vector<proto::Message> Runtime::TakeLoot() {
   std::lock_guard _(m_lock);
+  NoteDepth(5, m_lootInbox.size());
   return std::exchange(m_lootInbox, {});
 }
 
@@ -1182,7 +1229,10 @@ void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you)
       return static_cast<std::int64_t>(now - entry.second.second) > 1'000'000;
     });
   }
-  // Each NPC is a track of its own, drawn like a remote player.
+  // Each NPC is a track of its own, drawn like a remote player (one lock
+  // for them all: this comes ten times a second with up to 64).
+  const auto arrival = HostNowUs();
+  std::lock_guard _(m_tracksLock);
   for (const auto &entry : states.npcs) {
     proto::PlayerState state;
     state.player = kNpcPuppetBase + entry.npc;
@@ -1190,7 +1240,7 @@ void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you)
     state.timeUs = states.timeUs;
     state.position = entry.position;
     state.orientation = sync::FromYaw(entry.yaw);
-    PushRemote(state);
+    m_tracks.try_emplace(state.player).first->second.Push(state, arrival);
   }
 }
 
@@ -1226,6 +1276,7 @@ void Runtime::PushNpcAnims(const proto::NpcAnims &anims) {
 
 std::vector<proto::NpcAnim> Runtime::TakeNpcAnims() {
   std::lock_guard _(m_lock);
+  NoteDepth(2, m_npcAnimsIn.size());
   return std::exchange(m_npcAnimsIn, {});
 }
 
@@ -1237,6 +1288,7 @@ void Runtime::PushNpcShot(const proto::NpcShot &shot) {
 
 std::vector<proto::NpcShot> Runtime::TakeNpcShots() {
   std::lock_guard _(m_lock);
+  NoteDepth(9, m_npcShotsIn.size());
   return std::exchange(m_npcShotsIn, {});
 }
 
@@ -1391,6 +1443,10 @@ std::uint32_t Runtime::TakeOverflows() {
 
 void Runtime::ResetSession() {
   PresenceState::Get().Reset();
+  {
+    std::lock_guard _(m_reachLock);
+    m_reach.Clear();
+  }
   {
     std::lock_guard _(m_lock);
     m_localShots.clear();
@@ -1840,11 +1896,16 @@ void Runtime::PushEvent(ScriptEvent event) {
 
 std::vector<ScriptEvent> Runtime::TakeEvents() {
   std::lock_guard _(m_lock);
+  NoteDepth(0, m_events.size());
   return std::exchange(m_events, {});
 }
 
 void Runtime::PushRemote(const proto::PlayerState &state) {
   const auto arrival = HostNowUs();
+  if (state.player < kNpcPuppetBase) {
+    std::lock_guard _(m_reachLock);
+    m_reach.Push(state.player, state.timeUs, state.position);
+  }
   std::lock_guard _(m_tracksLock);
   m_tracks.try_emplace(state.player).first->second.Push(state, arrival);
 }
@@ -1860,6 +1921,10 @@ void Runtime::ForgetRemote(proto::PlayerId player) {
     m_stealth.erase(player);
     if (m_remoteTimes.erase(player) > 0)
       ++m_remoteTimeChanges;
+  }
+  {
+    std::lock_guard _(m_reachLock);
+    m_reach.Forget(player);
   }
   {
     std::lock_guard _(m_tracksLock);
@@ -1950,5 +2015,38 @@ bool Runtime::TakeSnap(proto::PlayerId player) {
   const bool held = IsPuppetHeld(player);
   std::lock_guard _(m_snapsLock);
   return m_snaps.erase(player) != 0 && !held;
+}
+} // namespace tandem::plugin
+
+namespace tandem::plugin {
+namespace {
+constexpr const char *kQueueNames[] = {
+    "script events", "npc events",   "npc anims",   "action events", "hack events",
+    "loot in",       "npc outbox",   "hack outbox", "loot outbox",   "npc shots",
+    "shots at us",   "shot reports", "regroups",    "remote shots",  "hits on us"};
+static_assert(std::size(kQueueNames) == Runtime::kQueues);
+} // namespace
+
+void Runtime::NoteDepth(std::size_t queue, std::size_t depth) {
+  if (queue < kQueues && depth > m_queueMax[queue])
+    m_queueMax[queue] = static_cast<std::uint32_t>(depth);
+}
+
+std::string Runtime::QueueReport() {
+  std::string out;
+  std::lock_guard _(m_lock);
+  for (std::size_t i = 0; i < kQueues; ++i)
+    if (const auto max = std::exchange(m_queueMax[i], 0))
+      out += std::format("{}{} {}", out.empty() ? "" : ", ", kQueueNames[i], max);
+  return out.empty() ? "all empty" : out;
+}
+
+void Runtime::RequestPerfReport() {
+  if (!Started()) {
+    // Solo: no net thread to say it, and nothing on the wire.
+    log::Always("perf: {}; queues at most: {}", Perf::Get().Report(), QueueReport());
+    return;
+  }
+  m_perfReport.store(true);
 }
 } // namespace tandem::plugin

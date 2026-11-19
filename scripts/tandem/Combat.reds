@@ -136,7 +136,7 @@ public abstract class TandemCombat {
     let chemical = values.GetAttackValue(gamedataDamageType.Chemical);
     let flags = TandemCombat.Flags(hitEvent);
     TandemNative.SendPlayerHit(victim, npc, physical, thermal, electric, chemical, EnumInt(hitEvent.attackData.GetAttackType()), flags, pierce, hitEvent.hitPosition, hitEvent.hitDirection, attackId, weaponId);
-    TandemNative.Log(s"combat: \(IsDefined(from) ? TDBID.ToStringDEBUG(GameObject.GetTDBID(from)) : "?") (npc \(npc)) hit player \(victim)'s puppet: \(physical) physical, \(thermal) thermal, \(electric) electric, \(chemical) chemical, type \(EnumInt(hitEvent.attackData.GetAttackType())), flags \(flags), sent to their game");
+    TandemNative.LogDebug(s"combat: \(IsDefined(from) ? TDBID.ToStringDEBUG(GameObject.GetTDBID(from)) : "?") (npc \(npc)) hit player \(victim)'s puppet: \(physical) physical, \(thermal) thermal, \(electric) electric, \(chemical) chemical, type \(EnumInt(hitEvent.attackData.GetAttackType())), flags \(flags), sent to their game");
   }
 
   // ---- guest: the host's NPCs' hits on our V ----
@@ -278,7 +278,7 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
     let before = TandemCombat.Health(game, hitEvent.target);
     wrappedMethod(hitEvent);
     let after = TandemCombat.Health(game, hitEvent.target);
-    TandemNative.Log(s"combat: npc hit applied to our V: \(hitEvent.attackComputed.GetTotalAttackValue(gamedataStatPoolType.Health)) damage, health \(before) -> \(after)");
+    TandemNative.LogDebug(s"combat: npc hit applied to our V: \(hitEvent.attackComputed.GetTotalAttackValue(gamedataStatPoolType.Health)) damage, health \(before) -> \(after)");
     return;
   }
   let npc = TandemCombat.ProxyNpc(game, hitEvent.target);
@@ -314,7 +314,7 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
     // Sent when its pipeline ends, with the poise it took (Outcomes.reds).
     outcomes.Measured(hitEvent, npc, damage, TandemOutcomes.StrikeFlags(hitEvent, damage, TandemCombat.Health(game, hitEvent.target)));
     let xp = TandemCombat.AwardDamageExperience(game, hitEvent, damage);
-    TandemNative.Log(s"combat: hit on proxy \(npc) for \(damage), for the host (skill XP for \(xp)% of its health queued)");
+    TandemNative.LogDebug(s"combat: hit on proxy \(npc) for \(damage), for the host (skill XP for \(xp)% of its health queued)");
     // It takes the last of the health the host gave this proxy: a kill, now,
     // as our own game would have it (Npcs.reds PredictKill).
     if damage >= TandemCombat.Health(game, hitEvent.target) - 0.01 {
@@ -401,7 +401,7 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
         let ids: array<TweakDBID>;
         ArrayPush(ids, evt.staticData.GetID());
         TandemNative.SendNpcEffect(npc, ids);
-        TandemNative.Log(s"combat: status effect \(TDBID.ToStringDEBUG(evt.staticData.GetID())) on proxy \(npc) sent to the host");
+        TandemNative.LogDebug(s"combat: status effect \(TDBID.ToStringDEBUG(evt.staticData.GetID())) on proxy \(npc) sent to the host");
       }
     }
   }
@@ -440,12 +440,12 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   // explosions, its thrown objects' copies, a guest's car copy's
   // collisions) arrives as strikes or AreaHit.
   if TandemOutcomes.IsRemoteComputed(game, hitEvent) {
-    TandemNative.Log(s"combat: another V's own hit on \(EntityID.ToDebugStringDecimal(hitEvent.target.GetEntityID())) left to their game (type \(EnumInt(hitEvent.attackData.GetAttackType())))");
+    TandemNative.LogDebug(s"combat: another V's own hit on \(EntityID.ToDebugStringDecimal(hitEvent.target.GetEntityID())) left to their game (type \(EnumInt(hitEvent.attackData.GetAttackType())))");
     return;
   }
   let victim = TandemCombat.PuppetPlayer(game, hitEvent.target);
   if victim != 0u {
-    TandemNative.Log(s"combat: a hit on player \(victim)'s puppet enters the pipeline (type \(EnumInt(hitEvent.attackData.GetAttackType())))");
+    TandemNative.LogDebug(s"combat: a hit on player \(victim)'s puppet enters the pipeline (type \(EnumInt(hitEvent.attackData.GetAttackType())))");
   }
   // Guest: a hit on a proxy goes to the host once its pipeline has ended,
   // with the poise PostProcess took.
@@ -465,7 +465,7 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   let system = TandemCombat.System(game);
   if IsDefined(system) && system.IsForwardedHit(hitEvent) {
     if !hitEvent.attackData.HasFlag(hitFlag.SuccessfulAttack) {
-      TandemNative.Log(s"combat: npc hit on our V dealt no damage (no-damage flag \(hitEvent.attackData.HasFlag(hitFlag.DealNoDamage)), evaded \(hitEvent.attackData.HasFlag(hitFlag.WasEvaded)), blocked \(hitEvent.attackData.WasBlocked()), deflected \(hitEvent.attackData.WasDeflectedAny()))");
+      TandemNative.LogDebug(s"combat: npc hit on our V dealt no damage (no-damage flag \(hitEvent.attackData.HasFlag(hitFlag.DealNoDamage)), evaded \(hitEvent.attackData.HasFlag(hitFlag.WasEvaded)), blocked \(hitEvent.attackData.WasBlocked()), deflected \(hitEvent.attackData.WasDeflectedAny()))");
     }
     system.ForgetForwardedHit(hitEvent);
   }

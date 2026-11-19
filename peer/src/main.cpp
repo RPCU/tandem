@@ -107,14 +107,22 @@
 // to skip --skip-hours (as the time skip wheel or a bed does), each request
 // heard is answered as --skip-answer says, and --activity KIND makes the
 // mock player busy (a workspot, photo mode...) for --activity-for seconds.
-// A bad network: --latency, --jitter, --loss and --reorder put a shaped link
-// (tandem/shaping.hpp) between the mock player and the others, both ways.
+// A bad network: --latency, --jitter, --loss, --burst and --reorder put a
+// shaped link (tandem/shaping.hpp) between the mock player and the others,
+// both ways.
+// Traffic (docs/architecture/netcode.md): every report says what went over
+// the wire, each way, and the largest message types; --traffic-report adds the
+// whole table; --legacy-wire sends as before the netcode work (every state
+// every frame, whole poses and NPC lists), to compare.
+// tandem-peer traffic FILE...: the bandwidth a recording (.tplay, .tsession
+// or an NPC recording) takes on the wire, legacy and compact.
 
 #include "tandem/combat.hpp"
 #include "tandem/comms.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/movement.hpp"
+#include "tandem/netcode.hpp"
 #include "tandem/play.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/presence.hpp"
@@ -125,6 +133,7 @@
 #include "tandem/traffic.hpp"
 #include "tandem/vehicle_combat.hpp"
 
+#include "tandem/net_traffic.hpp"
 #include "tandem/regions.hpp"
 
 #include <algorithm>
@@ -287,6 +296,8 @@ struct Options {
   int activityAtSeconds{3};
   int activityForSeconds{15};
   tandem::net::LinkShape link; // a bad network, both ways (none: direct)
+  bool traffic{};              // the whole traffic table in each report
+  bool legacyWire{};           // send as before netcode.md (Endpoint::SetCompact(false))
   // Loot: drop one of this record in front of the other V (empty: never);
   // pick up the others' world items this long after they appear (-1: never);
   // host of a replay: dead NPCs' bodies go after this long (-1: never).
@@ -434,6 +445,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "       tandem-peer play-info FILE   what a gameplay recording holds, where it starts\n"
          "       tandem-peer sim --role host|join ...  a simulated second game (sim --help)\n"
          "       tandem-peer sim-fuzz ...     simulated games against each other, seed by seed\n\n"
+         "       tandem-peer traffic FILE...  the bandwidth a recording takes, legacy and "
+         "compact\n\n"
          "  --port N           UDP port (default 27450)\n"
          "  --relay HOST[:PORT] tandem-relay (default port 27460): host, also reachable\n"
          "                     through it (its join code is logged); join, used when\n"
@@ -609,6 +622,7 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --jitter MS        up to MS more at random, each way (the order kept)\n"
          "  --loss PERCENT     PERCENT of the datagrams lost, each way\n"
          "  --reorder PERCENT  PERCENT of the datagrams held back behind later ones\n"
+         "  --burst N          losses come in bursts of N datagrams on average (--loss)\n"
          "  --device SPEC      operate a device by its id, SPEC = ENTITY:CLASS:WORDS[@SECONDS]:\n"
          "                     ENTITY in hex (tools/game.sh cmd device near), CLASS its state's\n"
          "                     class (DoorControllerPS...), WORDS a comma list of on off\n"
@@ -619,6 +633,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --device-answer W  every device another player changes is made WORDS (as above)\n"
          "                     --device-after seconds later\n"
          "  --device-after N   see --device-answer (3)\n"
+         "  --traffic-report   each report has the whole traffic table (by message type)\n"
+         "  --legacy-wire      send as before the netcode work: every state every frame,\n"
+         "                     whole poses and NPC lists (to compare the bandwidth)\n"
          "  --loot-quest REC   5 s after another player is there, \"our V\" loots one REC (a\n"
          "                     quest item): every other player gets it too\n"
          "  --level N          our V's level (1-100): the host scales its NPCs to the mean\n"
@@ -901,6 +918,14 @@ Options Parse(int argc, char **argv) {
     }
     if (flag == "--trade-accept") {
       options.tradeAccept = true;
+      continue;
+    }
+    if (flag == "--traffic-report") {
+      options.traffic = true;
+      continue;
+    }
+    if (flag == "--legacy-wire") {
+      options.legacyWire = true;
       continue;
     }
     if (flag == "--ride-along") {
@@ -1241,6 +1266,8 @@ Options Parse(int argc, char **argv) {
       options.link.loss = Percent(flag, value);
     else if (flag == "--reorder")
       options.link.reorder = Percent(flag, value);
+    else if (flag == "--burst")
+      options.link.burst = Number<float>(value);
     else if (flag == "--record") {
       options.recordFile = value;
     } else if (flag == "--replay") {
@@ -2946,12 +2973,112 @@ int PlayInfo(const std::string &path) {
   return 0;
 }
 
+// tandem-peer traffic FILE...: what a recording would take on the wire, as
+// its messages were (legacy) and as the netcode sends them now (compact:
+// delta-coded poses, NPC changes, compact states, a still V 5 times a
+// second; no relevance: the other player is unknown). Datagrams
+// are what goes within 4 ms (ENet sends what is queued at each service),
+// each with IP, UDP and ENet headers (32 bytes) and 8 bytes a message.
+int Traffic(const std::vector<std::string> &paths) {
+  namespace proto = tandem::proto;
+  constexpr double kDatagramBytes = 32, kCommandBytes = 8;
+  for (const auto &path : paths) {
+    std::string error;
+    std::vector<std::pair<std::uint64_t, proto::Message>> entries;
+    if (auto recording = tandem::play::Load(path, error))
+      for (auto &entry : recording->entries)
+        entries.emplace_back(entry.atUs, std::move(entry.message));
+    else
+      for (auto &entry : Recording::Load(path))
+        entries.emplace_back(entry.atUs, std::move(entry.message));
+    if (entries.size() < 2) {
+      std::cerr << "tandem-peer: " << path << ": nothing to measure " << error << '\n';
+      continue;
+    }
+    const double seconds = static_cast<double>(entries.back().first - entries.front().first) / 1e6;
+    struct Way {
+      std::map<std::size_t, std::pair<double, double>> kinds; // bytes, messages
+      double datagrams{}, bytes{};
+      std::uint64_t lastUs{};
+      bool any{};
+      void Add(std::uint64_t at, const proto::Message &message) {
+        const auto size = static_cast<double>(proto::Encode(message).size());
+        auto &kind = kinds[message.index()];
+        kind.first += size;
+        kind.second += 1;
+        bytes += size + kCommandBytes;
+        if (!any || at - lastUs > 4'000) {
+          datagrams += 1;
+          lastUs = at;
+          any = true;
+        }
+      }
+      double Kbps(double seconds) const {
+        return (bytes + datagrams * kDatagramBytes) * 8 / 1000 / seconds;
+      }
+    } legacy, compact;
+    tandem::pose::PoseEncoder poses;
+    tandem::netcode::NpcCoder npcs;
+    tandem::netcode::StillGate<proto::PlayerState> states;
+    tandem::netcode::StillGate<proto::VehicleState> cars;
+    std::uint32_t poseSeq = 0, npcSeq = 0;
+    constexpr std::uint64_t kBase = 1'800'000'000'000'000;
+    for (const auto &[at, message] : entries) {
+      legacy.Add(at, message);
+      if (auto pose = std::get_if<proto::PoseState>(&message)) {
+        auto stamped = *pose;
+        stamped.seq = ++poseSeq;
+        stamped.timeUs = kBase + at;
+        compact.Add(at, poses.Encode(stamped));
+      } else if (auto list = std::get_if<proto::NpcStates>(&message)) {
+        auto stamped = *list;
+        stamped.seq = ++npcSeq;
+        stamped.timeUs = kBase + at;
+        if (const auto motion = npcs.Encode(stamped))
+          compact.Add(at, *motion);
+        else
+          compact.Add(at, stamped);
+      } else if (auto state = std::get_if<proto::PlayerState>(&message)) {
+        auto stamped = *state;
+        stamped.timeUs = kBase + at;
+        for (const auto &send : states.Offer(stamped, 0))
+          compact.Add(at, tandem::netcode::Compact(send));
+      } else if (auto car = std::get_if<proto::VehicleState>(&message)) {
+        auto stamped = *car;
+        stamped.timeUs = kBase + at;
+        for (const auto &send : cars.Offer(stamped, 0))
+          compact.Add(at, tandem::netcode::Compact(send));
+      } else {
+        compact.Add(at, message);
+      }
+    }
+    std::cout << std::format(
+        "{}: {:.1f} s, {} messages: legacy {:.1f} kbit/s ({:.0f} datagrams/s), "
+        "compact {:.1f} kbit/s ({:.0f}/s)\n",
+        path, seconds, entries.size(), legacy.Kbps(seconds), legacy.datagrams / seconds,
+        compact.Kbps(seconds), compact.datagrams / seconds);
+    std::map<std::string, std::pair<double, double>> rows; // legacy, compact kbit/s
+    for (const auto &[kind, totals] : legacy.kinds)
+      rows[proto::NameOfKind(kind)].first += totals.first * 8 / 1000 / seconds;
+    for (const auto &[kind, totals] : compact.kinds)
+      rows[proto::NameOfKind(kind)].second += totals.first * 8 / 1000 / seconds;
+    for (const auto &[name, kbps] : rows)
+      if (kbps.first + kbps.second >= 0.05)
+        std::cout << std::format("  {:<14} legacy {:7.2f}  compact {:7.2f} kbit/s\n", name,
+                                 kbps.first, kbps.second);
+    std::cout << std::format("  pose: {} keys of {} frames\n", poses.Keys(), poses.Frames());
+  }
+  return 0;
+}
+
 int main(int argc, char **argv) {
   if (argc >= 3 && std::string_view(argv[1]) == "play-info")
     return PlayInfo(argv[2]);
   // The simulated second game (docs/architecture/sim.md).
   if (argc >= 2 && (std::string_view(argv[1]) == "sim" || std::string_view(argv[1]) == "sim-fuzz"))
     return tandem::sim::SimMain(argv[1], std::vector<std::string_view>(argv + 2, argv + argc));
+  if (argc >= 3 && std::string_view(argv[1]) == "traffic")
+    return Traffic(std::vector<std::string>(argv + 2, argv + argc));
   auto options = Parse(argc, argv);
   if (options.check) {
     std::cout << "options ok\n";
@@ -3049,6 +3176,10 @@ int main(int argc, char **argv) {
               : options.linkConsent == Options::LinkAnswer::Ask ? tandem::proto::LinkMode::Listed
                                                                 : tandem::proto::LinkMode::Off};
   endpoint->SetLocalLink(ownLink);
+  if (options.legacyWire) {
+    endpoint->SetCompact(false);
+    Log("legacy wire: every state every frame, whole poses and NPC lists");
+  }
   if (options.drop > 0.f || options.dup > 0.f) {
     endpoint->SetFaults({.drop = options.drop, .dup = options.dup, .seed = std::random_device{}()});
     Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice",
@@ -3382,6 +3513,8 @@ int main(int argc, char **argv) {
   const auto interval = std::chrono::microseconds(1'000'000 / options.rateHz);
   auto nextSend = std::chrono::steady_clock::now();
   auto nextReport = nextSend + 5s;
+  auto lastTraffic = endpoint->Traffic();
+  auto lastTrafficUs = tandem::net::NowUs();
   int resyncsAsked = 0;
   std::uint64_t heard = 0, heardPoses = 0, heardShots = 0, heardVehicles = 0;
   // --pause-at: when someone else was first there, and how far the pause got.
@@ -6135,6 +6268,17 @@ int main(int argc, char **argv) {
         Log("bad network: {} datagrams through, {} lost, {} held back", link.passed, link.lost,
             link.reordered);
       }
+      {
+        const auto traffic = endpoint->Traffic();
+        const auto delta = traffic - lastTraffic;
+        const auto nowUs = tandem::net::NowUs();
+        const double seconds = static_cast<double>(nowUs - lastTrafficUs) / 1e6;
+        lastTraffic = traffic;
+        lastTrafficUs = nowUs;
+        Log("traffic: {}", tandem::net::Summary(delta, seconds));
+        if (options.traffic)
+          std::cout << tandem::net::Table(delta, seconds) << std::flush;
+      }
       if (const auto &faults = endpoint->FaultStats(); faults.Active())
         Log("faults: {} message(s) lost, {} sent twice; {} resync(s) asked of us so far",
             faults.Dropped(), faults.Duplicated(), resyncsAsked);
@@ -6151,6 +6295,10 @@ int main(int argc, char **argv) {
     Log("play saved: {} messages, {:.1f} s", savedPlay.Count(),
         static_cast<double>(savedPlay.LastUs()) / 1e6);
     savedPlay.Close();
+  }
+  {
+    const auto whole = endpoint->Traffic();
+    Log("traffic over the whole run:\n{}", tandem::net::Table(whole, 1.0));
   }
   referee.End();
   endpoint->Leave("tandem-peer stopped");

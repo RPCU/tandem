@@ -103,7 +103,7 @@ bool AttachController(std::uint32_t player, const RED4ext::Handle<RED4ext::ent::
   auto *controller = new PuppetController(player);
   controller->id = entity->entityID;
   attach(move, controller);
-  log::Info("puppet {}: controller handed to the engine", player);
+  log::Debug("puppet {}: controller handed to the engine", player);
   return true;
 }
 } // namespace tandem::plugin::engine

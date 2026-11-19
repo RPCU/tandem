@@ -2,6 +2,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "../log.hpp"
+#include "../perf.hpp"
 #include "../runtime.hpp"
 #include "controller.hpp"
 
@@ -84,23 +85,20 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
     return;
   }
 
+  const Perf::Scope timed(Work::Controller);
   // In a vehicle the mount places the body (seat of a car copy that follows
-  // the driver): the controller keeps still.
-  std::uint32_t seatChanges = 0;
-  if (const auto seat = Runtime::Get().RemoteSeat(player, seatChanges); seat && seat->vehicle)
-    return;
-  // On an NCART train (seated in a train of our world, or hidden and placed
-  // by the scripts), or riding along in a full scene vehicle (hidden):
-  // scripts/tandem/Transit.reds. Never walked along the line or the road.
-  std::uint32_t transitChanges = 0;
-  if (const auto ride = Runtime::Get().RemoteTransit(player, transitChanges);
-      ride && (ride->kind == proto::TransitKind::Metro || ride->kind == proto::TransitKind::Along))
+  // the driver): the controller keeps still. On an NCART train (seated in a
+  // train of our world, or hidden and placed by the scripts), or riding
+  // along in a full scene vehicle (hidden): scripts/tandem/Transit.reds.
+  // Never walked along the line or the road.
+  const auto placedBy = Runtime::Get().PlacementOf(player);
+  if (placedBy.seated || placedBy.riding)
     return;
   // Placed by something else for now: a grapple's workspot, a carrier's
   // shoulder (Takedowns.reds), an NPC proxy's bench or wall (NpcAnims.reds).
   // The gait idles meanwhile.
   // Placement starts afresh once it is let go (no stale timers or landing).
-  if (Runtime::Get().IsPuppetHeld(player)) {
+  if (placedBy.held) {
     m_speed = 0.f;
     m_placer = movement::Placer{};
     m_placement = movement::Placement::Ground;
@@ -135,35 +133,35 @@ void PuppetController::GetDeltaTransform(RED4ext::Vector4 &position,
   if (const auto bit = 1u << static_cast<unsigned>(placement);
       step.changed && !(m_placementsSeen & bit)) {
     m_placementsSeen |= bit;
-    log::Info("puppet {}: first {} placement{}", player, movement::NameOf(placement),
-              movement::FollowsFreely(placement) ? " (follows the stream freely)" : "");
+    log::Debug("puppet {}: first {} placement{}", player, movement::NameOf(placement),
+               movement::FollowsFreely(placement) ? " (follows the stream freely)" : "");
   }
   // (NPC proxies send no movement: they stay on the ground and their
   // scripts place them.)
   if (step.snap && player < kNpcPuppetBase) {
     Runtime::Get().RequestSnap(player);
     if (m_placer.Snaps() <= 10 || m_placer.Snaps() % 10 == 0)
-      log::Info("puppet {}: body {:.2f} m from target ({}, {:+.2f} m up): teleport #{}", player,
-                std::hypot(view.position.x - current.X, view.position.y - current.Y,
-                           view.position.z - current.Z),
-                movement::NameOf(placement), view.position.z - current.Z, m_placer.Snaps());
+      log::Debug("puppet {}: body {:.2f} m from target ({}, {:+.2f} m up): teleport #{}", player,
+                 std::hypot(view.position.x - current.X, view.position.y - current.Y,
+                            view.position.z - current.Z),
+                 movement::NameOf(placement), view.position.z - current.Z, m_placer.Snaps());
   }
 
   if (!std::exchange(m_loggedDelta, true))
-    log::Info("puppet {}: moving, body ({:.1f}, {:.1f}, {:.1f}) -> ({:.1f}, {:.1f}, {:.1f})",
-              player, current.X, current.Y, current.Z, view.position.x, view.position.y,
-              view.position.z);
+    log::Debug("puppet {}: moving, body ({:.1f}, {:.1f}, {:.1f}) -> ({:.1f}, {:.1f}, {:.1f})",
+               player, current.X, current.Y, current.Z, view.position.x, view.position.y,
+               view.position.z);
 
   // Health line every ~5 s: is the body where the network says?
   ++m_frames;
   if (now - m_lastHealthUs >= 5'000'000) {
     const float gap = std::hypot(view.position.x - current.X, view.position.y - current.Y,
                                  view.position.z - current.Z);
-    log::Info("puppet {}: {} frames, body ({:.1f}, {:.1f}, {:.1f}) {:.2f} m from target, "
-              "speed {:.1f} m/s, gait {}, {}, {} teleports{}",
-              player, m_frames, current.X, current.Y, current.Z, gap, view.speed,
-              static_cast<int>(m_gait.style), movement::NameOf(placement), m_placer.Snaps(),
-              view.extrapolated ? ", extrapolating" : "");
+    log::Debug("puppet {}: {} frames, body ({:.1f}, {:.1f}, {:.1f}) {:.2f} m from target, "
+               "speed {:.1f} m/s, gait {}, {}, {} teleports{}",
+               player, m_frames, current.X, current.Y, current.Z, gap, view.speed,
+               static_cast<int>(m_gait.style), movement::NameOf(placement), m_placer.Snaps(),
+               view.extrapolated ? ", extrapolating" : "");
     m_lastHealthUs = now;
     m_frames = 0;
   }
@@ -183,22 +181,22 @@ void PuppetController::LoadClips() {
 void PuppetController::SendAnimationParameters(float, RED4ext::Vector4 &, RED4ext::Quaternion &) {
   if (m_sendsUntilClips && --m_sendsUntilClips == 0) {
     LoadClips();
-    log::Info("puppet {}: clips walk {:.2f} s, jog {:.2f} s, sprint {:.2f} s", player, m_walkClip,
-              m_jogClip, m_sprintClip);
+    log::Debug("puppet {}: clips walk {:.2f} s, jog {:.2f} s, sprint {:.2f} s", player, m_walkClip,
+               m_jogClip, m_sprintClip);
   }
   AnimationData data;
   data.controller = GetName();
   GetAnimationParameters(data);
   m_driver.Send(data);
   if (!std::exchange(m_loggedSend, true)) {
-    log::Info("puppet {}: animating (clips walk {:.2f} s, jog {:.2f} s, sprint {:.2f} s)", player,
-              m_walkClip, m_jogClip, m_sprintClip);
+    log::Debug("puppet {}: animating (clips walk {:.2f} s, jog {:.2f} s, sprint {:.2f} s)", player,
+               m_walkClip, m_jogClip, m_sprintClip);
     // Which of the reserved bytes the engine wrote: its real footprint.
     std::string written;
     for (std::size_t k = 0; k < sizeof(engineScratch); ++k)
       if (engineScratch[k])
         written += std::format(" +0x{:X}={:02X}", 0x20 + k, engineScratch[k]);
-    log::Info("puppet {}: engine wrote{}", player, written.empty() ? " nothing" : written);
+    log::Debug("puppet {}: engine wrote{}", player, written.empty() ? " nothing" : written);
   }
 }
 
@@ -231,13 +229,19 @@ void PuppetController::Attach(RED4ext::move::Component &aComponent) {
   m_placer = movement::Placer{};
   m_placement = movement::Placement::Ground;
   m_lastPlaceUs = 0;
-  log::Info("puppet {}: controller attached", player);
+  if (player >= kNpcPuppetBase)
+    log::Debug("puppet {}: controller attached", player);
+  else
+    log::Info("puppet {}: controller attached", player);
 }
 
 void PuppetController::Detach(RED4ext::move::Component &) {
   m_driver.Detach();
   component = nullptr;
-  log::Info("puppet {}: controller detached", player);
+  if (player >= kNpcPuppetBase)
+    log::Debug("puppet {}: controller detached", player);
+  else
+    log::Info("puppet {}: controller detached", player);
 }
 
 void PuppetController::GetAnimationParameters(AnimationData &data) {

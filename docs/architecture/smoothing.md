@@ -9,9 +9,12 @@
 - **Remote things are drawn slightly in the past**, interpolated between
   the two samples around that time: 65 ms behind at 30 Hz, widened per
   player by measured jitter and transit, capped at 400 ms (measured on 2.5
-  by NCO, see the research file). Short gaps are extrapolated (250 ms for
-  players, falling when the V is in the air; 500 ms for vehicles), then
-  held; recovery blends back.
+  by NCO, see the research file), and moved there at a bounded pace (the
+  drawn timeline never skips back). Short gaps are extrapolated (250 ms for
+  players, falling when the V is in the air; 500 ms for vehicles; an NPC
+  along the velocity of its last two states), then held; the correction
+  when states come back fades out over ~0.1 s. Cars follow a cubic through
+  their states and velocities. Numbers and tests: `netcode.md`.
 - **Teleports are put, not flown.** Two states further apart than 20 m and
   faster than 150 m/s (a fast travel, a quest teleport, a regroup) are not
   interpolated: the body stays until the moment of the jump and is then
@@ -38,5 +41,7 @@
   facility). A held puppet (`HoldPuppet`: a grapple, a carrier, an NPC
   proxy's workspot) is its holder's: no placement and no teleport while
   held (a pending one is dropped), placement afresh once let go.
-- Rates: players and vehicles 30 Hz; NPC proxies 10–30 Hz by distance and
-  relevance (budgeted per frame).
+- Rates: players and vehicles 30 Hz, fewer when far from every other V or
+  standing still; poses 30 Hz within 30 m, fewer beyond (`netcode.md`,
+  Relevance); NPC proxies 10 Hz, only those that changed (`NpcMotion`).
+  The clock offset is slewed in (`Endpoint::kClockSlew`), not jumped.

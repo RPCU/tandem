@@ -252,7 +252,7 @@ public class TandemShots {
     if !IsDefined(weapon) && TDBID.IsValid(shot.weapon) {
       if !this.m_handed {
         this.m_handed = true;
-        TandemNative.Log(s"shots: npc \(shot.npc)'s proxy has nothing in its hand: given \(TDBID.ToStringDEBUG(shot.weapon))");
+        TandemNative.LogDebug(s"shots: npc \(shot.npc)'s proxy has nothing in its hand: given \(TDBID.ToStringDEBUG(shot.weapon))");
       }
       TandemWeapons.Hold(proxy, slot, shot.weapon);
       this.m_waitingFor = "an empty hand";
@@ -321,7 +321,7 @@ public class TandemShots {
     this.m_fired += 1;
     // The first of each session, then every tenth.
     if this.m_fired == 1 || this.m_fired % 10 == 0 {
-      TandemNative.Log(s"shots: npc \(shot.npc)'s shot at us fired from its proxy (\(this.m_fired) so far; speed \(shot.factor), catching up x\(shot.boost) for \(shot.boostSeconds) s)");
+      TandemNative.LogDebug(s"shots: npc \(shot.npc)'s shot at us fired from its proxy (\(this.m_fired) so far; speed \(shot.factor), catching up x\(shot.boost) for \(shot.boostSeconds) s)");
     }
     return true;
   }
