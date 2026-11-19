@@ -26,6 +26,8 @@ declare -A value=(
   ["--play"]=x.tplay ["--play-offset"]="1,2,3" ["--save-play"]=x.tplay ["--record-session"]=x.tsession ["--play-session"]=x.tsession
   ["--travel-at"]=15 ["--travel-to"]="-915,1879.5,36.3" ["--travel-point"]=FastTravel.x
   ["--offer-regroup"]=10 ["--regroup-answer"]=no
+  ["--ask-skip"]=8 ["--skip-hours"]=2 ["--skip-reason"]=sleep ["--skip-answer"]=no
+  ["--activity"]=workspot ["--activity-at"]=4 ["--activity-for"]=10
   ["--latency"]=120 ["--jitter"]=40 ["--loss"]=5 ["--reorder"]=2.5
   ["--drop-item"]=Items.FirstAidWhiffV0 ["--loot-quest"]=Keycards.x ["--take-items"]=2 ["--remove-corpses"]=5
   ["--go-down"]=10 ["--go-out"]=10 ["--revive"]=3
