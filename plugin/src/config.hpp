@@ -1,6 +1,7 @@
 #pragma once
 
-// tandem.ini, next to tandem.dll:
+// tandem.ini, next to tandem.dll (or where TANDEM_CONFIG says; TANDEM_PORT
+// overrides its port: tandem/instance.hpp, for several games on a machine):
 //
 //   role = join          ; off | host | join (the co-op menu can pick another)
 //   address = 127.0.0.1  ; join: the host's address
