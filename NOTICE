@@ -1,9 +1,11 @@
 tandem: co-op for Cyberpunk 2077
 ================================
 
-tandem is written from scratch. This file names the third-party code it is
-built with, the projects whose published code it learned from or uses at
-run time, and what it deliberately does not contain.
+tandem is written from scratch and released under the MIT licence
+(LICENSE; LICENSE.txt in a release), Copyright (c) 2026 Victor Hang. This
+file names the third-party code it is built with, the projects whose
+published code it learned from or uses at run time, and what it
+deliberately does not contain.
 
 tandem is not made, endorsed or supported by CD PROJEKT RED. Cyberpunk 2077
 is a trademark of CD PROJEKT S.A. tandem ships no game file and no game
@@ -47,7 +49,12 @@ C and C++ run-time libraries (the redistributable static CRT and STL of
 the MSVC toolset).
 
 tandem-relay (relay/) uses the Go standard library only (BSD-3-Clause,
-Copyright (c) The Go Authors), compiled into its binary.
+Copyright (c) The Go Authors), compiled into its binary. Its container
+image built from relay/Dockerfile is based on
+gcr.io/distroless/static-debian12 (Apache-2.0, Google LLC), which carries
+Debian's CA certificates, tzdata and base files with their own licences
+under /usr/share/doc; the Nix image (nix/relay-image.nix) carries the
+nixpkgs CA certificates (MPL-2.0).
 
 
 2. Code used to build and test, not shipped to players

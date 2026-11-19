@@ -1,0 +1,41 @@
+name: Go Lint and Format Check
+
+# The Go modules' formatting, as the devenv hooks (gofumpt) do locally.
+# golines runs on the relay only: tools/pilot has long string literals.
+on:
+  pull_request:
+
+jobs:
+  lint_and_format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install Tools
+        run: |
+          go install mvdan.cc/gofumpt@v0.9.1
+          go install github.com/segmentio/golines@v0.13.0
+
+      - name: Run gofumpt
+        run: |
+          gofumpt -d relay tools/pilot | tee gofumpt_output.txt
+          if [ -s gofumpt_output.txt ]; then
+            echo "gofumpt found issues:"
+            exit 1
+          fi
+
+      - name: Run golines
+        working-directory: relay
+        run: |
+          golines --max-len=160 . --dry-run | tee golines_output.txt
+          if [ -s golines_output.txt ]; then
+            echo "golines found lines exceeding 160 characters:"
+            exit 1
+          fi

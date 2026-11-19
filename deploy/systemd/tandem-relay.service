@@ -20,7 +20,7 @@
 # it (running sessions are held and come back by themselves).
 [Unit]
 Description=tandem-relay: UDP relay for tandem co-op sessions
-Documentation=https://github.com/Banh-Canh/tandem
+Documentation=https://github.com/RPCU/tandem/blob/main/docs/relay.md
 After=network-online.target
 Wants=network-online.target
 
