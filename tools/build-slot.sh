@@ -12,7 +12,10 @@
 # build alone takes every core, three take a third each.
 set -euo pipefail
 
-lock() { if [ "$1" = 0 ]; then echo /tmp/tandem-build.lock; else echo "/tmp/tandem-build.lock.$1"; fi; }
+# TANDEM_SLOT_POOL picks the pool: build (default; slot 0 is the old lock)
+# or test (/tmp/tandem-test.lock.N: the tests mostly wait, they need no cores).
+pool=${TANDEM_SLOT_POOL:-build}
+lock() { if [ "$1" = 0 ]; then echo "/tmp/tandem-$pool.lock"; else echo "/tmp/tandem-$pool.lock.$1"; fi; }
 
 if [ "${1:-}" = --free ]; then
   for ((i = 0; i < $2; i++)); do
