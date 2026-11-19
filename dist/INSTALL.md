@@ -57,7 +57,8 @@ menu tells you what to fix.
 
    ```
    red4ext/plugins/tandem/   tandem.dll, tandem.default.ini, tandem-report.exe,
-                             INSTALL.md, NOTICE.txt, THIRD-PARTY-LICENSES.txt
+                             INSTALL.md, LICENSE.txt, NOTICE.txt,
+                             THIRD-PARTY-LICENSES.txt
    r6/scripts/tandem/        the scripts (*.reds)
    r6/tweaks/tandem/         the records (*.tweak)
    ```
