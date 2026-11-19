@@ -68,7 +68,7 @@ task touches ([Topic files](#topic-files)).
 | `plugin/` | the RED4ext plugin (`tandem.dll`, Windows x64): entry points, config, net thread; `report/`: `tandem-report.exe`, the bug report without the game | `windows` preset (clang-cl) |
 | `peer/` | `tandem-peer`, the mock player (Linux); `peer/sim/`: the simulated second game (`tandem_sim`: referee, world, story, V, personas, coverage) | `linux` preset |
 | `tests/` | doctest unit and loopback tests of `core/` (Linux) | `linux` preset |
-| `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
+| `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay`; `Dockerfile`: the image without Nix | Go / `nix/relay.nix` / `docker build relay/` |
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
 | `deploy/kubernetes/base` | kustomize base for the relay | `task k8s:check` |
 | `deploy/systemd` | `tandem-relay.service`, the relay on a plain server (`docs/relay.md`) | — |
@@ -79,6 +79,8 @@ task touches ([Topic files](#topic-files)).
 | `docs/` | this core; `architecture/`: one file per subsystem; `relay.md` (operating a relay), `playtest.md` (the first two-machine session); `research/`: engine facts with sources, design research, `data/` (RTTI and skeleton dumps) | `task docs:check` |
 | `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `check-strings.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `package.py` (`task package`), `re/` (read-only reverse engineering, see its README), `pilot/` (the test pilot that plays our V: `architecture/autopilot.md`) | — |
 | `vendor/` | git submodules: RED4ext.SDK, RedLib, ENet, zpp_bits, doctest | — |
+| `.github/workflows/` | CI on GitHub: `ci.yaml` (Go vet and race tests of `relay/` and `tools/pilot/`, `k8s:check`, the Linux core tests with GCC 14, docs links, natives, strings), `linting.yaml` (gofumpt, golines), `nix-build.yaml` (the Nix relay and image), `image.yaml` (pushes `zot.rpcu.io/public/tandem-relay`). Not in CI: the plugin (needs the xwin sysroot) and `scripts:check` (needs the game's scripts) | GitHub Actions |
+| `LICENSE`, `NOTICE` | tandem's licence (MIT) and the third-party code and credits | `task package` ships both |
 
 The build is Linux-only: the plugin is cross-compiled with clang-cl and
 lld-link against the MSVC CRT and Windows SDK that `xwin` downloads. No

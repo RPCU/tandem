@@ -134,8 +134,21 @@ skopeo copy docker-archive:result-relay-image \
   docker://registry.example.org/tandem/tandem-relay:0.1.0
 ```
 
-Without Nix, any builder that copies the static binary above into an empty
-image does the same job; keep it non-root, with no shell.
+Without Nix, [`relay/Dockerfile`](../relay/Dockerfile) builds the same
+image (a static binary on `gcr.io/distroless/static-debian12:nonroot`: CA
+certificates, no shell, user `65532:65532`, the same entrypoint and
+command):
+
+```sh
+docker build -t tandem-relay relay/
+```
+
+CI (`.github/workflows/image.yaml`) builds that Dockerfile and pushes
+`zot.rpcu.io/public/tandem-relay:<8-char commit>` on every push to
+`main`, plus `:<x.y.z>` for a version tag; `nix-build.yaml` checks the Nix
+image builds whenever its inputs change. Any other builder that copies the
+static binary into an empty image does the same job; keep it non-root,
+with no shell.
 
 ### The manifests
 

@@ -1,0 +1,119 @@
+name: CI
+
+# What can run without the game or the Windows sysroot. The plugin
+# (tandem.dll) is not built here: it is cross-compiled with clang-cl against
+# the MSVC CRT and Windows SDK that `task sysroot` fetches with xwin (Microsoft's
+# licence is accepted by whoever runs it), so it stays a local build
+# (`task build:plugin`, tools/build.sh). `task scripts:check` needs the
+# game's own scripts and is left out too.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  go:
+    name: go (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [relay, tools/pilot]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache: false # standard library only: no go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Build
+        if: matrix.module == 'relay'
+        run: CGO_ENABLED=0 go build -trimpath -o tandem-relay ./cmd/tandem-relay
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install kustomize and kubeconform
+        run: |
+          go install sigs.k8s.io/kustomize/kustomize/v5@v5.8.3
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
+
+      # task k8s:check
+      - name: Render and validate the base
+        run: kustomize build deploy/kubernetes/base | kubeconform -strict -summary -
+
+  core:
+    name: core tests (Linux)
+    runs-on: ubuntu-latest
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      # The protocol's translation units take several GB each: more jobs
+      # than this get the compiler OOM-killed on a 16 GB runner.
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0 # the build is named after the commit (core/CMakeLists.txt)
+
+      # relay-loopback builds the relay with Go and runs sessions through it.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: relay/go.mod
+          cache: false
+
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-14 ninja-build
+
+      # task test
+      - name: Configure
+        run: cmake --preset linux
+
+      - name: Build
+        run: cmake --build --preset linux
+
+      - name: Test
+        run: ctest --preset linux
+
+  checks:
+    name: docs, natives, strings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # task docs:check (links only: the facts check compares with HEAD)
+      - name: Docs links
+        run: python3 tools/docs-check.py links
+
+      # task natives:check
+      - name: Natives.reds matches natives.cpp
+        run: python3 tools/check-natives.py
+
+      # task strings:check
+      - name: Player-facing strings
+        run: python3 tools/check-strings.py
