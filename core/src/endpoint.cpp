@@ -64,7 +64,7 @@ bool AimsAtWorld(const proto::Message &message) {
 
 Endpoint::Endpoint(std::unique_ptr<net::Session> session, Identity identity, Timing timing)
     : m_session(std::move(session)), m_identity(std::move(identity)), m_timing(timing),
-      m_checker(Us(timing.resyncCooldown)) {}
+      m_checker(Us(timing.resyncCooldown)), m_deviceCheck(Us(timing.resyncCooldown)) {}
 
 std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port, std::string &error,
                                          Timing timing, std::optional<net::RelayOptions> relay) {
@@ -181,10 +181,22 @@ void Endpoint::SendDigests() {
   if (round)
     m_nextDigestUs = now + Us(m_timing.digest);
   ++m_digestSeq;
+  const auto devices = DeviceDigestNow();
   for (const auto &[peer, player] : m_playerOfPeer)
-    if (round || m_digestSoon.contains(player))
+    if (round || m_digestSoon.contains(player)) {
       Send(peer, DigestFor(player));
+      Send(peer, devices);
+    }
   m_digestSoon.clear();
+  // A request our game never answered with a report (it has no such
+  // device): forgotten, the next change of the device speaks for itself.
+  std::erase_if(m_deviceUses, [&](const auto &entry) {
+    return now - entry.second.atUs > 2 * Us(m_timing.resyncCooldown);
+  });
+}
+
+proto::DeviceDigest Endpoint::DeviceDigestNow() const {
+  return {.count = static_cast<std::uint32_t>(m_devices.Size()), .hash = m_devices.Digest()};
 }
 
 proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
@@ -507,6 +519,34 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      SendDomainsTo(event.peer, domains, true);
                      out.push_back(events::Resync{player, domains});
                    },
+                   [&](const proto::DeviceState &ask) {
+                     // A guest asks what a device is (it came into its
+                     // world). Nothing else of a guest's is a device's state.
+                     if (ask.how != proto::kDeviceAsk)
+                       return;
+                     if (const auto *record = m_devices.Find(devices::KeyOf(ask))) {
+                       if (devices::WhatOf(*record) != devices::WhatOf(ask)) {
+                         auto answer = *record;
+                         answer.how = proto::kDeviceQuiet;
+                         Send(event.peer, answer);
+                       }
+                       return;
+                     }
+                     auto mine = ask;
+                     mine.by = player;
+                     out.push_back(events::DeviceAsked{mine});
+                   },
+                   [&](const proto::DeviceUse &use) { OnDeviceUse(event.peer, player, use, out); },
+                   [&](const proto::DeviceSet &) {
+                     // At most one per cooldown and guest, as for ResyncRequest.
+                     const auto now = net::NowUs();
+                     auto &last = m_deviceSetAtUs[player];
+                     if (last != 0 && now - last < Us(m_timing.resyncCooldown) / 2)
+                       return;
+                     last = now;
+                     SendDevicesTo(event.peer, true);
+                     out.push_back(events::Resync{player, proto::kDomainDevices});
+                   },
                    [&](const proto::Epoch &epoch) {
                      auto relayed = epoch;
                      relayed.player = player;
@@ -568,6 +608,10 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_seenHost.erase(player);
   m_guestEpoch.erase(player);
   m_resyncAtUs.erase(player);
+  // What it changed stays changed (a device is the world's, not a
+  // player's); only its requests still waiting for our game go.
+  m_deviceSetAtUs.erase(player);
+  std::erase_if(m_deviceUses, [&](const auto &entry) { return entry.second.player == player; });
   // Gone while in the pause menu: no longer pausing anyone.
   if (NotePaused(player, false)) {
     Broadcast(proto::Pause{player, false});
@@ -741,6 +785,10 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       for (const auto &[id, item] : m_worldItems)
         Send(peer, item);
   }
+  // The devices as the session has them (a resync of them is asked for
+  // apart, DeviceSet).
+  if ((domains & proto::kDomainWorld) && !resync)
+    SendDevicesTo(peer, false);
   if (domains & proto::kDomainNpcs) {
     if (resync) {
       proto::NpcSet set;
@@ -1147,6 +1195,28 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               return;
             Send(m_hostPeer, proto::ResyncRequest{ask});
             out.push_back(events::Resync{m_you, ask});
+          },
+          [&](const proto::DeviceState &state) {
+            // The host's word only (an ask is a guest's, never relayed).
+            if (state.how == proto::kDeviceAsk)
+              return;
+            const bool news = m_devices.Accept(state);
+            // The answer to our own request, even when it changes nothing
+            // of the record: the host's device did not become what we asked.
+            const bool answer = m_deviceAsked.erase(devices::KeyOf(state)) > 0;
+            if (news || answer)
+              out.push_back(events::HostDevice{state});
+          },
+          [&](const proto::DeviceSet &) {
+            m_devices.Clear();
+            m_deviceAsked.clear();
+            out.push_back(events::DevicesReset{});
+          },
+          [&](const proto::DeviceDigest &digest) {
+            if (!m_deviceCheck.Compare(digest, DeviceDigestNow(), net::NowUs()))
+              return;
+            Send(m_hostPeer, proto::DeviceSet{});
+            out.push_back(events::Resync{m_you, proto::kDomainDevices});
           },
           [&](const proto::Epoch &epoch) {
             if (epoch.player != m_host) {
@@ -1939,6 +2009,103 @@ void Endpoint::ClaimWorldItem(proto::PlayerId player, proto::WorldItemId id, std
   if (std::ranges::all_of(takers, [](auto taker) { return taker != proto::kNoPlayer; })) {
     m_worldItems.erase(item);
     m_worldTakers.erase(id);
+  }
+}
+
+void Endpoint::ReportDevice(proto::DeviceState state) {
+  if (!IsHost() || !IsJoined() || m_ended)
+    return;
+  const auto key = devices::KeyOf(state);
+  if (const auto changed = m_devices.Report(state))
+    Broadcast(*changed);
+  // The guest whose request this answers: when our device did not become
+  // what it asked (the game refused: sealed, unpowered), it gets ours back.
+  const auto asked = m_deviceUses.find(key);
+  if (asked == m_deviceUses.end())
+    return;
+  // ...and so does whoever asked for something else meanwhile.
+  if (const auto *record = m_devices.Find(key)) {
+    const auto answer = [&](proto::PlayerId player, const devices::What &what) {
+      if (devices::WhatOf(*record) == what)
+        return;
+      if (const auto peer = PeerOf(player))
+        Send(*peer, *record);
+    };
+    answer(asked->second.player, asked->second.what);
+    for (const auto &[player, what] : asked->second.late)
+      answer(player, what);
+  }
+  m_deviceUses.erase(asked);
+}
+
+void Endpoint::UseDevice(proto::DeviceUse use) {
+  if (IsHost() || !IsJoined() || m_ended)
+    return;
+  const auto key = devices::KeyOf(use);
+  const auto *record = m_devices.Find(key);
+  if (record && devices::WhatOf(*record) == devices::WhatOf(use))
+    return; // the session has it so already
+  use.seen = record ? record->revision : 0;
+  use.player = m_you;
+  m_deviceAsked[key] = devices::WhatOf(use);
+  Send(m_hostPeer, use);
+}
+
+void Endpoint::AskDevice(proto::DeviceState state) {
+  if (IsHost() || !IsJoined() || m_ended)
+    return;
+  if (const auto *record = m_devices.Find(devices::KeyOf(state))) {
+    if (devices::WhatOf(*record) != devices::WhatOf(state)) {
+      auto again = *record;
+      again.how = proto::kDeviceQuiet;
+      m_pending.push_back(events::HostDevice{again});
+    }
+    return;
+  }
+  state.how = proto::kDeviceAsk;
+  state.revision = 0;
+  state.by = m_you;
+  Send(m_hostPeer, state);
+}
+
+// Host: a guest operated a device. First come, first served, by the
+// revision it had seen (devices::Ledger::Judge).
+void Endpoint::OnDeviceUse(net::PeerId peer, proto::PlayerId player, const proto::DeviceUse &use,
+                           std::vector<SessionEvent> &out) {
+  auto mine = use;
+  mine.player = player;
+  const auto key = devices::KeyOf(mine);
+  // Someone else's request is with our game right now (both arrived within
+  // a frame): that one was first. This one hears what the device became.
+  if (const auto first = m_deviceUses.find(key);
+      first != m_deviceUses.end() && first->second.player != player) {
+    ++m_deviceStale;
+    if (first->second.late.size() < kMaxGuests)
+      first->second.late.emplace_back(player, devices::WhatOf(mine));
+    return;
+  }
+  switch (m_devices.Judge(mine)) {
+  case devices::Ledger::Verdict::Grant:
+    m_deviceUses[key] = {player, devices::WhatOf(mine), net::NowUs(), {}};
+    out.push_back(events::DeviceRequested{mine});
+    break;
+  case devices::Ledger::Verdict::Stale:
+    ++m_deviceStale;
+    Send(peer, *m_devices.Find(key)); // someone was first: the device as it is
+    break;
+  case devices::Ledger::Verdict::Same:
+  case devices::Ledger::Verdict::Full:
+    break;
+  }
+}
+
+void Endpoint::SendDevicesTo(net::PeerId peer, bool resync) {
+  if (resync)
+    Send(peer, proto::DeviceSet{static_cast<std::uint32_t>(m_devices.Size())});
+  for (const auto &[key, state] : m_devices.All()) {
+    auto quiet = state;
+    quiet.how = proto::kDeviceQuiet;
+    Send(peer, quiet);
   }
 }
 

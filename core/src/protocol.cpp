@@ -85,6 +85,15 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *transit = std::get_if<Transit>(&message);
       transit && transit->kind > TransitKind::Along)
     return std::nullopt;
+  // A device's state uses the known bits and a known status only.
+  const auto device = [](std::int8_t status, std::uint16_t flags) {
+    return status >= kDeviceDisabled && status <= kDeviceOn && (flags & ~kDeviceStateBits) == 0;
+  };
+  if (const auto *state = std::get_if<DeviceState>(&message);
+      state && (!device(state->status, state->flags) || state->how > kDeviceAsk))
+    return std::nullopt;
+  if (const auto *use = std::get_if<DeviceUse>(&message); use && !device(use->status, use->flags))
+    return std::nullopt;
   return message;
 }
 
@@ -134,7 +143,8 @@ const char *NameOf(const Message &message) {
       "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",    "NpcWound",
       "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",       "ResyncRequest",
       "NpcSet",         "Epoch",          "Elsewhere",    "Transit",      "NpcSeat",
-      "NpcShotAt",      "ShotHit"};
+      "NpcShotAt",      "ShotHit",        "DeviceState",  "DeviceUse",    "DeviceSet",
+      "DeviceDigest"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

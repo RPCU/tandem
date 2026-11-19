@@ -987,6 +987,9 @@ inline constexpr std::uint8_t kDomainNpcs = 2;    // the NPCs the host shares, t
 inline constexpr std::uint8_t kDomainStory = 4;   // journal, tracked entry, call, hub, effects
 inline constexpr std::uint8_t kDomainPlayers = 8; // roster, looks, held items, seats, radios...
 inline constexpr std::uint8_t kAllDomains = 15;
+// The devices (DeviceDigest, DeviceSet): a domain of its own messages, named
+// here for the reports of a resync only; never a bit of Digest or ResyncRequest.
+inline constexpr std::uint8_t kDomainDevices = 16;
 
 // Host to each guest every few seconds (Event channel: it falls in the
 // reliable stream after everything the host sent before it, so the guest
@@ -1136,15 +1139,99 @@ struct ShotHit {     // Event channel
   friend bool operator==(const ShotHit &, const ShotHit &) = default;
 };
 
-using Message = std::variant<
-    Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
-    Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
-    Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
-    PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle,
-    ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
-    NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
-    Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
-    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit>;
+// ---- Devices and world objects (docs/architecture/devices.md) ----
+//
+// A placed device is named by its entity's static id and the class of its
+// persistent state (its PersistentID's component is "controller"): the same
+// in every game. The host's session keeps one record per device anyone
+// touched or asked about: what it is now, and who changed it last.
+
+// What a device is, class by class (the bits a class has no use for stay 0).
+inline constexpr std::uint16_t kDeviceOpen = 1;         // door, gate
+inline constexpr std::uint16_t kDeviceLocked = 2;       // door
+inline constexpr std::uint16_t kDeviceSealed = 4;       // door
+inline constexpr std::uint16_t kDeviceBroken = 8;       // durability: broken or destroyed
+inline constexpr std::uint16_t kDeviceExploded = 16;    // explosive: barrel, mine, trap
+inline constexpr std::uint16_t kDeviceHacked = 32;      // a quickhack was done on it
+inline constexpr std::uint16_t kDeviceFriendly = 64;    // camera, turret: turned by a player
+inline constexpr std::uint16_t kDeviceExposed = 128;    // its quickhacks are open (a breach)
+inline constexpr std::uint16_t kDeviceBreached = 256;   // access point: the network is breached
+inline constexpr std::uint16_t kDeviceMoving = 512;     // lift: on its way to `value`
+inline constexpr std::uint16_t kDeviceGlitching = 1024; // distracting (a glitch, a malfunction)
+inline constexpr std::uint16_t kDeviceStateBits = 2047;
+// How a DeviceState travels (not part of what the device is):
+inline constexpr std::uint8_t kDeviceLive = 0; // it just changed: shown the game's way
+inline constexpr std::uint8_t kDeviceQuiet =
+    1; // a record (a join, a resync, an answer): set, not played
+inline constexpr std::uint8_t kDeviceAsk = 2; // guest to host: mine is this, what is yours?
+
+// The status of a device: the game's EDeviceStatus.
+inline constexpr std::int8_t kDeviceDisabled = -2, kDeviceUnpowered = -1, kDeviceOff = 0,
+                             kDeviceOn = 1;
+inline constexpr std::int32_t kDeviceNoValue = -1;
+
+// A device as the session has it (Event channel). Host to guests: its word,
+// kept for late joiners and hashed in DeviceDigest; a guest applies it to
+// its own copy, loaded or not, and remembers what its own save had. Guest
+// to host (kDeviceAsk): this device came into my world like this; the host
+// answers with its own when they differ.
+struct DeviceState {
+  std::uint64_t entity{};             // the entity's static id
+  std::uint64_t cls{};                // its persistent state's class name
+  std::int8_t status{};               // kDeviceDisabled .. kDeviceOn
+  std::uint16_t flags{};              // kDevice* state bits
+  std::int32_t value{kDeviceNoValue}; // lift: floor; radio, TV: station; security system: state
+  std::uint32_t revision{}; // the host's count of its changes (a guest's: the one it has seen)
+  PlayerId by{};            // who changed it last (kNoPlayer: the host's world)
+  std::uint8_t how{};       // kDeviceLive, kDeviceQuiet, kDeviceAsk
+  friend bool operator==(const DeviceState &, const DeviceState &) = default;
+};
+
+// A guest operated a device (Event channel; guest to host, never relayed):
+// it is this in my game now. The guest's own copy changed at once; the host
+// brings its own to the same state the game's way and its DeviceState is
+// the answer for everyone. `seen` fences it: when someone else changed the
+// device since the revision the guest had seen, the request is void and
+// the guest gets the host's state back.
+struct DeviceUse {
+  std::uint64_t entity{};
+  std::uint64_t cls{};
+  std::int8_t status{};
+  std::uint16_t flags{};
+  std::int32_t value{kDeviceNoValue};
+  std::uint32_t seen{};
+  PlayerId player{}; // set by the host from the connection
+  friend bool operator==(const DeviceUse &, const DeviceUse &) = default;
+};
+
+// Host to one guest, opening a resync of the devices: forget the record,
+// `count` DeviceStates follow (what is not among them goes back to what the
+// guest's own save had). Guest to host: send me the record again.
+struct DeviceSet {
+  std::uint32_t count{};
+  friend bool operator==(const DeviceSet &, const DeviceSet &) = default;
+};
+
+// Host to each guest with its Digest (Event channel): the hash of the
+// device record (tandem/devices.hpp). A guest whose copy differs twice in a
+// row asks for it again (DeviceSet).
+struct DeviceDigest {
+  std::uint32_t count{};
+  std::uint32_t hash{};
+  friend bool operator==(const DeviceDigest &, const DeviceDigest &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
+                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
+                 Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
+                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
+                 NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
+                 Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise,
+                 Difficulty, AreaHit, Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit,
+                 NpcSeat, NpcShotAt, ShotHit, DeviceState, DeviceUse, DeviceSet, DeviceDigest>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.
