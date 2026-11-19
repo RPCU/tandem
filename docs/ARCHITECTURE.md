@@ -1263,6 +1263,8 @@ revive down|hold|fresh|report` (`fresh` forgets the 5-minute cooldown of
   private_actors, private_scenes, public_scenes, time_host; `relay`,
   `relay_token`, `join` for the relay and join codes): the defaults, and
   the test harness's session.
+- Releases, startup and join-time compatibility checks, bug reports:
+  [`architecture/release.md`](architecture/release.md).
 
 ## Talking to the engine safely
 
@@ -1338,6 +1340,7 @@ Wire format (`relay/internal/relay/wire.go`, big-endian, `TNR1` + type):
 | 10 `Secret`       | secret 16                             | relay → guest                |
 
 - **Observability**: JSON logs, `/healthz`, Prometheus `/metrics`.
+- **Running one** (tokens, systemd, the image, firewall, limits): [`relay.md`](relay.md).
 - **Shipping**: `nix-build -A relayImage` builds an OCI image with only the
   static binary and CA certificates, running as uid 65532.
 - **Kubernetes** (`deploy/kubernetes/base`): one replica (sessions live in

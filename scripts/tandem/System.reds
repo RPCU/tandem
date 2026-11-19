@@ -218,6 +218,11 @@ public class TandemSystem extends ScriptableSystem {
     if this.m_inGame || !this.m_attached {
       return;
     }
+    // No session chosen: the plugin refused it (co-op is off, a startup
+    // check failed: Coop.reds says why). The game stays as it is.
+    if !TandemNative.IsConfigured() {
+      return;
+    }
     let player = GetPlayer(this.GetGameInstance());
     if !IsDefined(player) {
       return;

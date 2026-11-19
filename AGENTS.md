@@ -22,9 +22,9 @@ nix/           relay package and OCI image, redscript (the game's scc, built for
 deploy/        kubernetes/base: kustomize base for the relay
 scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors plugin/src/natives.cpp, StoryNatives.reds story_natives.cpp, CombatNatives.reds combat_natives.cpp, SyncNatives.reds sync_natives.cpp, ElsewhereNatives.reds elsewhere_natives.cpp)
 tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet records, their attitude groups, the player marker)
-dist/          files installed next to the DLL (tandem.ini)
+dist/          files installed next to the DLL (tandem.ini, shipped as tandem.default.ini) and INSTALL.md, the players' guide
 cmake/         clang-cl-msvc.cmake: the Windows cross toolchain
-docs/          ARCHITECTURE.md, research/ (engine facts, sources; data/: RTTI and skeleton dumps)
+docs/          ARCHITECTURE.md, architecture/release.md (packaging, compatibility checks, bug reports), relay.md (operating a relay), playtest.md, research/ (engine facts, sources; data/: RTTI and skeleton dumps)
 tools/         game.sh (drive the game), scenario.sh + scenarios/ (in-game tests), check-natives.py, scripts-check.sh, re/ (read-only reverse engineering, see its README)
 vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 ```
@@ -60,6 +60,7 @@ vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 | `task scripts:check` | compile `scripts/tandem` as the game does (seconds, no game) |
 | `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
 | `task logs`          | follow the plugin's log on the game machine                  |
+| `task package`       | the release zip and its symbols zip (`build/package/`)       |
 
 `tools/remote.sh TASK…` runs a task on the game machine instead (more cores):
 it syncs the working tree to `~/.cache/tandem/src/<worktree>` there, runs
