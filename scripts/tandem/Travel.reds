@@ -683,8 +683,10 @@ private final func PerformFastTravel(player: ref<GameObject>, nodeData: ref<Fast
       travel.Departing(nodeData.GetPointRecord(), TandemNative.NodeRefHash(nodeData.GetMarkerRef()));
     }
     // Our world is rebuilt around our V: the session's epoch moves on
-    // (docs/ARCHITECTURE.md, Consistency).
-    TandemSync.WorldRebuilt(2);
+    // (docs/ARCHITECTURE.md, Consistency). Solo: nothing to tell.
+    if TandemNative.IsStarted() {
+      TandemSync.WorldRebuilt(2);
+    }
   }
   wrappedMethod(player, nodeData);
 }
@@ -716,6 +718,10 @@ private final func RefreshInputHints() -> Void {
     name = TandemMarkers.NameOf(this.selectedMappin.GetMappin());
   }
   let ours = NotEquals(name, "") && this.GetFastTravelSystem().IsFastTravelEnabled();
+  // Solo: no marker of ours, no hint to show or take back.
+  if !ours && !TandemNative.IsStarted() {
+    return;
+  }
   let data: InputHintData;
   data.action = n"world_map_menu_fast_travel";
   data.source = n"TandemRegroup";

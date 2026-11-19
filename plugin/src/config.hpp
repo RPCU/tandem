@@ -2,7 +2,13 @@
 
 // tandem.ini, next to tandem.dll:
 //
-//   role = join          ; off | host | join (the co-op menu can pick another)
+//   role = join          ; off (solo, the default) | host | join; the co-op menu
+//                        ; can pick another. Solo: tandem does nothing to the game.
+//   recorder = off       ; on: record what this game plays, solo or in a session
+//                        ; (tandem/recorder.hpp), in recordings/auto/
+//   recorder_max_mb = 2048        ; the oldest segments go beyond this
+//   recorder_segment_minutes = 10
+//   recorder_pose = on   ; off: no body poses in the recordings
 //   address = 127.0.0.1  ; join: the host's address
 //   port = 27450
 //   name = V
@@ -58,6 +64,11 @@ struct Config {
   bool mirror{false};
   bool pose{true};
   bool story{true};
+  // The recorder (docs/ARCHITECTURE.md, "Recorder"): independent of the role.
+  bool recorder{false};
+  std::uint64_t recorderMaxMb{2048};
+  std::uint32_t recorderSegmentMinutes{10};
+  bool recorderPose{true};
   bool questFreeze{false};
   std::vector<std::string> questFreezeAllow;
   // Scene privacy (engine/scenes.cpp): private scenes are not watched.

@@ -12,6 +12,7 @@ add_library(tandem_core STATIC
   src/interpolation.cpp
   src/movement.cpp
   src/play.cpp
+  src/recorder.cpp
   src/pose.cpp
   src/vehicle.cpp
   src/hosts.cpp

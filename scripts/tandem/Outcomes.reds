@@ -521,7 +521,8 @@ public class TandemOutcomes {
       return false;
     }
     if obj.IsPlayer() {
-      return true;
+      // Solo is vanilla: our V's limbs are ours to keep only in a session.
+      return TandemNative.IsStarted();
     }
     let player = TandemCombat.PuppetPlayer(obj.GetGame(), obj);
     if player == 0u {

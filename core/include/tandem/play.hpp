@@ -32,6 +32,9 @@ class Endpoint;
 
 namespace tandem::play {
 inline constexpr std::uint32_t kMagic = 0x594C5054; // "TPLY"
+// A recorded session (.tsession, tandem/recorder.hpp): the same layout, with
+// everything the game sent (its world too), not only its own V.
+inline constexpr std::uint32_t kSessionMagic = 0x53455354; // "TSES"
 inline constexpr std::uint16_t kVersion = 1;
 
 struct Header {
@@ -51,6 +54,8 @@ struct Recording {
   Header header;
   std::vector<Entry> entries;
   std::size_t skipped{}; // messages that did not decode (another protocol version)
+  bool session{};        // a .tsession (kSessionMagic): every kind of message
+  bool truncated{};      // ended inside an entry (a crash while writing)
   std::uint64_t DurationUs() const { return entries.empty() ? 0 : entries.back().atUs; }
   // Where the V was first, and the time it was there.
   std::optional<proto::PlayerState> FirstState() const;
@@ -63,11 +68,16 @@ bool Keeps(const proto::Message &message);
 // Writes a recording (the plugin's net thread; tandem-peer --save-play).
 class Writer {
 public:
-  bool Open(const std::filesystem::path &path, const Header &header, std::string &error);
+  bool Open(const std::filesystem::path &path, const Header &header, std::string &error,
+            std::uint32_t magic = kMagic);
   // `hostUs`: when it was sent, on the host clock (earlier than the start: at 0).
   void Add(std::uint64_t hostUs, const proto::Message &message);
   void Close();
+  // What was added so far reaches the file (a crash keeps it readable).
+  bool Flush();
+  bool Good() const { return m_out.good(); }
   bool IsOpen() const { return m_out.is_open(); }
+  std::uint64_t Bytes() const { return m_bytes; }
   std::size_t Count() const { return m_count; }
   std::uint64_t LastUs() const { return m_lastUs; }
   const std::filesystem::path &Path() const { return m_path; }
@@ -78,6 +88,7 @@ private:
   Header m_header;
   std::size_t m_count{};
   std::uint64_t m_lastUs{};
+  std::uint64_t m_bytes{};
 };
 
 std::optional<Recording> Load(const std::filesystem::path &path, std::string &error);
