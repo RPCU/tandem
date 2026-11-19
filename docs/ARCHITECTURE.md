@@ -89,7 +89,9 @@ shared hooks (treefmt with clang-format, nixfmt, prettier, gofumpt, shfmt;
 shellcheck) come from `npins` → `nixbook/devenvModules/devenv.nix`. The
 Windows sysroot (MSVC CRT + Windows SDK 10.0.22621) lives in `$TANDEM_XWIN`
 (default `~/.cache/tandem/xwin`); `task sysroot` fetches it. SDK 10.0.26100
-does not work with xwin.
+does not work with xwin. ccache sits in front of every compile, one cache
+per machine for all worktrees (`architecture/testing.md`, "The compiler
+cache").
 
 ## Session and transport
 
