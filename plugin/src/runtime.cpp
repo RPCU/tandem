@@ -1528,6 +1528,8 @@ void Runtime::ResetSession() {
     m_streetEvents.clear();
     m_sharedTraffic.clear();
     m_trafficStatus.clear();
+    m_trafficShown.clear();
+    m_trafficOwners.clear();
     m_heat.clear();
     // Vehicle combat: the next session's vehicles are named anew (our car
     // too: by our player id in it); the scripts say our car's damage again.
@@ -1631,10 +1633,16 @@ sync::VehicleView Runtime::TrafficOf(proto::TrafficId id) {
 }
 
 void Runtime::SetSharedTraffic(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
-                               const std::map<proto::TrafficId, proto::TrafficStatus> &status) {
+                               const std::map<proto::TrafficId, proto::TrafficStatus> &status,
+                               const std::map<proto::TrafficId, proto::TrafficSpawn> &shown,
+                               std::map<proto::TrafficId, proto::PlayerId> owners) {
   std::lock_guard _(m_lock);
   m_sharedTraffic = traffic;
   m_trafficStatus = status;
+  m_trafficShown.clear();
+  for (const auto &[id, spawn] : shown)
+    m_trafficShown.insert(id);
+  m_trafficOwners = std::move(owners);
 }
 
 std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> Runtime::SharedTraffic() {
@@ -1642,6 +1650,8 @@ std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> Runtime::Share
   std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> out;
   out.reserve(m_sharedTraffic.size());
   for (const auto &[id, spawn] : m_sharedTraffic) {
+    if (!m_trafficShown.contains(id))
+      continue; // ours: our game runs it
     // Without a status it stands as it was announced.
     proto::TrafficStatus status{
         .id = id, .flags = static_cast<std::uint16_t>(spawn.flags & proto::kTrafficStatusMask)};
@@ -1655,6 +1665,13 @@ std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> Runtime::Share
 bool Runtime::IsTrafficShared(proto::TrafficId id) {
   std::lock_guard _(m_lock);
   return m_sharedTraffic.contains(id);
+}
+
+proto::PlayerId Runtime::TrafficOwnerOf(proto::TrafficId id) {
+  std::lock_guard _(m_lock);
+  if (const auto it = m_trafficOwners.find(id); it != m_trafficOwners.end())
+    return it->second;
+  return m_sharedTraffic.contains(id) ? proto::TrafficOwner(id) : proto::kNoPlayer;
 }
 
 void Runtime::SubmitLocalHeat(const proto::Heat &heat) {

@@ -33,6 +33,16 @@ using namespace std::chrono_literals;
 // Our V's state and pose wait this long at most for each other (one datagram).
 constexpr std::uint64_t kCoalesceUs = 8'000;
 
+// The session's record of the street, for the scripts: every shared
+// vehicle, the ones we show as proxies, who runs each (traffic.md).
+void ShareStreet(Runtime &runtime, const Endpoint &endpoint) {
+  std::map<proto::TrafficId, proto::PlayerId> owners;
+  for (const auto &[id, spawn] : endpoint.SharedTraffic())
+    owners[id] = endpoint.TrafficOwnerOf(id);
+  runtime.SetSharedTraffic(endpoint.SharedTraffic(), endpoint.TrafficStatuses(),
+                           endpoint.ProxiedTraffic(), std::move(owners));
+}
+
 struct NetThread::Impl {
   Config config;
   proto::Body body{};
@@ -591,6 +601,38 @@ struct NetThread::Impl {
                                          .spawn = {.id = e.status.id},
                                          .flags = e.status.flags,
                                          .amount = e.status.health});
+              } else if constexpr (std::is_same_v<E, events::TrafficGive>) {
+                street = true;
+                log::Info("street: the host asks us to give vehicle {:#x} to player {}", e.id,
+                          e.to);
+                runtime.PushStreetEvent(
+                    {.kind = StreetEvent::Kind::Give, .spawn = {.id = e.id}, .player = e.to});
+              } else if constexpr (std::is_same_v<E, events::TrafficTake>) {
+                street = true;
+                const auto &s = e.state;
+                log::Info("street: vehicle {:#x} is ours now (from player {}{})", s.id, s.from,
+                          (s.handover & proto::kHandoverInherited) ? ", inherited" : "");
+                // Ours to move now: the giver's track is of no use (a new one
+                // starts if it is ever another game's again).
+                runtime.ForgetTraffic(s.id);
+                runtime.PushStreetEvent({.kind = StreetEvent::Kind::Take,
+                                         .spawn = {.id = s.id,
+                                                   .position = s.position,
+                                                   .orientation = s.orientation,
+                                                   .flags = s.flags},
+                                         .flags = s.flags,
+                                         .reason = s.handover,
+                                         .player = s.from,
+                                         .amount = s.health,
+                                         .vector = s.velocity});
+              } else if constexpr (std::is_same_v<E, events::TrafficOwnerChanged>) {
+                street = true;
+                log::Info("street: vehicle {:#x} is run by player {} now (was {})", e.id, e.owner,
+                          e.was);
+                runtime.PushStreetEvent({.kind = StreetEvent::Kind::Owner,
+                                         .spawn = {.id = e.id},
+                                         .reason = static_cast<std::int32_t>(e.was),
+                                         .player = e.owner});
               } else if constexpr (std::is_same_v<E, events::TrafficHitBy>) {
                 runtime.PushStreetEvent({.kind = StreetEvent::Kind::Hit,
                                          .spawn = {.id = e.hit.id, .position = e.hit.position},
@@ -606,7 +648,7 @@ struct NetThread::Impl {
                 const auto &d = e.damage;
                 log::Info("wheels: vehicle {:#x} of player {}: health {:.2f}, flags {:#x}, tyres "
                           "{:#x}, {} part(s) off",
-                          d.vehicle, proto::OwnerOfVehicle(d.vehicle), d.health, d.flags, d.tyres,
+                          d.vehicle, endpoint->VehicleOwner(d.vehicle), d.health, d.flags, d.tyres,
                           d.parts.size());
                 runtime.PushVehicleDamage(d);
               } else if constexpr (std::is_same_v<E, events::VehicleHitBy>) {
@@ -907,7 +949,7 @@ struct NetThread::Impl {
       }
       const Perf::Scope pass(Work::NetPass);
       if (street && !ended)
-        runtime.SetSharedTraffic(endpoint->SharedTraffic(), endpoint->TrafficStatuses());
+        ShareStreet(runtime, *endpoint);
       summary.peakPlayers = std::max(summary.peakPlayers, endpoint->Players().size());
       if (const auto lost = runtime.TakeOverflows())
         log::Warn("consistency: {} event(s) dropped, a queue was full (the game was not taking "
@@ -1165,13 +1207,21 @@ struct NetThread::Impl {
           endpoint->SendTrafficHit(*hit);
         } else if (const auto *claim = std::get_if<proto::TrafficClaim>(&message)) {
           endpoint->ClaimTraffic(claim->id, claim->seat);
+          streetSaid = true;
+        } else if (const auto *given = std::get_if<proto::TrafficHandoverState>(&message)) {
+          log::Info("street: vehicle {:#x} given to player {}", given->id, given->to);
+          endpoint->GiveTraffic(*given);
+          streetSaid = true;
+        } else if (const auto *done = std::get_if<proto::TrafficHandoverDone>(&message)) {
+          endpoint->AnswerTraffic(done->id, done->accepted);
+          streetSaid = true;
         } else if (const auto *crime = std::get_if<proto::Crime>(&message);
                    crime && !endpoint->SendCrime(*crime)) {
           log::Info("crime of player {} dropped: not a guest in the session", crime->player);
         }
       }
       if (streetSaid)
-        runtime.SetSharedTraffic(endpoint->SharedTraffic(), endpoint->TrafficStatuses());
+        ShareStreet(runtime, *endpoint);
       if (auto cars = runtime.TakeTrafficStates())
         endpoint->SendTrafficStates(std::move(*cars));
       // Vehicle combat: what our game says of its vehicles and our V in them.

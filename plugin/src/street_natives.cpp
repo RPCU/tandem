@@ -24,18 +24,24 @@ namespace tandem::plugin {
 // the area's owner. Plain fields only (the script VM aligns struct locals
 // to 8).
 struct TandemStreetEvent {
-  std::int32_t kind{}; // 1 spawn, 2 gone, 3 status, 4 hit (owner), 5 crime (ours)
+  // 1 spawn, 2 gone, 3 status, 4 hit (owner), 5 crime (ours), 6 give (owner),
+  // 7 take (ours now), 8 owner changed
+  std::int32_t kind{};
   std::uint32_t id{};
   Red::TweakDBID record;
   Red::CName appearance;
   Red::EntityID entity;
   float x{}, y{}, z{};
   float i{}, j{}, k{}, r{1.f};
-  std::int32_t flags{};   // spawn, status: kTraffic*; hit: kTrafficHit*; crime: kCrime*
-  std::int32_t reason{};  // gone: 0 away, 1 taken, 2 removed; crime: its kind
-  std::uint32_t player{}; // gone taken: whose car it is now; hit: who
-  float amount{};         // status: health 0..1; hit: damage; crime: share of health
-  float dx{}, dy{}, dz{}; // hit: the push (collision) or the way it went
+  std::int32_t flags{}; // spawn, status: kTraffic*; hit: kTrafficHit*; crime: kCrime*
+  // gone: 0 away, 1 taken, 2 removed; crime: its kind; take: kHandover*
+  // (16: inherited); owner: who ran it
+  std::int32_t reason{};
+  // gone taken: whose car it is now; hit: who; give: to whom; take: from
+  // whom; owner: who runs it now
+  std::uint32_t player{};
+  float amount{};         // status, take: health 0..1; hit: damage; crime: share of health
+  float dx{}, dy{}, dz{}; // hit: the push (collision) or the way it went; take: velocity
   std::uint32_t npc{};    // crime: the victim or witness as shared
   std::int32_t attack{};  // crime: gamedataAttackType
 };
@@ -55,11 +61,14 @@ struct TandemStreetCar {
 static_assert(alignof(TandemStreetCar) <= 8, "the script VM aligns struct locals to 8");
 
 struct TandemStreet : Red::IScriptable {
-  // A shared vehicle's id: the owner's player id and its own counter.
+  // A shared vehicle's id: the announcer's player id and its own counter.
   static std::uint32_t MakeId(std::uint32_t owner, std::uint32_t counter) {
     return proto::MakeTrafficId(owner, counter);
   }
+  // The game that announced it (its id says so), and the one that runs it
+  // now (a hand-over moves it; 0: not one the session knows).
   static std::uint32_t OwnerOf(std::uint32_t id) { return proto::TrafficOwner(id); }
+  static std::uint32_t RunBy(std::uint32_t id) { return Runtime::Get().TrafficOwnerOf(id); }
   // NpcSeat's owner for a seat in a shared vehicle, and back.
   static std::uint32_t SeatOwner(std::uint32_t id) { return proto::TrafficSeatOwner(id); }
   static bool IsStreetSeat(std::uint32_t owner) { return proto::IsTrafficSeat(owner); }
@@ -124,6 +133,24 @@ struct TandemStreet : Red::IScriptable {
   static void Claim(std::uint32_t id, Red::CName seat) {
     Runtime::Get().SubmitStreet(proto::TrafficClaim{.id = id, .seat = seat.hash});
   }
+  // Hand-over (traffic.md, "Who owns an area"). The host asked us to give
+  // one of ours to `to`: how we leave it (our body stays as its proxy).
+  static void Give(std::uint32_t id, std::uint32_t to, Red::Vector4 position,
+                   Red::Quaternion orientation, Red::Vector4 velocity, float health,
+                   std::int32_t flags) {
+    Runtime::Get().SubmitStreet(proto::TrafficHandoverState{
+        .id = id,
+        .to = to,
+        .position = {position.X, position.Y, position.Z},
+        .orientation = {orientation.i, orientation.j, orientation.k, orientation.r},
+        .velocity = {velocity.X, velocity.Y, velocity.Z},
+        .health = std::clamp(health, 0.f, 1.f),
+        .flags = static_cast<std::uint16_t>(flags)});
+  }
+  // Our answer to a give (false: we keep it) or a take (whether we run it).
+  static void Answer(std::uint32_t id, bool accepted) {
+    Runtime::Get().SubmitStreet(proto::TrafficHandoverDone{.id = id, .accepted = accepted});
+  }
   // What happened to the shared vehicles, and our V's crimes seen elsewhere.
   static Red::DynArray<TandemStreetEvent> TakeEvents() {
     Red::DynArray<TandemStreetEvent> out;
@@ -166,8 +193,8 @@ struct TandemStreet : Red::IScriptable {
     const auto view = Runtime::Get().TrafficOf(id);
     return {view.velocity.x, view.velocity.y, view.velocity.z, 0.f};
   }
-  // The vehicles shared now, as the session's record has them: the proxies
-  // our game must show, no more, no less.
+  // The vehicles shared now that another game runs, as the session's record
+  // has them: the proxies our game must show, no more, no less.
   static Red::DynArray<TandemStreetCar> Shared() {
     Red::DynArray<TandemStreetCar> out;
     for (const auto &[spawn, status] : Runtime::Get().SharedTraffic())
@@ -269,6 +296,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStreetCar, "TandemStreetCar", {
 RTTI_DEFINE_CLASS(tandem::plugin::TandemStreet, "TandemStreet", {
   RTTI_METHOD(MakeId);
   RTTI_METHOD(OwnerOf);
+  RTTI_METHOD(RunBy);
   RTTI_METHOD(SeatOwner);
   RTTI_METHOD(IsStreetSeat);
   RTTI_METHOD(CarOfSeat);
@@ -278,6 +306,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStreet, "TandemStreet", {
   RTTI_METHOD(SendStatus);
   RTTI_METHOD(SendHit);
   RTTI_METHOD(Claim);
+  RTTI_METHOD(Give);
+  RTTI_METHOD(Answer);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(Position);
   RTTI_METHOD(Orientation);
