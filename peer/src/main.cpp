@@ -1855,6 +1855,12 @@ int main(int argc, char **argv) {
   if (!options.echoLook)
     endpoint->SetLocalAppearance(
         RandomLook(options.body, options.lookSeed.value_or(std::random_device{}())));
+  // --strike blade: our puppet holds a katana, so the host's NPC reacts to
+  // (and is cut by) a blade: its hit reaction reads the attacker's weapon.
+  if (options.strike == "blade") {
+    endpoint->SetLocalHeld({.right = TweakDBID("Items.Preset_Katana_Default")});
+    Log("holding Items.Preset_Katana_Default");
+  }
   if (options.host)
     Log("hosting on UDP {} as {}{}", options.port, options.name,
         options.relay

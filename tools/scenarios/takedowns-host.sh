@@ -12,7 +12,7 @@ expect_peer 'npc [0-9]+: action 1 (accepted|refused)' 10
 # fallback. (A first grab may be refused: the peer takes the next NPC.)
 expect 'takedowns: [0-9]+ grappled by player [0-9]+ \((workspot|fallback)' 45
 expect 'takedowns: [0-9]+ taken down by player [0-9]+ \((kill|setUnconscious)\)' 15
-expect 'npcs: [0-9]+ died \(killer: player [2-9]\)' 20
+expect 'npcs: [0-9]+ died \(killer: player ([2-9]|[1-9][0-9]+)\)' 20
 # A body: picked up onto the puppet's shoulder, thrown.
 expect_peer 'pick up npc [0-9]+' 30
 expect 'takedowns: [0-9]+ carried by player [0-9]+' 10

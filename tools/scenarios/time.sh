@@ -39,7 +39,7 @@ expect_peer 'player 1: time abilities 0x0' 5
 # own, stronger one (0.25) starts: then it stands in the bubble unslowed.
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --sandevistan-at 8 --sandevistan-for 12 --sandevistan-scale 0.5
 expect_peer 'sandevistan on' 40
-expect 'time: bubble of player [2-9]: [1-9][0-9]* NPC' 5
+expect 'time: bubble of player ([2-9]|[1-9][0-9]+): [1-9][0-9]* NPC' 5
 expect 'time: npc [0-9]+ at 0.5' 5
 expect 'time: our V slowed to 0.5' 5
 mark
