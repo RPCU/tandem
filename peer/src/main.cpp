@@ -81,6 +81,10 @@
 // is), --device-answer WORDS changes back, --device-after seconds later,
 // every device another player just changed. A host has no world of its
 // own: a guest's request is taken as said. What it hears is logged.
+// Breach Protocol (devices.md, "Breach Protocol"): --breach SPEC breaches
+// an access point (ENTITY[:CLASS]) or an NPC (npc=N) with --programs, as a
+// won minigame would; --breach-failed loses it instead. What it hears (the
+// host's answer, other players' breaches it would apply) is logged.
 // Loot: --loot-quest has "its V" loot a quest item (everyone gets it);
 // --drop-item drops a shared world item in front of your V; --take-items
 // picks up what the others drop; as the host of a replay, --remove-corpses
@@ -349,6 +353,16 @@ struct Options {
   std::vector<DeviceOrder> devices;
   std::string deviceAnswer;
   int deviceAfterSeconds{3};
+  // Breach Protocol: what to breach and when (--breach), with which daemons.
+  struct BreachOrder {
+    std::uint64_t entity{}, cls{};
+    std::uint32_t npc{};
+    int atSeconds{5};
+    bool done{};
+  };
+  std::optional<BreachOrder> breach;
+  std::vector<std::uint64_t> breachPrograms;
+  bool breachFailed{};
   // Faults on what we send (docs/architecture/consistency.md, Consistency).
   float drop{}, dup{};
   int vanishAtSeconds{-1}; // end without a goodbye this long into the session (-1: never)
@@ -635,6 +649,13 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --device-answer W  every device another player changes is made WORDS (as above)\n"
          "                     --device-after seconds later\n"
          "  --device-after N   see --device-answer (3)\n"
+         "  --breach SPEC      Breach Protocol won, SPEC = ENTITY[:CLASS][@SECONDS] (an access\n"
+         "                     point by its id in hex; CLASS AccessPointControllerPS) or\n"
+         "                     npc=N[@SECONDS] (the quickhack on NPC N); SECONDS into the\n"
+         "                     session (5)\n"
+         "  --programs LIST    --breach: the daemons uploaded, MinigameAction records by name\n"
+         "                     or hex, comma separated (NetworkCameraShutdown,...)\n"
+         "  --breach-failed    --breach: the minigame is lost (the network is alerted)\n"
          "  --traffic-report   each report has the whole traffic table (by message type)\n"
          "  --legacy-wire      send as before the netcode work: every state every frame,\n"
          "                     whole poses and NPC lists (to compare the bandwidth)\n"
@@ -820,6 +841,61 @@ Options::DeviceOrder DeviceOrderOf(std::string_view spec) {
   return order;
 }
 
+// --breach ENTITY[:CLASS][@SECONDS] | npc=N[@SECONDS]
+Options::BreachOrder BreachOrderOf(std::string_view spec) {
+  Options::BreachOrder order;
+  if (const auto at = spec.find('@'); at != std::string_view::npos) {
+    order.atSeconds = Number<int>(spec.substr(at + 1));
+    spec = spec.substr(0, at);
+  }
+  if (spec.starts_with("npc=")) {
+    order.npc = Number<std::uint32_t>(spec.substr(4));
+    if (order.npc == 0)
+      Usage("--breach: npc=N names an NPC by its session id");
+    return order;
+  }
+  const auto colon = spec.find(':');
+  auto entity = spec.substr(0, colon);
+  if (entity.starts_with("0x"))
+    entity.remove_prefix(2);
+  if (std::from_chars(entity.data(), entity.data() + entity.size(), order.entity, 16).ptr !=
+          entity.data() + entity.size() ||
+      order.entity == 0)
+    Usage(std::format("--breach: {} is not an entity id in hex", entity));
+  order.cls = CName(colon == std::string_view::npos ? std::string_view("AccessPointControllerPS")
+                                                    : spec.substr(colon + 1));
+  return order;
+}
+
+// --programs A,B: records by name (MinigameAction. optional) or in hex.
+std::vector<std::uint64_t> ProgramsOf(std::string_view list) {
+  std::vector<std::uint64_t> programs;
+  std::size_t start = 0;
+  while (start <= list.size()) {
+    const auto comma = list.find(',', start);
+    auto name = list.substr(start, comma == std::string_view::npos ? comma : comma - start);
+    if (!name.empty()) {
+      std::uint64_t id{};
+      if (name.starts_with("0x")) {
+        if (std::from_chars(name.data() + 2, name.data() + name.size(), id, 16).ptr !=
+            name.data() + name.size())
+          Usage(std::format("--programs: {} is not a record id", name));
+      } else {
+        id = TweakDBID(name.find('.') == std::string_view::npos
+                           ? std::format("MinigameAction.{}", name)
+                           : std::string(name));
+      }
+      programs.push_back(id);
+    }
+    if (comma == std::string_view::npos)
+      break;
+    start = comma + 1;
+  }
+  if (programs.size() > tandem::proto::kMaxBreachPrograms)
+    Usage(std::format("--programs: at most {} daemons", tandem::proto::kMaxBreachPrograms));
+  return programs;
+}
+
 Vec3 Point(std::string_view flag, std::string_view value) {
   float xyz[3]{};
   std::size_t start = 0;
@@ -922,6 +998,10 @@ Options Parse(int argc, char **argv) {
       options.tradeAccept = true;
       continue;
     }
+    if (flag == "--breach-failed") {
+      options.breachFailed = true;
+      continue;
+    }
     if (flag == "--traffic-report") {
       options.traffic = true;
       continue;
@@ -1000,6 +1080,10 @@ Options Parse(int argc, char **argv) {
       options.deviceAnswer = std::string(value);
     } else if (flag == "--device-after")
       options.deviceAfterSeconds = Number<int>(value);
+    else if (flag == "--breach")
+      options.breach = BreachOrderOf(value);
+    else if (flag == "--programs")
+      options.breachPrograms = ProgramsOf(value);
     else if (flag == "--scan-at") {
       options.sandevistanAtSeconds = Number<int>(value);
       options.timeAbility = tandem::proto::kTimeScanning;
@@ -4387,6 +4471,21 @@ int main(int argc, char **argv) {
               Log("{} operated by player {}: taken as said", describeDevice(key, what),
                   e.use.player);
               answerDevice(key, what);
+            } else if constexpr (std::is_same_v<E, tandem::events::BreachBy>) {
+              // No world of ours: the daemons are taken as run.
+              const auto &b = e.breach;
+              Log("breach by player {}: network {:x} npc {}, {} daemon(s), {} trap(s){}{}: {}",
+                  b.player, b.entity, b.npc, b.programs.size(), b.traps.size(),
+                  (b.flags & tandem::proto::kBreachRemote) ? ", remote" : "",
+                  (b.flags & tandem::proto::kBreachFailed) ? ", lost" : "",
+                  endpoint->IsHost() ? "applied to its network and our NPCs"
+                                     : "applied to our NPCs");
+            } else if constexpr (std::is_same_v<E, tandem::events::BreachAnswered>) {
+              const auto &r = e.result;
+              constexpr const char *kVerdicts[] = {"granted", "refused (breached already)",
+                                                   "refused (the record is full)"};
+              Log("our breach of network {:x} npc {}: {}, by player {}", r.entity, r.npc,
+                  kVerdicts[static_cast<int>(r.verdict)], r.by);
             } else if constexpr (std::is_same_v<E, tandem::events::DevicesReset>) {
               Log("devices: the host sends its record again");
             } else if constexpr (std::is_same_v<E, tandem::events::Resync>) {
@@ -5330,6 +5429,25 @@ int main(int argc, char **argv) {
         what = tandem::devices::WhatOf(*record);
       DeviceWords(order.words, what);
       operateDevice(key, what, "--device");
+    }
+    // --breach: its outcome, once, at its time into the session.
+    if (options.breach && !options.breach->done && devicesFrom &&
+        now >= *devicesFrom + std::chrono::seconds(options.breach->atSeconds)) {
+      options.breach->done = true;
+      const auto &order = *options.breach;
+      tandem::proto::Breach breach{.entity = order.entity,
+                                   .cls = order.cls,
+                                   .npc = order.npc,
+                                   .programs = options.breachPrograms};
+      if (order.npc != 0)
+        breach.flags |= tandem::proto::kBreachRemote;
+      if (options.breachFailed) {
+        breach.flags |= tandem::proto::kBreachFailed;
+        breach.programs.clear();
+      }
+      endpoint->SendBreach(breach);
+      Log("breached network {:x} npc {} with {} daemon(s){} (--breach)", order.entity, order.npc,
+          breach.programs.size(), options.breachFailed ? ", lost" : "");
     }
     for (auto it = deviceAnswers.begin(); it != deviceAnswers.end();) {
       if (now < it->second.first) {

@@ -40,6 +40,7 @@ declare -A value=(
   ["--car-damage"]=5 ["--exit-at"]=8 ["--exit-kind"]=knocked ["--bump"]=3 ["--shoot-cars"]=4
   ["--gunner"]=5 ["--gunner-seat"]=seat_back_left ["--ram-npcs"]=3 ["--chase"]=5
   ["--device"]="1a2b3c4d5e6f7788:DoorControllerPS:open,unlocked@8" ["--device-answer"]=closed ["--device-after"]=2
+  ["--breach"]="a0b1c2d3e4f50617:AccessPointControllerPS@4" ["--programs"]="NetworkCameraShutdown,0x1234" ["--breach-failed"]=--check
   ["--region-far"]=1000 ["--region-npcs"]=3 ["--region-record"]=Character.x ["--region-walk-at"]=10
   ["--region-leave-at"]=20 ["--region-speed"]=25
   ["--region-at"]="1,2,3"

@@ -228,6 +228,14 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *combat = std::get_if<VehicleCombat>(&message);
       combat && combat->mode > SeatCombat::Gunner)
     return std::nullopt;
+  // A breach: its daemons within the bound, flags and verdicts this version knows.
+  if (const auto *breach = std::get_if<Breach>(&message);
+      breach && (breach->programs.size() > kMaxBreachPrograms ||
+                 breach->traps.size() > kMaxBreachPrograms || (breach->flags & ~kBreachFlags) != 0))
+    return std::nullopt;
+  if (const auto *result = std::get_if<BreachResult>(&message);
+      result && result->verdict > BreachVerdict::Full)
+    return std::nullopt;
   // At most the bound, sorted and without repeats: one set, said one way.
   if (const auto *restrictions = std::get_if<StoryRestrictions>(&message);
       restrictions && (restrictions->effects.size() > kMaxStoryRestrictions ||
@@ -451,7 +459,9 @@ const char *NameOfKind(std::size_t kind) {
                                    "PoseFrame",
                                    "NpcMotion",
                                    "PlayerMotion",
-                                   "VehicleMotion"};
+                                   "VehicleMotion",
+                                   "Breach",
+                                   "BreachResult"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

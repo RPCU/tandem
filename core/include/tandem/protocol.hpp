@@ -2431,6 +2431,47 @@ struct VehicleMotion {
   friend bool operator==(const VehicleMotion &, const VehicleMotion &) = default;
 };
 
+// ---- Breach Protocol (docs/architecture/devices.md, "Breach Protocol") ----
+//
+// The minigame is the breacher's own, as in single player (its UI, its
+// timer, its rewards); what it did to the world is a request to the owner
+// of what it affects. A game's own breach (a jack-in, the quickhack on a
+// device or an NPC, or a mod that fakes the outcome) goes to the host:
+// the access point's network is the host's (breached once for everyone:
+// the record of the access point says so, kDeviceBreached), the daemons'
+// targets are their owners'. The host grants the first breach of a network
+// and refuses any later one; a granted breach is passed on to every other
+// game for the NPCs of that network it runs, and the NPC breached through
+// the quickhack is its owner's to apply.
+inline constexpr std::size_t kMaxBreachPrograms = 16; // daemons and traps, each
+inline constexpr std::uint8_t kBreachRemote = 1; // the Breach Protocol quickhack, not a jack-in
+inline constexpr std::uint8_t kBreachFailed = 2; // the minigame was lost: the network is alerted
+inline constexpr std::uint8_t kBreachApply = 4;  // host to the other games: granted, apply it
+inline constexpr std::uint8_t kBreachFlags = 7;
+struct Breach {                        // Event channel
+  PlayerId player{};                   // who breached: set by the host from the connection
+  std::uint64_t entity{};              // the access point's static id (0: none, an NPC's own squad)
+  std::uint64_t cls{};                 // its persistent state's class
+  NpcId npc{};                         // the NPC breached through the quickhack (0: none)
+  std::vector<std::uint64_t> programs; // the daemons uploaded (MinigameAction records)
+  std::vector<std::uint64_t> traps;    // the traps the grid set off (MinigameTraps records)
+  std::uint8_t flags{};                // kBreach*
+  friend bool operator==(const Breach &, const Breach &) = default;
+};
+
+// The host's answer to a guest's breach (Event channel; to the breacher
+// only). Refused: the network (or the NPC) was breached already, `by` says
+// by whom (kNoPlayer: the host's world had it so).
+enum class BreachVerdict : std::uint8_t { Granted = 0, Breached = 1, Full = 2 };
+struct BreachResult {
+  std::uint64_t entity{};
+  std::uint64_t cls{};
+  NpcId npc{};
+  BreachVerdict verdict{};
+  PlayerId by{};
+  friend bool operator==(const BreachResult &, const BreachResult &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -2447,7 +2488,8 @@ using Message = std::variant<
     TimeSkip, TimeSkipVote, TimeSkipResult, PlayerLevel, SessionLevel, NpcLevel, Trade, TradeOffer,
     TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
-    Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion>;
+    Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, Breach,
+    BreachResult>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions):

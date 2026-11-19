@@ -209,6 +209,10 @@ private:
   std::set<std::pair<proto::NpcId, proto::NpcActionKind>> m_askedOnDead;
   std::set<std::pair<proto::WorldItemId, std::uint8_t>> m_claimed;
   std::set<std::pair<proto::NpcId, std::uint64_t>> m_uploads;
+  // Breach Protocol: our breaches awaiting the host's answer (network, NPC),
+  // and who breached each network as the host said.
+  std::map<std::tuple<std::uint64_t, std::uint64_t, proto::NpcId>, std::uint32_t> m_breachesAsked;
+  std::map<std::pair<std::uint64_t, std::uint64_t>, proto::PlayerId> m_breached;
   std::deque<std::uint64_t> m_pings;
   std::uint32_t m_offers{}; // the Regroup offers we made
   // Epochs.

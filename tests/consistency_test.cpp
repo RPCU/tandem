@@ -195,6 +195,9 @@ TEST_CASE("faults never touch the handshake and never send a one-shot twice") {
   // A shot at a V and its hit: doubling either would be a second shot.
   CHECK(consistency::IsOneShot(proto::NpcShotAt{}));
   CHECK(consistency::IsOneShot(proto::ShotHit{}));
+  // A breach runs its daemons once; its answer is said once.
+  CHECK(consistency::IsOneShot(proto::Breach{}));
+  CHECK(consistency::IsOneShot(proto::BreachResult{}));
   // A time skip's request, answers and result: each one counts.
   CHECK(consistency::IsOneShot(proto::TimeSkip{}));
   CHECK(consistency::IsOneShot(proto::TimeSkipVote{}));
