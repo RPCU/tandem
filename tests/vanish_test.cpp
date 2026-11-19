@@ -1,6 +1,6 @@
 // A player can vanish at any moment (Alt-F4, a crash, power or network
 // gone): no Bye, no disconnect. Whatever it was doing must end cleanly for
-// the ones left (docs/ARCHITECTURE.md, Consistency). A real host and guests
+// the ones left (docs/architecture/consistency.md, Consistency). A real host and guests
 // over loopback UDP; "vanish" is the endpoint destroyed without Leave().
 
 #include "ports.hpp"

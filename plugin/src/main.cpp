@@ -8,8 +8,10 @@
 #include "engine/scenes.hpp"
 #include "engine/trace.hpp"
 #include "log.hpp"
+#include "recording.hpp"
 #include "runtime.hpp"
 
+#include "tandem/instance.hpp"
 #include "tandem/protocol.hpp"
 
 #include <RED4ext/RED4ext.hpp>
@@ -17,8 +19,10 @@
 
 #include <windows.h>
 
+#include <cstring>
 #include <filesystem>
 #include <format>
+#include <string>
 
 namespace {
 const RED4ext::v1::Sdk *g_sdk{};
@@ -27,6 +31,15 @@ std::filesystem::path PluginDirectory(RED4ext::v1::PluginHandle handle) {
   wchar_t path[MAX_PATH]{};
   GetModuleFileNameW(reinterpret_cast<HMODULE>(handle), path, MAX_PATH);
   return std::filesystem::path(path).parent_path();
+}
+
+// An environment variable of the game's process ("" when not set). Under
+// Wine the Unix environment the game was launched with is the process's.
+std::wstring Environment(const char *name) {
+  const std::wstring wide(name, name + std::strlen(name)); // our names are ASCII
+  std::wstring value(32767, L'\0');
+  value.resize(GetEnvironmentVariableW(wide.c_str(), value.data(), 32767));
+  return value;
 }
 
 // Every frame of the running game, on the game thread, also while the world
@@ -94,18 +107,43 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     g_sdk = sdk;
     log::g_handle = handle;
     log::g_logger = sdk->logger;
+    // One game among several on a machine keeps its files apart and takes
+    // its own port (tandem/instance.hpp, docs/architecture/two-instances.md).
+    const auto files = tandem::instance::Resolve(
+        PluginDirectory(handle), {.config = Environment(tandem::instance::kConfigVariable),
+                                  .command = Environment(tandem::instance::kCommandVariable),
+                                  .log = Environment(tandem::instance::kLogVariable)});
+    const bool ownLog = files.log.empty() || log::OpenFile(files.log);
     log::Info("tandem {} loaded (protocol {})", TANDEM_VERSION, tandem::proto::kProtocolVersion);
+    if (!ownLog)
+      log::Warn("{}: cannot write {}", tandem::instance::kLogVariable, files.log.string());
+    if (files != tandem::instance::Resolve(PluginDirectory(handle), {}))
+      log::Info("instance files: settings {}, commands {}, log {}", files.config.string(),
+                files.command.string(), files.log.empty() ? "RED4ext's" : files.log.string());
 
     auto &runtime = Runtime::Get();
-    runtime.config = LoadConfig(PluginDirectory(handle) / "tandem.ini");
-    runtime.config.commandFile = PluginDirectory(handle) / "tandem.cmd";
-    runtime.config.recentFile = PluginDirectory(handle) / "recent.txt";
+    runtime.config = LoadConfig(files.config);
+    runtime.config.commandFile = files.command;
+    runtime.config.recentFile = files.recent;
+    if (const auto text = Environment(tandem::instance::kPortVariable); !text.empty()) {
+      // Digits are ASCII; anything else is refused by ParsePort.
+      std::string narrow;
+      for (const wchar_t c : text)
+        narrow.push_back(c < 128 ? static_cast<char>(c) : '?');
+      if (const auto port = tandem::instance::ParsePort(narrow)) {
+        runtime.config.port = *port;
+        log::Info("port {} ({})", *port, tandem::instance::kPortVariable);
+      } else {
+        log::Warn("{}: bad port {}", tandem::instance::kPortVariable, narrow);
+      }
+    }
     runtime.ResetChoice();
     // A command left from an earlier run is not for this one.
     std::error_code ignored;
     std::filesystem::remove(runtime.config.commandFile, ignored);
-    // Nor is a pilot state: the test pilot (tools/pilot) must not read an old one.
-    runtime.config.pilotStateFile = PluginDirectory(handle) / "pilot.state";
+    // Nor is a pilot state: the test pilot (tools/pilot) must not read an old
+    // one. Next to the command file, so each instance (TANDEM_CMD) has its own.
+    runtime.config.pilotStateFile = files.command.parent_path() / "pilot.state";
     std::filesystem::remove(runtime.config.pilotStateFile, ignored);
     log::Info("role: {} (tandem.ini; the co-op menu can pick another)",
               NameOf(runtime.config.role));
@@ -132,11 +170,33 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     }
     if (runtime.config.trace || runtime.config.mirror)
       engine::InstallTrace(sdk, handle, runtime.config.trace);
+    // The recorder (recording.hpp): its own key, whatever the role.
+    Recording::Get().Configure(runtime.config.recorder,
+                               PluginDirectory(handle) / "recordings" / "auto",
+                               runtime.config.recorderMaxMb << 20,
+                               std::uint64_t{runtime.config.recorderSegmentMinutes} * 60'000'000);
+    // What is installed, and that none of it acts without a session
+    // (docs/architecture/session.md, "Solo is vanilla").
+    {
+      std::string hooks = "idle-controller pass-through";
+      if (runtime.config.pose)
+        hooks += ", pose stream (reads only with a source)";
+      if (runtime.config.questFreeze || runtime.config.scenePrivacy)
+        hooks += ", quest node observer (freeze off)";
+      if (runtime.config.trace || runtime.config.mirror)
+        hooks += ", anim trace";
+      log::Info("tandem: {} (hooks idle: {}; script wraps gated on a session); recorder {}",
+                runtime.config.role == Config::Role::Off
+                    ? std::string("solo, passive")
+                    : std::format("co-op at load as {}", NameOf(runtime.config.role)),
+                hooks, runtime.config.recorder ? "on" : "off");
+    }
     // The session starts when scripts report a loaded game (TandemNative.Start).
     break;
   }
   case RED4ext::v1::EMainReason::Unload:
     Runtime::Get().Stop();
+    Recording::Get().Shutdown();
     engine::RemoveHooks(g_sdk, handle);
     engine::RemovePoseStream(g_sdk, handle);
     engine::RemoveTrace(g_sdk, handle);
@@ -144,6 +204,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     engine::RemovePoseHook();
     log::Info("tandem unloaded");
     log::g_logger = nullptr;
+    log::CloseFile();
     break;
   }
   return true;

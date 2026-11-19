@@ -253,7 +253,7 @@ log are that game's), its own pad with its own USB product id
 left for the day two instances run: `tools/game.sh` drives one game
 (`GAME_DIR`, one `pgrep`), each instance must be told to read only its pad
 (`SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT`), and only one window has the
-focus (see the research notes, 2.5).
+focus (research §14.2.5).
 
 ## First-run checklist
 
@@ -286,7 +286,7 @@ tools`, `no pilot state`.
 **2. The probe** — `tools/game.sh cmd pilot probe`, then read its lines:
 run `tools/game.sh log 200 | grep 'pilot probe'`.
 
-- Copy the lines into the research notes (1.2). `FunctionalTestsGameSystem
+- Copy the lines into the research notes (§14.1.2). `FunctionalTestsGameSystem
 … instance present` would mean input with no device at all is possible:
   the next thing to build. `instance absent` → the pad stays.
 - No `pilot probe` line at all → the DLL or scripts are not this build

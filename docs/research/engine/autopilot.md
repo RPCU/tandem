@@ -33,13 +33,13 @@ order to verify it in; update the tags here as each line is proven.
 
 ---
 
-## 1. What a script can do
+## 14.1 What a script can do
 
-### 1.1 Summary
+### 14.1.1 Summary
 
 | Action                               | Script-level?  | How                                                                              | In `Pilot.reds` as        |
 | ------------------------------------ | -------------- | -------------------------------------------------------------------------------- | ------------------------- |
-| Walk, sprint, jump, climb, dodge     | **no**         | no player move-to, no input injection in script (1.2)                            | the pad                   |
+| Walk, sprint, jump, climb, dodge     | **no**         | no player move-to, no input injection in script (§14.1.2)                        | the pad                   |
 | Teleport                             | yes            | `TeleportationFacility.Teleport`                                                 | `cmd teleport` (existing) |
 | Look / aim at a point                | yes            | `TargetingSystem.LookAt(player, AimRequest)`                                     | `act look`                |
 | Draw, holster, pick a weapon slot    | yes            | `EquipmentSystemWeaponManipulationRequest`                                       | `act equip`               |
@@ -62,7 +62,7 @@ order to verify it in; update the tags here as each line is proven.
 | Buy from a vendor                    | yes            | `BuyRequest` to the `MarketSystem`                                               | `act vendor`              |
 | Lock saving                          | yes            | `SaveLocksManager`, and our own `ScriptableSystem.IsSavingLocked`                | always, from `pilot on`   |
 
-### 1.2 Movement and input: nothing in script
+### 14.1.2 Movement and input: nothing in script
 
 - **No move-to for the player.** `AIMoveToCommand` (`final.reds:262294`) is
   for an `AIComponent`; the player state machine has an `AiControlled`
@@ -97,7 +97,7 @@ order to verify it in; update the tags here as each line is proven.
   **action name** (no device, no focus, no Steam) becomes possible from the
   plugin, and would replace the pad. `[2.5-untested]`
 
-### 1.3 Look and aim
+### 14.1.3 Look and aim
 
 - `TargetingSystem.LookAt(instigator, out params: AimRequest)`
   (`:108394`), with `BreakAimSnap(instigator)` first (`:108402`) and
@@ -115,7 +115,7 @@ order to verify it in; update the tags here as each line is proven.
   (`:174229`) and `GetActiveCameraWorldTransform(transform)` (`:174219`;
   vanilla reads the transform after the call, `:148115`). `[2.5-untested]`
 
-### 1.4 Weapons
+### 14.1.4 Weapons
 
 - Draw and holster: `EquipmentSystemWeaponManipulationRequest` (`:178788`,
   `owner` = the player) queued to the `EquipmentSystem` scriptable system,
@@ -140,7 +140,7 @@ order to verify it in; update the tags here as each line is proven.
 - Not possible: melee attacks and grenade throws are decided from input
   (`:248828`, `:518447` for dodge).
 
-### 1.5 Cyberware, health, death
+### 14.1.5 Cyberware, health, death
 
 - `ItemActionsHelper.UseItem(executor, itemID)` (`:69438`) on
   `EquipmentSystem.GetData(player).GetActiveItem(gamedataEquipmentArea.SystemReplacementCW)`
@@ -161,7 +161,7 @@ order to verify it in; update the tags here as each line is proven.
   another V up, `Revive.reds` makes it "down". `act hurt all` refuses
   unless that protection is on.
 
-### 1.6 Quickhacks, takedowns, loot, vendors, the phone
+### 14.1.6 Quickhacks, takedowns, loot, vendors, the phone
 
 - Quickhack: `ExecutePuppetActionEvent{actionID}` (`:201075`) queued on the
   NPC; `ScriptedPuppet.OnExecutePuppetAction` (`:22452`) builds the
@@ -201,7 +201,7 @@ order to verify it in; update the tags here as each line is proven.
   `choices` and `sel` so the pad can move the selection and confirm.
   Whether `SelectedIndex` follows the dialogue selection is `[2.5-untested]`.
 
-### 1.7 Devices
+### 14.1.7 Devices
 
 - No "activate the interaction in front of V" native (`InteractionManager`
   `:199584`, `InteractionComponent` `:94789`).
@@ -218,7 +218,7 @@ order to verify it in; update the tags here as each line is proven.
   `GetLookAtObject` returns the lift's panel from inside is unknown.
   `[2.5-untested]`
 
-### 1.8 Vehicles and AutoDrive
+### 14.1.8 Vehicles and AutoDrive
 
 - Entering: a `MountingRequest` whose `mountData.isInstant` is false makes
   the player's state machine play the entry
@@ -248,7 +248,7 @@ order to verify it in; update the tags here as each line is proven.
   `:217147`). No throttle or steering natives on `vehicleBaseObject`
   (`ForceBrakesFor`, `TurnEngineOn`, `SetVehicleRemoteControlled` only).
 
-### 1.9 Saving
+### 14.1.9 Saving
 
 - `SaveLocksManager.RequestSaveLockAdd(game, reason)` / `RequestSaveLockRemove`
   (`:195179`, `:195188`): a scriptable system whose `IsSavingLocked()` is
@@ -265,7 +265,7 @@ order to verify it in; update the tags here as each line is proven.
   honours script locks is not visible in script. `[2.5-untested]`: the
   pilot therefore also compares the save folder before and after each run.
 
-### 1.10 Where the state's fields come from `[2.5-untested]`
+### 14.1.10 Where the state's fields come from `[2.5-untested]`
 
 All read on the game thread in `TandemPilot.WriteState`: position and
 heading from the player (or the vehicle of `VehicleComponent.GetVehicle`,
@@ -285,9 +285,9 @@ first compared with what is on screen.
 
 ---
 
-## 2. Virtual input
+## 14.2 Virtual input
 
-### 2.1 The game machine `[local]`
+### 14.2.1 The game machine `[local]`
 
 - `hardware.uinput.enable`, plus the udev rule
   `KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="uinput", TAG+="uaccess"`;
@@ -299,7 +299,7 @@ first compared with what is on screen.
   `hardware.steam-hardware`, proton-ge and proton-cachyos. Sunshine runs as
   a user service and makes its own uinput pads for remote players.
 
-### 2.2 Why a gamepad
+### 14.2.2 Why a gamepad
 
 - A uinput **keyboard or mouse** goes libinput → Sway → the focused surface
   → XWayland → Wine: it types into whatever has the focus, and the keyboard
@@ -330,7 +330,7 @@ first compared with what is on screen.
   stick has a response curve and aim assist, so it is closed on the view
   vector, and exact aiming is the script's look-at.
 
-### 2.3 The device `[offline-verified]` for its creation
+### 14.2.3 The device `[offline-verified]` for its creation
 
 `tools/pilot/internal/pad/uinput_linux.go` makes what the kernel's xpad
 driver makes for a wired Xbox 360 pad, which is also the shape of
@@ -353,7 +353,7 @@ signature, and removed it on close. The events it emits were not read back
 there (Steam runs on that desktop): `TANDEM_PILOT_UINPUT=events` does that
 on a machine nobody is using.
 
-### 2.4 Default bindings the routines assume `[reported]`
+### 14.2.4 Default bindings the routines assume `[reported]`
 
 Left stick move, right stick look, A jump, B crouch (two quick presses
 with a direction: dodge), X interact / reload, Y draw and holster, L3
@@ -363,7 +363,7 @@ consumable, d-pad up/down and X in a dialogue, LB+RB the operating system
 bindings may differ: the routines check every effect on the state rather
 than trust a button.
 
-### 2.5 Two instances `[inference]`
+### 14.2.5 Two instances `[inference]`
 
 Each instance gets its own pad with its own product id (`--product`), and
 is launched with `SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT=0x045e/0xPID`
