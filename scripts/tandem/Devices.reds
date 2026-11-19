@@ -84,6 +84,10 @@ public class TandemDevice {
 
 public class TandemDevices extends ScriptableSystem {
   private let m_devices: array<ref<TandemDevice>>;
+  // The same devices by their entity's (32-bit) hash: a drive through the
+  // city attaches hundreds a minute, each found without walking the list.
+  private let m_index: ref<inkHashMap>;
+  private let m_collisions: Int32;
   private let m_cursor: Int32;
   // In a session, as whom (0: none), and as its host.
   private let m_you: Uint32;
@@ -215,7 +219,23 @@ public class TandemDevices extends ScriptableSystem {
 
   // ---- the devices we follow ----
 
+  private static func KeyOf(entity: EntityID) -> Uint64 {
+    return Cast<Uint64>(EntityID.GetHash(entity));
+  }
+
   private func Find(entity: EntityID, cls: CName) -> ref<TandemDevice> {
+    if !IsDefined(this.m_index) {
+      return null;
+    }
+    let first = this.m_index.Get(TandemDevices.KeyOf(entity)) as TandemDevice;
+    if !IsDefined(first) {
+      return null;
+    }
+    if first.entity == entity && Equals(first.cls, cls) {
+      return first;
+    }
+    // Two entities with one short hash (or two states of one entity): the
+    // second is only in the list.
     for device in this.m_devices {
       if device.entity == entity && Equals(device.cls, cls) {
         return device;
@@ -231,8 +251,38 @@ public class TandemDevices extends ScriptableSystem {
       device.entity = entity;
       device.cls = cls;
       ArrayPush(this.m_devices, device);
+      if !IsDefined(this.m_index) {
+        this.m_index = new inkHashMap();
+      }
+      let key = TandemDevices.KeyOf(entity);
+      if !this.m_index.KeyExist(key) {
+        this.m_index.Insert(key, device);
+      } else {
+        this.m_collisions += 1;
+      }
     }
     return device;
+  }
+
+  // Out of the list (the caller erases it there) and out of the index.
+  private func Unindex(device: ref<TandemDevice>) -> Void {
+    if !IsDefined(this.m_index) {
+      return;
+    }
+    let key = TandemDevices.KeyOf(device.entity);
+    if this.m_index.Get(key) == device {
+      this.m_index.Remove(key);
+      if this.m_collisions == 0 {
+        return;
+      }
+      // Another one behind the same key takes its place.
+      for other in this.m_devices {
+        if other != device && TandemDevices.KeyOf(other.entity) == key {
+          this.m_index.Insert(key, other);
+          return;
+        }
+      }
+    }
   }
 
   private func Now() -> Float {
@@ -259,17 +309,17 @@ public class TandemDevices extends ScriptableSystem {
     if !IsDefined(owner) {
       return;
     }
-    let entity = owner.GetEntityID();
-    let i = ArraySize(this.m_devices) - 1;
-    while i >= 0 {
-      let device = this.m_devices[i];
-      if device.entity == entity {
-        device.attached = false;
-        if this.Idle(device) {
-          ArrayErase(this.m_devices, i);
-        }
-      }
-      i -= 1;
+    let ps = owner.GetDevicePS();
+    if !IsDefined(ps) {
+      return;
+    }
+    let device = this.Find(owner.GetEntityID(), ps.GetClassName());
+    if !IsDefined(device) {
+      return;
+    }
+    device.attached = false;
+    if this.Idle(device) {
+      this.Drop(device);
     }
   }
 
@@ -333,8 +383,10 @@ public class TandemDevices extends ScriptableSystem {
     this.m_resetAt = 0.0;
     let i = ArraySize(this.m_devices) - 1;
     while i >= 0 {
-      this.Forget(this.m_devices[i]);
-      if !this.m_devices[i].attached {
+      let device = this.m_devices[i];
+      this.Forget(device);
+      if !device.attached {
+        this.Unindex(device);
         ArrayErase(this.m_devices, i);
       }
       i -= 1;
@@ -376,6 +428,7 @@ public class TandemDevices extends ScriptableSystem {
           touched.dirty = false;
           this.Look(touched, now, true);
           if this.Idle(touched) {
+            this.Unindex(touched);
             ArrayErase(this.m_devices, d);
           }
         }
@@ -653,6 +706,7 @@ public class TandemDevices extends ScriptableSystem {
   }
 
   private func Drop(device: ref<TandemDevice>) -> Void {
+    this.Unindex(device);
     ArrayRemove(this.m_devices, device);
   }
 
