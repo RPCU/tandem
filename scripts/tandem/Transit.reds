@@ -708,6 +708,10 @@ public class TandemTransit {
     }
     let records = [
       t"GameplayRestriction.NoMovement", t"GameplayRestriction.NoJump", t"GameplayRestriction.NoWeapons",
+      // NoWeapons only keeps a weapon from being drawn; NoCombat also puts
+      // one already in hand away (ForceEmptyHands, final.reds:540418): a V
+      // carried along never fights from a seat it does not have.
+      t"GameplayRestriction.NoCombat",
       t"GameplayRestriction.NoWorldInteractions", t"GameplayRestriction.VehicleNoInteraction",
       t"GameplayRestriction.ForceCrouch", t"BaseStatusEffect.Invulnerable"
     ];
