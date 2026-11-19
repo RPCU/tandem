@@ -96,6 +96,7 @@
 #include "tandem/movement.hpp"
 #include "tandem/play.hpp"
 #include "tandem/pose.hpp"
+#include "tandem/presence.hpp"
 #include "tandem/shaping.hpp"
 
 #include <algorithm>
@@ -236,6 +237,15 @@ struct Options {
   // Faults on what we send (docs/ARCHITECTURE.md, Consistency).
   float drop{}, dup{};
   int vanishAtSeconds{-1}; // end without a goodbye this long into the session (-1: never)
+  // Presence (docs/architecture/presence.md): our V is hurt this often (0:
+  // never), swings a melee weapon this often, is in a menu N s in, for 5 s
+  // (-1: never); host: one of our NPCs plays a hit reaction this often.
+  int hurtSeconds{0};
+  int meleeSeconds{0};
+  int menuAtSeconds{-1};
+  int reactNpcsSeconds{0};
+  std::string holdRecord;   // what our V holds in its right hand ("": nothing said)
+  int holsterAtSeconds{-1}; // put it away N s in, for 5 s (-1: never)
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -358,7 +368,19 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --detect-for N     --detect-at: and lose it again after N seconds (default 10)\n"
          "  --camo N           turn optical camo on N seconds after another player is in the\n"
          "                     session, for 5 seconds\n"
-         "  --shoot N          join: fire a gunshot (shot and noise) every N seconds\n"
+         "  --shoot N          fire a gunshot every N seconds: the shot, where its bullet\n"
+         "                     ended (a cue: 6 m past the other V), and as a guest its noise\n"
+         "  --hurt N           our V is hit every N seconds: its health falls a quarter (the\n"
+         "                     others' puppet of it grunts and flinches), then is full again\n"
+         "  --melee N          swing a melee weapon every N seconds, and land it (a cue)\n"
+         "  --menu-at N        our V is in a menu N seconds after another player is in the\n"
+         "                     session, for 5 seconds\n"
+         "  --hold RECORD      our V holds this item in its right hand (a weapon for --shoot\n"
+         "                     and --melee to be seen and heard: Items.Preset_Lexington_Default)\n"
+         "  --holster-at N     --hold: put it away N seconds after another player is in the\n"
+         "                     session, and draw it again 5 seconds later\n"
+         "  --react-npcs N     host: every N seconds one of the NPCs it sends plays a hit\n"
+         "                     reaction (twitch, impact, stagger, knockdown, ragdoll, its end)\n"
          "  --hack-npcs N      join: upload a quickhack on one of the host's NPCs every N\n"
          "                     seconds (1.5 s upload), then land its effect\n"
          "  --hack-action REC  --hack-npcs: the quickhack (default QuickHack.BlindHack)\n"
@@ -604,6 +626,18 @@ Options Parse(int argc, char **argv) {
       options.camoAtSeconds = Number<int>(value);
     else if (flag == "--shoot")
       options.shootSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--hurt")
+      options.hurtSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--melee")
+      options.meleeSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--menu-at")
+      options.menuAtSeconds = Number<int>(value);
+    else if (flag == "--react-npcs")
+      options.reactNpcsSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--hold")
+      options.holdRecord = value;
+    else if (flag == "--holster-at")
+      options.holsterAtSeconds = Number<int>(value);
     else if (flag == "--drive-seconds")
       options.driveSeconds = Number<int>(value);
     else if (flag == "--radio") {
@@ -2081,6 +2115,10 @@ int main(int argc, char **argv) {
     });
   // --strike blade: our puppet holds a katana, so the host's NPC reacts to
   // (and is cut by) a blade: its hit reaction reads the attacker's weapon.
+  if (!options.holdRecord.empty()) {
+    endpoint->SetLocalHeld({.right = TweakDBID(options.holdRecord)});
+    Log("holding {}", options.holdRecord);
+  }
   if (options.strike == "blade") {
     endpoint->SetLocalHeld({.right = TweakDBID("Items.Preset_Katana_Default")});
     Log("holding Items.Preset_Katana_Default");
@@ -2146,6 +2184,12 @@ int main(int argc, char **argv) {
   auto nextAwareness = std::chrono::steady_clock::now();
   int camoStep = 0; // 0 waiting, 1 on, 2 done
   auto nextShot = std::chrono::steady_clock::now();
+  // Presence: --melee, --hurt, --menu-at, --react-npcs.
+  auto nextMelee = nextShot, nextHurt = nextShot, nextReaction = nextShot;
+  float ourHealth = 1.f;
+  bool ourMenu = false, presenceSent = false;
+  std::size_t reactionStep = 0;
+  int holsterStep = 0;
   std::optional<std::chrono::steady_clock::time_point> sharedSince;
   // --detect-at: while detected, every guest's bit (player - 1).
   const auto detectedBits = [&]() -> std::uint8_t {
@@ -2426,6 +2470,19 @@ int main(int argc, char **argv) {
               if (!firstRemote)
                 firstRemote = e.state;
               lastOf[e.state.player] = e.state;
+            } else if constexpr (std::is_same_v<E, tandem::events::RemotePresence>) {
+              Log("player {} presence: health {:.0f} %, flags {:#x}", e.presence.player,
+                  tandem::presence::HealthFraction(e.presence.health) * 100.f, e.presence.flags);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteCue>) {
+              Log("player {} cue: {} to ({:.1f}, {:.1f}, {:.1f}), flags {:#x}", e.cue.player,
+                  e.cue.kind == tandem::proto::CueKind::Trace ? "bullet" : "melee hit", e.cue.at.x,
+                  e.cue.at.y, e.cue.at.z, e.cue.arg);
+            } else if constexpr (std::is_same_v<E, tandem::events::HostNpcReaction>) {
+              // Twitches come by the dozen under fire: the others are said.
+              if (e.reaction.type != tandem::proto::kReactionTwitch)
+                Log("npc {} reacts: type {} (direction {}, intensity {}, part {}), by player {}",
+                    e.reaction.npc, e.reaction.type, e.reaction.direction, e.reaction.intensity,
+                    e.reaction.bodyPart, e.reaction.by);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteStealth>) {
               Log("player {} stealth: flags {:#x}, visibility {:.2f}, camo {:#x}", e.stealth.player,
                   e.stealth.flags, e.stealth.visibility, e.stealth.camo);
@@ -3575,12 +3632,85 @@ int main(int argc, char **argv) {
         Log("optical camo off");
       }
     }
-    // --shoot: a gunshot, seen (Shot) and heard (Noise, gamedataStimType.Gunshot 28).
-    if (options.shootSeconds && !options.host && endpoint->IsJoined() && now >= nextShot) {
+    // Where a shot or a swing of ours lands: 6 m past the other V at chest
+    // height, a step to its side, so the bullet is seen going by.
+    const auto beyond = [&]() -> std::optional<tandem::proto::Vec3> {
+      if (lastOf.empty())
+        return std::nullopt;
+      const auto &other = lastOf.begin()->second;
+      const float yaw = tandem::sync::YawOf(other.orientation);
+      return tandem::proto::Vec3{other.position.x + std::sin(yaw) * 6.f + std::cos(yaw) * 1.f,
+                                 other.position.y - std::cos(yaw) * 6.f + std::sin(yaw) * 1.f,
+                                 other.position.z + 1.3f};
+    };
+    // --shoot: a gunshot, seen (Shot, and where its bullet ended: a Cue) and,
+    // from a guest, heard by the host's NPCs (Noise, gamedataStimType.Gunshot 28).
+    if (options.shootSeconds && endpoint->IsJoined() && now >= nextShot) {
       nextShot = now + std::chrono::seconds(options.shootSeconds);
       endpoint->SendLocalShot({.hand = tandem::proto::Hand::Right, .effect = 16});
-      endpoint->SendNoise({.stim = 28, .radius = 25.f});
+      if (const auto at = beyond())
+        endpoint->SendLocalCue({.kind = tandem::proto::CueKind::Trace, .at = *at});
+      if (!options.host)
+        endpoint->SendNoise({.stim = 28, .radius = 25.f});
       Log("gunshot");
+    }
+    // --melee: a swing (Shot 200), and it lands (a Cue).
+    if (options.meleeSeconds && endpoint->IsJoined() && now >= nextMelee) {
+      nextMelee = now + std::chrono::seconds(options.meleeSeconds);
+      endpoint->SendLocalShot({.hand = tandem::proto::Hand::Right, .effect = 200});
+      if (const auto at = beyond())
+        endpoint->SendLocalCue({.kind = tandem::proto::CueKind::MeleeHit, .at = *at});
+      Log("melee swing");
+    }
+    // --hurt: our V's health, a quarter down each time, then full again.
+    // --menu-at: in a menu for 5 s. Both are our Presence.
+    if (endpoint->IsJoined() && (options.hurtSeconds || options.menuAtSeconds >= 0)) {
+      bool changed = !presenceSent;
+      if (options.hurtSeconds && now >= nextHurt) {
+        nextHurt = now + std::chrono::seconds(options.hurtSeconds);
+        if (presenceSent) {
+          ourHealth = ourHealth > 0.3f ? ourHealth - 0.25f : 1.f;
+          changed = true;
+        }
+      }
+      const bool inMenu = options.menuAtSeconds >= 0 && shared >= options.menuAtSeconds &&
+                          shared < options.menuAtSeconds + 5;
+      changed |= inMenu != ourMenu;
+      ourMenu = inMenu;
+      if (changed) {
+        presenceSent = true;
+        endpoint->SetLocalPresence(
+            {.health = tandem::presence::HealthCode(ourHealth),
+             .flags = static_cast<std::uint8_t>(ourMenu ? tandem::proto::kPresenceMenu : 0)});
+        Log("our V: health {:.0f} %{}", ourHealth * 100.f, ourMenu ? ", in a menu" : "");
+      }
+    }
+    // --holster-at: the weapon away, then drawn again.
+    if (options.holsterAtSeconds >= 0 && !options.holdRecord.empty() && holsterStep < 2) {
+      if (holsterStep == 0 && shared >= options.holsterAtSeconds) {
+        endpoint->SetLocalHeld({});
+        holsterStep = 1;
+        Log("weapon holstered");
+      } else if (holsterStep == 1 && shared >= options.holsterAtSeconds + 5) {
+        endpoint->SetLocalHeld({.right = TweakDBID(options.holdRecord)});
+        holsterStep = 2;
+        Log("weapon drawn");
+      }
+    }
+    // --react-npcs: one of the NPCs we share plays the next hit reaction.
+    if (options.reactNpcsSeconds && options.host && endpoint->Players().size() > 1 &&
+        !endpoint->SharedNpcs().empty() && now >= nextReaction) {
+      nextReaction = now + std::chrono::seconds(options.reactNpcsSeconds);
+      constexpr std::uint8_t kCycle[] = {1, 2, 3, 5, 6, 0};
+      const auto type = kCycle[reactionStep++ % std::size(kCycle)];
+      const auto npc = endpoint->SharedNpcs().begin()->first;
+      endpoint->SendNpcReaction({.npc = npc,
+                                 .type = type,
+                                 .direction = 3,
+                                 .intensity = 1,
+                                 .bodyPart = 4,
+                                 .way = {0.f, -3.f, 1.f}});
+      Log("npc {} plays hit reaction {}", npc, type);
     }
     // Replay, once someone is there to see it, at the recording's pace.
     if (options.host && replayNext < replay.size() && endpoint->Players().size() > 1) {
