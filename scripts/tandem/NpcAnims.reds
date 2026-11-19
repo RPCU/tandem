@@ -102,11 +102,119 @@ public class TandemNpcAnimProxy {
   public let shown: TandemNpcAnim;
   public let look: ref<LookAtAddEvent>;
   public let lookAt: Uint32;
-  // Workspot: 0 out, 1 entering (since `since`), 2 in, 3 leaving.
-  public let spot: Int32;
-  public let spotPath: Uint64;
-  public let spotEntry: Int32;
+  // The host's workspot, played on the proxy.
+  public let spot: ref<TandemSpot>;
+}
+
+// A workspot played on a body tandem moves (an NPC proxy, a player's
+// puppet: Activities.reds): the same workspot resource, played from the
+// body's own workspot component placed where the body stands, then the same
+// entry of its tree. While it plays, tandem's controller keeps still (the
+// workspot places the body); when the one it follows gets up, the body
+// plays the exit. `hold`: the puppet id this holds while it plays (0: the
+// caller holds it).
+public class TandemSpot {
+  // 0 out, 1 entering (since `since`), 2 in, 3 leaving.
+  public let state: Int32;
+  public let path: Uint64;
+  public let entry: Int32;
   public let since: Float;
+
+  public func Playing() -> Bool {
+    return this.state == 1 || this.state == 2;
+  }
+
+  public func Step(game: GameInstance, body: ref<ScriptedPuppet>, hold: Uint32, want: Uint64, entry: Int32, now: Float, label: String) -> Void {
+    let workspots = GameInstance.GetWorkspotSystem(game);
+    switch this.state {
+      case 0:
+        if want != 0ul {
+          this.Enter(game, body, hold, want, now, label);
+        }
+        break;
+      case 1:
+        if workspots.IsActorInWorkspot(body) {
+          this.state = 2;
+          workspots.SendJumpCommandEnt(body, entry, true);
+          this.entry = entry;
+          TandemNative.Log(s"\(label) in workspot \(want), entry \(this.entry)");
+        } else if now - this.since > 2.0 {
+          // Never started: leave it standing, moved by the controller.
+          this.state = 0;
+          this.path = want;
+          if hold != 0u {
+            TandemNative.HoldPuppet(hold, false);
+          }
+          TandemNative.Log(s"\(label) could not enter workspot \(want)");
+        }
+        break;
+      case 2:
+        if want != this.path {
+          this.state = 3;
+          this.since = now;
+          workspots.SendSlowExitSignal(body);
+        } else if entry != this.entry {
+          this.entry = entry;
+          workspots.SendJumpCommandEnt(body, this.entry, false);
+        }
+        break;
+      case 3:
+        if !workspots.IsActorInWorkspot(body) || now - this.since > 4.0 {
+          if workspots.IsActorInWorkspot(body) {
+            workspots.StopNpcInWorkspot(body);
+          }
+          this.state = 0;
+          this.path = 0ul;
+          if hold != 0u {
+            TandemNative.HoldPuppet(hold, false);
+          }
+        }
+        break;
+    }
+  }
+
+  // Out at once (the one it follows is gone).
+  public func Stop(game: GameInstance, body: ref<ScriptedPuppet>) -> Void {
+    if IsDefined(body) && GameInstance.GetWorkspotSystem(game).IsActorInWorkspot(body) {
+      GameInstance.GetWorkspotSystem(game).StopNpcInWorkspot(body);
+    }
+    this.state = 0;
+    this.path = 0ul;
+  }
+
+  private func Enter(game: GameInstance, body: ref<ScriptedPuppet>, hold: Uint32, path: Uint64, now: Float, label: String) -> Void {
+    if path == this.path {
+      return; // that one failed: not again until it changes
+    }
+    let spot = TandemSpot.ComponentOf(body);
+    if !IsDefined(spot) {
+      TandemNative.Log(s"\(label) has no workspot component");
+      this.path = path;
+      return;
+    }
+    if !TandemNative.SetResourcePath(spot, n"workspotResource", path) {
+      this.path = path;
+      return;
+    }
+    spot.SetLocalTransform(body.GetWorldPosition(), body.GetWorldOrientation());
+    if hold != 0u {
+      TandemNative.HoldPuppet(hold, true);
+    }
+    GameInstance.GetWorkspotSystem(game).PlayNpcInWorkspot(body, body, body, TandemNpcAnims.SpotName(), n"None", 0.3);
+    this.state = 1;
+    this.path = path;
+    this.since = now;
+  }
+
+  public static func ComponentOf(body: ref<ScriptedPuppet>) -> ref<WorkspotResourceComponent> {
+    for component in body.GetComponents() {
+      let spot = component as WorkspotResourceComponent;
+      if IsDefined(spot) && Equals(spot.GetName(), TandemNpcAnims.SpotName()) {
+        return spot;
+      }
+    }
+    return null;
+  }
 }
 
 public class TandemNpcAnims {
@@ -131,10 +239,12 @@ public class TandemNpcAnims {
   public func Start(game: GameInstance, npcs: ref<TandemNpcs>) -> Void {
     this.m_game = game;
     this.m_npcs = npcs;
-    // Every proxy gets a workspot component of its own while it is built
-    // (Codeware: components can be added until the entity initializes).
+    // Every proxy and player puppet gets a workspot component of its own
+    // while it is built (Codeware: components can be added until the entity
+    // initializes).
     GameInstance.GetCallbackSystem().RegisterCallback(n"Entity/Assemble", this, n"OnAssemble")
-      .AddTarget(DynamicEntityTarget.Tag(n"Tandem.Proxy"));
+      .AddTarget(DynamicEntityTarget.Tag(n"Tandem.Proxy"))
+      .AddTarget(DynamicEntityTarget.Tag(n"Tandem.Puppet"));
   }
 
   private cb func OnAssemble(event: ref<EntityLifecycleEvent>) {
@@ -449,88 +559,13 @@ public class TandemNpcAnims {
     return TandemNpcs.PuppetOf(this.m_game, target);
   }
 
-  // The host's workspot on the proxy: the same workspot resource, played
-  // from the proxy's own workspot component placed where the proxy stands
-  // (which is where the host's NPC sits), then the same entry of its tree.
-  // While it plays, tandem's controller keeps still (the workspot places
-  // the body); when the host's NPC gets up, the proxy plays the exit.
+  // The host's workspot on the proxy (TandemSpot).
   private func Workspot(body: ref<ScriptedPuppet>, proxy: ref<TandemNpcAnimProxy>, now: Float) -> Void {
-    let workspots = GameInstance.GetWorkspotSystem(this.m_game);
-    let puppet = TandemNative.NpcPuppetId(proxy.npc);
+    if !IsDefined(proxy.spot) {
+      proxy.spot = new TandemSpot();
+    }
     let want = (proxy.anim.flags & 2) != 0 ? proxy.anim.workspot : 0ul;
-    switch proxy.spot {
-      case 0:
-        if want != 0ul {
-          this.Enter(body, proxy, want, now);
-        }
-        break;
-      case 1:
-        if workspots.IsActorInWorkspot(body) {
-          proxy.spot = 2;
-          workspots.SendJumpCommandEnt(body, proxy.anim.workspotEntry, true);
-          proxy.spotEntry = proxy.anim.workspotEntry;
-          TandemNative.Log(s"npc anims: proxy \(proxy.npc) in workspot \(want), entry \(proxy.spotEntry)");
-        } else if now - proxy.since > 2.0 {
-          // Never started: leave it standing, moved by the controller.
-          proxy.spot = 0;
-          proxy.spotPath = want;
-          TandemNative.HoldPuppet(puppet, false);
-          TandemNative.Log(s"npc anims: proxy \(proxy.npc) could not enter workspot \(want)");
-        }
-        break;
-      case 2:
-        if want != proxy.spotPath {
-          proxy.spot = 3;
-          proxy.since = now;
-          workspots.SendSlowExitSignal(body);
-        } else if proxy.anim.workspotEntry != proxy.spotEntry {
-          proxy.spotEntry = proxy.anim.workspotEntry;
-          workspots.SendJumpCommandEnt(body, proxy.spotEntry, false);
-        }
-        break;
-      case 3:
-        if !workspots.IsActorInWorkspot(body) || now - proxy.since > 4.0 {
-          if workspots.IsActorInWorkspot(body) {
-            workspots.StopNpcInWorkspot(body);
-          }
-          proxy.spot = 0;
-          proxy.spotPath = 0ul;
-          TandemNative.HoldPuppet(puppet, false);
-        }
-        break;
-    }
-  }
-
-  private func Enter(body: ref<ScriptedPuppet>, proxy: ref<TandemNpcAnimProxy>, path: Uint64, now: Float) -> Void {
-    if path == proxy.spotPath {
-      return; // that one failed: not again until it changes
-    }
-    let spot = this.SpotOf(body);
-    if !IsDefined(spot) {
-      TandemNative.Log(s"npc anims: proxy \(proxy.npc) has no workspot component");
-      proxy.spotPath = path;
-      return;
-    }
-    if !TandemNative.SetResourcePath(spot, n"workspotResource", path) {
-      proxy.spotPath = path;
-      return;
-    }
-    spot.SetLocalTransform(body.GetWorldPosition(), body.GetWorldOrientation());
-    TandemNative.HoldPuppet(TandemNative.NpcPuppetId(proxy.npc), true);
-    GameInstance.GetWorkspotSystem(this.m_game).PlayNpcInWorkspot(body, body, body, TandemNpcAnims.SpotName(), n"None", 0.3);
-    proxy.spot = 1;
-    proxy.spotPath = path;
-    proxy.since = now;
-  }
-
-  private func SpotOf(body: ref<ScriptedPuppet>) -> ref<WorkspotResourceComponent> {
-    for component in body.GetComponents() {
-      let spot = component as WorkspotResourceComponent;
-      if IsDefined(spot) && Equals(spot.GetName(), TandemNpcAnims.SpotName()) {
-        return spot;
-      }
-    }
-    return null;
+    proxy.spot.Step(this.m_game, body, TandemNative.NpcPuppetId(proxy.npc), want, proxy.anim.workspotEntry, now, s"npc anims: proxy \(proxy.npc)");
   }
 
   private func FindProxy(npc: Uint32) -> ref<TandemNpcAnimProxy> {

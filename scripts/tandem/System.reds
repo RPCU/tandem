@@ -123,6 +123,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_elsewhere: ref<TandemElsewhere>;
   private let m_visibility: ref<TandemVisibility>;
   private let m_travel: ref<TandemTravel>;
+  // Time skips, workspots, menus, photo mode (Activities.reds).
+  private let m_activities: ref<TandemActivities>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
   // Stealth, detection and combat per player, camo, noises (Stealth.reds).
@@ -265,6 +267,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_elsewhere.Start(this.GetGameInstance());
     this.m_travel = new TandemTravel();
     this.m_travel.Start(this.GetGameInstance());
+    this.m_activities = new TandemActivities();
+    this.m_activities.Start(this.GetGameInstance(), this);
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
     this.m_attitudes = new TandemAttitudes();
@@ -366,6 +370,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_travel) {
       this.m_travel.Stop();
       this.m_travel = null;
+    }
+    if IsDefined(this.m_activities) {
+      this.m_activities.Stop();
+      this.m_activities = null;
     }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
@@ -587,6 +595,17 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_travel;
   }
 
+  public func Activities() -> ref<TandemActivities> {
+    return this.m_activities;
+  }
+
+  // Our look again at the next check (Activities.reds: out of a mirror, the
+  // ripperdoc, the wardrobe), the face and hair too; an unchanged one goes
+  // to nobody.
+  public func RefreshLook() -> Void {
+    this.m_sentAppearance = false;
+  }
+
   public func Revive() -> ref<TandemRevive> {
     return this.m_revive;
   }
@@ -681,6 +700,9 @@ public class TandemSystem extends ScriptableSystem {
     }
     if IsDefined(this.m_travel) && this.m_playing {
       this.m_travel.Tick(this.Now(), this.m_you);
+    }
+    if IsDefined(this.m_activities) && this.m_playing {
+      this.m_activities.Tick(this.Now(), this.m_you);
     }
     // Slowed time (Time.reds): every frame, in the script tick, once the
     // world runs and we are in a session. (It ran from the plugin's
@@ -1246,6 +1268,9 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_revive) {
         this.m_revive.Command(command);
       }
+    } else if (StrBeginsWith(command, "skip ") || StrBeginsWith(command, "busy")) && IsDefined(this.m_activities) {
+      // Activities.reds: skip ask HOURS | skip accept | skip decline | busy KIND|off | busy report.
+      this.m_activities.Command(command);
     } else if StrBeginsWith(command, "elsewhere") && IsDefined(this.m_elsewhere) {
       // Elsewhere.reds: elsewhere test PLACE|off, elsewhere state.
       this.m_elsewhere.Command(command);
