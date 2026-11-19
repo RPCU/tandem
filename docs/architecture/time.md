@@ -64,7 +64,9 @@
     finishers, quickhack breach timers, dodge/slide slow-mo;
   - _another timeline_: braindances (the player is in a recording, not in the
     world), Johnny flashbacks, the Relic sequences;
-  - _skipped time_: sleeping, waiting, fast travel, phone-call time skips;
+  - _skipped time_: sleeping, waiting, fast travel, phone-call time skips
+    (done for the wheel, beds and the host's story: asked of everyone,
+    `activities.md`);
   - _stopped time_: the pause menu, inventory, map, character and perk
     screens, crafting, the wardrobe, photo mode, tutorials and popups —
     single-player pauses the whole world for all of them.

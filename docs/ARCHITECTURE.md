@@ -66,7 +66,7 @@ task touches ([Topic files](#topic-files)).
 | `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
 | `deploy/kubernetes/base` | kustomize base for the relay | `task k8s:check` |
-| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp` | `task scripts:check`, `task natives:check` |
+| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `ActivityNatives.reds` `activity_natives.cpp` | `task scripts:check`, `task natives:check` |
 | `tweaks/` | TweakXL records, installed to `r6/tweaks/tandem` (the puppet records, their attitude groups, the player marker) | — |
 | `dist/` | files installed next to the DLL (`tandem.ini`) | — |
 | `cmake/` | `clang-cl-msvc.cmake`: the Windows cross toolchain | — |
@@ -132,6 +132,8 @@ The owner simulates; everyone else displays.
 | spawns: crowds, traffic, encounters | host | guests' own spawning is suppressed |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
 | time of day, weather, police heat | host | applied (wanted level: open, `architecture/world.md`) |
+| the clock: time skips (wheel, bed) | host's clock, asked of every other player | each agrees or not; applied in every game; the host's story only says so (`architecture/activities.md`) |
+| a V busy: workspot, menu, minigame, photo mode | that player's game | puppet held where it sits, same workspot; photo mode stands only its own game still |
 | a V's time abilities (Sandevistan…) | that player's game | shown on the puppet; never slow anyone's world |
 | an NPC's speed in a time bubble | host | proxies animated at the same speed |
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
@@ -268,6 +270,7 @@ plugin") and its open problems.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, rewards; open: scenes for guests, story decisions, quests together.
 - `quest-carryover.md`: (proposal) what a guest brings home: the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
+- `activities.md`: the rule table for activities outside combat and quests (time skips asked of everyone, workspots on puppets, minigames and screens, shops, mirror and wardrobe looks, photo mode, contests, clubs and joytoys), its decisions and what is built.
 - `coop-menu.md`: the co-op menu, invites and join codes in game.
 - `travel.md`: fast travel together, regroup; open: region authority.
 - `relay.md`: the relay's sessions, join codes, abuse limits, wire format, deployment, the game side.
