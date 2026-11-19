@@ -133,6 +133,10 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   the mock player and checks the game's log; a failure keeps its evidence
   under `.cache/scenarios/`. Add a scenario (`tools/scenarios/*.sh`, a few
   lines) for each feature you verify in game, so it stays verified.
+- **Instances** (`tools/instance.sh`, `docs/architecture/two-instances.md`;
+  untried on anya): more games apart from the player's. `tools/game.sh` and
+  `tools/scenario.sh` know one game and kill it **by name**: never run them
+  while instances run.
 - **Every scenario starts from `test reset`** (`tools/game.sh test-reset`,
   `scripts/tandem/TestReset.reds`), which `tools/scenario.sh` runs before
   each one: the save loads as the player left it (in a car, mid-mission,
