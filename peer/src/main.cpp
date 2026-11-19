@@ -928,1690 +928,1713 @@ Options Parse(int argc, char **argv) {
     else if (flag == "--scan-at") {
       options.sandevistanAtSeconds = Number<int>(value);
       options.timeAbility = tandem::proto::kTimeScanning;
-      else if (flag == "--level") {
-        options.level = Number<int>(value);
-        if (options.level < 1 || options.level > tandem::proto::kMaxLevel)
-          Usage("--level is 1 to 100");
-      }
-      else if (flag == "--npc-level") options.npcLevel = Number<float>(value);
-      else if (flag == "--lend") {
-        constexpr std::string_view names[] = {"crew", "owner", "never"};
-        const auto *named = std::ranges::find(names, value);
-        if (named == std::end(names))
-          Usage("--lend is crew, owner or never");
-        options.lend = static_cast<int>(named - std::begin(names));
-      }
-      else if (flag == "--unlock-vehicle") options.unlockVehicle = std::string(value);
-      else if (flag == "--trade-give") options.tradeGive = std::string(value);
-      else if (flag == "--trade-money") options.tradeMoney = Number<int>(value);
-      else if (flag == "--trade-asks") options.tradeAsks = Number<int>(value);
-      else if (flag == "--drop-item") options.dropItem = std::string(value);
-      else if (flag == "--loot-quest") options.lootQuest = std::string(value);
-      else if (flag == "--take-items") options.takeItemsSeconds = Number<int>(value);
-      else if (flag == "--remove-corpses") options.removeCorpsesSeconds = Number<int>(value);
-      else if (flag == "--hit-npcs") options.hitNpcsSeconds = Number<int>(value);
-      else if (flag == "--grab-npcs") options.grabNpcsSeconds = Number<int>(value);
-      else if (flag == "--carry-npcs") options.carryNpcsSeconds = Number<int>(value);
-      else if (flag == "--hold-npcs") options.holdNpcsSeconds = Number<int>(value);
-      else if (flag == "--hit-you") options.hitYouSeconds = Number<int>(value);
-      else if (flag == "--hit-you-melee") options.hitYouMelee = value == "on";
-      else if (flag == "--shoot-you") options.shootYouSeconds = Number<int>(value);
-      else if (flag == "--shot-weapon") options.shotWeapon = std::string(value);
-      else if (flag == "--strike") {
-        constexpr std::string_view kinds[] = {"plain", "nonlethal", "cap",
-                                              "poise", "head",      "blade"};
-        if (std::ranges::find(kinds, value) == std::end(kinds))
-          Usage(std::format("unknown strike {}", value));
-        options.strike = std::string(value);
-      }
-      else if (flag == "--difficulty") {
-        constexpr std::string_view levels[] = {"easy", "hard", "veryhard", "story"};
-        if (const auto *named = std::ranges::find(levels, value); named != std::end(levels))
-          options.difficulty = static_cast<int>(named - std::begin(levels));
-        else if (const auto level = Number<int>(value); level >= 0 && level <= 3)
-          options.difficulty = level;
-        else
-          Usage(std::format("--difficulty: no level {}", value));
-      }
-      else if (flag == "--area-hit") options.areaHitSeconds = Number<int>(value);
-      else if (flag == "--friendly-fire") {
-        if (value == "on")
-          options.friendlyFire = true;
-        else if (value == "off")
-          options.friendlyFire = false;
-        else
-          Usage(std::format("--friendly-fire: on or off, not {}", value));
-      }
-      else if (flag == "--throw") options.throwSeconds = Number<int>(value);
-      else if (flag == "--throw-item") options.throwItem = std::string(value);
-      else if (flag == "--smart") options.smartSeconds = Number<int>(value);
-      else if (flag == "--defend") options.defendSeconds = Number<int>(value);
-      else if (flag == "--npc") options.npcRecord = std::string(value);
-      else if (flag == "--region-far") options.regionFar = Number<float>(value);
-      else if (flag == "--region-at") options.regionAt = Point(flag, value);
-      else if (flag == "--region-npcs") options.regionNpcs = std::clamp(Number<int>(value), 0, 32);
-      else if (flag == "--region-record") options.regionRecord = std::string(value);
-      else if (flag == "--region-walk-at") options.regionWalkAtSeconds = Number<int>(value);
-      else if (flag == "--region-leave-at") options.regionLeaveAtSeconds = Number<int>(value);
-      else if (flag == "--region-speed") options.regionSpeed = std::max(0.1f, Number<float>(value));
-      else if (flag == "--detect-at") options.detectAtSeconds = Number<int>(value);
-      else if (flag == "--detect-for") options.detectForSeconds = Number<int>(value);
-      else if (flag == "--camo") options.camoAtSeconds = Number<int>(value);
-      else if (flag == "--shoot") options.shootSeconds = std::max(1, Number<int>(value));
-      else if (flag == "--hurt") options.hurtSeconds = std::max(1, Number<int>(value));
-      else if (flag == "--melee") options.meleeSeconds = std::max(1, Number<int>(value));
-      else if (flag == "--menu-at") options.menuAtSeconds = Number<int>(value);
-      else if (flag == "--react-npcs") options.reactNpcsSeconds = std::max(1, Number<int>(value));
-      else if (flag == "--hold") options.holdRecord = value;
-      else if (flag == "--holster-at") options.holsterAtSeconds = Number<int>(value);
-      else if (flag == "--drive-seconds") options.driveSeconds = Number<int>(value);
-      else if (flag == "--radio") {
-        if (value == "off")
-          options.radioStation = -1;
-        else if (const auto *named = std::ranges::find(kStations, value);
-                 named != std::end(kStations))
-          options.radioStation = static_cast<int>(named - std::begin(kStations));
-        else if (const auto station = Number<int>(value); station >= 0 && station < 14)
-          options.radioStation = station;
-        else
-          Usage(std::format("--radio: no station {}", value));
-      }
-      else if (flag == "--look-keys") {
-        options.lookKeys = value;
-      }
-      else if (flag == "--look") {
-        if (value == "echo")
-          options.echoLook = true;
-        else if (value == "random")
-          options.echoLook = false;
-        else
-          Usage(std::format("unknown look {}", value));
-      }
-      else if (flag == "--seed") options.lookSeed = Number<unsigned>(value);
-      else if (flag == "--vehicle") options.vehicle = std::string(value);
-      else if (flag == "--pose") options.poseFile = std::string(value);
-      else if (flag == "--rate") options.rateHz = std::max(1, Number<int>(value));
-      else if (flag == "--mode") {
-        if (value == "mirror")
-          options.mode = Mode::Mirror;
-        else if (value == "ghost")
-          options.mode = Mode::Ghost;
-        else if (value == "front")
-          options.mode = Mode::Front;
-        else if (value == "idle")
-          options.mode = Mode::Idle;
-        else if (value == "drive")
-          options.mode = Mode::Drive;
-        else if (value == "course")
-          options.mode = Mode::Course;
-        else if (value == "path")
-          options.mode = Mode::Path;
-        else if (value == "metro")
-          options.mode = Mode::Metro;
-        else if (value == "watch")
-          options.mode = Mode::Watch;
-        else if (value == "region")
-          options.mode = Mode::Region;
-        else
-          Usage(std::format("unknown mode {}", value));
-      }
-      else if (flag == "--metro-at") options.metroAtSeconds = std::max(0, Number<int>(value));
-      else if (flag == "--metro-for") options.metroForSeconds = std::max(8, Number<int>(value));
-      else if (flag == "--seat") options.seat = std::string(value);
-      else if (flag == "--driver-npc") options.driverNpc = std::string(value);
-      else if (flag == "--offset") {
-        options.offset = Point(flag, value);
-        options.offsetGiven = true;
-      }
-      else if (flag == "--play") options.playFile = std::string(value);
-      else if (flag == "--record-session") options.recordSessionFile = std::string(value);
-      else if (flag == "--play-session") options.playSessionFile = std::string(value);
-      else if (flag == "--play-offset") options.playOffset = Point(flag, value);
-      else if (flag == "--save-play") options.savePlayFile = std::string(value);
-      else if (flag == "--travel-at") options.travelAtSeconds = Number<int>(value);
-      else if (flag == "--travel-to") options.travelTo = Point(flag, value);
-      else if (flag == "--travel-point") options.travelPoint = std::string(value);
-      else if (flag == "--offer-regroup") options.offerRegroupSeconds = Number<int>(value);
-      else if (flag == "--link") {
-        if (value == "auto")
-          options.linkConsent = Options::LinkAnswer::Auto;
-        else if (value == "ask")
-          options.linkConsent = Options::LinkAnswer::Ask;
-        else if (value == "off")
-          options.linkConsent = Options::LinkAnswer::Off;
-        else
-          Usage(std::format("--link: auto, ask or off, not {}", value));
-      }
-      else if (flag == "--link-at") options.linkAtSeconds = Number<int>(value);
-      else if (flag == "--ping") options.pingSeconds = Number<int>(value);
-      else if (flag == "--tag") options.tagSeconds = Number<int>(value);
-      else if (flag == "--reveal") options.revealSeconds = Number<int>(value);
-      else if (flag == "--waypoint") options.waypoint = Point(flag, value);
-      else if (flag == "--waypoint-clear") options.waypointClearSeconds = Number<int>(value);
-      else if (flag == "--hack-npc") {
-        if (value != "nearest")
-          Number<std::uint32_t>(value);
-        options.hackNpc = std::string(value);
-      }
-      else if (flag == "--mark-target") {
-        if (value != "nearest")
-          Number<std::uint32_t>(value); // a number, or the usage
-        options.markTarget = std::string(value);
-      }
-      else if (flag == "--regroup-answer") {
-        if (value == "yes")
-          options.regroupAnswer = Options::Answer::Yes;
-        else if (value == "no")
-          options.regroupAnswer = Options::Answer::No;
-        else if (value == "ignore")
-          options.regroupAnswer = Options::Answer::Ignore;
-        else
-          Usage(std::format("--regroup-answer: yes, no or ignore, not {}", value));
-      }
-      else if (flag == "--ask-skip") options.askSkipSeconds = Number<int>(value);
-      else if (flag == "--skip-hours") options.skipHours = Number<int>(value);
-      else if (flag == "--skip-reason") {
-        if (const auto reason = SkipReasonNamed(value))
-          options.skipReason = *reason;
-        else
-          Usage(std::format("--skip-reason: wait, sleep or quest, not {}", value));
-      }
-      else if (flag == "--skip-answer") {
-        if (value == "yes")
-          options.skipAnswer = Options::Answer::Yes;
-        else if (value == "no")
-          options.skipAnswer = Options::Answer::No;
-        else if (value == "ignore")
-          options.skipAnswer = Options::Answer::Ignore;
-        else
-          Usage(std::format("--skip-answer: yes, no or ignore, not {}", value));
-      }
-      else if (flag == "--activity") {
-        if (!ActivityNamed(std::string(value)))
-          Usage(std::format("--activity: workspot, sleep, screen, minigame, shop, menu, photo or "
-                            "contest, not {}",
-                            value));
-        options.activity = std::string(value);
-      }
-      else if (flag == "--activity-at") options.activityAtSeconds = Number<int>(value);
-      else if (flag == "--activity-for") options.activityForSeconds = Number<int>(value);
-      else if (flag == "--latency") options.link.latencyMs = Number<std::uint32_t>(value);
-      else if (flag == "--jitter") options.link.jitterMs = Number<std::uint32_t>(value);
-      else if (flag == "--loss") options.link.loss = Percent(flag, value);
-      else if (flag == "--reorder") options.link.reorder = Percent(flag, value);
-      else if (flag == "--record") {
-        options.recordFile = value;
-      }
-      else if (flag == "--replay") {
-        options.replayFile = value;
-      }
-      else if (flag == "--relay") {
-        if (!options.relay)
-          options.relay.emplace();
-        if (!tandem::net::ParseRelayAddress(value, options.relay->address, options.relay->port))
-          Usage(std::format("--relay is HOST[:PORT], not {}", value));
-      }
-      else if (flag == "--relay-token") {
-        const auto token = tandem::net::ParseRelayToken(value);
-        if (!token)
-          Usage("--relay-token is 64 hex digits (tandem-relay token)");
-        if (!options.relay)
-          options.relay.emplace();
-        options.relay->token = *token;
-      }
-      else if (flag == "--code") {
-        const auto code = tandem::net::NormalizeJoinCode(value);
-        if (!code)
-          Usage(std::format("not a join code: {}", value));
-        options.code = *code;
-      }
-      else if (flag == "--story") {
-        options.storyFile = value;
-      }
-      else if (flag == "--go-down") {
-        options.goDownSeconds = Number<int>(value);
-      }
-      else if (flag == "--go-out") {
-        options.goOutSeconds = Number<int>(value);
-      }
-      else if (flag == "--revive") {
-        options.reviveSeconds = Number<int>(value);
-      }
-      else if (flag == "--answer") {
-        options.answerSeconds = Number<int>(value);
-      }
-      else if (flag == "--reply") {
-        options.replyEntry = Number<std::uint32_t>(value);
-      }
-      else if (flag == "--suggest") {
-        options.suggestIndex = Number<int>(value);
-      }
-      else if (flag == "--anims") {
-        options.animsFile = value;
-      }
-      else if (flag == "--path") {
-        options.pathFile = value;
-      }
-      else if (flag == "--save-path") {
-        options.savePathFile = value;
-      }
-      else if (flag == "--traffic") {
-        options.trafficCars = Number<int>(value);
-        if (options.trafficCars < 0 || options.trafficCars > 64)
-          Usage("--traffic is 0 to 64");
-      }
-      else if (flag == "--traffic-vehicle") {
-        options.trafficVehicle = std::string(value);
-      }
-      else if (flag == "--wreck-at") {
-        options.wreckAtSeconds = Number<int>(value);
-      }
-      else if (flag == "--ram-traffic") {
-        options.ramTrafficSeconds = Number<int>(value);
-      }
-      else if (flag == "--steal-at") {
-        options.stealAtSeconds = Number<int>(value);
-      }
-      else if (flag == "--heat") {
-        options.heat = Number<int>(value);
-        if (options.heat < 0 || options.heat > 5)
-          Usage("--heat is 0 to 5");
-      }
-      else if (flag == "--heat-at") {
-        options.heatAtSeconds = Number<int>(value);
-      }
-      else if (flag == "--heat-for") {
-        options.heatForSeconds = Number<int>(value);
-      }
-      else if (flag == "--crime-at") {
-        options.crimeAtSeconds = Number<int>(value);
-      }
-      else Usage(std::format("unknown option {}", flag));
+    } else if (flag == "--level") {
+      options.level = Number<int>(value);
+      if (options.level < 1 || options.level > tandem::proto::kMaxLevel)
+        Usage("--level is 1 to 100");
+    } else if (flag == "--npc-level")
+      options.npcLevel = Number<float>(value);
+    else if (flag == "--lend") {
+      constexpr std::string_view names[] = {"crew", "owner", "never"};
+      const auto *named = std::ranges::find(names, value);
+      if (named == std::end(names))
+        Usage("--lend is crew, owner or never");
+      options.lend = static_cast<int>(named - std::begin(names));
+    } else if (flag == "--unlock-vehicle")
+      options.unlockVehicle = std::string(value);
+    else if (flag == "--trade-give")
+      options.tradeGive = std::string(value);
+    else if (flag == "--trade-money")
+      options.tradeMoney = Number<int>(value);
+    else if (flag == "--trade-asks")
+      options.tradeAsks = Number<int>(value);
+    else if (flag == "--drop-item")
+      options.dropItem = std::string(value);
+    else if (flag == "--loot-quest")
+      options.lootQuest = std::string(value);
+    else if (flag == "--take-items")
+      options.takeItemsSeconds = Number<int>(value);
+    else if (flag == "--remove-corpses")
+      options.removeCorpsesSeconds = Number<int>(value);
+    else if (flag == "--hit-npcs")
+      options.hitNpcsSeconds = Number<int>(value);
+    else if (flag == "--grab-npcs")
+      options.grabNpcsSeconds = Number<int>(value);
+    else if (flag == "--carry-npcs")
+      options.carryNpcsSeconds = Number<int>(value);
+    else if (flag == "--hold-npcs")
+      options.holdNpcsSeconds = Number<int>(value);
+    else if (flag == "--hit-you")
+      options.hitYouSeconds = Number<int>(value);
+    else if (flag == "--hit-you-melee")
+      options.hitYouMelee = value == "on";
+    else if (flag == "--shoot-you")
+      options.shootYouSeconds = Number<int>(value);
+    else if (flag == "--shot-weapon")
+      options.shotWeapon = std::string(value);
+    else if (flag == "--strike") {
+      constexpr std::string_view kinds[] = {"plain", "nonlethal", "cap", "poise", "head", "blade"};
+      if (std::ranges::find(kinds, value) == std::end(kinds))
+        Usage(std::format("unknown strike {}", value));
+      options.strike = std::string(value);
+    } else if (flag == "--difficulty") {
+      constexpr std::string_view levels[] = {"easy", "hard", "veryhard", "story"};
+      if (const auto *named = std::ranges::find(levels, value); named != std::end(levels))
+        options.difficulty = static_cast<int>(named - std::begin(levels));
+      else if (const auto level = Number<int>(value); level >= 0 && level <= 3)
+        options.difficulty = level;
+      else
+        Usage(std::format("--difficulty: no level {}", value));
+    } else if (flag == "--area-hit")
+      options.areaHitSeconds = Number<int>(value);
+    else if (flag == "--friendly-fire") {
+      if (value == "on")
+        options.friendlyFire = true;
+      else if (value == "off")
+        options.friendlyFire = false;
+      else
+        Usage(std::format("--friendly-fire: on or off, not {}", value));
+    } else if (flag == "--throw")
+      options.throwSeconds = Number<int>(value);
+    else if (flag == "--throw-item")
+      options.throwItem = std::string(value);
+    else if (flag == "--smart")
+      options.smartSeconds = Number<int>(value);
+    else if (flag == "--defend")
+      options.defendSeconds = Number<int>(value);
+    else if (flag == "--npc")
+      options.npcRecord = std::string(value);
+    else if (flag == "--region-far")
+      options.regionFar = Number<float>(value);
+    else if (flag == "--region-at")
+      options.regionAt = Point(flag, value);
+    else if (flag == "--region-npcs")
+      options.regionNpcs = std::clamp(Number<int>(value), 0, 32);
+    else if (flag == "--region-record")
+      options.regionRecord = std::string(value);
+    else if (flag == "--region-walk-at")
+      options.regionWalkAtSeconds = Number<int>(value);
+    else if (flag == "--region-leave-at")
+      options.regionLeaveAtSeconds = Number<int>(value);
+    else if (flag == "--region-speed")
+      options.regionSpeed = std::max(0.1f, Number<float>(value));
+    else if (flag == "--detect-at")
+      options.detectAtSeconds = Number<int>(value);
+    else if (flag == "--detect-for")
+      options.detectForSeconds = Number<int>(value);
+    else if (flag == "--camo")
+      options.camoAtSeconds = Number<int>(value);
+    else if (flag == "--shoot")
+      options.shootSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--hurt")
+      options.hurtSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--melee")
+      options.meleeSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--menu-at")
+      options.menuAtSeconds = Number<int>(value);
+    else if (flag == "--react-npcs")
+      options.reactNpcsSeconds = std::max(1, Number<int>(value));
+    else if (flag == "--hold")
+      options.holdRecord = value;
+    else if (flag == "--holster-at")
+      options.holsterAtSeconds = Number<int>(value);
+    else if (flag == "--drive-seconds")
+      options.driveSeconds = Number<int>(value);
+    else if (flag == "--radio") {
+      if (value == "off")
+        options.radioStation = -1;
+      else if (const auto *named = std::ranges::find(kStations, value);
+               named != std::end(kStations))
+        options.radioStation = static_cast<int>(named - std::begin(kStations));
+      else if (const auto station = Number<int>(value); station >= 0 && station < 14)
+        options.radioStation = station;
+      else
+        Usage(std::format("--radio: no station {}", value));
+    } else if (flag == "--look-keys") {
+      options.lookKeys = value;
+    } else if (flag == "--look") {
+      if (value == "echo")
+        options.echoLook = true;
+      else if (value == "random")
+        options.echoLook = false;
+      else
+        Usage(std::format("unknown look {}", value));
+    } else if (flag == "--seed")
+      options.lookSeed = Number<unsigned>(value);
+    else if (flag == "--vehicle")
+      options.vehicle = std::string(value);
+    else if (flag == "--pose")
+      options.poseFile = std::string(value);
+    else if (flag == "--rate")
+      options.rateHz = std::max(1, Number<int>(value));
+    else if (flag == "--mode") {
+      if (value == "mirror")
+        options.mode = Mode::Mirror;
+      else if (value == "ghost")
+        options.mode = Mode::Ghost;
+      else if (value == "front")
+        options.mode = Mode::Front;
+      else if (value == "idle")
+        options.mode = Mode::Idle;
+      else if (value == "drive")
+        options.mode = Mode::Drive;
+      else if (value == "course")
+        options.mode = Mode::Course;
+      else if (value == "path")
+        options.mode = Mode::Path;
+      else if (value == "metro")
+        options.mode = Mode::Metro;
+      else if (value == "watch")
+        options.mode = Mode::Watch;
+      else if (value == "region")
+        options.mode = Mode::Region;
+      else
+        Usage(std::format("unknown mode {}", value));
+    } else if (flag == "--metro-at")
+      options.metroAtSeconds = std::max(0, Number<int>(value));
+    else if (flag == "--metro-for")
+      options.metroForSeconds = std::max(8, Number<int>(value));
+    else if (flag == "--seat")
+      options.seat = std::string(value);
+    else if (flag == "--driver-npc")
+      options.driverNpc = std::string(value);
+    else if (flag == "--offset") {
+      options.offset = Point(flag, value);
+      options.offsetGiven = true;
+    } else if (flag == "--play")
+      options.playFile = std::string(value);
+    else if (flag == "--record-session")
+      options.recordSessionFile = std::string(value);
+    else if (flag == "--play-session")
+      options.playSessionFile = std::string(value);
+    else if (flag == "--play-offset")
+      options.playOffset = Point(flag, value);
+    else if (flag == "--save-play")
+      options.savePlayFile = std::string(value);
+    else if (flag == "--travel-at")
+      options.travelAtSeconds = Number<int>(value);
+    else if (flag == "--travel-to")
+      options.travelTo = Point(flag, value);
+    else if (flag == "--travel-point")
+      options.travelPoint = std::string(value);
+    else if (flag == "--offer-regroup")
+      options.offerRegroupSeconds = Number<int>(value);
+    else if (flag == "--link") {
+      if (value == "auto")
+        options.linkConsent = Options::LinkAnswer::Auto;
+      else if (value == "ask")
+        options.linkConsent = Options::LinkAnswer::Ask;
+      else if (value == "off")
+        options.linkConsent = Options::LinkAnswer::Off;
+      else
+        Usage(std::format("--link: auto, ask or off, not {}", value));
+    } else if (flag == "--link-at")
+      options.linkAtSeconds = Number<int>(value);
+    else if (flag == "--ping")
+      options.pingSeconds = Number<int>(value);
+    else if (flag == "--tag")
+      options.tagSeconds = Number<int>(value);
+    else if (flag == "--reveal")
+      options.revealSeconds = Number<int>(value);
+    else if (flag == "--waypoint")
+      options.waypoint = Point(flag, value);
+    else if (flag == "--waypoint-clear")
+      options.waypointClearSeconds = Number<int>(value);
+    else if (flag == "--hack-npc") {
+      if (value != "nearest")
+        Number<std::uint32_t>(value);
+      options.hackNpc = std::string(value);
+    } else if (flag == "--mark-target") {
+      if (value != "nearest")
+        Number<std::uint32_t>(value); // a number, or the usage
+      options.markTarget = std::string(value);
+    } else if (flag == "--regroup-answer") {
+      if (value == "yes")
+        options.regroupAnswer = Options::Answer::Yes;
+      else if (value == "no")
+        options.regroupAnswer = Options::Answer::No;
+      else if (value == "ignore")
+        options.regroupAnswer = Options::Answer::Ignore;
+      else
+        Usage(std::format("--regroup-answer: yes, no or ignore, not {}", value));
+    } else if (flag == "--ask-skip")
+      options.askSkipSeconds = Number<int>(value);
+    else if (flag == "--skip-hours")
+      options.skipHours = Number<int>(value);
+    else if (flag == "--skip-reason") {
+      if (const auto reason = SkipReasonNamed(value))
+        options.skipReason = *reason;
+      else
+        Usage(std::format("--skip-reason: wait, sleep or quest, not {}", value));
+    } else if (flag == "--skip-answer") {
+      if (value == "yes")
+        options.skipAnswer = Options::Answer::Yes;
+      else if (value == "no")
+        options.skipAnswer = Options::Answer::No;
+      else if (value == "ignore")
+        options.skipAnswer = Options::Answer::Ignore;
+      else
+        Usage(std::format("--skip-answer: yes, no or ignore, not {}", value));
+    } else if (flag == "--activity") {
+      if (!ActivityNamed(std::string(value)))
+        Usage(std::format("--activity: workspot, sleep, screen, minigame, shop, menu, photo or "
+                          "contest, not {}",
+                          value));
+      options.activity = std::string(value);
+    } else if (flag == "--activity-at")
+      options.activityAtSeconds = Number<int>(value);
+    else if (flag == "--activity-for")
+      options.activityForSeconds = Number<int>(value);
+    else if (flag == "--latency")
+      options.link.latencyMs = Number<std::uint32_t>(value);
+    else if (flag == "--jitter")
+      options.link.jitterMs = Number<std::uint32_t>(value);
+    else if (flag == "--loss")
+      options.link.loss = Percent(flag, value);
+    else if (flag == "--reorder")
+      options.link.reorder = Percent(flag, value);
+    else if (flag == "--record") {
+      options.recordFile = value;
+    } else if (flag == "--replay") {
+      options.replayFile = value;
+    } else if (flag == "--relay") {
+      if (!options.relay)
+        options.relay.emplace();
+      if (!tandem::net::ParseRelayAddress(value, options.relay->address, options.relay->port))
+        Usage(std::format("--relay is HOST[:PORT], not {}", value));
+    } else if (flag == "--relay-token") {
+      const auto token = tandem::net::ParseRelayToken(value);
+      if (!token)
+        Usage("--relay-token is 64 hex digits (tandem-relay token)");
+      if (!options.relay)
+        options.relay.emplace();
+      options.relay->token = *token;
+    } else if (flag == "--code") {
+      const auto code = tandem::net::NormalizeJoinCode(value);
+      if (!code)
+        Usage(std::format("not a join code: {}", value));
+      options.code = *code;
+    } else if (flag == "--story") {
+      options.storyFile = value;
+    } else if (flag == "--go-down") {
+      options.goDownSeconds = Number<int>(value);
+    } else if (flag == "--go-out") {
+      options.goOutSeconds = Number<int>(value);
+    } else if (flag == "--revive") {
+      options.reviveSeconds = Number<int>(value);
+    } else if (flag == "--answer") {
+      options.answerSeconds = Number<int>(value);
+    } else if (flag == "--reply") {
+      options.replyEntry = Number<std::uint32_t>(value);
+    } else if (flag == "--suggest") {
+      options.suggestIndex = Number<int>(value);
+    } else if (flag == "--anims") {
+      options.animsFile = value;
+    } else if (flag == "--path") {
+      options.pathFile = value;
+    } else if (flag == "--save-path") {
+      options.savePathFile = value;
+    } else if (flag == "--traffic") {
+      options.trafficCars = Number<int>(value);
+      if (options.trafficCars < 0 || options.trafficCars > 64)
+        Usage("--traffic is 0 to 64");
+    } else if (flag == "--traffic-vehicle") {
+      options.trafficVehicle = std::string(value);
+    } else if (flag == "--wreck-at") {
+      options.wreckAtSeconds = Number<int>(value);
+    } else if (flag == "--ram-traffic") {
+      options.ramTrafficSeconds = Number<int>(value);
+    } else if (flag == "--steal-at") {
+      options.stealAtSeconds = Number<int>(value);
+    } else if (flag == "--heat") {
+      options.heat = Number<int>(value);
+      if (options.heat < 0 || options.heat > 5)
+        Usage("--heat is 0 to 5");
+    } else if (flag == "--heat-at") {
+      options.heatAtSeconds = Number<int>(value);
+    } else if (flag == "--heat-for") {
+      options.heatForSeconds = Number<int>(value);
+    } else if (flag == "--crime-at") {
+      options.crimeAtSeconds = Number<int>(value);
+    } else
+      Usage(std::format("unknown option {}", flag));
+  }
+  if (options.mode == Mode::Path && options.pathFile.empty() && !options.check)
+    Usage("--mode path needs --path FILE");
+  if (!options.host && !options.check) {
+    if (options.address.empty() && options.code.empty())
+      Usage("join needs an address or --code");
+    if (!options.code.empty() && (!options.relay || options.relay->address.empty()))
+      Usage("--code needs --relay");
+  }
+  if (options.relay && options.relay->address.empty() && !options.check)
+    Usage("--relay-token needs --relay");
+  if (options.relay)
+    options.relay->code = options.code;
+  return options;
+}
+
+// A recorded pose, played in a loop (tools/re/pose_export.py's format).
+class PoseClip {
+public:
+  bool Load(const std::string &path, std::string &error) {
+    std::ifstream in(path, std::ios::binary);
+    char magic[4]{};
+    std::uint32_t version = 0, frames = 0;
+    in.read(magic, 4);
+    in.read(reinterpret_cast<char *>(&version), 4);
+    in.read(reinterpret_cast<char *>(&frames), 4);
+    in.read(reinterpret_cast<char *>(&m_referenceHips), 4);
+    if (!in || std::string_view(magic, 4) != "TPOS" || version != 1 || frames == 0) {
+      error = std::format("{}: not a pose file", path);
+      return false;
     }
-    if (options.mode == Mode::Path && options.pathFile.empty() && !options.check)
-      Usage("--mode path needs --path FILE");
-    if (!options.host && !options.check) {
-      if (options.address.empty() && options.code.empty())
-        Usage("join needs an address or --code");
-      if (!options.code.empty() && (!options.relay || options.relay->address.empty()))
-        Usage("--code needs --relay");
+    m_frames.resize(frames);
+    for (auto &frame : m_frames) {
+      in.read(reinterpret_cast<char *>(&frame.time), 4);
+      in.read(reinterpret_cast<char *>(&frame.hips), 12);
+      in.read(reinterpret_cast<char *>(frame.model.data()), sizeof(frame.model));
     }
-    if (options.relay && options.relay->address.empty() && !options.check)
-      Usage("--relay-token needs --relay");
-    if (options.relay)
-      options.relay->code = options.code;
-    return options;
+    if (!in) {
+      error = std::format("{}: truncated", path);
+      return false;
+    }
+    return true;
   }
 
-  // A recorded pose, played in a loop (tools/re/pose_export.py's format).
-  class PoseClip {
-  public:
-    bool Load(const std::string &path, std::string &error) {
-      std::ifstream in(path, std::ios::binary);
-      char magic[4]{};
-      std::uint32_t version = 0, frames = 0;
-      in.read(magic, 4);
-      in.read(reinterpret_cast<char *>(&version), 4);
-      in.read(reinterpret_cast<char *>(&frames), 4);
-      in.read(reinterpret_cast<char *>(&m_referenceHips), 4);
-      if (!in || std::string_view(magic, 4) != "TPOS" || version != 1 || frames == 0) {
-        error = std::format("{}: not a pose file", path);
-        return false;
-      }
-      m_frames.resize(frames);
-      for (auto &frame : m_frames) {
-        in.read(reinterpret_cast<char *>(&frame.time), 4);
-        in.read(reinterpret_cast<char *>(&frame.hips), 12);
-        in.read(reinterpret_cast<char *>(frame.model.data()), sizeof(frame.model));
-      }
-      if (!in) {
-        error = std::format("{}: truncated", path);
-        return false;
-      }
-      return true;
+  // The pose `nowUs` into the loop.
+  tandem::proto::PoseState At(std::uint64_t nowUs) const {
+    const float span = m_frames.back().time - m_frames.front().time;
+    const float t = m_frames.front().time + std::fmod(static_cast<float>(nowUs / 1e6), span);
+    std::size_t i = 0;
+    while (i + 1 < m_frames.size() && m_frames[i + 1].time <= t)
+      ++i;
+    const auto &frame = m_frames[i];
+    return tandem::pose::Pack(tandem::pose::FromModel(frame.model, frame.hips, m_referenceHips));
+  }
+
+  std::size_t Frames() const { return m_frames.size(); }
+  float Seconds() const { return m_frames.back().time - m_frames.front().time; }
+
+private:
+  struct Frame {
+    float time{};
+    Vec3 hips;
+    std::array<tandem::proto::Quat, tandem::pose::kBones> model{};
+  };
+  std::vector<Frame> m_frames;
+  float m_referenceHips{1.f};
+};
+
+// Messages with their time, for --record / --replay (NPC messages) and
+// --save-path / --path (player states): per message u64 microseconds since
+// the first, u32 length, the encoded message.
+class Recording {
+public:
+  // Written beside the file (FILE.part) and put in its place by Finish, so
+  // a recording without a single NPC (an empty street) never replaces a
+  // good one: replaying it gives a guest no proxies at all.
+  bool Open(const std::string &path) {
+    m_path = path;
+    m_out.open(path + ".part", std::ios::binary);
+    return bool(m_out);
+  }
+  // Keeps the recording if it holds NPCs; false (and the old file) if not.
+  bool Finish() {
+    if (m_path.empty())
+      return false;
+    m_out.close();
+    std::error_code error;
+    if (m_spawns == 0) {
+      std::filesystem::remove(m_path + ".part", error);
+      return false;
     }
+    std::filesystem::rename(m_path + ".part", m_path, error);
+    return !error;
+  }
+  std::size_t Spawns() const { return m_spawns; }
+  void Add(const tandem::proto::Message &message) {
+    if (std::holds_alternative<tandem::proto::NpcSpawn>(message))
+      ++m_spawns;
+    const auto now = tandem::net::NowUs();
+    if (!m_start)
+      m_start = now;
+    const auto bytes = tandem::proto::Encode(message);
+    const std::uint64_t at = now - *m_start;
+    const auto size = static_cast<std::uint32_t>(bytes.size());
+    m_out.write(reinterpret_cast<const char *>(&at), 8);
+    m_out.write(reinterpret_cast<const char *>(&size), 4);
+    m_out.write(reinterpret_cast<const char *>(bytes.data()), size);
+    m_out.flush();
+    ++m_count;
+  }
+  std::size_t Count() const { return m_count; }
 
-    // The pose `nowUs` into the loop.
-    tandem::proto::PoseState At(std::uint64_t nowUs) const {
-      const float span = m_frames.back().time - m_frames.front().time;
-      const float t = m_frames.front().time + std::fmod(static_cast<float>(nowUs / 1e6), span);
-      std::size_t i = 0;
-      while (i + 1 < m_frames.size() && m_frames[i + 1].time <= t)
-        ++i;
-      const auto &frame = m_frames[i];
-      return tandem::pose::Pack(tandem::pose::FromModel(frame.model, frame.hips, m_referenceHips));
+  struct Entry {
+    std::uint64_t atUs;
+    tandem::proto::Message message;
+  };
+  static std::vector<Entry> Load(const std::string &path) {
+    std::vector<Entry> out;
+    std::ifstream in(path, std::ios::binary);
+    for (;;) {
+      std::uint64_t at = 0;
+      std::uint32_t size = 0;
+      if (!in.read(reinterpret_cast<char *>(&at), 8) ||
+          !in.read(reinterpret_cast<char *>(&size), 4))
+        break;
+      std::vector<std::byte> bytes(size);
+      if (!in.read(reinterpret_cast<char *>(bytes.data()), size))
+        break;
+      if (auto message = tandem::proto::Decode(bytes))
+        out.push_back({at, std::move(*message)});
     }
+    return out;
+  }
 
-    std::size_t Frames() const { return m_frames.size(); }
-    float Seconds() const { return m_frames.back().time - m_frames.front().time; }
+  // NPC spawns in a loaded recording (none: nothing to replay).
+  static std::size_t SpawnsIn(const std::vector<Entry> &entries) {
+    return static_cast<std::size_t>(std::ranges::count_if(entries, [](const Entry &entry) {
+      return std::holds_alternative<tandem::proto::NpcSpawn>(entry.message);
+    }));
+  }
 
-  private:
-    struct Frame {
-      float time{};
-      Vec3 hips;
-      std::array<tandem::proto::Quat, tandem::pose::kBones> model{};
+private:
+  std::ofstream m_out;
+  std::string m_path;
+  std::optional<std::uint64_t> m_start;
+  std::size_t m_count{};
+  std::size_t m_spawns{};
+};
+
+// The course mode's script: where a V is `t` seconds in, in metres along
+// the course (x ahead, z up) and how it moves, as its game would say it.
+struct CoursePoint {
+  float ahead{}, up{};
+  tandem::movement::Movement movement{.known = true};
+  std::uint8_t stance{}; // gamePSMLocomotionStates
+  const char *what{};
+};
+
+class Course {
+public:
+  static constexpr float kGravity = 9.81f;
+
+  // One lap, then it starts again from the start.
+  float Seconds() const { return m_end; }
+
+  CoursePoint At(float t) const {
+    using D = tandem::movement::Detailed;
+    using S = tandem::movement::Swim;
+    t = std::fmod(t, m_end);
+    float x = 0.f; // where the segment starts
+    CoursePoint p;
+    const auto segment = [&](float length, const char *what) {
+      if (t < length) {
+        p.what = what;
+        return true;
+      }
+      t -= length;
+      return false;
     };
-    std::vector<Frame> m_frames;
-    float m_referenceHips{1.f};
-  };
-
-  // Messages with their time, for --record / --replay (NPC messages) and
-  // --save-path / --path (player states): per message u64 microseconds since
-  // the first, u32 length, the encoded message.
-  class Recording {
-  public:
-    // Written beside the file (FILE.part) and put in its place by Finish, so
-    // a recording without a single NPC (an empty street) never replaces a
-    // good one: replaying it gives a guest no proxies at all.
-    bool Open(const std::string &path) {
-      m_path = path;
-      m_out.open(path + ".part", std::ios::binary);
-      return bool(m_out);
-    }
-    // Keeps the recording if it holds NPCs; false (and the old file) if not.
-    bool Finish() {
-      if (m_path.empty())
-        return false;
-      m_out.close();
-      std::error_code error;
-      if (m_spawns == 0) {
-        std::filesystem::remove(m_path + ".part", error);
-        return false;
-      }
-      std::filesystem::rename(m_path + ".part", m_path, error);
-      return !error;
-    }
-    std::size_t Spawns() const { return m_spawns; }
-    void Add(const tandem::proto::Message &message) {
-      if (std::holds_alternative<tandem::proto::NpcSpawn>(message))
-        ++m_spawns;
-      const auto now = tandem::net::NowUs();
-      if (!m_start)
-        m_start = now;
-      const auto bytes = tandem::proto::Encode(message);
-      const std::uint64_t at = now - *m_start;
-      const auto size = static_cast<std::uint32_t>(bytes.size());
-      m_out.write(reinterpret_cast<const char *>(&at), 8);
-      m_out.write(reinterpret_cast<const char *>(&size), 4);
-      m_out.write(reinterpret_cast<const char *>(bytes.data()), size);
-      m_out.flush();
-      ++m_count;
-    }
-    std::size_t Count() const { return m_count; }
-
-    struct Entry {
-      std::uint64_t atUs;
-      tandem::proto::Message message;
-    };
-    static std::vector<Entry> Load(const std::string &path) {
-      std::vector<Entry> out;
-      std::ifstream in(path, std::ios::binary);
-      for (;;) {
-        std::uint64_t at = 0;
-        std::uint32_t size = 0;
-        if (!in.read(reinterpret_cast<char *>(&at), 8) ||
-            !in.read(reinterpret_cast<char *>(&size), 4))
-          break;
-        std::vector<std::byte> bytes(size);
-        if (!in.read(reinterpret_cast<char *>(bytes.data()), size))
-          break;
-        if (auto message = tandem::proto::Decode(bytes))
-          out.push_back({at, std::move(*message)});
-      }
-      return out;
-    }
-
-    // NPC spawns in a loaded recording (none: nothing to replay).
-    static std::size_t SpawnsIn(const std::vector<Entry> &entries) {
-      return static_cast<std::size_t>(std::ranges::count_if(entries, [](const Entry &entry) {
-        return std::holds_alternative<tandem::proto::NpcSpawn>(entry.message);
-      }));
-    }
-
-  private:
-    std::ofstream m_out;
-    std::string m_path;
-    std::optional<std::uint64_t> m_start;
-    std::size_t m_count{};
-    std::size_t m_spawns{};
-  };
-
-  // The course mode's script: where a V is `t` seconds in, in metres along
-  // the course (x ahead, z up) and how it moves, as its game would say it.
-  struct CoursePoint {
-    float ahead{}, up{};
-    tandem::movement::Movement movement{.known = true};
-    std::uint8_t stance{}; // gamePSMLocomotionStates
-    const char *what{};
-  };
-
-  class Course {
-  public:
-    static constexpr float kGravity = 9.81f;
-
-    // One lap, then it starts again from the start.
-    float Seconds() const { return m_end; }
-
-    CoursePoint At(float t) const {
-      using D = tandem::movement::Detailed;
-      using S = tandem::movement::Swim;
-      t = std::fmod(t, m_end);
-      float x = 0.f; // where the segment starts
-      CoursePoint p;
-      const auto segment = [&](float length, const char *what) {
-        if (t < length) {
-          p.what = what;
-          return true;
-        }
-        t -= length;
-        return false;
-      };
-      const auto ground = [&](D d) { p.movement.detailed = d; };
-      // Walking 3 s at 1.6 m/s.
-      if (segment(3.f, "walk")) {
-        ground(D::Stand);
-        p.ahead = x + 1.6f * t;
-        return p;
-      }
-      x += 4.8f;
-      // A jump, 1 m high, 0.9 s, 3 m/s ahead; then landing.
-      if (segment(0.9f, "jump")) {
-        const float v0 = 4.43f;
-        p.movement.detailed = t < v0 / kGravity ? D::Jump : D::Fall;
-        p.ahead = x + 3.f * t;
-        p.up = std::max(0.f, v0 * t - 0.5f * kGravity * t * t);
-        return p;
-      }
-      x += 2.7f;
-      if (segment(0.3f, "land")) {
-        ground(D::RegularLand);
-        p.ahead = x;
-        return p;
-      }
-      // A double jump: up, a second push at the top, down.
-      if (segment(1.6f, "double jump")) {
-        const float v0 = 4.43f, t1 = v0 / kGravity, h1 = 0.5f * v0 * t1;
-        p.ahead = x + 2.f * t;
-        if (t < t1) {
-          p.movement.detailed = D::Jump;
-          p.up = v0 * t - 0.5f * kGravity * t * t;
-        } else {
-          const float u = t - t1;
-          const float v1 = 4.f;
-          p.movement.detailed = u < v1 / kGravity ? D::DoubleJump : D::Fall;
-          p.up = std::max(0.f, h1 + v1 * u - 0.5f * kGravity * u * u);
-        }
-        return p;
-      }
-      x += 3.2f;
-      if (segment(0.3f, "land")) {
-        ground(D::HardLand);
-        p.ahead = x;
-        return p;
-      }
-      // Mantling a 1.5 m ledge, then walking on top of it.
-      if (segment(0.8f, "climb")) {
-        p.movement.detailed = D::Climb;
-        p.ahead = x + 0.6f * t / 0.8f;
-        p.up = 1.5f * std::min(1.f, t / 0.6f);
-        return p;
-      }
-      x += 0.6f;
-      if (segment(2.f, "on the ledge")) {
-        ground(D::Stand);
-        p.ahead = x + 1.5f * t;
-        p.up = 1.5f;
-        return p;
-      }
-      x += 3.f;
-      // Off the ledge: a fall and a hard landing.
-      if (segment(0.55f, "drop")) {
-        p.movement.detailed = D::Fall;
-        p.ahead = x + 1.f * t;
-        p.up = std::max(0.f, 1.5f - 0.5f * kGravity * t * t);
-        return p;
-      }
-      x += 0.55f;
-      if (segment(0.4f, "land")) {
-        ground(D::HardLand);
-        p.ahead = x;
-        return p;
-      }
-      // A 4 m ladder: up at 1 m/s, a slide down.
-      if (segment(4.f, "ladder up")) {
-        p.movement.detailed = D::Ladder;
-        p.ahead = x;
-        p.up = 1.f * t;
-        return p;
-      }
-      if (segment(1.5f, "ladder slide")) {
-        p.movement.detailed = D::LadderSlide;
-        p.ahead = x;
-        p.up = 4.f - 4.f * t / 1.5f;
-        return p;
-      }
-      // Swimming on the surface, diving 2.5 m, climbing out.
-      if (segment(4.f, "swim")) {
-        p.movement.swim = S::Surface;
-        p.ahead = x + 1.2f * t;
-        return p;
-      }
-      x += 4.8f;
-      if (segment(5.f, "dive")) {
-        p.movement.swim = S::Diving;
-        p.ahead = x + 1.f * t;
-        p.up = -2.5f * std::sin(std::numbers::pi_v<float> * t / 5.f);
-        return p;
-      }
-      x += 5.f;
-      if (segment(1.f, "out of the water")) {
-        p.movement.swim = S::Climbing;
-        p.ahead = x + 0.5f * t;
-        p.up = 0.5f * std::sin(std::numbers::pi_v<float> * t);
-        return p;
-      }
-      x += 0.5f;
-      // An elevator: 6 m up, 6 m down, standing.
-      if (segment(8.f, "elevator")) {
-        ground(D::Stand);
-        p.movement.elevator = t > 0.5f && t < 7.5f;
-        p.ahead = x;
-        p.up = t < 4.f ? 6.f * std::clamp((t - 0.5f) / 3.f, 0.f, 1.f)
-                       : 6.f * std::clamp((7.5f - t) / 3.f, 0.f, 1.f);
-        return p;
-      }
-      // A sprint into a slide, then a dodge.
-      if (segment(1.5f, "sprint")) {
-        ground(D::Sprint);
-        p.stance = 2;
-        p.ahead = x + 6.f * t;
-        return p;
-      }
-      x += 9.f;
-      if (segment(1.f, "slide")) {
-        ground(D::Slide);
-        p.stance = 9;
-        p.ahead = x + 6.f * t - 2.5f * t * t;
-        return p;
-      }
-      x += 3.5f;
-      if (segment(0.3f, "dodge")) {
-        ground(D::Dodge);
-        p.stance = 6;
-        p.ahead = x + 8.f * t;
-        return p;
-      }
-      x += 2.4f;
-      // Standing a moment at the end, then (next lap) back at the start.
-      segment(m_end, "rest");
+    const auto ground = [&](D d) { p.movement.detailed = d; };
+    // Walking 3 s at 1.6 m/s.
+    if (segment(3.f, "walk")) {
       ground(D::Stand);
+      p.ahead = x + 1.6f * t;
+      return p;
+    }
+    x += 4.8f;
+    // A jump, 1 m high, 0.9 s, 3 m/s ahead; then landing.
+    if (segment(0.9f, "jump")) {
+      const float v0 = 4.43f;
+      p.movement.detailed = t < v0 / kGravity ? D::Jump : D::Fall;
+      p.ahead = x + 3.f * t;
+      p.up = std::max(0.f, v0 * t - 0.5f * kGravity * t * t);
+      return p;
+    }
+    x += 2.7f;
+    if (segment(0.3f, "land")) {
+      ground(D::RegularLand);
       p.ahead = x;
       return p;
     }
+    // A double jump: up, a second push at the top, down.
+    if (segment(1.6f, "double jump")) {
+      const float v0 = 4.43f, t1 = v0 / kGravity, h1 = 0.5f * v0 * t1;
+      p.ahead = x + 2.f * t;
+      if (t < t1) {
+        p.movement.detailed = D::Jump;
+        p.up = v0 * t - 0.5f * kGravity * t * t;
+      } else {
+        const float u = t - t1;
+        const float v1 = 4.f;
+        p.movement.detailed = u < v1 / kGravity ? D::DoubleJump : D::Fall;
+        p.up = std::max(0.f, h1 + v1 * u - 0.5f * kGravity * u * u);
+      }
+      return p;
+    }
+    x += 3.2f;
+    if (segment(0.3f, "land")) {
+      ground(D::HardLand);
+      p.ahead = x;
+      return p;
+    }
+    // Mantling a 1.5 m ledge, then walking on top of it.
+    if (segment(0.8f, "climb")) {
+      p.movement.detailed = D::Climb;
+      p.ahead = x + 0.6f * t / 0.8f;
+      p.up = 1.5f * std::min(1.f, t / 0.6f);
+      return p;
+    }
+    x += 0.6f;
+    if (segment(2.f, "on the ledge")) {
+      ground(D::Stand);
+      p.ahead = x + 1.5f * t;
+      p.up = 1.5f;
+      return p;
+    }
+    x += 3.f;
+    // Off the ledge: a fall and a hard landing.
+    if (segment(0.55f, "drop")) {
+      p.movement.detailed = D::Fall;
+      p.ahead = x + 1.f * t;
+      p.up = std::max(0.f, 1.5f - 0.5f * kGravity * t * t);
+      return p;
+    }
+    x += 0.55f;
+    if (segment(0.4f, "land")) {
+      ground(D::HardLand);
+      p.ahead = x;
+      return p;
+    }
+    // A 4 m ladder: up at 1 m/s, a slide down.
+    if (segment(4.f, "ladder up")) {
+      p.movement.detailed = D::Ladder;
+      p.ahead = x;
+      p.up = 1.f * t;
+      return p;
+    }
+    if (segment(1.5f, "ladder slide")) {
+      p.movement.detailed = D::LadderSlide;
+      p.ahead = x;
+      p.up = 4.f - 4.f * t / 1.5f;
+      return p;
+    }
+    // Swimming on the surface, diving 2.5 m, climbing out.
+    if (segment(4.f, "swim")) {
+      p.movement.swim = S::Surface;
+      p.ahead = x + 1.2f * t;
+      return p;
+    }
+    x += 4.8f;
+    if (segment(5.f, "dive")) {
+      p.movement.swim = S::Diving;
+      p.ahead = x + 1.f * t;
+      p.up = -2.5f * std::sin(std::numbers::pi_v<float> * t / 5.f);
+      return p;
+    }
+    x += 5.f;
+    if (segment(1.f, "out of the water")) {
+      p.movement.swim = S::Climbing;
+      p.ahead = x + 0.5f * t;
+      p.up = 0.5f * std::sin(std::numbers::pi_v<float> * t);
+      return p;
+    }
+    x += 0.5f;
+    // An elevator: 6 m up, 6 m down, standing.
+    if (segment(8.f, "elevator")) {
+      ground(D::Stand);
+      p.movement.elevator = t > 0.5f && t < 7.5f;
+      p.ahead = x;
+      p.up = t < 4.f ? 6.f * std::clamp((t - 0.5f) / 3.f, 0.f, 1.f)
+                     : 6.f * std::clamp((7.5f - t) / 3.f, 0.f, 1.f);
+      return p;
+    }
+    // A sprint into a slide, then a dodge.
+    if (segment(1.5f, "sprint")) {
+      ground(D::Sprint);
+      p.stance = 2;
+      p.ahead = x + 6.f * t;
+      return p;
+    }
+    x += 9.f;
+    if (segment(1.f, "slide")) {
+      ground(D::Slide);
+      p.stance = 9;
+      p.ahead = x + 6.f * t - 2.5f * t * t;
+      return p;
+    }
+    x += 3.5f;
+    if (segment(0.3f, "dodge")) {
+      ground(D::Dodge);
+      p.stance = 6;
+      p.ahead = x + 8.f * t;
+      return p;
+    }
+    x += 2.4f;
+    // Standing a moment at the end, then (next lap) back at the start.
+    segment(m_end, "rest");
+    ground(D::Stand);
+    p.ahead = x;
+    return p;
+  }
 
-  private:
-    float m_end{3.f + 0.9f + 0.3f + 1.6f + 0.3f + 0.8f + 2.f + 0.55f + 0.4f + 4.f + 1.5f + 4.f +
-                5.f + 1.f + 8.f + 1.5f + 1.f + 0.3f + 2.f};
+private:
+  float m_end{3.f + 0.9f + 0.3f + 1.6f + 0.3f + 0.8f + 2.f + 0.55f + 0.4f + 4.f + 1.5f + 4.f + 5.f +
+              1.f + 8.f + 1.5f + 1.f + 0.3f + 2.f};
+};
+
+// A scripted host story (--story FILE): one step per line,
+//   SECONDS VERB ARGS...    seconds after a guest is in the session
+// Verbs (hashes are journal path hashes as the game logs them, `cmd story
+// dump`; names are CNames or TweakDB records by name):
+//   snapshot HASH:STATE ...      the journal as a joiner gets it
+//   journal HASH STATE [notify]  one change (notify: the toast and sound)
+//   tracked HASH                 the tracked entry
+//   call CONTACT PHASE           the host's call: 1 ringing, 2 started, 3 ended
+//   line TYPE SPEAKER TEXT...    a dialogue line (type 1 regular, 2 holocall;
+//                                SPEAKER: host for our V, or a name)
+//   hide                         the last line goes
+//   hub ID TITLE|OPTION|...      a choice hub (no options: closed)
+//   pick ID INDEX                the host picks (every hub closes)
+//   tier N                       the host's scene tier (1..5)
+//   reward RECORD [QUESTHASH]    a quest reward for every guest
+//   effect RECORD on|off         a story status effect on the host's V
+//                                (a relic glitch: BaseStatusEffect.JohnnySicknessLow)
+//   replacer on|off              the host plays as Johnny (StoryState flag)
+//   private on|off               the host is in a private scene (romance,
+//                                a minor one-to-one chat: StoryState flag)
+//   scene NAME [TIER]            a story scene plays on the host (scene
+//                                replay; NAME: its resource path or a
+//                                number; TIER: the host's, 4 by default);
+//                                scene off: it is over; scene private: it
+//                                is one nobody watches
+//   cast NPC[:ghost][:hidden] ...  its actors among the NPCs the host shares
+//                                (own: the --npc NPC), standing in front of
+//                                the mock player; with --pose or in mirror
+//                                and front modes, each takes the pose the
+//                                mock player sends (ActorPose)
+//   skip on|off                  the host fast-forwards the scene
+//   voice ID SPEAKER [SECONDS] [call]  a voiced line begins (ID: its string
+//                                id; SPEAKER: host, an NPC id or own)
+//   cut ID                       it is cut before its end
+//   world PLACE [moved] [settled] the host's V in another world (Elsewhere):
+//                                cyberspace, braindance, johnny, other, or
+//                                city to come back; moved: the scene took it
+//                                away from its body, which stays where the
+//                                mock player was (settled: sitting, lying)
+//   activity KIND [anchored] [lying] [frozen]  the host's V busy
+//                                (docs/architecture/activities.md): workspot,
+//                                sleep, screen, minigame, shop, menu, photo,
+//                                contest, or none; anchored where it stands
+//   skip HOURS [wait|sleep|quest] the host asks the others to skip HOURS
+//                                (quest: its story moved the clock: said)
+// Lines starting with # are comments.
+struct StoryStep {
+  double at{};
+  std::string verb;
+  std::vector<std::string> args;
+  std::string rest; // everything after the verb
+};
+
+std::vector<StoryStep> LoadStory(const std::string &path, std::string &error) {
+  std::vector<StoryStep> steps;
+  std::ifstream in(path);
+  if (!in) {
+    error = std::format("cannot read {}", path);
+    return steps;
+  }
+  std::string line;
+  for (int number = 1; std::getline(in, line); ++number) {
+    if (line.empty() || line[0] == '#')
+      continue;
+    std::istringstream words(line);
+    StoryStep step;
+    if (!(words >> step.at >> step.verb)) {
+      error = std::format("{}:{}: expected SECONDS VERB", path, number);
+      return {};
+    }
+    std::getline(words, step.rest);
+    if (const auto first = step.rest.find_first_not_of(' '); first != std::string::npos)
+      step.rest = step.rest.substr(first);
+    std::istringstream rest(step.rest);
+    for (std::string word; rest >> word;)
+      step.args.push_back(word);
+    steps.push_back(std::move(step));
+  }
+  return steps;
+}
+
+std::uint32_t Hash32(const std::string &text) {
+  return static_cast<std::uint32_t>(std::stoul(text, nullptr, 0));
+}
+
+tandem::proto::Place PlaceNamed(const std::string &name) {
+  using tandem::proto::Place;
+  if (name == "cyberspace")
+    return Place::Cyberspace;
+  if (name == "braindance")
+    return Place::Braindance;
+  if (name == "johnny")
+    return Place::Johnny;
+  if (name == "other")
+    return Place::Other;
+  return Place::City;
+}
+
+const char *PlaceName(tandem::proto::Place place) {
+  constexpr const char *names[] = {"the city", "cyberspace", "a braindance", "Johnny",
+                                   "another body"};
+  const auto index = static_cast<std::size_t>(place);
+  return index < std::size(names) ? names[index] : "?";
+}
+
+// The scene the scripted host plays (scene replay): what its game would
+// sample, said through the same Stage as the game's (core/scene.hpp).
+struct SceneScript {
+  tandem::scene::Stage stage;
+  tandem::scene::HostSample sample;
+  tandem::proto::NpcId own{}; // "own" in a .story file: the --npc NPC
+};
+
+// A scene step (scene, cast, skip, voice, cut): what the host sends for it.
+// nullopt: not a scene step.
+std::optional<std::vector<tandem::proto::Message>>
+SceneMessages(const StoryStep &step, SceneScript &script, const tandem::proto::Vec3 &host,
+              float hostYaw, tandem::proto::PlayerId hostPlayer, std::uint64_t hostNowUs) {
+  namespace proto = tandem::proto;
+  const auto &a = step.args;
+  const auto npcOf = [&](const std::string &word) -> proto::NpcId {
+    return word == "own" ? script.own : static_cast<proto::NpcId>(std::stoul(word, nullptr, 0));
+  };
+  try {
+    if (step.verb == "scene" && !a.empty()) {
+      script.sample.host = host;
+      script.sample.hostYaw = hostYaw;
+      script.sample.isPrivate = a[0] == "private";
+      if (a[0] == "off") {
+        script.sample = {};
+      } else {
+        // A number, or a resource path hashed as the game hashes it (FNV-1a).
+        const bool number = a[0].find_first_not_of("0123456789abcdefxABCDEFX") == std::string::npos;
+        script.sample.scene = number ? std::stoull(a[0], nullptr, 0) : CName(a[0]);
+        script.sample.tier = static_cast<std::uint8_t>(a.size() > 1 ? std::stoi(a[1]) : 4);
+        script.sample.rate = 1.f;
+      }
+      return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "cast") {
+      script.sample.host = host;
+      script.sample.hostYaw = hostYaw;
+      script.sample.actors.clear();
+      // In an arc 2.5 m in front of the mock player, facing it.
+      const float spread = 0.7f;
+      for (std::size_t i = 0; i < a.size(); ++i) {
+        tandem::scene::ActorSample actor;
+        auto word = a[i];
+        actor.flags = proto::kActorPosed;
+        for (auto colon = word.rfind(':'); colon != std::string::npos; colon = word.rfind(':')) {
+          const auto flag = word.substr(colon + 1);
+          if (flag == "ghost")
+            actor.flags |= proto::kActorGhost;
+          else if (flag == "hidden")
+            actor.flags |= proto::kActorHidden;
+          word.resize(colon);
+        }
+        actor.npc = npcOf(word);
+        const float angle =
+            hostYaw + (static_cast<float>(i) - static_cast<float>(a.size() - 1) / 2.f) * spread;
+        actor.position = {host.x - std::sin(angle) * 2.5f, host.y + std::cos(angle) * 2.5f, host.z};
+        script.sample.actors.push_back(actor);
+      }
+      return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "skip" && !a.empty()) {
+      script.sample.rate = a[0] == "on" ? 4.f : 1.f;
+      return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "voice" && a.size() >= 2) {
+      std::uint8_t flags = 0;
+      float seconds = 4.f;
+      for (std::size_t i = 2; i < a.size(); ++i) {
+        if (a[i] == "call")
+          flags |= proto::kVoiceHolocall;
+        else
+          seconds = std::stof(a[i]);
+      }
+      const bool byHost = a[1] == "host";
+      std::vector<proto::Message> out;
+      if (auto line =
+              script.stage.Line(std::stoull(a[0], nullptr, 0), byHost ? 0 : npcOf(a[1]),
+                                byHost ? hostPlayer : proto::kNoPlayer, seconds, flags, hostNowUs))
+        out.push_back(*line);
+      return out;
+    }
+    if (step.verb == "cut" && !a.empty()) {
+      std::vector<proto::Message> out;
+      if (auto line = script.stage.Hide(std::stoull(a[0], nullptr, 0), hostNowUs))
+        out.push_back(*line);
+      return out;
+    }
+  } catch (const std::exception &) {
+    return std::vector<proto::Message>{};
+  }
+  return std::nullopt;
+}
+
+// One story step as the host's game would send it.
+std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::uint64_t &lastLine,
+                                                   tandem::proto::PlayerId host) {
+  namespace proto = tandem::proto;
+  const auto &a = step.args;
+  try {
+    if (step.verb == "snapshot") {
+      proto::Journal journal{.snapshot = true};
+      for (const auto &pair : a) {
+        const auto colon = pair.find(':');
+        journal.entries.push_back({Hash32(pair.substr(0, colon)),
+                                   static_cast<std::uint8_t>(std::stoi(pair.substr(colon + 1))),
+                                   0});
+      }
+      return journal;
+    }
+    if (step.verb == "journal" && a.size() >= 2)
+      return proto::Journal{.entries = {{Hash32(a[0]), static_cast<std::uint8_t>(std::stoi(a[1])),
+                                         static_cast<std::uint8_t>(a.size() > 2)}}};
+    if (step.verb == "tracked" && !a.empty())
+      return proto::Tracked{Hash32(a[0])};
+    if (step.verb == "call" && a.size() >= 2)
+      return proto::PhoneCall{.contact = CName(a[0]),
+                              .phase = static_cast<std::uint8_t>(std::stoi(a[1])),
+                              .mode = 1,
+                              .flags = proto::kCallRejectable | proto::kCallShowAvatar};
+    if (step.verb == "line" && a.size() >= 3) {
+      proto::Subtitle line{
+          .line = ++lastLine, .type = static_cast<std::uint8_t>(std::stoi(a[0])), .duration = 4.f};
+      if (a[1] == "host")
+        line.speakerPlayer = host;
+      else
+        line.speakerName = a[1];
+      const auto text = step.rest.find(a[1]);
+      line.text = step.rest.substr(text + a[1].size() + 1);
+      return line;
+    }
+    if (step.verb == "hide")
+      return proto::Subtitle{.line = lastLine, .flags = proto::kLineHide};
+    if (step.verb == "hub" && !a.empty()) {
+      proto::ChoiceHub hub{.hub = std::stoi(a[0])};
+      const auto rest = step.rest.substr(step.rest.find(a[0]) + a[0].size());
+      if (const auto bar = rest.find('|'); bar != std::string::npos) {
+        hub.title = rest.substr(rest.find_first_not_of(' '), bar - rest.find_first_not_of(' '));
+        std::size_t start = bar + 1;
+        for (;;) {
+          const auto next = rest.find('|', start);
+          hub.options.push_back({rest.substr(start, next - start), 0});
+          if (next == std::string::npos)
+            break;
+          start = next + 1;
+        }
+      }
+      return hub;
+    }
+    if (step.verb == "pick" && a.size() >= 2)
+      return proto::ChoiceCursor{.hub = std::stoi(a[0]),
+                                 .index = static_cast<std::int8_t>(std::stoi(a[1])),
+                                 .kind = proto::kCursorPicked};
+    if (step.verb == "tier" && !a.empty())
+      return proto::StoryState{.tier = static_cast<std::uint8_t>(std::stoi(a[0]))};
+    if (step.verb == "private" && !a.empty())
+      return proto::StoryState{.tier = static_cast<std::uint8_t>(a[0] == "on" ? 3 : 1),
+                               .flags = a[0] == "on" ? proto::kStoryPrivate : std::uint8_t{0}};
+    if (step.verb == "replacer" && !a.empty())
+      return proto::StoryState{.tier = 1,
+                               .flags = a[0] == "on" ? proto::kStoryReplacer : std::uint8_t{0}};
+    if (step.verb == "effect" && a.size() >= 2)
+      return proto::StoryEffect{.effect = TweakDBID(a[0]), .applied = a[1] == "on"};
+    if (step.verb == "world" && !a.empty()) {
+      proto::Elsewhere away{.place = PlaceNamed(a[0])};
+      for (std::size_t i = 1; i < a.size(); ++i) {
+        if (a[i] == "moved")
+          away.flags |= proto::kElsewhereMoved;
+        else if (a[i] == "settled")
+          away.flags |= proto::kElsewhereSettled;
+      }
+      return away;
+    }
+    if (step.verb == "activity" && !a.empty()) {
+      const auto kind = ActivityNamed(a[0]);
+      if (!kind)
+        return std::nullopt;
+      proto::Activity busy{.kind = *kind};
+      for (std::size_t i = 1; i < a.size(); ++i) {
+        if (a[i] == "anchored")
+          busy.flags |= proto::kActivityAnchored;
+        else if (a[i] == "lying")
+          busy.flags |= proto::kActivityLying;
+        else if (a[i] == "frozen")
+          busy.flags |= proto::kActivityFrozen;
+      }
+      return busy;
+    }
+    if (step.verb == "skip" && !a.empty()) {
+      const auto reason = a.size() > 1 ? SkipReasonNamed(a[1]) : proto::SkipReason::Wait;
+      if (!reason)
+        return std::nullopt;
+      return proto::TimeSkip{.reason = *reason, .toSeconds = std::stoi(a[0]) * 3600};
+    }
+    if (step.verb == "reward" && !a.empty())
+      return proto::QuestReward{.reward = TweakDBID(a[0]),
+                                .quest = a.size() > 1 ? Hash32(a[1]) : 0};
+  } catch (const std::exception &) {
+  }
+  return std::nullopt;
+}
+
+// A story message heard, in one line (for the scenarios' expect_peer).
+std::string Describe(const tandem::proto::Message &message) {
+  namespace proto = tandem::proto;
+  if (const auto *journal = std::get_if<proto::Journal>(&message))
+    return std::format("journal: {} {} entries", journal->snapshot ? "snapshot of" : "change of",
+                       journal->entries.size());
+  if (const auto *tracked = std::get_if<proto::Tracked>(&message))
+    return std::format("tracked: {}", tracked->hash);
+  if (const auto *call = std::get_if<proto::PhoneCall>(&message))
+    return std::format("call: contact {:#x} phase {} answered by {}{}", call->contact, call->phase,
+                       call->answeredBy, call->flags & proto::kCallRejected ? " (rejected)" : "");
+  if (const auto *action = std::get_if<proto::PhoneAction>(&message))
+    return std::format("phone: action {} on {:#x} by player {}", action->action, action->contact,
+                       action->player);
+  if (const auto *reply = std::get_if<proto::PhoneReply>(&message))
+    return std::format("phone: reply {} by player {}", reply->choiceEntry, reply->player);
+  if (const auto *line = std::get_if<proto::Subtitle>(&message))
+    return (line->flags & proto::kLineHide)
+               ? std::format("line: {} hidden", line->line)
+               : std::format("line: type {} from {}: {}", line->type,
+                             line->speakerPlayer ? std::format("player {}", line->speakerPlayer)
+                                                 : line->speakerName,
+                             line->text);
+  if (const auto *hub = std::get_if<proto::ChoiceHub>(&message))
+    return hub->options.empty() ? std::format("hub: {} closed", hub->hub)
+                                : std::format("hub: {} '{}' with {} options", hub->hub, hub->title,
+                                              hub->options.size());
+  if (const auto *cursor = std::get_if<proto::ChoiceCursor>(&message))
+    return std::format("cursor: player {} hub {} index {} kind {}", cursor->player, cursor->hub,
+                       cursor->index, cursor->kind);
+  if (const auto *state = std::get_if<proto::StoryState>(&message))
+    return std::format("story state: player {} tier {} flags {}", state->player, state->tier,
+                       state->flags);
+  if (const auto *reward = std::get_if<proto::QuestReward>(&message))
+    return std::format("reward: {:#x} (quest {})", reward->reward, reward->quest);
+  if (const auto *effect = std::get_if<proto::StoryEffect>(&message))
+    return std::format("story effect: {:#x} {} on player {}", effect->effect,
+                       effect->applied ? "on" : "off", effect->player);
+  if (const auto *scene = std::get_if<proto::SceneState>(&message))
+    return scene->scene == 0
+               ? std::format("scene: play {} over{}", scene->play,
+                             scene->flags & proto::kSceneInterrupted ? " (interrupted)" : "")
+               : std::format("scene: {:#x} play {} tier {} rate {:.1f} flags {:#x}{}", scene->scene,
+                             scene->play, scene->tier, scene->rate, scene->flags,
+                             scene->flags & proto::kSceneStaged
+                                 ? std::format(" staged at {:.1f} {:.1f} {:.1f} ({:.1f} m)",
+                                               scene->anchor.x, scene->anchor.y, scene->anchor.z,
+                                               scene->radius)
+                                 : "");
+  if (const auto *cast = std::get_if<proto::SceneCast>(&message)) {
+    std::string who;
+    for (const auto &actor : cast->actors)
+      who += std::format(" {}{}", actor.npc,
+                         actor.flags & proto::kActorGhost
+                             ? (actor.flags & proto::kActorHidden ? " (ghost, hidden)" : " (ghost)")
+                             : "");
+    return std::format("scene cast: play {}, {} actor(s):{}", cast->play, cast->actors.size(), who);
+  }
+  if (const auto *line = std::get_if<proto::SceneLine>(&message))
+    return std::format("scene line: {} {} by {} ({:.1f} s, play {})", line->line,
+                       line->flags & proto::kVoiceStop ? "cut" : "voiced",
+                       line->speakerPlayer ? std::format("player {}", line->speakerPlayer)
+                                           : std::format("npc {}", line->speaker),
+                       line->duration, line->play);
+  return "story: ?";
+}
+
+// --anims: NPC animation states and shots by time, for the replayed NPCs.
+// One line per change, `#` comments:
+//   SECONDS NPC HIGH UPPER STANCE [weapon=RECORD] [target=PLAYER] [shoot=N]
+//           [workspot=HASH:ENTRY:ANIM]
+// SECONDS count from the replay's start. NPC is a replayed NPC's id or *
+// (every replayed NPC out then); HIGH, UPPER and STANCE are the game's state
+// names (gamedataNPCHighLevelState, gamedataNPCUpperBodyState,
+// gamedataNPCStanceState) or numbers; shoot=N fires N shots, five a second;
+// workspot takes the resource path hash (as the game logs it, 0x… or
+// decimal), the tree entry and the animation name. With a script, the
+// recording's own animation states and shots are not sent: the script alone
+// decides, whichever NPCs were recorded.
+class NpcAnimScript {
+public:
+  struct Line {
+    std::uint64_t atUs{};
+    std::optional<tandem::proto::NpcId> npc; // none: every NPC
+    tandem::proto::NpcAnim anim;
+    int shots{};
   };
 
-  // A scripted host story (--story FILE): one step per line,
-  //   SECONDS VERB ARGS...    seconds after a guest is in the session
-  // Verbs (hashes are journal path hashes as the game logs them, `cmd story
-  // dump`; names are CNames or TweakDB records by name):
-  //   snapshot HASH:STATE ...      the journal as a joiner gets it
-  //   journal HASH STATE [notify]  one change (notify: the toast and sound)
-  //   tracked HASH                 the tracked entry
-  //   call CONTACT PHASE           the host's call: 1 ringing, 2 started, 3 ended
-  //   line TYPE SPEAKER TEXT...    a dialogue line (type 1 regular, 2 holocall;
-  //                                SPEAKER: host for our V, or a name)
-  //   hide                         the last line goes
-  //   hub ID TITLE|OPTION|...      a choice hub (no options: closed)
-  //   pick ID INDEX                the host picks (every hub closes)
-  //   tier N                       the host's scene tier (1..5)
-  //   reward RECORD [QUESTHASH]    a quest reward for every guest
-  //   effect RECORD on|off         a story status effect on the host's V
-  //                                (a relic glitch: BaseStatusEffect.JohnnySicknessLow)
-  //   replacer on|off              the host plays as Johnny (StoryState flag)
-  //   private on|off               the host is in a private scene (romance,
-  //                                a minor one-to-one chat: StoryState flag)
-  //   scene NAME [TIER]            a story scene plays on the host (scene
-  //                                replay; NAME: its resource path or a
-  //                                number; TIER: the host's, 4 by default);
-  //                                scene off: it is over; scene private: it
-  //                                is one nobody watches
-  //   cast NPC[:ghost][:hidden] ...  its actors among the NPCs the host shares
-  //                                (own: the --npc NPC), standing in front of
-  //                                the mock player; with --pose or in mirror
-  //                                and front modes, each takes the pose the
-  //                                mock player sends (ActorPose)
-  //   skip on|off                  the host fast-forwards the scene
-  //   voice ID SPEAKER [SECONDS] [call]  a voiced line begins (ID: its string
-  //                                id; SPEAKER: host, an NPC id or own)
-  //   cut ID                       it is cut before its end
-  //   world PLACE [moved] [settled] the host's V in another world (Elsewhere):
-  //                                cyberspace, braindance, johnny, other, or
-  //                                city to come back; moved: the scene took it
-  //                                away from its body, which stays where the
-  //                                mock player was (settled: sitting, lying)
-  //   activity KIND [anchored] [lying] [frozen]  the host's V busy
-  //                                (docs/architecture/activities.md): workspot,
-  //                                sleep, screen, minigame, shop, menu, photo,
-  //                                contest, or none; anchored where it stands
-  //   skip HOURS [wait|sleep|quest] the host asks the others to skip HOURS
-  //                                (quest: its story moved the clock: said)
-  // Lines starting with # are comments.
-  struct StoryStep {
-    double at{};
-    std::string verb;
-    std::vector<std::string> args;
-    std::string rest; // everything after the verb
-  };
-
-  std::vector<StoryStep> LoadStory(const std::string &path, std::string &error) {
-    std::vector<StoryStep> steps;
+  bool Load(const std::string &path, std::string &error) {
     std::ifstream in(path);
     if (!in) {
       error = std::format("cannot read {}", path);
-      return steps;
+      return false;
     }
-    std::string line;
-    for (int number = 1; std::getline(in, line); ++number) {
-      if (line.empty() || line[0] == '#')
+    std::string text;
+    for (int number = 1; std::getline(in, text); ++number) {
+      if (const auto hash = text.find('#'); hash != std::string::npos)
+        text.resize(hash);
+      std::vector<std::string> words;
+      for (std::size_t at = 0; at < text.size();) {
+        const auto start = text.find_first_not_of(" \t\r", at);
+        if (start == std::string::npos)
+          break;
+        const auto end = text.find_first_of(" \t\r", start);
+        words.push_back(text.substr(start, end - start));
+        at = end == std::string::npos ? text.size() : end;
+      }
+      if (words.empty())
         continue;
-      std::istringstream words(line);
-      StoryStep step;
-      if (!(words >> step.at >> step.verb)) {
-        error = std::format("{}:{}: expected SECONDS VERB", path, number);
-        return {};
+      Line line;
+      if (words.size() < 5 || !ParseLine(words, line)) {
+        error =
+            std::format("{}:{}: not SECONDS NPC HIGH UPPER STANCE [key=value...]", path, number);
+        return false;
       }
-      std::getline(words, step.rest);
-      if (const auto first = step.rest.find_first_not_of(' '); first != std::string::npos)
-        step.rest = step.rest.substr(first);
-      std::istringstream rest(step.rest);
-      for (std::string word; rest >> word;)
-        step.args.push_back(word);
-      steps.push_back(std::move(step));
+      m_lines.push_back(line);
     }
-    return steps;
+    std::ranges::stable_sort(m_lines, {}, &Line::atUs);
+    return true;
   }
 
-  std::uint32_t Hash32(const std::string &text) {
-    return static_cast<std::uint32_t>(std::stoul(text, nullptr, 0));
+  std::size_t Size() const { return m_lines.size(); }
+  const std::vector<Line> &Lines() const { return m_lines; }
+
+private:
+  static std::optional<int> Number(std::string_view text) {
+    int value = 0;
+    const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (ec != std::errc{} || end != text.data() + text.size())
+      return std::nullopt;
+    return value;
   }
-
-  tandem::proto::Place PlaceNamed(const std::string &name) {
-    using tandem::proto::Place;
-    if (name == "cyberspace")
-      return Place::Cyberspace;
-    if (name == "braindance")
-      return Place::Braindance;
-    if (name == "johnny")
-      return Place::Johnny;
-    if (name == "other")
-      return Place::Other;
-    return Place::City;
-  }
-
-  const char *PlaceName(tandem::proto::Place place) {
-    constexpr const char *names[] = {"the city", "cyberspace", "a braindance", "Johnny",
-                                     "another body"};
-    const auto index = static_cast<std::size_t>(place);
-    return index < std::size(names) ? names[index] : "?";
-  }
-
-  // The scene the scripted host plays (scene replay): what its game would
-  // sample, said through the same Stage as the game's (core/scene.hpp).
-  struct SceneScript {
-    tandem::scene::Stage stage;
-    tandem::scene::HostSample sample;
-    tandem::proto::NpcId own{}; // "own" in a .story file: the --npc NPC
-  };
-
-  // A scene step (scene, cast, skip, voice, cut): what the host sends for it.
-  // nullopt: not a scene step.
-  std::optional<std::vector<tandem::proto::Message>> SceneMessages(
-      const StoryStep &step, SceneScript &script, const tandem::proto::Vec3 &host, float hostYaw,
-      tandem::proto::PlayerId hostPlayer, std::uint64_t hostNowUs) {
-    namespace proto = tandem::proto;
-    const auto &a = step.args;
-    const auto npcOf = [&](const std::string &word) -> proto::NpcId {
-      return word == "own" ? script.own : static_cast<proto::NpcId>(std::stoul(word, nullptr, 0));
-    };
-    try {
-      if (step.verb == "scene" && !a.empty()) {
-        script.sample.host = host;
-        script.sample.hostYaw = hostYaw;
-        script.sample.isPrivate = a[0] == "private";
-        if (a[0] == "off") {
-          script.sample = {};
-        } else {
-          // A number, or a resource path hashed as the game hashes it (FNV-1a).
-          const bool number =
-              a[0].find_first_not_of("0123456789abcdefxABCDEFX") == std::string::npos;
-          script.sample.scene = number ? std::stoull(a[0], nullptr, 0) : CName(a[0]);
-          script.sample.tier = static_cast<std::uint8_t>(a.size() > 1 ? std::stoi(a[1]) : 4);
-          script.sample.rate = 1.f;
-        }
-        return script.stage.Update(script.sample, hostNowUs);
-      }
-      if (step.verb == "cast") {
-        script.sample.host = host;
-        script.sample.hostYaw = hostYaw;
-        script.sample.actors.clear();
-        // In an arc 2.5 m in front of the mock player, facing it.
-        const float spread = 0.7f;
-        for (std::size_t i = 0; i < a.size(); ++i) {
-          tandem::scene::ActorSample actor;
-          auto word = a[i];
-          actor.flags = proto::kActorPosed;
-          for (auto colon = word.rfind(':'); colon != std::string::npos; colon = word.rfind(':')) {
-            const auto flag = word.substr(colon + 1);
-            if (flag == "ghost")
-              actor.flags |= proto::kActorGhost;
-            else if (flag == "hidden")
-              actor.flags |= proto::kActorHidden;
-            word.resize(colon);
-          }
-          actor.npc = npcOf(word);
-          const float angle =
-              hostYaw + (static_cast<float>(i) - static_cast<float>(a.size() - 1) / 2.f) * spread;
-          actor.position = {host.x - std::sin(angle) * 2.5f, host.y + std::cos(angle) * 2.5f,
-                            host.z};
-          script.sample.actors.push_back(actor);
-        }
-        return script.stage.Update(script.sample, hostNowUs);
-      }
-      if (step.verb == "skip" && !a.empty()) {
-        script.sample.rate = a[0] == "on" ? 4.f : 1.f;
-        return script.stage.Update(script.sample, hostNowUs);
-      }
-      if (step.verb == "voice" && a.size() >= 2) {
-        std::uint8_t flags = 0;
-        float seconds = 4.f;
-        for (std::size_t i = 2; i < a.size(); ++i) {
-          if (a[i] == "call")
-            flags |= proto::kVoiceHolocall;
-          else
-            seconds = std::stof(a[i]);
-        }
-        const bool byHost = a[1] == "host";
-        std::vector<proto::Message> out;
-        if (auto line = script.stage.Line(std::stoull(a[0], nullptr, 0), byHost ? 0 : npcOf(a[1]),
-                                          byHost ? hostPlayer : proto::kNoPlayer, seconds, flags,
-                                          hostNowUs))
-          out.push_back(*line);
-        return out;
-      }
-      if (step.verb == "cut" && !a.empty()) {
-        std::vector<proto::Message> out;
-        if (auto line = script.stage.Hide(std::stoull(a[0], nullptr, 0), hostNowUs))
-          out.push_back(*line);
-        return out;
-      }
-    } catch (const std::exception &) {
-      return std::vector<proto::Message>{};
+  // A state by its enum value's name or number.
+  static std::optional<std::uint8_t> State(std::string_view text,
+                                           std::initializer_list<std::string_view> names) {
+    if (const auto number = Number(text))
+      return static_cast<std::uint8_t>(*number);
+    std::uint8_t index = 0;
+    for (const auto name : names) {
+      if (name == text)
+        return index;
+      ++index;
     }
     return std::nullopt;
   }
 
-  // One story step as the host's game would send it.
-  std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::uint64_t &lastLine,
-                                                     tandem::proto::PlayerId host) {
-    namespace proto = tandem::proto;
-    const auto &a = step.args;
-    try {
-      if (step.verb == "snapshot") {
-        proto::Journal journal{.snapshot = true};
-        for (const auto &pair : a) {
-          const auto colon = pair.find(':');
-          journal.entries.push_back({Hash32(pair.substr(0, colon)),
-                                     static_cast<std::uint8_t>(std::stoi(pair.substr(colon + 1))),
-                                     0});
-        }
-        return journal;
-      }
-      if (step.verb == "journal" && a.size() >= 2)
-        return proto::Journal{.entries = {{Hash32(a[0]), static_cast<std::uint8_t>(std::stoi(a[1])),
-                                           static_cast<std::uint8_t>(a.size() > 2)}}};
-      if (step.verb == "tracked" && !a.empty())
-        return proto::Tracked{Hash32(a[0])};
-      if (step.verb == "call" && a.size() >= 2)
-        return proto::PhoneCall{.contact = CName(a[0]),
-                                .phase = static_cast<std::uint8_t>(std::stoi(a[1])),
-                                .mode = 1,
-                                .flags = proto::kCallRejectable | proto::kCallShowAvatar};
-      if (step.verb == "line" && a.size() >= 3) {
-        proto::Subtitle line{.line = ++lastLine,
-                             .type = static_cast<std::uint8_t>(std::stoi(a[0])),
-                             .duration = 4.f};
-        if (a[1] == "host")
-          line.speakerPlayer = host;
-        else
-          line.speakerName = a[1];
-        const auto text = step.rest.find(a[1]);
-        line.text = step.rest.substr(text + a[1].size() + 1);
-        return line;
-      }
-      if (step.verb == "hide")
-        return proto::Subtitle{.line = lastLine, .flags = proto::kLineHide};
-      if (step.verb == "hub" && !a.empty()) {
-        proto::ChoiceHub hub{.hub = std::stoi(a[0])};
-        const auto rest = step.rest.substr(step.rest.find(a[0]) + a[0].size());
-        if (const auto bar = rest.find('|'); bar != std::string::npos) {
-          hub.title = rest.substr(rest.find_first_not_of(' '), bar - rest.find_first_not_of(' '));
-          std::size_t start = bar + 1;
-          for (;;) {
-            const auto next = rest.find('|', start);
-            hub.options.push_back({rest.substr(start, next - start), 0});
-            if (next == std::string::npos)
-              break;
-            start = next + 1;
-          }
-        }
-        return hub;
-      }
-      if (step.verb == "pick" && a.size() >= 2)
-        return proto::ChoiceCursor{.hub = std::stoi(a[0]),
-                                   .index = static_cast<std::int8_t>(std::stoi(a[1])),
-                                   .kind = proto::kCursorPicked};
-      if (step.verb == "tier" && !a.empty())
-        return proto::StoryState{.tier = static_cast<std::uint8_t>(std::stoi(a[0]))};
-      if (step.verb == "private" && !a.empty())
-        return proto::StoryState{.tier = static_cast<std::uint8_t>(a[0] == "on" ? 3 : 1),
-                                 .flags = a[0] == "on" ? proto::kStoryPrivate : std::uint8_t{0}};
-      if (step.verb == "replacer" && !a.empty())
-        return proto::StoryState{.tier = 1,
-                                 .flags = a[0] == "on" ? proto::kStoryReplacer : std::uint8_t{0}};
-      if (step.verb == "effect" && a.size() >= 2)
-        return proto::StoryEffect{.effect = TweakDBID(a[0]), .applied = a[1] == "on"};
-      if (step.verb == "world" && !a.empty()) {
-        proto::Elsewhere away{.place = PlaceNamed(a[0])};
-        for (std::size_t i = 1; i < a.size(); ++i) {
-          if (a[i] == "moved")
-            away.flags |= proto::kElsewhereMoved;
-          else if (a[i] == "settled")
-            away.flags |= proto::kElsewhereSettled;
-        }
-        return away;
-      }
-      if (step.verb == "activity" && !a.empty()) {
-        const auto kind = ActivityNamed(a[0]);
-        if (!kind)
-          return std::nullopt;
-        proto::Activity busy{.kind = *kind};
-        for (std::size_t i = 1; i < a.size(); ++i) {
-          if (a[i] == "anchored")
-            busy.flags |= proto::kActivityAnchored;
-          else if (a[i] == "lying")
-            busy.flags |= proto::kActivityLying;
-          else if (a[i] == "frozen")
-            busy.flags |= proto::kActivityFrozen;
-        }
-        return busy;
-      }
-      if (step.verb == "skip" && !a.empty()) {
-        const auto reason = a.size() > 1 ? SkipReasonNamed(a[1]) : proto::SkipReason::Wait;
-        if (!reason)
-          return std::nullopt;
-        return proto::TimeSkip{.reason = *reason, .toSeconds = std::stoi(a[0]) * 3600};
-      }
-      if (step.verb == "reward" && !a.empty())
-        return proto::QuestReward{.reward = TweakDBID(a[0]),
-                                  .quest = a.size() > 1 ? Hash32(a[1]) : 0};
-    } catch (const std::exception &) {
+  static bool ParseLine(const std::vector<std::string> &words, Line &line) {
+    double seconds = 0;
+    if (std::from_chars(words[0].data(), words[0].data() + words[0].size(), seconds).ec !=
+        std::errc{})
+      return false;
+    line.atUs = static_cast<std::uint64_t>(seconds * 1e6);
+    if (words[1] != "*") {
+      const auto npc = Number(words[1]);
+      if (!npc)
+        return false;
+      line.npc = static_cast<tandem::proto::NpcId>(*npc);
     }
-    return std::nullopt;
+    const auto high = State(words[2], {"Alerted", "Any", "Combat", "Dead", "Fear", "Relaxed",
+                                       "Stealth", "Unconscious", "Wounded"});
+    const auto upper = State(words[3], {"Aim", "Any", "Attack", "ChargedAttack", "Defend", "Equip",
+                                        "Normal", "Parry", "Reload", "Shoot", "Taunt"});
+    const auto stance =
+        State(words[4], {"Any", "Cover", "Crouch", "Stand", "Swim", "Vehicle", "VehicleWindow"});
+    if (!high || !upper || !stance)
+      return false;
+    line.anim.highLevel = *high;
+    line.anim.upperBody = *upper;
+    line.anim.stance = *stance;
+    for (std::size_t i = 5; i < words.size(); ++i) {
+      const auto equals = words[i].find('=');
+      if (equals == std::string::npos)
+        return false;
+      const std::string_view key(words[i].data(), equals);
+      const std::string_view value(words[i].data() + equals + 1, words[i].size() - equals - 1);
+      if (key == "weapon") {
+        line.anim.weapon = TweakDBID(value);
+        line.anim.flags |= tandem::proto::kNpcAnimWeaponDrawn;
+      } else if (key == "target") {
+        const auto player = Number(value);
+        if (!player)
+          return false;
+        line.anim.target = static_cast<std::uint32_t>(*player);
+      } else if (key == "shoot") {
+        const auto shots = Number(value);
+        if (!shots)
+          return false;
+        line.shots = *shots;
+      } else if (key == "workspot") {
+        // HASH:ENTRY:ANIM
+        const auto first = value.find(':');
+        if (first == std::string_view::npos)
+          return false;
+        const auto second = value.find(':', first + 1);
+        if (second == std::string_view::npos)
+          return false;
+        const auto hashText = value.substr(0, first);
+        const bool hex = hashText.starts_with("0x");
+        const auto digits = hex ? hashText.substr(2) : hashText;
+        std::uint64_t hash = 0;
+        if (std::from_chars(digits.data(), digits.data() + digits.size(), hash, hex ? 16 : 10).ec !=
+            std::errc{})
+          return false;
+        const auto entry = Number(value.substr(first + 1, second - first - 1));
+        if (!entry)
+          return false;
+        line.anim.workspot = hash;
+        line.anim.workspotEntry = static_cast<std::uint32_t>(*entry);
+        line.anim.workspotAnim = CName(value.substr(second + 1));
+        line.anim.flags |= tandem::proto::kNpcAnimInWorkspot;
+      } else
+        return false;
+    }
+    return true;
   }
 
-  // A story message heard, in one line (for the scenarios' expect_peer).
-  std::string Describe(const tandem::proto::Message &message) {
+  std::vector<Line> m_lines;
+};
+
+// --mode region: the NPCs this mock player runs itself, as a game does for the
+// NPCs around its V (docs/architecture/regions.md): announced once in the
+// session, moved ten times a second, hurt and killed by the others' strikes,
+// given away when the host asks and taken over when it says so.
+class RegionNpcs {
+public:
+  explicit RegionNpcs(const Options &options) : m_options(options) {}
+
+  void Tick(tandem::Endpoint &endpoint, std::uint64_t nowUs, const Vec3 &at, bool follow) {
     namespace proto = tandem::proto;
-    if (const auto *journal = std::get_if<proto::Journal>(&message))
-      return std::format("journal: {} {} entries", journal->snapshot ? "snapshot of" : "change of",
-                         journal->entries.size());
-    if (const auto *tracked = std::get_if<proto::Tracked>(&message))
-      return std::format("tracked: {}", tracked->hash);
-    if (const auto *call = std::get_if<proto::PhoneCall>(&message))
-      return std::format("call: contact {:#x} phase {} answered by {}{}", call->contact,
-                         call->phase, call->answeredBy,
-                         call->flags & proto::kCallRejected ? " (rejected)" : "");
-    if (const auto *action = std::get_if<proto::PhoneAction>(&message))
-      return std::format("phone: action {} on {:#x} by player {}", action->action, action->contact,
-                         action->player);
-    if (const auto *reply = std::get_if<proto::PhoneReply>(&message))
-      return std::format("phone: reply {} by player {}", reply->choiceEntry, reply->player);
-    if (const auto *line = std::get_if<proto::Subtitle>(&message))
-      return (line->flags & proto::kLineHide)
-                 ? std::format("line: {} hidden", line->line)
-                 : std::format("line: type {} from {}: {}", line->type,
-                               line->speakerPlayer ? std::format("player {}", line->speakerPlayer)
-                                                   : line->speakerName,
-                               line->text);
-    if (const auto *hub = std::get_if<proto::ChoiceHub>(&message))
-      return hub->options.empty() ? std::format("hub: {} closed", hub->hub)
-                                  : std::format("hub: {} '{}' with {} options", hub->hub,
-                                                hub->title, hub->options.size());
-    if (const auto *cursor = std::get_if<proto::ChoiceCursor>(&message))
-      return std::format("cursor: player {} hub {} index {} kind {}", cursor->player, cursor->hub,
-                         cursor->index, cursor->kind);
-    if (const auto *state = std::get_if<proto::StoryState>(&message))
-      return std::format("story state: player {} tier {} flags {}", state->player, state->tier,
-                         state->flags);
-    if (const auto *reward = std::get_if<proto::QuestReward>(&message))
-      return std::format("reward: {:#x} (quest {})", reward->reward, reward->quest);
-    if (const auto *effect = std::get_if<proto::StoryEffect>(&message))
-      return std::format("story effect: {:#x} {} on player {}", effect->effect,
-                         effect->applied ? "on" : "off", effect->player);
-    if (const auto *scene = std::get_if<proto::SceneState>(&message))
-      return scene->scene == 0
-                 ? std::format("scene: play {} over{}", scene->play,
-                               scene->flags & proto::kSceneInterrupted ? " (interrupted)" : "")
-                 : std::format("scene: {:#x} play {} tier {} rate {:.1f} flags {:#x}{}",
-                               scene->scene, scene->play, scene->tier, scene->rate, scene->flags,
-                               scene->flags & proto::kSceneStaged
-                                   ? std::format(" staged at {:.1f} {:.1f} {:.1f} ({:.1f} m)",
-                                                 scene->anchor.x, scene->anchor.y, scene->anchor.z,
-                                                 scene->radius)
-                                   : "");
-    if (const auto *cast = std::get_if<proto::SceneCast>(&message)) {
+    if (!endpoint.IsJoined())
+      return;
+    if (!m_announced) {
+      m_announced = true;
+      for (int i = 0; i < m_options.regionNpcs; ++i) {
+        const auto id =
+            tandem::regions::MakeNpcId(endpoint.You(), static_cast<std::uint32_t>(i + 1));
+        m_npcs[id] = {.position = Around(at, i), .slot = i};
+        endpoint.SendNpcSpawn({.npc = id,
+                               .record = TweakDBID(m_options.regionRecord),
+                               .position = m_npcs[id].position});
+        endpoint.SendNpcHealth({.npc = id, .health = 1.f});
+      }
+      Log("region: running {} NPC(s) of our own ({}), ids from {}", m_options.regionNpcs,
+          m_options.regionRecord, tandem::regions::MakeNpcId(endpoint.You(), 1));
+    }
+    if (nowUs - m_lastStatesUs < 100'000)
+      return;
+    m_lastStatesUs = nowUs;
+    proto::NpcStates states;
+    for (auto &[id, npc] : m_npcs) {
+      // With us while we walk up; where they are once we leave them, and
+      // the ones we took over stay where they were handed to us.
+      if (follow && npc.slot >= 0)
+        npc.position = Around(at, npc.slot);
+      states.npcs.push_back({.npc = id, .position = npc.position});
+    }
+    endpoint.SendNpcStates(std::move(states));
+  }
+
+  // True: the event was about the NPCs we run, and is dealt with.
+  bool On(const tandem::SessionEvent &event, tandem::Endpoint &endpoint) {
+    namespace proto = tandem::proto;
+    namespace events = tandem::events;
+    if (const auto *linked = std::get_if<events::RegionsChanged>(&event)) {
       std::string who;
-      for (const auto &actor : cast->actors)
-        who +=
-            std::format(" {}{}", actor.npc,
-                        actor.flags & proto::kActorGhost
-                            ? (actor.flags & proto::kActorHidden ? " (ghost, hidden)" : " (ghost)")
-                            : "");
-      return std::format("scene cast: play {}, {} actor(s):{}", cast->play, cast->actors.size(),
-                         who);
+      for (const auto player : linked->linked)
+        who += (who.empty() ? "" : ", ") + std::to_string(player);
+      Log("region: linked with {}", who.empty() ? "nobody" : "player " + who);
+      return true;
     }
-    if (const auto *line = std::get_if<proto::SceneLine>(&message))
-      return std::format("scene line: {} {} by {} ({:.1f} s, play {})", line->line,
-                         line->flags & proto::kVoiceStop ? "cut" : "voiced",
-                         line->speakerPlayer ? std::format("player {}", line->speakerPlayer)
-                                             : std::format("npc {}", line->speaker),
-                         line->duration, line->play);
-    return "story: ?";
+    if (const auto *give = std::get_if<events::NpcGive>(&event)) {
+      const auto it = m_npcs.find(give->npc);
+      if (it == m_npcs.end()) {
+        endpoint.RefuseNpc(give->npc);
+        return true;
+      }
+      endpoint.GiveNpc({.npc = give->npc,
+                        .to = give->to,
+                        .position = it->second.position,
+                        .health = it->second.health,
+                        .flags = proto::kHandoverCombat,
+                        .target = give->to,
+                        .hostileTo = static_cast<std::uint8_t>(1u << ((give->to - 1) & 7)),
+                        .highLevel = 2});
+      Log("region: handed npc {} over to player {} (health {:.2f})", give->npc, give->to,
+          it->second.health);
+      m_npcs.erase(it);
+      return true;
+    }
+    if (const auto *take = std::get_if<events::NpcTake>(&event)) {
+      const auto &state = take->state;
+      auto &npc = m_npcs[state.npc];
+      npc.slot = -1;
+      if ((state.flags & proto::kHandoverBlind) == 0)
+        npc.position = state.position;
+      else if (const auto known = endpoint.SharedNpcs().find(state.npc);
+               known != endpoint.SharedNpcs().end())
+        npc.position = known->second.position;
+      npc.health = state.health >= 0.f ? state.health : 1.f;
+      endpoint.AdoptNpc(state.npc, true);
+      Log("region: took npc {} over from player {} (health {:.2f}, {} effect(s), target "
+          "player {}{})",
+          state.npc, state.from, npc.health, state.effects.size(), state.target,
+          state.flags & proto::kHandoverInherited ? ", inherited" : "");
+      return true;
+    }
+    if (const auto *owner = std::get_if<events::NpcOwnerChanged>(&event)) {
+      if (owner->was == endpoint.You() && m_npcs.erase(owner->npc) > 0)
+        Log("region: npc {} is no longer ours (now player {}'s)", owner->npc, owner->owner);
+      else
+        Log("region: npc {} is now run by player {} (was {})", owner->npc, owner->owner,
+            owner->was);
+      return true;
+    }
+    // Strikes and hits on the NPCs we run: health down, dead at zero.
+    proto::NpcId hit = 0;
+    proto::PlayerId by = 0;
+    float damage = 0.f;
+    if (const auto *plain = std::get_if<events::NpcHitBy>(&event)) {
+      hit = plain->hit.npc;
+      by = plain->hit.player;
+      damage = plain->hit.damage;
+    } else if (const auto *combat = std::get_if<events::Combat>(&event)) {
+      if (const auto *strike = std::get_if<proto::NpcStrike>(&combat->message)) {
+        hit = strike->npc;
+        by = strike->player;
+        damage = strike->damage;
+      }
+    }
+    const auto it = m_npcs.find(hit);
+    if (hit == 0 || it == m_npcs.end())
+      return false;
+    it->second.health = std::max(0.f, it->second.health - damage / 100.f);
+    Log("region: player {} hit our npc {}: {:.0f} damage, health {:.2f}", by, hit, damage,
+        it->second.health);
+    if (it->second.health <= 0.f) {
+      endpoint.SendNpcGone({.npc = hit, .reason = proto::kGoneDead, .killer = by});
+      Log("region: our npc {} died (killer: player {})", hit, by);
+      m_npcs.erase(it);
+    } else {
+      endpoint.SendNpcHealth({.npc = hit, .health = it->second.health});
+    }
+    return true;
   }
 
-  // --anims: NPC animation states and shots by time, for the replayed NPCs.
-  // One line per change, `#` comments:
-  //   SECONDS NPC HIGH UPPER STANCE [weapon=RECORD] [target=PLAYER] [shoot=N]
-  //           [workspot=HASH:ENTRY:ANIM]
-  // SECONDS count from the replay's start. NPC is a replayed NPC's id or *
-  // (every replayed NPC out then); HIGH, UPPER and STANCE are the game's state
-  // names (gamedataNPCHighLevelState, gamedataNPCUpperBodyState,
-  // gamedataNPCStanceState) or numbers; shoot=N fires N shots, five a second;
-  // workspot takes the resource path hash (as the game logs it, 0x… or
-  // decimal), the tree entry and the animation name. With a script, the
-  // recording's own animation states and shots are not sent: the script alone
-  // decides, whichever NPCs were recorded.
-  class NpcAnimScript {
-  public:
-    struct Line {
-      std::uint64_t atUs{};
-      std::optional<tandem::proto::NpcId> npc; // none: every NPC
-      tandem::proto::NpcAnim anim;
-      int shots{};
-    };
+  std::size_t Running() const { return m_npcs.size(); }
 
-    bool Load(const std::string &path, std::string &error) {
-      std::ifstream in(path);
-      if (!in) {
-        error = std::format("cannot read {}", path);
-        return false;
-      }
-      std::string text;
-      for (int number = 1; std::getline(in, text); ++number) {
-        if (const auto hash = text.find('#'); hash != std::string::npos)
-          text.resize(hash);
-        std::vector<std::string> words;
-        for (std::size_t at = 0; at < text.size();) {
-          const auto start = text.find_first_not_of(" \t\r", at);
-          if (start == std::string::npos)
-            break;
-          const auto end = text.find_first_of(" \t\r", start);
-          words.push_back(text.substr(start, end - start));
-          at = end == std::string::npos ? text.size() : end;
-        }
-        if (words.empty())
-          continue;
-        Line line;
-        if (words.size() < 5 || !ParseLine(words, line)) {
-          error =
-              std::format("{}:{}: not SECONDS NPC HIGH UPPER STANCE [key=value...]", path, number);
-          return false;
-        }
-        m_lines.push_back(line);
-      }
-      std::ranges::stable_sort(m_lines, {}, &Line::atUs);
-      return true;
-    }
-
-    std::size_t Size() const { return m_lines.size(); }
-    const std::vector<Line> &Lines() const { return m_lines; }
-
-  private:
-    static std::optional<int> Number(std::string_view text) {
-      int value = 0;
-      const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
-      if (ec != std::errc{} || end != text.data() + text.size())
-        return std::nullopt;
-      return value;
-    }
-    // A state by its enum value's name or number.
-    static std::optional<std::uint8_t> State(std::string_view text,
-                                             std::initializer_list<std::string_view> names) {
-      if (const auto number = Number(text))
-        return static_cast<std::uint8_t>(*number);
-      std::uint8_t index = 0;
-      for (const auto name : names) {
-        if (name == text)
-          return index;
-        ++index;
-      }
-      return std::nullopt;
-    }
-
-    static bool ParseLine(const std::vector<std::string> &words, Line &line) {
-      double seconds = 0;
-      if (std::from_chars(words[0].data(), words[0].data() + words[0].size(), seconds).ec !=
-          std::errc{})
-        return false;
-      line.atUs = static_cast<std::uint64_t>(seconds * 1e6);
-      if (words[1] != "*") {
-        const auto npc = Number(words[1]);
-        if (!npc)
-          return false;
-        line.npc = static_cast<tandem::proto::NpcId>(*npc);
-      }
-      const auto high = State(words[2], {"Alerted", "Any", "Combat", "Dead", "Fear", "Relaxed",
-                                         "Stealth", "Unconscious", "Wounded"});
-      const auto upper = State(words[3], {"Aim", "Any", "Attack", "ChargedAttack", "Defend",
-                                          "Equip", "Normal", "Parry", "Reload", "Shoot", "Taunt"});
-      const auto stance =
-          State(words[4], {"Any", "Cover", "Crouch", "Stand", "Swim", "Vehicle", "VehicleWindow"});
-      if (!high || !upper || !stance)
-        return false;
-      line.anim.highLevel = *high;
-      line.anim.upperBody = *upper;
-      line.anim.stance = *stance;
-      for (std::size_t i = 5; i < words.size(); ++i) {
-        const auto equals = words[i].find('=');
-        if (equals == std::string::npos)
-          return false;
-        const std::string_view key(words[i].data(), equals);
-        const std::string_view value(words[i].data() + equals + 1, words[i].size() - equals - 1);
-        if (key == "weapon") {
-          line.anim.weapon = TweakDBID(value);
-          line.anim.flags |= tandem::proto::kNpcAnimWeaponDrawn;
-        } else if (key == "target") {
-          const auto player = Number(value);
-          if (!player)
-            return false;
-          line.anim.target = static_cast<std::uint32_t>(*player);
-        } else if (key == "shoot") {
-          const auto shots = Number(value);
-          if (!shots)
-            return false;
-          line.shots = *shots;
-        } else if (key == "workspot") {
-          // HASH:ENTRY:ANIM
-          const auto first = value.find(':');
-          if (first == std::string_view::npos)
-            return false;
-          const auto second = value.find(':', first + 1);
-          if (second == std::string_view::npos)
-            return false;
-          const auto hashText = value.substr(0, first);
-          const bool hex = hashText.starts_with("0x");
-          const auto digits = hex ? hashText.substr(2) : hashText;
-          std::uint64_t hash = 0;
-          if (std::from_chars(digits.data(), digits.data() + digits.size(), hash, hex ? 16 : 10)
-                  .ec != std::errc{})
-            return false;
-          const auto entry = Number(value.substr(first + 1, second - first - 1));
-          if (!entry)
-            return false;
-          line.anim.workspot = hash;
-          line.anim.workspotEntry = static_cast<std::uint32_t>(*entry);
-          line.anim.workspotAnim = CName(value.substr(second + 1));
-          line.anim.flags |= tandem::proto::kNpcAnimInWorkspot;
-        } else
-          return false;
-      }
-      return true;
-    }
-
-    std::vector<Line> m_lines;
+private:
+  struct Npc {
+    Vec3 position;
+    float health{1.f};
+    int slot{-1}; // where it stands around us (-1: taken over, it stays put)
   };
+  // A ring 3 m around our V.
+  static Vec3 Around(const Vec3 &at, int slot) {
+    const float angle = 0.9f * static_cast<float>(slot);
+    return {at.x + 3.f * std::cos(angle), at.y + 3.f * std::sin(angle), at.z};
+  }
 
-  // --mode region: the NPCs this mock player runs itself, as a game does for the
-  // NPCs around its V (docs/architecture/regions.md): announced once in the
-  // session, moved ten times a second, hurt and killed by the others' strikes,
-  // given away when the host asks and taken over when it says so.
-  class RegionNpcs {
-  public:
-    explicit RegionNpcs(const Options &options) : m_options(options) {}
+  const Options &m_options;
+  std::map<tandem::proto::NpcId, Npc> m_npcs;
+  bool m_announced{};
+  std::uint64_t m_lastStatesUs{};
+};
 
-    void Tick(tandem::Endpoint &endpoint, std::uint64_t nowUs, const Vec3 &at, bool follow) {
-      namespace proto = tandem::proto;
-      if (!endpoint.IsJoined())
-        return;
-      if (!m_announced) {
-        m_announced = true;
-        for (int i = 0; i < m_options.regionNpcs; ++i) {
-          const auto id =
-              tandem::regions::MakeNpcId(endpoint.You(), static_cast<std::uint32_t>(i + 1));
-          m_npcs[id] = {.position = Around(at, i), .slot = i};
-          endpoint.SendNpcSpawn({.npc = id,
-                                 .record = TweakDBID(m_options.regionRecord),
-                                 .position = m_npcs[id].position});
-          endpoint.SendNpcHealth({.npc = id, .health = 1.f});
-        }
-        Log("region: running {} NPC(s) of our own ({}), ids from {}", m_options.regionNpcs,
-            m_options.regionRecord, tandem::regions::MakeNpcId(endpoint.You(), 1));
-      }
-      if (nowUs - m_lastStatesUs < 100'000)
-        return;
-      m_lastStatesUs = nowUs;
-      proto::NpcStates states;
-      for (auto &[id, npc] : m_npcs) {
-        // With us while we walk up; where they are once we leave them, and
-        // the ones we took over stay where they were handed to us.
-        if (follow && npc.slot >= 0)
-          npc.position = Around(at, npc.slot);
-        states.npcs.push_back({.npc = id, .position = npc.position});
-      }
-      endpoint.SendNpcStates(std::move(states));
-    }
+// What the mock player does with the states it hears.
+class Puppeteer {
+public:
+  explicit Puppeteer(const Options &options) : m_options(options) {}
 
-    // True: the event was about the NPCs we run, and is dealt with.
-    bool On(const tandem::SessionEvent &event, tandem::Endpoint &endpoint) {
-      namespace proto = tandem::proto;
-      namespace events = tandem::events;
-      if (const auto *linked = std::get_if<events::RegionsChanged>(&event)) {
-        std::string who;
-        for (const auto player : linked->linked)
-          who += (who.empty() ? "" : ", ") + std::to_string(player);
-        Log("region: linked with {}", who.empty() ? "nobody" : "player " + who);
-        return true;
-      }
-      if (const auto *give = std::get_if<events::NpcGive>(&event)) {
-        const auto it = m_npcs.find(give->npc);
-        if (it == m_npcs.end()) {
-          endpoint.RefuseNpc(give->npc);
-          return true;
-        }
-        endpoint.GiveNpc({.npc = give->npc,
-                          .to = give->to,
-                          .position = it->second.position,
-                          .health = it->second.health,
-                          .flags = proto::kHandoverCombat,
-                          .target = give->to,
-                          .hostileTo = static_cast<std::uint8_t>(1u << ((give->to - 1) & 7)),
-                          .highLevel = 2});
-        Log("region: handed npc {} over to player {} (health {:.2f})", give->npc, give->to,
-            it->second.health);
-        m_npcs.erase(it);
-        return true;
-      }
-      if (const auto *take = std::get_if<events::NpcTake>(&event)) {
-        const auto &state = take->state;
-        auto &npc = m_npcs[state.npc];
-        npc.slot = -1;
-        if ((state.flags & proto::kHandoverBlind) == 0)
-          npc.position = state.position;
-        else if (const auto known = endpoint.SharedNpcs().find(state.npc);
-                 known != endpoint.SharedNpcs().end())
-          npc.position = known->second.position;
-        npc.health = state.health >= 0.f ? state.health : 1.f;
-        endpoint.AdoptNpc(state.npc, true);
-        Log("region: took npc {} over from player {} (health {:.2f}, {} effect(s), target "
-            "player {}{})",
-            state.npc, state.from, npc.health, state.effects.size(), state.target,
-            state.flags & proto::kHandoverInherited ? ", inherited" : "");
-        return true;
-      }
-      if (const auto *owner = std::get_if<events::NpcOwnerChanged>(&event)) {
-        if (owner->was == endpoint.You() && m_npcs.erase(owner->npc) > 0)
-          Log("region: npc {} is no longer ours (now player {}'s)", owner->npc, owner->owner);
-        else
-          Log("region: npc {} is now run by player {} (was {})", owner->npc, owner->owner,
-              owner->was);
-        return true;
-      }
-      // Strikes and hits on the NPCs we run: health down, dead at zero.
-      proto::NpcId hit = 0;
-      proto::PlayerId by = 0;
-      float damage = 0.f;
-      if (const auto *plain = std::get_if<events::NpcHitBy>(&event)) {
-        hit = plain->hit.npc;
-        by = plain->hit.player;
-        damage = plain->hit.damage;
-      } else if (const auto *combat = std::get_if<events::Combat>(&event)) {
-        if (const auto *strike = std::get_if<proto::NpcStrike>(&combat->message)) {
-          hit = strike->npc;
-          by = strike->player;
-          damage = strike->damage;
-        }
-      }
-      const auto it = m_npcs.find(hit);
-      if (hit == 0 || it == m_npcs.end())
-        return false;
-      it->second.health = std::max(0.f, it->second.health - damage / 100.f);
-      Log("region: player {} hit our npc {}: {:.0f} damage, health {:.2f}", by, hit, damage,
-          it->second.health);
-      if (it->second.health <= 0.f) {
-        endpoint.SendNpcGone({.npc = hit, .reason = proto::kGoneDead, .killer = by});
-        Log("region: our npc {} died (killer: player {})", hit, by);
-        m_npcs.erase(it);
-      } else {
-        endpoint.SendNpcHealth({.npc = hit, .health = it->second.health});
-      }
-      return true;
-    }
+  void Heard(const PlayerState &state) {
+    m_heard.push_back({tandem::net::NowUs(), state});
+    while (m_heard.size() > 512)
+      m_heard.pop_front();
+  }
 
-    std::size_t Running() const { return m_npcs.size(); }
+  void HeardPose(const tandem::proto::PoseState &pose) {
+    m_poses.push_back({tandem::net::NowUs(), pose});
+    while (m_poses.size() > 256)
+      m_poses.pop_front();
+  }
 
-  private:
-    struct Npc {
-      Vec3 position;
-      float health{1.f};
-      int slot{-1}; // where it stands around us (-1: taken over, it stays put)
-    };
-    // A ring 3 m around our V.
-    static Vec3 Around(const Vec3 &at, int slot) {
-      const float angle = 0.9f * static_cast<float>(slot);
-      return {at.x + 3.f * std::cos(angle), at.y + 3.f * std::sin(angle), at.z};
-    }
-
-    const Options &m_options;
-    std::map<tandem::proto::NpcId, Npc> m_npcs;
-    bool m_announced{};
-    std::uint64_t m_lastStatesUs{};
-  };
-
-  // What the mock player does with the states it hears.
-  class Puppeteer {
-  public:
-    explicit Puppeteer(const Options &options) : m_options(options) {}
-
-    void Heard(const PlayerState &state) {
-      m_heard.push_back({tandem::net::NowUs(), state});
-      while (m_heard.size() > 512)
-        m_heard.pop_front();
-    }
-
-    void HeardPose(const tandem::proto::PoseState &pose) {
-      m_poses.push_back({tandem::net::NowUs(), pose});
-      while (m_poses.size() > 256)
-        m_poses.pop_front();
-    }
-
-    // The pose to send: the clip's, else (mirror, front) the newest heard at
-    // least `delay` old.
-    std::optional<tandem::proto::PoseState> NextPose(std::uint64_t nowUs, const PoseClip *clip) {
-      if (clip)
-        return clip->At(nowUs);
-      // mirror and front show your own pose back (front: in view, facing you).
-      if (m_options.mode != Mode::Mirror && m_options.mode != Mode::Front)
-        return std::nullopt;
-      const auto delayUs = static_cast<std::uint64_t>(m_options.delay.count()) * 1000;
-      const tandem::proto::PoseState *pick = nullptr;
-      for (const auto &[at, pose] : m_poses)
-        if (at + delayUs <= nowUs)
-          pick = &pose;
-      if (!pick)
-        return std::nullopt;
-      return *pick;
-    }
-
-    // After a fast travel: stand there instead of the mode's motion, until
-    // cleared (another V came to us).
-    void StandAt(std::optional<Vec3> at) { m_station = at; }
-    const std::optional<Vec3> &Station() const { return m_station; }
-    // Where the other player's V was last heard (nullopt: not yet).
-    std::optional<Vec3> HeardAt() const {
-      if (m_heard.empty())
-        return std::nullopt;
-      return m_heard.back().second.position;
-    }
-    std::optional<Vec3> m_regionAnchor;
-    std::uint64_t m_regionStartUs{}, m_regionLastUs{};
-    float m_regionX{};
-    bool m_regionLeaving{};
-    // --path: the saved states to replay.
-    void SetPath(std::vector<PlayerState> path) { m_path = std::move(path); }
-
-    std::optional<PlayerState> Next(std::uint64_t nowUs) {
-      // Standing by an NPC it grabs or carries (--grab-npcs, --carry-npcs).
-      if (m_beside) {
-        PlayerState out;
-        out.position = {m_beside->x + 0.8f, m_beside->y, m_beside->z};
-        out.orientation = tandem::sync::FromYaw(std::numbers::pi_v<float> / 2.f); // facing -X
-        return out;
-      }
-      if (m_station) {
-        PlayerState out;
-        out.position = *m_station;
-        return out;
-      }
-      switch (m_options.mode) {
-      case Mode::Idle:
-        return std::nullopt;
-      case Mode::Course:
-        return CourseState(nowUs);
-      case Mode::Path:
-        return PathState(nowUs);
-      case Mode::Mirror:
-        return Mirror(nowUs);
-      case Mode::Ghost:
-        return Ghost(nowUs);
-      case Mode::Front:
-        return Front(nowUs);
-      case Mode::Drive:
-        if (m_parkedAt)
-          return Parked();
-        return Drive(nowUs).first;
-      case Mode::Metro:
-        return Metro(nowUs);
-      case Mode::Watch:
-        return Watch();
-      case Mode::Region:
-        return Region(nowUs);
-      }
+  // The pose to send: the clip's, else (mirror, front) the newest heard at
+  // least `delay` old.
+  std::optional<tandem::proto::PoseState> NextPose(std::uint64_t nowUs, const PoseClip *clip) {
+    if (clip)
+      return clip->At(nowUs);
+    // mirror and front show your own pose back (front: in view, facing you).
+    if (m_options.mode != Mode::Mirror && m_options.mode != Mode::Front)
       return std::nullopt;
-    }
+    const auto delayUs = static_cast<std::uint64_t>(m_options.delay.count()) * 1000;
+    const tandem::proto::PoseState *pick = nullptr;
+    for (const auto &[at, pose] : m_poses)
+      if (at + delayUs <= nowUs)
+        pick = &pose;
+    if (!pick)
+      return std::nullopt;
+    return *pick;
+  }
 
-    // region: far from the other V (where it first stood), then up to it, then
-    // off again. A straight walk along X at --region-speed.
-    std::optional<PlayerState> Region(std::uint64_t nowUs) {
-      if (m_heard.empty() && !m_options.regionAt)
-        return std::nullopt;
-      if (!m_regionAnchor) {
-        m_regionAnchor = m_options.regionAt ? *m_options.regionAt : m_heard.back().second.position;
-        m_regionStartUs = m_regionLastUs = nowUs;
-        m_regionX = m_options.regionFar;
-      }
-      const auto seconds = static_cast<double>(nowUs - m_regionStartUs) / 1e6;
-      m_regionLeaving =
-          m_options.regionLeaveAtSeconds >= 0 && seconds >= m_options.regionLeaveAtSeconds;
-      const bool near = !m_regionLeaving && m_options.regionWalkAtSeconds >= 0 &&
-                        seconds >= m_options.regionWalkAtSeconds;
-      const float goal = near ? std::min(8.f, m_options.regionFar) : m_options.regionFar;
-      const float step = m_options.regionSpeed * static_cast<float>(nowUs - m_regionLastUs) / 1e6f;
-      m_regionLastUs = nowUs;
-      const float before = m_regionX;
-      if (m_regionX > goal)
-        m_regionX = std::max(goal, m_regionX - step);
-      else
-        m_regionX = std::min(goal, m_regionX + step);
+  // After a fast travel: stand there instead of the mode's motion, until
+  // cleared (another V came to us).
+  void StandAt(std::optional<Vec3> at) { m_station = at; }
+  const std::optional<Vec3> &Station() const { return m_station; }
+  // Where the other player's V was last heard (nullopt: not yet).
+  std::optional<Vec3> HeardAt() const {
+    if (m_heard.empty())
+      return std::nullopt;
+    return m_heard.back().second.position;
+  }
+  std::optional<Vec3> m_regionAnchor;
+  std::uint64_t m_regionStartUs{}, m_regionLastUs{};
+  float m_regionX{};
+  bool m_regionLeaving{};
+  // --path: the saved states to replay.
+  void SetPath(std::vector<PlayerState> path) { m_path = std::move(path); }
+
+  std::optional<PlayerState> Next(std::uint64_t nowUs) {
+    // Standing by an NPC it grabs or carries (--grab-npcs, --carry-npcs).
+    if (m_beside) {
       PlayerState out;
-      out.position = {m_regionAnchor->x + m_regionX, m_regionAnchor->y, m_regionAnchor->z};
-      if (m_regionX != before)
-        out.velocity = {m_regionX < before ? -m_options.regionSpeed : m_options.regionSpeed, 0.f,
-                        0.f};
-      // Facing the other V (-X).
-      out.orientation = tandem::sync::FromYaw(std::numbers::pi_v<float> / 2.f);
+      out.position = {m_beside->x + 0.8f, m_beside->y, m_beside->z};
+      out.orientation = tandem::sync::FromYaw(std::numbers::pi_v<float> / 2.f); // facing -X
       return out;
     }
-    // region: we are walking off (our NPCs stay where they are).
-    bool RegionLeaving() const { return m_regionLeaving; }
-
-    // watch: where the other V is, 30 m under it (or --offset): out of
-    // sight, out of every NPC's reach, never in anyone's way, while the host
-    // sends us everything a guest gets (--record-session).
-    std::optional<PlayerState> Watch() {
-      if (m_heard.empty())
-        return std::nullopt;
-      auto out = m_heard.back().second;
-      const Vec3 by = m_options.offsetGiven ? m_options.offset : Vec3{0.f, 0.f, -30.f};
-      out.position = {out.position.x + by.x, out.position.y + by.y, out.position.z + by.z};
-      out.stance = 0;
-      out.flags = 0;
-      return out;
-    }
-
-    // metro: on the train from now on (once).
-    void Board(std::uint64_t nowUs) {
-      if (!m_boardUs)
-        m_boardUs = nowUs;
-    }
-
-    // metro: 0 waiting on the platform, 1 riding, 2 skipping (ten times
-    // faster), 3 off at the exit station; `secondHalf` past the skip.
-    int MetroStep(std::uint64_t nowUs, bool *secondHalf = nullptr) const {
-      if (!m_boardUs || nowUs < *m_boardUs)
-        return 0;
-      const float t = static_cast<float>(nowUs - *m_boardUs) / 1e6f;
-      const float ride = static_cast<float>(m_options.metroForSeconds), half = ride / 2.f;
-      if (secondHalf)
-        *secondHalf = t >= half + kSkipSeconds;
-      if (t >= ride)
-        return 3;
-      if (t >= half && t < half + kSkipSeconds)
-        return 2;
-      return 1;
-    }
-
-  private:
-    std::optional<PlayerState> Mirror(std::uint64_t nowUs) {
-      // The newest state at least `delay` old.
-      const auto delayUs = static_cast<std::uint64_t>(m_options.delay.count()) * 1000;
-      const PlayerState *pick = nullptr;
-      for (const auto &[at, state] : m_heard)
-        if (at + delayUs <= nowUs)
-          pick = &state;
-      if (!pick)
-        return std::nullopt;
-      auto out = *pick;
-      out.position.x += m_options.offset.x;
-      out.position.y += m_options.offset.y;
-      out.position.z += m_options.offset.z;
-      return out;
-    }
-
-    std::optional<PlayerState> Ghost(std::uint64_t nowUs) {
-      constexpr float kRadius = 3.f;
-      constexpr float kSpeed = 2.f; // m/s along the circle
-      const Vec3 center = m_heard.empty() ? Vec3{} : m_heard.back().second.position;
-      const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
-
+    if (m_station) {
       PlayerState out;
-      out.position = {center.x + kRadius * std::cos(angle), center.y + kRadius * std::sin(angle),
-                      center.z};
-      out.velocity = {-kSpeed * std::sin(angle), kSpeed * std::cos(angle), 0.f};
-      // Facing along the circle: yaw around Z (the game's up axis).
-      const float yaw = angle + std::numbers::pi_v<float> / 2.f;
-      out.orientation = {0.f, 0.f, std::sin(yaw / 2.f), std::cos(yaw / 2.f)};
+      out.position = *m_station;
       return out;
     }
-
-  public:
-    // A car going round a 12 m circle at 8 m/s around where your V was first
-    // heard (fixed, so you can watch it pass): the driver's state, and the car's.
-    std::pair<std::optional<PlayerState>, std::optional<tandem::proto::VehicleState>>
-    Drive(std::uint64_t nowUs) {
-      if (m_heard.empty())
-        return {};
-      if (!m_center)
-        m_center = m_heard.back().second.position;
-      constexpr float kRadius = 12.f, kSpeed = 8.f;
-      const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
-      const Vec3 at{m_center->x + kRadius * std::cos(angle),
-                    m_center->y + kRadius * std::sin(angle), m_center->z};
-      const Vec3 velocity{-kSpeed * std::sin(angle), kSpeed * std::cos(angle), 0.f};
-      // The game's forward is +Y turned by yaw: facing along the circle.
-      const auto facing = tandem::sync::FromYaw(angle);
-      PlayerState body;
-      body.position = at;
-      body.velocity = velocity;
-      body.orientation = facing;
-      tandem::proto::VehicleState car;
-      car.position = at;
-      car.orientation = facing;
-      car.velocity = velocity;
-      return {body, car};
+    switch (m_options.mode) {
+    case Mode::Idle:
+      return std::nullopt;
+    case Mode::Course:
+      return CourseState(nowUs);
+    case Mode::Path:
+      return PathState(nowUs);
+    case Mode::Mirror:
+      return Mirror(nowUs);
+    case Mode::Ghost:
+      return Ghost(nowUs);
+    case Mode::Front:
+      return Front(nowUs);
+    case Mode::Drive:
+      if (m_parkedAt)
+        return Parked();
+      return Drive(nowUs).first;
+    case Mode::Metro:
+      return Metro(nowUs);
+    case Mode::Watch:
+      return Watch();
+    case Mode::Region:
+      return Region(nowUs);
     }
+    return std::nullopt;
+  }
 
-    void Park(const Vec3 &at) { m_parkedAt = at; }
-    void Beside(std::optional<Vec3> at) { m_beside = at; }
-
-  private:
-    std::optional<Vec3> m_center;
-    std::optional<Vec3> m_parkedAt;
-    std::optional<Vec3> m_beside;
-    std::optional<Vec3> m_station;
-
-    // metro: a straight line from the platform (3 m to the right of where
-    // your V was first heard, along its facing), 8 m up while riding, at
-    // 20 m/s, 200 m/s while skipping.
-    static constexpr float kMetroSpeed = 20.f, kSkipSeconds = 3.f, kSkipFactor = 10.f,
-                           kMetroUp = 8.f;
-    std::optional<std::uint64_t> m_boardUs;
-    std::optional<Vec3> m_platform;
-    float m_lineYaw{};
-
-    float MetroDistance(float t) const {
-      const float ride = static_cast<float>(m_options.metroForSeconds), half = ride / 2.f;
-      t = std::clamp(t, 0.f, ride);
-      if (t < half)
-        return kMetroSpeed * t;
-      const float skip = std::min(t - half, kSkipSeconds);
-      return kMetroSpeed * half + kMetroSpeed * kSkipFactor * skip +
-             kMetroSpeed * std::max(0.f, t - half - kSkipSeconds);
+  // region: far from the other V (where it first stood), then up to it, then
+  // off again. A straight walk along X at --region-speed.
+  std::optional<PlayerState> Region(std::uint64_t nowUs) {
+    if (m_heard.empty() && !m_options.regionAt)
+      return std::nullopt;
+    if (!m_regionAnchor) {
+      m_regionAnchor = m_options.regionAt ? *m_options.regionAt : m_heard.back().second.position;
+      m_regionStartUs = m_regionLastUs = nowUs;
+      m_regionX = m_options.regionFar;
     }
+    const auto seconds = static_cast<double>(nowUs - m_regionStartUs) / 1e6;
+    m_regionLeaving =
+        m_options.regionLeaveAtSeconds >= 0 && seconds >= m_options.regionLeaveAtSeconds;
+    const bool near = !m_regionLeaving && m_options.regionWalkAtSeconds >= 0 &&
+                      seconds >= m_options.regionWalkAtSeconds;
+    const float goal = near ? std::min(8.f, m_options.regionFar) : m_options.regionFar;
+    const float step = m_options.regionSpeed * static_cast<float>(nowUs - m_regionLastUs) / 1e6f;
+    m_regionLastUs = nowUs;
+    const float before = m_regionX;
+    if (m_regionX > goal)
+      m_regionX = std::max(goal, m_regionX - step);
+    else
+      m_regionX = std::min(goal, m_regionX + step);
+    PlayerState out;
+    out.position = {m_regionAnchor->x + m_regionX, m_regionAnchor->y, m_regionAnchor->z};
+    if (m_regionX != before)
+      out.velocity = {m_regionX < before ? -m_options.regionSpeed : m_options.regionSpeed, 0.f,
+                      0.f};
+    // Facing the other V (-X).
+    out.orientation = tandem::sync::FromYaw(std::numbers::pi_v<float> / 2.f);
+    return out;
+  }
+  // region: we are walking off (our NPCs stay where they are).
+  bool RegionLeaving() const { return m_regionLeaving; }
 
-    std::optional<PlayerState> Metro(std::uint64_t nowUs) {
-      if (m_heard.empty())
-        return std::nullopt;
-      if (!m_platform) {
-        const auto &them = m_heard.back().second;
-        m_lineYaw = tandem::sync::YawOf(them.orientation);
-        // The game's right is (cos, sin) of the yaw.
-        m_platform = Vec3{them.position.x + 3.f * std::cos(m_lineYaw),
-                          them.position.y + 3.f * std::sin(m_lineYaw), them.position.z};
-      }
-      const int step = MetroStep(nowUs);
-      const float t =
-          m_boardUs && nowUs > *m_boardUs ? static_cast<float>(nowUs - *m_boardUs) / 1e6f : 0.f;
-      const float along = step == 0 ? 0.f : MetroDistance(t);
-      // The game's forward is (-sin, cos) of the yaw.
-      const float fx = -std::sin(m_lineYaw), fy = std::cos(m_lineYaw);
-      const float speed = step == 1 ? kMetroSpeed : step == 2 ? kMetroSpeed * kSkipFactor : 0.f;
-      PlayerState out;
-      out.position = {m_platform->x + fx * along, m_platform->y + fy * along,
-                      m_platform->z + (step == 1 || step == 2 ? kMetroUp : 0.f)};
-      out.velocity = {fx * speed, fy * speed, 0.f};
-      out.orientation = tandem::sync::FromYaw(m_lineYaw);
-      return out;
-    }
+  // watch: where the other V is, 30 m under it (or --offset): out of
+  // sight, out of every NPC's reach, never in anyone's way, while the host
+  // sends us everything a guest gets (--record-session).
+  std::optional<PlayerState> Watch() {
+    if (m_heard.empty())
+      return std::nullopt;
+    auto out = m_heard.back().second;
+    const Vec3 by = m_options.offsetGiven ? m_options.offset : Vec3{0.f, 0.f, -30.f};
+    out.position = {out.position.x + by.x, out.position.y + by.y, out.position.z + by.z};
+    out.stance = 0;
+    out.flags = 0;
+    return out;
+  }
 
-    std::optional<PlayerState> Parked() const {
-      PlayerState out;
-      out.position = {m_parkedAt->x + 2.f, m_parkedAt->y, m_parkedAt->z};
-      return out;
-    }
+  // metro: on the train from now on (once).
+  void Board(std::uint64_t nowUs) {
+    if (!m_boardUs)
+      m_boardUs = nowUs;
+  }
 
-    // The course, laid out ahead of where your V first stood, facing the way it faced.
-    std::optional<PlayerState> CourseState(std::uint64_t nowUs) {
-      if (m_heard.empty())
-        return std::nullopt;
-      if (!m_courseStartUs) {
-        const auto &them = m_heard.back().second;
-        m_courseStartUs = nowUs;
-        m_courseYaw = tandem::sync::YawOf(them.orientation);
-        m_courseOrigin = {them.position.x + m_options.offset.x,
-                          them.position.y + m_options.offset.y,
-                          them.position.z + m_options.offset.z};
-      }
-      const float t = static_cast<float>(nowUs - *m_courseStartUs) / 1e6f;
-      // The game's forward is +Y turned by yaw: (-sin, cos). 3 m ahead of your V.
-      const float fx = -std::sin(m_courseYaw), fy = std::cos(m_courseYaw);
-      const auto place = [&](const CoursePoint &p) {
-        const float ahead = 3.f + p.ahead;
-        return Vec3{m_courseOrigin.x + fx * ahead, m_courseOrigin.y + fy * ahead,
-                    m_courseOrigin.z + p.up};
-      };
-      const auto point = m_course.At(t);
-      const auto at = place(point);
-      const auto next = place(m_course.At(t + 0.02f));
-      if (point.what != m_courseWhat) {
-        m_courseWhat = point.what;
-        Log("course: {} ({})", point.what,
-            tandem::movement::NameOf(tandem::movement::PlacementOf(point.movement)));
-      }
-      PlayerState out;
-      out.position = at;
-      // (the lap's end jumps back to the start: no velocity across it)
-      if (std::hypot(next.x - at.x, next.y - at.y, next.z - at.z) < 1.f)
-        out.velocity = {(next.x - at.x) / 0.02f, (next.y - at.y) / 0.02f, (next.z - at.z) / 0.02f};
-      out.orientation = tandem::sync::FromYaw(m_courseYaw);
-      out.stance = point.stance;
-      out.flags = tandem::movement::Pack(point.movement);
-      return out;
-    }
+  // metro: 0 waiting on the platform, 1 riding, 2 skipping (ten times
+  // faster), 3 off at the exit station; `secondHalf` past the skip.
+  int MetroStep(std::uint64_t nowUs, bool *secondHalf = nullptr) const {
+    if (!m_boardUs || nowUs < *m_boardUs)
+      return 0;
+    const float t = static_cast<float>(nowUs - *m_boardUs) / 1e6f;
+    const float ride = static_cast<float>(m_options.metroForSeconds), half = ride / 2.f;
+    if (secondHalf)
+      *secondHalf = t >= half + kSkipSeconds;
+    if (t >= ride)
+      return 3;
+    if (t >= half && t < half + kSkipSeconds)
+      return 2;
+    return 1;
+  }
 
-    // A saved path at its own pace, in a loop, moved by --offset.
-    std::optional<PlayerState> PathState(std::uint64_t nowUs) {
-      if (m_path.size() < 2)
-        return std::nullopt;
-      if (!m_pathStartUs)
-        m_pathStartUs = nowUs;
-      const auto first = m_path.front().timeUs, span = m_path.back().timeUs - first;
-      const auto at = first + (nowUs - *m_pathStartUs) % std::max<std::uint64_t>(span, 1);
-      while (m_pathNext + 1 < m_path.size() && m_path[m_pathNext + 1].timeUs <= at)
-        ++m_pathNext;
-      if (m_path[m_pathNext].timeUs > at)
-        m_pathNext = 0; // a new lap
-      auto out = m_path[m_pathNext];
-      out.position.x += m_options.offset.x;
-      out.position.y += m_options.offset.y;
-      out.position.z += m_options.offset.z;
-      if (const auto placement = tandem::movement::PlacementOf(out.flags);
-          placement != m_pathPlacement) {
-        m_pathPlacement = placement;
-        Log("path: {}", tandem::movement::NameOf(placement));
-      }
-      return out;
-    }
+private:
+  std::optional<PlayerState> Mirror(std::uint64_t nowUs) {
+    // The newest state at least `delay` old.
+    const auto delayUs = static_cast<std::uint64_t>(m_options.delay.count()) * 1000;
+    const PlayerState *pick = nullptr;
+    for (const auto &[at, state] : m_heard)
+      if (at + delayUs <= nowUs)
+        pick = &state;
+    if (!pick)
+      return std::nullopt;
+    auto out = *pick;
+    out.position.x += m_options.offset.x;
+    out.position.y += m_options.offset.y;
+    out.position.z += m_options.offset.z;
+    return out;
+  }
 
-    std::optional<PlayerState> Front(std::uint64_t nowUs) {
-      if (m_heard.empty())
-        return std::nullopt;
-      constexpr float kAhead = 3.f, kSway = 2.f, kRate = 0.6f; // m, m, rad/s
+  std::optional<PlayerState> Ghost(std::uint64_t nowUs) {
+    constexpr float kRadius = 3.f;
+    constexpr float kSpeed = 2.f; // m/s along the circle
+    const Vec3 center = m_heard.empty() ? Vec3{} : m_heard.back().second.position;
+    const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
+
+    PlayerState out;
+    out.position = {center.x + kRadius * std::cos(angle), center.y + kRadius * std::sin(angle),
+                    center.z};
+    out.velocity = {-kSpeed * std::sin(angle), kSpeed * std::cos(angle), 0.f};
+    // Facing along the circle: yaw around Z (the game's up axis).
+    const float yaw = angle + std::numbers::pi_v<float> / 2.f;
+    out.orientation = {0.f, 0.f, std::sin(yaw / 2.f), std::cos(yaw / 2.f)};
+    return out;
+  }
+
+public:
+  // A car going round a 12 m circle at 8 m/s around where your V was first
+  // heard (fixed, so you can watch it pass): the driver's state, and the car's.
+  std::pair<std::optional<PlayerState>, std::optional<tandem::proto::VehicleState>>
+  Drive(std::uint64_t nowUs) {
+    if (m_heard.empty())
+      return {};
+    if (!m_center)
+      m_center = m_heard.back().second.position;
+    constexpr float kRadius = 12.f, kSpeed = 8.f;
+    const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
+    const Vec3 at{m_center->x + kRadius * std::cos(angle), m_center->y + kRadius * std::sin(angle),
+                  m_center->z};
+    const Vec3 velocity{-kSpeed * std::sin(angle), kSpeed * std::cos(angle), 0.f};
+    // The game's forward is +Y turned by yaw: facing along the circle.
+    const auto facing = tandem::sync::FromYaw(angle);
+    PlayerState body;
+    body.position = at;
+    body.velocity = velocity;
+    body.orientation = facing;
+    tandem::proto::VehicleState car;
+    car.position = at;
+    car.orientation = facing;
+    car.velocity = velocity;
+    return {body, car};
+  }
+
+  void Park(const Vec3 &at) { m_parkedAt = at; }
+  void Beside(std::optional<Vec3> at) { m_beside = at; }
+
+private:
+  std::optional<Vec3> m_center;
+  std::optional<Vec3> m_parkedAt;
+  std::optional<Vec3> m_beside;
+  std::optional<Vec3> m_station;
+
+  // metro: a straight line from the platform (3 m to the right of where
+  // your V was first heard, along its facing), 8 m up while riding, at
+  // 20 m/s, 200 m/s while skipping.
+  static constexpr float kMetroSpeed = 20.f, kSkipSeconds = 3.f, kSkipFactor = 10.f, kMetroUp = 8.f;
+  std::optional<std::uint64_t> m_boardUs;
+  std::optional<Vec3> m_platform;
+  float m_lineYaw{};
+
+  float MetroDistance(float t) const {
+    const float ride = static_cast<float>(m_options.metroForSeconds), half = ride / 2.f;
+    t = std::clamp(t, 0.f, ride);
+    if (t < half)
+      return kMetroSpeed * t;
+    const float skip = std::min(t - half, kSkipSeconds);
+    return kMetroSpeed * half + kMetroSpeed * kSkipFactor * skip +
+           kMetroSpeed * std::max(0.f, t - half - kSkipSeconds);
+  }
+
+  std::optional<PlayerState> Metro(std::uint64_t nowUs) {
+    if (m_heard.empty())
+      return std::nullopt;
+    if (!m_platform) {
       const auto &them = m_heard.back().second;
-      const float yaw = tandem::sync::YawOf(them.orientation);
-      // The game's forward is +Y turned by yaw: (-sin, cos); right is (cos, sin).
-      const float fx = -std::sin(yaw), fy = std::cos(yaw);
-      const float rx = std::cos(yaw), ry = std::sin(yaw);
-      const float t = static_cast<float>(nowUs % 600'000'000ULL) / 1e6f;
-      const float side = kSway * std::sin(t * kRate);
-      const float sideSpeed = kSway * kRate * std::cos(t * kRate);
-
-      PlayerState out;
-      out.position = {them.position.x + fx * kAhead + rx * side,
-                      them.position.y + fy * kAhead + ry * side, them.position.z};
-      out.velocity = {rx * sideSpeed, ry * sideSpeed, 0.f};
-      out.orientation = tandem::sync::FromYaw(yaw + std::numbers::pi_v<float>); // facing them
-      // Crouched 4 s out of every 8 (gamePSMLocomotionStates::Crouch = 1).
-      out.stance = (static_cast<int>(t) % 8) < 4 ? 1 : 0;
-      return out;
+      m_lineYaw = tandem::sync::YawOf(them.orientation);
+      // The game's right is (cos, sin) of the yaw.
+      m_platform = Vec3{them.position.x + 3.f * std::cos(m_lineYaw),
+                        them.position.y + 3.f * std::sin(m_lineYaw), them.position.z};
     }
+    const int step = MetroStep(nowUs);
+    const float t =
+        m_boardUs && nowUs > *m_boardUs ? static_cast<float>(nowUs - *m_boardUs) / 1e6f : 0.f;
+    const float along = step == 0 ? 0.f : MetroDistance(t);
+    // The game's forward is (-sin, cos) of the yaw.
+    const float fx = -std::sin(m_lineYaw), fy = std::cos(m_lineYaw);
+    const float speed = step == 1 ? kMetroSpeed : step == 2 ? kMetroSpeed * kSkipFactor : 0.f;
+    PlayerState out;
+    out.position = {m_platform->x + fx * along, m_platform->y + fy * along,
+                    m_platform->z + (step == 1 || step == 2 ? kMetroUp : 0.f)};
+    out.velocity = {fx * speed, fy * speed, 0.f};
+    out.orientation = tandem::sync::FromYaw(m_lineYaw);
+    return out;
+  }
 
-    const Options &m_options;
-    Course m_course;
-    std::optional<std::uint64_t> m_courseStartUs;
-    float m_courseYaw{};
-    Vec3 m_courseOrigin;
-    const char *m_courseWhat{};
-    std::vector<PlayerState> m_path;
-    std::optional<std::uint64_t> m_pathStartUs;
-    std::size_t m_pathNext{};
-    tandem::movement::Placement m_pathPlacement{};
-    std::deque<std::pair<std::uint64_t, PlayerState>> m_heard;
-    std::deque<std::pair<std::uint64_t, tandem::proto::PoseState>> m_poses;
-  };
+  std::optional<PlayerState> Parked() const {
+    PlayerState out;
+    out.position = {m_parkedAt->x + 2.f, m_parkedAt->y, m_parkedAt->z};
+    return out;
+  }
+
+  // The course, laid out ahead of where your V first stood, facing the way it faced.
+  std::optional<PlayerState> CourseState(std::uint64_t nowUs) {
+    if (m_heard.empty())
+      return std::nullopt;
+    if (!m_courseStartUs) {
+      const auto &them = m_heard.back().second;
+      m_courseStartUs = nowUs;
+      m_courseYaw = tandem::sync::YawOf(them.orientation);
+      m_courseOrigin = {them.position.x + m_options.offset.x, them.position.y + m_options.offset.y,
+                        them.position.z + m_options.offset.z};
+    }
+    const float t = static_cast<float>(nowUs - *m_courseStartUs) / 1e6f;
+    // The game's forward is +Y turned by yaw: (-sin, cos). 3 m ahead of your V.
+    const float fx = -std::sin(m_courseYaw), fy = std::cos(m_courseYaw);
+    const auto place = [&](const CoursePoint &p) {
+      const float ahead = 3.f + p.ahead;
+      return Vec3{m_courseOrigin.x + fx * ahead, m_courseOrigin.y + fy * ahead,
+                  m_courseOrigin.z + p.up};
+    };
+    const auto point = m_course.At(t);
+    const auto at = place(point);
+    const auto next = place(m_course.At(t + 0.02f));
+    if (point.what != m_courseWhat) {
+      m_courseWhat = point.what;
+      Log("course: {} ({})", point.what,
+          tandem::movement::NameOf(tandem::movement::PlacementOf(point.movement)));
+    }
+    PlayerState out;
+    out.position = at;
+    // (the lap's end jumps back to the start: no velocity across it)
+    if (std::hypot(next.x - at.x, next.y - at.y, next.z - at.z) < 1.f)
+      out.velocity = {(next.x - at.x) / 0.02f, (next.y - at.y) / 0.02f, (next.z - at.z) / 0.02f};
+    out.orientation = tandem::sync::FromYaw(m_courseYaw);
+    out.stance = point.stance;
+    out.flags = tandem::movement::Pack(point.movement);
+    return out;
+  }
+
+  // A saved path at its own pace, in a loop, moved by --offset.
+  std::optional<PlayerState> PathState(std::uint64_t nowUs) {
+    if (m_path.size() < 2)
+      return std::nullopt;
+    if (!m_pathStartUs)
+      m_pathStartUs = nowUs;
+    const auto first = m_path.front().timeUs, span = m_path.back().timeUs - first;
+    const auto at = first + (nowUs - *m_pathStartUs) % std::max<std::uint64_t>(span, 1);
+    while (m_pathNext + 1 < m_path.size() && m_path[m_pathNext + 1].timeUs <= at)
+      ++m_pathNext;
+    if (m_path[m_pathNext].timeUs > at)
+      m_pathNext = 0; // a new lap
+    auto out = m_path[m_pathNext];
+    out.position.x += m_options.offset.x;
+    out.position.y += m_options.offset.y;
+    out.position.z += m_options.offset.z;
+    if (const auto placement = tandem::movement::PlacementOf(out.flags);
+        placement != m_pathPlacement) {
+      m_pathPlacement = placement;
+      Log("path: {}", tandem::movement::NameOf(placement));
+    }
+    return out;
+  }
+
+  std::optional<PlayerState> Front(std::uint64_t nowUs) {
+    if (m_heard.empty())
+      return std::nullopt;
+    constexpr float kAhead = 3.f, kSway = 2.f, kRate = 0.6f; // m, m, rad/s
+    const auto &them = m_heard.back().second;
+    const float yaw = tandem::sync::YawOf(them.orientation);
+    // The game's forward is +Y turned by yaw: (-sin, cos); right is (cos, sin).
+    const float fx = -std::sin(yaw), fy = std::cos(yaw);
+    const float rx = std::cos(yaw), ry = std::sin(yaw);
+    const float t = static_cast<float>(nowUs % 600'000'000ULL) / 1e6f;
+    const float side = kSway * std::sin(t * kRate);
+    const float sideSpeed = kSway * kRate * std::cos(t * kRate);
+
+    PlayerState out;
+    out.position = {them.position.x + fx * kAhead + rx * side,
+                    them.position.y + fy * kAhead + ry * side, them.position.z};
+    out.velocity = {rx * sideSpeed, ry * sideSpeed, 0.f};
+    out.orientation = tandem::sync::FromYaw(yaw + std::numbers::pi_v<float>); // facing them
+    // Crouched 4 s out of every 8 (gamePSMLocomotionStates::Crouch = 1).
+    out.stance = (static_cast<int>(t) % 8) < 4 ? 1 : 0;
+    return out;
+  }
+
+  const Options &m_options;
+  Course m_course;
+  std::optional<std::uint64_t> m_courseStartUs;
+  float m_courseYaw{};
+  Vec3 m_courseOrigin;
+  const char *m_courseWhat{};
+  std::vector<PlayerState> m_path;
+  std::optional<std::uint64_t> m_pathStartUs;
+  std::size_t m_pathNext{};
+  tandem::movement::Placement m_pathPlacement{};
+  std::deque<std::pair<std::uint64_t, PlayerState>> m_heard;
+  std::deque<std::pair<std::uint64_t, tandem::proto::PoseState>> m_poses;
+};
 } // namespace
 
 // The body keys of a real V (face, body, arms: the game's appearance keys,

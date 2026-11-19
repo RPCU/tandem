@@ -506,7 +506,7 @@ TEST_CASE("each player's lending reaches everyone once, late joiners too, and go
   CHECK_FALSE(IsStory(never));
   CHECK(ChannelOf(never) == Channel::Event);
   CHECK_FALSE(consistency::IsOneShot(never)); // state: a repeat is applied nowhere
-  CHECK(Message(CarLend{}).index() == std::variant_size_v<Message> - 1);
+  CHECK(Message(CarLend{}).index() == Message(VehicleUnlock{}).index() + 1); // appended
   CHECK(std::string_view(NameOf(never)) == "CarLend");
   // Out of range: refused on the wire and by the endpoint.
   CHECK_FALSE(Decode(Encode(CarLend{.lend = static_cast<Lend>(7)})).has_value());
