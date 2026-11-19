@@ -17,6 +17,8 @@ declare -A value=(
   ["--hack-player"]=6 ["--npc-hack"]=AIQuickHack.HackRevealPosition ["--hack-car"]=5
   ["--npc"]=Character.x ["--detect-at"]=15 ["--detect-for"]=10 ["--camo"]=10 ["--shoot"]=3
   ["--strike"]=nonlethal ["--difficulty"]=veryhard ["--area-hit"]=5
+  ["--friendly-fire"]=on ["--throw"]=5 ["--throw-item"]=Items.x ["--smart"]=5 ["--defend"]=5
+  ["--hit-you-melee"]=on
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
   ["--shoot-you"]=3 ["--shot-weapon"]=Items.x
   ["--sandevistan-at"]=10 ["--sandevistan-for"]=5 ["--sandevistan-scale"]=0.25

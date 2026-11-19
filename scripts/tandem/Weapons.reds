@@ -13,6 +13,12 @@ protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: r
     if IsDefined(weapon) {
       // gamedataFxAction: Shoot 16, SilencedShoot 17
       TandemNative.SendShot(false, weapon.IsSilenced() ? 17 : 16);
+      // A smart weapon's round homes on its lock on the others' games too
+      // (Throws.reds); in a session only.
+      let throws = TandemThrows.Of(scriptInterface.executionOwner.GetGame());
+      if IsDefined(throws) && Equals(RPGManager.GetWeaponEvolution(weapon.GetItemID()), gamedataWeaponEvolution.Smart) {
+        throws.OnOurSmartShot(weapon);
+      }
     }
   }
 }

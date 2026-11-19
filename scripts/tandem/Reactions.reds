@@ -88,6 +88,31 @@ public abstract class TandemReactions {
     if Equals(GameObject.GetAttitudeBetween(body, instigator), EAIAttitude.AIA_Hostile) {
       TargetTrackingExtension.InjectThreat(body, instigator);
     }
+    // Our companions fight whoever a guest fights, as they would for our V.
+    TandemReactions.RallyCompanions(body.GetGame(), body, instigator);
+  }
+
+  // Host: a fight between one of our NPCs (`enemy`) and a guest's V (its
+  // puppet `guest`). Our V's companions (Jackie, Panam, Judy, Takemura...:
+  // AIFollowerRole followers, ScriptedPuppet.IsPlayerCompanion) take that
+  // NPC on as they take on our V's enemies, when they are hostile to it and
+  // friendly to the guest; vanilla's follower only ever looks out for the
+  // player it follows. Their attitudes to the guest's V are our V's
+  // (Attitudes.reds), so they never turn on the guest.
+  public static func RallyCompanions(game: GameInstance, enemy: wref<GameObject>, guest: wref<GameObject>) -> Void {
+    if !TandemNative.IsHost() || !IsDefined(enemy) || !IsDefined(guest) {
+      return;
+    }
+    let player = GetPlayer(game);
+    let foe = enemy as ScriptedPuppet;
+    if !IsDefined(player) || !IsDefined(foe) || foe.IsDead() || foe.IsCharacterCivilian() || TandemReactions.GuestOf(game, guest) == 0u {
+      return;
+    }
+    for companion in player.GetNPCsAroundObject(60.0) {
+      if IsDefined(companion) && companion != foe && !companion.IsDead() && companion.IsPlayerCompanion() && Equals(GameObject.GetAttitudeBetween(companion, enemy), EAIAttitude.AIA_Hostile) && NotEquals(GameObject.GetAttitudeBetween(companion, guest), EAIAttitude.AIA_Hostile) {
+        TargetTrackingExtension.InjectThreat(companion, enemy);
+      }
+    }
   }
 }
 

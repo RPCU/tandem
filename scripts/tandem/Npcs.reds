@@ -96,6 +96,13 @@ public class TandemNpcs {
   // the armour penetration the host sent for each (Combat.reds).
   private let m_forwarded: array<ref<gameHitEvent>>;
   private let m_forwardedPierce: array<Float>;
+  // Guest: the host's NPCs' melee hits on our V waiting for their proxy to
+  // be drawn landing them (TandemFight.MeleeHold): the hit, its armour
+  // penetration, when it runs. And whether the first was logged.
+  private let m_held: array<ref<gameHitEvent>>;
+  private let m_heldPierce: array<Float>;
+  private let m_heldUntil: array<Float>;
+  private let m_heldLogged: Bool;
   // Host: how far each NPC is in noticing each guest, gathered by Share and
   // sent every other round (5 Hz; Stealth.reds shows it on the guest).
   private let m_awareNpcs: array<Uint32>;
@@ -183,6 +190,10 @@ public class TandemNpcs {
 
   // Each hit runs on our V through our own damage system (the target's side
   // of the hit by our game's rules), from the NPC's proxy when we have it.
+  // A melee hit waits until its proxy is drawn landing it (the host decided
+  // it a network trip and an interpolation delay ahead of what we see), so
+  // a block, a parry or a dodge is timed against the swing on our screen,
+  // as in single player (docs/architecture/combat-coverage.md).
   private func TakePlayerHits() -> Void {
     let damage = GameInstance.GetDamageSystem(this.m_game);
     for hit in TandemNative.TakePlayerHits() {
@@ -193,17 +204,43 @@ public class TandemNpcs {
       }
       let event = TandemCombat.PlayerHitEvent(this.m_game, hit, proxy);
       if IsDefined(event) {
-        // The newest few: an entry leaves when its pipeline ends.
-        while ArraySize(this.m_forwarded) >= 16 {
-          ArrayErase(this.m_forwarded, 0);
-          ArrayErase(this.m_forwardedPierce, 0);
+        let hold = (hit.flags & 4) != 0 && IsDefined(proxy) ? TandemFight.MeleeHold(hit.npc) : 0.0;
+        if hold > 0.005 && ArraySize(this.m_held) < 16 {
+          ArrayPush(this.m_held, event);
+          ArrayPush(this.m_heldPierce, hit.pierce);
+          ArrayPush(this.m_heldUntil, this.m_now + hold);
+          if !this.m_heldLogged {
+            this.m_heldLogged = true;
+            TandemNative.Log(s"npcs: npc \(hit.npc)'s melee hit on our V held \(hold * 1000.0) ms, until its proxy lands it");
+          }
+        } else {
+          this.RunPlayerHit(damage, event, hit.pierce);
         }
-        ArrayPush(this.m_forwarded, event);
-        ArrayPush(this.m_forwardedPierce, hit.pierce);
-        damage.QueueHitEvent(event, event.target);
         TandemNative.Log(s"npcs: hit by npc \(hit.npc)\(IsDefined(proxy) ? "" : " (no proxy)"): \(hit.physical) physical, \(hit.thermal) thermal, \(hit.electric) electric, \(hit.chemical) chemical, type \(hit.attackType), attack \(TDBID.ToStringDEBUG(hit.attack))");
       }
     }
+    let i = 0;
+    while i < ArraySize(this.m_held) {
+      if this.m_now >= this.m_heldUntil[i] {
+        this.RunPlayerHit(damage, this.m_held[i], this.m_heldPierce[i]);
+        ArrayErase(this.m_held, i);
+        ArrayErase(this.m_heldPierce, i);
+        ArrayErase(this.m_heldUntil, i);
+      } else {
+        i += 1;
+      }
+    }
+  }
+
+  private func RunPlayerHit(damage: ref<DamageSystem>, event: ref<gameHitEvent>, pierce: Float) -> Void {
+    // The newest few: an entry leaves when its pipeline ends.
+    while ArraySize(this.m_forwarded) >= 16 {
+      ArrayErase(this.m_forwarded, 0);
+      ArrayErase(this.m_forwardedPierce, 0);
+    }
+    ArrayPush(this.m_forwarded, event);
+    ArrayPush(this.m_forwardedPierce, pierce);
+    damage.QueueHitEvent(event, event.target);
   }
 
   public func IsForwarded(hit: ref<gameHitEvent>) -> Bool {

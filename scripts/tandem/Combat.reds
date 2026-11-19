@@ -47,9 +47,9 @@ public abstract class TandemCombat {
 
   // A hit on a remote player's puppet whose target's side is that player's
   // game's (every stage of it is skipped here): on the host, an NPC's; on
-  // any game, our V's area effect (Outcomes.reds).
+  // any game, our V's under friendly fire (Outcomes.reds).
   public static func OnPuppet(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
-    return TandemCombat.PuppetPlayer(game, hitEvent.target) != 0u && (TandemNative.IsHost() || TandemOutcomes.IsOurArea(game, hitEvent));
+    return TandemCombat.PuppetPlayer(game, hitEvent.target) != 0u && (TandemNative.IsHost() || TandemOutcomes.IsOurHit(game, hitEvent));
   }
 
   // A hit someone else's game computed the attacker's side of, run on our
@@ -242,20 +242,22 @@ public abstract class TandemCombat {
 private final func DealDamages(hitEvent: ref<gameHitEvent>) {
   let game = GetGameInstance();
   // A remote player's puppet never takes damage here: the host sends an
-  // NPC's hit to that player's game, any game its own V's area effects
-  // (Outcomes.reds); that game applies it to its V.
+  // NPC's hit to that player's game, any game its own V's hits under
+  // friendly fire (Outcomes.reds); that game applies it to its V.
   let victim = TandemCombat.PuppetPlayer(game, hitEvent.target);
   if victim != 0u {
     if TandemNative.IsHost() && TandemCombat.ForwardsToPlayer(hitEvent, game) {
       TandemCombat.SendPlayerHit(game, victim, hitEvent, this.GetArmorPenetrationValue(hitEvent.attackData.GetWeapon(), hitEvent));
-    } else if TandemOutcomes.IsOurArea(game, hitEvent) {
+      // Our companions stand by that V (Reactions.reds).
+      TandemReactions.RallyCompanions(game, hitEvent.attackData.GetInstigator(), hitEvent.target);
+    } else if TandemOutcomes.HurtsPartner(game, hitEvent) {
       TandemOutcomes.SendAreaHit(game, victim, hitEvent);
     }
     return;
   }
   // Guest: a proxy attacks nobody (the host's NPC does, as PlayerHit).
   if TandemOutcomes.IsProxyComputed(game, hitEvent) {
-    TandemNative.Log("combat: a proxy's own hit on our V dropped (the host's NPC is the one that attacks)");
+    TandemNative.Log("combat: a proxy's own hit dropped (the host's NPC is the one that attacks)");
     return;
   }
   // Guest: the host's NPC's hit on our V, applied here like any other.
@@ -356,6 +358,16 @@ private final func ProcessInstantKill(hitEvent: ref<gameHitEvent>) {
 // frame after the hit, so they are caught here, not in the damage pipeline.
 @wrapMethod(NPCPuppet)
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
+  // Host: a guest's gorilla-arms one punch on our NPC: the slow motion
+  // vanilla gives "the player" is that guest's (its own game played it on
+  // its proxy), never our V's (coop-perks.md §5.3).
+  if TandemNative.IsHost() && IsDefined(evt.staticData) && ArrayContains(evt.staticData.GameplayTags(), n"OnePunchedMark") {
+    let outcomes = TandemOutcomes.Of(this.GetGame());
+    let instigator = GameInstance.FindEntityByID(this.GetGame(), evt.instigatorEntityID) as GameObject;
+    if IsDefined(outcomes) && TandemCombat.PuppetPlayer(this.GetGame(), instigator) != 0u {
+      outcomes.SuppressPunchSlowMo();
+    }
+  }
   let result = wrappedMethod(evt);
   // A V is never crippled or dismembered (Outcomes.reds KeepsLimbs).
   if IsDefined(evt.staticData) && TandemOutcomes.IsLimbEffect(evt.staticData) && TandemOutcomes.KeepsLimbs(this, s"status effect \(TDBID.ToStringDEBUG(evt.staticData.GetID()))") {
@@ -399,10 +411,11 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   if IsDefined(shots) && shots.SimulatedByGuest(hitEvent) {
     return;
   }
-  // Host: what a guest's game computed already (its effects' ticks and
-  // explosions, its car copy's collisions) arrives as strikes.
-  if TandemOutcomes.IsGuestComputed(game, hitEvent) {
-    TandemNative.Log(s"combat: a guest's own hit on \(EntityID.ToDebugStringDecimal(hitEvent.target.GetEntityID())) left to their game (type \(EnumInt(hitEvent.attackData.GetAttackType())))");
+  // What another V's game computed already (its effects' ticks and
+  // explosions, its thrown objects' copies, a guest's car copy's
+  // collisions) arrives as strikes or AreaHit.
+  if TandemOutcomes.IsRemoteComputed(game, hitEvent) {
+    TandemNative.Log(s"combat: another V's own hit on \(EntityID.ToDebugStringDecimal(hitEvent.target.GetEntityID())) left to their game (type \(EnumInt(hitEvent.attackData.GetAttackType())))");
     return;
   }
   let victim = TandemCombat.PuppetPlayer(game, hitEvent.target);
@@ -421,6 +434,9 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   if TandemNative.IsHost() && IsDefined(outcomes) {
     outcomes.Forget(hitEvent);
   }
+  // Guest: an NPC's attack on our V we blocked or parried: the host's NPC
+  // recoils (Outcomes.reds).
+  TandemOutcomes.ReportDefence(game, hitEvent);
   let system = TandemCombat.System(game);
   if IsDefined(system) && system.IsForwardedHit(hitEvent) {
     if !hitEvent.attackData.HasFlag(hitFlag.SuccessfulAttack) {

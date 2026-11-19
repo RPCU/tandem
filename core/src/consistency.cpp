@@ -24,7 +24,8 @@ Hasher &Hasher::Add(std::string_view text) {
 }
 
 std::uint32_t WorldDigest(const std::optional<proto::World> &world,
-                          const std::optional<proto::Difficulty> &difficulty) {
+                          const std::optional<proto::Difficulty> &difficulty,
+                          const std::optional<proto::Rules> &rules) {
   Hasher hash;
   if (world)
     hash.Add(std::uint64_t{world->revision})
@@ -33,6 +34,8 @@ std::uint32_t WorldDigest(const std::optional<proto::World> &world,
         .Add(std::uint64_t{world->timePaused});
   if (difficulty)
     hash.Add(std::uint64_t{0xD0}).Add(std::uint64_t{difficulty->level});
+  if (rules)
+    hash.Add(std::uint64_t{0xD1}).Add(std::uint64_t{rules->flags});
   return hash.Value();
 }
 
@@ -194,7 +197,10 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<NpcShotAt>(message) || std::holds_alternative<ShotHit>(message) ||
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
          std::holds_alternative<NpcStrike>(message) || std::holds_alternative<NpcWound>(message) ||
-         std::holds_alternative<AreaHit>(message);
+         std::holds_alternative<AreaHit>(message) ||
+         // A throw, its end, a defence: each one counts.
+         std::holds_alternative<Throw>(message) || std::holds_alternative<ThrowEnd>(message) ||
+         std::holds_alternative<Defended>(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

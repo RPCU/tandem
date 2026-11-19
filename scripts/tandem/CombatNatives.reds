@@ -8,8 +8,14 @@ public native struct TandemFightEvent {
   // EHitShapeType; attack); 2 a host NPC's wound (npc, player: whose hit,
   // part: gameDismBodyPart, shape: gameDismWoundType, x y z); 3 a host NPC's
   // poise (npc, poise 0..1); 4 the session's difficulty (level:
-  // gameDifficulty); 5 another V's area effect on our V (player: whose,
-  // physical..chemical, attackType, flags: proto::kHit*, attack, weapon).
+  // gameDifficulty); 5 another V's hit on our V (player: whose,
+  // physical..chemical, attackType, flags: proto::kHit*, attack, weapon);
+  // 6 another V's throw (player, id, level: 0 grenade 1 knife 2 launcher
+  // round 3 smart round, flags: proto::kThrow*, attack: the item, x y z the
+  // origin, dx dy dz the velocity, npc / target: the NPC / V it homes on);
+  // 7 its end (player, id, level: 0 exploded 1 stuck 2 gone, x y z); 8 the
+  // session's rules (flags: proto::kRule*); 9 (host) a guest blocked (level
+  // 1) or parried (2) our NPC's attack (player, npc).
   native let kind: Int32;
   native let npc: Uint32;
   native let player: Uint32;
@@ -35,6 +41,8 @@ public native struct TandemFightEvent {
   native let dx: Float;
   native let dy: Float;
   native let dz: Float;
+  native let id: Uint32;
+  native let target: Uint32;
 }
 
 public native class TandemFight extends IScriptable {
@@ -43,6 +51,14 @@ public native class TandemFight extends IScriptable {
   public static native func SendPoise(npc: Uint32, poise: Float)
   public static native func SendDifficulty(level: Int32)
   public static native func SendAreaHit(player: Uint32, physical: Float, thermal: Float, electric: Float, chemical: Float, attackType: Int32, flags: Int32, position: Vector4, direction: Vector4, attack: TweakDBID, weapon: TweakDBID)
+  public static native func SendThrow(id: Uint32, kind: Int32, flags: Int32, item: TweakDBID, origin: Vector4, velocity: Vector4, npc: Uint32, at: Uint32)
+  public static native func SendThrowEnd(id: Uint32, how: Int32, position: Vector4)
+  public static native func SendRules(flags: Int32)
+  public static native func ConfiguredRules() -> Int32
+  public static native func FriendlyFire() -> Bool
+  public static native func SendDefended(npc: Uint32, how: Int32)
+  public static native func MeleeHold(npc: Uint32) -> Float
+  public static native func StaleThrows() -> Int32
   public static native func TakeEvents() -> array<TandemFightEvent>
   public static native func StrikeLoss(health: Float, maxHealth: Float, damage: Float, flags: Int32, minHealth: Float, immortal: Bool) -> Float
 }

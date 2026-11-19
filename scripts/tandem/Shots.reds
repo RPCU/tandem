@@ -40,6 +40,10 @@ public class TandemShots {
   // Guest: why the last shot is still waiting, and the shots fired.
   private let m_waitingFor: String;
   private let m_fired: Int32;
+  // Guest: the proxies that fired at us lately, and when: their bullets'
+  // hits on our V are ours to apply (IsSimulatedHit), whatever flight time.
+  private let m_recentBy: array<EntityID>;
+  private let m_recentAt: array<Float>;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -304,6 +308,13 @@ public class TandemShots {
     ArrayPush(this.m_firedBoost, shot.boost);
     ArrayPush(this.m_firedBoostSeconds, shot.boostSeconds);
     ArrayPush(this.m_firedTime, now);
+    let recent = ArrayFindFirst(this.m_recentBy, proxy.GetEntityID());
+    if recent >= 0 {
+      this.m_recentAt[recent] = now;
+    } else {
+      ArrayPush(this.m_recentBy, proxy.GetEntityID());
+      ArrayPush(this.m_recentAt, now);
+    }
     // The attack it fires: the host's, as a slowed one is (Time.reds).
     AIWeapon.SetAttackBasedOnTimeDilation(proxy, weapon, shot.attack);
     weapon.AI_ShootAt(IPositionProvider.CreateStaticPositionProvider(at), null, proxy, Cast<Uint16>(0), params, Cast<Uint8>(Max(perShot, 1)), 0.0, maxSpread);
@@ -374,6 +385,36 @@ public class TandemShots {
     }
   }
 
+  // A hit on our V from a shot this game fired from a proxy (any shot of a
+  // proxy that fired at us in the last 3 s: a slowed bullet flies long):
+  // ours to apply, not a proxy's own hit to drop (TandemOutcomes
+  // .IsProxyComputed).
+  public func IsSimulatedHit(hitEvent: ref<gameHitEvent>) -> Bool {
+    if TandemNative.IsHost() || !IsDefined(hitEvent) || !IsDefined(hitEvent.attackData) {
+      return false;
+    }
+    if !AttackData.IsRangedOrDirect(hitEvent.attackData.GetAttackType()) {
+      return false;
+    }
+    let from = hitEvent.attackData.GetInstigator();
+    if !IsDefined(from) {
+      return false;
+    }
+    let now = this.Now();
+    let i = 0;
+    while i < ArraySize(this.m_recentBy) {
+      if now - this.m_recentAt[i] > 3.0 {
+        ArrayErase(this.m_recentBy, i);
+        ArrayErase(this.m_recentAt, i);
+      } else if this.m_recentBy[i] == from.GetEntityID() {
+        return true;
+      } else {
+        i += 1;
+      }
+    }
+    return false;
+  }
+
   // A hit on our V from a proxy's shot (DealDamages, Combat.reds): the host
   // shows it on our puppet.
   public func Report(hitEvent: ref<gameHitEvent>) -> Void {
@@ -407,5 +448,7 @@ public class TandemShots {
     ArrayClear(this.m_boosted);
     ArrayClear(this.m_boostUntil);
     ArrayClear(this.m_boostFactor);
+    ArrayClear(this.m_recentBy);
+    ArrayClear(this.m_recentAt);
   }
 }

@@ -104,11 +104,12 @@ Config LoadConfig(const std::filesystem::path &path) {
       } else
         log::Warn("tandem.ini:{}: bad {} {}", number, key, value);
     } else if (key == "story" || key == "quest_freeze" || key == "recorder" ||
-               key == "recorder_pose") {
-      auto &flag = key == "story"          ? config.story
-                   : key == "quest_freeze" ? config.questFreeze
-                   : key == "recorder"     ? config.recorder
-                                           : config.recorderPose;
+               key == "recorder_pose" || key == "friendly_fire") {
+      auto &flag = key == "story"           ? config.story
+                   : key == "quest_freeze"  ? config.questFreeze
+                   : key == "recorder"      ? config.recorder
+                   : key == "friendly_fire" ? config.friendlyFire
+                                            : config.recorderPose;
       if (value == "on" || value == "true")
         flag = true;
       else if (value == "off" || value == "false")

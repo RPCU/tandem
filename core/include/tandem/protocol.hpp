@@ -1136,20 +1136,91 @@ struct ShotHit {     // Event channel
   friend bool operator==(const ShotHit &, const ShotHit &) = default;
 };
 
-using Message = std::variant<
-    Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
-    Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
-    Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
-    PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle,
-    ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
-    NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
-    Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
-    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit>;
+// ---- Thrown objects, the session's rules, defence (docs/architecture/combat-coverage.md) ----
+
+// Our V threw or launched an object whose flight the others must see: a
+// grenade, a throwing knife or axe, a round of the arm launcher, or a smart
+// weapon's guided projectile. The thrower's game owns the real one (its
+// flight, its hits, its explosion: hits on proxies go as NpcStrike, on
+// another V as AreaHit); every other game launches a copy from the
+// thrower's puppet whose hits are dropped (a remote V's puppet never deals
+// damage on our game) and ends it where the real one did (ThrowEnd). The
+// copy's own non-damage effects stay: smoke blinds the host's NPCs, its
+// explosion is heard by them. Event channel, a one-shot, except Smart
+// (State: one per shot, a late one is worth nothing); the host stamps the
+// thrower and relays it to everyone else.
+enum class ThrowKind : std::uint8_t { Grenade = 0, Knife = 1, Launcher = 2, Smart = 3 };
+inline constexpr std::uint8_t kThrowSticky = 1, kThrowHoming = 2, kThrowCharged = 4,
+                              kThrowQuick = 8;
+struct Throw {
+  PlayerId player{};    // the thrower: set by the host from the connection
+  std::uint32_t id{};   // the thrower's number for this object (ThrowEnd names it)
+  ThrowKind kind{};     //
+  std::uint8_t flags{}; // kThrow*
+  std::uint64_t item{}; // TweakDB id: the grenade, the knife, the round, the smart weapon
+  Vec3 origin;          // where it left the hand
+  Vec3 velocity;        // its launch velocity (m/s): the copy's direction and speed
+  NpcId npc{};          // what it homes on: a host NPC (0: none)...
+  PlayerId at{};        // ...or a V (kNoPlayer: none)
+  friend bool operator==(const Throw &, const Throw &) = default;
+};
+
+// The real object of a Throw came to its end: it exploded, stuck (a knife
+// in a wall or a body) or is gone (picked up by its owner, despawned). The
+// copies end the same way at the same place. Event channel, a one-shot;
+// relayed like Throw.
+enum class ThrowEndKind : std::uint8_t { Exploded = 0, Stuck = 1, Gone = 2 };
+struct ThrowEnd {
+  PlayerId player{};
+  std::uint32_t id{};
+  ThrowEndKind how{};
+  Vec3 position;
+  friend bool operator==(const ThrowEnd &, const ThrowEnd &) = default;
+};
+
+// The session's rules, the host's (tandem.ini): every game plays by them.
+// Host to everyone, on change, kept for late joiners, in the world digest.
+// kRuleFriendlyFire: a V's hits (shots, blades, explosions) hurt the other
+// Vs (AreaHit carries every one); off, they never do (the default: as
+// vanilla's companions, a partner is never hurt by V).
+inline constexpr std::uint8_t kRuleFriendlyFire = 1;
+inline constexpr std::uint8_t kRuleFlags = kRuleFriendlyFire;
+struct Rules {
+  std::uint8_t flags{}; // kRule*
+  friend bool operator==(const Rules &, const Rules &) = default;
+};
+
+// A host NPC's attack on our V, run on our game (a PlayerHit, a shot fired
+// from its proxy), was blocked or parried there by our rules: the host's
+// NPC gets what vanilla's attacker gets then (DamageManager
+// .ProcessDefensiveState: the "attack blocked" or "attack parried" animation
+// event, AI event and signal: its stagger, its next move). Guest to host,
+// never relayed; behind the epoch fence.
+enum class DefendKind : std::uint8_t { Blocked = 1, Parried = 2 };
+struct Defended {
+  PlayerId player{}; // who defended: set by the host from the connection
+  NpcId npc{};       // the attacker
+  DefendKind how{};
+  friend bool operator==(const Defended &, const Defended &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
+                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
+                 Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
+                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
+                 NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
+                 Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise,
+                 Difficulty, AreaHit, Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit,
+                 NpcSeat, NpcShotAt, ShotHit, Throw, ThrowEnd, Rules, Defended>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.
 bool IsStory(const Message &message);
-// A hit outcome message (NpcStrike … AreaHit): one path in endpoint.hpp too.
+// A hit outcome message (NpcStrike … AreaHit, Throw … Defended): one path in
+// endpoint.hpp too.
 bool IsCombat(const Message &message);
 
 std::vector<std::byte> Encode(const Message &message);

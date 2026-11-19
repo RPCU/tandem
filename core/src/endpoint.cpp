@@ -58,6 +58,7 @@ bool AimsAtWorld(const proto::Message &message) {
          std::holds_alternative<proto::NpcStrike>(message) ||
          std::holds_alternative<proto::ShotHit>(message) ||
          std::holds_alternative<proto::NpcAction>(message) ||
+         std::holds_alternative<proto::Defended>(message) ||
          std::holds_alternative<proto::Noise>(message);
 }
 } // namespace
@@ -191,7 +192,7 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
   return {
       .epoch = IsHost() ? m_epoch : m_hostEpoch,
       .seq = m_digestSeq,
-      .world = consistency::WorldDigest(m_world, m_difficulty),
+      .world = consistency::WorldDigest(m_world, m_difficulty, m_rules),
       .npcs = consistency::NpcDigest(m_npcs, m_npcHealth, m_npcHolds),
       .story = m_story.Digest(),
       .players =
@@ -735,6 +736,8 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       Send(peer, *m_world);
     if (m_difficulty)
       Send(peer, *m_difficulty);
+    if (m_rules)
+      Send(peer, *m_rules);
     // What lies in the world (its taken stacks at quantity 0). Loot is not
     // in the digests: the host arbitrates each claim (ClaimWorldItem).
     if (!resync)
@@ -844,16 +847,28 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
     return;
   }
   if (proto::IsCombat(message)) {
-    // The host's word on its NPCs and rules; an area hit only when on us.
-    if (std::holds_alternative<proto::NpcStrike>(message))
+    // The host's word on its NPCs and rules; an area hit only when on us,
+    // and only while the rules allow it; another player's throws.
+    if (std::holds_alternative<proto::NpcStrike>(message) ||
+        std::holds_alternative<proto::Defended>(message))
       return;
-    if (const auto *area = std::get_if<proto::AreaHit>(&message); area && area->player != m_you)
+    if (const auto *area = std::get_if<proto::AreaHit>(&message);
+        area && (area->player != m_you || !FriendlyFire()))
       return;
-    // The difficulty is state: kept for the digests, said once.
+    if (const auto *thrown = std::get_if<proto::Throw>(&message); thrown && thrown->player == m_you)
+      return;
+    if (const auto *end = std::get_if<proto::ThrowEnd>(&message); end && end->player == m_you)
+      return;
+    // The difficulty and the rules are state: kept for the digests, said once.
     if (const auto *difficulty = std::get_if<proto::Difficulty>(&message)) {
       if (m_difficulty == *difficulty)
         return;
       m_difficulty = *difficulty;
+    }
+    if (const auto *rules = std::get_if<proto::Rules>(&message)) {
+      if (m_rules == *rules)
+        return;
+      m_rules = *rules;
     }
     out.push_back(events::Combat{message});
     return;
@@ -1994,15 +2009,36 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     mine.player = player;
     out.push_back(events::Combat{mine});
   } else if (const auto *area = std::get_if<proto::AreaHit>(&message)) {
-    // To the victim's game: ours, or pass it on (never back to the attacker).
+    // To the victim's game: ours, or pass it on (never back to the
+    // attacker), while the session's rules allow friendly fire.
+    if (!FriendlyFire())
+      return;
     auto mine = *area;
     mine.from = player;
     if (mine.player == m_you)
       out.push_back(events::Combat{mine});
     else if (const auto peer = PeerOf(mine.player); peer && mine.player != player)
       Send(*peer, mine);
+  } else if (const auto *thrown = std::get_if<proto::Throw>(&message)) {
+    // Its copy on every other game: ours, and the other guests'.
+    auto mine = *thrown;
+    mine.player = player;
+    out.push_back(events::Combat{mine});
+    if (const auto peer = PeerOf(player))
+      Broadcast(mine, *peer);
+  } else if (const auto *end = std::get_if<proto::ThrowEnd>(&message)) {
+    auto mine = *end;
+    mine.player = player;
+    out.push_back(events::Combat{mine});
+    if (const auto peer = PeerOf(player))
+      Broadcast(mine, *peer);
+  } else if (const auto *defended = std::get_if<proto::Defended>(&message)) {
+    // For the host's game only: it owns the attacker.
+    auto mine = *defended;
+    mine.player = player;
+    out.push_back(events::Combat{mine});
   }
-  // Wounds, poise and the difficulty are the host's to say.
+  // Wounds, poise, the difficulty and the rules are the host's to say.
 }
 
 bool Endpoint::SendCombat(proto::Message message) {
@@ -2014,6 +2050,8 @@ bool Endpoint::SendCombat(proto::Message message) {
   if (auto *area = std::get_if<proto::AreaHit>(&message)) {
     if (area->player == m_you)
       return false; // our own V's hits are our game's
+    if (!FriendlyFire())
+      return false; // the session's rules: a V never hurts another
     area->from = m_you;
     if (!IsHost()) {
       Send(m_hostPeer, message);
@@ -2031,12 +2069,41 @@ bool Endpoint::SendCombat(proto::Message message) {
     Send(m_hostPeer, message);
     return true;
   }
+  if (auto *defended = std::get_if<proto::Defended>(&message)) {
+    if (IsHost())
+      return false; // the host's own NPCs' attacks on its V are its game's
+    defended->player = m_you;
+    Send(m_hostPeer, message);
+    return true;
+  }
+  // Our throws: to every other game (a guest's through the host).
+  if (auto *thrown = std::get_if<proto::Throw>(&message)) {
+    thrown->player = m_you;
+    if (IsHost())
+      Broadcast(message);
+    else
+      Send(m_hostPeer, message);
+    return true;
+  }
+  if (auto *end = std::get_if<proto::ThrowEnd>(&message)) {
+    end->player = m_you;
+    if (IsHost())
+      Broadcast(message);
+    else
+      Send(m_hostPeer, message);
+    return true;
+  }
   if (!IsHost())
     return false; // the host's NPCs, the host's rules
   if (const auto *poise = std::get_if<proto::NpcPoise>(&message))
     m_npcPoise[poise->npc] = *poise;
   if (const auto *difficulty = std::get_if<proto::Difficulty>(&message))
     m_difficulty = *difficulty;
+  if (const auto *rules = std::get_if<proto::Rules>(&message)) {
+    if (m_rules == *rules)
+      return true; // said already
+    m_rules = *rules;
+  }
   Broadcast(message);
   return true;
 }

@@ -34,7 +34,8 @@ constexpr bool kKept =
     std::is_same_v<M, proto::Vitals> || std::is_same_v<M, proto::Revive> ||
     std::is_same_v<M, proto::NpcStrike> || std::is_same_v<M, proto::AreaHit> ||
     std::is_same_v<M, proto::Transit> || std::is_same_v<M, proto::ShotHit> ||
-    std::is_same_v<M, proto::Elsewhere>;
+    std::is_same_v<M, proto::Elsewhere> || std::is_same_v<M, proto::Throw> ||
+    std::is_same_v<M, proto::ThrowEnd>;
 } // namespace
 
 bool Keeps(const proto::Message &message) {
@@ -229,6 +230,17 @@ std::optional<proto::Message> Adapt(proto::Message message, const Mapping &mappi
         } else if constexpr (std::is_same_v<M, proto::Elsewhere>) {
           Shift(m.anchor, mapping.offset);
           return true;
+        } else if constexpr (std::is_same_v<M, proto::Throw>) {
+          // What it homes on: the recorder's NPC or V, mapped (else none).
+          Shift(m.origin, mapping.offset);
+          if (m.npc != 0 && !npc(m.npc, nullptr))
+            m.npc = 0;
+          if (m.at != proto::kNoPlayer && !other(m.at))
+            m.at = proto::kNoPlayer;
+          return true;
+        } else if constexpr (std::is_same_v<M, proto::ThrowEnd>) {
+          Shift(m.position, mapping.offset);
+          return true;
         } else {
           return true;
         }
@@ -279,7 +291,9 @@ void Apply(Endpoint &endpoint, const proto::Message &message) {
           endpoint.SetLocalVitals(m);
         else if constexpr (std::is_same_v<M, proto::Revive>)
           endpoint.SendRevive(m);
-        else if constexpr (std::is_same_v<M, proto::NpcStrike> || std::is_same_v<M, proto::AreaHit>)
+        else if constexpr (std::is_same_v<M, proto::NpcStrike> ||
+                           std::is_same_v<M, proto::AreaHit> || std::is_same_v<M, proto::Throw> ||
+                           std::is_same_v<M, proto::ThrowEnd>)
           endpoint.SendCombat(m);
         else if constexpr (std::is_same_v<M, proto::Transit>)
           endpoint.SetLocalTransit(m);
@@ -353,7 +367,8 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                       std::is_same_v<M, proto::VehicleState> || std::is_same_v<M, proto::Stealth> ||
                       std::is_same_v<M, proto::TimeEffect> || std::is_same_v<M, proto::Elsewhere> ||
                       std::is_same_v<M, proto::Vitals> || std::is_same_v<M, proto::Pause> ||
-                      std::is_same_v<M, proto::Epoch> || std::is_same_v<M, proto::StoryEffect>)
+                      std::is_same_v<M, proto::Epoch> || std::is_same_v<M, proto::StoryEffect> ||
+                      std::is_same_v<M, proto::Throw> || std::is_same_v<M, proto::ThrowEnd>)
           return host(m.player);
         else if constexpr (std::is_same_v<M, proto::VehicleRadio>) {
           later(m.trackStartUs);
@@ -424,7 +439,7 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                              std::is_same_v<M, proto::NpcShot> ||
                              std::is_same_v<M, proto::NpcPoise> ||
                              std::is_same_v<M, proto::Difficulty> ||
-                             std::is_same_v<M, proto::Journal> ||
+                             std::is_same_v<M, proto::Rules> || std::is_same_v<M, proto::Journal> ||
                              std::is_same_v<M, proto::Tracked> ||
                              std::is_same_v<M, proto::QuestReward>) {
           return true;

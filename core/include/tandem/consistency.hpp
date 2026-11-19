@@ -38,7 +38,8 @@ private:
 // Each domain's hash, the same on the host (its record) and on a guest (what
 // it received). Positions are left out: they are state, newest wins.
 std::uint32_t WorldDigest(const std::optional<proto::World> &world,
-                          const std::optional<proto::Difficulty> &difficulty = std::nullopt);
+                          const std::optional<proto::Difficulty> &difficulty = std::nullopt,
+                          const std::optional<proto::Rules> &rules = std::nullopt);
 // `holds`: who holds which NPC (grapples, carried bodies).
 std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
                         const std::map<proto::NpcId, proto::NpcHealth> &health,

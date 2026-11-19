@@ -35,6 +35,8 @@
 //                        ; the single-player slow motion whole on its own game (the
 //                        ; NPCs it shares follow the bubbles' rules); bubble puts its
 //                        ; world back to normal speed and slows only the NPCs
+//   friendly_fire = off  ; host: on, the Vs' hits (shots, blades, explosions) hurt
+//                        ; each other (proto::Rules, every game follows the host's)
 
 #include "tandem/relay.hpp"
 
@@ -80,6 +82,8 @@ struct Config {
   // bubbles only (false), or the whole single-player slow motion with what
   // is shared exempted (true).
   bool timeHostFull{true};
+  // The session's rules when we host (proto::Rules): the Vs hurt each other.
+  bool friendlyFire{false};
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;
