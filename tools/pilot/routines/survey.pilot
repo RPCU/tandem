@@ -1,0 +1,13 @@
+# Which way is the ground open around V? Ten metres out and back along each
+# axis; a direction that is blocked is a warning, not a failure. Read the
+# log to pick waypoints for a new spot.
+limit 240
+needs veh == 0
+optional walk ~0 ~10 timeout 15
+walk ~0 ~0 within 1.5
+optional walk ~10 ~0 timeout 15
+walk ~0 ~0 within 1.5
+optional walk ~0 ~-10 timeout 15
+walk ~0 ~0 within 1.5
+optional walk ~-10 ~0 timeout 15
+walk ~0 ~0 within 1.5

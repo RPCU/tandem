@@ -1,0 +1,9 @@
+# First contact with the plugin's pilot: no pad, no action. The state line
+# is shown twice, three seconds apart; saving must be locked.
+#   PILOT_FLAGS='--pad none --focus off' tools/game.sh pilot run state
+limit 30
+show
+check savelock == 1
+wait 3
+show
+check pilot == 1

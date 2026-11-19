@@ -1,0 +1,9 @@
+# A vendor: stand V in front of one, looking at it, then run this. It
+# counts the wares and buys the first thing V can pay for. (Nothing is
+# saved: the eddies are back with the next load.)
+limit 60
+needs veh == 0
+sim npc vendor 0 2
+act target nearest 5
+act vendor list
+act vendor buy

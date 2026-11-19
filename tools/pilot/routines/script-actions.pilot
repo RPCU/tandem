@@ -1,0 +1,55 @@
+# The script-level actions, with no pad at all:
+#   PILOT_FLAGS='--pad none --focus off' tools/game.sh pilot run script-actions
+# Each is acknowledged by the plugin and checked on the state. This is the
+# first-run test of the names docs/research/engine/autopilot.md tags as
+# untested: every step is optional, so one run reports all that fail
+# (warnings), and the routine itself only fails without a target.
+limit 180
+needs veh == 0
+check savelock == 1
+cmd god on
+if npcs == 0
+  cmd npc spawn 1
+end
+until npcs > 0 timeout 15
+act target nearest
+check tid != 0
+show
+# Look: the view must end on the target.
+optional act look target 2
+wait 1.5
+optional face target tolerance 3 timeout 1
+# A quickhack, while the target stands.
+optional act hack
+optional expect hacks: our upload timeout 5
+# Draw, fire, reload.
+optional act equip weapon
+optional until weapon == 1 timeout 6
+optional act fire 0.6
+optional until thp < 100 timeout 3
+optional until firing == 0 timeout 3
+optional act reload
+# Health down and up.
+optional act hurt 30
+optional until hp < 80 timeout 3
+optional act heal
+optional until hp > 80 timeout 5
+# The operating system (a Sandevistan slows time).
+optional act ability
+optional until dilated == 1 timeout 3
+optional act ability off
+optional act equip holster
+optional until weapon == 0 timeout 6
+# The car: called, entered at the wheel, AutoDrive asked, left.
+optional act summon
+optional until car > 0 and car < 20 timeout 40
+optional act mount
+optional until veh == 1 and seat == driver timeout 12
+optional act autodrive on
+optional until auto == 1 timeout 3
+optional act autodrive off
+optional act exit
+optional until veh == 0 timeout 10
+act target none
+cmd god off
+show

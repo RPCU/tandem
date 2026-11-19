@@ -1,0 +1,24 @@
+# A takedown started out of combat: V crouches, comes up behind a ganger
+# and takes it down without killing it.
+limit 180
+needs veh == 0
+needs combat == 0
+sim npc neutral 0 6
+if role == guest
+  act target proxy
+else
+  if npcs == 0
+    cmd npc spawn 1
+  end
+  until npcs > 0 timeout 20
+  act target nearest
+end
+check tid != 0
+press b
+until crouch == 1 timeout 3
+walk target within 1.6 pace walk timeout 30
+act takedown nonlethal
+until tdead == 1 timeout 15
+optional expect takedowns: our timeout 3
+until takedown == 0 timeout 10
+press b

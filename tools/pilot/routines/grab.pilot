@@ -1,0 +1,19 @@
+# A grab, then the kill from the hold (the two steps of a takedown).
+limit 180
+needs veh == 0
+sim npc neutral 0 6
+if role == guest
+  act target proxy
+else
+  if npcs == 0
+    cmd npc spawn 1
+  end
+  until npcs > 0 timeout 20
+  act target nearest
+end
+walk target within 1.6 pace walk timeout 30
+act takedown grab
+until takedown != 0 timeout 6
+wait 2
+act takedown kill
+until tdead == 1 timeout 15

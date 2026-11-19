@@ -1,0 +1,64 @@
+# A fight with a gun, a quickhack and fists, for the "fight" recording.
+# As a guest (of tandem-peer host --replay): against the host's NPCs, so the
+# recording holds our hits. As host or alone: against gangers it spawns.
+limit 300
+needs veh == 0
+sim npc hostile 0 12
+cmd god on
+if role == guest
+  act target proxy
+else
+  if hostile == 0
+    cmd npc hostile
+  end
+  until hostile > 0 timeout 20
+  act target hostile
+end
+check tid != 0
+# The gun.
+act equip weapon
+until weapon == 1 timeout 6
+repeat 3
+  if tdead == 0
+    optional act look target 1.5
+    face target tolerance 4 timeout 6
+    trigger rt 1 0.3
+    wait 0.3
+  end
+end
+# A quickhack while it still stands.
+if tdead == 0
+  act hack
+  optional expect hacks: our upload timeout 6
+  wait 2
+end
+# Fists: close in and hit.
+if tdead == 0
+  act equip fists
+  until weapon == 0 timeout 6
+  walk target within 1.8 timeout 20
+  repeat 6
+    if tdead == 0
+      optional act look target 1
+      face target tolerance 8 timeout 4
+      trigger rt 1 0.15
+      wait 0.5
+    end
+  end
+end
+# The gun again for whoever is left.
+if tdead == 0
+  act equip weapon
+  until weapon == 1 timeout 6
+  repeat 8
+    if tdead == 0
+      optional act look target 1.5
+      face target tolerance 4 timeout 6
+      trigger rt 1 0.5
+      wait 0.3
+    end
+  end
+end
+until tdead == 1 timeout 5
+act equip holster
+cmd god off

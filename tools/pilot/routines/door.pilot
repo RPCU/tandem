@@ -1,0 +1,10 @@
+# A door: stand V in front of one, looking at it (teleport there first),
+# then run this. It lists what the door offers and opens it as its prompt
+# would. The pad's way is "until prompt > 0" then "press x".
+limit 60
+needs veh == 0
+sim door 0 2
+act device
+act device ToggleOpen
+wait 2
+optional act device ToggleOpen
