@@ -9,7 +9,8 @@
 # ones) is synced to ~/.cache/tandem/src/<worktree name> on GAME_HOST, the
 # Windows sysroot to ~/.cache/tandem/xwin (once), and the task runs inside
 # devenv in one of anya's build slots (tools/build-slot.sh: TANDEM_REMOTE_SLOTS,
-# default 3, each CMAKE_BUILD_PARALLEL_LEVEL jobs, default 5; one task at a
+# default 3, each CMAKE_BUILD_PARALLEL_LEVEL jobs, by default the cores
+# shared among the busy slots (TANDEM_JOBS=auto); one task at a
 # time per worktree), at low priority so a running game keeps its frames. Nothing is written inside the game's directory.
 # build/windows/plugin/tandem.{dll,pdb} come back into this tree, so
 # `task deploy` and tools/scenario.sh pick them up; after build, build:linux
@@ -44,7 +45,8 @@ ssh "$host" mkdir -p "$remote"
   git ls-files -z --others --exclude-standard
 } | rsync -a --from0 --files-from=- --ignore-missing-args . "$host:$remote/"
 
-jobs=${CMAKE_BUILD_PARALLEL_LEVEL:-5}
+# Fixed when the caller sets it, else the cores shared among busy slots.
+if [ -n "${CMAKE_BUILD_PARALLEL_LEVEL:-}" ]; then jobs="CMAKE_BUILD_PARALLEL_LEVEL=$CMAKE_BUILD_PARALLEL_LEVEL"; else jobs=TANDEM_JOBS=auto; fi
 slots=${TANDEM_REMOTE_SLOTS:-3}
 # The copy there has no history: the build is named after this commit
 # (core/CMakeLists.txt, TANDEM_COMMIT).
@@ -54,7 +56,7 @@ commit=$(git rev-parse --short=7 HEAD)
 # games (tools/instance.sh scopes) to 9 fps and pushed them into swap. While
 # a test instance runs, one slot only (memory).
 # shellcheck disable=SC2029 # expanded here on purpose
-ssh "$host" "cd $remote && CMAKE_BUILD_PARALLEL_LEVEL=$jobs TANDEM_XWIN=\$HOME/.cache/tandem/xwin \
+ssh "$host" "cd $remote && $jobs TANDEM_XWIN=\$HOME/.cache/tandem/xwin \
   TANDEM_COMMIT=$commit flock /tmp/tandem-src-$name.lock tools/build-slot.sh \$(pgrep -f '[t]andem-instances/' >/dev/null && echo 1 || echo $slots) \
   systemd-run --user --scope --quiet -p CPUWeight=10 -p IOWeight=10 nice -n 19 devenv shell -- task $*"
 
