@@ -125,6 +125,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     runtime.config = LoadConfig(files.config);
     runtime.config.commandFile = files.command;
     runtime.config.recentFile = files.recent;
+    log::SetLevel(static_cast<log::Level>(runtime.config.logLevel));
     if (const auto text = Environment(tandem::instance::kPortVariable); !text.empty()) {
       // Digits are ASCII; anything else is refused by ParsePort.
       std::string narrow;

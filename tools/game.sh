@@ -305,12 +305,13 @@ here() {
 role() {
   local ini="$dir/red4ext/plugins/tandem/tandem.ini" text
   case ${1:-} in
-  host) text=$'role = host\nport = 27450\nname = V\n' ;;
-  off) text=$'role = off\nport = 27450\nname = V\n' ;;
+  # log = debug: the scenarios read per-puppet, per-hit lines (log.hpp).
+  host) text=$'role = host\nport = 27450\nname = V\nlog = debug\n' ;;
+  off) text=$'role = off\nport = 27450\nname = V\nlog = debug\n' ;;
   join)
     local address=${2:-}
     [ -n "$address" ] || address=$(here)
-    text="role = join"$'\n'"address = $address"$'\nport = 27450\nname = V\n'
+    text="role = join"$'\n'"address = $address"$'\nport = 27450\nname = V\nlog = debug\n'
     ;;
   player)
     remote "[ -e '$ini.player' ] && mv '$ini.player' '$ini'; head -1 '$ini'"

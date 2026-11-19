@@ -147,6 +147,15 @@ Config LoadConfig(const std::filesystem::path &path) {
         config.timeHostFull = true;
       else
         log::Warn("tandem.ini:{}: time_host is bubble or full", number);
+    } else if (key == "log") {
+      if (value == "warn" || value == "quiet")
+        config.logLevel = 1;
+      else if (value == "info")
+        config.logLevel = 2;
+      else if (value == "debug")
+        config.logLevel = 3;
+      else
+        log::Warn("tandem.ini:{}: log is warn, info or debug", number);
     } else if (key == "trace") {
       config.trace = value == "on" || value == "true";
     } else if (key == "port") {

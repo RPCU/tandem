@@ -14,6 +14,7 @@ add_library(tandem SHARED
   src/main.cpp
   src/config.cpp
   src/log.cpp
+  src/perf.cpp
   src/net_thread.cpp
   src/runtime.cpp
   src/natives.cpp

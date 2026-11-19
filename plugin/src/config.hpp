@@ -31,6 +31,9 @@
 //   private_scenes = , public_scenes =  ; scene resource paths, comma-separated
 //   quest_freeze_allow = ; more open-world phase resources that keep running
 //                        ; on a frozen guest (resource paths, comma-separated)
+//   log = info           ; warn | info | debug (log.hpp): info is quiet (the
+//                        ; session's life, a minute's traffic and frame cost);
+//                        ; debug adds every puppet, proxy, hit and shot
 //   time_host = full     ; host's Sandevistan (scripts/tandem/Time.reds): full keeps
 //                        ; the single-player slow motion whole on its own game (the
 //                        ; NPCs it shares follow the bubbles' rules); bubble puts its
@@ -80,6 +83,8 @@ struct Config {
   // bubbles only (false), or the whole single-player slow motion with what
   // is shared exempted (true).
   bool timeHostFull{true};
+  // The log's level: 1 warn, 2 info, 3 debug (log::Level).
+  int logLevel{2};
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;

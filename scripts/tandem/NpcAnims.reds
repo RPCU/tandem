@@ -382,7 +382,7 @@ public class TandemNpcAnims {
     this.m_applied += 1;
     if !proxy.applied {
       proxy.applied = true;
-      TandemNative.Log(s"npc anims: proxy \(proxy.npc) follows (high \(anim.highLevel), upper \(anim.upperBody), stance \(anim.stance), weapon \(TDBID.ToStringDEBUG(anim.weapon)), workspot \(anim.workspot))");
+      TandemNative.LogDebug(s"npc anims: proxy \(proxy.npc) follows (high \(anim.highLevel), upper \(anim.upperBody), stance \(anim.stance), weapon \(TDBID.ToStringDEBUG(anim.weapon)), workspot \(anim.workspot))");
     }
   }
 
@@ -469,7 +469,7 @@ public class TandemNpcAnims {
           proxy.spot = 2;
           workspots.SendJumpCommandEnt(body, proxy.anim.workspotEntry, true);
           proxy.spotEntry = proxy.anim.workspotEntry;
-          TandemNative.Log(s"npc anims: proxy \(proxy.npc) in workspot \(want), entry \(proxy.spotEntry)");
+          TandemNative.LogDebug(s"npc anims: proxy \(proxy.npc) in workspot \(want), entry \(proxy.spotEntry)");
         } else if now - proxy.since > 2.0 {
           // Never started: leave it standing, moved by the controller.
           proxy.spot = 0;

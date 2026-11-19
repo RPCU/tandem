@@ -195,8 +195,8 @@ bool Allowed(std::uintptr_t phase, const Path &path, std::uintptr_t context) {
     if (std::ranges::find(g_openPrefixes, candidatePath) == g_openPrefixes.end()) {
       g_openPrefixes.push_back(candidatePath);
       g_byPhase.clear(); // earlier refusals may have been its children
-      log::Info("quest: open-world phase {:#x} keeps running (resource {:#x})",
-                HashOf(candidatePath), ResourceOf(candidate));
+      log::Debug("quest: open-world phase {:#x} keeps running (resource {:#x})",
+                 HashOf(candidatePath), ResourceOf(candidate));
     }
     return true;
   };
@@ -252,8 +252,8 @@ std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, 
     std::lock_guard _(g_lock);
     ++g_refused;
     if (g_frozenPhases.insert(HashOf(path)).second)
-      log::Info("quest: freezing phase {:#x} (resource {:#x}, depth {})", HashOf(path),
-                ResourceOf(phaseAddress), path.size());
+      log::Debug("quest: freezing phase {:#x} (resource {:#x}, depth {})", HashOf(path),
+                 ResourceOf(phaseAddress), path.size());
     // Kept once per signal: the engine wakes some nodes (scenes, phones)
     // again and again while they wait.
     auto key = std::make_tuple(path, nodeId, socketName);

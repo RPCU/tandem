@@ -630,13 +630,17 @@ public class TandemSystem extends ScriptableSystem {
         this.m_pause.SetReady();
       }
     }
+    // Each section's cost (plugin/src/perf.hpp kTickSections: the same order).
+    TandemNative.PerfMark(0);
     this.SampleLocal();
     this.SendAppearance();
     this.SendHeld();
     this.SendSeat();
+    TandemNative.PerfMark(1);
     if IsDefined(this.m_world) {
       this.m_world.Tick(this.Now());
     }
+    TandemNative.PerfMark(2);
     // Not behind the loading screen: listing NPCs while the world streams in
     // hung the load (2026-11-18).
     // Only in a session (m_you: this game's player id while in one): a
@@ -646,42 +650,56 @@ public class TandemSystem extends ScriptableSystem {
       // clock runs slower, and the others must hear of our NPCs as often.
       this.m_npcs.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this.m_you);
     }
+    TandemNative.PerfMark(3);
     if IsDefined(this.m_stealth) && this.m_playing && this.m_you != 0u {
       this.m_stealth.Tick(this.Now(), this.m_you, this.m_npcs);
     }
+    TandemNative.PerfMark(4);
     TandemHacks.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
+    TandemNative.PerfMark(5);
     // Grapples, takedowns, carried bodies (Takedowns.reds); 0: not in a session.
     TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
+    TandemNative.PerfMark(6);
     if IsDefined(this.m_revive) && this.m_playing {
       this.m_revive.Tick(this.Now(), this.m_you);
     }
+    TandemNative.PerfMark(7);
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
     }
+    TandemNative.PerfMark(8);
     this.HandleEvents();
     this.SpawnJoined();
+    TandemNative.PerfMark(9);
     if this.m_playing && this.m_you != 0u {
       this.CheckPuppets();
     }
+    TandemNative.PerfMark(10);
     this.DrivePuppets();
     this.Rebuild();
+    TandemNative.PerfMark(11);
     // Our ride and the others' (the NCART, rides, quest scene vehicles).
     if IsDefined(this.m_transit) && this.m_playing {
       this.m_transit.Tick(this.Now(), this, this.m_puppets);
     }
+    TandemNative.PerfMark(12);
     if IsDefined(this.m_elsewhere) {
       this.m_elsewhere.Tick(this.Now(), this, this.m_playing ? this.m_you : 0u);
     }
+    TandemNative.PerfMark(13);
     if IsDefined(this.m_visibility) {
       this.m_visibility.Tick(this.Now(), this);
     }
+    TandemNative.PerfMark(14);
     // The car radio (Radio.reds): the driver's for everyone aboard.
     if IsDefined(this.m_radio) && this.m_playing {
       this.m_radio.Tick(this.Now(), this);
     }
+    TandemNative.PerfMark(15);
     if IsDefined(this.m_travel) && this.m_playing {
       this.m_travel.Tick(this.Now(), this.m_you);
     }
+    TandemNative.PerfMark(16);
     // Slowed time (Time.reds): every frame, in the script tick, once the
     // world runs and we are in a session. (It ran from the plugin's
     // per-frame call before: the game crashed there loading a save and froze
@@ -690,11 +708,16 @@ public class TandemSystem extends ScriptableSystem {
       this.m_time.Update();
     }
 
+    TandemNative.PerfMark(17);
     this.TickAttitudes();
+    TandemNative.PerfMark(18);
     this.ProcessLeaving();
+    TandemNative.PerfMark(19);
     this.DrawShots();
+    TandemNative.PerfMark(20);
     this.TickProxyTests();
     this.TickHostileTests();
+    TandemNative.PerfMark(21);
     this.HandleCommand();
     if IsDefined(this.m_testReset) {
       this.m_testReset.Tick(this.Now());
@@ -705,6 +728,7 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_vehicleProbe) {
       this.m_vehicleProbe.Tick();
     }
+    TandemNative.PerfMark(-1);
     this.Schedule(0.0);
   }
 
@@ -730,6 +754,11 @@ public class TandemSystem extends ScriptableSystem {
   // Also from the pause menu (Coop.reds), which takes the commands while the
   // world, and so our tick, is paused.
   public func RunCommand(command: String) -> Void {
+    // The frame cost, queues and traffic now (tools/game.sh cmd perf), solo too.
+    if Equals(command, "perf") {
+      TandemNative.PerfReport();
+      return;
+    }
     if StrBeginsWith(command, "time ") {
       if IsDefined(this.m_time) {
         this.m_time.Command(command);

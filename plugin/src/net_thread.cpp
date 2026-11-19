@@ -1,6 +1,7 @@
 #include "net_thread.hpp"
 #include "combat.hpp"
 #include "log.hpp"
+#include "perf.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
@@ -8,12 +9,16 @@
 #include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/play.hpp"
+#include "tandem/traffic.hpp"
 
 #include <optional>
 #include <thread>
 
 namespace tandem::plugin {
 using namespace std::chrono_literals;
+
+// Our V's state and pose wait this long at most for each other (one datagram).
+constexpr std::uint64_t kCoalesceUs = 8'000;
 
 struct NetThread::Impl {
   Config config;
@@ -266,6 +271,14 @@ struct NetThread::Impl {
     std::optional<net::RelayStatus> relayShown;
 
     auto nextReport = std::chrono::steady_clock::now() + 10s;
+    std::optional<proto::PlayerState> pendingLocal;
+    std::optional<proto::PoseState> pendingPose;
+    std::uint64_t pendingSinceUs = 0, lastPoseUs = 0;
+    // Once a minute (and on tools/game.sh cmd perf): the traffic, the
+    // netcode's counters, the frame cost, the queues (netcode.md).
+    auto nextMinute = std::chrono::steady_clock::now() + 60s;
+    auto lastTraffic = endpoint->Traffic();
+    auto lastTrafficUs = net::NowUs();
     auto nextStatus = std::chrono::steady_clock::now() + 500ms;
     bool ended = false;
     std::uint64_t silentSinceUs = 0;
@@ -557,6 +570,7 @@ struct NetThread::Impl {
             },
             event);
       }
+      const Perf::Scope pass(Work::NetPass);
       if (shared && !ended)
         runtime.SetShared(endpoint->SharedNpcs(), endpoint->Players());
       if (const auto lost = runtime.TakeOverflows())
@@ -591,12 +605,33 @@ struct NetThread::Impl {
                              static_cast<std::int64_t>(net::NowUs()));
       if (auto request = runtime.TakeRecordingRequest())
         Record(*request, *endpoint);
+      // Our V's state (the script tick) and pose (the animation job) come a
+      // few ms apart: the first waits up to kCoalesceUs for the other, so
+      // both go in one datagram (netcode.md: 32 bytes of headers saved 30
+      // times a second). Without a pose stream the state goes at once.
       if (auto local = runtime.TakeLocal()) {
         Story::Get().FilterLocal(*local); // a private scene: held where it began
-        endpoint->SendLocalState(*local);
+        if (!pendingLocal)
+          pendingSinceUs = net::NowUs();
+        pendingLocal = local;
       }
-      if (auto pose = runtime.TakeLocalPose(); pose && !Story::Get().Private())
-        endpoint->SendLocalPose(*pose);
+      if (auto pose = runtime.TakeLocalPose(); pose && !Story::Get().Private()) {
+        if (!pendingPose && !pendingLocal)
+          pendingSinceUs = net::NowUs();
+        pendingPose = pose;
+        lastPoseUs = net::NowUs();
+      }
+      if (pendingLocal || pendingPose) {
+        const auto nowUs = net::NowUs();
+        const bool poseLive = lastPoseUs && nowUs - lastPoseUs < 200'000;
+        if ((pendingLocal && pendingPose) || (pendingLocal && !poseLive) ||
+            nowUs - pendingSinceUs >= kCoalesceUs) {
+          if (pendingLocal)
+            endpoint->SendLocalState(*std::exchange(pendingLocal, std::nullopt));
+          if (pendingPose)
+            endpoint->SendLocalPose(*std::exchange(pendingPose, std::nullopt));
+        }
+      }
       if (auto appearance = runtime.TakeLocalAppearance()) {
         lastAppearance = *appearance;
         endpoint->SetLocalAppearance(std::move(*appearance));
@@ -732,10 +767,39 @@ struct NetThread::Impl {
                                      : SessionStatus::State::Connecting,
                 {}, endpoint.get());
       }
+      if (const auto now = std::chrono::steady_clock::now();
+          now >= nextMinute || runtime.TakePerfReport()) {
+        const bool asked = now < nextMinute;
+        if (!asked)
+          nextMinute = now + 60s;
+        const auto traffic = endpoint->Traffic();
+        const auto delta = traffic - lastTraffic;
+        const auto nowUs = net::NowUs();
+        const double seconds = static_cast<double>(nowUs - lastTrafficUs) / 1e6;
+        lastTraffic = traffic;
+        lastTrafficUs = nowUs;
+        const auto c = endpoint->Counters();
+        const auto line = std::format(
+            "traffic: {}; poses {} keys of {} frames ({} thinned), {} over another key; states "
+            "held {}, thinned {}; npcs {} compact, {} whole",
+            net::Summary(delta, seconds), c.poseKeys, c.poseFrames, c.poseSkipped, c.poseOtherKey,
+            c.statesHeld, c.statesSkipped, c.npcMotions, c.npcWhole);
+        const auto perf = std::format("perf: {}; queues at most: {}", Perf::Get().Report(),
+                                      runtime.QueueReport());
+        if (asked) {
+          log::Always("{}", line);
+          log::Always("{}", perf);
+        } else {
+          log::Info("{}", line);
+          log::Info("{}", perf);
+        }
+        if (log::Enabled(log::Level::Debug))
+          log::Debug("traffic table ({:.0f} s):\n{}", seconds, net::Table(delta, seconds));
+      }
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {
         nextReport = now + 10s;
         const auto link = endpoint->HostLinkStats();
-        log::Info(
+        log::Debug(
             "{} player(s){}", endpoint->Players().size(),
             link ? std::format(", rtt {} ms, loss {:.1f}%", link->rttMs, link->packetLoss * 100)
                  : "");
@@ -752,11 +816,11 @@ struct NetThread::Impl {
           if (id == endpoint->You())
             continue;
           if (const auto stats = runtime.StatsOf(id))
-            log::Info("  player {}: {} states, {} dropped, {} poses, drawn {} ms behind (jitter "
-                      "{} ms, transit {} ms, every {} ms)",
-                      id, stats->received, stats->dropped, runtime.PosesReceived(id),
-                      stats->delayUs / 1000, stats->jitterUs / 1000, stats->transitUs / 1000,
-                      stats->intervalUs / 1000);
+            log::Debug("  player {}: {} states, {} dropped, {} poses, drawn {} ms behind (jitter "
+                       "{} ms, transit {} ms, every {} ms)",
+                       id, stats->received, stats->dropped, runtime.PosesReceived(id),
+                       stats->delayUs / 1000, stats->jitterUs / 1000, stats->transitUs / 1000,
+                       stats->intervalUs / 1000);
         }
       }
     }

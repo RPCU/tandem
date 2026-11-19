@@ -9,6 +9,7 @@
 #include "tandem/elsewhere.hpp"
 #include "tandem/hosts.hpp"
 #include "tandem/interpolation.hpp"
+#include "tandem/lagcomp.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
@@ -417,6 +418,12 @@ public:
   // Game thread writes, the movement controller reads.
   void HoldPuppet(proto::PlayerId player, bool hold);
   bool IsPuppetHeld(proto::PlayerId player) const;
+  // A puppet's controller, every frame: whether something else places it
+  // (seated in a car, on a train or riding along, held), in one go.
+  struct Placement {
+    bool seated{}, riding{}, held{};
+  };
+  Placement PlacementOf(proto::PlayerId player) const;
   // Loot (scripts/tandem/Loot.reds): our drops and pickup claims (WorldItem,
   // WorldItemTaken), game -> net; world items appearing and stacks taken,
   // net -> game. Both queued, bounded.
@@ -452,6 +459,21 @@ public:
   // e.g. behind a long loading screen); the scripts' checks then put the
   // proxies right. Read and cleared by the net thread.
   std::uint32_t TakeOverflows();
+
+  // Frame cost (perf.hpp): the deepest each queue was when taken, since the
+  // last report (and reset); a report asked for (tools/game.sh cmd perf),
+  // said by the net thread with the traffic, or at once when solo.
+  static constexpr std::size_t kQueues = 15;
+  std::string QueueReport();
+  void RequestPerfReport();
+  bool TakePerfReport() { return m_perfReport.exchange(false); }
+
+  // Fairness (tandem/lagcomp.hpp), host: is a guest's V (`puppetAt`, its
+  // puppet now) within `limit` of our NPC (`npcAt`, now), as the guest saw
+  // them when it asked? Rewinds both by the guest's round trip and view
+  // delay, bounded. Game thread.
+  lagcomp::Reach ReachOf(proto::PlayerId player, proto::NpcId npc, const proto::Vec3 &puppetAt,
+                         const proto::Vec3 &npcAt, float limit);
 
   // Net thread writes remote states; the animation thread and scripts read views.
   void PushRemote(const proto::PlayerState &state);
@@ -539,6 +561,9 @@ private:
   mutable std::mutex m_posesLock;
   std::map<proto::PlayerId, pose::PoseTrack> m_poses;
 
+  mutable std::mutex m_reachLock;
+  lagcomp::Book m_reach; // m_reachLock: guests' Vs by player id, our NPCs by kNpcPuppetBase + id
+
   mutable std::mutex m_tracksLock;
   std::map<proto::PlayerId, sync::Track> m_tracks;
 
@@ -559,6 +584,9 @@ private:
   std::map<proto::PlayerId, proto::PlayerInfo> m_roster;
   std::optional<std::uint8_t> m_epochRequest;
   std::uint32_t m_overflows{};
+  std::array<std::uint32_t, kQueues> m_queueMax{};      // m_lock
+  void NoteDepth(std::size_t queue, std::size_t depth); // under m_lock
+  std::atomic<bool> m_perfReport{false};
   std::optional<bool> m_localPaused;                                   // m_lock
   std::vector<proto::PlayerId> m_remotePaused;                         // m_lock
   std::uint32_t m_remotePausedChanges{};                               // m_lock

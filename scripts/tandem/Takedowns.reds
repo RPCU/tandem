@@ -502,7 +502,9 @@ public class TandemTakedowns extends ScriptableSystem {
       reason = 1;
     } else if (kind == 3 || kind == 4 || kind == 5 || kind == 6) && body.IsDead() {
       reason = 1;
-    } else if (kind == 1 || kind == 7) && Vector4.Distance(body.GetWorldPosition(), puppet.GetWorldPosition()) > 6.0 {
+    } else if (kind == 1 || kind == 7) && !TandemNative.InReach(event.player, event.npc, puppet.GetWorldPosition(), body.GetWorldPosition(), 6.0) {
+      // Too far as the guest saw them, a bounded rewind back (lagcomp.hpp):
+      // our puppet of it and our NPC are where they are here, not there.
       reason = 5;
     } else if kind == 6 && !this.FinisherHolds(body, event.amount) {
       reason = 3;

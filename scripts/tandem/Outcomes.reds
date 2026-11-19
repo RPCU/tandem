@@ -251,7 +251,7 @@ public class TandemOutcomes {
 
   private func SendStrike(strike: ref<TandemStrike>, poise: Float) -> Void {
     TandemFight.SendStrike(strike.npc, strike.damage, poise, strike.minHealth, strike.flags, strike.attackType, strike.zone, strike.part, strike.shape, strike.attack, strike.position, strike.direction);
-    TandemNative.Log(s"outcomes: strike on proxy \(strike.npc): \(strike.damage) health, \(poise) poise, flags \(strike.flags), zone \(strike.zone), part \(strike.part), attack \(TDBID.ToStringDEBUG(strike.attack))");
+    TandemNative.LogDebug(s"outcomes: strike on proxy \(strike.npc): \(strike.damage) health, \(poise) poise, flags \(strike.flags), zone \(strike.zone), part \(strike.part), attack \(TDBID.ToStringDEBUG(strike.attack))");
   }
 
   // ---- host: guests' strikes on our NPCs ----
@@ -385,7 +385,7 @@ public class TandemOutcomes {
       let godMode = GameInstance.GetGodModeSystem(this.m_game);
       let alive = IsDefined(body) && !body.IsDead();
       let invulnerable = IsDefined(body) && godMode.HasGodMode(body.GetEntityID(), gameGodModeType.Invulnerable);
-      TandemNative.Log(s"outcomes: player \(this.m_strikes[i].player)'s strike on \(this.m_strikes[i].npc) deals no damage here (alive \(alive), invulnerable \(invulnerable), friendly fire ignored \(hitEvent.attackData.HasFlag(hitFlag.FriendlyFireIgnored)))");
+      TandemNative.LogDebug(s"outcomes: player \(this.m_strikes[i].player)'s strike on \(this.m_strikes[i].npc) deals no damage here (alive \(alive), invulnerable \(invulnerable), friendly fire ignored \(hitEvent.attackData.HasFlag(hitFlag.FriendlyFireIgnored)))");
       return;
     }
     let loss = this.ApplyPools(body, this.m_strikes[i], hitEvent.attackData.GetInstigator());
@@ -414,7 +414,7 @@ public class TandemOutcomes {
     if strike.poise > 0.0 && body.CanReceivePoiseDamage() {
       pools.RequestChangingStatPoolValue(id, gamedataStatPoolType.Poise, -strike.poise, instigator, false, false);
     }
-    TandemNative.Log(s"outcomes: \(strike.npc) struck by player \(strike.player): \(loss) of \(health) health, \(strike.poise) poise, flags \(strike.flags), zone \(strike.zone)");
+    TandemNative.LogDebug(s"outcomes: \(strike.npc) struck by player \(strike.player): \(loss) of \(health) health, \(strike.poise) poise, flags \(strike.flags), zone \(strike.zone)");
     // A lethal strike kills, as the guest's game measured it: the health
     // pool alone stops at the defeat mechanic's 0.1 % (NPCDeathListener),
     // and the hit reaction that kills a defeated NPC in vanilla's own hit
