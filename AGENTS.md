@@ -25,7 +25,7 @@ tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet record
 dist/          files installed next to the DLL (tandem.ini)
 cmake/         clang-cl-msvc.cmake: the Windows cross toolchain
 docs/          ARCHITECTURE.md, research/ (engine facts, sources; data/: RTTI and skeleton dumps)
-tools/         game.sh (drive the game), scenario.sh + scenarios/ (in-game tests), check-natives.py, scripts-check.sh, re/ (read-only reverse engineering, see its README)
+tools/         game.sh (drive the game), scenario.sh + scenarios/ (in-game tests), check-natives.py, scripts-check.sh, re/ (read-only reverse engineering, see its README), pilot/ (the test pilot that plays our V: docs/architecture/autopilot.md)
 vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 ```
 
@@ -53,6 +53,7 @@ vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 | `task peer -- …`     | run the mock player (`host --mode mirror` by default)        |
 | `task relay:run`     | a local relay open to any host (testing only)                |
 | `task relay:test`    | relay vet + tests with the race detector                     |
+| `task pilot:test`    | the test pilot: vet, tests, every routine on its simulator   |
 | `task relay:image`   | relay OCI image via Nix (`result-relay-image`)               |
 | `task k8s:check`     | render the kustomize base and validate it (kubeconform)      |
 | `task check`         | all of the above                                             |
