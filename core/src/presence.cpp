@@ -110,6 +110,13 @@ void Observer::Move(const proto::Vec3 &position, std::uint16_t flags, bool crouc
     return;
   }
 
+  // Faster than anyone runs: carried (seated in a car whose sender fills
+  // no flags), not walking.
+  if (flat / dt > kCarried) {
+    m_walked = 0.f;
+    m_speed = 0.f;
+    return;
+  }
   // On its feet. The speed is smoothed over ≈0.15 s: one late frame of
   // the interpolation must not turn a walk into a sprint.
   const float blend = std::min(1.f, dt / 0.15f);

@@ -283,7 +283,9 @@ public class TandemPresenceSync {
         let heard = this.Known(player);
         // A body out of sight (hidden, in another world) makes no sound.
         let silent = TandemVisibility.IsHidden(this.m_game, player);
-        for event in TandemPresence.Observe(player, body.GetWorldPosition(), dt) {
+        // Seated (a car, a train): the body is carried, it does not walk.
+        let walked = VehicleComponent.IsMountedToVehicle(this.m_game, body) ? 0.0 : dt;
+        for event in TandemPresence.Observe(player, body.GetWorldPosition(), walked) {
           if !silent && dt > 0.0 {
             this.Play(heard, body, event, now);
           }

@@ -98,6 +98,11 @@ TEST_SUITE("presence") {
     slide.For(1.f, 6.f, Flags(Detailed::Slide));
     CHECK(slide.Count(Kind::Step) == 0);
 
+    // In a car (the body moves at the car's speed): nobody walks.
+    Walk driven;
+    driven.For(5.f, 25.f, Flags(Detailed::Stand));
+    CHECK(driven.heard.empty());
+
     Walk put;
     put.For(1.f, 0.f, Flags(Detailed::Stand));
     put.at = {500.f, 500.f, 20.f};

@@ -64,6 +64,7 @@ public:
   static constexpr float kRunSpeed = 2.6f;  // m/s: walk below, run above
   static constexpr float kSprintSpeed = 5.8f;
   static constexpr float kTeleport = 5.f;         // m in one sample: put, not walked
+  static constexpr float kCarried = 14.f;         // m/s: faster than any V runs (a car, a train)
   static constexpr float kHurtGapSeconds = 0.35f; // at most one grunt per
   static constexpr float kHardFall = 9.f;         // m/s down: a hard landing
   static constexpr float kVeryHardFall = 14.f;
