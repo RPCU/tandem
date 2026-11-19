@@ -27,8 +27,8 @@ bool HostOnly(const p::Message &m) {
 
 // What only a guest sends, and the host never passes on.
 bool GuestOnly(const p::Message &m) {
-  return IsAny<p::Hello, p::Ping, p::Noise, p::PhoneAction, p::PhoneReply, p::ResyncRequest,
-               p::DeviceUse>(m);
+  // (Noise goes to every linked player since regions: each owner's NPCs hear it.)
+  return IsAny<p::Hello, p::Ping, p::PhoneAction, p::PhoneReply, p::ResyncRequest, p::DeviceUse>(m);
 }
 
 // What an NPC's owner says about it (the host, or since regions the guest
@@ -303,9 +303,10 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
     // lag a hand-over by a datagram: the endpoint drops those.)
     if (p::ChannelOf(message) != p::Channel::State)
       for (const auto npc : OwnedBy(message)) {
+        // A spawn: of its own range, or one it took over (its set again).
         const bool spawn = std::holds_alternative<p::NpcSpawn>(message);
-        const auto owner = spawn ? regions::Announcer(npc) : OwnerOf(npc);
-        if (owner != from) {
+        const auto owner = OwnerOf(npc);
+        if (owner != from && !(spawn && regions::Announcer(npc) == from)) {
           Add("authority.not-owner",
               std::format("player {} sent {} about npc {}, which {}", from, name, npc,
                           spawn ? "is not in its range of ids"
@@ -323,7 +324,7 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
     }
     CheckValues(stamped, hostUs);
     CheckRate(from, stamped, bytes.size());
-    CheckSequence(stamped);
+    CheckSequence(from, stamped);
     CheckOneShot(from, stamped, bytes);
     FromGuest(from, stamped);
     Note(stamped, false);
@@ -365,7 +366,7 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
   from = m_hostPlayer;
   CheckValues(message, hostUs);
   CheckRate(from, message, bytes.size());
-  CheckSequence(message);
+  CheckSequence(from, message);
   CheckOneShot(from, message, bytes);
   FromHost(message, ours);
   Note(message, false);
@@ -535,7 +536,7 @@ void Referee::CheckRate(p::PlayerId from, const p::Message &message, std::size_t
                      bytes));
 }
 
-void Referee::CheckSequence(const p::Message &message) {
+void Referee::CheckSequence(p::PlayerId from, const p::Message &message) {
   std::optional<std::pair<p::PlayerId, std::uint32_t>> seq;
   if (const auto *state = std::get_if<p::PlayerState>(&message))
     seq = {state->player, state->seq};
@@ -545,10 +546,11 @@ void Referee::CheckSequence(const p::Message &message) {
     seq = {vehicle->player, vehicle->seq};
   else if (const auto *shot = std::get_if<p::Shot>(&message))
     seq = {shot->player, shot->seq};
+  // Each owner numbers its NPCs' states (a host its own and those it relays).
   else if (const auto *npcs = std::get_if<p::NpcStates>(&message))
-    seq = {p::kNoPlayer, npcs->seq};
+    seq = {from, npcs->seq};
   else if (const auto *awareness = std::get_if<p::NpcAwareness>(&message))
-    seq = {p::kNoPlayer, awareness->seq};
+    seq = {from, awareness->seq};
   if (!seq)
     return;
   const TypeAndPlayer key{message.index(), seq->first};
@@ -779,14 +781,19 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           const auto known = m_npcs.find(m.npc);
           if (known == m_npcs.end())
             return;
-          if (known->second.live &&
-              (known->second.record != m.record || known->second.appearance != m.appearance))
+          const bool same =
+              known->second.record == m.record && known->second.appearance == m.appearance;
+          if (!same)
+            Add("ids.reused", std::format("npc {} announced again as another NPC: ids are never "
+                                          "reused in a session",
+                                          m.npc));
+          // Out of our view and back (a link broke and formed again: regions)
+          // is the same NPC; one that died or was disposed of never returns.
+          else if (!known->second.live && known->second.dead)
             Add("ids.reused",
-                std::format("npc {} announced again as another NPC while it is shared", m.npc));
-          else if (!known->second.live)
-            Add("ids.reused", std::format("npc {} announced again after it went ({}): ids are "
-                                          "never reused in a session",
-                                          m.npc, known->second.goneReason));
+                std::format("npc {} announced again after it {}", m.npc,
+                            known->second.goneReason == p::kGoneDisposed ? "was disposed of"
+                                                                         : "died"));
         } else if constexpr (std::is_same_v<M, p::NpcGone>) {
           NeedPlayer(m.killer, name);
           const auto known = m_npcs.find(m.npc);
@@ -1011,6 +1018,11 @@ void Referee::Note(const p::Message &message, bool sent) {
         } else if constexpr (std::is_same_v<M, p::NpcOwner>) {
           if (!(m.flags & p::kNpcPinned) || m.owner != OwnerOf(m.npc))
             m_owners[m.npc] = m.owner;
+        } else if constexpr (std::is_same_v<M, p::NpcHandoverState>) {
+          // The giver's state makes the receiver its owner (the receiver
+          // learns it from this, not from an NpcOwner).
+          if (m.to != p::kNoPlayer)
+            m_owners[m.npc] = m.to;
         } else if constexpr (std::is_same_v<M, p::NpcGone>) {
           auto &npc = m_npcs[m.npc];
           npc.live = false;

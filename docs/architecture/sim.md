@@ -46,7 +46,7 @@ the end, `referee-suite:`; tests break rules on purpose, so it is a report;
 | `authority.not-yours`, `authority.own-state-back`, `authority.misdelivered` | a guest speaking in another player's name; the host sending us our own state; a hit, hack, revive or answer meant for another player |
 | `authority.acting-while-down`, `authority.revive-self`, `authority.revive-not-down` | firing, grabbing or uploading while down or out (after 1.5 s of grace); reviving oneself, or a V that is not down |
 | `authority.vehicle-not-yours`, `authority.accepted-on-dead`, `authority.state-after-gone` (hint) | moving a car while riding in someone else's; the host accepting a takedown on an NPC it said dead; an NPC still in the host's states 3 s after it went |
-| `ids.unknown-npc`, `ids.unknown-player`, `ids.unknown-item`, `ids.unknown-offer`, `ids.reused` | names never announced (an NPC, a player, a world item's stack, a regroup offer); an NPC id announced again as another NPC, or after it went |
+| `ids.unknown-npc`, `ids.unknown-player`, `ids.unknown-item`, `ids.unknown-offer`, `ids.reused` | names never announced (an NPC, a player, a world item's stack, a regroup offer); an NPC id announced again as another NPC, or after it died or was disposed of (out of view and back, a link that broke and formed again, is the same NPC) |
 | `oneshot.*` | the second welcome, a state sequence number repeated, a bag dropped twice, a death, a reward, a game over, a quest item or an NPC shot at us twice; one stack to two takers; the same hit byte for byte within 30 ms (hint); more health drops than our hits with nobody else fighting (hint) |
 | `reply.unasked`, `roster.broken` | an answer (takedown reply, upload, pickup, pong) to nothing we asked; a roster without us or the host, with a player twice, or too long |
 | `value.not-finite`, `value.range`, `value.clock` | NaN or infinite numbers; health, poise, damage, factors, tiers, phone actions out of range; a state stamped more than 3 s from the host clock |
@@ -166,6 +166,13 @@ On the existing loopback tests (2026-11-19, the whole suite watched):
   regroup offers never made, a revive of a V that is not down, a death
   sent twice, a third of the host's messages lost (`ids.unknown-npc` for
   healths whose spawn was lost, `digest.resync-loop`).
+
+With per-player regions merged, the referee learnt the owners' rules from
+the regions tests (a receiver learns it owns an NPC from the hand-over's
+state, an owner resends the spawns of NPCs it took over with its set,
+`Noise` goes to every linked player, each owner numbers its own NPC
+states, and an NPC can leave a guest's view and come back); what is left
+there is the lossy hand-over test's lost and doubled messages.
 
 Sim against sim (`sim-fuzz`, 8 seeds of 30 s, every persona as host and
 guest): no violation, no failed check; 59 of 72 message types sent, 87 of

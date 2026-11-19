@@ -150,7 +150,7 @@ private:
   void Forget(proto::PlayerId player);
   void CheckValues(const proto::Message &message, std::uint64_t hostUs);
   void CheckRate(proto::PlayerId from, const proto::Message &message, std::size_t bytes);
-  void CheckSequence(const proto::Message &message);
+  void CheckSequence(proto::PlayerId from, const proto::Message &message);
   void CheckOneShot(proto::PlayerId from, const proto::Message &message,
                     const std::vector<std::byte> &bytes);
   void FromGuest(proto::PlayerId from, const proto::Message &message);

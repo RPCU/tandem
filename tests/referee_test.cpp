@@ -139,6 +139,10 @@ TEST_CASE("referee: ids nobody announced, ids used twice") {
     CHECK(Rules(referee).empty());
     referee.Received(1, proto::NpcSpawn{.npc = 5, .record = 11}, kSecond);
     CHECK(Broke(referee, "ids.reused"));
+    // Out of view and back (a link broke and formed again) is the same NPC.
+    referee.Received(1, proto::NpcGone{.npc = 5, .reason = proto::kGoneAway}, kSecond);
+    referee.Received(1, proto::NpcSpawn{.npc = 5, .record = 11}, kSecond);
+    CHECK(Rules(referee).empty());
     referee.Received(1, proto::NpcGone{.npc = 5, .reason = proto::kGoneDead, .killer = 3}, kSecond);
     referee.Received(1, proto::NpcSpawn{.npc = 5, .record = 10}, kSecond);
     CHECK(Broke(referee, "ids.reused"));
