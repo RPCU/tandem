@@ -56,6 +56,9 @@ public native class TandemStory extends IScriptable {
   public static native func FreezeHeld() -> Uint32;
   public static native func FreezeLost() -> Bool;
   public static native func FreezeReport() -> String;
+  public static native func Grouped(grouped: Bool) -> Void;
+  public static native func IsGrouped() -> Bool;
+  public static native func QuestTrace(on: Bool) -> Void;
   public static native func TakeEvents() -> array<TandemStoryEvent>;
   public static native func You() -> Uint32;
   public static native func HostId() -> Uint32;

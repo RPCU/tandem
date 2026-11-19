@@ -65,6 +65,7 @@
 #include <mutex>
 #include <set>
 #include <tuple>
+#include <utility>
 
 namespace tandem::plugin::engine {
 namespace {
@@ -106,19 +107,34 @@ std::atomic_bool g_active{false};
 bool g_freezeAllowed = false; // tandem.ini quest_freeze = on (set at load)
 std::atomic_bool g_layoutChecked{false}, g_layoutOk{false};
 thread_local bool t_replaying = false;
+// Ownership (docs/architecture/quest-carryover.md, "Whose gig is it"): a
+// phase this game does not own waits. Story phases are the host's for the
+// whole session; a gig's phase is ours while we are apart from the host and
+// waits while we are grouped with it. Grouped until the regions work says
+// otherwise: then gigs wait like the story, as before.
+std::atomic_bool g_grouped{true};
+std::atomic_bool g_trace{false};
 
 using Path = std::vector<std::uint16_t>;
 struct Held {
   Path phase;
   std::uint16_t node{};
   std::uint64_t socket{};
+  bool gig{};
   auto Key() const { return std::tie(phase, node, socket); }
 };
 
-std::mutex g_lock;                       // everything below
-std::set<std::uint64_t> g_allowed;       // open-world resource path hashes
-std::vector<Path> g_openPrefixes;        // node paths of open-world phases met
-std::map<std::uint32_t, bool> g_byPhase; // NodePathHash -> allowed (cache)
+// What a phase is to the freeze.
+enum class Owner : std::uint8_t { World, Gig, Story }; // World: always runs
+
+std::mutex g_lock;                        // everything below
+std::set<std::uint64_t> g_allowed;        // open-world resource path hashes
+std::set<std::uint64_t> g_gigs;           // gig resource path hashes (tandem.ini)
+std::vector<Path> g_openPrefixes;         // node paths of open-world phases met
+std::vector<Path> g_gigPrefixes;          // and of gig phases
+std::map<std::uint32_t, Owner> g_byPhase; // NodePathHash -> what it is (cache)
+std::set<std::uint32_t> g_tracedPhases;   // spike C2: lines already logged
+std::set<std::pair<std::uint32_t, std::uint16_t>> g_tracedNodes;
 std::vector<Held> g_held;
 std::set<std::tuple<Path, std::uint16_t, std::uint64_t>> g_heldKeys;
 bool g_overflow = false;
@@ -180,52 +196,134 @@ std::uint32_t HashOf(const Path &path) {
   return hash;
 }
 
-// Under g_lock. Whether the phase keeps running in the freeze.
-bool Allowed(std::uintptr_t phase, const Path &path, std::uintptr_t context) {
+// Under g_lock. What the phase is: by its own resource, an ancestor's on
+// the context's phase stack, or a known phase's node path it extends. The
+// open world wins over a gig list entry.
+Owner OwnerOf(std::uintptr_t phase, const Path &path, std::uintptr_t context) {
   if (path.empty())
-    return true; // the root graph: it only starts phases
+    return Owner::World; // the root graph: it only starts phases
   const auto hash = HashOf(path);
   if (const auto it = g_byPhase.find(hash); it != g_byPhase.end())
     return it->second;
 
-  bool allowed = false;
+  bool open = false, gig = false;
   const auto learn = [&](std::uintptr_t candidate, const Path &candidatePath) {
-    if (!g_allowed.contains(ResourceOf(candidate)))
-      return false;
-    if (std::ranges::find(g_openPrefixes, candidatePath) == g_openPrefixes.end()) {
-      g_openPrefixes.push_back(candidatePath);
-      g_byPhase.clear(); // earlier refusals may have been its children
-      log::Info("quest: open-world phase {:#x} keeps running (resource {:#x})",
-                HashOf(candidatePath), ResourceOf(candidate));
+    const auto resource = ResourceOf(candidate);
+    const bool isOpen = g_allowed.contains(resource);
+    const bool isGig = !isOpen && g_gigs.contains(resource);
+    if (!isOpen && !isGig)
+      return;
+    auto &prefixes = isOpen ? g_openPrefixes : g_gigPrefixes;
+    if (std::ranges::find(prefixes, candidatePath) == prefixes.end()) {
+      prefixes.push_back(candidatePath);
+      g_byPhase.clear(); // earlier verdicts may have been its children
+      log::Info("quest: {} phase {:#x} (resource {:#x})",
+                isOpen ? "open-world phase keeps running:" : "gig", HashOf(candidatePath),
+                resource);
     }
-    return true;
+    (isOpen ? open : gig) = true;
   };
-  allowed = learn(phase, path);
-  if (!allowed) {
+  learn(phase, path);
+  ArrayHead stack{};
+  if (!open && ReadAt(context + kContextStack, stack) && stack.size <= kMaxStack)
+    for (std::uint32_t i = 0; i < stack.size && !open; ++i) {
+      std::uintptr_t ancestor = 0;
+      Path ancestorPath;
+      if (ReadAt(stack.entries + i * sizeof(void *), ancestor) && ancestor &&
+          ReadPath(ancestor, ancestorPath))
+        learn(ancestor, ancestorPath);
+    }
+  for (const auto &prefix : g_openPrefixes)
+    open = open || IsPrefix(prefix, path);
+  for (const auto &prefix : g_gigPrefixes)
+    gig = gig || IsPrefix(prefix, path);
+  const auto owner = open ? Owner::World : gig ? Owner::Gig : Owner::Story;
+  g_byPhase[hash] = owner;
+  return owner;
+}
+
+// ---- spike C2: what a phase is made of (quest trace on) ----
+// One line per phase (its chain of resources, root first) and one per
+// journal node met in it (the journal entry it names): enough to tell, from
+// one solo run past a few gigs, how a gig's phase can be recognised.
+
+struct JournalOffsets {
+  RED4ext::CClass *node = nullptr;
+  std::uint32_t type = 0, path = 0, realPath = 0, className = 0;
+};
+JournalOffsets g_journal; // set once, before the trace is on
+
+// The journal path a journal node names, into `out` (guarded).
+bool JournalPathOf(void *node, char *out, std::size_t size, std::uint64_t &className) {
+  __try {
+    auto *type = static_cast<RED4ext::ISerializable *>(node)->GetType();
+    if (!type || !type->IsA(g_journal.node))
+      return false;
+    const auto *bytes = static_cast<const std::uint8_t *>(node);
+    const auto *kind = *reinterpret_cast<const std::uint8_t *const *>(bytes + g_journal.type);
+    if (!kind)
+      return false;
+    const auto *path = *reinterpret_cast<const std::uint8_t *const *>(kind + g_journal.path);
+    if (!path)
+      return false;
+    const auto *text =
+        reinterpret_cast<const RED4ext::CString *>(path + g_journal.realPath)->c_str();
+    className = *reinterpret_cast<const std::uint64_t *>(path + g_journal.className);
+    std::size_t i = 0;
+    for (; text && i + 1 < size && text[i]; ++i)
+      out[i] = text[i];
+    out[i] = 0;
+    return i > 0;
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
+void Trace(std::uintptr_t phase, const Path &path, void *node, std::uint16_t nodeId,
+           std::uintptr_t context) {
+  const auto hash = HashOf(path);
+  std::string chain;
+  bool firstOfPhase = false;
+  {
+    std::lock_guard _(g_lock);
+    if (g_tracedPhases.size() + g_tracedNodes.size() > 20000)
+      return;
+    firstOfPhase = g_tracedPhases.insert(hash).second;
+  }
+  if (firstOfPhase) {
     ArrayHead stack{};
     if (ReadAt(context + kContextStack, stack) && stack.size <= kMaxStack)
-      for (std::uint32_t i = 0; i < stack.size && !allowed; ++i) {
+      for (std::uint32_t i = 0; i < stack.size; ++i) {
         std::uintptr_t ancestor = 0;
         Path ancestorPath;
         if (ReadAt(stack.entries + i * sizeof(void *), ancestor) && ancestor &&
             ReadPath(ancestor, ancestorPath))
-          allowed = learn(ancestor, ancestorPath);
+          chain += std::format(" {:#x}@{}", ResourceOf(ancestor), ancestorPath.size());
       }
+    std::string ids;
+    for (const auto id : path)
+      ids += std::format("{}{}", ids.empty() ? "" : ".", id);
+    log::Info("quest trace: phase {:#x} path {} resource {:#x} chain{}", hash, ids,
+              ResourceOf(phase), chain);
   }
-  if (!allowed)
-    for (const auto &prefix : g_openPrefixes)
-      if (IsPrefix(prefix, path)) {
-        allowed = true;
-        break;
-      }
-  g_byPhase[hash] = allowed;
-  return allowed;
+  char journal[200];
+  std::uint64_t className = 0;
+  if (g_journal.node && JournalPathOf(node, journal, sizeof(journal), className)) {
+    {
+      std::lock_guard _(g_lock);
+      if (!g_tracedNodes.insert({hash, nodeId}).second)
+        return;
+    }
+    log::Info("quest trace: phase {:#x} node {} journal {} ({})", hash, nodeId, journal,
+              RED4ext::CName(className).ToString());
+  }
 }
 
 std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, void *outputs) {
   // Scene privacy (scenes.cpp): which scene runs, on every game.
   ObserveSceneNode(node);
-  if (!g_active.load(std::memory_order_relaxed) || t_replaying)
+  const bool tracing = g_trace.load(std::memory_order_relaxed);
+  if ((!g_active.load(std::memory_order_relaxed) && !tracing) || t_replaying)
     return g_original(phase, node, context, socket, outputs);
 
   const auto phaseAddress = reinterpret_cast<std::uintptr_t>(phase);
@@ -236,13 +334,20 @@ std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, 
       !ReadAt(reinterpret_cast<std::uintptr_t>(node) + kNodeId, nodeId) ||
       !ReadAt(reinterpret_cast<std::uintptr_t>(socket), socketName))
     return g_original(phase, node, context, socket, outputs); // unreadable: never guess
+  if (tracing)
+    Trace(phaseAddress, path, node, nodeId, reinterpret_cast<std::uintptr_t>(context));
+  if (!g_active.load(std::memory_order_relaxed))
+    return g_original(phase, node, context, socket, outputs);
 
   // Decided under the lock, run outside it: nodes run nested graphs, which
   // come back here on the same thread.
-  bool allowed = false;
+  bool allowed = false, gig = false;
   {
     std::lock_guard _(g_lock);
-    allowed = Allowed(phaseAddress, path, reinterpret_cast<std::uintptr_t>(context));
+    const auto owner = OwnerOf(phaseAddress, path, reinterpret_cast<std::uintptr_t>(context));
+    gig = owner == Owner::Gig;
+    // Ours to run: the open world, and our gigs while we are apart.
+    allowed = owner == Owner::World || (gig && !g_grouped.load(std::memory_order_relaxed));
     if (allowed)
       ++g_passed;
   }
@@ -252,8 +357,8 @@ std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, 
     std::lock_guard _(g_lock);
     ++g_refused;
     if (g_frozenPhases.insert(HashOf(path)).second)
-      log::Info("quest: freezing phase {:#x} (resource {:#x}, depth {})", HashOf(path),
-                ResourceOf(phaseAddress), path.size());
+      log::Info("quest: freezing {} phase {:#x} (resource {:#x}, depth {})", gig ? "gig" : "story",
+                HashOf(path), ResourceOf(phaseAddress), path.size());
     // Kept once per signal: the engine wakes some nodes (scenes, phones)
     // again and again while they wait.
     auto key = std::make_tuple(path, nodeId, socketName);
@@ -267,7 +372,7 @@ std::uint8_t Detour(void *phase, void *node, void *context, const void *socket, 
       g_overflow = true;
     } else {
       g_heldKeys.insert(key);
-      g_held.push_back({std::move(path), nodeId, socketName});
+      g_held.push_back({std::move(path), nodeId, socketName, gig});
     }
   }
   return kRefused;
@@ -313,10 +418,35 @@ std::uint8_t Replay(void *system, void *root, const Held &held) {
   const auto executePath = reinterpret_cast<ExecutePathFn>(vtable[kExecutePathSlot]);
   return executePath(root, context.data(), &path, held.node, held.socket, &outputs);
 }
+// Gives held signals back to their phases, in the order they came. Game
+// thread. Answers how many (-1: no quests system).
+int GiveBack(const std::vector<Held> &held) {
+  auto *system = QuestsSystem();
+  void *root = nullptr;
+  if (system)
+    ReadAt(reinterpret_cast<std::uintptr_t>(system) + kSystemRoot, root);
+  if (!root) {
+    log::Error("quest: no quests system: {} held signals dropped", held.size());
+    return -1;
+  }
+  auto *lock = reinterpret_cast<RED4ext::SharedSpinLock *>(
+      reinterpret_cast<std::uintptr_t>(system) + kSystemLock);
+  int given = 0;
+  t_replaying = true;
+  lock->Lock();
+  for (const auto &signal : held) {
+    Replay(system, root, signal);
+    ++given;
+  }
+  lock->Unlock();
+  t_replaying = false;
+  return given;
+}
 } // namespace
 
 bool InstallQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle,
-                        const std::vector<std::string> &allow, bool freeze) {
+                        const std::vector<std::string> &allow, const std::vector<std::string> &gigs,
+                        bool freeze) {
   g_freezeAllowed = freeze;
   {
     std::lock_guard _(g_lock);
@@ -324,6 +454,8 @@ bool InstallQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle h
       g_allowed.insert(RED4ext::ResourcePath(path).hash);
     for (const auto &path : allow)
       g_allowed.insert(RED4ext::ResourcePath(path.c_str()).hash);
+    for (const auto &path : gigs)
+      g_gigs.insert(RED4ext::ResourcePath(path.c_str()).hash);
   }
   g_target = reinterpret_cast<void *>(RED4ext::UniversalRelocBase::Resolve(kExecuteNode));
   if (!g_target) {
@@ -374,28 +506,64 @@ bool SetQuestFreeze(bool on) {
     overflow = std::exchange(g_overflow, false);
     g_frozenPhases.clear();
   }
-  auto *system = QuestsSystem();
-  void *root = nullptr;
-  if (system)
-    ReadAt(reinterpret_cast<std::uintptr_t>(system) + kSystemRoot, root);
-  if (!root) {
-    log::Error("quest: no quests system: {} held signals dropped", held.size());
+  const int given = GiveBack(held);
+  if (given < 0)
     return false;
-  }
-  auto *lock = reinterpret_cast<RED4ext::SharedSpinLock *>(
-      reinterpret_cast<std::uintptr_t>(system) + kSystemLock);
-  std::size_t given = 0;
-  t_replaying = true;
-  lock->Lock();
-  for (const auto &signal : held) {
-    Replay(system, root, signal);
-    ++given;
-  }
-  lock->Unlock();
-  t_replaying = false;
   log::Info("quest: own quests resumed ({} held signals given back{})", given,
             overflow ? ", some were lost" : "");
   return true;
+}
+
+void SetQuestGrouped(bool grouped) {
+  if (g_grouped.exchange(grouped) == grouped)
+    return;
+  log::Info("quest: {} the host: our gigs {}", grouped ? "grouped with" : "apart from",
+            grouped ? "wait" : "run");
+  if (grouped || !g_active.load())
+    return;
+  // Apart again: the gig signals held while grouped go back to their phases.
+  std::vector<Held> gigs;
+  {
+    std::lock_guard _(g_lock);
+    std::vector<Held> kept;
+    for (auto &held : g_held) {
+      if (held.gig)
+        g_heldKeys.erase(std::make_tuple(held.phase, held.node, held.socket));
+      (held.gig ? gigs : kept).push_back(std::move(held));
+    }
+    g_held = std::move(kept);
+  }
+  if (!gigs.empty())
+    log::Info("quest: {} held gig signals given back", GiveBack(gigs));
+}
+
+bool QuestGrouped() { return g_grouped.load(); }
+
+void SetQuestTrace(bool on) {
+  if (on && !g_journal.node) {
+    auto *rtti = RED4ext::CRTTISystem::Get();
+    const auto offset = [&](const char *type, const char *name) -> std::uint32_t {
+      auto *found = rtti->GetClass(type);
+      const auto *property = found ? found->GetProperty(name) : nullptr;
+      return property ? property->valueOffset : 0;
+    };
+    JournalOffsets journal{.node = rtti->GetClass("questJournalNodeDefinition"),
+                           .type = offset("questJournalNodeDefinition", "type"),
+                           .path = offset("questIJournal_NodeType", "path"),
+                           .realPath = offset("gameJournalPath", "realPath"),
+                           .className = offset("gameJournalPath", "className")};
+    if (journal.node && journal.type && journal.path && journal.realPath && journal.className)
+      g_journal = journal;
+    else
+      log::Warn("quest trace: journal node layout not found by RTTI: phases only");
+  }
+  {
+    std::lock_guard _(g_lock);
+    g_tracedPhases.clear();
+    g_tracedNodes.clear();
+  }
+  g_trace = on && g_target != nullptr;
+  log::Info("quest trace: {}", g_trace ? "on" : g_target ? "off" : "no hook (scene_privacy off?)");
 }
 
 std::uint32_t QuestFreezeHeld() {
@@ -410,9 +578,10 @@ bool QuestFreezeOverflowed() {
 
 std::string QuestFreezeReport() {
   std::lock_guard _(g_lock);
-  return std::format("quest freeze {}: {} nodes refused ({} repeats), {} passed, {} signals held, "
-                     "{} phases frozen, {} open-world phases met{}",
-                     g_active ? "on" : "off", g_refused, g_repeats, g_passed, g_held.size(),
-                     g_frozenPhases.size(), g_openPrefixes.size(), g_overflow ? ", OVERFLOW" : "");
+  return std::format(
+      "quest freeze {} ({}): {} nodes refused ({} repeats), {} passed, {} signals held, "
+      "{} phases frozen, {} open-world phases met{}",
+      g_active ? "on" : "off", g_grouped ? "grouped" : "apart", g_refused, g_repeats, g_passed,
+      g_held.size(), g_frozenPhases.size(), g_openPrefixes.size(), g_overflow ? ", OVERFLOW" : "");
 }
 } // namespace tandem::plugin::engine

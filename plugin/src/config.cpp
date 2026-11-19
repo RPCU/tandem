@@ -115,12 +115,13 @@ Config LoadConfig(const std::filesystem::path &path) {
         flag = false;
       else
         log::Warn("tandem.ini:{}: {} is on or off", number, key);
-    } else if (key == "quest_freeze_allow" || key == "private_actors" || key == "private_scenes" ||
-               key == "public_scenes") {
-      auto &list = key == "quest_freeze_allow" ? config.questFreezeAllow
-                   : key == "private_actors"   ? config.privateActors
-                   : key == "private_scenes"   ? config.privateScenes
-                                               : config.publicScenes;
+    } else if (key == "quest_freeze_allow" || key == "quest_freeze_gigs" ||
+               key == "private_actors" || key == "private_scenes" || key == "public_scenes") {
+      auto &list = key == "quest_freeze_allow"  ? config.questFreezeAllow
+                   : key == "quest_freeze_gigs" ? config.questFreezeGigs
+                   : key == "private_actors"    ? config.privateActors
+                   : key == "private_scenes"    ? config.privateScenes
+                                                : config.publicScenes;
       if (key == "private_actors")
         list.clear(); // the file's list replaces the defaults
       for (std::size_t start = 0; start <= value.size();) {

@@ -143,12 +143,12 @@ void Ledger::Unpack(std::span<const std::uint64_t> words) {
 JoinNote NoteFor(const StoryMark &host, const StoryMark &guest) {
   if (host.pointOfNoReturn && !guest.pointOfNoReturn)
     return JoinNote::HostEnding;
-  if (host.mainDone >= guest.mainDone + kAheadBy)
+  // Dogtown before the guest's own story got there is a spoiler too.
+  if (host.mainDone >= guest.mainDone + kAheadBy || (host.ep1Started && !guest.ep1Started))
     return JoinNote::HostAhead;
   if (guest.mainDone >= host.mainDone + kAheadBy)
     return JoinNote::HostBehind;
   return JoinNote::None;
 }
 
-bool Ep1Missing(const StoryMark &host, const StoryMark &guest) { return host.ep1 && !guest.ep1; }
 } // namespace tandem::carry

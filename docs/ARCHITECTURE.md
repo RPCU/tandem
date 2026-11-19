@@ -139,7 +139,7 @@ The owner simulates; everyone else displays.
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
 | items a V drops on purpose | host | lie in every game; the first pickup keeps it |
-| quest and important items, rewards | every player's own V | whoever gets one, every V gets it |
+| quest and important items, rewards | every player's own V | whoever gets one, every V gets it; a guest gives the host's quest props (tag `Quest`, keycards) back when it leaves, and keeps iconics and rewards |
 
 Enemy level (the mean of the players' levels): `architecture/npcs.md`.
 
