@@ -215,7 +215,11 @@ struct Options {
   int detectAtSeconds{-1};  // host: its NPCs detect the guests this long in (-1: never)
   int detectForSeconds{10}; // ...for this long
   int camoAtSeconds{-1};    // optical camo on this long into the session, for 5 s
-  int shootSeconds{0};      // join: a gunshot (shot + noise) this often (0: never)
+  std::string camoRecord;   // ...its status effect record (Stealth::camo; none: 0)
+  // Status effects that show on our V (StatusVisuals): REC@FROM-TO[,...], in
+  // seconds after another player is in (TO 0 or missing: kept).
+  std::string statusVisuals;
+  int shootSeconds{0}; // join: a gunshot (shot + noise) this often (0: never)
   // Quickhacks: join: upload --hack-action on a host NPC every N s, then land
   // --hack-effect; host: one of our NPCs hacks the guest (--npc-hack) every
   // N s; either: hack the car another player drives every N s.
@@ -538,6 +542,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --detect-for N     --detect-at: and lose it again after N seconds (default 10)\n"
          "  --camo N           turn optical camo on N seconds after another player is in the\n"
          "                     session, for 5 seconds\n"
+         "  --camo-record REC  --camo: its status effect record, as a V's camo sends it\n"
+         "                     (BaseStatusEffect.OpticalCamoCoolPerkShort)\n"
+         "  --status REC@FROM-TO[,REC@FROM-TO]  status effects that show on our V, each\n"
+         "                     from FROM to TO seconds after another player is in (no TO:\n"
+         "                     kept): the others' puppet of it plays their visuals\n"
          "  --shoot N          fire a gunshot every N seconds: the shot, where its bullet\n"
          "                     ended (a cue: 6 m past the other V), and as a guest its noise\n"
          "  --hurt N           our V is hit every N seconds: its health falls a quarter (the\n"
@@ -1099,6 +1108,10 @@ Options Parse(int argc, char **argv) {
       options.detectForSeconds = Number<int>(value);
     else if (flag == "--camo")
       options.camoAtSeconds = Number<int>(value);
+    else if (flag == "--camo-record")
+      options.camoRecord = value;
+    else if (flag == "--status")
+      options.statusVisuals = value;
     else if (flag == "--shoot")
       options.shootSeconds = std::max(1, Number<int>(value));
     else if (flag == "--hurt")
@@ -3342,6 +3355,35 @@ int main(int argc, char **argv) {
   auto nextNpcState = std::chrono::steady_clock::now();
   auto nextAwareness = std::chrono::steady_clock::now();
   int camoStep = 0; // 0 waiting, 1 on, 2 done
+  // --status: each record's window, and the set last sent.
+  struct StatusWindow {
+    std::string record;
+    double from{}, to{};
+  };
+  std::vector<StatusWindow> statusWindows;
+  for (std::size_t start = 0; start < options.statusVisuals.size();) {
+    const auto comma =
+        std::min(options.statusVisuals.find(',', start), options.statusVisuals.size());
+    const auto item = options.statusVisuals.substr(start, comma - start);
+    start = comma + 1;
+    const auto at = item.find('@');
+    if (item.empty() || at == std::string::npos) {
+      std::cerr << "tandem-peer: --status wants REC@FROM-TO, not '" << item << "'\n";
+      return 1;
+    }
+    const auto times = item.substr(at + 1);
+    const auto dash = times.find('-');
+    StatusWindow window{.record = item.substr(0, at)};
+    try {
+      window.from = std::stod(times.substr(0, dash));
+      window.to = dash == std::string::npos ? 0.0 : std::stod(times.substr(dash + 1));
+    } catch (const std::exception &) {
+      std::cerr << "tandem-peer: --status: bad times in '" << item << "'\n";
+      return 1;
+    }
+    statusWindows.push_back(window);
+  }
+  std::vector<std::uint64_t> statusShown;
   auto nextShot = std::chrono::steady_clock::now();
   // Presence: --melee, --hurt, --menu-at, --react-npcs.
   auto nextMelee = nextShot, nextHurt = nextShot, nextReaction = nextShot;
@@ -3796,6 +3838,9 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemotePresence>) {
               Log("player {} presence: health {:.0f} %, flags {:#x}", e.presence.player,
                   tandem::presence::HealthFraction(e.presence.health) * 100.f, e.presence.flags);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteStatusVisuals>) {
+              Log("player {} status visuals: {} record(s)", e.visuals.player,
+                  e.visuals.records.size());
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteCue>) {
               Log("player {} cue: {} to ({:.1f}, {:.1f}, {:.1f}), flags {:#x}", e.cue.player,
                   e.cue.kind == tandem::proto::CueKind::Trace ? "bullet" : "melee hit", e.cue.at.x,
@@ -6047,13 +6092,32 @@ int main(int argc, char **argv) {
     // --camo: our optical camo on for 5 s.
     if (options.camoAtSeconds >= 0 && shared >= 0.0 && camoStep < 2) {
       if (camoStep == 0 && shared >= options.camoAtSeconds) {
-        endpoint->SetLocalStealth({.flags = tandem::proto::kStealthCamo, .visibility = 0.2f});
+        endpoint->SetLocalStealth(
+            {.flags = tandem::proto::kStealthCamo,
+             .visibility = 0.2f,
+             .camo = options.camoRecord.empty() ? 0 : TweakDBID(options.camoRecord)});
         camoStep = 1;
-        Log("optical camo on");
+        Log("optical camo on{}", options.camoRecord.empty() ? "" : " (" + options.camoRecord + ")");
       } else if (camoStep == 1 && shared >= options.camoAtSeconds + 5) {
         endpoint->SetLocalStealth({.flags = 0, .visibility = 1.f});
         camoStep = 2;
         Log("optical camo off");
+      }
+    }
+    // --status: the status effects that show on our V now, as one set.
+    if (!statusWindows.empty() && shared >= 0.0) {
+      std::vector<std::uint64_t> on;
+      std::string names;
+      for (const auto &window : statusWindows)
+        if (shared >= window.from && (window.to <= window.from || shared < window.to)) {
+          on.push_back(TweakDBID(window.record));
+          names += (names.empty() ? "" : ", ") + window.record;
+        }
+      auto set = tandem::presence::StatusSet(on);
+      if (set != statusShown) {
+        statusShown = set;
+        endpoint->SetLocalStatusVisuals(set);
+        Log("status visuals on our V: {}", names.empty() ? "none" : names);
       }
     }
     // Where a shot or a swing of ours lands: 6 m past the other V at chest

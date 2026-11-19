@@ -1056,6 +1056,20 @@ struct TandemNative : Red::IScriptable {
     return sync::TimeBubbles::PlayerFactor(player, own, {position.X, position.Y, position.Z}, who,
                                            inside);
   }
+  // Whose bubble slows our V (the same arguments; 0: nobody's).
+  static std::uint32_t TimeSlowedBy(std::uint32_t player, float own, Red::Vector4 position,
+                                    Red::DynArray<std::uint32_t> owners,
+                                    Red::DynArray<float> scales,
+                                    Red::DynArray<Red::Vector4> ownerPositions, bool inside) {
+    std::vector<sync::TimeBubbles::Owner> who;
+    for (std::uint32_t i = 0; i < owners.Size() && i < scales.Size() && i < ownerPositions.Size();
+         ++i)
+      who.push_back({.player = owners[i],
+                     .scale = scales[i],
+                     .position = {ownerPositions[i].X, ownerPositions[i].Y, ownerPositions[i].Z}});
+    return sync::TimeBubbles::SlowedBy(player, own, {position.X, position.Y, position.Z}, who,
+                                       inside);
+  }
   // The world speed a V's abilities ask for as a bubble (1: none): ours
   // as our `own`, and the others' (the scanner counts, tandem/timebubble.hpp).
   static float TimeBubbleScale(std::int32_t abilities, float scale) {
@@ -2093,6 +2107,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(TimeBubbleMembers);
   RTTI_METHOD(TimeBubbleScale);
   RTTI_METHOD(TimePlayerFactor);
+  RTTI_METHOD(TimeSlowedBy);
   RTTI_METHOD(IsTimeHostFull);
   RTTI_METHOD(RelayCode);
   RTTI_METHOD(RelayStatus);

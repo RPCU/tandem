@@ -488,3 +488,64 @@ muzzleOffset)` (54056), then the weapon effects. Its aiming needs the
   (`IsAgentVisible`) and no cooldown runs: `MemoryWipeOnDodge` on the NPC,
   the sound, the dilation removed, `DodgeOutOfSightCooldown` and
   `SecondChancePerkCooldown` on V (`:39682-39696`). [2.5-untested]
+
+### 13.75 A status effect's look, without its gameplay (2026-11-19, read in final.reds, not run)
+
+- **Where a status effect names its look.** `StatusEffect_Record` has
+  three lists for it (`:18188-18271`): `VFX()` and `SFX()`, each of
+  `StatusEffectFX_Record` (`Name()`, `ShouldReapply()`, `:203977`), and
+  `Packages()` of `GameplayLogicPackage_Record`, whose `Effectors()` are
+  `Effector_Record`s naming their script class (`EffectorClassName()`,
+  `:17453`); each effector reads its own fields from TweakDB in its
+  `Initialize` (`record + t".field"`). `UiData()` is the buff bar's icon
+  and text, no look. [2.5-untested]
+- **How the game plays it on any character.** `GameObject
+.OnStatusEffectApplied` (`:12246`) runs `StartStatusEffectVFX`
+  (`:12262`: `GameObjectEffectHelper.StartEffectEvent(this, name)` for each
+  VFX, on a new application or when `ShouldReapply`) and
+  `StartStatusEffectSFX` (`:12274`: `GameObject.PlaySound`);
+  `OnStatusEffectRemoved` breaks the loops (`BreakEffectLoopEvent`,
+  `:12291`) and stops the sounds on the final removal. A defeated NPC
+  keeps them (`CacheFXOnDefeated`, `:465043`, then
+  `RemoveCachedStatusEffectFXEvent`). The names resolve in the entity's own
+  effect lists (`entEffectSpawnerComponent`s; V's `fx_status_effects`), so
+  one name can be a body effect on an NPC and a screen effect on V
+  (`BaseStatusEffect.Burning`'s `status_burning`: the modding wiki's
+  "creating custom FX" guide). [2.5-untested]
+- **The visual effectors.** `PlayVFXEffector` (`:307141`): `vfxName`
+  started on `ActionOn`, broken on `ActionOff`/`Uninitialize`, or started
+  only then with `startOnUninitialize`; `fireAndForget` starts it again on
+  each repeat. `ApplyShaderEffector` (`:299449`: `overrideMaterialName`,
+  `overrideMaterialTag`, `applyToOwner`, `applyToWeapon`) and
+  `ApplyShaderOnObjectEffector` (`:299350`: the same on its
+  `applicationTarget`, `overrideMaterialClearOnDetach`) both create a
+  static game effect (`GameEffectSystem.CreateEffectStatic(name, tag,
+owner)`, `:53063`), set `EffectSharedData.enable` and `.entity`, and
+  `Run()` it; off is the same with `enable` false. Every other effector is
+  gameplay (stats, damage, AI, vision blockers such as
+  `AttachOpticalCamoVisionBlockerEffector`, `:249803`). [2.5-untested]
+- **The player's own records.** Effects on V are often separate records
+  from an NPC's for the same thing: a hit's status effects on a player are
+  `PlayerBleeding`, `PlayerBurning`, `PlayerPoisoned`,
+  `PlayerElectrocuted`, on an NPC `Bleeding`, `Burning`… (`:85994-86038`);
+  an NPC's burning spreads to V as `PlayerBurning` (`:21039`). A puppet
+  (`player_*_tpp.ent`, `tweaks/tandem/puppet.tweak`) is V's own template,
+  so V's records' names are the likeliest to resolve on it; whether they
+  give a body effect there is to see. [to-see]
+- **Camo is tagged** `CamoActiveOnPlayer` on a V (`:269230`) and `Cloak`
+  on an NPC (`NPCPuppet.OnStatusEffectApplied`, `:126484`: removes its
+  sense mappin; `:127055` puts it back). [2.5-untested]
+- Tandem (presence.md, "Status effects"): a V's records that show (VFX, or
+  a visual effector) travel as `StatusVisuals`; the partner's game plays
+  them on the puppet by these same calls, never applying the effect.
+  [2.5-untested]
+- **The game's soft slow-motion cue** (for a V another V's bubble slows,
+  time.md): the Focus perk, when it slows time a little, starts
+  `cool_perk_focused_state_fullscreen` on V with
+  `time_dilation_focused_enter` (`AimingStateEvents`, `:542843-542849`;
+  Deadeye's reload the same, `ReloadEvents`, `:547592-547596`) and ends
+  with `BreakEffectLoopEvent` and `time_dilation_focused_exit`
+  (`PlayerPuppet`, `:44513-44514`; `:547671-547673`). A Sandevistan's own enter has no screen effect in the
+  scripts (its camera curve `Sandevistan` and a Razer Chroma animation,
+  `:524139-524146`; its look is `SandevistanPlayerBuff`'s, applied by the
+  cyberware); Berserk plays `slow` (`:224030`). [2.5-untested]

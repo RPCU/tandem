@@ -138,7 +138,7 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::ThrowEnd> || std::is_same_v<M, p::Activity> ||
                            std::is_same_v<M, p::CarLend> || std::is_same_v<M, p::Link> ||
                            std::is_same_v<M, p::Waypoint> || std::is_same_v<M, p::Defended> ||
-                           std::is_same_v<M, p::TradeOffer>)
+                           std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::StatusVisuals>)
           return &m.player;
         else
           return nullptr;

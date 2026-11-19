@@ -143,6 +143,7 @@ The owner simulates; everyone else displays.
 | the clock: time skips (wheel, bed) | host's clock, asked of every other player | each agrees or not; applied in every game; the host's story only says so (`architecture/activities.md`) |
 | a V busy: workspot, menu, minigame, photo mode | that player's game | puppet held where it sits, same workspot; photo mode stands only its own game still |
 | a V's time abilities (Sandevistan, the scanner…) | that player's game | shown on the puppet; never slow anyone's world |
+| a V's status effects that show (burning, shock, camo, a heal…) | that player's game | their look and sound played on the puppet, never their gameplay (`architecture/presence.md`) |
 | an NPC's speed in a time bubble | the NPC's owner | proxies animated at the same speed |
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | NPC melee at a V: whether it is blocked, parried, dodged | the V's game, at its proxy's swing | host's NPC decides to attack and recoils; `architecture/combat-coverage.md` |
@@ -302,7 +303,7 @@ plugin") and its open problems.
 - `garage.md`: owned vehicles: each player's garage, driving a partner's car, vehicles earned together (credited, or kept with `vehicle_rewards = keep`), purchases, PL deliveries, decisions.
 - `trade.md`: trade between two players: the prompt and the table, what may be traded, the host's two-phase arbitration, the protocol, what is not verified.
 - `quest-carryover.md`: what a guest brings home (stage A1 built: the ledger in the save, rewards through it, quest props given back on leave): the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
-- `presence.md` (`scripts/tandem/Presence.reds`, `PartyHud.reds`, `HitReactions.reds`): the partner seen and heard: a puppet's sounds, hit reactions on puppets and proxies, drawn bullets, the party HUD (linked partners) and nameplates (`nameplates = near|always|off`), names (the pseudo prompt, unique names: `core/include/tandem/names.hpp`), small details (flashlight, look-at, stances, holstering); the audit, what needs eyes and ears in game.
+- `presence.md` (`scripts/tandem/Presence.reds`, `PartyHud.reds`, `HitReactions.reds`, `StatusVisuals.reds`): the partner seen and heard: a puppet's sounds, hit reactions on puppets and proxies, drawn bullets, its V's status effects on it (`StatusVisuals`), the party HUD (linked partners) and nameplates (`nameplates = near|always|off`), names (the pseudo prompt, unique names: `core/include/tandem/names.hpp`), small details (flashlight, look-at, stances, holstering); the audit, what needs eyes and ears in game.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
 - `activities.md`: the rule table for activities outside combat and quests (time skips asked of everyone, workspots on puppets, minigames and screens, shops, mirror and wardrobe looks, photo mode, contests, clubs and joytoys), its decisions and what is built.
 - `coop-menu.md`: the co-op menu, its Settings page (saved to `tandem.ini`), invites and join codes in game.

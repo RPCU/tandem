@@ -718,6 +718,30 @@ TEST_CASE("story restrictions survive encoding, are a story message, and say one
   CHECK(Decode(Encode(many)).has_value());
 }
 
+TEST_CASE("status visuals survive encoding, are kept state, and say one set one way") {
+  RoundTrips(StatusVisuals{.player = 2, .revision = 4, .records = {0x10, 0x15e213846eULL}});
+  RoundTrips(StatusVisuals{.player = 1, .revision = 1});
+  CHECK(ChannelOf(StatusVisuals{}) == Channel::Event);
+  CHECK(IsReliable(StatusVisuals{}));
+  CHECK_FALSE(IsStory(StatusVisuals{}));
+  CHECK_FALSE(IsCombat(StatusVisuals{}));
+  CHECK(std::string(NameOf(StatusVisuals{})) == "StatusVisuals");
+  // Appended last, so every earlier message keeps its id (no version bump).
+  CHECK(Message(StatusVisuals{}).index() == Message(VehicleMotion{}).index() + 1);
+  CHECK(Message(StatusVisuals{}).index() + 1 == std::variant_size_v<Message>);
+  // Unsorted, repeated or too many: refused.
+  CHECK_FALSE(Decode(Encode(StatusVisuals{.records = {2, 1}})).has_value());
+  CHECK_FALSE(Decode(Encode(StatusVisuals{.records = {1, 1}})).has_value());
+  StatusVisuals many;
+  for (std::uint64_t i = 0; i <= kMaxStatusVisuals; ++i)
+    many.records.push_back(i + 1);
+  CHECK_FALSE(Decode(Encode(many)).has_value());
+  many.records.pop_back();
+  CHECK(Decode(Encode(many)).has_value());
+  // A full set is still a small event.
+  CHECK(Encode(many).size() < 160);
+}
+
 TEST_CASE("down-and-out messages survive encoding, reliably, and refuse what is out of range") {
   RoundTrips(Vitals{.player = 2, .revision = 7, .life = Life::Down, .flags = kVitalsInCombat});
   RoundTrips(Vitals{.player = 1, .revision = 1, .life = Life::Out});
