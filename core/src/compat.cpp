@@ -129,9 +129,12 @@ Startup Check(const Facts &facts) {
           std::format("{} {} is too old: tandem needs {} or newer. Co-op is off.", need.name,
                       Format(*found->version), Format(need.minimum)));
   }
+  // Only said: without redscript no script of ours runs to show a message,
+  // and the plugin does nothing without its scripts.
   if (!facts.redscript)
-    out.problems.push_back(std::format(
-        "redscript is not installed ({}). tandem needs redscript {} or newer. Co-op is off.",
+    out.warnings.push_back(std::format(
+        "redscript does not seem installed ({} is missing): without redscript {} or newer "
+        "tandem's menu and scripts do not load",
         kRedscript, kRedscriptVersion));
   if (!facts.scripts)
     out.problems.push_back("tandem's scripts are missing (r6/scripts/tandem): install the whole "

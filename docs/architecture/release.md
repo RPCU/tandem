@@ -104,7 +104,7 @@ logs what it found, and keeps it in `Runtime::installation`.
 | RED4ext ≥ 1.31.0                  | file version of `red4ext/RED4ext.dll`                                           | co-op off                                      |
 | Codeware ≥ 1.21.2                 | file version of `red4ext/plugins/Codeware/Codeware.dll`                         | co-op off                                      |
 | TweakXL ≥ 1.12.0                  | file version of `red4ext/plugins/TweakXL/TweakXL.dll`                           | co-op off                                      |
-| redscript is installed            | `engine/tools/scc.exe` exists (it has no version to read)                       | co-op off (log only: no script runs to say it) |
+| redscript is installed            | `engine/tools/scc.exe` exists (it has no version to read)                       | a line in the log (no script runs to say more) |
 | tandem's scripts and tweaks exist | `r6/scripts/tandem`, `r6/tweaks/tandem` hold files                              | co-op off                                      |
 | a version that cannot be read     | a DLL without a version resource                                                | a line in the log                              |
 

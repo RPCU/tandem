@@ -243,6 +243,7 @@ struct NetThread::Impl {
                                               : SessionStatus::State::Connecting,
             {}, endpoint.get());
     std::string endReason, refusal;
+    bool wasIn = false; // hosting, or welcomed by a host
     if (recorder.IsOpen())
       Tap(*endpoint);
     if (lastAppearance)
@@ -309,6 +310,7 @@ struct NetThread::Impl {
                           endpoint->ThroughRelay() ? ", through the relay" : "");
                 if (const auto secret = endpoint->RelaySessionSecret())
                   relaySecret = secret;
+                wasIn = true;
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.SetYou(e.you);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
@@ -818,10 +820,14 @@ struct NetThread::Impl {
                                             : "the session ended";
     summary.mismatches = endpoint->Checks().Mismatches();
     summary.resyncs = endpoint->Checks().Requests();
-    // For the bug report (tandem/report.hpp): the last session only.
-    if (std::ofstream file(config.commandFile.parent_path() / "last-session.txt", std::ios::trunc);
-        file)
-      file << report::Format(summary);
+    // For the bug report (tandem/report.hpp): the last session only. Not a
+    // guest's tries at a host that is gone: they would write over the
+    // session that mattered every 5 s.
+    if (wasIn || !refusal.empty())
+      if (std::ofstream file(config.commandFile.parent_path() / "last-session.txt",
+                             std::ios::trunc);
+          file)
+        file << report::Format(summary);
     // After the session's own reset, so the menu still says it.
     if (!refusal.empty())
       runtime.NoteDifference(refusal);

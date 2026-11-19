@@ -97,14 +97,14 @@ TEST_CASE("what cannot be read is a warning, not a problem") {
   CHECK(startup.warnings.size() == 2);
 }
 
-TEST_CASE("missing tandem files turn co-op off") {
+TEST_CASE("missing tandem files turn co-op off; a missing redscript is only said") {
   auto facts = Good();
   facts.tweaks = false;
   facts.redscript = false;
   const auto startup = compat::Check(facts);
-  CHECK(startup.problems.size() == 2);
+  REQUIRE(startup.problems.size() == 1);
   CHECK(Mentions(startup.problems, "r6/tweaks/tandem"));
-  CHECK(Mentions(startup.problems, "redscript"));
+  CHECK(Mentions(startup.warnings, "redscript"));
 }
 
 TEST_CASE("a folder's hash follows names and contents, not line endings or order") {
