@@ -66,6 +66,9 @@ public class TandemRevive {
   // Since when nobody else is in the session.
   private let m_aloneSince: Float;
   private let m_lastDrop: Float;
+  // Up again (GotUp): when to look that nothing of the death state is
+  // left (0: nothing to check).
+  private let m_upCheckAt: Float;
 
   // ---- reviving someone ----
   private let m_listening: Bool;
@@ -113,7 +116,11 @@ public class TandemRevive {
     if this.m_dying {
       return true;
     }
+    // Up, or being stood up right now: nothing to die of.
     if this.m_life == 0 || this.m_release || !IsDefined(player) {
+      if IsDefined(player) {
+        TandemNative.Log(s"revive: \(why) with our V up: nothing to do");
+      }
       return false;
     }
     TandemNative.Log(s"revive: \(why) with our V \(this.m_life == 1 ? "down" : "out"): it dies");
@@ -130,6 +137,11 @@ public class TandemRevive {
     if IsDefined(player) {
       if this.m_listening {
         player.UnregisterInputListener(this, n"Choice1");
+      }
+      // Up, or being stood up: nothing of being down stays on it (a V that
+      // is down here dies first, TandemSystem.EndSession).
+      if this.m_life == 0 && !this.m_dying {
+        this.ClearDown(player, "the session is over");
       }
       this.Unprotect(player);
       this.Vulnerable(player);
@@ -207,7 +219,13 @@ public class TandemRevive {
       this.m_listening = true;
     }
     let others = this.Others();
-    this.Protect(player, ArraySize(others) > 0 || this.m_life != 0);
+    // Kept while V is down or out, and while it is being stood up (a partner
+    // leaving then must not take V's floor away under it).
+    this.Protect(player, ArraySize(others) > 0 || this.m_life != 0 || this.m_release);
+    if this.m_upCheckAt > 0.0 && now >= this.m_upCheckAt {
+      this.m_upCheckAt = 0.0;
+      this.CheckUp(player);
+    }
     if this.m_invulnerable && this.m_life == 0 && this.m_graceUntil > 0.0 && now >= this.m_graceUntil {
       this.Vulnerable(player);
     }
@@ -258,7 +276,7 @@ public class TandemRevive {
       TandemNative.Log("revive: another player is here: our V goes down instead of dying");
     } else if !want && this.m_protected {
       this.Unprotect(player);
-      TandemNative.Log("revive: alone: our V dies the game's way");
+      TandemNative.Log("revive: nobody else here: our V is no longer kept from dying (it is up)");
     }
   }
 
@@ -493,17 +511,64 @@ public class TandemRevive {
       pools.RequestSettingStatPoolValue(id, gamedataStatPoolType.Health, 20.0, null, true);
       TandemNative.Log("revive: Second Heart got our V up, at 20 % (co-op rule)");
     }
-    this.m_ours = false;
+    this.ClearDown(player, "up");
+    // A moment to get one's bearings before the next bullet.
+    if this.m_invulnerable {
+      this.m_graceUntil = this.m_now + 3.0;
+    }
+    this.m_upCheckAt = this.m_now + 2.0;
+  }
+
+  // Up: the one place every trace of being down, out or dying goes. Our
+  // life, the hold on the state machine, a death after leaving the session
+  // (TandemSystem.LeftDown, which also locked saving), the HUD bar, NPC
+  // senses, and the death state's screen effect.
+  private func ClearDown(player: ref<PlayerPuppet>, why: String) -> Void {
+    let was = this.m_life != 0 || this.m_release || this.m_dying || this.m_lost;
+    this.m_life = 0;
     this.m_release = false;
+    this.m_ours = false;
+    this.m_dying = false;
+    this.m_lost = false;
+    this.m_reviver = 0u;
+    this.m_calmSince = -1.0;
+    this.m_aloneSince = -1.0;
+    this.HideBar(false);
+    if IsDefined(this.m_system) {
+      this.m_system.ClearLeftDown();
+    }
     if this.m_madeInvisible {
       player.SetInvisible(false);
       this.m_madeInvisible = false;
     }
     player.SetSenseObjectType(gamedataSenseObjectType.Player);
-    // A moment to get one's bearings before the next bullet.
-    if this.m_invulnerable {
-      this.m_graceUntil = this.m_now + 3.0;
+    // The death state's own effect (DeathEvents, final.reds 527775): its
+    // exit stops it, but never twice is harmless.
+    GameObjectEffectHelper.BreakEffectLoopEvent(player, n"dying");
+    this.SendOurs(player);
+    if was {
+      TandemNative.Log(s"revive: our V is up, nothing of being down left (\(why))");
     }
+  }
+
+  // Two seconds after getting up the player state machine must be past its
+  // death state (ExplorationEvents.OnEnter, final.reds 525154: vitals 0, the
+  // death sound state ended). If it still says dead, do what that state does
+  // for the screen and the sound.
+  private func CheckUp(player: ref<PlayerPuppet>) -> Void {
+    if this.m_life != 0 {
+      return;
+    }
+    let psm = GameInstance.GetBlackboardSystem(this.m_game).GetLocalInstanced(player.GetEntityID(), GetAllBlackboardDefs().PlayerStateMachine);
+    let vitals = IsDefined(psm) ? psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.Vitals) : 0;
+    if vitals == 0 {
+      TandemNative.Log("revive: up: the state machine is past its death state");
+      return;
+    }
+    TandemNative.Log(s"revive: up, but the state machine still says vitals \(vitals): its death effects ended by hand");
+    psm.SetInt(GetAllBlackboardDefs().PlayerStateMachine.Vitals, 0);
+    GameObjectEffectHelper.BreakEffectLoopEvent(player, n"dying");
+    GameInstance.GetAudioSystem(this.m_game).Play(n"global_death_exit");
   }
 
   // The host says no V is up any more.
@@ -597,7 +662,7 @@ public class TandemRevive {
       let health = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
       if !able || !IsDefined(body) || TandemNative.RemoteLife(this.m_holding) != 1 {
         this.CancelHold("they are no longer down, or we cannot");
-      } else if Vector4.Distance(body.GetWorldPosition(), here) > 2.5 {
+      } else if Vector4.Distance(body.GetWorldPosition(), here) > 2.5 && !(this.m_testHold && this.m_now - this.m_holdAt < 2.0) {
         this.CancelHold("moved away");
       } else if health < this.m_holdHealth - 0.5 {
         this.CancelHold("hit");
@@ -906,10 +971,15 @@ public class TandemRevive {
       // (test) as if our V had never been revived: the next fall is a
       // revivable down, not out (the 300 s cooldown of an earlier test).
       this.m_revivedAt = -1000.0;
+      // Still down or out from an earlier test: up first.
+      if this.m_life != 0 && !this.m_dying {
+        TandemNative.Log("revive fresh: our V was down: it stands up");
+        this.Release(player);
+      }
       TandemNative.Log("revive fresh: no recent revive");
     } else if Equals(command, "revive report") {
       let health = GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
-      TandemNative.Log(s"revive report: our V life \(this.m_life), health \(health) %, protected \(this.m_protected), invulnerable \(this.m_invulnerable), released \(this.m_release), lost \(this.m_lost), \(this.UpOthers()) other(s) up, revived \(RoundF(this.m_now - this.m_revivedAt)) s ago");
+      TandemNative.Log(s"revive report: our V life \(this.m_life), health \(health) %, protected \(this.m_protected), invulnerable \(this.m_invulnerable), released \(this.m_release), lost \(this.m_lost), dying \(this.m_dying), left down \(IsDefined(this.m_system) && this.m_system.LeftDown()), \(this.UpOthers()) other(s) up, revived \(RoundF(this.m_now - this.m_revivedAt)) s ago");
       for p in this.Others() {
         TandemNative.Log(s"revive report: \(this.NameOf(p)) life \(TandemNative.RemoteLife(p)), flags \(TandemNative.RemoteVitalsFlags(p)), puppet \(IsDefined(this.PuppetOf(p)))");
       }

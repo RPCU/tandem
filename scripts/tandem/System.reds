@@ -368,6 +368,15 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_leftDown;
   }
 
+  // Our V is up (Revive.reds ClearDown): no death after leaving is pending,
+  // whatever an earlier session left.
+  public func ClearLeftDown() -> Void {
+    if this.m_leftDown {
+      this.m_leftDown = false;
+      TandemNative.Log("revive: our V is up: no death after leaving pending");
+    }
+  }
+
   // No save while our V is down or out (or dying after it left down): a
   // game killed there reloads from before the fight, like any death
   // (ScriptableSystem.IsSavingLocked, final.reds:48411; the save locks ask

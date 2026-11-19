@@ -1470,6 +1470,76 @@ TEST_CASE("down and out: the last V up leaving loses the session for the one lef
   }));
 }
 
+// The in-game bug of 2026-11-19: after down, out and a respawn, our V is
+// up; the partner leaving must not count it as down (no loss, no death), and
+// a partner joining finds it up.
+TEST_CASE("down and out: up again after down, out and a respawn, a partner leaving or joining "
+          "changes nothing") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE((host && a));
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->Players().size() == 2; }));
+  DownAndOut atHost, atA;
+  const auto collect = [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : atA).Collect(events);
+  };
+  for (const auto life : {proto::Life::Down, proto::Life::Out, proto::Life::Up}) {
+    host->SetLocalVitals({.life = life});
+    REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+      collect(i, events);
+      return a->LifeOf(1) == life;
+    }));
+  }
+  CHECK(atA.vitals.back().life == proto::Life::Up);
+  CHECK(host->LifeOf(1) == proto::Life::Up);
+  CHECK(atHost.lost.empty());
+
+  // The partner leaves: our V is up, nothing is lost.
+  a->Leave();
+  REQUIRE(Pump({host.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return host->Players().size() == 1;
+  }));
+  PumpFor({host.get()}, 200ms, collect);
+  CHECK(atHost.lost.empty());
+  CHECK(host->LifeOf(1) == proto::Life::Up);
+
+  // A partner joins: it finds our V up, and is told nothing else of it.
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(b, error);
+  DownAndOut atB;
+  REQUIRE(Pump({host.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    (i == 0 ? atHost : atB).Collect(events);
+    return b->Players().size() == 2;
+  }));
+  PumpFor({host.get(), b.get()}, 200ms,
+          [&](std::size_t i, const auto &events) { (i == 0 ? atHost : atB).Collect(events); });
+  CHECK(b->LifeOf(1) == proto::Life::Up);
+  for (const auto &vitals : atB.vitals)
+    CHECK(vitals.life == proto::Life::Up);
+  CHECK(atHost.lost.empty());
+  CHECK(atB.lost.empty());
+
+  // A guest's V the same way (down, out, up): it leaving loses nothing.
+  for (const auto life : {proto::Life::Down, proto::Life::Out, proto::Life::Up}) {
+    b->SetLocalVitals({.life = life});
+    REQUIRE(Pump({host.get(), b.get()}, [&](std::size_t i, const auto &events) {
+      (i == 0 ? atHost : atB).Collect(events);
+      return host->LifeOf(b->You()) == life;
+    }));
+  }
+  b->Leave();
+  REQUIRE(Pump({host.get()}, [&](std::size_t, const auto &events) {
+    atHost.Collect(events);
+    return host->Players().size() == 1;
+  }));
+  PumpFor({host.get()}, 200ms, [&](std::size_t, const auto &events) { atHost.Collect(events); });
+  CHECK(atHost.lost.empty());
+}
+
 TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits to their V") {
   const auto port = NextPort();
   std::string error;
