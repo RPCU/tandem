@@ -20,7 +20,8 @@
   each game sends its V's time abilities when they change (`TimeEffect`:
   Sandevistan, Kerenzikov, slow-motion perks, scanning, and the world speed
   the implant asks for; reliable, kept by the host for late joiners, ended
-  when a player leaves). Every V with a Sandevistan or Kerenzikov on has a
+  when a player leaves). Every V with a Sandevistan or Kerenzikov on (or a
+  slow-motion perk or implant, or its scanner: below) has a
   **time bubble**: the NPCs within 150 m of it are slowed by its factor, for
   everyone. The host slows its real NPCs with the per-entity dilation
   (`SetIndividualTimeDilation`, the local global factor ignored); guests
@@ -36,8 +37,125 @@
   plays, never from the plugin's per-frame call: there it crashed the game
   loading a save and froze it right after "playing" (2026-11-18; suspects
   in engine-knowledge §13.15). Scenario `time`.
+- **The scanner's slow time is a bubble too** (`scripts/tandem/Time.reds`,
+  2026-11-19, not yet run in game; the user: "the scanner has a bubble
+  slow time too so it's standard"). It was switched off while another V
+  was in the session before; now the scanner's own dilation (reason
+  `focusMode`) makes a bubble exactly as a Sandevistan's does, through the
+  same path: `TimeEffect` with `kTimeScanning`, a bubble ability since
+  protocol 7 (`proto::kTimeBubbleAbilities`); the same reach
+  (`TimeBubbles::kRadius`, 150 m: in single player the scanner slows the
+  whole world, as the Sandevistan does, and one reach for every bubble
+  keeps the rules one), the same sticky membership, the same slowing of
+  the other Vs inside it (`PlayerFactor`).
+  - _Its factor_ is the one the game sets, read as it sets it
+    (`GetActiveTimeDilation(n"focusMode", true)`) and never changed.
+    Nothing in a build changes it: the scanner's slow motion is one
+    TweakDB profile, the same for every V, in combat or not, with no stat,
+    perk or implant on it (`research/engine/time.md` §13.40). So there is
+    no build to scale anything by, and nothing to keep: what the scanner
+    gives in single player it gives here.
+  - _When_: whenever the game's scanner state slows time, which is only
+    while an enemy or a sensor (camera, turret) is in view (its TweakDB
+    flag), never in a vehicle or a takedown, and only while no other
+    dilation is on. The quickhack panel adds no slow motion of its own:
+    picking a quickhack is the same one.
+  - _The scanning V_ keeps the scanner's slow motion on its own screen, as
+    in single player: a guest always; the host with `time_host = full`
+    (the default), its shared NPCs set to the bubble's speed whatever its
+    own factor; with `time_host = bubble` the host holds it at normal
+    speed under its own reason, as the other abilities, and the bubble
+    alone slows the NPCs around it.
+  - _The others_: the NPCs around the scanning V slow, for everyone; a V
+    within the reach with no ability of its own is slowed with them (its
+    own game, `SlowSelf`), and sees the scanning V move at its own speed;
+    a V scanning too stands in it on an equal footing; a V in a vehicle,
+    dead or downed is not slowed.
+  - _Slow time cancels slow time, by strength_ (the user, 2026-11-19: "the
+    slow time bubble still should be cancelled out by other slow time
+    (depending on slowtime power), for example sandevistan or if the other
+    player scan too"). A V's scanner is its own ability like a
+    Sandevistan, on the host and on a guest alike: each game computes its
+    V's `own` and the others' bubbles through one core rule
+    (`TimeBubbles::BubbleScale`, native `TimeBubbleScale`), and a V is
+    slowed by the strongest other bubble around it divided by its own
+    ability's factor, never below that and never sped up
+    (`TimeBubbles::PlayerFactor`). The slow is that ratio alone, not the
+    product: the scanner and the Sandevistan exempt their own V from their
+    global dilation, and ours goes on the player's own factor under its
+    own reason (`tandemBubble`), which their states never set or unset.
+    The NPCs between two bubbles take the stronger one. With a scanner at
+    0.2 (its real factor is not read yet):
+
+    <!-- prettier-ignore -->
+    | A | B | A slowed to | B slowed to | NPCs near both |
+    | --- | --- | --- | --- | --- |
+    | scans (0.2) | nothing | 1 | 0.2 | 0.2 |
+    | scans (0.2) | Sandevistan 0.1 | 0.1 / 0.2 = 0.5 | 1 | 0.1 |
+    | scans (0.2) | Sandevistan 0.5 | 1 | 0.2 / 0.5 = 0.4 | 0.2 |
+    | scans (0.2) | Kerenzikov 0.4 | 1 | 0.2 / 0.4 = 0.5 | 0.2 |
+    | scans (0.2) | scans (0.2) | 1 | 1 | 0.2 |
+
+    Locked by `tests/timebubble_test.cpp` (the table) and
+    `tests/endpoint_test.cpp` (a host and a guest both scanning, each
+    weighing the others' `TimeEffect`s against its own), in game by
+    scenario `time-scan`. To read in game: whether a scanner profile that
+    slows the player too (`applyTimeDilationToPlayer`) adds its own player
+    factor to ours, and how the two combine (`time report` logs what our
+    V's speed reads, `GetTimeDilationValue`); and a vanilla clean-up 1 s
+    after the scanner closes (`CleanUpTimeDilationEvent`, final.reds
+    43307-43318) that sets a player factor of 1 for 0.1 s under no reason,
+    which could cut into ours for that long.
+
+  - _Measured for the partner's side_: the log lines
+    `time: our scanner's bubble ran N s` (when one ends) and
+    `time: our V back to its own speed after N s`; `time report` gives
+    this session's scanner bubbles and how long our V was slowed by the
+    others' bubbles (by a scanner's alone, too), and the same tally is
+    logged when the session ends.
+  - _Tests_: `tools/game.sh cmd time scan SCALE SECONDS` (a dilation as
+    the scanner's state sets it, without opening it); the mock player's
+    `--scan-at N` (its scanner on for `--sandevistan-for` seconds at
+    `--sandevistan-scale`); scenario `time-scan`; the endpoint test keeps
+    a scanning scale (`tests/endpoint_test.cpp`).
 
 ## Open problems
+
+- **What the partner lives with when a V scans.** The scanner is opened
+  far more often than a Sandevistan: every quickhack, every look at an
+  enemy's weak points, every camera spotted. A partner within 150 m with
+  no ability of their own is slowed with the NPCs each time, for as long
+  as the scanner shows an enemy or a sensor. Against the enemies nothing
+  changes (both slow together), but in real time the partner's own V
+  feels sluggish while the netrunner moves at full speed, and the fight
+  takes longer for them.
+  Estimate, to replace by the logs' tallies: a quickhacking V keeps the
+  scanner open about 1 to 3 s per quickhack and 5 to 15 quickhacks per
+  fight, so 10 to 40 s of a 60 to 120 s fight, roughly 15 to 40 % of it.
+  A partner in the same fight spends that share at the scanner's factor
+  (not read yet: the first scan logs it). At a factor of 0.1 and 30 %
+  that is about 27 % of the partner's real time lost to slow motion; a
+  partner out of the 150 m, in a vehicle, or scanning too loses none.
+  Possible mitigations, **for the user to decide** (none is built):
+  1. a smaller reach for the scanner's bubble only (say 40 m): a partner
+     fighting the same group still shares it, one elsewhere is untouched;
+     NPCs beyond it keep their speed on the host;
+  2. the scanner's bubble slows the NPCs only, never another V: the
+     partner keeps full speed, but gets the scanner's slow motion on the
+     enemies for free, which single player never gives them;
+  3. a V in combat (or aiming, or shooting) is not slowed by a scanner's
+     bubble: the same as 2 in a fight;
+  4. a softer factor for the other Vs than for the NPCs (half as slow,
+     say): less sluggish, and a smaller edge on the enemies than 2;
+  5. a time limit per opening (say 3 s): after it the scanner works in
+     real time for its owner, as with the bubble off; the netrunner loses
+     some of single player's comfort;
+  6. a cue on the partner's screen while a scanner slows them (a sound, a
+     screen effect), so being slowed reads as "my partner is scanning";
+     polish whatever else is chosen (no native one exists, below).
+     Recommended: play it as built first (it is the standard rule and fair
+     against the enemies), add 6, and if the partner finds it intrusive take
+     1 before any mitigation that hands out free slow motion (2, 3, 4).
 
 - **The pause menu pauses everyone; nothing else does.** The pause menu
   (settings, save/load, quit) stops the world, the NPCs and every V
@@ -93,7 +211,9 @@
     other V at normal speed; when one ends, its NPCs go back unless the
     other's bubble holds them.
   - _Scanner and quickhack panel, Focus, Deadeye's reload, Berserk, melee
-    hit stop, deflect_: local only, no bubble. A guest keeps them on its
+    hit stop, deflect_: local only, no bubble (Focus and Deadeye's reload
+    since made bubbles, below; the scanner on 2026-11-19, Inside the
+    plugin). A guest keeps them on its
     screen; the host drops their world part. Others see the V as it is
     (standing, scanning). The Relic's Gorilla Arms one-punch slow motion
     is a deflect: the puncher's alone (a guest's mark on the host's NPC
@@ -108,7 +228,8 @@
   - _Perks and implants that slow time_ (Focus, Deadeye's reload, and
     every `SetTimeDilationEffector`: Reflex Tuner, Synaptic Accelerator,
     second chance) make a bubble with their own factor too, so they keep
-    their purpose; only the scanner, hit stop and deflect stay local.
+    their purpose; only the scanner, hit stop and deflect stay local (the
+    scanner: a bubble since 2026-11-19).
     Everything tied to slowed time was read for what still holds for its
     user (`research/coop-perks.md` §5.1a): nothing of the game's is
     changed, the user's own checks see what single player shows.
@@ -136,7 +257,8 @@
     its own factor, and its NPC updates go out on real time;
   - a bubble reaches 150 m (every NPC a game shows), a V leaves it 15 m
     farther out than it enters;
-  - the scanner's slow motion is off while another V is in the session;
+  - the scanner's slow motion is off while another V is in the session
+    (until 2026-11-19: since then a bubble, Inside the plugin);
   - a slowed NPC's bullets fly at its speed (per-entity dilation on the
     projectile, and the game's own projectile attack chosen for it where
     no dilation is active);

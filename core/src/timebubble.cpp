@@ -83,6 +83,12 @@ float TimeBubbles::PlayerFactor(proto::PlayerId player, float own, const proto::
   return std::min(1.f, strongest / own);
 }
 
+float TimeBubbles::BubbleScale(std::uint8_t abilities, float scale) {
+  if ((abilities & proto::kTimeBubbleAbilities) == 0 || !std::isfinite(scale) || !(scale < 1.f))
+    return 1.f;
+  return std::clamp(scale, 0.05f, 1.f);
+}
+
 float TimeBubbles::FactorOf(proto::NpcId npc) const {
   const auto it = m_factors.find(npc);
   return it == m_factors.end() ? 1.f : it->second;

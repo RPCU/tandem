@@ -15,7 +15,8 @@
 
 namespace tandem::proto {
 inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
-// 7: Hello.flags (Phantom Liberty), NpcCueKind::OutOfSight.
+// 7: Hello.flags (Phantom Liberty), NpcCueKind::OutOfSight, kTimeScanning
+// in kTimeBubbleAbilities (a TimeEffect means more).
 inline constexpr std::uint16_t kProtocolVersion = 7;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
@@ -626,10 +627,10 @@ struct QuestReward {
 inline constexpr std::uint8_t kTimeSandevistan = 1, kTimeKerenzikov = 2, kTimeSlowMo = 4,
                               kTimeScanning = 8;
 // The abilities that make a bubble (kTimeSlowMo: perks and implants that
-// slow time, Focus, Deadeye, Reflex Tuner...); scanning stays on its owner's
-// screen.
+// slow time, Focus, Deadeye, Reflex Tuner...; kTimeScanning: the scanner's
+// own slow motion, since protocol 7: before, scanning made none).
 inline constexpr std::uint8_t kTimeBubbleAbilities =
-    kTimeSandevistan | kTimeKerenzikov | kTimeSlowMo;
+    kTimeSandevistan | kTimeKerenzikov | kTimeSlowMo | kTimeScanning;
 struct TimeEffect {
   PlayerId player{};
   std::uint8_t abilities{}; // kTime* bits (0: none)

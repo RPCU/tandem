@@ -2,14 +2,14 @@
 
 // Time bubbles (docs/architecture/time.md, slowed and stopped time).
 //
-// In single player a Sandevistan or a Kerenzikov slows the whole world. In
-// a shared world the whole world would slow for every player, so instead
-// the NPCs around the V using it are slowed, for everyone, by the factor
-// the ability asks for: that V's bubble. The host applies it to its real
-// NPCs (per-entity time dilation, the one vanilla gives a single NPC); each
-// guest applies the same factors to its proxies so they animate at the
-// speed they move. Everything outside every bubble, and every V, keeps
-// normal speed.
+// In single player a Sandevistan, a Kerenzikov, a slow-motion perk or the
+// scanner slows the whole world. In a shared world the whole world would
+// slow for every player, so instead the NPCs around the V using it are
+// slowed, for everyone, by the factor the ability asks for: that V's
+// bubble. The host applies it to its real NPCs (per-entity time dilation,
+// the one vanilla gives a single NPC); each guest applies the same factors
+// to its proxies so they animate at the speed they move. Everything
+// outside every bubble, and every V, keeps normal speed.
 //
 // The rules, in one place so every game agrees:
 // - one bubble per V whose ability is on (scale < 1); it holds the NPCs
@@ -91,6 +91,12 @@ public:
   static CatchUp ShotCatchUp(std::uint64_t firedUs, std::uint64_t nowUs);
   static float PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
                             std::span<const Owner> owners, bool inside = false);
+  // The world speed a V's abilities ask for as a bubble (and as the `own`
+  // of PlayerFactor): `scale` when any of them makes one
+  // (proto::kTimeBubbleAbilities: the scanner too), else 1. Every game
+  // computes its own V's and the others' through it, so a V's scanner
+  // counts as its own ability on the host and on a guest alike.
+  static float BubbleScale(std::uint8_t abilities, float scale);
   std::size_t MembersOf(proto::PlayerId owner) const;
   std::size_t Bubbles() const { return m_bubbles.size(); }
 

@@ -19,7 +19,7 @@ declare -A value=(
   ["--strike"]=nonlethal ["--difficulty"]=veryhard ["--area-hit"]=5
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
   ["--shoot-you"]=3 ["--shot-weapon"]=Items.x
-  ["--sandevistan-at"]=10 ["--sandevistan-for"]=5 ["--sandevistan-scale"]=0.25
+  ["--sandevistan-at"]=10 ["--sandevistan-for"]=5 ["--sandevistan-scale"]=0.25 ["--scan-at"]=10
   ["--metro-at"]=5 ["--metro-for"]=40 ["--seat"]=seat_front_right ["--driver-npc"]=Character.x
   # A flag without a value: followed by another flag that takes none.
   ["--scene"]=--check ["--ride-along"]=--check ["--play-loop"]=--check

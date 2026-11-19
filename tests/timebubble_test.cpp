@@ -135,6 +135,50 @@ TEST_CASE("a bubble slows the other Vs in it by the ratio of their own ability")
   CHECK(TimeBubbles::PlayerFactor(4, 1.f, {3, 3, 0}, {}) == 1.f);
 }
 
+TEST_CASE("the scanner's bubble: cancelled by the other V's slow time, by its strength") {
+  using namespace tandem::proto;
+  // Only the abilities that make a bubble count, the scanner among them.
+  CHECK(TimeBubbles::BubbleScale(kTimeScanning, 0.2f) == doctest::Approx(0.2f));
+  CHECK(TimeBubbles::BubbleScale(kTimeScanning | kTimeSandevistan, 0.1f) == doctest::Approx(0.1f));
+  CHECK(TimeBubbles::BubbleScale(kTimeScanning, 1.f) == 1.f); // held at normal speed: none
+  CHECK(TimeBubbles::BubbleScale(0, 0.2f) == 1.f);
+  CHECK(TimeBubbles::BubbleScale(0x10, 0.2f) == 1.f);
+  CHECK(TimeBubbles::BubbleScale(kTimeScanning, 0.f) == doctest::Approx(0.05f));
+
+  // A (player 1) scans at 0.2; B (player 2) stands 10 m away with
+  // B's ability. Each game passes its own V's BubbleScale as `own`.
+  const Vec3 atA{0, 0, 0}, atB{10, 0, 0};
+  const auto scanA = TimeBubbles::BubbleScale(kTimeScanning, 0.2f);
+  struct Case {
+    std::uint8_t abilities;
+    float scale;
+    float slowsB; // B's factor in A's bubble
+    float slowsA; // A's factor in B's
+  };
+  const Case cases[] = {
+      {0, 1.f, 0.2f, 1.f},                 // B with nothing: as slow as the NPCs
+      {kTimeSandevistan, 0.1f, 1.f, 0.5f}, // a stronger Sandevistan: B free, A at 0.1 / 0.2
+      {kTimeSandevistan, 0.5f, 0.4f, 1.f}, // a weaker one: B at 0.2 / 0.5, A free
+      {kTimeScanning, 0.2f, 1.f, 1.f},     // both scan: neither slows the other
+      {kTimeKerenzikov, 0.4f, 0.5f, 1.f},  // 0.2 / 0.4
+  };
+  for (const auto &c : cases) {
+    const auto ownB = TimeBubbles::BubbleScale(c.abilities, c.scale);
+    std::vector<Owner> owners{{.player = 1, .scale = scanA, .position = atA}};
+    if (ownB < 1.f)
+      owners.push_back({.player = 2, .scale = ownB, .position = atB});
+    CAPTURE(c.abilities);
+    CAPTURE(c.scale);
+    CHECK(TimeBubbles::PlayerFactor(2, ownB, atB, owners) == doctest::Approx(c.slowsB));
+    CHECK(TimeBubbles::PlayerFactor(1, scanA, atA, owners) == doctest::Approx(c.slowsA));
+    // The NPCs between them: the stronger of the two, never the product.
+    TimeBubbles bubbles;
+    const std::vector<Npc> npc{{7, {5, 0, 0}}};
+    bubbles.Update(owners, npc);
+    CHECK(bubbles.FactorOf(7) == doctest::Approx(std::min(scanA, ownB)));
+  }
+}
+
 TEST_CASE("an implant's factor that changes mid-effect reaches its NPCs") {
   TimeBubbles bubbles;
   const std::vector<Npc> npcs{{1, {9, 0, 0}}};

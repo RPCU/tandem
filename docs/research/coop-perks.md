@@ -667,7 +667,7 @@ must be measured.
 | Berserk, Overclock | status effects and stats; `berserk` is an effector reason (`307274`) | identical |
 | Melee hit stop, deflect and one-punch slow motion | `meleeHit` (`45789`), `deflect` (`39679`, `552917`, `554284`) | identical on the user's game (local, a few frames, no bubble) |
 | Skill XP for kills while active, the "time dilation" achievement | `StatusEffectType.Sandevistan` on the killer (`37134-37153`), `CheckTimeDilationSources` (`51487-51492`) | identical; a guest's XP itself is §2.4 |
-| Scanner and quickhack panel slow motion | `focusMode` (`529159-529188`) | **off by decision** (user, 2026-11-18) while another V is in the session, on host and guest: the dilation is put back to normal speed under its own reason, the scanner itself is untouched. Alone or in single player: vanilla |
+| Scanner and quickhack panel slow motion | `focusMode` (`529159-529188`) | identical pending in-game check: a time bubble at the scanner's own factor (user, 2026-11-19; it was **off by decision** (user, 2026-11-18) while another V is in the session, on host and guest: the dilation was put back to normal speed under its own reason, the scanner itself untouched). No stat or perk changes that factor (`engine/time.md` §13.40). Alone or in single player: vanilla |
 
 **Still open, for review** (nothing shipped blind):
 

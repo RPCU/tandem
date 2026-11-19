@@ -330,6 +330,11 @@ easeInCurve, easeOutCurve, applyTimeDilationToPlayer}` (and
   scanning and quickhack selection happen in real time (the usual co-op
   answer; upload times already cost real seconds). Others see the scanning
   V as scanning (stance/animation in its replicated state).
+- **Rule (decided, 2026-11-19).** The user, after real-time scanning
+  proved hard on moving targets: a time bubble like the Sandevistan's, at
+  the scanner's own factor (`../architecture/time.md`; facts in
+  `engine/time.md` §13.40: one profile, no stat, the same in and out of
+  combat).
 
 ### 2.4 Cool perks that slow time
 
@@ -916,7 +921,7 @@ player exempt, **G+P** global plus an own player factor, **E** per entity,
 | --- | --- | --- | --- | --- |
 | Sandevistan | `sandevistan`; `SandevistanEvents.OnEnter` `524119` | G−P | reason; PSM BB `TimeDilation == 1` | owner-local; owner sped up instead; others see fast V |
 | Kerenzikov | `kereznikov`; `KerenzikovEvents.OnEnter` `527831` | G+P | reason; PSM state `kerenzikov`; `KerenzikovPlayerBuff` | owner-local; no world slow-down |
-| scanner / quickhack | `focusMode`; `TimeDilationFocusModeEvents` `529159` | G−P or G+P (TweakDB) | reason; PSM `Vision == 1` | off in co-op (TweakXL flag) |
+| scanner / quickhack | `focusMode`; `TimeDilationFocusModeEvents` `529159` | G−P or G+P (TweakDB) | reason; PSM `Vision == 1` | off in co-op (TweakXL flag); built: a time bubble (2026-11-19, `../architecture/time.md`) |
 | Cool focus perk | `focusedStatePerkDilation`; `542858` | G | reason; tag `FocusedCoolPerkSE` | owner-local, dilation dropped |
 | Deadeye reload perk | `coolReloadPerkDilation`; `547583` | G | reason; tag `DeadeyeQuickReloadSE` | owner-local, dilation dropped |
 | second chance perk | status `SecondChancePerkTimeDilation`; TweakDB | ? | status effect | as effectors |

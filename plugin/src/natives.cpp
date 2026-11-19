@@ -1034,6 +1034,11 @@ struct TandemNative : Red::IScriptable {
     return sync::TimeBubbles::PlayerFactor(player, own, {position.X, position.Y, position.Z}, who,
                                            inside);
   }
+  // The world speed a V's abilities ask for as a bubble (1: none): ours
+  // as our `own`, and the others' (the scanner counts, tandem/timebubble.hpp).
+  static float TimeBubbleScale(std::int32_t abilities, float scale) {
+    return sync::TimeBubbles::BubbleScale(static_cast<std::uint8_t>(abilities), scale);
+  }
   static std::int32_t TimeBubbleMembers(std::uint32_t player) {
     return static_cast<std::int32_t>(Runtime::Get().Bubbles().MembersOf(player));
   }
@@ -2038,6 +2043,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(ClearTimeBubbles);
   RTTI_METHOD(TimeFactorOf);
   RTTI_METHOD(TimeBubbleMembers);
+  RTTI_METHOD(TimeBubbleScale);
   RTTI_METHOD(TimePlayerFactor);
   RTTI_METHOD(IsTimeHostFull);
   RTTI_METHOD(RelayCode);
