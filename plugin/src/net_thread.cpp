@@ -1,5 +1,6 @@
 #include "net_thread.hpp"
 
+#include "activity.hpp"
 #include "combat.hpp"
 #include "log.hpp"
 #include "presence.hpp"
@@ -40,6 +41,7 @@ struct NetThread::Impl {
   std::optional<proto::Transit> lastTransit;
   std::optional<proto::Heat> lastHeat;
   std::optional<proto::Elsewhere> lastElsewhere;
+  std::optional<proto::Activity> lastActivity;
   // Guest through a relay: the session's secret, to join again after the
   // code expired.
   std::optional<net::RelaySecret> relaySecret;
@@ -112,6 +114,10 @@ struct NetThread::Impl {
       return "loading screen";
     case proto::kEpochFastTravel:
       return "fast travel";
+    case proto::kEpochTimeSkip:
+      return "time skip";
+    case proto::kEpochFrozen:
+      return "back from a standstill";
     default:
       return "join";
     }
@@ -285,6 +291,8 @@ struct NetThread::Impl {
       endpoint->SetLocalHeat(*lastHeat);
     if (lastElsewhere)
       endpoint->SetLocalElsewhere(*lastElsewhere);
+    if (lastActivity)
+      endpoint->SetLocalActivity(*lastActivity);
     if (lastVitals)
       endpoint->SetLocalVitals(*lastVitals);
     if (lastPresence)
@@ -618,6 +626,24 @@ struct NetThread::Impl {
                           e.state.player, static_cast<int>(e.state.place), e.state.flags,
                           e.state.anchor.x, e.state.anchor.y, e.state.anchor.z);
                 runtime.PushRemoteElsewhere(e.state);
+              } else if constexpr (std::is_same_v<E, events::RemoteActivity>) {
+                log::Info("player {}: busy {} (flags {:#x}, workspot {:#x} entry {}, device {:#x})",
+                          e.state.player, static_cast<int>(e.state.kind), e.state.flags,
+                          e.state.workspot, e.state.entry, e.state.device);
+                Activities::Get().PushRemote(e.state);
+              } else if constexpr (std::is_same_v<E, events::TimeSkipAsked>) {
+                log::Info("player {} asks to skip time to {} (request {}, reason {})", e.skip.from,
+                          e.skip.toSeconds, e.skip.request, static_cast<int>(e.skip.reason));
+                Activities::Get().PushEvent({.kind = SkipEvent::Kind::Asked, .skip = e.skip});
+              } else if constexpr (std::is_same_v<E, events::TimeSkipVoted>) {
+                log::Info("player {} {} our time skip {}", e.vote.from,
+                          e.vote.accepted ? "accepted" : "declined", e.vote.request);
+                Activities::Get().PushEvent({.kind = SkipEvent::Kind::Voted, .vote = e.vote});
+              } else if constexpr (std::is_same_v<E, events::TimeSkipEnded>) {
+                log::Info("time skip {} of player {}: outcome {} (by {}, why {}), {} -> {}",
+                          e.result.request, e.result.asker, static_cast<int>(e.result.outcome),
+                          e.result.by, e.result.why, e.result.fromSeconds, e.result.toSeconds);
+                Activities::Get().PushEvent({.kind = SkipEvent::Kind::Ended, .result = e.result});
               } else if constexpr (std::is_same_v<E, events::WorldItemAppeared>) {
                 log::Info("loot: world item {} dropped by player {} ({} stacks, token {})",
                           e.item.id, e.item.dropper, e.item.stacks.size(), e.item.token);
@@ -703,6 +729,7 @@ struct NetThread::Impl {
                 runtime.SetOthersLives({});
                 // Nobody of this session is anywhere for us any more.
                 runtime.ClearRemoteElsewhere();
+                Activities::Get().EndSession();
                 // The next session's players start afresh (a restarted host
                 // counts its states from the start again).
                 for (const auto &[id, info] : endpoint->Players())
@@ -767,7 +794,10 @@ struct NetThread::Impl {
         Story::Get().FilterLocal(*local); // a private scene: held where it began
         endpoint->SendLocalState(*local);
       }
-      if (auto pose = runtime.TakeLocalPose(); pose && !Story::Get().Private())
+      // A private scene, or a game standing still (photo mode, a menu that
+      // stops it): no poses, so the others' puppet idles on its own graph.
+      if (auto pose = runtime.TakeLocalPose();
+          pose && !Story::Get().Private() && !Activities::Get().LocalFrozen())
         endpoint->SendLocalPose(*pose);
       // Scene replay: the actors of the host's scene (none in a private one).
       for (const auto &pose : runtime.TakeActorPoses())
@@ -814,6 +844,27 @@ struct NetThread::Impl {
         endpoint->SetLocalElsewhere(*away);
         log::Info("our place {} (flags {:#x})", static_cast<int>(away->place), away->flags);
       }
+      if (auto busy = Activities::Get().TakeLocal()) {
+        lastActivity = *busy;
+        endpoint->SetLocalActivity(*busy);
+        log::Info("our V busy {} (flags {:#x}, workspot {:#x})", static_cast<int>(busy->kind),
+                  busy->flags, busy->workspot);
+      }
+      for (const auto &message : Activities::Get().TakeOutbound())
+        std::visit(
+            [&](const auto &m) {
+              using M = std::decay_t<decltype(m)>;
+              if constexpr (std::is_same_v<M, SkipAsk>) {
+                const auto request = endpoint->AskTimeSkip(m.reason, m.fromSeconds, m.toSeconds);
+                log::Info("asked to skip time {} -> {} (request {}, reason {})", m.fromSeconds,
+                          m.toSeconds, request, static_cast<int>(m.reason));
+              } else if constexpr (std::is_same_v<M, SkipAnswer>) {
+                endpoint->AnswerTimeSkip(m.asker, m.request, m.accepted, m.why);
+              } else {
+                endpoint->WithdrawTimeSkip();
+              }
+            },
+            message);
       if (auto world = runtime.TakeWorld())
         endpoint->SetWorld(*world);
       for (const auto &message : runtime.TakeNpcOutbox()) {
@@ -1035,6 +1086,7 @@ struct NetThread::Impl {
     // Nobody in this session pauses us any more; its code is gone.
     runtime.SetRemotePaused({});
     runtime.ClearRemoteElsewhere();
+    Activities::Get().EndSession();
     runtime.SetRelay("", "");
     summary.relay = endpoint->ThroughRelay() || (endpoint->IsHost() && relay.has_value());
     summary.seconds = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(

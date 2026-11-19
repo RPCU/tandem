@@ -144,6 +144,11 @@ public class TandemTravel {
     return IsDefined(travel) ? travel.Offer(player, reason, label) : 0u;
   }
 
+  // An offer is on screen (the phone key is ours until it goes).
+  public func Showing() -> Bool {
+    return IsDefined(this.m_offer);
+  }
+
   // Go to `player` now (the regroup action). False when it cannot be done.
   public static func RegroupTo(game: GameInstance, player: Uint32) -> Bool {
     let travel = TandemTravel.Of(game);

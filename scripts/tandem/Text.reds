@@ -164,7 +164,8 @@ public class TandemText {
       "", "Session-Ended", "Story-NotRestored", "Story-SceneStarted", "Scene-InScene", "Transit-Leaving",
       "Travel-FastTravelledTo", "Travel-FastTravelled", "Travel-Labelled", "Travel-Scene",
       "Travel-Taken", "Travel-Asks", "Travel-Blocked", "Revive-Down", "Revive-DownAlone",
-      "Revive-Out", "Revive-AllDown", "Revive-WaitHost"
+      "Revive-Out", "Revive-AllDown", "Revive-WaitHost", "Activities-AsksSleep", "Activities-AsksWait",
+      "Activities-CannotSkip"
     ];
     if ArrayContains(asks, key) {
       return 2;
@@ -367,6 +368,21 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Travel-Taken", "{1} was taken somewhere else");
     this.Text("Tandem-Travel-Asks", "{1} asks you to join them");
     this.Text("Tandem-Travel-Join", "Join {1}");
+    this.Text("Tandem-Activities-WaitingAll", "Waiting for the others to agree...");
+    this.Text("Tandem-Activities-WaitingSleep", "Waiting for the others to agree to sleep until {1}...");
+    this.Text("Tandem-Activities-WaitingWait", "Waiting for the others to agree to wait until {1}...");
+    this.Text("Tandem-Activities-Agrees", "{1} agrees");
+    this.Text("Tandem-Activities-MovedOn", "{1} moved on to {2}");
+    this.Text("Tandem-Activities-Slept", "{1} slept until {2}");
+    this.Text("Tandem-Activities-Waited", "{1} waited until {2}");
+    this.Text("Tandem-Activities-CannotSkip", "{1} wants to skip time: you can't right now");
+    this.Text("Tandem-Activities-AsksSleep", "{1} wants to sleep until {2}");
+    this.Text("Tandem-Activities-AsksWait", "{1} wants to wait until {2}");
+    this.Text("Tandem-Activities-AgreeSleep", "Agree to sleep until {1}");
+    this.Text("Tandem-Activities-AgreeWait", "Agree to wait until {1}");
+    this.Text("Tandem-Activities-WaitingFor", "Waiting for {1}...");
+    this.Text("Tandem-Activities-Photo", "{1} is in photo mode");
+    this.Text("Tandem-Activities-Back", "{1} is back");
     this.Text("Tandem-Travel-Blocked", "You can't fast travel right now");
     // The settings page (Settings.reds).
     this.Text("Tandem-Menu-Settings", "Settings");
@@ -531,6 +547,21 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Travel-Taken", "{1} a été emmené(e) ailleurs");
     this.Text("Tandem-Travel-Asks", "{1} vous demande de le rejoindre");
     this.Text("Tandem-Travel-Join", "Rejoindre {1}");
+    this.Text("Tandem-Activities-WaitingAll", "En attente de l'accord des autres...");
+    this.Text("Tandem-Activities-WaitingSleep", "En attente de l'accord des autres pour dormir jusqu'à {1}...");
+    this.Text("Tandem-Activities-WaitingWait", "En attente de l'accord des autres pour attendre jusqu'à {1}...");
+    this.Text("Tandem-Activities-Agrees", "{1} est d'accord");
+    this.Text("Tandem-Activities-MovedOn", "{1} est passé à {2}");
+    this.Text("Tandem-Activities-Slept", "{1} a dormi jusqu'à {2}");
+    this.Text("Tandem-Activities-Waited", "{1} a attendu jusqu'à {2}");
+    this.Text("Tandem-Activities-CannotSkip", "{1} veut passer le temps : impossible pour vous en ce moment");
+    this.Text("Tandem-Activities-AsksSleep", "{1} veut dormir jusqu'à {2}");
+    this.Text("Tandem-Activities-AsksWait", "{1} veut attendre jusqu'à {2}");
+    this.Text("Tandem-Activities-AgreeSleep", "Accepter de dormir jusqu'à {1}");
+    this.Text("Tandem-Activities-AgreeWait", "Accepter d'attendre jusqu'à {1}");
+    this.Text("Tandem-Activities-WaitingFor", "En attente de {1}...");
+    this.Text("Tandem-Activities-Photo", "{1} est en mode photo");
+    this.Text("Tandem-Activities-Back", "{1} est de retour");
     this.Text("Tandem-Travel-Blocked", "Voyage rapide impossible pour l'instant");
     this.Text("Tandem-Menu-Settings", "Paramètres");
     this.Text("Tandem-Settings-Saved", "Enregistrés dans tandem.ini dès leur modification");

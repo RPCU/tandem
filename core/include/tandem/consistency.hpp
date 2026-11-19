@@ -73,6 +73,8 @@ struct PlayersView {
   const std::map<proto::PlayerId, proto::Elsewhere> &elsewhere;
   // Who is wanted (a V with no heat counts like one never heard of).
   const std::map<proto::PlayerId, proto::Heat> &heat;
+  // Who is busy (a V doing nothing counts like one never heard of).
+  const std::map<proto::PlayerId, proto::Activity> &activities;
 };
 std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self);
 

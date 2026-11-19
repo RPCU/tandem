@@ -345,6 +345,21 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Travel-Taken` | {1} was taken somewhere else | {1} a été emmené(e) ailleurs | Text.reds, Travel.reds |
 | `Travel-Asks` | {1} asks you to join them | {1} vous demande de le rejoindre | Text.reds, Travel.reds |
 | `Travel-Join` | Join {1} | Rejoindre {1} | Travel.reds |
+| `Activities-WaitingAll` | Waiting for the others to agree... | En attente de l'accord des autres... | Activities.reds |
+| `Activities-WaitingSleep` | Waiting for the others to agree to sleep until {1}... | En attente de l'accord des autres pour dormir jusqu'à {1}... | Activities.reds |
+| `Activities-WaitingWait` | Waiting for the others to agree to wait until {1}... | En attente de l'accord des autres pour attendre jusqu'à {1}... | Activities.reds |
+| `Activities-Agrees` | {1} agrees | {1} est d'accord | Activities.reds |
+| `Activities-MovedOn` | {1} moved on to {2} | {1} est passé à {2} | Activities.reds |
+| `Activities-Slept` | {1} slept until {2} | {1} a dormi jusqu'à {2} | Activities.reds |
+| `Activities-Waited` | {1} waited until {2} | {1} a attendu jusqu'à {2} | Activities.reds |
+| `Activities-CannotSkip` | {1} wants to skip time: you can't right now | {1} veut passer le temps : impossible pour vous en ce moment | Activities.reds |
+| `Activities-AsksSleep` | {1} wants to sleep until {2} | {1} veut dormir jusqu'à {2} | Activities.reds |
+| `Activities-AsksWait` | {1} wants to wait until {2} | {1} veut attendre jusqu'à {2} | Activities.reds |
+| `Activities-AgreeSleep` | Agree to sleep until {1} | Accepter de dormir jusqu'à {1} | Activities.reds |
+| `Activities-AgreeWait` | Agree to wait until {1} | Accepter d'attendre jusqu'à {1} | Activities.reds |
+| `Activities-WaitingFor` | Waiting for {1}... | En attente de {1}... | Activities.reds |
+| `Activities-Photo` | {1} is in photo mode | {1} est en mode photo | Activities.reds |
+| `Activities-Back` | {1} is back | {1} est de retour | Activities.reds |
 | `Travel-Blocked` | You can't fast travel right now | Voyage rapide impossible pour l'instant | Text.reds, Travel.reds |
 
 ### The settings page

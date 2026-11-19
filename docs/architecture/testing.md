@@ -11,7 +11,7 @@
 | mock player | `tandem-peer` as host or guest against the real game | `task peer -- host --mode mirror` |
 | consistency | digests, resyncs, epochs, dedupe; convergence with a third lost; vanishing | `task test` |
 | regions | links, owners, hand-over (also with a third lost), a vanishing owner, digests both ways; two mock players meeting | `task test` |
-| natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere, region) | `task natives:check` |
+| natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere, region, street, presence, activity) | `task natives:check` |
 | scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods | `task scripts:check` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
@@ -172,6 +172,19 @@ REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
   arrived at); `--offer-regroup N` asks the others to come to it; offers it
   gets are answered by `--regroup-answer yes|no|ignore` (yes: it goes
   there).
+- **Activities** (any mode; `activities.md`): `--ask-skip N` asks the
+  others to skip `--skip-hours H` (default 3) N s after another player is
+  there, `--skip-reason wait|sleep|quest` (quest, as host: said, never
+  asked); requests it hears are answered by `--skip-answer yes|no|ignore`;
+  an applied skip moves the clock it sends as host. `--activity KIND`
+  (`workspot`, `sleep`, `screen`, `minigame`, `shop`, `menu`, `photo`,
+  `contest`) makes it busy `--activity-at N` s (default 3) after another
+  player is there, anchored where it stands, for `--activity-for S` s
+  (default 15; 0: for good). A host story's `activity KIND [anchored]
+[lying] [frozen]` and `skip HOURS [wait|sleep|quest]` do the same.
+  The game side: `tools/game.sh cmd skip ask HOURS`, `skip accept`, `skip
+decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
+  `skip-asked`, `busy-puppet`, `look-mirror`.
 - **A bad network** (any mode): `--latency MS`, `--jitter MS`,
   `--loss PERCENT`, `--reorder PERCENT`, each way. A UDP relay with a link
   model on each direction (`net::Shaper`, `core/src/shaping.cpp`) sits

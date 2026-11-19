@@ -879,3 +879,46 @@ TEST_CASE("throws, rules and defences of kinds the receiver does not know are re
   bytes = Encode(Defended{.how = static_cast<DefendKind>(3)});
   CHECK_FALSE(Decode(bytes).has_value());
 }
+
+TEST_CASE("activities and time skips: survive encoding, small, reliable, unknown kinds refused") {
+  RoundTrips(Activity{.player = 2,
+                      .kind = ActivityKind::Workspot,
+                      .flags = kActivityAnchored | kActivityLying,
+                      .device = 0x1122334455667788ull,
+                      .workspot = 0x99AABBCCDDEEFF00ull,
+                      .entry = 7,
+                      .anim = 0x1234ull,
+                      .anchor = {-12.5f, 300.f, 7.25f},
+                      .yaw = -1.25f});
+  RoundTrips(Activity{.player = 1, .kind = ActivityKind::Photo, .flags = kActivityFrozen});
+  RoundTrips(TimeSkip{.from = 3,
+                      .request = 4,
+                      .reason = SkipReason::Sleep,
+                      .fromSeconds = 3600,
+                      .toSeconds = 8 * 3600});
+  RoundTrips(
+      TimeSkipVote{.from = 1, .asker = 3, .request = 4, .accepted = false, .why = kSkipCombat});
+  RoundTrips(TimeSkipResult{.asker = 3,
+                            .request = 4,
+                            .reason = SkipReason::Wait,
+                            .outcome = SkipOutcome::Declined,
+                            .by = 1,
+                            .why = kSkipCombat,
+                            .fromSeconds = 3600,
+                            .toSeconds = 7200});
+  for (const Message m : {Message(Activity{}), Message(TimeSkip{}), Message(TimeSkipVote{}),
+                          Message(TimeSkipResult{})}) {
+    CHECK(ChannelOf(m) == Channel::Event);
+    CHECK_FALSE(IsStory(m));
+    CHECK(Encode(m).size() < 64);
+  }
+  CHECK(std::string(NameOf(Activity{})) == "Activity");
+  CHECK(std::string(NameOf(TimeSkip{})) == "TimeSkip");
+  CHECK(std::string(NameOf(TimeSkipVote{})) == "TimeSkipVote");
+  CHECK(std::string(NameOf(TimeSkipResult{})) == "TimeSkipResult");
+  // What this version does not know is refused.
+  CHECK_FALSE(Decode(Encode(Activity{.kind = static_cast<ActivityKind>(9)})).has_value());
+  CHECK_FALSE(Decode(Encode(TimeSkip{.reason = static_cast<SkipReason>(3)})).has_value());
+  CHECK_FALSE(Decode(Encode(TimeSkipVote{.why = kSkipWhyMax + 1})).has_value());
+  CHECK_FALSE(Decode(Encode(TimeSkipResult{.outcome = static_cast<SkipOutcome>(5)})).has_value());
+}

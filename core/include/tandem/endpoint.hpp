@@ -8,6 +8,7 @@
 // the host; the host relays what one guest sends to the others. Each player's
 // game owns its own V (PlayerState); the host's game owns the shared world.
 
+#include "tandem/activity.hpp"
 #include "tandem/consistency.hpp"
 #include "tandem/devices.hpp"
 #include "tandem/protocol.hpp"
@@ -55,6 +56,9 @@ struct Timing {
   // be asked for again after a resync.
   std::chrono::milliseconds digest{3'000};
   std::chrono::milliseconds resyncCooldown{5'000};
+  // Host: how long the others have to answer a time skip
+  // (activity::kSkipAnswerUs).
+  std::chrono::milliseconds skipAnswer{20'000};
 };
 
 namespace events {
@@ -388,6 +392,27 @@ struct JoinRefused {
   std::string name;
   std::string notice;
 };
+// Another player started, changed or ended what it is busy with (kind None),
+// or left while busy (docs/architecture/activities.md). Never our own.
+struct RemoteActivity {
+  proto::Activity state;
+};
+// Another player asks to skip time: ours to answer (AnswerTimeSkip).
+struct TimeSkipAsked {
+  proto::TimeSkip skip;
+};
+// A player answered our request (a yes is not the end: the others may still
+// be thinking).
+struct TimeSkipVoted {
+  proto::TimeSkipVote vote;
+};
+// A request ended (ours, or one we were asked about; ours refused at once):
+// Applied means the host's clock is at `toSeconds`, so every game
+// fast-forwards its own V and a guest sets its clock without waiting for
+// the next World.
+struct TimeSkipEnded {
+  proto::TimeSkipResult result;
+};
 } // namespace events
 
 // Who this game is in the session, and what it has installed (the mock
@@ -433,7 +458,8 @@ using SessionEvent = std::variant<
     events::NpcTake, events::NpcOwnerChanged, events::TrafficSpawned, events::TrafficMoved,
     events::TrafficLeft, events::TrafficChanged, events::TrafficHitBy, events::RemoteHeat,
     events::CrimeReported, events::RemotePresence, events::RemoteCue, events::HostNpcReaction,
-    events::RemoteInstall, events::JoinRefused>;
+    events::RemoteInstall, events::JoinRefused, events::RemoteActivity, events::TimeSkipAsked,
+    events::TimeSkipVoted, events::TimeSkipEnded>;
 
 class Endpoint {
 public:
@@ -554,6 +580,27 @@ public:
   void SetLocalElsewhere(proto::Elsewhere state);
   // Every player not in the city, as this game knows them (us included).
   const std::map<proto::PlayerId, proto::Elsewhere> &Elsewheres() const { return m_elsewheres; }
+  // What our V is busy with (tandem/activity.hpp). Kept: sent now if we are
+  // in the session, else as soon as we are; the host hands everyone's to
+  // late joiners.
+  void SetLocalActivity(proto::Activity state);
+  // Every busy player, as this game knows them (us included).
+  const std::map<proto::PlayerId, proto::Activity> &Activities() const { return m_activities; }
+  // Time skips (tandem/activity.hpp): ask to move the shared clock to
+  // `toSeconds` (our clock is `fromSeconds`). Returns the request's number
+  // (0: not in a session); how it ends comes as TimeSkipEnded. The host's
+  // story moving its clock is SkipReason::Quest: said to everyone, never
+  // asked.
+  std::uint32_t AskTimeSkip(proto::SkipReason reason, std::int32_t fromSeconds,
+                            std::int32_t toSeconds);
+  // Our answer to another player's request (TimeSkipAsked); `why` is
+  // proto::kSkip*, for a no.
+  void AnswerTimeSkip(proto::PlayerId asker, std::uint32_t request, bool accepted,
+                      std::uint8_t why = proto::kSkipNoReason);
+  // Takes our open request back.
+  void WithdrawTimeSkip();
+  // Host: the open request, if any.
+  const std::optional<proto::TimeSkip> &OpenTimeSkip() const { return m_skips.Open(); }
   // How hard our V is to see (kept: sent now if we are in the session, else
   // as soon as we are; the host hands everyone's to late joiners).
   void SetLocalStealth(proto::Stealth stealth);
@@ -947,6 +994,22 @@ private:
   bool NoteElsewhere(const proto::Elsewhere &state);
   // A player is gone (or back from a crash): back in the city for everyone.
   void EndElsewhereOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
+  // What players are busy with (host: the session's record, for late joiners).
+  proto::Activity m_localActivity;
+  std::map<proto::PlayerId, proto::Activity> m_activities;
+  void SendLocalActivityNow();
+  bool NoteActivity(const proto::Activity &state);
+  void EndActivityOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
+  // Time skips: our requests' count; host, the one open request.
+  std::uint32_t m_skipRequests{};
+  activity::SkipArbiter m_skips;
+  std::optional<proto::TimeSkip> m_ourSkip; // guest: ours, until it ends
+  void OnTimeSkip(proto::TimeSkip skip, std::vector<SessionEvent> &out);
+  void OnTimeSkipVote(const proto::TimeSkipVote &vote, std::vector<SessionEvent> &out);
+  // `asked`: the others were asked (they hear how it ended); else only the
+  // asker hears (an Applied skip is everyone's news either way).
+  void EndTimeSkip(const proto::TimeSkipResult &result, bool asked, std::vector<SessionEvent> &out);
+  activity::Blocker SkipBlocker() const;
   // Our stealth, and (host) everyone's latest, for late joiners.
   std::optional<proto::Stealth> m_localStealth;
   std::uint32_t m_stealthRevision{};

@@ -39,7 +39,7 @@ constexpr bool kKept =
     // (TrafficHit, TrafficClaim) are not kept: they name vehicles of the
     // recorder's street, which no other session has.
     std::is_same_v<M, proto::Heat> || std::is_same_v<M, proto::Throw> ||
-    std::is_same_v<M, proto::ThrowEnd>;
+    std::is_same_v<M, proto::ThrowEnd> || std::is_same_v<M, proto::Activity>;
 } // namespace
 
 bool Keeps(const proto::Message &message) {
@@ -245,6 +245,12 @@ std::optional<proto::Message> Adapt(proto::Message message, const Mapping &mappi
         } else if constexpr (std::is_same_v<M, proto::ThrowEnd>) {
           Shift(m.position, mapping.offset);
           return true;
+        } else if constexpr (std::is_same_v<M, proto::Activity>) {
+          // A device and a workspot are the recorder's world's: the pose and
+          // the place replay, the device does not.
+          Shift(m.anchor, mapping.offset);
+          m.device = 0;
+          return true;
         } else {
           return true;
         }
@@ -307,6 +313,8 @@ void Apply(Endpoint &endpoint, const proto::Message &message) {
           endpoint.SetLocalElsewhere(m);
         else if constexpr (std::is_same_v<M, proto::Heat>)
           endpoint.SetLocalHeat(m);
+        else if constexpr (std::is_same_v<M, proto::Activity>)
+          endpoint.SetLocalActivity(m);
       },
       message);
 }
@@ -380,7 +388,7 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                       std::is_same_v<M, proto::Vitals> || std::is_same_v<M, proto::Pause> ||
                       std::is_same_v<M, proto::Epoch> || std::is_same_v<M, proto::StoryEffect> ||
                       std::is_same_v<M, proto::Heat> || std::is_same_v<M, proto::Throw> ||
-                      std::is_same_v<M, proto::ThrowEnd>)
+                      std::is_same_v<M, proto::ThrowEnd> || std::is_same_v<M, proto::Activity>)
           return host(m.player);
         else if constexpr (std::is_same_v<M, proto::VehicleRadio>) {
           later(m.trackStartUs);

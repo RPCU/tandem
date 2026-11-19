@@ -77,7 +77,11 @@ public class TandemWorld {
     this.m_applied = changes;
     let host = TandemNative.HostGameTime();
     let ours = TandemWorld.GameSeconds(this.m_game);
-    if host >= 0 && Abs(host - ours) > 60 {
+    // Our bed moved our clock and the others are asked (Activities.reds):
+    // it stays until they answer.
+    let activities = TandemActivities.Of(this.m_game);
+    let held = IsDefined(activities) && activities.HoldsClock();
+    if host >= 0 && Abs(host - ours) > 60 && !held {
       GameInstance.GetTimeSystem(this.m_game).SetGameTimeBySeconds(host);
       TandemNative.Log(s"world: time set to the host's (\(host) s, was \(ours) s)");
     }

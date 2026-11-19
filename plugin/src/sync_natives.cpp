@@ -73,9 +73,10 @@ struct TandemSync : Red::IScriptable {
   }
   static bool InSession(std::uint32_t player) { return Runtime::Get().InRoster(player); }
 
-  // Our world was rebuilt around our V (proto::kEpoch*: 2 fast travel).
+  // Our world was rebuilt around our V (proto::kEpoch*: 1 a loading screen,
+  // 2 fast travel, 3 a time skip, 4 back from a standstill: photo mode).
   static void WorldRebuilt(std::int32_t reason) {
-    if (reason == proto::kEpochLoading || reason == proto::kEpochFastTravel)
+    if (reason >= proto::kEpochLoading && reason <= proto::kEpochFrozen)
       Runtime::Get().RequestEpoch(static_cast<std::uint8_t>(reason));
   }
 

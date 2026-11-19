@@ -158,6 +158,18 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
       hash.Add(std::uint64_t{id})
           .Add(std::uint64_t{h.stage})
           .Add(std::uint64_t{static_cast<std::uint8_t>(h.state)});
+  hash.Add(std::uint64_t{0xAA});
+  for (const auto &[id, a] : players.activities)
+    if (id != self && a.kind != proto::ActivityKind::None)
+      hash.Add(std::uint64_t{id})
+          .Add(std::uint64_t{static_cast<std::uint8_t>(a.kind)})
+          .Add(std::uint64_t{a.flags})
+          .Add(a.device)
+          .Add(a.workspot)
+          .Add(std::uint64_t{a.entry})
+          .Add(a.anchor.x)
+          .Add(a.anchor.y)
+          .Add(a.anchor.z);
   return hash.Value();
 }
 
@@ -246,7 +258,9 @@ bool IsOneShot(const proto::Message &message) {
          // Presence: a cue is of the moment, a reaction is played once.
          std::holds_alternative<Cue>(message) || std::holds_alternative<NpcReaction>(message) ||
          std::holds_alternative<Throw>(message) || std::holds_alternative<ThrowEnd>(message) ||
-         std::holds_alternative<Defended>(message);
+         std::holds_alternative<Defended>(message) || std::holds_alternative<TimeSkip>(message) ||
+         std::holds_alternative<TimeSkipVote>(message) ||
+         std::holds_alternative<TimeSkipResult>(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

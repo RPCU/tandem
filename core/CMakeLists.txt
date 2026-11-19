@@ -29,19 +29,23 @@ add_library(tandem_core STATIC
   src/regions.cpp
   src/traffic.cpp
   src/presence.cpp
-  src/settings.cpp)
+  src/settings.cpp
+  src/activity.cpp)
 target_include_directories(tandem_core PUBLIC include)
 target_link_libraries(tandem_core PUBLIC enet zpp_bits)
 target_compile_features(tandem_core PUBLIC cxx_std_23)
-# zpp_bits checks at compile time that the ids of the message variant are
-# unique, by recursion over every pair of alternatives: past some 75 messages
-# clang runs out of its default constexpr steps (GCC's limit is higher).
+# zpp_bits checks at compile time that every message of the variant has its
+# own id, in steps that grow with the square of their number: past some 75
+# messages clang runs out of its default constexpr steps (1048576), and GCC
+# of its ops limit further on. PUBLIC: what instantiates the encoding needs it.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    target_compile_options(tandem_core PRIVATE /clang:-fconstexpr-steps=33554432)
+    target_compile_options(tandem_core PUBLIC /clang:-fconstexpr-steps=33554432)
   else()
-    target_compile_options(tandem_core PRIVATE -fconstexpr-steps=33554432)
+    target_compile_options(tandem_core PUBLIC -fconstexpr-steps=33554432)
   endif()
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  target_compile_options(tandem_core PUBLIC -fconstexpr-ops-limit=1073741824)
 endif()
 
 # The build's name, "0.2.0+2fa03ca": the release and the commit it was built

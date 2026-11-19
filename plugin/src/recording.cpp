@@ -3,6 +3,7 @@
 
 #include "recording.hpp"
 
+#include "activity.hpp"
 #include "combat.hpp"
 #include "log.hpp"
 #include "runtime.hpp"
@@ -217,6 +218,9 @@ void Recording::DrainSolo() {
     add(*time);
   if (auto away = runtime.TakeLocalElsewhere())
     add(*away);
+  if (auto busy = Activities::Get().TakeLocal())
+    add(*busy);
+  Activities::Get().TakeOutbound(); // time skips are a session's
   if (auto world = runtime.TakeWorld())
     add(*world);
   for (auto &message : runtime.TakeNpcOutbox())

@@ -138,6 +138,8 @@ The owner simulates; everyone else displays.
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
 | time of day, weather | host | applied |
 | a V's police heat: score, wanted level, stars | that player's game | told; the owner of the area sends police after that V alone (`architecture/police.md`) |
+| the clock: time skips (wheel, bed) | host's clock, asked of every other player | each agrees or not; applied in every game; the host's story only says so (`architecture/activities.md`) |
+| a V busy: workspot, menu, minigame, photo mode | that player's game | puppet held where it sits, same workspot; photo mode stands only its own game still |
 | a V's time abilities (Sandevistan, the scanner…) | that player's game | shown on the puppet; never slow anyone's world |
 | an NPC's speed in a time bubble | the NPC's owner | proxies animated at the same speed |
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
@@ -291,6 +293,7 @@ plugin") and its open problems.
 - `quest-carryover.md`: (proposal) what a guest brings home: the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
 - `presence.md` (`scripts/tandem/Presence.reds`, `PartyHud.reds`, `HitReactions.reds`): the partner seen and heard: a puppet's sounds, hit reactions on puppets and proxies, drawn bullets, the party HUD and nameplate, small details (flashlight, look-at, stances, holstering); the audit, what needs eyes and ears in game.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
+- `activities.md`: the rule table for activities outside combat and quests (time skips asked of everyone, workspots on puppets, minigames and screens, shops, mirror and wardrobe looks, photo mode, contests, clubs and joytoys), its decisions and what is built.
 - `coop-menu.md`: the co-op menu, its Settings page (saved to `tandem.ini`), invites and join codes in game.
 - `strings.md`: every player-facing text (the inventory), the keyed table in English and French (`Text.reds`, Codeware's localization; ArchiveXL weighed), notices, input hints through the game's own bindings, the lint (`task strings:check`).
 - `travel.md`: fast travel together, regroup; region authority: `regions.md`.

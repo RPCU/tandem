@@ -51,8 +51,9 @@ TEST_CASE("the players digest leaves out what is the viewer's own") {
   std::map<proto::PlayerId, proto::Vitals> lives;
   std::map<proto::PlayerId, proto::Elsewhere> elsewhere;
   std::map<proto::PlayerId, proto::Heat> heat;
+  std::map<proto::PlayerId, proto::Activity> activities;
   const consistency::PlayersView view{roster, looks, held,  seats,     radios, stealth,
-                                      paused, time,  lives, elsewhere, heat};
+                                      paused, time,  lives, elsewhere, heat,   activities};
   const auto before = consistency::PlayersDigest(view, 2);
   // The guest's own look and pause are its game's: the host's record of
   // them does not count in the guest's digest.
@@ -77,6 +78,16 @@ TEST_CASE("the players digest leaves out what is the viewer's own") {
   CHECK(consistency::PlayersDigest(view, 2) == away);
   heat[1] = {.player = 1, .stage = 2, .state = proto::HeatState::Searching};
   CHECK(consistency::PlayersDigest(view, 2) != away);
+  // Busy: the host on a bench counts for the guest, the guest's own not.
+  const auto busy = consistency::PlayersDigest(view, 2);
+  activities[2] = {.player = 2, .kind = proto::ActivityKind::Photo};
+  CHECK(consistency::PlayersDigest(view, 2) == busy);
+  activities[1] = {.player = 1,
+                   .kind = proto::ActivityKind::Workspot,
+                   .flags = proto::kActivityAnchored,
+                   .workspot = 9,
+                   .anchor = {4, 5, 6}};
+  CHECK(consistency::PlayersDigest(view, 2) != busy);
 }
 
 TEST_CASE("the traffic digest follows the set, the records and how each vehicle stands") {
@@ -184,6 +195,11 @@ TEST_CASE("faults never touch the handshake and never send a one-shot twice") {
   // A shot at a V and its hit: doubling either would be a second shot.
   CHECK(consistency::IsOneShot(proto::NpcShotAt{}));
   CHECK(consistency::IsOneShot(proto::ShotHit{}));
+  // A time skip's request, answers and result: each one counts.
+  CHECK(consistency::IsOneShot(proto::TimeSkip{}));
+  CHECK(consistency::IsOneShot(proto::TimeSkipVote{}));
+  CHECK(consistency::IsOneShot(proto::TimeSkipResult{}));
+  CHECK_FALSE(consistency::IsOneShot(proto::Activity{}));
   link.Set({.dup = 1.0});
   CHECK(link.Decide(proto::NpcShotAt{}) == consistency::FaultyLink::Action::Send);
   // A throw doubled is a second grenade; a defence doubled, a second stagger.
