@@ -1,4 +1,4 @@
-// Fast travel together, and regroup (docs/ARCHITECTURE.md, milestone 4).
+// Fast travel together, and regroup (docs/architecture/travel.md, milestone 4).
 //
 // Players stay free to be anywhere: nobody is ever moved without saying yes.
 //
@@ -736,7 +736,7 @@ private final func PerformFastTravel(player: ref<GameObject>, nodeData: ref<Fast
       travel.Departing(nodeData.GetPointRecord(), TandemNative.NodeRefHash(nodeData.GetMarkerRef()));
     }
     // Our world is rebuilt around our V: the session's epoch moves on
-    // (docs/ARCHITECTURE.md, Consistency). Solo: nothing to tell.
+    // (docs/architecture/consistency.md, Consistency). Solo: nothing to tell.
     if TandemNative.IsStarted() {
       TandemSync.WorldRebuilt(2);
     }

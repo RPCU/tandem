@@ -1,6 +1,6 @@
 #pragma once
 
-// Hit outcomes (docs/ARCHITECTURE.md, "Game rules hold for every hit"): how
+// Hit outcomes (docs/architecture/combat.md, "Game rules hold for every hit"): how
 // the host applies a guest's hit on its NPC by the rules the guest's game
 // measured it with. Platform-independent, so the plugin and the mock player
 // apply a strike the same way and the rules are tested on Linux.

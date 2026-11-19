@@ -1,4 +1,4 @@
-// Slowed time in a shared world (docs/ARCHITECTURE.md, open problems:
+// Slowed time in a shared world (docs/architecture/time.md, open problems:
 // slowed and stopped time; research in docs/research/coop-time.md).
 //
 // Single player slows the whole world for one V (TimeSystem.SetTimeDilation,
@@ -57,7 +57,7 @@
 //   train: Transit.reds), and the clock moves on by what the ride takes
 //   either way (World.reds brings the guests along). What the network
 //   drives here is exempted from it, as from a slow motion.
-// - Menus, pause, time skips: not here (Pause.reds; ARCHITECTURE).
+// - Menus, pause, time skips: not here (Pause.reds; docs/architecture/time.md).
 //
 // Runs from TandemSystem.Tick, every frame once the world plays: the script
 // tick is one frame behind a dilation at most. (It ran from the plugin's

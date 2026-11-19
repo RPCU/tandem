@@ -1,4 +1,4 @@
-// Where the other Vs are (docs/ARCHITECTURE.md, Inside the plugin): one
+// Where the other Vs are (docs/architecture/players.md, Inside the plugin): one
 // marker per remote player, in the world, on the minimap and on the world
 // map, the way the game marks your own car.
 //

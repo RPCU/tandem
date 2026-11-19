@@ -1,4 +1,4 @@
-// Loot in co-op (docs/ARCHITECTURE.md, "Loot").
+// Loot in co-op (docs/architecture/loot.md, "Loot").
 //
 // Corpses and containers are per player: every game rolls its own loot, by
 // its own V's level and perks, and nobody takes from the other. Nothing is

@@ -1,4 +1,4 @@
-// The shared world (docs/ARCHITECTURE.md, milestone 4): the host's game time
+// The shared world (docs/architecture/world.md, milestone 4): the host's game time
 // and weather, followed by every guest. Weather by name through Codeware's
 // WeatherSystem (engine-knowledge.md / coop-quests-world.md §8).
 

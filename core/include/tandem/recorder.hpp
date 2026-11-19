@@ -1,6 +1,6 @@
 #pragma once
 
-// The recorder (tandem.ini `recorder = on`, docs/ARCHITECTURE.md "Recorder"):
+// The recorder (tandem.ini `recorder = on`, docs/architecture/recordings.md):
 // what the game sends, or would send to a guest, written as it plays, solo
 // or in a session, for later replays and tests.
 //

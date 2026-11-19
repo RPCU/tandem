@@ -966,7 +966,7 @@ struct TandemNative : Red::IScriptable {
   // tandem.ini time_host = full (the default): the host keeps its own slow
   // motion whole; bubble: its world is put back to normal speed.
   static bool IsTimeHostFull() { return Runtime::Get().config.timeHostFull; }
-  // Invites through tandem-relay (docs/ARCHITECTURE.md, "Invites"): the
+  // Invites through tandem-relay (docs/architecture/coop-menu.md, "Invites"): the
   // host's join code to show ("K7Q-2M9"; "" until the relay gave one, or
   // with no relay), what the relay link is doing ("" no relay,
   // "connecting", "ready", else the problem, in words), and joining the

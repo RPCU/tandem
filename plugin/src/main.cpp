@@ -136,7 +136,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
                                runtime.config.recorderMaxMb << 20,
                                std::uint64_t{runtime.config.recorderSegmentMinutes} * 60'000'000);
     // What is installed, and that none of it acts without a session
-    // (docs/ARCHITECTURE.md, "Solo is vanilla").
+    // (docs/architecture/session.md, "Solo is vanilla").
     {
       std::string hooks = "idle-controller pass-through";
       if (runtime.config.pose)
