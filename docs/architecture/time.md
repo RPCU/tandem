@@ -37,6 +37,24 @@
   plays, never from the plugin's per-frame call: there it crashed the game
   loading a save and froze it right after "playing" (2026-11-18; suspects
   in engine-knowledge §13.15). Scenario `time`.
+- **A mod's slow motion is a bubble too** (`Time.reds` `Unexplained`,
+  core `TimeBubbles::UnexplainedSlow`, 2026-11-19, not yet run in game):
+  any global slow motion on our V's game that none of the reasons above
+  explains (the whole factor clearly below the smallest of theirs) is sent
+  as a slow-motion ability (`kTimeSlowMo`) with that factor, so the others
+  see a bubble, and our player reads once "A mod slowed time: shared as a
+  time bubble around you". The reason cannot be named: the time system's
+  natives cannot be wrapped and no script lists the active reasons, so the
+  rule needs no list of mods (OverclockOverheat's optional
+  `OverclockDilation` asked for it, [`mod-compat.md`](mod-compat.md)). The
+  exceptions stay as they were: melee hit stop (`meleeHit`,
+  `meleeHitStrong`) and deflect local, menus (`WorldMap`, the TweakDB
+  profiles' reasons of `radialMenu`, `hubMenu`, `vehicleRadioMenu`,
+  `nanoWireBreach`, `settings`), a ride's skip (`customFFTimeDilation`, a
+  speed-up) and our V slowed by another V's bubble (`tandemBubble`) are
+  never taken for one. A host cannot take it back (no reason to hold): its
+  world stays slowed and the NPCs it shares are exempted, as with
+  `time_host = full`. Tests: `tests/timebubble_test.cpp`.
 - **The scanner's slow time is a bubble too** (`scripts/tandem/Time.reds`,
   2026-11-19, not yet run in game; the user: "the scanner has a bubble
   slow time too so it's standard"). It was switched off while another V

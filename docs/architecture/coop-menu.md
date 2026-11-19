@@ -96,7 +96,20 @@
   them all, `coop set KEY VALUE` changes one (scenario `settings`).
 - Not yet verified in game. Not done: the Mod Settings mod's page (it keeps
   its own saved values, which would compete with tandem.ini's: one source of
-  truth was kept).
+  truth was kept). **Mod Settings: not used, by decision 2026-11-19**
+  (the user: no duplicated settings menu), even when it is installed: this
+  page is the only one ([`mod-compat.md`](mod-compat.md)).
+
+### Mods
+
+- In a session the pause menu's Co-op page has **Mods**
+  (`TandemCoopAction.Mods`, [`mod-compat.md`](mod-compat.md)): a popup
+  with each player's mods against ours in words, their names once asked
+  (opening it asks; they arrive as a notice, shown the next time), and
+  every record shown otherwise this session (whose, which, as what). The
+  status panel has one line per player whose mods differ.
+  `tools/game.sh cmd coop mods` logs the same, `coop mods names` asks for
+  the names.
 
 ### Invites: the in-game flow (for the main menu)
 

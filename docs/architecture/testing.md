@@ -295,6 +295,20 @@ REC@X,Y,Z#ENTITY` shares one NPC of REC standing at X,Y,Z once a guest
   points a car) and says how the car stands; everything heard is logged.
   The game side's test commands: `tools/game.sh cmd wheels`, `wheels
 shoot`, `wheels gun`, `wheels ungun`.
+- **Other mods** (any mode; `mod-compat.md`): records a mod would add,
+  with their hints (the game's enum names): `--held-record
+NAME:TYPE[:CATEGORY]` (held, as `--hold`), `--vehicle-record
+NAME:TYPE[:SEATS]` (driven, as `--vehicle`), `--look-piece NAME:TYPE`
+  (worn, again for more), `--npc-record NAME:TYPE[:GENDER]` (the host's
+  NPC, as `--npc`). `--unknown NAME,...` gives the mock player a "game"
+  that lacks those records: what it hears is resolved as a game does,
+  logged (`mods: unknown ... shown as ...`, `mods notice: ...`) and told to
+  its owner (`Substitutes`); a `Substitutes` about ours is logged. Scenarios
+  `mods-unknown-held`, `mods-unknown-vehicle`, `mods-unknown-look`; the
+  game's commands `coop mods` (every comparison and replacement, in the
+  log) and `coop mods names` (ask for the others' mod names).
+  `tandem-peer mods PATH` prints what tandem makes of a game folder's mods
+  (names and contents) or of a list of file names (`tests/data/mods-sample.tsv`).
 
 ## Driving the game and the builds
 

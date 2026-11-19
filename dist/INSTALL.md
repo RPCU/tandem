@@ -310,14 +310,27 @@ unaffected.
   player is told once what differs: the tandem build, the game's version,
   tandem's scripts or tweaks (extract the whole release again, on both
   games), or the list of other mods.
-- **Other mods**: tandem compares the _names_ of the mods installed in
-  each game (a fingerprint of the list; the names themselves never leave
-  your PC) and warns when they differ. It never refuses a session for it.
-  Mods that only change looks or the interface are harmless. Mods that
-  change gameplay (weapon stats, enemy health, AI, cyberware, quests,
-  vehicles, time, new items) should be the same on every game, or each
-  player will see a slightly different fight. When something looks out of
-  step, try again without them before reporting a bug.
+- **Other mods**: tandem sorts the mods of each game by what they add
+  (only on your screen, new items, vehicles, characters or looks, gameplay
+  changes) and tells you what differs, for example _Judy has mods you
+  don't (3): 2 with new items (shown as similar vanilla ones), 1 changing
+  gameplay_. It never refuses a session for it. Only a number for each
+  mod and what it adds leave your PC; its name goes only to a partner who
+  opens **Co-op → Mods** in the pause menu, and only for the mods they do
+  not have.
+  - Mods that only change looks, sound or the interface are harmless.
+  - A weapon, piece of clothing, car or character from a mod the other
+    game lacks shows there as a similar vanilla one (or not at all), and
+    both of you are told. An item from such a mod cannot be traded, dropped
+    for or given to a player who lacks it: it stays with you.
+  - Mods that change gameplay (weapon stats, enemy health, AI, quickhacks,
+    time) should be the same on every game, or each player sees a slightly
+    different fight: the host's rules apply to the enemies you share. A mod
+    that changes the weather is overruled by the host's weather; a mod's
+    slow motion is shared as a time bubble.
+  - Co-op → Mods lists every comparison and everything shown otherwise.
+    When something looks out of step, try again without the mod before
+    reporting a bug.
 
 ## Reporting a bug
 
