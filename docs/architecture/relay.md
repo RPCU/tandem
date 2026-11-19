@@ -113,7 +113,9 @@ loss costs its own sessions a short hold (below), nobody else's.
   - meanwhile the session **holds** its relayed players (below), so
     nobody leaves: positions freeze for the gap, then play goes on. Test
     "a relay that restarts within the hold" (`tests/relay_test.cpp`) kills
-    a relay for 8 s mid-session.
+    a relay mid-session for 2.5 times the session's timeout, with the
+    session's and the link's waits shortened (`kFast`, `kFastRelay`:
+    timeout 1 s, hold 8 s; the game's are 5 s and 20 s).
 - **Before** (until 2026-11-19): one replica, a Deployment with
   `Recreate` (two would have split a session), every answer at most 21
   bytes, and a restart ended every session (the games registered again and
@@ -446,4 +448,10 @@ the plugin joins again by secret at `RelayStatus::at` every 5 s,
 `net_thread.cpp`), and a host's starts over at the configured address
 (another replica, a new code). Before this, a relay gap longer than the
 5 s session timeout ended every relayed session: guests came back as new
-players after the host's 20 s refresh.
+players after the host's 20 s refresh. These waits (and a host's choice
+among its relays, a direct path's punching and its silence) are
+`RelayOptions::times` (`net::RelayTimes`): the defaults are the game's,
+the tests shorten them (`kFastRelay`), as `Timing` does for the session;
+`relay-loopback` went from 82 s to under 10 s that way, with the relays'
+`--drain-timeout 1s` (their 60 s drain on the cleanup's SIGTERM was most
+of it).

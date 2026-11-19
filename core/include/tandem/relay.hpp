@@ -53,6 +53,20 @@ std::optional<RelayToken> ParseRelayToken(std::string_view hex);
 // "name[:port]" (default port kDefaultRelayPort); false when malformed.
 bool ParseRelayAddress(std::string_view text, std::string &name, std::uint16_t &port);
 
+// How long the session's side of the relay waits for things
+// (docs/architecture/relay.md, "A relay that goes silent", "Direct
+// paths"). The defaults are the game's; tests shorten them, as Timing does
+// for the session.
+struct RelayTimes {
+  std::uint32_t chooseMs{1'000};         // a host with several relays: probed for this long
+  std::uint32_t probeMs{1'000};          // registered and silent this long: asked again
+  std::uint32_t idleProbeMs{5'000};      // the same, for a host with no relayed guest
+  std::uint32_t lostAfterProbeMs{2'000}; // still silent this long after: lost (held)
+  std::uint32_t holdMs{20'000};          // a lost relay waited for, its players held
+  std::uint32_t punchMs{3'000};          // a direct path's punches, unanswered: given up
+  std::uint32_t directSilentMs{1'500};   // a direct path silent this long: back on the relay
+};
+
 struct RelayOptions {
   std::string address;
   std::uint16_t port{kDefaultRelayPort};
@@ -76,6 +90,7 @@ struct RelayOptions {
   // keep`), rather than a new one each session.
   bool keepCode{};
   std::uint32_t codeSalt{};
+  RelayTimes times;
 };
 
 // What the relays saw of us (the connection check): how our NAT maps the

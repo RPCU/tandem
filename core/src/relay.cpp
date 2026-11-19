@@ -44,21 +44,19 @@ constexpr std::size_t kObservedSize = kHeader + 4 + 1 + 4 + 2; // IPv4
 constexpr std::uint16_t kKeptLeft = 0xFFFF;
 // One redirect within a relay network, one more to cross its regions.
 constexpr int kMaxRedirects = 2;
-// Host with several relays: each probed every 250 ms for a second at most,
-// the first to answer the soonest taken.
-constexpr enet_uint32 kChooseMs = 1'000;
+// Host with several relays: each probed every 250 ms for a second at most
+// (RelayTimes::chooseMs), the first to answer the soonest taken.
 constexpr enet_uint32 kProbeEveryMs = 250;
 // The connection check, once registered: two relay ports probed, 3 times
 // 300 ms apart at most.
 constexpr int kCheckTries = 3;
 constexpr enet_uint32 kCheckEveryMs = 300;
 
-// Direct paths: punches every 100 ms for 3 s; a path silent for 1.5 s
-// while we send on it is dropped (the relay takes its traffic back), and a
-// guest asks for another introduction a minute later.
-constexpr enet_uint32 kPunchMs = 3'000;
+// Direct paths: punches every 100 ms for 3 s (RelayTimes::punchMs); a path
+// silent for 1.5 s (directSilentMs) while we send on it is dropped (the
+// relay takes its traffic back), and a guest asks for another introduction
+// a minute later.
 constexpr enet_uint32 kPunchEveryMs = 100;
-constexpr enet_uint32 kDirectSilentMs = 1'500;
 constexpr enet_uint32 kIntroduceAgainMs = 60'000;
 
 constexpr enet_uint32 kResendMs = 500;
@@ -67,15 +65,13 @@ constexpr enet_uint32 kResendMs = 500;
 constexpr enet_uint32 kRefreshMs = 20'000;
 constexpr enet_uint32 kKeepaliveMs = 10'000; // the relay forgets a client after 2 min
 constexpr enet_uint32 kCodeRetryMs = 1'000;
-// Registered: a relay silent this long is asked again (our registration,
-// answered at once); silent this long, it is lost and the session holds
-// its relayed players. A session's ENet pings each way every half second,
-// so a live relay is not silent for a second.
-// A host with no relayed guest hears only the answers to its probes: it
-// asks every few seconds (its code comes back as soon after a restart).
-constexpr enet_uint32 kProbeMs = 1'000;
-constexpr enet_uint32 kIdleProbeMs = 5'000;
-constexpr enet_uint32 kLostAfterProbeMs = 2'000;
+// Registered: a relay silent for RelayTimes::probeMs is asked again (our
+// registration, answered at once); silent lostAfterProbeMs more, it is lost
+// and the session holds its relayed players. A session's ENet pings each
+// way every half second, so a live relay is not silent for a second. A
+// host with no relayed guest hears only the answers to its probes: it asks
+// every few seconds (idleProbeMs; its code comes back as soon after a
+// restart).
 // Host: a relayed guest's socket closes after this long without traffic.
 constexpr enet_uint32 kChannelIdleMs = 60'000;
 constexpr std::size_t kMaxChannels = 8;
@@ -560,7 +556,7 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
       m_lost = false;
       if (m_role == Role::Guest) {
         m_channel = Be16(body);
-      } else if (quiet >= kProbeMs) {
+      } else if (quiet >= m_options.times.probeMs) {
         m_codeRequestMs = now - kRefreshMs;
         m_addressesSent = false; // and what it knew of our addresses
       }
@@ -735,7 +731,7 @@ void RelayLink::OnIntroduce(const std::uint8_t *body, std::size_t length, enet_u
     *direct = Direct{};
     return;
   }
-  direct->punchUntilMs = now + kPunchMs;
+  direct->punchUntilMs = now + m_options.times.punchMs;
   direct->punchedMs = now - kPunchEveryMs;
   DirectTimers(*direct, m_role == Role::Host ? channel : m_channel, now);
 }
@@ -816,8 +812,8 @@ void RelayLink::DirectTimers(Direct &direct, std::uint16_t channel, enet_uint32 
   if (direct.nonce == 0)
     return;
   if (direct.up) {
-    if (Since(now, direct.heardMs) >= kDirectSilentMs &&
-        Since(now, direct.sentMs) < kDirectSilentMs) {
+    if (Since(now, direct.heardMs) >= m_options.times.directSilentMs &&
+        Since(now, direct.sentMs) < m_options.times.directSilentMs) {
       direct = Direct{};
       if (m_role == Role::Guest)
         m_introduceAgainMs = now + kIntroduceAgainMs;
@@ -932,7 +928,7 @@ void RelayLink::Timers(enet_uint32 now) {
   // Choosing the nearest relay: probes until all answered or a second passed.
   if (m_phase == Phase::Choosing) {
     if (std::ranges::all_of(m_rttMs, [](enet_uint32 rtt) { return rtt != 0; }) ||
-        Since(now, m_chooseMs) >= kChooseMs) {
+        Since(now, m_chooseMs) >= m_options.times.chooseMs) {
       Choose(now);
     } else if (Since(now, m_probedMs) >= kProbeEveryMs) {
       m_probedMs = now;
@@ -973,15 +969,16 @@ void RelayLink::Timers(enet_uint32 now) {
         m_role == Role::Guest
             ? !m_direct.up
             : std::ranges::any_of(m_channels, [&](const auto &entry) {
-                return Since(now, entry.second.lastMs) < kIdleProbeMs && !entry.second.direct.up;
+                return Since(now, entry.second.lastMs) < m_options.times.idleProbeMs &&
+                       !entry.second.direct.up;
               });
-    const auto probeMs = relaying ? kProbeMs : kIdleProbeMs;
+    const auto probeMs = relaying ? m_options.times.probeMs : m_options.times.idleProbeMs;
     const auto silent = Since(now, m_heardMs);
-    if (silent >= probeMs + kLostAfterProbeMs && !m_lost) {
+    if (silent >= probeMs + m_options.times.lostAfterProbeMs && !m_lost) {
       m_lost = true;
       m_lostMs = now;
     }
-    if (m_lost && Since(now, m_lostMs) >= kHoldMs) {
+    if (m_lost && Since(now, m_lostMs) >= m_options.times.holdMs) {
       if (m_role == Role::Guest) {
         // Still with the host directly: the session goes on without the
         // relay, which is asked again now and then.

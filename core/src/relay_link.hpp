@@ -22,8 +22,10 @@ public:
   // How long a relay that went silent is waited for, the relayed players
   // held (their connections not judged): a relay restarting in Kubernetes
   // is back within ~10 s. Past it a guest's link fails, a host's starts over
-  // from the configured address.
-  static constexpr enet_uint32 kHoldMs = 20'000;
+  // from the configured address. The game's: RelayTimes::holdMs (tests
+  // shorten it).
+  static constexpr enet_uint32 kHoldMs = RelayTimes{}.holdMs;
+  enet_uint32 HoldMs() const { return m_options.times.holdMs; }
 
   // Host: ENet listens on `enetPort` (all interfaces); relayed guests reach it
   // from 127.0.0.1. Guest: ENet connects to Target() from `enetSource`, the

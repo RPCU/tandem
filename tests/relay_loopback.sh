@@ -25,11 +25,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Waits up to 5 s for sed's EXPRESSION to print something from FILE; prints
+# Waits for sed's EXPRESSION to print something from FILE (up to 15 s: a
+# bound for a busy machine, it ends as soon as the line is there); prints
 # its first line.
 wait_for() {
   local file=$1 expression=$2 found=""
-  for _ in $(seq 50); do
+  for _ in $(seq 150); do
     found=$(sed -n "$expression" "$file" | head -n 1)
     [ -n "$found" ] && break
     sleep 0.1
@@ -45,6 +46,9 @@ base=$((62000 + ($$ % 800) * 4))
 replica0=127.0.0.1:$base replica1=127.0.0.1:$((base + 1)) front=127.0.0.1:$((base + 2))
 peers=$replica0,$replica1
 # Open to any host, and more code lookups than the tests make from 127.0.0.1.
+# A drain of a second: the cleanup's SIGTERM would otherwise wait out the
+# sessions left behind (the 60 s default, the bulk of this test's time
+# before 2026-11-19: 82 s, now under 10).
 for shard in 0 1; do
   udp=$replica0 extra=(--front "$front")
   if [ "$shard" = 1 ]; then
@@ -52,7 +56,7 @@ for shard in 0 1; do
   fi
   "$work/tandem-relay" serve --allow-any-host --udp "$udp" --http 127.0.0.1:0 \
     --peers "$peers" --shard "$shard" "${extra[@]}" \
-    --code-lookup-burst 50 >"$work/relay$shard.log" 2>&1 &
+    --code-lookup-burst 50 --drain-timeout 1s >"$work/relay$shard.log" 2>&1 &
   up=$(wait_for "$work/relay$shard.log" 's/.*"msg":"relay up".*"udp":"\([^"]*\)".*/\1/p')
   if [ -z "$up" ]; then
     echo "relay $shard did not start:" >&2
