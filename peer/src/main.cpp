@@ -98,6 +98,7 @@
 #include "tandem/pose.hpp"
 #include "tandem/shaping.hpp"
 #include "tandem/traffic.hpp"
+#include "tandem/vehicle_combat.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -253,6 +254,24 @@ struct Options {
   int heatAtSeconds{5};
   int heatForSeconds{20};
   int crimeAtSeconds{-1};
+  // Vehicle combat (docs/architecture/vehicle-combat.md). drive: our car is
+  // hit this long after we sit (dents, a flat tyre, a part off), burns 4 s
+  // later and blows up 4 s after that (-1: never); we leave it this long
+  // after we sit, the hard way (--exit-kind; -1: never); we push the car
+  // another player drives this often (0: never). Any mode: shoot that car
+  // this often (0: never); ask for the gunner seat of another player's car
+  // this long in, aim and fire from it for 20 s (-1: never). join: run into
+  // one of the host's NPCs this often (0: never). host --traffic: the first
+  // car chases the guest this long in, for 20 s (-1: never).
+  int carDamageSeconds{-1};
+  int exitAtSeconds{-1};
+  tandem::proto::ExitKind exitKind{tandem::proto::ExitKind::Bail};
+  int bumpSeconds{0};
+  int shootCarsSeconds{0};
+  int gunnerSeconds{-1};
+  std::string gunnerSeat{"seat_back_left"};
+  int ramNpcsSeconds{0};
+  int chaseSeconds{-1};
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -458,7 +477,24 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --heat-at N        ...from N seconds in (default 5)\n"
          "  --heat-for N       ...for N seconds, the last 5 unseen (default 20)\n"
          "  --crime-at N       host: N seconds in, a witness calls the police on the guest's\n"
-         "                     V (Crime): its own game gives it the heat\n";
+         "                     V (Crime): its own game gives it the heat\n"
+         "  --car-damage N     drive: N seconds after we sit our car is hit (dents, a flat\n"
+         "                     tyre, the front bumper off), burns 4 s later, blows up 4 s\n"
+         "                     after that (VehicleDamage: every copy the same)\n"
+         "  --exit-at N        drive: leave the car N seconds after we sit, the hard way\n"
+         "  --exit-kind K      --exit-at: bail | thrown | knocked | dead | exploded (default\n"
+         "                     bail: jump out on the move; the car rolls on to a stop)\n"
+         "  --bump N           drive: push the car another player drives every N seconds\n"
+         "                     (VehicleBump; their game applies it unless it felt it)\n"
+         "  --shoot-cars N     shoot the car another player drives every N seconds\n"
+         "                     (VehicleHit to its driver's game; every other one a tyre)\n"
+         "  --gunner N         N seconds after another player is there, ask for the gunner\n"
+         "                     seat of their car; aim and fire from it for 20 s, then leave\n"
+         "  --gunner-seat SLOT --gunner: the seat asked for (default seat_back_left)\n"
+         "  --ram-npcs N       join: run into one of the host's NPCs every N seconds at\n"
+         "                     12 m/s (NpcRam, and its hit as NpcStrike)\n"
+         "  --chase N          host --traffic: the first car chases the first guest N seconds\n"
+         "                     in, for 20 s (Chase)\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -793,6 +829,33 @@ Options Parse(int argc, char **argv) {
       options.heatForSeconds = Number<int>(value);
     } else if (flag == "--crime-at") {
       options.crimeAtSeconds = Number<int>(value);
+    } else if (flag == "--car-damage") {
+      options.carDamageSeconds = Number<int>(value);
+    } else if (flag == "--exit-at") {
+      options.exitAtSeconds = Number<int>(value);
+    } else if (flag == "--exit-kind") {
+      using tandem::proto::ExitKind;
+      const std::map<std::string_view, ExitKind> kinds{{"bail", ExitKind::Bail},
+                                                       {"thrown", ExitKind::Thrown},
+                                                       {"knocked", ExitKind::Knocked},
+                                                       {"dead", ExitKind::Dead},
+                                                       {"exploded", ExitKind::Exploded}};
+      const auto it = kinds.find(value);
+      if (it == kinds.end())
+        Usage("--exit-kind is bail, thrown, knocked, dead or exploded");
+      options.exitKind = it->second;
+    } else if (flag == "--bump") {
+      options.bumpSeconds = Number<int>(value);
+    } else if (flag == "--shoot-cars") {
+      options.shootCarsSeconds = Number<int>(value);
+    } else if (flag == "--gunner") {
+      options.gunnerSeconds = Number<int>(value);
+    } else if (flag == "--gunner-seat") {
+      options.gunnerSeat = std::string(value);
+    } else if (flag == "--ram-npcs") {
+      options.ramNpcsSeconds = Number<int>(value);
+    } else if (flag == "--chase") {
+      options.chaseSeconds = Number<int>(value);
     } else
       Usage(std::format("unknown option {}", flag));
   }
@@ -2470,6 +2533,34 @@ int main(int argc, char **argv) {
   int heatStep = 0;
   bool crimeSaid = false;
 
+  // Vehicle combat. Our car's damage as its owner (hits on it, --car-damage),
+  // a car rolling on after we left it, pushes from others' cars, the gunner
+  // seat we asked for, what we heard of the others' vehicles.
+  namespace vc = tandem::vehiclecombat;
+  std::optional<tandem::proto::VehicleDamage> ourDamage;
+  const auto ourCarDamage = [&]() -> tandem::proto::VehicleDamage & {
+    if (!ourDamage)
+      ourDamage = tandem::proto::VehicleDamage{.vehicle = tandem::proto::PlayerCar(endpoint->You()),
+                                               .record = TweakDBID(options.vehicle)};
+    return *ourDamage;
+  };
+  int carDamageStep = 0;
+  std::optional<tandem::proto::VehicleState> rolling;
+  std::uint64_t rollingSinceUs = 0, rolledAtUs = 0;
+  vc::BumpLedger bumps;
+  auto nextBump = std::chrono::steady_clock::now() + 3s;
+  auto nextCarShot = std::chrono::steady_clock::now() + 3s;
+  int carShots = 0;
+  auto nextNpcRam = std::chrono::steady_clock::now() + 3s;
+  int gunnerStep = 0;
+  tandem::proto::VehicleRef gunnerCar = 0;
+  std::optional<std::chrono::steady_clock::time_point> gunnerSince;
+  auto nextAim = std::chrono::steady_clock::now();
+  auto nextMountedShot = std::chrono::steady_clock::now();
+  std::map<tandem::proto::VehicleRef, tandem::proto::VehicleDamage> heardDamage;
+  std::map<tandem::proto::PlayerId, std::chrono::steady_clock::time_point> aimLoggedAt;
+  int chaseStep = 0;
+
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
       std::visit(
@@ -2991,6 +3082,93 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::CrimeReported>) {
               Log("police: the area's owner saw our V commit a crime (kind {}, npc {})",
                   static_cast<int>(e.crime.kind), e.crime.npc);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteVehicleDamage>) {
+              namespace proto = tandem::proto;
+              const auto &d = e.damage;
+              const auto it = heardDamage.find(d.vehicle);
+              const auto before = it == heardDamage.end()
+                                      ? std::nullopt
+                                      : std::optional<proto::VehicleDamage>(it->second);
+              const auto end = vc::OnArrival(d, before, endpoint->HostNowUs());
+              heardDamage[d.vehicle] = d;
+              Log("vehicle {:#x} (of player {}): health {:.2f}, flags {:#x}, tyres {:#x}, {} "
+                  "part(s) "
+                  "off{}",
+                  d.vehicle, proto::OwnerOfVehicle(d.vehicle), d.health, d.flags, d.tyres,
+                  d.parts.size(),
+                  end == vc::Destruction::Explode ? ": it blows up"
+                  : end == vc::Destruction::Wreck ? ": a wreck"
+                                                  : "");
+            } else if constexpr (std::is_same_v<E, tandem::events::VehicleHitBy>) {
+              namespace proto = tandem::proto;
+              const auto &hit = e.hit;
+              if (hit.vehicle == proto::PlayerCar(endpoint->You())) {
+                // Ours to apply: 1000 health points a car.
+                auto &car = ourCarDamage();
+                car = vc::Apply(car, hit, 1000.f, endpoint->HostNowUs());
+                endpoint->SetVehicleDamage(car);
+                Log("our car: player {} hit it for {:.0f}{}: health {:.2f}{}", hit.player,
+                    hit.damage,
+                    hit.flags & proto::kVehicleHitTyre ? std::format(", tyre {} flat", hit.tyre)
+                                                       : "",
+                    car.health, car.flags & proto::kDamageDestroyed ? " (a wreck)" : "");
+              } else if (proto::IsStreetCar(hit.vehicle)) {
+                Log("street: player {} hit vehicle {:#x}{}", hit.player,
+                    proto::TrafficOfSeat(hit.vehicle),
+                    hit.flags & proto::kVehicleHitTyre ? std::format(": tyre {} flat", hit.tyre)
+                                                       : "");
+                if (hit.flags & proto::kVehicleHitTyre) {
+                  auto damage = endpoint->VehicleDamages().contains(hit.vehicle)
+                                    ? endpoint->VehicleDamages().at(hit.vehicle)
+                                    : proto::VehicleDamage{.vehicle = hit.vehicle};
+                  damage = vc::Apply(damage, {.flags = hit.flags, .tyre = hit.tyre}, 1000.f,
+                                     endpoint->HostNowUs());
+                  endpoint->SetVehicleDamage(damage);
+                }
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteVehicleExit>) {
+              constexpr const char *kKinds[] = {"got out",           "bailed out",
+                                                "was thrown out",    "was knocked off",
+                                                "died at the wheel", "was blown out"};
+              Log("player {} {} of vehicle {:#x} at {:.1f} m/s{}", e.exit.player,
+                  kKinds[static_cast<int>(e.exit.kind)], e.exit.vehicle,
+                  std::hypot(e.exit.velocity.x, e.exit.velocity.y, e.exit.velocity.z),
+                  e.exit.flags & tandem::proto::kExitRolling ? ": it rolls on" : "");
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteVehicleCombat>) {
+              constexpr const char *kModes[] = {"none", "driver combat", "passenger combat",
+                                                "mounted weapons", "gunner"};
+              Log("player {} in vehicle {:#x}: {} (weapon {:#x})", e.combat.player,
+                  e.combat.vehicle, kModes[static_cast<int>(e.combat.mode)], e.combat.weapon);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteMountedFire>) {
+              Log("player {} fires vehicle {:#x}'s weapon {:#x}", e.fire.player, e.fire.vehicle,
+                  e.fire.weapon);
+            } else if constexpr (std::is_same_v<E, tandem::events::GunnerChanged>) {
+              Log("vehicle {:#x}: gunner {}{}", e.gunner.vehicle, e.gunner.gunner,
+                  e.gunner.gunner == tandem::proto::kNoPlayer ? " (free)"
+                  : e.gunner.gunner == endpoint->You()        ? " (us)"
+                                                              : "");
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteGunnerAim>) {
+              auto &at = aimLoggedAt[e.aim.player];
+              if (std::chrono::steady_clock::now() - at > 2s) {
+                at = std::chrono::steady_clock::now();
+                Log("player {} aims vehicle {:#x}'s gun: yaw {:.2f}, pitch {:.2f}{}", e.aim.player,
+                    e.aim.vehicle, e.aim.yaw, e.aim.pitch,
+                    e.aim.flags & tandem::proto::kAimFiring ? ", firing" : "");
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::VehicleBumpBy>) {
+              bumps.Receive(e.bump, endpoint->HostNowUs());
+            } else if constexpr (std::is_same_v<E, tandem::events::NpcRamBy>) {
+              Log("player {} ran into npc {} at {:.1f} m/s{}", e.ram.player, e.ram.npc,
+                  std::hypot(e.ram.velocity.x, e.ram.velocity.y, e.ram.velocity.z),
+                  e.ram.flags & tandem::proto::kRamLethal      ? " (lethal)"
+                  : e.ram.flags & tandem::proto::kRamKnockdown ? " (knocked down)"
+                                                               : "");
+            } else if constexpr (std::is_same_v<E, tandem::events::ChaseChanged>) {
+              if (e.chase.target == tandem::proto::kNoPlayer)
+                Log("street: vehicle {:#x} chases nobody now", e.chase.vehicle);
+              else
+                Log("street: vehicle {:#x} chases player {}{}", e.chase.vehicle, e.chase.target,
+                    e.chase.target == endpoint->You() ? " (us)" : "");
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
               g_stop = 1;
@@ -3218,7 +3396,60 @@ int main(int argc, char **argv) {
                                                .yaw = tandem::sync::YawOf(car->orientation)}}});
           }
         }
-        if (seated && options.driveSeconds > 0 &&
+        // --car-damage: dents, a flat tyre, the bumper off; fire; a wreck.
+        if (seated && options.carDamageSeconds >= 0 && carDamageStep < 3 &&
+            nowUs - seatedAtUs >
+                static_cast<std::uint64_t>(options.carDamageSeconds + 4 * carDamageStep) *
+                    1'000'000) {
+          namespace proto = tandem::proto;
+          auto &car = ourCarDamage();
+          if (carDamageStep == 0) {
+            const float dents[] = {0.6f, 0.4f, 0.f, 0.f, 0.f,  0.f,  0.f,  0.f,
+                                   0.f,  0.f,  0.f, 0.f, 0.3f, 0.8f, 0.5f, 0.f};
+            car.health = 0.55f;
+            car.tyres |= 1;
+            car.grid = vc::PackGrid(dents);
+            car.parts = {CName("BumperFront")};
+            Log("our car: hit: dents, the front left tyre flat, the front bumper off");
+          } else if (carDamageStep == 1) {
+            car.health = 0.08f;
+            car.flags |= proto::kDamageBurning;
+            Log("our car burns");
+          } else {
+            car.health = 0.f;
+            car.flags = proto::kDamageDestroyed;
+            car.explodedUs = endpoint->HostNowUs();
+            Log("our car blew up");
+          }
+          ++carDamageStep;
+          endpoint->SetVehicleDamage(car);
+        }
+        // --exit-at: out of the car the hard way.
+        if (seated && options.exitAtSeconds >= 0 && lastCar &&
+            nowUs - seatedAtUs > static_cast<std::uint64_t>(options.exitAtSeconds) * 1'000'000) {
+          namespace proto = tandem::proto;
+          const bool driver = options.seat == "seat_front_left";
+          const auto &v = lastCar->velocity;
+          const float speed = std::hypot(v.x, v.y, v.z);
+          const bool rolls = vc::Rolls(options.exitKind, speed, driver);
+          endpoint->SendVehicleExit(
+              {.vehicle = proto::PlayerCar(endpoint->You()),
+               .kind = options.exitKind,
+               .flags = static_cast<std::uint8_t>((rolls ? proto::kExitRolling : 0) |
+                                                  (driver ? proto::kExitDriver : 0)),
+               .velocity = v});
+          endpoint->SetLocalSeat({});
+          endpoint->SetLocalTransit({});
+          parked = true;
+          puppeteer.Park(lastCar->position);
+          if (rolls) {
+            rolling = lastCar;
+            rollingSinceUs = rolledAtUs = nowUs;
+          }
+          Log("out of the car the hard way (kind {}) at {:.1f} m/s{}",
+              static_cast<int>(options.exitKind), speed, rolls ? ": it rolls on" : "");
+        }
+        if (seated && !parked && options.driveSeconds > 0 &&
             nowUs - seatedAtUs > static_cast<std::uint64_t>(options.driveSeconds) * 1'000'000) {
           endpoint->SetLocalSeat({}); // on foot, beside where the car stopped
           endpoint->SetLocalTransit({});
@@ -3226,6 +3457,161 @@ int main(int argc, char **argv) {
           if (lastCar)
             puppeteer.Park(lastCar->position);
           Log("out of the car");
+        }
+      }
+    }
+    // The car we left on the move rolls on, slowing, until it stops: our
+    // game simulates it, so its state keeps coming from us.
+    if (rolling) {
+      const auto nowUs = tandem::net::NowUs();
+      const float dt = static_cast<float>(nowUs - rolledAtUs) / 1e6f;
+      if (dt >= 1.f / 30.f) {
+        rolledAtUs = nowUs;
+        auto &car = *rolling;
+        const float keep = std::max(0.f, 1.f - 0.6f * dt);
+        car.velocity = {car.velocity.x * keep, car.velocity.y * keep, car.velocity.z * keep};
+        car.position = {car.position.x + car.velocity.x * dt, car.position.y + car.velocity.y * dt,
+                        car.position.z + car.velocity.z * dt};
+        const float speed = std::hypot(car.velocity.x, car.velocity.y, car.velocity.z);
+        if (speed < vc::kRestSpeed || nowUs - rollingSinceUs > vc::kRollUs) {
+          car.velocity = {};
+          endpoint->SendLocalVehicle(car);
+          Log("our car rolled to a stop at ({:.1f}, {:.1f}, {:.1f})", car.position.x,
+              car.position.y, car.position.z);
+          rolling.reset();
+        } else {
+          endpoint->SendLocalVehicle(car);
+        }
+      }
+    }
+    // Pushes from the others' cars, once our game had the time to feel
+    // the contact itself.
+    for (const auto &push : bumps.Due(endpoint->HostNowUs()))
+      Log("our car: pushed by player {}'s car ({:.1f}, {:.1f}, {:.1f}) m/s", push.from,
+          push.impulse.x, push.impulse.y, push.impulse.z);
+    {
+      namespace proto = tandem::proto;
+      // The first other player who drives (or, with nobody driving, any).
+      const auto driverOther = [&](bool anyone) -> proto::PlayerId {
+        for (const auto &[player, drives] : driving)
+          if (drives && player != endpoint->You())
+            return player;
+        if (anyone)
+          for (const auto &[id, info] : endpoint->Players())
+            if (id != endpoint->You())
+              return id;
+        return proto::kNoPlayer;
+      };
+      // --bump: our car pushes theirs.
+      if (options.bumpSeconds && options.mode == Mode::Drive && seated && !parked && lastCar &&
+          std::chrono::steady_clock::now() >= nextBump) {
+        nextBump = std::chrono::steady_clock::now() + std::chrono::seconds(options.bumpSeconds);
+        if (const auto other = driverOther(false)) {
+          endpoint->SendVehicleBump(
+              {.other = other, .impulse = {0.f, 2.5f, 0.f}, .position = lastCar->position});
+          Log("our car pushed player {}'s car", other);
+        }
+      }
+      // --shoot-cars: our shots land on their car (every other one a tyre).
+      if (options.shootCarsSeconds && endpoint->IsJoined() &&
+          std::chrono::steady_clock::now() >= nextCarShot) {
+        nextCarShot =
+            std::chrono::steady_clock::now() + std::chrono::seconds(options.shootCarsSeconds);
+        if (const auto other = driverOther(false)) {
+          const bool tyre = carShots++ % 2 == 1;
+          endpoint->SendVehicleHit({.vehicle = proto::PlayerCar(other),
+                                    .damage = 150.f,
+                                    .flags = tyre ? proto::kVehicleHitTyre : std::uint8_t{0},
+                                    .tyre = static_cast<std::int8_t>(tyre ? 1 : -1),
+                                    .direction = {0.f, 1.f, 0.f}});
+          Log("shot player {}'s car for 150{}", other, tyre ? ", tyre 1" : "");
+        }
+      }
+      // --ram-npcs: our car runs into one of the host's NPCs at 12 m/s.
+      if (options.ramNpcsSeconds && !options.host && endpoint->IsJoined() &&
+          !endpoint->SharedNpcs().empty() && std::chrono::steady_clock::now() >= nextNpcRam) {
+        nextNpcRam =
+            std::chrono::steady_clock::now() + std::chrono::seconds(options.ramNpcsSeconds);
+        const auto &[npc, spawn] = *endpoint->SharedNpcs().begin();
+        const proto::Vec3 velocity{12.f, 0.f, 0.f};
+        endpoint->SendCombat(proto::NpcStrike{.npc = npc,
+                                              .damage = 60.f,
+                                              .attackType = 1, // the collision's (Direct)
+                                              .position = spawn.position,
+                                              .direction = {1.f, 0.f, 0.f}});
+        endpoint->SendNpcRam({.npc = npc,
+                              .velocity = velocity,
+                              .position = spawn.position,
+                              .flags = vc::RamFlags(12.f, false)});
+        Log("our car ran into npc {} at 12 m/s", npc);
+      }
+      // --gunner: ask for their car's gun, aim and fire, leave.
+      if (options.gunnerSeconds >= 0 && endpoint->IsJoined() && togetherSince &&
+          now >= *togetherSince + std::chrono::seconds(options.gunnerSeconds)) {
+        if (gunnerStep == 0) {
+          if (const auto other = driverOther(true)) {
+            gunnerCar = proto::PlayerCar(other);
+            endpoint->AskGunner(gunnerCar, CName(options.gunnerSeat));
+            gunnerStep = 1;
+            gunnerSince = now;
+            Log("gunner: asking for the gun of player {}'s vehicle ({})", other,
+                options.gunnerSeat);
+          }
+        } else if (gunnerStep == 1) {
+          const auto &seats = endpoint->Gunners();
+          if (const auto it = seats.find(gunnerCar); it != seats.end()) {
+            if (it->second.gunner == endpoint->You()) {
+              gunnerStep = 2;
+              gunnerSince = now;
+              endpoint->SetLocalVehicleCombat({.mode = proto::SeatCombat::Gunner,
+                                               .vehicle = gunnerCar,
+                                               .weapon = TweakDBID("Items.Panzer_Cannon")});
+              Log("gunner: the seat is ours");
+            } else {
+              gunnerStep = 4;
+              Log("gunner: the seat is player {}'s", it->second.gunner);
+            }
+          } else if (now - *gunnerSince > 5s) {
+            gunnerStep = 4;
+            Log("gunner: no answer");
+          }
+        } else if (gunnerStep == 2) {
+          const double t = std::chrono::duration<double>(now - *gunnerSince).count();
+          if (now >= nextAim) {
+            nextAim = now + 50ms;
+            endpoint->SendGunnerAim({.vehicle = gunnerCar,
+                                     .yaw = static_cast<float>(std::sin(t * 0.8)),
+                                     .pitch = 0.1f,
+                                     .flags = proto::kAimFiring});
+          }
+          if (now >= nextMountedShot) {
+            nextMountedShot = now + 2s;
+            endpoint->SendMountedFire({.vehicle = gunnerCar,
+                                       .weapon = TweakDBID("Items.Panzer_Cannon"),
+                                       .target = {0.f, 30.f, 0.f}});
+            Log("gunner: fire");
+          }
+          if (t > 20.0) {
+            endpoint->AskGunner(gunnerCar, CName(options.gunnerSeat), true);
+            endpoint->SetLocalVehicleCombat({});
+            gunnerStep = 3;
+            Log("gunner: left the seat");
+          }
+        }
+      }
+      // --chase: the first street car goes after the first guest.
+      if (options.host && options.chaseSeconds >= 0 && !street.empty() && firstRemote &&
+          togetherSince) {
+        const double in = std::chrono::duration<double>(now - *togetherSince).count();
+        const int step = in < options.chaseSeconds ? 0 : in < options.chaseSeconds + 20 ? 1 : 2;
+        if (step != chaseStep && !street.front().gone) {
+          chaseStep = step;
+          endpoint->SendChase({.vehicle = street.front().id,
+                               .target = step == 1 ? firstRemote->player : proto::kNoPlayer,
+                               .flags = proto::kChaseRamming});
+          Log("street: vehicle {:#x} {}", street.front().id,
+              step == 1 ? std::format("chases player {}", firstRemote->player)
+                        : "gives up the chase");
         }
       }
     }
