@@ -614,6 +614,16 @@ struct TandemNative : Red::IScriptable {
     return engine::ScheduleLook(entity, appearance->look);
   }
 
+  // A stand-in for a puppet whose own look is missing or failed (body: 1
+  // female, 2 male): the last real look of that body this game has seen.
+  // Answers the keys scheduled (0: already worn), -1 when there is none.
+  static std::int32_t ApplyStandInLook(Red::Handle<Red::ent::Entity> entity, std::int32_t body) {
+    const auto keys = Runtime::Get().StandInLook(BodyOf(body));
+    if (keys.empty())
+      return -1;
+    return engine::ScheduleLook(entity, keys);
+  }
+
   // What our V holds, when it changes (0 / empty id: nothing).
   static void SendHeld(Red::TweakDBID right, Red::TweakDBID left) {
     Runtime::Get().SubmitLocalHeld({.right = right.value, .left = left.value});
@@ -1842,6 +1852,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RemoteAppearanceChanges);
   RTTI_METHOD(RemoteItems);
   RTTI_METHOD(ApplyRemoteLook);
+  RTTI_METHOD(ApplyStandInLook);
   RTTI_METHOD(PoseSource);
   RTTI_METHOD(PoseBind);
   RTTI_METHOD(PoseLoop);

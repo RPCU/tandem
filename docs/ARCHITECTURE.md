@@ -948,7 +948,14 @@ revive down|hold|report`; scenarios `revive-peer`, `revive-game`,
   game), its clothes as the TweakDB ids of what the wardrobe shows. Sent as
   `Appearance` (reliable) when the clothes change; the host keeps everyone's
   latest for late joiners. A puppet wears the clothes as preview items, the
-  way the inventory paper doll dresses V.
+  way the inventory paper doll dresses V. V's templates have no meshes of
+  their own, so clothes are never shown on no body: a look with no keys
+  (the mock player's random look) or keys that fail get a stand-in body,
+  the last real look of that body seen this game (ours or another
+  player's), else ours when our body is theirs; with none the puppet stays
+  hidden (`PuppetVisibility.reds`, reason `nolook`) and is tried again every
+  2 s until a look comes. Hiding fades the body and its item entities
+  together, then hides every mesh of both.
 - **Player markers** (`scripts/tandem/Markers.reds`,
   `tweaks/tandem/markers.tweak`): every remote player has a marker in the
   world, on the minimap and on the world map, the way the game marks your

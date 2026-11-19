@@ -222,6 +222,10 @@ public:
   // Net thread -> game thread: each player's latest look; `changes` counts
   // the looks received for them (0: none yet).
   void PushRemoteAppearance(const proto::Appearance &appearance);
+  // A whole V's look of this body (head, body, arms) for a puppet whose own
+  // keys are missing or failed: the last real one seen this game (ours or
+  // another player's of that body). Empty when none was.
+  std::vector<proto::AppearanceKey> StandInLook(proto::Body body) const;
   std::optional<proto::Appearance> RemoteAppearance(proto::PlayerId player, std::uint32_t &changes);
 
   // What our V holds (newest only) and its shots (queued), game -> net thread;
@@ -550,31 +554,33 @@ private:
   std::map<proto::PlayerId, proto::PlayerInfo> m_roster;
   std::optional<std::uint8_t> m_epochRequest;
   std::uint32_t m_overflows{};
-  std::optional<bool> m_localPaused;                             // m_lock
-  std::vector<proto::PlayerId> m_remotePaused;                   // m_lock
-  std::uint32_t m_remotePausedChanges{};                         // m_lock
-  std::vector<proto::NpcShotAt> m_shotsAt;                       // m_lock
-  std::vector<proto::ShotHit> m_shotHits;                        // m_lock
-  std::map<proto::PlayerId, std::string> m_names;                // m_lock
-  std::optional<proto::TimeEffect> m_localTime;                  // m_lock
-  std::map<proto::PlayerId, proto::TimeEffect> m_remoteTimes;    // m_lock
-  std::uint32_t m_remoteTimeChanges{};                           // m_lock
-  sync::TimeBubbles m_bubbles;                                   // game thread
-  elsewhere::Tracker m_away;                                     // game thread
-  elsewhere::PoseHistory m_poseHistory;                          // m_lock
-  std::optional<proto::PoseState> m_poseHold;                    // m_lock
-  std::uint64_t m_poseHoldSentUs{};                              // m_lock
-  std::optional<proto::Elsewhere> m_localElsewhere;              // m_lock
-  std::map<proto::PlayerId, proto::Elsewhere> m_remoteElsewhere; // m_lock
-  std::uint32_t m_remoteElsewhereChanges{};                      // m_lock
-  std::vector<proto::Message> m_regroupOutbox;                   // m_lock
-  std::vector<RegroupEvent> m_regroupEvents;                     // m_lock
-  std::uint32_t m_regroupOffers{};                               // m_lock
-  std::optional<proto::Vitals> m_localVitals;                    // m_lock
-  std::vector<proto::Vitals> m_othersLives;                      // m_lock
-  std::uint32_t m_othersLivesChanges{};                          // m_lock
-  std::vector<proto::Revive> m_localRevives, m_revives;          // m_lock
-  std::uint32_t m_sessionLosses{};                               // m_lock
+  std::optional<bool> m_localPaused;                                   // m_lock
+  std::vector<proto::PlayerId> m_remotePaused;                         // m_lock
+  std::uint32_t m_remotePausedChanges{};                               // m_lock
+  std::vector<proto::NpcShotAt> m_shotsAt;                             // m_lock
+  std::vector<proto::ShotHit> m_shotHits;                              // m_lock
+  std::map<proto::PlayerId, std::string> m_names;                      // m_lock
+  std::optional<proto::TimeEffect> m_localTime;                        // m_lock
+  std::map<proto::PlayerId, proto::TimeEffect> m_remoteTimes;          // m_lock
+  std::uint32_t m_remoteTimeChanges{};                                 // m_lock
+  sync::TimeBubbles m_bubbles;                                         // game thread
+  elsewhere::Tracker m_away;                                           // game thread
+  std::map<proto::Body, std::vector<proto::AppearanceKey>> m_standIns; // m_lock
+  void NoteStandIn(const proto::Appearance &appearance);               // under m_lock
+  elsewhere::PoseHistory m_poseHistory;                                // m_lock
+  std::optional<proto::PoseState> m_poseHold;                          // m_lock
+  std::uint64_t m_poseHoldSentUs{};                                    // m_lock
+  std::optional<proto::Elsewhere> m_localElsewhere;                    // m_lock
+  std::map<proto::PlayerId, proto::Elsewhere> m_remoteElsewhere;       // m_lock
+  std::uint32_t m_remoteElsewhereChanges{};                            // m_lock
+  std::vector<proto::Message> m_regroupOutbox;                         // m_lock
+  std::vector<RegroupEvent> m_regroupEvents;                           // m_lock
+  std::uint32_t m_regroupOffers{};                                     // m_lock
+  std::optional<proto::Vitals> m_localVitals;                          // m_lock
+  std::vector<proto::Vitals> m_othersLives;                            // m_lock
+  std::uint32_t m_othersLivesChanges{};                                // m_lock
+  std::vector<proto::Revive> m_localRevives, m_revives;                // m_lock
+  std::uint32_t m_sessionLosses{};                                     // m_lock
   std::mutex m_snapsLock;
   std::set<proto::PlayerId> m_snaps; // m_snapsLock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;

@@ -431,6 +431,9 @@ public native class TandemNative extends IScriptable {
   public static native func RemoteAppearanceChanges(player: Uint32) -> Int32
   public static native func RemoteItems(player: Uint32) -> array<TweakDBID>
   public static native func ApplyRemoteLook(entity: ref<Entity>, player: Uint32) -> Int32
+  // A stand-in look of that body (1 female, 2 male) when a player's own is
+  // missing or failed: the last real one seen (-1: none yet).
+  public static native func ApplyStandInLook(entity: ref<Entity>, body: Int32) -> Int32
   public static native func PoseSource(entity: ref<Entity>)
   public static native func PoseBind(player: Uint32, entity: ref<Entity>)
   public static native func PoseLoop(player: Uint32)

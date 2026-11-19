@@ -12,6 +12,10 @@ public class TandemPuppet {
   public let dressed: Bool;
   public let seenAt: Float;
   public let dressedAt: Float;
+  // A body look is on it (theirs, or a stand-in): V's templates have no
+  // meshes of their own, and clothes alone would float in the air.
+  public let bodyOn: Bool;
+  public let lookRetryAt: Float;
   // The looks received for this player that the puppet wears (0: ours, as a
   // stand-in), and the clothes it was given.
   public let appearanceChanges: Int32;
@@ -1670,6 +1674,15 @@ public class TandemSystem extends ScriptableSystem {
         this.Dress(puppet);
       } else if TandemNative.RemoteAppearanceChanges(puppet.player) != puppet.appearanceChanges {
         this.Redress(puppet);
+      } else if !puppet.bodyOn && this.Now() >= puppet.lookRetryAt {
+        // Hidden for want of a body: a stand-in may be known by now (a
+        // player of that body joined).
+        puppet.lookRetryAt = this.Now() + 2.0;
+        let entity = entities.GetEntity(puppet.id);
+        if IsDefined(entity) && StrBeginsWith(puppet.record, "Character.TandemPuppet")
+          && !Equals(puppet.record, "Character.TandemPuppetTest") {
+          this.StandIn(puppet, entity, "still no look");
+        }
       }
       if puppet.dressed && TandemNative.RemoteHeldChanges(puppet.player) != puppet.heldChanges {
         this.Rearm(puppet);
@@ -1885,16 +1898,51 @@ public class TandemSystem extends ScriptableSystem {
       this.Redress(puppet);
       return;
     }
-    // No look from them (an older peer): ours, as a stand-in, if it fits.
-    let localMale = Equals(GetPlayer(game).GetResolvedGenderName(), n"Male");
-    if NotEquals(localMale, puppet.body == 2) {
-      TandemNative.Log(s"player \(puppet.player): no look received, and ours is for the other body");
+    // No look from them (an older peer): a whole body first (StandIn), then
+    // our clothes if our body is theirs.
+    if this.StandIn(puppet, entity, "no look received") < 0 {
       return;
     }
-    puppet.worn = TandemOutfit.Shown(GetPlayer(game));
-    let on = TandemOutfit.WearPreview(entity as GameObject, puppet.worn);
-    TandemNative.Log(s"player \(puppet.player): no look received, wearing ours (\(on) clothes)");
-    TandemNative.ApplyLook(entity, GameInstance.GetCharacterCustomizationSystem(game).GetState(), localMale);
+    let localMale = Equals(GetPlayer(game).GetResolvedGenderName(), n"Male");
+    if Equals(localMale, puppet.body == 2) {
+      puppet.worn = TandemOutfit.Shown(GetPlayer(game));
+      let on = TandemOutfit.WearPreview(entity as GameObject, puppet.worn);
+      TandemNative.Log(s"player \(puppet.player): no look received, wearing our clothes (\(on))");
+    }
+  }
+
+  // A whole body for a puppet whose player's look gave none (no
+  // character-creator keys, as the mock player's random look; or they
+  // failed): the last real look of that body seen (ours or another
+  // player's), else ours when our body is theirs. With none at all the
+  // puppet stays hidden (PuppetVisibility.reds, n"nolook") until a look
+  // comes: clothes alone are never shown. Answers the keys scheduled, -1
+  // when nothing was.
+  private func StandIn(puppet: ref<TandemPuppet>, entity: ref<Entity>, why: String) -> Int32 {
+    let game = this.GetGameInstance();
+    if puppet.bodyOn {
+      return 0;
+    }
+    let keys = TandemNative.ApplyStandInLook(entity, puppet.body);
+    let from = "the last look of that body seen";
+    if keys < 0 {
+      let localMale = Equals(GetPlayer(game).GetResolvedGenderName(), n"Male");
+      if Equals(localMale, puppet.body == 2) {
+        keys = TandemNative.ApplyLook(entity, GameInstance.GetCharacterCustomizationSystem(game).GetState(), localMale);
+        from = "ours";
+      }
+    }
+    if keys < 0 {
+      if !TandemVisibility.IsHidden(game, puppet.player) {
+        TandemNative.Log(s"player \(puppet.player): \(why), and no stand-in body: hidden until a look comes");
+      }
+      TandemVisibility.Hide(game, puppet.player, n"nolook", 0.0);
+      return -1;
+    }
+    puppet.bodyOn = true;
+    TandemVisibility.Show(game, puppet.player, n"nolook", 0.3);
+    TandemNative.Log(s"player \(puppet.player): \(why): a stand-in body (\(from), \(keys) keys)");
+    return keys;
   }
 
   // The player changed seats: out of the old one, their car copy kept only
@@ -2106,6 +2154,14 @@ public class TandemSystem extends ScriptableSystem {
     puppet.appearanceChanges = TandemNative.RemoteAppearanceChanges(puppet.player);
     let items = TandemNative.RemoteItems(puppet.player);
     let keys = TandemNative.ApplyRemoteLook(entity, puppet.player);
+    if keys >= 0 {
+      // Theirs (0: what it already wears).
+      puppet.bodyOn = true;
+      TandemVisibility.Show(this.GetGameInstance(), puppet.player, n"nolook", 0.3);
+    } else {
+      // No keys, or they failed: never their clothes on no body.
+      this.StandIn(puppet, entity, "their look has no body");
+    }
     if !TandemOutfit.Same(items, puppet.worn) {
       TandemOutfit.TakeOff(entity, puppet.worn);
       puppet.worn = items;
