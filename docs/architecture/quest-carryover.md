@@ -400,23 +400,18 @@ now (`quest` is a redscript keyword).
   important items are every player's" to the length of the session for
   items tagged `Quest` and keycards. Iconics stay. Decided by the user
   2026-11-19.
-- **`progression` branch** (uncommitted work read on 2026-11-19: `Saves.reds`,
-  `core/progress.hpp`): no contradiction. It owns _when_ the guest saves;
-  this owns _what must be true before_ (session items out, ledger words
-  stored). Its `LeftOver` bit for the story already gates the save on
-  `GuestLeave` having finished, and the session items go out at the top
-  of `GuestLeave`. For that branch when it merges (its `Story.reds` and
-  `System.reds` changes were uncommitted on 2026-11-19, so not edited
-  here): its `TandemStorySystem.LeftOver` adds one condition to bit 1,
-  `this.SessionItemsLeft() > 0`, so no save is made while the removal has
-  not run (no V at that moment); the story's `Tick` retries it outside a
-  session. Its `Begin` hunk (`CarryLoad`, the garage) and ours (the
-  session items' note) sit side by side in the same function, and its
-  `carryover_test.cpp` still calls `Ep1Missing`, which this branch
-  removed (Phantom Liberty is required): drop those three checks when
-  merging.
-- **`Story.reds` today** keeps `m_rewarded` / `m_rewardedQuests`: the
-  ledger replaces them (same rule, plus the host-behind case).
+- **`progression` branch** (merged with this on 2026-11-19): it owns
+  _when_ the guest saves (`Saves.reds`, `core/progress.hpp`); this owns
+  _what must be true before_ (session items out, ledger words stored).
+  `TandemStorySystem.LeftOver` bit 1 counts `this.SessionItemsLeft() > 0`, so no
+  save is made while the removal has not run (no V at that moment); the
+  story's `Tick` retries it outside a session. Its `Begin` loads the ledger
+  (`CarryLoad`, the garage) beside the session items' note; the
+  `carryover_test.cpp` checks of `Ep1Missing` are gone (Phantom Liberty is
+  required).
+- **`Story.reds`'s `m_rewarded` / `m_rewardedQuests`**: replaced by the
+  ledger (same rule, plus the host-behind case); an older save's pairs move
+  into it once (`MigrateRewards`).
 
 ## Stages
 

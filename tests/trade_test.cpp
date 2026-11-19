@@ -670,6 +670,9 @@ struct Game {
   int applied{};
   // Agree to whatever is on the table as soon as there is something on it.
   bool eager{};
+  // ...and only once our own side is up (a player who means to put
+  // something up does not agree before it has).
+  bool ownFirst{};
 
   void Send(const std::vector<proto::Message> &messages) {
     for (const auto &message : messages)
@@ -693,7 +696,8 @@ struct Game {
     for (const auto &e : heard.events)
       events.push_back(e);
     if (eager && seat.Is() == Seat::State::Open && !seat.WeConfirmed() &&
-        (!trade::Empty(seat.Mine()) || !trade::Empty(seat.Theirs())))
+        (!trade::Empty(seat.Mine()) || !trade::Empty(seat.Theirs())) &&
+        (!ownFirst || seat.Mine().revision > 0))
       Send(seat.Confirm());
   }
   bool Saw(Kind kind) const {
@@ -885,6 +889,10 @@ TEST_CASE("under loss in both directions a trade is applied by both sides, once,
     s.a.endpoint->SetFaults({.drop = 0.25, .seed = seed + 1});
     s.b.endpoint->SetFaults({.drop = 0.25, .seed = seed + 2});
     s.a.eager = s.b.eager = true;
+    // Each means to put a side up: agreeing before it has (its own offer
+    // lost or not yet sent, the other's arrived) is a valid trade of nothing
+    // for 50 eddies, not the one this test checks.
+    s.a.ownFirst = s.b.ownFirst = true;
     // Players who keep trying: ask when free, accept when asked, put their
     // side up when at the table.
     const auto play = [&] {
