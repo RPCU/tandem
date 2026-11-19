@@ -9,14 +9,14 @@ cannot join, and two different releases refuse each other with a message.
 
 ## Requirements
 
-| What                    | Version                            | Notes                                                 |
-| ----------------------- | ---------------------------------- | ----------------------------------------------------- |
-| Cyberpunk 2077 (PC)     | patch **2.50** exactly             | the executable's file version is `3.0.88.46235`       |
-| [RED4ext][red4ext]      | **1.31.0** or newer                | loads `tandem.dll`                                    |
-| [redscript][redscript]  | **0.5.32** or newer                | compiles tandem's scripts                             |
-| [Codeware][codeware]    | **1.21.2** or newer                | tandem's scripts and menus use it                     |
-| [TweakXL][tweakxl]      | **1.12.0** or newer                | loads the records of the other players' bodies        |
-| Windows 10/11, or Linux | Linux: Steam with Proton, as usual | RED4ext's own Linux instructions apply (its launcher) |
+| What                    | Version                  | Notes                                                                                        |
+| ----------------------- | ------------------------ | -------------------------------------------------------------------------------------------- |
+| Cyberpunk 2077 (PC)     | patch **2.50** exactly   | the executable's file version is `3.0.88.46235`                                              |
+| [RED4ext][red4ext]      | **1.31.0** or newer      | loads `tandem.dll`                                                                           |
+| [redscript][redscript]  | **0.5.32** or newer      | compiles tandem's scripts                                                                    |
+| [Codeware][codeware]    | **1.21.2** or newer      | tandem's scripts and menus use it                                                            |
+| [TweakXL][tweakxl]      | **1.12.0** or newer      | loads the records of the other players' bodies                                               |
+| Windows 10/11, or Linux | Linux: Steam with Proton | Steam launch option `WINEDLLOVERRIDES="winmm,version=n,b" %command%`, as for any RED4ext mod |
 
 ArchiveXL is **not** needed: tandem ships no archive. Cyber Engine Tweaks is
 not needed either.
@@ -227,7 +227,7 @@ TweakXL: 1.12.0
   update or remove: tandem cannot load until every script mod compiles.
 
 - **No popup, and no `red4ext/logs/tandem-*.log` either**: RED4ext is not
-  installed or not loading (on Linux: its launch option is missing), or
+  installed or not loading (on Linux: the launch option above is missing), or
   `tandem.dll` is not at `red4ext/plugins/tandem/tandem.dll` (the zip was
   extracted somewhere else, or into a folder of its own).
 - **No popup, tandem's log exists**: redscript is not installed
