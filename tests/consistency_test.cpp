@@ -50,8 +50,9 @@ TEST_CASE("the players digest leaves out what is the viewer's own") {
   std::map<proto::PlayerId, proto::TimeEffect> time;
   std::map<proto::PlayerId, proto::Vitals> lives;
   std::map<proto::PlayerId, proto::Elsewhere> elsewhere;
-  const consistency::PlayersView view{roster,  looks,  held, seats, radios,
-                                      stealth, paused, time, lives, elsewhere};
+  std::map<proto::PlayerId, proto::Heat> heat;
+  const consistency::PlayersView view{roster, looks, held,  seats,     radios, stealth,
+                                      paused, time,  lives, elsewhere, heat};
   const auto before = consistency::PlayersDigest(view, 2);
   // The guest's own look and pause are its game's: the host's record of
   // them does not count in the guest's digest.
@@ -68,6 +69,33 @@ TEST_CASE("the players digest leaves out what is the viewer's own") {
   CHECK(consistency::PlayersDigest(view, 2) == seated);
   elsewhere[1] = {.player = 1, .place = proto::Place::Cyberspace, .flags = 1, .anchor = {1, 2, 3}};
   CHECK(consistency::PlayersDigest(view, 2) != seated);
+  // Wanted: the host's stars count for the guest, the guest's own do not,
+  // and no heat is the same as never heard of.
+  const auto away = consistency::PlayersDigest(view, 2);
+  heat[2] = {.player = 2, .stage = 3, .state = proto::HeatState::Active};
+  heat[1] = {.player = 1};
+  CHECK(consistency::PlayersDigest(view, 2) == away);
+  heat[1] = {.player = 1, .stage = 2, .state = proto::HeatState::Searching};
+  CHECK(consistency::PlayersDigest(view, 2) != away);
+}
+
+TEST_CASE("the traffic digest follows the set, the records and how each vehicle stands") {
+  std::map<proto::TrafficId, proto::TrafficSpawn> cars{{7, {.id = 7, .record = 0x11}}};
+  std::map<proto::TrafficId, proto::TrafficStatus> status;
+  const auto one = consistency::TrafficDigest(cars, status);
+  CHECK(one == consistency::TrafficDigest(cars, status));
+  // Where it is does not count: positions are state.
+  cars[7].position = {5, 6, 7};
+  CHECK(consistency::TrafficDigest(cars, status) == one);
+  cars[8] = {.id = 8, .record = 0x11, .flags = proto::kTrafficParked};
+  const auto two = consistency::TrafficDigest(cars, status);
+  CHECK(two != one);
+  // A wreck is not the car it was.
+  status[8] = {.id = 8, .health = 0.f, .flags = proto::kTrafficDestroyed};
+  CHECK(consistency::TrafficDigest(cars, status) != two);
+  // What was said of a car that is gone is nobody's business.
+  cars.erase(8);
+  CHECK(consistency::TrafficDigest(cars, status) == one);
 }
 
 TEST_CASE("the story record says when a message changes nothing, and hashes what lasts") {
