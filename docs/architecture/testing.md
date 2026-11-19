@@ -343,6 +343,19 @@ first build is mostly hits on what another worktree compiled.
   compiler's own `-MD` or `/showIncludes` list, no second preprocessor run
   on a miss); `compiler_check = echo %compiler%` (every Nix store file has
   the same mtime: the compiler's store path stands for its version).
+- **Safety:** no sloppiness is set: a hit needs the same compiler (store
+  path), flags and the content of every included file. A cache it cannot
+  read or write, or a compile it cannot cache, makes ccache run the
+  compiler as is; no ccache in the shell, no launcher. Concurrent builds
+  share the cache safely (ccache locks its files). If a build looks wrong,
+  `TANDEM_CCACHE=0` rebuilds without it.
+- **Measured** on the game machine (2026-11-19, 12 jobs): a fresh
+  worktree's `build:plugin` took 190 s without the cache and 2.2 s warm from
+  another worktree, `build:linux` 305 s and 15 s (mostly linking the tests).
+  Through `tools/build.sh` under load, a fresh `build:plugin build:linux`:
+  72 s, 193 of 195 compiles hits (the misses: the files that include the
+  commit's build name). A one-file change still compiles that file (18 s
+  for a plugin file); changing it back is a hit (0.5 s).
 - **`task ccache:stats`**, **`task ccache:clear`**; `tools/remote.sh
 ccache:stats` for the game machine's.
 - **What the build does for it:** ccache refuses every clang-cl `/clang:`
