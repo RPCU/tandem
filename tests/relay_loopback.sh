@@ -50,7 +50,7 @@ for shard in 0 1; do
   fi
   "$work/tandem-relay" serve --allow-any-host --udp "$udp" --http 127.0.0.1:0 \
     --peers "$peers" --shard "$shard" "${extra[@]}" \
-    --code-lookup-burst 50 >"$work/relay$shard.log" 2>&1 &
+    --code-lookup-burst 50 --expect-public-clients=false >"$work/relay$shard.log" 2>&1 &
   up=$(wait_for "$work/relay$shard.log" 's/.*"msg":"relay up".*"udp":"\([^"]*\)".*/\1/p')
   if [ -z "$up" ]; then
     echo "relay $shard did not start:" >&2

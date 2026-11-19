@@ -87,6 +87,10 @@ func serve(args []string) error {
 		"join code lookups one address may make at once (then one per 6 s)")
 	fs.IntVar(&cfg.MaxCodeFailuresPerMinute, "max-code-failures", cfg.MaxCodeFailuresPerMinute,
 		"failed join code lookups per minute, from everyone together, for the whole fleet (each replica takes its share)")
+	fs.BoolVar(&cfg.ExpectPublicClients, "expect-public-clients", cfg.ExpectPublicClients,
+		"warn when client addresses look rewritten on the way (mostly internal, or all one or two); =false on a LAN or in tests")
+	internal := fs.String("internal-cidrs", env("TANDEM_RELAY_INTERNAL_CIDRS", ""),
+		"prefixes counted as internal besides private, loopback, link-local and 100.64.0.0/10 (a cluster's pod network), comma-separated")
 	_ = fs.Parse(args)
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -99,6 +103,9 @@ func serve(args []string) error {
 		return err
 	}
 	if cfg.Regions, err = parsePeers(*regions); err != nil {
+		return err
+	}
+	if cfg.InternalPrefixes, err = parsePrefixes(*internal); err != nil {
 		return err
 	}
 	cfg.Region = *region
@@ -241,6 +248,21 @@ func parsePeers(text string) ([]netip.AddrPort, error) {
 			return nil, fmt.Errorf("--peers: %q is not ip:port", field)
 		}
 		out = append(out, p)
+	}
+	return out, nil
+}
+
+func parsePrefixes(text string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, field := range strings.Split(text, ",") {
+		if field = strings.TrimSpace(field); field == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(field)
+		if err != nil {
+			return nil, fmt.Errorf("--internal-cidrs: %q is not a prefix (10.42.0.0/16)", field)
+		}
+		out = append(out, p.Masked())
 	}
 	return out, nil
 }

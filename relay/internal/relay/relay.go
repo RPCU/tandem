@@ -68,6 +68,16 @@ type Config struct {
 	// The fleet-wide failure budget is then the whole world's.
 	Regions []netip.AddrPort
 	Region  int
+
+	// Players reach us from the internet: their addresses should be public
+	// and many. When they are mostly internal, or all one or two, something
+	// on the path rewrites them, and the relay says so (sources.go). Off for
+	// a relay on a LAN or in tests.
+	ExpectPublicClients bool
+	// Counted as internal besides private, loopback, link-local and shared
+	// (100.64.0.0/10) addresses: a cluster's pod or service network outside
+	// those.
+	InternalPrefixes []netip.Prefix
 }
 
 // DefaultConfig suits a small group's relay.
@@ -87,6 +97,8 @@ func DefaultConfig() Config {
 		MaxLookupSources:         4096,
 
 		IntroduceInterval: 2 * time.Second,
+
+		ExpectPublicClients: true,
 	}
 }
 
@@ -286,6 +298,9 @@ type Server struct {
 	// Failed code lookups in the minute that started at failWindow.
 	failWindow time.Time
 	failures   int
+
+	// What the client addresses look like (sources.go).
+	watch sourceWatch
 }
 
 func NewServer(cfg Config, log *slog.Logger) *Server {
@@ -304,6 +319,8 @@ func NewServer(cfg Config, log *slog.Logger) *Server {
 		lookups:  map[netip.Prefix]*lookupBucket{},
 	}
 	s.clients.init()
+	s.watch.seen = make(map[netip.AddrPort]struct{}, sourceWatchCap)
+	s.watch.windowStart = now
 	return s
 }
 
@@ -360,6 +377,9 @@ func (s *Server) process(w *worker, p port, from netip.AddrPort, b []byte, now t
 	if err != nil {
 		s.Metrics.dropped(dropMalformed)
 		return to, nil, false
+	}
+	if s.cfg.ExpectPublicClients && samples(d.kind) {
+		s.observe(from)
 	}
 	out := w.out[:0]
 	w.extra, w.extraTo = w.extra[:0], netip.AddrPort{}
@@ -968,6 +988,7 @@ func (s *Server) ServeAll(ctx context.Context, direct, front []*net.UDPConn) err
 				return
 			case now := <-tick.C:
 				s.sweep(now)
+				s.checkSources(now)
 			}
 		}
 	}()

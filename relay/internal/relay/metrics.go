@@ -118,6 +118,8 @@ type Snapshot struct {
 	Redirects         map[string]uint64
 	Introductions     uint64
 	Probes            uint64
+	// Client addresses look rewritten on the way (sources.go).
+	SourceNATSuspected bool
 }
 
 // Snapshot reads the counters, with the live session and client counts.
@@ -129,6 +131,7 @@ func (s *Server) Snapshot() Snapshot {
 		CodesIssued: m.codes.Load(), CodesReclaimed: m.reclaimed.Load(), Introductions: m.introductions.Load(), Probes: m.probes.Load(),
 		Drops: map[string]uint64{}, Lookups: map[string]uint64{},
 		Refusals: map[string]uint64{}, Redirects: map[string]uint64{},
+		SourceNATSuspected: s.SourceNATSuspected(),
 	}
 	for i := range m.forward {
 		out.Packets += m.forward[i].packets.Load()
@@ -164,13 +167,18 @@ func (s *Server) WriteMetrics(w io.Writer) {
 			fmt.Fprintf(w, "%s{%s=%q} %d\n", name, label, n, values[n])
 		}
 	}
-	draining := 0
-	if snap.Draining {
-		draining = 1
+	flag := func(b bool) int {
+		if b {
+			return 1
+		}
+		return 0
 	}
 	gauge("tandem_relay_sessions", "Open co-op sessions.", snap.Sessions)
 	gauge("tandem_relay_clients", "Registered hosts and guests.", snap.Clients)
-	gauge("tandem_relay_draining", "1 while the relay takes no new session (shutting down).", draining)
+	gauge("tandem_relay_draining", "1 while the relay takes no new session (shutting down).", flag(snap.Draining))
+	gauge("tandem_relay_source_nat_suspected",
+		"1 while client addresses look rewritten on the way (mostly internal, or one or two for everyone): see docs/relay.md.",
+		flag(snap.SourceNATSuspected))
 	counter("tandem_relay_forwarded_packets_total", "Datagrams forwarded.", snap.Packets)
 	counter("tandem_relay_forwarded_bytes_total", "Payload bytes forwarded.", snap.Bytes)
 	labelled("tandem_relay_dropped_total", "Datagrams dropped, by reason.", "reason", dropNames[:], snap.Drops)
