@@ -74,6 +74,11 @@
 
 ## Open problems
 
+- **What a guest brings home** (proposal 2026-11-19): `quest-carryover.md`.
+  The ledger of what a guest did and earned (`core/src/carryover.cpp`,
+  tested) is written; its natives and script, the removal of quest props
+  on leave and the join notes are staged there.
+
 - **Scenes for guests.** Replaying the host's quest-scene nodes in a guest's
   game (the campaign fork's approach) is unproven: nodes run outside their
   phase. Alternatives to study: guests follow the scene as spectators of the
