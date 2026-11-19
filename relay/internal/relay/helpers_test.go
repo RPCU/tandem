@@ -58,6 +58,14 @@ func ask(t *testing.T, c *net.UDPConn, req []byte) Reply {
 }
 
 func (s *Server) handleOn(p port, from netip.AddrPort, b []byte, now time.Time) (outgoing, bool) {
-	to, reply, ok := s.process(newWorker(0), p, from, bytes.Clone(b), now)
-	return outgoing{to, bytes.Clone(reply)}, ok
+	out, _, ok := s.handleTwo(p, from, b, now)
+	return out, ok
+}
+
+// handleTwo also returns the second datagram an answer may come with (an
+// introduction to the other side); its `to` is invalid when there is none.
+func (s *Server) handleTwo(p port, from netip.AddrPort, b []byte, now time.Time) (outgoing, outgoing, bool) {
+	w := newWorker(0)
+	to, reply, ok := s.process(w, p, from, bytes.Clone(b), now)
+	return outgoing{to, bytes.Clone(reply)}, outgoing{w.extraTo, bytes.Clone(w.extra)}, ok
 }

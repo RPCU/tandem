@@ -23,6 +23,21 @@
 //	Redirect      (11) family (1) | address (4 or 16) | port (2)  relay -> client
 //	RejoinGuest   (12) secret (16) | channel (2) | zero padding to 64 bytes
 //	ReclaimCode   (13) secret (16) | code (6) | seconds left (2) | zero padding to 64 bytes
+//	Addresses     (14) flags (1) | count (1) | count x (IPv4 (4) | port (2)) | zero padding to 64 bytes
+//	Introduce     (15) channel (2) | nonce (4) | flags (1) | public IPv4 (4) | port (2) | LAN IPv4 (4) | port (2)  relay -> client
+//	Punch         (16) nonce (4) | channel (2) | ack (1)  client <-> client, never to the relay
+//
+// Direct paths (hole punching): a registered client tells the relay its LAN
+// addresses (Addresses: up to 3, private or loopback only) and its NAT's
+// flags (FlagMapping*). A guest's Addresses is answered with two
+// Introductions, one to it and one to its host, each naming the other's
+// public address as the relay sees it, its first LAN address and a nonce
+// drawn for the pair: 24 bytes each, 48 in all for a 64-byte request, sent
+// only to members of the guest's own session, at most once per
+// IntroduceInterval. The two then send each other Punch datagrams from the
+// socket they use for the relay; once one is answered (ack 1), they send
+// Data to each other directly, falling back to the relay when it goes
+// silent.
 //
 // Data: the host addresses a guest by its channel; a guest's channel field is
 // ignored and the relay stamps the guest's channel before handing it to the
@@ -82,7 +97,25 @@ const (
 	typeRedirect      msgType = 11
 	typeRejoinGuest   msgType = 12
 	typeReclaimCode   msgType = 13
+	typeAddresses     msgType = 14
+	typeIntroduce     msgType = 15
+	typePunch         msgType = 16
 )
+
+// Addresses' flags: what the client learnt of its NAT (the connection
+// check): how its public port is chosen.
+const (
+	FlagMappingUnknown byte = 0
+	// The same public port whichever relay port it sends to: punching works.
+	FlagMappingStable byte = 1
+	// Another public port per destination (a symmetric NAT): punching
+	// cannot work from both sides at once.
+	FlagMappingVaries byte = 2
+	flagMappingMask   byte = 3
+)
+
+// MaxLAN is the LAN addresses an Addresses message carries.
+const MaxLAN = 3
 
 // ErrorCode tells a client why it was refused.
 type ErrorCode byte
@@ -152,6 +185,9 @@ type datagram struct {
 	code    [CodeSize]byte
 	// ReclaimCode: the code's seconds left.
 	left uint16
+	// Addresses.
+	flags byte
+	lan   [MaxLAN]netip.AddrPort
 }
 
 func parse(b []byte) (datagram, error) {
@@ -204,6 +240,20 @@ func parse(b []byte) (datagram, error) {
 		copy(d.secret[:], body[:SecretSize])
 		copy(d.code[:], body[SecretSize:SecretSize+CodeSize])
 		d.left = binary.BigEndian.Uint16(body[SecretSize+CodeSize:])
+	case typeAddresses:
+		if len(b) != registerSize || body[1] > MaxLAN {
+			return d, errMalformed
+		}
+		d.flags = body[0]
+		for i := range int(body[1]) {
+			at := body[2+6*i:]
+			a := netip.AddrPortFrom(netip.AddrFrom4([4]byte(at[:4])), binary.BigEndian.Uint16(at[4:]))
+			// Only addresses on the client's own network: a client cannot have
+			// the other side send punches at a stranger.
+			if a.Port() != 0 && (a.Addr().IsPrivate() || a.Addr().IsLoopback()) {
+				d.lan[i] = a
+			}
+		}
 	default:
 		return d, errMalformed
 	}
@@ -287,7 +337,46 @@ func ReclaimCode(secret [SecretSize]byte, code string, left uint16) []byte {
 	return append(b, make([]byte, registerSize-len(b))...)
 }
 
+// Addresses builds a registered client's LAN addresses (IPv4, MaxLAN at
+// most) and NAT flags.
+func Addresses(flags byte, lan []netip.AddrPort) []byte {
+	b := header(typeAddresses, registerSize)
+	lan = lan[:min(len(lan), MaxLAN)]
+	b = append(b, flags, byte(len(lan)))
+	for _, a := range lan {
+		raw := a.Addr().Unmap().As4()
+		b = binary.BigEndian.AppendUint16(append(b, raw[:]...), a.Port())
+	}
+	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+// Punch builds a punch datagram (client to client).
+func Punch(nonce uint32, channel uint16, ack bool) []byte {
+	b := binary.BigEndian.AppendUint32(header(typePunch, 7), nonce)
+	b = binary.BigEndian.AppendUint16(b, channel)
+	if ack {
+		return append(b, 1)
+	}
+	return append(b, 0)
+}
+
 // The relay's answers are appended to a buffer it reuses: no allocation.
+
+// introduceSize: what one Introduce takes (two answer one Addresses).
+const introduceSize = headerSize + 2 + 4 + 1 + 6 + 6
+
+func appendIntroduce(b []byte, channel uint16, nonce uint32, flags byte, public, lan netip.AddrPort) []byte {
+	b = binary.BigEndian.AppendUint16(appendHeader(b, typeIntroduce), channel)
+	b = append(binary.BigEndian.AppendUint32(b, nonce), flags)
+	for _, a := range []netip.AddrPort{public, lan} {
+		var raw [4]byte
+		if a.Addr().Unmap().Is4() {
+			raw = a.Addr().Unmap().As4()
+		}
+		b = binary.BigEndian.AppendUint16(append(b, raw[:]...), a.Port())
+	}
+	return b
+}
 
 func appendHeader(b []byte, kind msgType) []byte {
 	return append(append(b, magic...), byte(kind))
@@ -337,6 +426,12 @@ type Reply struct {
 	HasSecret bool
 	// Redirect: where to ask instead.
 	Redirect netip.AddrPort
+	// Introduce: the other side of a direct path (Channel: the guest's).
+	Introduced bool
+	Nonce      uint32
+	PeerFlags  byte
+	Peer       netip.AddrPort
+	PeerLAN    netip.AddrPort
 }
 
 // ParseReply decodes a relay -> client datagram.
@@ -382,6 +477,17 @@ func ParseReply(b []byte) (Reply, error) {
 			return Reply{}, errMalformed
 		}
 		return Reply{Redirect: netip.AddrPortFrom(addr, binary.BigEndian.Uint16(body[len(body)-2:]))}, nil
+	case typeIntroduce:
+		if len(b) != introduceSize {
+			return Reply{}, errMalformed
+		}
+		at := func(p []byte) netip.AddrPort {
+			return netip.AddrPortFrom(netip.AddrFrom4([4]byte(p[:4])), binary.BigEndian.Uint16(p[4:]))
+		}
+		return Reply{
+			Introduced: true, Channel: binary.BigEndian.Uint16(body), Nonce: binary.BigEndian.Uint32(body[2:]),
+			PeerFlags: body[6], Peer: at(body[7:]), PeerLAN: at(body[13:]),
+		}, nil
 	}
 	return Reply{}, errMalformed
 }

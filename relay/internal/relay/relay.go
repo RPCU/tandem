@@ -54,6 +54,9 @@ type Config struct {
 	// Sources tracked at once; a new one beyond it is ignored.
 	MaxLookupSources int
 
+	// A guest's Addresses are answered (two introductions) at most this often.
+	IntroduceInterval time.Duration
+
 	// A fleet of replicas: Peers[i] is the public address of replica i (the
 	// owner of the codes shardOf maps to i), and Shard is this one. Empty:
 	// a relay on its own, owning every code.
@@ -76,6 +79,8 @@ func DefaultConfig() Config {
 		CodeLookupInterval:       6 * time.Second,
 		MaxCodeFailuresPerMinute: 120,
 		MaxLookupSources:         4096,
+
+		IntroduceInterval: 2 * time.Second,
 	}
 }
 
@@ -115,6 +120,12 @@ type client struct {
 	window      int64
 	windowPkts  int
 	windowBytes int
+
+	// Under Server.mu: what it told us for direct paths (Addresses), and
+	// when it was last introduced.
+	lan        netip.AddrPort
+	flags      byte
+	introduced time.Time
 }
 
 type session struct {
@@ -292,13 +303,18 @@ const (
 	portFront
 )
 
-// worker is one reader's scratch space: its answers are built in out.
+// worker is one reader's scratch space: its answers are built in out, and a
+// second datagram (an introduction to the other side) in extra.
 type worker struct {
-	slot int
-	out  []byte
+	slot    int
+	out     []byte
+	extra   []byte
+	extraTo netip.AddrPort
 }
 
-func newWorker(slot int) *worker { return &worker{slot: slot, out: make([]byte, 0, 64)} }
+func newWorker(slot int) *worker {
+	return &worker{slot: slot, out: make([]byte, 0, 64), extra: make([]byte, 0, 64)}
+}
 
 // process handles one datagram and answers where to send what (ok false:
 // nothing). Data is rewritten in place and sent on as b; any other answer
@@ -315,13 +331,48 @@ func (s *Server) process(w *worker, p port, from netip.AddrPort, b []byte, now t
 		return to, nil, false
 	}
 	out := w.out[:0]
-	if p == portFront {
+	w.extra, w.extraTo = w.extra[:0], netip.AddrPort{}
+	switch {
+	case p == portFront:
 		out, ok = s.front(out, from, d, now)
-	} else {
+	case d.kind == typeAddresses:
+		out, ok = s.addresses(w, out, from, d, len(b), now)
+	default:
 		out, ok = s.control(out, from, d, len(b), now)
 	}
 	w.out = out
 	return from, out, ok
+}
+
+// addresses keeps a registered client's LAN address and NAT flags; a
+// guest's also introduces it and its host to each other (two answers, 48
+// bytes for its 64, both to members of its session). Anyone else: nothing.
+func (s *Server) addresses(w *worker, out []byte, from netip.AddrPort, d datagram, size int, now time.Time) ([]byte, bool) {
+	c := s.clients.get(from)
+	if c == nil {
+		s.Metrics.dropped(dropUnknown)
+		return out, false
+	}
+	if s.overRate(c, size, s.mono(now)) {
+		return out, false
+	}
+	c.lastSeen.Store(s.mono(now))
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c.lan, c.flags = d.lan[0], d.flags&flagMappingMask
+	host := c.session.host
+	if c == host || now.Sub(c.introduced) < s.cfg.IntroduceInterval ||
+		!c.addr.Addr().Unmap().Is4() || !host.addr.Addr().Unmap().Is4() {
+		return out, false
+	}
+	c.introduced = now
+	var raw [4]byte
+	_, _ = rand.Read(raw[:])
+	nonce := binary.BigEndian.Uint32(raw[:])
+	s.Metrics.introduced()
+	w.extraTo = host.addr
+	w.extra = appendIntroduce(w.extra, c.channel, nonce, c.flags, c.addr, c.lan)
+	return appendIntroduce(out, c.channel, nonce, host.flags, host.addr, host.lan), true
 }
 
 func (s *Server) control(out []byte, from netip.AddrPort, d datagram, size int, now time.Time) ([]byte, bool) {
@@ -817,6 +868,10 @@ func (s *Server) read(ctx context.Context, conn *net.UDPConn, p port, w *worker)
 		}
 		if _, err := conn.WriteToUDPAddrPort(reply, to); err != nil {
 			s.log.Debug("write", "to", to, "err", err)
+		}
+		if w.extraTo.IsValid() {
+			_, _ = conn.WriteToUDPAddrPort(w.extra, w.extraTo)
+			w.extraTo = netip.AddrPort{}
 		}
 	}
 }
