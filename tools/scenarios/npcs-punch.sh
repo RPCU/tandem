@@ -17,5 +17,5 @@ expect_peer 'npc [0-9]+ gets effect 0x[0-9a-f]+ from player [0-9]+' 10
 cmd npc punch
 expect 'combat: instant kill on proxy [0-9]+, for the host' 10
 expect_peer 'npc [0-9]+ died' 5
-expect 'npcs: proxy [0-9]+ died, our kill' 10
+expect 'npcs: proxy [0-9]+ died by our hit' 10
 reject 'watchdog: game thread silent'

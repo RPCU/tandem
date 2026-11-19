@@ -1,7 +1,7 @@
 # As a guest of a scripted host story: the host vanishes mid-story (no goodbye): the session ends on the silence, weapons free, the guest's own story and saves back, once
 # shellcheck shell=bash disable=SC2317
-# Needs the test tandem.ini on the game machine to say quest_freeze = on.
-ensure join
+# Journal mirroring needs the freeze (off by default): turned on here.
+ensure join quest_freeze=on
 peer host --mode idle --body male --story tools/scenarios/story-host.story --vanish-at 20
 expect 'in the session as player' 30
 expect 'save: locked \(tandem\)' 20

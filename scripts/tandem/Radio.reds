@@ -85,7 +85,7 @@ public class TandemRadio {
   // ---- the driver ----
 
   private func Drive(car: wref<VehicleObject>, now: Float, riders: Int32) -> Void {
-    let none: CName;
+    let none = n"None";
     let on = car.IsRadioReceiverActive();
     let station = on ? Cast<Int32>(car.GetCurrentRadioIndex()) : -1;
     let track = on ? car.GetRadioReceiverTrackName() : none;
@@ -123,7 +123,7 @@ public class TandemRadio {
 
   private func Ride(car: wref<VehicleObject>, driver: Uint32, now: Float) -> Void {
     if car.GetEntityID() != this.m_rideCar || driver != this.m_rideDriver {
-      let none: CName;
+      let none = n"None";
       this.m_rideCar = car.GetEntityID();
       this.m_rideDriver = driver;
       this.m_applied = -1;
@@ -207,7 +207,7 @@ public class TandemRadio {
   }
 
   private func Unride() -> Void {
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     TandemNative.Log(s"radio: out of player \(this.m_rideDriver)'s car: our pocket radio back");
     this.m_rideCar = none;
     this.m_rideDriver = 0u;

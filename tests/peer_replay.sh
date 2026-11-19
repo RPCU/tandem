@@ -24,12 +24,23 @@ fail() {
   exit 1
 }
 
-# host ARGS...: a mock host in the background on the next port.
+# wait_for FILE REGEX: until the line is in the log (10 s at most): fixed
+# sleeps failed while a build loaded the machine.
+wait_for() {
+  local _
+  for _ in $(seq 1 100); do
+    grep -qE "$2" "$1" 2>/dev/null && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+# host ARGS...: a mock host in the background on the next port, once it listens.
 host() {
   port=$((port + 1))
   "$peer" host --port "$port" --mode idle "$@" >"$dir/host-$port.log" 2>&1 &
   pids+=($!)
-  sleep 0.3
+  wait_for "$dir/host-$port.log" 'hosting on UDP' || fail "the mock host did not start"
 }
 # join SECONDS ARGS...: a mock guest for that long, its log on stdout's file.
 join() {
@@ -40,7 +51,7 @@ join() {
 
 # A host with one NPC (it stands it in front of the guest once it moves).
 host --npc Character.Tester
-join 4 --mode ghost --record "$dir/good.rec"
+join 8 --mode ghost --record "$dir/good.rec"
 grep -qE 'recording saved: [0-9]+ NPC messages, [1-9][0-9]* spawns' "$dir/join-$port.log" ||
   fail "a recording next to an NPC holds no spawn"
 [ -s "$dir/good.rec" ] || fail "the recording is not there"
@@ -48,20 +59,19 @@ cp "$dir/good.rec" "$dir/good.copy"
 
 # An empty street: nothing to record, the good recording stays.
 host
-join 3 --mode ghost --record "$dir/good.rec"
+join 6 --mode ghost --record "$dir/good.rec"
 grep -q 'recording not saved: no NPC spawns' "$dir/join-$port.log" ||
   fail "an empty recording was not refused"
 cmp -s "$dir/good.rec" "$dir/good.copy" || fail "an empty recording replaced a good one"
 
 # Its replay gives a guest the NPC (recorded again on the guest's side).
 host --replay "$dir/good.rec"
-join 4 --mode ghost --record "$dir/again.rec"
+join 8 --mode ghost --record "$dir/again.rec"
 grep -qE 'recording saved: [0-9]+ NPC messages, [1-9][0-9]* spawns' "$dir/join-$port.log" ||
   fail "the replay sent the guest no NPC spawn"
 
 # A replay with no spawn says so.
 : >"$dir/empty.rec"
 host --replay "$dir/empty.rec"
-sleep 0.5
-grep -q 'replay: no NPC spawns' "$dir/host-$port.log" || fail "an empty replay was not reported"
+wait_for "$dir/host-$port.log" 'replay: no NPC spawns' || fail "an empty replay was not reported"
 echo "peer_replay: ok"

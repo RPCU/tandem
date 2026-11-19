@@ -503,7 +503,8 @@ redscript natives (UI, events)              ENet socket
       follows a moving parent), and a transform binding (`entHardTransformBinding`
       binds components inside one entity, not the player to another). It sends `Transit`
       `Along` (the carrier), so every game hides its puppet (there is no
-      seat to show it in), and sends no `Seat` (the trunk slot is no
+      seat to show it in) and puts its map marker on the car that carries
+      it (the carrier's real car on the host, its copy elsewhere), and sends no `Seat` (the trunk slot is no
       one's seat). The game lends no camera to a V without a seat:
       a vehicle's cameras and its scene camera mode belong to the seated
       V's state machine (vehicle states Passenger, Scene), and only photo
@@ -1502,9 +1503,12 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   at the recorded pace once a player joins. Record with the game as host,
   then let it join as a guest of the replay (`role = join`). Recordings
   carry the NPCs' animation states and shots too; `host --replay FILE
---anims SCRIPT` adds scripted ones (a text file: time, NPC or `*`, the
-  three states by name, optional weapon, target, shots, workspot; e.g.
-  `tools/scenarios/npcs-anims.anims`).
+--anims SCRIPT` scripts them instead (the recording's own are then left
+  out; a text file: time, NPC or `*`, the three states by name, optional
+  weapon, target, shots, workspot; e.g. `tools/scenarios/npcs-anims.anims`).
+  `tools/game.sh cmd npc seek [RANGE]` finds the nearest NPC sitting,
+  leaning or smoking (in a workspot) within RANGE m of V and moves V within
+  sharing range of it (scenario `npcs-anims-host`).
   A recording
   with no `NpcSpawn` (an empty street: rain or night) is not saved and
   the previous file stays, since its replay gives a guest no proxies at

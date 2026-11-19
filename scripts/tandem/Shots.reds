@@ -36,6 +36,7 @@ public class TandemShots {
   private let m_boostUntil: array<Float>;
   private let m_boostFactor: array<Float>;
   private let m_logged: array<CName>;
+  private let m_handed: Bool;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -199,8 +200,9 @@ public class TandemShots {
     let i = 0;
     while i < ArraySize(waiting) {
       if !this.Fire(waiting[i], now) {
-        // Its weapon is being put in the proxy's hand: half a second at most.
-        if now - since[i] < 0.5 {
+        // Its proxy is spawning (bodies take a couple of seconds) or its
+        // weapon is being put in its hand: up to 3 s.
+        if now - since[i] < 3.0 {
           ArrayPush(this.m_waiting, waiting[i]);
           ArrayPush(this.m_waitingSince, since[i]);
         } else {
@@ -236,7 +238,15 @@ public class TandemShots {
     }
     let slot = t"AttachmentSlots.WeaponRight";
     let weapon = GameInstance.GetTransactionSystem(this.m_game).GetItemInSlot(proxy, slot) as WeaponObject;
-    if TDBID.IsValid(shot.weapon) && (!IsDefined(weapon) || ItemID.GetTDBID(weapon.GetItemID()) != shot.weapon) {
+    // NPC anims (NpcAnims.reds) puts the host's weapon in the proxy's hand
+    // from the NPC's own animation state: that one is used as it is (never
+    // swapped here, the two would undo each other). Only an empty hand gets
+    // the shot's weapon.
+    if !IsDefined(weapon) && TDBID.IsValid(shot.weapon) {
+      if !this.m_handed {
+        this.m_handed = true;
+        TandemNative.Log(s"shots: npc \(shot.npc)'s proxy has nothing in its hand: given \(TDBID.ToStringDEBUG(shot.weapon))");
+      }
       TandemWeapons.Hold(proxy, slot, shot.weapon);
       return false;
     }
@@ -249,7 +259,7 @@ public class TandemShots {
     if IsDefined(agent) && IsDefined(player.GetAttitudeAgent()) && NotEquals(agent.GetAttitudeTowards(player.GetAttitudeAgent()), EAIAttitude.AIA_Hostile) {
       agent.SetAttitudeTowards(player.GetAttitudeAgent(), EAIAttitude.AIA_Hostile);
     }
-    let aim: Vector4;
+    let aim = new Vector4(0.0, 0.0, 0.0, 0.0);
     let head = IPositionProvider.CreateSlotPositionProvider(player, n"Head");
     if !IsDefined(head) || !head.CalculatePosition(aim) {
       aim = player.GetWorldPosition();
@@ -259,7 +269,7 @@ public class TandemShots {
     let stats = GameInstance.GetStatsSystem(this.m_game);
     let weaponStats = Cast<StatsObjectID>(weapon.GetEntityID());
     let maxSpread = stats.GetStatValue(weaponStats, gamedataStatType.SpreadMaxAI);
-    let offset: Vector4;
+    let offset = new Vector4(0.0, 0.0, 0.0, 0.0);
     let target = player.GetTargetShootComponent();
     if IsDefined(target) {
       offset = target.HandleBeingShot(proxy, weapon, aim, maxSpread, shot.tbh);
@@ -267,8 +277,16 @@ public class TandemShots {
     let params: gameprojectileWeaponParams;
     params.hitPlaneOffset = offset;
     params.shootingOffset = stats.GetStatValue(weaponStats, gamedataStatType.ShootingOffsetAI);
+    // Aimed at our V: the other Vs' puppets here do not catch it (on the
+    // host's game the NPC's shot at us passed them by too).
+    for other in system.PuppetPlayers() {
+      let puppet = system.PuppetOf(other);
+      if IsDefined(puppet) {
+        gameprojectileWeaponParams.AddObjectToIgnoreCollisionWith(params, puppet.GetEntityID());
+      }
+    }
     let perShot = Cast<Int32>(stats.GetStatValue(weaponStats, gamedataStatType.ProjectilesPerShot));
-    let at: WorldPosition;
+    let at: WorldPosition; // assigned on every path: filled whole by WorldPosition.SetVector4 at once
     WorldPosition.SetVector4(at, aim + offset);
     ArrayPush(this.m_firedBy, proxy.GetEntityID());
     ArrayPush(this.m_firedFactor, shot.factor);

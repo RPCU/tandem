@@ -12,8 +12,8 @@ shot loot-copy
 # V picks it up ("take all"): a claim, granted, and the player hears it.
 cmd loot take
 expect 'loot take: world item [0-9]+, true' 10
-expect 'loot: we picked up world item [0-9]+ stack 0' 5
-expect 'loot: world item [0-9]+ stack 0 \(Items.FirstAidWhiffV0 x1\) is ours' 5
+expect 'loot: we picked up world item [0-9]+ stack 0' 10
+expect 'loot: world item [0-9]+ stack 0 \(Items.FirstAidWhiffV0 x1\) is ours' 10
 expect_peer 'world item [0-9]+ stack 0 taken by player 1' 10
 # V drops one: shared, and the player takes it: gone from our bag.
 cmd loot drop Items.FirstAidWhiffV0

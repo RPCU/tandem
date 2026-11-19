@@ -684,9 +684,16 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(command, "pose hook") {
       TandemNative.PoseHook();
     } else if Equals(command, "npc count") {
-      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0)");
+      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed)");
     } else if Equals(command, "npc anims") {
       TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
+    } else if StrBeginsWith(command, "npc seek") {
+      // (test) "npc seek [RANGE]": the nearest NPC in a workspot within
+      // RANGE m (150), V moved within sharing range of it.
+      let range = StrLen(command) > 9 ? StringToFloat(StrAfterFirst(command, "seek ")) : 150.0;
+      if IsDefined(this.m_npcs) {
+        this.m_npcs.SeekWorkspot(range > 0.0 ? range : 150.0);
+      }
     } else if Equals(command, "proxy clear") {
       for test in this.m_proxyTests {
         GameInstance.GetDynamicEntitySystem().DeleteEntity(test.id);
@@ -907,7 +914,7 @@ public class TandemSystem extends ScriptableSystem {
             this.m_rideCar = puppet.car;
             this.m_rideSlot = slot;
             seated = true;
-            TandemNative.Log(s"vehicle ride: in \(NameToString(slot)) of player \(puppet.player)'s car");
+            TandemNative.Log(s"vehicle ride: in player \(puppet.player)'s car, seat \(NameToString(slot))");
           } else if IsDefined(car) {
             TandemNative.Log(s"vehicle ride: no free passenger seat in player \(puppet.player)'s car");
           }
@@ -1179,8 +1186,11 @@ public class TandemSystem extends ScriptableSystem {
     if !IsDefined(player) {
       return;
     }
-    let record: TweakDBID;
-    let slot: CName;
+    // Set explicitly: a TweakDBID local left unset is not zero in the
+    // script VM (on foot the seat went out as a perk's record, 2026-11-18,
+    // and puppets of an echoed seat sat in a phantom car, never moving).
+    let record = TDBID.None();
+    let slot = n"None";
     let owner = 0u;
     let car: wref<VehicleObject>;
     // On the NCART no seat is sent: every game rides its own train
@@ -1253,7 +1263,7 @@ public class TandemSystem extends ScriptableSystem {
   // The host NPC a proxy in our world stands for (0: none; Combat.reds).
   // The proxy of a host NPC in our world, alive or dead (Loot.reds).
   public func ProxyOfNpc(npc: Uint32) -> EntityID {
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     return IsDefined(this.m_npcs) ? this.m_npcs.ProxyEntity(npc) : none;
   }
 
@@ -1333,7 +1343,7 @@ public class TandemSystem extends ScriptableSystem {
         return puppet.car;
       }
     }
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     return none;
   }
 
@@ -1406,7 +1416,7 @@ public class TandemSystem extends ScriptableSystem {
     }
 
     let position = player.GetWorldPosition();
-    let velocity: Vector4;
+    let velocity = new Vector4(0.0, 0.0, 0.0, 0.0);
     if this.m_haveLast && now > this.m_lastSampleTime {
       let dt = now - this.m_lastSampleTime;
       velocity.X = (position.X - this.m_lastPosition.X) / dt;
@@ -1944,7 +1954,7 @@ public class TandemSystem extends ScriptableSystem {
     let record = TandemNative.RemoteSeatVehicle(puppet.player);
     let owner = TandemNative.RemoteSeatOwner(puppet.player);
     let body = entities.GetEntity(puppet.id) as GameObject;
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     if EntityID.IsDefined(puppet.seatedIn) && IsDefined(body) {
       TandemVehicles.Unseat(game, body, puppet.seatedIn, puppet.seatedSlot);
       // Mounting detached its movement controller: put ours back once the
@@ -2163,7 +2173,7 @@ public class TandemSystem extends ScriptableSystem {
   // The remote player's stance on the NPC body, through the NPC state machine
   // (NPCPuppet.ChangeStanceState: the stance anim feature + puppet blackboard).
   private func Pose(puppet: ref<TandemPuppet>) -> Void {
-    let stance: gamedataNPCStanceState;
+    let stance = gamedataNPCStanceState.Stand;
     switch TandemNative.RemoteStance(puppet.player) {
       case 1:  // Crouch
       case 11: // CrouchSprint
@@ -2292,7 +2302,7 @@ public class TandemSystem extends ScriptableSystem {
   // Takes every puppet out of a car that is about to go.
   private func EmptyCar(car: EntityID) -> Void {
     let game = this.GetGameInstance();
-    let none: EntityID;
+    let none = EntityID.FromHash(0ul);
     for puppet in this.m_puppets {
       if EntityID.IsDefined(puppet.seatedIn) && puppet.seatedIn == car {
         let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
@@ -2320,7 +2330,9 @@ public class TandemSystem extends ScriptableSystem {
 // whose script definition redscript does not trust: constructing it with
 // arguments may be undefined behaviour (its warning), so set the field.
 public func TandemYawAngles(yaw: Float) -> EulerAngles {
-  let angles: EulerAngles;
+  let angles: EulerAngles; // assigned on every path: each field below
+  angles.Pitch = 0.0;
+  angles.Roll = 0.0;
   angles.Yaw = yaw;
   return angles;
 }

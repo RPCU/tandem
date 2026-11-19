@@ -8,7 +8,7 @@ expect 'player [0-9]+: ride 2 ' 10
 shot ride
 # Our V gets in too: a free seat of the copy, never the puppet's.
 cmd vehicle ride
-expect 'vehicle ride: in seat_back_(left|right) of player [0-9]+' 10
+expect "vehicle ride: in player [0-9]+'s car, seat seat_back_(left|right)" 10
 cmd ride
 expect 'ride: its seats:.*seat_front_right\(taken\)' 5
 pause 3

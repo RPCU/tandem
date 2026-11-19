@@ -26,7 +26,7 @@ expect 'time: our V back to its own speed' 5
 cmd time test 0.25 4
 expect 'time: our abilities 1 \(world speed 0.25' 5
 expect 'time: world speed 0\.2[0-9]* over the test' 5
-expect 'time: npc [0-9]+ at 0.25 .*ignoring our global factor true' 5
+expect 'time: npc [0-9]+ at 0\.25[0-9]* .*ignoring our global factor true' 5
 cmd time report
 expect 'time: what the game.s fire-rate formula reads .*sandevistan active true, factor 0\.2' 5
 expect 'time: bubble of player 1: [1-9][0-9]* NPC' 5
@@ -39,7 +39,7 @@ expect_peer 'player 1: time abilities 0x0' 5
 # own, stronger one (0.25) starts: then it stands in the bubble unslowed.
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --sandevistan-at 8 --sandevistan-for 12 --sandevistan-scale 0.5
 expect_peer 'sandevistan on' 40
-expect 'time: bubble of player [2-9]: [1-9][0-9]* NPC' 5
+expect 'time: bubble of player ([2-9]|[1-9][0-9]+): [1-9][0-9]* NPC' 5
 expect 'time: npc [0-9]+ at 0.5' 5
 expect 'time: our V slowed to 0.5' 5
 mark
