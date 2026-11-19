@@ -91,6 +91,12 @@ struct Config {
   progress::LeaveMode leave{progress::LeaveMode::Stay};
   // Trade between players (Trade.reds): off until checked in game.
   bool trade{false};
+  // A vehicle a host's quest gave while we took part (Garage.reds): credited
+  // in our ledger (false), or unlocked in our own garage too (true).
+  bool vehicleRewardsKept{false};
+  // Who may drive our cars (Vehicles.reds, garage.md): any partner (crew),
+  // only with us aboard, or nobody.
+  proto::Lend lend{proto::Lend::Crew};
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;

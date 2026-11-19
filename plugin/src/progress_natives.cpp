@@ -12,6 +12,7 @@
 #include "runtime.hpp"
 
 #include "tandem/progress.hpp"
+#include "tandem/vehicle.hpp"
 
 #include <RedLib.hpp>
 
@@ -61,6 +62,28 @@ struct TandemProgress : Red::IScriptable {
     return progress::ProxyShift(level, applied, hostNpcLevel);
   }
 
+  // ---- cars (docs/architecture/garage.md) ----
+
+  // tandem.ini `lend`: 0 crew, 1 only with us aboard, 2 never (proto::Lend).
+  static std::int32_t OwnLend() { return static_cast<std::int32_t>(Runtime::Get().config.lend); }
+  // Our word on our cars, to everyone (the endpoint keeps it).
+  static void SendCarLend(std::int32_t lend) {
+    if (lend >= 0 && lend <= static_cast<std::int32_t>(proto::Lend::Never))
+      Combat::Get().Send(proto::CarLend{.lend = static_cast<proto::Lend>(lend)});
+  }
+  // A partner's word on its cars (0 crew when it said none).
+  static std::int32_t CarLendOf(std::uint32_t player) {
+    return static_cast<std::int32_t>(Combat::Get().LendOf(player));
+  }
+  // May a partner take the wheel of a car under that word (tandem/vehicle.hpp)?
+  static bool MayDrive(std::int32_t lend, bool ownerAboard, bool ownerInSession) {
+    const auto word = lend >= 0 && lend <= static_cast<std::int32_t>(proto::Lend::Never)
+                          ? static_cast<proto::Lend>(lend)
+                          : proto::Lend::Never;
+    return sync::MayDrive(
+        {.lend = word, .ownerAboard = ownerAboard, .ownerInSession = ownerInSession});
+  }
+
   // ---- saves ----
 
   // tandem.ini `leave`: 0 stay, 1 save, 2 reload.
@@ -106,6 +129,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemProgress, "TandemProgress", {
   RTTI_METHOD(SendNpcLevel);
   RTTI_METHOD(NpcLevelShift);
   RTTI_METHOD(ProxyLevelShift);
+  RTTI_METHOD(OwnLend);
+  RTTI_METHOD(SendCarLend);
+  RTTI_METHOD(CarLendOf);
+  RTTI_METHOD(MayDrive);
   RTTI_METHOD(LeaveMode);
   RTTI_METHOD(LeaveTick);
   RTTI_METHOD(LeaveLocked);

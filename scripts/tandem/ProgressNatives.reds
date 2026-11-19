@@ -12,6 +12,13 @@ public native class TandemProgress extends IScriptable {
   public static native func NpcLevelShift(level: Float, applied: Float, hostLevel: Float, sessionLevel: Float, curveAtHost: Float, curveAtSession: Float, fixed: Bool, maxLevel: Float) -> Float
   // Guest: the modifier a proxy should carry to be at the host's NPC's level.
   public static native func ProxyLevelShift(level: Float, applied: Float, hostNpcLevel: Float) -> Float
+  // Cars (docs/architecture/garage.md). tandem.ini `lend` (0 crew, 1 only
+  // with us aboard, 2 never), said to everyone; a partner's word (0 when it
+  // said none); whether a partner may take the wheel under a word.
+  public static native func OwnLend() -> Int32
+  public static native func SendCarLend(lend: Int32)
+  public static native func CarLendOf(player: Uint32) -> Int32
+  public static native func MayDrive(lend: Int32, ownerAboard: Bool, ownerInSession: Bool) -> Bool
   // tandem.ini `leave`: 0 stay, 1 save, 2 reload.
   public static native func LeaveMode() -> Int32
   // One step of our way out of a session (core/progress.hpp). left: what

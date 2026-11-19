@@ -148,6 +148,22 @@ Config LoadConfig(const std::filesystem::path &path) {
         config.timeHostFull = true;
       else
         log::Warn("tandem.ini:{}: time_host is bubble or full", number);
+    } else if (key == "lend") {
+      if (value == "crew")
+        config.lend = proto::Lend::Crew;
+      else if (value == "owner")
+        config.lend = proto::Lend::WithOwner;
+      else if (value == "never")
+        config.lend = proto::Lend::Never;
+      else
+        log::Warn("tandem.ini:{}: lend is crew, owner or never", number);
+    } else if (key == "vehicle_rewards") {
+      if (value == "keep")
+        config.vehicleRewardsKept = true;
+      else if (value == "credit")
+        config.vehicleRewardsKept = false;
+      else
+        log::Warn("tandem.ini:{}: vehicle_rewards is credit or keep", number);
     } else if (key == "leave") {
       if (value == "stay")
         config.leave = progress::LeaveMode::Stay;

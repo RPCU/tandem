@@ -160,9 +160,15 @@ struct TandemFight : Red::IScriptable {
   // What the session said about hits since the last call.
   static Red::DynArray<TandemFightEvent> TakeEvents() {
     Red::DynArray<TandemFightEvent> out;
-    for (const auto &message : Combat::Get().TakeInbound())
+    for (const auto &message : Combat::Get().TakeInbound()) {
+      // Who may drive whose cars: kept here for the vehicle scripts.
+      if (const auto *lend = std::get_if<proto::CarLend>(&message)) {
+        Combat::Get().NoteLend(*lend);
+        continue;
+      }
       if (auto event = EventOf(message); event.kind != 0)
         out.EmplaceBack(event);
+    }
     return out;
   }
   // Host: the health points a guest's strike takes (core/combat.hpp).

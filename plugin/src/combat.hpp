@@ -6,6 +6,7 @@
 
 #include "tandem/protocol.hpp"
 
+#include <map>
 #include <mutex>
 #include <vector>
 
@@ -23,8 +24,14 @@ public:
   // Game thread.
   std::vector<proto::Message> TakeInbound();
   void Send(proto::Message message);
+  // Who may drive each player's cars (proto::CarLend, as the session said
+  // it; Crew for a player that said nothing). Game thread: noted as the
+  // scripts take the session's word.
+  void NoteLend(const proto::CarLend &lend);
+  proto::Lend LendOf(proto::PlayerId player);
 
 private:
+  std::map<proto::PlayerId, proto::Lend> m_lends;
   std::mutex m_lock;
   std::vector<proto::Message> m_inbound, m_outbound;
 };

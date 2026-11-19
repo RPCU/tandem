@@ -21,6 +21,8 @@ public native struct TandemStoryEvent {
   // 40 a player's story state (player, state: tier, flags: 1 braindance
   // 2 replacer 4 in a call);
   // 41 a quest reward for our V (reward, hash: its quest);
+  // 43 a vehicle the host's quest gave while we took part (reward: the
+  // vehicle record, hash: its quest);
   // 42 a story effect on the host's V (reward: the status effect, flags 1:
   // on, 0: gone)
   native let kind: Int32;
@@ -37,6 +39,12 @@ public native struct TandemStoryEvent {
   native let reward: TweakDBID;
   native let name: String;
   native let text: String;
+}
+
+// A quest's prop co-op lent our V (tag Quest, a keycard): taken back on leave.
+public native struct TandemCarryItem {
+  native let record: TweakDBID;
+  native let quantity: Int32;
 }
 
 public native class TandemStory extends IScriptable {
@@ -61,6 +69,31 @@ public native class TandemStory extends IScriptable {
   public static native func SendState(tier: Int32, flags: Int32) -> Void;
   public static native func QuestMoved(questHash: Uint32, x: Float, y: Float, z: Float) -> Void;
   public static native func Reward(reward: TweakDBID, x: Float, y: Float, z: Float) -> Int32;
+  // Host: a vehicle came into our garage: the guests that took part are told
+  // (event 43 there: reward: the vehicle record, hash: its quest).
+  public static native func VehicleUnlocked(vehicle: TweakDBID, x: Float, y: Float, z: Float) -> Int32;
+  // tandem.ini vehicle_rewards = keep.
+  public static native func VehicleRewardsKept() -> Bool;
+  // The ledger of what our V earned in co-op: the save's words in, the
+  // words to save out; a vehicle earned (true the first time), kept.
+  public static native func CarryLoad(words: array<Uint64>);
+  public static native func CarryWords() -> array<Uint64>;
+  public static native func CarryVehicle(vehicle: TweakDBID, questHash: Uint32, owned: Bool) -> Bool;
+  public static native func CarryVehicleKept(vehicle: TweakDBID);
+  public static native func CarryVehicles() -> array<TweakDBID>;
+  public static native func CarryVehicleIsKept(vehicle: TweakDBID) -> Bool;
+  // Guest: a step of the host's quest with us (kind: gameJournalQuestType;
+  // own: our own state of it, gameJournalEntryState), its end, a reward (0
+  // pay, 1 paid already, 2 we did that quest alone), our own story's reward
+  // (false: co-op paid it), the props lent to us, taken back on leave.
+  public static native func CarryQuest(questHash: Uint32, kind: Int32, own: Int32, host: String);
+  public static native func CarryCompleted(questHash: Uint32);
+  public static native func CarryPay(questHash: Uint32, reward: TweakDBID) -> Int32;
+  public static native func CarryOwnPays(questHash: Uint32, reward: TweakDBID) -> Bool;
+  public static native func CarrySessionItem(record: TweakDBID, quantity: Int32);
+  public static native func CarrySessionItems() -> array<TandemCarryItem>;
+  public static native func CarryWith(questHash: Uint32, host: String) -> Bool;
+  public static native func CarryReport() -> String;
   public static native func SendEffect(effect: TweakDBID, applied: Bool) -> Void;
   public static native func SceneClass() -> Int32;
   public static native func SetPrivate(on: Bool) -> Void;
