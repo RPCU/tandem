@@ -35,7 +35,10 @@ between a session's host and guests; it never parses game traffic.
   padded to 64 bytes, are answered from an unregistered address, and every
   answer is smaller than its request (at most 21 bytes: no amplification);
   per-client packet and byte rate limits; at most `max-sessions`; idle
-  clients forgotten after two minutes.
+  clients forgotten after two minutes. A session takes 5 guests at once
+  (`MaxGuests`): the host's 3 players and its 2 spare connections (a player
+  coming back while its old channel idles out, one to tell the session is
+  full); the host enforces the 4 players.
 
 Wire format (`relay/internal/relay/wire.go`, big-endian, `TNR1` + type):
 
