@@ -4,8 +4,8 @@ ensure join
 peer host --mode idle --body male --replay recordings/npcs.rec --remove-corpses 15
 expect 'puppet 6[0-9]{4}: clips walk' 60
 cmd npc punch
-expect 'combat: instant kill on proxy [0-9]+ sent to the host' 10
-expect 'npcs: proxy [0-9]+ died, our kill' 10
+expect 'combat: instant kill on proxy [0-9]+, for the host' 10
+expect 'npcs: proxy [0-9]+ died by our hit' 10
 # Its death rolled its loot in our game, from its own record.
 expect 'loot: proxy corpse [A-Za-z_.0-9]+: [0-9]+ item\(s\), [0-9]+ important' 5
 reject 'loot: proxy corpse .*rolled here'
