@@ -2,6 +2,7 @@
 // mapping, and a recording made through one session replayed through another.
 
 #include "ports.hpp"
+#include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/play.hpp"
 
@@ -26,7 +27,7 @@ constexpr std::uint64_t kStart = 1'800'000'000'000'000;
 bool PumpUntil(std::vector<Endpoint *> endpoints,
                const std::function<void(std::size_t, const SessionEvent &)> &seen,
                const std::function<bool()> &done, std::chrono::milliseconds limit = 3s) {
-  const auto deadline = std::chrono::steady_clock::now() + limit;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(limit);
   while (std::chrono::steady_clock::now() < deadline) {
     for (std::size_t i = 0; i < endpoints.size(); ++i)
       for (const auto &event : endpoints[i]->Update(1ms))

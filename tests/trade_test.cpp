@@ -6,6 +6,7 @@
 // view.
 
 #include "ports.hpp"
+#include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/trade.hpp"
 
@@ -713,7 +714,7 @@ struct Game {
 
 bool Until(std::vector<Game *> games, const std::function<bool()> &done,
            std::chrono::milliseconds limit = 4s) {
-  const auto deadline = std::chrono::steady_clock::now() + limit;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(limit);
   while (std::chrono::steady_clock::now() < deadline) {
     for (auto *game : games)
       if (game->endpoint)
@@ -845,7 +846,7 @@ TEST_CASE("a party that vanishes: closed for the other before the commit, applie
     s.a.Send(s.a.seat.Offer({Item(0xA)}, 0, 0));
     s.host.endpoint.reset();
     bool ended = false;
-    const auto deadline = std::chrono::steady_clock::now() + 4s;
+    const auto deadline = std::chrono::steady_clock::now() + test::Patience(4s);
     while (!ended && std::chrono::steady_clock::now() < deadline)
       for (const auto &event : s.a.endpoint->Update(1ms))
         ended = ended || std::holds_alternative<events::Ended>(event);

@@ -2,6 +2,7 @@
 // read when their versions do not match.
 
 #include "ports.hpp"
+#include "slowdown.hpp"
 #include "tandem/compat.hpp"
 #include "tandem/endpoint.hpp"
 
@@ -210,7 +211,7 @@ TEST_CASE("a game with another protocol is refused in words, and the host is tol
 
   std::optional<std::string> refusal, notice;
   bool welcomed = false;
-  const auto deadline = std::chrono::steady_clock::now() + 3s;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(3s);
   while (!(refusal && notice) && std::chrono::steady_clock::now() < deadline) {
     for (const auto &event : raw->Poll(1ms)) {
       if (event.kind == net::Event::Kind::Connected)
@@ -247,7 +248,7 @@ TEST_CASE("each side learns what the other has installed and what differs") {
   REQUIRE_MESSAGE(guest, error);
 
   std::optional<events::RemoteInstall> atHost, atGuest;
-  const auto deadline = std::chrono::steady_clock::now() + 3s;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(3s);
   while (!(atHost && atGuest) && std::chrono::steady_clock::now() < deadline) {
     for (const auto &event : host->Update(1ms))
       if (const auto *install = std::get_if<events::RemoteInstall>(&event))
@@ -278,7 +279,7 @@ TEST_CASE("games that say nothing but their build have nothing to differ in") {
   auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
   REQUIRE((host && guest));
   std::optional<events::RemoteInstall> atHost;
-  const auto deadline = std::chrono::steady_clock::now() + 3s;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(3s);
   while (!atHost && std::chrono::steady_clock::now() < deadline) {
     for (const auto &event : host->Update(1ms))
       if (const auto *install = std::get_if<events::RemoteInstall>(&event))
@@ -311,7 +312,7 @@ struct Refusal {
 };
 Refusal JoinRefusal(Endpoint &host, Endpoint &guest) {
   Refusal out;
-  const auto deadline = std::chrono::steady_clock::now() + 3s;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(3s);
   while (!(out.guest && out.host) && std::chrono::steady_clock::now() < deadline) {
     for (const auto &event : host.Update(1ms))
       if (const auto *refused = std::get_if<events::JoinRefused>(&event))
@@ -375,7 +376,7 @@ TEST_CASE("a Hello of another version is recognised even when its layout is not 
   auto raw = net::Session::Connect("127.0.0.1", port, error);
   REQUIRE_MESSAGE(raw, error);
   std::optional<std::string> refusal, notice;
-  const auto deadline = std::chrono::steady_clock::now() + 3s;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(3s);
   while (!(refusal && notice) && std::chrono::steady_clock::now() < deadline) {
     for (const auto &event : raw->Poll(1ms)) {
       if (event.kind == net::Event::Kind::Connected)

@@ -6,6 +6,7 @@
 // wire (Endpoint::SetCompact(false)) is measured alongside for the record.
 
 #include "motion.hpp"
+#include "slowdown.hpp"
 
 #include "tandem/endpoint.hpp"
 #include "tandem/net_traffic.hpp"
@@ -74,7 +75,7 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
         endpoint->Update(0ms);
     return done();
   };
-  REQUIRE(pump(5s, [&] {
+  REQUIRE(pump(test::Patience(5s), [&] {
     for (auto &guest : joined)
       if (!guest->IsJoined())
         return false;

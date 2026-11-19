@@ -310,6 +310,29 @@ NAME:TYPE[:SEATS]` (driven, as `--vehicle`), `--look-piece NAME:TYPE`
   `tandem-peer mods PATH` prints what tandem makes of a game folder's mods
   (names and contents) or of a list of file names (`tests/data/mods-sample.tsv`).
 
+## Busy machines
+
+The loopback and session tests run real endpoints against the wall clock,
+and they used to fail now and then on a loaded machine (a build beside
+them, three test runs at once, anya at load ~24: a join that took longer
+than the test's 5 s, `budget_test`; `peer-regions` and loopback cases the
+same), then pass on a rerun. Since 2026-11-19:
+
+- **Waits for a state stretch** (`tests/slowdown.hpp`): `test::Patience
+(limit)` is the limit times `test::Slowdown()`, the machine's load per
+  core when the tests start (`/proc/loadavg`, at least 1) or
+  `TANDEM_TEST_SLOWDOWN=F` (1 to 20), whichever is larger. Every test's
+  pump helper ("until the guest is joined, at most 3 s") goes through it,
+  and the waits of the pumps that also pace frames. A wait ends as soon as
+  its state is reached, so the longer bound costs nothing when the test
+  passes; what it checks is unchanged.
+- **Fixed windows do not**: a window that checks something does _not_
+  happen, or paces frames, keeps its length when it calls a pump that does
+  not stretch (`relay_test.cpp`'s `Pump(…, false)`), or stretches only
+  where a longer window checks the same thing (a helper's "nothing more
+  arrived in 200 ms").
+- `tests/relay_loopback.sh` waits up to 15 s for each line it expects.
+
 ## Driving the game and the builds
 
 - `tools/scenario.sh` deploys first. Scripts alone would be hot-reloaded
