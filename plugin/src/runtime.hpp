@@ -152,6 +152,9 @@ struct ScriptEvent {
     // Something serious to tell the player (name: the text), at most once
     // in a while (net_thread.cpp): a resync, a lost host, a reconnection.
     Notice = 5,
+    // The session shows us under another name (name: it), another player
+    // having ours.
+    Renamed = 6,
   };
   Kind kind{};
   proto::PlayerId player{};
@@ -267,6 +270,11 @@ public:
   bool ChangeSetting(const std::string &key, const std::string &value);
   // Its value as saved (a change waiting for the session's end included).
   std::string SavedSetting(std::string_view key) const;
+  // Game thread (the co-op menu): the name is still the default (V) and the
+  // menu has not asked for one since the game started (names.hpp).
+  bool NameToAsk() const;
+  // The menu asked (whatever the answer); false asks again (tests).
+  void NameAsked(bool asked) { m_nameAsked = asked; }
 
   // Game thread: be the guest of the session `code` names, through
   // tandem.ini's relay. A running session is left for it at once; else it
@@ -663,6 +671,7 @@ private:
   mutable std::mutex m_lock; // session lifecycle, local outbox, events
   // Game thread: settings saved during a session, applied as it stops.
   std::vector<std::pair<std::string, std::string>> m_pendingSettings;
+  bool m_nameAsked{false};
   std::unique_ptr<NetThread> m_net;
   SessionChoice m_choice; // m_lock
   SessionStatus m_status; // m_lock

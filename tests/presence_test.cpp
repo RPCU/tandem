@@ -357,6 +357,30 @@ TEST_SUITE("presence") {
     CHECK(presence::NameplateOpacity(25.f) == 0.f);
   }
 
+  TEST_CASE("nameplates near, always or off") {
+    using presence::Nameplates;
+    const auto near = [](float d) { return presence::NameplateLookOf(d, Nameplates::Near); };
+    const auto always = [](float d) { return presence::NameplateLookOf(d, Nameplates::Always); };
+    // near: today's, full size while shown.
+    CHECK(near(3.f) == presence::PlateLook{1.f, 1.f});
+    CHECK(near(16.f).opacity == doctest::Approx(0.5f));
+    CHECK(near(16.f).scale == 1.f);
+    CHECK(near(25.f).opacity == 0.f);
+    // always: the same up close, then smaller and fainter, never gone.
+    CHECK(always(3.f) == presence::PlateLook{1.f, 1.f});
+    CHECK(always(presence::kNameplateFull) == presence::PlateLook{1.f, 1.f});
+    const auto mid = always(81.f);
+    CHECK(mid.opacity == doctest::Approx((1.f + presence::kNameplateFarOpacity) / 2.f));
+    CHECK(mid.scale == doctest::Approx((1.f + presence::kNameplateFarScale) / 2.f));
+    CHECK(always(40.f).scale > always(100.f).scale);
+    CHECK(always(40.f).opacity > always(100.f).opacity);
+    CHECK(always(presence::kNameplateFar).scale == doctest::Approx(presence::kNameplateFarScale));
+    CHECK(always(2000.f) == always(presence::kNameplateFar)); // a floor, never gone
+    CHECK(always(2000.f).opacity > 0.f);
+    // off: never.
+    CHECK(presence::NameplateLookOf(3.f, Nameplates::Off).opacity == 0.f);
+  }
+
   TEST_CASE("a hit puppet flinches the way the hit went and comes back to rest") {
     const proto::Vec3 north{0.f, 1.f, 0.f};
     presence::Flinch flinch;

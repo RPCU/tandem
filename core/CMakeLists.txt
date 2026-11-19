@@ -35,7 +35,8 @@ add_library(tandem_core STATIC
   src/activity.cpp
   src/progress.cpp
   src/trade.cpp
-  src/comms.cpp)
+  src/comms.cpp
+  src/names.cpp)
 target_include_directories(tandem_core PUBLIC include)
 target_link_libraries(tandem_core PUBLIC enet zpp_bits)
 target_compile_features(tandem_core PUBLIC cxx_std_23)

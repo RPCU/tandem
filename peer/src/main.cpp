@@ -264,6 +264,7 @@ struct Options {
   // never), our scan tag or reveal of shared NPCs every N s, our waypoint.
   enum class LinkAnswer { Auto, Ask, Off } linkConsent{LinkAnswer::Auto};
   int linkAtSeconds{-1};
+  int unlinkAtSeconds{-1};
   int pingSeconds{0};
   int tagSeconds{0};
   int revealSeconds{0};
@@ -569,6 +570,7 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     the default; ask: nobody until asked, every request\n"
          "                     accepted; off: nobody, requests ignored)\n"
          "  --link-at N        N seconds after another player is in, ask everyone to link\n"
+         "  --unlink-at N      N seconds after another player is in, break every link\n"
          "  --ping N           every N seconds a ping: in front of the other V, then the\n"
          "                     nearest shared NPC (enemy), the same again (danger), a\n"
          "                     withdrawal, round again\n"
@@ -1166,6 +1168,8 @@ Options Parse(int argc, char **argv) {
         Usage(std::format("--link: auto, ask or off, not {}", value));
     } else if (flag == "--link-at")
       options.linkAtSeconds = Number<int>(value);
+    else if (flag == "--unlink-at")
+      options.unlinkAtSeconds = Number<int>(value);
     else if (flag == "--ping")
       options.pingSeconds = Number<int>(value);
     else if (flag == "--tag")
@@ -3436,8 +3440,8 @@ int main(int argc, char **argv) {
   int pingStep = 0;
   tandem::proto::TargetRef lastPing;
   Vec3 lastPingAt{};
-  bool tagOn = false, linkAsked = false, waypointSet = false, waypointCleared = false,
-       targetMarked = false;
+  bool tagOn = false, linkAsked = false, unlinked = false, waypointSet = false,
+       waypointCleared = false, targetMarked = false;
   int hackStep = 0;
   tandem::proto::NpcId hackedNpc = 0;
   auto nextHackNpc = std::chrono::steady_clock::now();
@@ -3582,6 +3586,8 @@ int main(int argc, char **argv) {
               Log("- player {}", e.player);
             else if constexpr (std::is_same_v<E, tandem::events::PlayerReturned>)
               Log("= player {} ({}) is back", e.player.id, e.player.name);
+            else if constexpr (std::is_same_v<E, tandem::events::NamedAs>)
+              Log("the session shows us as {} ({} is taken)", e.shown, e.asked);
             else if constexpr (std::is_same_v<E, tandem::events::RemoteState>) {
               ++heard;
               if (e.state.player == followed()) {
@@ -4839,6 +4845,15 @@ int main(int argc, char **argv) {
           ownLink = tandem::comms::WithConsent(ownLink, id, true);
       endpoint->SetLocalLink(ownLink);
       Log("asked everyone to link ({} listed)", ownLink.players.size());
+    }
+    if (!unlinked && together(options.unlinkAtSeconds)) {
+      unlinked = true;
+      for (const auto &[id, info] : endpoint->Players())
+        if (id != endpoint->You())
+          ownLink = tandem::comms::WithConsent(ownLink, id, false);
+      endpoint->SetLocalLink(ownLink);
+      Log("broke every link (mode {}, {} listed)", static_cast<int>(ownLink.mode),
+          ownLink.players.size());
     }
     const auto nearestNpc = [&]() -> std::optional<tandem::proto::NpcSpawn> {
       std::optional<tandem::proto::NpcSpawn> best;

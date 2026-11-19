@@ -183,6 +183,22 @@ std::uint32_t RoundedMetres(float distance);
 inline constexpr float kNameplateFull = 12.f, kNameplateGone = 20.f;
 float NameplateOpacity(float distance);
 
+// tandem.ini `nameplates`: near (the above), always (at any distance in
+// view, smaller and fainter the farther), off.
+enum class Nameplates : std::uint8_t { Near = 0, Always = 1, Off = 2 };
+
+// `always`: full size and strength to kNameplateFull, then down to the
+// floor at kNameplateFar and beyond, never gone: a far plate stays a small,
+// faint label, so a crowded street is not covered in names.
+inline constexpr float kNameplateFar = 150.f, kNameplateFarScale = 0.55f,
+                       kNameplateFarOpacity = 0.5f;
+struct PlateLook {
+  float opacity{}; // 0: not shown
+  float scale{};   // of the plate's size up close
+  friend bool operator==(const PlateLook &, const PlateLook &) = default;
+};
+PlateLook NameplateLookOf(float distance, Nameplates mode);
+
 // ---- a puppet that is hit ----
 
 // A flinch laid over the puppet's pose: the upper body is knocked the way

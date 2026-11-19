@@ -18,6 +18,7 @@
 #include "runtime.hpp"
 
 #include "tandem/movement.hpp"
+#include "tandem/names.hpp"
 
 #include <RedLib.hpp>
 
@@ -463,6 +464,13 @@ struct TandemNative : Red::IScriptable {
   }
   static bool SetSetting(Red::CString key, Red::CString value) {
     return Runtime::Get().ChangeSetting(key.c_str(), value.c_str());
+  }
+  // The co-op menu asks for a name once a game run while it is the default.
+  static bool NameToAsk() { return Runtime::Get().NameToAsk(); }
+  static void NameAsked(bool asked) { Runtime::Get().NameAsked(asked); }
+  // Why a typed name would be refused ("": it would not).
+  static Red::CString NameProblem(Red::CString typed) {
+    return Red::CString(std::string(names::Problem(typed.c_str())).c_str());
   }
   static Red::CString RecorderStatus() {
     return Red::CString(plugin::Recording::Get().Status().c_str());
@@ -1939,6 +1947,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RecorderSet);
   RTTI_METHOD(Setting);
   RTTI_METHOD(SetSetting);
+  RTTI_METHOD(NameToAsk);
+  RTTI_METHOD(NameAsked);
+  RTTI_METHOD(NameProblem);
   RTTI_METHOD(RecorderStatus);
   RTTI_METHOD(SendLocalState);
   RTTI_METHOD(TakeEvents);

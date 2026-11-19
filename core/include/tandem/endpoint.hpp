@@ -479,6 +479,12 @@ struct NpcRamBy {
 struct ChaseChanged {
   proto::Chase chase;
 };
+// Guest: the session shows us under another name than ours (another
+// player has it: "V (2)"), from the roster, once and again if it changes.
+struct NamedAs {
+  std::string asked;
+  std::string shown;
+};
 } // namespace events
 
 // Who this game is in the session, and what it has installed (the mock
@@ -526,10 +532,10 @@ using SessionEvent = std::variant<
     events::CrimeReported, events::RemotePresence, events::RemoteCue, events::HostNpcReaction,
     events::RemoteInstall, events::JoinRefused, events::RemoteActivity, events::TimeSkipAsked,
     events::TimeSkipVoted, events::TimeSkipEnded, events::Trade, events::MarkFrom, events::TagFrom,
-    events::RemoteLink, events::RemoteWaypoint, events::CrimeReported, events::RemoteVehicleDamage,
-    events::VehicleHitBy, events::RemoteVehicleExit, events::RemoteVehicleCombat,
-    events::RemoteMountedFire, events::GunnerChanged, events::RemoteGunnerAim,
-    events::VehicleBumpBy, events::NpcRamBy, events::ChaseChanged>;
+    events::RemoteLink, events::RemoteWaypoint, events::RemoteVehicleDamage, events::VehicleHitBy,
+    events::RemoteVehicleExit, events::RemoteVehicleCombat, events::RemoteMountedFire,
+    events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
+    events::ChaseChanged, events::NamedAs>;
 
 class Endpoint {
 public:
@@ -1080,7 +1086,13 @@ private:
 
   proto::PlayerId m_you{proto::kNoPlayer};
   proto::PlayerId m_host{proto::kNoPlayer};
+  // The roster: each player under the name the session shows (the host
+  // makes names unique at join: names::Unique).
   std::map<proto::PlayerId, proto::PlayerInfo> m_players;
+  // Host: the name each guest asked for (sanitized), which a returning
+  // player is matched by; guest: our own as the roster last showed it.
+  std::map<proto::PlayerId, std::string> m_askedNames;
+  std::string m_shownName;
 
   // Host: which connection is which player (only after a valid Hello).
   std::map<net::PeerId, proto::PlayerId> m_playerOfPeer;

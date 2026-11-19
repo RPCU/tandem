@@ -304,6 +304,24 @@ float NameplateOpacity(float distance) {
   return (kNameplateGone - distance) / (kNameplateGone - kNameplateFull);
 }
 
+PlateLook NameplateLookOf(float distance, Nameplates mode) {
+  switch (mode) {
+  case Nameplates::Off:
+    return {};
+  case Nameplates::Near: {
+    const auto opacity = NameplateOpacity(distance);
+    return {opacity, opacity > 0.f ? 1.f : 0.f};
+  }
+  case Nameplates::Always:
+    break;
+  }
+  if (!(distance > kNameplateFull)) // NaN too: up close
+    return {1.f, 1.f};
+  const auto far =
+      std::clamp((distance - kNameplateFull) / (kNameplateFar - kNameplateFull), 0.f, 1.f);
+  return {1.f + (kNameplateFarOpacity - 1.f) * far, 1.f + (kNameplateFarScale - 1.f) * far};
+}
+
 void Flinch::Hit(float strength, const proto::Vec3 &direction, const proto::Vec3 &forward,
                  std::uint64_t nowUs) {
   strength = std::clamp(strength, 0.f, 1.f);
