@@ -1081,6 +1081,7 @@ revive down|hold|fresh|report` (`fresh` forgets the 5-minute cooldown of
     `story::Participation`); each guest gives its own V the reward
     (`RPGManager.GiveReward`) once, and keeps it in a persistent ledger so
     its own story pays nothing again for it.
+  - _Scene replay_ (the scene's actors, voices and Johnny for a guest; `scene_replay = on`): [`architecture/scene-replay.md`](architecture/scene-replay.md).
   - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`,
     `story-private`, `story-private-host`.
 - **Other worlds** (`scripts/tandem/Elsewhere.reds`, `core/src/elsewhere.cpp`,
