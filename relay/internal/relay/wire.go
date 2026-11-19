@@ -20,6 +20,9 @@
 //	Code          (8)  code (6) | seconds left (2)  relay -> host
 //	ResolveCode   (9)  code (6) | zero padding to 64 bytes
 //	Secret        (10) secret (16)                 relay -> guest
+//	Redirect      (11) family (1) | address (4 or 16) | port (2)  relay -> client
+//	RejoinGuest   (12) secret (16) | channel (2) | zero padding to 64 bytes
+//	ReclaimCode   (13) secret (16) | code (6) | seconds left (2) | zero padding to 64 bytes
 //
 // Data: the host addresses a guest by its channel; a guest's channel field is
 // ignored and the relay stamps the guest's channel before handing it to the
@@ -34,11 +37,20 @@
 // joins again with it later, after the code expired. A code is 6 characters
 // of Crockford's base32 (ASCII, upper case; see NormalizeCode), lives
 // CodeTTL, and dies with its session.
+//
+// Replicas (see Config.Peers): each relay of a fleet owns its sessions, and a
+// code names its owner (shardOf). A request for another replica's session,
+// or a new session on a replica that is draining, is answered with a
+// Redirect to the replica that takes it; a client follows one at most.
+// RejoinGuest is RegisterGuest asking for the channel the guest had, and
+// ReclaimCode a registered host asking for the code it had, both after the
+// relay restarted and forgot them (granted when free).
 package relay
 
 import (
 	"encoding/binary"
 	"errors"
+	"net/netip"
 	"strings"
 )
 
@@ -67,6 +79,9 @@ const (
 	typeCode          msgType = 8
 	typeResolveCode   msgType = 9
 	typeSecret        msgType = 10
+	typeRedirect      msgType = 11
+	typeRejoinGuest   msgType = 12
+	typeReclaimCode   msgType = 13
 )
 
 // ErrorCode tells a client why it was refused.
@@ -82,6 +97,9 @@ const (
 	ErrNoCode ErrorCode = 6
 	// Too many code lookups from this address, or from everyone: wait.
 	ErrSlowDown ErrorCode = 7
+	// The relay is shutting down and has no other replica to send a new
+	// session to: try again in a moment.
+	ErrDraining ErrorCode = 8
 )
 
 // CodeSize is a join code's length, in characters of codeAlphabet.
@@ -132,6 +150,8 @@ type datagram struct {
 	payload []byte
 	renew   bool
 	code    [CodeSize]byte
+	// ReclaimCode: the code's seconds left.
+	left uint16
 }
 
 func parse(b []byte) (datagram, error) {
@@ -171,6 +191,19 @@ func parse(b []byte) (datagram, error) {
 			return d, errMalformed
 		}
 		copy(d.code[:], body[:CodeSize])
+	case typeRejoinGuest:
+		if len(b) != registerSize {
+			return d, errMalformed
+		}
+		copy(d.secret[:], body[:SecretSize])
+		d.channel = binary.BigEndian.Uint16(body[SecretSize:])
+	case typeReclaimCode:
+		if len(b) != registerSize {
+			return d, errMalformed
+		}
+		copy(d.secret[:], body[:SecretSize])
+		copy(d.code[:], body[SecretSize:SecretSize+CodeSize])
+		d.left = binary.BigEndian.Uint16(body[SecretSize+CodeSize:])
 	default:
 		return d, errMalformed
 	}
@@ -234,21 +267,60 @@ func ResolveCode(code string) []byte {
 	return append(b, make([]byte, registerSize-len(b))...)
 }
 
-func codeReply(code string, left uint16) []byte {
-	b := append(header(typeCode, CodeSize+2), code...)
+// RejoinGuest builds a guest's registration asking for the channel it had.
+func RejoinGuest(secret [SecretSize]byte, channel uint16) []byte {
+	b := header(typeRejoinGuest, registerSize)
+	b = append(b, secret[:]...)
+	b = binary.BigEndian.AppendUint16(b, channel)
+	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+// ReclaimCode builds a registered host's request for the code it had, with
+// its seconds left.
+func ReclaimCode(secret [SecretSize]byte, code string, left uint16) []byte {
+	b := header(typeReclaimCode, registerSize)
+	b = append(b, secret[:]...)
+	var raw [CodeSize]byte
+	copy(raw[:], code)
+	b = append(b, raw[:]...)
+	b = binary.BigEndian.AppendUint16(b, left)
+	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+// The relay's answers are appended to a buffer it reuses: no allocation.
+
+func appendHeader(b []byte, kind msgType) []byte {
+	return append(append(b, magic...), byte(kind))
+}
+
+func appendCode(b []byte, code string, left uint16) []byte {
+	b = append(appendHeader(b, typeCode), code...)
 	return binary.BigEndian.AppendUint16(b, left)
 }
 
-func secretReply(secret [SecretSize]byte) []byte {
-	return append(header(typeSecret, SecretSize), secret[:]...)
+func appendSecret(b []byte, secret [SecretSize]byte) []byte {
+	return append(appendHeader(b, typeSecret), secret[:]...)
 }
 
-func registered(channel uint16) []byte {
-	return binary.BigEndian.AppendUint16(header(typeRegistered, 2), channel)
+func appendRegistered(b []byte, channel uint16) []byte {
+	return binary.BigEndian.AppendUint16(appendHeader(b, typeRegistered), channel)
 }
 
-func errorReply(code ErrorCode) []byte {
-	return append(header(typeError, 1), byte(code))
+func appendError(b []byte, code ErrorCode) []byte {
+	return append(appendHeader(b, typeError), byte(code))
+}
+
+// At most 24 bytes (an IPv6 address): smaller than any request it answers.
+func appendRedirect(b []byte, to netip.AddrPort) []byte {
+	b = appendHeader(b, typeRedirect)
+	if a := to.Addr().Unmap(); a.Is4() {
+		raw := a.As4()
+		b = append(append(b, 4), raw[:]...)
+	} else {
+		raw := a.As16()
+		b = append(append(b, 6), raw[:]...)
+	}
+	return binary.BigEndian.AppendUint16(b, to.Port())
 }
 
 // Reply is what a client reads back from the relay.
@@ -263,6 +335,8 @@ type Reply struct {
 	// Secret: the session a code names.
 	Secret    [SecretSize]byte
 	HasSecret bool
+	// Redirect: where to ask instead.
+	Redirect netip.AddrPort
 }
 
 // ParseReply decodes a relay -> client datagram.
@@ -297,6 +371,17 @@ func ParseReply(b []byte) (Reply, error) {
 			return Reply{}, errMalformed
 		}
 		return Reply{Secret: [SecretSize]byte(body), HasSecret: true}, nil
+	case typeRedirect:
+		var addr netip.Addr
+		switch {
+		case len(body) == 1+4+2 && body[0] == 4:
+			addr = netip.AddrFrom4([4]byte(body[1:5]))
+		case len(body) == 1+16+2 && body[0] == 6:
+			addr = netip.AddrFrom16([16]byte(body[1:17]))
+		default:
+			return Reply{}, errMalformed
+		}
+		return Reply{Redirect: netip.AddrPortFrom(addr, binary.BigEndian.Uint16(body[len(body)-2:]))}, nil
 	}
 	return Reply{}, errMalformed
 }

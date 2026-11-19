@@ -1,9 +1,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# The relay alone. An overlay sets the namespace, the image registry and the
-# load balancer annotations, and provides the host-token Secret (SOPS, an
-# external secret operator...): see docs/architecture/relay.md.
+# The relay alone. An overlay sets the namespace, the image registry, the
+# load balancer annotations (a static address per replica), the peers list
+# below, and provides the host-token Secret (SOPS, an external secret
+# operator...): see docs/relay.md.
 labels:
   - pairs:
       app.kubernetes.io/name: tandem-relay
@@ -12,9 +13,20 @@ labels:
 
 resources:
   - serviceaccount.yaml
-  - deployment.yaml
+  - statefulset.yaml
   - service.yaml
+  - service-replicas.yaml
+  - poddisruptionbudget.yaml
   - networkpolicy.yaml
+
+# Every replica's public address (its Service's external address), in
+# ordinal order: a replica sends players to another by it. Addresses, not
+# names: the relay makes no DNS query. Replace it in the overlay
+# (behavior: replace); the name's hash rolls the replicas when it changes.
+configMapGenerator:
+  - name: tandem-relay-peers
+    literals:
+      - peers=192.0.2.10:27460,192.0.2.11:27460
 
 images:
   - name: tandem-relay

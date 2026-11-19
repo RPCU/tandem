@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tandem-relay
+spec:
+  # Each replica owns its sessions (share-nothing) and the join codes of its
+  # shard: the shard is the pod's ordinal, so a replica that is replaced
+  # comes back as the same shard, at the same public address (its own
+  # Service, service-replicas.yaml), and its hosts get their session and
+  # code back. Changing the count re-maps codes: change the peers list in
+  # the same change (kustomization.yaml).
+  replicas: 2
+  serviceName: tandem-relay-pods
+  # Replicas do not depend on each other: start and replace them at once.
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    spec:
+      serviceAccountName: tandem-relay
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      # SIGTERM drains (no new session, sent to the next replica), running
+      # sessions go on until they end or --drain-timeout: past it the games
+      # hold their players while the pod comes back (20 s, core/src/relay.cpp).
+      terminationGracePeriodSeconds: 75
+      affinity:
+        podAntiAffinity:
+          # One replica per node where there are enough: a node going down
+          # takes one shard. Make it required in an overlay if your cluster
+          # always has as many nodes as replicas.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: tandem-relay
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: relay
+          image: tandem-relay
+          args:
+            - serve
+            - --udp=:27460
+            - --front=:27461
+            - --http=:8080
+            - --host-tokens=/etc/tandem-relay/host-tokens
+            - --readers=2
+            - --drain-timeout=60s
+          env:
+            # Every replica's public address, in ordinal order.
+            - name: TANDEM_RELAY_PEERS
+              valueFrom:
+                configMapKeyRef:
+                  name: tandem-relay-peers
+                  key: peers
+            # This one's ordinal (Kubernetes 1.28+ labels StatefulSet pods).
+            - name: TANDEM_RELAY_SHARD
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+          ports:
+            - name: game
+              containerPort: 27460
+              protocol: UDP
+            - name: front
+              containerPort: 27461
+              protocol: UDP
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # Not ready while draining: the entrance stops sending players here.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: "1"
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: host-tokens
+              mountPath: /etc/tandem-relay
+              readOnly: true
+      volumes:
+        - name: host-tokens
+          secret:
+            # One hex token per line, key `host-tokens`. Not in this base:
+            # provide it from your secret store.
+            secretName: tandem-relay-host-tokens
+            defaultMode: 0400

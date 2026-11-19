@@ -6,9 +6,12 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
   ingress:
-    # Players, from anywhere.
+    # Players, from anywhere: sessions (27460) and the fleet's entrance
+    # (27461).
     - ports:
         - port: 27460
+          protocol: UDP
+        - port: 27461
           protocol: UDP
     # Probes come from the kubelet (not filtered by NetworkPolicy); metrics
     # only from the monitoring namespace. An overlay can change the label.
@@ -21,4 +24,7 @@ spec:
           protocol: TCP
   # No egress at all: everything the relay sends is a reply on a flow a
   # player opened (conntrack lets those through), and it needs no DNS.
+  # Replicas never talk to each other either: each knows the others'
+  # addresses from its configuration (the peers list) and only hands them
+  # to players in redirects.
   egress: []
