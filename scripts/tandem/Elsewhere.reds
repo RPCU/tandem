@@ -36,6 +36,9 @@ public class TandemElsewhere {
   private let m_why: String;
   private let m_settled: Bool;
   private let m_test: Int32;
+  private let m_testUntil: Float;
+  // "elsewhere state" reports, numbered (a scenario expects the Nth).
+  private let m_reports: Int32;
   // What the others are told (place + 256 * flags), as last logged.
   private let m_told: Int32;
   // Our V is where the others are not; since when it is back.
@@ -123,6 +126,12 @@ public class TandemElsewhere {
   //   IsJohnnyReplacer, :39362); someone else: any other replacer record
   //   (IsReplacer, :39344: not Character.Player_Puppet_Base).
   private func Classify(player: ref<PlayerPuppet>) -> Int32 {
+    // A test world never outlives its test: a scenario that stopped half
+    // way left one on and every later puppet hidden (2026-11-19).
+    if this.m_test >= 0 && this.m_lastTick > this.m_testUntil {
+      TandemNative.Log(s"elsewhere: test \(TandemElsewhere.PlaceName(this.m_test)) over (2 minutes)");
+      this.m_test = -1;
+    }
     if this.m_test >= 0 {
       this.m_why = "a test";
       return this.m_test;
@@ -261,8 +270,20 @@ public class TandemElsewhere {
     let game = this.m_game;
     for player in system.PuppetPlayers() {
       let known = this.Known(player);
-      let hide = this.m_inside || now - this.m_backAt < 0.75 || now < known.revealAt
-        || ((known.flags & 1) != 0 && (known.flags & 2) == 0);
+      // Only for a reason: we are elsewhere (or just back), or their own
+      // last state says their body is out of sight. A player never heard
+      // of as away is shown.
+      let why = "";
+      if this.m_inside {
+        why = s"we are in \(TandemElsewhere.PlaceName(this.m_place)) (\(this.m_why))";
+      } else if this.m_backAt > 0.0 && now - this.m_backAt < 0.75 {
+        why = "we are just back";
+      } else if now < known.revealAt {
+        why = "they are just back";
+      } else if (known.flags & 1) != 0 && (known.flags & 2) == 0 {
+        why = s"they are in \(TandemElsewhere.PlaceName(known.place)), body out of sight";
+      }
+      let hide = StrLen(why) > 0;
       // The shared set of reasons (PuppetVisibility.reds): a private scene
       // that hides the same puppet keeps it hidden after we let go.
       if hide {
@@ -271,7 +292,7 @@ public class TandemElsewhere {
         if !known.hidden {
           known.hidden = true;
           TandemVisibility.Hide(game, player, n"elsewhere", 0.0);
-          TandemNative.Log(s"elsewhere: player \(player)'s puppet hidden");
+          TandemNative.Log(s"elsewhere: player \(player)'s puppet hidden: \(why)");
         }
       } else if known.hidden {
         known.hidden = false;
@@ -389,6 +410,11 @@ public class TandemElsewhere {
     }
     ArrayClear(this.m_players);
     this.m_changes = 0u;
+    // A test world is the session's (a scenario's): it ends with it.
+    if this.m_test >= 0 {
+      TandemNative.Log(s"elsewhere: test \(TandemElsewhere.PlaceName(this.m_test)) over with the session");
+      this.m_test = -1;
+    }
   }
 
   // ---- commands (tools/game.sh cmd elsewhere …) ----
@@ -408,10 +434,12 @@ public class TandemElsewhere {
       } else if Equals(what, "other") {
         this.m_test = 4;
       }
+      this.m_testUntil = this.m_lastTick + 120.0;
       TandemNative.Log(s"elsewhere: test \(this.m_test >= 0 ? TandemElsewhere.PlaceName(this.m_test) : "off")");
     } else if Equals(command, "elsewhere state") {
       let ours = TandemAway.Ours();
-      TandemNative.Log(s"elsewhere: our V in \(TandemElsewhere.PlaceName(this.m_place)) (\(this.m_why)), settled \(this.m_settled), told place \(ours.place) flags \(ours.flags), body held \(TandemAway.Holding()), inside \(this.m_inside)");
+      this.m_reports += 1;
+      TandemNative.Log(s"elsewhere: state #\(this.m_reports): our V in \(TandemElsewhere.PlaceName(this.m_place)) (\(this.m_why)), settled \(this.m_settled), told place \(ours.place) flags \(ours.flags), body held \(TandemAway.Holding()), inside \(this.m_inside)");
       for known in this.m_players {
         TandemNative.Log(s"elsewhere: player \(known.player) in \(TandemElsewhere.PlaceName(known.place)), flags \(known.flags), hidden \(known.hidden)");
       }
