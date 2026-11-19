@@ -11,6 +11,7 @@
 #include "presence.hpp"
 #include "story.hpp"
 
+#include "tandem/names.hpp"
 #include "tandem/report.hpp"
 #include "tandem/session.hpp"
 #include "tandem/settings.hpp"
@@ -221,6 +222,16 @@ std::string Runtime::RelayStatus() const {
   return m_relayStatus;
 }
 
+void Runtime::SetRelayDetails(RelayView view) {
+  std::lock_guard _(m_lock);
+  m_relayView = std::move(view);
+}
+
+Runtime::RelayView Runtime::RelayDetails() const {
+  std::lock_guard _(m_lock);
+  return m_relayView;
+}
+
 bool Runtime::JoinByCode(std::string_view text) {
   const auto code = net::NormalizeJoinCode(text);
   if (!code) {
@@ -256,7 +267,7 @@ namespace {
 // What a running session was set up with: changed for the next one.
 bool ForTheNextSession(std::string_view key) {
   return key == "name" || key == "relay" || key == "relay_token" || key == "story" ||
-         key == "time_host";
+         key == "time_host" || key == "code";
 }
 } // namespace
 
@@ -276,19 +287,25 @@ bool Runtime::ChangeSetting(const std::string &key, const std::string &value) {
     s << in.rdbuf();
     text = s.str();
   }
-  const auto updated = settings::SetKey(text, key, value);
+  // Saved as it applies: a name trimmed of its spaces.
+  const auto stored = key == "name" ? names::Clean(value).value_or(value) : value;
+  const auto updated = settings::SetKey(text, key, stored);
   if (!updated) {
     log::Warn("setting: {} cannot hold that value", key);
     return false;
   }
   const bool later = ForTheNextSession(key) && Started();
   if (later)
-    m_pendingSettings.emplace_back(key, value);
+    m_pendingSettings.emplace_back(key, stored);
   else
-    ApplySetting(config, key, value, 0);
+    ApplySetting(config, key, stored, 0);
   if (key == "recorder")
     Recording::Get().SetEnabled(config.recorder);
-  const auto shown = key == "relay_token" ? std::string("(a token)") : value;
+  if (key == "direct")
+    directOn = config.direct;
+  if (key == "code_salt")
+    codeSalt = config.codeSalt;
+  const auto shown = key == "relay_token" ? std::string("(a token)") : stored;
   if (config.file.empty()) {
     log::Info("setting: {} = {} (no tandem.ini to save it in)", key, shown);
     return true;
@@ -324,6 +341,8 @@ std::string Runtime::SavedSetting(std::string_view key) const {
     ApplySetting(saved, k, v, 0);
   return SettingOf(saved, key);
 }
+
+bool Runtime::NameToAsk() const { return !m_nameAsked && names::IsDefault(SavedSetting("name")); }
 
 void Runtime::Stop() {
   for (const auto &[key, value] : m_pendingSettings)

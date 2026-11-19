@@ -14,10 +14,11 @@ std::string_view Trim(std::string_view text) {
 } // namespace
 
 bool IsEditable(std::string_view key) {
-  static constexpr std::array<std::string_view, 13> kKeys{
-      "name",         "recorder",      "friendly_fire", "enemy_scaling", "notices",
-      "markers",      "nameplates",    "relay",         "relay_token",   "story",
-      "quest_freeze", "scene_privacy", "time_host"};
+  // (code_salt: not on the page, saved by its "new code" action.)
+  static constexpr std::array<std::string_view, 17> kKeys{
+      "name",          "recorder",  "friendly_fire", "enemy_scaling", "notices",  "markers",
+      "nameplates",    "party_hud", "relay",         "relay_token",   "story",    "quest_freeze",
+      "scene_privacy", "time_host", "direct",        "code",          "code_salt"};
   for (const auto k : kKeys)
     if (k == key)
       return true;

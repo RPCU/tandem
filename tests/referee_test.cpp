@@ -54,6 +54,40 @@ Referee Host(std::uint64_t now = kSecond) {
 }
 } // namespace
 
+TEST_CASE("referee: an owner's word on an NPC goes only to the games that show it") {
+  auto referee = Guest();
+  referee.Received(1, proto::NpcSpawn{.npc = 7, .record = 1}, kSecond);
+  referee.Received(1, proto::PlayerHit{.player = 2, .npc = 7, .physical = 1.f}, kSecond);
+  CHECK(Rules(referee).empty());
+  // It leaves our view (a link broke, its region's edge): what was in
+  // flight may still land...
+  referee.Received(1, proto::NpcGone{.npc = 7, .reason = proto::kGoneAway}, 2 * kSecond);
+  referee.Received(1, proto::NpcShotAt{.player = 2, .npc = 7, .timeUs = 1}, 2 * kSecond + 500'000);
+  CHECK(Rules(referee).empty());
+  // ...then nothing its owner says to one V about it is for us.
+  const auto later = 4 * kSecond;
+  referee.Received(1, proto::PlayerHit{.player = 2, .npc = 7, .physical = 2.f}, later);
+  referee.Received(1, proto::NpcCue{.npc = 7, .player = 2, .cue = proto::NpcCueKind::CombatStart},
+                   later);
+  referee.Received(1, proto::NpcShotAt{.player = 2, .npc = 7, .timeUs = 2}, later);
+  referee.Received(1, proto::PlayerHack{.player = 2, .npc = 7, .action = 1}, later);
+  referee.Received(1, proto::NpcAnims{.npcs = {{.npc = 7}}}, later);
+  CHECK(Rules(referee) == std::vector<std::string>(5, "authority.not-shared"));
+  // Back in our view (the link formed again): its word is ours again.
+  referee.Received(1, proto::NpcSpawn{.npc = 7, .record = 1}, 5 * kSecond);
+  referee.Received(1, proto::PlayerHit{.player = 2, .npc = 7, .physical = 3.f}, 5 * kSecond);
+  // A corpse's word is not checked (wounds, holds follow a death).
+  referee.Received(1, proto::NpcGone{.npc = 7, .reason = proto::kGoneDead}, 6 * kSecond);
+  referee.Received(1, proto::NpcAnims{.npcs = {{.npc = 7}}}, 8 * kSecond);
+  CHECK(Rules(referee).empty());
+  // The host letting go of one of ours (nobody could take it over, or our
+  // set named one its record no longer holds) is not another's word on it.
+  const auto ours = regions::MakeNpcId(2, 1);
+  referee.Sent(1, proto::NpcSpawn{.npc = ours, .record = 2}, 9 * kSecond);
+  referee.Received(1, proto::NpcGone{.npc = ours, .reason = proto::kGoneAway}, 9 * kSecond);
+  CHECK(Rules(referee).empty());
+}
+
 TEST_CASE("referee: a guest may not say what is the host's") {
   auto referee = Host();
   referee.Received(2, proto::NpcSpawn{.npc = 7}, kSecond);

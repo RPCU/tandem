@@ -153,6 +153,9 @@ struct ScriptEvent {
     // Something serious to tell the player (name: the text), at most once
     // in a while (net_thread.cpp): a resync, a lost host, a reconnection.
     Notice = 5,
+    // The session shows us under another name (name: it), another player
+    // having ours.
+    Renamed = 6,
   };
   Kind kind{};
   proto::PlayerId player{};
@@ -201,6 +204,11 @@ public:
 
   // tandem.ini, as loaded (the defaults; the choice below overrides the role).
   Config config;
+  // `direct` as the settings page last set it, for the net thread (applied
+  // to a running session at once).
+  std::atomic<bool> directOn{true};
+  // `code_salt` likewise (the New join code action moves it on).
+  std::atomic<std::uint32_t> codeSalt{0};
 
   // What is installed around us (tandem/compat.hpp), judged once when the
   // plugin loads (main.cpp) and only read afterwards, from any thread.
@@ -261,6 +269,19 @@ public:
   void SetRelay(std::string code, std::string status);
   std::string RelayCode() const;
   std::string RelayStatus() const;
+  // The rest of what the co-op menu shows of the relay link (net thread
+  // sets, game thread reads): the code is kept, the connection check
+  // (net::DirectOutlook), the direct paths up.
+  struct RelayView {
+    bool kept{};
+    std::string check;
+    std::int32_t direct{};
+  };
+  void SetRelayDetails(RelayView view);
+  RelayView RelayDetails() const;
+  // "New code" asked by the co-op menu (counted; the net thread acts on a
+  // change).
+  std::atomic<std::uint32_t> newCodeRequests{0};
   // Game thread (the settings page): change a tandem.ini key
   // (settings::IsEditable) and save it there. Applied at once, or, for what
   // a running session was set up with (name, relay, story, time_host), when
@@ -268,6 +289,11 @@ public:
   bool ChangeSetting(const std::string &key, const std::string &value);
   // Its value as saved (a change waiting for the session's end included).
   std::string SavedSetting(std::string_view key) const;
+  // Game thread (the co-op menu): the name is still the default (V) and the
+  // menu has not asked for one since the game started (names.hpp).
+  bool NameToAsk() const;
+  // The menu asked (whatever the answer); false asks again (tests).
+  void NameAsked(bool asked) { m_nameAsked = asked; }
 
   // Game thread: be the guest of the session `code` names, through
   // tandem.ini's relay. A running session is left for it at once; else it
@@ -685,6 +711,7 @@ private:
   mutable std::mutex m_lock; // session lifecycle, local outbox, events
   // Game thread: settings saved during a session, applied as it stops.
   std::vector<std::pair<std::string, std::string>> m_pendingSettings;
+  bool m_nameAsked{false};
   std::unique_ptr<NetThread> m_net;
   SessionChoice m_choice; // m_lock
   SessionStatus m_status; // m_lock
@@ -693,6 +720,7 @@ private:
   std::vector<std::string> m_differences; // m_compatLock
   proto::Body m_body{};                   // m_lock: the last Start's
   std::string m_relayCode, m_relayStatus; // m_lock
+  RelayView m_relayView;                  // m_lock
   std::optional<proto::PlayerState> m_local;
   std::vector<ScriptEvent> m_events;
 

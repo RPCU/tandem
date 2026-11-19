@@ -1,6 +1,8 @@
 #include "config.hpp"
 #include "log.hpp"
 
+#include "tandem/names.hpp"
+
 #include <charconv>
 #include <format>
 #include <fstream>
@@ -42,10 +44,41 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
     config.address = value;
     config.addressSet = !value.empty();
   } else if (key == "relay") {
-    if (value.empty())
-      config.relay.clear();
-    else if (!net::ParseRelayAddress(value, config.relay, config.relayPort))
-      return Bad("relay is host or host:port, not {}", value);
+    // One relay, or a list: a host registers on the nearest, a guest asks
+    // each in turn for its code.
+    config.relay.clear();
+    config.relayMore.clear();
+    for (std::size_t start = 0; !value.empty() && start <= value.size();) {
+      const auto comma = value.find(',', start);
+      const auto field =
+          Trim(value.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+      std::string name;
+      std::uint16_t port{};
+      if (!net::ParseRelayAddress(field, name, port))
+        return Bad("relay is host or host:port (a list: comma-separated), not {}", value);
+      if (config.relay.empty()) {
+        config.relay = name;
+        config.relayPort = port;
+      } else {
+        config.relayMore.push_back(field);
+      }
+      if (comma == std::string::npos)
+        break;
+      start = comma + 1;
+    }
+  } else if (key == "code") {
+    if (value == "keep")
+      config.keepCode = true;
+    else if (value == "new")
+      config.keepCode = false;
+    else
+      return Bad("code is keep or new");
+  } else if (key == "code_salt") {
+    std::uint32_t salt{};
+    auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), salt);
+    if (ec != std::errc{} || end != value.data() + value.size())
+      return Bad("code_salt is a number");
+    config.codeSalt = salt;
   } else if (key == "relay_token") {
     if (value.empty())
       config.relayToken = {};
@@ -61,9 +94,11 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
     else
       return Bad("join is a join code like K7Q-2M9, not {}", value);
   } else if (key == "name") {
-    if (value.empty())
-      return Bad("name is empty");
-    config.name = value;
+    const auto name = names::Clean(value);
+    if (!name)
+      return Bad("name is 1 to {} characters, no control characters, ; or # ({}: {})",
+                 names::kMaxLength, names::Problem(value), value);
+    config.name = *name;
   } else if (key == "puppet_female")
     config.puppetFemale = value;
   else if (key == "puppet_male")
@@ -104,14 +139,14 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       return Bad("bad {} {}", key, value);
   } else if (key == "story" || key == "quest_freeze" || key == "recorder" ||
              key == "recorder_pose" || key == "friendly_fire" || key == "markers" ||
-             key == "nameplates" || key == "enemy_scaling") {
+             key == "party_hud" || key == "enemy_scaling") {
     auto &flag = key == "story"           ? config.story
                  : key == "quest_freeze"  ? config.questFreeze
                  : key == "recorder"      ? config.recorder
                  : key == "friendly_fire" ? config.friendlyFire
                  : key == "enemy_scaling" ? config.enemyScaling
                  : key == "markers"       ? config.markers
-                 : key == "nameplates"    ? config.nameplates
+                 : key == "party_hud"     ? config.partyHud
                                           : config.recorderPose;
     if (value == "on" || value == "true")
       flag = true;
@@ -203,6 +238,13 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.link = Config::Link::Off;
     else
       return Bad("link is auto, ask or off");
+  } else if (key == "direct") {
+    if (value == "auto" || value == "on")
+      config.direct = true;
+    else if (value == "off")
+      config.direct = false;
+    else
+      return Bad("direct is auto or off");
   } else if (key == "pings") {
     if (value == "on" || value == "true")
       config.pings = true;
@@ -228,6 +270,16 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.compat = false;
     else
       return Bad("compat is on or off");
+  } else if (key == "nameplates") {
+    // on, true: what they were before near and always (tandem.ini files of then).
+    if (value == "near" || value == "on" || value == "true")
+      config.nameplates = presence::Nameplates::Near;
+    else if (value == "always")
+      config.nameplates = presence::Nameplates::Always;
+    else if (value == "off" || value == "false")
+      config.nameplates = presence::Nameplates::Off;
+    else
+      return Bad("nameplates is near, always or off");
   } else if (key == "notices") {
     if (value == "all" || value == "important" || value == "minimal")
       config.notices = value;
@@ -263,13 +315,23 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return config.notices;
   if (key == "markers")
     return OnOff(config.markers);
+  if (key == "party_hud")
+    return OnOff(config.partyHud);
   if (key == "nameplates")
-    return OnOff(config.nameplates);
-  if (key == "relay")
-    return config.relay.empty() ? std::string()
-           : config.relayPort == net::kDefaultRelayPort
-               ? config.relay
-               : std::format("{}:{}", config.relay, config.relayPort);
+    return config.nameplates == presence::Nameplates::Always ? "always"
+           : config.nameplates == presence::Nameplates::Off  ? "off"
+                                                             : "near";
+  if (key == "relay") {
+    auto text = config.relay.empty() ? std::string()
+                : config.relayPort == net::kDefaultRelayPort
+                    ? config.relay
+                    : std::format("{}:{}", config.relay, config.relayPort);
+    for (const auto &more : config.relayMore)
+      text += ", " + more;
+    return text;
+  }
+  if (key == "code")
+    return config.keepCode ? "keep" : "new";
   if (key == "relay_token") // never shown: set or not
     return config.relayToken == net::RelayToken{} ? std::string() : std::string("set");
   if (key == "story")
@@ -280,6 +342,8 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return OnOff(config.scenePrivacy);
   if (key == "time_host")
     return config.timeHostFull ? "full" : "bubble";
+  if (key == "direct")
+    return config.direct ? "auto" : "off";
   return {};
 }
 

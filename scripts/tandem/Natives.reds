@@ -2,7 +2,8 @@
 // signature that differs from the C++ side fails at load.
 
 public native struct TandemEvent {
-  // 1 joined, 2 left, 3 session ended, 4 we are in the session
+  // 1 joined, 2 left, 3 session ended, 4 we are in the session, 5 a notice,
+  // 6 the session shows us as `name` (another player has ours)
   native let kind: Int32;
   native let player: Uint32;
   native let name: String;
@@ -330,6 +331,9 @@ public native class TandemNative extends IScriptable {
   public static native func RecorderSet(on: Bool)
   public static native func Setting(key: String) -> String
   public static native func SetSetting(key: String, value: String) -> Bool
+  public static native func NameToAsk() -> Bool
+  public static native func NameAsked(asked: Bool)
+  public static native func NameProblem(typed: String) -> String
   public static native func RecorderStatus() -> String
   public static native func SendLocalState(position: Vector4, orientation: Quaternion, velocity: Vector4, locomotion: Int32, flags: Int32)
   public static native func TakeEvents() -> array<TandemEvent>
@@ -505,6 +509,14 @@ public native class TandemNative extends IScriptable {
   // code, or no relay in tandem.ini; starts now, or with the next game).
   public static native func RelayCode() -> String
   public static native func RelayStatus() -> String
+  // The host's code is its kept one (the same next session); another code
+  // now (false: not hosting through a relay); the connection check
+  // ("direct": direct connections likely, "relay": relay only, "" not
+  // known); the direct paths up (host: its guests'; guest: 0 or 1).
+  public static native func RelayCodeKept() -> Bool
+  public static native func RelayNewCode() -> Bool
+  public static native func RelayCheck() -> String
+  public static native func RelayDirect() -> Int32
   public static native func JoinByCode(code: String) -> Bool
   public static native func RecordStart(name: String) -> Bool
   public static native func RecordStop()

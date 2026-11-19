@@ -30,7 +30,8 @@ a screenshot, every thread's backtrace when the plugin's watchdog saw the
 game thread stop). Each feature verified in game gets a scenario.
 More than two players: `peer2 ARGS…` starts a second mock player beside
 the first (`expect_peer2` reads its log, `.cache/peer2.log`); scenario
-`three-players`.
+`three-players`. Mock players under the same `--name` are shown as "V (2)",
+"V (3)" (each logs `the session shows us as …`); scenario `names-duplicate`.
 Every scenario starts from one known state, `tools/game.sh test-reset`
 (`cmd test reset`, `scripts/tandem/TestReset.reds`), run after the last
 scenario's mock player is stopped and after any fresh start: the save
@@ -206,6 +207,8 @@ decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
   `skip-asked`, `busy-puppet`, `look-mirror`.
 - **Comms** (any mode, `comms.md`): `--link auto|ask|off` (its consent;
   ask: every request accepted), `--link-at N` (asks everyone N s in),
+  `--unlink-at N` (breaks every link N s in: the party HUD's entry goes,
+  scenario `hud-linked`),
   `--ping N` (every N s: a spot before the other V, the nearest shared NPC
   as an enemy and at once again as a danger, then taken back), `--tag N`
   (scan tag on and off of the nearest shared NPC), `--reveal N` (up to 4

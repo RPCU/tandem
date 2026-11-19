@@ -198,6 +198,11 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
             .Add(w.position.y)
             .Add(w.position.z);
   }
+  if (players.regionPairs) {
+    hash.Add(std::uint64_t{0xAD});
+    for (const auto id : *players.regionPairs)
+      hash.Add(std::uint64_t{id});
+  }
   return hash.Value();
 }
 

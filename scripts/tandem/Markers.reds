@@ -391,11 +391,15 @@ public final static func MappinToTexturePart(mappinVariant: gamedataMappinVarian
 protected cb func OnUpdate() -> Bool {
   let result = wrappedMethod();
   let name = TandemMarkers.NameOf(this.GetMappin());
-  if NotEquals(name, "") {
-    inkWidgetRef.SetTintColor(this.iconWidget, TandemMarkers.ColorOf(TandemMarkers.PlayerOf(this.GetMappin())));
+  let player = TandemMarkers.PlayerOf(this.GetMappin());
+  if player != 0u {
+    // A player's marker in their colour (a ping's is its sender's: Comms.reds,
+    // UpdateIcon; tinting it here made it white).
+    inkWidgetRef.SetTintColor(this.iconWidget, TandemMarkers.ColorOf(player));
   }
-  if NotEquals(name, "") && !TandemSettings.Nameplates() {
-    // The settings page's switch: no name over the other players.
+  // One name over a player: none with nameplates = off, the nameplate's
+  // where it shows (PartyHud.reds), else the marker's. Pings keep theirs.
+  if player != 0u && (TandemSettings.NameplateMode() == 2 || TandemPartyHud.PlateShown(GetGameInstance(), player)) {
     if inkWidgetRef.IsValid(this.displayName) {
       inkWidgetRef.SetVisible(this.displayName, false);
     }

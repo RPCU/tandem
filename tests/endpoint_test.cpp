@@ -321,6 +321,9 @@ TEST_CASE("quickhacks: uploads to the host, states to all, NPC hacks and car hac
   REQUIRE(Pump({host.get(), a.get(), b.get()},
                [&](std::size_t, const auto &) { return a->IsJoined() && b->IsJoined(); }));
 
+  // NPC 7 is the host's, shared with both (regions: its word to one V goes
+  // only to a game that shows it).
+  host->SendNpcSpawn({.npc = 7, .record = 1});
   // a uploads on NPC 7: the host hears it in a's name, nobody else does.
   a->SendNpcHack({.player = 99, .npc = 7, .action = 0x55, .uploadMs = 1200});
   std::optional<proto::NpcHack> upload;
@@ -395,6 +398,7 @@ TEST_CASE("an NPC's hit on a guest reaches that guest only, whole") {
     return a->Players().size() == 3 && b->Players().size() == 3;
   }));
 
+  host->SendNpcSpawn({.npc = 7, .record = 1}); // the attacker, shared with both
   const proto::PlayerHit sent{.player = a->You(),
                               .npc = 7,
                               .physical = 10.f,
@@ -1135,6 +1139,90 @@ TEST_CASE("a live player cannot be replaced by a namesake") {
   CHECK_FALSE(aEnded);
   CHECK(a->IsJoined());
   CHECK(host->Players().size() == 3);
+  // ...shown under a name of its own.
+  CHECK(host->Players().at(other->You()).name == "a (2)");
+}
+
+TEST_CASE("names are unique in a session: the host adds (2), (3); each guest learns its own") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"V"}, port, error, kFast);
+  auto a = Endpoint::Join({"V"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((host && a));
+  std::vector<std::string> namedA, namedB;
+  const auto noteNamed = [](std::vector<std::string> &into, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *named = std::get_if<events::NamedAs>(&event))
+        into.push_back(named->shown);
+  };
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      noteNamed(namedA, events);
+    return a->Players().size() == 2 && !namedA.empty();
+  }));
+  CHECK(namedA == std::vector<std::string>{"V (2)"});
+
+  // A third V, and a guest whose name only differs by its case: unique too.
+  auto b = Endpoint::Join({" v "}, "127.0.0.1", port, error, kFast);
+  auto c = Endpoint::Join({"Panam"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((b && c));
+  const std::vector<Endpoint *> four{host.get(), a.get(), b.get(), c.get()};
+  REQUIRE(Pump(four, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      noteNamed(namedA, events);
+    if (i == 2)
+      noteNamed(namedB, events);
+    return std::ranges::all_of(four, [](const Endpoint *e) { return e->Players().size() == 4; }) &&
+           !namedB.empty();
+  }));
+  CHECK(namedA.size() == 1); // told once
+  CHECK(namedB == std::vector<std::string>{"v (3)"});
+  // One roster everywhere, with the shown names.
+  for (const auto *e : four) {
+    CHECK(e->Players().at(1).name == "V");
+    CHECK(e->Players().at(a->You()).name == "V (2)");
+    CHECK(e->Players().at(b->You()).name == "v (3)");
+    CHECK(e->Players().at(c->You()).name == "Panam");
+  }
+
+  // The second V leaves: its name is free for the next one.
+  const auto ofA = a->You();
+  a.reset();
+  REQUIRE(Pump(
+      {host.get(), b.get(), c.get()},
+      [&](std::size_t, const auto &) {
+        return !host->Players().contains(ofA) && !c->Players().contains(ofA);
+      },
+      1ms, kFast.timeout * 3));
+  auto d = Endpoint::Join({"V"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(d);
+  REQUIRE(Pump({host.get(), b.get(), c.get(), d.get()}, [&](std::size_t, const auto &) {
+    return d->IsJoined() && c->Players().size() == 4;
+  }));
+  CHECK(host->Players().at(d->You()).name == "V (2)");
+  CHECK(c->Players().at(d->You()).name == "V (2)");
+}
+
+TEST_CASE("a returning player is matched by the name it asked for, not the one it is shown") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"V"}, port, error, kFast);
+  auto a = Endpoint::Join({"V"}, "127.0.0.1", port, error, kFast);
+  REQUIRE((host && a));
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) { return a->IsJoined(); }));
+  const auto id = a->You();
+  a.reset(); // its game crashed
+  PumpFor({host.get()}, kFast.takeover + 100ms);
+  auto back = Endpoint::Join({"V"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(back);
+  bool returned = false;
+  REQUIRE(Pump({host.get(), back.get()}, [&](std::size_t i, const auto &events) {
+    returned |= i == 0 && Has<events::PlayerReturned>(events);
+    return back->IsJoined() && returned;
+  }));
+  CHECK(back->You() == id);
+  CHECK(host->Players().size() == 2);
+  CHECK(host->Players().at(id).name == "V (2)"); // still, not "V (3)"
 }
 
 TEST_CASE(
@@ -1313,6 +1401,7 @@ TEST_CASE("an NPC cue reaches only the player it is for") {
   REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
     return a->Players().size() == 3 && b->Players().size() == 3;
   }));
+  host->SendNpcSpawn({.npc = 7, .record = 1}); // shared with both
   host->SendNpcCue({.npc = 7, .player = b->You(), .cue = proto::NpcCueKind::CombatStart});
   bool aHeard = false;
   std::optional<proto::NpcCue> bHeard;
@@ -2088,6 +2177,7 @@ TEST_CASE(
   REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
     return a->Players().size() == 3 && b->Players().size() == 3;
   }));
+  host->SendNpcSpawn({.npc = 7, .record = 1});               // the shooter, shared with both
   CHECK_FALSE(host->SendNpcShotAt({.player = 1, .npc = 7})); // the host's own V: its game's
   CHECK_FALSE(host->SendNpcShotAt({.player = 9, .npc = 7})); // nobody
   const auto before = host->HostNowUs();

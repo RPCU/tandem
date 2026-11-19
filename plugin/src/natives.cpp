@@ -19,6 +19,7 @@
 #include "runtime.hpp"
 
 #include "tandem/movement.hpp"
+#include "tandem/names.hpp"
 
 #include <RedLib.hpp>
 
@@ -464,6 +465,13 @@ struct TandemNative : Red::IScriptable {
   }
   static bool SetSetting(Red::CString key, Red::CString value) {
     return Runtime::Get().ChangeSetting(key.c_str(), value.c_str());
+  }
+  // The co-op menu asks for a name once a game run while it is the default.
+  static bool NameToAsk() { return Runtime::Get().NameToAsk(); }
+  static void NameAsked(bool asked) { Runtime::Get().NameAsked(asked); }
+  // Why a typed name would be refused ("": it would not).
+  static Red::CString NameProblem(Red::CString typed) {
+    return Red::CString(std::string(names::Problem(typed.c_str())).c_str());
   }
   static Red::CString RecorderStatus() {
     return Red::CString(plugin::Recording::Get().Status().c_str());
@@ -1067,6 +1075,28 @@ struct TandemNative : Red::IScriptable {
   static Red::CString RelayCode() { return Red::CString(Runtime::Get().RelayCode().c_str()); }
 
   static Red::CString RelayStatus() { return Red::CString(Runtime::Get().RelayStatus().c_str()); }
+
+  // The relay link's details (Runtime::SetRelayDetails), and the "new code"
+  // action: a kept code's next salt is saved here (tandem.ini's code_salt),
+  // the net thread asks the relay.
+  static bool RelayCodeKept() { return Runtime::Get().RelayDetails().kept; }
+
+  static bool RelayNewCode() {
+    auto &runtime = Runtime::Get();
+    if (runtime.ChosenRole() != Config::Role::Host || runtime.RelayCode().empty())
+      return false;
+    if (runtime.config.keepCode)
+      runtime.ChangeSetting("code_salt", std::to_string(runtime.config.codeSalt + 1));
+    ++runtime.newCodeRequests;
+    log::Info("relay: a new join code asked for");
+    return true;
+  }
+
+  static Red::CString RelayCheck() {
+    return Red::CString(Runtime::Get().RelayDetails().check.c_str());
+  }
+
+  static std::int32_t RelayDirect() { return Runtime::Get().RelayDetails().direct; }
 
   // Gameplay recording (tandem/play.hpp, tools/game.sh cmd record start
   // NAME): our V's play, written by the net thread next to the DLL as
@@ -1966,6 +1996,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RecorderSet);
   RTTI_METHOD(Setting);
   RTTI_METHOD(SetSetting);
+  RTTI_METHOD(NameToAsk);
+  RTTI_METHOD(NameAsked);
+  RTTI_METHOD(NameProblem);
   RTTI_METHOD(RecorderStatus);
   RTTI_METHOD(SendLocalState);
   RTTI_METHOD(TakeEvents);
@@ -2085,6 +2118,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(IsTimeHostFull);
   RTTI_METHOD(RelayCode);
   RTTI_METHOD(RelayStatus);
+  RTTI_METHOD(RelayCodeKept);
+  RTTI_METHOD(RelayNewCode);
+  RTTI_METHOD(RelayCheck);
+  RTTI_METHOD(RelayDirect);
   RTTI_METHOD(JoinByCode);
   RTTI_METHOD(RecordStart);
   RTTI_METHOD(RecordStop);

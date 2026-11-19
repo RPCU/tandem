@@ -11,24 +11,24 @@ public class TandemSettings {
   // once, 1 from the next session, 2 after a restart.
   public static func Keys() -> array<String> {
     return [
-      "name", "friendly_fire", "enemy_scaling", "notices", "markers", "nameplates", "recorder",
-      "relay", "relay_token", "story", "quest_freeze", "scene_privacy", "time_host"
+      "name", "friendly_fire", "enemy_scaling", "notices", "markers", "nameplates", "party_hud", "recorder",
+      "relay", "relay_token", "code", "direct", "story", "quest_freeze", "scene_privacy", "time_host"
     ];
   }
 
   private static func Labels() -> array<String> {
     return [
-      "Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-Recorder",
-      "Settings-Relay", "Settings-RelayToken", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost"
+      "Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud", "Settings-Recorder",
+      "Settings-Relay", "Settings-RelayToken", "Settings-Code", "Settings-Direct", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost"
     ];
   }
 
   private static func Kinds() -> array<Int32> {
-    return [2, 0, 0, 1, 0, 0, 0, 2, 2, 0, 0, 0, 1];
+    return [2, 0, 0, 1, 0, 1, 0, 0, 2, 2, 1, 1, 0, 0, 0, 1];
   }
 
   private static func Whens() -> array<Int32> {
-    return [1, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 1];
+    return [1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 2, 2, 1];
   }
 
   private static func IndexOf(key: String) -> Int32 {
@@ -56,6 +56,15 @@ public class TandemSettings {
     if Equals(key, "time_host") {
       return ["full", "bubble"];
     }
+    if Equals(key, "nameplates") {
+      return ["near", "always", "off"];
+    }
+    if Equals(key, "direct") {
+      return ["auto", "off"];
+    }
+    if Equals(key, "code") {
+      return ["new", "keep"];
+    }
     return ["on", "off"];
   }
 
@@ -65,6 +74,15 @@ public class TandemSettings {
     }
     if Equals(key, "time_host") {
       return ["Settings-TimeHost-Full", "Settings-TimeHost-Bubble"];
+    }
+    if Equals(key, "nameplates") {
+      return ["Settings-Nameplates-Near", "Settings-Nameplates-Always", "Common-Off"];
+    }
+    if Equals(key, "direct") {
+      return ["Settings-Direct-Auto", "Common-Off"];
+    }
+    if Equals(key, "code") {
+      return ["Settings-Code-New", "Settings-Code-Keep"];
     }
     return ["Common-On", "Common-Off"];
   }
@@ -131,6 +149,17 @@ public class TandemSettings {
     return i < 0 ? key : TandemText.Get(TandemSettings.Labels()[i]);
   }
 
+  // What a typed setting's popup says: the name its rules, the others
+  // "type the new value".
+  public static func Prompt(key: String) -> String {
+    return TandemText.Get(Equals(key, "name") ? "Name-Ask" : "Settings-Type");
+  }
+
+  // Why a typed value was refused, in words.
+  public static func Refusal(key: String, value: String) -> String {
+    return TandemText.F(Equals(key, "name") ? "Name-Invalid" : "Settings-Invalid", value);
+  }
+
   // The next value of an on/off or a choice, as tandem.ini writes it.
   public static func Next(key: String) -> String {
     let values = TandemSettings.Choices(key);
@@ -163,9 +192,21 @@ public class TandemSettings {
     return NotEquals(TandemNative.Setting("markers"), "off");
   }
 
-  // Off: no name over the other players (Markers.reds).
-  public static func Nameplates() -> Bool {
-    return NotEquals(TandemNative.Setting("nameplates"), "off");
+  // The name over the other players (PartyHud.reds' nameplate, Markers.reds'
+  // label): 0 near (to 12 m, gone at 20 m), 1 always (any distance, smaller
+  // and fainter far away), 2 off. Read every frame.
+  public static func NameplateMode() -> Int32 {
+    let value = TandemNative.Setting("nameplates");
+    if Equals(value, "always") {
+      return 1;
+    }
+    return Equals(value, "off") ? 2 : 0;
+  }
+
+  // Off: no party list on the HUD (PartyHud.reds); the nameplates are
+  // `nameplates`' own. Read every frame.
+  public static func PartyHud() -> Bool {
+    return NotEquals(TandemNative.Setting("party_hud"), "off");
   }
 
   // The least important notice shown (TandemText.Importance): 0 all, 1 no
@@ -178,8 +219,16 @@ public class TandemSettings {
     return Equals(value, "important") ? 1 : 0;
   }
 
-  // coop settings | coop set KEY VALUE (tools/game.sh cmd). True: it was one.
+  // coop settings | coop set KEY VALUE | coop name [reset] (tools/game.sh
+  // cmd). True: it was one.
   public static func Command(command: String) -> Bool {
+    if Equals(command, "coop name") || Equals(command, "coop name reset") {
+      if Equals(command, "coop name reset") {
+        TandemNative.NameAsked(false);
+      }
+      TandemNative.Log(s"coop: name \"\(TandemNative.Setting("name"))\", the co-op menu asks for one: \(TandemNative.NameToAsk() ? "yes" : "no")");
+      return true;
+    }
     if Equals(command, "coop settings") {
       for key in TandemSettings.Keys() {
         let value = Equals(key, "relay_token") ? (StrLen(TandemNative.Setting(key)) > 0 ? "set" : "") : TandemNative.Setting(key);

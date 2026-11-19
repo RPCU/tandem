@@ -1,19 +1,36 @@
-// The party HUD (docs/architecture/presence.md): one entry per partner on
-// the game's HUD layer, and a nameplate over each puppet at close range.
+// The party HUD (docs/architecture/presence.md): one entry per linked
+// partner on the game's HUD layer, and a nameplate over each puppet.
 //
 // Built in script from the game's own ink widgets, fonts and colour styles
 // (a custom .inkwidget from an archive crashed the client:
 // engine-knowledge.md §9), on Codeware's HUD layer window, as the co-op
 // menu's panel is (Coop.reds). Never interactive: it takes no input.
 //
-// An entry says, like the game's own companion and boss bars: the name, the
+// An entry, like the game's own companion and boss bars, says the name, the
 // health, and one line of state (down with the revive countdown, out, in a
 // scene, elsewhere, in a menu), then the distance and an arrow when the
-// camera does not see them. What it says is decided in core
-// (tandem/presence.hpp: StatusOf, BearingOf, ProjectOf), tested there.
+// camera does not see them, all in the partner's own colour
+// (TandemMarkers.ColorOf). Only partners we are linked with have one
+// (comms.md, the link: TandemCommsNative.LinkState): a link broken or a
+// partner gone takes it away at the next frame. Health is the entry's
+// alone: the nameplate over a puppet's head is its name, for every
+// partner, linked or not; everyone else keeps their marker (Markers.reds).
+// What it says is decided in core (tandem/presence.hpp: StatusOf, BearingOf,
+// ProjectOf, NameplateLookOf), tested there.
+//
+// The nameplate follows tandem.ini nameplates: near (to 12 m, gone at 20 m),
+// always (at any distance in view, smaller and fainter far away; only near
+// ones while our V talks, scene tier 2), off.
 //
 // Hidden in photo mode, in cinematic scenes (our tier 3 and up), in a
-// braindance and when we are not in a session.
+// braindance, when the game hides its own HUD and when we are not in a
+// session; the list alone with party_hud = off.
+//
+// The list's place (presence.md, Layout): top left under the game's health
+// bar and buffs; below the holocall, compact, while a call is up; compact
+// while the dialogue choice hub is up; hidden when there is no room. The
+// HUD's units are the window's at the UI scale, so the list keeps to the
+// left edge at any aspect, as the health bar does.
 
 public class TandemPartyEntry {
   public let player: Uint32;
@@ -27,7 +44,6 @@ public class TandemPartyEntry {
   // The nameplate over the puppet.
   public let plate: ref<inkVerticalPanel>;
   public let plateName: ref<inkText>;
-  public let plateBar: ref<inkRectangle>;
   // What it shows, as last logged.
   public let status: Int32;
   public let health: Int32;
@@ -35,8 +51,11 @@ public class TandemPartyEntry {
   public let side: Int32;
   public let metres: Int32;
   public let plateOn: Bool;
+  public let linked: Bool;
   public let loggedAt: Float;
   public let shown: Bool;
+  // The nameplate this frame (Markers.reds hides the marker's name under it).
+  public let plateNow: Bool;
 }
 
 public class TandemPartyHud {
@@ -51,6 +70,28 @@ public class TandemPartyHud {
   // The camera's field of view is read as horizontal (false) or vertical.
   private let m_fovVertical: Bool;
   private let m_now: Float;
+  // Our V's scene tier, as Hidden read it.
+  private let m_tier: Int32;
+  // Below a holocall (HUD units, top left).
+  private let m_callLeft: Float;
+  private let m_callTop: Float;
+  // What the list yields to now (Layout), as last logged; shown or why not.
+  private let m_layout: String;
+  private let m_compact: Bool;
+  private let m_listOn: Bool;
+  private let m_listWhy: String;
+  // The test commands' cases (presence hud holocall|boss|choices|hudhidden
+  // on|off|auto): -1 auto, 0 off, 1 on.
+  private let m_force: array<Int32>;
+  // The game's HUD modules (Scan).
+  private let m_scannedAt: Float;
+  private let m_boss: wref<inkWidget>;
+  private let m_modules: array<wref<inkWidget>>;
+  private let m_modulesLogged: Int32;
+  // The HUD in its own units, and the screen's aspect (Measure).
+  private let m_width: Float;
+  private let m_height: Float;
+  private let m_aspect: Float;
 
   public static func BarWidth() -> Float {
     return 420.0;
@@ -62,7 +103,17 @@ public class TandemPartyHud {
     // 3840 x 2160 whatever the screen).
     this.m_left = 96.0;
     this.m_top = 340.0;
+    // Below the holo portrait, which takes the left column under the
+    // health bar (a first pick: presence.md, Layout, to check on screen).
+    this.m_callLeft = 96.0;
+    this.m_callTop = 1080.0;
     this.m_why = "no session";
+    this.m_listOn = true;
+    this.m_modulesLogged = -1;
+    this.m_force = [-1, -1, -1, -1];
+    this.m_width = 3840.0;
+    this.m_height = 2160.0;
+    this.m_aspect = 16.0 / 9.0;
   }
 
   public func Stop() -> Void {
@@ -111,6 +162,26 @@ public class TandemPartyHud {
     this.Apply();
   }
 
+  // Whether a player's nameplate shows now (Markers.reds: one name over a
+  // player, the plate's where it shows, else the marker's).
+  public func PlateOn(player: Uint32) -> Bool {
+    if !this.m_visible {
+      return false;
+    }
+    for entry in this.m_entries {
+      if entry.player == player {
+        return entry.plateNow;
+      }
+    }
+    return false;
+  }
+
+  public static func PlateShown(game: GameInstance, player: Uint32) -> Bool {
+    let presence = TandemPresenceSync.Of(game);
+    let hud = IsDefined(presence) ? presence.Hud() : null;
+    return IsDefined(hud) && hud.PlateOn(player);
+  }
+
   // ---- widgets ----
 
   private func Window() -> wref<inkCompoundWidget> {
@@ -144,29 +215,40 @@ public class TandemPartyHud {
     return true;
   }
 
-  private static func Text(name: CName, size: Int32, style: CName, color: CName) -> ref<inkText> {
+  // A text in the HUD's font: in a colour of the game's style (`style`), or
+  // in a player's own colour (`player`, when not 0).
+  private static func Text(name: CName, size: Int32, weight: CName, style: CName, player: Uint32) -> ref<inkText> {
     let text = new inkText();
     text.SetName(name);
     text.SetFontFamily("base\\gameplay\\gui\\fonts\\raj\\raj.inkfontfamily");
-    text.SetFontStyle(style);
+    text.SetFontStyle(weight);
     text.SetFontSize(size);
     text.SetLetterCase(textLetterCase.UpperCase);
-    text.SetStyle(r"base\\gameplay\\gui\\common\\main_colors.inkstyle");
-    text.BindProperty(n"tintColor", color);
+    TandemPartyHud.Tint(text, style, player);
     text.SetFitToContent(true);
     text.SetInteractive(false);
     return text;
   }
 
-  private static func Block(name: CName, width: Float, height: Float, color: CName, opacity: Float) -> ref<inkRectangle> {
+  private static func Block(name: CName, width: Float, height: Float, style: CName, player: Uint32, opacity: Float) -> ref<inkRectangle> {
     let block = new inkRectangle();
     block.SetName(name);
     block.SetSize(new Vector2(width, height));
-    block.SetStyle(r"base\\gameplay\\gui\\common\\main_colors.inkstyle");
-    block.BindProperty(n"tintColor", color);
+    TandemPartyHud.Tint(block, style, player);
     block.SetOpacity(opacity);
     block.SetInteractive(false);
     return block;
+  }
+
+  // The player's identity colour, the same in every game and on every mark
+  // of theirs (marker, pings, quickhacks), else the game's style colour.
+  private static func Tint(widget: ref<inkWidget>, style: CName, player: Uint32) -> Void {
+    if player != 0u {
+      widget.SetTintColor(TandemMarkers.ColorOf(player));
+    } else {
+      widget.SetStyle(r"base\\gameplay\\gui\\common\\main_colors.inkstyle");
+      widget.BindProperty(n"tintColor", style);
+    }
   }
 
   private func Entry(player: Uint32) -> ref<TandemPartyEntry> {
@@ -186,27 +268,29 @@ public class TandemPartyHud {
     root.SetFitToContent(true);
     root.SetMargin(new inkMargin(0.0, 0.0, 0.0, 28.0));
     root.SetInteractive(false);
+    root.SetVisible(false);
     root.Reparent(this.m_root);
     entry.root = root;
 
     // The name, as the game writes a character's over its bar.
-    entry.name = TandemPartyHud.Text(n"name", 38, n"Medium", n"MainColors.Blue");
+    entry.name = TandemPartyHud.Text(n"name", 38, n"Medium", n"", player);
     entry.name.Reparent(root);
 
-    // The health bar: a dim track and its fill, the player bar's red.
+    // The health bar: a dim track and its fill.
     let track = new inkCanvas();
     track.SetName(n"health");
     track.SetSize(new Vector2(TandemPartyHud.BarWidth(), 10.0));
     track.SetMargin(new inkMargin(0.0, 6.0, 0.0, 6.0));
     track.SetInteractive(false);
     track.Reparent(root);
-    let back = TandemPartyHud.Block(n"track", TandemPartyHud.BarWidth(), 10.0, n"MainColors.Red", 0.25);
+    let back = TandemPartyHud.Block(n"track", TandemPartyHud.BarWidth(), 10.0, n"", player, 0.25);
     back.Reparent(track);
-    entry.bar = TandemPartyHud.Block(n"fill", TandemPartyHud.BarWidth(), 10.0, n"MainColors.Red", 1.0);
+    entry.bar = TandemPartyHud.Block(n"fill", TandemPartyHud.BarWidth(), 10.0, n"", player, 1.0);
     entry.bar.Reparent(track);
 
-    // One line of state: down, out, in a scene, elsewhere, in a menu.
-    entry.state = TandemPartyHud.Text(n"state", 30, n"Regular", n"MainColors.Red");
+    // One line of state: down, out, in a scene, elsewhere, in a menu (the
+    // HUD's red: it says something is wrong).
+    entry.state = TandemPartyHud.Text(n"state", 30, n"Regular", n"MainColors.Red", 0u);
     entry.state.SetVisible(false);
     entry.state.Reparent(root);
 
@@ -226,14 +310,14 @@ public class TandemPartyHud {
     arrow.SetRenderTransformPivot(new Vector2(0.5, 0.5));
     arrow.SetInteractive(false);
     arrow.Reparent(where);
-    let leftBar = TandemPartyHud.Block(n"left", 5.0, 22.0, n"MainColors.Blue", 1.0);
+    let leftBar = TandemPartyHud.Block(n"left", 5.0, 22.0, n"", player, 1.0);
     leftBar.SetAnchor(inkEAnchor.Centered);
     leftBar.SetAnchorPoint(new Vector2(0.5, 0.5));
     leftBar.SetRenderTransformPivot(new Vector2(0.5, 0.5));
     leftBar.SetTranslation(new Vector2(-6.0, 0.0));
     leftBar.SetRotation(35.0);
     leftBar.Reparent(arrow);
-    let rightBar = TandemPartyHud.Block(n"right", 5.0, 22.0, n"MainColors.Blue", 1.0);
+    let rightBar = TandemPartyHud.Block(n"right", 5.0, 22.0, n"", player, 1.0);
     rightBar.SetAnchor(inkEAnchor.Centered);
     rightBar.SetAnchorPoint(new Vector2(0.5, 0.5));
     rightBar.SetRenderTransformPivot(new Vector2(0.5, 0.5));
@@ -241,26 +325,24 @@ public class TandemPartyHud {
     rightBar.SetRotation(-35.0);
     rightBar.Reparent(arrow);
     entry.arrow = arrow;
-    entry.distance = TandemPartyHud.Text(n"distance", 30, n"Regular", n"MainColors.Blue");
+    entry.distance = TandemPartyHud.Text(n"distance", 30, n"Regular", n"", player);
     entry.distance.Reparent(where);
 
-    // The nameplate: the name and a thin health line, centred over the head.
+    // The nameplate: the name alone, centred over the head; scaled about
+    // its foot.
     let plate = new inkVerticalPanel();
     plate.SetName(n"tandem_nameplate");
     plate.SetFitToContent(true);
     plate.SetAnchor(inkEAnchor.TopLeft);
     plate.SetAnchorPoint(new Vector2(0.5, 1.0));
+    plate.SetRenderTransformPivot(new Vector2(0.5, 1.0));
     plate.SetInteractive(false);
     plate.SetVisible(false);
     plate.Reparent(this.m_plates);
     entry.plate = plate;
-    entry.plateName = TandemPartyHud.Text(n"name", 32, n"Medium", n"MainColors.Blue");
+    entry.plateName = TandemPartyHud.Text(n"name", 32, n"Medium", n"", player);
     entry.plateName.SetHAlign(inkEHorizontalAlign.Center);
     entry.plateName.Reparent(plate);
-    entry.plateBar = TandemPartyHud.Block(n"health", 160.0, 5.0, n"MainColors.Red", 1.0);
-    entry.plateBar.SetHAlign(inkEHorizontalAlign.Center);
-    entry.plateBar.SetMargin(new inkMargin(0.0, 4.0, 0.0, 0.0));
-    entry.plateBar.Reparent(plate);
 
     ArrayPush(this.m_entries, entry);
     TandemNative.Log(s"hud: entry for player \(player) (\(TandemPartyHud.NameOf(player)))");
@@ -269,33 +351,197 @@ public class TandemPartyHud {
 
   public static func NameOf(player: Uint32) -> String {
     let name = TandemNative.PlayerName(player);
-    return StrLen(name) > 0 ? name : s"Player \(player)";
+    return StrLen(name) > 0 ? name : TandemText.Unnamed(player);
   }
 
-  // TODO: localized strings.
-  public static func StateText(status: Int32, place: Int32, reviveLeft: Float) -> String {
+  // The state line (in English for the log: scenarios read it).
+  public static func StateText(status: Int32, place: Int32, reviveLeft: Float, opt english: Bool) -> String {
     switch status {
       case 1:
-        return reviveLeft >= 0.0 ? s"Reviving \(CeilF(reviveLeft))" : "Down";
+        return reviveLeft >= 0.0 ? TandemText.FE(english, "Party-Reviving", s"\(CeilF(reviveLeft))") : TandemText.T(english, "Party-Down");
       case 2:
-        return "Out";
+        return TandemText.T(english, "Party-Out");
       case 3:
-        return TandemElsewhere.PlaceName(place);
+        return TandemText.T(english, TandemPartyHud.PlaceKey(place));
       case 4:
-        return "In a scene";
+        return TandemText.T(english, "Party-Scene");
       case 5:
-        return "In a menu";
+        return TandemText.T(english, "Party-Menu");
       default:
         return "";
+    }
+  }
+
+  // Where a V elsewhere is (proto::Place, Elsewhere.reds).
+  public static func PlaceKey(place: Int32) -> String {
+    switch place {
+      case 1:
+        return "Party-Cyberspace";
+      case 2:
+        return "Party-Braindance";
+      case 3:
+        return "Party-Johnny";
+      case 4:
+        return "Party-OtherBody";
+      default:
+        return "Party-Elsewhere";
+    }
+  }
+
+  // ---- where the list sits, and what it yields to (presence.md, Layout) ----
+
+  // The space kept free above the bottom left corner: the game's hotkeys
+  // (phone, consumable, grenade) and its radio toast.
+  public static func BottomClear() -> Float {
+    return 420.0;
+  }
+
+  // How tall an entry is, full (name, bar, state, where) or compact (name,
+  // bar, and the state when there is one).
+  public static func EntryHeight(compact: Bool) -> Float {
+    return compact ? 110.0 : 170.0;
+  }
+
+  // A test command's answer for case `i` (0 holocall, 1 boss bar, 2 choice
+  // hub, 3 the game's HUD hidden), else what the game says.
+  private func Forced(i: Int32, auto: Bool) -> Bool {
+    let forced = this.m_force[i];
+    return forced < 0 ? auto : forced == 1;
+  }
+
+  // A holocall or an audio call is up (the phone's own blackboard: the
+  // phase NewHudPhoneGameController shows its holo for).
+  private func HoloCall() -> Bool {
+    let board = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().UI_ComDevice);
+    if !IsDefined(board) {
+      return false;
+    }
+    let value = board.GetVariant(GetAllBlackboardDefs().UI_ComDevice.PhoneCallInformation);
+    if !IsDefined(value) {
+      return false;
+    }
+    let call = FromVariant<PhoneCallInformation>(value);
+    return Equals(call.callPhase, questPhoneCallPhase.IncomingCall) || Equals(call.callPhase, questPhoneCallPhase.StartCall);
+  }
+
+  // The dialogue choice hub is up (dialogWidgetGameController's blackboard).
+  private func Choices() -> Bool {
+    let board = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().UIInteractions);
+    if !IsDefined(board) {
+      return false;
+    }
+    let value = board.GetVariant(GetAllBlackboardDefs().UIInteractions.DialogChoiceHubs);
+    if !IsDefined(value) {
+      return false;
+    }
+    let hubs = FromVariant<DialogChoiceHubs>(value);
+    return ArraySize(hubs.choiceHubs) > 0;
+  }
+
+  // The game's HUD modules on the HUD layer (Codeware's controllers), found
+  // again every 2 s: the boss bar, and the health bar, minimap and quest
+  // tracker whose visibility says whether the game shows its HUD.
+  private func Scan(now: Float) -> Void {
+    if this.m_scannedAt > 0.0 && now >= this.m_scannedAt && now - this.m_scannedAt < 2.0 {
+      return;
+    }
+    this.m_scannedAt = now;
+    this.m_boss = null;
+    ArrayClear(this.m_modules);
+    let layer = GameInstance.GetInkSystem().GetLayer(n"inkHUDLayer");
+    if !IsDefined(layer) {
+      return;
+    }
+    for controller in layer.GetGameControllers() {
+      let module = controller as inkGameController;
+      if IsDefined(module) {
+        if IsDefined(module as BossHealthBarGameController) {
+          this.m_boss = module.GetRootWidget();
+        } else if IsDefined(module as healthbarWidgetGameController) || IsDefined(module as MinimapContainerController) || IsDefined(module as QuestTrackerGameController) {
+          ArrayPush(this.m_modules, module.GetRootWidget());
+        }
+      }
+    }
+    if this.m_modulesLogged != ArraySize(this.m_modules) {
+      this.m_modulesLogged = ArraySize(this.m_modules);
+      TandemNative.Log(s"hud: the game's HUD modules followed: \(ArraySize(this.m_modules)) (health bar, minimap, quest tracker), boss bar \(IsDefined(this.m_boss) ? "found" : "not found")");
+    }
+  }
+
+  // The game hides its whole HUD (cinematic camera, the empty context, a
+  // taxi ride...): every module we follow is hidden. One module turned off
+  // in the game's settings does not count.
+  private func GameHudHidden() -> Bool {
+    if ArraySize(this.m_modules) == 0 {
+      return false;
+    }
+    for module in this.m_modules {
+      if IsDefined(module) && module.IsVisible() {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // The HUD's size in its own units (the window at the UI scale: 3840 x
+  // 2160 at 16:9, wider at 21:9, taller at 16:10) and the screen's aspect.
+  private func Measure() -> Void {
+    let ui = GameInstance.GetUISystem(this.m_game);
+    let window = ui.GetCurrentWindowSize();
+    let inverse = ui.GetInverseUIScale();
+    if window.X > 0.0 && window.Y > 0.0 && inverse > 0.0 {
+      this.m_aspect = window.X / window.Y;
+      this.m_width = window.X * inverse;
+      this.m_height = window.Y * inverse;
+    } else {
+      this.m_aspect = 16.0 / 9.0;
+      this.m_width = 3840.0;
+      this.m_height = 2160.0;
+    }
+  }
+
+  // Where the list goes this frame, compact or not, shown or not.
+  private func Layout(linked: Int32) -> Void {
+    this.Measure();
+    let call = this.Forced(0, this.HoloCall());
+    let boss = this.Forced(1, IsDefined(this.m_boss) && this.m_boss.IsVisible());
+    let choices = this.Forced(2, this.Choices());
+    let compact = call || choices;
+    let left = call ? this.m_callLeft : this.m_left;
+    let top = call ? this.m_callTop : this.m_top;
+    let why = "";
+    if !TandemSettings.PartyHud() {
+      why = "party_hud off";
+    } else if top + Cast<Float>(linked) * TandemPartyHud.EntryHeight(compact) > this.m_height - TandemPartyHud.BottomClear() {
+      why = "no room";
+    }
+    this.m_compact = compact;
+    this.m_listOn = Equals(why, "");
+    this.m_root.SetMargin(new inkMargin(left, top, 0.0, 0.0));
+    let place = call ? "below the holocall" : "under the health bar";
+    let yields = (call ? ", holocall up" : "") + (choices ? ", choice hub up" : "") + (boss ? ", boss bar up (top centre: nothing to yield)" : "");
+    let layout = s"\(place) (\(compact ? "compact" : "full")) at \(left) \(top), HUD \(RoundF(this.m_width)) x \(RoundF(this.m_height))\(yields)";
+    if NotEquals(layout, this.m_layout) {
+      this.m_layout = layout;
+      TandemNative.Log(s"hud: layout \(layout)");
+    }
+    if NotEquals(why, this.m_listWhy) {
+      this.m_listWhy = why;
+      TandemNative.Log(Equals(why, "") ? "hud: party list shown" : s"hud: party list hidden (\(why))");
     }
   }
 
   // ---- every frame of the session ----
 
   // Why the HUD of ours is hidden now ("": it is shown).
-  private func Hidden(you: Uint32, count: Int32) -> String {
+  private func Hidden(you: Uint32, count: Int32, now: Float) -> String {
+    this.m_tier = 0;
     if you == 0u || count == 0 {
       return "no session";
+    }
+    this.Scan(now);
+    if this.Forced(3, this.GameHudHidden()) {
+      return "the game's HUD is hidden";
     }
     let presence = TandemPresenceSync.Of(this.m_game);
     if GameInstance.GetPhotoModeSystem(this.m_game).IsPhotoModeActive() || (IsDefined(presence) && presence.InPhotoMode()) {
@@ -306,7 +552,10 @@ public class TandemPartyHud {
       return "no player";
     }
     let psm = GameInstance.GetBlackboardSystem(this.m_game).GetLocalInstanced(player.GetEntityID(), GetAllBlackboardDefs().PlayerStateMachine);
-    if IsDefined(psm) && psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.SceneTier) >= 3 {
+    if IsDefined(psm) {
+      this.m_tier = psm.GetInt(GetAllBlackboardDefs().PlayerStateMachine.SceneTier);
+    }
+    if this.m_tier >= 3 {
       return "cinematic";
     }
     let braindance = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().Braindance);
@@ -326,14 +575,14 @@ public class TandemPartyHud {
       photo = true;
     }
     let show = this.m_visible && !photo;
-    this.m_root.SetVisible(show);
+    this.m_root.SetVisible(show && this.m_listOn);
     this.m_plates.SetVisible(show);
   }
 
   public func Tick(now: Float, system: ref<TandemSystem>, you: Uint32) -> Void {
     this.m_now = now;
     let players = system.PuppetPlayers();
-    let why = this.Hidden(you, ArraySize(players));
+    let why = this.Hidden(you, ArraySize(players), now);
     if NotEquals(why, this.m_why) {
       this.m_why = why;
       TandemNative.Log(Equals(why, "") ? s"hud: party shown (\(ArraySize(players)) partners)" : s"hud: party hidden (\(why))");
@@ -343,6 +592,13 @@ public class TandemPartyHud {
       this.Apply();
       return;
     }
+    let linkedCount = 0;
+    for player in players {
+      if TandemCommsNative.LinkState(player) == 3 {
+        linkedCount += 1;
+      }
+    }
+    this.Layout(linkedCount);
     this.Apply();
     if !this.m_visible {
       return;
@@ -361,6 +617,8 @@ public class TandemPartyHud {
     let away = TandemElsewhere.Get(this.m_game);
     let revive = TandemRevive.Of(this.m_game);
     let paused = TandemNative.PausedPlayers();
+    // The settings page's choice, read as it changes.
+    let plates = TandemSettings.NameplateMode();
     for player in players {
       let body = system.PuppetOf(player);
       let entry = this.Entry(player);
@@ -375,6 +633,11 @@ public class TandemPartyHud {
       if status == 1 || status == 2 {
         health = 0.0;
       }
+      // Linked (both consent, comms.md): its entry and its health; else its
+      // name over the head alone.
+      let linked = TandemCommsNative.LinkState(player) == 3;
+      entry.root.SetVisible(linked);
+      entry.root.SetMargin(new inkMargin(0.0, 0.0, 0.0, this.m_compact ? 12.0 : 28.0));
       let left = IsDefined(revive) ? revive.HoldLeft(player) : -1.0;
       entry.name.SetText(TandemPartyHud.NameOf(player));
       entry.bar.SetSize(new Vector2(TandemPartyHud.BarWidth() * ClampF(health, 0.0, 1.0), 10.0));
@@ -388,43 +651,58 @@ public class TandemPartyHud {
       let bearing = TandemPresence.Bearing(camera, forward, half, where);
       let hiddenBody = TandemVisibility.IsHidden(this.m_game, player);
       let off = !bearing.inView || hiddenBody;
-      entry.where.SetVisible(off);
+      entry.where.SetVisible(linked && off && !this.m_compact);
       let metres = TandemPresence.RoundedMetres(bearing.distance);
-      if off {
+      if linked && off {
         entry.arrow.SetRotation(Rad2Deg(bearing.angle));
         entry.distance.SetText(metres < 1000 ? TandemText.F("Party-Metres", s"\(metres)") : TandemText.F("Party-Kilometres", s"\(metres / 1000).\((metres % 1000) / 100)"));
       }
 
-      // The nameplate, over the head, up close.
+      // The nameplate, over the head: near, always (only the near ones
+      // while our V talks), or off.
       let head = where;
       head.Z += 2.0;
-      let point = TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, 16.0 / 9.0, head);
-      let opacity = TandemPresence.NameplateOpacity(bearing.distance);
+      let point = TandemPresence.Project(camera, forward, right, half, this.m_fovVertical, this.m_aspect, head);
+      let mode = plates;
+      if mode == 1 && this.m_tier >= 2 {
+        mode = 0;
+      }
+      let opacity = TandemPresence.NameplateOpacity(bearing.distance, mode);
       let plateOn = IsDefined(body) && !hiddenBody && point.visible && opacity > 0.0 && status != 3;
       entry.plate.SetVisible(plateOn);
+      entry.plateNow = plateOn;
       if plateOn {
-        entry.plate.SetMargin(new inkMargin(point.x * 3840.0, point.y * 2160.0, 0.0, 0.0));
+        let scale = TandemPresence.NameplateScale(bearing.distance, mode);
+        entry.plate.SetMargin(new inkMargin(point.x * this.m_width, point.y * this.m_height, 0.0, 0.0));
         entry.plate.SetOpacity(opacity);
+        entry.plate.SetScale(new Vector2(scale, scale));
         entry.plateName.SetText(TandemPartyHud.NameOf(player));
-        entry.plateBar.SetSize(new Vector2(160.0 * ClampF(health, 0.0, 1.0), 5.0));
       }
 
       // The log proves the state (scenarios read it): on a change of what
-      // is shown, at most twice a second.
+      // is shown, at most twice a second (a link change at once).
       let percent = Cast<Int32>(health * 100.0);
       let changed = status != entry.status || Equals(off, entry.inView) || NotEquals(plateOn, entry.plateOn) || AbsF(Cast<Float>(percent - entry.health)) >= 10.0 || (off && bearing.side != entry.side) || !entry.shown;
-      if changed && now - entry.loggedAt >= 0.5 {
+      let relinked = NotEquals(linked, entry.linked);
+      if relinked || changed && now - entry.loggedAt >= 0.5 {
         entry.loggedAt = now;
         entry.shown = true;
         entry.status = status;
         entry.inView = !off;
         entry.plateOn = plateOn;
+        entry.linked = linked;
         entry.health = percent;
         entry.side = bearing.side;
         entry.metres = metres;
-        TandemNative.Log(s"hud: player \(player) \"\(TandemPartyHud.NameOf(player))\" health \(percent) % status \(TandemPartyHud.StatusName(status))\(StrLen(text) > 0 ? s" [\(text)]" : ""), \(metres) m, \(off ? s"off screen (arrow side \(bearing.side))" : "in view"), nameplate \(plateOn ? "on" : "off")");
+        this.Log(entry, TandemPartyHud.StateText(status, place, left, true));
       }
     }
+  }
+
+  private func Log(entry: ref<TandemPartyEntry>, state: String) -> Void {
+    let where = entry.inView ? "in view" : s"off screen (arrow side \(entry.side))";
+    let plate = entry.plateOn ? "on" : "off";
+    TandemNative.Log(s"hud: player \(entry.player) \"\(TandemPartyHud.NameOf(entry.player))\" health \(entry.health) % status \(TandemPartyHud.StatusName(entry.status))\(StrLen(state) > 0 ? s" [\(state)]" : ""), \(entry.metres) m, \(where), nameplate \(plate), \(entry.linked ? "linked: in the party list" : "not linked: no entry")");
   }
 
   public static func StatusName(status: Int32) -> String {
@@ -461,6 +739,14 @@ public class TandemPartyHud {
     } else if Equals(command, "fov v") || Equals(command, "fov h") {
       this.m_fovVertical = Equals(command, "fov v");
       TandemNative.Log(s"hud: the camera's field of view read as \(this.m_fovVertical ? "vertical" : "horizontal")");
+    } else if StrBeginsWith(command, "call-at ") {
+      // presence hud call-at X Y: where the list goes below a holocall.
+      let rest = StrAfterFirst(command, "call-at ");
+      this.m_callLeft = StringToFloat(StrBeforeFirst(rest, " "));
+      this.m_callTop = StringToFloat(StrAfterFirst(rest, " "));
+      TandemNative.Log(s"hud: below a holocall, the list goes at \(this.m_callLeft) \(this.m_callTop)");
+    } else if this.ForceCommand(command) {
+      return;
     } else if Equals(command, "camera") {
       // What the engine's own projection says of each puppet's head, next
       // to ours: one run settles the field of view's convention.
@@ -484,10 +770,29 @@ public class TandemPartyHud {
     }
   }
 
+  // presence hud holocall|boss|choices|hudhidden on|off|auto: force a case
+  // the list yields to (scenario hud-layout screenshots each).
+  private func ForceCommand(command: String) -> Bool {
+    let cases = ["holocall", "boss", "choices", "hudhidden"];
+    let i = 0;
+    while i < ArraySize(cases) {
+      if StrBeginsWith(command, cases[i] + " ") {
+        let value = StrAfterFirst(command, " ");
+        this.m_force[i] = Equals(value, "on") ? 1 : (Equals(value, "off") ? 0 : -1);
+        TandemNative.Log(s"hud: \(cases[i]) forced \(Equals(value, "on") || Equals(value, "off") ? value : "auto")");
+        return true;
+      }
+      i += 1;
+    }
+    return false;
+  }
+
   public func Report() -> Void {
-    TandemNative.Log(s"hud: party \(this.m_visible ? "shown" : s"hidden (\(this.m_why))"), \(ArraySize(this.m_entries)) entries, widget \(IsDefined(this.m_root) ? "built" : "not built"), at \(this.m_left) \(this.m_top)");
+    TandemNative.Log(s"hud: layout \(this.m_layout); list \(this.m_listOn ? "shown" : s"hidden (\(this.m_listWhy))")");
+    let modes = ["near", "always", "off"];
+    TandemNative.Log(s"hud: party \(this.m_visible ? "shown" : s"hidden (\(this.m_why))"), \(ArraySize(this.m_entries)) entries, widget \(IsDefined(this.m_root) ? "built" : "not built"), at \(this.m_left) \(this.m_top), nameplates \(modes[TandemSettings.NameplateMode()])");
     for entry in this.m_entries {
-      TandemNative.Log(s"hud: player \(entry.player) \"\(TandemPartyHud.NameOf(entry.player))\" health \(entry.health) % status \(TandemPartyHud.StatusName(entry.status)), \(entry.metres) m, \(entry.inView ? "in view" : s"off screen (arrow side \(entry.side))"), nameplate \(entry.plateOn ? "on" : "off")");
+      this.Log(entry, TandemPartyHud.StateText(entry.status, 0, -1.0, true));
     }
   }
 }

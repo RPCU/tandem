@@ -111,15 +111,75 @@ the HUD layer (`scripts/tandem/PartyHud.reds`).
 <!-- prettier-ignore -->
 | About the partner | Today | After | Needs eyes |
 | --- | --- | --- | --- |
-| name | on the world marker and the map tooltip | an entry under V's own health bar: the name in the HUD's font | place and size on screen (`cmd presence hud at X Y`) |
-| health | not shown | a bar under the name (`Presence`, a byte) | colours |
+| who has an entry | — | **linked partners only** (both consent, [`comms.md`](comms.md): `TandemCommsNative.LinkState` 3, `link = auto` links everyone from the start); a link broken or a partner gone (`PlayerLeft`) takes it away at the next frame. An unlinked partner keeps its marker and a nameplate with its name alone | that a break is seen at once |
+| name | on the world marker and the map tooltip | an entry under V's own health bar: the name in the HUD's font, in the partner's colour (`TandemMarkers.ColorOf`) | place and size on screen (`cmd presence hud at X Y`) |
+| health | not shown | a bar under the name (`Presence`, a byte), in the partner's colour on a dim track of it | colours against the HUD's |
 | down / out | a notice, the outline, the revive prompt | "Down", "Reviving 7" while we hold the revive (its countdown), "Out"; the bar empties | — |
-| distance and direction off screen | the world marker | under the bar when the camera does not see them: an arrow turned their way and "124 m" / "1.2 km" | the arrow's sense |
-| in a scene, elsewhere, in a menu | notices only | one line: "In a scene" (their tier 3 and up), "Cyberspace" / "Braindance"…, "In a menu" (the pause menu or any full-screen menu); most important first | — |
-| nameplate | only the game's own, when aimed at | the name and a thin health line over the puppet's head, full to 12 m, gone at 20 m, hidden with the body | its place over the head (the camera's field of view: see research) |
+| distance and direction off screen | the world marker | under the bar when the camera does not see them: an arrow turned their way and "124 m" / "1.2 km", in their colour | the arrow's sense |
+| in a scene, elsewhere, in a menu | notices only | one line in the HUD's red: "In a scene" (their tier 3 and up), "Cyberspace" / "Braindance"…, "In a menu" (the pause menu or any full-screen menu); most important first; keyed texts (`Party-*`, English in the log) | — |
+| nameplate | only the game's own, when aimed at | the name alone over the puppet's head, in their colour, for every partner, linked or not (health is the party entry's only: the user's call, 2026-11-19); hidden with the body. `nameplates = near` (default): full to 12 m, gone at 20 m; `always`: at any distance in view, full to 12 m then smaller and fainter to a floor at 150 m (55 % size, 50 % opacity, `NameplateLookOf`), only the near ones while our V talks (scene tier 2); `off`: none | its place over the head (the camera's field of view: see research); `always` in a crowded street |
+| the marker's name | its world label | one name over a player: the marker's label hides while the nameplate shows (`TandemPartyHud.PlateShown`), and with `nameplates = off` | no flicker at 20 m |
 | photo mode, cinematics | — | all of it hidden in photo mode, when our own scene tier is 3 or more, in a braindance, with no session | hidden in both |
 
-### 5. Small presence details
+### 5. Layout: where the list sits, what it yields to
+
+"Make sure it doesn't overlap with holo call or anything else" (the user,
+2026-11-19). The list is ours on the game's HUD layer, not one of its
+modules, so it follows the game's own signals itself
+(`TandemPartyHud.Layout`, every frame). **Nothing here is measured on
+screen yet**: the places are first picks from the vanilla scripts and the
+HUD as it is played; scenario `hud-layout` screenshots every case for a
+person to check, and `presence hud at X Y` / `call-at X Y` move the two
+places without a rebuild.
+
+**Units.** The HUD layer's virtual window, in the HUD's own units: the
+window at the UI scale (`UISystem.GetCurrentWindowSize()` x
+`GetInverseUIScale()`): 3840 x 2160 at 16:9, wider at 21:9 (5160 x 2160 at
+3440 x 1440), taller at 16:10. The list is anchored top left, as the
+health bar is, so it keeps to the left edge at every aspect and scales with
+the UI. The nameplates are placed in the same units with the screen's own
+aspect (they assumed 16:9 before).
+
+**The vanilla widgets, by place, and the rule for each** (2.50 scripts:
+the controllers named, `inkHUDGameController.ShowRequest` / `HideRequest`
+toggling their root's visibility):
+
+<!-- prettier-ignore -->
+| Vanilla widget | Where | Shares space with the list? | Rule |
+| --- | --- | --- | --- |
+| health bar, buffs, cyberware cooldowns (`healthbarWidgetGameController`, `inkCooldownGameController`) | top left | the list sits under them (96, 340) | fixed: the list starts below them |
+| holocall / audio call portrait (`NewHudPhoneGameController`, `HoloAudioCallLogicController`) | left column, under the health bar | **yes** | while `UI_ComDevice.PhoneCallInformation` is in its `IncomingCall` or `StartCall` phase: the list moves below the portrait (96, 1080) and turns compact |
+| dialogue choice hub (`dialogWidgetGameController`), subtitles | right of centre; bottom centre | no | while `UIInteractions.DialogChoiceHubs` has a hub: compact in place (a conversation needs no arrow or distance) |
+| boss health bar (`BossHealthBarGameController`) | top centre | no, at any aspect from 16:10 to 32:9 | nothing to yield: logged (its root's visibility), the partners' health stays whole in a boss fight |
+| minimap, wanted level, quest tracker and objectives, district name (`MinimapContainerController`, `WantedBarGameController`, `QuestTrackerGameController`) | top right | no | none |
+| ammo and weapon (`WeaponRosterGameController`), input hints (`InputHintManagerGameController`, ours too) | bottom right | no | none |
+| hotkeys (phone, consumable, grenade, `HotkeysWidgetController`), radio toast (`HotkeyCustomRadioWidgetController`) | bottom left | below the list | the list never goes into the bottom 420 units (`BottomClear`): with more entries than fit, it hides ("no room"; 3 partners always fit) |
+| item, XP, level, journal, zone-alert toasts (`ItemsNotificationQueue`, `JournalNotificationQueue`, `LevelUpNotificationQueue`, `ZoneAlertNotificationQueue`) | right side, top centre | no | none |
+| our notices (the warning line) | top centre | no | none |
+| interaction prompts (`InteractionsHubGameController`), stealth indicator (`StealthIndicatorGameController`) | around the crosshair | no | none |
+| vehicle HUD (`hudCarController`: speed, gear) | bottom centre / right | no | none |
+| the whole HUD hidden (cinematic camera, the `Empty` UI context, a taxi ride: `DelamainTaxiSystem` pushes `UIGameContext.DelamainTaxi`) | — | — | when every module we follow (health bar, minimap, quest tracker, found on the HUD layer with Codeware's `GetGameControllers`, again every 2 s) is hidden, the list and the nameplates hide too; one module turned off in the game's settings does not count |
+
+**Compact**: the name, the bar, and the state line when there is one
+(Down, Reviving…); no arrow or distance; 12 units between entries instead
+of 28.
+
+**The setting**: `party_hud = on|off` (default `on`, the settings page,
+applied at once): off hides the list alone; nameplates are `nameplates`'
+own. **No input to toggle it in game**: every free action is a chord or a
+debug binding, the tag key already pings and links (`comms.md`), the phone
+key answers offers; and the vanilla HUD has no "hide HUD" key of its own to
+follow (2.50 hides it by context, which the list follows). The settings
+page is the toggle.
+
+**Test commands**: `presence hud holocall|boss|choices|hudhidden
+on|off|auto` force a case (auto: the game's word), `presence hud at X Y`,
+`presence hud call-at X Y`, `presence report` (the layout and why the list
+is hidden), `coop set party_hud on|off`. Each change of layout is logged:
+`hud: layout below the holocall (compact) at 96 1080, HUD 3840 x 2160,
+holocall up`; `hud: party list hidden (party_hud off)`.
+
+### 6. Small presence details
 
 <!-- prettier-ignore -->
 | Detail | Verdict |
@@ -131,6 +191,36 @@ the HUD layer (`scripts/tandem/PartyHud.reds`).
 | swimming, ladders | Placement done by the movement work; now a ladder is heard rung by rung and water is silent. Swim strokes and splashes: **open** |
 | holstering | Seen through `Held` (the hand empties); now heard |
 
+### 7. Names
+
+- **A pseudo for everyone** (`tandem.ini name`, default `V`): the co-op
+  menu asks for one in the game's own text popup (Codeware's
+  `GenericMessageNotification.ShowInput`, as the settings page's typed
+  values) the first time a player hosts or joins while the name is still
+  `V` (or empty), once a game run (`TandemNative.NameToAsk`, `NameAsked`):
+  main menu Host a game / Join a game, pause menu Host this game / Join a
+  game. A refused name asks again with the reason; cancel plays as `V`
+  for now (asked again at the next launch); then the page picked goes on.
+  Saved through the settings native (`SetSetting`), so the settings page
+  changes it too.
+- **What a name is** (`core/include/tandem/names.hpp`): 1 to 16
+  characters (code points: "Hélène" is 6), trimmed of spaces, valid UTF-8,
+  no control or invisible format character (C0, C1, DEL, zero widths,
+  direction overrides, line separators, the byte order mark), no `;` or `#`
+  (tandem.ini's comment signs: `names::Problem`). `tandem.ini`'s parser
+  refuses any other (`ApplySetting`, `plugin/src/config.cpp`).
+- **Unique in a session**, by the host: a guest whose name another player
+  has (the same but for ASCII case) is shown as "V (2)", "V (3)", the first
+  free number (`names::Unique`); whatever a guest sent is sanitized first
+  (`names::Sanitize`: controls dropped, cut to 16 characters, nothing left
+  is `V`). The roster carries the shown name, so every game names the
+  player the same way; **no protocol change** (`Hello::name` and
+  `PlayerInfo::name` keep their meaning: asked, and shown). A guest learns
+  its own from the roster (`events::NamedAs`, the notice "V is taken in this
+  session: the others see you as V (2)", `Session-Renamed`). A returning
+  player (`session.md`) is matched by the name it asked for, so it keeps
+  "V (2)". A name freed by a player leaving is given again.
+
 ## Tests
 
 - `tests/presence_test.cpp`: strides and gaits, a mock player with no
@@ -139,7 +229,15 @@ the HUD layer (`scripts/tandem/PartyHud.reds`).
   dashes, pain from health (not from a gain or a tick), draws and holsters,
   down, abilities, health in a byte, the send gate, the HUD's status
   priority, the bearing and its arrow, the screen projection, distances,
-  the nameplate's fade, the flinch.
+  the nameplate's fade, near / always / off (size and opacity by
+  distance), the flinch.
+- `tests/names_test.cpp`: typed names (trim, length in characters, UTF-8,
+  controls, comment signs), the default, what a host shows for anything
+  sent, unique names.
+- `tests/endpoint_test.cpp`, over loopback: three Vs and a "v" are shown
+  as V, V (2), v (3), each guest told its own once; the name freed by a
+  leaver is given again; a namesake of a live player is "a (2)"; a
+  returning player keeps its shown name.
 - `tests/pose_test.cpp`: the flinch leans the upper body about the body's
   axes and leaves hips and legs alone.
 - `tests/protocol_test.cpp`, `tests/endpoint_test.cpp`: the three messages
@@ -157,16 +255,24 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | `presence-audio` | footsteps (their source), the shot and its bullet, pain and the flinch, holster and draw |
 | `presence-moves` | jump, landing, climb, the blade's swing and its impact |
 | `presence-hud` | the entry, health, menu, down, off screen with its arrow, the nameplate; logs the camera's projection |
+| `hud-layout` | screenshots of each case: the list under the health bar, below a holocall (compact), with the boss bar, with the choice hub (compact), the game's HUD hidden, `party_hud = off` |
+| `hud-linked` | a linked partner's entry with health, its plate the name alone; the link broken from its side: no entry, the plate stays; `nameplates = always`; a vanish takes plate and marker |
+| `names-prompt` | the pause menu's Host this game asks for a name while it is V; a bad one asked again; a good one saved, then hosting |
+| `names-duplicate` | two mock players named V and v beside our V: shown as V (2) and v (3), each told its own, markers and HUD entries under those names |
 | `presence-reactions` | as a guest: impact, stagger, knockdown, ragdoll and its end on a proxy |
 | `presence-reactions-host` | as host: a guest's hits make our NPCs react, and each reaction goes out |
 
 By hand: `tools/game.sh cmd presence report | steps auto|on|off | vo NAME |
 sound NAME | fx NAME | flinch | bullet | hud [at X Y | fov h|v | camera] |
-react TYPE`.
+react TYPE`; `coop name` (the name, and whether the menu would ask),
+`coop name reset` (ask again), `coop name answer TEXT` / `coop name
+cancel` (answer the open name popup), `coop set nameplates
+near|always|off`.
 
 The mock player: `--hold RECORD`, `--holster-at N`, `--shoot N` (now also
 as host, with the bullet's end), `--melee N`, `--hurt N`, `--menu-at N`,
-`--react-npcs N` (host).
+`--react-npcs N` (host), `--unlink-at N` (breaks its links), `--name NAME`
+(logs `the session shows us as …` when the host renamed it).
 
 ## Open
 
@@ -177,4 +283,9 @@ as host, with the bullet's end), `--melee N`, `--hurt N`, `--menu-at N`,
 - The world marker and the party entry both say where the partner is: once
   both are seen in game, decide whether the entry's arrow replaces the
   marker's distance text.
-- Localized strings for the entry's state line.
+- The name popup answered by `coop name answer` calls the token's
+  callback: whether the popup also closes (else the command must close it
+  as Codeware's `Close` does) is to see in game.
+- Codeware's text field draws what is typed in capitals: whether its
+  `GetText` gives the case typed (what is saved and shown) is to see in
+  game.

@@ -9,6 +9,7 @@
 #include <doctest/doctest.h>
 
 #include <functional>
+#include <sstream>
 
 using namespace std::chrono_literals;
 using namespace tandem;
@@ -31,7 +32,8 @@ struct Game {
   int scaleWords{};
   std::vector<proto::NpcId> asked;
   int duplicateSpawns{}, strayGones{}, hits{}, strikes{}, effects{}, hacks{}, actions{}, replies{},
-      noises{}, playerHits{}, cues{}, shotsAt{}, shotHits{}, states{}, lost{};
+      noises{}, playerHits{}, cues{}, shotsAt{}, shotHits{}, states{}, lost{}, playerHacks{},
+      areaHits{}, npcWords{};
   bool refuse{}, fail{};
   std::vector<proto::PlayerId> linked;
   proto::PlayerId leader{};
@@ -61,11 +63,28 @@ struct Game {
         ++hits;
       else if (const auto *combat = std::get_if<events::Combat>(&event)) {
         strikes += std::holds_alternative<proto::NpcStrike>(combat->message) ? 1 : 0;
+        areaHits += std::holds_alternative<proto::AreaHit>(combat->message) ? 1 : 0;
+        npcWords += std::holds_alternative<proto::NpcWound>(combat->message) ||
+                            std::holds_alternative<proto::NpcPoise>(combat->message) ||
+                            std::holds_alternative<proto::NpcScale>(combat->message)
+                        ? 1
+                        : 0;
         if (const auto *scale = std::get_if<proto::NpcScale>(&combat->message)) {
           scales[scale->npc] = scale->players;
           ++scaleWords;
         }
-      } else if (std::holds_alternative<events::NpcEffectBy>(event))
+      } else if (std::holds_alternative<events::HostPlayerHack>(event))
+        ++playerHacks;
+      // What an owner says about its NPC to the games that show it.
+      else if (std::holds_alternative<events::HostNpcAnims>(event) ||
+               std::holds_alternative<events::HostNpcHold>(event) ||
+               std::holds_alternative<events::HostNpcShot>(event) ||
+               std::holds_alternative<events::HostNpcHealth>(event) ||
+               std::holds_alternative<events::HostNpcStatus>(event) ||
+               std::holds_alternative<events::HostNpcHackState>(event) ||
+               std::holds_alternative<events::HostActorPose>(event))
+        ++npcWords;
+      else if (std::holds_alternative<events::NpcEffectBy>(event))
         ++effects;
       else if (std::holds_alternative<events::NpcHackBy>(event))
         ++hacks;
@@ -282,6 +301,68 @@ TEST_CASE("hits, effects, hacks, actions and shots reach the NPC's owner, whoeve
   CHECK(s->gb.noises == 0);
 }
 
+TEST_CASE("an owner's word on its NPC reaches only the games that show it") {
+  // The host and a linked; b just past the link distance from the host
+  // (kLinkOut), farther still from a: it shows nobody's NPCs.
+  auto s = Start(true);
+  Place(*s->host, 0);
+  Place(*s->a, 100);
+  Place(*s->b, -(regions::kLinkOut + 5.f));
+  const auto a = s->a->You(), b = s->b->You();
+  s->h.Announce(1, {10.f, 0.f, 0.f});
+  s->ga.Announce(1, {100.f, 0.f, 0.f});
+  const auto theirs = MakeNpcId(a, 1);
+  REQUIRE(s->Until([&] {
+    return s->b->Apart() && !s->host->LinkedWith(b) && s->ga.proxies.contains(1) &&
+           s->h.proxies.contains(theirs);
+  }));
+  REQUIRE(s->Until([&] { return s->gb.proxies.empty(); }));
+  s->host->SendCombat(proto::Rules{.flags = proto::kRuleFriendlyFire});
+  s->For(100ms);
+  const auto quiet = s->gb.npcWords;
+
+  // Everything each owner says about its NPC, to b and to everyone.
+  const auto speak = [&](Endpoint &owner, proto::NpcId npc, proto::PlayerId to) {
+    owner.SendPlayerHit({.player = to, .npc = npc, .physical = 5.f});
+    owner.SendNpcCue({.npc = npc, .player = to, .cue = proto::NpcCueKind::CombatStart});
+    owner.SendNpcShotAt({.player = to, .npc = npc});
+    owner.SendPlayerHack({.player = to, .npc = npc, .action = 1});
+    owner.SendNpcShot({.npc = npc});
+    owner.SendNpcAnims({.npcs = {{.npc = npc, .stance = 1}}});
+    owner.SendNpcHold({.npc = npc, .player = to});
+    owner.SendNpcHold({.npc = npc});
+    owner.SendCombat(proto::NpcWound{.npc = npc, .part = 1, .wound = 1});
+    owner.SendCombat(proto::NpcPoise{.npc = npc, .poise = 0.5f});
+    owner.SendNpcHealth({.npc = npc, .health = 0.9f});
+    owner.SendCombat(proto::NpcScale{.npc = npc, .players = 2});
+  };
+  speak(*s->host, 1, b);
+  speak(*s->a, theirs, b);
+  // The same aimed at the games that do show them: these arrive.
+  speak(*s->host, 1, a);
+  speak(*s->a, theirs, 1);
+  REQUIRE(s->Until([&] {
+    return s->ga.playerHits == 1 && s->ga.cues == 1 && s->ga.shotsAt == 1 &&
+           s->ga.playerHacks == 1 && s->h.playerHits == 1 && s->h.cues == 1 && s->h.shotsAt == 1 &&
+           s->h.playerHacks == 1;
+  }));
+  // A V's own hit on another V is not an NPC's: it reaches its target's game.
+  CHECK(s->a->SendCombat(proto::AreaHit{.player = b, .physical = 5.f}));
+  REQUIRE(s->Until([&] { return s->gb.areaHits == 1; }));
+  s->For(200ms);
+  CHECK(s->gb.playerHits == 0);
+  CHECK(s->gb.cues == 0);
+  CHECK(s->gb.shotsAt == 0);
+  CHECK(s->gb.playerHacks == 0);
+  CHECK(s->gb.npcWords == quiet);
+  CHECK(s->gb.scales.empty());
+  // The scale reached the games that show the NPC.
+  CHECK(s->ga.scales[1] == 2);
+  CHECK(s->h.scales[theirs] == 2);
+  CHECK(s->gb.proxies.empty());
+  CHECK(s->gb.duplicateSpawns == 0);
+}
+
 TEST_CASE("players apart share no NPC; meeting shows both sets; parting drops them again") {
   auto s = Start();
   Place(*s->host, 0);
@@ -320,6 +401,31 @@ TEST_CASE("players apart share no NPC; meeting shows both sets; parting drops th
   CHECK(s->h.duplicateSpawns + s->ga.duplicateSpawns == 0);
   s->For(400ms);
   CHECK(s->a->Checks().Requests() == 0);
+}
+
+TEST_CASE("a lost Regions is healed by the players digest: the owner's states flow again") {
+  auto s = Start();
+  Place(*s->host, 0);
+  Place(*s->a, 1000);
+  s->ga.Announce(1, {1000.f, 0.f, 0.f});
+  REQUIRE(s->Until([&] { return s->a->Apart() && !s->host->LinkedWith(s->a->You()); }));
+  // The guest comes over while everything the host says is lost: the link
+  // forms on the host, and its Regions never arrives. Links do not change
+  // again: only the digest can tell the guest.
+  s->host->SetFaults({.drop = 1.0});
+  Place(*s->a, 100);
+  REQUIRE(s->Until([&] { return s->host->LinkedWith(s->a->You()); }));
+  s->For(50ms);
+  s->host->SetFaults({});
+  CHECK(s->a->Apart());
+  REQUIRE(s->Until([&] { return s->a->LinkedWith(1); }));
+  CHECK(s->a->Checks().Requests() >= 1);
+  // Linked in its own view, the owner sends its NPC's states again.
+  const auto theirs = MakeNpcId(s->a->You(), 1);
+  const auto before = s->h.states;
+  s->ga.Move(theirs, {120.f, 0.f, 0.f});
+  REQUIRE(s->Until([&] { return s->h.states > before; }));
+  CHECK(s->host->SharedNpcs().at(theirs).position.x == doctest::Approx(120.f));
 }
 
 TEST_CASE("every game knows who runs the area around each player (traffic's AreaOwner)") {
@@ -505,6 +611,20 @@ TEST_CASE("hand-overs go through although a third of everything is lost") {
 
   // Whatever was lost on the way, both agree on who runs each NPC, every
   // NPC has exactly one game running it, and nobody shows what is not there.
+  // On a failure: who each game says runs each NPC, and what each runs.
+  const auto describe = [&] {
+    std::ostringstream out;
+    auto all = Keys(s->host->SharedNpcs());
+    for (const auto &[npc, spawn] : s->a->SharedNpcs())
+      all.insert(npc);
+    for (const auto npc : all)
+      out << "\nnpc " << npc << ": owner " << s->host->NpcOwner(npc) << " (host), "
+          << s->a->NpcOwner(npc) << " (guest); runs: host " << s->h.running.contains(npc)
+          << ", guest " << s->ga.running.contains(npc) << "; in the record of: host "
+          << s->host->SharedNpcs().contains(npc) << ", guest " << s->a->SharedNpcs().contains(npc);
+    return out.str();
+  };
+  INFO(describe());
   REQUIRE(s->Until(
       [&] {
         for (const auto &[npc, spawn] : s->host->SharedNpcs()) {
@@ -598,6 +718,27 @@ TEST_CASE("an owner whose world is rebuilt leaves its NPCs to who stays; the hos
   CHECK(s->a->OwnsNpc(7));
   CHECK(s->h.lost == 2);
   CHECK(s->h.running.empty());
+}
+
+TEST_CASE("an old owner that missed the word on its NPC's new owner stops running it") {
+  auto s = Start();
+  Place(*s->host, 0);
+  Place(*s->a, 30);
+  s->ga.Announce(1, {10.f, 0.f, 0.f});
+  const auto npc = MakeNpcId(s->a->You(), 1);
+  REQUIRE(s->Until([&] { return s->h.proxies.contains(npc); }));
+  // The guest's world is rebuilt: the host, next to the NPC, inherits it,
+  // and its word to the guest is lost.
+  s->host->SetFaults({.drop = 1.0});
+  s->a->BumpEpoch(proto::kEpochFastTravel);
+  REQUIRE(s->Until([&] { return s->h.running.contains(npc); }));
+  s->For(50ms);
+  s->host->SetFaults({});
+  CHECK(s->ga.running.contains(npc)); // two brains for now
+  REQUIRE(s->Until([&] { return !s->ga.running.contains(npc); }));
+  CHECK(s->a->NpcOwner(npc) == 1u);
+  CHECK(s->ga.lost == 1);
+  CHECK(s->host->OwnsNpc(npc));
 }
 
 TEST_CASE("the host's record of a guest's NPCs is healed when a spawn or a removal was lost") {

@@ -234,10 +234,16 @@ void Endpoint::ForgetNpc(proto::NpcId npc) {
 
 std::uint32_t Endpoint::OwnedHash(proto::PlayerId owner, std::uint16_t &count) const {
   // Which NPCs, and what they are: health and holds change too often to
-  // compare across the link without racing what is in flight.
+  // compare across the link without racing what is in flight. Neither does
+  // an NPC being handed to or from it (host: the guest learns it owns one
+  // from the giver's state, which may still be on its way or lost and sent
+  // again; a guest's m_handovers is empty).
   return consistency::NpcDigest(
       m_npcs, {}, {}, m_npcOwner,
-      [&](proto::NpcId, proto::PlayerId theirs) { return theirs == owner; }, &count);
+      [&](proto::NpcId npc, proto::PlayerId theirs) {
+        return theirs == owner && !InHandover(npc, owner);
+      },
+      &count);
 }
 
 void Endpoint::ResendOwned() {
@@ -734,24 +740,27 @@ bool Endpoint::OnOwnerMessage(net::PeerId peer, proto::PlayerId player,
               out.push_back(events::HostNpcAwareness{std::move(theirs)});
             return true;
           },
-          // ---- the owner's word to one player ----
+          // ---- the owner's word to one player: only if it shows the NPC ----
           [&](const proto::NpcCue &cue) {
-            if (owns(cue.npc) && RouteToPlayer(cue.player, cue, player))
+            if (owns(cue.npc) && SharedWith(cue.npc, cue.player) &&
+                RouteToPlayer(cue.player, cue, player))
               out.push_back(events::HostNpcCue{cue});
             return true;
           },
           [&](const proto::PlayerHit &hit) {
-            if (hit.npc != 0 && owns(hit.npc) && RouteToPlayer(hit.player, hit, player))
+            if (hit.npc != 0 && owns(hit.npc) && SharedWith(hit.npc, hit.player) &&
+                RouteToPlayer(hit.player, hit, player))
               out.push_back(events::HitByNpc{hit});
             return true;
           },
           [&](const proto::PlayerHack &hack) {
-            if (owns(hack.npc) && RouteToPlayer(hack.player, hack, player))
+            if (owns(hack.npc) && SharedWith(hack.npc, hack.player) &&
+                RouteToPlayer(hack.player, hack, player))
               out.push_back(events::HostPlayerHack{hack});
             return true;
           },
           [&](const proto::NpcShotAt &shot) {
-            if (!owns(shot.npc))
+            if (!owns(shot.npc) || !SharedWith(shot.npc, shot.player))
               return true;
             m_shotAt[shot.npc] = {shot.player, net::NowUs()};
             if (RouteToPlayer(shot.player, shot, player))
@@ -794,12 +803,27 @@ bool Endpoint::OnOwnerMessage(net::PeerId peer, proto::PlayerId player,
           },
           [&](const proto::NpcSet &set) {
             // Its whole set again (our record of it differed): what it no
-            // longer names is gone.
+            // longer names is gone. Not one being handed to or from it: its
+            // set may have crossed the hand-over's state on the way.
             const std::set<proto::NpcId> named(set.npcs.begin(), set.npcs.end());
             std::vector<proto::NpcId> gone;
             for (const auto &[npc, spawn] : m_npcs)
-              if (NpcOwner(npc) == player && !named.contains(npc))
+              if (NpcOwner(npc) == player && !named.contains(npc) && !InHandover(npc, player))
                 gone.push_back(npc);
+            // What it names and does not run by our record: it is told, or
+            // it would run it for good beside its real owner (a lost
+            // NpcOwner), or one we let go of (its spawn of another's id is
+            // never taken). One of its own range comes with its spawn next.
+            for (const auto npc : named) {
+              if (InHandover(npc, player))
+                continue;
+              if (!m_npcs.contains(npc)) {
+                if (regions::Announcer(npc) != player)
+                  Send(peer, proto::NpcGone{.npc = npc, .reason = proto::kGoneAway});
+              } else if (const auto owner = NpcOwner(npc); owner != player) {
+                Send(peer, proto::NpcOwner{.npc = npc, .owner = owner});
+              }
+            }
             for (const auto npc : gone) {
               const proto::NpcGone away{.npc = npc, .reason = proto::kGoneAway};
               ShareNpc(away, player, peer);

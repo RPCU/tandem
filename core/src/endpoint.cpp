@@ -3,6 +3,7 @@
 #include "tandem/activity.hpp"
 #include "tandem/compat.hpp"
 #include "tandem/elsewhere.hpp"
+#include "tandem/names.hpp"
 #include "tandem/play.hpp"
 #include "tandem/progress.hpp"
 #include "tandem/traffic.hpp"
@@ -200,6 +201,8 @@ std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port, 
   auto endpoint =
       std::unique_ptr<Endpoint>(new Endpoint(std::move(session), std::move(identity), timing));
   endpoint->m_you = endpoint->m_host = 1;
+  endpoint->m_identity.name = names::Sanitize(endpoint->m_identity.name);
+  endpoint->m_askedNames[1] = endpoint->m_identity.name;
   endpoint->m_players[1] = {1, endpoint->m_identity.name, endpoint->m_identity.body};
   if (CreationHook())
     CreationHook()(*endpoint);
@@ -377,7 +380,7 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
                      .Add(std::uint64_t{consistency::PlayersDigest(
                          {m_players, m_appearances, m_held, m_seats, m_radios, m_stealth, m_paused,
                           m_timeEffects, m_lives, m_elsewheres, m_heat, m_activities, &m_commsLinks,
-                          &m_waypoints},
+                          &m_waypoints, &m_regionsSent},
                          self)})
                      .Add(std::uint64_t{VehiclePlayersDigest(self)})
                      .Value(),
@@ -863,6 +866,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_links.Forget(player);
   m_places.erase(player);
   m_players.erase(player);
+  m_askedNames.erase(player);
   m_appearances.erase(player);
   m_held.erase(player);
   m_seats.erase(player);
@@ -977,8 +981,11 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
   // its link dropped) while the old one has not timed out yet: if the old one
   // has gone silent, the new one takes its place, with its id, puppet and
   // seat. A live player keeps its place: a namesake joins as someone else.
+  // Matched by the name it asked for: the session may show it as "V (2)".
+  const auto asked = names::Sanitize(hello.name);
   const auto silent = std::ranges::find_if(m_playerOfPeer, [&](const auto &entry) {
-    if (m_players[entry.second].name != hello.name)
+    if (const auto it = m_askedNames.find(entry.second);
+        it == m_askedNames.end() || it->second != asked)
       return false;
     const auto link = m_session->StatsOf(entry.first);
     return !link || std::chrono::milliseconds{link->quietMs} >= m_timing.takeover;
@@ -1039,7 +1046,12 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
 
   m_playerOfPeer[peer] = player;
   m_seenHost[player] = m_epoch;
-  m_players[player] = {player, hello.name, hello.body};
+  // One name per player: a namesake is shown as "V (2)", "V (3)"...
+  std::vector<std::string> taken;
+  for (const auto &[id, info] : m_players)
+    taken.push_back(info.name);
+  m_askedNames[player] = asked;
+  m_players[player] = {player, names::Unique(asked, taken), hello.body};
   Send(peer, proto::Welcome{player, m_host, HostNowUs()});
   out.push_back(events::PlayerJoined{m_players[player]});
   BroadcastRoster();
@@ -1189,6 +1201,12 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       proto::NpcSet set;
       for (const auto npc : shown)
         if (set.npcs.size() < proto::kMaxNpcSet)
+          set.npcs.push_back(npc);
+      // ...and the ones being handed to or from it: its body there is the
+      // NPC's, whatever its copy says of the owner until the hand-over ends.
+      for (const auto &[npc, handover] : m_handovers)
+        if (InHandover(npc, them) && m_npcs.contains(npc) && !Sees(them, NpcOwner(npc)) &&
+            set.npcs.size() < proto::kMaxNpcSet)
           set.npcs.push_back(npc);
       Send(peer, set);
     }
@@ -1469,6 +1487,14 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             std::map<proto::PlayerId, proto::PlayerInfo> next;
             for (const auto &player : roster.players)
               next[player.id] = player;
+            // How the session shows us: our name, or the host made it unique.
+            if (const auto self = next.find(m_you); self != next.end() &&
+                                                    !self->second.name.empty() &&
+                                                    self->second.name != m_shownName) {
+              m_shownName = self->second.name;
+              if (m_shownName != m_identity.name)
+                out.push_back(events::NamedAs{m_identity.name, m_shownName});
+            }
             for (const auto &[id, info] : next)
               if (id != m_you && !m_players.contains(id))
                 out.push_back(events::PlayerJoined{info});
@@ -2142,11 +2168,11 @@ void Endpoint::SendNpcStates(proto::NpcStates states) {
 }
 
 void Endpoint::SendActorPose(proto::ActorPose pose) {
-  if (!IsHost() || m_ended || !m_npcs.contains(pose.npc))
+  if (!IsHost() || m_ended || !OwnsNpc(pose.npc))
     return;
   pose.seq = ++m_npcSeq;
   pose.timeUs = HostNowUs();
-  Broadcast(pose);
+  ShareNpc(pose, m_you); // the games that show the actor, as its states
 }
 
 void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
@@ -2209,8 +2235,8 @@ void Endpoint::SendNpcCue(const proto::NpcCue &cue) {
   if (!IsJoined() || m_ended || cue.player == m_you || !SpeaksFor(cue.npc))
     return;
   if (!IsHost())
-    Send(m_hostPeer, cue);
-  else if (const auto peer = PeerOf(cue.player))
+    Send(m_hostPeer, cue); // the host passes it on if that player shows the NPC
+  else if (const auto peer = PeerOf(cue.player); peer && SharedWith(cue.npc, cue.player))
     Send(*peer, cue);
 }
 
@@ -2289,7 +2315,8 @@ bool Endpoint::SendPlayerHit(const proto::PlayerHit &hit) {
     return true;
   }
   const auto target = PeerOf(hit.player);
-  if (!target)
+  // An NPC's hit only for a game that shows it (regions.md: linked with us).
+  if (!target || (hit.npc != 0 && !SharedWith(hit.npc, hit.player)))
     return false;
   Send(*target, hit); // that player's game only
   return true;
@@ -2337,7 +2364,7 @@ void Endpoint::SendPlayerHack(const proto::PlayerHack &hack) {
     return;
   if (!IsHost())
     Send(m_hostPeer, hack);
-  else if (const auto peer = PeerOf(hack.player))
+  else if (const auto peer = PeerOf(hack.player); peer && SharedWith(hack.npc, hack.player))
     Send(*peer, hack);
 }
 
@@ -2367,7 +2394,8 @@ bool Endpoint::SendNpcShotAt(proto::NpcShotAt shot) {
     return true;
   }
   const auto peer = PeerOf(shot.player);
-  if (!peer)
+  // Only at a V whose game shows the shooter (it fires the shot from its proxy).
+  if (!peer || !SharedWith(shot.npc, shot.player))
     return false;
   // Behind the epoch fence: a guest that has not seen our world since it
   // was rebuilt is not in it to be shot at.

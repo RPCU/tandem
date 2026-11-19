@@ -481,6 +481,12 @@ struct NpcRamBy {
 struct ChaseChanged {
   proto::Chase chase;
 };
+// Guest: the session shows us under another name than ours (another
+// player has it: "V (2)"), from the roster, once and again if it changes.
+struct NamedAs {
+  std::string asked;
+  std::string shown;
+};
 } // namespace events
 
 // Who this game is in the session, and what it has installed (the mock
@@ -531,7 +537,7 @@ using SessionEvent = std::variant<
     events::RemoteLink, events::RemoteWaypoint, events::RemoteVehicleDamage, events::VehicleHitBy,
     events::RemoteVehicleExit, events::RemoteVehicleCombat, events::RemoteMountedFire,
     events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
-    events::ChaseChanged>;
+    events::ChaseChanged, events::NamedAs>;
 
 class Endpoint {
 public:
@@ -946,6 +952,12 @@ public:
     return m_session->RelaySessionSecret();
   }
   bool ThroughRelay() const { return m_throughRelay; }
+  // Direct paths set up through the relay (tandem.ini's `direct`): see
+  // net::RelayOptions::direct. Changed in a session, at once.
+  void SetDirect(bool on) { m_session->SetDirect(on); }
+  // Host on a relay: another join code now (Relay()->codeSalt has a kept
+  // one's new salt).
+  void NewRelayCode() { m_session->NewRelayCode(); }
 
   void Leave(const std::string &reason = "left");
 
@@ -1009,6 +1021,12 @@ private:
   // Host: `viewer` shows `owner`'s NPCs (linked, and not its own).
   bool Sees(proto::PlayerId viewer, proto::PlayerId owner) const {
     return viewer != owner && m_links.Linked(viewer, owner);
+  }
+  // Host: `viewer`'s game shows `npc` (in the shared record, its owner linked
+  // with it). An owner's word to one player about its NPC (a hit, a cue, a
+  // shot, a hack) goes only where this holds, like its states.
+  bool SharedWith(proto::NpcId npc, proto::PlayerId viewer) const {
+    return m_npcs.contains(npc) && Sees(viewer, NpcOwner(npc));
   }
   // Host: an owner's word on its NPC, to every guest that sees it.
   void ShareNpc(const proto::Message &message, proto::PlayerId owner, net::PeerId except = 0);
@@ -1093,6 +1111,13 @@ private:
     int tries{};
   };
   std::map<proto::NpcId, Handover> m_handovers;
+  // Host: `npc` is being handed from or to `player`. Until it is done, that
+  // player's word on what it runs may not have caught up with our record:
+  // its set neither drops nor corrects it, and its owned digest leaves it out.
+  bool InHandover(proto::NpcId npc, proto::PlayerId player) const {
+    const auto it = m_handovers.find(npc);
+    return it != m_handovers.end() && (it->second.from == player || it->second.to == player);
+  }
   std::uint64_t m_handoversDone{}, m_inherited{};
   // Giver: what we gave, until we hear who owns it. Receiver: what we took.
   std::map<proto::NpcId, proto::NpcHandoverState> m_given;
@@ -1122,7 +1147,13 @@ private:
 
   proto::PlayerId m_you{proto::kNoPlayer};
   proto::PlayerId m_host{proto::kNoPlayer};
+  // The roster: each player under the name the session shows (the host
+  // makes names unique at join: names::Unique).
   std::map<proto::PlayerId, proto::PlayerInfo> m_players;
+  // Host: the name each guest asked for (sanitized), which a returning
+  // player is matched by; guest: our own as the roster last showed it.
+  std::map<proto::PlayerId, std::string> m_askedNames;
+  std::string m_shownName;
 
   // Host: which connection is which player (only after a valid Hello).
   std::map<net::PeerId, proto::PlayerId> m_playerOfPeer;
