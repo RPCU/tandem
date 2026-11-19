@@ -18,6 +18,18 @@ public native struct TandemShot {
   native let effect: Int32;
 }
 
+// What kind of thing a record we send is, by the game's own enum names
+// (TandemMods.ItemHint, VehicleHint, NpcHint): a game without the record
+// shows a similar vanilla one (docs/architecture/mod-compat.md).
+public native struct TandemRecordHint {
+  // gamedataItemType ("Wea_Handgun"), gamedataVehicleType ("Car"), gamedataNPCType ("Human")
+  native let type: CName;
+  // gamedataItemCategory ("Weapon"); an NPC's gender ("Female")
+  native let tag: CName;
+  // a vehicle's seats
+  native let size: Int32;
+}
+
 public native struct TandemNpcEvent {
   // 1 spawn, 2 gone, 3 hit (host), 4 health, 5 effect (host), 6 seat
   // (guest: it sits in player's vehicle in slot `appearance`; player 0: out)
@@ -383,7 +395,7 @@ public native class TandemNative extends IScriptable {
   public static native func PoseWatch(entity: ref<Entity>, label: String, depth: Int32)
   public static native func PoseCopy(source: ref<Entity>, target: ref<Entity>)
   public static native func PoseReport()
-  public static native func SendNpcSpawn(npc: Uint32, record: TweakDBID, appearance: CName, position: Vector4, orientation: Quaternion)
+  public static native func SendNpcSpawn(npc: Uint32, record: TweakDBID, appearance: CName, position: Vector4, orientation: Quaternion, hint: TandemRecordHint)
   public static native func SendNpcStates(npcs: array<Uint32>, positions: array<Vector4>, orientations: array<Quaternion>, detected: array<Int32>)
   public static native func SendNpcGone(npc: Uint32, reason: Int32, killer: Uint32)
   public static native func SendNpcHealth(npc: Uint32, health: Float)
@@ -478,9 +490,12 @@ public native class TandemNative extends IScriptable {
   public static native func TimeFactorOf(npc: Uint32) -> Float
   public static native func TimeBubbleMembers(player: Uint32) -> Int32
   public static native func TimeBubbleScale(abilities: Int32, scale: Float) -> Float
+  // A slow motion none of the reasons we follow explains (another mod's):
+  // the world speed to share as a bubble, else 1 (core's TimeBubbles::UnexplainedSlow).
+  public static native func TimeUnexplainedSlow(global: Float, explained: Float, isLocal: Bool) -> Float
   public static native func TimePlayerFactor(player: Uint32, own: Float, position: Vector4, owners: array<Uint32>, scales: array<Float>, ownerPositions: array<Vector4>, inside: Bool) -> Float
   public static native func IsTimeHostFull() -> Bool
-  public static native func SendSeat(vehicle: TweakDBID, seat: CName, owner: Uint32)
+  public static native func SendSeat(vehicle: TweakDBID, seat: CName, owner: Uint32, hint: TandemRecordHint)
   public static native func SendVehicle(position: Vector4, orientation: Quaternion, velocity: Vector4)
   public static native func RemoteSeatChanges(player: Uint32) -> Int32
   public static native func RemoteSeatVehicle(player: Uint32) -> TweakDBID
@@ -501,12 +516,12 @@ public native class TandemNative extends IScriptable {
   public static native func RemoteTransitCarrier(player: Uint32) -> Uint32
   // Host: our NPC sits in a player's vehicle (owner 0: got out).
   public static native func SendNpcSeat(npc: Uint32, owner: Uint32, seat: CName)
-  public static native func SendHeld(right: TweakDBID, left: TweakDBID)
+  public static native func SendHeld(right: TweakDBID, left: TweakDBID, rightHint: TandemRecordHint, leftHint: TandemRecordHint)
   public static native func SendShot(left: Bool, effect: Int32)
   public static native func RemoteHeldChanges(player: Uint32) -> Int32
   public static native func RemoteHeld(player: Uint32, left: Bool) -> TweakDBID
   public static native func TakeShots() -> array<TandemShot>
-  public static native func SubmitAppearance(state: ref<gameuiICharacterCustomizationState>, male: Bool, items: array<TweakDBID>) -> Int32
+  public static native func SubmitAppearance(state: ref<gameuiICharacterCustomizationState>, male: Bool, items: array<TweakDBID>, hints: array<TandemRecordHint>) -> Int32
   public static native func RemoteAppearanceChanges(player: Uint32) -> Int32
   public static native func RemoteItems(player: Uint32) -> array<TweakDBID>
   public static native func ApplyRemoteLook(entity: ref<Entity>, player: Uint32) -> Int32

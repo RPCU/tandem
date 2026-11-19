@@ -52,8 +52,12 @@
 //   it lasts while the game keeps it (an enemy or a sensor in view). Melee hit stop ("meleeHit", final.reds:45789) and
 //   deflect/one-punch ("deflect", final.reds:39679): local only, no bubble. A guest keeps them on its
 //   screen; the host drops their world part (time_host = bubble). Others see the V as it is: standing, scanning.
-// - Any other global dilation left on the host is logged ("an unknown
-//   dilation").
+// - Any other global slow motion (a mod's: its reason cannot be read, the
+//   time system's natives cannot be wrapped) is a bubble too, at the
+//   world's factor, when none of the reasons above explains it and no local
+//   one is on (Unexplained; core's TimeBubbles::UnexplainedSlow): told
+//   once. The host cannot take it back (no reason to hold): its world stays
+//   slowed, the NPCs it shares are exempted as with time_host = full.
 // - A ride's own skip (the NCART, a cab: "customFFTimeDilation" at 10 while
 //   the skip is held, PlayerPuppet.OnAction SceneFastForward under a
 //   CustomFastForward effect, final.reds:40298): kept, on the host too. It
@@ -89,6 +93,8 @@ public class TandemTime {
   // Reasons taken back during their current activation (logged once each).
   private let m_taken: array<CName>;
   private let m_unknownLogged: Float;
+  // A mod's slow motion was shared as a bubble (said once a session).
+  private let m_unexplainedSaid: Bool;
   // What the game asked for under each reason we follow, and the reasons
   // of the effector dilations on our V now.
   private let m_askedReasons: array<CName>;
@@ -256,6 +262,15 @@ public class TandemTime {
       scale = MinF(scale, scan);
     }
     this.CountScan((abilities & 8) != 0);
+    // A slow motion none of those explains: another mod's (the time system
+    // does not say whose reason it is), shared as a bubble like a perk's.
+    let other = this.Unexplained(times);
+    if other < 1.0 {
+      if (abilities & 4) == 0 {
+        abilities += 4;
+      }
+      scale = MinF(scale, other);
+    }
     if abilities == this.m_sentAbilities && AbsF(scale - this.m_sentScale) < 0.01 {
       return;
     }
@@ -263,6 +278,44 @@ public class TandemTime {
     this.m_sentScale = scale;
     TandemNative.SendTimeEffect(abilities, scale);
     TandemNative.Log(s"time: our abilities \(abilities) (world speed \(scale))");
+  }
+
+  // The world speed of a slow motion no reason we know of explains (a
+  // mod's: OverclockOverheat's optional one, any other), else 1. The ones
+  // we follow explain theirs; the local ones (melee hit stop, deflect, a
+  // menu's, a ride's skip, our V slowed by another V's bubble) leave it
+  // alone (core's TimeBubbles::UnexplainedSlow decides).
+  private func Unexplained(times: ref<TimeSystem>) -> Float {
+    if !TandemTime.Dilated(times) {
+      return 1.0;
+    }
+    let explained = 1.0;
+    let followed = [n"sandevistan", n"kereznikov", n"focusedStatePerkDilation", n"coolReloadPerkDilation", n"focusMode"];
+    for reason in this.m_effectors {
+      ArrayPush(followed, reason);
+    }
+    for reason in followed {
+      if times.IsTimeDilationActive(reason) {
+        explained = MinF(explained, times.GetActiveTimeDilation(reason, true));
+      }
+    }
+    let local = this.m_selfSet;
+    let kept = [n"meleeHit", n"meleeHitStrong", n"deflect", n"customFFTimeDilation", n"WorldMap", n"tandemBubble", n"timeDilation",
+      TweakDBInterface.GetCName(t"timeSystem.radialMenu.reason", n""), TweakDBInterface.GetCName(t"timeSystem.hubMenu.reason", n""),
+      TweakDBInterface.GetCName(t"timeSystem.vehicleRadioMenu.reason", n""), TweakDBInterface.GetCName(t"timeSystem.nanoWireBreach.reason", n""),
+      TweakDBInterface.GetCName(t"timeSystem.settings.reason", n"")];
+    for reason in kept {
+      if IsNameValid(reason) && times.IsTimeDilationActive(reason) {
+        local = true;
+      }
+    }
+    let factor = TandemNative.TimeUnexplainedSlow(times.GetActiveTimeDilation(), explained, local);
+    if factor < 1.0 && !this.m_unexplainedSaid {
+      this.m_unexplainedSaid = true;
+      TandemNative.Log(s"time: a slow motion of no reason we know slows our world to \(factor): shared as a time bubble");
+      TandemText.Notice(this.m_game, "Time-ModSlow");
+    }
+    return factor;
   }
 
   // Our world runs slowed now: a dilation is active and its factor is one.

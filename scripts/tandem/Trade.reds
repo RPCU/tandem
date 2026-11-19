@@ -50,6 +50,8 @@ public class TandemTradeTable {
   private let m_asks: Int32;
   private let m_mineShown: array<ref<gameItemData>>;
   private let m_theirs: array<ref<gameItemData>>;
+  // Items of their side our game lacks (a mod): the trade is never agreed.
+  private let m_unknownTheirs: Int32;
   // The screen, once it is up; whether it is to be drawn again; when we
   // asked the game for it.
   private let m_screen: wref<FullscreenVendorGameController>;
@@ -618,6 +620,13 @@ public class TandemTradeTable {
   }
 
   public func ToggleAgree() -> Void {
+    // Their side holds an item our game lacks (a mod): it cannot come
+    // here, so we never agree, and nothing changes hands.
+    if !TandemTrade.TradeWeConfirmed() && this.m_unknownTheirs > 0 {
+      this.Notice("Trade-Unknown", 5.0, TandemCoop.NameOf(TandemTrade.TradeWith()));
+      TandemNative.Log(s"trade: their side has \(this.m_unknownTheirs) item(s) our game lacks: not agreed");
+      return;
+    }
     if TandemTrade.TradeWeConfirmed() {
       TandemTrade.TradeWithdraw();
       TandemNative.Log("trade: we no longer agree");
@@ -727,25 +736,35 @@ public class TandemTradeTable {
   private func ShowTheirs() -> Void {
     let player = GetPlayer(this.m_game);
     ArrayClear(this.m_theirs);
+    this.m_unknownTheirs = 0;
     let count = TandemTrade.TradeItemCount(1);
     let i = 0;
     while i < count {
       let item = TandemTrade.TradeItemAt(1, i);
-      let params: ItemModParams;
-      params.itemID = TandemTradeTable.IdOf(item.record, item.seed);
-      params.quantity = item.quantity;
-      let p = 0;
-      while p < item.parts {
-        let part = TandemTrade.TradePartAt(1, i, p);
-        ArrayPush(params.customPartsToInstall, TandemTradeTable.IdOf(part.record, part.seed));
-        p += 1;
-      }
-      let data = Inventory.CreateItemData(params, player);
-      if IsDefined(data) {
-        this.Stamp(data, 1, i, item);
-        ArrayPush(this.m_theirs, data);
+      if !TDBID.IsValid(item.record) {
+        // From a mod our game lacks: not shown, and the trade not agreed.
+        this.m_unknownTheirs += 1;
+      } else {
+        this.ShowTheir(player, i, item);
       }
       i += 1;
+    }
+  }
+
+  private func ShowTheir(player: ref<PlayerPuppet>, i: Int32, item: TandemTradeItem) -> Void {
+    let params: ItemModParams;
+    params.itemID = TandemTradeTable.IdOf(item.record, item.seed);
+    params.quantity = item.quantity;
+    let p = 0;
+    while p < item.parts {
+      let part = TandemTrade.TradePartAt(1, i, p);
+      ArrayPush(params.customPartsToInstall, TandemTradeTable.IdOf(part.record, part.seed));
+      p += 1;
+    }
+    let data = Inventory.CreateItemData(params, player);
+    if IsDefined(data) {
+      this.Stamp(data, 1, i, item);
+      ArrayPush(this.m_theirs, data);
     }
   }
 
@@ -806,6 +825,8 @@ public class TandemTradeTable {
     let taken = TandemTrade.TradeItemCount(3);
     i = 0;
     while i < taken {
+      // (Never one our game lacks: ToggleAgree refuses such a table, and a
+      // commit is only of offers both confirmed.)
       let item = TandemTrade.TradeItemAt(3, i);
       let id = TandemTradeTable.IdOf(item.record, item.seed);
       if item.seed != 0u && ts.HasItem(player, id) {

@@ -315,7 +315,9 @@ public class TandemLoot extends ScriptableSystem {
     stack.record = event.record;
     stack.seed = event.seed;
     stack.quantity = event.quantity;
-    stack.taken = event.quantity <= 0;
+    // An item our game lacks (a mod; the plugin said so on screen): never
+    // in our copy, so it stays in the host's bag for a player who has it.
+    stack.taken = event.quantity <= 0 || !TDBID.IsValid(event.record);
     ArrayPush(item.stacks, stack);
     if item.ownDrop {
       // The bag is the one vanilla gave us: what it holds now is what we
@@ -708,6 +710,11 @@ public class TandemLoot extends ScriptableSystem {
     let owned = new TandemWorldStack();
     owned.record = event.record;
     let name = this.NameOf(event.player);
+    // From a mod our game lacks (said on screen): theirs alone.
+    if !TDBID.IsValid(event.record) {
+      TandemNative.Log(s"loot: \(name) looted an item our game does not have: not given");
+      return;
+    }
     if this.CountIn(player, owned) > 0 {
       TandemNative.Log(s"loot: \(name) looted \(TDBID.ToStringDEBUG(event.record)): we have it already");
       return;
@@ -730,8 +737,8 @@ public class TandemLoot extends ScriptableSystem {
     if IsDefined(system) {
       body = GameInstance.GetDynamicEntitySystem().GetEntity(system.ProxyOfNpc(event.id)) as ScriptedPuppet;
     }
-    if !IsDefined(body) {
-      TandemNative.Log(s"loot: \(TDBID.ToStringDEBUG(event.record)) on npc \(event.id)'s corpse: no proxy of it here");
+    if !IsDefined(body) || !TDBID.IsValid(event.record) {
+      TandemNative.Log(s"loot: \(TDBID.ToStringDEBUG(event.record)) on npc \(event.id)'s corpse: no proxy of it here, or not in our game");
       return;
     }
     let owned = new TandemWorldStack();

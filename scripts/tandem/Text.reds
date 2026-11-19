@@ -174,12 +174,13 @@ public class TandemText {
       "Travel-Taken", "Travel-Asks", "Travel-Blocked", "Revive-Down", "Revive-DownAlone",
       "Revive-Out", "Revive-AllDown", "Revive-WaitHost", "Activities-AsksSleep", "Activities-AsksWait",
       "Activities-CannotSkip", "Trade-Asks", "Comms-LinkAsked", "Saves-Failed", "Saves-WhenYouCan",
-      "Saves-NotRestored"
+      "Saves-NotRestored", "Mods-Replaced-Item", "Trade-Unknown"
     ];
     if ArrayContains(asks, key) {
       return 2;
     }
-    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Revive-") ? 1 : 0;
+    // A record shown otherwise (Mods.reds): never only in the log.
+    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Revive-") || StrBeginsWith(key, "Mods-") || StrBeginsWith(key, "World-") || StrBeginsWith(key, "Time-Mod") ? 1 : 0;
   }
 
   // An input hint in the HUD's hint bar: the game draws the key or button
@@ -360,6 +361,46 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     // Loot, markers.
     this.Text("Tandem-Loot-Taken", "Someone already took it");
     this.Text("Tandem-Loot-TakenBy", "{1} picked it up first");
+    // Other mods (Mods.reds, docs/architecture/mod-compat.md).
+    this.Text("Tandem-Menu-Mods", "Mods");
+    this.Text("Tandem-Mods-TheyHave", "{1} has mods you don't ({2})");
+    this.Text("Tandem-Mods-YouHave", "You have mods {1} doesn't ({2})");
+    this.Text("Tandem-Mods-Same", "{1} has the same mods as you");
+    this.Text("Tandem-Mods-Differ", "Mods: {1}");
+    this.Text("Tandem-Mods-Category-Items", "{1} with new items (shown as similar vanilla ones)");
+    this.Text("Tandem-Mods-Category-Vehicles", "{1} with new vehicles (shown as similar vanilla ones)");
+    this.Text("Tandem-Mods-Category-Characters", "{1} with new characters (shown as vanilla ones)");
+    this.Text("Tandem-Mods-Category-Looks", "{1} with new looks (shown with vanilla pieces)");
+    this.Text("Tandem-Mods-Category-Gameplay", "{1} changing gameplay (the host's rules apply to shared enemies)");
+    this.Text("Tandem-Mods-Category-Unknown", "{1} tandem can't sort");
+    this.Text("Tandem-Mods-Category-Local", "{1} only changing how the game looks or sounds (fine either way)");
+    this.Text("Tandem-Mods-Seen", "{1} sees {2} of your things as vanilla ones: mods they don't have");
+    this.Text("Tandem-Mods-NamesCame", "{1}'s mod names are in Co-op, Mods");
+    this.Text("Tandem-Mods-Names", "{1}'s mods you don't have: {2}");
+    this.Text("Tandem-Mods-ReplacedCount", "Shown otherwise this session ({1}):");
+    this.Text("Tandem-Mods-Nothing", "nothing");
+    this.Text("Tandem-Mods-NoneCompared", "No other player's mods compared yet");
+    this.Text("Tandem-Mods-Replaced-Weapon", "{1}'s weapon comes from a mod you don't have: shown as a similar one ({2})");
+    this.Text("Tandem-Mods-Replaced-Clothing", "{1}'s clothes come from a mod you don't have: shown plain or left off ({2} pieces)");
+    this.Text("Tandem-Mods-Replaced-Look", "{1}'s look has pieces from a mod you don't have: left off ({2})");
+    this.Text("Tandem-Mods-Replaced-Vehicle", "{1}'s vehicle comes from a mod you don't have: shown as a similar one ({2})");
+    this.Text("Tandem-Mods-Replaced-Character", "Characters from {1}'s game come from a mod you don't have: shown as vanilla ones ({2})");
+    this.Text("Tandem-Mods-Replaced-CharacterLook", "Characters from {1}'s game wear looks from a mod you don't have: shown in their usual look ({2})");
+    this.Text("Tandem-Mods-Replaced-Item", "An item from {1} comes from a mod you don't have: it can't come into your game and stays theirs ({2})");
+    this.Text("Tandem-Mods-Replaced-Effect", "Effects from {1}'s game come from a mod you don't have: not shown ({2})");
+    this.Text("Tandem-Mods-Replaced-Radio", "{1}'s radio station isn't installed here: the radio stays off");
+    this.Text("Tandem-Mods-Line-Weapon", "{1}'s weapon {2}");
+    this.Text("Tandem-Mods-Line-Clothing", "{1}'s clothing {2}");
+    this.Text("Tandem-Mods-Line-Look", "{1}'s look piece {2}");
+    this.Text("Tandem-Mods-Line-Vehicle", "{1}'s vehicle {2}");
+    this.Text("Tandem-Mods-Line-Character", "a character of {1}'s game {2}");
+    this.Text("Tandem-Mods-Line-CharacterLook", "a character look of {1}'s game {2}");
+    this.Text("Tandem-Mods-Line-Item", "an item from {1} {2}");
+    this.Text("Tandem-Mods-Line-Effect", "an effect from {1}'s game {2}");
+    this.Text("Tandem-Mods-Line-Radio", "{1}'s radio station {2}");
+    this.Text("Tandem-Trade-Unknown", "{1} offers an item from a mod you don't have: it can't be traded");
+    this.Text("Tandem-World-WeatherIsHost", "Another mod changes your weather: in co-op the host's weather stays");
+    this.Text("Tandem-Time-ModSlow", "A mod slowed time: shared as a time bubble around you");
     this.Text("Tandem-Marker-Description", "Another V, in your city");
     this.Text("Tandem-Marker-Distance", "{1}  {2} M");
     // Down, revive, respawn.
@@ -663,6 +704,46 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Scene-Watch", "Regarder la scène");
     this.Text("Tandem-Loot-Taken", "Quelqu'un l'a déjà pris");
     this.Text("Tandem-Loot-TakenBy", "{1} l'a ramassé avant vous");
+    // Other mods (Mods.reds, docs/architecture/mod-compat.md).
+    this.Text("Tandem-Menu-Mods", "Mods");
+    this.Text("Tandem-Mods-TheyHave", "{1} a des mods que vous n'avez pas ({2})");
+    this.Text("Tandem-Mods-YouHave", "Vous avez des mods que {1} n'a pas ({2})");
+    this.Text("Tandem-Mods-Same", "{1} a les mêmes mods que vous");
+    this.Text("Tandem-Mods-Differ", "Mods : {1}");
+    this.Text("Tandem-Mods-Category-Items", "{1} avec de nouveaux objets (montrés comme des objets d'origine proches)");
+    this.Text("Tandem-Mods-Category-Vehicles", "{1} avec de nouveaux véhicules (montrés comme des véhicules d'origine proches)");
+    this.Text("Tandem-Mods-Category-Characters", "{1} avec de nouveaux personnages (montrés comme ceux d'origine)");
+    this.Text("Tandem-Mods-Category-Looks", "{1} avec de nouvelles apparences (montrées avec des pièces d'origine)");
+    this.Text("Tandem-Mods-Category-Gameplay", "{1} qui changent le jeu (les règles de l'hôte s'appliquent aux ennemis partagés)");
+    this.Text("Tandem-Mods-Category-Unknown", "{1} que tandem ne sait pas classer");
+    this.Text("Tandem-Mods-Category-Local", "{1} qui ne changent que l'image ou le son (sans souci)");
+    this.Text("Tandem-Mods-Seen", "{1} voit {2} de vos éléments comme ceux d'origine : des mods qu'il n'a pas");
+    this.Text("Tandem-Mods-NamesCame", "Les noms des mods de {1} sont dans Coop, Mods");
+    this.Text("Tandem-Mods-Names", "Les mods de {1} que vous n'avez pas : {2}");
+    this.Text("Tandem-Mods-ReplacedCount", "Montrés autrement pendant cette session ({1}) :");
+    this.Text("Tandem-Mods-Nothing", "rien");
+    this.Text("Tandem-Mods-NoneCompared", "Aucun mod d'un autre joueur comparé pour l'instant");
+    this.Text("Tandem-Mods-Replaced-Weapon", "L'arme de {1} vient d'un mod que vous n'avez pas : montrée comme une arme proche ({2})");
+    this.Text("Tandem-Mods-Replaced-Clothing", "Les vêtements de {1} viennent d'un mod que vous n'avez pas : montrés simples ou retirés ({2} pièces)");
+    this.Text("Tandem-Mods-Replaced-Look", "L'apparence de {1} a des pièces d'un mod que vous n'avez pas : retirées ({2})");
+    this.Text("Tandem-Mods-Replaced-Vehicle", "Le véhicule de {1} vient d'un mod que vous n'avez pas : montré comme un véhicule proche ({2})");
+    this.Text("Tandem-Mods-Replaced-Character", "Des personnages du jeu de {1} viennent d'un mod que vous n'avez pas : montrés comme ceux d'origine ({2})");
+    this.Text("Tandem-Mods-Replaced-CharacterLook", "Des personnages du jeu de {1} portent des apparences d'un mod que vous n'avez pas : montrés avec leur apparence habituelle ({2})");
+    this.Text("Tandem-Mods-Replaced-Item", "Un objet de {1} vient d'un mod que vous n'avez pas : il ne peut pas entrer dans votre jeu et reste le sien ({2})");
+    this.Text("Tandem-Mods-Replaced-Effect", "Des effets du jeu de {1} viennent d'un mod que vous n'avez pas : pas affichés ({2})");
+    this.Text("Tandem-Mods-Replaced-Radio", "La station de radio de {1} n'est pas installée ici : la radio reste éteinte");
+    this.Text("Tandem-Mods-Line-Weapon", "arme de {1} {2}");
+    this.Text("Tandem-Mods-Line-Clothing", "vêtement de {1} {2}");
+    this.Text("Tandem-Mods-Line-Look", "pièce d'apparence de {1} {2}");
+    this.Text("Tandem-Mods-Line-Vehicle", "véhicule de {1} {2}");
+    this.Text("Tandem-Mods-Line-Character", "un personnage du jeu de {1} {2}");
+    this.Text("Tandem-Mods-Line-CharacterLook", "une apparence de personnage du jeu de {1} {2}");
+    this.Text("Tandem-Mods-Line-Item", "un objet de {1} {2}");
+    this.Text("Tandem-Mods-Line-Effect", "un effet du jeu de {1} {2}");
+    this.Text("Tandem-Mods-Line-Radio", "station de radio de {1} {2}");
+    this.Text("Tandem-Trade-Unknown", "{1} propose un objet d'un mod que vous n'avez pas : il ne peut pas être échangé");
+    this.Text("Tandem-World-WeatherIsHost", "Un autre mod change votre météo : en coop, la météo de l'hôte reste");
+    this.Text("Tandem-Time-ModSlow", "Un mod a ralenti le temps : partagé comme une bulle de temps autour de vous");
     this.Text("Tandem-Marker-Description", "Un autre V, dans votre ville");
     this.Text("Tandem-Marker-Distance", "{1}  {2} M");
 

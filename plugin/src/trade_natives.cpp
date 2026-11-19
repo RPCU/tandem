@@ -9,6 +9,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "log.hpp"
+#include "mods.hpp"
 #include "runtime.hpp"
 #include "trade.hpp"
 
@@ -222,7 +223,13 @@ struct TandemTrade : Red::IScriptable {
     const auto *item = ItemOf(side, index);
     if (!item)
       return {};
-    return {.record = Red::TweakDBID(item->item.record),
+    // What the partner offers, if our game lacks it (a mod): none, and
+    // Trade.reds refuses the trade, so nothing changes hands.
+    const bool theirs = side == 1 || side == 3;
+    const auto record = theirs ? ModRecords::Get().Resolve(mods::Kind::Item, item->item.record, {},
+                                                           Side(side).player)
+                               : item->item.record;
+    return {.record = Red::TweakDBID(record),
             .seed = item->item.seed,
             .quantity = static_cast<std::int32_t>(item->item.quantity),
             .stats = static_cast<std::int32_t>(item->stats.size()),

@@ -11,6 +11,7 @@
 #include "engine/quests.hpp"
 #include "engine/scenes.hpp"
 #include "log.hpp"
+#include "mods.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
 
@@ -229,11 +230,18 @@ void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
                                      .flags = effect->applied ? 1 : 0,
                                      .reward = Red::TweakDBID(effect->effect)});
   } else if (const auto *reward = std::get_if<proto::QuestReward>(&m)) {
-    out.EmplaceBack(TandemStoryEvent{
-        .kind = kReward, .hash = reward->quest, .reward = Red::TweakDBID(reward->reward)});
+    // A reward or a car our game lacks (a modded quest's): never given
+    // (none; the script skips it), never replaced by another.
+    constexpr proto::PlayerId host = 1; // the story's: the host's (always player 1)
+    out.EmplaceBack(TandemStoryEvent{.kind = kReward,
+                                     .hash = reward->quest,
+                                     .reward = Red::TweakDBID(ModRecords::Get().Resolve(
+                                         mods::Kind::Item, reward->reward, {}, host))});
   } else if (const auto *unlock = std::get_if<proto::VehicleUnlock>(&m)) {
-    out.EmplaceBack(TandemStoryEvent{
-        .kind = kVehicle, .hash = unlock->quest, .reward = Red::TweakDBID(unlock->vehicle)});
+    out.EmplaceBack(TandemStoryEvent{.kind = kVehicle,
+                                     .hash = unlock->quest,
+                                     .reward = Red::TweakDBID(ModRecords::Get().Resolve(
+                                         mods::Kind::Item, unlock->vehicle, {}, 1))}); // the host's
   } else if (const auto *restrictions = std::get_if<proto::StoryRestrictions>(&m)) {
     // The host's set, kept here for RestrictUpdate; the script hears how
     // many (and acts on its next check).

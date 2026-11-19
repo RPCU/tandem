@@ -635,7 +635,7 @@ public class TandemNpcs {
           known.record = npc.GetRecordID();
           known.appearance = npc.GetCurrentAppearanceName();
           ArrayPush(this.m_known, known);
-          TandemNative.SendNpcSpawn(known.npc, npc.GetRecordID(), npc.GetCurrentAppearanceName(), npc.GetWorldPosition(), npc.GetWorldOrientation());
+          TandemNative.SendNpcSpawn(known.npc, npc.GetRecordID(), npc.GetCurrentAppearanceName(), npc.GetWorldPosition(), npc.GetWorldOrientation(), TandemMods.NpcHint(npc));
           // A vendor placed in the world says its entity: a partner whose
           // game shows it opens its own vendor of it (Vendors.reds).
           TandemVendors.Announce(known.npc, npc);
@@ -938,7 +938,8 @@ public class TandemNpcs {
       return true; // nothing left to apply it to
     }
     // A guest's own XP marker (an older build sent them): not ours to wear.
-    if TandemCombat.IsOwnMarker(event.record) {
+    // An effect our game lacks (a mod's; said on screen): none.
+    if TandemCombat.IsOwnMarker(event.record) || !TDBID.IsValid(event.record) {
       return true;
     }
     let instigator = TandemNpcs.PuppetOf(this.m_game, event.player);
@@ -1051,6 +1052,14 @@ public class TandemNpcs {
         }
         // The controller once its body has had two seconds to load.
         if IsDefined(npc) && proxy.seenAt > 0.0 && now - proxy.seenAt >= 2.0 {
+          // An appearance its owner's game has and ours lacks (an NPC look
+          // pack): the body wears another (the template's own): said once.
+          if IsNameValid(proxy.appearance) && NotEquals(npc.GetCurrentAppearanceName(), proxy.appearance) {
+            // Its owner: the announcer, in the id's top 8 bits (regions::Announcer).
+            TandemModsNative.ModNote(TandemMods.CharacterLook(), proxy.appearance, 0, proxy.npc / 16777216u + 1u);
+            TandemNative.Log(s"npcs: proxy \(proxy.npc) asked for look \(NameToString(proxy.appearance)), wears \(NameToString(npc.GetCurrentAppearanceName()))");
+            proxy.appearance = npc.GetCurrentAppearanceName();
+          }
           let puppet = TandemNative.NpcPuppetId(proxy.npc);
           TandemNative.RegisterPuppet(puppet, proxy.id);
           proxy.ready = TandemNative.AttachController(puppet, npc);
@@ -1881,10 +1890,11 @@ public class TandemNpcs {
     }
     let effects = GameInstance.GetStatusEffectSystem(this.m_game);
     for effect in TandemRegions.EffectsOf(event.npc) {
-      if !StatusEffectSystem.ObjectHasStatusEffect(body, effect.record) {
+      // One our game lacks (a mod's) comes as none: skipped.
+      if TDBID.IsValid(effect.record) && !StatusEffectSystem.ObjectHasStatusEffect(body, effect.record) {
         StatusEffectHelper.ApplyStatusEffect(body, effect.record);
       }
-      if effect.remaining > 0.0 {
+      if TDBID.IsValid(effect.record) && effect.remaining > 0.0 {
         effects.SetStatusEffectRemainingDuration(id, effect.record, effect.remaining);
       }
     }

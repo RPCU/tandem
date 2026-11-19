@@ -63,6 +63,7 @@ enum TandemCoopAction {
   Setting = 14,
   Report = 15,
   NewCode = 16,
+  Mods = 17,
 }
 
 // One of our entries in a menu's list: the vanilla item data (its label is
@@ -111,6 +112,16 @@ public class TandemCoop {
       }
     }
     return "";
+  }
+
+  // A player of the session by id; one with no name yet as such.
+  public static func NameOf(id: Uint32) -> String {
+    for player in TandemNative.SessionPlayers() {
+      if player.id == id {
+        return player.name;
+      }
+    }
+    return TandemText.Unnamed(id);
   }
 
   // Phantom Liberty, by the game's own check (the one its main menu uses
@@ -214,6 +225,15 @@ public class TandemCoop {
     }
     // What differs from the other players' games: said on screen when it
     // was found, and counted here (the log and the bug report have the words).
+    // Each player's mods against ours, in words (Mods.reds).
+    if status.state == 3 {
+      for player in TandemModsNative.ModPlayers() {
+        let differ = TandemMods.Comparison(player, TandemCoop.NameOf(player), english);
+        if StrLen(differ) > 0 {
+          ArrayPush(lines, differ);
+        }
+      }
+    }
     let differences = ArraySize(TandemNative.CompatWarnings());
     if differences > 0 {
       ArrayPush(lines, s"\(differences) difference(s) between your games: see tandem's log");
@@ -461,6 +481,7 @@ public class TandemCoopMenu {
             this.Add("Menu-NewCode", TandemCoopAction.NewCode);
           }
         }
+        this.Add("Menu-Mods", TandemCoopAction.Mods);
         this.Add("Menu-Leave", TandemCoopAction.Leave);
       } else {
         this.Add("Menu-HostNow", TandemCoopAction.HostNow);
@@ -1169,6 +1190,11 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
     this.TandemGo(TandemCoopPage.Coop);
   } else if Equals(action, TandemCoopAction.Invite) {
     GenericMessageNotification.Show(this, TandemText.Get("Menu-Invite"), TandemCoop.InviteText(), GenericMessageNotificationType.OK);
+  } else if Equals(action, TandemCoopAction.Mods) {
+    // The names come when the others answer: said in a notice, shown here
+    // the next time.
+    TandemMods.AskNames();
+    GenericMessageNotification.Show(this, TandemText.Get("Menu-Mods"), TandemMods.MenuText(), GenericMessageNotificationType.OK);
   } else if Equals(action, TandemCoopAction.NewCode) {
     TandemNative.RelayNewCode();
     this.TandemGo(TandemCoopPage.Coop);

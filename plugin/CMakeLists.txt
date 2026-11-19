@@ -41,6 +41,8 @@ add_library(tandem SHARED
   src/trade_natives.cpp
   src/comms.cpp
   src/comms_natives.cpp
+  src/mods.cpp
+  src/mods_natives.cpp
   src/engine/layout.cpp
   src/engine/animation.cpp
   src/engine/controller.cpp
