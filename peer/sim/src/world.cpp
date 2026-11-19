@@ -364,10 +364,13 @@ void HostWorld::Tick(std::uint64_t nowUs, const Scene &scene, const SeenPlayer &
       gone.push_back(id);
       Hit("npc.corpse-removed");
     } else if (npc.Alive() && npc.holder == p::kNoPlayer) {
+      // The host's region: its NPCs are its V's surroundings (regions.md,
+      // kLose); others' are their own games'.
       float nearest = Distance(npc.position, self.position);
-      for (const auto &[player, seen] : scene.players)
-        if (seen.heard)
-          nearest = std::min(nearest, Distance(npc.position, seen.position));
+      if (!m_config.aroundSelf)
+        for (const auto &[player, seen] : scene.players)
+          if (seen.heard)
+            nearest = std::min(nearest, Distance(npc.position, seen.position));
       if (nearest > m_config.leash) {
         Remove(npc, p::kGoneAway, out);
         gone.push_back(id);

@@ -59,7 +59,9 @@ What it found on the existing loopback tests: "Findings" below.
 
 ## The host's world
 
-`sim::HostWorld` runs NPCs with a small behaviour machine: idle, patrol,
+`sim::HostWorld` runs the NPCs around the host's own V (its region: they
+go beyond 85 m of it, `regions::kLose`; the endpoint shares them with the
+linked guests) with a small behaviour machine: idle, patrol,
 alerted (a noise, a traced hack), combat, cover, staggered (guard broken,
 stunned), flee (civilians), held, unconscious, dead. Each perceives every V
 by distance, its visibility, crouching and camo (meter rising, detection,
@@ -74,7 +76,7 @@ started, done or failed), takedown requests with the refusals of
 `Takedowns.reds` in their order (gone, held, too far, conditions, not
 yours), slowed NPCs in time bubbles (`sync::TimeBubbles`), the world's time
 and weather, the pause menu, quest items on corpses, bodies cleared after
-40 s, NPCs nobody is near despawned, a new wave a while after the last
+40 s, NPCs out of its region despawned, a new wave a while after the last
 fighter fell, everything rebuilt on a fast travel. It writes protocol
 messages; the endpoint keeps the session's record and its digests from
 them, and `HostWorld::Check` compares the world with that record every
@@ -173,6 +175,15 @@ state, an owner resends the spawns of NPCs it took over with its set,
 `Noise` goes to every linked player, each owner numbers its own NPC
 states, and an NPC can leave a guest's view and come back); what is left
 there is the lossy hand-over test's lost and doubled messages.
+
+`sim-fuzz` after the merge caught the sim's own world fighting a guest its
+NPCs were not shared with (spawned around the partner, far from the host's
+V: `NpcShotAt`, `NpcCue` and the guest's `ShotHit` about NPCs the guest
+never heard of): under regions a host's NPCs live in the host's region.
+The endpoint itself still sends `NpcShotAt`, `NpcCue` and `PlayerHit` to a
+guest the NPC is not shared with (an NPC at its region's edge, a guest just
+past the link distance); the guest drops the shot (shooter unknown). Open:
+`regions.md` owns that rule.
 
 Sim against sim (`sim-fuzz`, 8 seeds of 30 s, every persona as host and
 guest): no violation, no failed check; 59 of 72 message types sent, 87 of

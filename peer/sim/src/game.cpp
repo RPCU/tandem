@@ -38,8 +38,6 @@ Game::Game(GameOptions options, Coverage &coverage)
   Say(motionLog);
   if (m_options.host) {
     HostWorld::Config config;
-    // A loner hosts far from its guests: it shares what is around itself.
-    config.aroundSelf = m_persona.region > 0.f;
     config.difficulty = static_cast<std::uint8_t>(m_random.Index(4));
     m_world = std::make_unique<HostWorld>(config, m_random.Fork(), &coverage);
     m_world->hitOwnV = [this](const p::PlayerHit &hit) { m_ownHits.push_back(hit); };

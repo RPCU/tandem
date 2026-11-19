@@ -1023,6 +1023,16 @@ void Referee::Note(const p::Message &message, bool sent) {
           // learns it from this, not from an NpcOwner).
           if (m.to != p::kNoPlayer)
             m_owners[m.npc] = m.to;
+          if (!sent && m.to == m_self)
+            m_given.insert(m.npc);
+        } else if constexpr (std::is_same_v<M, p::NpcHandoverDone>) {
+          // A receiver that cannot run what it was given gives it up: the
+          // host speaks for it from then on (its end for everyone). A giver
+          // that refuses keeps it.
+          if (sent && !m.accepted && m_given.erase(m.npc) > 0)
+            m_owners[m.npc] = m_hostPlayer;
+          else if (sent)
+            m_given.erase(m.npc);
         } else if constexpr (std::is_same_v<M, p::NpcGone>) {
           auto &npc = m_npcs[m.npc];
           npc.live = false;

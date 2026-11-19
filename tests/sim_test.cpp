@@ -77,7 +77,7 @@ TEST_CASE("sim: the host's world answers by the real host's rules") {
   sim::HostWorld world({.npcs = 3}, sim::Random(5), &coverage);
   sim::Scene scene;
   scene.self = scene.host = 1;
-  scene.players[2] = {.id = 2, .heard = true, .position = {10.f, 0.f, 0.f}};
+  scene.players[2] = {.id = 2, .heard = true, .position = {40.f, 0.f, 0.f}};
   sim::SeenPlayer self{.id = 1, .heard = true, .position = {0.f, 0.f, 0.f}};
   sim::Outbox out;
   world.Tick(kSecond, scene, self, out);

@@ -82,7 +82,7 @@ public:
   struct Config {
     std::size_t npcs{5}; // alive at a time
     float ring{16.f};    // spawned this far from the anchor, give or take
-    float leash{90.f};   // an NPC farther than this from every V goes
+    float leash{85.f};   // an NPC farther than this from our V goes (regions::kLose)
     std::uint64_t corpseUs{40'000'000};
     std::uint64_t waveUs{12'000'000};    // a new group this long after the last fell
     std::uint64_t grappleUs{12'000'000}; // a grappled NPC breaks free after this
@@ -91,9 +91,10 @@ public:
     float clockScale{8.f};      // game seconds a second
     std::int32_t startTime{12 * 3600};
     std::uint64_t weatherUs{90'000'000};
-    // The NPCs are spawned around our own V, not the partner's (a host that
-    // plays far from its guests shares what is around itself).
-    bool aroundSelf{};
+    // The NPCs live around our own V (per-player regions: a host shares
+    // what is around itself, with the guests linked to it); off, around the
+    // partner's, and kept while anyone is near (before regions).
+    bool aroundSelf{true};
     std::vector<NpcSpec> cast; // empty: DefaultCast()
   };
   static std::vector<NpcSpec> DefaultCast();
