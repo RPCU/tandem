@@ -320,8 +320,9 @@ same), then pass on a rerun. Since 2026-11-19:
 
 - **Waits for a state stretch** (`tests/slowdown.hpp`): `test::Patience
 (limit)` is the limit times `test::Slowdown()`, the machine's load per
-  core when the tests start (`/proc/loadavg`, at least 1) or
-  `TANDEM_TEST_SLOWDOWN=F` (1 to 20), whichever is larger. Every test's
+  core (`/proc/loadavg`, at least 1) or
+  `TANDEM_TEST_SLOWDOWN=F` (1 to 20), whichever is larger, read at each
+  wait (a build next door starts and stops). Every test's
   pump helper ("until the guest is joined, at most 3 s") goes through it,
   and the waits of the pumps that also pace frames. A wait ends as soon as
   its state is reached, so the longer bound costs nothing when the test
@@ -332,6 +333,13 @@ same), then pass on a rerun. Since 2026-11-19:
   where a longer window checks the same thing (a helper's "nothing more
   arrived in 200 ms").
 - `tests/relay_loopback.sh` waits up to 15 s for each line it expects.
+- **Ports apart per run** (`tests/ports.hpp`): each test binary starts its
+  ports (41000 to 61000) at a place spread from its process id, and skips
+  a port someone holds. Before, each process had 50 ports from
+  `41000 + (pid % 400) * 50`: runs started together got consecutive ids,
+  and the first one past its 50 ports bound the next one's (three runs of
+  the loopback suites at once failed the same seven region cases each
+  time).
 
 ## Driving the game and the builds
 

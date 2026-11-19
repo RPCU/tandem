@@ -7,7 +7,7 @@
 // check something does not happen are left as they are.
 //
 // TANDEM_TEST_SLOWDOWN=F sets it (1 to 20); otherwise, and at least, the
-// machine's load per core when the tests start (/proc/loadavg), from 1.
+// machine's load per core at each wait (/proc/loadavg), from 1.
 // docs/architecture/testing.md, "Busy machines".
 
 #include <algorithm>
@@ -18,22 +18,23 @@
 
 namespace tandem::test {
 inline double Slowdown() {
-  static const double factor = [] {
-    double out = 1.0;
+  static const double asked = [] {
     if (const char *text = std::getenv("TANDEM_TEST_SLOWDOWN")) {
       char *end = nullptr;
-      const double asked = std::strtod(text, &end);
-      if (end != text && asked > 0.0)
-        out = asked;
+      const double value = std::strtod(text, &end);
+      if (end != text && value > 0.0)
+        return value;
     }
-    double load = 0.0;
-    if (std::ifstream loadavg("/proc/loadavg"); loadavg >> load) {
-      const double cores = std::max(1u, std::thread::hardware_concurrency());
-      out = std::max(out, load / cores);
-    }
-    return std::clamp(out, 1.0, 20.0);
+    return 1.0;
   }();
-  return factor;
+  // The load now (each wait reads it: a build next door starts and stops).
+  double out = asked;
+  double load = 0.0;
+  if (std::ifstream loadavg("/proc/loadavg"); loadavg >> load) {
+    const double cores = std::max(1u, std::thread::hardware_concurrency());
+    out = std::max(out, load / cores);
+  }
+  return std::clamp(out, 1.0, 20.0);
 }
 
 // An upper bound on a wait for a state, stretched by Slowdown(). Waits end
