@@ -4,9 +4,10 @@
 #   tools/build.sh test            tools/build.sh build:plugin test
 #
 # On the game machine (tools/remote.sh: more cores, its own build lock) when
-# nobody plays there and its lock is free; otherwise here, through the
-# laptop's lock with limited parallelism. So several agents build at once:
-# one on each machine, the rest queue on whichever lock they picked.
+# nobody plays there and one of its build slots is free (3 by default:
+# tools/build-slot.sh); otherwise here, in the laptop's one slot
+# (TANDEM_LOCAL_SLOTS) with limited parallelism. Our own test instances on
+# the game machine (tools/instance.sh) are not someone playing.
 # TANDEM_BUILD=local|remote forces one side (remote still refuses while the
 # game runs: a build would take its frames).
 set -euo pipefail
@@ -14,15 +15,21 @@ cd "$(git rev-parse --show-toplevel)"
 host=${GAME_HOST:-anya}
 [ $# -gt 0 ] || set -- build test
 
-playing() { ssh -o ConnectTimeout=5 "$host" 'pgrep -f "[C]yberpunk2077.exe" >/dev/null'; }
+remote_slots=${TANDEM_REMOTE_SLOTS:-3}
+local_slots=${TANDEM_LOCAL_SLOTS:-1}
+playing() { ssh -o ConnectTimeout=5 "$host" 'pgrep -af "[C]yberpunk2077.exe" | grep -v tandem-instances | grep -q .'; }
 reachable() { ssh -o ConnectTimeout=5 "$host" true 2>/dev/null; }
-remote_busy() { ssh -o ConnectTimeout=5 "$host" '! flock -n /tmp/tandem-build.lock true'; }
-local_busy() { ! flock -n /tmp/tandem-build.lock true; }
+# shellcheck disable=SC2029 # expanded here on purpose
+remote_busy() {
+  ssh -o ConnectTimeout=5 "$host" "for i in \$(seq 0 $((remote_slots - 1))); do
+    f=/tmp/tandem-build.lock; [ \$i = 0 ] || f=\$f.\$i; flock -n \$f true && exit 1; done; exit 0"
+}
+local_busy() { ! tools/build-slot.sh --free "$local_slots"; }
 
 local_run() {
-  echo "build: here, through the laptop's lock" >&2
+  echo "build: here, in the laptop's build slot" >&2
   CMAKE_BUILD_PARALLEL_LEVEL=${CMAKE_BUILD_PARALLEL_LEVEL:-8} \
-    exec flock /tmp/tandem-build.lock direnv exec . task "$@"
+    exec tools/build-slot.sh "$local_slots" direnv exec . task "$@"
 }
 remote_run() {
   echo "build: on $host" >&2
