@@ -1,0 +1,434 @@
+# Scene replay: a guest watches the host's story scenes
+
+A guest standing next to the host in a story scene should see and hear it
+as if it were there: the actors move as the scene moves them, speak with
+their voices in the guest's language, Johnny comes and goes with his
+glitch. Before this, a guest got the journal, calls, subtitles and choice
+hubs, and saw the scene's NPCs as proxies that walk and idle.
+
+Engine facts and their sources: [`research/scene-replay.md`](../research/scene-replay.md)
+(read offline on 2.50; tags there). Earlier notes: `research/coop-scenes.md`,
+`research/coop-quests-design.md` §2.5, `research/pose-streaming.md`.
+
+**State (2026-11-19)**: designed, built through the protocol, the core
+logic, the plugin, the scripts and the mock player; tested without the
+game (loopback). **Nothing is verified in game.** It is off unless
+`tandem.ini` says `scene_replay = on`; the scenarios turn it on.
+
+## Contents
+
+1. [The decision](#1-the-decision)
+2. [What travels](#2-what-travels)
+3. [The host's side](#3-the-hosts-side)
+4. [The guest's side](#4-the-guests-side)
+5. [Voice and subtitles](#5-voice-and-subtitles)
+6. [The guest's own V](#6-the-guests-own-v)
+7. [Johnny](#7-johnny)
+8. [When things go wrong](#8-when-things-go-wrong)
+9. [What is built, and where](#9-what-is-built-and-where)
+10. [Tests](#10-tests)
+11. [In-game checks, and the scenarios](#11-in-game-checks-and-the-scenarios)
+12. [Not built, and what would unblock it](#12-not-built-and-what-would-unblock-it)
+13. [Risks](#13-risks)
+
+## 1. The decision
+
+Two ways were weighed.
+
+**(a) The guest's game plays the same scene resource, as a spectator**,
+driven by the host's scene state, its actors bound to the proxies, the
+host's V played by the host's puppet, with no quest effect.
+
+**(b) The host says what its scene shows** (who acts, each actor's pose,
+each voiced line, where it is staged) **and the guest shows it on its
+proxies.**
+
+(a) would be the more native one: everything a scene does, for free. The
+evidence is against building it (research file §8):
+
+- a scene resource carries the story's logic, not only its picture: quest
+  nodes embedded in the graph (`scnQuestNode`), sockets fired from the
+  timeline, mounts, equipment, spawns. Playing it plays them, on a guest
+  whose story is frozen so that this never happens;
+- the scene's V is the local player (`scnPlayerActorDef`): the guest's own
+  V would be seated, animated and camera-locked as the host's. The one
+  alternative in the data, "network player N", is a leftover of CDPR's
+  cancelled multiplayer with no proof it runs;
+- the scene finds or spawns its own actors; no plan accepts "this proxy".
+  Found actors are the guest's own hidden copies, spawned ones a second
+  set: two copies of one scene, the failure principle 1 exists to prevent;
+- nothing reflected starts a scene outside a quest phase (Codeware's
+  `QuestsSystem.ExecuteNode` on a built scene node is the only lead,
+  unproven), and nothing sets a running scene's section or time: joining
+  mid-scene or following a skip would need the scene system's insides
+  (0x10d0 bytes the SDK knows nothing of);
+- none of it can be tried without the game.
+
+Four unknowns, each enough to sink it, and a failure mode that breaks the
+guest's own story. **(b) is built.** Each of its parts exists by name or is
+a hook tandem already has and has verified:
+
+- bodies: the pose stream that already draws a remote V on its puppet,
+  from an NPC of the host's game to its proxy (the same rig on both sides,
+  no retargeting);
+- voice: the game's own dialog line event, queued on the proxy with the
+  line's string id (the same id in every copy of the game, each with its
+  own language's recording);
+- the rest is bookkeeping the session already does for the story.
+
+What (b) does not give yet: **lipsync and facial animation** (an
+animation of the face rig's tracks, attached by the scene: nothing plays
+it by name outside one), and **props the scene spawns**. Both are listed
+in §12 with what would unblock them. (a) stays a research spike (research
+file §9, last item), worth a look only for scenes with no V in them.
+
+The authority table's row is unchanged: _quests: facts, journal, phases,
+scenes — host; followed, never run on their own_.
+
+## 2. What travels
+
+Four messages, appended to the protocol (no version bump); all host to
+guests. The first three are story messages (`proto::IsStory`): one path
+through `Endpoint::SendStory`, kept by `story::Record` for late joiners,
+reliable and ordered.
+
+| Message      | Channel | When                          | Carries                                                                                                                                              |
+| ------------ | ------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SceneState` | Event   | on every change               | the scene's resource path hash (0: none), its `play` number, host clock at its time 0, rate (fast-forward), the host's tier, flags, the staging area |
+| `SceneCast`  | Event   | whole, on every change        | `play`, the actors: `NpcId` and flags (ghost, hidden, posed)                                                                                         |
+| `SceneLine`  | Event   | a line begins, or is cut      | `play`, the line's string id, the speaker (`NpcId` or `PlayerId`), host clock when it began, its length, flags (cut, holocall, bark)                 |
+| `ActorPose`  | State   | ≤ 30 Hz per actor, unreliable | `NpcId`, seq, host-clock time, the body pose (a `PoseState`: 68 rotations of 6 bytes and the hips, 431 bytes)                                        |
+
+- `play` counts the host's scenes in a session. A scene played again is
+  another play; a cast or a line names its play, so what belongs to a scene
+  that is over is void wherever it arrives.
+- Times are host-clock microseconds (`uint64_t`): a guest that hears of a
+  scene or a line late knows how far in it is.
+- `section` (the scene node playing) is in `SceneState` and always 0: the
+  host cannot read it today. It is there so that the day it can, the
+  message does not change.
+- The staging area is the middle of the host's V and the actors that show,
+  the distance of the farthest from it, and the way the host's V faces it.
+- Cost: a scene with four actors is 4 × 431 bytes × 30 Hz ≈ 52 kB/s while
+  it lasts (a player's own pose is 13 kB/s). Bounded by 16 actors read at
+  once; `scene_replay = noposes` leaves the poses out.
+
+## 3. The host's side
+
+`scripts/tandem/Scenes.reds` (`HostTick`, four times a second) and
+`scene::Stage` (`core/src/scene.cpp`):
+
+- **A scene plays** when the host's V is in one (`IsEntityInScene` on V,
+  or tier 3 and up). Which one: the scene whose quest node ran in the last
+  3 s (the hook scene privacy already uses, `engine/scenes.cpp`); a scene
+  with no node seen is announced all the same, with no name.
+- **Private scenes are never announced**: when the story script holds the
+  scene private (`kStoryPrivate`), or its class says so at any tier
+  (`TandemStory.SceneClass() >= 2`), the stage gets `isPrivate`: no state,
+  no cast, no pose (the net thread drops actor poses while private), no
+  line. A scene that turns private while watched ends for the guests.
+- **Its actors** are the NPCs the host shares that the scene system says
+  are in a scene, within 30 m of V. One with a `gamePhantomEntityComponent`
+  is a ghost (Johnny), hidden unless a workspot holds it.
+- **Their bodies**: each actor is bound as a pose source
+  (`engine/posestream.cpp`): read after its entity's animation job, 30
+  times a second, sent as `ActorPose`.
+- **Lines**: the host's subtitle listener (`Dialogue.reds`) already sees
+  every line shown. It now also says whose voice it is: the speaker's
+  `NpcId` or the host's own `PlayerId`, when it began, how long it is. A
+  subtitle hidden before its end is a cut. A line whose speaker is an NPC
+  the host does not share is not voiced (nobody a guest could hear it
+  from), unless it is a holocall.
+- **Changes only**: the stage says a staging area again only when it moved
+  0.75 m and at most twice a second; the cast when it differs; the rest at
+  once (fast-forward, a hub holding the scene's time, the tier).
+- **The end**: no scene any more. It is an interruption when someone was
+  still speaking.
+
+## 4. The guest's side
+
+The plugin turns the host's messages into cues (`scene::Replay`, tested
+without the game); the script applies them (`Scenes.reds`):
+
+| Cue               | The guest's game                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| a scene begins    | notes it (and how long it has played); the watch offer is armed                                                                      |
+| it changed        | staging, tier, flags; a fast-forward stops the voices                                                                                |
+| an NPC acts       | once its proxy is ready, binds the proxy's root graph instance to that NPC's pose stream; a ghost is shown or hidden with its effect |
+| it no longer does | unbinds it: the proxy's own animation again                                                                                          |
+| a line begins     | queues the dialog line event on the speaker (the proxy, the host's puppet, or our own V for a holocall), from the right second       |
+| a line stops      | queues the stop event                                                                                                                |
+| the scene is over | every actor released, the offer closed                                                                                               |
+
+- A proxy keeps everything it had: its place still comes from the host's
+  NPC states, its animation graph still runs with the host's states and
+  workspot (`NpcAnims.reds`: footsteps, its sounds). The pose is written
+  over the graph's result where the engine commits it, so the proxy's own
+  deformation and face graphs follow, exactly as for a remote V.
+- The pose is drawn as far in the past as the proxy's position (the same
+  track delay), so body and place stay in step.
+- **A stream that stops is not a frozen actor**: with no pose for 1 s
+  (the scene is over, the host is gone, the actor's body is not one the
+  stream knows) the write does nothing and the proxy shows its own
+  animation, whether or not the script has unbound it yet.
+- A proxy whose body is rebuilt (streamed out and back, a fast travel) is
+  bound again on the next tick: the cast names NPCs, not entities.
+- The host's V is not in the cast: its puppet already shows its pose.
+
+## 5. Voice and subtitles
+
+- **The voice is the guest's own**: `DialogLineEvent` (Codeware's name for
+  `gameaudioeventsDialogLine`) with the line's string id, queued on the
+  speaker's entity. The guest's game looks the id up in its own language's
+  voice-over map: the guest hears the line in its language, from the
+  proxy's place. Expression: spoken; phone for a holocall (queued on our
+  own V); inner dialog for a ghost (Johnny is heard in the head, as the
+  host hears him).
+- **In sync with the subtitle**: the host sends the subtitle, then the
+  voice, in one tick on one ordered channel; the guest shows one and plays
+  the other in the same frame.
+- **A guest arriving mid-line** hears it from where it is: `seekTime` is
+  host clock minus the line's start. Less than 0.25 s in: from the start
+  (the network's delay is not worth a seek). Less than 0.35 s left: not
+  played.
+- **One voice per speaker**: a speaker's new line stops its earlier one.
+- **Out of earshot** (40 m from the speaker; holocalls excepted): not
+  played, as its subtitle is not shown (25 m from the host).
+- **No double subtitles.** Today's subtitle is the host's text, written on
+  the guest's subtitle board. If the voice event makes the guest's game
+  show the line itself (unknown until tested), there would be two. So the
+  mirrored line is shown under a stand-in id (`TandemStory.StandInLine`),
+  and the guest listens to its own board: a line arriving there under the
+  real id of one we mirrored is the game's own, in the guest's language;
+  ours is hidden at once, and a mirrored line the game already showed is
+  not shown. Whichever way the engine behaves, a line is on screen once,
+  and the guest's own language wins when the game provides it.
+- A V's line (`speakerPlayer`) is queued on that player's puppet with
+  `isPlayer`. Which of the two recordings plays (the host's V may be of
+  the other body) is not controlled yet: research file §3, the `gender`
+  field.
+
+## 6. The guest's own V
+
+It is not an actor. It stands free, weapons lowered near a tier 3+ scene
+and invulnerable near a tier 4+ one, as before (`Story.reds`,
+`UpdateHolds`).
+
+- **A place to watch from.** A staged scene the host cannot walk away from
+  (tier 3 and up), our V within 60 m but not at it (more than 4 m beyond
+  its actors): a notice, once per scene, "NAME is in a scene", and a
+  "Watch the scene" hint on `Choice1` (the player's own binding,
+  `strings.md`). On accept (`Scenes.reds`, `Watch`; `scene::WatchSpot`):
+  a spot on a ring 1.6 m beyond the actors (2.2 to 7 m from the middle),
+  on the host's side of the scene but at least 25° off its line of sight
+  to the actors, first within 80° of it, at least 1.1 m from every actor,
+  the host and the other players' puppets, the nearest such spot to where
+  our V stands. It must be ground a character can stand on (the
+  navigation system's query within 0.75 m), or nothing happens: never into
+  a wall. Our V is put there facing the scene. No spot: it stays where it
+  is. Far away (over 100 m) the existing offer to join still applies.
+- **Never through an actor.** The actors go where the host's scene puts
+  them, and may walk into where our V stands. While a scene is on, five
+  times a second: if our V is within 0.45 m of an actor's proxy, it takes
+  a step of at most 12 cm out, the short way (`scene::KeepOut`), until
+  clear. Below the distance at which the game's own collision already
+  keeps a walking V out, so it never fights the player's own steps.
+- **A watch camera** (seeing through the host's eyes in a tier 5 cutscene)
+  is not built: see §12.
+
+## 7. Johnny
+
+Johnny is an NPC of the host's world; a guest has his proxy when the host
+shares him. What was open: he is there through the Relic only.
+
+- His entity hides itself unless it plays a workspot (the phantom entity
+  component, research file §7), and plays its own glitch when it appears.
+  The proxy is the same entity, and tandem already plays the host NPC's
+  workspot on the proxy. So the expectation, to verify, is that he appears
+  on the guest when he does on the host, by the game's own means.
+- On top of it, in case that does not hold, the cast carries it: an actor
+  with the phantom component is a **ghost**; **hidden** when no workspot
+  holds it on the host. The guest shows or hides the proxy to match, with
+  the component's own effects (`teleportEndEffect` or `spawnEffect` to
+  appear, `teleportStartEffect` to go: `johnny_teleport_start` is the
+  effect scenes use for his exit) and the animation system's fade. A ghost
+  that leaves the cast goes the same way: he is not there for the host
+  either.
+- His lines are voiced as inner dialog.
+- Songbird and any other phantom entity follow the same rule: it is the
+  component that decides, not a list of names.
+- The relic glitches on the host's V (`StoryEffect`) are unchanged.
+
+Limit: outside a scene (Johnny leaning on a wall as a quest phase puts
+him, no scene running) only the first point applies.
+
+## 8. When things go wrong
+
+| Case                                   | What happens                                                                                                                                                                                                                                         | Tested                                             |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| the host skips (fast-forward)          | `SceneState` with the skipping flag and the rate: voices stop, lines begun while it lasts are not played; the poses keep coming and move as fast as the host's                                                                                       | `scene_test` (replay)                              |
+| a choice is made                       | nothing special: the hub closes as before; while it is up the scene's time is held (flag); what follows arrives as cast, poses and lines                                                                                                             | `scene_test` (stage, replay)                       |
+| the scene is interrupted               | the end comes with the interrupted flag (someone was speaking): voices cut, actors released                                                                                                                                                          | `scene_test`                                       |
+| one scene straight into another        | another play: the guest ends the first (voices, actors) before the second begins, even if the first's end never came                                                                                                                                 | `scene_test`                                       |
+| a guest arrives mid-scene              | the record gives it the state, the cast and the lines being spoken, in that order; it joins at host clock − start, and each line from where it is now                                                                                                | `scene_test` (endpoints: joins 2 s in)             |
+| the host vanishes                      | 5 s of silence end the session; before the script hears of the end it gets the cues: voices stopped, every actor released, the scene over (interrupted); the plugin forgets every actor pose. Even before that, a pose stream silent for 1 s lets go | `scene_test` (endpoints: host destroyed mid-line)  |
+| a private scene                        | never announced: no state, cast, pose or line (§3); one that turns private ends for the guests                                                                                                                                                       | `scene_test` (stage)                               |
+| the scene's end is lost (a bug)        | the story digest hashes the scene and its cast: host and guest differ, the guest asks for the story again, and a resync says "no scene plays" explicitly                                                                                             | `scene_test` (endpoints with a dropped end; ≈ 8 s) |
+| repeats (a resync, a duplicate)        | the record and the replay drop what they have: a line already playing is not played again                                                                                                                                                            | `scene_test`                                       |
+| the host's world is rebuilt (an epoch) | actor poses are numbered with the NPC states: the same fence voids the old world's; a pose for an NPC the guest does not know (it overtook its `NpcGone`) is dropped                                                                                 | `scene_test` (unknown NPC); fence shared with NPCs |
+| an actor's proxy is not there yet      | bound when it is ready; its lines are not voiced until then (logged)                                                                                                                                                                                 | in game                                            |
+| a body the stream does not know        | not read on the host (logged once per skeleton); the proxy keeps its own animation                                                                                                                                                                   | in game                                            |
+| poses lost or late (unreliable)        | the track interpolates between the two around the drawn time and holds past the newest, as for players; older sequence numbers are dropped                                                                                                           | `pose_test` (the track)                            |
+| scene replay off on one side           | a guest with it off ignores the scene messages; a host with it off announces nothing. Both keep today's behaviour                                                                                                                                    | by construction                                    |
+
+Digests: only what lasts and changes rarely is hashed (which scene, which
+play, the cast). The staging area, the rate and the lines are left out:
+they change too often, and a wrong one heals with the next change.
+
+## 9. What is built, and where
+
+- **Protocol** (`core/include/tandem/protocol.hpp`): `SceneState`,
+  `SceneCast`, `SceneLine`, `ActorPose`, appended; bounds checked in
+  `Decode` (32 actors, a rate between 0 and 16).
+- **Core** (`core/include/tandem/scene.hpp`, `core/src/scene.cpp`):
+  `scene::Stage` (host), `scene::Replay` (guest), `scene::WatchSpot`,
+  `scene::KeepOut`. `story::Record` keeps the scene, its cast and the
+  lines being spoken for joiners and hashes scene and cast. `Endpoint`:
+  the three story messages through the story path, `SendActorPose` /
+  `events::HostActorPose`, the explicit "no scene" in a story resync.
+- **Plugin**: `engine/posestream.cpp` (actor sources and actor bindings on
+  the two existing hooks; the write side is one function for players and
+  actors), `runtime.cpp` (actor pose queues and tracks),
+  `story_natives.cpp` (the stage and the replay on the game thread; cues
+  as story events 50 to 56; the natives in `StoryNatives.reds`),
+  `engine/scenes.cpp` (`ScenePlaying`), `config.cpp` (`scene_replay`).
+- **Scripts**: `Scenes.reds` (new), `Dialogue.reds` (the voice of each
+  line, the stand-in subtitle ids and the dedupe), `Story.reds` (wiring).
+- **Mock player** (`peer/src/main.cpp`): story verbs `scene`, `cast`,
+  `skip`, `voice`, `cut`; its scene's actors take the pose it sends; as a
+  guest it logs what it hears.
+- **Config**: `scene_replay = off | on | noposes` (`tandem.ini`).
+
+Engine access, by the rules: scripts and RTTI names (Codeware's imports);
+the two functions by address-library hash that the pose stream already
+hooks, behind its existing layout checks (`entAnimatedComponent` and
+`animRig` sizes; the source skeleton has every body bone; the target rig
+maps all 71; the first sampled pose has the rig's bone count and is in
+local space). **No new hook, hash or raw offset.**
+
+## 10. Tests
+
+`task test` (Linux, no game), in `tests/scene_test.cpp` and
+`tests/protocol_test.cpp`:
+
+- the messages survive encoding, travel on the right channels, are story
+  messages (but the pose), stay small, and refuse out-of-range values;
+- the stage: begin with cast and staging, says only what changes, skip and
+  hold flags, the end, plays counted, lines with their start, cuts,
+  interruptions, private scenes;
+- the replay: begin, cast changes, voices from their start or seeked,
+  stale lines dropped, one voice per speaker, a skip, another play, the
+  end, a reset;
+- the watch spot (beside the host, clear, facing the scene, on the host's
+  floor, another one when taken) and the step out of an actor;
+- the record: what a joiner gets, the digest, repeats;
+- through real endpoints over loopback UDP: a guest watches; a guest
+  cannot speak for the scene; poses only for known NPCs and only from the
+  host; a second guest joins 2 s in and seeks; the end; the host destroyed
+  mid-line; a lost end healed by the digests.
+
+`task scripts:check` compiles the scripts against the game's and
+Codeware's (0 errors, 0 warnings); `tools/check-natives.py` matches the
+natives.
+
+## 11. In-game checks, and the scenarios
+
+Not run yet (the game machine was not available to this work). In order;
+the first three decide how good the feature is (research file §9 has the
+detail of each):
+
+1. `tools/game.sh cmd story scene voice STRINGID` next to an NPC: is the
+   line heard, from it, in the game's language; does a subtitle appear by
+   itself; whose voice with `isPlayer`.
+2. As host in a real scene: the id of `subtitle: sent` lines against the
+   lines' string ids.
+3. **`task scenario -- scene-replay`** (the game as a guest of a scripted
+   host): the scene begins, weapons lowered, the actor's proxy follows the
+   host's pose (the mock player sends our own V's pose back for it: crouch
+   and the Tyger Claw crouches), lines voiced and cut, a skip, the end
+   releases the actor; a second scene in which the host vanishes mid-line
+   is stopped and nothing stays held. With real string ids in
+   `tools/scenarios/scene-replay.story`, someone listening confirms the
+   voices and the single subtitle.
+4. **`task scenario -- scene-replay-host`** (the game as host, a test
+   scene with spawned gangers): announced with cast and staging, the
+   actors' bodies read and sent (`actor N's skeleton … mapped`), a line of
+   ours voiced for the guest, the end said.
+5. Two games, a real story scene (the first with Jackie is enough), a
+   guest beside the host: bodies, voices, one subtitle per line, the watch
+   offer and the spot, an actor walking into the guest's V.
+6. Johnny (the first scene after the heist where he appears): his proxy
+   on the guest, visible when he is on the host, his glitch both ways.
+7. The earlier story scenarios still pass (`story-guest`, `story-host`,
+   `story-johnny`, `story-private`): the subtitle path changed (stand-in
+   ids).
+
+## 12. Not built, and what would unblock it
+
+- **Lipsync and faces.** The proxies' mouths do not move. The way that
+  fits what exists: stream the `face_rig` graph instance's sampled pose
+  like the root's, but its float tracks (the NPC skeleton has 427; the
+  mouth and jaw are a few dozen), as a second small message per speaking
+  actor. Needs, in game (`tools/re/`, read-only): where the tracks sit in
+  a sampled pose, and that writing them at the commit moves the face.
+  Until then a speaking proxy keeps its idle face.
+- **Props the scene spawns** (a glass, a shard handed over): to announce
+  like NPCs, with an attachment to an actor's slot. Props the scene finds
+  in the world are there already; whether they move with the scene is to
+  see in game.
+- **Items in actors' hands**: `NpcAnims` already gives a proxy the weapon
+  its NPC holds; scene-equipped props are the case above.
+- **A watch camera**: for tier 5 cutscenes (the picture is a scene
+  camera's, not V's eyes), follow the host's active camera
+  (`coop-scenes.md` §2.4: sample it on the host, a free or activated
+  camera on the guest, both untested). Not started: it needs the game.
+- **The scene's section and its true clock**: `SceneState.section` is 0.
+  A guest follows the host by what the host shows, so it is not needed
+  for (b); it would be for (a).
+- **Whose voice V has** on another game (the `gender` field).
+- **Actors far from the host's V** (over 30 m) and **non-humanoid
+  actors** (drones, robots) are not posed.
+- **Approach (a)**, as a spike only, for scenes with no V in them.
+
+## 13. Risks
+
+- **Everything engine-side is unverified.** The voice event may do
+  nothing outside a scene, or play without position; the subtitle id may
+  not be the string id; an NPC's pose may not read or write as V's does;
+  the phantom system may hide Johnny's proxy whatever we do. Each has a
+  check in §11 and a fallback in the design: no voice (today's subtitles
+  stay), no pose (the proxy's own animation), the cast's ghost flags. That
+  is why it ships off by default.
+- **The pose hooks run for more entities.** They were bound to the local
+  V and up to 64 puppets; a host now reads up to 16 NPCs and a guest
+  writes up to 16 proxies, on animation job threads. The reads are guarded
+  and throttled (30 Hz each) and the code paths are the verified ones, but
+  the load and the timing on NPCs are new. `scene_replay = noposes` keeps
+  the rest of the feature without them.
+- **A proxy posed in the wrong place**: the pose is relative to the
+  entity's root, which a guest places from the host's NPC states (10 Hz,
+  interpolated). In a scene with root motion the two must stay in step;
+  they share a clock and a delay, but a visible slide is possible and
+  would call for a higher state rate for actors.
+- **Staging from positions only**: the watch spot knows the actors, the
+  host and the ground, not the furniture. The navigation check keeps V
+  out of walls; a spot behind a pillar is possible. It is offered, never
+  forced.
+- **Voices and the guest's own game**: a line voiced on a proxy while the
+  guest's own (frozen) story would voice nothing is fine; a guest far from
+  its frozen story but near the host's scene hears only the host's. A
+  guest whose own open-world scenes still run (they are not frozen) can
+  hear both at once; nothing new, but more audible now.
+- **Bandwidth** in large scenes (§2), all unreliable and droppable.
+- **The subtitle path changed** for every mirrored line (stand-in ids):
+  the story scenarios must be run again.

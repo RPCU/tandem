@@ -333,6 +333,8 @@ struct NetThread::Impl {
                 runtime.PushRemote(e.state);
               } else if constexpr (std::is_same_v<E, events::RemotePose>) {
                 runtime.PushRemotePose(e.pose);
+              } else if constexpr (std::is_same_v<E, events::HostActorPose>) {
+                runtime.PushActorPose(e.pose);
               } else if constexpr (std::is_same_v<E, events::RemoteHeld>) {
                 runtime.PushRemoteHeld(e.held);
               } else if constexpr (std::is_same_v<E, events::RemoteShot>) {
@@ -597,6 +599,10 @@ struct NetThread::Impl {
       }
       if (auto pose = runtime.TakeLocalPose(); pose && !Story::Get().Private())
         endpoint->SendLocalPose(*pose);
+      // Scene replay: the actors of the host's scene (none in a private one).
+      for (const auto &pose : runtime.TakeActorPoses())
+        if (!Story::Get().Private())
+          endpoint->SendActorPose(pose);
       if (auto appearance = runtime.TakeLocalAppearance()) {
         lastAppearance = *appearance;
         endpoint->SetLocalAppearance(std::move(*appearance));

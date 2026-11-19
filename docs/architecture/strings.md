@@ -31,8 +31,8 @@ places) and what comes from another game are data, not text.
   in their hands. Never a key name in a text. In use: a ride's question
   (`PhoneInteract` press: ride along, `PhoneReject` hold: follow), a regroup
   offer (`PhoneInteract`), the world map's Join (`world_map_menu_fast_travel`
-  hold, `WorldMapInputHints`), the host's scene offer (`Choice1`, which also
-  takes it). The revive prompt is the game's interaction hub
+  hold, `WorldMapInputHints`), the host's scene offer and the scene replay's
+  watch offer (`Choice1`, which also takes them). The revive prompt is the game's interaction hub
   (`InteractionChoiceHub`, `Choice1` held), which draws its own binding.
 - **The plugin's words** (`core/src/endpoint.cpp`, `relay.cpp`,
   `plugin/src/net_thread.cpp`): a session's end, a refusal, a relay
@@ -259,6 +259,14 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Story-SceneStarted` | {1} started a scene | {1} a lancé une scène | Story.reds, Text.reds |
 | `Story-Busy` | {1} is busy | {1} est occupé(e) | Story.reds |
 | `Story-Join` | Join {1} | Rejoindre {1} | Story.reds |
+
+### Scene replay
+
+<!-- prettier-ignore -->
+| Key | English | French | Shown by |
+| --- | --- | --- | --- |
+| `Scene-InScene` | {1} is in a scene | {1} est dans une scène | Scenes.reds, Text.reds |
+| `Scene-Watch` | Watch the scene | Regarder la scène | Scenes.reds |
 
 ### Loot
 

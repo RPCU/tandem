@@ -13,6 +13,9 @@ public class TandemPhone {
   // Guest: the host's call we present (none: phase 0 or 3).
   private let m_contact: CName;
   private let m_phase: Int32;
+  // The host's call that waits for our own call to end (one phone, one call).
+  private let m_pending: TandemStoryEvent;
+  private let m_havePending: Bool;
 
   public func Start(game: GameInstance, story: ref<TandemStorySystem>) -> Void {
     this.m_game = game;
@@ -53,6 +56,16 @@ public class TandemPhone {
     if !IsDefined(phone) {
       return;
     }
+    // Our own call is up (our own fixer, while we run our own world apart:
+    // Story.reds SetApart): the host's waits its turn, and is dropped if it
+    // ends meanwhile. Grouped, as before: the host's call is shown.
+    if this.m_story.Apart() && phone.TandemOwnCallUp() {
+      this.m_havePending = event.state == 1 || event.state == 2;
+      this.m_pending = event;
+      TandemNative.Log(s"phone: the host's call (\(NameToString(event.contact)), phase \(event.state)) waits for our own call");
+      return;
+    }
+    this.m_havePending = false;
     let audio = GameInstance.GetAudioSystem(this.m_game);
     let phase = event.state;
     let answered = event.player != 0u;
@@ -94,6 +107,18 @@ public class TandemPhone {
     }
   }
 
+  // The host's call that waited: shown once our own call is over.
+  public func GuestTick() -> Void {
+    if !this.m_havePending {
+      return;
+    }
+    let phone = TandemPhone.Phone(this.m_game);
+    if IsDefined(phone) && !phone.TandemOwnCallUp() {
+      this.m_havePending = false;
+      this.OnHostCall(this.m_pending);
+    }
+  }
+
   // Leaving: no call stays up, no ringtone goes on (NCO: on every exit).
   public func Close() -> Void {
     let phone = TandemPhone.Phone(this.m_game);
@@ -110,6 +135,7 @@ public class TandemPhone {
       phone.m_tandemMirror = false;
     }
     this.m_phase = 0;
+    this.m_havePending = false;
   }
 
   public func Presenting() -> Bool {
@@ -224,9 +250,28 @@ public final func TandemAnswerFor(contact: CName, reject: Bool) -> Bool {
   return true;
 }
 
+// A call of our own (not the host's mirrored one) is ringing or talking.
+@addMethod(PhoneSystem)
+public final func TandemOwnCallUp() -> Bool {
+  return !this.m_tandemMirror
+    && (Equals(this.m_LastCallInformation.callPhase, questPhoneCallPhase.IncomingCall)
+      || Equals(this.m_LastCallInformation.callPhase, questPhoneCallPhase.StartCall));
+}
+
 // Host: every phase of our call goes to the guests.
+// Guest apart from the host (Story.reds SetApart): a call of our own that
+// starts while the host's is on our phone waits five seconds and tries
+// again (one phone, one call). Grouped, as before.
 @wrapMethod(PhoneSystem)
 private final func OnTriggerCall(request: ref<questTriggerCallRequest>) {
+  if this.m_tandemMirror && Equals(request.callPhase, questPhoneCallPhase.IncomingCall) {
+    let guest = TandemStorySystem.Get(this.GetGameInstance());
+    if IsDefined(guest) && guest.IsGuest() && guest.Apart() {
+      GameInstance.GetDelaySystem(this.GetGameInstance()).DelayScriptableSystemRequest(n"PhoneSystem", request, 5.0);
+      TandemNative.Log("phone: our own call waits for the host's call to end");
+      return;
+    }
+  }
   let before = this.m_LastCallInformation;
   wrappedMethod(request);
   let story = TandemStorySystem.Get(this.GetGameInstance());

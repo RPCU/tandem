@@ -346,6 +346,8 @@ void Runtime::Stop() {
   }
   std::lock_guard _(m_posesLock);
   m_poses.clear();
+  m_actorPoses.clear();
+  m_actorOut.clear();
 }
 
 bool Runtime::Started() const {
@@ -1328,6 +1330,59 @@ bool Runtime::PoseOf(proto::PlayerId player, pose::Pose &out) {
   std::lock_guard _(m_posesLock);
   const auto it = m_poses.find(player);
   return it != m_poses.end() && it->second.At(now > delayUs ? now - delayUs : 0, out);
+}
+
+void Runtime::SubmitActorPose(proto::NpcId npc, const proto::PoseState &pose) {
+  std::lock_guard _(m_posesLock);
+  m_actorOut[npc] = pose;
+}
+
+std::vector<proto::ActorPose> Runtime::TakeActorPoses() {
+  std::vector<proto::ActorPose> out;
+  std::lock_guard _(m_posesLock);
+  out.reserve(m_actorOut.size());
+  for (const auto &[npc, state] : m_actorOut)
+    out.push_back(pose::ForActor(npc, state));
+  m_actorOut.clear();
+  return out;
+}
+
+void Runtime::PushActorPose(const proto::ActorPose &pose) {
+  std::lock_guard _(m_posesLock);
+  m_actorPoses[pose.npc].Push(pose::FromActor(pose));
+  ++m_actorPosesIn;
+}
+
+bool Runtime::ActorPoseOf(proto::NpcId npc, pose::Pose &out) {
+  // Drawn as far in the past as the proxy's position.
+  std::uint64_t delayUs = 100'000;
+  {
+    std::lock_guard _(m_tracksLock);
+    if (const auto it = m_tracks.find(kNpcPuppetBase + npc);
+        it != m_tracks.end() && !it->second.Empty())
+      delayUs = it->second.DelayUs();
+  }
+  const auto now = HostNowUs();
+  std::lock_guard _(m_posesLock);
+  const auto it = m_actorPoses.find(npc);
+  if (it == m_actorPoses.end())
+    return false;
+  // The stream stopped (the scene is over, the host is gone): the proxy is
+  // not left frozen in its last pose.
+  if (now > it->second.NewestUs() + delayUs + kActorPoseStaleUs)
+    return false;
+  return it->second.At(now > delayUs ? now - delayUs : 0, out);
+}
+
+void Runtime::ForgetActorPoses() {
+  std::lock_guard _(m_posesLock);
+  m_actorPoses.clear();
+  m_actorOut.clear();
+}
+
+std::uint32_t Runtime::ActorPosesReceived() {
+  std::lock_guard _(m_posesLock);
+  return std::exchange(m_actorPosesIn, 0);
 }
 
 std::uint32_t Runtime::PosesReceived(proto::PlayerId player) {

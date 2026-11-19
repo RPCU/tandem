@@ -263,6 +263,17 @@ void ObserveSceneNode(void *node) {
 
 std::uint64_t RecentScenePath() { return g_lastPath.load(); }
 
+std::uint64_t ScenePlaying(std::uint32_t maxAgeMs) {
+  // The layout check also arms the observer (it needs the node class).
+  if (!LayoutOk())
+    return 0;
+  const auto path = g_lastPath.load();
+  const auto at = g_lastUs.load();
+  if (path == 0 || net::NowUs() - at > static_cast<std::uint64_t>(maxAgeMs) * 1000)
+    return 0;
+  return path;
+}
+
 SceneClass ClassifyRecentScene(std::uint32_t maxAgeMs, std::string &why) {
   // The layout check also arms the observer (it needs the node class).
   if (!LayoutOk())

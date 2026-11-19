@@ -24,7 +24,8 @@ namespace tandem::plugin::engine {
 // scenes.cpp) until SetQuestFreeze(true), which only `freeze` allows.
 // `allow` are extra open-world phase resources (paths) that keep running.
 bool InstallQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle,
-                        const std::vector<std::string> &allow, bool freeze);
+                        const std::vector<std::string> &allow, const std::vector<std::string> &gigs,
+                        bool freeze);
 void RemoveQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle handle);
 
 // Game thread. The hook is in and the engine layouts are the measured ones.
@@ -34,6 +35,16 @@ bool QuestFreezeAvailable();
 // in the order they came; answers how many were given back.
 bool SetQuestFreeze(bool on);
 bool QuestFrozen();
+// Game thread. Ownership ("Whose gig is it", quest-carryover.md): grouped
+// with the host (the default) our gig phases wait like the story; apart
+// they run, and the gig signals held meanwhile are given back. A gig phase
+// is one under a resource of tandem.ini quest_freeze_gigs (until spike C2
+// settles a better test).
+void SetQuestGrouped(bool grouped);
+bool QuestGrouped();
+// Spike C2: log every phase met (its chain of resources) and every journal
+// node in it (the journal entry it names), once each.
+void SetQuestTrace(bool on);
 // How many signals are held now, and whether more came than could be held
 // (then the guest's own story lost some: its leave must reload a save).
 std::uint32_t QuestFreezeHeld();

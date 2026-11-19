@@ -223,6 +223,19 @@ public:
   bool PoseOf(proto::PlayerId player, pose::Pose &out);
   std::uint32_t PosesReceived(proto::PlayerId player);
 
+  // Scene replay (docs/architecture/scene-replay.md): the body poses of a
+  // scene's actors. Host: animation job threads -> net thread, the newest of
+  // each NPC. Guest: the net thread writes, animation job threads read, drawn
+  // as far in the past as the proxy's position; nothing once the stream has
+  // stopped for kActorPoseStaleUs (the proxy's own animation shows again).
+  static constexpr std::uint64_t kActorPoseStaleUs = 1'000'000;
+  void SubmitActorPose(proto::NpcId npc, const proto::PoseState &pose);
+  std::vector<proto::ActorPose> TakeActorPoses();
+  void PushActorPose(const proto::ActorPose &pose);
+  bool ActorPoseOf(proto::NpcId npc, pose::Pose &out);
+  void ForgetActorPoses();
+  std::uint32_t ActorPosesReceived();
+
   // Game thread -> net thread: our V's look, newest only (the endpoint keeps it
   // and sends it again to whoever joins).
   void SubmitLocalAppearance(proto::Appearance appearance);
@@ -548,6 +561,9 @@ private:
   std::uint32_t m_loopSeq{};
   mutable std::mutex m_posesLock;
   std::map<proto::PlayerId, pose::PoseTrack> m_poses;
+  std::map<proto::NpcId, pose::PoseTrack> m_actorPoses; // m_posesLock
+  std::map<proto::NpcId, proto::PoseState> m_actorOut;  // m_posesLock
+  std::uint32_t m_actorPosesIn{};                       // m_posesLock
 
   mutable std::mutex m_tracksLock;
   std::map<proto::PlayerId, sync::Track> m_tracks;

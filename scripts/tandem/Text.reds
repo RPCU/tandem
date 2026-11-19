@@ -161,7 +161,7 @@ public class TandemText {
   // lives (shown unless notices = minimal), 0: news (notices = all).
   public static func Importance(key: String) -> Int32 {
     let asks = [
-      "", "Session-Ended", "Story-NotRestored", "Story-SceneStarted", "Transit-Leaving",
+      "", "Session-Ended", "Story-NotRestored", "Story-SceneStarted", "Scene-InScene", "Transit-Leaving",
       "Travel-FastTravelledTo", "Travel-FastTravelled", "Travel-Labelled", "Travel-Scene",
       "Travel-Taken", "Travel-Asks", "Travel-Blocked", "Revive-Down", "Revive-DownAlone",
       "Revive-Out", "Revive-AllDown", "Revive-WaitHost"
@@ -313,6 +313,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Story-SceneStarted", "{1} started a scene");
     this.Text("Tandem-Story-Busy", "{1} is busy");
     this.Text("Tandem-Story-Join", "Join {1}");
+    this.Text("Tandem-Scene-InScene", "{1} is in a scene");
+    this.Text("Tandem-Scene-Watch", "Watch the scene");
     // Loot, markers.
     this.Text("Tandem-Loot-Taken", "Someone already took it");
     this.Text("Tandem-Loot-TakenBy", "{1} picked it up first");
@@ -470,6 +472,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Story-SceneStarted", "{1} a lancé une scène");
     this.Text("Tandem-Story-Busy", "{1} est occupé(e)");
     this.Text("Tandem-Story-Join", "Rejoindre {1}");
+    this.Text("Tandem-Scene-InScene", "{1} est dans une scène");
+    this.Text("Tandem-Scene-Watch", "Regarder la scène");
     this.Text("Tandem-Loot-Taken", "Quelqu'un l'a déjà pris");
     this.Text("Tandem-Loot-TakenBy", "{1} l'a ramassé avant vous");
     this.Text("Tandem-Marker-Description", "Un autre V, dans votre ville");

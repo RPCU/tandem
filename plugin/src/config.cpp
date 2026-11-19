@@ -110,12 +110,13 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       flag = false;
     else
       return Bad("{} is on or off", key);
-  } else if (key == "quest_freeze_allow" || key == "private_actors" || key == "private_scenes" ||
-             key == "public_scenes") {
-    auto &list = key == "quest_freeze_allow" ? config.questFreezeAllow
-                 : key == "private_actors"   ? config.privateActors
-                 : key == "private_scenes"   ? config.privateScenes
-                                             : config.publicScenes;
+  } else if (key == "quest_freeze_allow" || key == "quest_freeze_gigs" || key == "private_actors" ||
+             key == "private_scenes" || key == "public_scenes") {
+    auto &list = key == "quest_freeze_allow"  ? config.questFreezeAllow
+                 : key == "quest_freeze_gigs" ? config.questFreezeGigs
+                 : key == "private_actors"    ? config.privateActors
+                 : key == "private_scenes"    ? config.privateScenes
+                                              : config.publicScenes;
     if (key == "private_actors")
       list.clear(); // the file's list replaces the defaults
     for (std::size_t start = 0; start <= value.size();) {
@@ -135,6 +136,16 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.scenePrivacy = false;
     else
       return Bad("scene_privacy is on or off");
+  } else if (key == "scene_replay") {
+    if (value == "on" || value == "true")
+      config.sceneReplay = config.scenePoses = true;
+    else if (value == "noposes") {
+      config.sceneReplay = true;
+      config.scenePoses = false;
+    } else if (value == "off" || value == "false")
+      config.sceneReplay = false;
+    else
+      return Bad("scene_replay is on, noposes or off");
   } else if (key == "time_host") {
     if (value == "bubble")
       config.timeHostFull = false;

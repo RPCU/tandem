@@ -15,7 +15,8 @@
 namespace tandem::story {
 // The host's story as a player joining now needs it: the journal (its
 // snapshot plus every change since), the tracked entry, the call that is up,
-// the open choice hub and every player's StoryState.
+// the open choice hub, every player's StoryState, and the scene that plays
+// (tandem/scene.hpp: its state, its cast, the lines being spoken).
 class Record {
 public:
   // A story message the host sent (or relayed); a guest notes what it
@@ -23,14 +24,18 @@ public:
   bool Note(const proto::Message &message);
   // The story domain's hash for digests (tandem/consistency.hpp): the
   // journal and the tracked entry, what lasts and what a resync (ForJoiner)
-  // sends whole. Calls, hubs and effects are short-lived and sent again on
-  // every change; StoryStates are left out (a guest is never sent its own).
+  // sends whole, and the scene that plays with its cast (a lost end would
+  // hold a guest's proxies for good). Calls, hubs, effects and lines are
+  // short-lived and sent again on every change; StoryStates are left out (a
+  // guest is never sent its own).
   std::uint32_t Digest() const;
   // A player left: its StoryState goes.
   void Forget(proto::PlayerId player);
   // What to send a newcomer, in order: the journal snapshot first.
   std::vector<proto::Message> ForJoiner() const;
   std::size_t JournalSize() const { return m_journal.size(); }
+  // A scene plays (scene replay).
+  bool SceneOn() const { return m_scene.has_value(); }
 
 private:
   std::map<std::uint32_t, proto::JournalChange> m_journal;
@@ -40,7 +45,13 @@ private:
   std::optional<proto::ChoiceHub> m_hub;
   std::map<proto::PlayerId, proto::StoryState> m_states;
   std::map<std::uint64_t, proto::StoryEffect> m_effects; // on now
+  std::optional<proto::SceneState> m_scene;              // playing now
+  std::optional<proto::SceneCast> m_cast;
+  std::vector<proto::SceneLine> m_lines; // begun and not cut, newest last
 };
+// How many begun lines the record keeps (a joiner drops the ones that are
+// over: scene::Replay).
+inline constexpr std::size_t kKeptLines = 8;
 
 // "Taking part" (design §4.3): a guest takes part in a quest when it is
 // within kNearMetres of the host's V as one of the quest's objectives
