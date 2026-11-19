@@ -1,5 +1,6 @@
 #include "relay_link.hpp"
 #include "resolve.hpp"
+#include "sha256.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -37,6 +38,8 @@ enum : std::uint8_t {
   kProbe = 17,
   kObserved = 18,
   kRegisterHostKeep = 19,
+  kChallenge = 20,
+  kRegisterHostOpen = 21,
 };
 constexpr std::size_t kPunchSize = kHeader + 4 + 2 + 1;
 constexpr std::size_t kObservedSize = kHeader + 4 + 1 + 4 + 2; // IPv4
@@ -52,6 +55,9 @@ constexpr enet_uint32 kProbeEveryMs = 250;
 // 300 ms apart at most.
 constexpr int kCheckTries = 3;
 constexpr enet_uint32 kCheckEveryMs = 300;
+// An open relay's proof of work: hashes tried per Pump (about a
+// millisecond's), so the net thread's loop is never held up.
+constexpr int kPowSlice = 2048;
 
 // Direct paths: punches every 100 ms for 3 s; a path silent for 1.5 s
 // while we send on it is dropped (the relay takes its traffic back), and a
@@ -430,6 +436,17 @@ void RelayLink::SendRequest(enet_uint32 now) {
   if (m_phase == Phase::Resolving) {
     bytes = Header(kResolveCode);
     bytes.insert(bytes.end(), m_options.code.begin(), m_options.code.end());
+  } else if (m_role == Role::Host && m_solved) {
+    // An open relay's challenge, solved: the session opens with no token.
+    bytes = Header(kRegisterHostOpen);
+    bytes.insert(bytes.end(), m_secret.begin(), m_secret.end());
+    bytes.insert(bytes.end(), std::begin(m_challenge.stamp), std::end(m_challenge.stamp));
+    bytes.push_back(m_challenge.bits);
+    bytes.insert(bytes.end(), std::begin(m_challenge.mac), std::end(m_challenge.mac));
+    for (int shift = 56; shift >= 0; shift -= 8)
+      bytes.push_back(static_cast<std::uint8_t>(m_powNonce >> shift));
+  } else if (m_role == Role::Host && m_solving) {
+    return; // the solver sends it once it holds
   } else if (m_role == Role::Host) {
     const bool keep = m_options.keepCode && !m_keepFailed;
     bytes = Header(keep ? kRegisterHostKeep : kRegisterHost);
@@ -452,6 +469,45 @@ void RelayLink::SendRequest(enet_uint32 now) {
   m_requestMs = now;
 }
 
+// An open relay asks a host with no token for a proof of work: a nonce
+// such that SHA-256(mac | secret | nonce) starts with `bits` zero bits
+// (relay/internal/relay/open.go). A new challenge (ours was refused: stale,
+// or used) starts over; a late copy of the one being solved is ignored.
+void RelayLink::OnChallenge(const std::uint8_t *body, std::size_t length, enet_uint32 now) {
+  if (m_role != Role::Host || length != 4 + 1 + 16 ||
+      (m_phase != Phase::Registering && m_phase != Phase::Ready))
+    return;
+  if ((m_solving || m_solved) && std::memcmp(body + 5, m_challenge.mac, 16) == 0)
+    return;
+  std::memcpy(m_challenge.stamp, body, 4);
+  m_challenge.bits = body[4];
+  std::memcpy(m_challenge.mac, body + 5, 16);
+  m_solving = true;
+  m_solved = false;
+  m_powNonce = 0;
+  Solve(now);
+}
+
+// A slice of the search, about a millisecond: Pump runs it each time until
+// it holds, then the registration goes out at once.
+void RelayLink::Solve(enet_uint32 now) {
+  if (!m_solving)
+    return;
+  std::uint8_t message[16 + 16 + 8];
+  std::memcpy(message, m_challenge.mac, 16);
+  std::copy(m_secret.begin(), m_secret.end(), message + 16);
+  for (int i = 0; i < kPowSlice; ++i, ++m_powNonce) {
+    for (int j = 0; j < 8; ++j)
+      message[32 + j] = static_cast<std::uint8_t>(m_powNonce >> (56 - 8 * j));
+    if (LeadingZeroBits(Sha256(message)) >= m_challenge.bits) {
+      m_solving = false;
+      m_solved = true;
+      SendRequest(now);
+      return;
+    }
+  }
+}
+
 void RelayLink::StartOver(enet_uint32 now) {
   m_relay = m_home;
   m_redirects = 0;
@@ -459,6 +515,7 @@ void RelayLink::StartOver(enet_uint32 now) {
   m_startMs = now;
   m_status.code.clear(); // that replica's: another gives another
   m_codeKept = false;
+  m_solving = m_solved = false; // another relay, another challenge
   if (m_homes.size() > 1) {
     // Several relays: the one answering the soonest now.
     m_phase = Phase::Choosing;
@@ -540,6 +597,7 @@ void RelayLink::Pump() {
     }
   }
 
+  Solve(now); // an open relay's proof of work, a slice at a time
   Timers(now);
 }
 
@@ -554,6 +612,7 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
   case kRegistered:
     if (length != 2)
       return;
+    m_solving = m_solved = false; // in: a retry needs no proof
     if (m_phase == Phase::Ready) {
       // Our probe answered: the relay is there (again). It may have
       // restarted, our code with it: asked for at once.
@@ -607,6 +666,9 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
     break;
   case kRedirect:
     OnRedirect(body, length, now);
+    break;
+  case kChallenge:
+    OnChallenge(body, length, now);
     break;
   case kData: {
     if (length < 2)
@@ -890,6 +952,9 @@ void RelayLink::OnError(std::uint8_t code) {
     break;
   case 8:
     Fail("the relay is restarting: try again in a moment");
+    break;
+  case 9:
+    Fail("the relay hosts as many sessions from your address as it may");
     break;
   default:
     Fail("the relay refused us (error " + std::to_string(code) + ")");

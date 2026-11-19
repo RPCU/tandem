@@ -134,32 +134,27 @@ Only the host forwards a port. Some connections cannot do it at all
 ### Across the internet, with a relay and a join code
 
 A relay is a small server (`tandem-relay`) that passes the traffic between
-players who cannot reach each other. tandem does not come with a public
-one: someone in your group runs it (`docs/relay.md` in tandem's source
+players who cannot reach each other. tandem comes set to the public RPCU
+relay (`relay = relay.rpcu.io:27460` in `red4ext/plugins/tandem/tandem.ini`),
+open to anyone: there is nothing to set up.
+
+1. The host hosts as above; the Co-op panel and the **Invite** popup show
+   a **join code** such as `K7Q-2M9`.
+2. The guest types the code in **Enter a code or an address**.
+
+Another relay (one your group runs: `docs/relay.md` in tandem's source
 explains how; a small VPS or a home server with one forwarded port is
-enough) and hands out its address and a **host token**.
-
-1. Both players write the relay in `red4ext/plugins/tandem/tandem.ini`:
-
-   ```ini
-   relay = relay.example.org:27460
-   ```
-
-2. Whoever hosts also writes the host token there (guests need none):
-
-   ```ini
-   relay_token = 64 hex digits
-   ```
-
-3. Restart the game. The host hosts as above; the Co-op panel and the
-   **Invite** popup now show a **join code** such as `K7Q-2M9`.
-4. The guest types the code in **Enter a code or an address**.
+enough) goes in the same line, for both players. If its operator gave the
+host a **host token** (`relay_token = 64 hex digits`), it lifts the relay's
+limits on that host's sessions, and a relay that takes only token holders
+needs it. An empty `relay =` turns relays off.
 
 A code is valid for ten minutes and the host's panel always shows the
 current one; once a guest is in, their game finds the session again by
 itself after a disconnection. The host's panel shows the relay's state if
-something is wrong ("the relay did not answer", "the relay refused our
-host token").
+something is wrong ("the relay did not answer", "the relay hosts as many
+sessions from your address as it may", "the relay refused our host
+token").
 
 A relayed session is a little slower than a direct one: everything makes a
 detour through the relay. With a relay set, a host is still reachable
@@ -178,9 +173,9 @@ keys and bad values are reported in tandem's log and ignored.
 | `role`                     | `off`                                 | `off`: solo until you start a session in the Co-op menu. `host`: host at every load. `join`: join `address` or `join` at every load.                                                                                                                  |
 | `port`                     | `27450`                               | UDP port the host listens on, and the port a guest calls when none is typed.                                                                                                                                                                          |
 | `address`                  | none                                  | `role = join`: the host's address.                                                                                                                                                                                                                    |
-| `relay`                    | none                                  | A tandem-relay, `host` or `host:port` (default port 27460); several, comma-separated: a host takes the nearest.                                                                                                                                       |
-| `code`                     | `new`                                 | Hosts: `keep` gives the same join code every session (the Co-op menu's New join code changes it).                                                                                                                                                     |
-| `relay_token`              | none                                  | A host token of that relay (64 hex digits). Hosts only. Keep it to yourself.                                                                                                                                                                          |
+| `relay`                    | `relay.rpcu.io:27460` (shipped)       | A tandem-relay, `host` or `host:port` (default port 27460): the public RPCU relay, open to anyone, by default; several, comma-separated: a host takes the nearest; empty: none.                                                                       |
+| `code`                     | `new`                                 | Hosts with a token: `keep` gives the same join code every session (the Co-op menu's New join code changes it).                                                                                                                                        |
+| `relay_token`              | none                                  | Optional: a host token of that relay (64 hex digits), lifting an open relay's limits on your sessions (needed on a token-only relay). Hosts only. Keep it to yourself.                                                                                |
 | `join`                     | none                                  | `role = join`: the host's join code.                                                                                                                                                                                                                  |
 | `direct`                   | `auto`                                | Through a relay, also try to reach the other player directly (lower latency, the relay as fallback). `off`: always the relay.                                                                                                                         |
 | `pose`                     | `on`                                  | Exact body poses of the other players. `off`: stock animations only.                                                                                                                                                                                  |

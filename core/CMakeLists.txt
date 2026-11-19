@@ -8,6 +8,7 @@ add_library(tandem_core STATIC
   src/message_make.cpp
   src/session.cpp
   src/relay.cpp
+  src/sha256.cpp
   src/consistency.cpp
   src/endpoint.cpp
   src/session_event.cpp
