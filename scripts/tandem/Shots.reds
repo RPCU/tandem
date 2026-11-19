@@ -388,7 +388,7 @@ public class TandemShots {
   // ours to apply, not a proxy's own hit to drop (TandemOutcomes
   // .IsProxyComputed).
   public func IsSimulatedHit(hitEvent: ref<gameHitEvent>) -> Bool {
-    if TandemNative.IsHost() || !IsDefined(hitEvent) || !IsDefined(hitEvent.attackData) {
+    if !IsDefined(hitEvent) || !IsDefined(hitEvent.attackData) {
       return false;
     }
     if !AttackData.IsRangedOrDirect(hitEvent.attackData.GetAttackType()) {

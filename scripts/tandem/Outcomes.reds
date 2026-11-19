@@ -159,7 +159,9 @@ public class TandemOutcomes {
           npcs.Levels().OnSession(event.level, Cast<Int32>(event.player));
           break;
         case 11:
-          if !TandemNative.IsHost() {
+          // Its owner's word on its level (any game, regions.md): on our
+          // proxy of it; one we run has ours already.
+          if !npcs.Owns(event.npc) {
             npcs.SetLevel(event.npc, event.damage);
           }
           break;
@@ -611,20 +613,22 @@ public class TandemOutcomes {
     return effect == t"BaseStatusEffect.MantisBladesRelicDismemberment" || effect == t"BaseStatusEffect.GorillaArmsOnePunchNPCMark" || effect == t"BaseStatusEffect.MantisBladesGrandFinaleNPCMark";
   }
 
-  // Guest: the session NPC a proxy stands for, dead (our hit killed it
-  // ahead of the host, Npcs.reds PredictKill) or alive.
+  // The session NPC a proxy stands for, dead (our hit killed it ahead of
+  // its owner, Npcs.reds PredictKill) or alive; 0 for one we run (any game
+  // shows proxies now, regions.md: the host too).
   public static func ProxyEvenDead(game: GameInstance, proxy: ref<GameObject>) -> Uint32 {
     let system = TandemCombat.System(game);
     let npcs = IsDefined(system) && system.You() != 0u ? system.Npcs() : null;
-    return IsDefined(npcs) && !TandemNative.IsHost() ? npcs.NpcOf(proxy.GetEntityID()) : 0u;
+    return IsDefined(npcs) && npcs.IsProxyEntity(proxy.GetEntityID()) ? npcs.NpcOf(proxy.GetEntityID()) : 0u;
   }
 
-  // Host: a guest's one-punch mark landing on a dead or defeated NPC of
-  // ours, which sends the one-punch slow motion to "the player"
-  // (126466-126472): our V, for a punch that is not ours. The guest's own
+  // The NPC's owner (the host, or a guest for an NPC of its own,
+  // regions.md): another V's one-punch mark landing on a dead or defeated
+  // NPC we run, which sends the one-punch slow motion to "the player"
+  // (126466-126472): our V, for a punch that is not ours. The puncher's own
   // game gave it to its V already (a local slow motion, Time.reds).
   public static func IsGuestsOnePunch(npc: ref<NPCPuppet>, evt: ref<ApplyStatusEffectEvent>) -> Bool {
-    if !TandemNative.IsHost() || !IsDefined(evt.staticData) || !evt.staticData.GameplayTagsContains(n"OnePunchedMark") {
+    if !IsDefined(evt.staticData) || !evt.staticData.GameplayTagsContains(n"OnePunchedMark") || !TandemOwn.Entity(npc.GetGame(), npc.GetEntityID()) {
       return false;
     }
     if !npc.IsDead() && !ScriptedPuppet.IsDefeated(npc) && !npc.IsAboutToDieOrDefeated() {
@@ -653,11 +657,12 @@ public class TandemOutcomes {
     return true;
   }
 
-  // Host: an instant dismemberment (StatusEffectManagerComponent, 321244:
-  // any effect tagged Dismember, as the grand finale's) whose V is a guest:
-  // the effect named them, or their hit was the NPC's last.
+  // The NPC's owner: an instant dismemberment (StatusEffectManagerComponent,
+  // 321244: any effect tagged Dismember, as the grand finale's) on an NPC we
+  // run whose V is another player: the effect named them, or their hit was
+  // the NPC's last.
   public static func IsGuestsDismemberment(owner: ref<GameObject>, instigator: EntityID) -> Bool {
-    let system = TandemNative.IsHost() && IsDefined(owner) ? TandemCombat.System(owner.GetGame()) : null;
+    let system = IsDefined(owner) && TandemOwn.Entity(owner.GetGame(), owner.GetEntityID()) ? TandemCombat.System(owner.GetGame()) : null;
     if !IsDefined(system) || system.You() == 0u {
       return false;
     }
@@ -908,10 +913,11 @@ public class TandemOutcomes {
     TandemNative.Log(s"outcomes: player \(event.player) \(event.level == 2 ? "parried" : "blocked") \(event.npc)'s attack: it gets the recoil");
   }
 
-  // Guest: the host NPC's attack on our V ended blocked or parried here
-  // (ProcessPipeline, Combat.reds): the host's NPC hears of it.
+  // Any game: a proxy's attack on our V (its owner's hit, PlayerHit) ended
+  // blocked or parried here (ProcessPipeline, Combat.reds): the NPC's owner
+  // hears of it (the host, or a guest for an NPC of its own, regions.md).
   public static func ReportDefence(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Void {
-    if TandemNative.IsHost() || !IsDefined(hitEvent.attackData) {
+    if !IsDefined(hitEvent.attackData) {
       return;
     }
     let player = GetPlayer(game);
@@ -932,7 +938,7 @@ public class TandemOutcomes {
     }
     if how != 0 {
       TandemFight.SendDefended(npc, how);
-      TandemNative.Log(s"outcomes: npc \(npc)'s attack \(how == 2 ? "parried" : "blocked") by our V, the host told");
+      TandemNative.Log(s"outcomes: npc \(npc)'s attack \(how == 2 ? "parried" : "blocked") by our V, its owner told");
     }
   }
 
@@ -956,9 +962,11 @@ public class TandemOutcomes {
     if system.IsForwardedHit(hitEvent) {
       return false;
     }
-    // The game that runs the target (the host, or any game for an NPC of its
-    // own, regions.md) replays the V's strikes on it: those stand.
-    let runs = TandemNative.IsHost() || (IsDefined(hitEvent.target) && TandemOwn.Entity(game, hitEvent.target.GetEntityID()));
+    // The game that runs the target replays the V's strikes on it: those
+    // stand. An NPC's owner runs it (regions.md); the host runs the rest of
+    // its world, but not a proxy of a guest's NPC.
+    let target = IsDefined(hitEvent.target) ? hitEvent.target.GetEntityID() : EntityID();
+    let runs = TandemOwn.Entity(game, target) || (TandemNative.IsHost() && !TandemOwn.IsProxy(game, target));
     let outcomes = system.Outcomes();
     return !runs || !IsDefined(outcomes) || !outcomes.IsStrike(hitEvent);
   }
@@ -1102,8 +1110,8 @@ protected cb func OnSetSlowMoForOnePunchAttackEvent(evt: ref<SetSlowMoForOnePunc
 }
 
 // An instant dismemberment (the Relic's Mantis Blades): never on a V; on
-// the host, for a guest's kill, the blood it puts on "the player's" screen
-// (the local player, 321266) is not ours.
+// the NPC's owner, for another V's kill, the blood it puts on "the
+// player's" screen (the local player, 321266) is not ours.
 @wrapMethod(StatusEffectManagerComponent)
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
   let owner = this.GetOwner();

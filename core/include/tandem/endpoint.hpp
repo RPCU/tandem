@@ -203,10 +203,10 @@ struct Story {
 struct RemoteTimeEffect {
   proto::TimeEffect effect;
 };
-// A hit outcome message (proto::IsCombat) for this game. Host: a guest's
-// NpcStrike, AreaHit on our V, Throw, ThrowEnd or Defended, stamped. Guest:
-// the host's NpcWound, NpcPoise, Difficulty, Rules, an AreaHit on our V,
-// another player's Throw and ThrowEnd.
+// A hit outcome message (proto::IsCombat) for this game. Another player's
+// NpcStrike or Defended on an NPC we run, stamped; an NPC owner's NpcWound,
+// NpcPoise and NpcLevel on one we show; an AreaHit on our V; another
+// player's Throw and ThrowEnd. Guest: the host's Difficulty and Rules.
 struct Combat {
   proto::Message message;
 };
@@ -677,27 +677,26 @@ public:
   // guest), kept for late joiners (story::Record). Guest: to the host, which
   // relays ChoiceCursor and StoryState. Anything else is dropped.
   void SendStory(proto::Message message, proto::PlayerId to = proto::kNoPlayer);
-  // Hit outcomes (proto::IsCombat). Guest: NpcStrike and Defended to the
-  // host. Host: NpcWound, NpcPoise, Difficulty, Rules to every guest
-  // (Difficulty, Rules and the poise kept for late joiners). Either: AreaHit
+  // Hit outcomes (proto::IsCombat). NpcStrike and Defended to the NPC's
+  // owner (a guest's through the host). An NPC's owner (the host, or a guest
+  // for its own NPCs: regions.md): NpcWound, NpcPoise and NpcLevel to the
+  // games that show it (poise and level kept for late joiners until the
+  // NPC goes). Host: Difficulty, Rules to every guest (kept for late
+  // joiners). Either: AreaHit
   // to its victim's game, through the host, only while the session's rules
   // allow friendly fire; Throw and ThrowEnd to every other game, through
   // the host. Levels travel here too (tandem/progress.hpp): PlayerLevel is
   // our V's, kept and said to the host as soon as we are in the session (the
   // host keeps everyone's and tells all the session's level when their mean
-  // changes: SessionLevel, never a game's to say); NpcLevel is the host's
-  // word on one of its NPCs, kept for late joiners until the NPC goes.
-  // NpcScale is an owner's word on an NPC it runs (tandem/scaling.hpp; one
-  // whose spawn has not reached us yet is said right after it), to everyone
-  // who sees that NPC, kept for late joiners until it goes. CarLend too: ours,
-  // kept and said as soon as we are in; the host stamps who, keeps everyone's
-  // (late joiners, resyncs) and tells all. NpcVendor: an owner's word that one
-  // of its NPCs is a placed vendor, to the players linked with it, kept with
-  // the NPC's records until it goes (one whose spawn is still on its way is
-  // said right after it); never a dead one (the host derives those from the
-  // owner's NpcGone, tells everyone and keeps them for the session). False
-  // when nothing was sent (not ours to say, nobody to send to, refused by the
-  // rules).
+  // changes: SessionLevel, never a game's to say). NpcScale is an owner's word on an NPC it runs
+  // (tandem/scaling.hpp; one whose spawn has not reached us yet is said right after it), to
+  // everyone who sees that NPC, kept for late joiners until it goes. CarLend too: ours, kept and
+  // said as soon as we are in; the host stamps who, keeps everyone's (late joiners, resyncs) and
+  // tells all. NpcVendor: an owner's word that one of its NPCs is a placed vendor, to the players
+  // linked with it, kept with the NPC's records until it goes (one whose spawn is still on its way
+  // is said right after it); never a dead one (the host derives those from the owner's NpcGone,
+  // tells everyone and keeps them for the session). False when nothing was sent (not ours to say,
+  // nobody to send to, refused by the rules).
   bool SendCombat(proto::Message message);
   // The session's rules as this game knows them (the host's own; a guest's,
   // what the host said; none yet: every flag off).

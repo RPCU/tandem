@@ -560,6 +560,19 @@ another V (friendly, as any melee hit). A guest's Emergency Cloaking does
 not wipe the host's NPCs' memory: per-player detection wins, the NPCs just
 lose that V.
 
+**Guests own NPCs too** ([`regions.md`](../architecture/regions.md)).
+The table's "host" side of an NPC is now its owner's, whichever game that
+is, and its "guest" side any game that shows the NPC as a proxy, the
+host's included (2026-11-19, scripts only): a Relic mark with no instigator
+on a proxy is ours and goes to its owner (`Combat.reds`, `ProxyEvenDead`);
+the one-punch slow motion dropped for another V's punch, the instant
+dismemberment's blood kept off our screen, and the way out of combat that
+lets only one V go run on the NPC's owner (`IsGuestsOnePunch`,
+`IsGuestsDismemberment`, `TandemStealth.OthersHunted`); Emergency
+Cloaking's "combat avoided" sound is played by us on any game that shows
+proxies (they are no threats there). A block or parry of an NPC's attack
+reaches its owner (`Defended`).
+
 **To verify in game** (scenario `relic-guest` covers the forwarded mark,
 `relic-host` the host's answer to a guest's second chance; none of this
 was run): a breach shows on a proxy and wears down; the

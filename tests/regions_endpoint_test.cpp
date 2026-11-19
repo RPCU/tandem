@@ -4,6 +4,7 @@
 // leaves, under loss too, and an owner that vanishes leaves heirs.
 
 #include "ports.hpp"
+#include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 
 #include <doctest/doctest.h>
@@ -37,6 +38,8 @@ struct Game {
   bool refuse{}, fail{};
   std::vector<proto::PlayerId> linked;
   proto::PlayerId leader{};
+  std::map<proto::NpcId, float> levels; // the owners' NpcLevel
+  std::vector<proto::Defended> defended;
   float giveHealth{0.4f};
 
   void Announce(std::uint32_t counter, proto::Vec3 at = {}) {
@@ -64,6 +67,10 @@ struct Game {
       else if (const auto *combat = std::get_if<events::Combat>(&event)) {
         strikes += std::holds_alternative<proto::NpcStrike>(combat->message) ? 1 : 0;
         areaHits += std::holds_alternative<proto::AreaHit>(combat->message) ? 1 : 0;
+        if (const auto *level = std::get_if<proto::NpcLevel>(&combat->message))
+          levels[level->npc] = level->level;
+        if (const auto *defence = std::get_if<proto::Defended>(&combat->message))
+          defended.push_back(*defence);
         npcWords += std::holds_alternative<proto::NpcWound>(combat->message) ||
                             std::holds_alternative<proto::NpcPoise>(combat->message) ||
                             std::holds_alternative<proto::NpcScale>(combat->message)
@@ -160,7 +167,7 @@ struct Session {
   }
 
   bool Until(const std::function<bool()> &done, std::chrono::milliseconds limit = 3s) {
-    const auto deadline = std::chrono::steady_clock::now() + limit;
+    const auto deadline = std::chrono::steady_clock::now() + test::Patience(limit);
     while (std::chrono::steady_clock::now() < deadline) {
       for (auto *game : Games())
         game->See(game->endpoint->Update(1ms));
@@ -299,6 +306,54 @@ TEST_CASE("hits, effects, hacks, actions and shots reach the NPC's owner, whoeve
   s->b->SendNoise({.stim = 1});
   REQUIRE(s->Until([&] { return s->ga.shotHits == 1 && s->ga.noises == 1 && s->h.noises == 1; }));
   CHECK(s->gb.noises == 0);
+}
+
+TEST_CASE("an NPC's level is its owner's word; a V's block of its attack goes to the owner") {
+  auto s = Start(true);
+  s->h.Announce(5);
+  s->ga.Announce(1);
+  const auto guests = MakeNpcId(s->a->You(), 1);
+  const auto host = s->host->You(), a = s->a->You(), b = s->b->You();
+  REQUIRE(s->Until([&] { return s->gb.proxies.size() == 2 && s->h.proxies.size() == 1; }));
+
+  // a scales its own NPC (Levels.reds): the host and b give their proxies
+  // the same, and the host keeps it for whoever comes next.
+  CHECK(s->a->SendCombat(proto::NpcLevel{.npc = guests, .level = 12.5f}));
+  CHECK(s->host->SendCombat(proto::NpcLevel{.npc = 5, .level = 30.f}));
+  REQUIRE(s->Until([&] {
+    return s->h.levels.contains(guests) && s->gb.levels.contains(guests) &&
+           s->ga.levels.contains(5) && s->gb.levels.contains(5);
+  }));
+  CHECK(s->h.levels[guests] == 12.5f);
+  CHECK(s->gb.levels[5] == 30.f);
+  CHECK_FALSE(s->ga.levels.contains(guests)); // its own word, not echoed
+  CHECK_FALSE(s->h.levels.contains(5));
+  CHECK(s->host->NpcLevels().at(guests).level == 12.5f);
+  // Nobody else speaks for it, nor for the host's.
+  CHECK_FALSE(s->b->SendCombat(proto::NpcLevel{.npc = guests, .level = 1.f}));
+  CHECK_FALSE(s->b->SendCombat(proto::NpcLevel{.npc = 5, .level = 1.f}));
+  CHECK_FALSE(s->host->SendCombat(proto::NpcLevel{.npc = guests, .level = 1.f}));
+  // The same level again changes nothing.
+  CHECK(s->a->SendCombat(proto::NpcLevel{.npc = guests, .level = 12.5f}));
+  s->For(200ms);
+  CHECK(s->h.levels[guests] == 12.5f);
+  CHECK(s->b->NpcLevels().at(guests).level == 12.5f);
+
+  // Blocks and parries of a's NPC's attacks: to a, from the host and from b.
+  CHECK(s->host->SendCombat(proto::Defended{.npc = guests, .how = proto::DefendKind::Blocked}));
+  CHECK(s->b->SendCombat(proto::Defended{.npc = guests, .how = proto::DefendKind::Parried}));
+  // Of the host's NPC: to the host, as before; a's own: its game's business.
+  CHECK(s->a->SendCombat(proto::Defended{.npc = 5, .how = proto::DefendKind::Blocked}));
+  CHECK_FALSE(s->a->SendCombat(proto::Defended{.npc = guests, .how = proto::DefendKind::Blocked}));
+  CHECK_FALSE(s->host->SendCombat(proto::Defended{.npc = 5, .how = proto::DefendKind::Blocked}));
+  REQUIRE(s->Until([&] { return s->ga.defended.size() == 2 && s->h.defended.size() == 1; }));
+  s->For(200ms);
+  CHECK(s->gb.defended.empty());
+  REQUIRE(s->ga.defended.size() == 2);
+  std::set<proto::PlayerId> by{s->ga.defended[0].player, s->ga.defended[1].player};
+  CHECK(by == std::set<proto::PlayerId>{host, b});
+  CHECK(s->h.defended[0].player == a);
+  CHECK(s->h.defended[0].npc == 5);
 }
 
 TEST_CASE("an owner's word on its NPC reaches only the games that show it") {

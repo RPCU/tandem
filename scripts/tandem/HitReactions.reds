@@ -87,12 +87,12 @@ public class TandemReactionsSync {
     }
   }
 
-  // ---- host: what our NPCs play ----
+  // ---- the owner (the host, or a guest for its own NPCs): what they play ----
 
   // One of our NPCs starts a reaction: `data` is the feature its component
   // or its AI task just applied; `type` 6 a ragdoll, 0 its end.
   public static func Started(owner: wref<GameObject>, data: ref<AnimFeature_HitReactionsData>, type: Int32, by: wref<GameObject>, way: Vector4) -> Void {
-    if !TandemNative.IsStarted() || !TandemNative.IsHost() || !IsDefined(owner) {
+    if !TandemNative.IsStarted() || !IsDefined(owner) || !TandemOwn.Entity(owner.GetGame(), owner.GetEntityID()) {
       return;
     }
     let system = TandemCombat.System(owner.GetGame());
@@ -110,17 +110,14 @@ public class TandemReactionsSync {
     if IsDefined(sync) {
       sync.m_sent += 1;
       if type != 1 || sync.m_sent % 50 == 1 {
-        TandemNative.Log(s"reaction: npc \(npc) plays \(TandemReactionsSync.TypeName(type)) (sent to the guests; \(sync.m_sent) so far)");
+        TandemNative.Log(s"reaction: npc \(npc) plays \(TandemReactionsSync.TypeName(type)) (sent to the games linked with us; \(sync.m_sent) so far)");
       }
     }
   }
 
-  // ---- guest: the same on our proxies ----
+  // ---- every game: the same on our proxies ----
 
   public func Tick(now: Float, system: ref<TandemSystem>) -> Void {
-    if TandemNative.IsHost() {
-      return;
-    }
     let npcs = system.NpcsSync();
     for reaction in TandemPresence.TakeNpcReactions() {
       // Alive or just dead: a death reaction may come after the death.
@@ -325,7 +322,7 @@ protected func PlayHitReactionAction(context: ScriptExecutionContext) -> Bool {
 @wrapMethod(NPCPuppet)
 protected cb func OnRagdollEnabledEvent(evt: ref<RagdollNotifyEnabledEvent>) -> Bool {
   let result = wrappedMethod(evt);
-  if TandemNative.IsStarted() && TandemNative.IsHost() {
+  if TandemNative.IsStarted() && TandemOwn.Entity(this.GetGame(), this.GetEntityID()) {
     let component = this.GetHitReactionComponent();
     let way = new Vector4(0.0, 0.0, 0.0, 0.0);
     if IsDefined(component) {
@@ -339,7 +336,7 @@ protected cb func OnRagdollEnabledEvent(evt: ref<RagdollNotifyEnabledEvent>) -> 
 @wrapMethod(NPCPuppet)
 protected cb func OnRagdollDisabledEvent(evt: ref<RagdollNotifyDisabledEvent>) -> Bool {
   let result = wrappedMethod(evt);
-  if TandemNative.IsStarted() && TandemNative.IsHost() {
+  if TandemNative.IsStarted() && TandemOwn.Entity(this.GetGame(), this.GetEntityID()) {
     TandemReactionsSync.Started(this, null, 0, null, new Vector4(0.0, 0.0, 0.0, 0.0));
   }
   return result;

@@ -872,11 +872,10 @@ public class TandemRevive {
       if life != was {
         this.Changed(p, was, life, body);
       } else if life != 0 && IsDefined(body) {
-        // The puppet may have been spawned again since.
+        // The puppet may have been spawned again since. The NPCs we run (the
+        // host's, or a guest's own, regions.md) let it go.
         this.Mark(body, life);
-        if TandemNative.IsHost() {
-          this.DropThreats(player, body);
-        }
+        this.DropThreats(player, body);
       }
     }
   }

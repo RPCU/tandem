@@ -1240,7 +1240,8 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       if (unlisted(npc))
         Send(peer, poise);
     for (const auto &[npc, level] : m_npcLevels)
-      Send(peer, level);
+      if (Sees(them, NpcOwnerOrAnnouncer(npc)))
+        Send(peer, level);
     // The vendors that died in the session, wherever they were.
     for (const auto &[entity, dead] : m_deadVendors)
       Send(peer, dead);
@@ -1363,8 +1364,11 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
         out.push_back(events::Combat{message});
       return;
     }
-    if (std::holds_alternative<proto::Defended>(message))
+    if (const auto *defended = std::get_if<proto::Defended>(&message)) {
+      if (OwnsNpc(defended->npc) && defended->player != m_you)
+        out.push_back(events::Combat{message});
       return;
+    }
     if (const auto *area = std::get_if<proto::AreaHit>(&message);
         area && (area->player != m_you || !FriendlyFire()))
       return;
@@ -2157,11 +2161,10 @@ void Endpoint::SendNpcSpawn(const proto::NpcSpawn &spawn) {
   m_corpseOwner.erase(spawn.npc);
   m_npcs[spawn.npc] = spawn;
   SayNpc(spawn);
-  // Its level, if the game said it first (the host's to say).
+  // Its level, if the game said it first (its owner's to say: ours).
   if (const auto early = m_npcLevelsEarly.extract(spawn.npc)) {
     m_npcLevels[spawn.npc] = early.mapped();
-    if (IsHost())
-      Broadcast(early.mapped());
+    SayNpc(early.mapped());
   }
   // Its scale, the same way (ours to say: we run it).
   if (const auto early = m_npcScaleEarly.extract(spawn.npc)) {
@@ -3660,10 +3663,24 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     if (const auto peer = PeerOf(player))
       Broadcast(mine, *peer);
   } else if (const auto *defended = std::get_if<proto::Defended>(&message)) {
-    // For the host's game only: it owns the attacker.
+    // For the attacker's owner: our game, or passed on.
     auto mine = *defended;
     mine.player = player;
-    out.push_back(events::Combat{mine});
+    if (RouteToOwner(mine.npc, mine, player))
+      out.push_back(events::Combat{mine});
+  } else if (const auto *npcLevel = std::get_if<proto::NpcLevel>(&message)) {
+    // A guest owner's word on its NPC's level: kept (late joiners), for who
+    // sees it.
+    if (!m_npcs.contains(npcLevel->npc) || NpcOwner(npcLevel->npc) != player)
+      return;
+    if (const auto it = m_npcLevels.find(npcLevel->npc);
+        it != m_npcLevels.end() && it->second == *npcLevel)
+      return;
+    m_npcLevels[npcLevel->npc] = *npcLevel;
+    if (const auto peer = PeerOf(player))
+      ShareNpc(message, player, *peer);
+    if (Sees(m_you, player))
+      out.push_back(events::Combat{message});
   } else if (const auto *level = std::get_if<proto::PlayerLevel>(&message)) {
     // Its V's level: the session's is the mean of everyone's.
     m_levels[player] = level->level;
@@ -3687,8 +3704,8 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     if (Sees(m_you, player))
       out.push_back(events::Combat{message});
   }
-  // Wounds, poise, the difficulty, the rules and the NPCs' levels are the
-  // host's to say.
+  // The difficulty and the rules are the host's to say; wounds, poise and
+  // levels their NPC's owner's (above).
 }
 
 std::set<proto::PlayerId> Endpoint::Present() const {
@@ -3888,10 +3905,40 @@ bool Endpoint::SendCombat(proto::Message message) {
     return true;
   }
   if (auto *defended = std::get_if<proto::Defended>(&message)) {
-    if (IsHost())
-      return false; // the host's own NPCs' attacks on its V are its game's
+    // To the attacker's owner (the host, or a guest for an NPC of its own,
+    // regions.md); our own NPCs' attacks on our V are our game's.
+    if (OwnsNpc(defended->npc) || NpcOwnerOrAnnouncer(defended->npc) == m_you)
+      return false;
     defended->player = m_you;
-    Send(m_hostPeer, message);
+    if (!IsHost()) {
+      Send(m_hostPeer, message);
+      return true;
+    }
+    RouteToOwner(defended->npc, message, m_you);
+    return true;
+  }
+  if (const auto *level = std::get_if<proto::NpcLevel>(&message)) {
+    // An owner's word on its NPC (the host's, or a guest's own: regions.md),
+    // only when it changes. One we are about to share (its spawn is on its
+    // way from the game by another queue): kept, and said right after the
+    // spawn.
+    if (m_you == proto::kNoPlayer)
+      return false;
+    if (!m_npcs.contains(level->npc)) {
+      if (regions::Announcer(level->npc) != m_you || m_npcOwner.contains(level->npc))
+        return false;
+      if (m_npcLevelsEarly.size() >= 256)
+        m_npcLevelsEarly.clear();
+      m_npcLevelsEarly[level->npc] = *level;
+      return false;
+    }
+    if (!OwnsNpc(level->npc))
+      return false;
+    if (const auto it = m_npcLevels.find(level->npc);
+        it != m_npcLevels.end() && it->second == *level)
+      return true;
+    m_npcLevels[level->npc] = *level;
+    SayNpc(message);
     return true;
   }
   // Our throws: to every other game (a guest's through the host).
@@ -3942,21 +3989,6 @@ bool Endpoint::SendCombat(proto::Message message) {
     if (m_rules == *rules)
       return true; // said already
     m_rules = *rules;
-  }
-  if (const auto *level = std::get_if<proto::NpcLevel>(&message)) {
-    // Of an NPC we share, and only when it changes. One we are about to
-    // share (its spawn is on its way from the game by another queue): kept,
-    // and said right after the spawn.
-    if (!m_npcs.contains(level->npc)) {
-      if (m_npcLevelsEarly.size() >= 256)
-        m_npcLevelsEarly.clear();
-      m_npcLevelsEarly[level->npc] = *level;
-      return false;
-    }
-    if (const auto it = m_npcLevels.find(level->npc);
-        it != m_npcLevels.end() && it->second == *level)
-      return true;
-    m_npcLevels[level->npc] = *level;
   }
   Broadcast(message);
   return true;
