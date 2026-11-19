@@ -320,6 +320,9 @@ TEST_CASE("quickhacks: uploads to the host, states to all, NPC hacks and car hac
   REQUIRE(Pump({host.get(), a.get(), b.get()},
                [&](std::size_t, const auto &) { return a->IsJoined() && b->IsJoined(); }));
 
+  // NPC 7 is the host's, shared with both (regions: its word to one V goes
+  // only to a game that shows it).
+  host->SendNpcSpawn({.npc = 7, .record = 1});
   // a uploads on NPC 7: the host hears it in a's name, nobody else does.
   a->SendNpcHack({.player = 99, .npc = 7, .action = 0x55, .uploadMs = 1200});
   std::optional<proto::NpcHack> upload;
@@ -394,6 +397,7 @@ TEST_CASE("an NPC's hit on a guest reaches that guest only, whole") {
     return a->Players().size() == 3 && b->Players().size() == 3;
   }));
 
+  host->SendNpcSpawn({.npc = 7, .record = 1}); // the attacker, shared with both
   const proto::PlayerHit sent{.player = a->You(),
                               .npc = 7,
                               .physical = 10.f,
@@ -1396,6 +1400,7 @@ TEST_CASE("an NPC cue reaches only the player it is for") {
   REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
     return a->Players().size() == 3 && b->Players().size() == 3;
   }));
+  host->SendNpcSpawn({.npc = 7, .record = 1}); // shared with both
   host->SendNpcCue({.npc = 7, .player = b->You(), .cue = proto::NpcCueKind::CombatStart});
   bool aHeard = false;
   std::optional<proto::NpcCue> bHeard;
@@ -2171,6 +2176,7 @@ TEST_CASE(
   REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
     return a->Players().size() == 3 && b->Players().size() == 3;
   }));
+  host->SendNpcSpawn({.npc = 7, .record = 1});               // the shooter, shared with both
   CHECK_FALSE(host->SendNpcShotAt({.player = 1, .npc = 7})); // the host's own V: its game's
   CHECK_FALSE(host->SendNpcShotAt({.player = 9, .npc = 7})); // nobody
   const auto before = host->HostNowUs();

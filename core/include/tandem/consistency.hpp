@@ -79,6 +79,10 @@ struct PlayersView {
   // waypoint (none given: not hashed).
   const std::map<proto::PlayerId, proto::Link> *links = nullptr;
   const std::map<proto::PlayerId, proto::Waypoint> *waypoints = nullptr;
+  // Who is linked with whom (Regions.pairs: regions.md): the same for every
+  // player. A lost Regions is otherwise never sent again until links change,
+  // and an owner that believes it is linked with nobody sends no NPC states.
+  const std::vector<proto::PlayerId> *regionPairs = nullptr;
 };
 std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self);
 

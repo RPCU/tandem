@@ -1039,10 +1039,13 @@ struct NetThread::Impl {
           endpoint->SendNpcReaction(*reaction);
         else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
                  hit && !endpoint->SendPlayerHit(*hit))
-          log::Info("hit on player {} dropped: not in the session, or not our NPC's", hit->player);
+          log::Info("hit on player {} dropped: not in the session, not our NPC's, or its game "
+                    "does not show it",
+                    hit->player);
         else if (const auto *shot = std::get_if<proto::NpcShotAt>(&message);
                  shot && !endpoint->SendNpcShotAt(*shot))
-          log::Info("shot at player {} dropped: not in the session, or not our NPC's",
+          log::Info("shot at player {} dropped: not in the session, not our NPC's, or its game "
+                    "does not show it",
                     shot->player);
         else if (const auto *report = std::get_if<proto::ShotHit>(&message))
           endpoint->SendShotHit(*report);

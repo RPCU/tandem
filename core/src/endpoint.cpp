@@ -380,7 +380,7 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
                      .Add(std::uint64_t{consistency::PlayersDigest(
                          {m_players, m_appearances, m_held, m_seats, m_radios, m_stealth, m_paused,
                           m_timeEffects, m_lives, m_elsewheres, m_heat, m_activities, &m_commsLinks,
-                          &m_waypoints},
+                          &m_waypoints, &m_regionsSent},
                          self)})
                      .Add(std::uint64_t{VehiclePlayersDigest(self)})
                      .Value(),
@@ -1201,6 +1201,12 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       proto::NpcSet set;
       for (const auto npc : shown)
         if (set.npcs.size() < proto::kMaxNpcSet)
+          set.npcs.push_back(npc);
+      // ...and the ones being handed to or from it: its body there is the
+      // NPC's, whatever its copy says of the owner until the hand-over ends.
+      for (const auto &[npc, handover] : m_handovers)
+        if (InHandover(npc, them) && m_npcs.contains(npc) && !Sees(them, NpcOwner(npc)) &&
+            set.npcs.size() < proto::kMaxNpcSet)
           set.npcs.push_back(npc);
       Send(peer, set);
     }
@@ -2146,11 +2152,11 @@ void Endpoint::SendNpcStates(proto::NpcStates states) {
 }
 
 void Endpoint::SendActorPose(proto::ActorPose pose) {
-  if (!IsHost() || m_ended || !m_npcs.contains(pose.npc))
+  if (!IsHost() || m_ended || !OwnsNpc(pose.npc))
     return;
   pose.seq = ++m_npcSeq;
   pose.timeUs = HostNowUs();
-  Broadcast(pose);
+  ShareNpc(pose, m_you); // the games that show the actor, as its states
 }
 
 void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
@@ -2212,8 +2218,8 @@ void Endpoint::SendNpcCue(const proto::NpcCue &cue) {
   if (!IsJoined() || m_ended || cue.player == m_you || !SpeaksFor(cue.npc))
     return;
   if (!IsHost())
-    Send(m_hostPeer, cue);
-  else if (const auto peer = PeerOf(cue.player))
+    Send(m_hostPeer, cue); // the host passes it on if that player shows the NPC
+  else if (const auto peer = PeerOf(cue.player); peer && SharedWith(cue.npc, cue.player))
     Send(*peer, cue);
 }
 
@@ -2292,7 +2298,8 @@ bool Endpoint::SendPlayerHit(const proto::PlayerHit &hit) {
     return true;
   }
   const auto target = PeerOf(hit.player);
-  if (!target)
+  // An NPC's hit only for a game that shows it (regions.md: linked with us).
+  if (!target || (hit.npc != 0 && !SharedWith(hit.npc, hit.player)))
     return false;
   Send(*target, hit); // that player's game only
   return true;
@@ -2340,7 +2347,7 @@ void Endpoint::SendPlayerHack(const proto::PlayerHack &hack) {
     return;
   if (!IsHost())
     Send(m_hostPeer, hack);
-  else if (const auto peer = PeerOf(hack.player))
+  else if (const auto peer = PeerOf(hack.player); peer && SharedWith(hack.npc, hack.player))
     Send(*peer, hack);
 }
 
@@ -2370,7 +2377,8 @@ bool Endpoint::SendNpcShotAt(proto::NpcShotAt shot) {
     return true;
   }
   const auto peer = PeerOf(shot.player);
-  if (!peer)
+  // Only at a V whose game shows the shooter (it fires the shot from its proxy).
+  if (!peer || !SharedWith(shot.npc, shot.player))
     return false;
   // Behind the epoch fence: a guest that has not seen our world since it
   // was rebuilt is not in it to be shot at.

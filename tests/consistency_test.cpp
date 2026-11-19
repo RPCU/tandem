@@ -88,6 +88,14 @@ TEST_CASE("the players digest leaves out what is the viewer's own") {
                    .workspot = 9,
                    .anchor = {4, 5, 6}};
   CHECK(consistency::PlayersDigest(view, 2) != busy);
+
+  // Who is linked with whom (regions): a lost Regions is a difference.
+  std::vector<proto::PlayerId> pairs{1, 2}, none;
+  auto linked = view, apart = view;
+  linked.regionPairs = &pairs;
+  apart.regionPairs = &none;
+  CHECK(consistency::PlayersDigest(linked, 2) != consistency::PlayersDigest(apart, 2));
+  CHECK(consistency::PlayersDigest(linked, 2) == consistency::PlayersDigest(linked, 2));
 }
 
 TEST_CASE("the traffic digest follows the set, the records and how each vehicle stands") {
