@@ -200,9 +200,15 @@ public class TandemMarkers extends ScriptableSystem {
     this.m_lastTick = this.Now();
     let game = this.GetGameInstance();
     let entities = GameInstance.GetDynamicEntitySystem();
+    // The settings page's switch (Settings.reds), read as it changes.
+    let shown = TandemSettings.Markers();
     for marker in this.m_markers {
       let body = entities.GetEntity(marker.puppet) as GameObject;
-      if IsDefined(body) && !marker.suppressed {
+      if !shown {
+        if marker.mappin.value != 0ul {
+          this.Unregister(marker);
+        }
+      } else if IsDefined(body) && !marker.suppressed {
         let target: wref<GameObject> = body;
         let car: wref<VehicleObject>;
         let inCar = VehicleComponent.GetVehicle(game, marker.puppet, car) && IsDefined(car);
@@ -345,7 +351,12 @@ public final static func MappinToTexturePart(mappinVariant: gamedataMappinVarian
 protected cb func OnUpdate() -> Bool {
   let result = wrappedMethod();
   let name = TandemMarkers.NameOf(this.GetMappin());
-  if NotEquals(name, "") {
+  if NotEquals(name, "") && !TandemSettings.Nameplates() {
+    // The settings page's switch: no name over the other players.
+    if inkWidgetRef.IsValid(this.displayName) {
+      inkWidgetRef.SetVisible(this.displayName, false);
+    }
+  } else if NotEquals(name, "") {
     if inkWidgetRef.IsValid(this.displayName) {
       inkTextRef.SetText(this.displayName, name);
       inkWidgetRef.SetVisible(this.displayName, true);

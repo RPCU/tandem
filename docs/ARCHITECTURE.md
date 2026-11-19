@@ -268,7 +268,7 @@ plugin") and its open problems.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, rewards; open: scenes for guests, story decisions, quests together.
 - `quest-carryover.md`: (proposal) what a guest brings home: the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
-- `coop-menu.md`: the co-op menu, invites and join codes in game.
+- `coop-menu.md`: the co-op menu, its Settings page (saved to `tandem.ini`), invites and join codes in game.
 - `strings.md`: every player-facing text (the inventory), the keyed table in English and French (`Text.reds`, Codeware's localization; ArchiveXL weighed), notices, input hints through the game's own bindings, the lint (`task strings:check`).
 - `travel.md`: fast travel together, regroup; open: region authority.
 - `relay.md`: the relay's sessions, join codes, abuse limits, wire format, deployment, the game side.

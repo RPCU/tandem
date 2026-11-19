@@ -35,12 +35,20 @@
 //                        ; the single-player slow motion whole on its own game (the
 //                        ; NPCs it shares follow the bubbles' rules); bubble puts its
 //                        ; world back to normal speed and slows only the NPCs
+//   friendly_fire = on   ; off: another V's explosions and area effects spare our V
+//   notices = all        ; important: no news (rides, calls, pauses...); minimal: only
+//                        ; what asks for an answer or went wrong
+//   markers = on         ; off: no marker for the other players (HUD, minimap, map)
+//   nameplates = on      ; off: no name over the other players
+// The settings page (scripts/tandem/Coop.reds) changes some of them while the
+// game runs and saves them here (TandemNative.SetSetting, tandem/settings.hpp).
 
 #include "tandem/relay.hpp"
 
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace tandem::plugin {
@@ -80,6 +88,13 @@ struct Config {
   // bubbles only (false), or the whole single-player slow motion with what
   // is shared exempted (true).
   bool timeHostFull{true};
+  // The settings page's own (applied by the scripts as they change).
+  bool friendlyFire{true};
+  std::string notices{"all"};
+  bool markers{true};
+  bool nameplates{true};
+  // Where it was read from (the settings page writes there).
+  std::filesystem::path file;
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;
@@ -88,5 +103,11 @@ struct Config {
 
 // Missing file: the defaults (off). Unknown keys and bad values are logged.
 Config LoadConfig(const std::filesystem::path &path);
+// One key's value into `config` (line: tandem.ini's line, for the log; 0: the
+// settings page). False, and logged, when it is not a value of that key.
+bool ApplySetting(Config &config, const std::string &key, const std::string &value, int line);
+// A settings page key's value as tandem.ini writes it ("" unknown; the relay
+// token is only "set" or "").
+std::string SettingOf(const Config &config, std::string_view key);
 const char *NameOf(Config::Role role);
 } // namespace tandem::plugin

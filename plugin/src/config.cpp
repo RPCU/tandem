@@ -2,6 +2,7 @@
 #include "log.hpp"
 
 #include <charconv>
+#include <format>
 #include <fstream>
 
 namespace tandem::plugin {
@@ -15,8 +16,186 @@ std::string Trim(std::string text) {
 }
 } // namespace
 
+bool ApplySetting(Config &config, const std::string &key, const std::string &value, int number) {
+  const auto Bad = [number]<typename... Args>(std::format_string<Args...> what, Args &&...args) {
+    const auto text = std::format(what, std::forward<Args>(args)...);
+    if (number > 0)
+      log::Warn("tandem.ini:{}: {}", number, text);
+    else
+      log::Warn("setting: {}", text);
+    return false;
+  };
+  if (key == "role") {
+    if (value == "off")
+      config.role = Config::Role::Off;
+    else if (value == "host")
+      config.role = Config::Role::Host;
+    else if (value == "join")
+      config.role = Config::Role::Join;
+    else if (value == "record") {
+      // Solo with the recorder on (the recorder is its own key now).
+      config.role = Config::Role::Off;
+      config.recorder = true;
+    } else
+      return Bad("role is off, host or join");
+  } else if (key == "address") {
+    config.address = value;
+    config.addressSet = !value.empty();
+  } else if (key == "relay") {
+    if (value.empty())
+      config.relay.clear();
+    else if (!net::ParseRelayAddress(value, config.relay, config.relayPort))
+      return Bad("relay is host or host:port, not {}", value);
+  } else if (key == "relay_token") {
+    if (value.empty())
+      config.relayToken = {};
+    else if (const auto token = net::ParseRelayToken(value))
+      config.relayToken = *token;
+    else
+      return Bad("relay_token is 64 hex digits (tandem-relay token)");
+  } else if (key == "join") {
+    if (value.empty())
+      config.joinCode.clear();
+    else if (const auto code = net::NormalizeJoinCode(value))
+      config.joinCode = *code;
+    else
+      return Bad("join is a join code like K7Q-2M9, not {}", value);
+  } else if (key == "name") {
+    if (value.empty())
+      return Bad("name is empty");
+    config.name = value;
+  } else if (key == "puppet_female")
+    config.puppetFemale = value;
+  else if (key == "puppet_male")
+    config.puppetMale = value;
+  else if (key == "probe") {
+    if (value == "on" || value == "true")
+      config.probe = true;
+    else if (value == "off" || value == "false")
+      config.probe = false;
+    else
+      return Bad("probe is on or off");
+  } else if (key == "mirror") {
+    config.mirror = value == "on" || value == "true";
+  } else if (key == "pose") {
+    if (value == "on" || value == "true")
+      config.pose = true;
+    else if (value == "off" || value == "false")
+      config.pose = false;
+    else
+      return Bad("pose is on or off");
+  } else if (key == "recorder_max_mb" || key == "recorder_segment_minutes") {
+    std::uint32_t number32{};
+    auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), number32);
+    if (ec == std::errc{} && end == value.data() + value.size() && number32 != 0) {
+      if (key == "recorder_max_mb")
+        config.recorderMaxMb = number32;
+      else
+        config.recorderSegmentMinutes = number32;
+    } else
+      return Bad("bad {} {}", key, value);
+  } else if (key == "story" || key == "quest_freeze" || key == "recorder" ||
+             key == "recorder_pose" || key == "friendly_fire" || key == "markers" ||
+             key == "nameplates") {
+    auto &flag = key == "story"           ? config.story
+                 : key == "quest_freeze"  ? config.questFreeze
+                 : key == "recorder"      ? config.recorder
+                 : key == "friendly_fire" ? config.friendlyFire
+                 : key == "markers"       ? config.markers
+                 : key == "nameplates"    ? config.nameplates
+                                          : config.recorderPose;
+    if (value == "on" || value == "true")
+      flag = true;
+    else if (value == "off" || value == "false")
+      flag = false;
+    else
+      return Bad("{} is on or off", key);
+  } else if (key == "quest_freeze_allow" || key == "private_actors" || key == "private_scenes" ||
+             key == "public_scenes") {
+    auto &list = key == "quest_freeze_allow" ? config.questFreezeAllow
+                 : key == "private_actors"   ? config.privateActors
+                 : key == "private_scenes"   ? config.privateScenes
+                                             : config.publicScenes;
+    if (key == "private_actors")
+      list.clear(); // the file's list replaces the defaults
+    for (std::size_t start = 0; start <= value.size();) {
+      const auto comma = value.find(',', start);
+      const auto path =
+          Trim(value.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+      if (!path.empty())
+        list.push_back(path);
+      if (comma == std::string::npos)
+        break;
+      start = comma + 1;
+    }
+  } else if (key == "scene_privacy") {
+    if (value == "on" || value == "true")
+      config.scenePrivacy = true;
+    else if (value == "off" || value == "false")
+      config.scenePrivacy = false;
+    else
+      return Bad("scene_privacy is on or off");
+  } else if (key == "time_host") {
+    if (value == "bubble")
+      config.timeHostFull = false;
+    else if (value == "full")
+      config.timeHostFull = true;
+    else
+      return Bad("time_host is bubble or full");
+  } else if (key == "notices") {
+    if (value == "all" || value == "important" || value == "minimal")
+      config.notices = value;
+    else
+      return Bad("notices is all, important or minimal");
+  } else if (key == "trace") {
+    config.trace = value == "on" || value == "true";
+  } else if (key == "port") {
+    std::uint16_t port{};
+    auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), port);
+    if (ec == std::errc{} && end == value.data() + value.size() && port != 0)
+      config.port = port;
+    else
+      return Bad("bad port {}", value);
+  } else
+    return Bad("unknown key {}", key);
+  return true;
+}
+
+std::string SettingOf(const Config &config, std::string_view key) {
+  const auto OnOff = [](bool on) { return std::string(on ? "on" : "off"); };
+  if (key == "name")
+    return config.name;
+  if (key == "recorder")
+    return OnOff(config.recorder);
+  if (key == "friendly_fire")
+    return OnOff(config.friendlyFire);
+  if (key == "notices")
+    return config.notices;
+  if (key == "markers")
+    return OnOff(config.markers);
+  if (key == "nameplates")
+    return OnOff(config.nameplates);
+  if (key == "relay")
+    return config.relay.empty() ? std::string()
+           : config.relayPort == net::kDefaultRelayPort
+               ? config.relay
+               : std::format("{}:{}", config.relay, config.relayPort);
+  if (key == "relay_token") // never shown: set or not
+    return config.relayToken == net::RelayToken{} ? std::string() : std::string("set");
+  if (key == "story")
+    return OnOff(config.story);
+  if (key == "quest_freeze")
+    return OnOff(config.questFreeze);
+  if (key == "scene_privacy")
+    return OnOff(config.scenePrivacy);
+  if (key == "time_host")
+    return config.timeHostFull ? "full" : "bubble";
+  return {};
+}
+
 Config LoadConfig(const std::filesystem::path &path) {
   Config config;
+  config.file = path;
   std::ifstream file(path);
   if (!file) {
     log::Info("no {}, staying offline", path.filename().string());
@@ -37,127 +216,7 @@ Config LoadConfig(const std::filesystem::path &path) {
     }
     const auto key = Trim(line.substr(0, equals));
     const auto value = Trim(line.substr(equals + 1));
-
-    if (key == "role") {
-      if (value == "off")
-        config.role = Config::Role::Off;
-      else if (value == "host")
-        config.role = Config::Role::Host;
-      else if (value == "join")
-        config.role = Config::Role::Join;
-      else if (value == "record") {
-        // Solo with the recorder on (the recorder is its own key now).
-        config.role = Config::Role::Off;
-        config.recorder = true;
-      } else
-        log::Warn("tandem.ini:{}: role is off, host or join", number);
-    } else if (key == "address") {
-      config.address = value;
-      config.addressSet = !value.empty();
-    } else if (key == "relay") {
-      if (value.empty())
-        config.relay.clear();
-      else if (!net::ParseRelayAddress(value, config.relay, config.relayPort))
-        log::Warn("tandem.ini:{}: relay is host or host:port, not {}", number, value);
-    } else if (key == "relay_token") {
-      if (const auto token = net::ParseRelayToken(value))
-        config.relayToken = *token;
-      else
-        log::Warn("tandem.ini:{}: relay_token is 64 hex digits (tandem-relay token)", number);
-    } else if (key == "join") {
-      if (value.empty())
-        config.joinCode.clear();
-      else if (const auto code = net::NormalizeJoinCode(value))
-        config.joinCode = *code;
-      else
-        log::Warn("tandem.ini:{}: join is a join code like K7Q-2M9, not {}", number, value);
-    } else if (key == "name")
-      config.name = value;
-    else if (key == "puppet_female")
-      config.puppetFemale = value;
-    else if (key == "puppet_male")
-      config.puppetMale = value;
-    else if (key == "probe") {
-      if (value == "on" || value == "true")
-        config.probe = true;
-      else if (value == "off" || value == "false")
-        config.probe = false;
-      else
-        log::Warn("tandem.ini:{}: probe is on or off", number);
-    } else if (key == "mirror") {
-      config.mirror = value == "on" || value == "true";
-    } else if (key == "pose") {
-      if (value == "on" || value == "true")
-        config.pose = true;
-      else if (value == "off" || value == "false")
-        config.pose = false;
-      else
-        log::Warn("tandem.ini:{}: pose is on or off", number);
-    } else if (key == "recorder_max_mb" || key == "recorder_segment_minutes") {
-      std::uint32_t number32{};
-      auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), number32);
-      if (ec == std::errc{} && end == value.data() + value.size() && number32 != 0) {
-        if (key == "recorder_max_mb")
-          config.recorderMaxMb = number32;
-        else
-          config.recorderSegmentMinutes = number32;
-      } else
-        log::Warn("tandem.ini:{}: bad {} {}", number, key, value);
-    } else if (key == "story" || key == "quest_freeze" || key == "recorder" ||
-               key == "recorder_pose") {
-      auto &flag = key == "story"          ? config.story
-                   : key == "quest_freeze" ? config.questFreeze
-                   : key == "recorder"     ? config.recorder
-                                           : config.recorderPose;
-      if (value == "on" || value == "true")
-        flag = true;
-      else if (value == "off" || value == "false")
-        flag = false;
-      else
-        log::Warn("tandem.ini:{}: {} is on or off", number, key);
-    } else if (key == "quest_freeze_allow" || key == "private_actors" || key == "private_scenes" ||
-               key == "public_scenes") {
-      auto &list = key == "quest_freeze_allow" ? config.questFreezeAllow
-                   : key == "private_actors"   ? config.privateActors
-                   : key == "private_scenes"   ? config.privateScenes
-                                               : config.publicScenes;
-      if (key == "private_actors")
-        list.clear(); // the file's list replaces the defaults
-      for (std::size_t start = 0; start <= value.size();) {
-        const auto comma = value.find(',', start);
-        const auto path = Trim(
-            value.substr(start, comma == std::string::npos ? std::string::npos : comma - start));
-        if (!path.empty())
-          list.push_back(path);
-        if (comma == std::string::npos)
-          break;
-        start = comma + 1;
-      }
-    } else if (key == "scene_privacy") {
-      if (value == "on" || value == "true")
-        config.scenePrivacy = true;
-      else if (value == "off" || value == "false")
-        config.scenePrivacy = false;
-      else
-        log::Warn("tandem.ini:{}: scene_privacy is on or off", number);
-    } else if (key == "time_host") {
-      if (value == "bubble")
-        config.timeHostFull = false;
-      else if (value == "full")
-        config.timeHostFull = true;
-      else
-        log::Warn("tandem.ini:{}: time_host is bubble or full", number);
-    } else if (key == "trace") {
-      config.trace = value == "on" || value == "true";
-    } else if (key == "port") {
-      std::uint16_t port{};
-      auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), port);
-      if (ec == std::errc{} && end == value.data() + value.size() && port != 0)
-        config.port = port;
-      else
-        log::Warn("tandem.ini:{}: bad port {}", number, value);
-    } else
-      log::Warn("tandem.ini:{}: unknown key {}", number, key);
+    ApplySetting(config, key, value, number);
   }
   return config;
 }

@@ -8,7 +8,9 @@
 #include "story.hpp"
 
 #include "tandem/session.hpp"
+#include "tandem/settings.hpp"
 
+#include <filesystem>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -170,7 +172,83 @@ bool Runtime::JoinByCode(std::string_view text) {
   return true;
 }
 
+namespace {
+// What a running session was set up with: changed for the next one.
+bool ForTheNextSession(std::string_view key) {
+  return key == "name" || key == "relay" || key == "relay_token" || key == "story" ||
+         key == "time_host";
+}
+} // namespace
+
+bool Runtime::ChangeSetting(const std::string &key, const std::string &value) {
+  if (!settings::IsEditable(key)) {
+    log::Warn("setting: {} is not one the settings page changes", key);
+    return false;
+  }
+  auto saved = config;
+  for (const auto &[k, v] : m_pendingSettings)
+    ApplySetting(saved, k, v, 0);
+  if (!ApplySetting(saved, key, value, 0))
+    return false;
+  std::string text;
+  if (std::ifstream in(config.file, std::ios::binary); in) {
+    std::stringstream s;
+    s << in.rdbuf();
+    text = s.str();
+  }
+  const auto updated = settings::SetKey(text, key, value);
+  if (!updated) {
+    log::Warn("setting: {} cannot hold that value", key);
+    return false;
+  }
+  const bool later = ForTheNextSession(key) && Started();
+  if (later)
+    m_pendingSettings.emplace_back(key, value);
+  else
+    ApplySetting(config, key, value, 0);
+  if (key == "recorder")
+    Recording::Get().SetEnabled(config.recorder);
+  const auto shown = key == "relay_token" ? std::string("(a token)") : value;
+  if (config.file.empty()) {
+    log::Info("setting: {} = {} (no tandem.ini to save it in)", key, shown);
+    return true;
+  }
+  // A whole file or none: written aside, then put in its place.
+  auto aside = config.file;
+  aside += ".new";
+  {
+    std::ofstream out(aside, std::ios::binary | std::ios::trunc);
+    out << *updated;
+    if (!out) {
+      log::Warn("setting: could not write {}", aside.filename().string());
+      return true;
+    }
+  }
+  std::error_code error;
+  std::filesystem::rename(aside, config.file, error);
+  if (error)
+    log::Warn("setting: could not replace {}: {}", config.file.filename().string(),
+              error.message());
+  else
+    log::Info("setting: {} = {}{} (saved to {})", key, shown,
+              later ? ", from the next session" : "", config.file.filename().string());
+  return true;
+}
+
+std::string Runtime::SavedSetting(std::string_view key) const {
+  // Read every frame by some scripts (nameplates): no copy unless a change waits.
+  if (m_pendingSettings.empty() || !ForTheNextSession(key))
+    return SettingOf(config, key);
+  auto saved = config;
+  for (const auto &[k, v] : m_pendingSettings)
+    ApplySetting(saved, k, v, 0);
+  return SettingOf(saved, key);
+}
+
 void Runtime::Stop() {
+  for (const auto &[key, value] : m_pendingSettings)
+    ApplySetting(config, key, value, 0);
+  m_pendingSettings.clear();
   std::unique_ptr<NetThread> net;
   {
     std::lock_guard _(m_lock);

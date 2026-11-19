@@ -2,7 +2,10 @@
 //
 // Main menu (SingleplayerMenuGameController): a "Co-op" entry. Its pages
 // live in the menu's own list, the way the menu shows its items:
-//   Co-op   -> Host a game | Join a game | Play solo (once one is chosen) | Back
+//   Co-op   -> Host a game | Join a game | Play solo (once one is chosen) |
+//              Settings | Back
+//   Settings -> one item per setting (Settings.reds): picking it switches or
+//              cycles it, or asks for a text; saved to tandem.ini at once
 //   Host    -> Continue | Load game | Back      (the game's own load list)
 //   Join    -> recent hosts... | Enter an address | Back
 //   Save    -> Continue | Load game | Back      (the V to join with)
@@ -10,7 +13,7 @@
 // (TandemNative.StartHost / Join); TandemSystem starts it as the save loads.
 //
 // Pause menu (PauseMenuGameController): "Co-op" -> Host this game | Join a
-// game, or, in a session, Invite | Leave session. These start and stop the
+// game, or, in a session, Invite | Leave session; Settings. These start and stop the
 // session at once (TandemSystem.CoopHost / CoopJoin / CoopLeave).
 //
 // Both show a status panel (who is in the session, the ping) and take the
@@ -31,6 +34,7 @@ enum TandemCoopPage {
   Host = 2,
   Join = 3,
   Save = 4,
+  Settings = 5,
 }
 
 enum TandemCoopAction {
@@ -47,6 +51,8 @@ enum TandemCoopAction {
   Invite = 10,
   Leave = 11,
   Recorder = 12,
+  Settings = 13,
+  Setting = 14,
 }
 
 // One of our entries in a menu's list: the vanilla item data (its label is
@@ -55,7 +61,7 @@ public class TandemMenuItem extends PauseMenuListItemData {
   public let coop: TandemCoopAction;
   // Its text's key (Text.reds; "" for a label that is data or vanilla's).
   public let key: String;
-  // JoinRecent: "address:port"
+  // JoinRecent: "address:port"; Setting: its tandem.ini key
   public let target: String;
 }
 
@@ -230,6 +236,8 @@ public class TandemCoopMenu {
   public let ticker: ref<inkAnimProxy>;
   public let deferral: ref<inkAnimProxy>;
   public let inputToken: ref<inkGameNotificationToken>;
+  // The setting a text popup asks for.
+  public let settingKey: String;
   // A popup closed with Esc: the menu still gets its release (clock ticks).
   public let swallowBack: Int32;
 
@@ -253,6 +261,9 @@ public class TandemCoopMenu {
     if Equals(page, TandemCoopPage.Save) {
       return "save";
     }
+    if Equals(page, TandemCoopPage.Settings) {
+      return "settings";
+    }
     return "root";
   }
 
@@ -269,12 +280,15 @@ public class TandemCoopMenu {
     if Equals(name, "save") {
       return TandemCoopPage.Save;
     }
+    if Equals(name, "settings") {
+      return TandemCoopPage.Settings;
+    }
     return TandemCoopPage.Root;
   }
 
   // The page Back (and Esc) leads to.
   public func Up() -> TandemCoopPage {
-    if Equals(this.page, TandemCoopPage.Host) || Equals(this.page, TandemCoopPage.Join) {
+    if Equals(this.page, TandemCoopPage.Host) || Equals(this.page, TandemCoopPage.Join) || Equals(this.page, TandemCoopPage.Settings) {
       return TandemCoopPage.Coop;
     }
     if Equals(this.page, TandemCoopPage.Save) {
@@ -308,6 +322,11 @@ public class TandemCoopMenu {
         item.target = address;
       }
       this.Add("Menu-EnterCode", TandemCoopAction.EnterAddress);
+    } else if Equals(this.page, TandemCoopPage.Settings) {
+      for key in TandemSettings.Keys() {
+        let item = this.Add("", TandemCoopAction.Setting, TandemSettings.Label(key, inSession || TandemNative.IsStarted()));
+        item.target = key;
+      }
     } else if this.inGame {
       if inSession {
         if TandemNative.SessionStatus().role == 1 {
@@ -331,10 +350,9 @@ public class TandemCoopMenu {
       }
       this.Add("", TandemCoopAction.LoadGame, TandemText.Vanilla("UI-ScriptExports-LoadGame0"));
     }
-    // The recorder's switch (until the game closes; tandem.ini's recorder
-    // key is the lasting one).
+    // The settings (the recorder among them), the game's own word for it.
     if Equals(this.page, TandemCoopPage.Coop) {
-      this.Add("Status-Recorder", TandemCoopAction.Recorder, TandemText.F("Status-Recorder", TandemText.Get(TandemNative.RecorderOn() ? "Common-On" : "Common-Off")));
+      this.Add("Menu-Settings", TandemCoopAction.Settings, TandemText.Vanilla("UI-Labels-Settings"));
     }
     this.Add("Menu-Back", TandemCoopAction.Back);
   }
@@ -477,6 +495,8 @@ public class TandemCoopMenu {
         ArrayPush(lines, TandemText.F("Status-ChooseJoinSave", TandemCoop.Shown(this.target)));
       } else if Equals(this.page, TandemCoopPage.Join) {
         ArrayPush(lines, TandemText.Get("Status-PickHost"));
+      } else if Equals(this.page, TandemCoopPage.Settings) {
+        ArrayPush(lines, TandemText.Get("Settings-Saved"));
       } else if this.inGame && status.role == 1 && status.state == 3 {
         ArrayPush(lines, TandemCoop.InviteText());
       }
@@ -675,10 +695,42 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
   } else if Equals(action, TandemCoopAction.Solo) {
     TandemNative.Leave();
     this.TandemGo(TandemCoopPage.Root);
-  } else if Equals(action, TandemCoopAction.Recorder) {
-    TandemNative.RecorderSet(!TandemNative.RecorderOn());
-    this.TandemGo(TandemCoopPage.Coop);
+  } else if Equals(action, TandemCoopAction.Settings) {
+    this.TandemGo(TandemCoopPage.Settings);
+  } else if Equals(action, TandemCoopAction.Setting) {
+    if TandemSettings.Kind(item.target) == 2 {
+      this.TandemAskSetting(item.target);
+    } else {
+      TandemSettings.Set(item.target, TandemSettings.Next(item.target));
+      this.TandemGo(TandemCoopPage.Settings);
+    }
   }
+  return true;
+}
+
+// A typed setting: the game's message popup with Codeware's text field.
+@addMethod(SingleplayerMenuGameController)
+private func TandemAskSetting(key: String) -> Void {
+  this.m_tandem.settingKey = key;
+  this.m_tandem.inputToken = GenericMessageNotification.ShowInput(this, TandemSettings.Title(key), TandemText.Get("Settings-Type"), GenericMessageNotificationType.ConfirmCancel);
+  this.m_tandem.inputToken.RegisterListener(this, n"OnTandemSetting");
+}
+
+@addMethod(SingleplayerMenuGameController)
+protected cb func OnTandemSetting(data: ref<inkGameNotificationData>) -> Bool {
+  this.m_tandem.inputToken = null;
+  let close = data as GenericMessageNotificationCloseData;
+  if !IsDefined(close) {
+    return false;
+  }
+  if NotEquals(close.result, GenericMessageNotificationResult.Confirm) {
+    this.m_tandem.swallowBack = 2;
+    return true;
+  }
+  if !TandemSettings.Set(this.m_tandem.settingKey, close.input) {
+    GenericMessageNotification.Show(this, TandemSettings.Title(this.m_tandem.settingKey), TandemText.F("Settings-Invalid", close.input), GenericMessageNotificationType.OK);
+  }
+  this.TandemGo(TandemCoopPage.Settings);
   return true;
 }
 
@@ -747,6 +799,10 @@ private func TandemCommand(command: String) -> Void {
   } else if Equals(verb, "solo") || Equals(verb, "leave") {
     TandemNative.Leave();
     this.TandemGo(TandemCoopPage.Root);
+  } else if TandemSettings.Command(command) {
+    if Equals(this.m_tandem.page, TandemCoopPage.Settings) {
+      this.TandemGo(TandemCoopPage.Settings);
+    }
   } else {
     TandemCoop.LogStatus();
     TandemNative.Log(s"coop: main menu page \(TandemCoopMenu.PageName(this.m_tandem.page)):\(this.m_tandem.ItemsText())");
@@ -907,11 +963,43 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
   } else if Equals(action, TandemCoopAction.Leave) {
     system.CoopLeave();
     this.TandemGo(TandemCoopPage.Coop);
-  } else if Equals(action, TandemCoopAction.Recorder) {
-    TandemNative.RecorderSet(!TandemNative.RecorderOn());
-    this.TandemGo(TandemCoopPage.Coop);
+  } else if Equals(action, TandemCoopAction.Settings) {
+    this.TandemGo(TandemCoopPage.Settings);
+  } else if Equals(action, TandemCoopAction.Setting) {
+    if TandemSettings.Kind(item.target) == 2 {
+      this.TandemAskSetting(item.target);
+    } else {
+      TandemSettings.Set(item.target, TandemSettings.Next(item.target));
+      this.TandemGo(TandemCoopPage.Settings);
+    }
   }
 }
+
+@addMethod(PauseMenuGameController)
+private func TandemAskSetting(key: String) -> Void {
+  this.m_tandem.settingKey = key;
+  this.m_tandem.inputToken = GenericMessageNotification.ShowInput(this, TandemSettings.Title(key), TandemText.Get("Settings-Type"), GenericMessageNotificationType.ConfirmCancel);
+  this.m_tandem.inputToken.RegisterListener(this, n"OnTandemSetting");
+}
+
+@addMethod(PauseMenuGameController)
+protected cb func OnTandemSetting(data: ref<inkGameNotificationData>) -> Bool {
+  this.m_tandem.inputToken = null;
+  let close = data as GenericMessageNotificationCloseData;
+  if !IsDefined(close) {
+    return false;
+  }
+  if NotEquals(close.result, GenericMessageNotificationResult.Confirm) {
+    this.m_tandem.swallowBack = 2;
+    return true;
+  }
+  if !TandemSettings.Set(this.m_tandem.settingKey, close.input) {
+    GenericMessageNotification.Show(this, TandemSettings.Title(this.m_tandem.settingKey), TandemText.F("Settings-Invalid", close.input), GenericMessageNotificationType.OK);
+  }
+  this.TandemGo(TandemCoopPage.Settings);
+  return true;
+}
+
 
 @addMethod(PauseMenuGameController)
 private func TandemAskAddress() -> Void {

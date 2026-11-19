@@ -300,6 +300,8 @@ public native class TandemNative extends IScriptable {
   public static native func RecorderTick(begin: Bool)
   public static native func RecorderCut()
   public static native func RecorderSet(on: Bool)
+  public static native func Setting(key: String) -> String
+  public static native func SetSetting(key: String, value: String) -> Bool
   public static native func RecorderStatus() -> String
   public static native func SendLocalState(position: Vector4, orientation: Quaternion, velocity: Vector4, locomotion: Int32, flags: Int32)
   public static native func TakeEvents() -> array<TandemEvent>

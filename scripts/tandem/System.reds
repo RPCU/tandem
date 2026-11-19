@@ -1285,8 +1285,9 @@ public class TandemSystem extends ScriptableSystem {
     return Equals(command, "where") || StrBeginsWith(command, "teleport") || StrBeginsWith(command, "god ");
   }
 
-  // coop status | coop host [PORT] | coop join ADDRESS[:PORT] | coop leave:
-  // what the pause menu's co-op page does, without the menu. The menu
+  // coop status | coop host [PORT] | coop join ADDRESS[:PORT] | coop leave |
+  // coop settings | coop set KEY VALUE: what the pause menu's co-op page
+  // does, without the menu. The menu
   // pages themselves (coop menu, coop pick) are the menus' own (Coop.reds).
   private func CoopCommand(command: String) -> Void {
     let words = StrSplit(command, " ");
@@ -1309,6 +1310,8 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(verb, "leave") {
       this.CoopLeave();
       TandemNative.Log("coop: left the session");
+    } else if TandemSettings.Command(command) {
+      return;
     } else {
       TandemNative.Log(s"coop: \(verb) needs the co-op menu open (the pause menu's or the main menu's)");
     }

@@ -382,6 +382,14 @@ struct TandemNative : Red::IScriptable {
   }
   static void RecorderCut() { plugin::Recording::Get().Cut(); }
   static void RecorderSet(bool on) { plugin::Recording::Get().SetEnabled(on); }
+
+  // ---- the settings page (Coop.reds): tandem.ini's keys, saved there ----
+  static Red::CString Setting(Red::CString key) {
+    return Red::CString(Runtime::Get().SavedSetting(key.c_str()).c_str());
+  }
+  static bool SetSetting(Red::CString key, Red::CString value) {
+    return Runtime::Get().ChangeSetting(key.c_str(), value.c_str());
+  }
   static Red::CString RecorderStatus() {
     return Red::CString(plugin::Recording::Get().Status().c_str());
   }
@@ -1774,6 +1782,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RecorderTick);
   RTTI_METHOD(RecorderCut);
   RTTI_METHOD(RecorderSet);
+  RTTI_METHOD(Setting);
+  RTTI_METHOD(SetSetting);
   RTTI_METHOD(RecorderStatus);
   RTTI_METHOD(SendLocalState);
   RTTI_METHOD(TakeEvents);

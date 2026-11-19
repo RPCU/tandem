@@ -140,7 +140,12 @@ public class TandemText {
   // A notice whose text is already made (several keys joined), with its
   // English for the log.
   public static func Say(game: GameInstance, kind: SimpleMessageType, seconds: Float, key: String, text: String, english: String) -> Void {
-    TandemNative.Log(s"coop notice: \(english) [\(key)]");
+    // The settings page's notices (all, important, minimal): logged either way.
+    let shown = TandemText.Importance(key) >= TandemSettings.NoticeLevel();
+    TandemNative.Log(s"coop notice: \(english) [\(key)]\(shown ? "" : " (not shown: notices)")");
+    if !shown {
+      return;
+    }
     let message: SimpleScreenMessage;
     message.isShown = true;
     message.duration = seconds;
@@ -150,6 +155,21 @@ public class TandemText {
       .GetBlackboardSystem(game)
       .Get(GetAllBlackboardDefs().UI_Notifications)
       .SetVariant(GetAllBlackboardDefs().UI_Notifications.WarningMessage, ToVariant(message), true);
+  }
+
+  // 2: asks for an answer or went wrong (always shown), 1: the session and
+  // lives (shown unless notices = minimal), 0: news (notices = all).
+  public static func Importance(key: String) -> Int32 {
+    let asks = [
+      "", "Session-Ended", "Story-NotRestored", "Story-SceneStarted", "Transit-Leaving",
+      "Travel-FastTravelledTo", "Travel-FastTravelled", "Travel-Labelled", "Travel-Scene",
+      "Travel-Taken", "Travel-Asks", "Travel-Blocked", "Revive-Down", "Revive-DownAlone",
+      "Revive-Out", "Revive-AllDown", "Revive-WaitHost"
+    ];
+    if ArrayContains(asks, key) {
+      return 2;
+    }
+    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Revive-") ? 1 : 0;
   }
 
   // An input hint in the HUD's hint bar: the game draws the key or button
@@ -339,6 +359,33 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Travel-Asks", "{1} asks you to join them");
     this.Text("Tandem-Travel-Join", "Join {1}");
     this.Text("Tandem-Travel-Blocked", "You can't fast travel right now");
+    // The settings page (Settings.reds).
+    this.Text("Tandem-Menu-Settings", "Settings");
+    this.Text("Tandem-Settings-Saved", "Saved to tandem.ini as you change them");
+    this.Text("Tandem-Settings-Item", "{1}: {2}");
+    this.Text("Tandem-Settings-NextSession", "{1} (from the next session)");
+    this.Text("Tandem-Settings-AfterRestart", "{1} (after a restart)");
+    this.Text("Tandem-Settings-Type", "Type the new value (empty: none)");
+    this.Text("Tandem-Settings-Invalid", "Not a value for this setting: {1}");
+    this.Text("Tandem-Settings-NotSet", "not set");
+    this.Text("Tandem-Settings-TokenSet", "set");
+    this.Text("Tandem-Settings-Name", "Name");
+    this.Text("Tandem-Settings-FriendlyFire", "Friendly fire");
+    this.Text("Tandem-Settings-Notices", "Notices");
+    this.Text("Tandem-Settings-Notices-All", "all");
+    this.Text("Tandem-Settings-Notices-Important", "important only");
+    this.Text("Tandem-Settings-Notices-Minimal", "questions and problems");
+    this.Text("Tandem-Settings-Markers", "Player markers");
+    this.Text("Tandem-Settings-Nameplates", "Names over players");
+    this.Text("Tandem-Settings-Recorder", "Recorder");
+    this.Text("Tandem-Settings-Relay", "Relay");
+    this.Text("Tandem-Settings-RelayToken", "Relay host token");
+    this.Text("Tandem-Settings-Story", "Story sync");
+    this.Text("Tandem-Settings-QuestFreeze", "Pause your own story (guest)");
+    this.Text("Tandem-Settings-ScenePrivacy", "Private scenes");
+    this.Text("Tandem-Settings-TimeHost", "Your Sandevistan (host)");
+    this.Text("Tandem-Settings-TimeHost-Full", "slows your whole game");
+    this.Text("Tandem-Settings-TimeHost-Bubble", "slows the NPCs around you");
   }
 }
 
@@ -466,5 +513,31 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Travel-Asks", "{1} vous demande de le rejoindre");
     this.Text("Tandem-Travel-Join", "Rejoindre {1}");
     this.Text("Tandem-Travel-Blocked", "Voyage rapide impossible pour l'instant");
+    this.Text("Tandem-Menu-Settings", "Paramètres");
+    this.Text("Tandem-Settings-Saved", "Enregistrés dans tandem.ini dès leur modification");
+    this.Text("Tandem-Settings-Item", "{1} : {2}");
+    this.Text("Tandem-Settings-NextSession", "{1} (à la prochaine session)");
+    this.Text("Tandem-Settings-AfterRestart", "{1} (après un redémarrage)");
+    this.Text("Tandem-Settings-Type", "Saisissez la nouvelle valeur (vide : aucune)");
+    this.Text("Tandem-Settings-Invalid", "Valeur refusée pour ce paramètre : {1}");
+    this.Text("Tandem-Settings-NotSet", "non défini");
+    this.Text("Tandem-Settings-TokenSet", "défini");
+    this.Text("Tandem-Settings-Name", "Nom");
+    this.Text("Tandem-Settings-FriendlyFire", "Tirs alliés");
+    this.Text("Tandem-Settings-Notices", "Notifications");
+    this.Text("Tandem-Settings-Notices-All", "toutes");
+    this.Text("Tandem-Settings-Notices-Important", "importantes seulement");
+    this.Text("Tandem-Settings-Notices-Minimal", "questions et problèmes");
+    this.Text("Tandem-Settings-Markers", "Marqueurs des joueurs");
+    this.Text("Tandem-Settings-Nameplates", "Noms au-dessus des joueurs");
+    this.Text("Tandem-Settings-Recorder", "Enregistreur");
+    this.Text("Tandem-Settings-Relay", "Relais");
+    this.Text("Tandem-Settings-RelayToken", "Jeton d'hôte du relais");
+    this.Text("Tandem-Settings-Story", "Histoire partagée");
+    this.Text("Tandem-Settings-QuestFreeze", "Mettre votre histoire en pause (invité)");
+    this.Text("Tandem-Settings-ScenePrivacy", "Scènes privées");
+    this.Text("Tandem-Settings-TimeHost", "Votre Sandevistan (hôte)");
+    this.Text("Tandem-Settings-TimeHost-Full", "ralentit tout votre jeu");
+    this.Text("Tandem-Settings-TimeHost-Bubble", "ralentit les PNJ autour de vous");
   }
 }

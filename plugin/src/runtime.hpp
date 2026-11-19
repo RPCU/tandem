@@ -182,6 +182,14 @@ public:
   void SetRelay(std::string code, std::string status);
   std::string RelayCode() const;
   std::string RelayStatus() const;
+  // Game thread (the settings page): change a tandem.ini key
+  // (settings::IsEditable) and save it there. Applied at once, or, for what
+  // a running session was set up with (name, relay, story, time_host), when
+  // it ends. False: not a key the page changes, or not a value of it.
+  bool ChangeSetting(const std::string &key, const std::string &value);
+  // Its value as saved (a change waiting for the session's end included).
+  std::string SavedSetting(std::string_view key) const;
+
   // Game thread: be the guest of the session `code` names, through
   // tandem.ini's relay. A running session is left for it at once; else it
   // starts with the next loaded game. False: not a code, or no relay.
@@ -492,6 +500,8 @@ private:
   };
 
   mutable std::mutex m_lock; // session lifecycle, local outbox, events
+  // Game thread: settings saved during a session, applied as it stops.
+  std::vector<std::pair<std::string, std::string>> m_pendingSettings;
   std::unique_ptr<NetThread> m_net;
   SessionChoice m_choice; // m_lock
   SessionStatus m_status; // m_lock

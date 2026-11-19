@@ -112,6 +112,7 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Menu-EnterCode` | Enter a code or an address | Saisir un code ou une adresse | Coop.reds |
 | `Menu-Back` | Back | Retour | Coop.reds |
 | `Menu-Recent` | {1} ({2}) | {1} ({2}) | Coop.reds |
+| `Menu-Settings` | Settings | Paramètres | Coop.reds |
 
 ### Its status panel
 
@@ -143,8 +144,8 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 <!-- prettier-ignore -->
 | Key | English | French | Shown by |
 | --- | --- | --- | --- |
-| `Common-On` | on | activé | Coop.reds |
-| `Common-Off` | off | désactivé | Coop.reds |
+| `Common-On` | on | activé | Settings.reds |
+| `Common-Off` | off | désactivé | Settings.reds |
 
 ### Invites
 
@@ -175,7 +176,7 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Session-YouLeft` | You left the co-op session | Vous avez quitté la session coop | System.reds |
 | `Session-PlayerJoined` | {1} joined the session | {1} a rejoint la session | System.reds |
 | `Session-PlayerLeft` | {1} left the session | {1} a quitté la session | System.reds |
-| `Session-Ended` | Co-op session ended: {1} | Session coop terminée : {1} | System.reds |
+| `Session-Ended` | Co-op session ended: {1} | Session coop terminée : {1} | System.reds, Text.reds |
 | `Session-Resync` | Resyncing with the host... | Resynchronisation avec l'hôte... | Text.reds |
 
 ### The plugin's reasons (shown as `Reason-Refused`, `Session-Ended`, the status panel)
@@ -254,8 +255,8 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 <!-- prettier-ignore -->
 | Key | English | French | Shown by |
 | --- | --- | --- | --- |
-| `Story-NotRestored` | Co-op: your story could not be restored exactly. Load your last save | Coop : votre histoire n'a pas pu être restaurée à l'identique. Chargez votre dernière sauvegarde | Story.reds |
-| `Story-SceneStarted` | {1} started a scene | {1} a lancé une scène | Story.reds |
+| `Story-NotRestored` | Co-op: your story could not be restored exactly. Load your last save | Coop : votre histoire n'a pas pu être restaurée à l'identique. Chargez votre dernière sauvegarde | Story.reds, Text.reds |
+| `Story-SceneStarted` | {1} started a scene | {1} a lancé une scène | Story.reds, Text.reds |
 | `Story-Busy` | {1} is busy | {1} est occupé(e) | Story.reds |
 | `Story-Join` | Join {1} | Rejoindre {1} | Story.reds |
 
@@ -280,11 +281,11 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 <!-- prettier-ignore -->
 | Key | English | French | Shown by |
 | --- | --- | --- | --- |
-| `Revive-Down` | You are down. {1} can revive you | Vous êtes à terre. {1} peut vous réanimer | Revive.reds |
-| `Revive-DownAlone` | You are down | Vous êtes à terre | Revive.reds |
-| `Revive-Out` | You are out. You will get up beside {1} | Vous êtes hors combat. Vous vous relèverez près de {1} | Revive.reds |
-| `Revive-AllDown` | Everyone is down | Tout le monde est à terre | Revive.reds |
-| `Revive-WaitHost` | Everyone is down. Waiting for {1} to load the last checkpoint | Tout le monde est à terre. En attente du dernier point de contrôle de {1} | Revive.reds |
+| `Revive-Down` | You are down. {1} can revive you | Vous êtes à terre. {1} peut vous réanimer | Revive.reds, Text.reds |
+| `Revive-DownAlone` | You are down | Vous êtes à terre | Revive.reds, Text.reds |
+| `Revive-Out` | You are out. You will get up beside {1} | Vous êtes hors combat. Vous vous relèverez près de {1} | Revive.reds, Text.reds |
+| `Revive-AllDown` | Everyone is down | Tout le monde est à terre | Revive.reds, Text.reds |
+| `Revive-WaitHost` | Everyone is down. Waiting for {1} to load the last checkpoint | Tout le monde est à terre. En attente du dernier point de contrôle de {1} | Revive.reds, Text.reds |
 | `Revive-RevivedBy` | {1} revived you | {1} vous a réanimé(e) | Revive.reds |
 | `Revive-BackBeside` | Back beside {1} | De retour près de {1} | Revive.reds |
 | `Revive-PlayerDown` | {1} is down | {1} est à terre | Revive.reds |
@@ -307,7 +308,7 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Transit-RidingToward` | {1} is riding the NCART toward {2} | {1} prend le NCART vers {2} | Transit.reds |
 | `Transit-Riding` | {1} is riding the NCART | {1} prend le NCART | Transit.reds |
 | `Transit-Skipping` | {1} is skipping the NCART ride | {1} passe le trajet en NCART | Transit.reds |
-| `Transit-Leaving` | {1}'s ride is leaving: ride along, or follow | Le véhicule de {1} part : montez, ou suivez | Transit.reds |
+| `Transit-Leaving` | {1}'s ride is leaving: ride along, or follow | Le véhicule de {1} part : montez, ou suivez | Text.reds, Transit.reds |
 | `Transit-RideWith` | Ride with {1} | Monter avec {1} | Transit.reds |
 | `Transit-Follow` | Follow | Suivre | Transit.reds |
 | `Transit-Following` | Following {1}: join them when the ride is over | Vous suivez {1} : rejoignez-le à la fin du trajet | Transit.reds |
@@ -322,11 +323,42 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | --- | --- | --- | --- |
 | `Travel-OnTheWay` | {1} is on the way | {1} arrive | Travel.reds |
 | `Travel-Stays` | {1} stays where they are | {1} reste sur place | Travel.reds |
-| `Travel-FastTravelledTo` | {1} fast travelled to {2} | {1} s'est déplacé(e) rapidement vers {2} | Travel.reds |
-| `Travel-FastTravelled` | {1} fast travelled | {1} a utilisé le voyage rapide | Travel.reds |
-| `Travel-Labelled` | {1}: {2} | {1} : {2} | Travel.reds |
-| `Travel-Scene` | {1} is starting a scene | {1} lance une scène | Travel.reds |
-| `Travel-Taken` | {1} was taken somewhere else | {1} a été emmené(e) ailleurs | Travel.reds |
-| `Travel-Asks` | {1} asks you to join them | {1} vous demande de le rejoindre | Travel.reds |
+| `Travel-FastTravelledTo` | {1} fast travelled to {2} | {1} s'est déplacé(e) rapidement vers {2} | Text.reds, Travel.reds |
+| `Travel-FastTravelled` | {1} fast travelled | {1} a utilisé le voyage rapide | Text.reds, Travel.reds |
+| `Travel-Labelled` | {1}: {2} | {1} : {2} | Text.reds, Travel.reds |
+| `Travel-Scene` | {1} is starting a scene | {1} lance une scène | Text.reds, Travel.reds |
+| `Travel-Taken` | {1} was taken somewhere else | {1} a été emmené(e) ailleurs | Text.reds, Travel.reds |
+| `Travel-Asks` | {1} asks you to join them | {1} vous demande de le rejoindre | Text.reds, Travel.reds |
 | `Travel-Join` | Join {1} | Rejoindre {1} | Travel.reds |
-| `Travel-Blocked` | You can't fast travel right now | Voyage rapide impossible pour l'instant | Travel.reds |
+| `Travel-Blocked` | You can't fast travel right now | Voyage rapide impossible pour l'instant | Text.reds, Travel.reds |
+
+### The settings page
+
+<!-- prettier-ignore -->
+| Key | English | French | Shown by |
+| --- | --- | --- | --- |
+| `Settings-Saved` | Saved to tandem.ini as you change them | Enregistrés dans tandem.ini dès leur modification | Coop.reds |
+| `Settings-Item` | {1}: {2} | {1} : {2} | Settings.reds |
+| `Settings-NextSession` | {1} (from the next session) | {1} (à la prochaine session) | Settings.reds |
+| `Settings-AfterRestart` | {1} (after a restart) | {1} (après un redémarrage) | Settings.reds |
+| `Settings-Type` | Type the new value (empty: none) | Saisissez la nouvelle valeur (vide : aucune) | Coop.reds |
+| `Settings-Invalid` | Not a value for this setting: {1} | Valeur refusée pour ce paramètre : {1} | Coop.reds |
+| `Settings-NotSet` | not set | non défini | Settings.reds |
+| `Settings-TokenSet` | set | défini | Settings.reds |
+| `Settings-Name` | Name | Nom | Settings.reds |
+| `Settings-FriendlyFire` | Friendly fire | Tirs alliés | Settings.reds |
+| `Settings-Notices` | Notices | Notifications | Settings.reds |
+| `Settings-Notices-All` | all | toutes | Settings.reds |
+| `Settings-Notices-Important` | important only | importantes seulement | Settings.reds |
+| `Settings-Notices-Minimal` | questions and problems | questions et problèmes | Settings.reds |
+| `Settings-Markers` | Player markers | Marqueurs des joueurs | Settings.reds |
+| `Settings-Nameplates` | Names over players | Noms au-dessus des joueurs | Settings.reds |
+| `Settings-Recorder` | Recorder | Enregistreur | Settings.reds |
+| `Settings-Relay` | Relay | Relais | Settings.reds |
+| `Settings-RelayToken` | Relay host token | Jeton d'hôte du relais | Settings.reds |
+| `Settings-Story` | Story sync | Histoire partagée | Settings.reds |
+| `Settings-QuestFreeze` | Pause your own story (guest) | Mettre votre histoire en pause (invité) | Settings.reds |
+| `Settings-ScenePrivacy` | Private scenes | Scènes privées | Settings.reds |
+| `Settings-TimeHost` | Your Sandevistan (host) | Votre Sandevistan (hôte) | Settings.reds |
+| `Settings-TimeHost-Full` | slows your whole game | ralentit tout votre jeu | Settings.reds |
+| `Settings-TimeHost-Bubble` | slows the NPCs around you | ralentit les PNJ autour de vous | Settings.reds |
