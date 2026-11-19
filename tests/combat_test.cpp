@@ -61,3 +61,18 @@ TEST_CASE("an older NpcHit becomes a strike with the same meaning") {
   CHECK(strike.zone == proto::kNoZone);
   CHECK(strike.position == proto::Vec3{1, 2, 3});
 }
+
+TEST_CASE("an NPC's melee hit on a guest waits until its proxy is drawn landing it") {
+  // Proxy drawn 120 ms behind the host, the hit 40 ms on the way: 80 ms more.
+  CHECK(combat::MeleeHoldUs(120'000, 40'000) == 80'000);
+  // A slow link: it arrived after the proxy showed it already, at once.
+  CHECK(combat::MeleeHoldUs(100'000, 150'000) == 0);
+  CHECK(combat::MeleeHoldUs(100'000, 100'000) == 0);
+  // A huge delay never holds a hit for long.
+  CHECK(combat::MeleeHoldUs(2'000'000, 10'000) == combat::kMaxMeleeHoldUs);
+}
+
+TEST_CASE("friendly fire is the session's rule, off unless the host says so") {
+  CHECK_FALSE(combat::FriendlyFire({}));
+  CHECK(combat::FriendlyFire({.flags = proto::kRuleFriendlyFire}));
+}

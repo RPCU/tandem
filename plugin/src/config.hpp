@@ -42,7 +42,8 @@
 //                        ; world back to normal speed and slows only the NPCs
 //   compat = on          ; off (developers): start sessions whatever the startup
 //                        ; check found (tandem/compat.hpp)
-//   friendly_fire = on   ; off: another V's explosions and area effects spare our V
+//   friendly_fire = off  ; host: on, the Vs' hits (shots, blades, explosions) hurt
+//                        ; each other (proto::Rules, every game follows the host's)
 //   notices = all        ; important: no news (rides, calls, pauses...); minimal: only
 //                        ; what asks for an answer or went wrong
 //   markers = on         ; off: no marker for the other players (HUD, minimap, map)
@@ -101,7 +102,9 @@ struct Config {
   // The startup check (game version, needed mods) keeps co-op off on a problem.
   bool compat{true};
   // The settings page's own (applied by the scripts as they change).
-  bool friendlyFire{true};
+  // The session's rule when we host (proto::Rules; the settings page edits it):
+  // the Vs hurt each other.
+  bool friendlyFire{false};
   std::string notices{"all"};
   bool markers{true};
   bool nameplates{true};

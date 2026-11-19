@@ -194,8 +194,9 @@ struct RemoteTimeEffect {
   proto::TimeEffect effect;
 };
 // A hit outcome message (proto::IsCombat) for this game. Host: a guest's
-// NpcStrike or AreaHit on our V, stamped. Guest: the host's NpcWound,
-// NpcPoise, Difficulty, an AreaHit on our V.
+// NpcStrike, AreaHit on our V, Throw, ThrowEnd or Defended, stamped. Guest:
+// the host's NpcWound, NpcPoise, Difficulty, Rules, an AreaHit on our V,
+// another player's Throw and ThrowEnd.
 struct Combat {
   proto::Message message;
 };
@@ -529,11 +530,17 @@ public:
   // guest), kept for late joiners (story::Record). Guest: to the host, which
   // relays ChoiceCursor and StoryState. Anything else is dropped.
   void SendStory(proto::Message message, proto::PlayerId to = proto::kNoPlayer);
-  // Hit outcomes (proto::IsCombat). Guest: NpcStrike to the host. Host:
-  // NpcWound, NpcPoise, Difficulty to every guest (the last two kept for
-  // late joiners). Either: AreaHit to its victim's game, through the host.
-  // False when nothing was sent (not ours to say, nobody to send to).
+  // Hit outcomes (proto::IsCombat). Guest: NpcStrike and Defended to the
+  // host. Host: NpcWound, NpcPoise, Difficulty, Rules to every guest
+  // (Difficulty, Rules and the poise kept for late joiners). Either: AreaHit
+  // to its victim's game, through the host, only while the session's rules
+  // allow friendly fire; Throw and ThrowEnd to every other game, through
+  // the host. False when nothing was sent (not ours to say, nobody to send
+  // to, refused by the rules).
   bool SendCombat(proto::Message message);
+  // The session's rules as this game knows them (the host's own; a guest's,
+  // what the host said; none yet: every flag off).
+  proto::Rules Rules() const { return m_rules.value_or(proto::Rules{}); }
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
   // Our V's time ability (Sandevistan...). Kept: sent now if we are in the
@@ -1005,6 +1012,9 @@ private:
   void CheckLost(std::vector<SessionEvent> &out);
   // Host: the session's difficulty and its NPCs' poise, for late joiners.
   std::optional<proto::Difficulty> m_difficulty;
+  // The session's rules (host: its own, for late joiners; guest: the host's).
+  std::optional<proto::Rules> m_rules;
+  bool FriendlyFire() const { return (Rules().flags & proto::kRuleFriendlyFire) != 0; }
   std::map<proto::NpcId, proto::NpcPoise> m_npcPoise;
   void OnGuestCombat(proto::PlayerId player, const proto::Message &message,
                      std::vector<SessionEvent> &out);

@@ -989,7 +989,9 @@ struct NetThread::Impl {
       for (auto &message : Combat::Get().TakeOutbound())
         if (!endpoint->SendCombat(message))
           if (const auto *area = std::get_if<proto::AreaHit>(&message))
-            log::Info("area hit on player {} dropped: not in the session", area->player);
+            log::Info("hit on player {} dropped: not in the session, or friendly fire is off",
+                      area->player);
+      Combat::Get().SetRules(endpoint->Rules());
 
       if (const auto now = std::chrono::steady_clock::now(); now >= nextStatus && !ended) {
         nextStatus = now + 500ms;

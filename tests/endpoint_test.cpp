@@ -1,6 +1,7 @@
 // A real host and real guests over loopback UDP, in one process.
 
 #include "ports.hpp"
+#include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/timebubble.hpp"
 
@@ -1692,6 +1693,8 @@ TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits
   // Before anyone joined: kept for whoever joins.
   CHECK(host->SendCombat(proto::Difficulty{.level = 2}));
   CHECK(host->SendCombat(proto::NpcPoise{.npc = 7, .poise = 0.5f}));
+  // Friendly fire on, so the Vs' area hits below reach each other.
+  CHECK(host->SendCombat(proto::Rules{.flags = proto::kRuleFriendlyFire}));
   auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
   auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
   REQUIRE((a && b));
@@ -1707,10 +1710,15 @@ TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits
   }));
   PumpFor({host.get(), a.get(), b.get()}, 200ms, collect);
   for (const std::size_t guest : {1u, 2u}) {
-    REQUIRE(heard[guest].size() == 2); // the difficulty and the poise, late as they were
+    // The difficulty, the rules and the poise, late as they were.
+    REQUIRE(heard[guest].size() == 3);
     CHECK(std::ranges::count_if(heard[guest], [](const auto &m) {
             const auto *d = std::get_if<proto::Difficulty>(&m);
             return d && d->level == 2;
+          }) == 1);
+    CHECK(std::ranges::count_if(heard[guest], [](const auto &m) {
+            const auto *r = std::get_if<proto::Rules>(&m);
+            return r && r->flags == proto::kRuleFriendlyFire;
           }) == 1);
   }
   heard.clear();
@@ -1772,8 +1780,107 @@ TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits
   REQUIRE_MESSAGE(late, error);
   heard.clear();
   PumpFor({host.get(), a.get(), b.get(), late.get()}, 600ms, collect);
-  REQUIRE(heard[3].size() == 1);
+  REQUIRE(heard[3].size() == 2);
   CHECK(std::holds_alternative<proto::Difficulty>(heard[3][0]));
+  CHECK(std::holds_alternative<proto::Rules>(heard[3][1]));
+}
+
+TEST_CASE("friendly fire off: no V's hit reaches another V") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((a && b));
+  std::map<std::size_t, std::vector<proto::Message>> heard;
+  const auto collect = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+    for (const auto &event : events)
+      if (const auto *combat = std::get_if<events::Combat>(&event))
+        heard[i].push_back(combat->message);
+  };
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  // No rules said yet: off. The host says off: still off, said once.
+  CHECK_FALSE(combat::FriendlyFire(a->Rules()));
+  CHECK_FALSE(a->SendCombat(proto::AreaHit{.player = b->You(), .physical = 30.f}));
+  CHECK_FALSE(host->SendCombat(proto::AreaHit{.player = a->You(), .physical = 30.f}));
+  CHECK(host->SendCombat(proto::Rules{}));
+  CHECK(host->SendCombat(proto::Rules{}));
+  PumpFor({host.get(), a.get(), b.get()}, 200ms, collect);
+  for (const std::size_t guest : {1u, 2u}) {
+    REQUIRE(heard[guest].size() == 1);
+    CHECK(std::holds_alternative<proto::Rules>(heard[guest][0]));
+  }
+  heard.clear();
+  // On: a's grenade reaches b. Off again: a's game sends none.
+  CHECK(host->SendCombat(proto::Rules{.flags = proto::kRuleFriendlyFire}));
+  PumpFor({host.get(), a.get(), b.get()}, 200ms, collect);
+  CHECK(combat::FriendlyFire(a->Rules()));
+  CHECK(a->SendCombat(proto::AreaHit{.player = b->You(), .physical = 30.f}));
+  PumpFor({host.get(), a.get(), b.get()}, 200ms, collect);
+  CHECK(std::ranges::count_if(heard[2], [](const auto &m) {
+          return std::holds_alternative<proto::AreaHit>(m);
+        }) == 1);
+  CHECK(host->SendCombat(proto::Rules{}));
+  PumpFor({host.get(), a.get(), b.get()}, 200ms, collect);
+  CHECK_FALSE(combat::FriendlyFire(a->Rules()));
+  CHECK_FALSE(a->SendCombat(proto::AreaHit{.player = b->You(), .physical = 30.f}));
+}
+
+TEST_CASE("throws: each copy everywhere but the thrower's game; defences to the host only") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((a && b));
+  std::map<std::size_t, std::vector<proto::Message>> heard;
+  const auto collect = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+    for (const auto &event : events)
+      if (const auto *combat = std::get_if<events::Combat>(&event))
+        heard[i].push_back(combat->message);
+  };
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  heard.clear();
+  // a throws a grenade (in someone else's name: stamped) and it explodes;
+  // the host throws a knife; a parries NPC 7, and the host cannot.
+  CHECK(a->SendCombat(proto::Throw{.player = 99, .id = 1, .kind = proto::ThrowKind::Grenade}));
+  CHECK(a->SendCombat(proto::ThrowEnd{.id = 1, .how = proto::ThrowEndKind::Exploded}));
+  CHECK(host->SendCombat(proto::Throw{.id = 5, .kind = proto::ThrowKind::Knife}));
+  CHECK(a->SendCombat(proto::Defended{.npc = 7, .how = proto::DefendKind::Parried}));
+  CHECK_FALSE(host->SendCombat(proto::Defended{.npc = 7, .how = proto::DefendKind::Blocked}));
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, collect);
+  const auto count = [&]<class T>(std::size_t i, std::type_identity<T>, proto::PlayerId by) {
+    return std::ranges::count_if(heard[i], [&](const auto &m) {
+      const auto *t = std::get_if<T>(&m);
+      return t && t->player == by;
+    });
+  };
+  constexpr std::type_identity<proto::Throw> kThrow;
+  constexpr std::type_identity<proto::ThrowEnd> kEnd;
+  constexpr std::type_identity<proto::Defended> kDefended;
+  // The host: a's grenade and its end, a's parry; never its own knife.
+  CHECK(count(0, kThrow, a->You()) == 1);
+  CHECK(count(0, kEnd, a->You()) == 1);
+  CHECK(count(0, kDefended, a->You()) == 1);
+  CHECK(count(0, kThrow, host->You()) == 0);
+  CHECK(heard[0].size() == 3);
+  // a: the host's knife only (its own grenade is its game's).
+  CHECK(count(1, kThrow, host->You()) == 1);
+  CHECK(heard[1].size() == 1);
+  // b: a's grenade and its end, the host's knife; no parry.
+  CHECK(count(2, kThrow, a->You()) == 1);
+  CHECK(count(2, kEnd, a->You()) == 1);
+  CHECK(count(2, kThrow, host->You()) == 1);
+  CHECK(count(2, kDefended, a->You()) == 0);
+  CHECK(heard[2].size() == 3);
 }
 
 namespace {

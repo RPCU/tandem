@@ -111,6 +111,9 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Menu-Leave` | Leave session | Quitter la session | Coop.reds |
 | `Menu-EnterCode` | Enter a code or an address | Saisir un code ou une adresse | Coop.reds |
 | `Menu-Back` | Back | Retour | Coop.reds |
+| `Menu-Report` | Write a bug report | Écrire un rapport de bug | Coop.reds |
+| `Popup-CoopOff` | Co-op is off | Coop désactivée | Coop.reds |
+| `Popup-Report` | Bug report | Rapport de bug | Coop.reds |
 | `Menu-Recent` | {1} ({2}) | {1} ({2}) | Coop.reds |
 | `Menu-Settings` | Settings | Paramètres | Coop.reds |
 
@@ -129,6 +132,10 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Status-InSessionAt` | In the session at {1} | Dans la session {1} | Coop.reds |
 | `Status-Retrying` | {1} not reached ({2}), trying again | {1} injoignable ({2}), nouvel essai | Coop.reds |
 | `Status-Connecting` | Connecting to {1}... | Connexion à {1}... | Coop.reds |
+| `Status-JoinFailed` | Could not join {1} | Impossible de rejoindre {1} | Coop.reds |
+| `Party-Metres` | {1} m | {1} m | PartyHud.reds |
+| `Party-Kilometres` | {1} km | {1} km | PartyHud.reds |
+| `Session-NeedsExpansion` | Co-op is off: tandem needs Phantom Liberty on every player's game | Coop désactivée : tandem demande Phantom Liberty dans le jeu de chaque joueur | System.reds |
 | `Status-None` | Not in a session | Aucune session | Coop.reds |
 | `Status-Host` | {1} (host) | {1} (hôte) | Coop.reds |
 | `Status-You` | {1} (you) | {1} (vous) | Coop.reds |
@@ -349,6 +356,7 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Settings-Item` | {1}: {2} | {1} : {2} | Settings.reds |
 | `Settings-NextSession` | {1} (from the next session) | {1} (à la prochaine session) | Settings.reds |
 | `Settings-AfterRestart` | {1} (after a restart) | {1} (après un redémarrage) | Settings.reds |
+| `Settings-HostsRule` | {1} (the host's rule) | {1} (règle de l'hôte) | Settings.reds |
 | `Settings-Type` | Type the new value (empty: none) | Saisissez la nouvelle valeur (vide : aucune) | Coop.reds |
 | `Settings-Invalid` | Not a value for this setting: {1} | Valeur refusée pour ce paramètre : {1} | Coop.reds |
 | `Settings-NotSet` | not set | non défini | Settings.reds |

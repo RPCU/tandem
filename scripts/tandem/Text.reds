@@ -373,6 +373,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-Saved", "Saved to tandem.ini as you change them");
     this.Text("Tandem-Settings-Item", "{1}: {2}");
     this.Text("Tandem-Settings-NextSession", "{1} (from the next session)");
+    this.Text("Tandem-Settings-HostsRule", "{1} (the host's rule)");
     this.Text("Tandem-Settings-AfterRestart", "{1} (after a restart)");
     this.Text("Tandem-Settings-Type", "Type the new value (empty: none)");
     this.Text("Tandem-Settings-Invalid", "Not a value for this setting: {1}");
@@ -535,6 +536,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-Saved", "Enregistrés dans tandem.ini dès leur modification");
     this.Text("Tandem-Settings-Item", "{1} : {2}");
     this.Text("Tandem-Settings-NextSession", "{1} (à la prochaine session)");
+    this.Text("Tandem-Settings-HostsRule", "{1} (règle de l'hôte)");
     this.Text("Tandem-Settings-AfterRestart", "{1} (après un redémarrage)");
     this.Text("Tandem-Settings-Type", "Saisissez la nouvelle valeur (vide : aucune)");
     this.Text("Tandem-Settings-Invalid", "Valeur refusée pour ce paramètre : {1}");

@@ -9,6 +9,7 @@
 
 #include "combat.hpp"
 #include "log.hpp"
+#include "runtime.hpp"
 
 #include "tandem/combat.hpp"
 
@@ -37,11 +38,23 @@ struct TandemFightEvent {
   float physical{}, thermal{}, electric{}, chemical{};
   float x{}, y{}, z{};
   float dx{}, dy{}, dz{};
+  std::uint32_t id{};
+  std::uint32_t target{};
 };
 static_assert(alignof(TandemFightEvent) <= 8, "the script VM aligns struct locals to 8");
 
 namespace {
-enum Kind : std::int32_t { kStrike = 1, kWound = 2, kPoise = 3, kDifficulty = 4, kAreaHit = 5 };
+enum Kind : std::int32_t {
+  kStrike = 1,
+  kWound = 2,
+  kPoise = 3,
+  kDifficulty = 4,
+  kAreaHit = 5,
+  kThrow = 6,
+  kThrowEnd = 7,
+  kRules = 8,
+  kDefended = 9
+};
 
 proto::Vec3 Vec(const Red::Vector4 &v) { return {v.X, v.Y, v.Z}; }
 
@@ -82,6 +95,28 @@ TandemFightEvent EventOf(const proto::Message &message) {
            .chemical = a->chemical};
     out.x = a->position.x, out.y = a->position.y, out.z = a->position.z;
     out.dx = a->direction.x, out.dy = a->direction.y, out.dz = a->direction.z;
+  } else if (const auto *t = std::get_if<proto::Throw>(&message)) {
+    out = {.kind = kThrow,
+           .npc = t->npc,
+           .player = t->player,
+           .flags = t->flags,
+           .level = static_cast<std::int32_t>(t->kind),
+           .attack = Red::TweakDBID(t->item)};
+    out.x = t->origin.x, out.y = t->origin.y, out.z = t->origin.z;
+    out.dx = t->velocity.x, out.dy = t->velocity.y, out.dz = t->velocity.z;
+    out.id = t->id;
+    out.target = t->at;
+  } else if (const auto *e = std::get_if<proto::ThrowEnd>(&message)) {
+    out = {.kind = kThrowEnd, .player = e->player, .level = static_cast<std::int32_t>(e->how)};
+    out.x = e->position.x, out.y = e->position.y, out.z = e->position.z;
+    out.id = e->id;
+  } else if (const auto *r = std::get_if<proto::Rules>(&message)) {
+    out = {.kind = kRules, .flags = r->flags};
+  } else if (const auto *d = std::get_if<proto::Defended>(&message)) {
+    out = {.kind = kDefended,
+           .npc = d->npc,
+           .player = d->player,
+           .level = static_cast<std::int32_t>(d->how)};
   }
   return out;
 }
@@ -145,6 +180,58 @@ struct TandemFight : Red::IScriptable {
                                       .attack = attack.value,
                                       .weapon = weapon.value});
   }
+  // Our V threw, launched or fired (smart) an object the others must see
+  // (proto::Throw; kind: 0 grenade, 1 knife, 2 launcher round, 3 smart round).
+  static void SendThrow(std::uint32_t id, std::int32_t kind, std::int32_t flags,
+                        Red::TweakDBID item, Red::Vector4 origin, Red::Vector4 velocity,
+                        std::uint32_t npc, std::uint32_t at) {
+    if (kind < 0 || kind > static_cast<std::int32_t>(proto::ThrowKind::Smart))
+      return;
+    Combat::Get().Send(proto::Throw{.id = id,
+                                    .kind = static_cast<proto::ThrowKind>(kind),
+                                    .flags = static_cast<std::uint8_t>(flags),
+                                    .item = item.value,
+                                    .origin = Vec(origin),
+                                    .velocity = Vec(velocity),
+                                    .npc = npc,
+                                    .at = at});
+  }
+  // Its end (how: 0 exploded, 1 stuck, 2 gone).
+  static void SendThrowEnd(std::uint32_t id, std::int32_t how, Red::Vector4 position) {
+    if (how < 0 || how > static_cast<std::int32_t>(proto::ThrowEndKind::Gone))
+      return;
+    Combat::Get().Send(proto::ThrowEnd{
+        .id = id, .how = static_cast<proto::ThrowEndKind>(how), .position = Vec(position)});
+  }
+  // Host: the session's rules (proto::kRule*), sent when they change.
+  static void SendRules(std::int32_t flags) {
+    Combat::Get().Send(proto::Rules{.flags = static_cast<std::uint8_t>(flags & proto::kRuleFlags)});
+  }
+  // Host: the rules tandem.ini asks for (friendly_fire).
+  static std::int32_t ConfiguredRules() {
+    return Runtime::Get().config.friendlyFire ? proto::kRuleFriendlyFire : 0;
+  }
+  // The session's rules as this game knows them: the Vs hurt each other.
+  static bool FriendlyFire() { return combat::FriendlyFire(Combat::Get().Rules()); }
+  // Guest: a host NPC's attack on our V was blocked (1) or parried (2) here.
+  static void SendDefended(std::uint32_t npc, std::int32_t how) {
+    if (how != static_cast<std::int32_t>(proto::DefendKind::Blocked) &&
+        how != static_cast<std::int32_t>(proto::DefendKind::Parried))
+      return;
+    Combat::Get().Send(proto::Defended{.npc = npc, .how = static_cast<proto::DefendKind>(how)});
+  }
+  // Guest: how long (seconds) a melee hit of the host's NPC `npc` waits
+  // before our game runs it, so it lands when its proxy is drawn landing it.
+  static float MeleeHold(std::uint32_t npc) {
+    const auto stats = Runtime::Get().StatsOf(kNpcPuppetBase + npc);
+    if (!stats)
+      return 0.f;
+    return static_cast<float>(combat::MeleeHoldUs(stats->delayUs, stats->transitUs)) / 1e6f;
+  }
+  // Throws dropped since the start for arriving too late (a stall).
+  static std::int32_t StaleThrows() {
+    return static_cast<std::int32_t>(Combat::Get().StaleThrows());
+  }
   // What the session said about hits since the last call.
   static Red::DynArray<TandemFightEvent> TakeEvents() {
     Red::DynArray<TandemFightEvent> out;
@@ -191,6 +278,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemFightEvent, "TandemFightEvent", {
   RTTI_PROPERTY(dx);
   RTTI_PROPERTY(dy);
   RTTI_PROPERTY(dz);
+  RTTI_PROPERTY(id);
+  RTTI_PROPERTY(target);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemFight, "TandemFight", {
@@ -199,6 +288,14 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemFight, "TandemFight", {
   RTTI_METHOD(SendPoise);
   RTTI_METHOD(SendDifficulty);
   RTTI_METHOD(SendAreaHit);
+  RTTI_METHOD(SendThrow);
+  RTTI_METHOD(SendThrowEnd);
+  RTTI_METHOD(SendRules);
+  RTTI_METHOD(ConfiguredRules);
+  RTTI_METHOD(FriendlyFire);
+  RTTI_METHOD(SendDefended);
+  RTTI_METHOD(MeleeHold);
+  RTTI_METHOD(StaleThrows);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(StrikeLoss);
 });

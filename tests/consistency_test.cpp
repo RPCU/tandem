@@ -186,6 +186,25 @@ TEST_CASE("faults never touch the handshake and never send a one-shot twice") {
   CHECK(consistency::IsOneShot(proto::ShotHit{}));
   link.Set({.dup = 1.0});
   CHECK(link.Decide(proto::NpcShotAt{}) == consistency::FaultyLink::Action::Send);
+  // A throw doubled is a second grenade; a defence doubled, a second stagger.
+  CHECK(consistency::IsOneShot(proto::Throw{}));
+  CHECK(consistency::IsOneShot(proto::ThrowEnd{}));
+  CHECK(consistency::IsOneShot(proto::Defended{}));
+  CHECK_FALSE(consistency::IsOneShot(proto::Rules{}));
+  CHECK(link.Decide(proto::Throw{}) == consistency::FaultyLink::Action::Send);
+  CHECK(link.Decide(proto::Rules{}) == consistency::FaultyLink::Action::Twice);
+}
+
+TEST_CASE("the session's rules are part of the world digest") {
+  const proto::World world{.revision = 1};
+  const auto none = consistency::WorldDigest(world, std::nullopt, std::nullopt);
+  const auto off = consistency::WorldDigest(world, std::nullopt, proto::Rules{});
+  const auto on = consistency::WorldDigest(world, std::nullopt,
+                                           proto::Rules{.flags = proto::kRuleFriendlyFire});
+  CHECK(none != off);
+  CHECK(off != on);
+  CHECK(on == consistency::WorldDigest(world, std::nullopt,
+                                       proto::Rules{.flags = proto::kRuleFriendlyFire}));
 }
 
 namespace {

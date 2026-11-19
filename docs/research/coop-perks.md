@@ -60,6 +60,7 @@ Limits:
 8. [Summary by risk](#8-summary-by-risk)
 9. [What could not be seen](#9-what-could-not-be-seen)
 10. [Tests owed](#10-tests-owed)
+11. [Leftovers, item by item (2026-11-19)](#11-leftovers-item-by-item-2026-11-19)
 
 ---
 
@@ -1051,3 +1052,41 @@ With the mock player as the other V where possible.
    (§2.2)?
 10. Second Heart on a guest in a session: revive percentage, downed state
     (§5.5).
+
+The scenarios that cover these, to run: 1 `outcomes-knockout` and a
+knife kill by hand; 2 `npcs-shoot-guest` (a blade held), then
+`combat-defend`; 3 `takedowns-host` (the cue); 4 `stealth-guest`; 5
+`hacks-guest`; 6 `hacks-upload`; 7 `hacks-guest`; 8 by hand; 9
+`outcomes-knockout`; 10 `revive-game`.
+
+## 11. Leftovers, item by item (2026-11-19)
+
+What §8 left as "needs a rule" and "cosmetic", and where each stands now.
+Every way of fighting, by attacker and target:
+[combat-coverage.md](../architecture/combat-coverage.md).
+
+<!-- prettier-ignore -->
+| §8 item | State |
+| --- | --- |
+| Hit outcome beyond health (§2.2) | built: `NpcStrike`, `NpcPoise`, `NpcWound` (combat.md) |
+| On-kill perks at hit time (§2.3) | built: the guest predicts the kill (`PredictKill`) |
+| Skill XP for guests, assists (§2.4) | built: queued per hit, paid at the death |
+| Detection-driven perks (§2.6) | built: combat state and `UI_Stealth` follow the host; `OnBeingNoticed` not queued yet |
+| One-game area and spread effects (§2.7) | built: a remote V's hits are dropped on every game but as strikes or `AreaHit` (`IsRemoteComputed`, 2026-11-19: on guests too) |
+| One difficulty (§2.8) | built |
+| Guests' noise (§2.9) | built for single broadcasts; a guest's grenade is now heard on the host through its copy's own stimuli (`Throw`) |
+| Area attacks and chain lightning must not hit the other V (§5.2, §5.3) | built: friendly fire is the session's rule, off by default (`Rules`): every V hit on another V's puppet is dropped, explosions included; on, it goes as `AreaHit` |
+| Gorilla-arms one punch (§5.3) | built: on the host, a guest's `OnePunchedMark` gives our V no slow motion (`SuppressPunchSlowMo`); the guest's own game plays it on its proxy |
+| Monowire contagion cleanup (§5.3) | open: the cleanup writes the host's V's blackboard on the host (harmless: a flag the host's V does not read then) |
+| Launcher rounds (§5.3) | built: the round's copy flies on the others' games (`Throw` Launcher); its explosion is the shooter's |
+| Death prevention before downed, Second Heart (§5.5) | built (revive.md) |
+| AI followers spawned by cyberware (§5.6) | open: a spawned follower is the host's NPC only when the host spawns it |
+| Quickhack queue on defeat, squad spread, control hacks, ping, System Collapse, upload awareness, police (§6.2, §6.3) | partly built (combat.md "Quickhacks"); open: System Collapse's buffs, ping sharing, Breach Protocol |
+| Passenger collision damage and run-overs (§7) | open (vehicles.md) |
+| Status-effect VFX on the puppet (cosmetic) | open: the puppet shows its V's look, weapons and pose, not its buffs' effects |
+| Ground slam, landings, dash effects (cosmetic) | open |
+| Thrown knives, launcher rounds, smart rounds (cosmetic) | built: `Throw` copies (combat-coverage.md "Throws"); vehicle missiles open |
+| Relic attack records, perfect-charge shots (cosmetic) | open: the shot shows, not the charge |
+| Airborne puppet placement (cosmetic) | built (players.md "Every way a V moves") |
+| `Cool_Right_Perk_3_1` knife pickup (§3.4) | built: only the owner can pick up its knife (the real one, in its world); the copies refuse |
+| Blade bullet block and deflect for a guest (§2.5, §3.2) | built: NPC shots at a guest are fired and decided on its game, so its perks apply; the host's NPC hears of a block or parry (`Defended`). Until 2026-11-19 those hits were dropped as a proxy's own (`IsProxyComputed`) |

@@ -37,4 +37,10 @@ proto::NpcStrike FromHit(const proto::NpcHit &hit) {
           .position = hit.position,
           .direction = hit.direction};
 }
+
+std::uint64_t MeleeHoldUs(std::uint64_t proxyDelayUs, std::uint64_t transitUs) {
+  if (proxyDelayUs <= transitUs)
+    return 0;
+  return std::min(proxyDelayUs - transitUs, kMaxMeleeHoldUs);
+}
 } // namespace tandem::combat

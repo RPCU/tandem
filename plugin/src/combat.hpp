@@ -6,6 +6,8 @@
 
 #include "tandem/protocol.hpp"
 
+#include <atomic>
+#include <cstdint>
 #include <mutex>
 #include <vector>
 
@@ -15,17 +17,31 @@ public:
   static Combat &Get();
 
   // Net thread: what the session says (NpcStrike from a guest, which a
-  // guest's older NpcHit also becomes; NpcWound, NpcPoise, Difficulty from
-  // the host; AreaHit on our V), and what we have to say.
+  // guest's older NpcHit also becomes; NpcWound, NpcPoise, Difficulty,
+  // Rules from the host; AreaHit on our V; the others' Throw and ThrowEnd;
+  // a guest's Defended), and what we have to say.
   void PushInbound(proto::Message message);
   std::vector<proto::Message> TakeOutbound();
+  // Net thread: the session's rules as the endpoint knows them now.
+  void SetRules(proto::Rules rules) { m_rules.store(rules.flags, std::memory_order_relaxed); }
 
-  // Game thread.
+  // Game thread. A throw that waited longer than combat::kThrowStaleUs (a
+  // stall, a loading screen) is dropped here: its copy would fly late.
   std::vector<proto::Message> TakeInbound();
   void Send(proto::Message message);
+  proto::Rules Rules() const { return {.flags = m_rules.load(std::memory_order_relaxed)}; }
+  // Throws dropped as stale since the start.
+  std::uint32_t StaleThrows() const { return m_staleThrows.load(std::memory_order_relaxed); }
 
 private:
+  struct Inbound {
+    proto::Message message;
+    std::uint64_t arrivalUs{};
+  };
   std::mutex m_lock;
-  std::vector<proto::Message> m_inbound, m_outbound;
+  std::vector<Inbound> m_inbound;
+  std::vector<proto::Message> m_outbound;
+  std::atomic<std::uint8_t> m_rules{};
+  std::atomic<std::uint32_t> m_staleThrows{};
 };
 } // namespace tandem::plugin

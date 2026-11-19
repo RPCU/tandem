@@ -60,7 +60,10 @@
 // As the host of a replay it applies strikes by the game's rules (core
 // combat.hpp) and answers with health, poise, wounds, knock-outs and deaths.
 // --difficulty (host) sets the session's difficulty; --area-hit throws "a
-// grenade" at every other V (AreaHit).
+// grenade" at every other V (AreaHit; --friendly-fire on, host, lets it
+// through). --throw and --smart send our V's throws and smart rounds for
+// the others' copies (Throw, ThrowEnd); --defend (join) blocks and parries
+// the host's NPCs' attacks (Defended).
 // Stealth: as host, --npc puts an NPC in front of the guest and --detect-at
 // makes the NPCs it sends notice, detect and lose the guests (NpcAwareness,
 // NpcEntry::detected); --camo turns "its optical camo" on, --shoot (join)
@@ -168,15 +171,21 @@ struct Options {
   int driveSeconds{0}; // drive: get out after this long (0: never)
   // drive: the car's radio (ERadioStationList index, -1 off); unset: none sent
   std::optional<int> radioStation;
-  int hitNpcsSeconds{0};  // join: hit one of the host's NPCs this often (0: never)
-  int hitYouSeconds{0};   // host: one of its NPCs hits each guest's V this often (0: never)
-  int shootYouSeconds{0}; // host: one of its NPCs fires at each guest's V this often
+  int hitNpcsSeconds{0};   // join: hit one of the host's NPCs this often (0: never)
+  int hitYouSeconds{0};    // host: one of its NPCs hits each guest's V this often (0: never)
+  bool hitYouMelee{false}; // --hit-you: a melee hit (blockable, held for the proxy's swing)
+  int shootYouSeconds{0};  // host: one of its NPCs fires at each guest's V this often
   std::string shotWeapon{"Items.Preset_Lexington_Default"}; // --shoot-you: its weapon
   // --hit-npcs: what each hit carries besides its damage (plain, nonlethal,
   // cap, poise, head, blade).
   std::string strike{"plain"};
-  std::optional<int> difficulty; // host: the session's gameDifficulty
-  int areaHitSeconds{0};         // our "grenade" hits every other V this often (0: never)
+  std::optional<int> difficulty;    // host: the session's gameDifficulty
+  int areaHitSeconds{0};            // our "grenade" hits every other V this often (0: never)
+  std::optional<bool> friendlyFire; // host: the session's rule (unset: none sent)
+  int throwSeconds{0};              // our V throws a grenade this often (0: never)
+  std::string throwItem{"Items.GrenadeFragRegular"}; // --throw: what
+  int smartSeconds{0};  // our V fires a smart round at an NPC this often (0: never)
+  int defendSeconds{0}; // join: we parry, then block, an NPC's attack this often
   // host: the world the game follows (time of day, weather name); unset: none sent
   std::optional<int> timeOfDayMinutes;
   std::string weather;
@@ -409,10 +418,18 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     40 poise), head (a headshot), blade (a katana on the left arm)\n"
          "  --hit-you N        host: an NPC (a replayed one if any) hits each guest's V for\n"
          "                     10 physical every N seconds\n"
+         "  --hit-you-melee X  --hit-you: on, the hits are melee (blockable; the guest\n"
+         "                     waits for its proxy's swing)\n"
          "  --difficulty D     host: the session's difficulty: easy | hard | veryhard | story\n"
          "                     (or 0-3); guests play at it\n"
          "  --area-hit N       every N seconds our \"grenade\" hits every other player's V for\n"
          "                     20 physical (an explosion, applied by their game)\n"
+         "  --friendly-fire X  host: the session's rule, on | off (the Vs hurt each other)\n"
+         "  --throw N          every N seconds our V throws a grenade (--throw-item) 10 m\n"
+         "                     ahead; it explodes 2 s later (the others launch a copy)\n"
+         "  --throw-item REC   --throw: the grenade's record (Items.GrenadeFragRegular)\n"
+         "  --smart N          every N seconds our V fires a smart round at an NPC we see\n"
+         "  --defend N         join: every N seconds we parry, then block, an NPC's attack\n"
          "  --time HH:MM       host: the time of day the game must follow\n"
          "  --weather NAME     host: the weather it must follow (24h_weather_rain...)\n"
          "  --record FILE      join: save the host's NPCs (spawns, states, gone) to FILE\n"
@@ -791,6 +808,8 @@ Options Parse(int argc, char **argv) {
       options.holdNpcsSeconds = Number<int>(value);
     else if (flag == "--hit-you")
       options.hitYouSeconds = Number<int>(value);
+    else if (flag == "--hit-you-melee")
+      options.hitYouMelee = value == "on";
     else if (flag == "--shoot-you")
       options.shootYouSeconds = Number<int>(value);
     else if (flag == "--shot-weapon")
@@ -810,6 +829,21 @@ Options Parse(int argc, char **argv) {
         Usage(std::format("--difficulty: no level {}", value));
     } else if (flag == "--area-hit")
       options.areaHitSeconds = Number<int>(value);
+    else if (flag == "--friendly-fire") {
+      if (value == "on")
+        options.friendlyFire = true;
+      else if (value == "off")
+        options.friendlyFire = false;
+      else
+        Usage(std::format("--friendly-fire: on or off, not {}", value));
+    } else if (flag == "--throw")
+      options.throwSeconds = Number<int>(value);
+    else if (flag == "--throw-item")
+      options.throwItem = std::string(value);
+    else if (flag == "--smart")
+      options.smartSeconds = Number<int>(value);
+    else if (flag == "--defend")
+      options.defendSeconds = Number<int>(value);
     else if (flag == "--npc")
       options.npcRecord = std::string(value);
     else if (flag == "--region-far")
@@ -2496,6 +2530,18 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
   if (const auto *a = std::get_if<proto::AreaHit>(&message))
     return std::format("player {}'s area effect hits us: {:.0f} physical, {:.0f} thermal (type {})",
                        a->from, a->physical, a->thermal, a->attackType);
+  if (const auto *t = std::get_if<proto::Throw>(&message))
+    return std::format("player {} throws {} (kind {}, flags {:#x}, npc {}, at player {})",
+                       t->player, t->id, static_cast<int>(t->kind), t->flags, t->npc, t->at);
+  if (const auto *e = std::get_if<proto::ThrowEnd>(&message))
+    return std::format("player {}'s throw {} ends ({})", e->player, e->id,
+                       static_cast<int>(e->how));
+  if (const auto *r = std::get_if<proto::Rules>(&message))
+    return std::format("the session's rules: friendly fire {}",
+                       (r->flags & proto::kRuleFriendlyFire) ? "on" : "off");
+  if (const auto *d = std::get_if<proto::Defended>(&message))
+    return std::format("player {} {} npc {}'s attack", d->player,
+                       d->how == proto::DefendKind::Parried ? "parried" : "blocked", d->npc);
   return proto::NameOf(message);
 }
 
@@ -2712,8 +2758,21 @@ int main(int argc, char **argv) {
   std::map<tandem::proto::NpcId, float> npcHealth; // host: replayed NPCs hit by guests
   std::map<tandem::proto::NpcId, float> npcPoise;  // ...and their poise
   bool difficultySent = false;
+  bool rulesSent = false;
   auto nextAreaHit =
       std::chrono::steady_clock::now() + std::chrono::seconds(options.areaHitSeconds);
+  auto nextThrow = std::chrono::steady_clock::now() + std::chrono::seconds(options.throwSeconds);
+  auto nextSmart = std::chrono::steady_clock::now() + std::chrono::seconds(options.smartSeconds);
+  auto nextDefend = std::chrono::steady_clock::now() + std::chrono::seconds(options.defendSeconds);
+  std::uint32_t throwId = 0;
+  bool parryNext = true;
+  // --throw: our grenades in flight (id, when it explodes, where).
+  struct Thrown {
+    std::uint32_t id;
+    std::chrono::steady_clock::time_point at;
+    tandem::proto::Vec3 where;
+  };
+  std::vector<Thrown> inFlight;
   std::set<tandem::proto::NpcId> deadNpcs;
   std::map<tandem::proto::NpcId, Vec3> npcAt; // join: where the host's NPCs are
   // join: when each was last in the host's states (dead and far NPCs are
@@ -4207,6 +4266,72 @@ int main(int argc, char **argv) {
           tandem::proto::Difficulty{.level = static_cast<std::uint8_t>(*options.difficulty)});
       Log("the session plays at difficulty {}", *options.difficulty);
     }
+    // --friendly-fire: the session's rule, kept by the endpoint for whoever joins.
+    if (options.friendlyFire && options.host && !rulesSent && endpoint->IsJoined()) {
+      rulesSent = endpoint->SendCombat(tandem::proto::Rules{
+          .flags = *options.friendlyFire ? tandem::proto::kRuleFriendlyFire : std::uint8_t{0}});
+      Log("the session's rules: friendly fire {}", *options.friendlyFire ? "on" : "off");
+    }
+    // --throw: a grenade 10 m ahead of our V (+Y), exploding 2 s later.
+    if (options.throwSeconds && endpoint->IsJoined() && now >= nextThrow) {
+      nextThrow = now + std::chrono::seconds(options.throwSeconds);
+      tandem::proto::Vec3 from = lastSent.value_or(tandem::proto::Vec3{});
+      from.z += 1.5f;
+      const tandem::proto::Throw thrown{.id = ++throwId,
+                                        .kind = tandem::proto::ThrowKind::Grenade,
+                                        .item = TweakDBID(options.throwItem),
+                                        .origin = from,
+                                        .velocity = {0.f, 7.f, 6.f}};
+      if (endpoint->SendCombat(thrown)) {
+        Log("we throw grenade {} ({})", thrown.id, options.throwItem);
+        inFlight.push_back(
+            {thrown.id, now + std::chrono::seconds(2), {from.x, from.y + 10.f, from.z - 1.5f}});
+      }
+    }
+    for (auto it = inFlight.begin(); it != inFlight.end();)
+      if (now >= it->at) {
+        endpoint->SendCombat(tandem::proto::ThrowEnd{
+            .id = it->id, .how = tandem::proto::ThrowEndKind::Exploded, .position = it->where});
+        Log("our grenade {} explodes", it->id);
+        it = inFlight.erase(it);
+      } else
+        ++it;
+    // --smart: a guided round at an NPC we know.
+    // (A guest aims at the host's NPCs, the host of a replay at its own.)
+    tandem::proto::NpcId smartAt = liveNpcs.empty() ? 0 : *liveNpcs.begin();
+    if (options.host)
+      for (const auto npc : replayedNpcs)
+        if (!deadNpcs.contains(npc)) {
+          smartAt = npc;
+          break;
+        }
+    if (options.smartSeconds && endpoint->IsJoined() && smartAt != 0 && now >= nextSmart) {
+      nextSmart = now + std::chrono::seconds(options.smartSeconds);
+      tandem::proto::Vec3 from = lastSent.value_or(tandem::proto::Vec3{});
+      from.z += 1.4f;
+      const auto npc = smartAt;
+      if (endpoint->SendCombat(
+              tandem::proto::Throw{.id = ++throwId,
+                                   .kind = tandem::proto::ThrowKind::Smart,
+                                   .flags = tandem::proto::kThrowHoming,
+                                   .item = TweakDBID("Items.Preset_Yukimura_Default"),
+                                   .origin = from,
+                                   .velocity = {0.f, 1.f, 0.f},
+                                   .npc = npc}))
+        Log("our smart round at npc {}", npc);
+    }
+    // --defend: a parry, then a block, of an NPC's attack on our V.
+    if (options.defendSeconds && !options.host && endpoint->IsJoined() && !liveNpcs.empty() &&
+        now >= nextDefend) {
+      nextDefend = now + std::chrono::seconds(options.defendSeconds);
+      const auto npc = *liveNpcs.begin();
+      const auto how =
+          parryNext ? tandem::proto::DefendKind::Parried : tandem::proto::DefendKind::Blocked;
+      parryNext = !parryNext;
+      if (endpoint->SendCombat(tandem::proto::Defended{.npc = npc, .how = how}))
+        Log("we {} npc {}'s attack", how == tandem::proto::DefendKind::Parried ? "parry" : "block",
+            npc);
+    }
     // --area-hit: our "grenade" on every other V, for their game to apply.
     if (options.areaHitSeconds && endpoint->IsJoined() && now >= nextAreaHit) {
       nextAreaHit = now + std::chrono::seconds(options.areaHitSeconds);
@@ -4344,12 +4469,16 @@ int main(int argc, char **argv) {
           break;
         }
       for (const auto &[id, info] : endpoint->Players())
-        if (id != endpoint->You() && endpoint->SendPlayerHit({.player = id,
-                                                              .npc = shooter,
-                                                              .physical = 10.f,
-                                                              .attackType = 10,
-                                                              .direction = {0.f, 1.f, 0.f}}))
-          Log("npc {} hit player {} for 10 physical", shooter, id);
+        if (id != endpoint->You() &&
+            endpoint->SendPlayerHit(
+                {.player = id,
+                 .npc = shooter,
+                 .physical = 10.f,
+                 .attackType = static_cast<std::uint8_t>(options.hitYouMelee ? 7 : 10),
+                 .flags = options.hitYouMelee ? tandem::proto::kHitMelee : std::uint8_t{0},
+                 .direction = {0.f, 1.f, 0.f}}))
+          Log("npc {} hit player {} for 10 physical{}", shooter, id,
+              options.hitYouMelee ? " (melee)" : "");
     }
     // --shoot-you: one of our (replayed) NPCs fires at each guest; the
     // guest's game fires the shot from its proxy and decides the hit.

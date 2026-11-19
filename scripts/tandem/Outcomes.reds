@@ -65,6 +65,9 @@ public class TandemOutcomes {
   // (Relic), until when.
   private let m_slowMoDrops: Int32;
   private let m_slowMoDropUntil: Float;
+  // Host: the rules last sent (-1 none). Thrown objects (Throws.reds).
+  private let m_sentRules: Int32;
+  private let m_throws: ref<TandemThrows>;
 
   // In a session only (null outside: single player is left alone).
   public static func Of(game: GameInstance) -> ref<TandemOutcomes> {
@@ -75,6 +78,15 @@ public class TandemOutcomes {
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
     this.m_sentLevel = -1;
+    this.m_sentRules = -1;
+  }
+
+  public func Throws() -> ref<TandemThrows> {
+    if !IsDefined(this.m_throws) {
+      this.m_throws = new TandemThrows();
+      this.m_throws.Start(this.m_game);
+    }
+    return this.m_throws;
   }
 
   // Every frame in a session (TandemNpcs.Tick).
@@ -87,6 +99,13 @@ public class TandemOutcomes {
           this.m_sentLevel = level;
           TandemFight.SendDifficulty(level);
           TandemNative.Log(s"outcomes: the session plays at our difficulty \(level)");
+        }
+        // The session's rules, tandem.ini's (friendly_fire).
+        let rules = TandemFight.ConfiguredRules();
+        if rules != this.m_sentRules {
+          this.m_sentRules = rules;
+          TandemFight.SendRules(rules);
+          TandemNative.Log(s"outcomes: the session's rules: friendly fire \((rules & 1) != 0 ? "on" : "off")");
         }
       }
     }
@@ -105,6 +124,7 @@ public class TandemOutcomes {
         i += 1;
       }
     }
+    this.Throws().Tick();
     for event in TandemFight.TakeEvents() {
       switch event.kind {
         case 1:
@@ -121,6 +141,18 @@ public class TandemOutcomes {
           break;
         case 5:
           this.TakeAreaHit(event, npcs);
+          break;
+        case 6:
+          this.Throws().Arrive(event);
+          break;
+        case 7:
+          this.Throws().Ended(event);
+          break;
+        case 8:
+          TandemNative.Log(s"outcomes: the host's rules: friendly fire \((event.flags & 1) != 0 ? "on" : "off")");
+          break;
+        case 9:
+          this.TakeDefended(event, npcs);
           break;
         default:
           break;
@@ -142,8 +174,12 @@ public class TandemOutcomes {
       this.m_haveOwn = false;
     }
     this.m_sentLevel = -1;
+    this.m_sentRules = -1;
     ArrayClear(this.m_hits);
     ArrayClear(this.m_strikes);
+    if IsDefined(this.m_throws) {
+      this.m_throws.End();
+    }
   }
 
   // ---- difficulty (coop-perks.md §2.8) ----
@@ -726,14 +762,27 @@ public class TandemOutcomes {
     TandemNative.Log("puppet limbs: dismemberment request, event, explosion and a crippled leg sent to the puppet");
   }
 
-  // ---- area effects: the attacker's game, once ----
+  // ---- a V's hits on another V: the attacker's game, once ----
 
-  // Our V's area effect (an explosion, a pressure wave: a grenade, a barrel
-  // we set off) reaching another V's puppet: that V's game applies it.
-  public static func IsOurArea(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
+  // Our V's hit (a shot, a blade, an explosion, a pressure wave: a grenade,
+  // a barrel we set off) reaching another V's puppet: that V's game applies
+  // it, while the session's rules allow friendly fire (TandemFight
+  // .FriendlyFire, the host's tandem.ini). Off, it is dropped here as
+  // vanilla drops a hit on a friend (CheckForQuickExit).
+  public static func IsOurHit(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
     let instigator = hitEvent.attackData.GetInstigator();
     let player = GetPlayer(game);
-    return IsDefined(instigator) && IsDefined(player) && instigator.GetEntityID() == player.GetEntityID() && AttackData.IsAreaOfEffect(hitEvent.attackData.GetAttackType()) && !AttackData.IsDoT(hitEvent.attackData);
+    return IsDefined(instigator) && IsDefined(player) && instigator.GetEntityID() == player.GetEntityID() && !AttackData.IsDoT(hitEvent.attackData);
+  }
+
+  // The area ones (kept for the target-side stages, Combat.reds OnPuppet).
+  public static func IsOurArea(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
+    return TandemOutcomes.IsOurHit(game, hitEvent) && AttackData.IsAreaOfEffect(hitEvent.attackData.GetAttackType());
+  }
+
+  // Our hit on another V's puppet goes to their game: friendly fire on.
+  public static func HurtsPartner(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
+    return TandemOutcomes.IsOurHit(game, hitEvent) && TandemFight.FriendlyFire();
   }
 
   public static func SendAreaHit(game: GameInstance, victim: Uint32, hitEvent: ref<gameHitEvent>) -> Void {
@@ -753,20 +802,20 @@ public class TandemOutcomes {
     let electric = values.GetAttackValue(gamedataDamageType.Electric);
     let chemical = values.GetAttackValue(gamedataDamageType.Chemical);
     TandemFight.SendAreaHit(victim, physical, thermal, electric, chemical, EnumInt(hitEvent.attackData.GetAttackType()), TandemCombat.Flags(hitEvent), hitEvent.hitPosition, hitEvent.hitDirection, attackId, weaponId);
-    TandemNative.Log(s"outcomes: our area effect hit player \(victim)'s puppet: \(physical) physical, \(thermal) thermal, sent to their game");
+    TandemNative.Log(s"outcomes: our hit (type \(EnumInt(hitEvent.attackData.GetAttackType()))) on player \(victim)'s puppet: \(physical) physical, \(thermal) thermal, sent to their game (friendly fire on)");
   }
 
-  // Another V's area effect on our V: run here as a hit from their puppet,
-  // by our rules (our armour, perks, difficulty: the target's side).
+  // Another V's hit on our V (friendly fire on): run here as a hit from
+  // their puppet, by our rules (our armour, perks, block, dodge, difficulty:
+  // the target's side).
   private func TakeAreaHit(event: TandemFightEvent, npcs: ref<TandemNpcs>) -> Void {
     let player = GetPlayer(this.m_game);
     let attacker = TandemNpcs.PuppetOf(this.m_game, event.player);
     if !IsDefined(player) {
       return;
     }
-    // Friendly fire off (the settings page): our V is spared by its own game.
-    if !TandemSettings.FriendlyFire() {
-      TandemNative.Log(s"outcomes: player \(event.player)'s area hit on our V spared (friendly_fire = off)");
+    if !TandemFight.FriendlyFire() {
+      TandemNative.Log(s"outcomes: player \(event.player)'s hit on our V dropped: friendly fire is off");
       return;
     }
     let record = TweakDBInterface.GetAttackRecord(event.attack);
@@ -807,39 +856,102 @@ public class TandemOutcomes {
     TandemNative.Log(s"outcomes: player \(event.player)'s area effect on our V: \(event.physical) physical, \(event.thermal) thermal, type \(event.attackType)");
   }
 
+  // ---- a guest's defence against our NPC (host) ----
+
+  // A guest blocked (level 1) or parried (2) our NPC's attack on its V, by
+  // its game's rules: our NPC gets what vanilla's attacker gets then
+  // (DamageManager.ProcessDefensiveState: the animation event, the AI event
+  // and, for a block, the signal), so it recoils, staggers or changes its
+  // next move as it would against our own V.
+  private func TakeDefended(event: TandemFightEvent, npcs: ref<TandemNpcs>) -> Void {
+    let body = GameInstance.FindEntityByID(this.m_game, npcs.EntityOfNpc(event.npc)) as ScriptedPuppet;
+    if !IsDefined(body) || body.IsDead() {
+      return;
+    }
+    let ai = new AIEvent();
+    if event.level == 2 {
+      AnimationControllerComponent.PushEvent(body, n"myAttackParried");
+      ai.name = n"MyAttackParried";
+    } else {
+      AnimationControllerComponent.PushEvent(body, n"myAttackBlocked");
+      ScriptedPuppet.SendActionSignal(body, n"BlockSignal", 0.3);
+      ai.name = n"MyAttackBlocked";
+    }
+    body.QueueEvent(ai);
+    TandemNative.Log(s"outcomes: player \(event.player) \(event.level == 2 ? "parried" : "blocked") \(event.npc)'s attack: it gets the recoil");
+  }
+
+  // Guest: the host NPC's attack on our V ended blocked or parried here
+  // (ProcessPipeline, Combat.reds): the host's NPC hears of it.
+  public static func ReportDefence(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Void {
+    if TandemNative.IsHost() || !IsDefined(hitEvent.attackData) {
+      return;
+    }
+    let player = GetPlayer(game);
+    let instigator = hitEvent.attackData.GetInstigator();
+    if !IsDefined(player) || !IsDefined(instigator) || hitEvent.target != player {
+      return;
+    }
+    let npc = TandemCombat.ProxyNpc(game, instigator);
+    if npc == 0u {
+      return;
+    }
+    let data = hitEvent.attackData;
+    let how = 0;
+    if data.HasFlag(hitFlag.WasDeflected) || data.HasFlag(hitFlag.WasBulletParried) || data.HasFlag(hitFlag.WasBulletDeflected) {
+      how = 2;
+    } else if data.WasBlocked() || data.HasFlag(hitFlag.WasBulletBlocked) {
+      how = 1;
+    }
+    if how != 0 {
+      TandemFight.SendDefended(npc, how);
+      TandemNative.Log(s"outcomes: npc \(npc)'s attack \(how == 2 ? "parried" : "blocked") by our V, the host told");
+    }
+  }
+
   // ---- one game computes each hit ----
 
-  // Host: a hit from a guest's puppet (or the copy of a car a guest drives)
-  // that is not one of its strikes: an effect, an explosion or a collision
-  // the guest's game computed too, and sends us as strikes. Dropped.
-  public static func IsGuestComputed(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
-    // The host, as before; any game for a hit on an NPC it runs.
-    if !TandemNative.IsHost() && !(IsDefined(hitEvent.target) && TandemOwn.Entity(game, hitEvent.target.GetEntityID())) {
-      return false;
-    }
+  // A hit from a remote V's puppet (or, on the host, the copy of a car a
+  // guest drives) that is not one of its strikes (host) nor another V's hit
+  // forwarded to our V (AreaHit): an effect, an explosion, a collision, a
+  // thrown object's copy (Throws.reds) that the V's own game computed
+  // already and sends as strikes or AreaHit. Dropped, on every game.
+  public static func IsRemoteComputed(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
     let instigator = hitEvent.attackData.GetInstigator();
     let system = TandemCombat.System(game);
     if !IsDefined(instigator) || !IsDefined(system) || system.You() == 0u {
       return false;
     }
     let id = instigator.GetEntityID();
-    if system.PlayerOfPuppet(id) == 0u && system.PlayerOfCar(id) == 0u {
+    if system.PlayerOfPuppet(id) == 0u && (!TandemNative.IsHost() || system.PlayerOfCar(id) == 0u) {
       return false;
     }
+    if system.IsForwardedHit(hitEvent) {
+      return false;
+    }
+    // The game that runs the target (the host, or any game for an NPC of its
+    // own, regions.md) replays the V's strikes on it: those stand.
+    let runs = TandemNative.IsHost() || (IsDefined(hitEvent.target) && TandemOwn.Entity(game, hitEvent.target.GetEntityID()));
     let outcomes = system.Outcomes();
-    return !IsDefined(outcomes) || !outcomes.IsStrike(hitEvent);
+    return !runs || !IsDefined(outcomes) || !outcomes.IsStrike(hitEvent);
   }
 
-  // Guest: a proxy's hit on our V that the host did not send (a death
-  // explosion, an effect running on the proxy): the host's NPC is the one
-  // that attacks, and its hits come as PlayerHit. Dropped.
+  // Guest: a proxy's hit that the host did not send (a death explosion, an
+  // effect running on the proxy, the copy of its grenade): the host's NPC is
+  // the one that attacks, and its hits on our V come as PlayerHit (on other
+  // NPCs they are the host's). Dropped; but for the shots the host asked our
+  // game to fire from it at our V (Shots.reds), which are ours to decide.
   public static func IsProxyComputed(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
     let player = GetPlayer(game);
-    if !IsDefined(player) || !IsDefined(hitEvent.target) || hitEvent.target.GetEntityID() != player.GetEntityID() {
+    if !IsDefined(player) || !IsDefined(hitEvent.target) {
       return false;
     }
     let system = TandemCombat.System(game);
     if !IsDefined(system) || system.You() == 0u || system.IsForwardedHit(hitEvent) {
+      return false;
+    }
+    let shots = TandemShots.Of(game);
+    if hitEvent.target.GetEntityID() == player.GetEntityID() && IsDefined(shots) && shots.IsSimulatedHit(hitEvent) {
       return false;
     }
     let npcs = system.Npcs();
@@ -896,13 +1008,14 @@ private final func PostProcess(hitEvent: ref<gameHitEvent>) {
   wrappedMethod(hitEvent);
 }
 
-// Our V's explosion on another V's puppet: friendly or not, it goes on to
-// DealDamages, where it is sent to that V's game.
+// Our V's hit on another V's puppet, friendly fire on: friendly or not, it
+// goes on to DealDamages, where it is sent to that V's game. Off: vanilla
+// drops it here, as a hit on any friend.
 @wrapMethod(DamageSystem)
 private final func CheckForQuickExit(hitEvent: ref<gameHitEvent>, cache: ref<CacheData>) -> Bool {
   let game = GetGameInstance();
-  if IsDefined(hitEvent.attackData) && TandemCombat.PuppetPlayer(game, hitEvent.target) != 0u && TandemOutcomes.IsOurArea(game, hitEvent) {
-    hitEvent.attackData.AddFlag(hitFlag.FriendlyFire, n"tandem_area_hit");
+  if IsDefined(hitEvent.attackData) && TandemCombat.PuppetPlayer(game, hitEvent.target) != 0u && TandemOutcomes.HurtsPartner(game, hitEvent) {
+    hitEvent.attackData.AddFlag(hitFlag.FriendlyFire, n"tandem_friendly_fire");
   }
   return wrappedMethod(hitEvent, cache);
 }

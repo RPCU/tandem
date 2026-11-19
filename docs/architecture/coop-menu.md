@@ -59,9 +59,12 @@
   session was set up with, so a change during one waits for its end (the
   label says "from the next session"); `quest_freeze` and `scene_privacy`
   choose hooks installed at launch ("after a restart").
-- **What they do**: `friendly_fire = off` makes our game spare our V from
-  another V's area hit (`AreaHit`, `Outcomes.reds`: the target's game owns
-  its V's health); `notices = important` hides news (rides, calls, pauses,
+- **What they do**: `friendly_fire` is the host's rule for the whole
+  session (`friendly_fire = off` by default; `combat.md`, `Rules`): on a host's page it
+  changes the rule at once (the host sends `Rules` again, every game
+  follows); on a guest's page in a session it shows the host's value,
+  "(the host's rule)", and cannot be changed there (its own tandem.ini's
+  value counts when it hosts). `notices = important` hides news (rides, calls, pauses,
   players elsewhere, loot), `minimal` keeps only what asks for an answer or
   went wrong (`TandemText.Importance`); every notice is logged either way.
   `markers = off` takes the other players' markers off (HUD, minimap, map);
@@ -75,8 +78,7 @@
   them all, `coop set KEY VALUE` changes one (scenario `settings`).
 - Not yet verified in game. Not done: the Mod Settings mod's page (it keeps
   its own saved values, which would compete with tandem.ini's: one source of
-  truth was kept), a session-wide friendly fire (the host's rule for
-  everyone would need an appended message).
+  truth was kept).
 
 ### Invites: the in-game flow (for the main menu)
 

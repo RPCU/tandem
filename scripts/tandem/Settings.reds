@@ -69,9 +69,16 @@ public class TandemSettings {
     return ["Common-On", "Common-Off"];
   }
 
+  // Friendly fire is the host's rule for the whole session (proto::Rules,
+  // docs/architecture/combat.md): a guest's page shows the host's and
+  // cannot change it; its own tandem.ini's counts when it hosts.
+  public static func IsHostsRule(key: String) -> Bool {
+    return Equals(key, "friendly_fire") && TandemNative.IsStarted() && !TandemNative.IsHost();
+  }
+
   // What the value is, in words.
   public static func ValueText(key: String) -> String {
-    let value = TandemNative.Setting(key);
+    let value = TandemSettings.IsHostsRule(key) ? (TandemFight.FriendlyFire() ? "on" : "off") : TandemNative.Setting(key);
     if TandemSettings.Kind(key) == 2 {
       if StrLen(value) == 0 {
         return TandemText.Get("Settings-NotSet");
@@ -97,6 +104,9 @@ public class TandemSettings {
       return key;
     }
     let label = TandemText.F("Settings-Item", TandemText.Get(TandemSettings.Labels()[i]), TandemSettings.ValueText(key));
+    if TandemSettings.IsHostsRule(key) {
+      return TandemText.F("Settings-HostsRule", label);
+    }
     let when = TandemSettings.Whens()[i];
     if when == 2 {
       return TandemText.F("Settings-AfterRestart", label);
@@ -128,17 +138,16 @@ public class TandemSettings {
 
   // Change it and save it (false: not a value of it; the plugin logs why).
   public static func Set(key: String, value: String) -> Bool {
+    if TandemSettings.IsHostsRule(key) {
+      TandemNative.Log(s"coop: setting \(key) refused: the host's rule while we are its guest");
+      return false;
+    }
     let done = TandemNative.SetSetting(key, value);
     TandemNative.Log(s"coop: setting \(key) \(done ? "changed" : "refused")");
     return done;
   }
 
   // ---- what the scripts apply themselves, read as they need it ----
-
-  // Off: another V's explosions and area effects spare our V (Outcomes.reds).
-  public static func FriendlyFire() -> Bool {
-    return NotEquals(TandemNative.Setting("friendly_fire"), "off");
-  }
 
   // Off: no marker for the other players (Markers.reds).
   public static func Markers() -> Bool {
@@ -165,6 +174,9 @@ public class TandemSettings {
     if Equals(command, "coop settings") {
       for key in TandemSettings.Keys() {
         let value = Equals(key, "relay_token") ? (StrLen(TandemNative.Setting(key)) > 0 ? "set" : "") : TandemNative.Setting(key);
+        if TandemSettings.IsHostsRule(key) {
+          value = s"\(TandemFight.FriendlyFire() ? "on" : "off") (the host's)";
+        }
         TandemNative.Log(s"coop: setting \(key) = \(value)");
       }
       return true;

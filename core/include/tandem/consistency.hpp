@@ -38,7 +38,8 @@ private:
 // Each domain's hash, the same on the host (its record) and on a guest (what
 // it received). Positions are left out: they are state, newest wins.
 std::uint32_t WorldDigest(const std::optional<proto::World> &world,
-                          const std::optional<proto::Difficulty> &difficulty = std::nullopt);
+                          const std::optional<proto::Difficulty> &difficulty = std::nullopt,
+                          const std::optional<proto::Rules> &rules = std::nullopt);
 // `holds`: who holds which NPC (grapples, carried bodies). `owners`: who runs
 // each NPC, where it is not the game that announced it (regions.hpp). With
 // `only`, the NPCs it accepts (id, owner) and no others: a guest is sent, and

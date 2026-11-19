@@ -139,7 +139,14 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   replayed one if any) hit every guest's V for 10 physical every N s; a
   guest logs the NPC hits it gets. `host --difficulty D` sets the
   session's difficulty; `--area-hit N` (either) throws "a grenade" (20
-  physical, `AreaHit`) at every other V every N s.
+  physical, `AreaHit`) at every other V every N s, which only friendly
+  fire lets through: `host --friendly-fire on|off` sets the session's rule
+  (`Rules`). `host --hit-you-melee on` makes `--hit-you`'s hits melee
+  (the guest holds them for its proxy's swing). `--throw N [--throw-item
+REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
+  later (`Throw`, `ThrowEnd`: the others launch a copy); `--smart N` fires
+  a smart round at an NPC it knows; `join --defend N` parries, then
+  blocks, one of the host's NPCs' attacks every N s (`Defended`).
 - **Down and out** (any mode): `--go-down N` puts its V down N s after
   another player is there (it lies still until someone revives it);
   `--go-out N` puts it out instead, up again 10 s later; `--revive N`

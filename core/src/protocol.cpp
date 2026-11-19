@@ -130,6 +130,15 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
       install &&
       (install->build.size() > kMaxInstallText || install->game.size() > kMaxInstallText))
     return std::nullopt;
+  if (const auto *thrown = std::get_if<Throw>(&message); thrown && thrown->kind > ThrowKind::Smart)
+    return std::nullopt;
+  if (const auto *end = std::get_if<ThrowEnd>(&message); end && end->how > ThrowEndKind::Gone)
+    return std::nullopt;
+  if (const auto *rules = std::get_if<Rules>(&message); rules && (rules->flags & ~kRuleFlags) != 0)
+    return std::nullopt;
+  if (const auto *defended = std::get_if<Defended>(&message);
+      defended && (defended->how < DefendKind::Blocked || defended->how > DefendKind::Parried))
+    return std::nullopt;
   return message;
 }
 
@@ -151,6 +160,9 @@ Channel ChannelOf(const Message &message) {
   // (a knockdown, a death, a ragdoll) must arrive.
   if (const auto *reaction = std::get_if<NpcReaction>(&message))
     return reaction->type == kReactionTwitch ? Channel::State : Channel::Event;
+  // A smart weapon's guided round, one per shot: like the shot itself.
+  if (const auto *thrown = std::get_if<Throw>(&message); thrown && thrown->kind == ThrowKind::Smart)
+    return Channel::State;
   return std::holds_alternative<PlayerState>(message) || std::holds_alternative<Cue>(message) ||
                  std::holds_alternative<PoseState>(message) ||
                  std::holds_alternative<Shot>(message) ||
@@ -177,8 +189,10 @@ bool IsStory(const Message &message) {
 }
 
 bool IsCombat(const Message &message) {
-  return message.index() >= Message(NpcStrike{}).index() &&
-         message.index() <= Message(AreaHit{}).index();
+  return (message.index() >= Message(NpcStrike{}).index() &&
+          message.index() <= Message(AreaHit{}).index()) ||
+         (message.index() >= Message(Throw{}).index() &&
+          message.index() <= Message(Defended{}).index());
 }
 
 bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::State; }
@@ -283,7 +297,11 @@ const char *NameOf(const Message &message) {
                                    "Presence",
                                    "Cue",
                                    "NpcReaction",
-                                   "Install"};
+                                   "Install",
+                                   "Throw",
+                                   "ThrowEnd",
+                                   "Rules",
+                                   "Defended"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

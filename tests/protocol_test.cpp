@@ -831,3 +831,51 @@ TEST_CASE("presence, cues and NPC reactions round-trip, on the right channels, a
   CHECK(std::string_view(NameOf(Cue{})) == "Cue");
   CHECK(std::string_view(NameOf(NpcReaction{})) == "NpcReaction");
 }
+
+TEST_CASE("throws, their ends, the session's rules and a defence survive encoding") {
+  RoundTrips(Throw{.player = 2,
+                   .id = 9,
+                   .kind = ThrowKind::Grenade,
+                   .flags = kThrowSticky | kThrowCharged,
+                   .item = 0x1122334455ULL,
+                   .origin = {1, 2, 3},
+                   .velocity = {4, 5, 6},
+                   .npc = 7});
+  RoundTrips(Throw{.player = 3, .id = 1, .kind = ThrowKind::Smart, .at = 1});
+  RoundTrips(ThrowEnd{.player = 2, .id = 9, .how = ThrowEndKind::Stuck, .position = {1, 2, 3}});
+  RoundTrips(Rules{.flags = kRuleFriendlyFire});
+  RoundTrips(Defended{.player = 2, .npc = 7, .how = DefendKind::Parried});
+  CHECK(std::string_view(NameOf(Throw{})) == "Throw");
+  CHECK(std::string_view(NameOf(ThrowEnd{})) == "ThrowEnd");
+  CHECK(std::string_view(NameOf(Rules{})) == "Rules");
+  CHECK(std::string_view(NameOf(Defended{})) == "Defended");
+  // One path for hit outcomes in the endpoint.
+  for (const auto &message :
+       {Message(Throw{}), Message(ThrowEnd{}), Message(Rules{}), Message(Defended{})})
+    CHECK(IsCombat(message));
+  CHECK_FALSE(IsCombat(ShotHit{}));
+  CHECK_FALSE(IsCombat(NpcShotAt{}));
+  // A grenade's flight is state the others must see once; a smart round is
+  // one per shot, like the shot.
+  CHECK(ChannelOf(Throw{.kind = ThrowKind::Grenade}) == Channel::Event);
+  CHECK(ChannelOf(Throw{.kind = ThrowKind::Knife}) == Channel::Event);
+  CHECK(ChannelOf(Throw{.kind = ThrowKind::Smart}) == Channel::State);
+  CHECK(IsReliable(ThrowEnd{}));
+  CHECK(IsReliable(Rules{}));
+  CHECK(IsReliable(Defended{}));
+  // Smart rounds go with every shot: small.
+  CHECK(Encode(Throw{}).size() < 64);
+}
+
+TEST_CASE("throws, rules and defences of kinds the receiver does not know are refused") {
+  auto bytes = Encode(Throw{.kind = static_cast<ThrowKind>(4)});
+  CHECK_FALSE(Decode(bytes).has_value());
+  bytes = Encode(ThrowEnd{.how = static_cast<ThrowEndKind>(3)});
+  CHECK_FALSE(Decode(bytes).has_value());
+  bytes = Encode(Rules{.flags = 2});
+  CHECK_FALSE(Decode(bytes).has_value());
+  bytes = Encode(Defended{.how = static_cast<DefendKind>(0)});
+  CHECK_FALSE(Decode(bytes).has_value());
+  bytes = Encode(Defended{.how = static_cast<DefendKind>(3)});
+  CHECK_FALSE(Decode(bytes).has_value());
+}

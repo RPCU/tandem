@@ -24,4 +24,24 @@ float StrikeLoss(const proto::NpcStrike &strike, float health, float maxHealth, 
 
 // A guest's NpcHit (the older, health-only message) as a strike.
 proto::NpcStrike FromHit(const proto::NpcHit &hit);
+
+// Guest: how long a host NPC's melee hit on our V waits before our game runs
+// it (block, parry, dodge, armour: the target's side), so it lands when our
+// proxy of that NPC is drawn landing it, not before (docs/architecture/
+// combat-coverage.md, "NPC melee at a guest"). The proxy is drawn
+// `proxyDelayUs` behind the host's clock; the hit was decided on the host
+// and took `transitUs` to arrive. Never negative, never more than
+// kMaxMeleeHoldUs (a late link must not turn a swing into a delayed curse).
+inline constexpr std::uint64_t kMaxMeleeHoldUs = 300'000;
+std::uint64_t MeleeHoldUs(std::uint64_t proxyDelayUs, std::uint64_t transitUs);
+
+// A throw's copy is launched only if the throw is this fresh: one held up
+// behind a stall or a loading screen would fly long after the real one
+// landed (its end, when it comes, finds no copy).
+inline constexpr std::uint64_t kThrowStaleUs = 1'000'000;
+
+// The session's rules (proto::Rules).
+inline bool FriendlyFire(const proto::Rules &rules) {
+  return (rules.flags & proto::kRuleFriendlyFire) != 0;
+}
 } // namespace tandem::combat
