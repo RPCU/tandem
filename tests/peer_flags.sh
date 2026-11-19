@@ -31,7 +31,7 @@ declare -A value=(
   ["--go-down"]=10 ["--go-out"]=10 ["--revive"]=3
   ["--path"]=x.path ["--save-path"]=x.path
   ["--drop"]=0.2 ["--dup"]=0.2 ["--vanish-at"]=20
-  ["--level"]=30 ["--npc-level"]=25 ["--trade-offer"]=--check ["--trade-accept"]=--check
+  ["--level"]=30 ["--npc-level"]=25 ["--lend"]=owner ["--unlock-vehicle"]=Vehicle.x ["--trade-offer"]=--check ["--trade-accept"]=--check
   ["--trade-give"]=Items.CommonMaterial1:2 ["--trade-money"]=100 ["--trade-asks"]=50
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true

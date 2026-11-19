@@ -228,6 +228,10 @@ struct Options {
   // said), and (host) the power level we say our NPCs have (0: none said).
   int level{0};
   float npcLevel{0.f};
+  // Garages (docs/architecture/garage.md): who may drive our cars (-1: not
+  // said), and (host) a vehicle our quest "gives" while the guests take part.
+  int lend{-1};
+  std::string unlockVehicle;
   // Trade (docs/architecture/trade.md): ask the first other player (again
   // every 20 s until one trade is done); accept whoever asks; what we put
   // on the table (RECORD[:N],...), the eddies we give and ask for. We agree
@@ -415,6 +419,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     of the players' levels and tells everyone (logged)\n"
          "  --npc-level L      host: say every NPC we share has power level L: the guest's\n"
          "                     proxies take it\n"
+         "  --lend WHO         who may drive our cars: crew (anyone, the default in game),\n"
+         "                     owner (only with us aboard), never\n"
+         "  --unlock-vehicle REC host: 5 s after a guest is there, our garage \"gets\" REC:\n"
+         "                     each guest is told it earned it with us (VehicleUnlock)\n"
          "  --trade-offer      ask the first other player to trade, every 20 s until one\n"
          "                     trade is done; we agree once they do\n"
          "  --trade-accept     accept whoever asks us to trade; we agree once they do\n"
@@ -594,6 +602,14 @@ Options Parse(int argc, char **argv) {
         Usage("--level is 1 to 100");
     } else if (flag == "--npc-level")
       options.npcLevel = Number<float>(value);
+    else if (flag == "--lend") {
+      constexpr std::string_view names[] = {"crew", "owner", "never"};
+      const auto *named = std::ranges::find(names, value);
+      if (named == std::end(names))
+        Usage("--lend is crew, owner or never");
+      options.lend = static_cast<int>(named - std::begin(names));
+    } else if (flag == "--unlock-vehicle")
+      options.unlockVehicle = std::string(value);
     else if (flag == "--trade-give")
       options.tradeGive = std::string(value);
     else if (flag == "--trade-money")
@@ -1957,6 +1973,11 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
     return std::format("the session's level is {} ({} players)", s->level, s->players);
   if (const auto *n = std::get_if<proto::NpcLevel>(&message))
     return std::format("npc {} is level {:.1f}", n->npc, n->level);
+  if (const auto *l = std::get_if<proto::CarLend>(&message)) {
+    constexpr const char *names[] = {"crew", "owner", "never"};
+    return std::format("player {} lends its cars: {}", l->player,
+                       names[static_cast<std::size_t>(l->lend) % 3]);
+  }
   return proto::NameOf(message);
 }
 
@@ -2173,6 +2194,11 @@ int main(int argc, char **argv) {
   // said when we share it).
   bool levelSent = false;
   std::set<tandem::proto::NpcId> levelledNpcs;
+  // --lend: said once (the endpoint keeps it); --unlock-vehicle: when, and
+  // the guests told.
+  bool lendSent = false;
+  std::optional<std::chrono::steady_clock::time_point> unlockAt;
+  std::set<tandem::proto::PlayerId> unlockedFor;
   // Trade: our seat at the table, when we ask next, the trades done.
   tandem::trade::Seat tradeSeat;
   auto nextTradeAsk = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -3510,6 +3536,29 @@ int main(int argc, char **argv) {
       endpoint->SendCombat(
           tandem::proto::PlayerLevel{.level = static_cast<std::uint8_t>(options.level)});
       Log("our V is level {}", options.level);
+    }
+    // --lend: who may drive our cars.
+    if (options.lend >= 0 && !lendSent) {
+      lendSent = true;
+      endpoint->SendCombat(
+          tandem::proto::CarLend{.lend = static_cast<tandem::proto::Lend>(options.lend)});
+      Log("our cars: lent to {}", options.lend == 0   ? "the crew"
+                                  : options.lend == 1 ? "the crew with us aboard"
+                                                      : "nobody");
+    }
+    // --unlock-vehicle: our "quest" gives a vehicle; each guest earned it.
+    if (!options.unlockVehicle.empty() && options.host && endpoint->IsJoined() &&
+        endpoint->Players().size() > 1) {
+      if (!unlockAt)
+        unlockAt = now + 5s;
+      if (now >= *unlockAt)
+        for (const auto &[id, info] : endpoint->Players())
+          if (id != endpoint->You() && unlockedFor.insert(id).second) {
+            endpoint->SendStory(
+                tandem::proto::VehicleUnlock{.vehicle = TweakDBID(options.unlockVehicle)}, id);
+            Log("vehicle {} unlocked in our garage: player {} earned it with us",
+                options.unlockVehicle, id);
+          }
     }
     // --npc-level: every NPC we share, once.
     if (options.npcLevel > 0.f && options.host && endpoint->IsJoined())
