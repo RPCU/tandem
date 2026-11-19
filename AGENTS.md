@@ -46,10 +46,10 @@ Run what your change can break before saying it works: `task test` for
 `task relay:test` for `relay/`, `task k8s:check` for `deploy/`,
 `task scripts:check` for `scripts/`, `task docs:check` for docs.
 
-`tools/build.sh TASK…` builds where it can (Git, below). `tools/remote.sh
-TASK…` runs a task on the game machine (more cores, its own build lock) and
-copies the DLL, `.pdb` and `tandem-peer` back; then `TANDEM_PREBUILT=1
-tools/scenario.sh …` deploys that DLL as is. Details:
+`tools/build.sh TASK…` builds where there is room (Git, below).
+`tools/remote.sh TASK…` runs a task on the game machine (more cores, its own
+build lock) and copies the DLL, `.pdb` and `tandem-peer` back; then
+`TANDEM_PREBUILT=1 tools/scenario.sh …` deploys that DLL as is. Details:
 `docs/architecture/testing.md`.
 
 ## Rules
