@@ -365,9 +365,26 @@ than trust a button.
 
 ### 14.2.5 Two instances `[inference]`
 
-Each instance gets its own pad with its own product id (`--product`), and
-is launched with `SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT=0x045e/0xPID`
-and Steam Input off, so each reads only its pad. Pads need no focus under
-plain Wine XInput, which makes them the only input that can drive two
-windows at once; whether the game itself ignores a pad while unfocused is
-to be measured (the focus check is `--focus off` then).
+- Each instance under gamescope draws on gamescope's nested Xwayland,
+  whose `DISPLAY` its game inherits. An X server delivers XTEST's input to
+  its own clients only, so it reaches that game and nothing else, focus
+  or not `[documented]` for X; that Wine takes XTEST's keys and relative
+  pointer motion as the game's input is `[inference]` (Wine reads XInput2
+  raw events of the master pointer, to which the XTEST pointer is
+  attached). That display's keymap is gamescope's, which follows the
+  desktop's (fr): the pilot looks keys up by keysym.
+- Whether gamescope's Xwayland asks for authorization is not known: the
+  pilot uses the game's `XAUTHORITY` when set, else none.
+- `internal/xtest`'s handshake (setup, `QueryExtension XTEST`,
+  `GetKeyboardMapping`) was run against a real Xwayland on the development
+  machine (Sway, French layout, 2026-11-19;
+  `TANDEM_PILOT_X11=1 go test -run RealDisplay ./internal/xtest/`, no input
+  sent): XTEST present, and `w` found on keycode 52, the key labelled Z on
+  an AZERTY board, as the layout says `[offline-verified]`.
+- A uinput pad is seen by every program: each instance is started with
+  `SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT=0x045e/0xPID` (SDL inside
+  Proton's winebus reads hints from the environment `[inference]`), each
+  with its own product id among Microsoft's known pads (`02d1 02dd 02ea
+0b12 028f`, Xbox pads in SDL's database `[documented]`; that SDL maps
+  our 360-shaped device under those ids the same way is `[inference]`).
+  Steam's client still sees the pad.

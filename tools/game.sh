@@ -43,8 +43,11 @@
 #                              from before the game starts) | stop | status |
 #                              pad [SECONDS] | build
 #                              (ROUTINE: a name in tools/pilot/routines or a
-#                              file; PILOT_INSTANCE, PILOT_FLAGS). Only on a
-#                              game this script started.
+#                              file; PILOT_FLAGS). Only on a game this script
+#                              started, or with PILOT_INSTANCE=NAME on
+#                              instance NAME of tools/instance.sh (its game
+#                              folder, keys on its own gamescope display;
+#                              cmd, log and fetch-play go to it too)
 #   tools/game.sh cmd TEXT     a command for tandem in the running game:
 #                              respawn | inspect | bodies | probe | probe stop | despawn |
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
@@ -71,6 +74,12 @@ set -euo pipefail
 
 host=${GAME_HOST:-anya}
 dir=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
+# PILOT_INSTANCE=NAME: an instance of tools/instance.sh instead of the Steam
+# game (docs/architecture/autopilot.md, "Two real games").
+instance=${PILOT_INSTANCE:-main}
+if [ "$instance" != main ] && [ -z "${GAME_DIR:-}" ]; then
+  dir=$(tools/instance.sh dir "$instance") || exit 1
+fi
 shots=.cache/shots
 
 remote() { ssh "$host" "$@"; }
@@ -99,7 +108,6 @@ wait_log() {
 # writes that game's pid and start time to the pilot's cache folder on the
 # game machine (never in the game's folder), stop removes it, and the pilot
 # refuses a running game that is not the one written there (the player's).
-instance=${PILOT_INSTANCE:-main}
 pilot_dir=.cache/tandem/pilot/$instance # on the game machine, under $HOME
 pilot_bin=build/linux/pilot/tandem-pilot
 
@@ -355,6 +363,10 @@ pilot_start() {
 # The pilot of this instance, if one runs: asked to stop (it releases the
 # pad), then killed.
 pilot_stop() {
+  # An instance's keys: let go of anything a pilot killed outright held.
+  if [ "$instance" != main ] && [ -x "$pilot_bin" ]; then
+    remote "$session_env; cd $pilot_dir 2>/dev/null && ./tandem-pilot release --instance '$instance' --game-dir '$dir' ${PILOT_FLAGS:-}" || true
+  fi
   remote "p=\$(cat $pilot_dir/lock 2>/dev/null); [ -n \"\$p\" ] && [ \"\$(cat /proc/\$p/comm 2>/dev/null)\" = tandem-pilot ] || { echo 'no pilot runs'; exit 0; }; \
     kill \$p; for i in \$(seq 1 30); do [ -e /proc/\$p ] || { echo 'pilot stopped'; exit 0; }; sleep 0.1; done; kill -KILL \$p; echo 'pilot killed'"
 }

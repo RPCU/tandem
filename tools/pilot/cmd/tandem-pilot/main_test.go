@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Banh-Canh/tandem/tools/pilot/internal/guard"
 	"github.com/Banh-Canh/tandem/tools/pilot/internal/link"
 	"github.com/Banh-Canh/tandem/tools/pilot/internal/pad"
 	"github.com/Banh-Canh/tandem/tools/pilot/internal/sim"
@@ -214,3 +215,47 @@ func TestPlayFailsWhenASaveIsWritten(t *testing.T) {
 		t.Errorf("a save written during the run: %d %v\n%s", code, err, out.String())
 	}
 }
+
+// A game folder of tools/instance.sh is driven as that instance: its name,
+// pad and saves, keys on its own display, never on the desktop's.
+func TestInstanceFlags(t *testing.T) {
+	inst := filepath.Join(t.TempDir(), "b")
+	if err := os.MkdirAll(filepath.Join(inst, "game"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(inst, ".tandem-instance"), []byte("name = b\npad = 0x02d1\n"), 0o644)
+	f, _, err := parseFlags([]string{"--game-dir", filepath.Join(inst, "game")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.instance != "b" || f.padKind != "keys" || f.focus != "display" || !strings.HasPrefix(f.saves, filepath.Join(inst, "compatdata")) {
+		t.Fatalf("%+v", f)
+	}
+	if id, err := f.identity(); err != nil || id.Product != 0x02d1 {
+		t.Fatalf("pad %v %v", id, err)
+	}
+	// The Steam install keeps the pad and the sway focus.
+	g, _, err := parseFlags([]string{"--game-dir", "/data/Steam/steamapps/common/Cyberpunk 2077"})
+	if err != nil || g.padKind != "uinput" || g.focus != "require" || g.instance != "main" {
+		t.Fatalf("%+v %v", g, err)
+	}
+
+	// The game's display must be its own.
+	proc := filepath.Join(t.TempDir(), "proc")
+	_ = os.MkdirAll(filepath.Join(proc, "7"), 0o755)
+	_ = os.WriteFile(filepath.Join(proc, "7", "environ"), []byte("DISPLAY=:0\x00"), 0o644)
+	f.proc = proc
+	t.Setenv("DISPLAY", ":0")
+	if _, err := f.gameDisplay(guardProcess(7)); err == nil || !strings.Contains(err.Error(), "desktop") {
+		t.Fatalf("the desktop's display: %v", err)
+	}
+	t.Setenv("DISPLAY", ":1")
+	if d, err := f.gameDisplay(guardProcess(7)); err != nil || d != ":0" {
+		t.Fatalf("its own display: %q %v", d, err)
+	}
+	if _, _, err := parseFlags([]string{"--keys", "lb=nothing"}); err == nil {
+		t.Fatal("a bad keymap must be refused")
+	}
+}
+
+func guardProcess(pid int) guard.Process { return guard.Process{PID: pid} }

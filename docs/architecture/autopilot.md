@@ -114,8 +114,9 @@ tandem-pilot dry ROUTINE...       play on the built-in simulator, printing every
                                   pad event and command it would send
 tandem-pilot run [FLAGS] ROUTINE  play on the running game
 tandem-pilot serve [FLAGS]        hold the pad between routines: "run" hands them over
-tandem-pilot owner | state | pad [SECONDS]
-  --pad uinput|none|dry   --focus require|off   --instance NAME   --product 0x028e
+tandem-pilot owner | state | pad [SECONDS] | release
+  --pad auto|uinput|keys|none|dry   --focus auto|require|display|off
+  --instance NAME   --product 0x028e   --keys BUTTON=KEY,...   --look PX/S   --display :N
 ```
 
 By default each `run` makes its pad and removes it. `serve`
@@ -245,15 +246,46 @@ fight`.
 
 ## Two real games
 
-Planned, not built: each instance has its own pilot, and nothing in the
-pilot is global. `PILOT_INSTANCE` names the instance: its own cache folder
-(lock, owner file), its own game folder (`--game-dir`: state, commands and
-log are that game's), its own pad with its own USB product id
-(`--product`), and the game process is matched by its folder. What is
-left for the day two instances run: `tools/game.sh` drives one game
-(`GAME_DIR`, one `pgrep`), each instance must be told to read only its pad
-(`SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT`), and only one window has the
-focus (research §14.2.5).
+Built, untried on the game machine: each instance of `tools/instance.sh`
+([`two-instances.md`](two-instances.md)) has its own pilot, and nothing in
+the pilot is global. `PILOT_INSTANCE=NAME tools/game.sh pilot …` drives
+instance NAME: `tools/game.sh` takes its game folder from
+`tools/instance.sh dir NAME` (so `cmd`, `log` and `fetch-play` go to it
+too), and `tandem-pilot` knows an instance by its folder
+(`--game-dir INSTANCES/NAME/game`, beside `.tandem-instance`):
+
+- **Ours** when the game process runs from that folder and carries
+  `TANDEM_INSTANCE_ID=INSTANCES/NAME` in its environment (instance.sh's
+  mark), checked every second; no owner file.
+- **Its own cache folder** (lock, spool), **its own state and commands**
+  (the plugin writes `pilot.state` next to its command file, `TANDEM_CMD`
+  or the instance's own `tandem.cmd`), **its own saves**
+  (`INSTANCES/NAME/compatdata/…/Saved Games`, compared before and after).
+- **Input on its own display** (`--pad keys`, the default for an
+  instance): gamescope gives each instance a nested Xwayland
+  (`DISPLAY=:N`, read from the game's environment) with that game alone
+  in it. The pilot speaks X11 to it (`internal/xtest`: XTEST's FakeInput,
+  standard library only) and plays the pad on a keyboard and a mouse
+  (`pad.KeyDevice`): the left stick is W A S D, the right stick moves the
+  pointer for as long as it is held, the triggers are the mouse buttons,
+  the buttons are keys (`--keys` changes any; LB and RB have none by
+  default). Keys are found by letter in that display's own keymap, so the
+  AZERTY layout does not matter. Nothing sent there reaches the desktop,
+  Steam's Big Picture or another instance, whatever has the focus; the
+  pilot refuses a game drawn on the desktop's own display
+  (`INSTANCE_DISPLAY=window`). It cannot steer by the triggers' travel:
+  drive with `act autodrive`. `tandem-pilot release` (run by
+  `pilot stop`) lets go of every key there, for a pilot killed outright.
+- **Or its own pad** (`--pad uinput`): instance.sh gives each instance a
+  USB product id of its own (`pad = 0x02d1` in `.tandem-instance`, the
+  first free of `02d1 02dd 02ea 0b12 028f`, or `INSTANCE_PAD`) and starts
+  the game with `SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT=0x045e/0xPID`;
+  the pilot makes that pad only when its game has the hint and every other
+  running game leaves the pad out. A pad is still seen by Steam's client:
+  keys are the safer choice (research §14.2.5).
+
+Two games at once: `PILOT_INSTANCE=a tools/game.sh pilot run street &`
+then `PILOT_INSTANCE=b tools/game.sh pilot run fight`.
 
 ## First-run checklist
 
@@ -389,7 +421,25 @@ teleport there); with the game as a guest of the replay host, `fight`,
 `call`. Then `PILOT=1 tools/scenario.sh pilot-street pilot-fight
 pilot-takedown`, and `tools/game.sh pilot session city street`.
 
-**12. After** — every run's last lines carry no `SAVE`; `tools/game.sh
+**12. Instances** (once the checklist of `two-instances.md` has two
+instances running in gamescope):
+
+- `PILOT_INSTANCE=a tools/game.sh pilot status` → `instance a's, on
+display :N`; the desktop's display → the instance is not in gamescope.
+- `PILOT_INSTANCE=a PILOT_FLAGS='--pad none' tools/game.sh pilot run
+state`, then `calibrate`: V steps, the view turns. `refused the
+connection` → the display's authorization (`XAUTHORITY` in the game's
+  environment); `no key types keysym` → that display's keymap lacks the
+  letter (`--keys`); `the left stick did not move V` → the game ignores
+  XTEST's keys, or its pointer (raw input from the XTEST device): write
+  down which.
+- During a walk, Steam's Big Picture and the other instance must not
+  react. Then the same with `b`, and both at once.
+- Kill a walking pilot (`ssh anya pkill -KILL tandem-pilot`), then
+  `PILOT_INSTANCE=a tools/game.sh pilot stop`: V stops (`release` let go
+  of the keys).
+
+**13. After** — every run's last lines carry no `SAVE`; `tools/game.sh
 stop`; `tools/game.sh role player`; compare the save folder with the copy
 of step 0 once.
 
@@ -409,5 +459,10 @@ of step 0 once.
   watches the stream.
 - **Waypoints are relative to the test field** and unmeasured: `survey`
   first.
+- **Keys on an instance's display** are untried: whether Wine takes
+  XTEST's relative pointer motion as mouse look, and the default key
+  bindings (`pad.DefaultKeymap`, from memory), are measured in step 12. A
+  pilot killed outright leaves its keys down on that display until
+  `pilot stop` (XTEST does not release them when the client goes).
 - **The simulator proves the interpreter, not the game.** A routine that
   passes there can fail on the first real step.

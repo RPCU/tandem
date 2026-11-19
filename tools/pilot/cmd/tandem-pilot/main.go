@@ -23,6 +23,7 @@ import (
 	"github.com/Banh-Canh/tandem/tools/pilot/internal/routine"
 	"github.com/Banh-Canh/tandem/tools/pilot/internal/sim"
 	"github.com/Banh-Canh/tandem/tools/pilot/internal/spool"
+	"github.com/Banh-Canh/tandem/tools/pilot/internal/xtest"
 )
 
 const usage = `tandem-pilot: play the game's V for a test
@@ -42,6 +43,14 @@ const usage = `tandem-pilot: play the game's V for a test
   tandem-pilot state [FLAGS]           print the plugin's pilot state
   tandem-pilot pad [FLAGS] [SECONDS]   create the virtual pad and hold it at
                                        rest (10 s): to see who picks it up
+  tandem-pilot release [FLAGS]         let go of every key and mouse button on
+                                       the instance's display (after a pilot
+                                       was killed outright)
+
+A game folder that is an instance of tools/instance.sh (INSTANCES/NAME/game)
+is driven as that instance: ours when its process carries the instance's
+mark, its own save folder, and by default keyboard and mouse sent to its
+own gamescope display (DISPLAY=:N), which reach that game and nothing else.
 
 Flags of run, serve, owner, state, pad:
 `
@@ -58,6 +67,11 @@ type flags struct {
 	product    string
 	idle       float64
 	proc       string
+	keys       string
+	look       float64
+	display    string
+	keymap     pad.Keymap
+	inst       *guard.Instance
 }
 
 func parseFlags(args []string) (*flags, []string, error) {
@@ -68,8 +82,11 @@ func parseFlags(args []string) (*flags, []string, error) {
 	set.StringVar(&f.instance, "instance", "main", "the game instance this pilot drives (its own lock, owner file and pad)")
 	set.StringVar(&f.cache, "cache", filepath.Join(home, ".cache", "tandem", "pilot"), "where the lock and owner files live")
 	set.StringVar(&f.uinput, "uinput", "/dev/uinput", "the uinput device")
-	set.StringVar(&f.padKind, "pad", "uinput", "uinput: a virtual pad; none: script-level actions only; dry: log the events")
-	set.StringVar(&f.focus, "focus", "require", "require: the game's window must have the focus (it is asked for once); off: not checked")
+	set.StringVar(&f.padKind, "pad", "auto", "uinput: a virtual pad; keys: keyboard and mouse on the game's own X display (an instance under gamescope); none: script-level actions only; dry: log the events; auto: keys for an instance, else uinput")
+	set.StringVar(&f.focus, "focus", "auto", "require: the game's window must have the focus under sway (it is asked for once); display: the game has an X display of its own (gamescope); off: not checked; auto: display for an instance, else require")
+	set.StringVar(&f.keys, "keys", "", "keys: bindings over the defaults, BUTTON=KEY,... (a b x y lb rb l3 r3 up down left right lt rt; KEY a letter, digit, space, shift, ctrl, alt, tab, an arrow, mouse1..5 or none)")
+	set.Float64Var(&f.look, "look", 1500, "keys: the pointer's speed at full right stick, in pixels a second")
+	set.StringVar(&f.display, "display", "", "keys: the X display to send to (default: the game's own DISPLAY)")
 	set.StringVar(&f.focusClass, "focus-class", "steam_app_1091500", "the game window's X11 class")
 	set.StringVar(&f.saves, "saves", "", "the save folder to watch (default: the game's Proton prefix)")
 	set.StringVar(&f.product, "product", "", "the pad's USB product id (default 0x028e; another per instance)")
@@ -82,14 +99,49 @@ func parseFlags(args []string) (*flags, []string, error) {
 	if err := set.Parse(args); err != nil {
 		return nil, nil, err
 	}
+	inst, err := guard.FindInstance(f.gameDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	f.inst = inst
+	if inst != nil {
+		// The instance's own cache folder, pad and saves.
+		if f.instance == "main" {
+			f.instance = inst.Name
+		}
+		if f.product == "" && inst.Pad != 0 {
+			f.product = fmt.Sprintf("%#04x", inst.Pad)
+		}
+	}
 	if f.saves == "" {
-		f.saves = guard.DefaultSaves(f.gameDir)
+		if inst != nil {
+			f.saves = inst.Saves()
+		} else {
+			f.saves = guard.DefaultSaves(f.gameDir)
+		}
 	}
-	if f.focus != "require" && f.focus != "off" {
-		return nil, nil, errors.New("--focus require|off")
+	switch f.focus {
+	case "auto":
+		f.focus = "require"
+		if inst != nil {
+			f.focus = "display"
+		}
+	case "require", "display", "off":
+	default:
+		return nil, nil, errors.New("--focus require|display|off|auto")
 	}
-	if f.padKind != "uinput" && f.padKind != "none" && f.padKind != "dry" {
-		return nil, nil, errors.New("--pad uinput|none|dry")
+	switch f.padKind {
+	case "auto":
+		f.padKind = "uinput"
+		if inst != nil {
+			f.padKind = "keys"
+		}
+	case "uinput", "keys", "none", "dry":
+	default:
+		return nil, nil, errors.New("--pad uinput|keys|none|dry|auto")
+	}
+	if f.keymap, err = pad.ParseKeymap(f.keys); err != nil {
+		return nil, nil, err
 	}
 	return f, set.Args(), nil
 }
@@ -109,18 +161,74 @@ func (f *flags) identity() (pad.Identity, error) {
 	return id, nil
 }
 
-// device makes the pad this run asked for.
-func (f *flags) device(out io.Writer) (pad.Device, error) {
+// checkGame finds the running game and says whether we may drive it: an
+// instance's when it carries the instance's mark, else the one
+// tools/game.sh start wrote in the owner file.
+func (f *flags) checkGame() (guard.Process, error) {
+	if f.inst != nil {
+		return guard.CheckInstance(f.proc, f.inst)
+	}
+	return guard.CheckOwner(f.proc, f.gameDir, f.ownerFile())
+}
+
+// gameDisplay is the X display keys go to: --display, else the game's own,
+// which must not be the desktop's (there they would reach whatever has the
+// focus).
+func (f *flags) gameDisplay(game guard.Process) (string, error) {
+	if f.display != "" {
+		return f.display, nil
+	}
+	display := guard.GameDisplay(f.proc, game.PID)
+	if display == "" {
+		return "", fmt.Errorf("the game (pid %d) has no DISPLAY", game.PID)
+	}
+	if desktop := os.Getenv("DISPLAY"); desktop != "" && display == desktop {
+		return "", fmt.Errorf("the game draws on the desktop's display %s, not one of its own: keys would reach whatever has the focus there (start the instance in gamescope: INSTANCE_DISPLAY=gamescope)", display)
+	}
+	return display, nil
+}
+
+// connect opens the game's X display for keys.
+func (f *flags) connect(game guard.Process) (*xtest.Conn, string, error) {
+	text, err := f.gameDisplay(game)
+	if err != nil {
+		return nil, "", err
+	}
+	display, err := xtest.ParseDisplay(text)
+	if err != nil {
+		return nil, "", err
+	}
+	conn, err := xtest.Dial(display, guard.Environ(f.proc, game.PID)["XAUTHORITY"])
+	if err != nil {
+		return nil, "", err
+	}
+	return conn, text, nil
+}
+
+// device makes the pad this run asked for; game is the running game (keys
+// need its display), nil before it runs (serve).
+func (f *flags) device(out io.Writer, game *guard.Process) (pad.Device, error) {
 	switch f.padKind {
 	case "none":
 		return noPad{}, nil
 	case "dry":
 		return pad.NewDry(out), nil
+	case "keys":
+		if game == nil {
+			return nil, errors.New("--pad keys needs the game running (serve is for a pad the game must see at launch)")
+		}
+		conn, display, err := f.connect(*game)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Fprintf(out, "pilot: keyboard and mouse on display %s (%s)\n", display, f.keymap)
+		return pad.NewKeyDevice(conn, f.keymap, f.look, 10*time.Millisecond), nil
 	}
 	id, err := f.identity()
 	if err != nil {
 		return nil, err
 	}
+
 	device, err := pad.OpenUinput(f.uinput, id)
 	if err != nil {
 		return nil, err
@@ -186,6 +294,8 @@ func main() {
 		code, err = showState(os.Args[2:])
 	case "pad":
 		code, err = holdPad(os.Args[2:])
+	case "release":
+		code, err = release(os.Args[2:])
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
@@ -253,9 +363,13 @@ func owner(args []string) (int, error) {
 	if err != nil {
 		return 2, err
 	}
-	game, err := guard.CheckOwner(f.proc, f.gameDir, f.ownerFile())
+	game, err := f.checkGame()
 	if err != nil {
 		return 1, err
+	}
+	if f.inst != nil {
+		fmt.Printf("the running game (pid %d) is instance %s's, on display %s\n", game.PID, f.inst.Name, guard.GameDisplay(f.proc, game.PID))
+		return 0, nil
 	}
 	fmt.Printf("the running game (pid %d) was started by our tools\n", game.PID)
 	return 0, nil
@@ -344,7 +458,7 @@ func play(f *flags, path string, shared *pad.Guarded, out io.Writer, stop <-chan
 	if err != nil {
 		return 2, err
 	}
-	process, err := guard.CheckOwner(f.proc, f.gameDir, f.ownerFile())
+	process, err := f.checkGame()
 	if err != nil {
 		return 1, err
 	}
@@ -355,10 +469,29 @@ func play(f *flags, path string, shared *pad.Guarded, out io.Writer, stop <-chan
 	game.ClearState()
 
 	var focus *guard.Focus
-	if f.focus == "require" {
+	switch f.focus {
+	case "require":
 		focus = guard.NewFocus(f.focusClass)
 		if err := focus.Take(); err != nil {
 			return 1, fmt.Errorf("the game's window: %w", err)
+		}
+	case "display":
+		// Its own display (gamescope): the game has that display's focus,
+		// and nothing sent there reaches the desktop.
+		if _, err := f.gameDisplay(process); err != nil {
+			return 1, err
+		}
+	}
+	if f.inst != nil && f.padKind == "uinput" {
+		// A uinput pad is seen by every game on the machine: only when this
+		// instance alone reads it (instance.sh starts it with the pad's SDL
+		// hint, and every other game must leave that pad out).
+		id, err := f.identity()
+		if err != nil {
+			return 2, err
+		}
+		if err := guard.PadReachesOnly(f.proc, process, id.Vendor, id.Product); err != nil {
+			return 1, err
 		}
 	}
 	saves, savesErr := guard.SnapshotSaves(f.saves)
@@ -368,7 +501,7 @@ func play(f *flags, path string, shared *pad.Guarded, out io.Writer, stop <-chan
 
 	guarded := shared
 	if guarded == nil {
-		device, err := f.device(out)
+		device, err := f.device(out, &process)
 		if err != nil {
 			return 1, err
 		}
@@ -400,7 +533,7 @@ func play(f *flags, path string, shared *pad.Guarded, out io.Writer, stop <-chan
 		Stop: stop,
 		Guard: func() error {
 			// Still the game we were allowed to drive, and still in front.
-			if _, err := guard.CheckOwner(f.proc, f.gameDir, f.ownerFile()); err != nil {
+			if _, err := f.checkGame(); err != nil {
 				return err
 			}
 			if focus != nil {
@@ -476,7 +609,7 @@ func serve(args []string) (int, error) {
 	}
 	defer lock.Close()
 	logf := logTo(os.Stdout)
-	device, err := f.device(os.Stdout)
+	device, err := f.device(os.Stdout, nil)
 	if err != nil {
 		return 1, err
 	}
@@ -543,4 +676,40 @@ func serve(args []string) (int, error) {
 		logf("routine %s: exit %d", path, code)
 		last = time.Now()
 	}
+}
+
+// release lets go of every key the keymap and the moves use, and every
+// mouse button, on the game's display: what a pilot killed outright (no
+// time to release) may have left down there.
+func release(args []string) (int, error) {
+	f, _, err := parseFlags(args)
+	if err != nil {
+		return 2, err
+	}
+	game, err := f.checkGame()
+	if err != nil {
+		return 1, err
+	}
+	conn, display, err := f.connect(game)
+	if err != nil {
+		return 1, err
+	}
+	defer conn.Close()
+	syms := []uint32{'w', 'a', 's', 'd'}
+	for _, b := range f.keymap.Buttons {
+		syms = append(syms, b.Keysym)
+	}
+	for _, t := range f.keymap.Triggers {
+		syms = append(syms, t.Keysym)
+	}
+	for _, sym := range syms {
+		if _, ok := conn.Keycode(sym); sym != 0 && ok {
+			_ = conn.Key(sym, false)
+		}
+	}
+	for b := byte(1); b <= 5; b++ {
+		_ = conn.Button(b, false)
+	}
+	fmt.Printf("pilot: every key and button let go on display %s\n", display)
+	return 0, nil
 }

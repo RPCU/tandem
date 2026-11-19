@@ -72,6 +72,13 @@
 #   INSTANCE_PORT         27450 (role)
 #   INSTANCE_GAME_ARGS    arguments for Cyberpunk2077.exe (none)
 #   INSTANCE_ENV          more VAR=VALUE for the game, space separated
+#   INSTANCE_PAD          the USB product id of the one pad the game reads
+#                         (Microsoft's vendor 045e; default: the first of
+#                         02d1 02dd 02ea 0b12 028f no other instance has).
+#                         The test pilot's pad for this instance
+#                         (docs/architecture/autopilot.md); the player's own
+#                         pads, Sunshine's and the main game's pilot pad
+#                         (028e) never reach it
 set -euo pipefail
 
 dry=0
@@ -103,7 +110,7 @@ if [ "$host" != local ]; then
   for variable in GAME_DIR TANDEM_INSTANCES USER_COMPATDATA STEAM_ROOT PROTON_DIR INSTANCE_MIRROR \
     INSTANCE_PREFIX INSTANCE_LAUNCHER INSTANCE_RUNTIME INSTANCE_FHS INSTANCE_DISPLAY INSTANCE_SIZE INSTANCE_FPS \
     INSTANCE_SANDBOX INSTANCE_HIDE_STEAM INSTANCE_SCOPE INSTANCE_MEMORY_MAX INSTANCE_MIN_FREE_MB \
-    INSTANCE_PORT INSTANCE_GAME_ARGS INSTANCE_ENV INSTANCE_ALLOW_FOREIGN; do
+    INSTANCE_PORT INSTANCE_GAME_ARGS INSTANCE_ENV INSTANCE_PAD INSTANCE_ALLOW_FOREIGN; do
     [ -z "${!variable+set}" ] || forward+=("$variable=${!variable}")
   done
   options=()
@@ -338,6 +345,40 @@ role_file() {
   note "role: $role"
 }
 
+# --- the instance's pad --------------------------------------------------------
+
+# The one pad this instance's game reads: kept in .tandem-instance ("pad =
+# 0x02d1"), chosen once, so the test pilot (which reads it there) makes
+# that pad and no other game takes it.
+pad_of() {
+  local pad other used=''
+  pad=$(sed -n 's/^pad = //p' "$inst/.tandem-instance" | head -1)
+  if [ -n "${INSTANCE_PAD:-}" ]; then
+    pad=$(printf '0x%04x' "$((INSTANCE_PAD))")
+  fi
+  if [ -z "$pad" ]; then
+    for other in "$root"/*/.tandem-instance; do
+      [ -f "$other" ] && [ "$other" != "$inst/.tandem-instance" ] || continue
+      used+=" $(sed -n 's/^pad = //p' "$other" | head -1)"
+    done
+    for pad in 0x02d1 0x02dd 0x02ea 0x0b12 0x028f none; do
+      [[ " $used " == *" $pad "* ]] || break
+    done
+    [ "$pad" != none ] || die "every pad id is taken by another instance: set INSTANCE_PAD"
+  fi
+  [[ $pad =~ ^0x[0-9a-f]{4}$ ]] && [ "$pad" != 0x028e ] || die "pad $pad: four hex digits, not 0x028e (the main game's)"
+  if ! grep -qx "pad = $pad" "$inst/.tandem-instance"; then
+    # (Its dry-run lines go to stderr: stdout is the answer.)
+    {
+      sed '/^pad = /d' "$inst/.tandem-instance"
+      echo "pad = $pad"
+    } | write "$inst/.tandem-instance.new" >&2
+    inside "$inst/.tandem-instance"
+    run mv -- "$inst/.tandem-instance.new" "$inst/.tandem-instance" >&2
+  fi
+  echo "$pad"
+}
+
 # --- start -------------------------------------------------------------------
 
 # The Proton the player's game runs with: its prefix names the files it
@@ -408,6 +449,10 @@ start() {
     "VKD3D_FRAME_RATE=$fps"
     "VKD3D_SHADER_CACHE_PATH=$inst/run"
   )
+  # One pad only: the instance's (SDL inside Proton's winebus reads the hint).
+  local pad
+  pad=$(pad_of)
+  environment+=("SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT=0x045e/$pad")
   local extra
   for extra in ${INSTANCE_ENV:-}; do environment+=("$extra"); done
   # No Steam identity: nothing the game could report to the client.
@@ -567,7 +612,7 @@ status() {
   for dir in "$root"/*/; do
     [ -f "$dir.tandem-instance" ] || continue
     instance "$(basename "$dir")"
-    echo "  $name: $([ -n "$(pids)" ] && echo "running ($(pids | wc -l) processes)" || echo stopped), role $(sed -n 's/^role *= *//p' "$inst/game/red4ext/plugins/tandem/tandem.ini" 2>/dev/null || true)"
+    echo "  $name: $([ -n "$(pids)" ] && echo "running ($(pids | wc -l) processes)" || echo stopped), role $(sed -n 's/^role *= *//p' "$inst/game/red4ext/plugins/tandem/tandem.ini" 2>/dev/null || true), pad $(sed -n 's/^pad = //p' "$inst/.tandem-instance" | head -1)"
   done
 }
 
