@@ -224,6 +224,19 @@ struct Options {
   // pick up the others' world items this long after they appear (-1: never);
   // host of a replay: dead NPCs' bodies go after this long (-1: never).
   std::string dropItem;
+  // Progression (docs/architecture/progression.md): our V's level (0: none
+  // said), and (host) the power level we say our NPCs have (0: none said).
+  int level{0};
+  float npcLevel{0.f};
+  // Trade (docs/architecture/trade.md): ask the first other player (again
+  // every 20 s until one trade is done); accept whoever asks; what we put
+  // on the table (RECORD[:N],...), the eddies we give and ask for. We agree
+  // once the other side does.
+  bool tradeOffer{false};
+  bool tradeAccept{false};
+  std::string tradeGive;
+  int tradeMoney{0};
+  int tradeAsks{0};
   std::string lootQuest; // "our V" loots one of this record (a quest item), once
   int takeItemsSeconds{-1};
   int removeCorpsesSeconds{-1};
@@ -398,6 +411,16 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --reorder PERCENT  PERCENT of the datagrams held back behind later ones\n"
          "  --loot-quest REC   5 s after another player is there, \"our V\" loots one REC (a\n"
          "                     quest item): every other player gets it too\n"
+         "  --level N          our V's level (1-100): the host scales its NPCs to the mean\n"
+         "                     of the players' levels and tells everyone (logged)\n"
+         "  --npc-level L      host: say every NPC we share has power level L: the guest's\n"
+         "                     proxies take it\n"
+         "  --trade-offer      ask the first other player to trade, every 20 s until one\n"
+         "                     trade is done; we agree once they do\n"
+         "  --trade-accept     accept whoever asks us to trade; we agree once they do\n"
+         "  --trade-give LIST  what we put on the table: RECORD[:N],... (Items.CommonMaterial1:2)\n"
+         "  --trade-money N    the eddies we give\n"
+         "  --trade-asks N     the eddies we ask for in return (a sale)\n"
          "  --drop-item RECORD drop one RECORD (Items.FirstAidWhiffV0...) as a shared world\n"
          "                     item in front of the other player, 5 s after they are there\n"
          "  --take-items N     pick up every world item the others drop, N seconds after it\n"
@@ -496,6 +519,14 @@ Options Parse(int argc, char **argv) {
       options.scene = true;
       continue;
     }
+    if (flag == "--trade-offer") {
+      options.tradeOffer = true;
+      continue;
+    }
+    if (flag == "--trade-accept") {
+      options.tradeAccept = true;
+      continue;
+    }
     if (flag == "--ride-along") {
       options.rideAlong = true;
       continue;
@@ -557,6 +588,18 @@ Options Parse(int argc, char **argv) {
       options.sandevistanForSeconds = Number<int>(value);
     else if (flag == "--sandevistan-scale")
       options.sandevistanScale = Number<float>(value);
+    else if (flag == "--level") {
+      options.level = Number<int>(value);
+      if (options.level < 1 || options.level > tandem::proto::kMaxLevel)
+        Usage("--level is 1 to 100");
+    } else if (flag == "--npc-level")
+      options.npcLevel = Number<float>(value);
+    else if (flag == "--trade-give")
+      options.tradeGive = std::string(value);
+    else if (flag == "--trade-money")
+      options.tradeMoney = Number<int>(value);
+    else if (flag == "--trade-asks")
+      options.tradeAsks = Number<int>(value);
     else if (flag == "--drop-item")
       options.dropItem = std::string(value);
     else if (flag == "--loot-quest")
@@ -1910,6 +1953,10 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
   if (const auto *a = std::get_if<proto::AreaHit>(&message))
     return std::format("player {}'s area effect hits us: {:.0f} physical, {:.0f} thermal (type {})",
                        a->from, a->physical, a->thermal, a->attackType);
+  if (const auto *s = std::get_if<proto::SessionLevel>(&message))
+    return std::format("the session's level is {} ({} players)", s->level, s->players);
+  if (const auto *n = std::get_if<proto::NpcLevel>(&message))
+    return std::format("npc {} is level {:.1f}", n->npc, n->level);
   return proto::NameOf(message);
 }
 
@@ -2122,6 +2169,42 @@ int main(int argc, char **argv) {
   std::map<tandem::proto::NpcId, float> npcHealth; // host: replayed NPCs hit by guests
   std::map<tandem::proto::NpcId, float> npcPoise;  // ...and their poise
   bool difficultySent = false;
+  // --level, --npc-level: said once (the endpoint keeps ours; an NPC's is
+  // said when we share it).
+  bool levelSent = false;
+  std::set<tandem::proto::NpcId> levelledNpcs;
+  // Trade: our seat at the table, when we ask next, the trades done.
+  tandem::trade::Seat tradeSeat;
+  auto nextTradeAsk = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  int tradesDone = 0;
+  const auto tradeSend = [&](const std::vector<tandem::proto::Message> &messages) {
+    for (const auto &message : messages)
+      endpoint->SendTrade(message);
+  };
+  // What --trade-give, --trade-money and --trade-asks put on the table.
+  const auto tradePut = [&] {
+    std::vector<tandem::proto::TradeItem> items;
+    std::string_view rest = options.tradeGive;
+    while (!rest.empty()) {
+      const auto comma = rest.find(',');
+      auto one = rest.substr(0, comma);
+      rest = comma == std::string_view::npos ? std::string_view{} : rest.substr(comma + 1);
+      std::uint32_t quantity = 1;
+      if (const auto colon = one.rfind(':'); colon != std::string_view::npos) {
+        quantity = Number<std::uint32_t>(one.substr(colon + 1));
+        one = one.substr(0, colon);
+      }
+      if (!one.empty() && quantity > 0)
+        items.push_back({.item = {.record = TweakDBID(std::string(one)), .quantity = quantity}});
+    }
+    if (items.empty() && options.tradeMoney == 0 && options.tradeAsks == 0)
+      return;
+    const auto count = items.size();
+    tradeSend(tradeSeat.Offer(std::move(items), static_cast<std::uint32_t>(options.tradeMoney),
+                              static_cast<std::uint32_t>(options.tradeAsks)));
+    Log("trade: our side: {} stacks, {} eddies, asks {}", count, options.tradeMoney,
+        options.tradeAsks);
+  };
   auto nextAreaHit =
       std::chrono::steady_clock::now() + std::chrono::seconds(options.areaHitSeconds);
   std::set<tandem::proto::NpcId> deadNpcs;
@@ -2712,6 +2795,58 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::PauseChanged>) {
               Log("player {} {} (pause menu)", e.pause.player,
                   e.pause.paused ? "paused" : "resumed");
+            } else if constexpr (std::is_same_v<E, tandem::events::Trade>) {
+              using Kind = tandem::trade::Seat::Event::Kind;
+              tradeSeat.SetYou(endpoint->You());
+              auto heard = tradeSeat.On(e.message, tandem::net::NowUs());
+              tradeSend(heard.send);
+              for (const auto &event : heard.events) {
+                switch (event.kind) {
+                case Kind::Asked:
+                  Log("trade: player {} asks us to trade", event.with);
+                  if (options.tradeAccept) {
+                    tradeSend(tradeSeat.Answer(true, tandem::net::NowUs()));
+                    Log("trade: accepted: table open with player {}", event.with);
+                    tradePut();
+                  } else {
+                    tradeSend(tradeSeat.Answer(false, tandem::net::NowUs()));
+                    Log("trade: declined (--trade-accept to accept)");
+                  }
+                  break;
+                case Kind::Opened:
+                  Log("trade: table open with player {}", event.with);
+                  tradePut();
+                  break;
+                case Kind::Offer:
+                  Log("trade: their side: {} stacks, {} eddies, asks {}",
+                      tradeSeat.Theirs().items.size(), tradeSeat.Theirs().money,
+                      tradeSeat.Theirs().asks);
+                  break;
+                case Kind::Confirmed:
+                  // They agree: so do we.
+                  Log("trade: player {} agrees: so do we", event.with);
+                  tradeSend(tradeSeat.Confirm());
+                  break;
+                case Kind::Withdrawn:
+                  Log("trade: player {} no longer agrees", event.with);
+                  break;
+                case Kind::Unconfirmed:
+                  Log("trade: our agreement did not count (reason {})",
+                      static_cast<int>(event.reason));
+                  break;
+                case Kind::Closed:
+                  Log("trade: closed with player {} (reason {}): nothing changed hands", event.with,
+                      static_cast<int>(event.reason));
+                  break;
+                case Kind::Commit:
+                  ++tradesDone;
+                  Log("trade: applied with player {}: gave {} stacks and {} eddies, took {} "
+                      "stacks and {} eddies",
+                      event.with, tradeSeat.Give().items.size(), tradeSeat.Give().money,
+                      tradeSeat.Take().items.size(), tradeSeat.Take().money);
+                  break;
+                }
+              }
             } else if constexpr (std::is_same_v<E, tandem::events::RegroupOffered>) {
               const auto &o = e.offer;
               Log("player {} offers to join them (offer {}, reason {}, point {:#x}{}) at ({:.1f}, "
@@ -3344,6 +3479,38 @@ int main(int argc, char **argv) {
             {.npc = hold.npc, .reason = tandem::proto::kGoneDead, .killer = endpoint->You()});
         Log("npc {} died", hold.npc);
         hold.step = 0;
+      }
+    }
+    // --level: our V's (the endpoint keeps it and says it once we are in).
+    if (options.level > 0 && !levelSent) {
+      levelSent = true;
+      endpoint->SendCombat(
+          tandem::proto::PlayerLevel{.level = static_cast<std::uint8_t>(options.level)});
+      Log("our V is level {}", options.level);
+    }
+    // --npc-level: every NPC we share, once.
+    if (options.npcLevel > 0.f && options.host && endpoint->IsJoined())
+      for (const auto &[npc, spawn] : endpoint->SharedNpcs())
+        if (!levelledNpcs.contains(npc) &&
+            endpoint->SendCombat(tandem::proto::NpcLevel{.npc = npc, .level = options.npcLevel}))
+          levelledNpcs.insert(npc);
+    // Trade: our seat's own clock, and --trade-offer's asking.
+    if (endpoint->IsJoined()) {
+      tradeSeat.SetYou(endpoint->You());
+      auto heard = tradeSeat.Tick(tandem::net::NowUs());
+      tradeSend(heard.send);
+      for (const auto &event : heard.events)
+        if (event.kind == tandem::trade::Seat::Event::Kind::Closed)
+          Log("trade: closed with player {} (reason {}): nothing changed hands", event.with,
+              static_cast<int>(event.reason));
+      if (options.tradeOffer && tradesDone == 0 &&
+          tradeSeat.Is() == tandem::trade::Seat::State::None && now >= nextTradeAsk) {
+        nextTradeAsk = now + std::chrono::seconds(20);
+        for (const auto &[id, info] : endpoint->Players())
+          if (id != endpoint->You() && tradeSeat.Is() == tandem::trade::Seat::State::None) {
+            tradeSend(tradeSeat.Ask(id, tandem::net::NowUs()));
+            Log("trade: asked player {} to trade", id);
+          }
       }
     }
     // --difficulty: the session's, kept by the endpoint for whoever joins.
