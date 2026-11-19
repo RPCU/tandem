@@ -80,8 +80,10 @@
   and on the map tooltip, and that the marker follows a seated player's car
   copy.
 - **Identity colour** (`TandemMarkers.ColorOf`): one colour per player id,
-  the same in every game. In order from id 1: cyan, yellow, green, pink,
-  orange, violet, red, then white. It tints a player's marker, nameplate and
+  the same in every game. In order from id 1 to 8 (`kMaxPlayerId`: ids go
+  round 2..8 as guests come and go): cyan, yellow, green, pink, orange,
+  violet, red, sky blue (`0.55, 0.75, 1.0`); white only for no player. It
+  tints a player's marker, nameplate and
   party entry ([`presence.md`](presence.md)), pings, waypoint, team target
   and quickhack indicators ([`comms.md`](comms.md)). One definition
   (`Markers.reds`; the `polish` and comms branches each had one, merged
@@ -89,6 +91,17 @@
   reds and cyans, and colour-blind pairs. Red/green (ids 3 and 7) and
   yellow/green (2 and 3) are the risky pairs, which is why the name always
   comes with the colour.
+  - **The 8th colour** (2026-11-19; until then id 8 fell to white, the
+    fallback): of every bright, saturated colour (one channel full,
+    luminance ≥ 0.2, away from white), the one whose nearest palette colour
+    is farthest in CIELAB under normal vision and simulated protanopia,
+    deuteranopia and tritanopia (Machado et al. 2009, full severity). Sky
+    blue's nearest: cyan for normal vision (ΔE 44), deuteranopia (23) and
+    tritanopia (25), pink for protanopia (20). The seven's own closest
+    pairs measured the same way are tighter: yellow/orange for
+    deuteranopia (18), yellow/green for protanopia (27), cyan/green for
+    tritanopia (9). Blue was the obvious pick and the worst: it is
+    violet's twin for a protanope (ΔE 0.3).
 
 ## Open problems
 
