@@ -5,6 +5,7 @@ add_library(tandem_core STATIC
   src/protocol.cpp
   src/session.cpp
   src/relay.cpp
+  src/sha256.cpp
   src/consistency.cpp
   src/endpoint.cpp
   src/endpoint_regions.cpp
