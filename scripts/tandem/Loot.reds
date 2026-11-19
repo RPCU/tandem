@@ -653,16 +653,32 @@ public class TandemLoot extends ScriptableSystem {
     }
     let loot = TandemLoot.Get(owner.GetGame());
     if IsDefined(loot) {
-      loot.OurImportant(id, data.GetQuantity(), false);
+      loot.OurImportant(id, data.GetQuantity(), false, TandemLoot.QuestProp(data));
     }
   }
 
-  private func OurImportant(id: ItemID, quantity: Int32, forced: Bool) -> Void {
+  // A quest's prop: tagged Quest, or a keycard. The game's quests test a V's
+  // inventory for these (engine/story.md §13.29); an iconic is not one.
+  public static func QuestProp(data: wref<gameItemData>) -> Bool {
+    if !IsDefined(data) {
+      return false;
+    }
+    return data.HasTag(n"Quest") || Equals(RPGManager.GetItemType(data.GetID()), gamedataItemType.Gen_Keycard);
+  }
+
+  // `prop`: a quest prop (QuestProp), which a guest holds for the session
+  // only: noted for the story's leave (Story.reds, session items) when the
+  // copy is kept, never for a second copy taken back out.
+  private func OurImportant(id: ItemID, quantity: Int32, forced: Bool, prop: Bool) -> Void {
     let record = ItemID.GetTDBID(id);
     let player = GetPlayer(this.GetGameInstance());
+    let story = TandemStorySystem.Get(this.GetGameInstance());
     // Co-op's own gift arriving.
     if !forced && ArrayContains(this.m_giving, record) {
       ArrayRemove(this.m_giving, record);
+      if prop && IsDefined(story) {
+        story.NoteSessionItem(record, quantity);
+      }
       return;
     }
     // A second copy of what co-op gave us (the corpse's own, looted later).
@@ -672,8 +688,14 @@ public class TandemLoot extends ScriptableSystem {
       if this.CountIn(player, owned) > quantity {
         GameInstance.GetTransactionSystem(this.GetGameInstance()).RemoveItem(player, id, quantity);
         TandemNative.Log(s"loot: \(TDBID.ToStringDEBUG(record)) is ours already (co-op): the second copy taken out");
+      } else if prop && IsDefined(story) {
+        // Co-op's copy is gone meanwhile: this one is the session's.
+        story.NoteSessionItem(record, quantity);
       }
       return;
+    }
+    if prop && IsDefined(story) {
+      story.NoteSessionItem(record, quantity);
     }
     let stack = TandemLoot.StackOf(id, quantity);
     TandemNative.SendSharedItem(0, 0u, stack.record, stack.seed, stack.quantity);
@@ -792,7 +814,8 @@ public class TandemLoot extends ScriptableSystem {
       let id = ItemID.FromTDBID(record);
       ArrayPush(this.m_giving, record);
       GameInstance.GetTransactionSystem(game).GiveItem(player, id, 1);
-      this.OurImportant(id, 1, true);
+      // (Its arrival above noted it if it is a quest prop: m_giving.)
+      this.OurImportant(id, 1, true, false);
     } else if Equals(command, "loot take") {
       // Take everything from the nearest world item's bag, as "take all".
       let best: ref<TandemWorldItem>;

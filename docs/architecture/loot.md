@@ -15,8 +15,9 @@
   if not). **Weapons** an enemy drops at death are part of its loot, so
   per player too: each game's corpse drops what its copy holds (sharing
   them would make players race for the enemy's gun). **Quest and
-  important items are every player's** (decided by the user 2026-11-18:
-  no quest may break): an item tagged `Quest` (quest items, their keys
+  important items are every player's for the session** (decided by the
+  user 2026-11-18: no quest may break; narrowed 2026-11-19: a guest gives
+  the host's quest props back when it leaves, see below): an item tagged `Quest` (quest items, their keys
   and shards), a keycard (`Gen_Keycard`) or an iconic item (the
   `IsItemIconic` stat) that comes into a V's inventory, not bought at a
   vendor, goes into every other V's too (`SharedItem`), by the game's own
@@ -25,7 +26,12 @@
   first, so the host's quests see it whoever looted it. The important
   items on a host NPC's corpse are also put on the guests' proxy corpses
   (a guest finds them where the host would); a second copy of an item
-  co-op already gave is taken back out when it arrives. **Rewards**
+  co-op already gave is taken back out when it arrives. **A guest keeps
+  the iconics; the quest props (tag `Quest`, keycards) are session
+  items**: noted as they come in (`TandemLoot.QuestProp`,
+  `TandemStorySystem.NoteSessionItem`) and removed from its inventory
+  when it leaves the session, before it can save, because its own quests
+  test its inventory for them (`quest-carryover.md`). **Rewards**
   (quest and gig rewards: items, money, XP, street cred) are the story's
   `QuestReward`: the host's game pays its own V as in solo and every
   guest that took part gets the same reward record through

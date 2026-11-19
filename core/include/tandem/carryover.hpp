@@ -121,11 +121,12 @@ private:
 
 // Joining a host whose story is elsewhere (design "edge cases"): what the
 // guest is told before it joins. Main quests done on each side, and whether
-// each game has Phantom Liberty.
+// each story has begun Phantom Liberty (every player owns it: the session
+// requires it at join).
 struct StoryMark {
   std::uint16_t mainDone{};
   bool pointOfNoReturn{}; // past it (an ending is being played)
-  bool ep1{};
+  bool ep1Started{};      // its story has begun Phantom Liberty
   friend bool operator==(const StoryMark &, const StoryMark &) = default;
 };
 enum class JoinNote : std::uint8_t {
@@ -135,7 +136,5 @@ enum class JoinNote : std::uint8_t {
   HostBehind, // quests the guest has done pay nothing again
 };
 JoinNote NoteFor(const StoryMark &host, const StoryMark &guest);
-// The host's Phantom Liberty content cannot be shown to a guest without it.
-bool Ep1Missing(const StoryMark &host, const StoryMark &guest);
 inline constexpr std::uint16_t kAheadBy = 3; // main quests of difference worth a word
 } // namespace tandem::carry
