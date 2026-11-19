@@ -90,9 +90,9 @@ are the user's to confirm.
    HUD). "When linked, the health bar of each player linked should be
    displayed too, with their name": the party list has an entry (name,
    health, state, off-screen arrow, in the partner's colour) for each
-   partner `TandemCommsNative.LinkState` says is linked, and their
-   nameplate a health line. An unlinked partner keeps its marker and a
-   nameplate with its name alone. A link broken (either side) or a partner
+   partner `TandemCommsNative.LinkState` says is linked. Health is on
+   screen only, in that list: the nameplate over a head is the name alone,
+   linked or not. An unlinked partner keeps its marker and its nameplate. A link broken (either side) or a partner
    gone takes the entry away at the next frame. Pings and waypoints are
    mappins: their direction off screen is the mappin's own clamping at the
    screen's edge, so no second arrow; names come from the same

@@ -1,4 +1,4 @@
-# The party HUD lists linked partners: name, health and state in their colour; a broken link takes the entry and the plate's health line away at once, a vanish everything
+# The party HUD lists linked partners: name, health and state in their colour; the nameplate is the name alone, linked or not; a broken link takes the entry away at once, a vanish everything
 # shellcheck shell=bash disable=SC2317
 ensure host
 cmd coop set nameplates near
@@ -8,14 +8,14 @@ peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')"
 expect 'joined \(player [0-9]+' 20
 # link = auto on both sides: linked from the start.
 expect 'comms: link with Panam: [0-9] -> 3' 20
-expect 'hud: player [0-9]+ "Panam" health [0-9]+ % status up, [0-9]+ m, in view, nameplate on, with health, linked: in the party list' 30
+expect 'hud: player [0-9]+ "Panam" health [0-9]+ % status up, [0-9]+ m, in view, nameplate on, linked: in the party list' 30
 shot hud-linked
-# Hurt: the bar follows, in the entry and on the plate.
+# Hurt: the entry's bar follows.
 expect 'hud: player [0-9]+ "Panam" health (75|50|25) % .*linked: in the party list' 20
-# The link broken from its side: no entry, the name alone over the head.
+# The link broken from its side: no entry; the name over the head stays.
 expect_peer 'broke every link' 30
 expect 'comms: link with Panam: 3 -> [0-2]' 5
-expect 'hud: player [0-9]+ "Panam" .*nameplate (on, name only|off), not linked: no entry' 5
+expect 'hud: player [0-9]+ "Panam" .*nameplate (on|off), not linked: no entry' 5
 shot hud-unlinked
 # Always: the plate at any distance (to look at: smaller and fainter far away).
 cmd coop set nameplates always

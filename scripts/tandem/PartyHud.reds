@@ -12,8 +12,9 @@
 // camera does not see them, all in the partner's own colour
 // (TandemMarkers.ColorOf). Only partners we are linked with have one
 // (comms.md, the link: TandemCommsNative.LinkState): a link broken or a
-// partner gone takes it away at the next frame. Everyone else keeps their
-// marker (Markers.reds) and a nameplate with their name alone, no health.
+// partner gone takes it away at the next frame. Health is the entry's
+// alone: the nameplate over a puppet's head is its name, for every
+// partner, linked or not; everyone else keeps their marker (Markers.reds).
 // What it says is decided in core (tandem/presence.hpp: StatusOf, BearingOf,
 // ProjectOf, NameplateLookOf), tested there.
 //
@@ -36,7 +37,6 @@ public class TandemPartyEntry {
   // The nameplate over the puppet.
   public let plate: ref<inkVerticalPanel>;
   public let plateName: ref<inkText>;
-  public let plateBar: ref<inkRectangle>;
   // What it shows, as last logged.
   public let status: Int32;
   public let health: Int32;
@@ -68,10 +68,6 @@ public class TandemPartyHud {
 
   public static func BarWidth() -> Float {
     return 420.0;
-  }
-
-  public static func PlateWidth() -> Float {
-    return 160.0;
   }
 
   public func Start(game: GameInstance) -> Void {
@@ -295,8 +291,8 @@ public class TandemPartyHud {
     entry.distance = TandemPartyHud.Text(n"distance", 30, n"Regular", n"", player);
     entry.distance.Reparent(where);
 
-    // The nameplate: the name (and, linked, a thin health line), centred
-    // over the head; scaled about its foot.
+    // The nameplate: the name alone, centred over the head; scaled about
+    // its foot.
     let plate = new inkVerticalPanel();
     plate.SetName(n"tandem_nameplate");
     plate.SetFitToContent(true);
@@ -310,11 +306,6 @@ public class TandemPartyHud {
     entry.plateName = TandemPartyHud.Text(n"name", 32, n"Medium", n"", player);
     entry.plateName.SetHAlign(inkEHorizontalAlign.Center);
     entry.plateName.Reparent(plate);
-    entry.plateBar = TandemPartyHud.Block(n"health", TandemPartyHud.PlateWidth(), 5.0, n"", player, 1.0);
-    entry.plateBar.SetHAlign(inkEHorizontalAlign.Center);
-    entry.plateBar.SetMargin(new inkMargin(0.0, 4.0, 0.0, 0.0));
-    entry.plateBar.SetVisible(false);
-    entry.plateBar.Reparent(plate);
 
     ArrayPush(this.m_entries, entry);
     TandemNative.Log(s"hud: entry for player \(player) (\(TandemPartyHud.NameOf(player)))");
@@ -494,8 +485,6 @@ public class TandemPartyHud {
         entry.plate.SetOpacity(opacity);
         entry.plate.SetScale(new Vector2(scale, scale));
         entry.plateName.SetText(TandemPartyHud.NameOf(player));
-        entry.plateBar.SetVisible(linked);
-        entry.plateBar.SetSize(new Vector2(TandemPartyHud.PlateWidth() * ClampF(health, 0.0, 1.0), 5.0));
       }
 
       // The log proves the state (scenarios read it): on a change of what
@@ -520,7 +509,7 @@ public class TandemPartyHud {
 
   private func Log(entry: ref<TandemPartyEntry>, state: String) -> Void {
     let where = entry.inView ? "in view" : s"off screen (arrow side \(entry.side))";
-    let plate = entry.plateOn ? (entry.linked ? "on, with health" : "on, name only") : "off";
+    let plate = entry.plateOn ? "on" : "off";
     TandemNative.Log(s"hud: player \(entry.player) \"\(TandemPartyHud.NameOf(entry.player))\" health \(entry.health) % status \(TandemPartyHud.StatusName(entry.status))\(StrLen(state) > 0 ? s" [\(state)]" : ""), \(entry.metres) m, \(where), nameplate \(plate), \(entry.linked ? "linked: in the party list" : "not linked: no entry")");
   }
 

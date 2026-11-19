@@ -117,7 +117,7 @@ the HUD layer (`scripts/tandem/PartyHud.reds`).
 | down / out | a notice, the outline, the revive prompt | "Down", "Reviving 7" while we hold the revive (its countdown), "Out"; the bar empties | — |
 | distance and direction off screen | the world marker | under the bar when the camera does not see them: an arrow turned their way and "124 m" / "1.2 km", in their colour | the arrow's sense |
 | in a scene, elsewhere, in a menu | notices only | one line in the HUD's red: "In a scene" (their tier 3 and up), "Cyberspace" / "Braindance"…, "In a menu" (the pause menu or any full-screen menu); most important first; keyed texts (`Party-*`, English in the log) | — |
-| nameplate | only the game's own, when aimed at | the name over the puppet's head in their colour, with a thin health line only when linked; hidden with the body. `nameplates = near` (default): full to 12 m, gone at 20 m; `always`: at any distance in view, full to 12 m then smaller and fainter to a floor at 150 m (55 % size, 50 % opacity, `NameplateLookOf`), only the near ones while our V talks (scene tier 2); `off`: none | its place over the head (the camera's field of view: see research); `always` in a crowded street |
+| nameplate | only the game's own, when aimed at | the name alone over the puppet's head, in their colour, for every partner, linked or not (health is the party entry's only: the user's call, 2026-11-19); hidden with the body. `nameplates = near` (default): full to 12 m, gone at 20 m; `always`: at any distance in view, full to 12 m then smaller and fainter to a floor at 150 m (55 % size, 50 % opacity, `NameplateLookOf`), only the near ones while our V talks (scene tier 2); `off`: none | its place over the head (the camera's field of view: see research); `always` in a crowded street |
 | the marker's name | its world label | one name over a player: the marker's label hides while the nameplate shows (`TandemPartyHud.PlateShown`), and with `nameplates = off` | no flicker at 20 m |
 | photo mode, cinematics | — | all of it hidden in photo mode, when our own scene tier is 3 or more, in a braindance, with no session | hidden in both |
 
@@ -197,7 +197,7 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | `presence-audio` | footsteps (their source), the shot and its bullet, pain and the flinch, holster and draw |
 | `presence-moves` | jump, landing, climb, the blade's swing and its impact |
 | `presence-hud` | the entry, health, menu, down, off screen with its arrow, the nameplate; logs the camera's projection |
-| `hud-linked` | a linked partner's entry and plate with health; the link broken from its side: no entry, the name alone; `nameplates = always`; a vanish takes plate and marker |
+| `hud-linked` | a linked partner's entry with health, its plate the name alone; the link broken from its side: no entry, the plate stays; `nameplates = always`; a vanish takes plate and marker |
 | `names-prompt` | the pause menu's Host this game asks for a name while it is V; a bad one asked again; a good one saved, then hosting |
 | `names-duplicate` | two mock players named V and v beside our V: shown as V (2) and v (3), each told its own, markers and HUD entries under those names |
 | `presence-reactions` | as a guest: impact, stagger, knockdown, ragdoll and its end on a proxy |
