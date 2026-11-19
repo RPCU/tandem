@@ -220,6 +220,7 @@ void Endpoint::ForgetNpc(proto::NpcId npc) {
   m_npcSeats.erase(npc);
   m_npcAnims.erase(npc);
   m_npcPoise.erase(npc);
+  m_npcVendors.erase(npc);
   m_npcOwner.erase(npc);
   m_pinned.erase(npc);
   m_refusedUntilUs.erase(npc);
@@ -228,6 +229,33 @@ void Endpoint::ForgetNpc(proto::NpcId npc) {
   m_shotAt.erase(npc);
   m_given.erase(npc);
   m_took.erase(npc);
+}
+
+void Endpoint::NoteVendorGone(const proto::NpcGone &gone, std::vector<SessionEvent> *out) {
+  if (!IsHost())
+    return;
+  if (gone.reason == proto::kGoneKnockedOut) {
+    // Its records go now; it may still die.
+    if (const auto it = m_npcVendors.find(gone.npc);
+        it != m_npcVendors.end() && m_downVendors.size() < 256)
+      m_downVendors[gone.npc] = it->second;
+    return;
+  }
+  auto vendor = m_downVendors.extract(gone.npc);
+  if (gone.reason != proto::kGoneDead)
+    return;
+  std::uint64_t entity = vendor ? vendor.mapped().entity : 0;
+  if (const auto it = m_npcVendors.find(gone.npc); it != m_npcVendors.end())
+    entity = it->second.entity;
+  if (entity == 0 || m_deadVendors.size() >= 256)
+    return;
+  const proto::NpcVendor dead{.entity = entity, .flags = proto::kVendorDead};
+  if (!m_deadVendors.emplace(entity, dead).second)
+    return;
+  // Every game hides its own copy, linked or not: the same dead stay dead.
+  Broadcast(dead);
+  if (out)
+    out->push_back(events::Combat{dead});
 }
 
 std::uint32_t Endpoint::OwnedHash(proto::PlayerId owner, std::uint16_t &count) const {
@@ -250,6 +278,8 @@ void Endpoint::ResendOwned() {
       Send(m_hostPeer, it->second);
     if (const auto it = m_npcHolds.find(npc); it != m_npcHolds.end())
       Send(m_hostPeer, it->second);
+    if (const auto it = m_npcVendors.find(npc); it != m_npcVendors.end())
+      Send(m_hostPeer, it->second);
     if (m_pinned.contains(npc))
       Send(m_hostPeer, proto::NpcOwner{.npc = npc, .owner = m_you, .flags = proto::kNpcPinned});
   }
@@ -266,6 +296,8 @@ std::vector<proto::Message> Endpoint::NpcRecords(proto::NpcId npc) const {
   if (const auto owner = NpcOwner(npc); owner != regions::Announcer(npc))
     out.emplace_back(proto::NpcOwner{.npc = npc, .owner = owner});
   out.emplace_back(spawn->second);
+  if (const auto it = m_npcVendors.find(npc); it != m_npcVendors.end())
+    out.emplace_back(it->second);
   if (const auto it = m_npcHealth.find(npc); it != m_npcHealth.end())
     out.emplace_back(it->second);
   if (const auto it = m_npcPoise.find(npc); it != m_npcPoise.end())
@@ -290,6 +322,7 @@ void Endpoint::ShowNpcHere(proto::NpcId npc, std::vector<SessionEvent> &out) {
                    [&](const proto::NpcSpawn &m) { out.push_back(events::HostNpcSpawn{m}); },
                    [&](const proto::NpcHealth &m) { out.push_back(events::HostNpcHealth{m}); },
                    [&](const proto::NpcPoise &m) { out.push_back(events::Combat{m}); },
+                   [&](const proto::NpcVendor &m) { out.push_back(events::Combat{m}); },
                    [&](const proto::NpcHold &m) { out.push_back(events::HostNpcHold{m}); },
                    [&](const proto::NpcAnims &m) { out.push_back(events::HostNpcAnims{m}); },
                    [&](const proto::NpcSeat &m) { out.push_back(events::HostNpcSeat{m}); },
@@ -618,6 +651,7 @@ bool Endpoint::OnOwnerMessage(net::PeerId peer, proto::PlayerId player,
           [&](const proto::NpcGone &gone) {
             if (!ownsBody(gone.npc))
               return true;
+            NoteVendorGone(gone, &out);
             ForgetNpc(gone.npc);
             if (gone.reason == proto::kGoneAway)
               m_corpseOwner.erase(gone.npc);
