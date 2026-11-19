@@ -25,6 +25,8 @@ expect 'story: you [0-9]+, host 1, frozen true, save locked true' 5
 cmd quest report
 expect 'quest freeze on: [0-9]+ nodes refused' 5
 # The host goes: everything put back, our own story resumes.
+# Only what comes after: the previous host's goodbye may be just past the start.
+mark
 pkill -x tandem-peer
 expect 'session ended' 60
 expect 'phone: mirrored call closed|story: leaving the host' 10

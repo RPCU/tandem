@@ -220,6 +220,12 @@ public class TandemStorySystem extends ScriptableSystem {
     return this.m_host;
   }
 
+  // We present the host's call (ringing or talking): its lines and hubs
+  // are everyone's on the call, wherever they stand (design §2.2, §2.4).
+  public func InHostCall() -> Bool {
+    return IsDefined(this.m_phone) && this.m_phone.Presenting();
+  }
+
   // The host is in a private scene (design §2.12): its lines and hubs are
   // its own.
   public func HostBusy() -> Bool {

@@ -12,6 +12,8 @@ pause 10
 # Timed out under loss (the previous scenario's host saying goodbye, just
 # after the mark, is no failure).
 reject 'session ended: (the host is gone|could not reach the host)'
+# Only what comes after: the previous host's goodbye may be just past the start.
+mark
 pkill -x tandem-peer
 expect 'session ended' 60
 cmd npc count
