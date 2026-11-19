@@ -65,6 +65,9 @@ public class TandemWorldItem {
   public let holder: EntityID;
   public let spawnedAt: Float;
   public let warned: Bool;
+  // Why its copy waits, as last logged (0: not waiting; 1 too far, 2 no holder).
+  public let waiting: Int32;
+  public let seenAt: Float;
 }
 
 // A loot object that just appeared in our world, to tell which bag is which.
@@ -189,6 +192,8 @@ public class TandemLoot extends ScriptableSystem {
     if !this.m_inGame {
       return;
     }
+    // The next tick first: nothing below can end the chain.
+    this.Schedule();
     let you = TandemNative.You();
     if you != this.m_you {
       if this.m_you != 0u {
@@ -213,7 +218,6 @@ public class TandemLoot extends ScriptableSystem {
       this.Watch();
       this.SpawnCopies();
     }
-    this.Schedule();
   }
 
   // ---- what our V drops ----
@@ -479,14 +483,33 @@ public class TandemLoot extends ScriptableSystem {
         item.warned = true;
         TandemNative.Log(s"loot: world item \(item.id): our copy never showed up");
       }
-      if !item.ownDrop && !item.spawned && IsDefined(this.FirstLeft(item)) && Vector4.Distance(player.GetWorldPosition(), item.position) < 80.0 {
+      if item.seenAt <= 0.0 {
+        item.seenAt = now;
+      }
+      let far = Vector4.Distance(player.GetWorldPosition(), item.position);
+      if !item.ownDrop && !item.spawned && IsDefined(this.FirstLeft(item)) && far >= 80.0 {
+        this.Waiting(item, 1, s"\(far) m away");
+      }
+      if !item.ownDrop && !item.spawned && IsDefined(this.FirstLeft(item)) && far < 80.0 {
+        // The dropper's puppet; any remote player's; after 2 s our own V
+        // (the item passes through its inventory, as our own drop would).
         let holder = this.HolderFor(item.dropper);
+        if !IsDefined(holder) && now - item.seenAt >= 2.0 {
+          holder = player;
+        }
+        if !IsDefined(holder) {
+          this.Waiting(item, 2, "no puppet to drop it from yet");
+        }
         if IsDefined(holder) {
+          let viaUs = holder.GetEntityID() == player.GetEntityID();
           let ts = GameInstance.GetTransactionSystem(game);
           let instructions: array<DropInstruction>;
           for stack in item.stacks {
             if !stack.taken {
               let id = TandemLoot.ItemOf(stack);
+              if viaUs {
+                ArrayPush(this.m_giving, stack.record);
+              }
               ts.GiveItem(holder, id, stack.quantity);
               ArrayPush(instructions, DropInstruction.Create(id, stack.quantity));
             }
@@ -495,9 +518,17 @@ public class TandemLoot extends ScriptableSystem {
           item.spawned = true;
           item.spawnedAt = now;
           item.holder = holder.GetEntityID();
-          TandemNative.Log(s"loot: world item \(item.id) from player \(item.dropper): copy spawning (\(ok))");
+          TandemNative.Log(s"loot: world item \(item.id) from player \(item.dropper): copy spawning (\(ok))\(viaUs ? ", through our V" : "")");
         }
       }
+    }
+  }
+
+  // Why a copy waits, logged once per reason.
+  private func Waiting(item: ref<TandemWorldItem>, why: Int32, text: String) -> Void {
+    if item.waiting != why {
+      item.waiting = why;
+      TandemNative.Log(s"loot: world item \(item.id): its copy waits (\(text))");
     }
   }
 
