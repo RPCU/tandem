@@ -53,6 +53,9 @@ void Story::Note(const StoryInbound &inbound) {
     m_stage = {};
     m_actors.clear();
     m_bodies.clear();
+    // The next session's host starts from no restriction. A guest's own
+    // (what its V holds) stay for its script's leave (RestrictLift).
+    m_sent.clear();
     // Nobody's pose stays held for a private scene (the next session's
     // player 2 is someone else), and ours is no longer held back.
     for (auto &slot : m_posePaused)

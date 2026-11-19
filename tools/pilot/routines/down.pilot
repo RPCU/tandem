@@ -1,0 +1,11 @@
+# Going down to be revived: V's health goes to nothing while another player
+# is in the session (tandem-peer --revive N revives it), and V must be up
+# again. Alone, the game refuses: V would die.
+limit 180
+needs session == 1
+sim session
+act hurt all
+until down == 1 timeout 10
+expect revive: our V is timeout 10
+until down == 0 timeout 90
+check hp > 0

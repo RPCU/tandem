@@ -1,0 +1,12 @@
+# The first routine to run on a machine: does the virtual pad reach the
+# game, and which way does each axis act? V walks about 2.5 m to its right
+# and 2.5 m ahead, then turns its view right and up and back.
+#   the left stick does nothing -> the game does not read the pad (focus,
+#                                  Steam Input, permissions): see the checklist
+#   an axis is reversed         -> remembered for this run (an inverted camera)
+limit 60
+needs veh == 0
+needs menu == 0
+calibrate move
+calibrate look
+check savelock == 1

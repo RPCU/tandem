@@ -326,6 +326,13 @@ public class TandemOutcomes {
       TandemNative.Log(s"outcomes: player \(event.player)'s strike on \(event.npc): no live NPC");
       return;
     }
+    // Host: a guest's hit on an actor of our V's scene is refused while the
+    // scene lasts (Restrictions.reds: a backstop to the guest's own holds).
+    let story = TandemStorySystem.Get(this.m_game);
+    if IsDefined(story) && IsDefined(story.Restrictions())
+      && story.Restrictions().RefusesHit(body, event.npc, event.player, "a strike") {
+      return;
+    }
     npcs.NoteHitBy(event.npc, event.player);
     let strike = new TandemStrike();
     strike.npc = event.npc;

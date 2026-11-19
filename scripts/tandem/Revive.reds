@@ -107,6 +107,11 @@ public class TandemRevive {
     this.m_livesSeen = -1;
   }
 
+  // Another V is up: ours goes down instead of dying.
+  public func Protected() -> Bool {
+    return this.m_protected;
+  }
+
   // Our V is down or out (no save meanwhile: TandemSystem.IsSavingLocked).
   // Seconds left of our revive of `player` (-1: we are not reviving them):
   // the party HUD's countdown.

@@ -1,0 +1,14 @@
+# A phone call: one comes in (a test call, as a quest would trigger it)
+# and V answers it. Needs a session (story commands are a session's).
+limit 90
+needs session == 1
+sim session
+sim call
+if call == 0
+  cmd story call judy
+end
+until call == 1 timeout 15
+act call answer
+until call != 1 timeout 10
+wait 3
+cmd story call end judy

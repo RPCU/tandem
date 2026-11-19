@@ -1,0 +1,7 @@
+# A dialogue choice, the one thing only the pad can do: stand V where a
+# conversation's choices are on screen (or about to be), then run this. It
+# waits for them and picks the first.
+limit 120
+sim choices 3
+until choices > 0 timeout 60
+choose 1

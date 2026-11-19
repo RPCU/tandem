@@ -24,8 +24,9 @@ public:
   bool Note(const proto::Message &message);
   // The story domain's hash for digests (tandem/consistency.hpp): the
   // journal and the tracked entry, what lasts and what a resync (ForJoiner)
-  // sends whole, and the scene that plays with its cast (a lost end would
-  // hold a guest's proxies for good). Calls, hubs, effects and lines are
+  // sends whole, the scene that plays with its cast (a lost end would hold
+  // a guest's proxies for good), and the host's story restrictions (a lost
+  // lift would keep a guest's weapons away for good). Calls, hubs, effects and lines are
   // short-lived and sent again on every change; StoryStates are left out (a
   // guest is never sent its own).
   std::uint32_t Digest() const;
@@ -36,6 +37,8 @@ public:
   std::size_t JournalSize() const { return m_journal.size(); }
   // A scene plays (scene replay).
   bool SceneOn() const { return m_scene.has_value(); }
+  // The host's V has story restrictions on now.
+  bool RestrictionsOn() const { return !m_restrictions.effects.empty(); }
 
 private:
   std::map<std::uint32_t, proto::JournalChange> m_journal;
@@ -47,7 +50,8 @@ private:
   std::map<std::uint64_t, proto::StoryEffect> m_effects; // on now
   std::optional<proto::SceneState> m_scene;              // playing now
   std::optional<proto::SceneCast> m_cast;
-  std::vector<proto::SceneLine> m_lines; // begun and not cut, newest last
+  std::vector<proto::SceneLine> m_lines;   // begun and not cut, newest last
+  proto::StoryRestrictions m_restrictions; // on the host's V now (empty: none)
 };
 // How many begun lines the record keeps (a joiner drops the ones that are
 // over: scene::Replay).
@@ -96,6 +100,77 @@ public:
 private:
   std::optional<proto::PhoneCall> m_call;
 };
+// ---- Story restrictions (docs/architecture/story.md, "Restrictions") ----
+//
+// Who shares the host's story moment. The moment is on while the host's V
+// is in a scene (tier 2 and up, private scenes included: a guest inside
+// one's area could break it as well) or has story restrictions on. A guest
+// is in it when it is grouped with the host (the same world, not apart),
+// neither V is in another world, and it stands inside the moment's area:
+// within kMomentNear of the host's V (the earshot of the host's scene
+// voices, scene-replay.md §5; 10 m more to leave it, so walking along the
+// edge does not flicker), or inside the staged scene when scene replay
+// says where it is (its actors' spread, at most kMomentStageCap, plus
+// kMomentStageMargin; 8 m more to leave).
+inline constexpr float kMomentNear = 40.f;
+inline constexpr float kMomentNearLeave = 50.f;
+inline constexpr float kMomentStageCap = 30.f;
+inline constexpr float kMomentStageMargin = 12.f;
+inline constexpr float kMomentStageLeave = 20.f;
+
+struct MomentInput {
+  bool grouped{};      // the host's world is ours (TandemStorySystem.Grouped)
+  bool away{};         // our V or the host's is in another world (cyberspace...)
+  bool hostKnown{};    // the host's V's position is known
+  proto::Vec3 host;    // the host's V
+  proto::Vec3 guest;   // our V
+  std::uint8_t tier{}; // the host's scene tier
+  bool restricted{};   // the host has story restrictions on
+  bool staged{};       // scene replay knows where the scene is staged
+  proto::Vec3 anchor;  // the staging area's middle
+  float radius{};      // its actors' farthest distance from it
+};
+// `was`: our V was in the moment at the last check (hysteresis).
+bool InMoment(const MomentInput &in, bool was);
+
+// A guest's restrictions: what its own V has from the host's moment and the
+// session's scene holds, so that only what tandem put on comes off. An
+// effect our V already had (its own game's: a zone of its own world, its
+// own quest) is "theirs": never applied, never removed by us.
+class Restrictions {
+public:
+  // The host's set, as heard (sorted, as the protocol has it).
+  void Host(const proto::StoryRestrictions &message) { m_host = message.effects; }
+  const std::vector<std::uint64_t> &HostSet() const { return m_host; }
+
+  struct Change {
+    std::vector<std::uint64_t> apply;  // put on our V (ours from now on)
+    std::vector<std::uint64_t> remove; // take off (ours, no longer wanted)
+    bool Empty() const { return apply.empty() && remove.empty(); }
+  };
+  // Each check: in the moment or not, plus the holds the host's scene tier
+  // asks for (Story.reds: weapons lowered, invulnerable). Applies what is
+  // wanted and not held yet; removes what is ours and no longer wanted.
+  Change Update(bool inMoment, const std::vector<std::uint64_t> &holds = {});
+  // Our V had `effect` already when we came to apply it, or its own game
+  // put it on again while ours was on: it is theirs from now on.
+  void Theirs(std::uint64_t effect);
+  // Our V lost `effect`, not through us (its own quest, a cleanse): we hold
+  // nothing of it; the next Update puts it on again if still wanted.
+  void Gone(std::uint64_t effect);
+  // The session is over, the host gone, or our game loads: every one of
+  // ours off, the host's set forgotten.
+  Change Lift();
+
+  bool Holds(std::uint64_t effect) const { return m_held.contains(effect); }
+  bool Ours(std::uint64_t effect) const;
+  std::size_t OursCount() const;
+
+private:
+  std::vector<std::uint64_t> m_host;
+  std::map<std::uint64_t, bool> m_held; // effect: true ours, false theirs
+};
+
 // Text replies need no arbiter here: the host applies them in the order
 // they arrive, on its game thread, and a reply whose choice entry is no
 // longer Active (another reply won) is dropped there (Story.reds).

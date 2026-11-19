@@ -120,6 +120,8 @@
 #include "tandem/presence.hpp"
 #include "tandem/scene.hpp"
 #include "tandem/shaping.hpp"
+#include "tandem/sim/game.hpp"
+#include "tandem/sim/referee.hpp"
 #include "tandem/traffic.hpp"
 #include "tandem/vehicle_combat.hpp"
 
@@ -215,6 +217,9 @@ struct Options {
   std::string npcHack{"AIQuickHack.HackRevealPosition"};
   int hackCarSeconds{0};
   std::string storyFile;         // host: a scripted story (tools/scenarios/story-host.story)
+  std::string restrictions;      // host: story restrictions on its V (REC[,REC]), as steps
+  double restrictAt{2.0};        // ...this long after a guest is in
+  double restrictFor{0.0};       // ...lifted after this long (0: never)
   int answerSeconds{-1};         // join: answer the host's ringing call after this long (-1: never)
   std::uint32_t replyEntry{};    // join: reply to the text with this choice entry hash
   int suggestIndex{-1};          // join: suggest this option of every hub (-1: never)
@@ -427,7 +432,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
       << "usage: tandem-peer host [options]\n"
          "       tandem-peer join ADDRESS[:PORT] [options]\n"
          "       tandem-peer join --code CODE --relay HOST[:PORT] [options]\n"
-         "       tandem-peer play-info FILE   what a gameplay recording holds, where it starts\n\n"
+         "       tandem-peer play-info FILE   what a gameplay recording holds, where it starts\n"
+         "       tandem-peer sim --role host|join ...  a simulated second game (sim --help)\n"
+         "       tandem-peer sim-fuzz ...     simulated games against each other, seed by seed\n\n"
          "  --port N           UDP port (default 27450)\n"
          "  --relay HOST[:PORT] tandem-relay (default port 27460): host, also reachable\n"
          "                     through it (its join code is logged); join, used when\n"
@@ -543,6 +550,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     seconds\n"
          "  --story FILE       host: play a scripted story (journal, calls, lines, hubs,\n"
          "                     rewards; format in tools/scenarios/story-host.story)\n"
+         "  --restrict REC[,REC]  host: its story puts these gameplay restrictions on its V\n"
+         "                     (GameplayRestriction.NoCombat,...): guests in its moment wear\n"
+         "                     them; join: logs the host's set as heard\n"
+         "  --restrict-at S    --restrict: S seconds after a guest is in (default 2)\n"
+         "  --restrict-for S   --restrict: lifted after S seconds (default 0: kept)\n"
          "  --answer N         join: answer the host's ringing call after N seconds\n"
          "  --reply HASH       join: reply to a text with this choice entry (journal hash)\n"
          "  --suggest N        join: suggest option N of every choice hub the host shows\n"
@@ -1256,6 +1268,12 @@ Options Parse(int argc, char **argv) {
       options.code = *code;
     } else if (flag == "--story") {
       options.storyFile = value;
+    } else if (flag == "--restrict") {
+      options.restrictions = value;
+    } else if (flag == "--restrict-at") {
+      options.restrictAt = Number<double>(value);
+    } else if (flag == "--restrict-for") {
+      options.restrictFor = Number<double>(value);
     } else if (flag == "--go-down") {
       options.goDownSeconds = Number<int>(value);
     } else if (flag == "--go-out") {
@@ -1667,6 +1685,9 @@ private:
 //   pick ID INDEX                the host picks (every hub closes)
 //   tier N                       the host's scene tier (1..5)
 //   reward RECORD [QUESTHASH]    a quest reward for every guest
+//   restrict REC[,REC]|off       the gameplay restrictions the host's story
+//                                has on its V now (GameplayRestriction.NoCombat:
+//                                weapons away); off: lifted
 //   effect RECORD on|off         a story status effect on the host's V
 //                                (a relic glitch: BaseStatusEffect.JohnnySicknessLow)
 //   replacer on|off              the host plays as Johnny (StoryState flag)
@@ -1917,6 +1938,17 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
     if (step.verb == "replacer" && !a.empty())
       return proto::StoryState{.tier = 1,
                                .flags = a[0] == "on" ? proto::kStoryReplacer : std::uint8_t{0}};
+    if (step.verb == "restrict" && !a.empty()) {
+      proto::StoryRestrictions set;
+      if (a[0] != "off")
+        for (std::size_t start = 0; start <= a[0].size();) {
+          const auto comma = std::min(a[0].find(',', start), a[0].size());
+          if (comma > start)
+            set.effects.push_back(TweakDBID(a[0].substr(start, comma - start)));
+          start = comma + 1;
+        }
+      return set;
+    }
     if (step.verb == "effect" && a.size() >= 2)
       return proto::StoryEffect{.effect = TweakDBID(a[0]), .applied = a[1] == "on"};
     if (step.verb == "world" && !a.empty()) {
@@ -1996,6 +2028,14 @@ std::string Describe(const tandem::proto::Message &message) {
   if (const auto *effect = std::get_if<proto::StoryEffect>(&message))
     return std::format("story effect: {:#x} {} on player {}", effect->effect,
                        effect->applied ? "on" : "off", effect->player);
+  if (const auto *set = std::get_if<proto::StoryRestrictions>(&message)) {
+    std::string effects;
+    for (const auto effect : set->effects)
+      effects += std::format(" {:#x}", effect);
+    return set->effects.empty() ? std::format("story restrictions: none on player {}", set->player)
+                                : std::format("story restrictions: {} on player {}:{}",
+                                              set->effects.size(), set->player, effects);
+  }
   if (const auto *scene = std::get_if<proto::SceneState>(&message))
     return scene->scene == 0
                ? std::format("scene: play {} over{}", scene->play,
@@ -2913,6 +2953,9 @@ int PlayInfo(const std::string &path) {
 int main(int argc, char **argv) {
   if (argc >= 3 && std::string_view(argv[1]) == "play-info")
     return PlayInfo(argv[2]);
+  // The simulated second game (docs/architecture/sim.md).
+  if (argc >= 2 && (std::string_view(argv[1]) == "sim" || std::string_view(argv[1]) == "sim-fuzz"))
+    return tandem::sim::SimMain(argv[1], std::vector<std::string_view>(argv + 2, argv + argc));
   auto options = Parse(argc, argv);
   if (options.check) {
     std::cout << "options ok\n";
@@ -3015,6 +3058,11 @@ int main(int argc, char **argv) {
     Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice",
         options.drop * 100, options.dup * 100);
   }
+  // The referee (docs/architecture/sim.md), in every mode: what the other
+  // games send us, checked against the protocol and the authority table;
+  // each breach is a `referee:` line, which scenarios reject.
+  tandem::sim::Referee referee(options.host, {.faulty = options.drop > 0.f || options.dup > 0.f});
+  referee.Attach(*endpoint);
   // --look random: the same clothes all session; its body keys from the
   // cache, or as soon as a look of its body is heard.
   const auto lookKeysDir = LookKeysDir(options.lookKeys);
@@ -3253,6 +3301,19 @@ int main(int argc, char **argv) {
       return 1;
     }
     Log("story: {} steps from {}", story.size(), options.storyFile);
+  }
+  // --restrict: two more steps of the host's story, in time order.
+  if (!options.restrictions.empty()) {
+    story.push_back({.at = options.restrictAt,
+                     .verb = "restrict",
+                     .args = {options.restrictions},
+                     .rest = options.restrictions});
+    if (options.restrictFor > 0.0)
+      story.push_back({.at = options.restrictAt + options.restrictFor,
+                       .verb = "restrict",
+                       .args = {"off"},
+                       .rest = "off"});
+    std::ranges::stable_sort(story, {}, &StoryStep::at);
   }
   // join: the call to answer, and when.
   std::optional<std::pair<std::uint64_t, std::chrono::steady_clock::time_point>> toAnswer;
@@ -4350,11 +4411,15 @@ int main(int argc, char **argv) {
                     e.chase.target == endpoint->You() ? " (us)" : "");
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
+              referee.End();
               g_stop = 1;
             }
           },
           event);
     }
+    referee.Tick();
+    for (const auto &finding : referee.Take())
+      Log("{}", finding.Line());
     if (auto relay = endpoint->Relay()) {
       relay->codeSecondsLeft = 0; // not a change worth a line
       if (relay != relayShown) {
@@ -6102,7 +6167,9 @@ int main(int argc, char **argv) {
         static_cast<double>(savedPlay.LastUs()) / 1e6);
     savedPlay.Close();
   }
+  referee.End();
   endpoint->Leave("tandem-peer stopped");
+  Log("referee summary: {} violation(s), {} hint(s)", referee.Violations(), referee.Hints());
   if (!options.recordFile.empty()) {
     if (recording.Finish())
       Log("recording saved: {} NPC messages, {} spawns, in {}", recording.Count(),

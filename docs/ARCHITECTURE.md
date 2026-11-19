@@ -65,7 +65,7 @@ task touches ([Topic files](#topic-files)).
 | --- | --- | --- |
 | `core/` | protocol, transport (ENet), session (`Endpoint`); platform-independent C++23 | both CMake presets |
 | `plugin/` | the RED4ext plugin (`tandem.dll`, Windows x64): entry points, config, net thread; `report/`: `tandem-report.exe`, the bug report without the game | `windows` preset (clang-cl) |
-| `peer/` | `tandem-peer`, the mock player (Linux) | `linux` preset |
+| `peer/` | `tandem-peer`, the mock player (Linux); `peer/sim/`: the simulated second game (`tandem_sim`: referee, world, story, V, personas, coverage) | `linux` preset |
 | `tests/` | doctest unit and loopback tests of `core/` (Linux) | `linux` preset |
 | `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
@@ -76,7 +76,7 @@ task touches ([Topic files](#topic-files)).
 | `dist/` | files installed next to the DLL (`tandem.ini`, shipped as `tandem.default.ini`) and `INSTALL.md`, the players' guide | `task package` |
 | `cmake/` | `clang-cl-msvc.cmake`: the Windows cross toolchain | — |
 | `docs/` | this core; `architecture/`: one file per subsystem; `relay.md` (operating a relay), `playtest.md` (the first two-machine session); `research/`: engine facts with sources, design research, `data/` (RTTI and skeleton dumps) | `task docs:check` |
-| `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `check-strings.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `package.py` (`task package`), `re/` (read-only reverse engineering, see its README) | — |
+| `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `check-strings.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `package.py` (`task package`), `re/` (read-only reverse engineering, see its README), `pilot/` (the test pilot that plays our V: `architecture/autopilot.md`) | — |
 | `vendor/` | git submodules: RED4ext.SDK, RedLib, ENet, zpp_bits, doctest | — |
 
 The build is Linux-only: the plugin is cross-compiled with clang-cl and
@@ -137,6 +137,7 @@ The owner simulates; everyone else displays.
 | NPCs: AI, position, health, death | the game that runs it (spawned it, or took it over; quest NPCs: host) | **proxy with its AI off** in the linked games, driven by its owner (`architecture/regions.md`) |
 | spawns: crowds, encounters | each game around its own V | held back only where a higher-ranked linked player's region covers it |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
+| the story's gameplay restrictions (no weapons, no sprint… during the host's scene) | host (its V's, reported) | worn on its own V by a guest in the host's story moment, taken off when it leaves it (`architecture/story.md`) |
 | time of day, weather | host | applied |
 | a V's police heat: score, wanted level, stars | that player's game | told; the owner of the area sends police after that V alone (`architecture/police.md`) |
 | the clock: time skips (wheel, bed) | host's clock, asked of every other player | each agrees or not; applied in every game; the host's story only says so (`architecture/activities.md`) |
@@ -294,7 +295,7 @@ plugin") and its open problems.
 - `loot.md`: per-player loot, dropped items, quest items.
 - `devices.md`: doors, lifts, cameras, turrets, the alarm, access points, computers, barrels, media and other devices: the host's word, a guest's own copy first, revisions, digest, a guest's world put back after; open: glass, a device's shots drawn for the others.
 - `revive.md`: down, revive, respawn, shared game over.
-- `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, rewards; open: scenes for guests, story decisions, quests together.
+- `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, the story's restrictions on a guest in the host's moment, rewards; open: scenes for guests, story decisions, quests together.
 - `scene-replay.md`: a guest watches the host's scenes: the stage, the cast, lines and actor poses (`scene_replay = on`, off by default).
 - `progression.md`: levels (enemies scaled to the mean of the players' levels), XP rules, economy (vendors, crafting, stash, garage, apartments), a guest's saves (the leave steps, crashes, what is never saved), decisions.
 - `garage.md`: owned vehicles: each player's garage, driving a partner's car, vehicles earned together (credited, or kept with `vehicle_rewards = keep`), purchases, PL deliveries, decisions.
@@ -312,6 +313,8 @@ plugin") and its open problems.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.
 - `two-instances.md`: two real games on the game machine (tried 2026-11-19: they play a session over loopback; a guest froze once, starts under load trip the engine's watchdog): results and measurements, findings, the setup (`tools/instance.sh`: a game folder and a prefix per instance, outside Steam, sandboxed off the player's files), the first-try checklist; the plugin's `TANDEM_CONFIG`, `TANDEM_CMD`, `TANDEM_PORT`, `TANDEM_LOG` (`core/include/tandem/instance.hpp`).
 - `release.md`: packaging (`task package`, the release and symbols zips), the startup check (game version, dependencies, Phantom Liberty, required on every game), what a join compares (protocol and Phantom Liberty refuse; build, files and mod lists warn), bug reports (`tandem-report`), what the game has not run yet. For release, compatibility and report code.
+- `autopilot.md`: the test pilot that plays our real V without a human (recordings, scenarios): script-level actions, a virtual pad, the plugin's state stream, routines with checks, its safety, two-instance runs, the first-run checklist.
+- `sim.md`: the simulated second game: the referee on every peer's wire, the host world, story director, simulated V and personas, `tandem-peer sim`, `sim-fuzz`, coverage.
 
 Beside them, for people rather than code: `dist/INSTALL.md` (the players' guide, shipped in the zip), [`relay.md`](relay.md) (operating a relay: tokens, systemd, firewall, the image), [`playtest.md`](playtest.md) (the first two-machine session, a checklist).
 

@@ -306,6 +306,11 @@ of their own.
   `tools/instance.sh` already wraps the game in bubblewrap: the device
   binds are a few more arguments, left for when a bot needs a pad.
 - Without gamescope, Wayland focus decides: only the focused game gets keys.
+- The test pilot uses the same path: `PILOT_INSTANCE=NAME tools/game.sh
+pilot run ROUTINE` plays an instance's V by XTEST on that display
+  (`autopilot.md`, "Two real games"), or by a pad only that instance reads
+  (an SDL hint for now; the bubblewrap device binds above are the sturdier
+  way).
 
 ### 5. Risks to the player's install
 
@@ -328,7 +333,7 @@ things named: the install, the prefix, the cloud folder.
 
 ```
 /data/Steam/tandem-instances/NAME/     (TANDEM_INSTANCES; same filesystem as the game)
-  .tandem-instance                     marks it as ours (destroy refuses without it)
+  .tandem-instance                     marks it as ours (destroy refuses without it); its pad
   game/                                the game folder: archive/ linked, the rest copied
   compatdata/                          its Proton prefix (STEAM_COMPAT_DATA_PATH)
   run/                                 pid, launch.log, shader cache
@@ -384,10 +389,16 @@ and a `load` each, the second once the first plays.
 sends itself to anya over ssh; `GAME_HOST=local` runs it on the machine at
 hand.
 
-**`tools/game.sh` and `tools/scenario.sh` are not instance-aware.** They
-find, start and kill "the game" by name and through Steam. Do not run them
-while instances run. The next piece of work is a two-game scenario runner
-on top of `instance.sh` (its `cmd` and `log`, per instance).
+**`tools/game.sh` and `tools/scenario.sh` are not instance-aware**, but for
+the test pilot: they find, start and kill "the game" by name and through
+Steam. Do not run them while instances run. `PILOT_INSTANCE=NAME
+tools/game.sh pilot …` (and its `cmd`, `log`, `fetch-play`) works on
+instance NAME: our V there is played by keys sent to the instance's own
+gamescope display, or by a pad only that instance reads (`.tandem-instance`
+records it as `pad = 0x02d1`, `INSTANCE_PAD` picks it, and `start` passes
+`SDL_GAMECONTROLLER_IGNORE_DEVICES_EXCEPT`): `autopilot.md`, "Two real
+games". The next piece of work is a two-game scenario runner on top of
+`instance.sh` (its `cmd` and `log`, per instance).
 
 ### What tandem needed
 

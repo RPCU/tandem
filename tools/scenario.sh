@@ -30,15 +30,25 @@
 #                          start, else the NPC recording REPLAY (- for none); the
 #                          scenario's own ARGS on top. $sessioned says which
 #   cmd TEXT               a tandem command in the game
+#   pilot ROUTINE [FLAGS]  the test pilot plays ROUTINE on our real V
+#                          (tools/pilot/routines/ROUTINE.pilot, through
+#                          tools/game.sh pilot run): it walks, drives, fights
+#                          while the mock player plays the other side; the
+#                          scenario fails when the routine does. A scenario
+#                          that uses it says "# needs the pilot" (all leaves
+#                          those out unless PILOT=1)
 #   expect REGEX [SECS]    a game log line since the scenario began (default
 #                          30 s); fails at once if the watchdog reports a
 #                          silent game thread
 #   expect_peer REGEX [SECS]  the same in the mock player's log
 #   expect_peer2 REGEX [SECS] the same in the second mock player's log
 #   reject REGEX           no such game log line so far
+#   reject_peer REGEX      no such mock player log line so far
 #   pause SECS             let time pass (still watching for a stall)
 #   shot NAME              a screenshot kept with the results
 #   note TEXT              a line in the report
+# Every scenario also rejects the mock player's `referee:` lines: the game
+# broke a protocol or authority rule (docs/architecture/sim.md).
 # A failed check stops the scenario and keeps the evidence under
 # .cache/scenarios/NAME-TIME/: the game's log since the start, the mock
 # player's log, a screenshot and, when the game thread went silent, every
@@ -58,7 +68,7 @@ dir=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
 remote() { ssh "$host" "$@"; }
 
 # The game log's lines since the mark (its file and line count at the start).
-mark_file='' mark_line=0
+mark_file='' mark_line=0 referee_from=0
 mark() {
   read -r mark_file mark_line < <(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); echo \"\$f \$(wc -l < \"\$f\")\"")
   peer_mark=$(wc -l <.cache/peer.log 2>/dev/null || echo 0)
@@ -71,6 +81,7 @@ fail() {
   mkdir -p "$out"
   since >"$out/game.log" 2>/dev/null || true
   tail -n +$((peer_mark + 1)) .cache/peer.log >"$out/peer.log" 2>/dev/null || true
+  [ -z "$piloted" ] || cp .cache/pilot.log "$out/pilot.log" 2>/dev/null || true
   $game shot "scenario-fail" >/dev/null 2>&1 && cp .cache/shots/scenario-fail.png "$out/" || true
   if grep -q 'watchdog: game thread silent' "$out/game.log" 2>/dev/null; then
     $game bt >/dev/null 2>&1 && cp .cache/re/bt.txt "$out/bt.txt" || true
@@ -109,7 +120,7 @@ ensure() {
 }
 peer() {
   $game peer "$@" | sed 's/^/  /'
-  peer_mark=0
+  peer_mark=0 referee_from=0
 }
 peer2() {
   mkdir -p .cache
@@ -117,6 +128,18 @@ peer2() {
   echo "  second mock player: $* (.cache/peer2.log)"
 }
 cmd() { $game cmd "$*" >/dev/null || fail "command not taken: $*"; }
+# The pilot's own log (each step, its checks, the pad's safety) is kept in
+# .cache/pilot.log and goes with a failure's evidence.
+piloted=''
+pilot() {
+  local status=0
+  piloted=1
+  mkdir -p .cache
+  echo "  pilot: $*"
+  $game pilot run "$@" >.cache/pilot.log 2>&1 || status=$?
+  grep -E 'WARN|PASS|FAIL|SAVE' .cache/pilot.log | sed 's/^/  /' || true
+  [ "$status" = 0 ] || fail "the pilot's routine $1 did not pass (.cache/pilot.log)"
+}
 reset() {
   local result status=0
   result=$($game test-reset 2>&1) || status=$?
@@ -209,6 +232,14 @@ reject() {
     echo "  ok, none: $1"
   fi
 }
+reject_peer() {
+  local from=${2:-$peer_mark}
+  if tail -n +$((from + 1)) .cache/peer.log 2>/dev/null | grep -qE "$1"; then
+    fail "unexpected (peer): $(tail -n +$((from + 1)) .cache/peer.log | grep -E "$1" | head -1 | cut -c1-160)"
+  else
+    echo "  ok, none (peer): $1"
+  fi
+}
 pause() {
   local start=$SECONDS
   while ((SECONDS - start < $1)); do
@@ -241,8 +272,11 @@ run() {
       mark
       reset
     fi
+    referee_from=$(wc -l <.cache/peer.log 2>/dev/null || echo 0)
     # shellcheck source=/dev/null
     source "$file"
+    # What the mock player heard broke no protocol or authority rule.
+    reject_peer 'referee: \[' "$referee_from"
   )
   status=$?
   set -e
@@ -265,11 +299,20 @@ list)
     # Host scenarios first, then guest ones: one role switch, fewer restarts.
     # A scenario marked "# runs last" (it leaves the game on a death screen)
     # comes after all the others.
+    # Scenarios that need the pilot (a virtual pad on the game machine) only
+    # with PILOT=1.
     mapfile -t names < <(
       grep -l '^ensure host' tools/scenarios/*.sh | xargs grep -L '^# runs last' | xargs -n1 basename | sed 's/\.sh$//'
       grep -L '^ensure host' tools/scenarios/*.sh | xargs grep -L '^# runs last' | xargs -n1 basename | sed 's/\.sh$//'
       grep -l '^# runs last' tools/scenarios/*.sh | xargs -n1 basename | sed 's/\.sh$//'
     )
+    if [ -z "${PILOT:-}" ]; then
+      kept=()
+      for name in "${names[@]}"; do
+        grep -q '^# needs the pilot' "tools/scenarios/$name.sh" || kept+=("$name")
+      done
+      names=("${kept[@]}")
+    fi
   fi
   passed=0 total=0 failures=()
   for name in "${names[@]}"; do

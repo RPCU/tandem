@@ -25,6 +25,8 @@ public native struct TandemStoryEvent {
   // vehicle record, hash: its quest);
   // 42 a story effect on the host's V (reward: the status effect, flags 1:
   // on, 0: gone);
+  // 44 the host's story restrictions changed (player: the host, index: how
+  // many; the set itself: TandemStory.RestrictHostSet);
   // scene replay (a guest; docs/architecture/scene-replay.md):
   // 50 the host's scene begins (line: the scene, hash: its play, state: the
   // host's tier, flags: 1 skipping 2 held 8 staged, duration: seconds it has
@@ -99,6 +101,17 @@ public native class TandemStory extends IScriptable {
   public static native func CarryWith(questHash: Uint32, host: String) -> Bool;
   public static native func CarryReport() -> String;
   public static native func SendEffect(effect: TweakDBID, applied: Bool) -> Void;
+  public static native func SendRestrictions(effects: array<TweakDBID>) -> Bool;
+  public static native func SceneCasts(npc: Uint32) -> Bool;
+  public static native func RestrictUpdate(grouped: Bool, away: Bool, hostKnown: Bool, hostX: Float, hostY: Float, hostZ: Float, x: Float, y: Float, z: Float, tier: Int32, holds: array<TweakDBID>) -> array<TweakDBID>;
+  public static native func RestrictRemovals() -> array<TweakDBID>;
+  public static native func RestrictLift() -> Void;
+  public static native func RestrictTheirs(effect: TweakDBID) -> Void;
+  public static native func RestrictGone(effect: TweakDBID) -> Void;
+  public static native func RestrictHolds(effect: TweakDBID) -> Bool;
+  public static native func RestrictOurs(effect: TweakDBID) -> Bool;
+  public static native func RestrictInMoment() -> Bool;
+  public static native func RestrictHostSet() -> array<TweakDBID>;
   public static native func SceneClass() -> Int32;
   public static native func SetPrivate(on: Bool) -> Void;
   public static native func PausePose(player: Uint32, paused: Bool) -> Void;

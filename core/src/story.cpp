@@ -3,6 +3,7 @@
 #include "tandem/consistency.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace tandem::story {
 bool Record::Note(const proto::Message &message) {
@@ -58,6 +59,13 @@ bool Record::Note(const proto::Message &message) {
     }
     return m_effects.erase(effect->effect) > 0;
   }
+  if (const auto *restrictions = std::get_if<proto::StoryRestrictions>(&message)) {
+    // The whole set each time; a repeat (a resync of what never changed)
+    // changes nothing, the explicit "none" of a resync included.
+    const bool changed = restrictions->effects != m_restrictions.effects;
+    m_restrictions = *restrictions;
+    return changed;
+  }
   if (const auto *scene = std::get_if<proto::SceneState>(&message)) {
     std::optional<proto::SceneState> next;
     if (scene->scene != 0)
@@ -108,6 +116,10 @@ std::uint32_t Record::Digest() const {
   if (m_cast)
     for (const auto &actor : m_cast->actors)
       hash.Add(std::uint64_t{actor.npc}).Add(std::uint64_t{actor.flags});
+  // The host's restrictions: a lift lost would hold a guest for good.
+  hash.Add(std::uint64_t{m_restrictions.effects.size()});
+  for (const auto effect : m_restrictions.effects)
+    hash.Add(effect);
   return hash.Value();
 }
 
@@ -134,6 +146,8 @@ std::vector<proto::Message> Record::ForJoiner() const {
     out.push_back(*m_hub);
   for (const auto &[id, effect] : m_effects)
     out.push_back(effect);
+  if (RestrictionsOn())
+    out.push_back(m_restrictions);
   if (m_scene) {
     out.push_back(*m_scene);
     if (m_cast)
@@ -179,6 +193,76 @@ std::set<proto::PlayerId> Participation::Of(std::uint32_t quest) const {
 void Participation::Forget(proto::PlayerId player) {
   for (auto &[quest, players] : m_players)
     players.erase(player);
+}
+
+namespace {
+float Distance(const proto::Vec3 &a, const proto::Vec3 &b) {
+  const float dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+  return std::sqrt(dx * dx + dy * dy + dz * dz);
+}
+} // namespace
+
+bool InMoment(const MomentInput &in, bool was) {
+  if (in.tier < 2 && !in.restricted)
+    return false; // no moment on the host's side
+  if (!in.grouped || in.away || !in.hostKnown)
+    return false;
+  const float near = was ? kMomentNearLeave : kMomentNear;
+  if (Distance(in.guest, in.host) <= near)
+    return true;
+  if (!in.staged || !(in.radius >= 0.f))
+    return false;
+  const float area =
+      std::min(in.radius, kMomentStageCap) + (was ? kMomentStageLeave : kMomentStageMargin);
+  return Distance(in.guest, in.anchor) <= area;
+}
+
+Restrictions::Change Restrictions::Update(bool inMoment, const std::vector<std::uint64_t> &holds) {
+  std::set<std::uint64_t> wanted(holds.begin(), holds.end());
+  if (inMoment)
+    wanted.insert(m_host.begin(), m_host.end());
+  Change change;
+  for (auto it = m_held.begin(); it != m_held.end();) {
+    if (wanted.contains(it->first)) {
+      ++it;
+      continue;
+    }
+    // Theirs is forgotten (ours to decide again next time), never removed.
+    if (it->second)
+      change.remove.push_back(it->first);
+    it = m_held.erase(it);
+  }
+  for (const auto effect : wanted)
+    if (m_held.emplace(effect, true).second)
+      change.apply.push_back(effect);
+  return change;
+}
+
+void Restrictions::Theirs(std::uint64_t effect) {
+  if (const auto it = m_held.find(effect); it != m_held.end())
+    it->second = false;
+}
+
+void Restrictions::Gone(std::uint64_t effect) { m_held.erase(effect); }
+
+Restrictions::Change Restrictions::Lift() {
+  Change change;
+  for (const auto &[effect, ours] : m_held)
+    if (ours)
+      change.remove.push_back(effect);
+  m_held.clear();
+  m_host.clear();
+  return change;
+}
+
+bool Restrictions::Ours(std::uint64_t effect) const {
+  const auto it = m_held.find(effect);
+  return it != m_held.end() && it->second;
+}
+
+std::size_t Restrictions::OursCount() const {
+  return static_cast<std::size_t>(
+      std::ranges::count_if(m_held, [](const auto &held) { return held.second; }));
 }
 
 void CallArbiter::Update(const proto::PhoneCall &call) {

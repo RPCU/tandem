@@ -193,6 +193,10 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     // A command left from an earlier run is not for this one.
     std::error_code ignored;
     std::filesystem::remove(runtime.config.commandFile, ignored);
+    // Nor is a pilot state: the test pilot (tools/pilot) must not read an old
+    // one. Next to the command file, so each instance (TANDEM_CMD) has its own.
+    runtime.config.pilotStateFile = files.command.parent_path() / "pilot.state";
+    std::filesystem::remove(runtime.config.pilotStateFile, ignored);
     log::Info("role: {} (tandem.ini; the co-op menu can pick another)",
               NameOf(runtime.config.role));
 

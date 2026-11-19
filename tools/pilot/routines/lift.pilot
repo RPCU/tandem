@@ -1,0 +1,9 @@
+# A lift: stand V inside one, looking at its panel, then run this. It goes
+# up one floor, waits for the ride, and comes back.
+limit 180
+needs veh == 0
+sim lift 0 2
+act lift 1
+wait 12
+act lift 0
+wait 12
