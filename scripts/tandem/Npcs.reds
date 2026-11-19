@@ -1158,6 +1158,9 @@ public class TandemNpcs {
     let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
     if IsDefined(body) {
       body.Kill(GetPlayer(this.m_game), false, false);
+      // Its loot is ours to roll, as for a death the host told us of (Die):
+      // Die returns early for a kill we saw first (Loot.reds).
+      TandemLoot.Corpse(this.m_game, proxy.id);
     }
     TandemNative.Log(s"npcs: proxy \(npc) died by our hit (ahead of the host)");
   }

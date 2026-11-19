@@ -16,6 +16,8 @@ expect "npcs shared: [1-9][0-9]*, own hidden: [0-9]+, in the session's record: [
 reject 'consistency: proxy [0-9]+ (has no NPC on the host|was missing)'
 reject 'consistency: puppet of player'
 reject 'watchdog: game thread silent'
+# Only what comes after: the previous host's goodbye may be just past the start.
+mark
 pkill -x tandem-peer
 expect 'session ended' 60
 cmd npc count
