@@ -1449,6 +1449,13 @@ game thread stop). Each feature verified in game gets a scenario.
   loop: your own jumps, ladders and swims on the puppet, over the same
   ground.
 - **idle** — connects and reports.
+- **play** — `--play FILE` replays a real V's play (a gameplay recording,
+  below) as the mock player's own V, at its recorded positions: the
+  puppet walks the real ground, drives real roads, fights where it
+  fought. It overrides `--mode`'s motion (and `--body`: the recording's);
+  a missing FILE leaves the mode to run. `--play-loop` starts it again at
+  its end, `--play-offset X,Y,Z` moves it. `tandem-peer play-info FILE`
+  says what a recording holds and where it starts.
 - `--relay HOST[:PORT]` (any mode): as host, also reachable through that
   relay (`--relay-token` if it needs one), logging `join code K7Q-2M9`; as
   guest, `join --code K7Q-2M9 --relay …` joins by code, and `join ADDRESS
@@ -1547,14 +1554,70 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   spawns says so in its log. The `npcs-host` scenario spawns its own
   gangers first (`tools/game.sh cmd npc spawn [N]`). Tested on Linux by
   `tests/peer_replay.sh` (part of `task test`).
+- **Gameplay recordings** (`core/include/tandem/play.hpp`): so the second
+  player in a scenario is real play, not a figure circling and floating
+  with no idea of the ground. The game records its own V: `tools/game.sh
+cmd record start NAME` … `record stop` (a session is needed: `role =
+host` records alone). Everything the game asks its `Endpoint` to send
+  about its own V (`Endpoint::SetTap`: states with the movement flags,
+  the pose stream, look, held items, shots, seats and cars, radio,
+  stealth, time abilities, life, revives, and its actions: strikes and
+  effects on NPCs, quickhacks, takedown requests, area hits, noises) is
+  written by the net thread, with its time, as real protocol messages, to
+  `red4ext/plugins/tandem/recordings/NAME.tplay`; it begins with what the
+  others already know (look, held items, seat). Off, it costs one empty
+  check per call. `tools/game.sh fetch-play NAME` copies it to
+  `recordings/play/NAME.tplay` (not in git: a few MB a minute).
+  `tandem-peer --play` hands the same messages to its own endpoint's same
+  calls at their recorded pace: the endpoint numbers and stamps them on
+  this session's clock (absolute times in them move with the replay),
+  our car stays ours (`Seat::owner`), a recorded other player becomes the
+  game's V, and a recorded NPC becomes the live one nearest where its hit
+  landed (else nearest the replayed V, within 30 m), kept for the rest;
+  what has no counterpart is dropped and counted. Hits on NPCs exist only
+  in a guest's recording (a host's V hits its own NPCs without a
+  message): record fights with the game as a guest of `tandem-peer host
+--replay recordings/npcs.rec`. Tested by `tests/play_test.cpp`
+  (a stream recorded through one session, replayed through another, seen
+  the same by a guest). In scenarios, `play NAME ARGS…` teleports our V
+  beside where the recording starts and replays it, or runs the synthetic
+  ARGS when the file is missing (`front`: `street`, `drive`: `drive`,
+  `movement-course`: `movement`, `npcs-hit`: `fight`). The body pose
+  recorder of `tools/re/record_pose.py` (`.tpose`, `--pose`) stays for
+  pose codec work; a `.tplay` carries the pose stream itself.
+
+  **A recording session** (5–10 min, by whoever plays; the game as host
+  with `tandem.ini` `role = host`, `name = V`; `tools/game.sh cmd …`
+  from this machine, or the co-op menu's console later):
+  1. `teleport home`, then `record start street`: walk 30 s through the
+     streets around, sprint 20 s, walk back; climb and go down a flight of
+     stairs; crouch-walk a bit; `record stop`.
+  2. `record start movement`: jump, double jump if V has the legs, vault
+     a low wall, mantle a ledge (a dumpster, a container), drop from a
+     2–3 m ledge, slide, dodge; a ladder if one is near; into water and a
+     dive if near (the docks); `record stop`.
+  3. `record start drive`: call a car, get in, drive a few blocks on the
+     roads (turns, a stop at a light), park, get out, walk 10 s;
+     `record stop`.
+  4. A fight as a guest: `tools/game.sh role join`, `tandem-peer host
+--replay recordings/npcs.rec` here, then in game `record start fight`:
+     draw a gun, shoot two or three of the gangers, a quickhack (Short
+     Circuit, Blind), a takedown from behind, a melee hit; `record stop`.
+  5. `tools/game.sh fetch-play street` (and `movement`, `drive`, `fight`).
+     Without a player, the same can be driven with `tools/game.sh cmd`
+     (`teleport`, `vehicle …`, `npc punch`, `takedown …`, `hack npc`) and
+     `tools/game.sh key`/`hold` (AZERTY), less naturally.
+
 - Planned — **the whole simulated second game**, so everything can be
   tested with one PC and one copy of the game. Built up as the protocol
   matures (each milestone adds what its messages need):
   - **record**: save everything a real game sends in a session (its V, and
-    as host its world: NPCs, events, quest facts) to a file (NPCs: done);
+    as host its world: NPCs, events, quest facts) to a file (NPCs: done;
+    its V: done, gameplay recordings above);
   - **replay**: play a recording back as that game — as host, so the one
     real game is tested as a guest against a real host's world; or as a
-    guest, so it is tested as host against a real player's V (NPCs: done);
+    guest, so it is tested as host against a real player's V (NPCs: done;
+    a V: done, `--play`);
   - **scripted players**: recordings edited or generated (walk a path, get
     in a car, shoot an NPC, join late, disconnect mid-fight) as repeatable
     regression scenarios, with checks on what the real game reports back;

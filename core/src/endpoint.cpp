@@ -1,6 +1,7 @@
 #include "tandem/endpoint.hpp"
 
 #include "tandem/elsewhere.hpp"
+#include "tandem/play.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -1180,6 +1181,8 @@ void Endpoint::BroadcastRoster() {
 }
 
 void Endpoint::SendLocalState(proto::PlayerState state) {
+  if (m_tap)
+    m_tap(state);
   if (!IsJoined() || m_ended)
     return;
   state.player = m_you;
@@ -1192,6 +1195,8 @@ void Endpoint::SendLocalState(proto::PlayerState state) {
 }
 
 void Endpoint::SendLocalPose(proto::PoseState pose) {
+  if (m_tap)
+    m_tap(pose);
   if (!IsJoined() || m_ended)
     return;
   pose.player = m_you;
@@ -1204,6 +1209,8 @@ void Endpoint::SendLocalPose(proto::PoseState pose) {
 }
 
 void Endpoint::SetLocalAppearance(proto::Appearance appearance) {
+  if (m_tap)
+    m_tap(appearance);
   appearance.revision = ++m_appearanceRevision;
   m_localAppearance = std::move(appearance);
   SendLocalAppearanceNow();
@@ -1222,6 +1229,8 @@ void Endpoint::SendLocalAppearanceNow() {
 }
 
 void Endpoint::SetLocalHeld(proto::Held held) {
+  if (m_tap)
+    m_tap(held);
   held.revision = ++m_heldRevision;
   m_localHeld = held;
   SendLocalHeldNow();
@@ -1240,6 +1249,8 @@ void Endpoint::SendLocalHeldNow() {
 }
 
 void Endpoint::SetLocalSeat(proto::Seat seat) {
+  if (m_tap)
+    m_tap(seat);
   seat.revision = ++m_seatRevision;
   m_localSeat = seat;
   SendLocalSeatNow();
@@ -1260,6 +1271,8 @@ void Endpoint::SendLocalSeatNow() {
 }
 
 void Endpoint::SetLocalVehicleRadio(proto::VehicleRadio radio) {
+  if (m_tap)
+    m_tap(radio);
   radio.revision = ++m_radioRevision;
   m_localRadio = radio;
   SendLocalRadioNow();
@@ -1319,6 +1332,8 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
 }
 
 void Endpoint::SendNpcAction(const proto::NpcAction &action) {
+  if (m_tap)
+    m_tap(action);
   if (IsHost() || !IsJoined() || m_ended)
     return; // the host's own actions are its game's
   auto mine = action;
@@ -1386,6 +1401,8 @@ void Endpoint::SendNpcShot(const proto::NpcShot &shot) {
 }
 
 void Endpoint::SendNpcEffect(const proto::NpcEffect &effect) {
+  if (m_tap)
+    m_tap(effect);
   if (IsHost() || !IsJoined() || m_ended)
     return;
   auto mine = effect;
@@ -1405,6 +1422,8 @@ bool Endpoint::SendPlayerHit(const proto::PlayerHit &hit) {
 }
 
 void Endpoint::SendNpcHit(const proto::NpcHit &hit) {
+  if (m_tap)
+    m_tap(hit);
   if (IsHost() || !IsJoined() || m_ended)
     return; // the host's own hits are its game's
   auto mine = hit;
@@ -1413,6 +1432,8 @@ void Endpoint::SendNpcHit(const proto::NpcHit &hit) {
 }
 
 void Endpoint::SendNpcHack(const proto::NpcHack &hack) {
+  if (m_tap)
+    m_tap(hack);
   if (IsHost() || !IsJoined() || m_ended)
     return; // the host's own uploads are its game's
   auto mine = hack;
@@ -1440,6 +1461,8 @@ void Endpoint::SendPlayerHack(const proto::PlayerHack &hack) {
 }
 
 void Endpoint::SendVehicleHack(proto::VehicleHack hack) {
+  if (m_tap)
+    m_tap(hack);
   if (!IsJoined() || m_ended || hack.driver == m_you)
     return; // our own car is not a copy: nothing to send
   hack.player = m_you;
@@ -1470,6 +1493,8 @@ bool Endpoint::SendNpcShotAt(proto::NpcShotAt shot) {
 }
 
 void Endpoint::SendShotHit(const proto::ShotHit &hit) {
+  if (m_tap)
+    m_tap(hit);
   if (IsHost() || !IsJoined() || m_ended)
     return;
   auto mine = hit;
@@ -1485,6 +1510,8 @@ std::optional<net::PeerId> Endpoint::PeerOf(proto::PlayerId player) const {
 }
 
 void Endpoint::SendLocalVehicle(proto::VehicleState vehicle) {
+  if (m_tap)
+    m_tap(vehicle);
   if (!IsJoined() || m_ended)
     return;
   vehicle.player = m_you;
@@ -1497,6 +1524,8 @@ void Endpoint::SendLocalVehicle(proto::VehicleState vehicle) {
 }
 
 void Endpoint::SendLocalShot(proto::Shot shot) {
+  if (m_tap)
+    m_tap(shot);
   if (!IsJoined() || m_ended)
     return;
   shot.player = m_you;
@@ -1527,6 +1556,8 @@ void Endpoint::SendLocalPausedNow() {
 }
 
 void Endpoint::SetLocalStealth(proto::Stealth stealth) {
+  if (m_tap)
+    m_tap(stealth);
   stealth.revision = ++m_stealthRevision;
   m_localStealth = stealth;
   SendLocalStealthNow();
@@ -1555,6 +1586,8 @@ void Endpoint::SendNpcAwareness(proto::NpcAwareness awareness) {
 }
 
 void Endpoint::SendNoise(const proto::Noise &noise) {
+  if (m_tap)
+    m_tap(noise);
   if (IsHost() || !IsJoined() || m_ended)
     return; // the host's own noises are heard by its NPCs already
   auto mine = noise;
@@ -1587,6 +1620,8 @@ void Endpoint::SendRegroupAnswer(proto::RegroupAnswer answer) {
 }
 
 void Endpoint::SetLocalVitals(proto::Vitals vitals) {
+  if (m_tap)
+    m_tap(vitals);
   vitals.revision = ++m_vitalsRevision;
   m_localVitals = vitals;
   SendLocalVitalsNow();
@@ -1606,6 +1641,8 @@ void Endpoint::SendLocalVitalsNow() {
 }
 
 void Endpoint::SendRevive(proto::Revive revive) {
+  if (m_tap)
+    m_tap(revive);
   if (!IsJoined() || m_ended || revive.target == m_you)
     return;
   revive.player = m_you;
@@ -1722,6 +1759,8 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
   Broadcast(message);
 }
 void Endpoint::SetLocalTimeEffect(proto::TimeEffect effect) {
+  if (m_tap)
+    m_tap(effect);
   effect = Sanitized(effect);
   effect.player = proto::kNoPlayer;
   if (effect == m_localTime)
@@ -1768,6 +1807,8 @@ void Endpoint::EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out,
 }
 
 void Endpoint::SetLocalTransit(proto::Transit transit) {
+  if (m_tap)
+    m_tap(transit);
   transit.player = proto::kNoPlayer;
   transit.revision = 0;
   if (m_localTransit) {
@@ -1919,6 +1960,8 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
 }
 
 bool Endpoint::SendCombat(proto::Message message) {
+  if (m_tap && play::Keeps(message))
+    m_tap(message);
   if (!IsJoined() || m_ended || !proto::IsCombat(message))
     return false;
   if (auto *area = std::get_if<proto::AreaHit>(&message)) {
@@ -1952,6 +1995,8 @@ bool Endpoint::SendCombat(proto::Message message) {
 }
 
 void Endpoint::SetLocalElsewhere(proto::Elsewhere state) {
+  if (m_tap)
+    m_tap(state);
   state = elsewhere::Sanitized(state);
   state.player = proto::kNoPlayer;
   if (state == m_localElsewhere)
@@ -2025,5 +2070,28 @@ void Endpoint::Leave(const std::string &reason) {
     m_session->Disconnect(peer);
   m_session->Poll(std::chrono::milliseconds{50});
   m_ended = true;
+}
+
+std::vector<proto::Message> Endpoint::LocalSnapshot() const {
+  std::vector<proto::Message> out;
+  if (m_localAppearance)
+    out.emplace_back(*m_localAppearance);
+  if (m_localHeld)
+    out.emplace_back(*m_localHeld);
+  if (m_localSeat)
+    out.emplace_back(*m_localSeat);
+  if (m_localRadio)
+    out.emplace_back(*m_localRadio);
+  if (m_localStealth)
+    out.emplace_back(*m_localStealth);
+  if (m_localTime.abilities)
+    out.emplace_back(m_localTime);
+  if (m_localTransit && m_localTransit->kind != proto::TransitKind::None)
+    out.emplace_back(*m_localTransit);
+  if (m_localVitals)
+    out.emplace_back(*m_localVitals);
+  if (m_localElsewhere != proto::Elsewhere{})
+    out.emplace_back(m_localElsewhere);
+  return out;
 }
 } // namespace tandem

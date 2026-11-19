@@ -453,5 +453,7 @@ public native class TandemNative extends IScriptable {
   public static native func RelayCode() -> String
   public static native func RelayStatus() -> String
   public static native func JoinByCode(code: String) -> Bool
+  public static native func RecordStart(name: String) -> Bool
+  public static native func RecordStop()
   public static native func IsJoinCode(text: String) -> Bool
 }

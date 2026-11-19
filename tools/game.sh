@@ -28,6 +28,8 @@
 #                              (default: join GAME_HOST, front mode, male body;
 #                              log in .cache/peer.log)
 #   tools/game.sh reload       hot-reload scripts and tweaks (RedHotTools)
+#   tools/game.sh fetch-play NAME  a gameplay recording made in game (cmd record
+#                              start NAME ... record stop) to recordings/play/NAME.tplay
 #   tools/game.sh cmd TEXT     a command for tandem in the running game:
 #                              respawn | inspect | bodies | probe | probe stop | despawn |
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
@@ -37,6 +39,8 @@
 #                              ride hide | ride show (every puppet out of sight and back) |
 #                              ride npc [RECORD] (an NPC into a free seat of our vehicle) |
 #                              teleport home | teleport X Y Z [YAW] |
+#                              record start NAME | record stop (our V's play, for
+#                              tandem-peer --play) |
 #                              proxy test [record] | proxy clear |
 #                              pose hook | pose report | pose watch [3] | pose copy [off] |
 #                              coop status | coop host [PORT] | coop join ADDRESS[:PORT] |
@@ -219,6 +223,17 @@ cmd() {
   echo "sent: $*"
 }
 
+# A recording of our V's play (plugin/src/net_thread.cpp writes it next
+# to the DLL) to recordings/play/, where scenarios and tandem-peer --play
+# find it.
+fetch_play() {
+  local name=${1:?a recording name}
+  mkdir -p recordings/play
+  scp -q "$host:$dir/red4ext/plugins/tandem/recordings/$name.tplay" "recordings/play/$name.tplay"
+  echo "recordings/play/$name.tplay ($(du -h "recordings/play/$name.tplay" | cut -f1))"
+  build/linux/peer/tandem-peer play-info "recordings/play/$name.tplay" 2>/dev/null || true
+}
+
 log() {
   remote "cd '$dir'; tail -n ${1:-40} \"\$(ls -t red4ext/logs/tandem-*.log | head -1)\""
 }
@@ -367,6 +382,7 @@ ensure)
   ;;
 healthy) healthy && echo healthy ;;
 reload) reload ;;
+fetch-play) fetch_play "${2:-}" ;;
 peer)
   shift
   peer "$@"

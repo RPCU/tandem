@@ -6,6 +6,7 @@
 
 #include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
+#include "tandem/play.hpp"
 
 #include <optional>
 #include <thread>
@@ -34,6 +35,44 @@ struct NetThread::Impl {
   // Consistency: what the player is told (never twice in a short while),
   // and whether our last session was lost (to say we are back).
   consistency::NoticeGate notices;
+
+  // Gameplay recording (tandem/play.hpp): our V as this game sends it, in a
+  // file next to the DLL. Kept across sessions; tapped on each endpoint.
+  play::Writer recorder;
+  std::string recordingName;
+
+  void Tap(Endpoint &endpoint) {
+    endpoint.SetTap([this, e = &endpoint](const proto::Message &message) {
+      recorder.Add(e->HostNowUs(), message);
+    });
+  }
+
+  // Starts a recording named `name` ("": stops the one going).
+  void Record(const std::string &name, Endpoint &endpoint) {
+    if (recorder.IsOpen()) {
+      endpoint.SetTap({});
+      log::Info("recording: {} stopped, {} messages, {:.1f} s ({})", recordingName,
+                recorder.Count(), static_cast<double>(recorder.LastUs()) / 1e6,
+                recorder.Path().string());
+      recorder.Close();
+    }
+    if (name.empty())
+      return;
+    const auto path = config.commandFile.parent_path() / "recordings" / (name + ".tplay");
+    std::string error;
+    if (!recorder.Open(
+            path, {.startHostUs = endpoint.HostNowUs(), .player = endpoint.You(), .body = body},
+            error)) {
+      log::Warn("recording: {}", error);
+      return;
+    }
+    recordingName = name;
+    // What the others already know of our V (look, held items, seat...).
+    for (const auto &message : endpoint.LocalSnapshot())
+      recorder.Add(endpoint.HostNowUs(), message);
+    Tap(endpoint);
+    log::Info("recording: {} started ({})", name, path.string());
+  }
 
   // Something serious, on screen (System.reds shows it the game's way), at
   // most once per `gapUs` for each key.
@@ -187,6 +226,8 @@ struct NetThread::Impl {
                                               : SessionStatus::State::Connecting,
             {}, endpoint.get());
     std::string endReason;
+    if (recorder.IsOpen())
+      Tap(*endpoint);
     if (lastAppearance)
       endpoint->SetLocalAppearance(*lastAppearance);
     if (lastHeld)
@@ -542,6 +583,8 @@ struct NetThread::Impl {
 
       runtime.SetClockOffset(static_cast<std::int64_t>(endpoint->HostNowUs()) -
                              static_cast<std::int64_t>(net::NowUs()));
+      if (auto request = runtime.TakeRecordingRequest())
+        Record(*request, *endpoint);
       if (auto local = runtime.TakeLocal()) {
         Story::Get().FilterLocal(*local); // a private scene: held where it began
         endpoint->SendLocalState(*local);

@@ -11,6 +11,11 @@
 #                          with these extra tandem.ini keys (restarts
 #                          only when needed: tools/game.sh ensure)
 #   peer ARGS...           (re)start the mock player
+#   play NAME ARGS...      the mock player joins and replays a real V's play,
+#                          recordings/play/NAME.tplay (tools/game.sh
+#                          fetch-play), our V first teleported beside where it
+#                          starts; without that file, it joins with ARGS (a
+#                          synthetic --mode) instead. $played says which (1, 0)
 #   cmd TEXT               a tandem command in the game
 #   expect REGEX [SECS]    a game log line since the scenario began (default
 #                          30 s); fails at once if the watchdog reports a
@@ -28,7 +33,7 @@
 # The game restarts only when the build or the role changed (scripts would
 # be hot-reloaded if RedHotTools were installed). Never run this while
 # someone plays (AGENTS.md).
-# shellcheck disable=SC2029
+# shellcheck disable=SC2029,SC2034 # (SC2034: $played is read by the scenarios it sources)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -93,6 +98,27 @@ peer() {
   peer_mark=0
 }
 cmd() { $game cmd "$*" >/dev/null || fail "command not taken: $*"; }
+played=0
+play() {
+  local name=$1 file=recordings/play/$1.tplay address beside
+  shift
+  address=$(getent ahostsv4 "$host" | awk 'NR == 1 { print $1 }')
+  if [ ! -f "$file" ]; then
+    echo "  no $file (tools/game.sh fetch-play $name): synthetic motion"
+    played=0
+    peer join "$address:27450" "$@"
+    return
+  fi
+  beside=$(build/linux/peer/tandem-peer play-info "$file" | sed -n 's/^beside: //p')
+  [ -n "$beside" ] || fail "$file holds no state of its V"
+  echo "  replaying $file"
+  cmd "$beside"
+  expect 'teleport: ' 10
+  # A far teleport loads the world around V before the replay walks it.
+  pause 5
+  played=1
+  peer join "$address:27450" --play "$file" "$@"
+}
 note() { echo "  $*"; }
 shot() { mkdir -p "$out" && $game shot "$1" >/dev/null && cp ".cache/shots/$1.png" "$out/"; }
 

@@ -22,7 +22,8 @@ declare -A value=(
   ["--sandevistan-at"]=10 ["--sandevistan-for"]=5 ["--sandevistan-scale"]=0.25
   ["--metro-at"]=5 ["--metro-for"]=40 ["--seat"]=seat_front_right ["--driver-npc"]=Character.x
   # A flag without a value: followed by another flag that takes none.
-  ["--scene"]=--check ["--ride-along"]=--check
+  ["--scene"]=--check ["--ride-along"]=--check ["--play-loop"]=--check
+  ["--play"]=x.tplay ["--play-offset"]="1,2,3" ["--save-play"]=x.tplay
   ["--travel-at"]=15 ["--travel-to"]="-915,1879.5,36.3" ["--travel-point"]=FastTravel.x
   ["--offer-regroup"]=10 ["--regroup-answer"]=no
   ["--latency"]=120 ["--jitter"]=40 ["--loss"]=5 ["--reorder"]=2.5

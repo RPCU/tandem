@@ -23,6 +23,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -949,6 +950,28 @@ struct TandemNative : Red::IScriptable {
 
   static Red::CString RelayStatus() { return Red::CString(Runtime::Get().RelayStatus().c_str()); }
 
+  // Gameplay recording (tandem/play.hpp, tools/game.sh cmd record start
+  // NAME): our V's play, written by the net thread next to the DLL as
+  // recordings/NAME.tplay. False: no session, or not a file name.
+  static bool RecordStart(Red::CString name) {
+    const std::string text = name.c_str();
+    const bool valid = !text.empty() && text.size() <= 64 && std::ranges::all_of(text, [](char c) {
+      return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_' || c == '.';
+    }) && text.front() != '.';
+    if (!valid) {
+      log::Warn("recording: '{}' is not a name (letters, digits, - _ .)", text);
+      return false;
+    }
+    if (!Runtime::Get().Started()) {
+      log::Warn("recording: no session (tandem.ini role = host records alone)");
+      return false;
+    }
+    Runtime::Get().RequestRecording(text);
+    return true;
+  }
+
+  static void RecordStop() { Runtime::Get().RequestRecording(""); }
+
   static bool JoinByCode(Red::CString code) { return Runtime::Get().JoinByCode(code.c_str()); }
   // The text is a join code (6 characters of base32, a dash optional).
   static bool IsJoinCode(Red::CString text) {
@@ -1831,6 +1854,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RelayCode);
   RTTI_METHOD(RelayStatus);
   RTTI_METHOD(JoinByCode);
+  RTTI_METHOD(RecordStart);
+  RTTI_METHOD(RecordStop);
   RTTI_METHOD(IsJoinCode);
   RTTI_METHOD(SendSeat);
   RTTI_METHOD(SendVehicle);
