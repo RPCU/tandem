@@ -5,7 +5,9 @@
 # TANDEM_RELAY_FRONT; TANDEM_RELAY_BIN for the cases that start and stop a
 # relay of their own), then the mock player hosting at the entrance and a
 # second one joining at the other replica by the code the first logged, as
-# players would.
+# players would; last, the same through a PROXY v2 forwarder
+# (relay/internal/proxyfwd, playit.gg's way) in front of a relay run with
+# --proxy-protocol.
 #
 # Usage: relay_loopback.sh GO RELAY_SOURCE TANDEM_TESTS TANDEM_PEER
 set -euo pipefail
@@ -79,3 +81,28 @@ if [ -z "$joined" ]; then
   exit 1
 fi
 echo "tandem-peer hosted at the entrance and joined by code $code at another replica"
+
+# Behind a tunnel that says who its clients are in PROXY v2 headers
+# (playit.gg): the relay trusts only the forwarder's address (127.0.0.2),
+# which keeps a socket per client and sends the header first on each.
+(cd "$source" && "$go" build -o "$work/proxyv2-forward" ./internal/proxyfwd/cmd)
+proxied=127.0.0.1:$((base + 3))
+"$work/tandem-relay" serve --allow-any-host --udp "$proxied" --http 127.0.0.1:0 \
+  --proxy-protocol --trusted-proxies 127.0.0.2/32 >"$work/proxied.log" 2>&1 &
+if [ -z "$(wait_for "$work/proxied.log" 's/.*"msg":"relay up".*"proxy_protocol":\(true\).*/\1/p')" ]; then
+  echo "the proxied relay did not start:" >&2
+  cat "$work/proxied.log" >&2
+  exit 1
+fi
+"$work/proxyv2-forward" 127.0.0.1:0 "$proxied" from=127.0.0.2 >"$work/forward.log" 2>&1 &
+tunnel=$(wait_for "$work/forward.log" 's/^forwarding \([^ ]*\) to .*/\1/p')
+"$peer" host --mode idle --port "$((port + 1))" --relay "$tunnel" >"$work/phost.log" 2>&1 &
+code=$(wait_for "$work/phost.log" 's/.*join code \([0-9A-Z-]*\) .*/\1/p')
+"$peer" join --code "$code" --relay "$tunnel" --mode idle >"$work/pguest.log" 2>&1 &
+joined=$(wait_for "$work/pguest.log" 's/.*\(in the session\).*/\1/p')
+if [ -z "$code" ] || [ -z "$joined" ]; then
+  echo "through the PROXY v2 forwarder: not in the session (code '$code')" >&2
+  cat "$work/phost.log" "$work/pguest.log" "$work/proxied.log" "$work/forward.log" >&2
+  exit 1
+fi
+echo "tandem-peer hosted and joined by code $code through a PROXY v2 tunnel"
