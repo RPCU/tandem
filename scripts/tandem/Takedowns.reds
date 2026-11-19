@@ -518,6 +518,9 @@ public class TandemTakedowns extends ScriptableSystem {
       reason = 3;
     } else if (kind == 8 || kind == 9) && (!IsDefined(held) || held.player != event.player) {
       reason = 4;
+    } else if kind != 2 && this.SceneActor(body, event) {
+      // An actor of our V's scene (Restrictions.reds): not while it lasts.
+      reason = 6;
     }
     TandemNative.SendNpcActionReply(event.player, event.npc, kind, reason == 0, reason);
     let answer = "accepted";
@@ -533,6 +536,12 @@ public class TandemTakedowns extends ScriptableSystem {
       }
       this.Apply(body, puppet, event);
     }
+  }
+
+  private func SceneActor(body: ref<NPCPuppet>, event: TandemNpcAction) -> Bool {
+    let story = TandemStorySystem.Get(this.GetGameInstance());
+    return IsDefined(story) && IsDefined(story.Restrictions())
+      && story.Restrictions().RefusesHit(body, event.npc, event.player, TandemTakedowns.KindName(event.action));
   }
 
   // The finisher's condition still holds here: its health is no higher than

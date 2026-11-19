@@ -20,6 +20,7 @@ declare -A value=(
   ["--friendly-fire"]=on ["--throw"]=5 ["--throw-item"]=Items.x ["--smart"]=5 ["--defend"]=5
   ["--hit-you-melee"]=on
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
+  ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5
   ["--shoot-you"]=3 ["--shot-weapon"]=Items.x
   ["--sandevistan-at"]=10 ["--sandevistan-for"]=5 ["--sandevistan-scale"]=0.25 ["--scan-at"]=10
   ["--metro-at"]=5 ["--metro-for"]=40 ["--seat"]=seat_front_right ["--driver-npc"]=Character.x

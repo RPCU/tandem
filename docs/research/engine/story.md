@@ -385,3 +385,132 @@ enable)` (:189919), called by quest nodes, not by reward records: a
 - To check in game (spikes C1a, C1b of the carry-over design): a hustle
   marked done from outside stays done across a save and load; a gig whose
   end facts are set finishes through its own graph. [2.5-untested]
+
+### 13.45 Gameplay restrictions: how quests hold V, and how a guest wears the host's (2026-11-19, scripts, Codeware and RTTI read)
+
+For `docs/architecture/story.md`, "Restrictions"
+(`scripts/tandem/Restrictions.reds`). Nothing here was run; F is
+`final.reds` (2.50).
+
+- **The status effect API.** `StatusEffectSystem.ApplyStatusEffect(objID,
+statusEffectID, opt instigatorID: TweakDBID, opt instigatorEntityID,
+opt applyCount, opt direction, opt isSavable, opt proxyEntityID)` and
+  `RemoveStatusEffect(objID, statusEffectID, opt removeCount: Uint32)`
+  (F:51168, :51180); `GetAppliedEffects(objID, out array)`,
+  `HasStatusEffectWithTag`, the static `ObjectHasStatusEffect(target, id)`
+  and `ObjectHasStatusEffectWithTag(target, tag)` (:51214). **No remove by
+  source or instigator**: `StatusEffectHelper.RemoveStatusEffectsByInstigatorID`
+  (:169066) matches the instigator, then removes the whole record. One
+  `StatusEffect` per record per target: `GetStackCount`, `GetMaxStacks`,
+  `GetInstigatorStaticDataID`, `GetInstigatorEntityID` (:83695), the
+  instigator being the last application's. The game's own counted uses
+  apply one stack and take one off (`RemoveStatusEffect(…,
+t"GameplayRestriction.NoWeapons", 1u)`, :282682/:282700, :548508…:548809).
+  Events: `ApplyStatusEffectEvent { isNewApplication, isAppliedOnSpawn,
+instigatorEntityID, proxyEntityID }` (:203824) and
+  `RemoveStatusEffect { isFinalRemoval }` (:203958), both with
+  `staticData` and `stackCount` (:179275). [2.5-verified offline for the
+  signatures; maxStacks of the restriction records is TweakDB data, not
+  read]
+- **Codeware's view of the sources**: `StatusEffect.sourcesData:
+array<gameSourceData{name: CName, savable}>`, `applicationSource`,
+  `instigatorRecordID`, `maxStacks` (CW
+  `scripts/Base/Addons/StatusEffect.reds`). The array must be indexed
+  (`for x in` over it is refused: the element type is a class without
+  `ref`). Quests name a source when they add restrictions (below), so this
+  is the one place that tells a quest's from another's. [2.5-untested]
+- **What a gameplay restriction is**: a status effect with the gameplay
+  tag `GameplayRestriction`. `PlayerPuppet.OnStatusEffectApplied` (F:43899)
+  hands those to `PlayerGameplayRestrictions.OnGameplayRestrictionAdded`
+  (:43931, :179041; removal :44490, :179082), and pushes the record's
+  `ActionRestriction` into the state machine's blackboard on a **new**
+  application only (:43934, `AddGameplayRestriction` :39826) while every
+  removal event pops it (:44492, :39842): taking one stack off a record
+  another source also holds can drop its action restriction early.
+  `RemoveAllGameplayRestrictions` removes the tag (:179037), on every fast
+  travel (:50417). There is no restriction value in
+  `gamedataStatusEffectType` (:4332); records cast to
+  `GameplayRestrictionStatusEffect_Record` (:249721). [2.5-untested]
+- **Records the scripts name** (`t"GameplayRestriction.*"`): BlockAllHubMenu,
+  BlockAllMenu, NoWeapons, NoMovement, FistFight, BlockFastTravel,
+  NoRadialMenus, NoJump, NoCameraControl, InfiniteAmmo, FastForward
+  (+CrouchLock, HintActive), Tier2Locomotion (Slow, Fast), BodyCarrying*,
+  VehicleNoInteraction, VehicleCombatNoInterruptions, PhoneCall*,
+  NoScanning, ForceCrouch, FocusModeLocomotion, FirearmsNoUnequipNoSwitch,
+  Firearms, DriverCombat*, Braindance, SecurityLocker,
+  NoWorldInteractions, BlockDeviceInteractions. `GameplayRestriction.NoCombat`
+  is named by no vanilla script (quests and tandem use it; it exists in
+  TweakDB). [2.5-untested]
+- **How the game answers them** (tags the player state machine reads):
+  `NoCombat` (unless `FastForward`), or `VehicleScene`, is
+  `IsNoCombatActionsForced` (F:246203), one of the reasons of
+  `IsEmptyHandsForced` (:246315); the upper body state machine's
+  `ForceEmptyHands` state then sends `EquipmentManipulationAction.UnequipAll`
+  (:540443) and sets `PlayerStateMachine.UpperBody` = 5 (:540449), and the
+  quick slots, the wheel and the hints are blocked (:239164, :420961,
+  :246807). So **holstering the game's way is a NoCombat-tagged effect**: a
+  one-off `EquipmentSystemWeaponManipulationRequest` (UnequipWeapon 21,
+  UnequipAll 25, :11190) does not stop a redraw. Fists, Melee, Firearms,
+  FirearmsNoUnequip/NoSwitch (:246185-:246202; on add, Fists and Melee
+  request the weapon, :179052); NoWeapons (`EmptyHandsEvents`, :540826);
+  NoJump (vault and climb, :246174; the jump hint by record, :246810);
+  ForceCrouch (:246168); NoDriving (:545366); NoScanning (:43929). Forced
+  walk is no tag: a state machine parameter (:244637); NoSprint, NoRun and
+  VehicleNoSummoning are read by no script (their records' action
+  restrictions or stats). [2.5-untested]
+- **The other reasons hands are forced empty**: the state machine's
+  `ForceEmptyHands` (the scene tier's `emptyHands`,
+  `SceneTierAbstractEvents`, :529823-:529861; `questSetTier_NodeType
+{ forceEmptyHands }`), `ForceEmptyHandsByZone` (a safe zone), and the
+  quest fact `ForceEmptyHands` (:246315). `SceneAimForced` and
+  `SceneSafeForced` (events `SceneForceWeaponAim` / `SceneForceWeaponSafe`,
+  :44668, :44708) override them. None of these is a status effect: the host
+  reads `PlayerStateMachine.UpperBody == 5` and reports it as NoCombat.
+  [2.5-untested]
+- **Quests**: `questGameplayRestrictions_NodeType { action
+(AddRestriction, RemoveRestriction, RemoveAllRestrictions), source: CName,
+restrictionIDs: array<TweakDBID> }`, `questCharacterManagerParameters_SetStatusEffect`,
+  `questSetTier_NodeType`, `questEquipItemParams { unequipTypes }` (CW
+  imports; the RTTI dump). Quest unequips go through
+  `OnUnequipByContextRequest` (F:56330). The scene tier is the state
+  machine's `SceneTier` parameter; `PlayerPuppet.GetSceneTier` reads
+  `PlayerStateMachine.HighLevel` (:44340); tiers 2 to 5 are "safe"
+  (`IsInSafeSceneTier`, :245890). `IsInLoreAnimationScene` (:53783) has no
+  script reader; lore animations are the status effect tag `LoreAnim`.
+  [2.5-untested]
+- **Static zones are not status effects.** `SecuritySystemControllerPS`
+  sets the player's security area type when it crosses a perimeter
+  (:114622, :114668, `SetSecurityAreaTypeE3HACK` :46209); `SAFE` maps to
+  `PublicZone`, not `SafeZone` (:46273), so security areas never holster.
+  The no-weapons safe zone is the quest fact `CityAreaType` = 2 (:45927,
+  :46262) → `OnEnterSafeZone`: `ForceEmptyHandsByZone` and
+  `PlayerStateMachine.Zones` = 2 (:46231-:46240). Security areas are placed
+  world devices (`SecurityArea` :502149, `SecurityAreaControllerPS`
+  :117493, quest-driven transitions :117830-:117914), and the safe-zone
+  fact is set by the world's own quest triggers: **a guest's world has
+  them on its own** (its own phases set the fact; the quest freeze lets
+  open-world phases run, `architecture/story.md`), so the host shares none
+  of them. [2.5-untested: that a frozen guest's safe zones still apply]
+- **Telling ours from the game's**: an invented instigator TweakDBID is
+  only a hash and one instance keeps one instigator, so it proves nothing.
+  Two ways: our own TweakXL clones of the records (only our instances are
+  touched; tag checks still fire, record-ID checks such as the jump hint
+  do not), or the vanilla records with a ledger: apply only when the V
+  does not have the effect (else it is the guest's own), one stack, take
+  one stack off; a later re-application by the guest's game shows as an
+  `ApplyStatusEffectEvent` with `isNewApplication` false: one stack means
+  it refreshed ours (it is the guest's now), two that it stacked (ours
+  comes off, its stays). tandem uses the second (record IDs behave exactly
+  as for the host). [2.5-untested]
+- **The host's backstop**: `GameObject.IsQuest()` (`m_markAsQuest`,
+  F:13517); `GodModeSystem.HasGodMode(id, gameGodModeType.Immortal |
+Invulnerable)` (:87673, types :530; quests set it through
+  `questCharacterManagerParameters_SetMortality { source }`);
+  `GameInstance.GetSceneSystem(game).GetScriptInterface().IsEntityInScene(id)`
+  (:193151). [2.5-verified offline]
+- To check in game (scenarios `story-restrict-guest`, `story-restrict-host`):
+  which records a real quest scene puts on the host's V and with which
+  `sourcesData` (the host logs both); that NoCombat applied to a guest
+  holsters it and blocks the wheel; that taking our stack off leaves a
+  restriction the guest's own game holds; maxStacks of NoCombat and
+  NoWeapons. [2.5-untested]

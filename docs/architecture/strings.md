@@ -439,6 +439,8 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Comms-PinPlaced` | The map pin {1} placed | Le repère placé par {1} | Comms.reds |
 | `Comms-PlaceTracked` | The place {1} tracks | Le lieu que suit {1} | Comms.reds |
 | `Comms-WaypointSet` | {1} set a waypoint | {1} a placé un point de passage | Comms.reds |
+| `Story-RestrictHolstered` | {1}'s scene: weapons away. | Scène de {1} : armes rangées. | Restrictions.reds |
+| `Story-RestrictSlow` | {1}'s scene: take it slow. | Scène de {1} : doucement. | Restrictions.reds |
 | `Travel-Blocked` | You can't fast travel right now | Voyage rapide impossible pour l'instant | Text.reds, Travel.reds |
 
 ### The settings page

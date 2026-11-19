@@ -48,6 +48,68 @@
     within 30 m of the host in a tier 3+ scene has its weapons lowered, tier
     4+ also invulnerable; a guest further than 100 m from a tier 4+ scene
     gets an offer to join (the regroup itself: TODO).
+  - _Restrictions_ (`scripts/tandem/Restrictions.reds`, `core/src/story.cpp`
+    `InMoment` and `Restrictions`, engine facts §13.45). The quest runs on
+    the host, so the restrictions its story puts on the host's V (no
+    weapons, no sprint, no jump, forced walk, no vehicle, no quickhacks)
+    would hold the host alone, and a guest could draw and fire beside the
+    host's scene, kill a quest NPC or break the scene. Now a guest that
+    shares the host's story moment wears the same ones on its own V.
+    - _The host reports_ four times a second the gameplay restrictions on
+      its V that a guest beside it shares: its status effects tagged
+      `GameplayRestriction`, but not what holds the host's own body or
+      camera (NoMovement, NoCameraControl, ForceCrouch, camera animations),
+      its menus and fast travel, nor what its own activity puts on (a body
+      carried, a call, a braindance, a time skip, focus mode, driving in
+      combat, a locker); and NoCombat when its hands are forced empty by
+      its scene or quest (the upper body state machine's ForceEmptyHands,
+      not a safe zone's). As `StoryRestrictions` (the whole set, sorted, on
+      every change; a story message: kept for late joiners, in the story
+      digest, an explicit "none" in a story resync). Each record's sources
+      (Codeware's `sourcesData`) are logged.
+    - _Who shares the moment_ (`story::InMoment`): the host's V is in a
+      scene (tier 2 and up, **private scenes included**: a guest inside
+      one's area could break it too) or has story restrictions on; the
+      guest is grouped with the host (`TandemStorySystem.Grouped()`: not
+      apart; the regions' leader rule later), neither V is in another world,
+      and it stands within 40 m of the host's V (the earshot of the scene's
+      voices; 50 m to leave, so the edge does not flicker) or inside the
+      staged scene when scene replay says where (its actors' spread, at most
+      30 m, plus 12 m; 20 m to leave). A straggler outside the moment
+      firing at a quest NPC is the combat path's, as always: the
+      restriction never reaches beyond the moment.
+    - _The guest wears them_ by the same records
+      (`StatusEffectHelper.ApplyStatusEffect`, one stack), so its game
+      holsters it and blocks its wheel the game's way (NoCombat: the upper
+      body state machine's ForceEmptyHands, §13.45). It takes them off when
+      it walks out, when the host lifts them, when the session ends or the
+      host vanishes (`GuestLeave`), one stack each. **Only what tandem put
+      on comes off**: an effect its V already had (its own world's, its
+      own quest's) is "theirs" and never applied nor removed; one its own
+      game applies again while ours is on (a refresh, not a second stack)
+      becomes theirs; one its game takes off is put on again while the
+      moment wants it. The scene holds above (weapons lowered at tier 3+,
+      invulnerable at 4+, within 30 m) go through the same ledger, so the
+      two never undo each other.
+    - _A notice_, once per moment, when a restriction first comes on:
+      "NAME's scene: weapons away." (or "take it slow." for the rest),
+      plain strings in `TandemRestrictText` until the localization table
+      (`Text.reds`, branch `polish`) is here.
+    - _The host's backstop_: while its V is in a scene or restricted, the
+      host refuses a guest's strike or takedown on one of the scene's
+      actors (scene replay's cast, or an NPC in a scene that is a quest NPC
+      or kept alive by god mode), logging `story: refused a guest's hit
+during the host's scene`.
+    - Static safe zones are not shared: they are a quest fact of the
+      guest's own world (`CityAreaType`), which its own open-world phases
+      set (to verify with the freeze on).
+    - Tests: `tests/restrictions_test.cpp` (the moment, the ledger, the
+      record, the endpoints: late joiner, lift, a lost lift, a vanished
+      host); mock player `--restrict REC[,REC] --restrict-at S
+--restrict-for S` and the story verb `restrict`; scenarios
+      `story-restrict-guest`, `story-restrict-host`; `tools/game.sh cmd
+story restrict` (report), `story restrict on|off REC` (a test
+      restriction on our V).
   - _Johnny, Songbird, takeovers_ (`research/coop-quests-design.md` §2.11):
     Johnny and Songbird are NPCs of the host's world, so a guest near the
     host sees them as proxies where the host does. Johnny's relic glitches
@@ -93,7 +155,7 @@
     the list. Iconics and rewards stay.
   - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`,
     `story-private`, `story-private-host`, `story-session-items`,
-    `story-gigs-apart`.
+    `story-gigs-apart`, `story-restrict-guest`, `story-restrict-host`.
 
 ## Open problems
 

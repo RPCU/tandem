@@ -463,6 +463,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Comms-PinPlaced", "The map pin {1} placed");
     this.Text("Tandem-Comms-PlaceTracked", "The place {1} tracks");
     this.Text("Tandem-Comms-WaypointSet", "{1} set a waypoint");
+    this.Text("Tandem-Story-RestrictHolstered", "{1}'s scene: weapons away.");
+    this.Text("Tandem-Story-RestrictSlow", "{1}'s scene: take it slow.");
     this.Text("Tandem-Travel-Blocked", "You can't fast travel right now");
     // The settings page (Settings.reds).
     this.Text("Tandem-Menu-Settings", "Settings");
@@ -721,6 +723,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Comms-PinPlaced", "Le repère placé par {1}");
     this.Text("Tandem-Comms-PlaceTracked", "Le lieu que suit {1}");
     this.Text("Tandem-Comms-WaypointSet", "{1} a placé un point de passage");
+    this.Text("Tandem-Story-RestrictHolstered", "Scène de {1} : armes rangées.");
+    this.Text("Tandem-Story-RestrictSlow", "Scène de {1} : doucement.");
     this.Text("Tandem-Travel-Blocked", "Voyage rapide impossible pour l'instant");
     this.Text("Tandem-Menu-Settings", "Paramètres");
     this.Text("Tandem-Settings-Saved", "Enregistrés dans tandem.ini dès leur modification");
