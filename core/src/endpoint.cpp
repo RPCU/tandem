@@ -836,6 +836,18 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
   if ((domains & proto::kDomainWorld) && !resync)
     SendDevicesTo(peer, false);
   if (domains & proto::kDomainNpcs) {
+    // The world vehicles, before who sits in them (the NPCs' seats below).
+    if (resync) {
+      proto::TrafficSet set;
+      for (const auto &[id, spawn] : m_traffic)
+        if (set.ids.size() < proto::kMaxTrafficSet)
+          set.ids.push_back(id);
+      Send(peer, set);
+    }
+    for (const auto &[id, spawn] : m_traffic)
+      Send(peer, spawn);
+    for (const auto &[id, status] : m_trafficStatus)
+      Send(peer, status);
     // The NPCs this guest shows: those of the owners it is linked with.
     std::vector<proto::NpcId> shown;
     for (const auto &[npc, spawn] : m_npcs)
@@ -2199,6 +2211,7 @@ void Endpoint::NoteTransit(const proto::Transit &transit) {
 }
 
 void Endpoint::SendTrafficSpawn(const proto::TrafficSpawn &spawn) {
+  Record(spawn);
   if (!OwnsArea() || !IsHost() || m_ended)
     return;
   if (const auto it = m_traffic.find(spawn.id); it != m_traffic.end() && it->second == spawn)
@@ -2208,6 +2221,7 @@ void Endpoint::SendTrafficSpawn(const proto::TrafficSpawn &spawn) {
 }
 
 void Endpoint::SendTrafficStates(proto::TrafficStates states) {
+  Record(states);
   if (!OwnsArea() || !IsHost() || m_ended)
     return;
   // Only what we announced, and no more than a packet holds.
@@ -2230,6 +2244,7 @@ void Endpoint::SendTrafficStates(proto::TrafficStates states) {
 }
 
 void Endpoint::SendTrafficGone(const proto::TrafficGone &gone) {
+  Record(gone);
   if (!OwnsArea() || !IsHost() || m_ended || !m_traffic.contains(gone.id))
     return;
   ForgetTraffic(gone.id);
@@ -2237,6 +2252,7 @@ void Endpoint::SendTrafficGone(const proto::TrafficGone &gone) {
 }
 
 void Endpoint::SendTrafficStatus(const proto::TrafficStatus &status) {
+  Record(status);
   if (!OwnsArea() || !IsHost() || m_ended || !m_traffic.contains(status.id))
     return;
   auto kept = status;
@@ -2279,6 +2295,7 @@ void Endpoint::TakeTraffic(proto::PlayerId player, proto::TrafficId id,
 }
 
 void Endpoint::SendTrafficHit(const proto::TrafficHit &hit) {
+  Record(hit);
   if (!IsJoined() || m_ended || !m_traffic.contains(hit.id))
     return;
   // Our own vehicles' hits are our game's.
@@ -2290,6 +2307,7 @@ void Endpoint::SendTrafficHit(const proto::TrafficHit &hit) {
 }
 
 void Endpoint::ClaimTraffic(proto::TrafficId id, std::uint64_t seat) {
+  Record(proto::TrafficClaim{.player = m_you, .id = id, .seat = seat});
   if (!IsJoined() || m_ended || !m_traffic.contains(id))
     return;
   if (IsHost())
@@ -2299,6 +2317,9 @@ void Endpoint::ClaimTraffic(proto::TrafficId id, std::uint64_t seat) {
 }
 
 void Endpoint::SetLocalHeat(proto::Heat heat) {
+  Record(heat);
+  if (m_tap)
+    m_tap(heat);
   heat.stage = std::min(heat.stage, proto::kMaxHeat);
   if (heat.stage == 0)
     heat.state = proto::HeatState::Default;
@@ -2347,6 +2368,7 @@ void Endpoint::EndHeatOf(proto::PlayerId player, std::vector<SessionEvent> &out,
 }
 
 bool Endpoint::SendCrime(const proto::Crime &crime) {
+  Record(crime);
   if (!OwnsArea() || !IsHost() || m_ended || crime.player == m_you)
     return false; // our own V's crimes are our game's
   const auto peer = PeerOf(crime.player);

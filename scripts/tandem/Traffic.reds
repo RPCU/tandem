@@ -1,5 +1,5 @@
 // World vehicles: traffic, parked cars, police cars (docs/architecture/traffic.md).
-// One game runs them: the owner of the area (TandemArea: the host today). It
+// One game runs them: the owner of the area (TandemArea, the regions' area owner). It
 // announces each vehicle near a player (TandemStreet.SendSpawn), says where
 // they all are ten times a second and how each stands (health, wreck,
 // siren). The other games show each one as a proxy: a copy of the same
@@ -12,18 +12,19 @@
 // elsewhere) to that player's seat as its car copy.
 
 // Who runs the world around a player: its NPCs, its traffic, its police.
-// The host's game today, everywhere; with per-player regions
-// (docs/research/coop-regions.md; in progress on its own branch) the owner of the player's group. Traffic
-// and police are written against this alone.
+// The area owner of per-player regions (docs/architecture/regions.md, "The
+// area owner"; Endpoint::AreaOwner). Traffic and police are written against
+// this alone.
 public abstract class TandemArea {
   // Our game runs the world around our V.
   public static func Owns() -> Bool {
-    return TandemNative.IsHost();
+    return TandemRegions.OwnsArea();
   }
 
   // Our game runs the world around that player's V (its puppet here).
   public static func OwnsAround(player: Uint32) -> Bool {
-    return TandemNative.IsHost();
+    let you = TandemNative.You();
+    return you != 0u && TandemRegions.AreaOwner(player) == you;
   }
 }
 

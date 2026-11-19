@@ -557,8 +557,8 @@ public:
   // Host only: one of our NPCs got into (owner set) or out of a player's
   // vehicle; kept while it sits, for late joiners.
   void SendNpcSeat(const proto::NpcSeat &seat);
-  // Who runs the world around a player (its NPCs, traffic, police): AreaOwner
-  // and OwnsArea, with the regions below.
+  // Who runs the world around a player (its traffic and police too):
+  // AreaOwner and OwnsArea, under Regions below.
   // Area owner only: the world vehicles it shares. Spawns and statuses are
   // kept for late joiners until the vehicle is gone; a spawn's position
   // follows the states. Ids come from proto::MakeTrafficId(You(), n).
@@ -702,7 +702,7 @@ public:
   bool Apart() const { return Linked().empty(); }
   proto::PlayerId RegionLeader() const;
   // The game that runs the world around `player`: its new NPCs, its crowd,
-  // its traffic and police (traffic.md of the traffic-police branch, "Who owns an
+  // its traffic and police (docs/architecture/traffic.md, "Who owns an
   // area"; the rule is regions::AreaOwner). A player's own game, unless its V
   // is deep in the region of a linked player that outranks it. Every
   // endpoint decides it from the places it hears, every 250 ms.

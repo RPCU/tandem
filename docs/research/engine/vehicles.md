@@ -210,7 +210,7 @@ stationName, songName)` (149608, no script caller) asks a station for a
   `CarRadioVolume`, `RadioportVolume`, read by the popup): not synced.
   [2.5-untested]
 
-### 13.32 Vehicle combat: the hooks and setters (2026-11-19, 2.50 scripts read)
+### 13.35 Vehicle combat: the hooks and setters (2026-11-19, 2.50 scripts read)
 
 Read from the 2.50 game's own scripts (`final.reds` of the game's bundle,
 line numbers of that dump); none of it run in game yet: every line is

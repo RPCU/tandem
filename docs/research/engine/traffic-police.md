@@ -18,9 +18,9 @@ Tags: `[S]` read in the vanilla scripts, `[R]` read in the RTTI dump, `[C]`
 Codeware's source, `[T]` measured by tandem in game, `[I]` inferred from
 those (stated nowhere, not tested), `[U]` reported by the user from play.
 
-## 1. Traffic
+## 13.32 Traffic and world vehicles
 
-### 1.1 What traffic is
+### What traffic is
 
 - **Traffic vehicles are crowd members.** A traffic car is a vehicle with a
   `gameCrowdMemberComponent` driven along lane splines by the native
@@ -61,7 +61,7 @@ those (stated nowhere, not tested), `[U]` reported by the user from play.
   (`final.reds:474500`). Whether the last two take a traffic car away is a
   probe for a day the game is free. `[S]` `[C]` `[I]`
 
-### 1.2 Finding the vehicles of the world
+### Finding the vehicles of the world
 
 - The targeting filters have no vehicle class (`TSFMV`: player, puppet,
   sensor, device, other; `final.reds` enum), so
@@ -84,7 +84,7 @@ those (stated nowhere, not tested), `[U]` reported by the user from play.
   street car has about 1050 points, engine-knowledge §6),
   `GetVehiclePS().GetSirenState()`, `IsPerformingPanicDriving()`. `[S]`
 
-### 1.3 Collisions, hits, explosions
+### Collisions, hits, explosions
 
 - **A bump is an event on the vehicle**: `VehicleBumpEvent{impactVelocityChange,
 isInTraffic, hitVehicle, hitNormal}` → `VehicleObject.OnVehicleBumpEvent`
@@ -110,7 +110,7 @@ isInTraffic, hitVehicle, hitNormal}` → `VehicleObject.OnVehicleBumpEvent`
 - A fleeing driver: `TriggerDrivingPanicBehavior(threatPosition)` (private,
   `final.reds:88621`), guarded by `CanStartPanicDriving()`. `[S]`
 
-### 1.4 Getting in, stealing
+### Getting in, stealing
 
 - `VehicleObject.OnMountingEvent(evt)` (`final.reds:88088`) runs for every
   mount; for the player it calls `ReevaluateStealing(character, slot,
@@ -126,7 +126,7 @@ occupiedByNonFriendly)` and then `StealVehicle(thief)`: a
   nothing in the scripts creates that request (native, or dead). What a
   theft costs is the witnesses' `CrimeWitness` reaction. `[S]`
 
-### 1.5 Moving a vehicle we do not simulate
+### Moving a vehicle we do not simulate
 
 Unchanged from engine-knowledge §13.6 `[T]`: a dynamic vehicle teleported
 every frame with the teleportation facility stays exactly where it is put;
@@ -137,7 +137,7 @@ moved by teleport after its driver left it (the owner's side of a theft)
 was never tried, nor was `DynamicEntitySystem.DisableEntity` as a way to
 retire a proxy.
 
-## 2. Police
+## 13.33 Police: the prevention system
 
 The prevention system is described in `coop-quests-world.md` §9: a script
 system (`PreventionSystem`, `final.reds:138624-143058`) that keeps the
@@ -145,7 +145,7 @@ score, the heat stage and the stars, over a native spawn system
 (`PreventionSpawnSystem`, `:189163`). What follows is what the co-op rule
 needed beyond it.
 
-### 2.1 How a crime is attributed
+### How a crime is attributed
 
 Every input checks for **the local player**, by `IsPlayer()` on the
 instigator or by taking the local player outright. There is no notion of
@@ -185,7 +185,7 @@ Consequences `[I]`:
   the object the stimulus came from (`final.reds:147824-147828`, class
   `AIReactionData`). That is the culprit a witness saw. `[S]`
 
-### 2.2 The score and the stars
+### The score and the stars
 
 - `ProcessPreventionDamageRequest` (`:140645`) adds to `m_totalCrimeScore`
   by victim and attack type from the district's heat table and raises the
@@ -204,7 +204,7 @@ Consequences `[I]`:
 - Forcing a stage: the quest request `SetWantedLevel{m_wantedLevel, …}`
   (`:141996`); standing down: `PreventionForceDeescalateRequest`. `[S]`
 
-### 2.3 Who the police are hostile to
+### Who the police are hostile to
 
 `ChangeAgentsAttitude` (`:141851`) sets the **group** relation between
 `police` (and the registered agent groups) and the local player's attitude
@@ -220,7 +220,7 @@ effects `PreventionStatusEffect.OnStarDropToZero` and
 `BaseStatusEffect.MemoryWipeLevel2Police`, and
 `StopPoliceBehaviour()`. That is the recipe for standing a unit down. `[S]`
 
-### 2.4 Spawning
+### Spawning
 
 Four script functions are the only callers of the native spawn requests
 `[S]`:
@@ -257,7 +257,7 @@ policeStrategy, vehicleType, spawnedObjects, success}`. `[S]`
   from are per district and stage in TweakDB
   (`PreventionHeatData.UnitRecordsPool`). `[S]`
 
-## 3. Open questions (need the game)
+## 13.34 Traffic and police: open questions (need the game)
 
 1. Does `ChangeDensityModifier(0.0)` remove the crowd's **parked** cars,
    and how fast do already spawned traffic cars leave?

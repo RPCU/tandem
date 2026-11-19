@@ -85,28 +85,6 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *transit = std::get_if<Transit>(&message);
       transit && transit->kind > TransitKind::Along)
     return std::nullopt;
-  if (const auto *cars = std::get_if<TrafficStates>(&message);
-      cars && cars->cars.size() > kMaxTrafficPerState)
-    return std::nullopt;
-  if (const auto *set = std::get_if<TrafficSet>(&message); set && set->ids.size() > kMaxTrafficSet)
-    return std::nullopt;
-  if (const auto *gone = std::get_if<TrafficGone>(&message); gone && gone->reason > kTrafficRemoved)
-    return std::nullopt;
-  if (const auto *heat = std::get_if<Heat>(&message);
-      heat && (heat->stage > kMaxHeat || heat->state > HeatState::Blinking))
-    return std::nullopt;
-  if (const auto *crime = std::get_if<Crime>(&message);
-      crime && (crime->kind < CrimeKind::Witness || crime->kind > CrimeKind::Kill))
-    return std::nullopt;
-  if (const auto *damage = std::get_if<VehicleDamage>(&message);
-      damage && damage->parts.size() > kMaxDetachedParts)
-    return std::nullopt;
-  if (const auto *exit = std::get_if<VehicleExit>(&message);
-      exit && exit->kind > ExitKind::Exploded)
-    return std::nullopt;
-  if (const auto *combat = std::get_if<VehicleCombat>(&message);
-      combat && combat->mode > SeatCombat::Gunner)
-    return std::nullopt;
   if (const auto *cast = std::get_if<SceneCast>(&message);
       cast && cast->actors.size() > kMaxSceneActors)
     return std::nullopt;
@@ -128,6 +106,28 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *given = std::get_if<NpcHandoverState>(&message);
       given && given->effects.size() > kMaxNpcEffects)
+    return std::nullopt;
+  if (const auto *cars = std::get_if<TrafficStates>(&message);
+      cars && cars->cars.size() > kMaxTrafficPerState)
+    return std::nullopt;
+  if (const auto *set = std::get_if<TrafficSet>(&message); set && set->ids.size() > kMaxTrafficSet)
+    return std::nullopt;
+  if (const auto *gone = std::get_if<TrafficGone>(&message); gone && gone->reason > kTrafficRemoved)
+    return std::nullopt;
+  if (const auto *heat = std::get_if<Heat>(&message);
+      heat && (heat->stage > kMaxHeat || heat->state > HeatState::Blinking))
+    return std::nullopt;
+  if (const auto *crime = std::get_if<Crime>(&message);
+      crime && (crime->kind < CrimeKind::Witness || crime->kind > CrimeKind::Kill))
+    return std::nullopt;
+  if (const auto *damage = std::get_if<VehicleDamage>(&message);
+      damage && damage->parts.size() > kMaxDetachedParts)
+    return std::nullopt;
+  if (const auto *exit = std::get_if<VehicleExit>(&message);
+      exit && exit->kind > ExitKind::Exploded)
+    return std::nullopt;
+  if (const auto *combat = std::get_if<VehicleCombat>(&message);
+      combat && combat->mode > SeatCombat::Gunner)
     return std::nullopt;
   return message;
 }

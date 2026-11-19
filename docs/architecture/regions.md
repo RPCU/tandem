@@ -264,7 +264,7 @@ states and shots, shots at a V, quickhacks, time bubbles, and the digests.
 **The area owner** is the same rule as one answer per player, for what is
 not an NPC: `Endpoint::AreaOwner(player)` (`regions::AreaOwner`) is the
 game that runs the world around that player's V (its new NPCs, its crowd,
-and the traffic and police of the `traffic-police` branch, whose `traffic.md` asks only this):
+and its traffic and police, [`traffic.md`](traffic.md), "Who owns an area"):
 its own game's, unless its V is within 45 m (60 m to leave) of a
 higher-ranked linked player's V, then that player's; a linked player that
 outranks it while either place is unknown covers it. Every endpoint decides

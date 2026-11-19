@@ -35,9 +35,6 @@ public class TandemNpcKnown {
   // sent (NpcSeat): Panam at the wheel of the quest car we ride in.
   public let seatVehicle: EntityID;
   public let seat: CName;
-  // Whose vehicle that is, as sent: a player, or a shared world vehicle
-  // (TandemStreet.SeatOwner).
-  public let seatOwner: Uint32;
   // Regions. A proxy we took over: one of our spawned entities (deleted when
   // it leaves the shared world), when its brain was switched on (0: checked
   // already), and until when a body spawned again for it may be missing.
@@ -46,6 +43,9 @@ public class TandemNpcKnown {
   public let pendingUntil: Float;
   public let record: TweakDBID;
   public let appearance: CName;
+  // Whose vehicle that is, as sent: a player, or a shared world vehicle
+  // (TandemStreet.SeatOwner).
+  public let seatOwner: Uint32;
 }
 
 public class TandemNpcProxy {

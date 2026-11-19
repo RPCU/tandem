@@ -1408,8 +1408,8 @@ struct RegionHold {
 // ---- World vehicles (docs/architecture/traffic.md) ----
 //
 // The traffic, the parked cars and the police cars around the players are
-// run by one game: the owner of that area (the host today; with per-player
-// regions, the game that owns the NPCs there). It shares each one as a
+// run by one game: the owner of that area (per-player regions' area owner,
+// Endpoint::AreaOwner: the game that owns the NPCs there). It shares each one as a
 // lightweight proxy: one TrafficSpawn, then its transform in TrafficStates
 // while it moves. A car a player gets into becomes that player's car under
 // the usual rule (Seat, VehicleState): TrafficClaim, TrafficGone{taken}.

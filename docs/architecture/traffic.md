@@ -28,22 +28,26 @@ a guest's own traffic stays off.
 
 ### Who owns an area
 
-Today the host's game runs the world everywhere a session reaches: it owns
-every area. With per-player regions (`regions.md`, in progress on its own
-branch) the owner of the NPCs around a player owns the vehicles there too:
-traffic follows the same owner, by construction, because nothing here asks
-"am I the host". The code asks one question in one place:
+The owner of the NPCs around a player owns the vehicles there too: the
+area owner of per-player regions ([`regions.md`](regions.md), "The area
+owner": a player's own game, unless its V is deep in the region of a linked
+player that outranks it). Traffic follows the same owner, by construction,
+because nothing here asks "am I the host". The code asks one question in
+one place:
 
 - core: `Endpoint::AreaOwner(player)` and `OwnsArea()` (`endpoint.hpp`);
-- scripts: `TandemArea.Owns()` and `OwnsAround(player)` (`Traffic.reds`).
+- scripts: `TandemArea.Owns()` and `OwnsAround(player)` (`Traffic.reds`),
+  which ask `TandemRegions.OwnsArea()` and `AreaOwner(player)`.
 
-Both answer "the host" today. What is already shaped for several owners:
+What is already shaped for several owners:
 a vehicle's id carries its owner (`MakeTrafficId(owner, counter)`: the
 owner's player id in the top byte), so two owners never collide and a
 request about a vehicle (`TrafficHit`, `TrafficClaim`) can be routed to its
-owner by the id alone. What regions will have to add: the host relaying a
-guest-owner's announcements and those requests (one function each in
-`endpoint.cpp`, where the comment says so), and a hand-over rule. Moving
+owner by the id alone. **Still to add:** the host relaying a guest-owner's
+announcements and those requests (one function each in `endpoint.cpp`,
+where the comment says so: `SendTraffic*` still share from the host only,
+so a guest that owns its area runs its own traffic, unshared), and a
+hand-over rule. Moving
 traffic is not worth handing over: when an area changes owner the old
 owner's cars go (`TrafficGone`) and the new owner's own traffic is announced;
 parked cars and wrecks, which a player may be looking at, are re-announced
@@ -257,7 +261,7 @@ Built in this change:
 
 Not built, in the order I would do them:
 
-- **Probes first** (research file §3): parked crowd cars under density 0,
+- **Probes first** (research §13.34): parked crowd cars under density 0,
   the cost of 30–40 teleports a frame, a wheel-turning proxy.
 - Horn, indicators, headlights, doors (the flags have room; nothing sends
   them yet).
