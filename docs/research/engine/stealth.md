@@ -1,6 +1,6 @@
 # Stealth, detection and takedowns
 
-Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md).
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
 ### 13.12 Combat state, detection and stealth for a guest (2026-11-18, scripts only)
 

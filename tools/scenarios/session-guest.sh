@@ -3,7 +3,7 @@
 ensure join
 host_world - --mode idle
 if [ "$sessioned" != 1 ]; then
-  note 'no recorded session (recordings/session/city.tsession, ARCHITECTURE.md "A recorded host session"): nothing to replay'
+  note 'no recorded session (recordings/session/city.tsession, docs/architecture/recordings.md "A recorded host session"): nothing to replay'
   pause 3
   return 0
 fi

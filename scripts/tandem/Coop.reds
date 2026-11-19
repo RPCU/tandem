@@ -1,4 +1,4 @@
-// Co-op in the game's own menus (docs/ARCHITECTURE.md, milestone 7).
+// Co-op in the game's own menus (docs/architecture/coop-menu.md, milestone 7).
 //
 // Main menu (SingleplayerMenuGameController): a "Co-op" entry. Its pages
 // live in the menu's own list, the way the menu shows its items:

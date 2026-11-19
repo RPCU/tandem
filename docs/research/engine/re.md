@@ -1,6 +1,6 @@
 # Reverse engineering the running game: RTTI, slots, crashes, script calls
 
-Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md).
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
 ## 13. Reverse engineering of the running game (2026-11-17, game 2.50, read-only)
 

@@ -1,6 +1,6 @@
 # tandem's own measurements
 
-Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md).
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
 ## 12. tandem's own measurements (game 2.50, Proton, anya)
 

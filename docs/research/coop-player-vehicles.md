@@ -804,7 +804,7 @@ duration, opt easeInCurve, opt easeOutCurve, opt listener)`,
 easeInCurve, easeOutCurve, ignoreGlobalDilation, useRealTime)`,
   `UnsetIndividualTimeDilation(easeOutCurve)`, `GetTimeDilationValue()`,
   `IsIgnoringGlobalTimeDilation()` [N] — the by-name tool for
-  ARCHITECTURE's rule "the world never slows for one player": the owner's
+  ../architecture/time.md's rule "the world never slows for one player": the owner's
   game keeps its local effect, others could speed the puppet up with an
   individual dilation > 1 (inferred; whether values above 1 are honoured is
   open question 9).
@@ -1517,7 +1517,7 @@ Vector4, projectiles: Uint32)`, `EnableNPCCombat(true)`.
 ### 8.9 What the driver's game sends, what a puppet vehicle must turn off
 
 **Driver's game sends** `VehicleState` (State channel, 30 Hz; extrapolated
-500 ms per ARCHITECTURE): vehicle id, `timeUs`, position (3 × f32),
+500 ms per ../architecture/smoothing.md): vehicle id, `timeUs`, position (3 × f32),
 orientation (smallest-three quaternion, 6 bytes — roll and pitch matter),
 linear velocity (3 × i16), angular velocity (3 × i16) for extrapolation,
 then cosmetics: steering (i8), RPM (u8), gear (i8), flags (handbrake,
@@ -1740,7 +1740,7 @@ n"OccupantSlots", slot)`: does the body sit, follow the vehicle, and
    `landing_*` effects exist on V's third-person entity?
 9. **Individual time dilation above 1.** Does
    `SetIndividualTimeDilation(reason, 2.0, …)` speed a puppet up (the
-   Sandevistan stand-in of ARCHITECTURE)?
+   Sandevistan stand-in of ../architecture/time.md)?
 10. **CPO leftovers.** Do `RegisterRemotePlayerMappin`,
     `PingSystem.TriggerPing`, `gameuiPlayerListGameController` and
     `cpPlayerSystem.FindPlayerControlledObjects(includeRemotePlayers)` do

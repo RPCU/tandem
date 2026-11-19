@@ -77,9 +77,9 @@ scenario. A scenario that needs another spot teleports after it.
   ground.
 - **idle** — connects and reports.
 - **watch** — follows the other V 30 m under it (or `--offset`): the
-  unseen guest of `--record-session` (below).
+  unseen guest of `--record-session` (`recordings.md`).
 - **play** — `--play FILE` replays a real V's play (a gameplay recording,
-  below) as the mock player's own V, at its recorded positions: the
+  `recordings.md`) as the mock player's own V, at its recorded positions: the
   puppet walks the real ground, drives real roads, fights where it
   fought. It overrides `--mode`'s motion (and `--body`: the recording's);
   a missing FILE leaves the mode to run. `--play-loop` starts it again at

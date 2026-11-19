@@ -33,7 +33,7 @@ sends after coming back is newer than what it sent before.
 **Reaching each other**: direct first (LAN, Tailscale/NetBird — already on
 every nixbook machine), then the relay when NAT blocks UDP. A host with a
 relay configured is reachable both ways at once: directly on its port, and
-through the relay by its **join code** (see [The relay](#the-relay)). A guest
+through the relay by its **join code** (see [The relay](relay.md)). A guest
 joining by code goes through the relay; given the host's address too, it
 tries that first and switches to the relay when the host has not answered
 within half the timeout (2.5 s), without reporting an end in between

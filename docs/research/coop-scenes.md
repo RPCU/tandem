@@ -376,7 +376,7 @@ dilation on the whole game** named `n"SceneSystemFastForward"`
 (tag `FastForward`) (`:521798-521830`). Allowed when: not in braindance, not
 in combat, tier < 5, not falling, not in an elevator, and
 `IsFastForwardingAllowed` (`:519817-519830`). In co-op this is a "slowed
-and stopped time" case (`ARCHITECTURE.md`, open problems): it changes the
+and stopped time" case (`../architecture/time.md`, open problems): it changes the
 host's clock rate. Detect with `IsFastForwardingActive(Default)` or the
 `FastForward` tag; proposal: fast-forward needs every player's consent (or
 is host-only and the guests' mirrored subtitles/animations simply speed
@@ -657,7 +657,7 @@ host's audio moot — not a real answer. This is the biggest open item.
   campaign fork mirrored).
 - **Guest**: executing that one node on the guest is the obvious route (it
   is self-contained: colour, duration, direction) but "a node run outside
-  its phase" is exactly what `ARCHITECTURE.md` lists as unproven. Fallback:
+  its phase" is exactly what `../architecture/story.md` lists as unproven. Fallback:
   a tandem full-screen ink layer driven by `{ color, duration, fadeIn,
 hostTime }`.
 - Loading screens: `questOverrideLoadingScreen_NodeType`,
@@ -759,7 +759,7 @@ SetLowerMovementLimit`. **V's own entity is what flies**: in editor mode
 ### 5.4 Co-op notes
 
 - **Time**: the rewindable section has **its own clock** (pause, 4 speeds,
-  reverse, jump). It is "another timeline" in `ARCHITECTURE.md`'s terms:
+  reverse, jump). It is "another timeline" in `../architecture/time.md`'s terms:
   it must not touch the world clock that guests follow.
 - **Detect** (host): `scnRewindableSectionEvent` / `Braindance.IsActive`.
 - **Sync**: `BraindanceState { active, sceneHash, timeSec, durationSec,
@@ -903,7 +903,7 @@ Workspots (§2.5) plus skipped time: UI `MenuScenario_TimeSkip`,
 `questTimeSkipped_ConditionType` (`questTimeSkipMode { PreSkip 0, PostSkip
 1 }`), status tag `NoTimeSkip`, NPC tag `Sleep`. Time of day is host-owned;
 a skip is a host decision applied to everyone ("skipped time" in
-`ARCHITECTURE.md`). Proposed: a guest's sleep/wait request becomes a
+`../architecture/time.md`). Proposed: a guest's sleep/wait request becomes a
 request to the host.
 
 ### 6.8 Takedowns, finishers, synced animations
@@ -1081,7 +1081,7 @@ game, story restrictions pushed by the host_.
    outside a running scene? If not, is running the scene's audio-only part
    on a guest feasible?
 5. Does executing a lone `questSetFadeInOut_NodeType` (or HUD video node)
-   on a guest work outside its phase (the ARCHITECTURE open problem, on
+   on a guest work outside its phase (the ../architecture/story.md open problem, on
    the smallest possible node)?
 6. `UIInteractions.LastAttemptedChoice`: confirm it fires for every
    dialogue choice (including timed-out and phone choices) and that

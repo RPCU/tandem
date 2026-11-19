@@ -1,4 +1,4 @@
-// Hit outcomes (docs/ARCHITECTURE.md, "Game rules hold for every hit"): a hit
+// Hit outcomes (docs/architecture/combat.md, "Game rules hold for every hit"): a hit
 // carries its whole outcome, not just health, and each part of it is decided
 // by one game only.
 //

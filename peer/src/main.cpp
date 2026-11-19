@@ -233,7 +233,7 @@ struct Options {
   int goDownSeconds{-1};
   int goOutSeconds{-1};
   int reviveSeconds{-1};
-  // Faults on what we send (docs/ARCHITECTURE.md, Consistency).
+  // Faults on what we send (docs/architecture/consistency.md, Consistency).
   float drop{}, dup{};
   int vanishAtSeconds{-1}; // end without a goodbye this long into the session (-1: never)
 };

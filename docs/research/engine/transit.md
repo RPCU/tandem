@@ -1,6 +1,6 @@
 # NCART metro, rides and quest vehicles
 
-Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md).
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
 ### 13.27 The NCART metro, rides and quest vehicles (2026-11-18, 2.50 scripts and resource list read, not run)
 

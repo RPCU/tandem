@@ -561,7 +561,7 @@ blackboard write (§7 has NCO's experience: block at `OnTriggerCall`, not at
 `PhoneSystem.OnTriggerCall`; **guest applies** by queuing the same
 `questTriggerCallRequest` to its own `PhoneSystem` — but the voice lines
 come from the scene the host runs, so this belongs with "scenes for guests"
-(open problem in ARCHITECTURE.md). **Guest must stop**: answering or
+(open problem in ../architecture/story.md). **Guest must stop**: answering or
 rejecting (it would write the `phonecall_*` fact locally); the host's choice
 decides.
 
@@ -1142,7 +1142,7 @@ hostClockUs)` only when it is off by more than a threshold (a set every
   and `SetPausedState(paused, n"tandem")` to follow quest clock pins.
 - **Guest must stop**: the wait menu (`TimeskipGameController`; or accept it
   as a request to the host), and any time dilation that slows the world
-  (ARCHITECTURE.md "slowed and stopped time"): the engine already separates
+  (../architecture/time.md "slowed and stopped time"): the engine already separates
   world dilation from `…OnLocalPlayerZero` (the local player), which is the
   hook for "a V's time effects are local".
 - Time listeners (`RegisterIntervalListener`) on the guest fire on the
@@ -1400,7 +1400,7 @@ guests' own spawning is suppressed"):
   `ExecuteNode`; (3) a large dynamic null area around the guest's V, moved
   as it moves; (4) native work on `worldRuntimeSystemTraffic` for vehicles.
   None is verified; **traffic suppression has no known script or Codeware
-  path** and is the open item of ARCHITECTURE.md's "suppressing guests' own
+  path** and is the open item of ../architecture/npcs.md's "suppressing guests' own
   world simulation".
 - **Host sends** crowd and traffic entities as proxies with a budget
   (distance and relevance), like other NPCs.
@@ -1464,7 +1464,7 @@ when `HasLastCheckpoint()` (`:335186-335232`).
 
 ### 11.3 Co-op mapping
 
-ARCHITECTURE.md: "the host's save is the world; guests keep their character
+../architecture/world.md: "the host's save is the world; guests keep their character
 progression in their own saves."
 
 - **Guest must stop**:

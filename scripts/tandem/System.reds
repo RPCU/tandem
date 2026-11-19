@@ -1641,7 +1641,7 @@ public class TandemSystem extends ScriptableSystem {
     }
   }
 
-  // ---- consistency (docs/ARCHITECTURE.md, Consistency) ----
+  // ---- consistency (docs/architecture/consistency.md, Consistency) ----
 
   // Our puppets against the session's players: a puppet whose player is no
   // longer in the session goes; a player in it with no puppet (none on its

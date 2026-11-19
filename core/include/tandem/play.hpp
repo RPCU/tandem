@@ -1,8 +1,8 @@
 #pragma once
 
 // Gameplay recordings: a real V's play, as its game sent it, replayed by
-// tandem-peer as its own player (docs/ARCHITECTURE.md, "Testing without a
-// second player").
+// tandem-peer as its own player (docs/architecture/recordings.md, "Gameplay
+// recordings").
 //
 // A recording (.tplay) is a stream of real protocol messages with their
 // time: everything the game asked its Endpoint to send about its own V

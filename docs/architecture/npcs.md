@@ -35,7 +35,7 @@ game (whether health, damage and loot follow the stat).
   NPCs hidden, 9–13 proxies shown, all proxies gone when the host left.
   Open: police (`PreventionSpawnSystem`), quest NPCs the guest needs to
   talk to (milestone 6), hit reactions and ragdolls from other players'
-  hits (below).
+  hits (`combat.md`).
 - **NPC animation** (`scripts/tandem/NpcAnims.reds`, engine-knowledge
   §13.21): the pose stream is too heavy for dozens of NPCs, so the host
   sends what an NPC's animation graph reads and the proxy's own graph

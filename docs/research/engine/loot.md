@@ -1,6 +1,6 @@
 # Loot
 
-Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md).
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
 ### 13.19 Loot: corpses, dropped items, quest items (2026-11-18, 2.50 scripts read)
 

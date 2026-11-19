@@ -1,6 +1,6 @@
 #pragma once
 
-// Time bubbles (docs/ARCHITECTURE.md, slowed and stopped time).
+// Time bubbles (docs/architecture/time.md, slowed and stopped time).
 //
 // In single player a Sandevistan or a Kerenzikov slows the whole world. In
 // a shared world the whole world would slow for every player, so instead

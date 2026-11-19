@@ -1,6 +1,6 @@
 # Quests, facts and scenes
 
-Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md).
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
 ## 7. Quests / facts / scenes (campaign fork + NCO)
 

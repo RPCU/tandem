@@ -1,6 +1,6 @@
 # Build gotchas and the address-hash table
 
-Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md).
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
 ## 10. Build gotchas (NCO, Windows/MSVC)
 

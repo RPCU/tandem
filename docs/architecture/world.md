@@ -23,7 +23,7 @@
   Physics objects (crates, bodies, cars hit) need an owner and a sync of
   their transform like vehicles; which ones (all props, or only those a
   player touched) is to decide. Done for takedowns, grapples, finishers
-  and carried, thrown and disposed bodies (see Inside the plugin; to
+  and carried, thrown and disposed bodies (see `stealth.md`; to
   verify in game with scenarios `takedowns-host` and `takedowns-guest`).
   Still open there: the disposal container's own state (door, light,
   "used") stays the actor's until devices are synced, and loot from a

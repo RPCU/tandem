@@ -1,4 +1,4 @@
-// One set of NPCs (docs/ARCHITECTURE.md, milestone 5). The host's game runs
+// One set of NPCs (docs/architecture/npcs.md, milestone 5). The host's game runs
 // them; it announces each NPC near its V to the guests and sends where they
 // all are ten times a second. A guest shows each one as a proxy: the same
 // record and appearance with its brain off (TandemProxies.Pacify), moved by
@@ -500,7 +500,7 @@ public class TandemNpcs {
   }
 
   // Which Vs this NPC has detected (bit player - 1): each player is seen,
-  // or not, on their own (ARCHITECTURE, each player is detected on their
+  // or not, on their own (docs/architecture/stealth.md, each player is detected on their
   // own). Full detection meter, or in combat with them as a hostile threat
   // (NPCPuppet.IsInCombatWithTarget: what keeps a V in combat once the NPC
   // has lost sight of them and searches). A guest enters and leaves combat
@@ -781,7 +781,7 @@ public class TandemNpcs {
     ArrayPush(this.m_proxies, proxy);
   }
 
-  // ---- guest: consistency (docs/ARCHITECTURE.md, Consistency) ----
+  // ---- guest: consistency (docs/architecture/consistency.md, Consistency) ----
 
   // Our proxies against the session's record of what the host shares (the
   // events that build them can be lost to a full queue, a loading screen,

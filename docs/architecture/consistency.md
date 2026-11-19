@@ -133,7 +133,7 @@ not merged yet).
   and puppets, gets its crowd back, and tries to join again every 5 s; on
   its return the guest's look, held items and seat go to the new session.
   Done (2026-11-18, loopback tests in `tests/endpoint_test.cpp`, see
-  [Session and transport](#session-and-transport)): a guest or host that
+  [Session and transport](session.md)): a guest or host that
   dies without a goodbye is noticed in 5 s (it was ~30 s, and dead mock
   players filled the guest slots: "could not reach the host"); a player
   back on a new connection while its old one is silent takes its place at

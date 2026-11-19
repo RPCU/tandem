@@ -160,7 +160,7 @@ only has to stop switching it off while the guest is apart.
    nodes, QW §6.1) and quest prefabs (QW §6.3) exist only in the game
    running that phase. Apart, a main-story NPC near the guest does not
    exist on the guest unless its own story phase spawned it — and the
-   guest's story phases must follow the host (ARCHITECTURE, Saves). Rule:
+   guest's story phases must follow the host (../architecture/world.md, Saves). Rule:
    quest NPCs belong to the game running the quest and never hand over;
    the main story is played together.
 5. **Quest suppression must be per phase.** Milestone 6 plans to stop a
@@ -178,7 +178,7 @@ only has to stop switching it off while the guest is apart.
    the map instead: the leftover remote-player mappin
    (`RegisterRemotePlayerMappin`, `final.reds:45502-45508`, QW §1). `[I]`
 7. **World saving.** A guest's world-state saving is locked in a session
-   (ARCHITECTURE, Saves); what the guest's game changes apart is lost from
+   (../architecture/world.md, Saves); what the guest's game changes apart is lost from
    its own save, which is the rule anyway. Only the host's record must
    learn it (§4).
 
@@ -200,7 +200,7 @@ same entity on screen and only switches its brain off:
 `Toggle(false)`, `ClearThreats`), then tandem's movement controller drives
 it from the new owner's `NpcStates` like any proxy (`Npcs.reds:398-415`).
 Both steps are in use on 2.50: `Pacify` on a guest's own NPCs and on
-proxies, the controller on proxies (§13.9, ARCHITECTURE NPCs). `[T]` No
+proxies, the controller on proxies (§13.9, ../architecture/npcs.md NPCs). `[T]` No
 pop on the screen of the player who is near the NPC.
 
 **Proxy → real (the receiving game).** Two ways:
@@ -435,7 +435,7 @@ owner (through the host when the owner is a guest).
 
 ### 4.1 Where the host keeps them
 
-The host's save is the world (ARCHITECTURE, Saves). Facts a guest's game
+The host's save is the world (../architecture/world.md, Saves). Facts a guest's game
 reports must reach it even if the host never visits the place before the
 session ends. Two ways, both cheap: `[I]`
 
@@ -497,7 +497,7 @@ instead of a server: the same facts, no accounts.
   system of each game around `m_player` (`final.reds:138636`), its spawn
   system is written around "the player" (QW §9.3). Each game chases its
   own V with its own units; no message is needed except `Heat` for the
-  other's HUD and map. This also answers ARCHITECTURE's undecided "chases
+  other's HUD and map. This also answers ../architecture/world.md's undecided "chases
   when players are far apart": one wanted level per player while apart.
   `[S]` `[I]`
 - **The lock must follow the group, not the session.** The guest's lock
@@ -580,7 +580,7 @@ it needs:
    from starting it (its trigger zones, the fixer's call) is open. `[I]`
 3. **The outcome into the host's world**: the gig's facts, journal entry
    states, fixer counter, mappin phase, deaths (§4.2). Rewards stay the
-   guest's own (ARCHITECTURE, Quests together, gigs apart).
+   guest's own (../architecture/story.md, Quests together, gigs apart).
 4. **The host's quest graph agreeing with it.** This is the unknown. The
    host's copy of that quest never ran: its graph sits where it was (gig
    offered, say). Setting the gig's named facts and journal states may not

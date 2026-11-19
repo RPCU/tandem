@@ -1419,7 +1419,7 @@ choiceEvent.activator)` (`22557`); then `OnInventoryEmptyEvent` (`23451`),
 
 ### 8.2 "Each player loots their own copy"
 
-**Decided and built 2026-11-18** (ARCHITECTURE.md, Loot;
+**Decided and built 2026-11-18** (../architecture/loot.md, Loot;
 `scripts/tandem/Loot.reds`): per-player loot as below; dropped weapons
 per player; quest and important items (Quest tag, keycards, iconics) go
 to every player's inventory whoever loots them (`SharedItem`, user's rule

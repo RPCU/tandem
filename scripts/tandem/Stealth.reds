@@ -1,4 +1,4 @@
-// Each player is detected on their own (docs/ARCHITECTURE.md). Only the
+// Each player is detected on their own (docs/architecture/stealth.md). Only the
 // host's NPCs are real, so they decide who is seen and hunted:
 //
 // - Guest: its V enters and leaves combat by the game's own switch, the

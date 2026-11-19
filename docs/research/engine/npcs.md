@@ -1,6 +1,6 @@
 # NPCs: identity, proxies, attitudes, animation state
 
-Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md).
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
 ### 13.7 Naming NPCs across games (2026-11-18)
 
@@ -169,7 +169,7 @@ all [2.5-untested].
   `:173136`; callers `:155212`, `:171583`); `OnStopShooting` plays
   `gamedataFxAction.ExitShoot` (`:173113`). A guest plays a shot with
   `WeaponObject.TriggerWeaponEffects(weapon, Shoot)` as for players
-  ([2.5-verified] on player puppets, §Weapons in ARCHITECTURE).
+  ([2.5-verified] on player puppets, §Weapons in ../../architecture/players.md).
 - **Target**: `TargetTrackerComponent.GetTopHostileThreat(onlyVisible, out
 TrackedLocation) -> Bool` (`:156469`), `TrackedLocation.entity`.
   An NPC turns its head and chest with a `LookAtAddEvent` (`:172727`;

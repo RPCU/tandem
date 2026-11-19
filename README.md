@@ -35,6 +35,6 @@ task k8s:check                   # deploy/kubernetes/base
 
 ## Docs
 
-- [Architecture](docs/ARCHITECTURE.md) — authority model, sync, threading, roadmap
-- [Engine knowledge](docs/research/engine-knowledge.md) — what earlier projects learned about the engine, with sources
+- [Architecture](docs/ARCHITECTURE.md) — authority model, threading, roadmap, and the index of the topic files in `docs/architecture/`
+- [Engine knowledge](docs/research/engine-knowledge.md) — what earlier projects learned about the engine, with sources: the index of `docs/research/engine/`
 - [AGENTS.md](AGENTS.md) — rules for AI agents working on this repository

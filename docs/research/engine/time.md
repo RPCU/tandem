@@ -1,6 +1,6 @@
 # Time dilation
 
-Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md).
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
 ### 13.15 Time dilation in a shared world (2026-11-18, scripts and RTTI only)
 

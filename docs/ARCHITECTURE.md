@@ -115,10 +115,10 @@ The owner simulates; everyone else displays.
 | NPCs: AI, position, health, death                            | host                      | **proxy with its AI off**, driven by the host                      |
 | spawns: crowds, traffic, encounters                          | host                      | guests' own spawning is suppressed                                 |
 | quests: facts, journal, phases, scenes                       | host                      | followed, never run on their own                                   |
-| time of day, weather, police heat                            | host                      | applied (wanted level: open, see below)                            |
+| time of day, weather, police heat                            | host                      | applied (wanted level: open, `architecture/world.md`)              |
 | a V's time abilities (Sandevistan…)                          | that player's game        | shown on the puppet; never slow anyone's world                     |
 | an NPC's speed in a time bubble                              | host                      | proxies animated at the same speed                                 |
-| NPC shots at a V                                             | the V's game              | host's NPC decides to fire; see below                              |
+| NPC shots at a V                                             | the V's game              | host's NPC decides to fire; `architecture/time.md`                 |
 | loot: corpses and containers                                 | each player's game        | rolled per player: each loots their own copy                       |
 | items a V drops on purpose                                   | host                      | lie in every game; the first pickup keeps it                       |
 | quest and important items, rewards                           | every player's own V      | whoever gets one, every V gets it                                  |
@@ -153,7 +153,7 @@ world (the host's save), so it is still true when anyone comes back. The
 first version shares the host's NPCs only near the host and never tethers
 anyone: a player who fast travels offers the others to join (accepted or
 not, each stays free), and anyone can regroup with another player at any
-time (see Fast travel together, Inside the plugin); per-player regions are
+time (see `architecture/travel.md`); per-player regions are
 the step after it. Until then a guest far from the host plays in a quiet
 world: its own crowd is off and the host's NPCs are shared only around the
 host.
@@ -258,6 +258,8 @@ subsystem's design as built ("Inside the plugin") and its open problems.
 Engine facts: [`research/engine-knowledge.md`](research/engine-knowledge.md) is the index (sources, tags, top traps, section number to file); the facts are in `research/engine/<topic>.md`.
 
 ## Open problems
+
+Each topic file ends with its own open problems.
 
 Research for them, gathered from the 2.50 game's scripts and live RTTI
 (facts with line references, a proposed co-op rule per case, and the

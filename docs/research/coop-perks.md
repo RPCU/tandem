@@ -1,7 +1,7 @@
 # Perks, skills and cyberware in a shared world
 
 Research for the "Cyberware, skills and perks in a shared world" open
-problem in [`../ARCHITECTURE.md`](../ARCHITECTURE.md): every player perk and
+problem in [`../architecture/players.md`](../architecture/players.md): every player perk and
 ability of 2.50 (perks 2.0, Phantom Liberty) read for what breaks when two Vs
 share one world. The model it is checked against: the host's game owns NPCs,
 devices and the world; each player's game owns its own V; a guest sees the
@@ -223,7 +223,7 @@ Status (2026-11-18, untested in game): `NpcStrike` carries health, poise,
 non-lethal, leave-1-HP, killing blow, the minimum health and the hit shape;
 the host plays the real reaction and dismemberment from a hit of the
 guest's puppet, poise comes back as `NpcPoise`, wounds as `NpcWound`,
-knock-outs as `NpcGone` reason 3 (ARCHITECTURE "A hit carries its whole
+knock-outs as `NpcGone` reason 3 (../architecture/combat.md "A hit carries its whole
 outcome"). The reaction is the host's own (its rules, from the attack and
 shape), not the one the guest's game picked for the proxy.
 
@@ -308,7 +308,7 @@ is then the guest's own attack on a proxy, sent back as an `NpcHit`. [I]
 
 ### 2.6 Detection-driven perks need the host's detection
 
-Stealth and combat state are per player (ARCHITECTURE "Each player is
+Stealth and combat state are per player (../architecture/stealth.md "Each player is
 detected on their own"). Perks read them through [R]:
 
 - `UI_Stealth.highestDetectionOnPlayer` / `highestHostileDetectionOnPlayer`
@@ -328,7 +328,7 @@ detected on their own"). Perks read them through [R]:
 On a guest none of these see the host's NPCs; on the host the guest's
 puppet has its NPC record's visibility.
 
-**Rule.** The host owns detection and reports it per player (ARCHITECTURE
+**Rule.** The host owns detection and reports it per player (../architecture/stealth.md
 already plans a per-player bit and level): the guest writes it into its
 `UI_Stealth` blackboard, queues `OnBeingNoticed` / tracked-as-hostile on
 its own V (`coop-npcs-combat.md` §9.1), and its perks follow. The guest
@@ -599,7 +599,7 @@ must be measured.
 **Still open, for review** (nothing shipped blind):
 
 - _NPC shots at a guest_: decided (the user, option b) and built: the
-  guest's game simulates them (`Shots.reds`, ARCHITECTURE). To check in
+  guest's game simulates them (`Shots.reds`, ../architecture/time.md). To check in
   game: the proxy holds and fires the NPC's weapon (it is handed the
   weapon record of each shot); `AI_ShootAt` with no ammo cost fires at
   all. The proxy is made hostile to the guest's V when it fires at it (a
@@ -625,7 +625,7 @@ ratio. The owner's own mechanics are untouched by this; a V slowed by
 someone else's bubble keeps its own rules in its own, slower, time.
 Vanilla has nothing like it (an enemy Sandevistan speeds the NPC up, never
 slows V, `427380-427400`), so there is no native sound or screen effect for
-being slowed: open, see ARCHITECTURE.
+being slowed: open, see ../architecture/time.md.
 
 ### 5.2 Berserk, ground slam, cyberware explosion
 
@@ -735,7 +735,7 @@ being slowed: open, see ARCHITECTURE.
   partner is a request to the owner (authority table). **Needs a rule**
   (with `coop-npcs-combat.md` §6.4).
 - Status (2026-11-18, `scripts/tandem/Revive.reds`, untested in game):
-  the rules are decided (ARCHITECTURE "Down and out"); Second Heart is
+  the rules are decided (../architecture/revive.md "Down and out"); Second Heart is
   checked first by vanilla's own conditions and revives at 20 % in a
   session; co-op down starts only when it does not apply
   (engine-knowledge §13.20).
@@ -833,7 +833,7 @@ and its replicated status effects.
   `PreventionSystem.NotifyPolice` `138772`),
   `RewardPlayerWithCrimeScoreEffector` (`306913-306921`),
   `TryDeactivatePreventionByMask` (`305783-305790`, a cyberware mask that
-  drops heat): heat is the host's (ARCHITECTURE "NCPD chases"), so crimes
+  drops heat): heat is the host's (../architecture/world.md "NCPD chases"), so crimes
   and heat reductions are requests to the host.
 
 ---

@@ -1,4 +1,4 @@
-// Every way a V moves, on the puppet (docs/ARCHITECTURE.md open problem).
+// Every way a V moves, on the puppet (docs/architecture/players.md open problem).
 //
 // Our V sends how it moves (in the air, climbing, on a ladder, swimming...)
 // from its player state machine, packed in PlayerState's flags: the layout

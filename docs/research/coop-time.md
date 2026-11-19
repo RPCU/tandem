@@ -1,7 +1,7 @@
 # Bent, stopped and skipped time — what single-player does, per effect
 
 Research for the "Slowed and stopped time" open problem in
-[`../ARCHITECTURE.md`](../ARCHITECTURE.md). It lists every place the game
+[`../architecture/time.md`](../architecture/time.md). It lists every place the game
 slows, stops or skips time, how to see it from a plugin or redscript, how to
 suppress it, and a proposed co-op rule for each.
 
@@ -189,11 +189,11 @@ In order of coverage:
    above.
 2. **Redscript `@wrapMethod`** on `TimeDilationHelper.SetTimeDilation`,
    `SetTimeDilationOnPlayer`, `SetTimeDilationWithProfile` (what NCO did,
-   `engine-knowledge.md:818`), plus `PlayerPuppet.SetSlowMo`, plus each
+   `engine-knowledge.md` §8), plus `PlayerPuppet.SetSlowMo`, plus each
    direct caller listed per effect below. More code, no raw address.
 3. **`IsMultiplayer()`**: the vanilla scripts already disable the helper and
    Sandevistan when it is true, but it gates 17 other script files (damage,
-   equipment, grenades…): do not flip it (`engine-knowledge.md:819`).
+   equipment, grenades…): do not flip it (`engine-knowledge.md` §8).
 
 ## 2. Time dilation, effect by effect
 
@@ -250,7 +250,7 @@ are.**
 - **Decided instead (2026-11-18)**: a time bubble. The NPCs around that V
   are slowed by its factor for everyone (per-entity dilation on the host),
   the owner keeps its slow motion on its own screen, no V is sped up.
-  Rules per mechanism: ARCHITECTURE.md (slowed and stopped time) and
+  Rules per mechanism: ../architecture/time.md (slowed and stopped time) and
   `scripts/tandem/Time.reds`.
 
 ### 2.2 Kerenzikov
@@ -675,7 +675,7 @@ isAffectedByTimeDilation = false)` runs on real time and still ticks
   wrapped; wrapping `OnInitialize` and calling `UnpauseGame()` inline
   removes the menu; calling it **0.25 s later** through a real-time
   `DelayCallback` works because the `SetMenuModeEvent` is consumed a frame
-  later (`engine-knowledge.md:895`, 2.31). Alternatives not tried by
+  later (`engine-knowledge.md` §9, 2.31). Alternatives not tried by
   anyone: `@replaceMethod` on the two `OnInitialize`/`PauseGameState`
   bodies without the call; a plugin hook on the native handler
   (`0x14192a468`) that returns early while a session is active — the
@@ -799,7 +799,7 @@ the loading screen. **No game-time change in scripts**; whether the
 loading screen advances the clock is native and unknown. Requests:
 `PerformFastTravelRequest` (`237972`), locks `AddFastTravelLock(reason)`
 (`InCombat`, `InVehicle`, `PreventionSystem`). **Rule:** already decided in
-ARCHITECTURE.md (tether and regroup on fast travel); for time, nothing to
+../architecture/travel.md (tether and regroup on fast travel); for time, nothing to
 do unless §8 shows a clock jump.
 
 ### 4.4 Quest-driven time
@@ -842,7 +842,7 @@ does, as long as the host's world never pauses (§3).
   `GetRainMoisture()`, `GetRainPuddles()`,
   `RegisterWeatherListener(WeatherScriptListener)` (`252163`). The wheel
   shows a weather icon after a skip (`383799`, `383994`). Setting weather
-  is covered in `engine-knowledge.md:71-73` (Codeware setter, sticky forced
+  is covered in `engine-knowledge.md` §1 (Codeware setter, sticky forced
   state).
 
 ## 5. Game time itself
@@ -877,12 +877,12 @@ request, expectedHour, timeout, opt repeat)`, `UnregisterListener(id)`
 - **What a host would broadcast** (matches the engine's own
   `gameTimeSystemReplicatedState`):
   - `gameTime: Int32` seconds and the host-clock microsecond stamp at which
-    it was sampled (ARCHITECTURE.md: absolute times are integers);
+    it was sampled (../architecture/smoothing.md: absolute times are integers);
   - `paused: Bool` (the §3.2 clock pause);
   - the real-time ratio once, at `Welcome`, if it is found to be
     configurable;
   - on join, on every skip/set (reliable, with the reason CName), and at a
-    low rate (NCO used 30 s, `engine-knowledge.md:71`) to correct drift.
+    low rate (NCO used 30 s, `engine-knowledge.md` §1) to correct drift.
     Guests extrapolate between updates with the ratio and call
     `SetGameTimeBySeconds` only when the error exceeds a threshold, to avoid
     re-triggering whatever a set triggers.

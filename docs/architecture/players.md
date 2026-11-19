@@ -95,7 +95,7 @@
   mock-player path (stairs, ladder, water). Facts:
   `research/coop-player-vehicles.md` §5 (locomotion specials).
   **State (2026-11-18, built and unit-tested, not yet tried in game):** our
-  V sends how it moves (`PlayerState::flags`, see "How a V moves" above);
+  V sends how it moves (`PlayerState::flags`, see "How a V moves" in `smoothing.md`);
   the controller follows the stream freely in the air, climbing, on a
   ladder, swimming, in an elevator or a workspot and when knocked down,
   eases the height back on landing, and has the game thread teleport a
@@ -123,7 +123,7 @@
   state goes through the owner of that state (a quickhack or perk effect on
   an NPC is a request to the host, like a hit); the others see and hear the
   ability on the puppet (status effect VFX, weapon and cyberware visuals,
-  sounds). Abilities that bend time follow the time rules above. Facts per
+  sounds). Abilities that bend time follow the time rules (`time.md`). Facts per
   ability: `research/coop-player-vehicles.md` §4, `research/coop-time.md`,
   `research/coop-npcs-combat.md` (quickhacks, finishers).
 
@@ -137,10 +137,10 @@
   stats, NPC netrunners hacking only the host); a V's defensive side
   (blade deflect, armour cyberware, dodge, health floors) must run on the
   guest for NPC hits (done: the host sends the attack, the guest runs the
-  hit on its own V; see Fights); camo and visibility must reach the host's senses;
+  hit on its own V; see Fights, `combat.md`); camo and visibility must reach the host's senses;
   carrying, throwing, finishers and Breach Protocol daemons change host
   NPCs and devices. Rules to adopt with them: a hit carries its whole
   outcome (poise, non-lethal, cap at 1 HP, reaction, dismemberment); the
   guest predicts kills so on-kill perks fire at the hit, and queues its
-  skill XP itself (done: see Fights); area and spreading effects run on one game;
+  skill XP itself (done: see Fights, `combat.md`); area and spreading effects run on one game;
   the session plays at the host's difficulty.

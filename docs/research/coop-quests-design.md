@@ -8,7 +8,7 @@ to build in steps. It decides what
 cites them as `QW §n` and `SC §n` and does not repeat them) and plans
 milestone 6 ("Story") of [`../ARCHITECTURE.md`](../ARCHITECTURE.md).
 
-**Status: design, 2026-11-18. Step 1 is written (see ARCHITECTURE "Inside
+**Status: design, 2026-11-18. Step 1 is written (see ../architecture/story.md "Inside
 the plugin", Story) and spike S1 read offline; nothing here ran in game or
 in a session yet.**
 
@@ -94,7 +94,7 @@ only their facts and failures.
 ### 1.1 The guest's situation
 
 A guest **loads its own save** (its own V, its own story at its own point)
-and then joins (`tandem.ini` `role = join`, `autoload`; ARCHITECTURE
+and then joins (`tandem.ini` `role = join`, `autoload`; ../architecture/world.md
 "Saves": "what stays the guest's own, in its own save: its V"). So unlike
 the campaign fork and NCO, whose guests started a quest-free new game
 ([K] `campaign-fork.md` §1, `engine-knowledge.md` §7 "NCO world-start
@@ -178,7 +178,7 @@ wait.
 
 ### 1.4 The guest's save: lock, baseline, restore
 
-ARCHITECTURE "Saves": the guest's world-state saving is locked in a
+../architecture/world.md "Saves": the guest's world-state saving is locked in a
 session and leaving puts it back in its own world. Concretely:
 
 **At join** (before any mirror is applied):
@@ -327,7 +327,7 @@ From the host's tier (`PlayerPuppet.OnSceneTierChange`,
 | 5 cutscene               | as tier 4                                                                                      | as tier 4                    |
 
 The host's V puppet plays its scene animation already (the pose stream
-reads V after the animation job, ARCHITECTURE "Body poses" [V]), sitting,
+reads V after the animation job, ../architecture/players.md "Body poses" [V]), sitting,
 gesturing, in the same workspot; the host's scene NPCs are proxies (walk
 and idle only in the first version). Restrictions are ref-counted per
 reason and removed by source name on any load (the fork's two lessons,
@@ -582,7 +582,7 @@ a frozen puppet or one floating in a void. Facts: engine-knowledge §13.18.
 The rule: **a V in another world leaves its body in the city; everyone
 sees the body, nobody sees the other world.** It applies to every player
 (the host's story dives and a guest's own), so it is player state
-(`Elsewhere`, ARCHITECTURE.md "Other worlds"), not a story message.
+(`Elsewhere`, ../architecture/elsewhere.md "Other worlds"), not a story message.
 
 | Moment                                                                 | The diver's body, for the others                                                                               | The diver                                      | The story                                       |
 | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------- |
@@ -771,7 +771,7 @@ quest}` to each guest that took part (§4.3). `quest` is the journal hash
   Some fixer payments may be item nodes adding money rather than reward
   records `[I]`: the host's node hook can forward those as money (step 2,
   test T7).
-- **Kill XP** is the killer's (ARCHITECTURE "Fights").
+- **Kill XP** is the killer's (../architecture/combat.md "Fights").
 
 ### 4.3 "Taking part"
 
@@ -859,7 +859,7 @@ what is streamed in around the host's V (ARCHITECTURE "Region limits"):
    the alternative is to leave it frozen in the host's save until the host
    passes through its end condition. This is the riskiest part.
 5. **Rewards**: native: the guest's own gig phase pays the guest's V. Its
-   save keeps the gig done (consistent with ARCHITECTURE: "quest progress:
+   save keeps the gig done (consistent with ../architecture/world.md: "quest progress:
    no, unless it plays that quest in its own game" — here it did), so the
    leave restore of §1.4 must **keep** the facts and journal entries the
    gig owned instead of putting them back.

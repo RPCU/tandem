@@ -1,4 +1,4 @@
-// Fights against the host's NPCs (docs/ARCHITECTURE.md, milestone 5).
+// Fights against the host's NPCs (docs/architecture/combat.md, milestone 5).
 //
 // On a guest every NPC is a proxy of the host's. When our V hits one, the
 // game's damage pipeline runs as usual (aim, weapon, perks, the proxy's
