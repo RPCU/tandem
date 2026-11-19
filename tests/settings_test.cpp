@@ -43,6 +43,7 @@ TEST_CASE("the page changes its own keys, never the session's") {
   CHECK(settings::IsEditable("name"));
   CHECK(settings::IsEditable("friendly_fire"));
   CHECK(settings::IsEditable("relay_token"));
+  CHECK(settings::IsEditable("direct"));
   CHECK_FALSE(settings::IsEditable("role"));
   CHECK_FALSE(settings::IsEditable("address"));
   CHECK_FALSE(settings::IsEditable("port"));

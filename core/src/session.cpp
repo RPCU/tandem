@@ -377,6 +377,16 @@ std::optional<RelaySecret> Session::RelaySessionSecret() const {
   return m_impl->relay ? m_impl->relay->Secret() : std::nullopt;
 }
 
+void Session::SetDirect(bool on) {
+  if (m_impl->relay)
+    m_impl->relay->SetDirect(on);
+}
+
+void Session::NewRelayCode() {
+  if (m_impl->relay)
+    m_impl->relay->NewCode();
+}
+
 std::uint16_t Session::LocalPort() const {
   ENetAddress address{};
   if (enet_socket_get_address(m_impl->host->socket, &address) != 0)

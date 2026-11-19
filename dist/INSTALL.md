@@ -175,9 +175,11 @@ keys and bad values are reported in tandem's log and ignored.
 | `role`                     | `off`                                 | `off`: solo until you start a session in the Co-op menu. `host`: host at every load. `join`: join `address` or `join` at every load. |
 | `port`                     | `27450`                               | UDP port the host listens on, and the port a guest calls when none is typed.                                                         |
 | `address`                  | none                                  | `role = join`: the host's address.                                                                                                   |
-| `relay`                    | none                                  | A tandem-relay, `host` or `host:port` (default port 27460).                                                                          |
+| `relay`                    | none                                  | A tandem-relay, `host` or `host:port` (default port 27460); several, comma-separated: a host takes the nearest.                      |
+| `code`                     | `new`                                 | Hosts: `keep` gives the same join code every session (the Co-op menu's New join code changes it).                                    |
 | `relay_token`              | none                                  | A host token of that relay (64 hex digits). Hosts only. Keep it to yourself.                                                         |
 | `join`                     | none                                  | `role = join`: the host's join code.                                                                                                 |
+| `direct`                   | `auto`                                | Through a relay, also try to reach the other player directly (lower latency, the relay as fallback). `off`: always the relay.        |
 | `pose`                     | `on`                                  | Exact body poses of the other players. `off`: stock animations only.                                                                 |
 | `story`                    | `on`                                  | Share the host's story (journal, calls, texts, subtitles, choices, rewards). `off`: each game keeps its own.                         |
 | `quest_freeze`             | `off`                                 | Guest: your own story waits while you play in the host's. Experimental.                                                              |

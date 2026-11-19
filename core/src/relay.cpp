@@ -31,7 +31,35 @@ enum : std::uint8_t {
   kRedirect = 11,
   kRejoinGuest = 12,
   kReclaimCode = 13,
+  kAddresses = 14,
+  kIntroduce = 15,
+  kPunch = 16,
+  kProbe = 17,
+  kObserved = 18,
+  kRegisterHostKeep = 19,
 };
+constexpr std::size_t kPunchSize = kHeader + 4 + 2 + 1;
+constexpr std::size_t kObservedSize = kHeader + 4 + 1 + 4 + 2; // IPv4
+// A kept code's seconds left: it lives while we are registered.
+constexpr std::uint16_t kKeptLeft = 0xFFFF;
+// One redirect within a relay network, one more to cross its regions.
+constexpr int kMaxRedirects = 2;
+// Host with several relays: each probed every 250 ms for a second at most,
+// the first to answer the soonest taken.
+constexpr enet_uint32 kChooseMs = 1'000;
+constexpr enet_uint32 kProbeEveryMs = 250;
+// The connection check, once registered: two relay ports probed, 3 times
+// 300 ms apart at most.
+constexpr int kCheckTries = 3;
+constexpr enet_uint32 kCheckEveryMs = 300;
+
+// Direct paths: punches every 100 ms for 3 s; a path silent for 1.5 s
+// while we send on it is dropped (the relay takes its traffic back), and a
+// guest asks for another introduction a minute later.
+constexpr enet_uint32 kPunchMs = 3'000;
+constexpr enet_uint32 kPunchEveryMs = 100;
+constexpr enet_uint32 kDirectSilentMs = 1'500;
+constexpr enet_uint32 kIntroduceAgainMs = 60'000;
 
 constexpr enet_uint32 kResendMs = 500;
 // Host: registration and code asked again this often, so a relay that
@@ -128,6 +156,28 @@ std::size_t ReceiveFrom(ENetSocket socket, ENetAddress &from, std::uint8_t *data
 
 std::uint16_t Be16(const std::uint8_t *p) { return static_cast<std::uint16_t>((p[0] << 8) | p[1]); }
 
+std::uint32_t Be32(const std::uint8_t *p) {
+  return (std::uint32_t{p[0]} << 24) | (std::uint32_t{p[1]} << 16) | (std::uint32_t{p[2]} << 8) |
+         p[3];
+}
+
+// An IPv4 address and port as the wire has them (network order already).
+ENetAddress AddressAt(const std::uint8_t *p) {
+  ENetAddress address{};
+  std::memcpy(&address.host, p, 4);
+  address.port = Be16(p + 4);
+  return address;
+}
+
+std::vector<std::uint8_t> PunchDatagram(std::uint32_t nonce, std::uint16_t channel, bool ack) {
+  auto bytes = Header(kPunch);
+  for (int shift = 24; shift >= 0; shift -= 8)
+    bytes.push_back(static_cast<std::uint8_t>(nonce >> shift));
+  AppendBe16(bytes, channel);
+  bytes.push_back(ack ? 1 : 0);
+  return bytes;
+}
+
 void WrapData(std::uint8_t *datagram, std::uint16_t channel) {
   std::memcpy(datagram, kMagic, 4);
   datagram[4] = kData;
@@ -175,6 +225,17 @@ std::optional<RelayToken> ParseRelayToken(std::string_view hex) {
   return token;
 }
 
+std::string_view DirectOutlook(const RelayStatus &status) {
+  switch (status.nat) {
+  case NatMapping::Stable:
+    return "direct";
+  case NatMapping::Varies:
+    return "relay";
+  default:
+    return "";
+  }
+}
+
 bool ParseRelayAddress(std::string_view text, std::string &name, std::uint16_t &port) {
   port = kDefaultRelayPort;
   if (const auto colon = text.rfind(':'); colon != std::string_view::npos) {
@@ -190,8 +251,8 @@ bool ParseRelayAddress(std::string_view text, std::string &name, std::uint16_t &
 
 RelayLink::RelayLink(Role role, RelayOptions options, std::uint16_t enetPort,
                      ENetAddress enetSource, std::uint32_t timeoutMs)
-    : m_role(role), m_options(std::move(options)), m_timeoutMs(timeoutMs),
-      m_enetSource(enetSource) {
+    : m_role(role), m_options(std::move(options)), m_timeoutMs(timeoutMs), m_enetSource(enetSource),
+      m_directOn(m_options.direct) {
   m_startMs = enet_time_get();
   if (!ResolveIpv4(m_options.address, m_relay)) {
     Fail("unknown relay " + m_options.address);
@@ -199,6 +260,18 @@ RelayLink::RelayLink(Role role, RelayOptions options, std::uint16_t enetPort,
   }
   m_relay.port = m_options.port;
   m_home = m_relay;
+  m_homes.push_back(m_relay);
+  for (const auto &more : m_options.more) {
+    std::string name;
+    std::uint16_t port{};
+    ENetAddress address{};
+    if (ParseRelayAddress(more, name, port) && ResolveIpv4(name, address)) {
+      address.port = port;
+      m_homes.push_back(address);
+    }
+  }
+  std::random_device random;
+  m_probeNonce = random() | 1;
   m_outer = OpenSocket(nullptr);
   if (m_outer == ENET_SOCKET_NULL) {
     Fail("could not open a socket to the relay");
@@ -230,7 +303,6 @@ RelayLink::RelayLink(Role role, RelayOptions options, std::uint16_t enetPort,
     m_enetListen.port = enetPort;
     // A new secret per session: the relay knows the session by it, and
     // only its host, from its own address, may ask for its code.
-    std::random_device random;
     for (std::size_t i = 0; i < m_secret.size(); i += 4) {
       const auto word = random();
       for (std::size_t j = 0; j < 4; ++j)
@@ -238,8 +310,98 @@ RelayLink::RelayLink(Role role, RelayOptions options, std::uint16_t enetPort,
     }
     m_haveSecret = true;
     m_phase = Phase::Registering;
+    if (m_homes.size() > 1) {
+      StartOver(m_startMs); // the nearest first
+      return;
+    }
   }
   SendRequest(m_startMs);
+}
+
+void RelayLink::Probe(const ENetAddress &to) {
+  auto bytes = Header(kProbe);
+  for (int shift = 24; shift >= 0; shift -= 8)
+    bytes.push_back(static_cast<std::uint8_t>(m_probeNonce >> shift));
+  const auto padded = Padded(std::move(bytes));
+  SendTo(m_outer, to, padded.data(), padded.size());
+}
+
+// A relay's answer to a probe (from any relay we asked): a round trip while
+// choosing, and what it saw of us for the connection check.
+bool RelayLink::OnObserved(const ENetAddress &from, const std::uint8_t *data, std::size_t size,
+                           enet_uint32 now) {
+  if (size < kHeader || std::memcmp(data, kMagic, 4) != 0 || data[4] != kObserved)
+    return false;
+  if (size != kObservedSize || Be32(data + kHeader) != m_probeNonce || data[kHeader + 4] != 4)
+    return true; // IPv6, or not ours
+  const auto us = AddressAt(data + kHeader + 5);
+  const auto before = Mapping();
+  const auto seen =
+      std::ranges::find_if(m_seen, [&](const Seen &s) { return Same(s.relay, from); });
+  if (seen != m_seen.end())
+    seen->us = us;
+  else if (m_seen.size() < 8)
+    m_seen.push_back({from, us});
+  if (m_phase == Phase::Choosing)
+    for (std::size_t i = 0; i < m_homes.size(); ++i)
+      if (Same(m_homes[i], from) && m_rttMs[i] == 0)
+        m_rttMs[i] = std::max<enet_uint32>(Since(now, m_chooseMs), 1);
+  // Known now: a guest asks for its introduction with it, a host tells it.
+  if (before == NatMapping::Unknown && Mapping() != NatMapping::Unknown) {
+    if (m_role == Role::Guest)
+      m_introduceAgainMs = Reached(now, m_introduceAgainMs) ? m_introduceAgainMs : now;
+    else
+      m_addressesSent = false;
+  }
+  return true;
+}
+
+void RelayLink::Choose(enet_uint32 now) {
+  std::size_t best = 0;
+  for (std::size_t i = 0; i < m_homes.size(); ++i)
+    if (m_rttMs[i] != 0 && (m_rttMs[best] == 0 || m_rttMs[i] < m_rttMs[best]))
+      best = i;
+  m_homeIndex = best;
+  m_home = m_relay = m_homes[best];
+  m_phase = Phase::Registering;
+  m_startMs = now;
+  SendRequest(now);
+}
+
+NatMapping RelayLink::Mapping() const {
+  if (m_seen.size() < 2)
+    return NatMapping::Unknown;
+  const bool same =
+      std::ranges::all_of(m_seen, [&](const Seen &s) { return Same(s.us, m_seen[0].us); });
+  return same ? NatMapping::Stable : NatMapping::Varies;
+}
+
+bool RelayLink::NextHome(enet_uint32 now) {
+  if (m_role != Role::Guest || m_homeIndex + 1 >= m_homes.size())
+    return false;
+  m_home = m_relay = m_homes[++m_homeIndex];
+  m_redirects = 0;
+  m_phase = Phase::Resolving;
+  SendRequest(now);
+  return true;
+}
+
+void RelayLink::NewCode() {
+  if (m_role != Role::Host || m_phase != Phase::Ready)
+    return;
+  const auto now = enet_time_get();
+  if (m_options.keepCode && !m_keepFailed) {
+    // The next salt: registered again with it, the relay gives its code.
+    ++m_options.codeSalt;
+    SendRequest(now);
+    m_codeRequestMs = now - kRefreshMs + 300;
+    return;
+  }
+  auto bytes = Header(kRequestCode);
+  bytes.insert(bytes.end(), m_secret.begin(), m_secret.end());
+  bytes.push_back(1); // renew
+  ToRelay(Padded(std::move(bytes)), now);
+  m_codeRequestMs = now;
 }
 
 RelayLink::~RelayLink() {
@@ -253,6 +415,9 @@ void RelayLink::Fail(std::string error) {
   m_phase = Phase::Failed;
   m_lost = false;
   m_status.error = std::move(error);
+  // A kept code's replica may be the trouble: the next try asks for any code.
+  if (m_role == Role::Host && m_options.keepCode)
+    m_keepFailed = true;
 }
 
 void RelayLink::ToRelay(const std::vector<std::uint8_t> &bytes, enet_uint32 now) {
@@ -266,9 +431,13 @@ void RelayLink::SendRequest(enet_uint32 now) {
     bytes = Header(kResolveCode);
     bytes.insert(bytes.end(), m_options.code.begin(), m_options.code.end());
   } else if (m_role == Role::Host) {
-    bytes = Header(kRegisterHost);
+    const bool keep = m_options.keepCode && !m_keepFailed;
+    bytes = Header(keep ? kRegisterHostKeep : kRegisterHost);
     bytes.insert(bytes.end(), m_secret.begin(), m_secret.end());
     bytes.insert(bytes.end(), m_options.token.begin(), m_options.token.end());
+    if (keep)
+      for (int shift = 24; shift >= 0; shift -= 8)
+        bytes.push_back(static_cast<std::uint8_t>(m_options.codeSalt >> shift));
   } else if (m_channel != 0) {
     // Back on a relay that may have restarted: our old channel, so the
     // host's proxy (and its ENet) knows us as before.
@@ -285,11 +454,21 @@ void RelayLink::SendRequest(enet_uint32 now) {
 
 void RelayLink::StartOver(enet_uint32 now) {
   m_relay = m_home;
-  m_redirected = false;
+  m_redirects = 0;
   m_lost = false;
-  m_phase = Phase::Registering;
   m_startMs = now;
   m_status.code.clear(); // that replica's: another gives another
+  m_codeKept = false;
+  if (m_homes.size() > 1) {
+    // Several relays: the one answering the soonest now.
+    m_phase = Phase::Choosing;
+    m_rttMs.assign(m_homes.size(), 0);
+    m_chooseMs = m_probedMs = now;
+    for (const auto &home : m_homes)
+      Probe(home);
+    return;
+  }
+  m_phase = Phase::Registering;
   SendRequest(now);
 }
 
@@ -324,8 +503,12 @@ void RelayLink::Pump() {
     const auto size = ReceiveFrom(m_outer, from, buffer, sizeof buffer);
     if (size == 0)
       break;
-    if (Same(from, m_relay))
+    if (OnObserved(from, buffer, size, now))
+      continue; // a probe's answer, from any relay we asked
+    if (Same(from, m_relay) && m_phase != Phase::Choosing)
       OnRelay(buffer, size, now);
+    else if (m_directOn)
+      OnDirect(from, buffer, size, now); // the other side, on a direct path
   }
 
   if (m_role == Role::Guest && m_inner != ENET_SOCKET_NULL) {
@@ -335,10 +518,9 @@ void RelayLink::Pump() {
         break;
       if (!Same(from, m_enetSource))
         continue; // only our own ENet speaks through the proxy
-      WrapData(buffer, 0);
-      if (m_phase == Phase::Ready) {
-        SendTo(m_outer, m_relay, buffer, kDataHeader + size);
-        m_sentMs = now;
+      WrapData(buffer, m_channel);
+      if (m_direct.up || m_phase == Phase::Ready) {
+        Forward(m_direct, buffer, kDataHeader + size, now);
       } else if (m_phase != Phase::Failed && m_pending.size() < kMaxPending) {
         m_pending.emplace_back(buffer, buffer + kDataHeader + size);
       }
@@ -350,11 +532,11 @@ void RelayLink::Pump() {
       const auto size = ReceiveFrom(channel.socket, from, buffer + kDataHeader, kMaxDatagram);
       if (size == 0)
         break;
-      if (!Same(from, m_enetListen) || m_phase != Phase::Ready)
+      if (!Same(from, m_enetListen) || (m_phase != Phase::Ready && !channel.direct.up))
         continue;
       WrapData(buffer, id);
-      SendTo(m_outer, m_relay, buffer, kDataHeader + size);
-      m_sentMs = channel.lastMs = now;
+      Forward(channel.direct, buffer, kDataHeader + size, now);
+      channel.lastMs = now;
     }
   }
 
@@ -376,10 +558,12 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
       // Our probe answered: the relay is there (again). It may have
       // restarted, our code with it: asked for at once.
       m_lost = false;
-      if (m_role == Role::Guest)
+      if (m_role == Role::Guest) {
         m_channel = Be16(body);
-      else if (quiet >= kProbeMs)
+      } else if (quiet >= kProbeMs) {
         m_codeRequestMs = now - kRefreshMs;
+        m_addressesSent = false; // and what it knew of our addresses
+      }
       return;
     }
     // A guest that gave up stays given up; a host takes a late answer.
@@ -394,6 +578,25 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
       SendTo(m_outer, m_relay, datagram.data(), datagram.size());
     m_pending.clear();
     m_sentMs = now;
+    // The connection check: this relay port and a second one (the fleet's
+    // entrance, or the next port: an entrance's by default).
+    m_checkAlt = Same(m_home, m_relay)
+                     ? ENetAddress{m_relay.host, static_cast<enet_uint16>(m_relay.port + 1)}
+                     : m_home;
+    m_checkTries = 0;
+    m_checkMs = now - kCheckEveryMs;
+    // The host tells the relay its addresses as it registers; a guest asks
+    // for its introduction once the check is done (or gave up).
+    if (m_directOn) {
+      if (m_role == Role::Host)
+        SendAddresses(now);
+      else
+        m_introduceAgainMs = now + kCheckTries * kCheckEveryMs;
+    }
+    break;
+  case kIntroduce:
+    if (m_phase == Phase::Ready && m_directOn)
+      OnIntroduce(body, length, now);
     break;
   case kError:
     // Registered, a refusal answers a probe of a relay that restarted and
@@ -426,7 +629,9 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
     if (NormalizeJoinCode(code) != code)
       return;
     m_status.code = std::string(code);
-    m_codeExpiresMs = now + 1000u * Be16(body + kJoinCodeSize);
+    // A kept code lives while we are registered: no countdown.
+    m_codeKept = Be16(body + kJoinCodeSize) == kKeptLeft;
+    m_codeExpiresMs = now + (m_codeKept ? 86'400'000u : 1000u * Be16(body + kJoinCodeSize));
     break;
   }
   case kSecret:
@@ -448,7 +653,13 @@ void RelayLink::OnRelay(const std::uint8_t *data, std::size_t size, enet_uint32 
 void RelayLink::OnRedirect(const std::uint8_t *body, std::size_t length, enet_uint32 now) {
   if (m_phase != Phase::Resolving && m_phase != Phase::Registering)
     return;
-  if (m_redirected) {
+  if (m_redirects >= kMaxRedirects) {
+    // Asking for a kept code, whose replica may be away: any code will do.
+    if (m_role == Role::Host && m_options.keepCode && !m_keepFailed) {
+      m_keepFailed = true;
+      StartOver(now);
+      return;
+    }
     Fail("the relay's replicas sent us on twice (their peers lists disagree)");
     return;
   }
@@ -462,8 +673,183 @@ void RelayLink::OnRedirect(const std::uint8_t *body, std::size_t length, enet_ui
   to.host = ip;
   to.port = Be16(body + 5);
   m_relay = to;
-  m_redirected = true;
+  ++m_redirects;
   SendRequest(now);
+}
+
+// Our addresses for direct paths: the LAN one (the interface that reaches
+// the relay, with the port of the socket we use for it); the relay adds the
+// public one it sees. A guest's asks for an introduction to its host.
+void RelayLink::SendAddresses(enet_uint32 now) {
+  ENetAddress lan{};
+  ENetSocket probe = enet_socket_create(ENET_SOCKET_TYPE_DATAGRAM);
+  if (probe != ENET_SOCKET_NULL) {
+    if (enet_socket_connect(probe, &m_relay) < 0 || enet_socket_get_address(probe, &lan) < 0)
+      lan.host = 0;
+    enet_socket_destroy(probe);
+  }
+  ENetAddress outer{};
+  enet_socket_get_address(m_outer, &outer);
+  auto bytes = Header(kAddresses);
+  bytes.push_back(static_cast<std::uint8_t>(Mapping())); // relay.FlagMapping*
+  if (lan.host != 0 && outer.port != 0) {
+    bytes.push_back(1);
+    const auto *raw = reinterpret_cast<const std::uint8_t *>(&lan.host); // network order
+    bytes.insert(bytes.end(), raw, raw + 4);
+    AppendBe16(bytes, outer.port);
+  } else {
+    bytes.push_back(0);
+  }
+  ToRelay(Padded(std::move(bytes)), now);
+  m_addressesMs = now;
+  m_addressesSent = true;
+  m_introduceAgainMs = now + kIntroduceAgainMs;
+}
+
+// The relay introduced us to the other side: punch at its public and LAN
+// addresses (the nonce, drawn by the relay for the pair, says it is us).
+void RelayLink::OnIntroduce(const std::uint8_t *body, std::size_t length, enet_uint32 now) {
+  if (length != 2 + 4 + 1 + 6 + 6)
+    return;
+  // Both behind NATs that map each destination apart: punches cannot meet.
+  if (body[6] == static_cast<std::uint8_t>(NatMapping::Varies) && Mapping() == NatMapping::Varies)
+    return;
+  const auto channel = Be16(body);
+  Direct *direct = &m_direct;
+  if (m_role == Role::Host) {
+    auto *found = ChannelFor(channel, now);
+    if (!found)
+      return;
+    direct = &found->direct;
+  }
+  *direct = Direct{};
+  direct->nonce = Be32(body + 2);
+  for (const auto *at : {body + 7, body + 13}) {
+    const auto address = AddressAt(at);
+    if (address.host == 0 || address.port == 0 ||
+        (direct->count == 1 && Same(address, direct->candidates[0])))
+      continue;
+    direct->candidates[direct->count++] = address;
+  }
+  if (direct->nonce == 0 || direct->count == 0) {
+    *direct = Direct{};
+    return;
+  }
+  direct->punchUntilMs = now + kPunchMs;
+  direct->punchedMs = now - kPunchEveryMs;
+  DirectTimers(*direct, m_role == Role::Host ? channel : m_channel, now);
+}
+
+// A datagram from someone other than the relay: a punch of the other side
+// (its nonce), or its data on a path a punch opened. Anything else is
+// dropped.
+void RelayLink::OnDirect(const ENetAddress &from, std::uint8_t *data, std::size_t size,
+                         enet_uint32 now) {
+  if (size < kHeader || std::memcmp(data, kMagic, 4) != 0)
+    return;
+  if (data[4] == kPunch && size == kPunchSize) {
+    const auto nonce = Be32(data + kHeader);
+    const auto channel = Be16(data + kHeader + 4);
+    Direct *direct = nullptr;
+    if (m_role == Role::Guest) {
+      if (m_direct.nonce == nonce)
+        direct = &m_direct;
+    } else if (const auto found = m_channels.find(channel);
+               found != m_channels.end() && found->second.direct.nonce == nonce) {
+      direct = &found->second.direct;
+    }
+    if (!direct || nonce == 0)
+      return;
+    direct->to = from;
+    direct->answered = true;
+    direct->heardMs = now;
+    if (data[kHeader + 6] == 0) {
+      const auto ack = PunchDatagram(nonce, channel, true);
+      SendTo(m_outer, from, ack.data(), ack.size());
+    } else if (!direct->up) {
+      direct->up = true; // our punch came back: both ways work
+      direct->sentMs = now;
+    }
+    return;
+  }
+  if (data[4] != kData || size < kDataHeader)
+    return;
+  // Data on a path a punch opened (the other side sends on it once our
+  // answer reached it: it works both ways).
+  if (m_role == Role::Guest) {
+    if (!m_direct.answered || !Same(from, m_direct.to))
+      return;
+    if (!m_direct.up)
+      m_direct.sentMs = now;
+    m_direct.up = true;
+    m_direct.heardMs = now;
+    SendTo(m_inner, m_enetSource, data + kDataHeader, size - kDataHeader);
+    return;
+  }
+  for (auto &[id, channel] : m_channels) {
+    auto &direct = channel.direct;
+    if (!direct.answered || !Same(from, direct.to))
+      continue;
+    if (!direct.up)
+      direct.sentMs = now;
+    direct.up = true;
+    direct.heardMs = now;
+    SendTo(channel.socket, m_enetListen, data + kDataHeader, size - kDataHeader);
+    channel.lastMs = now;
+    return;
+  }
+}
+
+void RelayLink::Forward(Direct &direct, std::uint8_t *buffer, std::size_t size, enet_uint32 now) {
+  if (direct.up) {
+    SendTo(m_outer, direct.to, buffer, size);
+    direct.sentMs = now;
+    return;
+  }
+  SendTo(m_outer, m_relay, buffer, size);
+  m_sentMs = now;
+}
+
+// Punches while the introduction is fresh; a path that went silent while we
+// sent on it is dropped, its traffic back on the relay at once.
+void RelayLink::DirectTimers(Direct &direct, std::uint16_t channel, enet_uint32 now) {
+  if (direct.nonce == 0)
+    return;
+  if (direct.up) {
+    if (Since(now, direct.heardMs) >= kDirectSilentMs &&
+        Since(now, direct.sentMs) < kDirectSilentMs) {
+      direct = Direct{};
+      if (m_role == Role::Guest)
+        m_introduceAgainMs = now + kIntroduceAgainMs;
+    }
+    return;
+  }
+  if (Reached(now, direct.punchUntilMs)) {
+    direct = Direct{}; // no answer: the relay it stays
+    return;
+  }
+  if (Since(now, direct.punchedMs) < kPunchEveryMs)
+    return;
+  direct.punchedMs = now;
+  const auto punch = PunchDatagram(direct.nonce, channel, false);
+  for (int i = 0; i < direct.count; ++i)
+    SendTo(m_outer, direct.candidates[i], punch.data(), punch.size());
+  // Heard from an address we did not know of (its NAT mapped another
+  // port): punched there too.
+  if (direct.answered && !Same(direct.to, direct.candidates[0]) &&
+      (direct.count < 2 || !Same(direct.to, direct.candidates[1])))
+    SendTo(m_outer, direct.to, punch.data(), punch.size());
+}
+
+void RelayLink::SetDirect(bool on) {
+  if (m_directOn == on)
+    return;
+  m_directOn = on;
+  m_direct = Direct{};
+  for (auto &[id, channel] : m_channels)
+    channel.direct = Direct{};
+  // On again: a guest asks for an introduction soon.
+  m_introduceAgainMs = enet_time_get();
 }
 
 void RelayLink::OnError(std::uint8_t code) {
@@ -479,7 +865,7 @@ void RelayLink::OnError(std::uint8_t code) {
       m_options.code = *NormalizeJoinCode(m_options.code);
       m_phase = Phase::Resolving;
       m_relay = m_home;
-      m_redirected = false;
+      m_redirects = 0;
       SendRequest(enet_time_get());
     } else {
       Fail("the session is not on the relay (the host left)");
@@ -495,7 +881,9 @@ void RelayLink::OnError(std::uint8_t code) {
     Fail("another host holds this session on the relay");
     break;
   case 6:
-    Fail("no session has this join code (wrong, or expired)");
+    // Another relay configured may hold it (one of another network).
+    if (!NextHome(enet_time_get()))
+      Fail("no session has this join code (wrong, or expired)");
     break;
   case 7:
     Fail("too many join attempts: try again in a minute");
@@ -541,12 +929,52 @@ bool RelayLink::Carries(const ENetAddress &address) const {
 }
 
 void RelayLink::Timers(enet_uint32 now) {
-  // Registered: a silent relay is asked again, then waited for.
+  // Choosing the nearest relay: probes until all answered or a second passed.
+  if (m_phase == Phase::Choosing) {
+    if (std::ranges::all_of(m_rttMs, [](enet_uint32 rtt) { return rtt != 0; }) ||
+        Since(now, m_chooseMs) >= kChooseMs) {
+      Choose(now);
+    } else if (Since(now, m_probedMs) >= kProbeEveryMs) {
+      m_probedMs = now;
+      for (std::size_t i = 0; i < m_homes.size(); ++i)
+        if (m_rttMs[i] == 0)
+          Probe(m_homes[i]);
+    }
+    return;
+  }
+
+  // The connection check, once registered: two relay ports.
+  if (m_phase == Phase::Ready && m_checkTries < kCheckTries && Mapping() == NatMapping::Unknown &&
+      Since(now, m_checkMs) >= kCheckEveryMs) {
+    ++m_checkTries;
+    m_checkMs = now;
+    Probe(m_relay);
+    Probe(m_checkAlt);
+  }
+
+  // Direct paths: punches, and silent ones dropped.
+  if (m_role == Role::Guest) {
+    DirectTimers(m_direct, m_channel, now);
+    if (m_directOn && m_phase == Phase::Ready && !m_lost && m_direct.nonce == 0 &&
+        Reached(now, m_introduceAgainMs))
+      SendAddresses(now);
+  } else {
+    for (auto &[id, channel] : m_channels)
+      DirectTimers(channel.direct, id, now);
+    if (m_directOn && m_phase == Phase::Ready && !m_lost &&
+        (!m_addressesSent || Since(now, m_addressesMs) >= kRefreshMs))
+      SendAddresses(now);
+  }
+
+  // Registered: a silent relay is asked again, then waited for (traffic on
+  // a direct path does not go through it: it is asked as when idle).
   if (m_phase == Phase::Ready) {
     const bool relaying =
-        m_role == Role::Guest || std::ranges::any_of(m_channels, [&](const auto &entry) {
-          return Since(now, entry.second.lastMs) < kIdleProbeMs;
-        });
+        m_role == Role::Guest
+            ? !m_direct.up
+            : std::ranges::any_of(m_channels, [&](const auto &entry) {
+                return Since(now, entry.second.lastMs) < kIdleProbeMs && !entry.second.direct.up;
+              });
     const auto probeMs = relaying ? kProbeMs : kIdleProbeMs;
     const auto silent = Since(now, m_heardMs);
     if (silent >= probeMs + kLostAfterProbeMs && !m_lost) {
@@ -555,6 +983,12 @@ void RelayLink::Timers(enet_uint32 now) {
     }
     if (m_lost && Since(now, m_lostMs) >= kHoldMs) {
       if (m_role == Role::Guest) {
+        // Still with the host directly: the session goes on without the
+        // relay, which is asked again now and then.
+        if (m_direct.up) {
+          m_lostMs = now;
+          return;
+        }
         Fail("lost the relay");
         return;
       }
@@ -601,8 +1035,9 @@ void RelayLink::Timers(enet_uint32 now) {
   // The code: asked until given, then again as often as the registration
   // (its time left, or back from a relay that restarted).
   if (m_phase == Phase::Ready && !m_lost) {
-    const bool wanted = m_status.code.empty() || Reached(now, m_codeExpiresMs) ||
-                        Since(now, m_codeRequestMs) >= kRefreshMs;
+    const bool expired = !m_codeKept && Reached(now, m_codeExpiresMs);
+    const bool wanted =
+        m_status.code.empty() || expired || Since(now, m_codeRequestMs) >= kRefreshMs;
     if (wanted && Since(now, m_codeRequestMs) >= kCodeRetryMs)
       RequestCode(now);
   }
@@ -639,6 +1074,7 @@ void RelayLink::Wait(ENetSocket enet, enet_uint32 ms) {
 RelayStatus RelayLink::Status() const {
   auto status = m_status;
   switch (m_phase) {
+  case Phase::Choosing:
   case Phase::Resolving:
   case Phase::Registering:
     status.state = RelayStatus::State::Connecting;
@@ -652,12 +1088,28 @@ RelayStatus RelayLink::Status() const {
     status.state = RelayStatus::State::Failed;
     break;
   }
-  if (!status.code.empty()) {
+  status.codeKept = m_codeKept && !status.code.empty();
+  status.codeSalt = m_options.codeSalt;
+  if (!status.code.empty() && !m_codeKept) {
     const auto left = static_cast<std::int32_t>(m_codeExpiresMs - enet_time_get());
     status.codeSecondsLeft = left > 0 ? static_cast<std::uint32_t>(left) / 1000 : 0;
   }
   if (m_relay.host != 0)
     status.at = Text(m_relay);
+  status.direct = m_direct.up ? 1 : 0;
+  for (const auto &[id, channel] : m_channels)
+    status.direct += channel.direct.up ? 1 : 0;
+  // The connection check.
+  if (const auto seen =
+          std::ranges::find_if(m_seen, [&](const Seen &s) { return Same(s.relay, m_relay); });
+      seen != m_seen.end() || !m_seen.empty()) {
+    const auto &us = seen != m_seen.end() ? seen->us : m_seen[0].us;
+    ENetAddress local{};
+    enet_socket_get_address(m_outer, &local);
+    status.publicAddress = Text(us);
+    status.portKept = us.port == local.port;
+  }
+  status.nat = Mapping();
   return status;
 }
 

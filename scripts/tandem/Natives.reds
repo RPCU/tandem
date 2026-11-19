@@ -501,6 +501,14 @@ public native class TandemNative extends IScriptable {
   // code, or no relay in tandem.ini; starts now, or with the next game).
   public static native func RelayCode() -> String
   public static native func RelayStatus() -> String
+  // The host's code is its kept one (the same next session); another code
+  // now (false: not hosting through a relay); the connection check
+  // ("direct": direct connections likely, "relay": relay only, "" not
+  // known); the direct paths up (host: its guests'; guest: 0 or 1).
+  public static native func RelayCodeKept() -> Bool
+  public static native func RelayNewCode() -> Bool
+  public static native func RelayCheck() -> String
+  public static native func RelayDirect() -> Int32
   public static native func JoinByCode(code: String) -> Bool
   public static native func RecordStart(name: String) -> Bool
   public static native func RecordStop()

@@ -12,23 +12,23 @@ public class TandemSettings {
   public static func Keys() -> array<String> {
     return [
       "name", "friendly_fire", "notices", "markers", "nameplates", "recorder",
-      "relay", "relay_token", "story", "quest_freeze", "scene_privacy", "time_host"
+      "relay", "relay_token", "code", "direct", "story", "quest_freeze", "scene_privacy", "time_host"
     ];
   }
 
   private static func Labels() -> array<String> {
     return [
       "Settings-Name", "Settings-FriendlyFire", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-Recorder",
-      "Settings-Relay", "Settings-RelayToken", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost"
+      "Settings-Relay", "Settings-RelayToken", "Settings-Code", "Settings-Direct", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost"
     ];
   }
 
   private static func Kinds() -> array<Int32> {
-    return [2, 0, 1, 0, 0, 0, 2, 2, 0, 0, 0, 1];
+    return [2, 0, 1, 0, 0, 0, 2, 2, 1, 1, 0, 0, 0, 1];
   }
 
   private static func Whens() -> array<Int32> {
-    return [1, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 1];
+    return [1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 2, 2, 1];
   }
 
   private static func IndexOf(key: String) -> Int32 {
@@ -56,6 +56,12 @@ public class TandemSettings {
     if Equals(key, "time_host") {
       return ["full", "bubble"];
     }
+    if Equals(key, "direct") {
+      return ["auto", "off"];
+    }
+    if Equals(key, "code") {
+      return ["new", "keep"];
+    }
     return ["on", "off"];
   }
 
@@ -65,6 +71,12 @@ public class TandemSettings {
     }
     if Equals(key, "time_host") {
       return ["Settings-TimeHost-Full", "Settings-TimeHost-Bubble"];
+    }
+    if Equals(key, "direct") {
+      return ["Settings-Direct-Auto", "Common-Off"];
+    }
+    if Equals(key, "code") {
+      return ["Settings-Code-New", "Settings-Code-Keep"];
     }
     return ["Common-On", "Common-Off"];
   }

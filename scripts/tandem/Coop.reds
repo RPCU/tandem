@@ -62,6 +62,7 @@ enum TandemCoopAction {
   Settings = 13,
   Setting = 14,
   Report = 15,
+  NewCode = 16,
 }
 
 // One of our entries in a menu's list: the vanilla item data (its label is
@@ -143,9 +144,12 @@ public class TandemCoop {
         let code = TandemNative.RelayCode();
         let relay = TandemNative.RelayStatus();
         if StrLen(code) > 0 {
-          ArrayPush(lines, TandemText.FE(english, "Status-Code", code));
+          ArrayPush(lines, TandemText.FE(english, TandemNative.RelayCodeKept() ? "Status-CodeKept" : "Status-Code", code));
         } else if StrLen(relay) > 0 && !Equals(relay, "ready") {
           ArrayPush(lines, TandemText.FE(english, "Status-Relay", TandemText.Reason(relay, english)));
+        }
+        for line in TandemCoop.ConnectionLines(english) {
+          ArrayPush(lines, line);
         }
       }
     } else if status.role == 2 {
@@ -154,6 +158,9 @@ public class TandemCoop {
       } else if status.state == 3 {
         let host = TandemCoop.HostName();
         ArrayPush(lines, StrLen(host) > 0 ? TandemText.FE(english, "Status-InSessionOf", host) : TandemText.FE(english, "Status-InSessionAt", target));
+        for line in TandemCoop.ConnectionLines(english) {
+          ArrayPush(lines, line);
+        }
       } else if status.state == 4 {
         ArrayPush(lines, TandemText.FE(english, "Status-Retrying", target, TandemText.Reason(status.detail, english)));
       } else if status.state == 5 {
@@ -186,6 +193,23 @@ public class TandemCoop {
     }
     if TandemNative.RecorderOn() {
       ArrayPush(lines, TandemText.FE(english, "Status-Recorder", TandemNative.RecorderStatus()));
+    }
+    return lines;
+  }
+
+  // Through a relay: what the connection check found (direct connections
+  // likely, or relay only), and the direct paths up.
+  public static func ConnectionLines(english: Bool) -> array<String> {
+    let lines: array<String>;
+    let check = TandemNative.RelayCheck();
+    if Equals(check, "direct") {
+      ArrayPush(lines, TandemText.T(english, "Status-CheckDirect"));
+    } else if Equals(check, "relay") {
+      ArrayPush(lines, TandemText.T(english, "Status-CheckRelay"));
+    }
+    let direct = TandemNative.RelayDirect();
+    if direct > 0 {
+      ArrayPush(lines, TandemText.FE(english, "Status-Direct", s"\(direct)"));
     }
     return lines;
   }
@@ -401,6 +425,10 @@ public class TandemCoopMenu {
       if inSession {
         if TandemNative.SessionStatus().role == 1 {
           this.Add("Menu-Invite", TandemCoopAction.Invite);
+          // Another join code (a kept one: the next, kept from now on).
+          if StrLen(TandemNative.RelayCode()) > 0 {
+            this.Add("Menu-NewCode", TandemCoopAction.NewCode);
+          }
         }
         this.Add("Menu-Leave", TandemCoopAction.Leave);
       } else {
@@ -1046,6 +1074,9 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
     this.TandemGo(TandemCoopPage.Coop);
   } else if Equals(action, TandemCoopAction.Invite) {
     GenericMessageNotification.Show(this, TandemText.Get("Menu-Invite"), TandemCoop.InviteText(), GenericMessageNotificationType.OK);
+  } else if Equals(action, TandemCoopAction.NewCode) {
+    TandemNative.RelayNewCode();
+    this.TandemGo(TandemCoopPage.Coop);
   } else if Equals(action, TandemCoopAction.Leave) {
     system.CoopLeave();
     this.TandemGo(TandemCoopPage.Coop);

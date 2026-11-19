@@ -143,13 +143,16 @@ private:
 };
 
 // The host's join code, once the relay gave it.
-std::string CodeOf(Endpoint &host) {
+std::string CodeOf(Endpoint &host, std::chrono::milliseconds limit = 3s) {
   std::string code;
-  Pump({&host}, [&](std::size_t, const auto &) {
-    if (const auto relay = host.Relay())
-      code = relay->code;
-    return !code.empty();
-  });
+  Pump(
+      {&host},
+      [&](std::size_t, const auto &) {
+        if (const auto relay = host.Relay())
+          code = relay->code;
+        return !code.empty();
+      },
+      limit);
   return code;
 }
 
@@ -412,10 +415,13 @@ TEST_SUITE("relay") {
     REQUIRE(relay.Start());
     std::this_thread::sleep_for(300ms);
     std::string error;
-    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, relay.Options());
+    // All through the relay (a direct path would carry them over the gap).
+    auto options = relay.Options();
+    options.direct = false;
+    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, options);
     REQUIRE_MESSAGE(host, error);
-    auto byCode = relay.Options();
-    byCode.code = CodeOf(*host);
+    auto byCode = options;
+    byCode.code = CodeOf(*host, 10s);
     REQUIRE_FALSE(byCode.code.empty());
     auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error);
     REQUIRE_MESSAGE(guest, error);
@@ -465,5 +471,178 @@ TEST_SUITE("relay") {
     REQUIRE_MESSAGE(third, error);
     REQUIRE(AllJoined({host.get(), guest.get(), third.get()}));
     CHECK(host->Relay()->code == byCode.code);
+  }
+
+  TEST_CASE("through the relay, host and guest find a direct path, and fall back to the relay") {
+    NEEDS_RELAY(relay);
+    std::string error;
+    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, relay);
+    REQUIRE_MESSAGE(host, error);
+    auto byCode = *relay;
+    byCode.code = CodeOf(*host);
+    auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error);
+    REQUIRE_MESSAGE(guest, error);
+    REQUIRE(AllJoined({host.get(), guest.get()}));
+
+    // Introduced by the relay, they punch through (on 127.0.0.1, at once).
+    REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t, const auto &) {
+      return guest->Relay()->direct == 1 && host->Relay()->direct == 1;
+    }));
+
+    bool ended = false, left = false;
+    // States flow (direct), and keep flowing once the path is gone.
+    const auto flows = [&](std::chrono::milliseconds limit) {
+      std::optional<proto::PlayerState> seen;
+      Pump(
+          {host.get(), guest.get()},
+          [&](std::size_t i, const std::vector<SessionEvent> &events) {
+            guest->SendLocalState(proto::PlayerState{.position = {1.f, 1.f, 1.f}});
+            for (const auto &event : events) {
+              ended |= std::holds_alternative<events::Ended>(event);
+              left |= std::holds_alternative<events::PlayerLeft>(event);
+              if (const auto *remote = std::get_if<events::RemoteState>(&event); remote && i == 0)
+                seen = remote->state;
+            }
+            return seen.has_value();
+          },
+          limit);
+      return seen.has_value();
+    };
+    CHECK(flows(2s));
+
+    // The host turns direct paths off (the settings page): its side stops at
+    // once, the guest's goes silent and falls back to the relay, and the
+    // session never notices.
+    host->SetDirect(false);
+    CHECK(host->Relay()->direct == 0);
+    REQUIRE(
+        Pump({host.get(), guest.get()}, [&](std::size_t, const std::vector<SessionEvent> &events) {
+          for (const auto &event : events)
+            ended |= std::holds_alternative<events::Ended>(event);
+          return guest->Relay()->direct == 0 || ended;
+        }));
+    CHECK(flows(3s));
+    CHECK_FALSE(ended);
+    CHECK_FALSE(left);
+    CHECK(guest->IsJoined());
+  }
+
+  TEST_CASE("a host that does not punch back: the guest stays on the relay, nothing lost") {
+    NEEDS_RELAY(relay);
+    std::string error;
+    auto noDirect = *relay;
+    noDirect.direct = false; // as a port that drops every punch
+    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, noDirect);
+    REQUIRE_MESSAGE(host, error);
+    auto byCode = *relay;
+    byCode.code = CodeOf(*host);
+    auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error);
+    REQUIRE_MESSAGE(guest, error);
+    REQUIRE(AllJoined({host.get(), guest.get()}));
+
+    // The guest punches for 3 s, unanswered; the session goes on meanwhile.
+    std::optional<proto::PlayerState> seen;
+    bool ended = false;
+    Pump(
+        {host.get(), guest.get()},
+        [&](std::size_t i, const std::vector<SessionEvent> &events) {
+          guest->SendLocalState(proto::PlayerState{.position = {2.f, 2.f, 2.f}});
+          for (const auto &event : events) {
+            ended |= std::holds_alternative<events::Ended>(event);
+            if (const auto *remote = std::get_if<events::RemoteState>(&event); remote && i == 0)
+              seen = remote->state;
+          }
+          return false;
+        },
+        4s);
+    CHECK_FALSE(ended);
+    REQUIRE(seen);
+    CHECK(guest->Relay()->direct == 0);
+    CHECK(host->Relay()->direct == 0);
+    CHECK(guest->ThroughRelay());
+  }
+
+  TEST_CASE("the connection check: what two relay ports saw of us") {
+    NEEDS_RELAY(relay);
+    std::string error;
+    // TANDEM_RELAY's next port is the fleet's other replica: two relay
+    // ports answer, and on 127.0.0.1 nothing maps ports.
+    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, relay);
+    REQUIRE_MESSAGE(host, error);
+    REQUIRE(Pump({host.get()}, [&](std::size_t, const auto &) {
+      return host->Relay()->nat != net::NatMapping::Unknown;
+    }));
+    const auto status = *host->Relay();
+    CHECK(status.nat == net::NatMapping::Stable);
+    CHECK(net::DirectOutlook(status) == "direct");
+    CHECK(status.portKept);
+    CHECK(status.publicAddress.starts_with("127.0.0.1:"));
+  }
+
+  TEST_CASE("several relays: a host takes the one that answers, a guest asks each in turn") {
+    const auto fleet = TestFleet();
+    const char *binary = std::getenv("TANDEM_RELAY_BIN");
+    if (!fleet || !binary) {
+      MESSAGE("TANDEM_RELAY_FLEET or TANDEM_RELAY_BIN unset: skipped");
+      return;
+    }
+    std::string error;
+    // The first relay listed answers nothing: the host registers on the next.
+    auto options = net::RelayOptions{.address = "127.0.0.1", .port = NextPort()};
+    options.more = {AddressOf(fleet->replicas[1])};
+    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, options);
+    REQUIRE_MESSAGE(host, error);
+    const auto code = CodeOf(*host, 5s);
+    REQUIRE(code.size() == net::kJoinCodeSize);
+    CHECK(host->Relay()->at == AddressOf(fleet->replicas[1]));
+
+    // A relay of another network (it does not know the code), then the fleet.
+    RelayProcess other(binary, NextPort());
+    REQUIRE(other.Start());
+    std::this_thread::sleep_for(300ms);
+    auto byCode = other.Options();
+    byCode.code = code;
+    byCode.more = {AddressOf(fleet->replicas[0])};
+    auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error);
+    REQUIRE_MESSAGE(guest, error);
+    REQUIRE(AllJoined({host.get(), guest.get()}, 8s));
+    CHECK(guest->Relay()->at == AddressOf(fleet->replicas[1]));
+  }
+
+  TEST_CASE("a kept code: the same next session, another on asking") {
+    NEEDS_RELAY(relay);
+    std::string error;
+    auto keep = *relay;
+    keep.keepCode = true;
+    keep.codeSalt = 41;
+    std::string kept;
+    {
+      auto host = Endpoint::Host({"host"}, NextPort(), error, {}, keep);
+      REQUIRE_MESSAGE(host, error);
+      kept = CodeOf(*host);
+      REQUIRE(kept.size() == net::kJoinCodeSize);
+      CHECK(host->Relay()->codeKept);
+      CHECK(host->Relay()->codeSecondsLeft == 0);
+    }
+    // The host comes back (its old session still on the relay): its code too.
+    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, keep);
+    REQUIRE_MESSAGE(host, error);
+    CHECK(CodeOf(*host) == kept);
+    auto byCode = *relay;
+    byCode.code = kept;
+    auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error);
+    REQUIRE_MESSAGE(guest, error);
+    REQUIRE(AllJoined({host.get(), guest.get()}));
+
+    // New code: the next salt, at once, the session untouched.
+    host->NewRelayCode();
+    std::string next;
+    REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t, const auto &) {
+      next = host->Relay()->code;
+      return !next.empty() && next != kept;
+    }));
+    CHECK(host->Relay()->codeKept);
+    CHECK(host->Relay()->codeSalt == 42);
+    CHECK(guest->IsJoined());
   }
 }

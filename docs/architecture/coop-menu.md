@@ -100,6 +100,13 @@ minute"`…), to show as is.
   starts when the next game is loaded (`TandemNative.Start`). The outcome
   arrives as the usual `TandemEvent`s (4 in the session, 3 ended with a
   reason).
+- `RelayCodeKept() -> Bool` (the code is the host's kept one: "Join code:
+  K7Q-2M9 (kept: the same next time)"), `RelayNewCode() -> Bool` (the pause
+  menu's "New join code", for a host with a code: a new one now; a kept
+  code's next salt, saved as `code_salt`), `RelayCheck() -> String` (the
+  connection check: `"direct"` likely, `"relay"` only, `""` unknown) and
+  `RelayDirect() -> Int32` (direct paths up), shown as status lines
+  (`TandemCoop.ConnectionLines`). See [The relay](relay.md).
 
 The flow: **host** — the menu's "Host co-op" loads one of the player's saves
 with `role = host` and shows `RelayCode()` (with a copy button and the
@@ -108,9 +115,10 @@ is what the player sends a friend. **Join** — "Join co-op" asks for the code
 (6 characters, a dash optional), calls `JoinByCode`, loads the guest's own
 save and waits for event 4, showing `RelayStatus()` and the end reason on
 failure. `scripts/tandem/Coop.reds` does this (the co-op menu above, which
-also hosts and joins by address). Still missing: a "new code" request (the
-wire has `renew`; `RelayLink` does not expose it yet), and a relay address
-shipped by default (today `relay =` is set by hand).
+also hosts and joins by address). Still missing: a relay address shipped
+by default (today `relay =` is set by hand). (The "new code" request, once
+missing because `RelayLink` did not expose the wire's `renew`, is the
+pause menu's New join code since 2026-11-19.)
 
 ## Open problems
 
