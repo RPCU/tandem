@@ -118,6 +118,10 @@ public class TandemSystem extends ScriptableSystem {
   private let m_time: ref<TandemTime>;
   // The NCART, rides and quest vehicles (Transit.reds).
   private let m_transit: ref<TandemTransit>;
+  // World vehicles (Traffic.reds: kept for the game's whole run, it knows
+  // every vehicle of our world) and police heat (Police.reds).
+  private let m_traffic: ref<TandemTraffic>;
+  private let m_police: ref<TandemPolice>;
   // Our V and the others in other worlds (Elsewhere.reds), and why each
   // puppet is hidden (PuppetVisibility.reds: private scenes, other worlds).
   private let m_elsewhere: ref<TandemElsewhere>;
@@ -180,6 +184,28 @@ public class TandemSystem extends ScriptableSystem {
   private func OnAttach() -> Void {
     if TandemNative.IsConfigured() {
       TandemNative.Log("system attached");
+    }
+    this.m_traffic = new TandemTraffic();
+    this.m_traffic.Start(this.GetGameInstance());
+    this.m_police = new TandemPolice();
+    this.m_police.Start(this.GetGameInstance());
+  }
+
+  public func Traffic() -> ref<TandemTraffic> {
+    return this.m_traffic;
+  }
+
+  public func Police() -> ref<TandemPolice> {
+    return this.m_police;
+  }
+
+  // The session's world vehicles and police units go with it.
+  private func EndStreet() -> Void {
+    if IsDefined(this.m_traffic) {
+      this.m_traffic.End();
+    }
+    if IsDefined(this.m_police) {
+      this.m_police.End();
     }
   }
 
@@ -297,6 +323,7 @@ public class TandemSystem extends ScriptableSystem {
     this.m_inGame = false;
     this.m_you = 0u;
     this.RemoveAllPuppets();
+    this.EndStreet();
     if !worldStays {
       // Nothing left to delete step by step.
       ArrayClear(this.m_leaving);
@@ -569,6 +596,16 @@ public class TandemSystem extends ScriptableSystem {
     if this.m_playing && this.m_you != 0u {
       this.CheckPuppets();
     }
+    // The street, before the puppets' seats: a vehicle a player took is
+    // that player's car copy from this frame on.
+    if this.m_playing && this.m_you != 0u {
+      if IsDefined(this.m_traffic) {
+        this.m_traffic.Tick(this.Now(), this.m_you, this);
+      }
+      if IsDefined(this.m_police) {
+        this.m_police.Tick(this.Now(), this.m_you, this);
+      }
+    }
     this.DrivePuppets();
     this.Rebuild();
     // Our ride and the others' (the NCART, rides, quest scene vehicles).
@@ -714,6 +751,15 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.PoseHook();
     } else if Equals(command, "npc count") {
       TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed)");
+    } else if Equals(command, "street count") {
+      // (test) the world vehicles shared in the session, as we have them.
+      TandemNative.Log(s"street \(IsDefined(this.m_traffic) ? this.m_traffic.Report() : "count: no vehicles")");
+    } else if StrBeginsWith(command, "police") {
+      // (test) "police report", "police heat N" (our V wanted at N stars,
+      // the quests' own way), "police calm".
+      if IsDefined(this.m_police) {
+        this.m_police.Command(command, this);
+      }
     } else if Equals(command, "npc anims") {
       TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
     } else if StrBeginsWith(command, "npc seek") {
@@ -892,7 +938,7 @@ public class TandemSystem extends ScriptableSystem {
       let copy: ref<VehicleObject>;
       for puppet in this.m_puppets {
         if !IsDefined(copy) && EntityID.IsDefined(puppet.car) {
-          copy = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.car) as VehicleObject;
+          copy = TandemTraffic.Body(this.GetGameInstance(), puppet.car);
         }
       }
       TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
@@ -940,7 +986,7 @@ public class TandemSystem extends ScriptableSystem {
       let seated = false;
       for puppet in this.m_puppets {
         if !seated && EntityID.IsDefined(puppet.car) {
-          let car = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.car) as VehicleObject;
+          let car = TandemTraffic.Body(this.GetGameInstance(), puppet.car);
           let player = GetPlayer(this.GetGameInstance());
           let slot = TandemVehicles.FreeSlot(this.GetGameInstance(), car, n"seat_front_right", player.GetEntityID());
           if IsDefined(car) && IsNameValid(slot) && !VehicleComponent.IsDriverSlot(slot) {
@@ -1612,6 +1658,7 @@ public class TandemSystem extends ScriptableSystem {
             this.m_transit.End();
           }
           this.RemoveAllPuppets();
+          this.EndStreet();
           if IsDefined(this.m_npcs) {
             this.m_npcs.End();
           }
@@ -1820,7 +1867,7 @@ public class TandemSystem extends ScriptableSystem {
         this.TrySeat(puppet);
       }
       if EntityID.IsDefined(puppet.car) {
-        let car = entities.GetEntity(puppet.car) as GameObject;
+        let car = TandemTraffic.Body(this.GetGameInstance(), puppet.car);
         if IsDefined(car) {
           TandemVehicles.Follow(this.GetGameInstance(), car, puppet.player);
         }
@@ -2143,6 +2190,15 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log(s"player \(puppet.player): on foot");
       return;
     }
+    // A vehicle it took from the street is its car: the body we have of
+    // it (the real one when we own the area, our proxy otherwise).
+    if owner == puppet.player && !EntityID.IsDefined(puppet.car) && IsDefined(this.m_traffic) {
+      let taken = this.m_traffic.TakeAdopted(puppet.player);
+      if EntityID.IsDefined(taken) && IsDefined(TandemTraffic.Body(game, taken)) {
+        puppet.car = taken;
+        TandemNative.Log(s"player \(puppet.player): drives the vehicle it took from the street");
+      }
+    }
     if owner == puppet.player && !EntityID.IsDefined(puppet.car) {
       let at = TandemNative.RemoteVehiclePosition(puppet.player);
       if at.W == 0.0 && IsDefined(body) {
@@ -2165,7 +2221,7 @@ public class TandemSystem extends ScriptableSystem {
     let owner = TandemNative.RemoteSeatOwner(puppet.player);
     let vehicle: wref<GameObject>;
     if owner == puppet.player {
-      vehicle = entities.GetEntity(puppet.car) as GameObject;
+      vehicle = TandemTraffic.Body(game, puppet.car);
     } else if owner == this.m_you {
       let ours: wref<VehicleObject>;
       if VehicleComponent.GetVehicle(game, GetPlayer(game), ours) {
@@ -2174,7 +2230,7 @@ public class TandemSystem extends ScriptableSystem {
     } else {
       for other in this.m_puppets {
         if other.player == owner && EntityID.IsDefined(other.car) {
-          vehicle = entities.GetEntity(other.car) as GameObject;
+          vehicle = TandemTraffic.Body(game, other.car);
         }
       }
     }
