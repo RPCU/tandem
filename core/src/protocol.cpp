@@ -98,6 +98,15 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *crime = std::get_if<Crime>(&message);
       crime && (crime->kind < CrimeKind::Witness || crime->kind > CrimeKind::Kill))
     return std::nullopt;
+  if (const auto *damage = std::get_if<VehicleDamage>(&message);
+      damage && damage->parts.size() > kMaxDetachedParts)
+    return std::nullopt;
+  if (const auto *exit = std::get_if<VehicleExit>(&message);
+      exit && exit->kind > ExitKind::Exploded)
+    return std::nullopt;
+  if (const auto *combat = std::get_if<VehicleCombat>(&message);
+      combat && combat->mode > SeatCombat::Gunner)
+    return std::nullopt;
   return message;
 }
 
@@ -112,7 +121,9 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<NpcAwareness>(message) ||
                  std::holds_alternative<Noise>(message) ||
                  std::holds_alternative<NpcShot>(message) ||
-                 std::holds_alternative<TrafficStates>(message)
+                 std::holds_alternative<TrafficStates>(message) ||
+                 std::holds_alternative<MountedFire>(message) ||
+                 std::holds_alternative<GunnerAim>(message)
              ? Channel::State
              // Everything else is reliable and ordered, the consistency
              // messages too (Digest, ResyncRequest, NpcSet, Epoch): a digest
@@ -129,6 +140,11 @@ bool IsStory(const Message &message) {
 bool IsCombat(const Message &message) {
   return message.index() >= Message(NpcStrike{}).index() &&
          message.index() <= Message(AreaHit{}).index();
+}
+
+bool IsVehicleCombat(const Message &message) {
+  return message.index() >= Message(VehicleDamage{}).index() &&
+         message.index() <= Message(Chase{}).index();
 }
 
 bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::State; }
@@ -151,7 +167,9 @@ const char *NameOf(const Message &message) {
       "NpcSet",         "Epoch",          "Elsewhere",    "Transit",       "NpcSeat",
       "NpcShotAt",      "ShotHit",        "TrafficSpawn", "TrafficStates", "TrafficGone",
       "TrafficStatus",  "TrafficHit",     "TrafficClaim", "TrafficSet",    "Heat",
-      "Crime"};
+      "Crime",          "VehicleDamage",  "VehicleHit",   "VehicleExit",   "VehicleCombat",
+      "MountedFire",    "GunnerRequest",  "Gunner",       "GunnerAim",     "VehicleBump",
+      "NpcRam",         "Chase"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

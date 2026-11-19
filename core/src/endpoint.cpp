@@ -61,6 +61,8 @@ bool AimsAtWorld(const proto::Message &message) {
          std::holds_alternative<proto::NpcAction>(message) ||
          std::holds_alternative<proto::TrafficHit>(message) ||
          std::holds_alternative<proto::TrafficClaim>(message) ||
+         std::holds_alternative<proto::VehicleHit>(message) ||
+         std::holds_alternative<proto::NpcRam>(message) ||
          std::holds_alternative<proto::Noise>(message);
 }
 } // namespace
@@ -199,12 +201,16 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
       .npcs = consistency::Hasher{}
                   .Add(std::uint64_t{consistency::NpcDigest(m_npcs, m_npcHealth, m_npcHolds)})
                   .Add(std::uint64_t{consistency::TrafficDigest(m_traffic, m_trafficStatus)})
+                  .Add(std::uint64_t{VehicleStreetDigest()})
                   .Value(),
       .story = m_story.Digest(),
-      .players = consistency::PlayersDigest({m_players, m_appearances, m_held, m_seats, m_radios,
-                                             m_stealth, m_paused, m_timeEffects, m_lives,
-                                             m_elsewheres, m_heat},
-                                            self),
+      .players = consistency::Hasher{}
+                     .Add(std::uint64_t{consistency::PlayersDigest(
+                         {m_players, m_appearances, m_held, m_seats, m_radios, m_stealth, m_paused,
+                          m_timeEffects, m_lives, m_elsewheres, m_heat},
+                         self)})
+                     .Add(std::uint64_t{VehiclePlayersDigest(self)})
+                     .Value(),
       .npcCount = static_cast<std::uint16_t>(std::min<std::size_t>(m_npcs.size(), 0xFFFF)),
   };
 }
@@ -295,6 +301,10 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
     }
     if (proto::IsCombat(message)) {
       OnGuestCombat(player, message, out);
+      return;
+    }
+    if (proto::IsVehicleCombat(message)) {
+      OnGuestVehicles(event.peer, player, message, out);
       return;
     }
 
@@ -606,6 +616,8 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   // Gone while wanted: the police have nobody to chase.
   EndHeatOf(player, out, true);
   m_lives.erase(player);
+  // Its car, its gunner seats, its weapons in a vehicle, the chases after it.
+  ForgetVehiclesOf(player, out, true);
   // It may have been reviving someone (it cannot say it stopped: a player
   // can vanish at any moment): every downed V hears its revive is off.
   for (const auto &[id, vitals] : m_lives) {
@@ -663,6 +675,8 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     EndElsewhereOf(player, out, true);
     // ...not wanted (its game says so again if it still is)...
     EndHeatOf(player, out, true);
+    // ...in no gunner seat, its car a new one...
+    ForgetVehiclesOf(player, out, true, true);
     // ...and its V is up until it says otherwise.
     if (LifeOf(player) != proto::Life::Up) {
       const proto::Vitals up{.player = player, .revision = m_lives[player].revision + 1};
@@ -823,6 +837,8 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
         if (!m_npcSeats.contains(npc))
           Send(peer, proto::NpcSeat{.npc = npc});
   }
+  // Vehicle combat: damage, gunner seats, weapons in vehicles, chases.
+  SendVehiclesTo(peer, them, domains, resync);
   // The story so far: journal, tracked entry, call, choice hub, story states.
   if (domains & proto::kDomainStory)
     for (const auto &message : m_story.ForJoiner())
@@ -902,6 +918,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
     out.push_back(events::Combat{message});
     return;
   }
+  if (proto::IsVehicleCombat(message)) {
+    OnHostVehicles(message, out);
+    return;
+  }
   std::visit(
       Overloaded{
           [&](const proto::Welcome &welcome) {
@@ -926,6 +946,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             SendLocalVitalsNow();
             SendLocalTransitNow();
             SendLocalHeatNow();
+            SendLocalVehicleCombatNow();
             // What overtook the Welcome, in the order it came.
             for (const auto &early : std::exchange(m_early, {}))
               OnGuestMessage(early, out);
@@ -970,6 +991,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 m_stealth.erase(id);
                 m_transits.erase(id);
                 EndHeatOf(id, out, false);
+                ForgetVehiclesOf(id, out, false);
                 m_lives.erase(id);
                 m_story.Forget(id);
                 out.push_back(events::PlayerLeft{id});
@@ -2041,6 +2063,7 @@ void Endpoint::SendTrafficStatus(const proto::TrafficStatus &status) {
 void Endpoint::ForgetTraffic(proto::TrafficId id) {
   m_traffic.erase(id);
   m_trafficStatus.erase(id);
+  ForgetStreetVehicle(id);
   // Whoever sat in it is out (host: said to everyone; the game takes the
   // real NPCs out itself).
   const auto owner = proto::TrafficSeatOwner(id);

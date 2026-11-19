@@ -12,6 +12,7 @@
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
 #include "tandem/story.hpp"
+#include "tandem/vehicle_combat.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -297,6 +298,48 @@ struct RemoteHeat {
 struct CrimeReported {
   proto::Crime crime;
 };
+// Vehicle combat (docs/architecture/vehicle-combat.md). How a vehicle
+// another game owns is damaged now (never one of ours).
+struct RemoteVehicleDamage {
+  proto::VehicleDamage damage;
+};
+// Another player's game hit a vehicle we own (stamped by the host).
+struct VehicleHitBy {
+  proto::VehicleHit hit;
+};
+// Another player left a vehicle the hard way (bail, thrown, dead...).
+struct RemoteVehicleExit {
+  proto::VehicleExit exit;
+};
+// Another player's weapons in a vehicle changed (mode None: no longer, or it left).
+struct RemoteVehicleCombat {
+  proto::VehicleCombat combat;
+};
+// Another player fired a vehicle's own weapon.
+struct RemoteMountedFire {
+  proto::MountedFire fire;
+};
+// Who holds a vehicle's gunner seat changed (gunner kNoPlayer: free). For
+// every game, the owner's and the gunner's too.
+struct GunnerChanged {
+  proto::Gunner gunner;
+};
+// Where the gunner of a vehicle aims (never our own aim).
+struct RemoteGunnerAim {
+  proto::GunnerAim aim;
+};
+// Another player's car says it pushed ours (BumpLedger decides).
+struct VehicleBumpBy {
+  proto::VehicleBump bump;
+};
+// Area owner: a player's car ran into one of our NPCs.
+struct NpcRamBy {
+  proto::NpcRam ram;
+};
+// One of the area owner's vehicles chases a player, or no longer does.
+struct ChaseChanged {
+  proto::Chase chase;
+};
 } // namespace events
 
 // Who this game is in the session.
@@ -333,7 +376,10 @@ using SessionEvent = std::variant<
     events::EpochChanged, events::RemoteElsewhere, events::RemoteTransit, events::HostNpcSeat,
     events::ShotAtUs, events::ShotHitBy, events::TrafficSpawned, events::TrafficMoved,
     events::TrafficLeft, events::TrafficChanged, events::TrafficHitBy, events::RemoteHeat,
-    events::CrimeReported>;
+    events::CrimeReported, events::RemoteVehicleDamage, events::VehicleHitBy,
+    events::RemoteVehicleExit, events::RemoteVehicleCombat, events::RemoteMountedFire,
+    events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
+    events::ChaseChanged>;
 
 class Endpoint {
 public:
@@ -483,6 +529,46 @@ public:
   // player's game alone; false when it is not a guest in the session (our
   // own V's crimes are our game's).
   bool SendCrime(const proto::Crime &crime);
+  // Vehicle combat (docs/architecture/vehicle-combat.md). The game that
+  // simulates a vehicle owns it: our car (PlayerCar(You())), or a shared
+  // world vehicle of our area. How one of ours is damaged now: kept (for
+  // late joiners, the digests), sent when it changed; the revision is ours
+  // to number. Ignored for a vehicle we do not own.
+  void SetVehicleDamage(proto::VehicleDamage damage);
+  // We hit a vehicle another game owns: to its owner, through the host.
+  void SendVehicleHit(proto::VehicleHit hit);
+  // Our V left a vehicle the hard way (sent before its Seat says so).
+  void SendVehicleExit(proto::VehicleExit exit);
+  // Our V's weapons in a vehicle (mode None: none). Kept: sent now if we
+  // are in the session, else as soon as we are; the host hands everyone's
+  // to late joiners.
+  void SetLocalVehicleCombat(proto::VehicleCombat combat);
+  // One shot of a vehicle weapon our V fires.
+  void SendMountedFire(proto::MountedFire fire);
+  // Our V asks for (or leaves) the gunner seat of another player's
+  // vehicle: the owner answers everyone with GunnerChanged.
+  void AskGunner(proto::VehicleRef vehicle, std::uint64_t seat, bool leave = false);
+  // Owner: the seat of one of our vehicles is free again (our game could
+  // not seat the gunner, or the vehicle is gone).
+  void FreeGunner(proto::VehicleRef vehicle);
+  // Our aim as the gunner of a vehicle (dropped unless the seat is ours).
+  void SendGunnerAim(proto::GunnerAim aim);
+  // Our car pushed `bump.other`'s: to that driver's game.
+  void SendVehicleBump(proto::VehicleBump bump);
+  // Our car ran into one of the area owner's NPCs (its proxy here).
+  void SendNpcRam(proto::NpcRam ram);
+  // Area owner: one of our shared vehicles chases a player (kNoPlayer:
+  // over). Kept while it lasts, for late joiners.
+  void SendChase(const proto::Chase &chase);
+  // As this game knows them (host: the session's record; us included).
+  const std::map<proto::VehicleRef, proto::VehicleDamage> &VehicleDamages() const {
+    return m_vehicleDamage;
+  }
+  const std::map<proto::VehicleRef, proto::Gunner> &Gunners() const { return m_gunners; }
+  const std::map<proto::PlayerId, proto::VehicleCombat> &SeatCombats() const {
+    return m_seatCombat;
+  }
+  const std::map<proto::TrafficId, proto::Chase> &Chases() const { return m_chases; }
   // Offer `offer.to` (kNoPlayer: everyone else) to come to us, or answer an
   // offer. `from` is filled in; nothing is kept.
   void SendRegroup(proto::Regroup offer);
@@ -704,6 +790,42 @@ private:
   bool NoteHeat(const proto::Heat &heat);
   // A player is gone (or back from a crash): no longer wanted, for everyone.
   void EndHeatOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast);
+  // Vehicle combat (endpoint_vehicles.cpp). Damage of every vehicle (host:
+  // the record; guest: what it heard, and its own car's), who holds which
+  // gunner seat, everyone's weapons in a vehicle, the chases; the seats of
+  // our own vehicles we give out.
+  std::map<proto::VehicleRef, proto::VehicleDamage> m_vehicleDamage;
+  std::map<proto::VehicleRef, proto::Gunner> m_gunners;
+  std::map<proto::PlayerId, proto::VehicleCombat> m_seatCombat;
+  std::optional<proto::VehicleCombat> m_localSeatCombat;
+  std::uint32_t m_seatCombatRevision{};
+  std::uint32_t m_damageRevision{};
+  std::uint32_t m_mountedSeq{}, m_aimSeq{};
+  std::map<proto::TrafficId, proto::Chase> m_chases;
+  vehiclecombat::Turrets m_turrets;
+  // Host: a guest's vehicle combat message; guest: the host's.
+  void OnGuestVehicles(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
+                       std::vector<SessionEvent> &out);
+  void OnHostVehicles(const proto::Message &message, std::vector<SessionEvent> &out);
+  // Records a damage state; false when it is not newer than ours.
+  bool NoteDamage(const proto::VehicleDamage &damage);
+  bool NoteGunner(const proto::Gunner &gunner);
+  // The owner's answer to a gunner request (ours to give, or relayed).
+  void GiveGunner(const proto::GunnerRequest &request, std::vector<SessionEvent> &out);
+  void SayGunner(const proto::Gunner &gunner, std::vector<SessionEvent> &out);
+  void SendLocalVehicleCombatNow();
+  // A player is gone (or back from a crash, `returning`): its car's damage,
+  // the gunner seats it held or gave, its weapons in a vehicle, the chases
+  // after it (not when returning: the chasers still chase its puppet).
+  void ForgetVehiclesOf(proto::PlayerId player, std::vector<SessionEvent> &out, bool broadcast,
+                        bool returning = false);
+  // A shared vehicle is no longer shared: its damage, seat and chase go.
+  void ForgetStreetVehicle(proto::TrafficId id);
+  // Host: the vehicle combat state of these domains, to one guest.
+  void SendVehiclesTo(net::PeerId peer, proto::PlayerId them, std::uint8_t domains, bool resync);
+  // The domains' hashes of it (consistency.hpp), as `self` sees them.
+  std::uint32_t VehiclePlayersDigest(proto::PlayerId self) const;
+  std::uint32_t VehicleStreetDigest() const;
   // Host: the story for late joiners, and who answered the call first.
   story::Record m_story;
   story::CallArbiter m_calls;

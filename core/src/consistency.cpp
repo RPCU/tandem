@@ -217,7 +217,14 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<AreaHit>(message) ||
          // A hit on a shared vehicle, a claim on one, a crime: each counts.
          std::holds_alternative<TrafficHit>(message) ||
-         std::holds_alternative<TrafficClaim>(message) || std::holds_alternative<Crime>(message);
+         std::holds_alternative<TrafficClaim>(message) || std::holds_alternative<Crime>(message) ||
+         // Vehicle combat: a hit, an exit, a mounted shot, a seat asked
+         // for, a push, a ram: each counts.
+         std::holds_alternative<VehicleHit>(message) ||
+         std::holds_alternative<VehicleExit>(message) ||
+         std::holds_alternative<MountedFire>(message) ||
+         std::holds_alternative<GunnerRequest>(message) ||
+         std::holds_alternative<VehicleBump>(message) || std::holds_alternative<NpcRam>(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {
