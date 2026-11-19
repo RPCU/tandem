@@ -824,6 +824,8 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
 }
 
 void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<SessionEvent> &out) {
+  if (m_receivedTap)
+    m_receivedTap(message);
   if (proto::IsStory(message)) {
     // Only the host speaks for the story; our own relayed states are ours.
     if (const auto *state = std::get_if<proto::StoryState>(&message);

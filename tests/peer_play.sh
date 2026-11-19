@@ -69,6 +69,25 @@ wait_for "$dir/host-$port.log" 'play: done, [1-9][0-9]* messages sent, 0 not for
 grep -qE '[1-9][0-9]* states' "$dir/join-$port.log" || fail "the guest heard no replayed state"
 grep -qE 'look from player 1: [0-9]+ keys' "$dir/join-$port.log" || fail "the guest got no look"
 
+# A host's session: a mock host whose V circles and with an NPC; a guest
+# watching unseen records what it is sent (--record-session); a mock host
+# replays it (--play-session) to another guest, which records it again.
+host --mode ghost --npc Character.Tester
+join 8 --mode watch --record-session "$dir/city.tsession"
+grep -qE 'session saved: [1-9][0-9]* messages' "$dir/join-$port.log" || fail "no session saved"
+"$peer" play-info "$dir/city.tsession" >"$dir/info.log" 2>&1 || fail "play-info failed on a session"
+grep -qE '^session: host 1, recorded by player 2' "$dir/info.log" || fail "the session lost its players"
+grep -qE '[1-9][0-9]* NpcSpawn' "$dir/info.log" || fail "the session holds no NPC spawn"
+grep -qE '^beside: teleport ' "$dir/info.log" || fail "the session gives no teleport"
+host --play-session "$dir/city.tsession"
+join 10 --mode idle --record-session "$dir/again.tsession"
+wait_for "$dir/host-$port.log" 'session: started' || fail "the session replay did not start"
+wait_for "$dir/host-$port.log" 'session: done, [1-9][0-9]* messages sent \([1-9][0-9]* NPCs\)' ||
+  fail "the session replay did not end, or sent no NPC"
+"$peer" play-info "$dir/again.tsession" >"$dir/again.log" 2>&1 || fail "the replay was not recorded"
+grep -qE '[1-9][0-9]* NpcSpawn' "$dir/again.log" || fail "the replayed session gave the guest no NPC"
+grep -qE '[1-9][0-9]* PlayerState' "$dir/again.log" || fail "the replayed session gave the guest no host V"
+
 # A missing recording: the mode runs instead.
 host --play "$dir/missing.tplay"
 wait_for "$dir/host-$port.log" "play: cannot read .*: the mode's own motion instead" ||

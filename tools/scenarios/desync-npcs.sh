@@ -1,7 +1,7 @@
 # As a guest of a lossy replayed host (a fifth of what it sends never leaves, reliable messages too; a fifth of its state goes twice): digests find what diverged, resyncs heal it, the proxies follow the session's record
 # shellcheck shell=bash disable=SC2317
 ensure join
-peer host --mode idle --body female --replay recordings/npcs.rec --drop 0.2 --dup 0.2
+host_world recordings/npcs.rec --mode idle --body female --drop 0.2 --dup 0.2
 expect 'in the session as player' 30
 expect 'npcs: guest, own crowd off' 20
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30

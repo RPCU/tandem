@@ -1,7 +1,7 @@
 # As a guest of a replayed host whose NPC fires at it every 3 s: our game fires the shot from the NPC's proxy and decides the hit
 # shellcheck shell=bash disable=SC2317
 ensure join
-peer host --mode idle --body female --replay recordings/npcs.rec --shoot-you 3
+host_world recordings/npcs.rec --mode idle --body female --shoot-you 3
 expect 'in the session as player' 30
 expect 'npcs: guest, own crowd off' 20
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30

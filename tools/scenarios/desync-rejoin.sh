@@ -1,7 +1,7 @@
 # The host goes and comes back (a save load restarts its session, its NPC ids start from 1 again): the guest says so once, joins again, and nothing of the old session lingers
 # shellcheck shell=bash disable=SC2317
 ensure join
-peer host --mode idle --body female --replay recordings/npcs.rec
+host_world recordings/npcs.rec --mode idle --body female
 expect 'in the session as player' 30
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
 pkill -x tandem-peer

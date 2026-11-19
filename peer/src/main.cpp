@@ -125,7 +125,7 @@ using tandem::proto::Vec3;
 
 volatile std::sig_atomic_t g_stop = 0;
 
-enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Metro, Idle };
+enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Metro, Watch, Idle };
 
 struct Options {
   bool host{};
@@ -135,6 +135,9 @@ struct Options {
   std::string name{"tandem-peer"};
   tandem::proto::Body body{tandem::proto::Body::Female};
   Vec3 offset{2.f, 0.f, 0.f};
+  bool offsetGiven{};            // --offset on the command line (watch: its own default)
+  std::string recordSessionFile; // join: what the host sends us, for --play-session
+  std::string playSessionFile;   // host: a real host's recorded session, replayed
   std::chrono::milliseconds delay{0};
   int rateHz{30};
   std::string poseFile;
@@ -289,7 +292,7 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --relay-token HEX  host: one of the relay's host tokens (tandem-relay token)\n"
          "  --code CODE        join: the host's join code (needs --relay)\n"
          "  --mode M           mirror | ghost | front | drive | course | path | metro |\n"
-         "                     idle (default mirror)\n"
+         "                     watch | idle (default mirror)\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
          "  --look L           random | echo: random clothes of its own (default), on a\n"
@@ -306,7 +309,14 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --play FILE        replay a real V's play (.tplay: tools/game.sh fetch-play) as\n"
          "                     our player, at its recorded positions, instead of --mode's\n"
          "                     motion; without FILE, --mode runs\n"
-         "  --play-loop        --play: start again at the end (default: stop there)\n"
+         "  --play-loop        --play, --play-session: start again at the end (default: stop\n"
+         "                     there)\n"
+         "  --record-session FILE  join: record everything the host sends us (its V, NPCs,\n"
+         "                     story, world, hits) to FILE (.tsession), for --play-session;\n"
+         "                     with --mode watch, unseen, 30 m under the host's V\n"
+         "  --play-session FILE  host: be the real host recorded in FILE for the guest that\n"
+         "                     joins (its V, NPCs, story, world), its own --mode motion off;\n"
+         "                     without FILE, --mode and --replay run\n"
          "  --play-offset X,Y,Z  --play: metres added to every position (default 0,0,0)\n"
          "  --save-play FILE   record what we send about our own V, as the game does, for\n"
          "                     --play (tests/peer_play.sh)\n"
@@ -640,6 +650,8 @@ Options Parse(int argc, char **argv) {
         options.mode = Mode::Path;
       else if (value == "metro")
         options.mode = Mode::Metro;
+      else if (value == "watch")
+        options.mode = Mode::Watch;
       else
         Usage(std::format("unknown mode {}", value));
     } else if (flag == "--metro-at")
@@ -650,10 +662,15 @@ Options Parse(int argc, char **argv) {
       options.seat = std::string(value);
     else if (flag == "--driver-npc")
       options.driverNpc = std::string(value);
-    else if (flag == "--offset")
+    else if (flag == "--offset") {
       options.offset = Point(flag, value);
-    else if (flag == "--play")
+      options.offsetGiven = true;
+    } else if (flag == "--play")
       options.playFile = std::string(value);
+    else if (flag == "--record-session")
+      options.recordSessionFile = std::string(value);
+    else if (flag == "--play-session")
+      options.playSessionFile = std::string(value);
     else if (flag == "--play-offset")
       options.playOffset = Point(flag, value);
     else if (flag == "--save-play")
@@ -1498,8 +1515,24 @@ public:
       return Drive(nowUs).first;
     case Mode::Metro:
       return Metro(nowUs);
+    case Mode::Watch:
+      return Watch();
     }
     return std::nullopt;
+  }
+
+  // watch: where the other V is, 30 m under it (or --offset): out of
+  // sight, out of every NPC's reach, never in anyone's way, while the host
+  // sends us everything a guest gets (--record-session).
+  std::optional<PlayerState> Watch() {
+    if (m_heard.empty())
+      return std::nullopt;
+    auto out = m_heard.back().second;
+    const Vec3 by = m_options.offsetGiven ? m_options.offset : Vec3{0.f, 0.f, -30.f};
+    out.position = {out.position.x + by.x, out.position.y + by.y, out.position.z + by.z};
+    out.stance = 0;
+    out.flags = 0;
+    return out;
   }
 
   // metro: on the train from now on (once).
@@ -1896,13 +1929,22 @@ int PlayInfo(const std::string &path) {
   for (const auto &[name, count] : counts)
     what += std::format("{}{} {}", what.empty() ? "" : ", ", count, name);
   const auto &h = recording->header;
+  if (h.kind == tandem::play::Kind::Session)
+    std::cout << std::format("session: host {}, recorded by player {}\n", h.host, h.player);
   std::cout << std::format(
       "play: {:.1f} s, {} messages ({}), player {}, body {}{}\n",
       static_cast<double>(recording->DurationUs()) / 1e6, recording->entries.size(), what, h.player,
       h.body == tandem::proto::Body::Male ? "male" : "female",
       recording->skipped ? std::format(", {} of another protocol skipped", recording->skipped)
                          : "");
-  const auto first = recording->FirstState();
+  // A session's start is its host's V.
+  std::optional<tandem::proto::PlayerState> first;
+  for (const auto &entry : recording->entries)
+    if (const auto *state = std::get_if<tandem::proto::PlayerState>(&entry.message);
+        state && (h.kind == tandem::play::Kind::Play || state->player == h.host)) {
+      first = *state;
+      break;
+    }
   if (!first)
     return 0;
   constexpr float kDegrees = 180.f / std::numbers::pi_v<float>;
@@ -1925,6 +1967,36 @@ int main(int argc, char **argv) {
   if (options.check) {
     std::cout << "options ok\n";
     return 0;
+  }
+  // --play-session: a real host's session instead of the mode's motion and
+  // --replay (its V's body: the rig the guest gives our puppet).
+  std::optional<tandem::play::Player> sessionPlay;
+  if (!options.playSessionFile.empty()) {
+    std::string sessionError;
+    auto recording = tandem::play::Load(options.playSessionFile, sessionError);
+    if (recording && recording->header.kind != tandem::play::Kind::Session) {
+      sessionError = options.playSessionFile + ": a play, not a session (--play)";
+      recording.reset();
+    }
+    if (recording && options.host) {
+      for (const auto &entry : recording->entries)
+        if (const auto *look = std::get_if<tandem::proto::Appearance>(&entry.message);
+            look && look->player == recording->header.host &&
+            look->body != tandem::proto::Body::Unknown) {
+          options.body = look->body;
+          break;
+        }
+      Log("session: {} ({:.1f} s, {} messages{}){}", options.playSessionFile,
+          static_cast<double>(recording->DurationUs()) / 1e6, recording->entries.size(),
+          recording->skipped ? std::format(", {} skipped", recording->skipped) : "",
+          options.playLoop ? ", in a loop" : "");
+      options.mode = Mode::Idle;
+      options.replayFile.clear();
+      sessionPlay.emplace(std::move(*recording), options.playLoop);
+    } else {
+      Log("session: {}: the mode's own host instead",
+          recording ? "--play-session is for a host" : sessionError);
+    }
   }
   // --play: a real V's play instead of the mode's motion (its body, its look).
   std::optional<tandem::play::Player> playback;
@@ -1992,8 +2064,21 @@ int main(int argc, char **argv) {
   const auto lookKeysDir = LookKeysDir(options.lookKeys);
   const auto lookSeed = options.lookSeed.value_or(std::random_device{}());
   auto ownKeys = LoadLookKeys(LookKeysFile(lookKeysDir, options.body));
-  if (!options.echoLook && !playback)
+  if (!options.echoLook && !playback && !sessionPlay)
     endpoint->SetLocalAppearance(RandomLook(options.body, lookSeed, ownKeys));
+  // --record-session: what the host sends us, from its welcome on (kept
+  // until we know who we are, then written with a header that says it).
+  tandem::play::Writer sessionOut;
+  std::vector<tandem::proto::Message> sessionEarly;
+  if (!options.recordSessionFile.empty() && !options.host)
+    endpoint->SetReceivedTap([&](const tandem::proto::Message &message) {
+      if (!tandem::play::KeepsSession(message))
+        return;
+      if (sessionOut.IsOpen())
+        sessionOut.Add(endpoint->HostNowUs(), message);
+      else if (sessionEarly.size() < 100'000)
+        sessionEarly.push_back(message);
+    });
   // --strike blade: our puppet holds a katana, so the host's NPC reacts to
   // (and is cut by) a blade: its hit reaction reads the attacker's weapon.
   if (options.strike == "blade") {
@@ -2249,14 +2334,84 @@ int main(int argc, char **argv) {
   std::map<tandem::proto::NpcId, std::chrono::steady_clock::time_point> corpses;
   std::optional<PlayerState> otherV; // the last state heard of another player
 
+  // The NPC world of a replay (--replay) or a recorded session
+  // (--play-session) as this host sends it: an NPC a guest killed is out of
+  // the rest; --npc and --detect-at on top; `shifted`: moved by --offset.
+  const auto replayNpcWorld = [&](tandem::proto::Message message, bool shifted) {
+    // --offset moves the replayed NPCs, to tell them from the game's own.
+    const auto shift = [&](Vec3 &p) {
+      if (!shifted)
+        return;
+      p.x += options.offset.x;
+      p.y += options.offset.y;
+      p.z += options.offset.z;
+    };
+    // An NPC a guest killed is out of the rest of the recording.
+    if (auto *spawn = std::get_if<tandem::proto::NpcSpawn>(&message)) {
+      shift(spawn->position);
+      endpoint->SendNpcSpawn(*spawn);
+      replayedNpcs.insert(spawn->npc);
+    } else if (auto *states = std::get_if<tandem::proto::NpcStates>(&message)) {
+      std::erase_if(states->npcs, [&](const auto &entry) { return deadNpcs.contains(entry.npc); });
+      sentNpcs.clear();
+      for (auto &entry : states->npcs) {
+        shift(entry.position);
+        entry.detected |= detectedBits();
+        sentNpcs.push_back(entry.npc);
+      }
+      if (ownNpc)
+        states->npcs.push_back(*ownNpc);
+      endpoint->SendNpcStates(*states);
+    } else if (const auto *gone = std::get_if<tandem::proto::NpcGone>(&message)) {
+      replayedNpcs.erase(gone->npc);
+      if (!deadNpcs.contains(gone->npc)) {
+        endpoint->SendNpcGone(*gone);
+        held.erase(gone->npc);
+      }
+    } else if (const auto *health = std::get_if<tandem::proto::NpcHealth>(&message))
+      endpoint->SendNpcHealth(*health);
+    // The recording's own animation states and shots, unless --anims
+    // scripts them: then the script alone says how the NPCs animate.
+    else if (auto *recorded = std::get_if<tandem::proto::NpcAnims>(&message)) {
+      if (anims.Size() == 0) {
+        std::erase_if(recorded->npcs,
+                      [&](const auto &anim) { return deadNpcs.contains(anim.npc); });
+        endpoint->SendNpcAnims(*recorded);
+      }
+    } else if (const auto *shot = std::get_if<tandem::proto::NpcShot>(&message)) {
+      if (anims.Size() == 0 && !deadNpcs.contains(shot->npc))
+        endpoint->SendNpcShot(*shot);
+    }
+  };
+  // --play-session: when it began, and what it sent.
+  std::optional<std::uint64_t> sessionStartUs;
+  std::uint64_t sessionSent = 0, sessionDropped = 0, sessionNpcs = 0;
+
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
       std::visit(
           [&](const auto &e) {
             using E = std::decay_t<decltype(e)>;
-            if constexpr (std::is_same_v<E, tandem::events::Joined>)
+            if constexpr (std::is_same_v<E, tandem::events::Joined>) {
               Log("in the session: player {}, host {}", e.you, e.host);
-            else if constexpr (std::is_same_v<E, tandem::events::PlayerJoined>)
+              if (!options.recordSessionFile.empty() && !sessionOut.IsOpen()) {
+                std::string saveError;
+                if (sessionOut.Open(options.recordSessionFile,
+                                    {.startHostUs = endpoint->HostNowUs(),
+                                     .player = e.you,
+                                     .body = options.body,
+                                     .kind = tandem::play::Kind::Session,
+                                     .host = e.host},
+                                    saveError)) {
+                  for (const auto &early : sessionEarly)
+                    sessionOut.Add(endpoint->HostNowUs(), early);
+                  sessionEarly.clear();
+                  Log("recording the session to {}", options.recordSessionFile);
+                } else {
+                  Log("--record-session: {}", saveError);
+                }
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::PlayerJoined>)
               Log("+ player {} ({})", e.player.id, e.player.name);
             else if constexpr (std::is_same_v<E, tandem::events::PlayerLeft>)
               Log("- player {}", e.player);
@@ -2296,7 +2451,7 @@ int main(int argc, char **argv) {
               // A real V's body keys: kept for random looks of that body.
               if (!e.appearance.look.empty() && e.appearance.body != tandem::proto::Body::Unknown) {
                 SaveLookKeys(LookKeysFile(lookKeysDir, e.appearance.body), e.appearance.look);
-                if (!options.echoLook && !playback && ownKeys.empty() &&
+                if (!options.echoLook && !playback && !sessionPlay && ownKeys.empty() &&
                     e.appearance.body == options.body) {
                   ownKeys = e.appearance.look;
                   endpoint->SetLocalAppearance(RandomLook(options.body, lookSeed, ownKeys));
@@ -3432,54 +3587,61 @@ int main(int argc, char **argv) {
       const auto nowUs = tandem::net::NowUs();
       if (!replayStartUs)
         replayStartUs = nowUs;
-      while (replayNext < replay.size() && replay[replayNext].atUs <= nowUs - *replayStartUs) {
-        auto message = replay[replayNext++].message;
-        // --offset moves the replayed NPCs, to tell them from the game's own.
-        const auto shift = [&](Vec3 &p) {
-          p.x += options.offset.x;
-          p.y += options.offset.y;
-          p.z += options.offset.z;
-        };
-        // An NPC a guest killed is out of the rest of the recording.
-        if (auto *spawn = std::get_if<tandem::proto::NpcSpawn>(&message)) {
-          shift(spawn->position);
-          endpoint->SendNpcSpawn(*spawn);
-          replayedNpcs.insert(spawn->npc);
-        } else if (auto *states = std::get_if<tandem::proto::NpcStates>(&message)) {
-          std::erase_if(states->npcs,
-                        [&](const auto &entry) { return deadNpcs.contains(entry.npc); });
-          sentNpcs.clear();
-          for (auto &entry : states->npcs) {
-            shift(entry.position);
-            entry.detected |= detectedBits();
-            sentNpcs.push_back(entry.npc);
-          }
-          if (ownNpc)
-            states->npcs.push_back(*ownNpc);
-          endpoint->SendNpcStates(*states);
-        } else if (const auto *gone = std::get_if<tandem::proto::NpcGone>(&message)) {
-          replayedNpcs.erase(gone->npc);
-          if (!deadNpcs.contains(gone->npc)) {
-            endpoint->SendNpcGone(*gone);
-            held.erase(gone->npc);
-          }
-        } else if (const auto *health = std::get_if<tandem::proto::NpcHealth>(&message))
-          endpoint->SendNpcHealth(*health);
-        // The recording's own animation states and shots, unless --anims
-        // scripts them: then the script alone says how the NPCs animate.
-        else if (auto *recorded = std::get_if<tandem::proto::NpcAnims>(&message)) {
-          if (anims.Size() == 0) {
-            std::erase_if(recorded->npcs,
-                          [&](const auto &anim) { return deadNpcs.contains(anim.npc); });
-            endpoint->SendNpcAnims(*recorded);
-          }
-        } else if (const auto *shot = std::get_if<tandem::proto::NpcShot>(&message)) {
-          if (anims.Size() == 0 && !deadNpcs.contains(shot->npc))
-            endpoint->SendNpcShot(*shot);
-        }
-      }
+      while (replayNext < replay.size() && replay[replayNext].atUs <= nowUs - *replayStartUs)
+        replayNpcWorld(replay[replayNext++].message, true);
       if (replayNext == replay.size())
         Log("replay: done");
+    }
+    // --play-session: the recorded host's messages as their time comes, once
+    // a guest is in, as this host's own.
+    if (sessionPlay && options.host && !sessionPlay->Done() && endpoint->Players().size() > 1) {
+      const auto nowUs = tandem::net::NowUs();
+      if (!sessionStartUs) {
+        sessionStartUs = nowUs;
+        Log("session: started");
+      }
+      const auto &header = sessionPlay->Of().header;
+      tandem::play::SessionMapping mapping{
+          .host = header.host, .you = header.player, .self = endpoint->You()};
+      for (const auto &[id, info] : endpoint->Players())
+        if (id != endpoint->You()) {
+          mapping.guest = id;
+          break;
+        }
+      const auto lap = sessionPlay->Lap();
+      for (const auto *entry : sessionPlay->Due(nowUs - *sessionStartUs)) {
+        const auto shift = static_cast<std::int64_t>(endpoint->HostNowUs()) -
+                           static_cast<std::int64_t>(header.startHostUs + entry->atUs);
+        auto message = tandem::play::AdaptSession(entry->message, mapping, shift);
+        if (!message) {
+          ++sessionDropped;
+          continue;
+        }
+        ++sessionSent;
+        if (std::holds_alternative<tandem::proto::NpcSpawn>(*message) ||
+            std::holds_alternative<tandem::proto::NpcStates>(*message) ||
+            std::holds_alternative<tandem::proto::NpcGone>(*message) ||
+            std::holds_alternative<tandem::proto::NpcHealth>(*message) ||
+            std::holds_alternative<tandem::proto::NpcAnims>(*message) ||
+            std::holds_alternative<tandem::proto::NpcShot>(*message)) {
+          if (const auto *spawn = std::get_if<tandem::proto::NpcSpawn>(&*message);
+              spawn && !replayedNpcs.contains(spawn->npc))
+            ++sessionNpcs;
+          replayNpcWorld(std::move(*message), false);
+          continue;
+        }
+        if (!std::holds_alternative<PlayerState>(*message) &&
+            !std::holds_alternative<tandem::proto::PoseState>(*message) &&
+            !std::holds_alternative<tandem::proto::VehicleState>(*message) &&
+            !std::holds_alternative<tandem::proto::NpcAwareness>(*message))
+          Log("session: {}", tandem::proto::NameOf(*message));
+        tandem::play::ApplyHost(*endpoint, *message, mapping.guest);
+      }
+      if (sessionPlay->Lap() != lap)
+        Log("session: lap {}", sessionPlay->Lap() + 1);
+      if (sessionPlay->Done())
+        Log("session: done, {} messages sent ({} NPCs), {} not for this session", sessionSent,
+            sessionNpcs, sessionDropped);
     }
     // --go-down / --go-out / --revive: down and out.
     if (!withSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
@@ -3572,6 +3734,11 @@ int main(int argc, char **argv) {
     }
   }
 
+  if (sessionOut.IsOpen()) {
+    Log("session saved: {} messages, {:.1f} s", sessionOut.Count(),
+        static_cast<double>(sessionOut.LastUs()) / 1e6);
+    sessionOut.Close();
+  }
   if (savedPlay.IsOpen()) {
     endpoint->SetTap({});
     Log("play saved: {} messages, {:.1f} s", savedPlay.Count(),
