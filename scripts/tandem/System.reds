@@ -950,6 +950,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_time) && this.m_playing && this.m_you != 0u {
       this.m_time.Update();
     }
+    // Other mods (Mods.reds): what our game shows otherwise, said.
+    if this.m_playing {
+      TandemMods.Tick(this.GetGameInstance());
+    }
 
     if IsDefined(this.m_saves) {
       this.m_saves.Tick();
@@ -1696,7 +1700,7 @@ public class TandemSystem extends ScriptableSystem {
   }
 
   // coop status | coop host [PORT] | coop join ADDRESS[:PORT] | coop leave |
-  // coop settings | coop set KEY VALUE: what the pause menu's co-op page
+  // coop settings | coop set KEY VALUE | coop mods [names]: what the pause menu's co-op page
   // does, without the menu. The menu
   // pages themselves (coop menu, coop pick) are the menus' own (Coop.reds).
   private func CoopCommand(command: String) -> Void {
@@ -1722,7 +1726,7 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log("coop: left the session");
     } else if Equals(verb, "report") {
       TandemNative.Log(s"coop: report: \(TandemNative.WriteReport())");
-    } else if TandemSettings.Command(command) {
+    } else if TandemSettings.Command(command) || TandemMods.Command(command) {
       return;
     } else {
       TandemNative.Log(s"coop: \(verb) needs the co-op menu open (the pause menu's or the main menu's)");
@@ -1769,7 +1773,7 @@ public class TandemSystem extends ScriptableSystem {
     if this.m_sentSeat && record == this.m_sentVehicle && Equals(slot, this.m_sentSlot) && owner == this.m_sentOwner {
       return;
     }
-    TandemNative.SendSeat(record, slot, owner);
+    TandemNative.SendSeat(record, slot, owner, TandemMods.VehicleHint(record));
     TandemNative.Log(s"our seat: \(TDBID.ToStringDEBUG(record)) \(NameToString(slot)) (car of player \(owner))");
     this.m_sentVehicle = record;
     this.m_sentSlot = slot;
@@ -2192,7 +2196,7 @@ public class TandemSystem extends ScriptableSystem {
     if this.m_sentHeld && right == this.m_sentRight && left == this.m_sentLeft {
       return;
     }
-    TandemNative.SendHeld(right, left);
+    TandemNative.SendHeld(right, left, TandemMods.ItemHint(right), TandemMods.ItemHint(left));
     this.m_sentRight = right;
     this.m_sentLeft = left;
     this.m_sentHeld = true;
@@ -2215,7 +2219,7 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     let male = Equals(player.GetResolvedGenderName(), n"Male");
-    let keys = TandemNative.SubmitAppearance(GameInstance.GetCharacterCustomizationSystem(game).GetState(), male, shown);
+    let keys = TandemNative.SubmitAppearance(GameInstance.GetCharacterCustomizationSystem(game).GetState(), male, shown, TandemMods.ItemHints(shown));
     this.m_sentItems = shown;
     this.m_sentAppearance = true;
     TandemNative.Log(s"our look sent: \(keys) keys, \(ArraySize(shown)) clothes");

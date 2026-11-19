@@ -4,6 +4,7 @@
 #include "combat.hpp"
 #include "comms.hpp"
 #include "log.hpp"
+#include "mods.hpp"
 #include "perf.hpp"
 #include "presence.hpp"
 #include "recording.hpp"
@@ -251,9 +252,14 @@ struct NetThread::Impl {
     std::string error;
     // (Without Phantom Liberty no session starts, unless compat = off: then
     // the other side refuses us, in words.)
-    const Identity identity{config.name, body, runtime.installation.install,
-                            runtime.Expansion() != compat::Expansion::Disabled &&
-                                runtime.Expansion() != compat::Expansion::Missing};
+    const Identity identity{.name = config.name,
+                            .body = body,
+                            .install = runtime.installation.install,
+                            .mods = ModRecords::Get().OursForIdentity(),
+                            .tellsMods = true,
+                            .expansion = runtime.Expansion() != compat::Expansion::Disabled &&
+                                         runtime.Expansion() != compat::Expansion::Missing};
+    ModRecords::Get().Ended();
     runtime.ClearDifferences();
     report::SessionSummary summary{
         .build = runtime.installation.install.build,
@@ -438,6 +444,14 @@ struct NetThread::Impl {
                   summary.notes.push_back(line);
                   Notice(line, line, 600'000'000);
                 }
+              } else if constexpr (std::is_same_v<E, events::RemoteMods>) {
+                ModRecords::Get().OnCompared(e);
+                if (e.comparison.Differ())
+                  summary.notes.push_back(mods::Describe(e.comparison, e.name));
+              } else if constexpr (std::is_same_v<E, events::ModNamesFrom>) {
+                ModRecords::Get().OnNames(e);
+              } else if constexpr (std::is_same_v<E, events::SubstitutesFrom>) {
+                ModRecords::Get().OnSeen(e);
               } else if constexpr (std::is_same_v<E, events::JoinRefused>) {
                 runtime.NoteDifference(e.notice);
                 summary.notes.push_back(e.notice);
@@ -1230,6 +1244,11 @@ struct NetThread::Impl {
         else if (const auto *waypoint = std::get_if<proto::Waypoint>(&message))
           endpoint->SetLocalWaypoint(*waypoint);
       }
+      // Other mods: what our game shows of others' records, names asked for.
+      for (const auto &told : ModRecords::Get().TakeTold())
+        endpoint->SendSubstitutes(told);
+      for (const auto player : ModRecords::Get().TakeNameAsks())
+        endpoint->AskModNames(player);
       for (auto &message : runtime.TakeRegroupOutbox()) {
         if (auto *offer = std::get_if<proto::Regroup>(&message))
           endpoint->SendRegroup(std::move(*offer));

@@ -15,6 +15,12 @@ public class TandemWorld {
   // game's own weather cycle is off while it is).
   private let m_timeOffset: Int32;
   private let m_weatherSet: Bool;
+  // Guest: when we last set the host's weather, and how often our weather
+  // left it on its own since (another mod changing it here: WeatherSwitcher).
+  private let m_weatherSetAt: Float;
+  private let m_overrides: Int32;
+  private let m_overrideSince: Float;
+  private let m_overrideSaid: Bool;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -28,7 +34,7 @@ public class TandemWorld {
     if TandemNative.IsHost() {
       this.Share(now);
     } else {
-      this.Follow();
+      this.Follow(now);
     }
   }
 
@@ -73,29 +79,59 @@ public class TandemWorld {
   }
 
   // Guest: the host's clock when ours is more than a minute off (a set every
-  // time would restart lighting blends), the host's weather blended in.
-  private func Follow() -> Void {
+  // time would restart lighting blends), the host's weather blended in. The
+  // weather is the host's alone: when ours leaves it with no word from the
+  // host (another mod set ours: WeatherSwitcher, a console command), it is
+  // set back at once, above the usual priority, and the player is told once.
+  private func Follow(now: Float) -> Void {
     let changes = TandemNative.HostWorldChanges();
-    if changes == this.m_applied || changes == 0 {
+    if changes == 0 {
       return;
     }
+    let fresh = changes != this.m_applied;
     this.m_applied = changes;
-    let host = TandemNative.HostGameTime();
-    let ours = TandemWorld.GameSeconds(this.m_game);
-    // Our bed moved our clock and the others are asked (Activities.reds):
-    // it stays until they answer.
-    let activities = TandemActivities.Of(this.m_game);
-    let held = IsDefined(activities) && activities.HoldsClock();
-    if host >= 0 && Abs(host - ours) > 60 && !held {
-      GameInstance.GetTimeSystem(this.m_game).SetGameTimeBySeconds(host);
-      this.m_timeOffset += host - ours;
-      TandemNative.Log(s"world: time set to the host's (\(host) s, was \(ours) s)");
+    if fresh {
+      let host = TandemNative.HostGameTime();
+      let ours = TandemWorld.GameSeconds(this.m_game);
+      // Our bed moved our clock and the others are asked (Activities.reds):
+      // it stays until they answer.
+      let activities = TandemActivities.Of(this.m_game);
+      let held = IsDefined(activities) && activities.HoldsClock();
+      if host >= 0 && Abs(host - ours) > 60 && !held {
+        GameInstance.GetTimeSystem(this.m_game).SetGameTimeBySeconds(host);
+        this.m_timeOffset += host - ours;
+        TandemNative.Log(s"world: time set to the host's (\(host) s, was \(ours) s)");
+      }
     }
     let weather = TandemNative.HostWeather();
-    if IsNameValid(weather) && NotEquals(weather, TandemWorld.Weather(this.m_game)) {
-      let ok = GameInstance.GetWeatherSystem(this.m_game).SetWeather(weather, 10.0);
-      this.m_weatherSet = this.m_weatherSet || ok;
-      TandemNative.Log(s"world: weather to the host's \(NameToString(weather)) (\(ok))");
+    if !IsNameValid(weather) || Equals(weather, TandemWorld.Weather(this.m_game)) {
+      return;
+    }
+    // Ours left the host's long after we set it, and the host said nothing.
+    let overridden = !fresh && this.m_weatherSet && now - this.m_weatherSetAt > 15.0;
+    if !fresh && !overridden {
+      return; // still blending into the host's
+    }
+    let ok = GameInstance.GetWeatherSystem(this.m_game).SetWeather(weather, overridden ? 2.0 : 10.0, 100u);
+    this.m_weatherSet = this.m_weatherSet || ok;
+    this.m_weatherSetAt = now;
+    if overridden {
+      this.Overridden(now);
+    }
+    TandemNative.Log(s"world: weather to the host's \(NameToString(weather)) (\(ok))\(overridden ? ": ours was changed here" : "")");
+  }
+
+  // Our weather left the host's three times in a minute: a mod of ours
+  // does it. Said once a session.
+  private func Overridden(now: Float) -> Void {
+    if now - this.m_overrideSince > 60.0 {
+      this.m_overrideSince = now;
+      this.m_overrides = 0;
+    }
+    this.m_overrides += 1;
+    if this.m_overrides >= 3 && !this.m_overrideSaid {
+      this.m_overrideSaid = true;
+      TandemText.Notice(this.m_game, "World-WeatherIsHost");
     }
   }
 
@@ -120,6 +156,8 @@ public class TandemWorld {
       this.m_timeOffset = 0;
     }
     this.m_applied = 0;
+    this.m_overrides = 0;
+    this.m_overrideSaid = false;
   }
 
   // The host's weather is still on (no save meanwhile: Saves.reds).

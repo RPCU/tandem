@@ -7,9 +7,11 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "mods.hpp"
 #include "runtime.hpp"
 
 #include "tandem/interpolation.hpp"
+#include "tandem/regions.hpp"
 
 #include <RedLib.hpp>
 
@@ -39,9 +41,12 @@ struct TandemSync : Red::IScriptable {
     auto &runtime = Runtime::Get();
     Red::DynArray<TandemSyncNpc> out;
     for (const auto &spawn : runtime.SharedNpcs()) {
+      // As TakeNpcEvents: a character our game lacks, a vanilla one.
+      const auto record = ModRecords::Get().Resolve(mods::Kind::Npc, spawn.record, spawn.hint,
+                                                    regions::Announcer(spawn.npc));
       TandemSyncNpc npc{.npc = spawn.npc,
-                        .record = Red::TweakDBID(spawn.record),
-                        .appearance = Red::CName(spawn.appearance),
+                        .record = Red::TweakDBID(record),
+                        .appearance = Red::CName(record == spawn.record ? spawn.appearance : 0),
                         .x = spawn.position.x,
                         .y = spawn.position.y,
                         .z = spawn.position.z,
