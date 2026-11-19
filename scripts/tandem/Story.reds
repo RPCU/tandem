@@ -76,12 +76,19 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_busy: array<Uint32>;
   private let m_lastCompanionScan: Float;
 
-  // Quest rewards this V got in co-op (its own save keeps them: a quest it
-  // was rewarded for with a host pays nothing again in its own story).
-  // Pairs (reward record, its quest's journal hash): generic records are
-  // shared by many quests, so the quest is part of the key.
+  // Quest rewards this V got in co-op before the ledger (pairs: reward
+  // record, its quest's journal hash): moved into the ledger at the first
+  // load, then empty. Kept declared so older saves still hand them over.
   private persistent let m_rewarded: array<TweakDBID>;
   private persistent let m_rewardedQuests: array<Uint32>;
+  // The ledger of what our V did and earned in co-op (core/carryover.hpp:
+  // its packed words; docs/architecture/quest-carryover.md), in our own
+  // save: written by the same save as what it describes, lost by the same
+  // load. The quests we took part in (with whom, completed), the rewards
+  // paid (once, whoever the host), the vehicles earned (Garage.reds).
+  private persistent let m_ledger: array<Uint64>;
+  // Our garage, and the host's news of it (Garage.reds).
+  private let m_garage: ref<TandemGarage>;
   // The quest whose journal moved last, and when (a reward in our own story
   // belongs to it: the host's rule, core/story.hpp).
   private let m_lastQuest: Uint32;
@@ -125,6 +132,12 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_phone.Start(this.GetGameInstance(), this);
     this.m_dialogue = new TandemDialogue();
     this.m_dialogue.Start(this.GetGameInstance(), this);
+    // The ledger as this save has it (and the rewards of a save from
+    // before it).
+    TandemStory.CarryLoad(this.m_ledger);
+    this.MigrateRewards();
+    this.m_garage = new TandemGarage();
+    this.m_garage.Start(this.GetGameInstance());
     // Journal changes: the host sends them; every game keeps the last quest
     // that moved (rewards, below).
     this.Listen();
@@ -189,6 +202,9 @@ public class TandemStorySystem extends ScriptableSystem {
         this.HostTick();
       } else {
         this.GuestTick();
+      }
+      if IsDefined(this.m_garage) {
+        this.m_garage.Tick(this.Now(), this.m_isHost);
       }
     }
     this.Schedule();
@@ -353,6 +369,12 @@ public class TandemStorySystem extends ScriptableSystem {
           break;
         case 41:
           this.OnReward(event.reward, event.hash);
+          break;
+        case 43:
+          // A vehicle the host's quest gave while we took part.
+          if !this.m_isHost && IsDefined(this.m_garage) && this.m_garage.Earned(event.reward, event.hash, this.NameOf(this.m_host)) {
+            this.m_ledger = TandemStory.CarryWords();
+          }
           break;
         default:
           break;
@@ -595,6 +617,7 @@ public class TandemStorySystem extends ScriptableSystem {
     // A change of the host's story, with its toast and sound when the
     // host's had one (JournalNotificationQueue.OnJournalUpdate, :341545).
     this.SetEntry(event.hash, event.state, event.flags != 0);
+    this.NoteJournal(event.hash, event.state);
   }
 
   private func ApplySnapshot() -> Void {
@@ -653,6 +676,12 @@ public class TandemStorySystem extends ScriptableSystem {
     TandemNative.Log("story: leaving the host's story");
     this.m_phone.Close();
     this.m_dialogue.Close();
+    // The host's quest props (tag Quest, keycards) are not ours to keep: our
+    // own quests test for them (quest-carryover.md). Iconics stay.
+    let loot = TandemLoot.Get(this.GetGameInstance());
+    if IsDefined(loot) {
+      loot.ReturnSessionItems();
+    }
     this.ReleaseHolds();
     this.TakeOffEffects();
     this.m_hostFlags = 0;
@@ -688,6 +717,8 @@ public class TandemStorySystem extends ScriptableSystem {
       this.m_ownTrackedKept = false;
     }
     let restored = ArraySize(this.m_touched);
+    // What we did with the host, for the next save.
+    this.Persist();
     ArrayClear(this.m_touched);
     ArrayClear(this.m_touchedBefore);
     if mismatches == 0 {
@@ -1079,17 +1110,40 @@ public class TandemStorySystem extends ScriptableSystem {
     TandemStory.Reward(reward, at.X, at.Y, at.Z);
   }
 
-  // Guest: a reward of the host's quest for our own V, once.
+  // Our V bought a vehicle (Garage.reds): ours alone, never a guest's.
+  public func OnVehicleBought() -> Void {
+    if IsDefined(this.m_garage) {
+      this.m_garage.Bought();
+    }
+  }
+
+  // tools/game.sh cmd garage [summon]
+  public func GarageCommand(command: String) -> Void {
+    if IsDefined(this.m_garage) {
+      this.m_garage.Command(command);
+    } else {
+      TandemNative.Log("garage: story sync is off (tandem.ini story)");
+    }
+  }
+
+  // Guest: a reward of the host's quest for our own V, once (the ledger:
+  // a resend, a rejoin or another host pays nothing again; a quest we
+  // finished alone before pays nothing either).
   private func OnReward(reward: TweakDBID, questHash: Uint32) -> Void {
     if this.m_isHost {
       return;
     }
-    if this.Rewarded(reward, questHash) {
+    this.NoteQuest(questHash);
+    let pay = TandemStory.CarryPay(questHash, reward);
+    if pay == 1 {
       TandemNative.Log(s"reward: \(TDBID.ToStringDEBUG(reward)) already given in co-op");
       return;
     }
-    ArrayPush(this.m_rewarded, reward);
-    ArrayPush(this.m_rewardedQuests, questHash);
+    if pay == 2 {
+      TandemNative.Log(s"reward: \(TDBID.ToStringDEBUG(reward)) (quest \(questHash)): we finished that quest alone, not paid again");
+      return;
+    }
+    this.Persist();
     // By our own rules: our level, our perks, our toasts (final.reds:37406).
     RPGManager.GiveReward(this.GetGameInstance(), reward);
     TandemNative.Log(s"reward: given \(TDBID.ToStringDEBUG(reward)) (quest \(questHash))");
@@ -1104,18 +1158,88 @@ public class TandemStorySystem extends ScriptableSystem {
     if !TandemStory.StoryOn() || this.InSession() || this.m_lastQuest == 0u || this.Now() - this.m_lastQuestAt > 10.0 {
       return false;
     }
-    return this.Rewarded(reward, this.m_lastQuest);
+    return !TandemStory.CarryOwnPays(this.m_lastQuest, reward);
   }
 
-  private func Rewarded(reward: TweakDBID, questHash: Uint32) -> Bool {
+  // ---- the ledger (core/carryover.hpp) ----
+
+  // The ledger changed: its words into our persistent field, for the next
+  // save (never one in a session: the guest's lock).
+  private func Persist() -> Void {
+    this.m_ledger = TandemStory.CarryWords();
+  }
+
+  // A save from before the ledger: its paid rewards go into it, once.
+  private func MigrateRewards() -> Void {
+    let moved = 0;
     let i = 0;
-    while i < ArraySize(this.m_rewarded) {
-      if this.m_rewarded[i] == reward && i < ArraySize(this.m_rewardedQuests) && this.m_rewardedQuests[i] == questHash {
-        return true;
+    while i < ArraySize(this.m_rewarded) && i < ArraySize(this.m_rewardedQuests) {
+      TandemStory.CarryPay(this.m_rewardedQuests[i], this.m_rewarded[i]);
+      moved += 1;
+      i += 1;
+    }
+    if moved > 0 || ArraySize(this.m_rewarded) > 0 {
+      ArrayClear(this.m_rewarded);
+      ArrayClear(this.m_rewardedQuests);
+      this.Persist();
+      TandemNative.Log(s"ledger: \(moved) reward(s) of an older save moved into it");
+    }
+  }
+
+  // Our own journal's state of a quest before the host's mirror changed it
+  // (gameJournalEntryState: 1 not started, 2 active, 3 done, 4 failed; 0 not
+  // in our game, a quest of content we lack).
+  private func OwnStateOf(questHash: Uint32) -> Int32 {
+    let i = 0;
+    while i < ArraySize(this.m_touched) {
+      if this.m_touched[i] == questHash && i < ArraySize(this.m_touchedBefore) {
+        return Max(this.m_touchedBefore[i], 1);
       }
       i += 1;
     }
-    return false;
+    let entry = this.m_journal.GetEntry(questHash);
+    if !IsDefined(entry) {
+      return 0;
+    }
+    let state: Int32 = EnumInt(this.m_journal.GetEntryState(entry));
+    return Max(state, 1);
+  }
+
+  // Guest: we take part in the host's quest (its first note fixes its kind,
+  // our own state of it and the host).
+  private func NoteQuest(questHash: Uint32) -> Void {
+    if questHash == 0u || !IsDefined(this.m_journal) {
+      return;
+    }
+    let entry = this.m_journal.GetEntry(questHash);
+    let kind: Int32 = IsDefined(entry) ? EnumInt(this.m_journal.GetQuestType(entry)) : 255;
+    TandemStory.CarryQuest(questHash, kind, this.OwnStateOf(questHash), this.NameOf(this.m_host));
+  }
+
+  // Guest: a change of the host's journal while near the host (the reward
+  // rule's 150 m): the quest it belongs to is one we take part in, and its
+  // end, seen with the host, is ours too.
+  private func NoteJournal(hash: Uint32, state: Int32) -> Void {
+    let distance = this.DistanceToHost();
+    if distance < 0.0 || distance > 150.0 {
+      return;
+    }
+    let entry = this.m_journal.GetEntry(hash);
+    if !IsDefined(entry) {
+      return;
+    }
+    let questEntry = this.QuestOf(entry);
+    if !IsDefined(questEntry) {
+      return;
+    }
+    let questHash = Cast<Uint32>(this.m_journal.GetEntryHash(questEntry));
+    this.NoteQuest(questHash);
+    // 3: Succeeded, on the quest itself.
+    if questHash == hash && state == 3 {
+      TandemStory.CarryCompleted(questHash);
+      TandemNative.Log(s"ledger: quest \(questHash) done with \(this.NameOf(this.m_host))");
+    }
+    this.Persist();
   }
 
   // ---- commands (tools/game.sh cmd story … / quest …) ----
@@ -1166,7 +1290,10 @@ public class TandemStorySystem extends ScriptableSystem {
     } else if Equals(command, "story join") {
       this.AcceptOffer();
     } else if Equals(command, "story state") {
-      TandemNative.Log(s"story: you \(this.m_you), host \(this.m_host), frozen \(this.m_frozen), save locked \(this.m_saveLocked), touched \(ArraySize(this.m_touched)), host tier \(this.m_hostTier), distance \(this.DistanceToHost()), rewarded \(ArraySize(this.m_rewarded))");
+      TandemNative.Log(s"story: you \(this.m_you), host \(this.m_host), frozen \(this.m_frozen), save locked \(this.m_saveLocked), touched \(ArraySize(this.m_touched)), host tier \(this.m_hostTier), distance \(this.DistanceToHost())");
+      TandemNative.Log(TandemStory.CarryReport());
+    } else if Equals(command, "story carry") {
+      TandemNative.Log(TandemStory.CarryReport());
     } else if StrBeginsWith(command, "story call") || StrBeginsWith(command, "story line") || StrBeginsWith(command, "story hub") {
       if StrBeginsWith(command, "story call") {
         this.m_phone.Command(command);
