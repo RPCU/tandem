@@ -9,6 +9,8 @@ expect_peer 'our grenade hit player [0-9]+ for 20 physical' 15
 expect "outcomes: player [0-9]+'s area effect on our V: 20(\.0+)? physical" 10
 expect 'combat: npc hit applied to our V: [0-9.]+ damage' 10
 # Few hits: stop the host, and our own difficulty comes back.
+# Only what comes after: the previous host's goodbye may be just past the start.
+mark
 pkill -x tandem-peer
 expect 'session ended' 60
 expect 'outcomes: our own difficulty [0-9] back' 10

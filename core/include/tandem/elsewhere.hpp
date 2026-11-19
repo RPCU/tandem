@@ -1,6 +1,6 @@
 #pragma once
 
-// A V in another world (docs/ARCHITECTURE.md, other worlds), the parts that
+// A V in another world (docs/architecture/elsewhere.md, other worlds), the parts that
 // need no game: what a received state may say, and the owner's side, which
 // tells when the scene has taken V away from its body and where that body is.
 //

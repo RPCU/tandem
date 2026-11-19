@@ -1,4 +1,4 @@
-// Other worlds (docs/ARCHITECTURE.md, other worlds; engine-knowledge §13.18):
+// Other worlds (docs/architecture/elsewhere.md, other worlds; engine-knowledge §13.18):
 // a V in cyberspace, in a braindance, playing as Johnny (a takeover, a
 // flashback) or as someone else, often far from its body.
 //

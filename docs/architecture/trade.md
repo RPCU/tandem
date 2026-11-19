@@ -6,8 +6,8 @@ quest or unique item only, by interacting when they are close"); designed
 and built the same day with the game machine out of reach: **the core is
 tested, nothing has run in game yet**, so it is off unless `tandem.ini`
 says `trade = on`. The engine facts are in
-[`research/engine/progression.md`](../research/engine/progression.md) §7
-and §8.
+[`research/engine/progression.md`](../research/engine/progression.md) §13.30.7
+and §13.30.8.
 
 ## What a player does
 

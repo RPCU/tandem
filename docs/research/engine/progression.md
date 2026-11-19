@@ -1,4 +1,8 @@
-# Engine facts: progression, economy, saves, items (game 2.50)
+# Progression, economy, saves, items
+
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
+
+### 13.30 Progression, economy, saves, items (2026-11-19, 2.50 scripts read, not run)
 
 What the game's own scripts say about levels, XP, vendors, saves and item
 data, gathered for [`docs/architecture/progression.md`](../../architecture/progression.md)
@@ -14,7 +18,7 @@ Tags: **[R]** read at the cited line; **[I]** inferred from what was read;
 2026-11-19, with the game machine out of reach). When one is verified,
 change its tag and say how.
 
-## 1. Levels and scaling
+#### 13.30.1 Levels and scaling
 
 - An NPC's level is its `gamedataStatType.PowerLevel` stat. Health, armour
   and damage are derived from it by TweakDB curves
@@ -60,7 +64,7 @@ change its tag and say how.
 - A V's level: `PowerLevel` and `Level` stats of the player entity; the
   cap is `BaseStats.PowerLevel`'s `Max()` (F:20082, F:416337) [R].
 
-## 2. Experience
+#### 13.30.2 Experience
 
 - Skill XP from damage: `RPGManager.AwardExperienceFromDamage` (F:36969),
   called from `StatPoolsManager.DrainStatPool` (F:219326) for real damage
@@ -96,7 +100,7 @@ change its tag and say how.
   that player's level and, with a `contentAssignment` on the reward, by the
   level difference (F:37510-37530) [R].
 
-## 3. Perks, attributes, respec
+#### 13.30.3 Perks, attributes, respec
 
 - `PlayerDevelopmentSystem.m_playerData` is persistent, one entry per
   attached player, created in `OnPlayerAttach` (F:79163-79199), found by
@@ -104,7 +108,7 @@ change its tag and say how.
   attach request (F:40102) [R]: an NPC entity (a tandem puppet) gets no
   entry, earns nothing and answers no perk test [I].
 
-## 4. Loot level
+#### 13.30.4 Loot level
 
 - The roll is native (`ProcessLoot` F:19444, `GenerateLoot` F:19406):
   which level it reads is not in the scripts [I].
@@ -117,7 +121,7 @@ change its tag and say how.
   `NPCLootLevelHelper` (F:2409) exist and are not used in scripts [R]:
   whether an NPC's level reaches its loot is to measure in game.
 
-## 5. Economy
+#### 13.30.5 Economy
 
 - **Vendors.** `MarketSystem.m_vendors: [Vendor]` is persistent (F:130219);
   a `Vendor` keeps its stock, sold items, restock time and price multiplier
@@ -151,7 +155,7 @@ change its tag and say how.
 - **Money** is the item `MarketSystem.Money()` in V's inventory (F:130351)
   [R].
 
-## 6. Saves
+#### 13.30.6 Saves
 
 - `ScriptableSystem.IsSavingLocked()` (F:48411) is asked of every scriptable
   system; `SaveLocksManager` (F:195154) keeps a list of reasons that **is
@@ -178,7 +182,7 @@ blend)` turns it on again (`coop-quests-world.md` §8.2) [R]. A guest
   that leaves a session without the reset keeps the cycle off: fixed in
   `World.reds` (2026-11-19).
 
-## 7. Items: what a trade must carry
+#### 13.30.7 Items: what a trade must carry
 
 - **ItemID** (F:53803-53827): `FromTDBID`, `GetTDBID`, `GetRngSeed`,
   `GetStructure`, `HasFlag(Preview)`, `CreateFromSeedWithOffset(record,
@@ -224,7 +228,7 @@ Inventory`, F:41260-41519): skill books are learned (F:41342), readables
   `RTDB.Vendor.customerFilterTags`), stash blacklist (F:77435:
   `HideInBackpackUI`, `Grenade`, `Inhaler`, `Injector`) [R].
 
-## 8. The storage screen (the trade table)
+#### 13.30.8 The storage screen (the trade table)
 
 - `FullscreenVendorGameController.OnSetUserData` (F:403966) reads
   `StorageBlackboard.StorageData`; with a `storageObject` it initialises

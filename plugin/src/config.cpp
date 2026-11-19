@@ -45,7 +45,11 @@ Config LoadConfig(const std::filesystem::path &path) {
         config.role = Config::Role::Host;
       else if (value == "join")
         config.role = Config::Role::Join;
-      else
+      else if (value == "record") {
+        // Solo with the recorder on (the recorder is its own key now).
+        config.role = Config::Role::Off;
+        config.recorder = true;
+      } else
         log::Warn("tandem.ini:{}: role is off, host or join", number);
     } else if (key == "address") {
       config.address = value;
@@ -89,10 +93,23 @@ Config LoadConfig(const std::filesystem::path &path) {
         config.pose = false;
       else
         log::Warn("tandem.ini:{}: pose is on or off", number);
-    } else if (key == "story" || key == "quest_freeze" || key == "trade") {
+    } else if (key == "recorder_max_mb" || key == "recorder_segment_minutes") {
+      std::uint32_t number32{};
+      auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), number32);
+      if (ec == std::errc{} && end == value.data() + value.size() && number32 != 0) {
+        if (key == "recorder_max_mb")
+          config.recorderMaxMb = number32;
+        else
+          config.recorderSegmentMinutes = number32;
+      } else
+        log::Warn("tandem.ini:{}: bad {} {}", number, key, value);
+    } else if (key == "story" || key == "quest_freeze" || key == "recorder" ||
+               key == "recorder_pose" || key == "trade") {
       auto &flag = key == "story"          ? config.story
                    : key == "quest_freeze" ? config.questFreeze
-                                           : config.trade;
+                   : key == "recorder"     ? config.recorder
+                   : key == "trade"        ? config.trade
+                                           : config.recorderPose;
       if (value == "on" || value == "true")
         flag = true;
       else if (value == "off" || value == "false")

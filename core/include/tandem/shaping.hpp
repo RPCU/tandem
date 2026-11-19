@@ -2,8 +2,8 @@
 
 // A bad network, on purpose: added latency, jitter, loss and reordering, to
 // test the smoothing (interpolation, poses, cars) and the reliable channels
-// without a bad link at hand (docs/ARCHITECTURE.md, testing without a second
-// player).
+// without a bad link at hand (docs/architecture/testing.md, "A bad
+// network").
 //
 // LinkModel decides what happens to each datagram (seeded: repeatable in
 // tests). Shaper is a UDP relay that puts one LinkModel on each direction:

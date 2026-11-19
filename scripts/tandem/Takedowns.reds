@@ -1,5 +1,5 @@
 // Grapples, takedowns, finishers and carried bodies in a shared world
-// (docs/ARCHITECTURE.md, "The second player acts on the world too").
+// (docs/architecture/world.md, "The second player acts on the world too").
 //
 // The host's NPCs are the host's: a player who grabs, takes down, finishes,
 // carries, throws or disposes of one plays its own side at once (its V's
@@ -519,6 +519,11 @@ public class TandemTakedowns extends ScriptableSystem {
     }
     TandemNative.Log(s"takedowns: player \(event.player) asks \(TandemTakedowns.KindName(kind)) on \(event.npc): \(answer)");
     if reason == 0 {
+      // Its death or knock-out is this player's (TandemNpcs.KillerOf).
+      let npcs = this.Npcs();
+      if IsDefined(npcs) {
+        npcs.NoteHitBy(event.npc, event.player);
+      }
       this.Apply(body, puppet, event);
     }
   }

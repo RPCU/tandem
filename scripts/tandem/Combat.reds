@@ -1,4 +1,4 @@
-// Fights against the host's NPCs (docs/ARCHITECTURE.md, milestone 5).
+// Fights against the host's NPCs (docs/architecture/combat.md, milestone 5).
 //
 // On a guest every NPC is a proxy of the host's. When our V hits one, the
 // game's damage pipeline runs as usual (aim, weapon, perks, the proxy's
@@ -276,6 +276,12 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
   }
   let npc = TandemCombat.ProxyNpc(game, hitEvent.target);
   if npc == 0u {
+    // Host: our own V's hit on a shared NPC (whose kill it is: KillerOf).
+    let own = hitEvent.attackData.GetInstigator();
+    let system = TandemCombat.System(game);
+    if TandemNative.IsHost() && IsDefined(own) && own.IsPlayer() && IsDefined(system) && IsDefined(system.Npcs()) {
+      system.Npcs().NoteOwnHit(hitEvent.target.GetEntityID());
+    }
     wrappedMethod(hitEvent);
     // Guest: a proxy's shot (Shots.reds) hit our V: the host shows it.
     let shots = TandemShots.Of(game);

@@ -14,6 +14,7 @@
 #include "engine/posestream.hpp"
 #include "engine/trace.hpp"
 #include "log.hpp"
+#include "recording.hpp"
 #include "runtime.hpp"
 
 #include "tandem/movement.hpp"
@@ -360,6 +361,30 @@ struct TandemNative : Red::IScriptable {
   }
 
   static std::int32_t DefaultPort() { return Runtime::Get().config.port; }
+
+  // ---- the recorder (recording.hpp), whatever the role ----
+  // tandem.ini's recorder (or the co-op menu's switch) is on.
+  static bool RecorderOn() { return plugin::Recording::Get().Enabled(); }
+  // Recording now (on, a game loaded, no error).
+  static bool Recording() { return plugin::Recording::Get().Active(); }
+  static bool RecorderPose() { return Runtime::Get().config.recorderPose; }
+  // A game is loaded / its world is gone.
+  static void RecorderStart(std::int32_t body) {
+    plugin::Recording::Get().GameLoaded(BodyOf(body));
+  }
+  static void RecorderLeft() { plugin::Recording::Get().GameLeft(); }
+  // Around the scripts' recording work of a frame (its cost, per segment).
+  static void RecorderTick(bool begin) {
+    if (begin)
+      plugin::Recording::Get().TickBegin();
+    else
+      plugin::Recording::Get().TickEnd();
+  }
+  static void RecorderCut() { plugin::Recording::Get().Cut(); }
+  static void RecorderSet(bool on) { plugin::Recording::Get().SetEnabled(on); }
+  static Red::CString RecorderStatus() {
+    return Red::CString(plugin::Recording::Get().Status().c_str());
+  }
 
   static void SendLocalState(Red::Vector4 position, Red::Quaternion orientation,
                              Red::Vector4 velocity, std::int32_t locomotion, std::int32_t flags) {
@@ -941,7 +966,7 @@ struct TandemNative : Red::IScriptable {
   // tandem.ini time_host = full (the default): the host keeps its own slow
   // motion whole; bubble: its world is put back to normal speed.
   static bool IsTimeHostFull() { return Runtime::Get().config.timeHostFull; }
-  // Invites through tandem-relay (docs/ARCHITECTURE.md, "Invites"): the
+  // Invites through tandem-relay (docs/architecture/coop-menu.md, "Invites"): the
   // host's join code to show ("K7Q-2M9"; "" until the relay gave one, or
   // with no relay), what the relay link is doing ("" no relay,
   // "connecting", "ready", else the problem, in words), and joining the
@@ -1741,6 +1766,15 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RecentHosts);
   RTTI_METHOD(LocalAddresses);
   RTTI_METHOD(DefaultPort);
+  RTTI_METHOD(RecorderOn);
+  RTTI_METHOD(Recording);
+  RTTI_METHOD(RecorderPose);
+  RTTI_METHOD(RecorderStart);
+  RTTI_METHOD(RecorderLeft);
+  RTTI_METHOD(RecorderTick);
+  RTTI_METHOD(RecorderCut);
+  RTTI_METHOD(RecorderSet);
+  RTTI_METHOD(RecorderStatus);
   RTTI_METHOD(SendLocalState);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(RegisterPuppet);

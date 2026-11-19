@@ -42,7 +42,7 @@ struct Timing {
   // player is heard from several times a second, so nobody takes its place.
   std::chrono::milliseconds takeover{2'000};
   // Host: how often each guest gets a digest of the shared state
-  // (docs/ARCHITECTURE.md, Consistency). Guest: how soon the same domain may
+  // (docs/architecture/consistency.md, Consistency). Guest: how soon the same domain may
   // be asked for again after a resync.
   std::chrono::milliseconds digest{3'000};
   std::chrono::milliseconds resyncCooldown{5'000};
@@ -359,7 +359,7 @@ public:
   // Host only: one of our NPCs hit `hit.player`'s V (its puppet here). Sent
   // to that player alone; false when it is not a guest in the session.
   bool SendPlayerHit(const proto::PlayerHit &hit);
-  // Quickhacks (docs/ARCHITECTURE.md). Guest only: we started uploading on a
+  // Quickhacks (docs/architecture/combat.md). Guest only: we started uploading on a
   // host NPC. Host only: uploads and quickhack effects on our NPCs, to
   // everyone; an NPC netrunner's hack on a guest's V, to that guest only.
   void SendNpcHack(const proto::NpcHack &hack);
@@ -455,7 +455,7 @@ public:
   void SendSharedItem(proto::SharedItem item);
   // Host: the world items still lying somewhere (taken stacks at quantity 0).
   const std::map<proto::WorldItemId, proto::WorldItem> &WorldItems() const { return m_worldItems; }
-  // Down and out (docs/ARCHITECTURE.md). Our V's life: kept, sent now if we
+  // Down and out (docs/architecture/revive.md). Our V's life: kept, sent now if we
   // are in the session, else as soon as we are; the host hands everyone's
   // to late joiners and decides when the session is lost (no V up).
   void SetLocalVitals(proto::Vitals vitals);
@@ -467,7 +467,7 @@ public:
   proto::Life LifeOf(proto::PlayerId player) const;
   const std::map<proto::PlayerId, proto::Vitals> &Lives() const { return m_lives; }
 
-  // Consistency (docs/ARCHITECTURE.md). Our world was rebuilt around our V
+  // Consistency (docs/architecture/consistency.md). Our world was rebuilt around our V
   // (proto::kEpoch* reason): what was in flight about the old one is void.
   // Host: every guest learns it, and their requests aimed at the old world
   // are dropped until they have. Guest: the host learns it.
@@ -521,6 +521,10 @@ public:
   // Session recording (tandem/play.hpp): as a guest, every message the host
   // sent us, as it arrives, before it is acted on. Empty: off.
   void SetReceivedTap(Tap tap) { m_receivedTap = std::move(tap); }
+  // The recorder (tandem/recorder.hpp): every call above that says
+  // something (about our V or, as the host, our world) hands `tap` the
+  // message as given, before anything is sent. Empty: off, and free.
+  void SetRecordTap(Tap tap) { m_recordTap = std::move(tap); }
   // Our V as it stands now (look, held items, seat, radio, stealth, time
   // ability, ride, life, elsewhere): what a recording begins with.
   std::vector<proto::Message> LocalSnapshot() const;
@@ -554,6 +558,11 @@ private:
   std::unique_ptr<net::Session> m_session;
   Identity m_identity;
   Tap m_tap;
+  Tap m_recordTap;
+  template <class M> void Record(const M &message) {
+    if (m_recordTap)
+      m_recordTap(proto::Message(message));
+  }
   Tap m_receivedTap;
   Timing m_timing;
 

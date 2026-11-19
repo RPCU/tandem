@@ -1,4 +1,4 @@
-// Hit outcomes (docs/ARCHITECTURE.md, "Game rules hold for every hit"): a hit
+// Hit outcomes (docs/architecture/combat.md, "Game rules hold for every hit"): a hit
 // carries its whole outcome, not just health, and each part of it is decided
 // by one game only.
 //
@@ -390,7 +390,10 @@ public class TandemOutcomes {
     }
     let body = hitEvent.target as ScriptedPuppet;
     if !IsDefined(body) || hitEvent.attackData.HasFlag(hitFlag.DealNoDamage) {
-      TandemNative.Log(s"outcomes: player \(this.m_strikes[i].player)'s strike on \(this.m_strikes[i].npc) deals no damage here (invulnerable, dead)");
+      let godMode = GameInstance.GetGodModeSystem(this.m_game);
+      let alive = IsDefined(body) && !body.IsDead();
+      let invulnerable = IsDefined(body) && godMode.HasGodMode(body.GetEntityID(), gameGodModeType.Invulnerable);
+      TandemNative.Log(s"outcomes: player \(this.m_strikes[i].player)'s strike on \(this.m_strikes[i].npc) deals no damage here (alive \(alive), invulnerable \(invulnerable), friendly fire ignored \(hitEvent.attackData.HasFlag(hitFlag.FriendlyFireIgnored)))");
       return;
     }
     let loss = this.ApplyPools(body, this.m_strikes[i], hitEvent.attackData.GetInstigator());
@@ -443,9 +446,14 @@ public class TandemOutcomes {
   // is clean, other melee a hole, the rest coarse. Through the wrapped
   // RequestDismemberment, so every proxy loses it too (NpcWound).
   private func Dismember(body: ref<ScriptedPuppet>, strike: ref<TandemStrike>, instigator: wref<GameObject>) -> Void {
+    // The hit shape's part (a script enum, -1..5) as the dismemberment's
+    // (native, other values), by name as HitShapeUserDataBase does.
+    let shape = new HitShapeUserDataBase();
+    shape.m_dismembermentPart = IntEnum<EAIDismembermentBodyPart>(strike.part);
     if strike.part < 0 || strike.part > 5 {
       return;
     }
+    let part = HitShapeUserDataBase.GetDismembermentBodyPart(shape);
     let attackType = IntEnum<gamedataAttackType>(strike.attackType);
     let melee = (strike.flags & 4) != 0;
     let explosion = AttackData.IsDismembermentCause(attackType);
@@ -459,12 +467,12 @@ public class TandemOutcomes {
     if !forced && !explosion && !(melee && clean) {
       return;
     }
-    if strike.part == 5 && !explosion {
+    if Equals(part, gameDismBodyPart.BODY) && !explosion {
       return; // the torso: only an explosion takes it apart
     }
     let wound = clean ? gameDismWoundType.CLEAN : melee ? gameDismWoundType.HOLE : gameDismWoundType.COARSE;
-    DismembermentComponent.RequestDismemberment(body, IntEnum<gameDismBodyPart>(strike.part), wound, strike.position);
-    TandemNative.Log(s"outcomes: \(strike.npc)'s killing strike cuts part \(strike.part) (wound \(EnumInt(wound)), weapon \(IsDefined(weapon) ? TDBID.ToStringDEBUG(ItemID.GetTDBID(weapon.GetItemID())) : "none"))");
+    DismembermentComponent.RequestDismemberment(body, part, wound, strike.position);
+    TandemNative.Log(s"outcomes: \(strike.npc)'s killing strike cuts part \(TandemOutcomes.PartIndex(part)) (wound \(TandemOutcomes.WoundIndex(wound)), weapon \(IsDefined(weapon) ? TDBID.ToStringDEBUG(ItemID.GetTDBID(weapon.GetItemID())) : "none"))");
   }
 
   // ---- wounds: the host decides, every proxy shows ----
@@ -487,8 +495,13 @@ public class TandemOutcomes {
             by = hitter.IsPlayer() ? system.You() : system.PlayerOfPuppet(hitter.GetEntityID());
           }
         }
-        TandemFight.SendWound(npc, by, EnumInt(part), EnumInt(wound), at);
-        TandemNative.Log(s"outcomes: \(npc) loses part \(EnumInt(part)) (wound \(EnumInt(wound)), player \(by)'s hit)");
+        let index = TandemOutcomes.PartIndex(part);
+        if index >= 0 {
+          TandemFight.SendWound(npc, by, index, TandemOutcomes.WoundIndex(wound), at);
+          TandemNative.Log(s"outcomes: \(npc) loses part \(index) (wound \(TandemOutcomes.WoundIndex(wound)), player \(by)'s hit)");
+        } else {
+          TandemNative.Log(s"outcomes: \(npc) loses parts \(EnumInt(part)) (not one limb: not sent)");
+        }
       }
       return true;
     }
@@ -502,8 +515,8 @@ public class TandemOutcomes {
     if !IsDefined(proxy) {
       return;
     }
-    let part = IntEnum<gameDismBodyPart>(event.part);
-    let wound = IntEnum<gameDismWoundType>(event.shape);
+    let part = TandemOutcomes.PartOf(event.part);
+    let wound = TandemOutcomes.WoundOf(event.shape);
     let at = new Vector4(event.x, event.y, event.z, 1.0);
     if event.player == you {
       // Our hit: the game's own request (its sound, our on-dismember perk).
@@ -520,6 +533,71 @@ public class TandemOutcomes {
     TandemNative.Log(s"outcomes: proxy \(event.npc) loses part \(event.part) (wound \(event.shape), player \(event.player)'s hit)");
   }
 
+  // ---- limbs on the wire ----
+  // gameDismBodyPart and gameDismWoundType are native enums whose values
+  // are not the scripts' 0..5 (LEFT_ARM is 14, 2026-11-19): NpcWound carries
+  // the script order, mapped by name both ways.
+
+  public static func PartIndex(part: gameDismBodyPart) -> Int32 {
+    if Equals(part, gameDismBodyPart.LEFT_ARM) {
+      return 0;
+    }
+    if Equals(part, gameDismBodyPart.RIGHT_ARM) {
+      return 1;
+    }
+    if Equals(part, gameDismBodyPart.LEFT_LEG) {
+      return 2;
+    }
+    if Equals(part, gameDismBodyPart.RIGHT_LEG) {
+      return 3;
+    }
+    if Equals(part, gameDismBodyPart.HEAD) {
+      return 4;
+    }
+    if Equals(part, gameDismBodyPart.BODY) {
+      return 5;
+    }
+    return -1;
+  }
+
+  public static func PartOf(index: Int32) -> gameDismBodyPart {
+    switch index {
+      case 0:
+        return gameDismBodyPart.LEFT_ARM;
+      case 1:
+        return gameDismBodyPart.RIGHT_ARM;
+      case 2:
+        return gameDismBodyPart.LEFT_LEG;
+      case 3:
+        return gameDismBodyPart.RIGHT_LEG;
+      case 4:
+        return gameDismBodyPart.HEAD;
+      default:
+        return gameDismBodyPart.BODY;
+    }
+  }
+
+  public static func WoundIndex(wound: gameDismWoundType) -> Int32 {
+    if Equals(wound, gameDismWoundType.CLEAN) {
+      return 0;
+    }
+    if Equals(wound, gameDismWoundType.COARSE) {
+      return 1;
+    }
+    return 2;
+  }
+
+  public static func WoundOf(index: Int32) -> gameDismWoundType {
+    switch index {
+      case 0:
+        return gameDismWoundType.CLEAN;
+      case 1:
+        return gameDismWoundType.COARSE;
+      default:
+        return gameDismWoundType.HOLE;
+    }
+  }
+
   // ---- a V keeps its limbs (the wraps at the end) ----
 
   // Whether `obj` is a V (ours, or a remote player's puppet): it is never
@@ -529,7 +607,8 @@ public class TandemOutcomes {
       return false;
     }
     if obj.IsPlayer() {
-      return true;
+      // Solo is vanilla: our V's limbs are ours to keep only in a session.
+      return TandemNative.IsStarted();
     }
     let player = TandemCombat.PuppetPlayer(obj.GetGame(), obj);
     if player == 0u {
@@ -694,7 +773,7 @@ public class TandemOutcomes {
 // The host's limbs and wounds for every proxy (TandemOutcomes.OnDismember).
 @wrapMethod(DismembermentComponent)
 public final static func RequestDismemberment(obj: ref<GameObject>, bodyPart: gameDismBodyPart, woundType: gameDismWoundType, opt hitPosition: Vector4, opt isCritical: Bool, opt debrisPath: String, opt debrisStrength: Float) {
-  if TandemOutcomes.KeepsLimbs(obj, s"request, part \(EnumInt(bodyPart))") {
+  if TandemOutcomes.KeepsLimbs(obj, s"request, part \(TandemOutcomes.PartIndex(bodyPart))") {
     return;
   }
   let outcomes = IsDefined(obj) ? TandemOutcomes.Of(obj.GetGame()) : null;

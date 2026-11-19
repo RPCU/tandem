@@ -8,16 +8,19 @@ add_library(tandem_core STATIC
   src/consistency.cpp
   src/endpoint.cpp
   src/story.cpp
+  src/carryover.cpp
   src/combat.cpp
   src/interpolation.cpp
   src/movement.cpp
   src/play.cpp
+  src/recorder.cpp
   src/pose.cpp
   src/vehicle.cpp
   src/hosts.cpp
   src/timebubble.cpp
   src/shaping.cpp
   src/elsewhere.cpp
+  src/instance.cpp
   src/progress.cpp
   src/trade.cpp)
 target_include_directories(tandem_core PUBLIC include)

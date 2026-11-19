@@ -1,4 +1,4 @@
-// The pause menu pauses everyone; nothing else does (docs/ARCHITECTURE.md,
+// The pause menu pauses everyone; nothing else does (docs/architecture/time.md,
 // open problems). Our pause menu opening and closing goes to the others;
 // while any other player is in theirs, our world is paused the way the pause
 // menu pauses it (PauseMenuBackgroundGameController: the system requests
