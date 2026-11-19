@@ -97,6 +97,7 @@
 #include "tandem/play.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/shaping.hpp"
+#include "tandem/sim/game.hpp"
 #include "tandem/sim/referee.hpp"
 
 #include <algorithm>
@@ -285,7 +286,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
       << "usage: tandem-peer host [options]\n"
          "       tandem-peer join ADDRESS[:PORT] [options]\n"
          "       tandem-peer join --code CODE --relay HOST[:PORT] [options]\n"
-         "       tandem-peer play-info FILE   what a gameplay recording holds, where it starts\n\n"
+         "       tandem-peer play-info FILE   what a gameplay recording holds, where it starts\n"
+         "       tandem-peer sim --role host|join ...  a simulated second game (sim --help)\n"
+         "       tandem-peer sim-fuzz ...     simulated games against each other, seed by seed\n\n"
          "  --port N           UDP port (default 27450)\n"
          "  --relay HOST[:PORT] tandem-relay (default port 27460): host, also reachable\n"
          "                     through it (its join code is logged); join, used when\n"
@@ -1964,6 +1967,9 @@ int PlayInfo(const std::string &path) {
 int main(int argc, char **argv) {
   if (argc >= 3 && std::string_view(argv[1]) == "play-info")
     return PlayInfo(argv[2]);
+  // The simulated second game (docs/architecture/sim.md).
+  if (argc >= 2 && (std::string_view(argv[1]) == "sim" || std::string_view(argv[1]) == "sim-fuzz"))
+    return tandem::sim::SimMain(argv[1], std::vector<std::string_view>(argv + 2, argv + argc));
   auto options = Parse(argc, argv);
   if (options.check) {
     std::cout << "options ok\n";

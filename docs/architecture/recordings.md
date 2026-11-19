@@ -135,7 +135,9 @@ host` records alone). Everything the game asks its `Endpoint` to send
   5. `build/linux/peer/tandem-peer play-info recordings/session/city.tsession`
      says what it holds; `tools/scenario.sh session-guest` replays it.
 
-- Planned — **the whole simulated second game**, so everything can be
+- **The whole simulated second game** (built: `sim.md`, `tandem-peer sim`:
+  a host world, a story, a simulated V whose moves are stitched from the
+  `.tplay` recordings, personas, a referee) — the plan it grew from, so everything can be
   tested with one PC and one copy of the game. Built up as the protocol
   matures (each milestone adds what its messages need):
   - **record**: save everything a real game sends in a session (its V, and

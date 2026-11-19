@@ -1,0 +1,180 @@
+# The simulated second game
+
+`tandem-peer` as a second game that plays: a referee on every message it
+hears, a host world with NPCs and a story, a simulated V with goals and a
+persona, all from one seed, so a session can be soaked, fuzzed and covered
+with one copy of the game, or with none (`peer/sim/`, the `tandem_sim`
+library; tests in `tests/referee_test.cpp` and `tests/sim_test.cpp`).
+
+<!-- prettier-ignore -->
+| Piece | File | What |
+| --- | --- | --- |
+| referee | `referee.hpp` | every message received, checked against the protocol and the authority table |
+| scene | `scene.hpp` | what one game knows of the session (players, the host's NPCs, items, call, hub), from the endpoint's events; `Deliver` hands a model's message to the endpoint call a game makes for it |
+| world | `world.hpp` | the host's NPCs, time of day, weather and its answers to guests |
+| story | `story.hpp` | a scripted quest, played by a director that waits for the guests |
+| V | `player.hpp`, `motion.hpp` | the simulated player and how it moves |
+| personas | `persona.hpp` | companion, loner, chaos, speedrunner |
+| game | `game.hpp` | one simulated game (endpoint, referee, models), `RunPair`, the command line |
+| coverage | `coverage.hpp` | which message types crossed the wire, which feature paths were taken |
+
+## The referee
+
+`sim::Referee` watches an endpoint's wire (`Endpoint::SetWireTap`: every
+message as it crosses, either way, before anything is filtered, stamped or
+applied) from one side, host or guest. It keeps its own record of what was
+said (roster, NPCs, holds, lives, seats, items, epochs, digests, requests
+awaiting an answer) and reports each breach with its rule:
+
+- `referee: [rule] text`, a violation: the other game did what the protocol
+  forbids, whatever the network does. Scenarios reject these lines.
+- `referee-hint: [rule] text`: legal on the wire but suspect (a burst, a
+  state held very long). Counted, never a failure by itself.
+
+It is on in every `tandem-peer` mode (findings logged as they come, a
+`referee summary:` at the end), in every `sim` game, and under the whole
+doctest suite (`tests/main.cpp`: every endpoint a test makes is watched
+through `Endpoint::SetCreationHook`, and the findings are listed by test at
+the end, `referee-suite:`; tests break rules on purpose, so it is a report;
+`TANDEM_REFEREE_SUITE=0` turns it off, `=1` also prints examples).
+
+<!-- prettier-ignore -->
+| Rules | Checks |
+| --- | --- |
+| `authority.host-only`, `authority.guest-only` | a guest sending what only the host says (spawns, world, rewards, holds…), the host sending what only a guest asks (strikes, resync requests…) |
+| `authority.not-yours`, `authority.own-state-back`, `authority.misdelivered` | a guest speaking in another player's name; the host sending us our own state; a hit, hack, revive or answer meant for another player |
+| `authority.acting-while-down`, `authority.revive-self`, `authority.revive-not-down` | firing, grabbing or uploading while down or out (after 1.5 s of grace); reviving oneself, or a V that is not down |
+| `authority.vehicle-not-yours`, `authority.accepted-on-dead`, `authority.state-after-gone` (hint) | moving a car while riding in someone else's; the host accepting a takedown on an NPC it said dead; an NPC still in the host's states 3 s after it went |
+| `ids.unknown-npc`, `ids.unknown-player`, `ids.unknown-item`, `ids.unknown-offer`, `ids.reused` | names never announced (an NPC, a player, a world item's stack, a regroup offer); an NPC id announced again as another NPC, or after it went |
+| `oneshot.*` | the second welcome, a state sequence number repeated, a bag dropped twice, a death, a reward, a game over, a quest item or an NPC shot at us twice; one stack to two takers; the same hit byte for byte within 30 ms (hint); more health drops than our hits with nobody else fighting (hint) |
+| `reply.unasked`, `roster.broken` | an answer (takedown reply, upload, pickup, pong) to nothing we asked; a roster without us or the host, with a player twice, or too long |
+| `value.not-finite`, `value.range`, `value.clock` | NaN or infinite numbers; health, poise, damage, factors, tiers, phone actions out of range; a state stamped more than 3 s from the host clock |
+| `rate.over-budget`, `rate.events` (hint), `rate.bytes` (hint), `rate.digest-silent`, `size.over-budget`, `size.state-fragmented` (hint) | states, poses, cars, shots, NPC states, awareness, digests, pings over their budget, more than 6 resync requests in 10 s; a `PlayerState` over 64 bytes; an unreliable message over a datagram; no digest for six digest periods |
+| `digest.diverged`, `digest.resync-loop` | our copy of a domain differing from the host's longer than two digests and a resync take; a guest asking for the same domain four times in a row (our resync does not heal it) |
+| `epoch.backwards`, `epoch.unknown`, `epoch.unacknowledged` | an epoch going back; a guest naming a host epoch we never had; a guest that has not acknowledged our new world within 5 s |
+| `stuck.hold`, `stuck.after-leave`, `stuck.time-effect`, `stuck.revive`, `stuck.life` (hint), `stuck.call` (hint) | a takedown held 30 s; a hold, time bubble or revive of a player that left 2 s ago; slowed time for 3 min; a revive held 30 s; a V down 10 min; a call ringing 2 min |
+
+What it found on the existing loopback tests: "Findings" below.
+
+## The host's world
+
+`sim::HostWorld` runs NPCs with a small behaviour machine: idle, patrol,
+alerted (a noise, a traced hack), combat, cover, staggered (guard broken,
+stunned), flee (civilians), held, unconscious, dead. Each perceives every V
+by distance, its visibility, crouching and camo (meter rising, detection,
+`NpcCue` CombatStart to that player's game, losing them after 8 s unseen);
+ranged NPCs keep their distance and fire in bursts (`NpcShotAt` to a guest,
+whose game decides the hit; `NpcShot` for everyone), melee ones close in
+(`PlayerHit`), netrunners hack guests (`PlayerHack`). It answers guests by
+the real host's rules: strikes by `combat::StrikeLoss` (non-lethal knocks
+out, health and poise, guard broken, wounds, a dead NPC ignores hits),
+effects and uploads (one upload at a time per target, `NpcHackState`
+started, done or failed), takedown requests with the refusals of
+`Takedowns.reds` in their order (gone, held, too far, conditions, not
+yours), slowed NPCs in time bubbles (`sync::TimeBubbles`), the world's time
+and weather, the pause menu, quest items on corpses, bodies cleared after
+40 s, NPCs nobody is near despawned, a new wave a while after the last
+fighter fell, everything rebuilt on a fast travel. It writes protocol
+messages; the endpoint keeps the session's record and its digests from
+them, and `HostWorld::Check` compares the world with that record every
+second (`sim-check:` on a difference).
+
+## The story
+
+`sim::StoryDirector` plays a `.story` file (the `host --story` format of
+`tools/scenarios/story-host.story`) or its own quest (every story message
+once: snapshot, journal, tracked entry, a call, lines, a hub and its pick,
+tiers, a story effect, a private scene, a cinematic, a reward, Johnny, a
+braindance), and adds `await answer|suggest SECS` (the story's clock stops
+until a guest answers the call or suggests an option), `cinematic SECS` and
+`loop SECS`. Rewards go once, to the guests near the host
+(`story::Participation`); a looped quest pays nothing again.
+
+## The simulated V
+
+`sim::SimV` picks goals by its persona's weights among those the scene
+makes possible: follow, wander, fight (ranged or melee, headshots, a
+finisher once the guard broke), hack (upload, then the effect when the
+upload is done), Sandevistan, takedown (grab, takedown or knockout, carry,
+throw, drop or dispose), drive, ride in the partner's car, fast travel
+(epoch, then a regroup offer), regroup, metro, another world (guests), pause
+menu, camo, drop and loot items, go down, hack the partner's car, a grenade,
+dial a call (guests). It answers the session as its game would: hits hurt;
+shots fired at it land by the AI's odds (`ShotHit`); at 0 health it goes
+down when another V is up and out otherwise, down alone for 3 s is out, out
+for 10 s respawns beside its partner; a helper revives a downed partner
+(10 s within 2 m), answers the host's calls and suggests at hubs, picks up
+what others drop, accepts regroup offers. As host, its requests on NPCs go
+to its own world, with no message, as a host's V hits its own NPCs.
+
+`sim::Motion` moves it: real play when there is some (`recordings/play/*.tplay`,
+the game's own V), cut into on-foot clips of 3 s (no car, water, ladder or
+workspot), each laid down where the V stands and turned toward its goal, the
+next stitched where it ended, with the recorded movement flags and stances;
+without recordings (or crouched), a plain walk at the game's speeds (1.5,
+4, 6.5 m/s) with its flags.
+
+## Personas
+
+<!-- prettier-ignore -->
+| Persona | Plays | On the session |
+| --- | --- | --- |
+| `companion` | near its partner (4 m), fights with it, rides with it, revives it | — |
+| `loner` | 400 m away in its own region (as host, sharing the NPCs around itself), drives, fast travels | never comes to regroup offers, never revives |
+| `chaos` | everything, twice as fast; hits right after a world is rebuilt, grabs what just died or someone else holds, lets go early | leaves and joins again every 45 s, half the time with no goodbye; 40 ms, 60 ms jitter, 15% loss, 5% reordered each way |
+| `speedrunner` | fast travel, cars, the metro, Sandevistan | — |
+
+## Running it
+
+- `tandem-peer sim --role host|join [ADDRESS[:PORT]] --persona P --seed N
+--minutes M [--story FILE] [--play-dir DIR] [--pace X] [--no-link]` (or
+  `task sim -- …`): one simulated game against the real one. It logs its
+  goals, the session, the referee's findings and its own checks, and at the
+  end the coverage report and `sim summary: … N violation(s)`; it exits 1 on
+  a violation or a failed check.
+- `tandem-peer sim-fuzz --seeds K [--first N] [--seconds S]` (`task
+sim:fuzz K=50`): K pairs of simulated games in one process over loopback,
+  each seed its own pairing of personas; one coverage report for the lot;
+  fails on any finding.
+- `task test` runs pairs headless (`tests/sim_test.cpp`: companion and
+  companion, companion and chaos, speedrunner and loner, at four times the
+  pace and with short digests) and expects no violation and no failed
+  check.
+- Soak scenarios (`tools/scenarios/soak-guest.sh`, `soak-host.sh`;
+  `PERSONA`, `SEED`, `MINUTES`): the real game against a simulated host or
+  guest for ten minutes.
+
+## Coverage
+
+`sim::Coverage` counts every message type sent and received (from the
+referees) and every feature path the models declare and take (`npc.*`,
+`world.*`, `story.*`, `v.*`, `session.*`). Its report says what a run never
+touched: message types that never crossed either way, feature paths never
+taken.
+
+## Findings
+
+On the existing loopback tests (2026-11-19, the whole suite watched):
+
+- **The host broadcast to every connection**, including ones that had not
+  said Hello: a late joiner heard player 2's epoch before its Welcome and
+  before the roster that brings player 2 (`ids.unknown-player`). Fixed:
+  `Endpoint::Broadcast` on the host sends to the session's players only.
+- What is left is the tests' own doing (they break rules on purpose): NPC
+  7 never announced in the routing tests, forged pause names, answers to
+  regroup offers never made, a revive of a V that is not down, a death
+  sent twice, a third of the host's messages lost (`ids.unknown-npc` for
+  healths whose spawn was lost, `digest.resync-loop`).
+
+Sim against sim (`sim-fuzz`, 8 seeds of 30 s, every persona as host and
+guest): no violation, no failed check; 59 of 72 message types sent, 87 of
+134 feature paths taken (the report lists the rest: rewards come 37 s into
+the default quest, leaves every 45 s).
+
+## Open
+
+- A real host recorded (`.tsession`) as the world model's training data:
+  the sim's NPCs keep the game's enums and rules, not its pacing.
+- The pose stream: the simulated V sends no `PoseState`.
+- Per-player regions: a loner's world is the host's, shared only where the
+  host is.

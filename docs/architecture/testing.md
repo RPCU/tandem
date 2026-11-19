@@ -10,6 +10,8 @@
 | via relay | a real relay process: join by code, fallback from direct, mock players | `task test` (`relay-loopback`) |
 | mock player | `tandem-peer` as host or guest against the real game | `task peer -- host --mode mirror` |
 | consistency | digests, resyncs, epochs, dedupe; convergence with a third lost; vanishing | `task test` |
+| referee | every message each test's endpoints hear, checked against the protocol and authority rules (`referee-suite:`) | `task test` |
+| sim | simulated games against each other, refereed (`sim.md`) | `task test`, `task sim:fuzz` |
 | natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere) | `task natives:check` |
 | scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods | `task scripts:check` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
@@ -41,7 +43,8 @@ combat, a grapple, a body carried, police heat, a menu or the phone open,
 time dilated, health), or `test reset: failed (…)`, which fails the
 scenario. A scenario that needs another spot teleports after it.
 
-`tandem-peer` modes:
+`tandem-peer` modes (in every one the referee checks what the others send,
+`sim.md`; a `referee:` line fails any scenario):
 
 - **mirror** — copies your V back as a second player, offset and optionally
   delayed: your own movements on a puppet, through the whole network path.
@@ -77,6 +80,10 @@ scenario. A scenario that needs another spot teleports after it.
   loop: your own jumps, ladders and swims on the puppet, over the same
   ground.
 - **idle** — connects and reports.
+- **sim** — `tandem-peer sim --role host|join --persona P --seed N
+--minutes M`: a simulated second game that plays (`sim.md`); `sim-fuzz`
+  runs simulated games against each other. Scenarios `soak-guest`,
+  `soak-host`.
 - **watch** — follows the other V 30 m under it (or `--offset`): the
   unseen guest of `--record-session` (`recordings.md`).
 - **play** — `--play FILE` replays a real V's play (a gameplay recording,

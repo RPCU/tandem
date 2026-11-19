@@ -38,6 +38,8 @@ Where things are (`core/`, `plugin/`, `peer/`, `tests/`, `relay/`, `nix/`,
 | `task scripts:check` | compile `scripts/tandem` as the game does (seconds, no game) |
 | `task docs:check`    | doc links and § numbers resolve; no fact lost since HEAD     |
 | `task scenario -- …` | in-game scenarios against the mock player (NAME, all, list)  |
+| `task sim -- …`      | the simulated second game against the real one (`sim.md`)    |
+| `task sim:fuzz K=N`  | N seeds of simulated games against each other, refereed      |
 | `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
 | `task logs`          | follow the plugin's log on the game machine                  |
 
@@ -133,6 +135,11 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   the mock player and checks the game's log; a failure keeps its evidence
   under `.cache/scenarios/`. Add a scenario (`tools/scenarios/*.sh`, a few
   lines) for each feature you verify in game, so it stays verified.
+- **The referee** (`docs/architecture/sim.md`) checks every message the
+  mock player hears against the protocol and the authority table, in every
+  mode: a `referee:` line in its log fails any scenario. A new message or
+  rule gets its referee check (`peer/sim/src/referee.cpp`) and a case in
+  `tests/referee_test.cpp`.
 - **Every scenario starts from `test reset`** (`tools/game.sh test-reset`,
   `scripts/tandem/TestReset.reds`), which `tools/scenario.sh` runs before
   each one: the save loads as the player left it (in a car, mid-mission,

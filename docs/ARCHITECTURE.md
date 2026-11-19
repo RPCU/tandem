@@ -61,7 +61,7 @@ task touches ([Topic files](#topic-files)).
 | --- | --- | --- |
 | `core/` | protocol, transport (ENet), session (`Endpoint`); platform-independent C++23 | both CMake presets |
 | `plugin/` | the RED4ext plugin (`tandem.dll`, Windows x64): entry points, config, net thread | `windows` preset (clang-cl) |
-| `peer/` | `tandem-peer`, the mock player (Linux) | `linux` preset |
+| `peer/` | `tandem-peer`, the mock player (Linux); `peer/sim/`: the simulated second game (`tandem_sim`: referee, world, story, V, personas, coverage) | `linux` preset |
 | `tests/` | doctest unit and loopback tests of `core/` (Linux) | `linux` preset |
 | `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
@@ -272,6 +272,7 @@ plugin") and its open problems.
 - `relay.md`: the relay's sessions, join codes, abuse limits, wire format, deployment, the game side.
 - `testing.md`: test levels, scenarios, every `tandem-peer` mode and flag.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the planned simulated second game.
+- `sim.md`: the simulated second game: the referee on every peer's wire, the host world, story director, simulated V and personas, `tandem-peer sim`, `sim-fuzz`, coverage.
 
 ## Research
 
