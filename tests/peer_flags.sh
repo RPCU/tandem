@@ -35,6 +35,10 @@ declare -A value=(
   ["--region-far"]=1000 ["--region-npcs"]=3 ["--region-record"]=Character.x ["--region-walk-at"]=10
   ["--region-leave-at"]=20 ["--region-speed"]=25
   ["--region-at"]="1,2,3"
+  ["--traffic"]=4 ["--traffic-vehicle"]=Vehicle.x ["--wreck-at"]=10 ["--ram-traffic"]=3 ["--steal-at"]=12
+  ["--heat"]=3 ["--heat-at"]=5 ["--heat-for"]=20 ["--crime-at"]=8
+  ["--hurt"]=4 ["--melee"]=5 ["--menu-at"]=10 ["--react-npcs"]=3
+  ["--hold"]=Items.x ["--holster-at"]=10
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true
 [ -n "$flags" ] || {

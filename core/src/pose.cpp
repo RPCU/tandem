@@ -264,6 +264,30 @@ proto::PoseState FromActor(const proto::ActorPose &pose) {
           .rotations = pose.rotations};
 }
 
+void LeanSpine(Pose &pose, float pitch, float roll) {
+  if (pitch == 0.f && roll == 0.f)
+    return;
+  static const int spine = BoneIndex("Spine1");
+  if (spine < 0)
+    return;
+  // The parent's rotation in model space: the locals down from the root.
+  proto::Quat parent{};
+  std::array<int, kBones> chain{};
+  std::size_t depth = 0;
+  for (int bone = kParents[static_cast<std::size_t>(spine)]; bone >= 0;
+       bone = kParents[static_cast<std::size_t>(bone)])
+    chain[depth++] = bone;
+  while (depth > 0)
+    parent = Multiply(parent, pose.local[static_cast<std::size_t>(chain[--depth])]);
+  // Forward is a turn about X the other way round (+X takes Y to Z: back);
+  // to the right, a turn about +Y (it takes Z to X).
+  const proto::Quat aboutX{std::sin(-pitch / 2.f), 0.f, 0.f, std::cos(-pitch / 2.f)};
+  const proto::Quat aboutY{0.f, std::sin(roll / 2.f), 0.f, std::cos(roll / 2.f)};
+  const auto lean = Multiply(aboutY, aboutX);
+  auto &local = pose.local[static_cast<std::size_t>(spine)];
+  local = Normalized(Multiply(Multiply(Multiply(Conjugate(parent), lean), parent), local));
+}
+
 void PoseTrack::Push(const proto::PoseState &state) {
   // Newest wins; a late or repeated pose is dropped (32-bit wrap-safe).
   if (m_haveSeq && static_cast<std::int32_t>(state.seq - m_lastSeq) <= 0)

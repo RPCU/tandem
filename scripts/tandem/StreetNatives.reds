@@ -1,0 +1,87 @@
+// World vehicles and police: the plugin's natives (plugin/src/street_natives.cpp).
+// Keep the two in sync: tools/check-natives.py checks them with Natives.reds.
+
+// One thing that happened to a shared vehicle, or a crime of our V seen by
+// the area's owner.
+public native struct TandemStreetEvent {
+  // 1 spawn, 2 gone, 3 status, 4 hit (area owner), 5 crime (ours)
+  native let kind: Int32;
+  native let id: Uint32;
+  native let record: TweakDBID;
+  native let appearance: CName;
+  // a placed vehicle's id in its owner's world (the same in ours); else 0
+  native let entity: EntityID;
+  // Where (plain floats: a 16-byte aligned field crashes the script VM).
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let i: Float;
+  native let j: Float;
+  native let k: Float;
+  native let r: Float;
+  // spawn, status: 1 parked, 2 police, 4 destroyed, 8 burning, 16 siren,
+  // 32 lights, 64 panic, 128 abandoned; hit: 1 collision, 2 explosion,
+  // 4 melee; crime: 1 the victim is police, 2 a vehicle
+  native let flags: Int32;
+  // gone: 0 out of range, 1 taken (it is `player`'s car now), 2 removed;
+  // crime: 1 witnessed, 2 combat with the police, 3 damage, 4 kill
+  native let reason: Int32;
+  native let player: Uint32;
+  // status: health 0..1; hit: damage; crime: the share of the victim's health
+  native let amount: Float;
+  // hit: the push given (collision, m/s) or the way it went
+  native let dx: Float;
+  native let dy: Float;
+  native let dz: Float;
+  // crime: the victim or the witness as the host shares it; its attack type
+  native let npc: Uint32;
+  native let attack: Int32;
+}
+
+// One shared vehicle as the session's record has it.
+public native struct TandemStreetCar {
+  native let id: Uint32;
+  native let record: TweakDBID;
+  native let appearance: CName;
+  native let entity: EntityID;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let i: Float;
+  native let j: Float;
+  native let k: Float;
+  native let r: Float;
+  native let flags: Int32;
+  native let health: Float;
+}
+
+public native class TandemStreet extends IScriptable {
+  // A shared vehicle's id: its owner's player id and the owner's counter.
+  public static native func MakeId(owner: Uint32, counter: Uint32) -> Uint32
+  public static native func OwnerOf(id: Uint32) -> Uint32
+  // TandemNative.SendNpcSeat's owner for a seat in a shared vehicle, and back.
+  public static native func SeatOwner(id: Uint32) -> Uint32
+  public static native func IsStreetSeat(owner: Uint32) -> Bool
+  public static native func CarOfSeat(owner: Uint32) -> Uint32
+  // Area owner: its world vehicles.
+  public static native func SendSpawn(id: Uint32, record: TweakDBID, appearance: CName, entity: EntityID, position: Vector4, orientation: Quaternion, flags: Int32)
+  public static native func SendStates(ids: array<Uint32>, positions: array<Vector4>, orientations: array<Quaternion>, velocities: array<Vector4>, viewers: array<Vector4>)
+  public static native func SendGone(id: Uint32, reason: Int32)
+  public static native func SendStatus(id: Uint32, health: Float, flags: Int32)
+  // Anyone: we hit a vehicle another game owns; our V gets into one.
+  public static native func SendHit(id: Uint32, damage: Float, flags: Int32, position: Vector4, impulse: Vector4)
+  public static native func Claim(id: Uint32, seat: CName)
+  public static native func TakeEvents() -> array<TandemStreetEvent>
+  // Where to draw a shared vehicle now (W 0: nothing says).
+  public static native func Position(id: Uint32) -> Vector4
+  public static native func Orientation(id: Uint32) -> Quaternion
+  public static native func Velocity(id: Uint32) -> Vector4
+  public static native func Shared() -> array<TandemStreetCar>
+  public static native func IsShared(id: Uint32) -> Bool
+  // Police: our V's wanted level (0..5) and EStarState; another player's.
+  public static native func SendHeat(stage: Int32, state: Int32)
+  public static native func HeatStage(player: Uint32) -> Int32
+  public static native func HeatState(player: Uint32) -> Int32
+  // Area owner: `player`'s puppet committed a crime here.
+  public static native func SendCrime(player: Uint32, kind: Int32, flags: Int32, attack: Int32, amount: Float, npc: Uint32, car: Uint32, position: Vector4)
+}

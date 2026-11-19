@@ -62,7 +62,16 @@
   dismemberment, every dismemberment request and event (explosion, guts)
   and the crippled and dismembered status effects
   (`TandemOutcomes.KeepsLimbs`; scenario `outcomes-limbs`,
-  `tools/game.sh cmd puppet limbs`). So the real NPC plays its own hit
+  `tools/game.sh cmd puppet limbs`). **The Relic tree**
+  (`research/coop-perks.md` §4, Relic tree) runs on its owner's game
+  through these same paths, with these additions: the marks a guest's arm
+  attacks put on a proxy with no instigator (the Mantis leap's
+  dismemberment, the Gorilla Arms' and grand finale's marks) are forwarded
+  like its hit's other effects and put on the host's NPC even dead (they
+  act on the dead); the host keeps the one-punch slow motion of a guest's
+  mark off its own V and a guest's instant dismemberment's blood off its
+  screen; an instant dismemberment never takes a V; scenario `relic-guest`,
+  `tools/game.sh cmd relic mark`. So the real NPC plays its own hit
   reaction by body part, weak spot and strength (frame damage from the
   puppet's weapon's factors), its wounds and dismemberment; its damage
   history names the guest's puppet (kill credit) and holds the non-lethal

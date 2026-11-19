@@ -43,7 +43,8 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
                       std::is_same_v<M, p::NpcWound> || std::is_same_v<M, p::NpcHackState> ||
                       std::is_same_v<M, p::NpcStatus> || std::is_same_v<M, p::PlayerHit> ||
                       std::is_same_v<M, p::PlayerHack> || std::is_same_v<M, p::NpcCue> ||
-                      std::is_same_v<M, p::NpcShotAt> || std::is_same_v<M, p::NpcActionReply>)
+                      std::is_same_v<M, p::NpcShotAt> || std::is_same_v<M, p::NpcActionReply> ||
+                      std::is_same_v<M, p::NpcReaction>)
           return {x.npc};
         else if constexpr (std::is_same_v<M, p::SharedItem>)
           return x.kind == p::kSharedOnCorpse ? std::vector<p::NpcId>{x.npc}
@@ -57,6 +58,22 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
           return {};
       },
       m);
+}
+
+// A world vehicle its owner speaks for (traffic.md: the owner's id is in it).
+std::optional<p::TrafficId> TrafficOwnedBy(const p::Message &m) {
+  if (const auto *spawn = std::get_if<p::TrafficSpawn>(&m))
+    return spawn->id;
+  if (const auto *status = std::get_if<p::TrafficStatus>(&m))
+    return status->id;
+  return std::nullopt;
+}
+std::optional<p::TrafficId> TrafficAsked(const p::Message &m) {
+  if (const auto *hit = std::get_if<p::TrafficHit>(&m))
+    return hit->id;
+  if (const auto *claim = std::get_if<p::TrafficClaim>(&m))
+    return claim->id;
+  return std::nullopt;
 }
 
 // A request to an NPC's owner (through the host, which stamps the sender).
@@ -101,7 +118,10 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::SharedItem> || std::is_same_v<M, p::Epoch> ||
                            std::is_same_v<M, p::PhoneAction> || std::is_same_v<M, p::PhoneReply> ||
                            std::is_same_v<M, p::ChoiceCursor> || std::is_same_v<M, p::StoryState> ||
-                           std::is_same_v<M, p::RegionHold> || std::is_same_v<M, p::DeviceUse>)
+                           std::is_same_v<M, p::RegionHold> || std::is_same_v<M, p::DeviceUse> ||
+                           std::is_same_v<M, p::Heat> || std::is_same_v<M, p::Presence> ||
+                           std::is_same_v<M, p::Cue> || std::is_same_v<M, p::TrafficHit> ||
+                           std::is_same_v<M, p::TrafficClaim>)
           return &m.player;
         else
           return nullptr;
@@ -314,6 +334,10 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
           break;
         }
       }
+    if (const auto car = TrafficOwnedBy(message); car && p::TrafficOwner(*car) != from)
+      Add("authority.not-owner", std::format("player {} sent {} about vehicle {:#x}, which player "
+                                             "{} runs",
+                                             from, name, *car, p::TrafficOwner(*car)));
     // A guest speaks in its own name only.
     auto stamped = message;
     if (auto *sender = SenderOf(stamped)) {
@@ -358,6 +382,16 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
             std::format("the host sent {} about npc {}, which our game runs", name, npc));
         break;
       }
+  if (const auto car = TrafficAsked(message); car && p::TrafficOwner(*car) != m_self)
+    Add("authority.not-owner", std::format("the host passed us {} for vehicle {:#x}, which player "
+                                           "{} runs",
+                                           name, *car, p::TrafficOwner(*car)));
+  if (const auto car = TrafficOwnedBy(message); car && p::TrafficOwner(*car) == m_self)
+    Add("authority.not-owner",
+        std::format("the host sent {} about vehicle {:#x}, which our game runs", name, *car));
+  if (const auto *crime = std::get_if<p::Crime>(&message); crime && crime->player != m_self)
+    Add("authority.misdelivered",
+        std::format("a crime of player {} came to us (player {})", crime->player, m_self));
   if (const auto *handover = std::get_if<p::NpcHandover>(&message);
       handover && OwnerOf(handover->npc) != m_self)
     Add("authority.not-owner", std::format("the host asks us to hand over npc {}, which player {} "
@@ -442,8 +476,25 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
                                 m.effects.size() <= p::kMaxNpcEffects);
         } else if constexpr (std::is_same_v<M, p::SceneCast>) {
           inRange = m.actors.size() <= p::kMaxSceneActors;
-        } else if constexpr (std::is_same_v<M, p::ActorPose>) {
+        } else if constexpr (std::is_same_v<M, p::ActorPose> ||
+                             std::is_same_v<M, p::TrafficStates>) {
           timeUs = m.timeUs;
+        } else if constexpr (std::is_same_v<M, p::TrafficStatus>) {
+          finite = std::isfinite(m.health);
+          inRange = !finite || (m.health >= 0.f && m.health <= 1.001f);
+        } else if constexpr (std::is_same_v<M, p::TrafficHit>) {
+          finite = std::isfinite(m.damage) && Finite(m.position) && Finite(m.impulse);
+          inRange = !finite || m.damage >= 0.f;
+        } else if constexpr (std::is_same_v<M, p::TrafficSpawn>) {
+          finite = Finite(m.position) && Finite(m.orientation);
+        } else if constexpr (std::is_same_v<M, p::Crime>) {
+          finite = std::isfinite(m.amount) && Finite(m.position);
+          inRange = !finite || (m.amount >= 0.f && m.amount <= 1.001f);
+        } else if constexpr (std::is_same_v<M, p::Heat>) {
+          inRange = m.stage <= p::kMaxHeat;
+        } else if constexpr (std::is_same_v<M, p::NpcReaction>) {
+          finite = std::isfinite(m.angle) && Finite(m.way);
+          inRange = m.type <= p::kReactionMax;
         }
       },
       message);
@@ -546,6 +597,10 @@ void Referee::CheckSequence(p::PlayerId from, const p::Message &message) {
     seq = {vehicle->player, vehicle->seq};
   else if (const auto *shot = std::get_if<p::Shot>(&message))
     seq = {shot->player, shot->seq};
+  else if (const auto *cue = std::get_if<p::Cue>(&message))
+    seq = {cue->player, cue->seq};
+  else if (const auto *cars = std::get_if<p::TrafficStates>(&message))
+    seq = {from, cars->seq};
   // Each owner numbers its NPCs' states (a host its own and those it relays).
   else if (const auto *npcs = std::get_if<p::NpcStates>(&message))
     seq = {from, npcs->seq};

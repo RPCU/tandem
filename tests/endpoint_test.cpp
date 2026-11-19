@@ -1883,3 +1883,124 @@ TEST_CASE(
   CHECK(atHost->player == a->You()); // a guest only reports its own V
   CHECK(atHost->npc == 7);
 }
+
+TEST_CASE("presence reaches everyone, stamped, and late joiners; cues are relayed, never kept") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  // Set before joining: sent once in.
+  guest->SetLocalPresence({.player = 99, .health = 200});
+  host->SetLocalPresence({.health = 255, .flags = proto::kPresenceMenu});
+  std::optional<proto::Presence> atHost, atGuest;
+  std::optional<proto::Cue> cueAtHost;
+  bool cued = false;
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1 && guest->IsJoined() && !cued) {
+      guest->SendLocalCue(
+          {.player = 99, .kind = proto::CueKind::Trace, .arg = 2, .at = {1.f, 2.f, 3.f}});
+      cued = true;
+    }
+    for (const auto &event : events) {
+      if (const auto *p = std::get_if<events::RemotePresence>(&event))
+        (i == 0 ? atHost : atGuest) = p->presence;
+      if (const auto *c = std::get_if<events::RemoteCue>(&event); c && i == 0)
+        cueAtHost = c->cue;
+    }
+    return atHost && atGuest && cueAtHost;
+  }));
+  CHECK(atHost->player == guest->You()); // a guest only speaks for its own V
+  CHECK(atHost->health == 200);
+  CHECK(atGuest->player == host->You());
+  CHECK(atGuest->flags == proto::kPresenceMenu);
+  CHECK(cueAtHost->player == guest->You());
+  CHECK(cueAtHost->kind == proto::CueKind::Trace);
+  CHECK(cueAtHost->at == proto::Vec3{1.f, 2.f, 3.f});
+  CHECK(host->Presences().at(guest->You()).health == 200);
+  CHECK(guest->Presences().at(host->You()).flags == proto::kPresenceMenu);
+
+  // A change reaches the host; a repeat of it says nothing new.
+  guest->SetLocalPresence({.health = 90, .flags = proto::kPresenceCombat});
+  int changes = 0;
+  PumpFor({host.get(), guest.get()}, 150ms, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *p = std::get_if<events::RemotePresence>(&event); p && i == 0) {
+        ++changes;
+        atHost = p->presence;
+      }
+  });
+  CHECK(changes == 1);
+  CHECK(atHost->health == 90);
+
+  // A later guest gets both presences, and the first guest's cue is relayed
+  // to it as it happens; the old cue is never replayed.
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::map<proto::PlayerId, proto::Presence> atLate;
+  std::vector<proto::Cue> lateCues;
+  bool second = false;
+  REQUIRE(Pump({host.get(), guest.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (late->IsJoined() && atLate.size() == 2 && !second) {
+      guest->SendLocalCue({.kind = proto::CueKind::MeleeHit, .at = {7.f, 8.f, 9.f}});
+      second = true;
+    }
+    for (const auto &event : events)
+      if (i == 2) {
+        if (const auto *p = std::get_if<events::RemotePresence>(&event))
+          atLate[p->presence.player] = p->presence;
+        if (const auto *c = std::get_if<events::RemoteCue>(&event))
+          lateCues.push_back(c->cue);
+      }
+    return atLate.size() == 2 && !lateCues.empty();
+  }));
+  CHECK(atLate.at(guest->You()).health == 90);
+  CHECK(atLate.at(host->You()).flags == proto::kPresenceMenu);
+  REQUIRE(lateCues.size() == 1);
+  CHECK(lateCues[0].kind == proto::CueKind::MeleeHit);
+  CHECK(lateCues[0].player == guest->You());
+
+  // The guest leaves: its presence goes with it.
+  const auto gone = guest->You();
+  guest->Leave();
+  REQUIRE(Pump({host.get(), guest.get(), late.get()}, [&](std::size_t, const auto &) {
+    return !host->Presences().contains(gone) && !late->Presences().contains(gone);
+  }));
+}
+
+TEST_CASE("an NPC's hit reactions reach the guests' proxies; only the host sends them") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  std::vector<proto::NpcReaction> heard;
+  bool sent = false, hostHeard = false;
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    if (guest->IsJoined() && !sent) {
+      sent = true;
+      // An NPC never announced (9) is dropped; a guest owns no NPC.
+      host->SendNpcReaction({.npc = 9, .type = proto::kReactionDeath});
+      host->SendNpcReaction(
+          {.npc = 7, .by = guest->You(), .type = 5, .direction = 3, .angle = 12.f});
+      host->SendNpcReaction({.npc = 7, .type = proto::kReactionDeath, .way = {0.f, 1.f, 0.f}});
+      guest->SendNpcReaction({.npc = 7, .type = 3});
+    }
+    for (const auto &event : events) {
+      if (const auto *r = std::get_if<events::HostNpcReaction>(&event); r && i == 1)
+        heard.push_back(r->reaction);
+      hostHeard |= i == 0 && Has<events::HostNpcReaction>(events);
+    }
+    return heard.size() == 2;
+  }));
+  // Reliable and in order: the knockdown, then the death.
+  CHECK(heard[0].type == 5);
+  CHECK(heard[0].by == guest->You());
+  CHECK(heard[0].angle == 12.f);
+  CHECK(heard[1].type == proto::kReactionDeath);
+  CHECK(heard[1].way == proto::Vec3{0.f, 1.f, 0.f});
+  CHECK_FALSE(hostHeard);
+}

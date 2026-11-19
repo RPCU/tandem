@@ -75,6 +75,12 @@ proto::Quat Slerp(const proto::Quat &a, const proto::Quat &b, float t);
 // Angle between two rotations, radians.
 float Angle(const proto::Quat &a, const proto::Quat &b);
 
+// Leans the upper body (from Spine1 up) by `pitch` forward and `roll` to
+// its right, radians, about the body's own axes (model space: X right, Y
+// forward, Z up), whatever the pose: a hit puppet's flinch (presence.hpp).
+// The hips and legs stay where they are.
+void LeanSpine(Pose &pose, float pitch, float roll);
+
 // A remote player's recent poses, drawn at a moment in the past (the same
 // delay as their position, see interpolation.hpp) between the two around it.
 // Past the newest pose it is held.

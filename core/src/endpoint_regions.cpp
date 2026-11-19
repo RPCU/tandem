@@ -651,6 +651,14 @@ bool Endpoint::OnOwnerMessage(net::PeerId peer, proto::PlayerId player,
               out.push_back(events::HostNpcAnims{std::move(known)});
             return true;
           },
+          [&](const proto::NpcReaction &reaction) {
+            if (!owns(reaction.npc))
+              return true;
+            ShareNpc(reaction, player, peer);
+            if (here)
+              out.push_back(events::HostNpcReaction{reaction});
+            return true;
+          },
           [&](const proto::NpcShot &shot) {
             if (!owns(shot.npc))
               return true;

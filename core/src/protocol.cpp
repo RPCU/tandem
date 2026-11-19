@@ -61,7 +61,7 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *hold = std::get_if<NpcHold>(&message); hold && hold->how > NpcHoldKind::Finisher)
     return std::nullopt;
   if (const auto *cue = std::get_if<NpcCue>(&message);
-      cue && (cue->cue < NpcCueKind::CombatStart || cue->cue > NpcCueKind::PoiseBroken))
+      cue && (cue->cue < NpcCueKind::CombatStart || cue->cue > NpcCueKind::OutOfSight))
     return std::nullopt;
   if (const auto *regroup = std::get_if<Regroup>(&message);
       regroup && regroup->label.size() > kMaxRegroupLabel)
@@ -107,13 +107,36 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *given = std::get_if<NpcHandoverState>(&message);
       given && given->effects.size() > kMaxNpcEffects)
     return std::nullopt;
+  if (const auto *cars = std::get_if<TrafficStates>(&message);
+      cars && cars->cars.size() > kMaxTrafficPerState)
+    return std::nullopt;
+  if (const auto *set = std::get_if<TrafficSet>(&message); set && set->ids.size() > kMaxTrafficSet)
+    return std::nullopt;
+  if (const auto *gone = std::get_if<TrafficGone>(&message); gone && gone->reason > kTrafficRemoved)
+    return std::nullopt;
+  if (const auto *heat = std::get_if<Heat>(&message);
+      heat && (heat->stage > kMaxHeat || heat->state > HeatState::Blinking))
+    return std::nullopt;
+  if (const auto *crime = std::get_if<Crime>(&message);
+      crime && (crime->kind < CrimeKind::Witness || crime->kind > CrimeKind::Kill))
+    return std::nullopt;
+  if (const auto *cue = std::get_if<Cue>(&message);
+      cue && (cue->kind < CueKind::Trace || cue->kind > CueKind::MeleeHit))
+    return std::nullopt;
+  if (const auto *reaction = std::get_if<NpcReaction>(&message);
+      reaction && reaction->type > kReactionMax)
+    return std::nullopt;
   return message;
 }
 
 Channel ChannelOf(const Message &message) {
   if (const auto *journal = std::get_if<Journal>(&message); journal && journal->snapshot)
     return Channel::Bulk;
-  return std::holds_alternative<PlayerState>(message) ||
+  // A twitch is one of many; the reactions that change how an NPC stands
+  // (a knockdown, a death, a ragdoll) must arrive.
+  if (const auto *reaction = std::get_if<NpcReaction>(&message))
+    return reaction->type == kReactionTwitch ? Channel::State : Channel::Event;
+  return std::holds_alternative<PlayerState>(message) || std::holds_alternative<Cue>(message) ||
                  std::holds_alternative<PoseState>(message) ||
                  std::holds_alternative<Shot>(message) ||
                  std::holds_alternative<VehicleState>(message) ||
@@ -121,7 +144,8 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<NpcAwareness>(message) ||
                  std::holds_alternative<Noise>(message) ||
                  std::holds_alternative<NpcShot>(message) ||
-                 std::holds_alternative<ActorPose>(message)
+                 std::holds_alternative<ActorPose>(message) ||
+                 std::holds_alternative<TrafficStates>(message)
              ? Channel::State
              // Everything else is reliable and ordered, the consistency
              // messages too (Digest, ResyncRequest, NpcSet, Epoch): a digest
@@ -231,7 +255,19 @@ const char *NameOf(const Message &message) {
                                    "NpcHandoverState",
                                    "NpcHandoverDone",
                                    "OwnedDigest",
-                                   "RegionHold"};
+                                   "RegionHold",
+                                   "TrafficSpawn",
+                                   "TrafficStates",
+                                   "TrafficGone",
+                                   "TrafficStatus",
+                                   "TrafficHit",
+                                   "TrafficClaim",
+                                   "TrafficSet",
+                                   "Heat",
+                                   "Crime",
+                                   "Presence",
+                                   "Cue",
+                                   "NpcReaction"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

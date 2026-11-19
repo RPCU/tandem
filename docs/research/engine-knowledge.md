@@ -24,7 +24,8 @@ was copied; each fact names where it came from.
 **Tags**: [2.5-verified] = NCO notes say it ran on 2.5, or CW uses it today; [2.31-only] = decoded/used
 on 2.31 and not re-verified (or known different) on 2.5; [broken-on-2.5] = recorded as crashing/failing
 on 2.5; [unverified] = built, never proven live; [2.5-untested] = read from the 2.50 game's own
-scripts, not yet run in game.
+scripts, not yet run in game; [to-hear] / [to-see] = built, only a person in the game can tell
+whether it sounds or looks right; [native] = decided inside the engine, no script lever found.
 
 **The 2.31→2.5 rule NCO learned the hard way** (`code/client/Game/CharacterCustomizationSystem.h:111-119`):
 "Every raw offset, hand-numbered vtable slot and engine-struct mimic in the client was decoded on 2.31
@@ -39,58 +40,63 @@ The facts live in `engine/<File>`; section numbers are unchanged, so a
 citation such as "§13.19" is found through this table. Numbers given twice
 (13.12, 13.15, 13.17) are told apart by their titles.
 
-| §     | Title                                                           | File              |
-| ----- | --------------------------------------------------------------- | ----------------- |
-| 1     | Networking stack and protocol                                   | `networking.md`   |
-| 2     | Spawning remote player puppets                                  | `puppets.md`      |
-| 3     | Moving puppets — every method tried                             | `puppets.md`      |
-| 4     | Animation                                                       | `animation.md`    |
-| 5     | Appearance / character customization                            | `appearance.md`   |
-| 6     | Vehicles                                                        | `vehicles.md`     |
-| 7     | Quests / facts / scenes (campaign fork + NCO)                   | `story.md`        |
-| 8     | Combat / NPC / damage                                           | `combat.md`       |
-| 9     | HUD / UI / archives / tweaks / saves / Steam                    | `ui.md`           |
-| 10    | Build gotchas (NCO, Windows/MSVC)                               | `build.md`        |
-| 11    | Address-hash table                                              | `build.md`        |
-| 12    | tandem's own measurements                                       | `measurements.md` |
-| 12.1  | V's body for a remote player                                    | `measurements.md` |
-| 13    | Reverse engineering of the running game                         | `re.md`           |
-| 13.1  | RTTI, as the game holds it                                      | `re.md`           |
-| 13.2  | Animation: from an entity to its pose                           | `animation.md`    |
-| 13.3  | Animation: where a frame's pose is produced                     | `animation.md`    |
-| 13.3b | The whole per-entity animation job                              | `animation.md`    |
-| 13.4  | What V's entity is made of                                      | `appearance.md`   |
-| 13.5  | NCO's hand-numbered slots, checked against 2.50                 | `re.md`           |
-| 13.6  | Moving a vehicle we do not simulate                             | `vehicles.md`     |
-| 13.7  | Naming NPCs across games                                        | `npcs.md`         |
-| 13.8  | Crashes that look like freezes, and three ways to cause them    | `re.md`           |
-| 13.9  | A guest's own NPCs off                                          | `npcs.md`         |
-| 13.10 | Damage to an NPC another game owns                              | `combat.md`       |
-| 13.11 | Host NPCs against a guest's puppet                              | `combat.md`       |
-| 13.13 | Calling a script static function from the plugin                | `re.md`           |
-| 13.12 | The car radio and the pocket radio                              | `vehicles.md`     |
-| 13.17 | Attitude groups and a puppet's record traits                    | `npcs.md`         |
-| 13.12 | Splitting a hit between the attacker's game and the target's    | `combat.md`       |
-| 13.12 | Combat state, detection and stealth for a guest                 | `stealth.md`      |
-| 13.14 | Quickhacks between games                                        | `combat.md`       |
-| 13.15 | Quest phases: making a node wait                                | `story.md`        |
-| 13.16 | Story levers in the scripts                                     | `story.md`        |
-| 13.15 | Time dilation in a shared world                                 | `time.md`         |
-| 13.17 | Takedowns, finishers, carried bodies and "the player" reactions | `stealth.md`      |
-| 13.18 | Fast travel and regroup                                         | `travel.md`       |
-| 13.19 | Loot: corpses, dropped items, quest items                       | `loot.md`         |
-| 13.20 | Down, revive, respawn: the levers                               | `revive.md`       |
-| 13.21 | An NPC's animation state, for a brain-off proxy                 | `npcs.md`         |
-| 13.22 | Every way a V moves: the signals, and NPC bodies in water       | `puppets.md`      |
-| 13.23 | Scenes: what kind, from the game's data                         | `story.md`        |
-| 13.24 | A hit's whole outcome                                           | `combat.md`       |
-| 13.25 | The main menu and the pause menu, for a co-op entry             | `ui.md`           |
-| 13.26 | Other worlds: cyberspace, braindances, replacers                | `elsewhere.md`    |
-| 13.27 | The NCART metro, rides and quest vehicles                       | `transit.md`      |
-| 13.28 | Firing an NPC's shot from a proxy                               | `combat.md`       |
-| 13.29 | What a quest's completion is made of, and what quests test      | `story.md`        |
-| 13.30 | Devices and world objects                                       | `devices.md`      |
-| 13.31 | Per-player regions: brains, state, pins, crowd                  | `regions.md`      |
+| §     | Title                                                           | File                |
+| ----- | --------------------------------------------------------------- | ------------------- |
+| 1     | Networking stack and protocol                                   | `networking.md`     |
+| 2     | Spawning remote player puppets                                  | `puppets.md`        |
+| 3     | Moving puppets — every method tried                             | `puppets.md`        |
+| 4     | Animation                                                       | `animation.md`      |
+| 5     | Appearance / character customization                            | `appearance.md`     |
+| 6     | Vehicles                                                        | `vehicles.md`       |
+| 7     | Quests / facts / scenes (campaign fork + NCO)                   | `story.md`          |
+| 8     | Combat / NPC / damage                                           | `combat.md`         |
+| 9     | HUD / UI / archives / tweaks / saves / Steam                    | `ui.md`             |
+| 10    | Build gotchas (NCO, Windows/MSVC)                               | `build.md`          |
+| 11    | Address-hash table                                              | `build.md`          |
+| 12    | tandem's own measurements                                       | `measurements.md`   |
+| 12.1  | V's body for a remote player                                    | `measurements.md`   |
+| 13    | Reverse engineering of the running game                         | `re.md`             |
+| 13.1  | RTTI, as the game holds it                                      | `re.md`             |
+| 13.2  | Animation: from an entity to its pose                           | `animation.md`      |
+| 13.3  | Animation: where a frame's pose is produced                     | `animation.md`      |
+| 13.3b | The whole per-entity animation job                              | `animation.md`      |
+| 13.4  | What V's entity is made of                                      | `appearance.md`     |
+| 13.5  | NCO's hand-numbered slots, checked against 2.50                 | `re.md`             |
+| 13.6  | Moving a vehicle we do not simulate                             | `vehicles.md`       |
+| 13.7  | Naming NPCs across games                                        | `npcs.md`           |
+| 13.8  | Crashes that look like freezes, and three ways to cause them    | `re.md`             |
+| 13.9  | A guest's own NPCs off                                          | `npcs.md`           |
+| 13.10 | Damage to an NPC another game owns                              | `combat.md`         |
+| 13.11 | Host NPCs against a guest's puppet                              | `combat.md`         |
+| 13.13 | Calling a script static function from the plugin                | `re.md`             |
+| 13.12 | The car radio and the pocket radio                              | `vehicles.md`       |
+| 13.17 | Attitude groups and a puppet's record traits                    | `npcs.md`           |
+| 13.12 | Splitting a hit between the attacker's game and the target's    | `combat.md`         |
+| 13.12 | Combat state, detection and stealth for a guest                 | `stealth.md`        |
+| 13.14 | Quickhacks between games                                        | `combat.md`         |
+| 13.15 | Quest phases: making a node wait                                | `story.md`          |
+| 13.16 | Story levers in the scripts                                     | `story.md`          |
+| 13.15 | Time dilation in a shared world                                 | `time.md`           |
+| 13.17 | Takedowns, finishers, carried bodies and "the player" reactions | `stealth.md`        |
+| 13.18 | Fast travel and regroup                                         | `travel.md`         |
+| 13.19 | Loot: corpses, dropped items, quest items                       | `loot.md`           |
+| 13.20 | Down, revive, respawn: the levers                               | `revive.md`         |
+| 13.21 | An NPC's animation state, for a brain-off proxy                 | `npcs.md`           |
+| 13.22 | Every way a V moves: the signals, and NPC bodies in water       | `puppets.md`        |
+| 13.23 | Scenes: what kind, from the game's data                         | `story.md`          |
+| 13.24 | A hit's whole outcome                                           | `combat.md`         |
+| 13.25 | The main menu and the pause menu, for a co-op entry             | `ui.md`             |
+| 13.26 | Other worlds: cyberspace, braindances, replacers                | `elsewhere.md`      |
+| 13.27 | The NCART metro, rides and quest vehicles                       | `transit.md`        |
+| 13.28 | Firing an NPC's shot from a proxy                               | `combat.md`         |
+| 13.29 | What a quest's completion is made of, and what quests test      | `story.md`          |
+| 13.30 | Devices and world objects                                       | `devices.md`        |
+| 13.31 | Per-player regions: brains, state, pins, crowd                  | `regions.md`        |
+| 13.32 | Traffic and world vehicles                                      | `traffic-police.md` |
+| 13.33 | Police: the prevention system                                   | `traffic-police.md` |
+| 13.34 | Traffic and police: open questions (need the game)              | `traffic-police.md` |
+| 13.35 | Presence: a remote V seen and heard                             | `presence.md`       |
+| 13.36 | The Relic tree's levers                                         | `combat.md`         |
 
 ## Top traps (one line each)
 

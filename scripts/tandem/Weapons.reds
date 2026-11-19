@@ -13,6 +13,8 @@ protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: r
     if IsDefined(weapon) {
       // gamedataFxAction: Shoot 16, SilencedShoot 17
       TandemNative.SendShot(false, weapon.IsSilenced() ? 17 : 16);
+      // Where it ended: the others draw the bullet (Presence.reds).
+      TandemPresenceSync.ShotFired(scriptInterface.executionOwner, weapon, false);
     }
   }
 }
@@ -85,6 +87,15 @@ public abstract class TandemWeapons {
       weapon.AI_PlayMeleeAttackSound(effect == 201);
     } else {
       WeaponObject.TriggerWeaponEffects(weapon, IntEnum<gamedataFxAction>(effect));
+      // What the game pushes with an NPC's shot and reload besides the
+      // effects (AIWeapon.Fire, final.reds:173344; the reload action,
+      // 438285): the weapon's own animation event, which its sounds and
+      // moving parts hang on.
+      if effect == 15 || effect == 16 || effect == 17 {
+        AnimationControllerComponent.PushEventToReplicate(weapon, n"Shoot");
+      } else if effect == 5 {
+        AnimationControllerComponent.PushEventToReplicate(weapon, n"Reload");
+      }
     }
   }
 }

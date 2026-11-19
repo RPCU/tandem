@@ -30,6 +30,11 @@ public class TandemStorySystem extends ScriptableSystem {
 
   // Host: the journal snapshot is owed (sent once the world plays), and the
   // changes since the last tick, sent together.
+  // Every other player's scene tier and story flags as last heard (the
+  // party HUD's "in a scene": PartyHud.reds).
+  private let m_tierPlayers: array<Uint32>;
+  private let m_tiers: array<Int32>;
+  private let m_tierFlags: array<Int32>;
   private let m_snapshotOwed: Bool;
   private let m_changedHashes: array<Uint32>;
   private let m_changedStates: array<Int32>;
@@ -240,6 +245,29 @@ public class TandemStorySystem extends ScriptableSystem {
     return this.m_you;
   }
 
+  private func NoteTier(player: Uint32, tier: Int32, flags: Int32) -> Void {
+    let i = ArrayFindFirst(this.m_tierPlayers, player);
+    if i < 0 {
+      ArrayPush(this.m_tierPlayers, player);
+      ArrayPush(this.m_tiers, tier);
+      ArrayPush(this.m_tierFlags, flags);
+    } else {
+      this.m_tiers[i] = tier;
+      this.m_tierFlags[i] = flags;
+    }
+  }
+
+  // A player's GameplayTier (1..5; 0: never heard) and its kStory* flags.
+  public func TierOf(player: Uint32) -> Int32 {
+    let i = ArrayFindFirst(this.m_tierPlayers, player);
+    return i < 0 ? 0 : this.m_tiers[i];
+  }
+
+  public func StoryFlagsOf(player: Uint32) -> Int32 {
+    let i = ArrayFindFirst(this.m_tierPlayers, player);
+    return i < 0 ? 0 : this.m_tierFlags[i];
+  }
+
   public func HostPlayer() -> Uint32 {
     return this.m_host;
   }
@@ -372,6 +400,7 @@ public class TandemStorySystem extends ScriptableSystem {
           this.m_dialogue.OnEvent(event);
           break;
         case 40:
+          this.NoteTier(event.player, event.state, event.flags);
           if event.player == this.m_host && !this.m_isHost {
             this.m_hostTier = event.state;
             this.OnHostFlags(event.flags);
