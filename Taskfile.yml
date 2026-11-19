@@ -89,6 +89,18 @@ tasks:
       - rsync --protect-args -rt --delete scripts/tandem/ "{{.GAME_HOST}}:{{.SCRIPTS_DIR}}/"
       - rsync --protect-args -rt --delete tweaks/tandem/ "{{.GAME_HOST}}:{{.TWEAKS_DIR}}/"
 
+  package:
+    desc: "Release for players: build/package/tandem-<build>.zip (the game's layout) and its symbols zip"
+    deps: [build:plugin]
+    cmds:
+      - task: package:files
+
+  package:files:
+    desc: "package without building: the DLL already in build/ (tools/build.sh brought it)"
+    deps: [natives:check, scripts:check]
+    cmds:
+      - python3 tools/package.py {{.CLI_ARGS}}
+
   reload:
     desc: "Send scripts and tweaks to the running game and hot-reload them (RedHotTools); no restart"
     deps: [scripts:check]
