@@ -92,6 +92,11 @@ public abstract class TandemCombat {
     if AttackData.IsDoT(hitEvent.attackData) {
       return false;
     }
+    // A device's (a turret, a mine, a barrel going up): the player's own
+    // game runs its copy of the device against its own V (Devices.reds).
+    if TandemDevices.IsDeviceHit(hitEvent) {
+      return false;
+    }
     let from = hitEvent.attackData.GetInstigator();
     return !IsDefined(from) || (!from.IsPlayer() && TandemCombat.PuppetPlayer(game, from) == 0u);
   }
@@ -287,7 +292,9 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
   }
   let instigator = hitEvent.attackData.GetInstigator();
   let outcomes = TandemOutcomes.Of(game);
-  if damage > 0.0 && IsDefined(instigator) && instigator.IsPlayer() && IsDefined(outcomes) {
+  // A device's blast our V set off: the host's copy of it does the damage
+  // to the real NPC (Devices.reds), ours shows it only.
+  if damage > 0.0 && IsDefined(instigator) && instigator.IsPlayer() && IsDefined(outcomes) && !TandemDevices.IsDeviceHit(hitEvent) {
     // Sent when its pipeline ends, with the poise it took (Outcomes.reds).
     outcomes.Measured(hitEvent, npc, damage, TandemOutcomes.StrikeFlags(hitEvent, damage, TandemCombat.Health(game, hitEvent.target)));
     let xp = TandemCombat.AwardDamageExperience(game, hitEvent, damage);
