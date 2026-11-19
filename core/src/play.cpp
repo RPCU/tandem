@@ -285,7 +285,11 @@ bool KeepsSession(const proto::Message &message) {
                  std::is_same_v<M, proto::NpcActionReply> ||
                  std::is_same_v<M, proto::RegroupAnswer> || std::is_same_v<M, proto::GameOver> ||
                  std::is_same_v<M, proto::WorldItemTaken> ||
-                 std::is_same_v<M, proto::PhoneAction> || std::is_same_v<M, proto::PhoneReply>);
+                 // Devices: the host's words are kept; the rest is the old
+                 // session's bookkeeping.
+                 std::is_same_v<M, proto::DeviceUse> || std::is_same_v<M, proto::DeviceSet> ||
+                 std::is_same_v<M, proto::DeviceDigest> || std::is_same_v<M, proto::PhoneAction> ||
+                 std::is_same_v<M, proto::PhoneReply>);
       },
       message);
 }
@@ -399,6 +403,14 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
           return host(m.dropper);
         } else if constexpr (std::is_same_v<M, proto::SharedItem>) {
           return host(m.player);
+        } else if constexpr (std::is_same_v<M, proto::DeviceState>) {
+          // The host's word on a device (never a guest's question): ours
+          // to say again, by whoever of this session did it.
+          if (m.how == proto::kDeviceAsk)
+            return false;
+          if (!player(m.by))
+            m.by = proto::kNoPlayer;
+          return true;
         } else if constexpr (std::is_same_v<M, proto::World> ||
                              std::is_same_v<M, proto::NpcSpawn> ||
                              std::is_same_v<M, proto::NpcHealth> ||
@@ -479,6 +491,8 @@ void ApplyHost(Endpoint &endpoint, const proto::Message &message, proto::PlayerI
           endpoint.DropWorldItem(m);
         else if constexpr (std::is_same_v<M, proto::SharedItem>)
           endpoint.SendSharedItem(m);
+        else if constexpr (std::is_same_v<M, proto::DeviceState>)
+          endpoint.ReportDevice(m);
       },
       message);
 }
