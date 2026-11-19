@@ -329,3 +329,59 @@ visible, transitionTime)` (final.reds:14006, a
   vendor chat, Judy's or Panam's romance scenes, a main quest scene with
   Judy (must be important); the category of a few known scenes.
   [2.5-untested]
+
+### 13.29 What a quest's completion is made of, and what quests test (2026-11-19, scripts, SDK and RTTI read)
+
+For `docs/architecture/quest-carryover.md`. Nothing here was run.
+
+- Quest kinds: `gameJournalQuestType` = MainQuest 0, SideQuest 1,
+  MinorQuest 2, StreetStory 3 (gigs), CyberPsycho 4, Contract 5,
+  VehicleQuest 6, ApartmentQuest 7, CourierQuest 8, CourierSideQuest 9
+  (final.reds:7102); `JournalManager.GetQuestType(entry)` (:196627 class).
+  [2.5-verified offline]
+- **Quests test the player's inventory.** `questInventory_ConditionType`
+  has `isPlayer`, `itemID` (a TweakDBID), `itemTag` (a CName), `quantity`
+  and a comparison; `questInventoryDuplicate_ConditionType` an `itemID`;
+  the quests system also has inventory listeners
+  (`questObjectInventoryListener`, `questObjectItemListener`). Quest nodes
+  add and remove items (`questAddRemoveItem_NodeTypeParams`: `isPlayer`,
+  `itemID`, `quantity`, `removeAllQuantity`, `tagToRemove`) and set item
+  tags (`questSetItemTags_NodeType`). So an item, or any item with a tag,
+  in a V's inventory can satisfy a quest condition of that V's own story.
+  [SDK structs; classes in `rtti-vtables-2.50.tsv`]
+- Quest items are the tag `Quest` (`itemData.HasTag(n"Quest")`,
+  final.reds:52919, :68485; the tag is dynamic: crafting removes it,
+  :70795); iconics are `RPGManager.IsItemIconic` (:35655).
+  [2.5-verified offline]
+- Rewards: `RPGManager.GiveReward` gives the record's items, XP, money and
+  **achievements** (`SendAddAchievementRequest`, :37606) to the local
+  player. Some script rewards count facts on the way
+  (`prologue_ma_done`, `prologue_sts_done` before `q005_done`, :37349-37386;
+  gig rewards are recognised by the record name `sts_…`, :37546).
+  [2.5-verified offline]
+- Open-world completion state: an NCPD hustle's is its point-of-interest
+  mappin's phase (`gamedataMappinPhase`: CompletedPhase 0, DefaultPhase 1,
+  DiscoveredPhase 2, UndiscoveredPhase 3; final.reds:1327) plus its
+  community and containers, all modelled by Codeware's `OpenWorldSystem`
+  (`CW src/App/World/OpenWorldSystem.cpp`), which resets one; the mappin
+  phase has no script setter (`Raw::MappinSystem::SetPoiMappinPhase`,
+  `CW src/Red/MappinSystem.hpp`). A gig is a quest phase: its journal
+  entries and facts can be set by script, its graph position cannot (no
+  script or Codeware call moves a phase; Codeware's `StopPhase` /
+  `RestartPhase` vfuncs are commented out, `CW src/Red/QuestsSystem.hpp`).
+  [C] [I]
+- District and fixer progress shown in the UI:
+  `JournalManager.GetMetaQuestData(gamedataMetaQuest)` →
+  `JournalMetaQuestScriptedData{hidden, percent, text}` (:196722, :319408);
+  what feeds it is native. [2.5-verified offline for the API; the source
+  of the percentage is unknown]
+- Vehicles are unlocked by `VehicleSystem.EnablePlayerVehicle(vehicle,
+enable)` (:189919), called by quest nodes, not by reward records: a
+  guest paid a reward record gets no car from it. [I]
+- Phantom Liberty: `IsEP1()` (:223600), `JournalManager.IsEp1Entry(entry)`
+  (:196693). The point of no return is a save type
+  (`inkSaveType.PointOfNoReturn`, :8239) and a reward screen
+  (`UI_PointOfNoReturnRewardScreen`, :315025). [2.5-verified offline]
+- To check in game (spikes C1a, C1b of the carry-over design): a hustle
+  marked done from outside stays done across a save and load; a gig whose
+  end facts are set finishes through its own graph. [2.5-untested]
