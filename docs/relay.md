@@ -360,6 +360,49 @@ configMapGenerator:
   should work. A relay on its own can run `--peers <its public ip:port>
 --front :27461` for that alone.
 
+### Behind kgateway
+
+kgateway can front the relay's **HTTP side only**; players keep reaching
+the UDP ports through the base's LoadBalancers. Why: the relay knows
+every player by the address its datagrams come from (who registered,
+the per-source lookup limits, the connection check, hole punching). A UDP
+proxy in front hides that address unless it says it in a PROXY protocol
+header, and Envoy's UDP proxy (what a kgateway UDP listener would be)
+cannot add one; kgateway has no UDP routes at all yet (2.5.2, November
+2026). Details and sources: [architecture/relay.md](architecture/relay.md#behind-a-gateway-kgateway).
+
+[`deploy/kubernetes/kgateway`](../deploy/kubernetes/kgateway) is the base
+plus:
+
+- a Gateway (`gatewayClassName: kgateway`, one HTTP listener on 8080,
+  hostname `relay-admin.example.org`: set yours) and an HTTPRoute:
+  `/healthz`, `/readyz`, `/metrics` answered by any ready replica,
+  `/replica-N/healthz|readyz|metrics` by replica N itself (also while it
+  drains, so its readiness shows it);
+- ClusterIP Services for those (`tandem-relay-http`, `tandem-relay-N-http`:
+  add one per replica you add);
+- the NetworkPolicy letting the gateway's pods
+  (`gateway.networking.k8s.io/gateway-name: tandem-relay-admin`, in the
+  relay's namespace) reach port 8080. Check that label on your kgateway's
+  proxy pods.
+
+Use it as your overlay's base in place of `../../base`. Keep the Gateway
+internal or put authentication in front: the metrics say how busy the
+relay is and how many lookups fail. Prometheus should still scrape the
+pods (`tandem-relay-pods`): through the gateway, `/metrics` is one
+replica's.
+
+**Latency**: none added. Sessions go straight to their replica's
+LoadBalancer, as without kgateway; sessions whose hole punching succeeds
+do not touch the relay at all. A UDP gateway would have added one hop
+inside the cluster, and lost what the relay must see.
+
+When kgateway gets UDP routes, putting the UDP ports behind it still
+needs the PROXY protocol on UDP, on every datagram or on each session's
+first, from Envoy. Until then, see the alternatives in the architecture
+notes (a UDP load balancer that keeps source addresses is what the base
+already asks for).
+
 ## What to open on a firewall
 
 | Direction | Port          | From                 | Why                                                                       |

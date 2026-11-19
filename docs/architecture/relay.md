@@ -229,6 +229,61 @@ NAT: "relay only"); fewer than two answers leave it unknown. The co-op
 menu shows it; it travels in `Addresses`' flags and `Introduce`, and two
 `Varies` sides skip punching.
 
+## Behind a gateway (kgateway)
+
+Asked 2026-11-19: run the relay behind kgateway without losing
+performance or adding latency. Researched the same day; the answer is
+**HTTP yes, UDP no** (`deploy/kubernetes/kgateway`).
+
+- **The relay needs each datagram's real source address**: it is the
+  client's identity (registration, the unregistered-address rule),
+  its lookup limits' source, what `Observed` reports and what `Introduce`
+  hands the other side for hole punching. Behind a UDP proxy every
+  datagram comes from the proxy. Envoy's udp_proxy keeps one upstream
+  socket per client session (sessions keyed by the client's 4-tuple,
+  replies sent back through it), so clients would still be told apart,
+  but all as the gateway's IP: one lookup budget for everyone (the 5-code
+  burst shared by every player), a connection check and introductions
+  naming the gateway, hole punching dead.
+- **kgateway routes no UDP** (v2.5.0, 3 Nov 2026, and its v2.5.2 patch of
+  13 Nov 2026, Envoy 1.39.6, Gateway API 1.7.0): UDPRoute is GA in Gateway
+  API since v1.6, but kgateway's support is an open pull request
+  (kgateway-dev/kgateway#14704, opened 12 Sep 2026). That PR translates a
+  UDPRoute to Envoy's udp_proxy with `idle_timeout: 60s` fixed (Envoy's
+  default is 1 minute; not configurable yet) and per-session, not
+  per-packet, balancing, and it explicitly skips the Gateway's proxy
+  protocol policy on UDP listeners ("TCP connection settings").
+- **Envoy cannot send the PROXY protocol on UDP** (udp_proxy API, Envoy
+  1.34 to 1.41-dev): its session filters are `dynamic_forward_proxy`,
+  `http_capsule`, `ext_authz`; the upstream PROXY protocol is a TCP
+  transport socket. The feature requests for UDP (envoyproxy/envoy#19004,
+  #38560, the latter for the listener side) were closed as not planned.
+  `use_original_src_ip` keeps the client's IP but not its port, needs
+  `CAP_NET_ADMIN` and routing the replies back through Envoy, and
+  kgateway does not expose it: not an option.
+- **So a `--proxy-protocol` mode was not built**: nothing in this stack
+  would send the header, and a mode no sender exercises is untested
+  surface on the packet path. If one appears (nginx's stream module has
+  `proxy_protocol v2` since 1.31.4, but whether it applies to UDP
+  datagrams, and to each or only a session's first, is disputed:
+  nginx/nginx#1061), the design would be: datagrams parsed for the
+  header only from `--trusted-proxies`, everything else dropped; the
+  header's source becomes the client's address for every rule (a
+  first-datagram-only sender's session keyed by the proxy's per-session
+  port); replies to the proxy's address; the size rule counting the
+  payload without the header; the header parsed in place (no
+  allocation).
+- **What works today**: the base's per-replica UDP LoadBalancers with
+  `externalTrafficPolicy: Local` (no hop added, addresses kept), and
+  kgateway for `/healthz`, `/readyz`, `/metrics`.
+
+Sources read (2026-11-19): Envoy's udp_proxy configuration and API
+reference (envoyproxy.io, `latest` = 1.41.0-dev, and v1.34.7);
+kgateway's v2.5 release blog (kgateway.dev); kgateway-dev/kgateway#14704;
+envoyproxy/envoy#19004, #36881, #38560; Gateway API's UDPRoute reference
+and the v1.6 release post (kubernetes.io); nginx's
+`ngx_stream_proxy_module` documentation and nginx/nginx#1061.
+
 ## The packet path
 
 Measured on the laptop (Ryzen 7 6800U, 16 threads, Go 1.27, `go test
