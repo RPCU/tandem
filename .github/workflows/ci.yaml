@@ -56,9 +56,14 @@ jobs:
           go install sigs.k8s.io/kustomize/kustomize/v5@v5.8.3
           go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
 
-      # task k8s:check
-      - name: Render and validate the base
-        run: kustomize build deploy/kubernetes/base | kubeconform -strict -summary -
+      # task k8s:check. Gateway and HTTPRoute (Gateway API CRDs) have no
+      # schema kubeconform ships: rendered, not validated.
+      - name: Render and validate the base and the overlays
+        run: |
+          set -o pipefail
+          kustomize build deploy/kubernetes/base | kubeconform -strict -summary -
+          kustomize build deploy/kubernetes/kgateway | kubeconform -strict -summary -skip Gateway,HTTPRoute -
+          kustomize build deploy/kubernetes/playit | kubeconform -strict -summary -
 
   core:
     name: core tests (Linux)
