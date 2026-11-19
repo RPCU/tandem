@@ -649,6 +649,15 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_bodies) {
         this.m_bodies.Recapture();
       }
+    } else if StrBeginsWith(command, "record start ") {
+      // Our V's play, recorded by the plugin for tandem-peer --play
+      // (record start NAME | record stop; tools/game.sh fetch-play NAME).
+      let name = StrAfterFirst(StrAfterFirst(command, " "), " ");
+      let started = TandemNative.RecordStart(name);
+      TandemNative.Log(s"record start \(name): \(started ? "asked" : "refused")");
+    } else if Equals(command, "record stop") {
+      TandemNative.RecordStop();
+      TandemNative.Log("record stop: asked");
     } else if StrBeginsWith(command, "record") {
       this.m_recordOverride = StrLen(command) > 7 ? StrAfterFirst(command, " ") : "";
       TandemNative.Log(s"puppets spawn from \(Equals(this.m_recordOverride, "") ? "the configured records" : this.m_recordOverride)");

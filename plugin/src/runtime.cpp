@@ -479,6 +479,16 @@ std::optional<proto::Transit> Runtime::TakeLocalTransit() {
   return std::exchange(m_localTransit, std::nullopt);
 }
 
+void Runtime::RequestRecording(std::string name) {
+  std::lock_guard _(m_lock);
+  m_recordingRequest = std::move(name);
+}
+
+std::optional<std::string> Runtime::TakeRecordingRequest() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_recordingRequest, std::nullopt);
+}
+
 void Runtime::PushRemoteTransit(const proto::Transit &transit) {
   std::lock_guard _(m_lock);
   auto &[changes, latest] = m_transits[transit.player];

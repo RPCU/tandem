@@ -181,6 +181,12 @@ natives:check` reads every pair).
   `regroup accept`…) that
   need no restart. Restart only for script or plugin changes. anya's
   keyboard is AZERTY: simulated keys land on other letters.
+- Real play instead of synthetic motion: the game records its own V
+  (`tools/game.sh cmd record start NAME`, `record stop`; `fetch-play NAME`
+  copies it to `recordings/play/NAME.tplay`), `tandem-peer --play FILE`
+  replays it, and a scenario's `play NAME ARGS…` uses it when it exists
+  (the synthetic ARGS otherwise). What to record: ARCHITECTURE.md,
+  "Gameplay recordings".
 - The game is launched through the Steam already running in anya's Sway
   session (`steam steam://rungameid/1091500` with that session's
   environment). Read `red4ext/logs/tandem-*.log` for the outcome.

@@ -94,6 +94,7 @@
 #include "tandem/endpoint.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/movement.hpp"
+#include "tandem/play.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/shaping.hpp"
 
@@ -187,6 +188,10 @@ struct Options {
   int grabNpcsSeconds{0};        // join: grab and take down one NPC this often (0: never)
   int carryNpcsSeconds{0};       // join: pick up, carry and throw a body this often
   int holdNpcsSeconds{0};        // host: our V grabs and takes down a replayed NPC this often
+  std::string playFile;          // --play: a real V's play (tandem/play.hpp)
+  bool playLoop{};               // ...again from the start at its end
+  Vec3 playOffset{};             // ...moved by this
+  std::string savePlayFile;      // record our own play there, as the plugin does
   std::string pathFile;          // path: the path to replay
   std::string savePathFile;      // save the states heard (your V's path) here
   // tandem-relay: its address, a host token (host), the session's code (join)
@@ -275,7 +280,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
   std::cerr
       << "usage: tandem-peer host [options]\n"
          "       tandem-peer join ADDRESS[:PORT] [options]\n"
-         "       tandem-peer join --code CODE --relay HOST[:PORT] [options]\n\n"
+         "       tandem-peer join --code CODE --relay HOST[:PORT] [options]\n"
+         "       tandem-peer play-info FILE   what a gameplay recording holds, where it starts\n\n"
          "  --port N           UDP port (default 27450)\n"
          "  --relay HOST[:PORT] tandem-relay (default port 27460): host, also reachable\n"
          "                     through it (its join code is logged); join, used when\n"
@@ -297,6 +303,13 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --delay MS         mirror: extra delay before copying (default 0)\n"
          "  --rate HZ          states sent per second (default 30)\n"
          "  --pose FILE        play a recorded body pose (.tpose) in a loop\n"
+         "  --play FILE        replay a real V's play (.tplay: tools/game.sh fetch-play) as\n"
+         "                     our player, at its recorded positions, instead of --mode's\n"
+         "                     motion; without FILE, --mode runs\n"
+         "  --play-loop        --play: start again at the end (default: stop there)\n"
+         "  --play-offset X,Y,Z  --play: metres added to every position (default 0,0,0)\n"
+         "  --save-play FILE   record what we send about our own V, as the game does, for\n"
+         "                     --play (tests/peer_play.sh)\n"
          "  --vehicle RECORD   drive: the car's record (default "
          "Vehicle.v_standard2_archer_hella_player)\n"
          "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
@@ -477,6 +490,10 @@ Options Parse(int argc, char **argv) {
       options.rideAlong = true;
       continue;
     }
+    if (flag == "--play-loop") {
+      options.playLoop = true;
+      continue;
+    }
     if (i + 1 >= args.size())
       Usage(std::format("{} needs a value", flag));
     const auto value = args[++i];
@@ -635,6 +652,12 @@ Options Parse(int argc, char **argv) {
       options.driverNpc = std::string(value);
     else if (flag == "--offset")
       options.offset = Point(flag, value);
+    else if (flag == "--play")
+      options.playFile = std::string(value);
+    else if (flag == "--play-offset")
+      options.playOffset = Point(flag, value);
+    else if (flag == "--save-play")
+      options.savePlayFile = std::string(value);
     else if (flag == "--travel-at")
       options.travelAtSeconds = Number<int>(value);
     else if (flag == "--travel-to")
@@ -1857,11 +1880,68 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
   return proto::NameOf(message);
 }
 
+// tandem-peer play-info FILE: what a recording holds, where it starts, and
+// the teleport that puts a V beside its start (tools/scenario.sh play).
+int PlayInfo(const std::string &path) {
+  std::string error;
+  const auto recording = tandem::play::Load(path, error);
+  if (!recording) {
+    std::cerr << "tandem-peer: " << error << '\n';
+    return 1;
+  }
+  std::map<std::string, int> counts;
+  for (const auto &entry : recording->entries)
+    ++counts[tandem::proto::NameOf(entry.message)];
+  std::string what;
+  for (const auto &[name, count] : counts)
+    what += std::format("{}{} {}", what.empty() ? "" : ", ", count, name);
+  const auto &h = recording->header;
+  std::cout << std::format(
+      "play: {:.1f} s, {} messages ({}), player {}, body {}{}\n",
+      static_cast<double>(recording->DurationUs()) / 1e6, recording->entries.size(), what, h.player,
+      h.body == tandem::proto::Body::Male ? "male" : "female",
+      recording->skipped ? std::format(", {} of another protocol skipped", recording->skipped)
+                         : "");
+  const auto first = recording->FirstState();
+  if (!first)
+    return 0;
+  constexpr float kDegrees = 180.f / std::numbers::pi_v<float>;
+  const float yaw = tandem::sync::YawOf(first->orientation);
+  std::cout << std::format("start: {:.2f} {:.2f} {:.2f} {:.1f}\n", first->position.x,
+                           first->position.y, first->position.z, yaw * kDegrees);
+  // 3 m ahead of where it starts (the game's forward: +Y turned by yaw),
+  // facing it: the replayed V comes into view at once.
+  const float ahead = 3.f;
+  std::cout << std::format(
+      "beside: teleport {:.2f} {:.2f} {:.2f} {:.1f}\n", first->position.x - std::sin(yaw) * ahead,
+      first->position.y + std::cos(yaw) * ahead, first->position.z, yaw * kDegrees + 180.f);
+  return 0;
+}
+
 int main(int argc, char **argv) {
-  const auto options = Parse(argc, argv);
+  if (argc >= 3 && std::string_view(argv[1]) == "play-info")
+    return PlayInfo(argv[2]);
+  auto options = Parse(argc, argv);
   if (options.check) {
     std::cout << "options ok\n";
     return 0;
+  }
+  // --play: a real V's play instead of the mode's motion (its body, its look).
+  std::optional<tandem::play::Player> playback;
+  if (!options.playFile.empty()) {
+    std::string playError;
+    if (auto recording = tandem::play::Load(options.playFile, playError)) {
+      Log("play: {} ({:.1f} s, {} messages{}){}", options.playFile,
+          static_cast<double>(recording->DurationUs()) / 1e6, recording->entries.size(),
+          recording->skipped ? std::format(", {} skipped", recording->skipped) : "",
+          options.playLoop ? ", in a loop" : "");
+      if (recording->header.body != tandem::proto::Body::Unknown)
+        options.body = recording->header.body;
+      options.mode = Mode::Idle;
+      playback.emplace(std::move(*recording), options.playLoop);
+    } else {
+      Log("play: {}: the mode's own motion instead", playError);
+    }
   }
   std::signal(SIGINT, [](int) { g_stop = 1; });
   std::signal(SIGTERM, [](int) { g_stop = 1; });
@@ -1912,7 +1992,7 @@ int main(int argc, char **argv) {
   const auto lookKeysDir = LookKeysDir(options.lookKeys);
   const auto lookSeed = options.lookSeed.value_or(std::random_device{}());
   auto ownKeys = LoadLookKeys(LookKeysFile(lookKeysDir, options.body));
-  if (!options.echoLook)
+  if (!options.echoLook && !playback)
     endpoint->SetLocalAppearance(RandomLook(options.body, lookSeed, ownKeys));
   // --strike blade: our puppet holds a katana, so the host's NPC reacts to
   // (and is cut by) a blade: its hit reaction reads the attacker's weapon.
@@ -2066,6 +2146,13 @@ int main(int argc, char **argv) {
   std::optional<std::chrono::steady_clock::time_point> joinedAt;
 
   Puppeteer puppeteer(options);
+  // --play: when it began, recorded NPCs as this session's, where our V is.
+  std::optional<std::uint64_t> playStartUs;
+  std::map<tandem::proto::NpcId, tandem::proto::NpcId> playNpcs;
+  Vec3 playedAt;
+  std::uint64_t playSent = 0, playDropped = 0;
+  // --save-play: our own play, from the moment we are in a session.
+  tandem::play::Writer savedPlay;
   // Down and out: our V's life (0 up, 1 down, 2 out) and where it lies;
   // since when another player is with us; the downed V we revive, the
   // others' latest positions.
@@ -2209,7 +2296,8 @@ int main(int argc, char **argv) {
               // A real V's body keys: kept for random looks of that body.
               if (!e.appearance.look.empty() && e.appearance.body != tandem::proto::Body::Unknown) {
                 SaveLookKeys(LookKeysFile(lookKeysDir, e.appearance.body), e.appearance.look);
-                if (!options.echoLook && ownKeys.empty() && e.appearance.body == options.body) {
+                if (!options.echoLook && !playback && ownKeys.empty() &&
+                    e.appearance.body == options.body) {
                   ownKeys = e.appearance.look;
                   endpoint->SetLocalAppearance(RandomLook(options.body, lookSeed, ownKeys));
                 }
@@ -2633,6 +2721,94 @@ int main(int argc, char **argv) {
         if (!relay->error.empty() && (!relayShown || relayShown->error != relay->error))
           Log("relay: {}", relay->error);
         relayShown = relay;
+      }
+    }
+
+    if (!options.savePlayFile.empty() && !savedPlay.IsOpen() && endpoint->IsJoined()) {
+      std::string saveError;
+      if (savedPlay.Open(options.savePlayFile,
+                         {.startHostUs = endpoint->HostNowUs(),
+                          .player = endpoint->You(),
+                          .body = options.body},
+                         saveError)) {
+        for (const auto &message : endpoint->LocalSnapshot())
+          savedPlay.Add(endpoint->HostNowUs(), message);
+        endpoint->SetTap([&](const tandem::proto::Message &message) {
+          savedPlay.Add(endpoint->HostNowUs(), message);
+        });
+        Log("saving our play to {}", options.savePlayFile);
+      } else {
+        Log("--save-play: {}", saveError);
+        options.savePlayFile.clear();
+      }
+    }
+
+    // --play: the recording's messages as their time comes, once someone
+    // else is there to see them.
+    if (playback && endpoint->IsJoined() && !playback->Done()) {
+      const auto nowUs = tandem::net::NowUs();
+      if (!playStartUs && endpoint->Players().size() > 1) {
+        playStartUs = nowUs;
+        Log("play: started");
+      }
+      if (playStartUs) {
+        const auto &header = playback->Of().header;
+        tandem::play::Mapping mapping{.self = header.player, .offset = options.playOffset};
+        for (const auto &[id, info] : endpoint->Players())
+          if (id != endpoint->You()) {
+            mapping.other = id;
+            break;
+          }
+        // A recorded NPC: the live one nearest where the hit landed (else
+        // nearest our V), within 30 m, then that one for the rest.
+        mapping.npc = [&](tandem::proto::NpcId recorded,
+                          const Vec3 *near) -> std::optional<tandem::proto::NpcId> {
+          if (const auto it = playNpcs.find(recorded);
+              it != playNpcs.end() && liveNpcs.contains(it->second))
+            return it->second;
+          const Vec3 at = near ? *near : playedAt;
+          std::optional<tandem::proto::NpcId> best;
+          float bestDistance = 30.f;
+          for (const auto npc : liveNpcs)
+            if (const auto where = npcAt.find(npc); where != npcAt.end()) {
+              const float d = std::hypot(where->second.x - at.x, where->second.y - at.y,
+                                         where->second.z - at.z);
+              if (d < bestDistance) {
+                bestDistance = d;
+                best = npc;
+              }
+            }
+          if (best) {
+            playNpcs[recorded] = *best;
+            Log("play: npc {} of the recording is npc {} here ({:.1f} m)", recorded, *best,
+                bestDistance);
+          }
+          return best;
+        };
+        const auto lap = playback->Lap();
+        for (const auto *entry : playback->Due(nowUs - *playStartUs)) {
+          const auto shift = static_cast<std::int64_t>(endpoint->HostNowUs()) -
+                             static_cast<std::int64_t>(header.startHostUs + entry->atUs);
+          auto message = tandem::play::Adapt(entry->message, mapping, shift);
+          if (!message) {
+            ++playDropped;
+            continue;
+          }
+          if (const auto *state = std::get_if<PlayerState>(&*message))
+            playedAt = state->position;
+          else if (const auto *seat = std::get_if<tandem::proto::Seat>(&*message))
+            Log("play: {}", seat->vehicle ? std::format("seated in {:#x}", seat->vehicle)
+                                          : std::string("on foot"));
+          else if (!std::holds_alternative<tandem::proto::PoseState>(*message) &&
+                   !std::holds_alternative<tandem::proto::VehicleState>(*message))
+            Log("play: {}", tandem::proto::NameOf(*message));
+          tandem::play::Apply(*endpoint, *message);
+          ++playSent;
+        }
+        if (playback->Lap() != lap)
+          Log("play: lap {}", playback->Lap() + 1);
+        if (playback->Done())
+          Log("play: done, {} messages sent, {} not for this session", playSent, playDropped);
       }
     }
 
@@ -3396,6 +3572,12 @@ int main(int argc, char **argv) {
     }
   }
 
+  if (savedPlay.IsOpen()) {
+    endpoint->SetTap({});
+    Log("play saved: {} messages, {:.1f} s", savedPlay.Count(),
+        static_cast<double>(savedPlay.LastUs()) / 1e6);
+    savedPlay.Close();
+  }
   endpoint->Leave("tandem-peer stopped");
   if (!options.recordFile.empty()) {
     if (recording.Finish())

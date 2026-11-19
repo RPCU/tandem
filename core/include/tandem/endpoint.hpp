@@ -14,6 +14,7 @@
 #include "tandem/story.hpp"
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -489,6 +490,16 @@ public:
 
   void Leave(const std::string &reason = "left");
 
+  // Gameplay recording (tandem/play.hpp): each call above about our own V
+  // hands `tap` the message as given, before anything is sent (whether or
+  // not anyone is there to get it). Empty: off, and free.
+  using Tap = std::function<void(const proto::Message &)>;
+  void SetTap(Tap tap) { m_tap = std::move(tap); }
+  // Our V as it stands now (look, held items, seat, radio, stealth, time
+  // ability, ride, life, elsewhere): what a recording begins with.
+  std::vector<proto::Message> LocalSnapshot() const;
+  proto::Body OwnBody() const { return m_identity.body; }
+
 private:
   Endpoint(std::unique_ptr<net::Session> session, Identity identity, Timing timing);
 
@@ -516,6 +527,7 @@ private:
 
   std::unique_ptr<net::Session> m_session;
   Identity m_identity;
+  Tap m_tap;
   Timing m_timing;
 
   proto::PlayerId m_you{proto::kNoPlayer};

@@ -255,6 +255,11 @@ public:
   void SubmitLocalTransit(const proto::Transit &transit);
   std::optional<proto::Transit> TakeLocalTransit();
   void PushRemoteTransit(const proto::Transit &transit);
+  // Gameplay recording (tandem/play.hpp), game thread -> net thread: start
+  // one (recordings/NAME.tplay next to the DLL; one already going stops
+  // first), or stop it (""). The net thread writes the file.
+  void RequestRecording(std::string name);
+  std::optional<std::string> TakeRecordingRequest();
   std::optional<proto::Transit> RemoteTransit(proto::PlayerId player, std::uint32_t &changes);
 
   // The radio of the car we drive, game -> net (each one sent: a repeat is
@@ -581,6 +586,7 @@ private:
   std::uint32_t m_othersLivesChanges{};                                // m_lock
   std::vector<proto::Revive> m_localRevives, m_revives;                // m_lock
   std::uint32_t m_sessionLosses{};                                     // m_lock
+  std::optional<std::string> m_recordingRequest;                       // m_lock
   std::mutex m_snapsLock;
   std::set<proto::PlayerId> m_snaps; // m_snapsLock
   std::array<PuppetSlot, kMaxPuppets> m_puppets;
