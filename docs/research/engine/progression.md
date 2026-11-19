@@ -302,9 +302,9 @@ VehicleSystem.reds`) [R]. Whether enabling twice is a no-op, and whether
 - PL car deliveries pay money through reward records named
   `sa_ep1_courier_tier*`, scaled by the fact `courier_missions_done`
   (F:37582-37593) [R].
+- `JournalManager.GetQuestType(entry) -> gameJournalQuestType` (F:196730)
+  [R]: the ledger's quest kinds come from it.
 - Phantom Liberty installed: the global native `IsEP1() -> Bool`
   (F:223600), which the game's own menus and loot use (F:35670, F:371063)
-  [R]. Whether it answers before a save is loaded (the main menu) is [I].
-- `JournalManager.GetQuestType(entry) -> gameJournalQuestType` (F:196730)
-  [R]; `TransactionSystem.RemoveItem(obj, itemID, amount)` (F:52042) [R]:
-  what the ledger's quest kinds and the props given back on leave use.
+  [R]; the release work checks it at join. `TransactionSystem.RemoveItem(obj,
+itemID, amount)` (F:52042) [R]: what the session items' removal uses.

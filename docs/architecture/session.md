@@ -6,14 +6,6 @@ broadcasts the `Roster`. A guest's messages count only after its `Welcome`,
 and the host stamps every relayed `PlayerState` with the sender's own id: a
 guest cannot speak for someone else.
 
-**Phantom Liberty is required** (decided 2026-11-19): its journal, items,
-vehicles and districts are in every session's world, and a game without it
-has none of their records. Each game checks its own (`IsEP1()`): without
-it the co-op menu chooses nothing and a session chosen in `tandem.ini` is
-dropped as the save loads ("Co-op needs Phantom Liberty";
-`TandemSystem.HasPhantomLiberty`). Nothing is said on the wire: two games
-that both start a session both have it.
-
 **Liveness** (`core/src/session.cpp`, `Timing` in `endpoint.hpp`): a
 connection that acknowledges nothing for **5 s** is dead, on either side.
 ENet pings an idle peer every 0.5 s, so a live one is heard from several

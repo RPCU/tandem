@@ -141,6 +141,11 @@ public class TandemNpcs {
     }
   }
 
+  // Host: the NPCs we share (Scenes.reds asks which of them act in a scene).
+  public func Known() -> array<ref<TandemNpcKnown>> {
+    return this.m_known;
+  }
+
   public static func Range() -> Float {
     return 60.0;
   }

@@ -93,6 +93,10 @@ struct HostNpcSpawn {
 struct HostNpcStates {
   proto::NpcStates states;
 };
+// A scene actor's body pose from the host (scene replay), for an NPC we know.
+struct HostActorPose {
+  proto::ActorPose pose;
+};
 struct HostNpcGone {
   proto::NpcGone gone;
 };
@@ -298,13 +302,13 @@ using SessionEvent = std::variant<
     events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
     events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
     events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
-    events::HostNpcStates, events::HostNpcGone, events::HostNpcHealth, events::NpcHitBy,
-    events::NpcEffectBy, events::PauseChanged, events::Ended, events::PlayerReturned,
-    events::RemoteVehicleRadio, events::HitByNpc, events::RemoteStealth, events::HostNpcAwareness,
-    events::NoiseBy, events::NpcHackBy, events::HostNpcHackState, events::HostNpcStatus,
-    events::HostPlayerHack, events::VehicleHackOn, events::Story, events::RemoteTimeEffect,
-    events::NpcActionBy, events::NpcActionAnswered, events::HostNpcHold, events::HostNpcCue,
-    events::RegroupOffered, events::RegroupAnswered, events::WorldItemAppeared,
+    events::HostNpcStates, events::HostActorPose, events::HostNpcGone, events::HostNpcHealth,
+    events::NpcHitBy, events::NpcEffectBy, events::PauseChanged, events::Ended,
+    events::PlayerReturned, events::RemoteVehicleRadio, events::HitByNpc, events::RemoteStealth,
+    events::HostNpcAwareness, events::NoiseBy, events::NpcHackBy, events::HostNpcHackState,
+    events::HostNpcStatus, events::HostPlayerHack, events::VehicleHackOn, events::Story,
+    events::RemoteTimeEffect, events::NpcActionBy, events::NpcActionAnswered, events::HostNpcHold,
+    events::HostNpcCue, events::RegroupOffered, events::RegroupAnswered, events::WorldItemAppeared,
     events::WorldItemTakenBy, events::SharedItemFrom, events::RemoteVitals, events::ReviveBy,
     events::SessionLost, events::HostNpcAnims, events::HostNpcShot, events::Combat, events::Resync,
     events::EpochChanged, events::RemoteElsewhere, events::RemoteTransit, events::HostNpcSeat,
@@ -346,6 +350,10 @@ public:
   // Host only: its NPCs (spawns kept for late joiners until gone).
   void SendNpcSpawn(const proto::NpcSpawn &spawn);
   void SendNpcStates(proto::NpcStates states);
+  // Host: one scene actor's body pose (State channel; numbered with the NPC
+  // states, so the epoch fence that voids the old world's states voids these
+  // too). Nothing for an NPC we do not share.
+  void SendActorPose(proto::ActorPose pose);
   void SendNpcGone(const proto::NpcGone &gone);
   // Host only: an NPC's health changed (kept for late joiners until gone).
   void SendNpcHealth(const proto::NpcHealth &health);

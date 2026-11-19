@@ -248,6 +248,22 @@ std::optional<Pose> Unpack(const proto::PoseState &state) {
   return pose;
 }
 
+proto::ActorPose ForActor(proto::NpcId npc, const proto::PoseState &state) {
+  return {.npc = npc,
+          .seq = state.seq,
+          .timeUs = state.timeUs,
+          .hips = state.hips,
+          .rotations = state.rotations};
+}
+
+proto::PoseState FromActor(const proto::ActorPose &pose) {
+  return {.player = proto::kNoPlayer,
+          .seq = pose.seq,
+          .timeUs = pose.timeUs,
+          .hips = pose.hips,
+          .rotations = pose.rotations};
+}
+
 void PoseTrack::Push(const proto::PoseState &state) {
   // Newest wins; a late or repeated pose is dropped (32-bit wrap-safe).
   if (m_haveSeq && static_cast<std::int32_t>(state.seq - m_lastSeq) <= 0)

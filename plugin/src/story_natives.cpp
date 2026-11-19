@@ -7,6 +7,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "config.hpp"
+#include "engine/posestream.hpp"
 #include "engine/quests.hpp"
 #include "engine/scenes.hpp"
 #include "log.hpp"
@@ -17,6 +18,7 @@
 
 #include <RedLib.hpp>
 
+#include <cmath>
 #include <format>
 
 namespace Red {
@@ -44,13 +46,6 @@ struct TandemStoryEvent {
 };
 static_assert(alignof(TandemStoryEvent) <= 8, "the script VM aligns struct locals to 8");
 
-// A quest's prop co-op lent our V (tag Quest, a keycard): taken back on leave.
-struct TandemCarryItem {
-  Red::TweakDBID record;
-  std::int32_t quantity{};
-};
-static_assert(alignof(TandemCarryItem) <= 8, "the script VM aligns struct locals to 8");
-
 namespace {
 // Kinds, as StoryNatives.reds lists them.
 enum Kind : std::int32_t {
@@ -73,6 +68,13 @@ enum Kind : std::int32_t {
   kReward = 41,
   kEffect = 42,
   kVehicle = 43,
+  kSceneBegin = 50,
+  kSceneChange = 51,
+  kSceneEnd = 52,
+  kSceneActor = 53,
+  kSceneActorGone = 54,
+  kSceneVoice = 55,
+  kSceneVoiceStop = 56,
 };
 
 // What our V earned in co-op (tandem/carryover.hpp): loaded from the save's
@@ -82,6 +84,48 @@ carry::Ledger &TheLedger() {
   return ledger;
 }
 
+// Scene replay: a guest's cue, as StoryNatives.reds lists it.
+void Flatten(const scene::Cue &cue, Red::DynArray<TandemStoryEvent> &out) {
+  using K = scene::Cue::Kind;
+  switch (cue.kind) {
+  case K::Begin:
+  case K::Change:
+  case K::End:
+    out.EmplaceBack(TandemStoryEvent{.kind = cue.kind == K::Begin    ? kSceneBegin
+                                             : cue.kind == K::Change ? kSceneChange
+                                                                     : kSceneEnd,
+                                     .hash = cue.state.play,
+                                     .state = cue.state.tier,
+                                     .flags = cue.state.flags,
+                                     .line = cue.state.scene,
+                                     .duration = cue.seconds});
+    return;
+  case K::Actor:
+  case K::ActorGone:
+    out.EmplaceBack(TandemStoryEvent{.kind = cue.kind == K::Actor ? kSceneActor : kSceneActorGone,
+                                     .flags = cue.actor.flags,
+                                     .npc = cue.actor.npc});
+    return;
+  case K::Voice:
+  case K::VoiceStop:
+    out.EmplaceBack(TandemStoryEvent{.kind = cue.kind == K::Voice ? kSceneVoice : kSceneVoiceStop,
+                                     .player = cue.line.speakerPlayer,
+                                     .hash = cue.line.play,
+                                     .flags = cue.line.flags,
+                                     .index = static_cast<std::int32_t>(cue.line.duration * 1000.f),
+                                     .line = cue.line.line,
+                                     .duration = cue.seconds,
+                                     .npc = cue.line.speaker});
+    return;
+  }
+}
+
+bool IsScene(const proto::Message &message) {
+  return std::holds_alternative<proto::SceneState>(message) ||
+         std::holds_alternative<proto::SceneCast>(message) ||
+         std::holds_alternative<proto::SceneLine>(message);
+}
+
 void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
   using K = StoryInbound::Kind;
   switch (in.kind) {
@@ -89,6 +133,11 @@ void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
     out.EmplaceBack(TandemStoryEvent{.kind = kInSession, .player = in.player, .hash = in.host});
     return;
   case K::Ended:
+    // The host is gone, or we left: its scene stops here first (voices cut,
+    // every proxy its own again), then the session's end.
+    for (const auto &cue : Story::Get().Replay().Reset())
+      Flatten(cue, out);
+    Runtime::Get().ForgetActorPoses();
     out.EmplaceBack(TandemStoryEvent{.kind = kEnded});
     return;
   case K::Joined:
@@ -101,6 +150,14 @@ void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
     break;
   }
   const auto &m = in.message;
+  if (IsScene(m)) {
+    // Scene replay off: the host's scenes are not played here.
+    if (!Runtime::Get().config.sceneReplay)
+      return;
+    for (const auto &cue : Story::Get().Replay().Note(m, Runtime::Get().HostNowUs()))
+      Flatten(cue, out);
+    return;
+  }
   if (const auto *journal = std::get_if<proto::Journal>(&m)) {
     if (journal->snapshot)
       out.EmplaceBack(TandemStoryEvent{
@@ -193,6 +250,11 @@ struct TandemStory : Red::IScriptable {
   static bool Frozen() { return engine::QuestFrozen(); }
   static std::uint32_t FreezeHeld() { return engine::QuestFreezeHeld(); }
   static bool FreezeLost() { return engine::QuestFreezeOverflowed(); }
+  // Ownership of gigs: grouped with the host (the default) or apart.
+  static void Grouped(bool grouped) { engine::SetQuestGrouped(grouped); }
+  static bool IsGrouped() { return engine::QuestGrouped(); }
+  // Spike C2: log phases and their journal nodes.
+  static void QuestTrace(bool on) { engine::SetQuestTrace(on); }
   static Red::CString FreezeReport() { return Red::CString(engine::QuestFreezeReport().c_str()); }
 
   // What the session said since the last call, oldest first.
@@ -374,17 +436,6 @@ struct TandemStory : Red::IScriptable {
   static bool CarryOwnPays(std::uint32_t quest, Red::TweakDBID reward) {
     return TheLedger().PayInOwnStory(quest, reward.value);
   }
-  // Guest: a quest's prop came into our inventory from the session.
-  static void CarrySessionItem(Red::TweakDBID record, std::int32_t quantity) {
-    TheLedger().NoteSessionItem(record.value, quantity);
-  }
-  // Leaving: every prop the session lent us, to take back out (forgotten).
-  static Red::DynArray<TandemCarryItem> CarrySessionItems() {
-    Red::DynArray<TandemCarryItem> out;
-    for (const auto &[record, quantity] : TheLedger().TakeSessionItems())
-      out.EmplaceBack(TandemCarryItem{.record = Red::TweakDBID(record), .quantity = quantity});
-    return out;
-  }
   // "done with NAME": the quest was played with a host of that name.
   static bool CarryWith(std::uint32_t quest, Red::CString host) {
     const auto *entry = TheLedger().Find(quest);
@@ -400,9 +451,9 @@ struct TandemStory : Red::IScriptable {
     }
     const auto line = std::format(
         "ledger: {} quests taken part in ({} completed, {} rewards paid), {} pending for our "
-        "world, {} vehicles, {} session props held",
+        "world, {} vehicles",
         ledger.Entries().size(), completed, rewards, ledger.Pending().size(),
-        ledger.Vehicles().size(), ledger.HasSessionItems() ? "some" : "no");
+        ledger.Vehicles().size());
     return Red::CString(line.c_str());
   }
 
@@ -430,6 +481,147 @@ struct TandemStory : Red::IScriptable {
     Story::Get().PausePose(player, paused);
   }
 
+  // ---- scene replay (docs/architecture/scene-replay.md) ----
+
+  // 0: off (tandem.ini scene_replay), 1: on, 2: with the actors' bodies
+  // (the pose hooks are in).
+  static std::int32_t SceneReplay() {
+    const auto &config = Runtime::Get().config;
+    if (!config.sceneReplay)
+      return 0;
+    return config.scenePoses && config.pose ? 2 : 1;
+  }
+
+  // Host: one actor of the scene our game plays, for the next SceneSample
+  // (flags proto::kActor*).
+  static void SceneActor(std::uint32_t npc, float x, float y, float z, std::int32_t flags) {
+    auto &actors = Story::Get().Actors();
+    if (actors.size() < proto::kMaxSceneActors)
+      actors.push_back({npc, {x, y, z}, Byte(flags)});
+  }
+
+  // Host, a few times a second: what our game plays now. `playing`: our V
+  // is in a scene (its tier, an actor in a scene); the scene is the one
+  // whose quest node ran last (engine/scenes.cpp). Says what changed to the
+  // guests and answers the play's number (0: no scene announced).
+  static std::int32_t SceneSample(bool playing, bool isPrivate, std::int32_t tier, float rate,
+                                  bool held, float x, float y, float z, float yaw) {
+    auto &story = Story::Get();
+    scene::HostSample sample{.isPrivate = isPrivate,
+                             .tier = Byte(tier),
+                             .rate = rate,
+                             .held = held,
+                             .host = {x, y, z},
+                             .hostYaw = yaw,
+                             .actors = std::move(story.Actors())};
+    story.Actors().clear();
+    if (playing && Runtime::Get().config.sceneReplay) {
+      // No node seen (the hook is out, or the scene is not a quest's): a
+      // scene all the same, with no name.
+      sample.scene = engine::ScenePlaying(3000);
+      if (sample.scene == 0)
+        sample.scene = 1;
+    }
+    const auto before = story.Stage().On() ? story.Stage().Play() : 0u;
+    for (auto &message : story.Stage().Update(sample, Runtime::Get().HostNowUs())) {
+      if (const auto *state = std::get_if<proto::SceneState>(&message)) {
+        if (state->scene == 0)
+          log::Info("scene: play {} is over{}", state->play,
+                    state->flags & proto::kSceneInterrupted ? " (interrupted)" : "");
+        else if (state->play != before)
+          log::Info("scene: {:#x} plays (play {}, tier {})", state->scene, state->play,
+                    state->tier);
+      } else if (const auto *cast = std::get_if<proto::SceneCast>(&message))
+        log::Info("scene: play {} has {} actor(s)", cast->play, cast->actors.size());
+      story.Send(std::move(message));
+    }
+    return story.Stage().On() ? static_cast<std::int32_t>(story.Stage().Play()) : 0;
+  }
+
+  // Host: a voiced line begins on our game (flags proto::kVoice*), or its
+  // subtitle went. True when the guests were told.
+  static bool SceneVoice(std::uint64_t line, std::uint32_t speakerNpc, std::uint32_t speakerPlayer,
+                         float duration, std::int32_t flags) {
+    if (!Runtime::Get().config.sceneReplay)
+      return false;
+    auto spoken = Story::Get().Stage().Line(line, speakerNpc, speakerPlayer, duration, Byte(flags),
+                                            Runtime::Get().HostNowUs());
+    if (spoken)
+      Story::Get().Send(*spoken);
+    return spoken.has_value();
+  }
+  static bool SceneVoiceHide(std::uint64_t line) {
+    auto cut = Story::Get().Stage().Hide(line, Runtime::Get().HostNowUs());
+    if (cut)
+      Story::Get().Send(*cut);
+    return cut.has_value();
+  }
+
+  // Guest: the scene the host plays, as heard (0: none); where it is staged
+  // (W: how far from the middle its actors stand; W < 0: not staged) and the
+  // way the host's V faces it; how long it has played.
+  static std::uint64_t ScenePlaying() { return Story::Get().Replay().State().scene; }
+  static Red::Vector4 SceneAnchor() {
+    const auto &state = Story::Get().Replay().State();
+    if (state.scene == 0 || !(state.flags & proto::kSceneStaged))
+      return {0.f, 0.f, 0.f, -1.f};
+    return {state.anchor.x, state.anchor.y, state.anchor.z, state.radius};
+  }
+  static float SceneYaw() { return Story::Get().Replay().State().yaw; }
+  static float SceneSeconds() { return Story::Get().Replay().Seconds(Runtime::Get().HostNowUs()); }
+  static bool SceneActs(std::uint32_t npc) { return Story::Get().Replay().Acts(npc); }
+
+  // Guest: the bodies around the scene (actors, the host's V, the other
+  // watchers), listed again before each question below.
+  static void SceneBodies() { Story::Get().Bodies().clear(); }
+  static void SceneBody(float x, float y, float z) {
+    auto &bodies = Story::Get().Bodies();
+    if (bodies.size() < 64)
+      bodies.push_back({x, y, z});
+  }
+  // A place to watch the scene from (core/scene.hpp): X Y Z and, in W, the
+  // yaw that faces the scene; W > 100: none.
+  static Red::Vector4 WatchSpot(float hostX, float hostY, float hostZ, float x, float y, float z) {
+    const auto spot = scene::WatchSpot(Story::Get().Replay().State(), Story::Get().Bodies(),
+                                       {hostX, hostY, hostZ}, {x, y, z});
+    if (!spot.found)
+      return {0.f, 0.f, 0.f, 1000.f};
+    return {spot.position.x, spot.position.y, spot.position.z, spot.yaw};
+  }
+  // The step that takes our V out of an actor it stands in (W: its length;
+  // 0: clear).
+  static Red::Vector4 KeepOut(float x, float y, float z, float radius, float maxStep) {
+    const auto step = scene::KeepOut({x, y, z}, Story::Get().Bodies(), radius, maxStep);
+    return {step.x, step.y, 0.f, std::hypot(step.x, step.y)};
+  }
+
+  // The actors' bodies (engine/posestream.cpp). Host: the NPC read as actor
+  // `npc` (null: no longer). Guest: the proxy drawn in its pose (null: its
+  // own animation again). Nothing without SceneReplay() == 2.
+  static void ActorSource(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
+    if (SceneReplay() == 2 || !entity)
+      engine::SetPoseActorSource(npc, entity);
+  }
+  static void ActorBind(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
+    if (SceneReplay() == 2 || !entity)
+      engine::BindPoseActor(npc, entity);
+  }
+  static void ActorsClear() {
+    engine::ClearPoseActors();
+    Runtime::Get().ForgetActorPoses();
+  }
+  static Red::CString SceneReport() {
+    const auto &replay = Story::Get().Replay();
+    const auto &stage = Story::Get().Stage();
+    return Red::CString(
+        std::format("scene: host play {} ({}), heard {:#x} play {} with {} actor(s), {} line(s) "
+                    "spoken, {} too late; {}",
+                    stage.Play(), stage.On() ? "on" : "off", replay.State().scene,
+                    replay.State().play, replay.Cast().size(), replay.Speaking(), replay.Stale(),
+                    engine::PoseActorsReport())
+            .c_str());
+  }
+
   // A dialogue line's id as a number and back (the script cannot build one).
   static Red::CRUID LineId(std::uint64_t line) {
     Red::CRUID id{};
@@ -437,6 +629,12 @@ struct TandemStory : Red::IScriptable {
     return id;
   }
   static std::uint64_t LineValue(Red::CRUID id) { return static_cast<std::uint64_t>(id.unk00); }
+  // The id a guest shows the host's line under (never 0, never the line's
+  // own: the game may show that one itself, Dialogue.reds).
+  static std::uint64_t StandInLine(std::uint64_t line) {
+    const auto standIn = line ^ 0x7A6E64656D4C696Eull;
+    return standIn == 0 ? 1 : standIn;
+  }
 
   RTTI_IMPL_TYPEINFO(TandemStory);
   RTTI_IMPL_ALLOCATOR();
@@ -460,11 +658,6 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStoryEvent, "TandemStoryEvent", {
   RTTI_PROPERTY(text);
 });
 
-RTTI_DEFINE_CLASS(tandem::plugin::TandemCarryItem, "TandemCarryItem", {
-  RTTI_PROPERTY(record);
-  RTTI_PROPERTY(quantity);
-});
-
 RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(StoryOn);
   RTTI_METHOD(FreezeAvailable);
@@ -473,6 +666,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(FreezeHeld);
   RTTI_METHOD(FreezeLost);
   RTTI_METHOD(FreezeReport);
+  RTTI_METHOD(Grouped);
+  RTTI_METHOD(IsGrouped);
+  RTTI_METHOD(QuestTrace);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(You);
   RTTI_METHOD(HostId);
@@ -499,14 +695,31 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(CarryCompleted);
   RTTI_METHOD(CarryPay);
   RTTI_METHOD(CarryOwnPays);
-  RTTI_METHOD(CarrySessionItem);
-  RTTI_METHOD(CarrySessionItems);
   RTTI_METHOD(CarryWith);
   RTTI_METHOD(CarryReport);
   RTTI_METHOD(SendEffect);
   RTTI_METHOD(SceneClass);
   RTTI_METHOD(SetPrivate);
   RTTI_METHOD(PausePose);
+  RTTI_METHOD(SceneReplay);
+  RTTI_METHOD(SceneActor);
+  RTTI_METHOD(SceneSample);
+  RTTI_METHOD(SceneVoice);
+  RTTI_METHOD(SceneVoiceHide);
+  RTTI_METHOD(ScenePlaying);
+  RTTI_METHOD(SceneAnchor);
+  RTTI_METHOD(SceneYaw);
+  RTTI_METHOD(SceneSeconds);
+  RTTI_METHOD(SceneActs);
+  RTTI_METHOD(SceneBodies);
+  RTTI_METHOD(SceneBody);
+  RTTI_METHOD(WatchSpot);
+  RTTI_METHOD(KeepOut);
+  RTTI_METHOD(ActorSource);
+  RTTI_METHOD(ActorBind);
+  RTTI_METHOD(ActorsClear);
+  RTTI_METHOD(SceneReport);
   RTTI_METHOD(LineId);
   RTTI_METHOD(LineValue);
+  RTTI_METHOD(StandInLine);
 });

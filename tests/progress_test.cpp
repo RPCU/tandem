@@ -509,9 +509,8 @@ TEST_CASE("each player's lending reaches everyone once, late joiners too, and go
   CHECK(Message(CarLend{}).index() == std::variant_size_v<Message> - 1);
   CHECK(std::string_view(NameOf(never)) == "CarLend");
   // Out of range: refused on the wire and by the endpoint.
-  auto bad = Encode(CarLend{.lend = Lend::Never});
-  bad.back() = std::byte{7};
-  CHECK_FALSE(Decode(bad).has_value());
+  CHECK_FALSE(Decode(Encode(CarLend{.lend = static_cast<Lend>(7)})).has_value());
+  CHECK(Decode(Encode(CarLend{.lend = Lend::Never})).has_value());
 
   const auto port = NextPort();
   std::string error;

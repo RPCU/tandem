@@ -635,7 +635,7 @@ TEST_CASE("trade messages: encoding, limits, one-shots") {
   CHECK(TradeAsker(MakeTradeId(3, 7)) == 3);
   CHECK(MakeTradeId(3, 7) != MakeTradeId(3, 8));
   CHECK(Message(Trade{}).index() == Message(NpcLevel{}).index() + 1);
-  CHECK(Message(TradeCommit{}).index() == std::variant_size_v<Message> - 1);
+  CHECK(Message(VehicleUnlock{}).index() == Message(TradeCommit{}).index() + 1); // then appended
   CHECK(std::string_view(NameOf(TradeCommit{})) == "TradeCommit");
   CHECK(Encode(Trade{}).size() < 32);
 

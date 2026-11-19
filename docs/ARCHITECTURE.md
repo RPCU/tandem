@@ -138,7 +138,7 @@ The owner simulates; everyone else displays.
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
 | items a V drops on purpose | host | lie in every game; the first pickup keeps it |
-| quest and important items, rewards | every player's own V | whoever gets one, every V gets it; a guest gives the host's quest props back on leaving (`architecture/quest-carryover.md`) |
+| quest and important items, rewards | every player's own V | whoever gets one, every V gets it; a guest gives the host's quest props (tag `Quest`, keycards) back when it leaves, and keeps iconics and rewards |
 | what a guest did in co-op (the ledger) | the guest's game (save) | never shared: quests taken part in, rewards paid once, vehicles earned |
 
 Enemy level (the mean of the players' levels): `architecture/npcs.md`.
@@ -268,6 +268,7 @@ plugin") and its open problems.
 - `loot.md`: per-player loot, dropped items, quest items.
 - `revive.md`: down, revive, respawn, shared game over.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, rewards; open: scenes for guests, story decisions, quests together.
+- `scene-replay.md`: a guest watches the host's scenes: the stage, the cast, lines and actor poses (`scene_replay = on`, off by default).
 - `progression.md`: levels (enemies scaled to the mean of the players' levels), XP rules, economy (vendors, crafting, stash, garage, apartments), a guest's saves (the leave steps, crashes, what is never saved), decisions.
 - `garage.md`: owned vehicles: each player's garage, driving a partner's car, vehicles earned together (credited, or kept with `vehicle_rewards = keep`), purchases, PL deliveries, decisions.
 - `trade.md`: trade between two players: the prompt and the table, what may be traded, the host's two-phase arbitration, the protocol, what is not verified.

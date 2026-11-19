@@ -634,14 +634,9 @@ protected cb func OnTandemTick(proxy: ref<inkAnimProxy>) -> Bool {
 }
 
 // The session the page stands for, chosen as its save is picked. False
-// (and said in a popup): it cannot be (no Phantom Liberty, a code with no
-// relay set).
+// (and said in a popup): it cannot be (a code with no relay set).
 @addMethod(SingleplayerMenuGameController)
 private func TandemChoose() -> Bool {
-  if !TandemSystem.HasPhantomLiberty() {
-    GenericMessageNotification.Show(this, "Co-op", "Co-op needs Phantom Liberty", GenericMessageNotificationType.OK);
-    return false;
-  }
   if Equals(this.m_tandem.page, TandemCoopPage.Host) {
     return TandemNative.StartHost(this.m_tandem.port);
   }

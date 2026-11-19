@@ -97,6 +97,13 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *transit = std::get_if<Transit>(&message);
       transit && transit->kind > TransitKind::Along)
     return std::nullopt;
+  if (const auto *cast = std::get_if<SceneCast>(&message);
+      cast && cast->actors.size() > kMaxSceneActors)
+    return std::nullopt;
+  // A rate no clock can follow, or one that is not a number.
+  if (const auto *scene = std::get_if<SceneState>(&message);
+      scene && !(scene->rate >= 0.f && scene->rate <= kMaxSceneRate))
+    return std::nullopt;
   if (const auto *level = std::get_if<PlayerLevel>(&message);
       level && (level->level == 0 || level->level > kMaxLevel))
     return std::nullopt;
@@ -128,7 +135,9 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<VehicleState>(message) ||
                  std::holds_alternative<NpcStates>(message) ||
                  std::holds_alternative<NpcAwareness>(message) ||
-                 std::holds_alternative<Noise>(message) || std::holds_alternative<NpcShot>(message)
+                 std::holds_alternative<Noise>(message) ||
+                 std::holds_alternative<NpcShot>(message) ||
+                 std::holds_alternative<ActorPose>(message)
              ? Channel::State
              // Everything else is reliable and ordered, the consistency
              // messages too (Digest, ResyncRequest, NpcSet, Epoch): a digest
@@ -140,6 +149,8 @@ bool IsStory(const Message &message) {
   return (message.index() >= Message(Journal{}).index() &&
           message.index() <= Message(QuestReward{}).index()) ||
          std::holds_alternative<StoryEffect>(message) ||
+         (message.index() >= Message(SceneState{}).index() &&
+          message.index() <= Message(SceneLine{}).index()) ||
          std::holds_alternative<VehicleUnlock>(message);
 }
 
@@ -160,22 +171,23 @@ bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::
 
 const char *NameOf(const Message &message) {
   constexpr const char *names[] = {
-      "Hello",          "Welcome",        "Refused",      "Ping",          "Pong",
-      "Roster",         "PlayerState",    "Bye",          "PoseState",     "Appearance",
-      "Held",           "Shot",           "Seat",         "VehicleState",  "World",
-      "NpcSpawn",       "NpcStates",      "NpcGone",      "NpcHit",        "NpcHealth",
-      "NpcEffect",      "Pause",          "VehicleRadio", "PlayerHit",     "NpcAwareness",
-      "Stealth",        "Noise",          "NpcHack",      "NpcHackState",  "NpcStatus",
-      "PlayerHack",     "VehicleHack",    "Journal",      "Tracked",       "PhoneCall",
-      "PhoneAction",    "PhoneReply",     "Subtitle",     "ChoiceHub",     "ChoiceCursor",
-      "StoryState",     "QuestReward",    "TimeEffect",   "StoryEffect",   "NpcAction",
-      "NpcActionReply", "NpcHold",        "NpcCue",       "Regroup",       "RegroupAnswer",
-      "WorldItem",      "WorldItemTaken", "SharedItem",   "Vitals",        "Revive",
-      "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",     "NpcWound",
-      "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",        "ResyncRequest",
-      "NpcSet",         "Epoch",          "Elsewhere",    "Transit",       "NpcSeat",
-      "NpcShotAt",      "ShotHit",        "PlayerLevel",  "SessionLevel",  "NpcLevel",
-      "Trade",          "TradeOffer",     "TradeCommit",  "VehicleUnlock", "CarLend"};
+      "Hello",          "Welcome",        "Refused",       "Ping",         "Pong",
+      "Roster",         "PlayerState",    "Bye",           "PoseState",    "Appearance",
+      "Held",           "Shot",           "Seat",          "VehicleState", "World",
+      "NpcSpawn",       "NpcStates",      "NpcGone",       "NpcHit",       "NpcHealth",
+      "NpcEffect",      "Pause",          "VehicleRadio",  "PlayerHit",    "NpcAwareness",
+      "Stealth",        "Noise",          "NpcHack",       "NpcHackState", "NpcStatus",
+      "PlayerHack",     "VehicleHack",    "Journal",       "Tracked",      "PhoneCall",
+      "PhoneAction",    "PhoneReply",     "Subtitle",      "ChoiceHub",    "ChoiceCursor",
+      "StoryState",     "QuestReward",    "TimeEffect",    "StoryEffect",  "NpcAction",
+      "NpcActionReply", "NpcHold",        "NpcCue",        "Regroup",      "RegroupAnswer",
+      "WorldItem",      "WorldItemTaken", "SharedItem",    "Vitals",       "Revive",
+      "GameOver",       "NpcAnims",       "NpcShot",       "NpcStrike",    "NpcWound",
+      "NpcPoise",       "Difficulty",     "AreaHit",       "Digest",       "ResyncRequest",
+      "NpcSet",         "Epoch",          "Elsewhere",     "Transit",      "NpcSeat",
+      "NpcShotAt",      "ShotHit",        "SceneState",    "SceneCast",    "SceneLine",
+      "ActorPose",      "PlayerLevel",    "SessionLevel",  "NpcLevel",     "Trade",
+      "TradeOffer",     "TradeCommit",    "VehicleUnlock", "CarLend"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

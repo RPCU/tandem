@@ -26,6 +26,7 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_journal: wref<JournalManager>;
   private let m_phone: ref<TandemPhone>;
   private let m_dialogue: ref<TandemDialogue>;
+  private let m_scenes: ref<TandemScenes>;
 
   // Host: the journal snapshot is owed (sent once the world plays), and the
   // changes since the last tick, sent together.
@@ -47,6 +48,7 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_ownTracked: Uint32;
   private let m_ownTrackedKept: Bool;
   private let m_inSnapshot: Bool;
+  // The host's journal as last heard: its snapshot, then every change.
   private let m_snapshotHashes: array<Uint32>;
   private let m_snapshotStates: array<Int32>;
   private let m_lastAutosaveDrop: Float;
@@ -89,6 +91,16 @@ public class TandemStorySystem extends ScriptableSystem {
   private persistent let m_ledger: array<Uint64>;
   // Our garage, and the host's news of it (Garage.reds).
   private let m_garage: ref<TandemGarage>;
+  // Session items (docs/architecture/quest-carryover.md): the host's quest
+  // props (tag Quest, keycards) our V holds as a guest. Not ours to keep:
+  // taken back out when we leave, and at the next load if a save ever held
+  // them (persistent for that).
+  private persistent let m_sessionItems: array<TweakDBID>;
+  private persistent let m_sessionCounts: array<Int32>;
+  // (regions, later) apart from the host: our own gigs run and their journal
+  // entries stay ours. Always grouped until the regions work says otherwise.
+  private let m_apart: Bool;
+
   // The quest whose journal moved last, and when (a reward in our own story
   // belongs to it: the host's rule, core/story.hpp).
   private let m_lastQuest: Uint32;
@@ -138,9 +150,16 @@ public class TandemStorySystem extends ScriptableSystem {
     this.MigrateRewards();
     this.m_garage = new TandemGarage();
     this.m_garage.Start(this.GetGameInstance());
+    this.m_scenes = new TandemScenes();
+    this.m_scenes.Start(this.GetGameInstance(), this);
     // Journal changes: the host sends them; every game keeps the last quest
     // that moved (rewards, below).
     this.Listen();
+    // A save that held session items (a session that did not end cleanly):
+    // out they go once the world plays (Tick), now that it is our own.
+    if this.m_you == 0u && ArraySize(this.m_sessionItems) > 0 {
+      TandemNative.Log("story: this save holds quest props of a co-op session: taken out once the world plays");
+    }
     // A load brings the save's own lock list back: ours again if in a session.
     if this.m_saveLocked {
       SaveLocksManager.RequestSaveLockAdd(this.GetGameInstance(), n"tandem");
@@ -194,6 +213,11 @@ public class TandemStorySystem extends ScriptableSystem {
       this.m_playing = true;
     }
     this.HandleEvents();
+    // Session items out of a session: a leave that found no V, or a save
+    // that held them (Begin).
+    if this.m_you == 0u && this.m_playing && ArraySize(this.m_sessionItems) > 0 {
+      this.RemoveSessionItems();
+    }
     if this.m_you != 0u && this.m_playing {
       this.ScanCompanions();
       this.UpdatePrivate();
@@ -246,6 +270,11 @@ public class TandemStorySystem extends ScriptableSystem {
   // its own.
   public func HostBusy() -> Bool {
     return (this.m_hostFlags & 8) != 0;
+  }
+
+  // Scene replay (Scenes.reds): the host's scenes for its guests.
+  public func Scenes() -> ref<TandemScenes> {
+    return this.m_scenes;
   }
 
   public func JournalOf() -> wref<JournalManager> {
@@ -304,6 +333,9 @@ public class TandemStorySystem extends ScriptableSystem {
         case 2:
           if !this.m_isHost && this.m_you != 0u {
             this.GuestLeave();
+          }
+          if this.m_isHost {
+            this.m_scenes.HostEnd();
           }
           this.EndPrivate();
           this.m_you = 0u;
@@ -366,6 +398,17 @@ public class TandemStorySystem extends ScriptableSystem {
           break;
         case 42:
           this.OnHostEffect(event.reward, event.flags != 0);
+          break;
+        case 50:
+        case 51:
+        case 52:
+        case 53:
+        case 54:
+        case 55:
+        case 56:
+          if !this.m_isHost {
+            this.m_scenes.OnEvent(event);
+          }
           break;
         case 41:
           this.OnReward(event.reward, event.hash);
@@ -430,6 +473,8 @@ public class TandemStorySystem extends ScriptableSystem {
       let tracked = this.m_journal.GetTrackedEntry();
       TandemStory.SendTracked(IsDefined(tracked) ? Cast<Uint32>(this.m_journal.GetEntryHash(tracked)) : 0u);
     }
+    // The scene our game plays, for the guests to watch (Scenes.reds).
+    this.m_scenes.HostTick(this.Now(), this.m_ourTier, this.m_inPrivate, this.m_dialogue.HubOpen());
   }
 
   // JournalManager callbacks (signature of JournalNotificationQueue's,
@@ -584,6 +629,8 @@ public class TandemStorySystem extends ScriptableSystem {
     }
     this.UpdateHolds();
     this.m_dialogue.GuestTick();
+    this.m_scenes.GuestTick(this.Now());
+    this.m_phone.GuestTick();
   }
 
   // The journal entry's state before the mirror first changed it.
@@ -614,6 +661,12 @@ public class TandemStorySystem extends ScriptableSystem {
       ArrayPush(this.m_snapshotStates, event.state);
       return;
     }
+    this.HostHeard(event.hash, event.state);
+    // Apart, a gig is its starter's: the host's gig entries are not ours
+    // to show (we see them when we help: grouped).
+    if this.OwnGigEntry(event.hash) {
+      return;
+    }
     // A change of the host's story, with its toast and sound when the
     // host's had one (JournalNotificationQueue.OnJournalUpdate, :341545).
     this.SetEntry(event.hash, event.state, event.flags != 0);
@@ -633,7 +686,7 @@ public class TandemStorySystem extends ScriptableSystem {
     this.Walk(own, ownStates);
     let hidden = 0;
     for hash in own {
-      if !ArrayContains(this.m_snapshotHashes, hash) && this.SetEntry(hash, 1, false) {
+      if !ArrayContains(this.m_snapshotHashes, hash) && !this.OwnGigEntry(hash) && this.SetEntry(hash, 1, false) {
         hidden += 1;
       }
     }
@@ -642,7 +695,10 @@ public class TandemStorySystem extends ScriptableSystem {
     while pass < 2 {
       let i = 0;
       while i < ArraySize(this.m_snapshotHashes) {
-        this.SetEntry(this.m_snapshotHashes[i], this.m_snapshotStates[i], false);
+        // Apart, the host's gig entries are not ours to show (OnHostJournal).
+        if !this.OwnGigEntry(this.m_snapshotHashes[i]) {
+          this.SetEntry(this.m_snapshotHashes[i], this.m_snapshotStates[i], false);
+        }
         i += 1;
       }
       pass += 1;
@@ -674,16 +730,17 @@ public class TandemStorySystem extends ScriptableSystem {
   // put the journal back, resume our own quests, unlock saving.
   private func GuestLeave() -> Void {
     TandemNative.Log("story: leaving the host's story");
+    // The host's quest props first: our own quests test our inventory.
+    this.RemoveSessionItems();
     this.m_phone.Close();
     this.m_dialogue.Close();
-    // The host's quest props (tag Quest, keycards) are not ours to keep: our
-    // own quests test for them (quest-carryover.md). Iconics stay.
-    let loot = TandemLoot.Get(this.GetGameInstance());
-    if IsDefined(loot) {
-      loot.ReturnSessionItems();
-    }
+    this.m_scenes.Leave();
     this.ReleaseHolds();
     this.TakeOffEffects();
+    // Back to the default before the journal is put back (our own gig
+    // entries given back meanwhile are no longer in the touched list).
+    this.m_apart = false;
+    TandemStory.Grouped(true);
     this.m_hostFlags = 0;
     this.m_hostTier = 0;
     let mismatches = 0;
@@ -753,11 +810,12 @@ public class TandemStorySystem extends ScriptableSystem {
   }
 
   // What of the host's story is still in our game (Saves.reds; the bits are
-  // core/progress.hpp's): 1 its journal, our story on hold or our lock;
+  // core/progress.hpp's): 1 its journal, our story on hold, our lock or its
+  // quest props in our inventory;
   // 16 what we hold for its scenes (combat, god mode, story effects).
   public func LeftOver() -> Int32 {
     let left = 0;
-    if this.m_saveLocked || this.m_frozen || ArraySize(this.m_touched) > 0 || this.m_ownTrackedKept {
+    if this.m_saveLocked || this.m_frozen || ArraySize(this.m_touched) > 0 || this.m_ownTrackedKept || this.SessionItemsLeft() > 0 {
       left += 1;
     }
     if this.m_holdCombat || this.m_holdGod || ArraySize(this.m_effects) > 0 {
@@ -1099,6 +1157,144 @@ public class TandemStorySystem extends ScriptableSystem {
     ArrayClear(this.m_others);
   }
 
+  // ---- session items, and whose gig it is (quest-carryover.md) ----
+
+  // Loot.reds: a quest prop came into our V's inventory.
+  public func NoteSessionItem(record: TweakDBID, quantity: Int32) -> Void {
+    // Ours to keep when we host, play alone, or run our own gig apart.
+    if !this.IsGuest() || this.m_apart || quantity <= 0 {
+      return;
+    }
+    let i = 0;
+    while i < ArraySize(this.m_sessionItems) {
+      if this.m_sessionItems[i] == record {
+        this.m_sessionCounts[i] += quantity;
+        return;
+      }
+      i += 1;
+    }
+    ArrayPush(this.m_sessionItems, record);
+    ArrayPush(this.m_sessionCounts, quantity);
+    TandemNative.Log(s"story: session item \(TDBID.ToStringDEBUG(record)) x\(quantity) (the host's quest prop: ours until we leave)");
+  }
+
+  private func RemoveSessionItems() -> Void {
+    let player = GetPlayer(this.GetGameInstance());
+    if ArraySize(this.m_sessionItems) == 0 || !IsDefined(player) {
+      return;
+    }
+    let items = GameInstance.GetTransactionSystem(this.GetGameInstance());
+    // One try each: one that is gone already (used, sold, dropped) is no
+    // longer ours to take.
+    let gone = 0;
+    let i = 0;
+    while i < ArraySize(this.m_sessionItems) {
+      if !items.RemoveItemByTDBID(player, this.m_sessionItems[i], this.m_sessionCounts[i]) {
+        gone += 1;
+      }
+      i += 1;
+    }
+    TandemNative.Log(s"story: \(ArraySize(this.m_sessionItems)) session item record(s) taken back out (\(gone) gone already)");
+    ArrayClear(this.m_sessionItems);
+    ArrayClear(this.m_sessionCounts);
+  }
+
+  // How many of the host's quest props our V still holds (for progression's
+  // TandemStorySystem.LeftOver, bit 1: no save while any is left).
+  public func SessionItemsLeft() -> Int32 {
+    return ArraySize(this.m_sessionItems);
+  }
+
+  // Whether our own world's gigs are played where we stand: apart from the
+  // host, or (regions) leading our group. The regions work calls this with
+  // TandemRegions.Leader() == You() (quest-carryover.md, "Whose gig is it");
+  // until then only the test command does, so we are always grouped and
+  // nothing changes. Guest only; leaving sets it back.
+  public func SetApart(apart: Bool) -> Void {
+    if Equals(apart, this.m_apart) || (apart && !this.IsGuest()) {
+      return;
+    }
+    this.m_apart = apart;
+    TandemStory.Grouped(!apart);
+    if !this.Mirroring() {
+      TandemNative.Log(s"story: \(apart ? "apart from the host: our gigs are ours" : "grouped with the host")");
+      return;
+    }
+    // The gig entries change hands: apart, ours are given back as they were
+    // before the mirror touched them (the host's go back to hidden, which is
+    // what they were here); grouped, the host's are shown as last heard and
+    // ours not in the host's journal are hidden again.
+    let changed = 0;
+    if apart {
+      let i = ArraySize(this.m_touched) - 1;
+      while i >= 0 {
+        if this.GigEntry(this.m_touched[i]) {
+          let before = this.m_touchedBefore[i] <= 1 ? 1 : this.m_touchedBefore[i];
+          this.m_journal.ChangeEntryStateByHash(this.m_touched[i], IntEnum<gameJournalEntryState>(before), JournalNotifyOption.DoNotNotify);
+          ArrayErase(this.m_touched, i);
+          ArrayErase(this.m_touchedBefore, i);
+          changed += 1;
+        }
+        i -= 1;
+      }
+    } else {
+      let own: array<Uint32>;
+      let ownStates: array<Int32>;
+      this.Walk(own, ownStates);
+      for hash in own {
+        if this.GigEntry(hash) && !ArrayContains(this.m_snapshotHashes, hash) && this.SetEntry(hash, 1, false) {
+          changed += 1;
+        }
+      }
+      let i = 0;
+      while i < ArraySize(this.m_snapshotHashes) {
+        if this.GigEntry(this.m_snapshotHashes[i]) && this.SetEntry(this.m_snapshotHashes[i], this.m_snapshotStates[i], false) {
+          changed += 1;
+        }
+        i += 1;
+      }
+    }
+    TandemNative.Log(s"story: \(apart ? "apart from the host: our gigs are ours" : "grouped with the host"), \(changed) gig journal entries changed hands");
+  }
+
+  public func Apart() -> Bool {
+    return this.m_apart;
+  }
+
+  // The host's journal as last heard (a change after the snapshot).
+  private func HostHeard(hash: Uint32, state: Int32) -> Void {
+    let i = 0;
+    while i < ArraySize(this.m_snapshotHashes) {
+      if this.m_snapshotHashes[i] == hash {
+        this.m_snapshotStates[i] = state;
+        return;
+      }
+      i += 1;
+    }
+    ArrayPush(this.m_snapshotHashes, hash);
+    ArrayPush(this.m_snapshotStates, state);
+  }
+
+  // A journal entry of a gig while we are apart: it belongs to its
+  // starter's world, so the mirror leaves ours alone and does not show the
+  // host's.
+  private func OwnGigEntry(hash: Uint32) -> Bool {
+    return this.m_apart && this.GigEntry(hash);
+  }
+
+  // A journal entry of a gig (street story, contract, cyberpsycho, courier).
+  private func GigEntry(hash: Uint32) -> Bool {
+    let entry = this.m_journal.GetEntry(hash);
+    let quest = IsDefined(entry) ? this.QuestOf(entry) : null;
+    if !IsDefined(quest) {
+      return false;
+    }
+    let kind = this.m_journal.GetQuestType(quest);
+    return Equals(kind, gameJournalQuestType.StreetStory) || Equals(kind, gameJournalQuestType.Contract)
+      || Equals(kind, gameJournalQuestType.CyberPsycho) || Equals(kind, gameJournalQuestType.CourierQuest)
+      || Equals(kind, gameJournalQuestType.CourierSideQuest);
+  }
+
   // ---- rewards (design §4) ----
 
   // Host: our V got a reward (PlayerPuppet.OnRewardEvent, final.reds:43468).
@@ -1255,6 +1451,21 @@ public class TandemStorySystem extends ScriptableSystem {
     } else if Equals(command, "quest freeze off") {
       TandemStory.Freeze(false);
       TandemNative.Log(s"quest: freeze off (\(TandemStory.FreezeReport()))");
+    } else if Equals(command, "quest trace on") || Equals(command, "quest trace off") {
+      // Spike C2: phases and their journal nodes, in the log.
+      TandemStory.QuestTrace(Equals(command, "quest trace on"));
+    } else if Equals(command, "quest apart") || Equals(command, "quest grouped") {
+      // (test, until regions) as if we were apart from the host, or back.
+      this.SetApart(Equals(command, "quest apart"));
+    } else if Equals(command, "story items") {
+      TandemNative.Log(s"story: \(ArraySize(this.m_sessionItems)) session item record(s) held");
+    } else if StrBeginsWith(command, "story item ") {
+      // (test) as if the host's quest had given our V this prop.
+      let record = TDBID.Create(StrAfterFirst(command, "item "));
+      let player = GetPlayer(this.GetGameInstance());
+      if IsDefined(player) && GameInstance.GetTransactionSystem(this.GetGameInstance()).GiveItem(player, ItemID.FromTDBID(record), 1) {
+        this.NoteSessionItem(record, 1);
+      }
     } else if Equals(command, "quest report") {
       TandemNative.Log(TandemStory.FreezeReport());
     } else if StrBeginsWith(command, "story journal ") {
@@ -1287,6 +1498,8 @@ public class TandemStorySystem extends ScriptableSystem {
       this.m_forcedPrivate = Equals(command, "story private on");
       this.m_lastPrivateCheck = 0.0;
       TandemNative.Log(s"story: test private scene \(this.m_forcedPrivate ? "on" : "off")");
+    } else if StrBeginsWith(command, "story scene") {
+      this.m_scenes.Command(command);
     } else if Equals(command, "story join") {
       this.AcceptOffer();
     } else if Equals(command, "story state") {

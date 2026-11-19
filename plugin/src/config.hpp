@@ -27,8 +27,13 @@
 //   quest_freeze = off   ; on: a guest's own story phases wait while it is in a
 //                        ; session (engine/quests.cpp); off: the hook stays out
 //   scene_privacy = on   ; off: every scene is watched (no private scenes)
+//   scene_replay = off   ; on: a host's story scenes play for its guests (their
+//                        ; cast, voices and, with pose = on, the actors' bodies:
+//                        ; docs/architecture/scene-replay.md); poses: only the
+//                        ; actors' bodies are left out
 //   private_actors = judy, panam, river, kerry, meredith  ; romance partners
 //   private_scenes = , public_scenes =  ; scene resource paths, comma-separated
+//   quest_freeze_gigs =  ; gig phase resources: they wait only while grouped
 //   quest_freeze_allow = ; more open-world phase resources that keep running
 //                        ; on a frozen guest (resource paths, comma-separated)
 //   time_host = full     ; host's Sandevistan (scripts/tandem/Time.reds): full keeps
@@ -79,8 +84,11 @@ struct Config {
   bool recorderPose{true};
   bool questFreeze{false};
   std::vector<std::string> questFreezeAllow;
+  std::vector<std::string> questFreezeGigs; // gig phase resources (ours while apart)
   // Scene privacy (engine/scenes.cpp): private scenes are not watched.
   bool scenePrivacy{true};
+  bool sceneReplay{false};
+  bool scenePoses{true}; // with sceneReplay
   std::vector<std::string> privateActors{"judy", "panam", "river", "kerry", "meredith"};
   std::vector<std::string> privateScenes, publicScenes;
   // How the host's own time dilations are played (Time.reds): its world in

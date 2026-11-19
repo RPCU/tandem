@@ -254,15 +254,6 @@ public class TandemSystem extends ScriptableSystem {
     if !IsDefined(player) {
       return;
     }
-    // Phantom Liberty is required (decided 2026-11-19): its journal, items,
-    // vehicles and districts are in every session's world, and a game
-    // without it has none of their records. The chosen session is dropped.
-    if !TandemSystem.HasPhantomLiberty() {
-      TandemNative.Log("co-op: Phantom Liberty is not installed here: no session");
-      TandemNative.Leave();
-      TandemCoop.Notice(this.GetGameInstance(), "Co-op needs Phantom Liberty");
-      return;
-    }
     let body = Equals(player.GetResolvedGenderName(), n"Male") ? 2 : 1;
     TandemNative.Log(s"in game, body \(body)");
     TandemNative.Start(body);
@@ -501,17 +492,8 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_inGame;
   }
 
-  // The game's own word (final.reds:223600): the expansion is installed.
-  public static func HasPhantomLiberty() -> Bool {
-    return IsEP1();
-  }
-
   // Host this game now (port 0: tandem.ini's), out of any session it was in.
   public func CoopHost(port: Int32) -> Bool {
-    if !TandemSystem.HasPhantomLiberty() {
-      TandemCoop.Notice(this.GetGameInstance(), "Co-op needs Phantom Liberty");
-      return false;
-    }
     this.EndSession(true);
     TandemNative.StartHost(port);
     this.BeginSession();
@@ -522,10 +504,6 @@ public class TandemSystem extends ScriptableSystem {
   // False: neither (nothing changed), or a code with no relay set (then out
   // of the session it was in).
   public func CoopJoin(address: String) -> Bool {
-    if !TandemSystem.HasPhantomLiberty() {
-      TandemCoop.Notice(this.GetGameInstance(), "Co-op needs Phantom Liberty");
-      return false;
-    }
     if TandemCoop.IsCode(address) {
       this.EndSession(true);
       if !TandemNative.JoinByCode(address) {
@@ -550,13 +528,6 @@ public class TandemSystem extends ScriptableSystem {
   public func CoopLeave() -> Void {
     if IsDefined(this.m_saves) {
       this.m_saves.Chosen();
-    }
-    // A guest gives the host's quest props back (with story sync off too).
-    if this.m_inGame && this.m_you != 0u && !TandemNative.IsHost() {
-      let loot = TandemLoot.Get(this.GetGameInstance());
-      if IsDefined(loot) {
-        loot.ReturnSessionItems();
-      }
     }
     this.EndSession(true);
     TandemNative.Leave();
@@ -2023,14 +1994,6 @@ public class TandemSystem extends ScriptableSystem {
           this.m_you = 0u;
           if IsDefined(this.m_time) {
             this.m_time.End();
-          }
-          // A guest: the host's quest props back out (Story.reds does it
-          // first when story sync is on; again here, it finds nothing).
-          if !TandemNative.IsHost() {
-            let loot = TandemLoot.Get(this.GetGameInstance());
-            if IsDefined(loot) {
-              loot.ReturnSessionItems();
-            }
           }
           // Our weather is the game's again (the clock waits: the host may
           // be back in a moment).

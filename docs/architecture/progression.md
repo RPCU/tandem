@@ -169,9 +169,10 @@ built here.
   money, loot, iconics, traded items, quest rewards); the ledger (quests
   taken part in, with whom, completed or not; rewards paid; vehicles
   earned). What it gives back on leaving: the host's quest props (items
-  tagged `Quest`, keycards), before saving unlocks (decided 2026-11-19).
+  tagged `Quest`, keycards), first thing in its leave, before saving
+  unlocks (decided 2026-11-19; the session items of `quest-carryover.md`).
 - **Phantom Liberty is required** on every game (decided 2026-11-19;
-  `session.md`).
+  checked at join, the release work).
 
 ### Leaving: from the session back to a guest's own saves
 
@@ -332,4 +333,4 @@ only saves after the steps above) and on the host (which saves any time):
 - In game: `tools/game.sh cmd progress` logs the leave step, our lock, the
   game's locks, what is left of a session, and the levels.
 - Scenarios (not run yet): `levels-host`, `levels-guest`, `saves-leave`,
-  `carry-props`, `trade-peer`, `garage-guest`, `garage-lend`.
+  `story-session-items`, `trade-peer`, `garage-guest`, `garage-lend`.

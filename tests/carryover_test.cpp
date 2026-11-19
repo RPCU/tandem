@@ -125,9 +125,11 @@ TEST_CASE("a guest is told when the host's story is elsewhere") {
         JoinNote::HostEnding);
   CHECK(NoteFor({.mainDone = 30, .pointOfNoReturn = true},
                 {.mainDone = 30, .pointOfNoReturn = true}) == JoinNote::None);
-  CHECK(Ep1Missing({.ep1 = true}, {.ep1 = false}));
-  CHECK_FALSE(Ep1Missing({.ep1 = false}, {.ep1 = true}));
-  CHECK_FALSE(Ep1Missing({.ep1 = true}, {.ep1 = true}));
+  // Both own Phantom Liberty (required); only the host's story has begun it.
+  CHECK(NoteFor({.mainDone = 6, .ep1Started = true}, {.mainDone = 5}) == JoinNote::HostAhead);
+  CHECK(NoteFor({.mainDone = 6}, {.mainDone = 5, .ep1Started = true}) == JoinNote::None);
+  CHECK(NoteFor({.mainDone = 6, .ep1Started = true}, {.mainDone = 5, .ep1Started = true}) ==
+        JoinNote::None);
 }
 
 TEST_CASE("a vehicle earned with a host is credited once, and survives the save") {
