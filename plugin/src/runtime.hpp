@@ -13,6 +13,7 @@
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
 #include "tandem/timebubble.hpp"
+#include "tandem/traffic.hpp"
 #include "tandem/vehicle.hpp"
 
 #include <array>
@@ -23,6 +24,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -90,6 +92,24 @@ struct RegroupEvent {
   Kind kind{};
   proto::Regroup offer;        // Offer
   proto::RegroupAnswer answer; // Answer
+};
+
+// World vehicles and police for the scripts (scripts/tandem/Traffic.reds,
+// Police.reds), net -> game thread: a shared vehicle appeared, went or
+// changed; a guest hit one of ours (area owner); the area's owner saw our
+// puppet commit a crime.
+struct StreetEvent {
+  enum class Kind : std::int32_t { Spawn = 1, Gone = 2, Status = 3, Hit = 4, Crime = 5 };
+  Kind kind{};
+  proto::TrafficSpawn spawn; // id set for every vehicle kind; Hit, Crime: position
+  std::int32_t flags{};      // Spawn, Status: kTraffic*; Hit: kTrafficHit*; Crime: kCrime*
+  std::int32_t reason{};     // Gone: kTraffic{Away,Taken,Removed}; Crime: proto::CrimeKind
+  proto::PlayerId player{};  // Gone taken: whose car; Hit: who
+  float amount{};            // Status: health 0..1; Hit: damage; Crime: share of health
+  proto::Vec3 vector;        // Hit: the push, or the way it went
+  proto::NpcId npc{};        // Crime: the victim or the witness
+  std::int32_t attack{};     // Crime: gamedataAttackType
+  std::uint64_t atUs{};      // when it arrived (steady clock): hits and crimes go stale
 };
 
 // NPC proxies use the player-puppet tracks and controller under these ids.
@@ -341,6 +361,32 @@ public:
   // Guest: which players the host's NPC has detected (bit player - 1).
   std::uint8_t NpcDetected(proto::NpcId npc);
   void SubmitNpcStates(const proto::NpcStates &states);
+  // World vehicles and police (docs/architecture/traffic.md, police.md).
+  // game -> net: what the area's owner says of its vehicles (TrafficSpawn,
+  // TrafficGone, TrafficStatus, Crime), and anyone's TrafficHit and
+  // TrafficClaim. The owner's moving vehicles go through the packet budget
+  // here (game thread) and leave as one TrafficStates (newest only).
+  void SubmitStreet(proto::Message message);
+  std::vector<proto::Message> TakeStreetOutbox();
+  void SubmitTrafficCars(std::span<const traffic::Car> cars, std::span<const proto::Vec3> viewers);
+  std::optional<proto::TrafficStates> TakeTrafficStates();
+  // net -> game: events for the scripts, and each vehicle's track.
+  void PushStreetEvent(StreetEvent event);
+  std::vector<StreetEvent> TakeStreetEvents();
+  void PushTrafficStates(const proto::TrafficStates &states);
+  void ForgetTraffic(proto::TrafficId id);
+  // Where to draw a shared vehicle now (game thread).
+  sync::VehicleView TrafficOf(proto::TrafficId id);
+  // The session's record of the shared vehicles, for the scripts' checks.
+  void SetSharedTraffic(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
+                        const std::map<proto::TrafficId, proto::TrafficStatus> &status);
+  std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> SharedTraffic();
+  bool IsTrafficShared(proto::TrafficId id);
+  // Our V's wanted level, game -> net (newest only); everyone else's.
+  void SubmitLocalHeat(const proto::Heat &heat);
+  std::optional<proto::Heat> TakeLocalHeat();
+  void PushRemoteHeat(const proto::Heat &heat);
+  proto::Heat HeatOf(proto::PlayerId player);
   std::vector<proto::Message> TakeNpcOutbox();
   std::optional<proto::NpcStates> TakeNpcStates();
   void PushNpcEvent(const NpcEvent &event);
@@ -521,6 +567,15 @@ private:
   std::uint32_t m_hostWorldChanges{};                                                // m_lock
   std::vector<proto::Message> m_npcOutbox;                                           // m_lock
   std::optional<proto::NpcStates> m_npcStates;                                       // m_lock
+  std::vector<proto::Message> m_streetOutbox;                                        // m_lock
+  std::optional<proto::TrafficStates> m_trafficStates;                               // m_lock
+  std::vector<StreetEvent> m_streetEvents;                                           // m_lock
+  std::map<proto::TrafficId, proto::TrafficSpawn> m_sharedTraffic;                   // m_lock
+  std::map<proto::TrafficId, proto::TrafficStatus> m_trafficStatus;                  // m_lock
+  std::optional<proto::Heat> m_localHeat;                                            // m_lock
+  std::map<proto::PlayerId, proto::Heat> m_heat;                                     // m_lock
+  traffic::Budget m_trafficBudget;                                                   // game thread
+  std::map<proto::TrafficId, sync::VehicleTrack> m_trafficTracks;                    // m_tracksLock
   std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
   std::vector<consistency::Timed<proto::PlayerHit>> m_playerHits;                    // m_lock
   std::vector<proto::Message> m_hackOutbox;                                          // m_lock
