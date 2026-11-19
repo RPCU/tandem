@@ -71,7 +71,7 @@ task touches ([Topic files](#topic-files)).
 | `dist/` | files installed next to the DLL (`tandem.ini`) | — |
 | `cmake/` | `clang-cl-msvc.cmake`: the Windows cross toolchain | — |
 | `docs/` | this core; `architecture/`: one file per subsystem; `research/`: engine facts with sources, design research, `data/` (RTTI and skeleton dumps) | `task docs:check` |
-| `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `remote.sh`, `check-natives.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `re/` (read-only reverse engineering, see its README) | — |
+| `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `re/` (read-only reverse engineering, see its README) | — |
 | `vendor/` | git submodules: RED4ext.SDK, RedLib, ENet, zpp_bits, doctest | — |
 
 The build is Linux-only: the plugin is cross-compiled with clang-cl and

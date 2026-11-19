@@ -198,6 +198,10 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   `build`, `build:linux` or `test`, `build/linux/peer/tandem-peer`) back.
   Then `TANDEM_PREBUILT=1 tools/scenario.sh …` deploys that DLL as is
   (`task deploy:files`) instead of rebuilding it here.
+  It refuses while the game runs on anya (our own scenario runs set
+  `TANDEM_REMOTE_WHILE_PLAYING=1` if they must build); `tools/build.sh
+TASK…` picks: anya when nobody plays there, else here through the laptop's
+  lock.
 - Through the relay by hand: `task relay:run`, then
   `task peer -- host --relay 127.0.0.1` (it logs `join code K7Q-2M9`) and
   `task peer -- join --code K7Q-2M9 --relay 127.0.0.1`. `task test` does the

@@ -14,6 +14,8 @@ mark
 expect 'combat: npc hit applied to our V: [0-9.]+ damage' 10
 reject 'npc hit on our V dealt no damage'
 # Few hits: stop the host before V is in danger.
+# Only what comes after: the previous host's goodbye may be just past the start.
+mark
 pkill -x tandem-peer
 expect 'session ended' 60
 reject 'watchdog: game thread silent'
