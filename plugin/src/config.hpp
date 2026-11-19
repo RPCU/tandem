@@ -29,6 +29,7 @@
 //   scene_privacy = on   ; off: every scene is watched (no private scenes)
 //   private_actors = judy, panam, river, kerry, meredith  ; romance partners
 //   private_scenes = , public_scenes =  ; scene resource paths, comma-separated
+//   quest_freeze_gigs =  ; gig phase resources: they wait only while grouped
 //   quest_freeze_allow = ; more open-world phase resources that keep running
 //                        ; on a frozen guest (resource paths, comma-separated)
 //   time_host = full     ; host's Sandevistan (scripts/tandem/Time.reds): full keeps
@@ -72,6 +73,7 @@ struct Config {
   bool recorderPose{true};
   bool questFreeze{false};
   std::vector<std::string> questFreezeAllow;
+  std::vector<std::string> questFreezeGigs; // gig phase resources (ours while apart)
   // Scene privacy (engine/scenes.cpp): private scenes are not watched.
   bool scenePrivacy{true};
   std::vector<std::string> privateActors{"judy", "panam", "river", "kerry", "meredith"};

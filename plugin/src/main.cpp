@@ -162,7 +162,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
       engine::SetScenePrivacy({runtime.config.privateActors, runtime.config.privateScenes,
                                runtime.config.publicScenes});
       engine::InstallQuestFreeze(sdk, handle, runtime.config.questFreezeAllow,
-                                 runtime.config.questFreeze);
+                                 runtime.config.questFreezeGigs, runtime.config.questFreeze);
     }
     if (runtime.config.trace || runtime.config.mirror)
       engine::InstallTrace(sdk, handle, runtime.config.trace);

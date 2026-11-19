@@ -109,7 +109,7 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   scenarios `desync-npcs`, `desync-rejoin`). Resyncs and epochs are logged.
 - `--vanish-at N` (any mode): N s after another player is in the session
   the peer ends with no goodbye, as a killed game does (scenarios
-  `vanish-down`, `vanish-drive`, `vanish-story`).
+  `vanish-down`, `vanish-drive`, `vanish-story`, `story-session-items`).
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
 - **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s

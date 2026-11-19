@@ -171,6 +171,11 @@ struct TandemStory : Red::IScriptable {
   static bool Frozen() { return engine::QuestFrozen(); }
   static std::uint32_t FreezeHeld() { return engine::QuestFreezeHeld(); }
   static bool FreezeLost() { return engine::QuestFreezeOverflowed(); }
+  // Ownership of gigs: grouped with the host (the default) or apart.
+  static void Grouped(bool grouped) { engine::SetQuestGrouped(grouped); }
+  static bool IsGrouped() { return engine::QuestGrouped(); }
+  // Spike C2: log phases and their journal nodes.
+  static void QuestTrace(bool on) { engine::SetQuestTrace(on); }
   static Red::CString FreezeReport() { return Red::CString(engine::QuestFreezeReport().c_str()); }
 
   // What the session said since the last call, oldest first.
@@ -341,6 +346,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(FreezeHeld);
   RTTI_METHOD(FreezeLost);
   RTTI_METHOD(FreezeReport);
+  RTTI_METHOD(Grouped);
+  RTTI_METHOD(IsGrouped);
+  RTTI_METHOD(QuestTrace);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(You);
   RTTI_METHOD(HostId);
