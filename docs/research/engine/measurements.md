@@ -49,7 +49,17 @@ Measured in this project; each line says how.
 - **Startup hangs happen without tandem's involvement too**: 2 of ~8 launches
   hung on the logo or behind a dialog (watchdog dump in
   `pfx/.../REDEngine/ReportQueue/`), the player's mod list being the other
-  suspect (see the anya notes). Not yet attributed. [open]
+  suspect (see the anya notes). Not yet attributed. [open] In test
+  instances (`docs/architecture/two-instances.md`, 2026-11-19) the phase
+  between the script compile and the audio's start takes about 50 s alone
+  and over 2 min with a second game and builds on every core; past 120 s
+  the engine watchdog fires (`Watchdog timeout!`, engineWatchdog.cpp:224)
+  and the process hangs in the crash handler: 2 of about 10 instance starts.
+  [2.5-verified]
+- **Frame rate under Proton without an overlay**: `WINEDEBUG=-all,+fps`
+  makes Wine log `trace:fps:win32u_vkQueuePresentKHR … @ approx 30.01fps`
+  at every present (vkd3d-proton presents through winevulkan).
+  [2.5-verified]
 
 ### 12.1 V's body for a remote player (2026-11-17, probe runs on anya)
 
