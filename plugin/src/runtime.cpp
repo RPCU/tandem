@@ -217,6 +217,8 @@ void Runtime::Stop() {
     m_hackEvents.clear();
     m_lootOutbox.clear();
     m_lootInbox.clear();
+    m_deviceOutbox.clear();
+    m_deviceInbox.clear();
     m_npcAnimsIn.clear();
     m_npcShotsIn.clear();
     m_localPaused.reset();
@@ -987,6 +989,32 @@ std::vector<proto::Message> Runtime::TakeLoot() {
   return std::exchange(m_lootInbox, {});
 }
 
+void Runtime::SubmitDevice(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_deviceOutbox.size() < 2048)
+    m_deviceOutbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeDeviceOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_deviceOutbox, {});
+}
+
+void Runtime::PushDevice(proto::Message message) {
+  std::lock_guard _(m_lock);
+  // Room for a whole record at a join (devices::kMaxDevices) and more; what
+  // does not fit is put right by the device digest.
+  if (m_deviceInbox.size() < 8192)
+    m_deviceInbox.push_back(std::move(message));
+  else
+    ++m_overflows;
+}
+
+std::vector<proto::Message> Runtime::TakeDevices() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_deviceInbox, {});
+}
+
 void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you) {
   {
     // The states list every NPC the host shares: who is not in them
@@ -1221,6 +1249,8 @@ void Runtime::ResetSession() {
     // Bags, claims, revives and offers name the old session's numbers.
     m_lootOutbox.clear();
     m_lootInbox.clear();
+    m_deviceOutbox.clear();
+    m_deviceInbox.clear();
     m_localRevives.clear();
     m_revives.clear();
     m_regroupOutbox.clear();

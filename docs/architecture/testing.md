@@ -165,6 +165,14 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   every stack the others drop N s after it appears; as the host of a
   replay, `--remove-corpses N` takes an NPC a guest killed away N s after
   its death (`NpcGone` reason 0).
+- **Devices** (any mode): `--device ENTITY:CLASS:WORDS[@SECONDS]`
+  operates a device by id (a guest asks the host; a host says its own is
+  that, and takes a guest's request as said: it has no world);
+  `--device-answer WORDS --device-after N` changes back every device
+  another player just changed, N s later. Every device it hears of is
+  logged as the game logs it. `tests/peer_devices.sh`; scenarios
+  `devices-door`, `devices-lift`, `devices-camera`, `devices-barrel`,
+  `devices-guest` (`architecture/devices.md`, Testing).
 
 ## Driving the game and the builds
 

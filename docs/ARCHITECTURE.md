@@ -138,6 +138,7 @@ The owner simulates; everyone else displays.
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
 | items a V drops on purpose | host | lie in every game; the first pickup keeps it |
 | quest and important items, rewards | every player's own V | whoever gets one, every V gets it; a guest gives the host's quest props (tag `Quest`, keycards) back when it leaves, and keeps iconics and rewards |
+| devices: doors, lifts, cameras, turrets, barrels, the alarm | host | own copy first, then the host's word; `architecture/devices.md` |
 
 Enemy level (the mean of the players' levels): `architecture/npcs.md`.
 
@@ -264,6 +265,7 @@ plugin") and its open problems.
 - `combat.md`: hits, outcomes, game rules for every hit, quickhacks.
 - `stealth.md`: takedowns, finishers, carried bodies, "the player" reactions, per-player detection.
 - `loot.md`: per-player loot, dropped items, quest items.
+- `devices.md`: doors, lifts, cameras, turrets, the alarm, access points, computers, barrels, media and other devices: the host's word, a guest's own copy first, revisions, digest, a guest's world put back after; open: glass, a device's shots drawn for the others.
 - `revive.md`: down, revive, respawn, shared game over.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, rewards; open: scenes for guests, story decisions, quests together.
 - `scene-replay.md`: a guest watches the host's scenes: the stage, the cast, lines and actor poses (`scene_replay = on`, off by default).

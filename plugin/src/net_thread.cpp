@@ -89,7 +89,8 @@ struct NetThread::Impl {
     for (const auto &[bit, name] : {std::pair{proto::kDomainWorld, "world"},
                                     {proto::kDomainNpcs, "npcs"},
                                     {proto::kDomainStory, "story"},
-                                    {proto::kDomainPlayers, "players"}})
+                                    {proto::kDomainPlayers, "players"},
+                                    {proto::kDomainDevices, "devices"}})
       if (domains & bit)
         out += out.empty() ? name : std::string(", ") + name;
     return out.empty() ? "nothing" : out;
@@ -524,6 +525,21 @@ struct NetThread::Impl {
                           e.item.kind == proto::kSharedOnCorpse ? "on a corpse" : "looted",
                           e.item.npc);
                 runtime.PushLoot(e.item);
+              } else if constexpr (std::is_same_v<E, events::HostDevice>) {
+                runtime.PushDevice(e.state);
+              } else if constexpr (std::is_same_v<E, events::DeviceAsked>) {
+                auto asked = e.state;
+                asked.how = proto::kDeviceAsk;
+                runtime.PushDevice(asked);
+              } else if constexpr (std::is_same_v<E, events::DeviceRequested>) {
+                log::Info("devices: player {} operated {:x} ({:#x}): status {}, flags {:#x}, "
+                          "value {}",
+                          e.use.player, e.use.entity, e.use.cls, static_cast<int>(e.use.status),
+                          e.use.flags, e.use.value);
+                runtime.PushDevice(e.use);
+              } else if constexpr (std::is_same_v<E, events::DevicesReset>) {
+                log::Info("devices: the host sends its record again");
+                runtime.PushDevice(proto::DeviceSet{});
               } else if constexpr (std::is_same_v<E, events::Resync>) {
                 if (e.player == endpoint->You()) {
                   log::Info("resync: asking the host for {} (our copy differed from its digest)",
@@ -709,6 +725,16 @@ struct NetThread::Impl {
           endpoint->SendRegroup(std::move(*offer));
         else if (const auto *answer = std::get_if<proto::RegroupAnswer>(&message))
           endpoint->SendRegroupAnswer(*answer);
+      }
+      for (auto &message : runtime.TakeDeviceOutbox()) {
+        if (const auto *state = std::get_if<proto::DeviceState>(&message)) {
+          if (state->how == proto::kDeviceAsk)
+            endpoint->AskDevice(*state);
+          else
+            endpoint->ReportDevice(*state);
+        } else if (const auto *use = std::get_if<proto::DeviceUse>(&message)) {
+          endpoint->UseDevice(*use);
+        }
       }
       for (auto &message : runtime.TakeLootOutbox()) {
         if (auto *item = std::get_if<proto::WorldItem>(&message))

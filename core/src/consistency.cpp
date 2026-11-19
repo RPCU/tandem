@@ -193,8 +193,9 @@ bool IsOneShot(const proto::Message &message) {
          // A shot at a V, and its hit: each one counts.
          std::holds_alternative<NpcShotAt>(message) || std::holds_alternative<ShotHit>(message) ||
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
-         std::holds_alternative<NpcStrike>(message) || std::holds_alternative<NpcWound>(message) ||
-         std::holds_alternative<AreaHit>(message);
+         // A request to operate a device: asked once (its answer is state).
+         std::holds_alternative<DeviceUse>(message) || std::holds_alternative<NpcStrike>(message) ||
+         std::holds_alternative<NpcWound>(message) || std::holds_alternative<AreaHit>(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

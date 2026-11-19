@@ -31,6 +31,7 @@ declare -A value=(
   ["--go-down"]=10 ["--go-out"]=10 ["--revive"]=3
   ["--path"]=x.path ["--save-path"]=x.path
   ["--drop"]=0.2 ["--dup"]=0.2 ["--vanish-at"]=20
+  ["--device"]="1a2b3c4d5e6f7788:DoorControllerPS:open,unlocked@8" ["--device-answer"]=closed ["--device-after"]=2
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true
 [ -n "$flags" ] || {

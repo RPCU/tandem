@@ -288,6 +288,11 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(loot) {
       loot.Begin();
     }
+    // Devices and world objects (Devices.reds).
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.Begin();
+    }
   }
 
   private final func OnPlayerDetach(request: ref<PlayerDetachRequest>) -> Void {
@@ -311,6 +316,12 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     TandemNative.PoseSource(null);
+    // Guest: every device the session changed, back as our own save had it
+    // (before the plugin stops: nothing of this goes to anyone).
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.End(worldStays);
+    }
     this.m_inGame = false;
     this.m_you = 0u;
     this.RemoveAllPuppets();
@@ -654,6 +665,11 @@ public class TandemSystem extends ScriptableSystem {
     TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
     if IsDefined(this.m_revive) && this.m_playing {
       this.m_revive.Tick(this.Now(), this.m_you);
+    }
+    // Devices (Devices.reds); 0: not in a session yet, or the world loads.
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this.m_playing ? this.m_you : 0u);
     }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
@@ -1249,6 +1265,9 @@ public class TandemSystem extends ScriptableSystem {
     } else if StrBeginsWith(command, "elsewhere") && IsDefined(this.m_elsewhere) {
       // Elsewhere.reds: elsewhere test PLACE|off, elsewhere state.
       this.m_elsewhere.Command(command);
+    } else if StrBeginsWith(command, "device") {
+      // Devices.reds: device, device near [KIND], device open|close|... [KIND].
+      TandemDevices.Get(this.GetGameInstance()).Command(command);
     } else if StrBeginsWith(command, "story") || StrBeginsWith(command, "quest") {
       // Story.reds: story …, quest freeze on|off, quest report.
       TandemStorySystem.Get(this.GetGameInstance()).Command(command);
@@ -1709,6 +1728,12 @@ public class TandemSystem extends ScriptableSystem {
             TandemCoop.Notice(this.GetGameInstance(), s"Co-op session ended: \(event.name)");
           }
           this.m_you = 0u;
+          // Guest: the devices the session changed, back as our own save
+          // had them (Devices.reds); the world stays.
+          let ended = TandemDevices.Get(this.GetGameInstance());
+          if IsDefined(ended) {
+            ended.End(true);
+          }
           if IsDefined(this.m_time) {
             this.m_time.End();
           }

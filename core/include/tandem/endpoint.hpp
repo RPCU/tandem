@@ -9,6 +9,7 @@
 // game owns its own V (PlayerState); the host's game owns the shared world.
 
 #include "tandem/consistency.hpp"
+#include "tandem/devices.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
 #include "tandem/story.hpp"
@@ -271,6 +272,25 @@ struct RemoteTransit {
 struct HostNpcSeat {
   proto::NpcSeat seat;
 };
+// Devices (docs/architecture/devices.md). Guest: the host's word on a
+// device, new, changed, or the answer to our own request (how: live or
+// quiet); our game brings its copy to it.
+struct HostDevice {
+  proto::DeviceState state;
+};
+// Host: a guest (`state.by`) asks what a device we have no record of is;
+// our game reports it (ReportDevice) if it has it.
+struct DeviceAsked {
+  proto::DeviceState state;
+};
+// Host: a guest operated a device and the request stands: our game brings
+// its own copy to that state and reports what it became.
+struct DeviceRequested {
+  proto::DeviceUse use;
+};
+// Guest: the host is sending its device record again: what it does not
+// name again is no longer the session's.
+struct DevicesReset {};
 } // namespace events
 
 // Who this game is in the session.
@@ -305,7 +325,8 @@ using SessionEvent = std::variant<
     events::WorldItemTakenBy, events::SharedItemFrom, events::RemoteVitals, events::ReviveBy,
     events::SessionLost, events::HostNpcAnims, events::HostNpcShot, events::Combat, events::Resync,
     events::EpochChanged, events::RemoteElsewhere, events::RemoteTransit, events::HostNpcSeat,
-    events::ShotAtUs, events::ShotHitBy>;
+    events::ShotAtUs, events::ShotHitBy, events::HostDevice, events::DeviceAsked,
+    events::DeviceRequested, events::DevicesReset>;
 
 class Endpoint {
 public:
@@ -438,6 +459,21 @@ public:
   // Loot: our V got a quest or important item, or (host) one lies on our
   // NPC's corpse: every other player gets it.
   void SendSharedItem(proto::SharedItem item);
+  // Devices (docs/architecture/devices.md). Host: our game says what a
+  // device is now (`state.by`: who made it so); everyone hears of a change,
+  // and a guest whose request it did not become gets the record back.
+  void ReportDevice(proto::DeviceState state);
+  // Guest: our V operated a device, it is this in our game now (a request:
+  // the host's DeviceState is the answer). `seen` and `player` are filled in.
+  void UseDevice(proto::DeviceUse use);
+  // Guest: a device came into our world like this. Known to the session and
+  // different: our game hears the host's word again; unknown: the host is asked.
+  void AskDevice(proto::DeviceState state);
+  // The session's device record: host, the authority; guest, its copy.
+  const devices::Ledger &Devices() const { return m_devices; }
+  const devices::DigestCheck &DeviceChecks() const { return m_deviceCheck; }
+  // Host: requests refused because someone else changed the device first.
+  std::uint64_t DeviceStale() const { return m_deviceStale; }
   // Host: the world items still lying somewhere (taken stacks at quantity 0).
   const std::map<proto::WorldItemId, proto::WorldItem> &WorldItems() const { return m_worldItems; }
   // Down and out (docs/architecture/revive.md). Our V's life: kept, sent now if we
@@ -680,6 +716,26 @@ private:
   consistency::Checker m_checker;
   std::set<proto::NpcId> m_corpses;
   std::vector<proto::Message> m_early;
+  // Devices: the record (host: the authority; guest: its copy). Host: the
+  // requests granted and not answered by a report yet, and each guest's
+  // last resync. Guest: our requests the host has not answered yet.
+  devices::Ledger m_devices;
+  struct DeviceRequest {
+    proto::PlayerId player{};
+    devices::What what;
+    std::uint64_t atUs{};
+    // Who asked for something else while our game had not answered yet.
+    std::vector<std::pair<proto::PlayerId, devices::What>> late;
+  };
+  std::map<devices::Key, DeviceRequest> m_deviceUses;
+  std::map<devices::Key, devices::What> m_deviceAsked;
+  std::map<proto::PlayerId, std::uint64_t> m_deviceSetAtUs;
+  devices::DigestCheck m_deviceCheck;
+  std::uint64_t m_deviceStale{};
+  void OnDeviceUse(net::PeerId peer, proto::PlayerId player, const proto::DeviceUse &use,
+                   std::vector<SessionEvent> &out);
+  void SendDevicesTo(net::PeerId peer, bool resync);
+  proto::DeviceDigest DeviceDigestNow() const;
   consistency::FaultyLink m_faults;
   bool m_ended{};
   // Guest: the relay to try when the host does not answer directly.
