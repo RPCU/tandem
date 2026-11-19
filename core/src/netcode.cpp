@@ -26,6 +26,10 @@ float AngleBetween(float a, float b) {
 // A gap a frame shorter than asked still counts: frames come every 16-33 ms
 // and do not fall on the interval.
 constexpr std::uint64_t kSlackUs = 12'000;
+// A V or car this far from its last state sent is sent at once, near or far
+// (a teleport, a fast travel, regions' places): the receivers would draw it
+// where it no longer is until the next state is due.
+constexpr float kJumpM = 5.f;
 } // namespace
 
 std::uint64_t PoseIntervalUs(float nearest) {
@@ -77,7 +81,8 @@ std::vector<State> StillGate<State>::Offer(const State &state, std::uint64_t rel
       ++m_heldCount;
       return out;
     }
-  } else if (m_last && relevanceUs && state.timeUs - m_last->timeUs + kSlackUs < relevanceUs) {
+  } else if (m_last && relevanceUs && state.timeUs - m_last->timeUs + kSlackUs < relevanceUs &&
+             Distance(state.position, m_last->position) < kJumpM) {
     // Far away: fewer states, the motion between them is the receiver's.
     m_held.reset();
     return out;
