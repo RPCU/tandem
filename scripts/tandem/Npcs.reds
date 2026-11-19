@@ -880,6 +880,13 @@ public class TandemNpcs {
     if TandemCombat.IsOwnMarker(event.record) {
       return true;
     }
+    // A guest's quickhack landing on an actor of our V's scene, during it:
+    // refused like its upload (Hacks.reds, Restrictions.reds' backstop).
+    let record = TweakDBInterface.GetStatusEffectRecord(event.record);
+    if IsDefined(record) && record.GameplayTagsContains(n"Quickhack")
+      && TandemHacks.SceneRefuses(this.m_game, body, event.npc, event.player, event.record) {
+      return true;
+    }
     let instigator = TandemNpcs.PuppetOf(this.m_game, event.player);
     if !IsDefined(instigator) {
       return false;
