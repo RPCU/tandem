@@ -489,6 +489,72 @@ struct NetThread::Impl {
                 log::Info("player {}: wanted level {} (state {})", e.heat.player, e.heat.stage,
                           static_cast<int>(e.heat.state));
                 runtime.PushRemoteHeat(e.heat);
+              } else if constexpr (std::is_same_v<E, events::RemoteVehicleDamage>) {
+                const auto &d = e.damage;
+                log::Info("wheels: vehicle {:#x} of player {}: health {:.2f}, flags {:#x}, tyres "
+                          "{:#x}, {} part(s) off",
+                          d.vehicle, proto::OwnerOfVehicle(d.vehicle), d.health, d.flags, d.tyres,
+                          d.parts.size());
+                runtime.PushVehicleDamage(d);
+              } else if constexpr (std::is_same_v<E, events::VehicleHitBy>) {
+                runtime.PushWheelsEvent({.kind = WheelsEvent::Kind::Hit,
+                                         .player = e.hit.player,
+                                         .vehicle = e.hit.vehicle,
+                                         .a = e.hit.flags,
+                                         .b = e.hit.tyre,
+                                         .c = e.hit.window,
+                                         .amount = e.hit.damage,
+                                         .position = e.hit.position,
+                                         .vector = e.hit.direction});
+              } else if constexpr (std::is_same_v<E, events::RemoteVehicleExit>) {
+                log::Info("wheels: player {} left vehicle {:#x} the hard way (kind {}, flags {})",
+                          e.exit.player, e.exit.vehicle, static_cast<int>(e.exit.kind),
+                          e.exit.flags);
+                runtime.PushWheelsEvent({.kind = WheelsEvent::Kind::Exit,
+                                         .player = e.exit.player,
+                                         .vehicle = e.exit.vehicle,
+                                         .a = static_cast<std::int32_t>(e.exit.kind),
+                                         .b = e.exit.flags,
+                                         .vector = e.exit.velocity});
+              } else if constexpr (std::is_same_v<E, events::RemoteVehicleCombat>) {
+                runtime.SetSeatCombat(e.combat);
+                runtime.PushWheelsEvent({.kind = WheelsEvent::Kind::Combat,
+                                         .player = e.combat.player,
+                                         .vehicle = e.combat.vehicle,
+                                         .a = static_cast<std::int32_t>(e.combat.mode),
+                                         .id = e.combat.weapon});
+              } else if constexpr (std::is_same_v<E, events::RemoteMountedFire>) {
+                runtime.PushWheelsEvent({.kind = WheelsEvent::Kind::Fire,
+                                         .player = e.fire.player,
+                                         .vehicle = e.fire.vehicle,
+                                         .id = e.fire.weapon,
+                                         .id2 = e.fire.slot,
+                                         .position = e.fire.target});
+              } else if constexpr (std::is_same_v<E, events::GunnerChanged>) {
+                log::Info("wheels: vehicle {:#x}: gunner {}", e.gunner.vehicle, e.gunner.gunner);
+                runtime.SetGunner(e.gunner);
+                runtime.PushWheelsEvent({.kind = WheelsEvent::Kind::Gunner,
+                                         .player = e.gunner.gunner,
+                                         .vehicle = e.gunner.vehicle,
+                                         .id = e.gunner.seat});
+              } else if constexpr (std::is_same_v<E, events::RemoteGunnerAim>) {
+                runtime.PushGunnerAim(e.aim);
+              } else if constexpr (std::is_same_v<E, events::VehicleBumpBy>) {
+                runtime.PushBump(e.bump);
+              } else if constexpr (std::is_same_v<E, events::NpcRamBy>) {
+                runtime.PushWheelsEvent({.kind = WheelsEvent::Kind::Ram,
+                                         .player = e.ram.player,
+                                         .a = e.ram.flags,
+                                         .npc = e.ram.npc,
+                                         .position = e.ram.position,
+                                         .vector = e.ram.velocity});
+              } else if constexpr (std::is_same_v<E, events::ChaseChanged>) {
+                log::Info("wheels: vehicle {:#x} chases player {}", e.chase.vehicle,
+                          e.chase.target);
+                runtime.PushWheelsEvent({.kind = WheelsEvent::Kind::Chase,
+                                         .player = e.chase.target,
+                                         .vehicle = e.chase.vehicle,
+                                         .a = e.chase.flags});
               } else if constexpr (std::is_same_v<E, events::CrimeReported>) {
                 log::Info("police: our V's crime seen by the area's owner (kind {}, npc {})",
                           static_cast<int>(e.crime.kind), e.crime.npc);
@@ -764,6 +830,35 @@ struct NetThread::Impl {
         runtime.SetSharedTraffic(endpoint->SharedTraffic(), endpoint->TrafficStatuses());
       if (auto cars = runtime.TakeTrafficStates())
         endpoint->SendTrafficStates(std::move(*cars));
+      // Vehicle combat: what our game says of its vehicles and our V in them.
+      for (auto &message : runtime.TakeWheelsOutbox())
+        std::visit(
+            [&](auto &m) {
+              using M = std::decay_t<decltype(m)>;
+              if constexpr (std::is_same_v<M, proto::VehicleDamage>)
+                endpoint->SetVehicleDamage(m);
+              else if constexpr (std::is_same_v<M, proto::VehicleHit>)
+                endpoint->SendVehicleHit(m);
+              else if constexpr (std::is_same_v<M, proto::VehicleExit>)
+                endpoint->SendVehicleExit(m);
+              else if constexpr (std::is_same_v<M, proto::VehicleCombat>)
+                endpoint->SetLocalVehicleCombat(m);
+              else if constexpr (std::is_same_v<M, proto::MountedFire>)
+                endpoint->SendMountedFire(m);
+              else if constexpr (std::is_same_v<M, proto::GunnerRequest>)
+                endpoint->AskGunner(m.vehicle, m.seat, m.leave);
+              else if constexpr (std::is_same_v<M, proto::Gunner>)
+                endpoint->FreeGunner(m.vehicle); // our game could not seat them
+              else if constexpr (std::is_same_v<M, proto::GunnerAim>)
+                endpoint->SendGunnerAim(m);
+              else if constexpr (std::is_same_v<M, proto::VehicleBump>)
+                endpoint->SendVehicleBump(m);
+              else if constexpr (std::is_same_v<M, proto::NpcRam>)
+                endpoint->SendNpcRam(m);
+              else if constexpr (std::is_same_v<M, proto::Chase>)
+                endpoint->SendChase(m);
+            },
+            message);
       if (auto heat = runtime.TakeLocalHeat()) {
         lastHeat = heat;
         if (heat->stage == 0)

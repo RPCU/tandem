@@ -15,6 +15,7 @@
 #include "tandem/timebubble.hpp"
 #include "tandem/traffic.hpp"
 #include "tandem/vehicle.hpp"
+#include "tandem/vehicle_combat.hpp"
 
 #include <array>
 #include <atomic>
@@ -110,6 +111,32 @@ struct StreetEvent {
   proto::NpcId npc{};        // Crime: the victim or the witness
   std::int32_t attack{};     // Crime: gamedataAttackType
   std::uint64_t atUs{};      // when it arrived (steady clock): hits and crimes go stale
+};
+
+// Vehicle combat for the scripts (scripts/tandem/Wheels.reds), net -> game
+// thread (docs/architecture/vehicle-combat.md). The latest damage of each
+// vehicle, gunner seats, aims and weapons in vehicles are kept as state for
+// the scripts to read; these say what happened.
+struct WheelsEvent {
+  enum class Kind : std::int32_t {
+    Damage = 1, // a vehicle another game owns changed; `a`: vehiclecombat::Destruction
+    Hit = 2,    // a hit on one of our vehicles: `amount` damage, `a` flags, `b` tyre, `c` window
+    Exit = 3,   // a player left a vehicle the hard way: `a` ExitKind, `b` kExit* flags
+    Combat = 4, // a player's weapons in a vehicle: `a` SeatCombat, `id` weapon
+    Fire = 5,   // a vehicle weapon fired: `id` weapon, `id2` slot, `position` its target
+    Gunner = 6, // a gunner seat changed hands: `player` the gunner (0: free), `id` the seat
+    Ram = 7,    // area owner: a player's car ran into our NPC `npc`: `vector` its velocity
+    Chase = 8,  // vehicle `vehicle` (a TrafficId) chases `player` (0: nobody), `a` flags
+  };
+  Kind kind{};
+  proto::PlayerId player{};
+  std::uint32_t vehicle{}; // a proto::VehicleRef (Chase: a TrafficId)
+  std::int32_t a{}, b{}, c{};
+  std::uint64_t id{}, id2{};
+  float amount{};
+  proto::NpcId npc{};
+  proto::Vec3 position, vector;
+  std::uint64_t atUs{}; // when it arrived (steady clock): hits, exits, shots go stale
 };
 
 // NPC proxies use the player-puppet tracks and controller under these ids.
@@ -387,6 +414,36 @@ public:
   std::optional<proto::Heat> TakeLocalHeat();
   void PushRemoteHeat(const proto::Heat &heat);
   proto::Heat HeatOf(proto::PlayerId player);
+  // Vehicle combat (docs/architecture/vehicle-combat.md). game -> net: what
+  // our game says (VehicleDamage of our vehicles, hits, exits, weapons in a
+  // vehicle, mounted shots, gunner requests, aims, bumps, rams, chases).
+  void SubmitWheels(proto::Message message);
+  std::vector<proto::Message> TakeWheelsOutbox();
+  // Our own vehicles' damage as the scripts build it: the grid and the
+  // parts are noted as the game reports them, the rest with the send.
+  void NoteOwnGrid(proto::VehicleRef vehicle, std::span<const float> cells);
+  void NoteOwnPart(proto::VehicleRef vehicle, std::uint64_t part);
+  proto::VehicleDamage OwnDamage(proto::VehicleRef vehicle);
+  void SetOwnDamage(const proto::VehicleDamage &damage);
+  void ForgetOwnDamage(proto::VehicleRef vehicle);
+  // net -> game: events, and the state the scripts read.
+  void PushWheelsEvent(WheelsEvent event);
+  std::vector<WheelsEvent> TakeWheelsEvents();
+  // A vehicle another game owns is damaged so: the event says what a copy
+  // must do (blow up now, be a wreck, or show its health).
+  void PushVehicleDamage(const proto::VehicleDamage &damage);
+  std::optional<proto::VehicleDamage> DamageOf(proto::VehicleRef vehicle);
+  void SetGunner(const proto::Gunner &gunner);
+  proto::Gunner GunnerOf(proto::VehicleRef vehicle);
+  void PushGunnerAim(const proto::GunnerAim &aim);
+  std::optional<proto::GunnerAim> AimOf(proto::VehicleRef vehicle);
+  void SetSeatCombat(const proto::VehicleCombat &combat);
+  proto::VehicleCombat SeatCombatOf(proto::PlayerId player);
+  // Pushes between players' cars (vehiclecombat::BumpLedger): our car
+  // touched `player`'s copy; another's report of a push; the pushes due.
+  void NoteContact(proto::PlayerId player);
+  void PushBump(const proto::VehicleBump &bump);
+  std::vector<vehiclecombat::BumpLedger::Push> TakeDuePushes();
   std::vector<proto::Message> TakeNpcOutbox();
   std::optional<proto::NpcStates> TakeNpcStates();
   void PushNpcEvent(const NpcEvent &event);
@@ -577,6 +634,14 @@ private:
   traffic::Budget m_trafficBudget;                                                   // game thread
   std::map<proto::TrafficId, sync::VehicleTrack> m_trafficTracks;                    // m_tracksLock
   std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
+  std::vector<proto::Message> m_wheelsOutbox;                                        // m_lock
+  std::vector<WheelsEvent> m_wheelsEvents;                                           // m_lock
+  std::map<proto::VehicleRef, proto::VehicleDamage> m_ownDamage;                     // m_lock
+  std::map<proto::VehicleRef, proto::VehicleDamage> m_vehicleDamage;                 // m_lock
+  std::map<proto::VehicleRef, proto::Gunner> m_gunners;                              // m_lock
+  std::map<proto::VehicleRef, proto::GunnerAim> m_aims;                              // m_lock
+  std::map<proto::PlayerId, proto::VehicleCombat> m_seatCombat;                      // m_lock
+  vehiclecombat::BumpLedger m_bumps;                                                 // m_lock
   std::vector<consistency::Timed<proto::PlayerHit>> m_playerHits;                    // m_lock
   std::vector<proto::Message> m_hackOutbox;                                          // m_lock
   std::vector<HackEvent> m_hackEvents;                                               // m_lock

@@ -1231,6 +1231,16 @@ void Runtime::ResetSession() {
     m_sharedTraffic.clear();
     m_trafficStatus.clear();
     m_heat.clear();
+    // Vehicle combat: the next session's vehicles are named anew (our car
+    // too: by our player id in it); the scripts say our car's damage again.
+    m_wheelsOutbox.clear();
+    m_wheelsEvents.clear();
+    m_vehicleDamage.clear();
+    m_gunners.clear();
+    m_aims.clear();
+    m_seatCombat.clear();
+    m_bumps.Clear();
+    m_ownDamage.clear();
   }
   // The NPCs' tracks: the next session's ids are other NPCs.
   std::lock_guard _(m_tracksLock);
@@ -1371,6 +1381,172 @@ proto::Heat Runtime::HeatOf(proto::PlayerId player) {
   std::lock_guard _(m_lock);
   const auto it = m_heat.find(player);
   return it == m_heat.end() ? proto::Heat{.player = player} : it->second;
+}
+
+void Runtime::SubmitWheels(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_wheelsOutbox.size() < 2048)
+    m_wheelsOutbox.push_back(std::move(message));
+  else
+    ++m_overflows;
+}
+
+std::vector<proto::Message> Runtime::TakeWheelsOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_wheelsOutbox, {});
+}
+
+void Runtime::NoteOwnGrid(proto::VehicleRef vehicle, std::span<const float> cells) {
+  std::lock_guard _(m_lock);
+  auto &damage = m_ownDamage[vehicle];
+  damage.vehicle = vehicle;
+  damage.grid = vehiclecombat::PackGrid(cells);
+}
+
+void Runtime::NoteOwnPart(proto::VehicleRef vehicle, std::uint64_t part) {
+  std::lock_guard _(m_lock);
+  auto &damage = m_ownDamage[vehicle];
+  damage.vehicle = vehicle;
+  if (!std::ranges::contains(damage.parts, part) && damage.parts.size() < proto::kMaxDetachedParts)
+    damage.parts.push_back(part);
+}
+
+proto::VehicleDamage Runtime::OwnDamage(proto::VehicleRef vehicle) {
+  std::lock_guard _(m_lock);
+  const auto it = m_ownDamage.find(vehicle);
+  return it == m_ownDamage.end() ? proto::VehicleDamage{.vehicle = vehicle} : it->second;
+}
+
+void Runtime::SetOwnDamage(const proto::VehicleDamage &damage) {
+  std::lock_guard _(m_lock);
+  m_ownDamage[damage.vehicle] = damage;
+}
+
+void Runtime::ForgetOwnDamage(proto::VehicleRef vehicle) {
+  std::lock_guard _(m_lock);
+  m_ownDamage.erase(vehicle);
+}
+
+void Runtime::PushWheelsEvent(WheelsEvent event) {
+  event.atUs = net::NowUs();
+  std::lock_guard _(m_lock);
+  if (m_wheelsEvents.size() < 2048)
+    m_wheelsEvents.push_back(std::move(event));
+  else
+    ++m_overflows;
+}
+
+std::vector<WheelsEvent> Runtime::TakeWheelsEvents() {
+  std::lock_guard _(m_lock);
+  // A hit, a ram, an exit or a shot that waited behind a loading screen is
+  // worth nothing: a pile of them at once would wreck a car, or play a
+  // burst of muzzle flashes. What is state is always applied.
+  const auto now = net::NowUs();
+  const auto before = m_wheelsEvents.size();
+  std::erase_if(m_wheelsEvents, [&](const WheelsEvent &event) {
+    using Kind = WheelsEvent::Kind;
+    const std::uint64_t maxAge = event.kind == Kind::Fire                             ? 500'000
+                                 : event.kind == Kind::Exit                           ? 1'000'000
+                                 : event.kind == Kind::Hit || event.kind == Kind::Ram ? 1'500'000
+                                                                                      : 0;
+    return maxAge != 0 && now > event.atUs && now - event.atUs > maxAge;
+  });
+  if (const auto stale = before - m_wheelsEvents.size())
+    log::Info("consistency: {} vehicle hit(s), ram(s), exit(s) or shot(s) dropped, too old", stale);
+  return std::exchange(m_wheelsEvents, {});
+}
+
+void Runtime::PushVehicleDamage(const proto::VehicleDamage &damage) {
+  const auto hostNow = HostNowUs();
+  std::lock_guard _(m_lock);
+  const auto it = m_vehicleDamage.find(damage.vehicle);
+  const auto before =
+      it == m_vehicleDamage.end() ? std::nullopt : std::optional<proto::VehicleDamage>(it->second);
+  const auto end = vehiclecombat::OnArrival(damage, before, hostNow);
+  m_vehicleDamage[damage.vehicle] = damage;
+  if (m_wheelsEvents.size() < 2048)
+    m_wheelsEvents.push_back({.kind = WheelsEvent::Kind::Damage,
+                              .player = damage.instigator,
+                              .vehicle = damage.vehicle,
+                              .a = static_cast<std::int32_t>(end),
+                              .id = damage.record,
+                              .amount = damage.health,
+                              .atUs = net::NowUs()});
+  else
+    ++m_overflows;
+}
+
+std::optional<proto::VehicleDamage> Runtime::DamageOf(proto::VehicleRef vehicle) {
+  std::lock_guard _(m_lock);
+  const auto it = m_vehicleDamage.find(vehicle);
+  if (it == m_vehicleDamage.end())
+    return std::nullopt;
+  return it->second;
+}
+
+void Runtime::SetGunner(const proto::Gunner &gunner) {
+  std::lock_guard _(m_lock);
+  if (gunner.gunner == proto::kNoPlayer) {
+    m_gunners.erase(gunner.vehicle);
+    m_aims.erase(gunner.vehicle);
+  } else {
+    m_gunners[gunner.vehicle] = gunner;
+  }
+}
+
+proto::Gunner Runtime::GunnerOf(proto::VehicleRef vehicle) {
+  std::lock_guard _(m_lock);
+  const auto it = m_gunners.find(vehicle);
+  return it == m_gunners.end() ? proto::Gunner{.vehicle = vehicle} : it->second;
+}
+
+void Runtime::PushGunnerAim(const proto::GunnerAim &aim) {
+  std::lock_guard _(m_lock);
+  auto &kept = m_aims[aim.vehicle];
+  // Newest wins (State channel: an old one may come late).
+  if (kept.player == aim.player && static_cast<std::int32_t>(aim.seq - kept.seq) <= 0)
+    return;
+  kept = aim;
+}
+
+std::optional<proto::GunnerAim> Runtime::AimOf(proto::VehicleRef vehicle) {
+  std::lock_guard _(m_lock);
+  const auto it = m_aims.find(vehicle);
+  if (it == m_aims.end())
+    return std::nullopt;
+  return it->second;
+}
+
+void Runtime::SetSeatCombat(const proto::VehicleCombat &combat) {
+  std::lock_guard _(m_lock);
+  if (combat.mode == proto::SeatCombat::None)
+    m_seatCombat.erase(combat.player);
+  else
+    m_seatCombat[combat.player] = combat;
+}
+
+proto::VehicleCombat Runtime::SeatCombatOf(proto::PlayerId player) {
+  std::lock_guard _(m_lock);
+  const auto it = m_seatCombat.find(player);
+  return it == m_seatCombat.end() ? proto::VehicleCombat{.player = player} : it->second;
+}
+
+void Runtime::NoteContact(proto::PlayerId player) {
+  const auto now = HostNowUs();
+  std::lock_guard _(m_lock);
+  m_bumps.Contact(player, now);
+}
+
+void Runtime::PushBump(const proto::VehicleBump &bump) {
+  const auto now = HostNowUs();
+  std::lock_guard _(m_lock);
+  m_bumps.Receive(bump, now);
+}
+
+std::vector<vehiclecombat::BumpLedger::Push> Runtime::TakeDuePushes() {
+  const auto now = HostNowUs();
+  std::lock_guard _(m_lock);
+  return m_bumps.Due(now);
 }
 
 void Runtime::PushRemotePose(const proto::PoseState &pose) {
