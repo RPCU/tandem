@@ -25,6 +25,13 @@ public class TandemNpcKnown {
   // sent (NpcSeat): Panam at the wheel of the quest car we ride in.
   public let seatVehicle: EntityID;
   public let seat: CName;
+  // Its level (Levels.reds): the round it was last worked out in, our
+  // modifier on it, and its level as last told to the guests.
+  public let levelGen: Int32;
+  public let levelSeen: Bool;
+  public let levelMod: ref<gameStatModifierData>;
+  public let levelShift: Float;
+  public let levelSent: Float;
 }
 
 public class TandemNpcProxy {
@@ -62,6 +69,9 @@ public class TandemNpcProxy {
   // and when the host's health for it said it lives (0: no such doubt).
   public let predictedAt: Float;
   public let doubtAt: Float;
+  // Our modifier on it for the host's NPC's level (Levels.reds).
+  public let levelMod: ref<gameStatModifierData>;
+  public let levelShift: Float;
 }
 
 // A proxy taken out of its seat, deleted a moment later (a body is deleted
@@ -108,6 +118,25 @@ public class TandemNpcs {
   private let m_lastCheck: Float;
   private let m_missingIds: array<Uint32>;
   private let m_missingSince: array<Float>;
+  // Each V's level, the session's, and our NPCs' or proxies' (Levels.reds).
+  private let m_levels: ref<TandemLevels>;
+
+  public func Levels() -> ref<TandemLevels> {
+    return this.m_levels;
+  }
+
+  // Guest: the host's level for one of its NPCs, on its proxy if it is there.
+  public func SetLevel(npc: Uint32, level: Float) -> Void {
+    this.m_levels.OnNpc(npc, level);
+    let proxy = this.FindProxy(npc);
+    if IsDefined(proxy) && proxy.seenAt > 0.0 {
+      let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
+      if IsDefined(body) {
+        this.m_levels.Proxy(proxy, body);
+        this.ApplyHealth(proxy);
+      }
+    }
+  }
 
   public static func Range() -> Float {
     return 60.0;
@@ -118,11 +147,14 @@ public class TandemNpcs {
     this.m_next = 1u;
     this.m_anims = new TandemNpcAnims();
     this.m_anims.Start(game, this);
+    this.m_levels = new TandemLevels();
+    this.m_levels.Start(game);
   }
 
   public func Tick(now: Float, you: Uint32) -> Void {
     this.m_you = you;
     this.m_now = now;
+    this.m_levels.Tick(now);
     if TandemNative.IsHost() {
       this.TakeHits();
       if now - this.m_last >= 0.1 {
@@ -243,6 +275,10 @@ public class TandemNpcs {
     }
     ArrayClear(this.m_leaving);
     ArrayClear(this.m_proxies);
+    // Host: our NPCs are scaled to our V again.
+    for known in this.m_known {
+      this.m_levels.Release(known, known.id);
+    }
     ArrayClear(this.m_known);
     this.m_anims.Clear();
     ArrayClear(this.m_missingIds);
@@ -268,6 +304,7 @@ public class TandemNpcs {
     if IsDefined(system) {
       system.Outcomes().End();
     }
+    this.m_levels.End();
     ArrayClear(this.m_hiddenIds);
     if this.m_quiet {
       GameInstance.GetCommunitySystem(this.m_game).ResetDensityModifier();
@@ -277,6 +314,11 @@ public class TandemNpcs {
 
   public func Hidden() -> Int32 {
     return this.m_hidden;
+  }
+
+  // Guest: our own crowd is still off (no save meanwhile: Saves.reds).
+  public func Quiet() -> Bool {
+    return this.m_quiet;
   }
 
   // ---- guest ----
@@ -362,6 +404,8 @@ public class TandemNpcs {
           known.health = health;
           TandemNative.SendNpcHealth(known.npc, health);
         }
+        // Scaled to the session's level, and its level told (Levels.reds).
+        this.m_levels.Host(known, npc);
         this.ShareSeat(known, npc, carrier);
         // Its guard, as its health (a guest's finisher checks the proxy's).
         let poise = pools.GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Poise, true) / 100.0;
@@ -375,6 +419,9 @@ public class TandemNpcs {
           let by = this.KillerOf(npc, known, player);
           TandemNative.SendNpcGone(known.npc, 3, by);
           TandemNative.Log(s"npcs: \(known.npc) knocked out (by player \(by))");
+          if by != this.m_you {
+            this.PayAssist(player, known.id);
+          }
         }
       }
     }
@@ -393,6 +440,12 @@ public class TandemNpcs {
             TandemNative.SendNpcGone(known.npc, 1, killer);
             this.m_anims.Forget(known.npc);
             TandemNative.Log(s"npcs: \(known.npc) died (killer: player \(killer))");
+            // A guest's kill we helped with: our share of the skill XP is
+            // paid as a guest's is (Die), and does not stay queued in our
+            // save (the game only pays it on our own kill).
+            if killer != this.m_you {
+              this.PayAssist(player, known.id);
+            }
             // Its quest and important items reach the guests' corpses (Loot.reds).
             TandemLoot.HostCorpse(this.m_game, known.id, known.npc);
           }
@@ -400,6 +453,8 @@ public class TandemNpcs {
         } else {
           TandemNative.SendNpcGone(known.npc, 0, 0u);
           this.m_anims.Forget(known.npc);
+          // No longer shared: scaled to our V again.
+          this.m_levels.Release(known, known.id);
         }
       }
     }
@@ -584,6 +639,10 @@ public class TandemNpcs {
     if !IsDefined(body) || body.IsDead() {
       return true; // nothing left to apply it to
     }
+    // A guest's own XP marker (an older build sent them): not ours to wear.
+    if TandemCombat.IsOwnMarker(event.record) {
+      return true;
+    }
     let instigator = TandemNpcs.PuppetOf(this.m_game, event.player);
     if !IsDefined(instigator) {
       return false;
@@ -662,6 +721,9 @@ public class TandemNpcs {
           proxy.seenAt = now;
           // Brain off at once: a proxy never acts on its own.
           TandemProxies.Pacify(npc);
+          // The host's NPC's level first: its health is a share of the
+          // maximum that level gives.
+          this.m_levels.Proxy(proxy, npc);
           this.ApplyHealth(proxy);
           this.ApplyPoise(proxy);
         }
@@ -939,6 +1001,13 @@ public class TandemNpcs {
         neutralized.type = ENeutralizeType.Unconscious;
         neutralized.targetID = proxy.id;
         player.QueueEvent(neutralized);
+        // The defeat's own reward (level XP, street cred, its bounty), as
+        // the game pays a knock-out (RewardKiller, final.reds:21851): the
+        // queue above is only the skill XP. Once per body (m_awarded).
+        let downed = body as NPCPuppet;
+        if IsDefined(downed) {
+          BountyManager.CompleteBounty(downed);
+        }
       } else {
         let pay = new ProcessQueuedCombatExperience();
         pay.Set(player, proxy.id);
@@ -946,6 +1015,17 @@ public class TandemNpcs {
       }
     }
     TandemNative.Log(s"npcs: proxy \(npc) knocked out\(by == this.m_you ? ", by us" : "")");
+  }
+
+  // The skill XP our own hits on a body queued, paid when another player
+  // finished it (an assist: a co-op choice, coop-perks.md §2.4).
+  private func PayAssist(player: ref<GameObject>, body: EntityID) -> Void {
+    if !IsDefined(player) {
+      return;
+    }
+    let pay = new ProcessQueuedCombatExperience();
+    pay.Set(player, body);
+    GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"PlayerDevelopmentSystem").QueueRequest(pay);
   }
 
   // Host: a guest's strike landed on one of our NPCs (its killer, if no
@@ -1100,6 +1180,7 @@ public class TandemNpcs {
 
   private func Remove(npc: Uint32) -> Void {
     let kept: array<ref<TandemNpcProxy>>;
+    this.m_levels.Forget(npc);
     for proxy in this.m_proxies {
       if proxy.npc == npc {
         this.m_anims.Drop(npc);
@@ -1176,6 +1257,9 @@ public class TandemNpcs {
         proxy.ready = false;
         proxy.seenAt = 0.0;
         proxy.dead = false;
+        // A new body: our level modifier went with the old one.
+        proxy.levelMod = null;
+        proxy.levelShift = 0.0;
         proxy.predictedAt = 0.0;
         proxy.doubtAt = 0.0;
         TandemNative.Log(s"npcs: proxy \(proxy.npc) lives on the host: our kill was not one, brought back");
