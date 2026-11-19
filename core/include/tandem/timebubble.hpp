@@ -97,6 +97,14 @@ public:
   // computes its own V's and the others' through it, so a V's scanner
   // counts as its own ability on the host and on a guest alike.
   static float BubbleScale(std::uint8_t abilities, float scale);
+  // A slow motion no reason we know of explains (another mod's: the time
+  // system cannot say whose): the world speed to share as a bubble, else
+  // 1. `global` is our game's whole factor now, `explained` the smallest
+  // factor of the reasons tandem follows that are active (1: none), and
+  // `local` whether a dilation that stays local is on (melee hit stop,
+  // deflect, a menu's, a ride's skip, our V slowed by another V's bubble):
+  // then nothing is added. A speed-up is never a bubble.
+  static float UnexplainedSlow(float global, float explained, bool local);
   std::size_t MembersOf(proto::PlayerId owner) const;
   std::size_t Bubbles() const { return m_bubbles.size(); }
 

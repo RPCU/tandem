@@ -37,6 +37,8 @@ declare -A value=(
   ["--go-down"]=10 ["--go-out"]=10 ["--revive"]=3
   ["--path"]=x.path ["--save-path"]=x.path
   ["--drop"]=0.2 ["--dup"]=0.2 ["--fault-seed"]=7 ["--vanish-at"]=20
+  ["--held-record"]=Items.x:Wea_Handgun:Weapon ["--vehicle-record"]=Vehicle.x:Car:2 ["--look-piece"]=Items.x:Clo_Legs
+  ["--npc-record"]=Character.x:Human:Female ["--unknown"]="Items.x,Vehicle.x"
   ["--car-damage"]=5 ["--exit-at"]=8 ["--exit-kind"]=knocked ["--bump"]=3 ["--shoot-cars"]=4
   ["--gunner"]=5 ["--gunner-seat"]=seat_back_left ["--ram-npcs"]=3 ["--chase"]=5
   ["--device"]="1a2b3c4d5e6f7788:DoorControllerPS:open,unlocked@8" ["--device-answer"]=closed ["--device-after"]=2
