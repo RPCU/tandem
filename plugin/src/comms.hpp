@@ -33,8 +33,9 @@ struct CommsEvent {
     TagOff = 4,
     Link = 5,     // our link with `player` changed (type: now, before: was; comms::LinkState)
     Waypoint = 6, // `player`'s waypoint (type: proto::WaypointKind, 0 none)
-    // A linked partner's quickhack on a shared NPC (target): its upload, the
-    // effect it left (record: the program; effect: the status effect).
+    // A linked partner's quickhack on a shared NPC or a device (target): its
+    // upload, the effect it left (record: the program; effect: the status
+    // effect, or a device's comms::HackBoard::kDevice*Effect).
     ShowUpload = 7,
     HideUpload = 8,
     ShowEffect = 9,
@@ -85,6 +86,13 @@ public:
                      std::int32_t step, float seconds, std::uint64_t nowUs);
   void PartnerEffect(proto::NpcId npc, proto::PlayerId player, std::uint64_t effect, bool applied,
                      float seconds, std::uint64_t nowUs);
+  // A device (its entity's static id) went from `before` to `after` (kDevice*
+  // bits) by `player`'s doing, as Devices.reds learns it (host: a guest's
+  // DeviceUse; guest: the host's live DeviceState): a partner's quickhack
+  // on it shows while we are linked (comms::HackBoard::Device).
+  void PartnerDevice(std::uint64_t entity, proto::PlayerId player, std::uint16_t before,
+                     std::uint16_t after, const comms::DevicePrograms &programs,
+                     std::uint64_t nowUs);
   // Our tag or reveal of one target (sent with the others of this tick).
   void Tag(proto::TagReason reason, bool on, std::uint8_t seconds, const proto::TargetRef &target);
   // We link with `player` (on) or break it.

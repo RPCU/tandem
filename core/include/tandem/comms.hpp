@@ -191,32 +191,75 @@ private:
 // "A partner's quickhacks"): the upload, then the effect it left, for the
 // players linked with us only. Fed by what already crosses games (the
 // host's NpcHackState and NpcStatus; on the host, its guests' NpcHack and
-// the effects landing on its NPCs); our own are vanilla's and never here.
+// the effects landing on its NPCs; for devices, DeviceUse and DeviceState's
+// bits: Device below); our own are vanilla's and never here.
 struct HackChange {
   enum class Kind { ShowUpload, HideUpload, ShowEffect, HideEffect };
   Kind kind{};
-  proto::NpcId npc{};
+  proto::TargetRef target; // a shared NPC, or a device (its entity)
   proto::PlayerId player{};
   std::uint64_t action{}; // the program (ObjectAction record): its icon
-  std::uint64_t effect{}; // effects: the status effect record
+  std::uint64_t effect{}; // effects: the status effect record (devices: kDevice*Effect)
   float seconds{};        // Show*: how long from now (0: unknown)
+};
+
+// What a partner's device quickhack left, for HackBoard::Device: the
+// programs whose icons show it (0: the indicator's own).
+struct DevicePrograms {
+  std::uint64_t hacked{};   // any quickhack (kDeviceHacked came on)
+  std::uint64_t glitch{};   // a distraction (kDeviceGlitching)
+  std::uint64_t friendly{}; // a camera or turret turned (kDeviceFriendly)
 };
 
 class HackBoard {
 public:
   static constexpr std::uint64_t kUnknownEffectUs = 120'000'000; // a backstop
   static constexpr std::size_t kMaxShown = 64;
+  // A device quickhack with nothing lasting to show (it turned the device
+  // off, opened it…): its indicator stays this long.
+  static constexpr float kDeviceHackSeconds = 5.f;
+  // The `effect` of a device's indicators: what came on (no status effect
+  // names it).
+  static constexpr std::uint64_t kDeviceHackedEffect = 1, kDeviceGlitchEffect = 2,
+                                 kDeviceFriendlyEffect = 3;
   // An upload started (seconds: its length), or ended (done or failed).
-  std::vector<HackChange> Upload(proto::NpcId npc, proto::PlayerId player, std::uint64_t action,
-                                 float seconds, std::uint64_t nowUs);
-  std::vector<HackChange> UploadEnded(proto::NpcId npc, proto::PlayerId player,
+  std::vector<HackChange> Upload(const proto::TargetRef &target, proto::PlayerId player,
+                                 std::uint64_t action, float seconds, std::uint64_t nowUs);
+  std::vector<HackChange> UploadEnded(const proto::TargetRef &target, proto::PlayerId player,
                                       std::uint64_t action);
-  // An effect came onto the NPC from `player` (seconds: what is left of it,
-  // 0 unknown) or left it (player kNoPlayer: whoever's it was).
+  // An effect came onto the target from `player` (seconds: what is left of
+  // it, 0 unknown) or left it (player kNoPlayer: whoever's it was).
+  std::vector<HackChange> Effect(const proto::TargetRef &target, proto::PlayerId player,
+                                 std::uint64_t effect, bool applied, float seconds,
+                                 std::uint64_t nowUs);
+  // The same on a shared NPC.
+  std::vector<HackChange> Upload(proto::NpcId npc, proto::PlayerId player, std::uint64_t action,
+                                 float seconds, std::uint64_t nowUs) {
+    return Upload(NpcTarget(npc), player, action, seconds, nowUs);
+  }
+  std::vector<HackChange> UploadEnded(proto::NpcId npc, proto::PlayerId player,
+                                      std::uint64_t action) {
+    return UploadEnded(NpcTarget(npc), player, action);
+  }
   std::vector<HackChange> Effect(proto::NpcId npc, proto::PlayerId player, std::uint64_t effect,
-                                 bool applied, float seconds, std::uint64_t nowUs);
-  // The NPC is gone (dead, no longer shared): everything on it.
-  std::vector<HackChange> ForgetNpc(proto::NpcId npc);
+                                 bool applied, float seconds, std::uint64_t nowUs) {
+    return Effect(NpcTarget(npc), player, effect, applied, seconds, nowUs);
+  }
+  // A device (its entity's static id) went from `before` to `after`
+  // (kDevice* state bits) by `player`'s doing: the host's game hears it as
+  // that guest's DeviceUse, a guest's as the host's live DeviceState (`by`).
+  // No program crosses games for a device, so the bits that came on say
+  // what shows: a distraction (kDeviceGlitching) or a turned camera or
+  // turret (kDeviceFriendly) while it lasts, any other quickhack
+  // (kDeviceHacked) for kDeviceHackSeconds. A bit that goes off hides its
+  // indicator, whoever's it was (player kNoPlayer: the host's world's own
+  // change, a glitch running out).
+  std::vector<HackChange> Device(std::uint64_t entity, proto::PlayerId player, std::uint16_t before,
+                                 std::uint16_t after, const DevicePrograms &programs,
+                                 std::uint64_t nowUs);
+  // The target is gone (dead, no longer shared, out of our world).
+  std::vector<HackChange> ForgetTarget(const proto::TargetRef &target);
+  std::vector<HackChange> ForgetNpc(proto::NpcId npc) { return ForgetTarget(NpcTarget(npc)); }
   // Shown only for linked players: a link made shows what is running, a
   // link broken hides it at once (kept, in case it comes back).
   std::vector<HackChange> SetLinked(proto::PlayerId player, bool linked, std::uint64_t nowUs);
@@ -227,19 +270,34 @@ public:
   bool Linked(proto::PlayerId player) const { return m_linked.contains(player); }
   std::size_t Shown() const;
 
+  static proto::TargetRef NpcTarget(proto::NpcId npc) { return {proto::TargetKind::Npc, npc}; }
+  static proto::TargetRef DeviceTarget(std::uint64_t entity) {
+    return {proto::TargetKind::Entity, entity};
+  }
+
 private:
   struct Running {
-    proto::NpcId npc{};
+    proto::TargetRef target;
     proto::PlayerId player{};
     bool upload{}; // else an effect
     std::uint64_t action{}, effect{};
     std::uint64_t untilUs{};
   };
+  using Key = std::pair<std::pair<proto::TargetKind, std::uint64_t>, proto::PlayerId>;
+  static Key KeyOf(const proto::TargetRef &target, proto::PlayerId player) {
+    return {{target.kind, target.id}, player};
+  }
   HackChange ChangeOf(const Running &running, bool show, std::uint64_t nowUs) const;
+  // An effect on (or off) the target, its icon `action`.
+  std::vector<HackChange> Show(const proto::TargetRef &target, proto::PlayerId player,
+                               std::uint64_t action, std::uint64_t effect, float seconds,
+                               std::uint64_t nowUs);
+  std::vector<HackChange> Hide(const proto::TargetRef &target, proto::PlayerId player,
+                               std::uint64_t effect, std::uint64_t nowUs);
   std::vector<Running> m_running;
   std::set<proto::PlayerId> m_linked;
-  // The program each player last uploaded on each NPC: the effect's icon.
-  std::map<std::pair<proto::NpcId, proto::PlayerId>, std::uint64_t> m_lastAction;
+  // The program each player last uploaded on each target: the effect's icon.
+  std::map<Key, std::uint64_t> m_lastAction;
 };
 
 // A waypoint worth sending again: another kind, or moved more than 1 m.

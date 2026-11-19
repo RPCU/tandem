@@ -103,6 +103,11 @@ game's own: a door closing itself): `UseDevice` says what the device is
 here now. What the host says is applied to our copy, loaded or not; what
 does not take (the game refused) is tried three times, then logged and left.
 
+**A partner's quickhack shows** on the device, in their colour, while the
+two are linked: the bits a guest's request (host) or the host's live word
+(guest) turned on go to the partner-quickhack board
+([`comms.md`](comms.md), "A partner's quickhacks": `PartnerDevice`).
+
 **A request at the host** (`Ledger::Judge`, `Endpoint::OnDeviceUse`):
 
 - nobody else changed the device since the revision the guest saw, or the

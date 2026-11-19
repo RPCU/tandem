@@ -31,8 +31,8 @@ public class TandemCommsMappinData extends MappinScriptData {
   public let player: Uint32;
 }
 
-// A linked partner's quickhack on a shared NPC, drawn with the game's own
-// quickhack indicator (QuickHackMappinController, as a vehicle's upload:
+// A linked partner's quickhack on a shared NPC or a device, drawn with the
+// game's own quickhack indicator (QuickHackMappinController, as a vehicle's upload:
 // VehicleComponent.CreateQuickHackMappin), tinted with that partner's
 // colour. The controller is kept here once it draws it, so our tick drives
 // its bar (no stat pool of the upload exists on our side).
@@ -45,7 +45,9 @@ public class TandemHackMappinData extends GameplayRoleMappinData {
 }
 
 public class TandemHackIndicator {
+  // Its target: a shared NPC (npc), or a device (entity; npc 0).
   public let npc: Uint32;
+  public let entity: EntityID;
   public let player: Uint32;
   public let upload: Bool;
   public let effect: TweakDBID;
@@ -379,13 +381,13 @@ public class TandemComms {
           this.ShowHack(e, true);
           break;
         case 8:
-          this.HideHack(e.npc, e.player, true, TDBID.None());
+          this.HideHack(e, true, TDBID.None());
           break;
         case 9:
           this.ShowHack(e, false);
           break;
         case 10:
-          this.HideHack(e.npc, e.player, false, e.effect);
+          this.HideHack(e, false, e.effect);
           break;
         default:
           break;
@@ -908,13 +910,17 @@ public class TandemComms {
     return TDBID.None();
   }
 
+  // What a hack event is on, for the log: "npc 70", "device 1a2b".
+  private static func HackTarget(e: TandemCommsEvent) -> String {
+    return e.targetKind == 2 ? s"device \(TandemNative.EntityHex(e.entity))" : s"npc \(e.npc)";
+  }
+
   private func ShowHack(e: TandemCommsEvent, upload: Bool) -> Void {
-    this.HideHack(e.npc, e.player, upload, upload ? TDBID.None() : e.effect);
-    let npcs = IsDefined(this.m_system) ? this.m_system.NpcsSync() : null;
-    let target = IsDefined(npcs) ? GameInstance.FindEntityByID(this.m_game, npcs.EntityOfNpc(e.npc)) as GameObject : null;
+    this.HideHack(e, upload, upload ? TDBID.None() : e.effect);
+    let target = this.EntityOf(e);
     let what = upload ? "upload" : "effect";
     if !IsDefined(target) {
-      TandemNative.Log(s"comms: \(this.NameOf(e.player))'s \(what) on npc \(e.npc): not here");
+      TandemNative.Log(s"comms: \(this.NameOf(e.player))'s \(what) on \(TandemComms.HackTarget(e)): not here");
       return;
     }
     let data = new TandemHackMappinData();
@@ -935,26 +941,29 @@ public class TandemComms {
     mappin.visibleThroughWalls = true;
     mappin.scriptData = data;
     let hack = new TandemHackIndicator();
-    hack.npc = e.npc;
+    hack.npc = e.targetKind == 1 ? e.npc : 0u;
+    hack.entity = e.targetKind == 2 ? e.entity : EntityID();
     hack.player = e.player;
     hack.upload = upload;
     hack.effect = e.effect;
     hack.data = data;
     hack.mappin = GameInstance.GetMappinSystem(this.m_game).RegisterMappinWithObject(mappin, target, target.GetQuickHackIndicatorSlotName());
     ArrayPush(this.m_hacks, hack);
-    TandemNative.Log(s"comms: showing \(this.NameOf(e.player))'s \(what) of \(TDBID.ToStringDEBUG(upload ? e.record : e.effect)) on npc \(e.npc) (\(e.seconds) s), registered \(hack.mappin.value != 0ul)");
+    TandemNative.Log(s"comms: showing \(this.NameOf(e.player))'s \(what) of \(TDBID.ToStringDEBUG(upload ? e.record : e.effect)) on \(TandemComms.HackTarget(e)) (\(e.seconds) s), registered \(hack.mappin.value != 0ul)");
   }
 
-  // Off: a player's upload on an NPC, or an effect (none: all of theirs).
-  private func HideHack(npc: Uint32, player: Uint32, upload: Bool, effect: TweakDBID) -> Void {
+  // Off: a player's upload on a target, or an effect (none: all of theirs).
+  private func HideHack(e: TandemCommsEvent, upload: Bool, effect: TweakDBID) -> Void {
     let kept: array<ref<TandemHackIndicator>>;
+    let npc = e.targetKind == 1 ? e.npc : 0u;
+    let entity = e.targetKind == 2 ? e.entity : EntityID();
     for hack in this.m_hacks {
-      let match = hack.npc == npc && hack.player == player && Equals(hack.upload, upload) && (upload || !TDBID.IsValid(effect) || hack.effect == effect);
+      let match = hack.npc == npc && hack.entity == entity && hack.player == e.player && Equals(hack.upload, upload) && (upload || !TDBID.IsValid(effect) || hack.effect == effect);
       if match {
         if hack.mappin.value != 0ul {
           GameInstance.GetMappinSystem(this.m_game).UnregisterMappin(hack.mappin);
         }
-        TandemNative.Log(s"comms: hid \(this.NameOf(player))'s \(upload ? "upload" : "effect") on npc \(npc)");
+        TandemNative.Log(s"comms: hid \(this.NameOf(e.player))'s \(upload ? "upload" : "effect") on \(TandemComms.HackTarget(e))");
       } else {
         ArrayPush(kept, hack);
       }

@@ -164,7 +164,9 @@ players' quickhacks are visible only if the players decided to link."
 Built 2026-11-19, not run in game.
 
 - **One colour per player, everywhere** (`TandemMarkers.ColorOf`, by
-  player id: cyan, yellow, green, pink, orange, violet, red, then white;
+  player id, 1 to 8: cyan, yellow, green, pink, orange, violet, red, sky
+  blue; white only for no player; the colour-blind pairs and how the 8th
+  was chosen: [`players.md`](players.md);
   one definition, in `Markers.reds`: `tools/scripts-duplicates.py` refuses a
   second). It tints a player's marker, nameplate and party entry
   (`PartyHud.reds`), pings, waypoint, team target and quickhacks. A ping's
@@ -214,10 +216,20 @@ Built 2026-11-19, not run in game.
   - an effect the host says has ended goes, whoever's it was;
   - everything expires (the upload's length and a second; the effect's
     remaining time, or 120 s when unknown); at most 64 shown.
-- **Devices** are not covered yet. Their quickhacks cross games on the
-  `devices` branch (`DeviceUse` with `kDeviceHacked`); once that branch is
-  merged, the same `PartnerUpload` / `PartnerEffect` calls on a device's
-  entity give it the same indicators.
+- **Devices** (2026-11-19, not run in game): the same board as an NPC's
+  `PartnerUpload` / `PartnerEffect`, the target a
+  device's entity (`TargetRef` kind Entity, its static id: the same in
+  every game), the same link gating. No program crosses games for a device
+  ([`devices.md`](devices.md): `DeviceUse` from a guest, the host's live
+  `DeviceState` with `by`), so `Devices.reds` hands the board the state
+  bits before and after (`TandemCommsNative.PartnerDevice`; host: a
+  guest's request, guest: the host's live word, never a record) and
+  `comms::HackBoard::Device` reads them: `kDeviceGlitching` came on, a
+  distraction, shown with the malfunction quickhack's icon while it lasts;
+  `kDeviceFriendly`, a turned camera or turret, while it lasts; any other
+  `kDeviceHacked` change, the indicator's own icon for 5 s. A bit that goes
+  off hides its indicator, whoever's it was. Tests: "a partner's quickhacks
+  on devices" (`tests/comms_hacks_test.cpp`).
 - Our game drives the indicator's bar itself (`TandemProgress`, every
   tick). The widget's own driver is a stat pool of the upload on the
   target, which exists only in the hacker's game.
