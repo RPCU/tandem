@@ -513,6 +513,29 @@ public class TandemNpcs {
     }
   }
 
+  // Our own copy of a vendor the session says died elsewhere (Vendors.reds):
+  // out of the shared world if we announced it, then out of sight for good.
+  // False when there is no living copy of ours to hide.
+  public func Bury(id: EntityID) -> Bool {
+    let own = GameInstance.FindEntityByID(this.m_game, id) as ScriptedPuppet;
+    if !IsDefined(own) || own.IsDead() || this.IsProxyEntity(id) {
+      return false;
+    }
+    let known = this.Find(id);
+    if IsDefined(known) {
+      if known.dead || known.down {
+        return false; // the one that died is ours
+      }
+      TandemNative.SendNpcGone(known.npc, 0, 0u);
+      this.m_anims.Forget(known.npc);
+      this.ForgetKnown(known.npc);
+    }
+    // A body that streamed in again is a new one: hidden again.
+    ArrayRemove(this.m_hiddenIds, id);
+    this.Suppress(own);
+    return true;
+  }
+
   private func ForgetKnown(npc: Uint32) -> Void {
     let kept: array<ref<TandemNpcKnown>>;
     for known in this.m_known {
@@ -574,6 +597,9 @@ public class TandemNpcs {
           // covers it: neither announced nor held back this round.
         } else if by != 0u && !TandemRegionRules.Engaged(this.m_game, npc) {
           this.Suppress(npc);
+        } else if TandemVendors.IsBuried(npc) {
+          // Our copy of a vendor the session says died (Vendors.reds).
+          this.Suppress(npc);
         } else {
           known = new TandemNpcKnown();
           known.id = id;
@@ -584,6 +610,9 @@ public class TandemNpcs {
           known.appearance = npc.GetCurrentAppearanceName();
           ArrayPush(this.m_known, known);
           TandemNative.SendNpcSpawn(known.npc, npc.GetRecordID(), npc.GetCurrentAppearanceName(), npc.GetWorldPosition(), npc.GetWorldOrientation());
+          // A vendor placed in the world says its entity: a partner whose
+          // game shows it opens its own vendor of it (Vendors.reds).
+          TandemVendors.Announce(known.npc, npc);
           // A quest or story NPC, a police unit: ours for good.
           if TandemRegionRules.Pinned(npc) {
             TandemRegions.Pin(known.npc);
