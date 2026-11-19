@@ -386,28 +386,27 @@ public class TandemTime {
 
   // ---- the bubbles ----
 
-  // The abilities that make a bubble (proto::kTimeBubbleAbilities):
-  // Sandevistan, Kerenzikov, slow-motion perks and implants, the scanner.
-  public static func BubbleAbilities() -> Int32 {
-    return 15;
-  }
-
   private func Bubbles(system: ref<TandemSystem>, player: ref<GameObject>) -> Void {
     let owners: array<Uint32>;
     let scales: array<Float>;
     let at: array<Vector4>;
     // Every other bubble is a scanner's (for the partner's measure).
     let scansOnly = true;
-    if (this.m_sentAbilities & TandemTime.BubbleAbilities()) != 0 && this.m_sentScale < 1.0 {
+    // Ours and the others' through the core's rule (TimeBubbleScale): the
+    // abilities that make a bubble, the scanner among them, the same on the
+    // host and on a guest. Ours is also our `own` below: a V scanning, or in
+    // a Sandevistan, is slowed by another V's bubble only by the ratio.
+    let own = TandemNative.TimeBubbleScale(this.m_sentAbilities, this.m_sentScale);
+    if own < 1.0 {
       ArrayPush(owners, system.You());
-      ArrayPush(scales, this.m_sentScale);
+      ArrayPush(scales, own);
       ArrayPush(at, player.GetWorldPosition());
     }
     for other in TandemNative.TimePlayers() {
-      let scale = TandemNative.TimeScale(other);
-      let spot = TandemNative.RemotePosition(other);
       let abilities = TandemNative.TimeAbilities(other);
-      if (abilities & TandemTime.BubbleAbilities()) != 0 && scale < 1.0 && spot.W != 0.0 {
+      let scale = TandemNative.TimeBubbleScale(abilities, TandemNative.TimeScale(other));
+      let spot = TandemNative.RemotePosition(other);
+      if scale < 1.0 && spot.W != 0.0 {
         if (abilities & 7) != 0 {
           scansOnly = false;
         }
@@ -436,7 +435,6 @@ public class TandemTime {
     if ArraySize(changes) > 0 {
       this.ReportBubbles(owners);
     }
-    let own = (this.m_sentAbilities & TandemTime.BubbleAbilities()) != 0 ? this.m_sentScale : 1.0;
     this.SlowSelf(player, TandemNative.TimePlayerFactor(system.You(), own, player.GetWorldPosition(), owners, scales, at, this.m_selfSet), scansOnly);
   }
 
@@ -450,6 +448,17 @@ public class TandemTime {
   // the per-entity dilation on V is used instead (checked once).
   // Not slowed: a dead or downed V, and a V in a vehicle (a car has no time
   // of its own to slow with it).
+  // With an ability of its own (`own`: the scanner too), the factor is the
+  // ratio of the other's bubble to it (PlayerFactor), and it is the whole
+  // slow: the scanner and the Sandevistan exempt our V from their global
+  // dilation (SetIgnoreTimeDilationOnLocalPlayerZero(true), final.reds
+  // 522203-522207), so nothing multiplies it. Our reason, "tandemBubble",
+  // is never theirs: their state machines set and unset "focusMode" and
+  // "sandevistan" by name and never touch it, and it never bars them (the
+  // check below). A scanner profile that slows the player too
+  // (applyTimeDilationToPlayer) would put a second player factor next to
+  // ours: how the two combine is to read in game ("time report" logs what
+  // our V's speed reads).
   private func SlowSelf(player: ref<GameObject>, factor: Float, scansOnly: Bool) -> Void {
     if player.IsDead() || VehicleComponent.IsMountedToVehicle(this.m_game, player) {
       factor = 1.0;
@@ -489,7 +498,7 @@ public class TandemTime {
     this.m_selfSet = true;
     this.m_selfFactor = factor;
     let whose = scansOnly ? ", a scanner's" : "";
-    TandemNative.Log(s"time: our V slowed to \(factor) (in another V's bubble\(whose))");
+    TandemNative.Log(s"time: our V slowed to \(factor) (in another V's bubble\(whose); own ability \(this.m_sentAbilities) at \(this.m_sentScale))");
   }
 
   // Our V's own speed back: out of the bubble, and always when the session
@@ -842,6 +851,10 @@ public class TandemTime {
     } else if Equals(command, "time report") {
       TandemNative.Log(s"time: what the game's fire-rate formula reads (CalcCycleTimeDeltaFactor): sandevistan active \(times.IsTimeDilationActive(n"sandevistan")), factor \(times.GetActiveTimeDilation()); sandevistan charge \(GameInstance.GetStatPoolsSystem(this.m_game).GetStatPoolValue(Cast<StatsObjectID>(GetPlayer(this.m_game).GetEntityID()), gamedataStatPoolType.SandevistanCharge, true))%");
       TandemNative.Log(s"time: world speed here \(times.GetActiveTimeDilation()) (a dilation active: \(times.IsTimeDilationActive())), our abilities \(this.m_sentAbilities) (\(this.m_sentScale)), \(ArraySize(this.m_applied)) entities set, taken back \(ArraySize(this.m_taken)), neutral \(this.m_neutral), host full \(TandemNative.IsTimeHostFull())");
+      let body = GetPlayer(this.m_game);
+      if IsDefined(body) {
+        TandemNative.Log(s"time: our V reads \(body.GetTimeDilationValue()) (slowed by a bubble \(this.m_selfSet) to \(this.m_selfFactor), as an entity \(this.m_selfEntity); scanner \(times.IsTimeDilationActive(n"focusMode")), sandevistan \(times.IsTimeDilationActive(n"sandevistan")))");
+      }
       TandemNative.Log(s"time: our scanner's bubbles: \(this.m_scans) for \(this.m_scanSeconds) s; our V slowed by the others' bubbles for \(this.m_slowedSeconds) s, \(this.m_slowedScanSeconds) s of it by a scanner's alone (this session)");
       for applied in this.m_applied {
         let body = GameInstance.FindEntityByID(this.m_game, applied.id) as gamePuppet;

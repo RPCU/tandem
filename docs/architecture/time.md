@@ -71,6 +71,42 @@
     own game, `SlowSelf`), and sees the scanning V move at its own speed;
     a V scanning too stands in it on an equal footing; a V in a vehicle,
     dead or downed is not slowed.
+  - _Slow time cancels slow time, by strength_ (the user, 2026-11-19: "the
+    slow time bubble still should be cancelled out by other slow time
+    (depending on slowtime power), for example sandevistan or if the other
+    player scan too"). A V's scanner is its own ability like a
+    Sandevistan, on the host and on a guest alike: each game computes its
+    V's `own` and the others' bubbles through one core rule
+    (`TimeBubbles::BubbleScale`, native `TimeBubbleScale`), and a V is
+    slowed by the strongest other bubble around it divided by its own
+    ability's factor, never below that and never sped up
+    (`TimeBubbles::PlayerFactor`). The slow is that ratio alone, not the
+    product: the scanner and the Sandevistan exempt their own V from their
+    global dilation, and ours goes on the player's own factor under its
+    own reason (`tandemBubble`), which their states never set or unset.
+    The NPCs between two bubbles take the stronger one. With a scanner at
+    0.2 (its real factor is not read yet):
+
+    <!-- prettier-ignore -->
+    | A | B | A slowed to | B slowed to | NPCs near both |
+    | --- | --- | --- | --- | --- |
+    | scans (0.2) | nothing | 1 | 0.2 | 0.2 |
+    | scans (0.2) | Sandevistan 0.1 | 0.1 / 0.2 = 0.5 | 1 | 0.1 |
+    | scans (0.2) | Sandevistan 0.5 | 1 | 0.2 / 0.5 = 0.4 | 0.2 |
+    | scans (0.2) | Kerenzikov 0.4 | 1 | 0.2 / 0.4 = 0.5 | 0.2 |
+    | scans (0.2) | scans (0.2) | 1 | 1 | 0.2 |
+
+    Locked by `tests/timebubble_test.cpp` (the table) and
+    `tests/endpoint_test.cpp` (a host and a guest both scanning, each
+    weighing the others' `TimeEffect`s against its own), in game by
+    scenario `time-scan`. To read in game: whether a scanner profile that
+    slows the player too (`applyTimeDilationToPlayer`) adds its own player
+    factor to ours, and how the two combine (`time report` logs what our
+    V's speed reads, `GetTimeDilationValue`); and a vanilla clean-up 1 s
+    after the scanner closes (`CleanUpTimeDilationEvent`, final.reds
+    43307-43318) that sets a player factor of 1 for 0.1 s under no reason,
+    which could cut into ours for that long.
+
   - _Measured for the partner's side_: the log lines
     `time: our scanner's bubble ran N s` (when one ends) and
     `time: our V back to its own speed after N s`; `time report` gives

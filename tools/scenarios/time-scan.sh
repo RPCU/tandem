@@ -32,6 +32,32 @@ expect 'time: our abilities 0 ' 5
 expect_peer 'player 1: time abilities 0x0' 5
 cmd time report
 expect 'time: our scanner.s bubbles: 1 for [0-9.]+ s; our V slowed by the others. bubbles for [0-9.]+ s, [0-9.]+ s of it by a scanner.s alone' 5
+# Slow time cancels slow time, by strength. The mock player's Sandevistan
+# (0.1) is stronger than our scanner (0.2): scanning in it, our V is slowed
+# by the ratio 0.1 / 0.2 alone, not by the product.
+peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --sandevistan-at 8 --sandevistan-for 14 --sandevistan-scale 0.1
+expect_peer 'sandevistan on' 40
+expect 'time: our V slowed to 0\.1' 5
+mark
+cmd time scan 0.2 5
+expect 'time: our V slowed to 0\.5' 5
+cmd time report
+expect 'time: our V reads ' 5
+reject 'time: our V slowed to 0\.02'
+expect 'time: test dilation over' 10
+expect 'time: our V slowed to 0\.1' 5
+expect_peer 'sandevistan off' 15
+expect 'time: our V back to its own speed' 5
+# Both scan at 0.2: neither slows the other.
+peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --scan-at 8 --sandevistan-for 14 --sandevistan-scale 0.2
+expect_peer 'scanning on' 40
+expect 'time: our V slowed to 0\.2' 5
+cmd time scan 0.2 5
+expect 'time: our V back to its own speed' 5
+expect 'time: test dilation over' 10
+expect 'time: our V slowed to 0\.2' 5
+expect_peer 'scanning off' 15
+expect 'time: our V back to its own speed' 5
 cmd npc hostile clear
 cmd god off
 # The scanner is never switched off any more.

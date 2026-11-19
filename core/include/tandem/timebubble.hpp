@@ -91,6 +91,12 @@ public:
   static CatchUp ShotCatchUp(std::uint64_t firedUs, std::uint64_t nowUs);
   static float PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
                             std::span<const Owner> owners, bool inside = false);
+  // The world speed a V's abilities ask for as a bubble (and as the `own`
+  // of PlayerFactor): `scale` when any of them makes one
+  // (proto::kTimeBubbleAbilities: the scanner too), else 1. Every game
+  // computes its own V's and the others' through it, so a V's scanner
+  // counts as its own ability on the host and on a guest alike.
+  static float BubbleScale(std::uint8_t abilities, float scale);
   std::size_t MembersOf(proto::PlayerId owner) const;
   std::size_t Bubbles() const { return m_bubbles.size(); }
 

@@ -2,6 +2,7 @@
 
 #include "ports.hpp"
 #include "tandem/endpoint.hpp"
+#include "tandem/timebubble.hpp"
 
 #include <doctest/doctest.h>
 
@@ -1278,6 +1279,31 @@ TEST_CASE("time abilities: stamped, made safe, kept for late joiners, ended when
     return !atHost.empty();
   }));
   CHECK(atHost.front() == proto::TimeEffect{late->You(), proto::kTimeScanning, 0.1f});
+
+  // The host scans too: the guest hears it with its scale. Each game then
+  // weighs the others' bubbles against its own ability, the scanner
+  // counting as one on both sides: the guest scanning at 0.1 is slowed by
+  // a's Sandevistan (0.05) by the ratio, and the host scanning at 0.2 too.
+  host->SetLocalTimeEffect({.abilities = proto::kTimeScanning, .scale = 0.2f});
+  atLate.clear();
+  REQUIRE(Pump({host.get(), a.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 2)
+      CollectTimes(events, atLate);
+    return !atLate.empty();
+  }));
+  CHECK(atLate.front() == proto::TimeEffect{1, proto::kTimeScanning, 0.2f});
+  const auto factorOn = [](const Endpoint &game, const proto::TimeEffect &ours) {
+    std::vector<sync::TimeBubbles::Owner> owners;
+    for (const auto &[player, effect] : game.TimeEffects())
+      owners.push_back({.player = player,
+                        .scale = sync::TimeBubbles::BubbleScale(effect.abilities, effect.scale)});
+    return sync::TimeBubbles::PlayerFactor(
+        game.You(), sync::TimeBubbles::BubbleScale(ours.abilities, ours.scale), {}, owners);
+  };
+  CHECK(factorOn(*late, {.abilities = proto::kTimeScanning, .scale = 0.1f}) ==
+        doctest::Approx(0.5f));
+  CHECK(factorOn(*host, {.abilities = proto::kTimeScanning, .scale = 0.2f}) ==
+        doctest::Approx(0.25f));
 
   // An ability that makes no bubble (a bit nobody knows yet): its scale is 1
   // whatever is sent.
