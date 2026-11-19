@@ -149,7 +149,9 @@ public class TandemAttitudes {
       let agent = npc.GetAttitudeAgent();
       if IsDefined(agent) {
         let npcGroup = agent.GetAttitudeGroup();
-        if IsNameValid(npcGroup) && !TandemAttitudes.IsOurs(npcGroup) && NotEquals(npcGroup, vGroup) && !ArrayContains(this.m_seen, npcGroup) {
+        // The police look at each V as its own heat says (Police.reds):
+        // V's relation to them is never a puppet's.
+        if IsNameValid(npcGroup) && !TandemAttitudes.IsOurs(npcGroup) && NotEquals(npcGroup, vGroup) && NotEquals(npcGroup, n"police") && !npc.IsPrevention() && !ArrayContains(this.m_seen, npcGroup) {
           ArrayPush(this.m_seen, npcGroup);
           ArrayPush(this.m_vTowards, -1);
           ArrayPush(this.m_towardsV, -1);
@@ -205,7 +207,7 @@ public class TandemAttitudes {
       if IsDefined(bodyAgent) && TandemAttitudes.IsOurs(bodyAgent.GetAttitudeGroup()) {
         for npc in around {
           let npcAgent = npc.GetAttitudeAgent();
-          if IsDefined(npcAgent) && !TandemAttitudes.IsOurs(npcAgent.GetAttitudeGroup()) {
+          if IsDefined(npcAgent) && !TandemAttitudes.IsOurs(npcAgent.GetAttitudeGroup()) && !npc.IsPrevention() {
             let toV = npcAgent.GetAttitudeTowards(vAgent);
             let fromV = vAgent.GetAttitudeTowards(npcAgent);
             let pair = this.Pair(npc.GetEntityID(), body.GetEntityID());

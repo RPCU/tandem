@@ -121,7 +121,7 @@ proto::PlayerId Leader(const std::set<proto::PlayerId> &group, proto::PlayerId h
                        const Holders &holders = {});
 
 // The game that runs the world around `player` (its new NPCs, its crowd, its
-// traffic and police: traffic.md of the traffic-police branch, "Who owns an area"): the
+// traffic and police: docs/architecture/traffic.md, "Who owns an area"): the
 // highest-ranked player of `players` linked with it that outranks it and
 // whose V is within kQuietIn of its V (kRadius for `current`, the area's
 // owner until now: the same hysteresis as the crowd), else `player`'s own

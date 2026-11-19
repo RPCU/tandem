@@ -24,7 +24,8 @@ add_library(tandem_core STATIC
   src/elsewhere.cpp
   src/instance.cpp
   src/devices.cpp
-  src/regions.cpp)
+  src/regions.cpp
+  src/traffic.cpp)
 target_include_directories(tandem_core PUBLIC include)
 target_link_libraries(tandem_core PUBLIC enet zpp_bits)
 target_compile_features(tandem_core PUBLIC cxx_std_23)

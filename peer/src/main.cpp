@@ -110,6 +110,7 @@
 #include "tandem/pose.hpp"
 #include "tandem/scene.hpp"
 #include "tandem/shaping.hpp"
+#include "tandem/traffic.hpp"
 
 #include "tandem/regions.hpp"
 
@@ -271,6 +272,22 @@ struct Options {
   // Faults on what we send (docs/architecture/consistency.md, Consistency).
   float drop{}, dup{};
   int vanishAtSeconds{-1}; // end without a goodbye this long into the session (-1: never)
+  // The street (docs/architecture/traffic.md). Host: this many cars driving
+  // round the guest, one more parked, of this record; the first one burns
+  // and blows up this long in (-1: never). Guest: ram a shared vehicle this
+  // often (0: never); get into the nearest one this long in (-1: never).
+  int trafficCars{0};
+  std::string trafficVehicle{"Vehicle.v_standard2_archer_hella"};
+  int wreckAtSeconds{-1};
+  int ramTrafficSeconds{0};
+  int stealAtSeconds{-1};
+  // Police (docs/architecture/police.md): "our V" is wanted at this level
+  // (0: never) from heatAt for heatFor seconds; host: tell the guest's game
+  // its V was seen committing a crime this long in (-1: never).
+  int heat{0};
+  int heatAtSeconds{5};
+  int heatForSeconds{20};
+  int crimeAtSeconds{-1};
 };
 
 // TweakDBID of a record name: CRC32 of the name, its length in the top byte.
@@ -482,7 +499,20 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     its copy get a free seat)\n"
          "  --driver-npc REC   host, drive --seat: an NPC of REC at the wheel (NpcSeat)\n"
          "  --ride-along       a player's scene ride with seats (Transit Scene): ride along\n"
-         "                     (Transit Along), carried with its car, out beside it at the end\n";
+         "                     (Transit Along), carried with its car, out beside it at the end\n"
+         "  --traffic N        host: N cars drive round where the guest was first heard, one\n"
+         "                     more is parked there (shared world vehicles); --npc REC puts\n"
+         "                     a driver in the first; hits wear them down to wrecks\n"
+         "  --traffic-vehicle REC  the cars' record (Vehicle.v_standard2_archer_hella)\n"
+         "  --wreck-at N       host --traffic: the first car burns N seconds in, then blows up\n"
+         "  --ram-traffic N    join: ram a shared vehicle every N seconds (TrafficHit)\n"
+         "  --steal-at N       join: N seconds in, get into the nearest shared vehicle and sit\n"
+         "                     at its wheel for --drive-seconds (default 15): it is ours\n"
+         "  --heat N           our V is wanted at N stars (police heat is per player)\n"
+         "  --heat-at N        ...from N seconds in (default 5)\n"
+         "  --heat-for N       ...for N seconds, the last 5 unseen (default 20)\n"
+         "  --crime-at N       host: N seconds in, a witness calls the police on the guest's\n"
+         "                     V (Crime): its own game gives it the heat\n";
   std::exit(error.empty() ? 0 : 2);
 }
 
@@ -914,6 +944,28 @@ Options Parse(int argc, char **argv) {
       options.pathFile = value;
     } else if (flag == "--save-path") {
       options.savePathFile = value;
+    } else if (flag == "--traffic") {
+      options.trafficCars = Number<int>(value);
+      if (options.trafficCars < 0 || options.trafficCars > 64)
+        Usage("--traffic is 0 to 64");
+    } else if (flag == "--traffic-vehicle") {
+      options.trafficVehicle = std::string(value);
+    } else if (flag == "--wreck-at") {
+      options.wreckAtSeconds = Number<int>(value);
+    } else if (flag == "--ram-traffic") {
+      options.ramTrafficSeconds = Number<int>(value);
+    } else if (flag == "--steal-at") {
+      options.stealAtSeconds = Number<int>(value);
+    } else if (flag == "--heat") {
+      options.heat = Number<int>(value);
+      if (options.heat < 0 || options.heat > 5)
+        Usage("--heat is 0 to 5");
+    } else if (flag == "--heat-at") {
+      options.heatAtSeconds = Number<int>(value);
+    } else if (flag == "--heat-for") {
+      options.heatForSeconds = Number<int>(value);
+    } else if (flag == "--crime-at") {
+      options.crimeAtSeconds = Number<int>(value);
     } else
       Usage(std::format("unknown option {}", flag));
   }
@@ -2813,6 +2865,7 @@ int main(int argc, char **argv) {
   bool metroSecondHalf = false;
   // drive --driver-npc: the NPC at the wheel (host), its states every 100 ms.
   constexpr tandem::proto::NpcId kDriverNpc = 50'001;
+  constexpr tandem::proto::NpcId kStreetDriver = 50'002;
   auto nextDriverState = std::chrono::steady_clock::now();
   // An NCART train's seat and id, made up: the game only uses them to find
   // the same train in its own world.
@@ -2944,6 +2997,28 @@ int main(int argc, char **argv) {
   // --play-session: when it began, and what it sent.
   std::optional<std::uint64_t> sessionStartUs;
   std::uint64_t sessionSent = 0, sessionDropped = 0, sessionNpcs = 0;
+
+  // The street. Host (--traffic): its cars, round a centre; guest: the
+  // vehicles shared with us and where each was last said to be.
+  struct StreetCar {
+    tandem::proto::TrafficId id{};
+    float angle{}, radius{}, speed{}; // radians, metres, metres per second (0: parked)
+    float health{1.f};
+    std::uint16_t flags{};
+    bool gone{};
+  };
+  std::vector<StreetCar> street;
+  std::optional<Vec3> streetCentre;
+  tandem::traffic::Budget streetBudget;
+  auto nextStreetState = std::chrono::steady_clock::now();
+  int wreckStep = 0;
+  std::map<tandem::proto::TrafficId, tandem::proto::TrafficSpawn> sharedCars;
+  auto nextRam = std::chrono::steady_clock::now() + 5s;
+  std::optional<tandem::proto::TrafficSpawn> stolen;
+  int stealStep = 0;
+  double stolenAt = 0.0;
+  int heatStep = 0;
+  bool crimeSaid = false;
 
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
@@ -3451,6 +3526,56 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::EpochChanged>) {
               Log("epoch: player {}'s world was rebuilt (reason {}, epoch {})", e.epoch.player,
                   e.epoch.reason, e.epoch.epoch);
+            } else if constexpr (std::is_same_v<E, tandem::events::TrafficSpawned>) {
+              sharedCars[e.spawn.id] = e.spawn;
+              Log("street: vehicle {:#x} ({:#x}, flags {:#x}) at ({:.1f}, {:.1f}, {:.1f}), {} "
+                  "shared",
+                  e.spawn.id, e.spawn.record, e.spawn.flags, e.spawn.position.x, e.spawn.position.y,
+                  e.spawn.position.z, sharedCars.size());
+            } else if constexpr (std::is_same_v<E, tandem::events::TrafficMoved>) {
+              for (const auto &car : e.states.cars)
+                if (const auto it = sharedCars.find(car.id); it != sharedCars.end())
+                  it->second.position = car.position;
+            } else if constexpr (std::is_same_v<E, tandem::events::TrafficLeft>) {
+              sharedCars.erase(e.gone.id);
+              for (auto &car : street)
+                if (car.id == e.gone.id)
+                  car.gone = true;
+              if (e.gone.reason == tandem::proto::kTrafficTaken)
+                Log("street: vehicle {:#x} taken: it is player {}'s car now{}", e.gone.id,
+                    e.gone.player, e.gone.player == endpoint->You() ? " (ours)" : "");
+              else
+                Log("street: vehicle {:#x} gone (reason {})", e.gone.id, e.gone.reason);
+            } else if constexpr (std::is_same_v<E, tandem::events::TrafficChanged>) {
+              if (const auto it = sharedCars.find(e.status.id); it != sharedCars.end())
+                it->second.flags = static_cast<std::uint16_t>(
+                    (it->second.flags & ~tandem::proto::kTrafficStatusMask) | e.status.flags);
+              Log("street: vehicle {:#x} health {:.2f}, flags {:#x}{}", e.status.id,
+                  e.status.health, e.status.flags,
+                  e.status.flags & tandem::proto::kTrafficDestroyed ? " (a wreck)" : "");
+            } else if constexpr (std::is_same_v<E, tandem::events::TrafficHitBy>) {
+              // Ours to apply: 1000 health points a car, a wreck at none.
+              for (auto &car : street) {
+                if (car.id != e.hit.id || car.gone)
+                  continue;
+                car.health = std::max(0.f, car.health - e.hit.damage / 1000.f);
+                if (car.health <= 0.f) {
+                  car.flags |= tandem::proto::kTrafficDestroyed;
+                  car.speed = 0.f;
+                }
+                endpoint->SendTrafficStatus(
+                    {.id = car.id, .health = car.health, .flags = car.flags});
+                Log("street: player {} hit vehicle {:#x} for {:.0f}{}: health {:.2f}", e.hit.player,
+                    e.hit.id, e.hit.damage,
+                    e.hit.flags & tandem::proto::kTrafficHitCollision ? " (a ram)" : "",
+                    car.health);
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteHeat>) {
+              Log("police: player {} wanted level {} (state {})", e.heat.player, e.heat.stage,
+                  static_cast<int>(e.heat.state));
+            } else if constexpr (std::is_same_v<E, tandem::events::CrimeReported>) {
+              Log("police: the area's owner saw our V commit a crime (kind {}, npc {})",
+                  static_cast<int>(e.crime.kind), e.crime.npc);
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
               g_stop = 1;
@@ -4183,6 +4308,153 @@ int main(int argc, char **argv) {
       sharedSince = now;
     const double shared =
         sharedSince ? std::chrono::duration<double>(now - *sharedSince).count() : -1.0;
+    // --traffic: cars round where the guest was first heard, one parked.
+    if (options.host && options.trafficCars > 0 && firstRemote && shared >= 0.0) {
+      namespace proto = tandem::proto;
+      const auto place = [&](const StreetCar &car) {
+        tandem::traffic::Car at{.id = car.id};
+        at.position = {streetCentre->x + std::cos(car.angle) * car.radius,
+                       streetCentre->y + std::sin(car.angle) * car.radius, streetCentre->z};
+        // Along the circle, anticlockwise: yaw 0 looks along +Y.
+        at.orientation = tandem::sync::FromYaw(car.angle);
+        at.velocity = {-std::sin(car.angle) * car.speed, std::cos(car.angle) * car.speed, 0.f};
+        return at;
+      };
+      if (!streetCentre) {
+        streetCentre = firstRemote->position;
+        for (int n = 0; n <= options.trafficCars; ++n) {
+          const bool parked = n == options.trafficCars;
+          StreetCar car{
+              .id = proto::MakeTrafficId(endpoint->You(), static_cast<std::uint32_t>(n + 1)),
+              .angle =
+                  6.2832f * static_cast<float>(n) / static_cast<float>(options.trafficCars + 1),
+              .radius = parked ? 8.f : 14.f + 4.f * static_cast<float>(n % 3),
+              .speed = parked ? 0.f : 7.f,
+              .flags = parked ? proto::kTrafficParked : proto::kTrafficLights};
+          const auto at = place(car);
+          endpoint->SendTrafficSpawn({.id = car.id,
+                                      .record = TweakDBID(options.trafficVehicle),
+                                      .position = at.position,
+                                      .orientation = at.orientation,
+                                      .flags = car.flags});
+          street.push_back(car);
+        }
+        Log("street: {} cars of {} round player {}, one parked", options.trafficCars,
+            options.trafficVehicle, firstRemote->player);
+        // A driver in the first one (--npc): an NPC like any other, seated.
+        if (!options.npcRecord.empty()) {
+          endpoint->SendNpcSpawn({.npc = kStreetDriver,
+                                  .record = TweakDBID(options.npcRecord),
+                                  .position = place(street.front()).position});
+          endpoint->SendNpcSeat({.npc = kStreetDriver,
+                                 .owner = proto::TrafficSeatOwner(street.front().id),
+                                 .seat = CName("seat_front_left")});
+          Log("street: npc {} at the wheel of vehicle {:#x}", kStreetDriver, street.front().id);
+        }
+      }
+      if (now >= nextStreetState) {
+        nextStreetState = now + 100ms;
+        std::vector<tandem::traffic::Car> cars;
+        for (auto &car : street) {
+          if (car.gone)
+            continue;
+          car.angle += car.speed / car.radius * 0.1f;
+          cars.push_back(place(car));
+        }
+        std::vector<Vec3> viewers;
+        if (otherV)
+          viewers.push_back(otherV->position);
+        endpoint->SendTrafficStates({.cars = streetBudget.Pick(cars, viewers)});
+      }
+      // --wreck-at: the first car burns, then blows up 4 s later.
+      if (options.wreckAtSeconds >= 0 && !street.front().gone) {
+        auto &car = street.front();
+        if (wreckStep == 0 && shared >= options.wreckAtSeconds) {
+          wreckStep = 1;
+          car.flags |= proto::kTrafficBurning;
+          car.health = 0.15f;
+          endpoint->SendTrafficStatus({.id = car.id, .health = car.health, .flags = car.flags});
+          Log("street: vehicle {:#x} burns", car.id);
+        } else if (wreckStep == 1 && shared >= options.wreckAtSeconds + 4) {
+          wreckStep = 2;
+          car.flags = static_cast<std::uint16_t>((car.flags & ~proto::kTrafficBurning) |
+                                                 proto::kTrafficDestroyed);
+          car.health = 0.f;
+          car.speed = 0.f;
+          endpoint->SendTrafficStatus({.id = car.id, .health = 0.f, .flags = car.flags});
+          Log("street: vehicle {:#x} blew up: a wreck", car.id);
+        }
+      }
+    }
+    // --ram-traffic: our car hits a shared vehicle (what our game would
+    // send when it rams the proxy: the damage, and the push it gave).
+    if (options.ramTrafficSeconds && !options.host && endpoint->IsJoined() && !sharedCars.empty() &&
+        now >= nextRam) {
+      nextRam = now + std::chrono::seconds(options.ramTrafficSeconds);
+      const auto &[id, spawn] = *sharedCars.begin();
+      endpoint->SendTrafficHit({.id = id,
+                                .damage = 300.f,
+                                .flags = tandem::proto::kTrafficHitCollision,
+                                .position = spawn.position,
+                                .impulse = {0.f, 6.f, 0.f}});
+      Log("street: rammed vehicle {:#x} for 300", id);
+    }
+    // --steal-at: into the nearest shared vehicle, at its wheel.
+    if (options.stealAtSeconds >= 0 && !options.host && shared >= options.stealAtSeconds) {
+      if (stealStep == 0 && !sharedCars.empty()) {
+        // The nearest one that still drives: nobody gets into a wreck.
+        const Vec3 from = lastState ? lastState->position : Vec3{};
+        const auto nearest = std::ranges::min_element(sharedCars, {}, [&](const auto &entry) {
+          const auto &p = entry.second.position;
+          const float wreck = entry.second.flags & tandem::proto::kTrafficDestroyed ? 1e12f : 0.f;
+          return wreck + (p.x - from.x) * (p.x - from.x) + (p.y - from.y) * (p.y - from.y);
+        });
+        stolen = nearest->second;
+        endpoint->ClaimTraffic(stolen->id, CName("seat_front_left"));
+        stealStep = 1;
+        stolenAt = shared;
+        Log("street: getting into vehicle {:#x}", stolen->id);
+      } else if (stealStep == 1 && !sharedCars.contains(stolen->id)) {
+        // The claim came back (TrafficLeft above said whose it is): if it
+        // is ours, we sit at its wheel where it stands.
+        stealStep = 2;
+        endpoint->SetLocalSeat({.vehicle = stolen->record, .seat = CName("seat_front_left")});
+      } else if (stealStep == 2) {
+        endpoint->SendLocalVehicle(
+            {.position = stolen->position, .orientation = stolen->orientation});
+        if (shared - stolenAt > (options.driveSeconds > 0 ? options.driveSeconds : 15)) {
+          endpoint->SetLocalSeat({});
+          stealStep = 3;
+          Log("street: out of the car we took");
+        }
+      }
+    }
+    // --heat: our V is wanted, seen until the last 5 s, then clean again.
+    if (options.heat > 0 && shared >= 0.0) {
+      using tandem::proto::HeatState;
+      const double at = options.heatAtSeconds, end = at + options.heatForSeconds;
+      const int step = shared < at ? 0 : shared < end - 5.0 ? 1 : shared < end ? 2 : 3;
+      if (step != heatStep) {
+        heatStep = step;
+        const auto stage = static_cast<std::uint8_t>(step == 1 || step == 2 ? options.heat : 0);
+        endpoint->SetLocalHeat(
+            {.stage = stage, .state = step == 1 ? HeatState::Active : HeatState::Searching});
+        Log("police: our wanted level {}{}", stage,
+            step == 1   ? " (seen)"
+            : step == 2 ? " (lost)"
+                        : "");
+      }
+    }
+    // --crime-at: a witness of ours called the police on the guest's V.
+    if (options.host && options.crimeAtSeconds >= 0 && !crimeSaid && firstRemote &&
+        shared >= options.crimeAtSeconds) {
+      crimeSaid = true;
+      const bool sent = endpoint->SendCrime({.player = firstRemote->player,
+                                             .kind = tandem::proto::CrimeKind::Witness,
+                                             .position = firstRemote->position});
+      Log("police: crime of player {} reported to its game{}", firstRemote->player,
+          sent ? "" : " (not in the session)");
+    }
     // --detect-at: the host's NPCs notice the guests (2 s), have detected
     // them (--detect-for s), then lose them.
     if (options.host && options.detectAtSeconds >= 0 && shared >= 0.0) {

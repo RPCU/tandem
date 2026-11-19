@@ -43,6 +43,9 @@ public class TandemNpcKnown {
   public let pendingUntil: Float;
   public let record: TweakDBID;
   public let appearance: CName;
+  // Whose vehicle that is, as sent: a player, or a shared world vehicle
+  // (TandemStreet.SeatOwner).
+  public let seatOwner: Uint32;
 }
 
 public class TandemNpcProxy {
@@ -618,7 +621,7 @@ public class TandemNpcs {
         VehicleComponent.GetMountedSlotName(this.m_game, npc, slot);
         if !Equals(slot, known.seat) {
           known.seat = slot;
-          TandemNative.SendNpcSeat(known.npc, this.m_you, slot);
+          TandemNative.SendNpcSeat(known.npc, known.seatOwner, slot);
           TandemNative.Log(s"npcs: \(known.npc) moved to \(NameToString(slot))");
         }
         return;
@@ -632,8 +635,24 @@ public class TandemNpcs {
       VehicleComponent.GetMountedSlotName(this.m_game, npc, slot);
       known.seatVehicle = carrier.GetEntityID();
       known.seat = slot;
+      known.seatOwner = this.m_you;
       TandemNative.SendNpcSeat(known.npc, this.m_you, slot);
       TandemNative.Log(s"npcs: \(known.npc) sits in \(NameToString(slot)) of our vehicle");
+      return;
+    }
+    // In a world vehicle we share (Traffic.reds): a driver, a passenger, an
+    // officer in a police car. Seated in its proxy on the other games.
+    let traffic = TandemTraffic.Of(this.m_game);
+    let ride: wref<VehicleObject>;
+    if IsDefined(traffic) && VehicleComponent.GetVehicle(this.m_game, npc, ride) && IsDefined(ride) {
+      let car = traffic.IdOfBody(ride.GetEntityID());
+      if car != 0u {
+        VehicleComponent.GetMountedSlotName(this.m_game, npc, slot);
+        known.seatVehicle = ride.GetEntityID();
+        known.seat = slot;
+        known.seatOwner = TandemStreet.SeatOwner(car);
+        TandemNative.SendNpcSeat(known.npc, known.seatOwner, slot);
+      }
     }
   }
 
@@ -910,7 +929,13 @@ public class TandemNpcs {
     }
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
     let carId = IsDefined(system) ? system.CarOf(proxy.seatOwner) : none;
-    let car = entities.GetEntity(carId) as VehicleObject;
+    // A seat in a shared world vehicle: its proxy here (Traffic.reds).
+    let street = TandemStreet.IsStreetSeat(proxy.seatOwner);
+    let traffic = TandemTraffic.Of(game);
+    if street && IsDefined(traffic) {
+      carId = traffic.BodyOf(TandemStreet.CarOfSeat(proxy.seatOwner));
+    }
+    let car = TandemTraffic.Body(game, carId);
     let slot = TandemVehicles.FreeSlot(game, car, proxy.seatSlot, proxy.id);
     if !IsDefined(car) || !IsNameValid(slot) {
       // No copy yet (it spawns with the player's seat), or every seat taken.
@@ -918,6 +943,9 @@ public class TandemNpcs {
       return;
     }
     TandemVehicles.Seat(game, npc, car, slot);
+    if street && IsDefined(traffic) {
+      traffic.MarkSeated(TandemStreet.CarOfSeat(proxy.seatOwner));
+    }
     proxy.seatedIn = carId;
     proxy.seatedSlot = slot;
     proxy.seatChanged = false;
@@ -1430,7 +1458,8 @@ public class TandemNpcs {
   }
 
   // The live proxies this game shows, and their entities in the same order:
-  // animated at the speed their owner's bubble gives them.
+  // animated at the speed their owner's bubble gives them (Police.reds: which
+  // of them are officers that see our V).
   public func ProxyIds() -> array<Uint32> {
     let out: array<Uint32>;
     for proxy in this.m_proxies {

@@ -1405,6 +1405,187 @@ struct RegionHold {
   friend bool operator==(const RegionHold &, const RegionHold &) = default;
 };
 
+// ---- World vehicles (docs/architecture/traffic.md) ----
+//
+// The traffic, the parked cars and the police cars around the players are
+// run by one game: the owner of that area (per-player regions' area owner,
+// Endpoint::AreaOwner: the game that owns the NPCs there). It shares each one as a
+// lightweight proxy: one TrafficSpawn, then its transform in TrafficStates
+// while it moves. A car a player gets into becomes that player's car under
+// the usual rule (Seat, VehicleState): TrafficClaim, TrafficGone{taken}.
+//
+// An id is unique in the session: the owner's player id in the top 8 bits,
+// its own counter below, so several owners never collide.
+using TrafficId = std::uint32_t;
+constexpr TrafficId MakeTrafficId(PlayerId owner, std::uint32_t counter) {
+  return (owner << 24) | (counter & 0xFFFFFFu);
+}
+constexpr PlayerId TrafficOwner(TrafficId id) { return id >> 24; }
+
+// What a world vehicle is and how it stands (TrafficSpawn::flags; the ones
+// under kTrafficStatusMask change and travel in TrafficStatus too).
+inline constexpr std::uint16_t kTrafficParked = 1;      // no driver, still: no state stream
+inline constexpr std::uint16_t kTrafficPolice = 2;      // a prevention vehicle
+inline constexpr std::uint16_t kTrafficDestroyed = 4;   // a wreck
+inline constexpr std::uint16_t kTrafficBurning = 8;     // on fire: about to blow
+inline constexpr std::uint16_t kTrafficSiren = 16;      // siren and light bar on
+inline constexpr std::uint16_t kTrafficLights = 32;     // headlights on
+inline constexpr std::uint16_t kTrafficPanic = 64;      // its driver flees
+inline constexpr std::uint16_t kTrafficAbandoned = 128; // its driver got out or was pulled out
+inline constexpr std::uint16_t kTrafficStatusMask =
+    kTrafficParked | kTrafficDestroyed | kTrafficBurning | kTrafficSiren | kTrafficLights |
+    kTrafficPanic | kTrafficAbandoned;
+
+struct TrafficSpawn { // Event channel; kept by the owner's side for late joiners
+  TrafficId id{};
+  std::uint64_t record{};     // TweakDB id of the vehicle record
+  std::uint64_t appearance{}; // CName hash of its appearance
+  // Its EntityID hash in the owner's world when it is a placed vehicle (the
+  // same in every game: the others take their own instance over instead of
+  // spawning a copy); 0 for what the owner's traffic spawned.
+  std::uint64_t entity{};
+  Vec3 position;
+  Quat orientation;
+  std::uint16_t flags{}; // kTraffic*
+  friend bool operator==(const TrafficSpawn &, const TrafficSpawn &) = default;
+};
+
+// One moving vehicle in a TrafficStates: 28 bytes. The orientation is the
+// quaternion's i, j, k with r >= 0, each in 1/32767; the velocity in cm/s
+// (tandem/traffic.hpp packs and unpacks both).
+struct TrafficEntry {
+  TrafficId id{};
+  Vec3 position;
+  std::array<std::int16_t, 3> orientation{};
+  std::array<std::int16_t, 3> velocity{};
+  friend bool operator==(const TrafficEntry &, const TrafficEntry &) = default;
+};
+
+// At 10 Hz a full packet is 32 x 28 bytes: under 9 kB/s per guest, whatever
+// the street holds (the owner picks the nearest moving ones, traffic.hpp).
+inline constexpr std::size_t kMaxTrafficPerState = 32;
+
+struct TrafficStates { // State channel, ~10 Hz: the vehicles that move
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  std::vector<TrafficEntry> cars;
+  friend bool operator==(const TrafficStates &, const TrafficStates &) = default;
+};
+
+inline constexpr std::uint8_t kTrafficAway = 0;    // out of range, despawned by its game
+inline constexpr std::uint8_t kTrafficTaken = 1;   // `player` got in: it is that player's car now
+inline constexpr std::uint8_t kTrafficRemoved = 2; // gone for good (a wreck cleaned up)
+struct TrafficGone {                               // Event channel
+  TrafficId id{};
+  std::uint8_t reason{}; // kTraffic{Away,Taken,Removed}
+  PlayerId player{};     // taken: whose car it is now
+  friend bool operator==(const TrafficGone &, const TrafficGone &) = default;
+};
+
+// How a shared vehicle stands, sent by its owner when it changes (Event
+// channel; kept for late joiners until gone): a wreck stays a wreck.
+struct TrafficStatus {
+  TrafficId id{};
+  float health{1.f};     // fraction of its maximum, 0..1
+  std::uint16_t flags{}; // kTraffic* under kTrafficStatusMask
+  friend bool operator==(const TrafficStatus &, const TrafficStatus &) = default;
+};
+
+// A player's game hit a shared vehicle (its proxy): bullets, an explosion,
+// or the car it drives ramming it. That game computed the damage and ran its
+// own car's side of a collision; the vehicle's owner applies the damage and
+// the push to the real one, and the outcome (TrafficStates, TrafficStatus,
+// its driver's reaction) comes back to everyone. To the owner through the
+// host, never relayed to the others.
+inline constexpr std::uint8_t kTrafficHitCollision = 1; // a ram: `impulse` is what our car gave it
+inline constexpr std::uint8_t kTrafficHitExplosion = 2;
+inline constexpr std::uint8_t kTrafficHitMelee = 4;
+struct TrafficHit {  // Event channel
+  PlayerId player{}; // who: set by the host from the connection
+  TrafficId id{};
+  float damage{};       // health points
+  std::uint8_t flags{}; // kTrafficHit*
+  Vec3 position;        // where it landed (world)
+  Vec3 impulse;         // collision: the velocity change given, m/s; else the way it went
+  friend bool operator==(const TrafficHit &, const TrafficHit &) = default;
+};
+
+// A player gets into a shared vehicle (steals it, or takes an empty one):
+// to its owner through the host. The first claim wins: the owner answers
+// everyone with TrafficGone{taken, player}; a later claimer hears the same
+// and knows it lost. From then on it is that player's car (Seat,
+// VehicleState), and whoever sat in it is out (NpcSeat).
+struct TrafficClaim { // Event channel
+  PlayerId player{};  // who: set by the host from the connection
+  TrafficId id{};
+  std::uint64_t seat{}; // the slot's CName hash
+  friend bool operator==(const TrafficClaim &, const TrafficClaim &) = default;
+};
+
+// Opens a resync of the shared vehicles: every one its owner shares now.
+// The receiver drops what it has beyond these (kept with the NPC domain).
+inline constexpr std::size_t kMaxTrafficSet = 512;
+struct TrafficSet {
+  std::vector<TrafficId> ids;
+  friend bool operator==(const TrafficSet &, const TrafficSet &) = default;
+};
+
+// NpcSeat::owner names a shared vehicle instead of a player's car when this
+// bit is set: the rest is the TrafficId (drivers and passengers of traffic
+// and police cars are NPCs like any other, seated the same way).
+inline constexpr PlayerId kSeatInTraffic = 0x80000000u;
+constexpr PlayerId TrafficSeatOwner(TrafficId id) { return kSeatInTraffic | id; }
+constexpr bool IsTrafficSeat(PlayerId owner) { return (owner & kSeatInTraffic) != 0; }
+constexpr TrafficId TrafficOfSeat(PlayerId owner) { return owner & ~kSeatInTraffic; }
+
+// ---- Police (docs/architecture/police.md) ----
+//
+// Heat is per player: each game's own prevention system scores its own V's
+// crimes and owns that V's wanted level. Sent by that game when it changes
+// (Event channel; the host stamps the player, keeps the latest for late
+// joiners and relays it). The owner of the area the V is in answers a heat
+// above 0 with police, hostile to that V alone; a player that leaves is no
+// longer wanted.
+enum class HeatState : std::uint8_t { // EStarState
+  Default = 0,
+  Active = 1,    // the police see the V
+  Searching = 2, // they lost it: grey stars
+  Blinking = 3,  // about to give up
+};
+inline constexpr std::uint8_t kMaxHeat = 5;
+struct Heat {
+  PlayerId player{};
+  std::uint32_t revision{};
+  std::uint8_t stage{}; // EPreventionHeatStage: 0 none, 1..5 stars
+  HeatState state{};
+  friend bool operator==(const Heat &, const Heat &) = default;
+};
+
+// A crime of a remote V that only the game running the witnesses can see:
+// one of its NPCs called the police on the V's puppet, or its police saw
+// the puppet attack. That game never blames its own V for it: it tells the
+// offender's game, whose prevention system scores it as its own. Area owner
+// to the offender only, through the host; never relayed to anyone else.
+enum class CrimeKind : std::uint8_t {
+  Witness = 1, // an NPC saw it and called it in (PreventionCrimeWitnessRequest)
+  Combat = 2,  // the police were attacked or drawn on (PreventionCombatStartedRequest)
+  Damage = 3,  // damage to a civilian, an officer or a vehicle the offender's game did not see
+  Kill = 4,    // the same, deadly
+};
+inline constexpr std::uint8_t kCrimePolice = 1;  // the victim is police
+inline constexpr std::uint8_t kCrimeVehicle = 2; // the victim is a vehicle (`traffic`)
+struct Crime {                                   // Event channel
+  PlayerId player{};                             // the offender
+  CrimeKind kind{};
+  std::uint8_t flags{};      // kCrime*
+  std::uint8_t attackType{}; // gamedataAttackType (Damage, Kill)
+  float amount{};            // Damage: the share of the victim's health, 0..1
+  NpcId npc{};               // the victim or the witness, as shared (0: not shared)
+  TrafficId traffic{};       // the vehicle hit (kCrimeVehicle)
+  Vec3 position;             // where the offender was
+  friend bool operator==(const Crime &, const Crime &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -1415,7 +1596,9 @@ using Message = std::variant<
     Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
     Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit,
     SceneState, SceneCast, SceneLine, ActorPose, DeviceState, DeviceUse, DeviceSet, DeviceDigest,
-    Regions, NpcOwner, NpcHandover, NpcHandoverState, NpcHandoverDone, OwnedDigest, RegionHold>;
+    Regions, NpcOwner, NpcHandover, NpcHandoverState, NpcHandoverDone, OwnedDigest, RegionHold,
+    TrafficSpawn, TrafficStates, TrafficGone, TrafficStatus, TrafficHit, TrafficClaim, TrafficSet,
+    Heat, Crime>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine):
 // endpoint.hpp relays these through one path.

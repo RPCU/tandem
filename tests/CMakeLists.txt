@@ -1,4 +1,4 @@
-add_executable(tandem-tests main.cpp protocol_test.cpp endpoint_test.cpp interpolation_test.cpp movement_test.cpp play_test.cpp pose_test.cpp vehicle_test.cpp story_test.cpp hosts_test.cpp recorder_test.cpp timebubble_test.cpp relay_test.cpp shaping_test.cpp regroup_test.cpp combat_test.cpp consistency_test.cpp vanish_test.cpp elsewhere_test.cpp instance_test.cpp carryover_test.cpp scene_test.cpp devices_test.cpp regions_test.cpp regions_endpoint_test.cpp)
+add_executable(tandem-tests main.cpp protocol_test.cpp endpoint_test.cpp interpolation_test.cpp movement_test.cpp play_test.cpp pose_test.cpp vehicle_test.cpp story_test.cpp hosts_test.cpp recorder_test.cpp timebubble_test.cpp relay_test.cpp shaping_test.cpp regroup_test.cpp combat_test.cpp consistency_test.cpp vanish_test.cpp elsewhere_test.cpp instance_test.cpp carryover_test.cpp scene_test.cpp devices_test.cpp regions_test.cpp regions_endpoint_test.cpp traffic_test.cpp police_test.cpp)
 target_link_libraries(tandem-tests PRIVATE tandem_core)
 target_include_directories(tandem-tests SYSTEM PRIVATE "${CMAKE_SOURCE_DIR}/vendor/doctest")
 add_test(NAME tandem-tests COMMAND tandem-tests)
@@ -7,6 +7,7 @@ add_test(NAME peer-replay COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_replay.sh" $
 add_test(NAME peer-play COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_play.sh" $<TARGET_FILE:tandem-peer>)
 add_test(NAME peer-devices COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_devices.sh" $<TARGET_FILE:tandem-peer>)
 add_test(NAME peer-regions COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_regions.sh" $<TARGET_FILE:tandem-peer>)
+add_test(NAME peer-street COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_street.sh" $<TARGET_FILE:tandem-peer>)
 
 # Sessions through a real relay process (built from relay/ with Go).
 find_program(GO_EXECUTABLE go)
