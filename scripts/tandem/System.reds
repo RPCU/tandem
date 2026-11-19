@@ -129,6 +129,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_travel: ref<TandemTravel>;
   // Time skips, workspots, menus, photo mode (Activities.reds).
   private let m_activities: ref<TandemActivities>;
+  // Pings, the link, shared tags, waypoints (Comms.reds).
+  private let m_comms: ref<TandemComms>;
   private let m_proxyTests: array<ref<TandemProxyTest>>;
   private let m_npcs: ref<TandemNpcs>;
   // Stealth, detection and combat per player, camo, noises (Stealth.reds).
@@ -332,6 +334,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_travel.Start(this.GetGameInstance());
     this.m_activities = new TandemActivities();
     this.m_activities.Start(this.GetGameInstance(), this);
+    this.m_comms = new TandemComms();
+    this.m_comms.Start(this.GetGameInstance(), this);
     this.m_npcs = new TandemNpcs();
     this.m_npcs.Start(this.GetGameInstance());
     this.m_attitudes = new TandemAttitudes();
@@ -468,6 +472,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_activities) {
       this.m_activities.Stop();
       this.m_activities = null;
+    }
+    if IsDefined(this.m_comms) {
+      this.m_comms.Stop();
+      this.m_comms = null;
     }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Stop();
@@ -743,6 +751,11 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_trade;
   }
 
+  // Pings, the link, shared tags, waypoints (Comms.reds).
+  public func Comms() -> ref<TandemComms> {
+    return this.m_comms;
+  }
+
   public func Revive() -> ref<TandemRevive> {
     return this.m_revive;
   }
@@ -865,6 +878,9 @@ public class TandemSystem extends ScriptableSystem {
     }
     if IsDefined(this.m_activities) && this.m_playing {
       this.m_activities.Tick(this.Now(), this.m_you);
+    }
+    if IsDefined(this.m_comms) && this.m_playing {
+      this.m_comms.Tick(this.Now(), this.m_you);
     }
     // Slowed time (Time.reds): every frame, in the script tick, once the
     // world runs and we are in a session. (It ran from the plugin's
@@ -1484,6 +1500,13 @@ public class TandemSystem extends ScriptableSystem {
         first = GameInstance.GetDynamicEntitySystem().GetEntity(this.m_puppets[0].id) as GameObject;
       }
       TandemOutcomes.TestLimbs(this.GetGameInstance(), first);
+    } else if StrBeginsWith(command, "comms") {
+      // Comms.reds: comms report | ping | link [NAME] | unlink [NAME] | accept | tag.
+      if IsDefined(this.m_comms) {
+        this.m_comms.Command(command);
+      } else {
+        TandemNative.Log("comms: not in a session");
+      }
     } else if Equals(command, "markers") {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {

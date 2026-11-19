@@ -100,6 +100,7 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.37 | Phantom Liberty: the game's own check                           | `ui.md`             |
 | 13.40 | The scanner's slow time                                         | `time.md`           |
 | 13.38 | Progression, economy, saves, items (levels, XP, vendors, trade) | `progression.md`    |
+| 13.39 | Pings, tags, reveals and waypoints, for comms                   | `ui.md`             |
 
 ## Top traps (one line each)
 

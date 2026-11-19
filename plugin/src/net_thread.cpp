@@ -2,6 +2,7 @@
 
 #include "activity.hpp"
 #include "combat.hpp"
+#include "comms.hpp"
 #include "log.hpp"
 #include "presence.hpp"
 #include "recording.hpp"
@@ -298,6 +299,10 @@ struct NetThread::Impl {
       endpoint->SetLocalVitals(*lastVitals);
     if (lastPresence)
       endpoint->SetLocalPresence(*lastPresence);
+    // Comms: whom we share tags with, and our waypoint, from the start.
+    endpoint->SetLocalLink(Comms::Get().OwnLink());
+    if (const auto waypoint = Comms::Get().OwnWaypoint())
+      endpoint->SetLocalWaypoint(*waypoint);
     if (config.role == Config::Role::Host)
       log::Info("hosting on UDP {}{}", config.port,
                 relay ? std::format(", and through relay {}:{}", relay->address, relay->port) : "");
@@ -358,6 +363,7 @@ struct NetThread::Impl {
                 shared = true;
                 Story::Get().PushInbound(
                     {.kind = StoryInbound::Kind::InSession, .player = e.you, .host = e.host});
+                Comms::Get().PushInbound({.kind = CommsInbound::Kind::InSession, .player = e.you});
               } else if constexpr (std::is_same_v<E, events::PlayerJoined>) {
                 log::Info("{} joined (player {}, body {})", e.player.name, e.player.id,
                           static_cast<int>(e.player.body));
@@ -370,12 +376,15 @@ struct NetThread::Impl {
                     {ScriptEvent::Kind::PlayerJoined, e.player.id, e.player.name, e.player.body});
                 Story::Get().PushInbound(
                     {.kind = StoryInbound::Kind::Joined, .player = e.player.id});
+                Comms::Get().PushInbound(
+                    {.kind = CommsInbound::Kind::Joined, .player = e.player.id});
               } else if constexpr (std::is_same_v<E, events::PlayerLeft>) {
                 log::Info("player {} left", e.player);
                 shared = true;
                 runtime.ForgetRemote(e.player);
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
+                Comms::Get().PushInbound({.kind = CommsInbound::Kind::Left, .player = e.player});
               } else if constexpr (std::is_same_v<E, events::PlayerReturned>) {
                 // Its puppet and seat stay; its new game sends its look again.
                 log::Info("{} is back on a new connection (player {})", e.player.name, e.player.id);
@@ -723,9 +732,32 @@ struct NetThread::Impl {
                                      .npc = e.npc,
                                      .player = e.owner,
                                      .was = e.was});
+              } else if constexpr (std::is_same_v<E, events::MarkFrom>) {
+                log::Info("comms: player {} pinged (mark {}, kind {}, target {}:{:#x}, at ({:.1f}, "
+                          "{:.1f}, {:.1f}))",
+                          e.mark.from, e.mark.id, static_cast<int>(e.mark.kind),
+                          static_cast<int>(e.mark.target.kind), e.mark.target.id, e.mark.position.x,
+                          e.mark.position.y, e.mark.position.z);
+                Comms::Get().PushInbound({.kind = CommsInbound::Kind::Message, .message = e.mark});
+              } else if constexpr (std::is_same_v<E, events::TagFrom>) {
+                log::Info("comms: player {} {} {} target(s) ({})", e.tag.from,
+                          e.tag.on ? "tagged" : "untagged", e.tag.targets.size(),
+                          e.tag.reason == proto::TagReason::Reveal ? "reveal" : "scan");
+                Comms::Get().PushInbound({.kind = CommsInbound::Kind::Message, .message = e.tag});
+              } else if constexpr (std::is_same_v<E, events::RemoteLink>) {
+                log::Info("comms: player {}'s link: mode {}, {} listed", e.link.player,
+                          static_cast<int>(e.link.mode), e.link.players.size());
+                Comms::Get().PushInbound({.kind = CommsInbound::Kind::Message, .message = e.link});
+              } else if constexpr (std::is_same_v<E, events::RemoteWaypoint>) {
+                log::Info("comms: player {}'s waypoint: kind {} at ({:.1f}, {:.1f}, {:.1f})",
+                          e.waypoint.player, static_cast<int>(e.waypoint.kind),
+                          e.waypoint.position.x, e.waypoint.position.y, e.waypoint.position.z);
+                Comms::Get().PushInbound(
+                    {.kind = CommsInbound::Kind::Message, .message = e.waypoint});
               } else if constexpr (std::is_same_v<E, events::Ended>) {
                 Regions::Get().Reset();
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
+                Comms::Get().PushInbound({.kind = CommsInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
                 runtime.SetYou(0);
                 runtime.SetRemotePaused({});
@@ -1001,6 +1033,16 @@ struct NetThread::Impl {
         endpoint->SendNoise(noise);
       for (auto &[message, to] : Story::Get().TakeOutbound())
         endpoint->SendStory(std::move(message), to);
+      for (auto &message : Comms::Get().TakeOutbound()) {
+        if (auto *mark = std::get_if<proto::Mark>(&message))
+          endpoint->SendMark(*mark);
+        else if (auto *tag = std::get_if<proto::Tag>(&message))
+          endpoint->SendTag(std::move(*tag));
+        else if (auto *link = std::get_if<proto::Link>(&message))
+          endpoint->SetLocalLink(std::move(*link));
+        else if (const auto *waypoint = std::get_if<proto::Waypoint>(&message))
+          endpoint->SetLocalWaypoint(*waypoint);
+      }
       for (auto &message : runtime.TakeRegroupOutbox()) {
         if (auto *offer = std::get_if<proto::Regroup>(&message))
           endpoint->SendRegroup(std::move(*offer));
@@ -1116,8 +1158,10 @@ struct NetThread::Impl {
     endpoint->Leave(stop.stop_requested() ? "left the session" : "the game closed");
     // Stopped (the co-op menu's Leave, another choice, the game left): the
     // story side ends its session too (a guest gets its own story back).
-    if (stop.stop_requested() && !ended)
+    if (stop.stop_requested() && !ended) {
       Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
+      Comms::Get().PushInbound({.kind = CommsInbound::Kind::Ended});
+    }
     return endReason.empty() ? std::string("the session ended") : endReason;
   }
 };

@@ -111,6 +111,7 @@
 // (tandem/shaping.hpp) between the mock player and the others, both ways.
 
 #include "tandem/combat.hpp"
+#include "tandem/comms.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/movement.hpp"
@@ -256,6 +257,24 @@ struct Options {
   // how long (0: until the end).
   int askSkipSeconds{-1};
   int skipHours{3};
+  // Comms (docs/architecture/comms.md): our link consent (auto: everyone;
+  // ask: nobody until asked, and every request is accepted; off: never), a
+  // request to every other player N s in (-1: never); a ping every N s (0:
+  // never), our scan tag or reveal of shared NPCs every N s, our waypoint.
+  enum class LinkAnswer { Auto, Ask, Off } linkConsent{LinkAnswer::Auto};
+  int linkAtSeconds{-1};
+  int pingSeconds{0};
+  int tagSeconds{0};
+  int revealSeconds{0};
+  std::optional<Vec3> waypoint;
+  int waypointClearSeconds{-1};
+  // A team target (the "Mark target" quickhack) 5 s in: a shared NPC's id,
+  // or "nearest" (empty: never).
+  std::string markTarget;
+  // host: our V "quickhacks" a shared NPC (an id, or "nearest") every 20 s:
+  // --hack-action's upload for 3 s, then --hack-effect on it for 10 s, as
+  // the host's game says it (NpcHackState, NpcStatus). Empty: never.
+  std::string hackNpc;
   tandem::proto::SkipReason skipReason{tandem::proto::SkipReason::Wait};
   Answer skipAnswer{Answer::Yes};
   std::string activity;
@@ -527,6 +546,25 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     to come to us\n"
          "  --regroup-answer A yes | no | ignore: how to answer an offer to join (default\n"
          "                     yes: go there)\n"
+         "  --link L           auto | ask | off: whom we share tags with (auto: everyone,\n"
+         "                     the default; ask: nobody until asked, every request\n"
+         "                     accepted; off: nobody, requests ignored)\n"
+         "  --link-at N        N seconds after another player is in, ask everyone to link\n"
+         "  --ping N           every N seconds a ping: in front of the other V, then the\n"
+         "                     nearest shared NPC (enemy), the same again (danger), a\n"
+         "                     withdrawal, round again\n"
+         "  --tag N            every N seconds tag (or untag) the nearest shared NPC, as\n"
+         "                     the scanner's tag (seen by linked players only)\n"
+         "  --reveal N         every N seconds reveal up to 4 shared NPCs for 10 s, as\n"
+         "                     the Ping quickhack (linked players only)\n"
+         "  --waypoint X,Y,Z   our waypoint (a map pin) there, once another player is in\n"
+         "  --waypoint-clear N take the waypoint away N seconds after setting it\n"
+         "  --mark-target ID   5 seconds after another player is in, make the shared NPC\n"
+         "                     ID (or \"nearest\") our team target, as the Mark target\n"
+         "                     quickhack does\n"
+         "  --hack-npc ID      host: every 20 s our V quickhacks the shared NPC ID (or\n"
+         "                     \"nearest\"): --hack-action uploads for 3 s, then\n"
+         "                     --hack-effect is on it for 10 s, as a host's game says\n"
          "  --ask-skip N       N seconds after another player is in the session, ask to\n"
          "                     skip --skip-hours of game time\n"
          "  --skip-hours H     --ask-skip: how many hours (default 3)\n"
@@ -1034,6 +1072,32 @@ Options Parse(int argc, char **argv) {
       else if (flag == "--travel-to") options.travelTo = Point(flag, value);
       else if (flag == "--travel-point") options.travelPoint = std::string(value);
       else if (flag == "--offer-regroup") options.offerRegroupSeconds = Number<int>(value);
+      else if (flag == "--link") {
+        if (value == "auto")
+          options.linkConsent = Options::LinkAnswer::Auto;
+        else if (value == "ask")
+          options.linkConsent = Options::LinkAnswer::Ask;
+        else if (value == "off")
+          options.linkConsent = Options::LinkAnswer::Off;
+        else
+          Usage(std::format("--link: auto, ask or off, not {}", value));
+      }
+      else if (flag == "--link-at") options.linkAtSeconds = Number<int>(value);
+      else if (flag == "--ping") options.pingSeconds = Number<int>(value);
+      else if (flag == "--tag") options.tagSeconds = Number<int>(value);
+      else if (flag == "--reveal") options.revealSeconds = Number<int>(value);
+      else if (flag == "--waypoint") options.waypoint = Point(flag, value);
+      else if (flag == "--waypoint-clear") options.waypointClearSeconds = Number<int>(value);
+      else if (flag == "--hack-npc") {
+        if (value != "nearest")
+          Number<std::uint32_t>(value);
+        options.hackNpc = std::string(value);
+      }
+      else if (flag == "--mark-target") {
+        if (value != "nearest")
+          Number<std::uint32_t>(value); // a number, or the usage
+        options.markTarget = std::string(value);
+      }
       else if (flag == "--regroup-answer") {
         if (value == "yes")
           options.regroupAnswer = Options::Answer::Yes;
@@ -2850,6 +2914,12 @@ int main(int argc, char **argv) {
     std::cerr << "tandem-peer: " << error << '\n';
     return 1;
   }
+  // Comms: our consent, from the start (the plugin does the same).
+  tandem::proto::Link ownLink{
+      .mode = options.linkConsent == Options::LinkAnswer::Auto  ? tandem::proto::LinkMode::Everyone
+              : options.linkConsent == Options::LinkAnswer::Ask ? tandem::proto::LinkMode::Listed
+                                                                : tandem::proto::LinkMode::Off};
+  endpoint->SetLocalLink(ownLink);
   if (options.drop > 0.f || options.dup > 0.f) {
     endpoint->SetFaults({.drop = options.drop, .dup = options.dup, .seed = std::random_device{}()});
     Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice",
@@ -3274,6 +3344,19 @@ int main(int argc, char **argv) {
         return id;
     return tandem::proto::kNoPlayer;
   };
+  // Comms: our pings (the game's own rules for them), their timers, the
+  // last target pinged, our tag's state, our waypoint's.
+  tandem::comms::Pinger pinger;
+  int pingStep = 0;
+  tandem::proto::TargetRef lastPing;
+  Vec3 lastPingAt{};
+  bool tagOn = false, linkAsked = false, waypointSet = false, waypointCleared = false,
+       targetMarked = false;
+  int hackStep = 0;
+  tandem::proto::NpcId hackedNpc = 0;
+  auto nextHackNpc = std::chrono::steady_clock::now();
+  auto nextPing = std::chrono::steady_clock::now(), nextTag = nextPing, nextReveal = nextPing,
+       waypointSetAt = nextPing;
 
   // The NPC world of a replay (--replay) or a recorded session
   // (--play-session) as this host sends it: an NPC a guest killed is out of
@@ -3769,6 +3852,40 @@ int main(int argc, char **argv) {
                 } else
                   Log("offer {} of player {}: declined", o.offer, o.from);
               }
+            } else if constexpr (std::is_same_v<E, tandem::events::MarkFrom>) {
+              const auto &m = e.mark;
+              Log("player {} pinged: mark {} kind {} target {}:{:#x} at ({:.1f}, {:.1f}, {:.1f}) "
+                  "for {} s",
+                  m.from, m.id, static_cast<int>(m.kind), static_cast<int>(m.target.kind),
+                  m.target.id, m.position.x, m.position.y, m.position.z, m.seconds);
+            } else if constexpr (std::is_same_v<E, tandem::events::TagFrom>) {
+              Log("player {} {} {} target(s) ({}, {} s)", e.tag.from,
+                  e.tag.on ? "tagged" : "untagged", e.tag.targets.size(),
+                  e.tag.reason == tandem::proto::TagReason::Reveal ? "reveal" : "scan",
+                  e.tag.seconds);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteLink>) {
+              const auto &l = e.link;
+              const bool theyAsk = tandem::comms::Consents(&l, endpoint->You());
+              const bool weDo = tandem::comms::Consents(&ownLink, l.player);
+              Log("player {}'s link: mode {}, {} listed: {}", l.player, static_cast<int>(l.mode),
+                  l.players.size(),
+                  theyAsk && weDo ? "linked"
+                  : theyAsk       ? "they ask us"
+                  : weDo          ? "we ask them"
+                                  : "not linked");
+              // --link ask: every request is accepted.
+              if (theyAsk && !weDo && options.linkConsent == Options::LinkAnswer::Ask) {
+                ownLink = tandem::comms::WithConsent(ownLink, l.player, true);
+                endpoint->SetLocalLink(ownLink);
+                Log("accepted player {}'s link request", l.player);
+              }
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteWaypoint>) {
+              const auto &w = e.waypoint;
+              if (w.kind == tandem::proto::WaypointKind::None)
+                Log("player {}'s waypoint: none", w.player);
+              else
+                Log("player {}'s waypoint: kind {} at ({:.1f}, {:.1f}, {:.1f})", w.player,
+                    static_cast<int>(w.kind), w.position.x, w.position.y, w.position.z);
             } else if constexpr (std::is_same_v<E, tandem::events::RegroupAnswered>) {
               Log("player {} {} (offer {})", e.answer.from,
                   e.answer.accepted ? (e.answer.offer ? "accepted: on the way" : "is on the way")
@@ -4304,6 +4421,168 @@ int main(int argc, char **argv) {
            .position = to});
       Log("fast travelled to ({:.1f}, {:.1f}, {:.1f}){}: offered everyone to join (offer {})", to.x,
           to.y, to.z, options.travelPoint.empty() ? "" : " at " + options.travelPoint, offers);
+    }
+    // Comms: link requests, pings, tags and reveals, our waypoint.
+    if (!linkAsked && together(options.linkAtSeconds)) {
+      linkAsked = true;
+      for (const auto &[id, info] : endpoint->Players())
+        if (id != endpoint->You())
+          ownLink = tandem::comms::WithConsent(ownLink, id, true);
+      endpoint->SetLocalLink(ownLink);
+      Log("asked everyone to link ({} listed)", ownLink.players.size());
+    }
+    const auto nearestNpc = [&]() -> std::optional<tandem::proto::NpcSpawn> {
+      std::optional<tandem::proto::NpcSpawn> best;
+      const Vec3 from = otherV ? otherV->position : lastSent.value_or(Vec3{});
+      for (const auto &[id, spawn] : endpoint->SharedNpcs())
+        if (!best || distance(spawn.position, from) < distance(best->position, from))
+          best = spawn;
+      return best;
+    };
+    if (options.pingSeconds > 0 && endpoint->IsJoined() && togetherSince && now >= nextPing) {
+      nextPing = now + std::chrono::seconds(options.pingSeconds);
+      // A spot in front of the other V, an enemy (or the spot again), the
+      // same at once (danger), then taken back: the four things a ping does.
+      const auto nowUs = tandem::net::NowUs();
+      std::optional<tandem::proto::Mark> mark;
+      const auto npc = nearestNpc();
+      Vec3 spot = lastSent.value_or(Vec3{});
+      if (otherV) {
+        const float yaw = tandem::sync::YawOf(otherV->orientation);
+        spot = {otherV->position.x - std::sin(yaw) * 4.f, otherV->position.y + std::cos(yaw) * 4.f,
+                otherV->position.z};
+      }
+      switch (pingStep++ % 4) {
+      case 0:
+        mark = pinger.Ping(tandem::proto::MarkKind::Spot, {}, spot, nowUs);
+        break;
+      case 1:
+        lastPing = npc ? tandem::proto::TargetRef{tandem::proto::TargetKind::Npc, npc->npc}
+                       : tandem::proto::TargetRef{};
+        lastPingAt = npc ? npc->position : Vec3{spot.x + 5.f, spot.y, spot.z};
+        mark = pinger.Ping(npc ? tandem::proto::MarkKind::Enemy : tandem::proto::MarkKind::Spot,
+                           lastPing, lastPingAt, nowUs);
+        // Twice in a row: careful (the danger window is 1.5 s).
+        if (mark) {
+          endpoint->SendMark(*mark);
+          Log("ping: mark {} kind {} at ({:.1f}, {:.1f}, {:.1f})", mark->id,
+              static_cast<int>(mark->kind), mark->position.x, mark->position.y, mark->position.z);
+        }
+        mark = pinger.Ping(npc ? tandem::proto::MarkKind::Enemy : tandem::proto::MarkKind::Spot,
+                           lastPing, lastPingAt, nowUs + 1);
+        break;
+      case 2:
+        mark = pinger.Ping(tandem::proto::MarkKind::Spot, lastPing, lastPingAt, nowUs);
+        break;
+      default:
+        break; // a rest
+      }
+      if (mark) {
+        endpoint->SendMark(*mark);
+        Log("ping: mark {} kind {} at ({:.1f}, {:.1f}, {:.1f})", mark->id,
+            static_cast<int>(mark->kind), mark->position.x, mark->position.y, mark->position.z);
+      }
+    }
+    if (options.tagSeconds > 0 && endpoint->IsJoined() && togetherSince && now >= nextTag) {
+      nextTag = now + std::chrono::seconds(options.tagSeconds);
+      if (const auto npc = nearestNpc()) {
+        tagOn = !tagOn;
+        endpoint->SendTag({.reason = tandem::proto::TagReason::Scan,
+                           .on = tagOn,
+                           .targets = {{tandem::proto::TargetKind::Npc, npc->npc}}});
+        Log("{} npc {} (scan)", tagOn ? "tagged" : "untagged", npc->npc);
+      }
+    }
+    if (options.revealSeconds > 0 && endpoint->IsJoined() && togetherSince && now >= nextReveal) {
+      nextReveal = now + std::chrono::seconds(options.revealSeconds);
+      tandem::proto::Tag reveal{
+          .reason = tandem::proto::TagReason::Reveal, .on = true, .seconds = 10};
+      for (const auto &[id, spawn] : endpoint->SharedNpcs())
+        if (reveal.targets.size() < 4)
+          reveal.targets.push_back({tandem::proto::TargetKind::Npc, id});
+      if (!reveal.targets.empty()) {
+        Log("revealed {} npc(s) for 10 s (ping quickhack)", reveal.targets.size());
+        endpoint->SendTag(std::move(reveal));
+      }
+    }
+    if (!options.markTarget.empty() && !targetMarked && together(5)) {
+      targetMarked = true;
+      std::optional<tandem::proto::NpcSpawn> npc;
+      if (options.markTarget == "nearest")
+        npc = nearestNpc();
+      else if (const auto it =
+                   endpoint->SharedNpcs().find(Number<std::uint32_t>(options.markTarget));
+               it != endpoint->SharedNpcs().end())
+        npc = it->second;
+      const tandem::proto::NpcId id =
+          npc ? npc->npc
+              : (options.markTarget == "nearest" ? 0 : Number<std::uint32_t>(options.markTarget));
+      if (id == 0) {
+        Log("team target: no shared NPC to mark");
+      } else if (const auto mark =
+                     pinger.Target({tandem::proto::TargetKind::Npc, id},
+                                   npc ? npc->position : Vec3{}, tandem::net::NowUs())) {
+        endpoint->SendMark(*mark);
+        Log("team target: mark {} on npc {}", mark->id, id);
+      }
+    }
+    if (!options.hackNpc.empty() && options.host && togetherSince && now >= nextHackNpc) {
+      namespace proto = tandem::proto;
+      const auto t = now - *togetherSince;
+      const auto step = static_cast<int>((t % 20s) / 1s);
+      if (hackStep == 0 && step < 3) {
+        hackStep = 1;
+        hackedNpc = 0;
+        if (options.hackNpc == "nearest") {
+          if (const auto npc = nearestNpc())
+            hackedNpc = npc->npc;
+        } else {
+          hackedNpc = Number<std::uint32_t>(options.hackNpc);
+        }
+        if (hackedNpc != 0) {
+          endpoint->SendNpcHackState({.npc = hackedNpc,
+                                      .player = endpoint->You(),
+                                      .action = TweakDBID(options.hackAction),
+                                      .step = proto::HackStep::Started,
+                                      .uploadMs = 3000});
+          Log("hack: uploading {} on npc {} (3 s)", options.hackAction, hackedNpc);
+        }
+      } else if (hackStep == 1 && step >= 3) {
+        hackStep = 2;
+        if (hackedNpc != 0) {
+          endpoint->SendNpcHackState({.npc = hackedNpc,
+                                      .player = endpoint->You(),
+                                      .action = TweakDBID(options.hackAction),
+                                      .step = proto::HackStep::Done});
+          endpoint->SendNpcStatus({.npc = hackedNpc,
+                                   .player = endpoint->You(),
+                                   .effect = TweakDBID(options.hackEffect),
+                                   .applied = true});
+          Log("hack: {} on npc {} (10 s)", options.hackEffect, hackedNpc);
+        }
+      } else if (hackStep == 2 && step >= 13) {
+        hackStep = 0;
+        if (hackedNpc != 0) {
+          endpoint->SendNpcStatus(
+              {.npc = hackedNpc, .effect = TweakDBID(options.hackEffect), .applied = false});
+          Log("hack: {} off npc {}", options.hackEffect, hackedNpc);
+        }
+        nextHackNpc = now + 2s; // the rest of the round
+      }
+    }
+    if (options.waypoint && !waypointSet && endpoint->IsJoined() && togetherSince) {
+      waypointSet = true;
+      waypointSetAt = now;
+      endpoint->SetLocalWaypoint(
+          {.kind = tandem::proto::WaypointKind::Pin, .position = *options.waypoint});
+      Log("waypoint set at ({:.1f}, {:.1f}, {:.1f})", options.waypoint->x, options.waypoint->y,
+          options.waypoint->z);
+    }
+    if (waypointSet && !waypointCleared && options.waypointClearSeconds >= 0 &&
+        now >= waypointSetAt + std::chrono::seconds(options.waypointClearSeconds)) {
+      waypointCleared = true;
+      endpoint->SetLocalWaypoint({});
+      Log("waypoint taken away");
     }
     // --offer-regroup: ask the others to come.
     if (!offeredRegroup && together(options.offerRegroupSeconds)) {

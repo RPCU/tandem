@@ -129,6 +129,11 @@ public class TandemTravel {
     return false;
   }
 
+  // A regroup offer is on screen (the phone key is its: Comms.reds).
+  public func ShowingOffer() -> Bool {
+    return IsDefined(this.m_offer);
+  }
+
   public static func Of(game: GameInstance) -> ref<TandemTravel> {
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
     return IsDefined(system) ? system.Travel() : null;

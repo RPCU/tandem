@@ -1,5 +1,6 @@
 // The RED4ext entry points.
 
+#include "comms.hpp"
 #include "config.hpp"
 #include "engine/hooks.hpp"
 #include "engine/pose.hpp"
@@ -168,6 +169,13 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     runtime.config = LoadConfig(files.config);
     runtime.config.commandFile = files.command;
     runtime.config.recentFile = files.recent;
+    tandem::plugin::Comms::Get().Configure(runtime.config.link == tandem::plugin::Config::Link::Auto
+                                               ? tandem::plugin::Comms::LinkDefault::Auto
+                                           : runtime.config.link ==
+                                                   tandem::plugin::Config::Link::Ask
+                                               ? tandem::plugin::Comms::LinkDefault::Ask
+                                               : tandem::plugin::Comms::LinkDefault::Off,
+                                           runtime.config.pings);
     if (const auto text = Environment(tandem::instance::kPortVariable); !text.empty()) {
       // Digits are ASCII; anything else is refused by ParsePort.
       std::string narrow;

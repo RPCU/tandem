@@ -165,7 +165,7 @@ public class TandemText {
       "Travel-FastTravelledTo", "Travel-FastTravelled", "Travel-Labelled", "Travel-Scene",
       "Travel-Taken", "Travel-Asks", "Travel-Blocked", "Revive-Down", "Revive-DownAlone",
       "Revive-Out", "Revive-AllDown", "Revive-WaitHost", "Activities-AsksSleep", "Activities-AsksWait",
-      "Activities-CannotSkip", "Trade-Asks", "Saves-Failed", "Saves-WhenYouCan",
+      "Activities-CannotSkip", "Trade-Asks", "Comms-LinkAsked", "Saves-Failed", "Saves-WhenYouCan",
       "Saves-NotRestored"
     ];
     if ArrayContains(asks, key) {
@@ -436,6 +436,33 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Saves-Failed", "Co-op: the game could not be saved. Save it yourself to keep what your V earned.");
     this.Text("Tandem-Saves-WhenYouCan", "Co-op: save your game when you can, to keep what your V earned.");
     this.Text("Tandem-Saves-NotRestored", "Co-op: your game could not be put back as it was. Load your last save.");
+    this.Text("Tandem-Comms-Enemy", "Enemy");
+    this.Text("Tandem-Comms-Device", "Device");
+    this.Text("Tandem-Comms-Loot", "Loot");
+    this.Text("Tandem-Comms-Vehicle", "Vehicle");
+    this.Text("Tandem-Comms-Danger", "Danger");
+    this.Text("Tandem-Comms-Target", "Target");
+    this.Text("Tandem-Comms-Here", "Here");
+    this.Text("Tandem-Comms-PingOf", "{1}: {2}");
+    this.Text("Tandem-Comms-YourPing", "Your ping");
+    this.Text("Tandem-Comms-TheirPing", "{1}'s ping");
+    this.Text("Tandem-Comms-YourTarget", "Your team target");
+    this.Text("Tandem-Comms-TheirTarget", "{1}'s target: focus it");
+    this.Text("Tandem-Comms-MarkTitle", "Mark target");
+    this.Text("Tandem-Comms-ClearTitle", "Clear the team mark");
+    this.Text("Tandem-Comms-MarkDescription", "Show your linked partners this target to focus: marked on their HUD and outlined, until it goes down, you mark another or you choose it again. No RAM, no trace.");
+    this.Text("Tandem-Comms-ClearDescription", "Take this target's mark off your partners' HUDs.");
+    this.Text("Tandem-Comms-OnlyShared", "Only shared targets can be marked");
+    this.Text("Tandem-Comms-LinksOff", "Links are off (tandem.ini)");
+    this.Text("Tandem-Comms-Linked", "Linked with {1}: scans and pings are shared");
+    this.Text("Tandem-Comms-LinkBroken", "Link with {1} broken");
+    this.Text("Tandem-Comms-LinkSent", "Link request sent to {1}");
+    this.Text("Tandem-Comms-LinkAsked", "{1} asks to link: share scans and pings");
+    this.Text("Tandem-Comms-LinkWith", "Link with {1}");
+    this.Text("Tandem-Comms-WaypointOf", "{1}'s waypoint");
+    this.Text("Tandem-Comms-PinPlaced", "The map pin {1} placed");
+    this.Text("Tandem-Comms-PlaceTracked", "The place {1} tracks");
+    this.Text("Tandem-Comms-WaypointSet", "{1} set a waypoint");
     this.Text("Tandem-Travel-Blocked", "You can't fast travel right now");
     // The settings page (Settings.reds).
     this.Text("Tandem-Menu-Settings", "Settings");
@@ -667,6 +694,33 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Saves-Failed", "Coop : la partie n'a pas pu être sauvegardée. Sauvegardez vous-même pour garder ce que votre V a gagné.");
     this.Text("Tandem-Saves-WhenYouCan", "Coop : sauvegardez dès que possible, pour garder ce que votre V a gagné.");
     this.Text("Tandem-Saves-NotRestored", "Coop : votre partie n'a pas pu être remise comme avant. Chargez votre dernière sauvegarde.");
+    this.Text("Tandem-Comms-Enemy", "Ennemi");
+    this.Text("Tandem-Comms-Device", "Appareil");
+    this.Text("Tandem-Comms-Loot", "Butin");
+    this.Text("Tandem-Comms-Vehicle", "Véhicule");
+    this.Text("Tandem-Comms-Danger", "Danger");
+    this.Text("Tandem-Comms-Target", "Cible");
+    this.Text("Tandem-Comms-Here", "Ici");
+    this.Text("Tandem-Comms-PingOf", "{1} : {2}");
+    this.Text("Tandem-Comms-YourPing", "Votre signal");
+    this.Text("Tandem-Comms-TheirPing", "Signal de {1}");
+    this.Text("Tandem-Comms-YourTarget", "Votre cible d'équipe");
+    this.Text("Tandem-Comms-TheirTarget", "Cible de {1} : concentrez-vous dessus");
+    this.Text("Tandem-Comms-MarkTitle", "Marquer la cible");
+    this.Text("Tandem-Comms-ClearTitle", "Retirer la marque d'équipe");
+    this.Text("Tandem-Comms-MarkDescription", "Montre cette cible à vos partenaires liés : marquée sur leur ATH et soulignée, jusqu'à ce qu'elle tombe, que vous en marquiez une autre ou que vous la choisissiez de nouveau. Sans RAM, sans traçage.");
+    this.Text("Tandem-Comms-ClearDescription", "Retire la marque de cette cible de l'ATH de vos partenaires.");
+    this.Text("Tandem-Comms-OnlyShared", "Seules les cibles partagées peuvent être marquées");
+    this.Text("Tandem-Comms-LinksOff", "Les liens sont désactivés (tandem.ini)");
+    this.Text("Tandem-Comms-Linked", "Lié à {1} : analyses et signaux partagés");
+    this.Text("Tandem-Comms-LinkBroken", "Lien avec {1} rompu");
+    this.Text("Tandem-Comms-LinkSent", "Demande de lien envoyée à {1}");
+    this.Text("Tandem-Comms-LinkAsked", "{1} demande un lien : partager analyses et signaux");
+    this.Text("Tandem-Comms-LinkWith", "Se lier à {1}");
+    this.Text("Tandem-Comms-WaypointOf", "Point de passage de {1}");
+    this.Text("Tandem-Comms-PinPlaced", "Le repère placé par {1}");
+    this.Text("Tandem-Comms-PlaceTracked", "Le lieu que suit {1}");
+    this.Text("Tandem-Comms-WaypointSet", "{1} a placé un point de passage");
     this.Text("Tandem-Travel-Blocked", "Voyage rapide impossible pour l'instant");
     this.Text("Tandem-Menu-Settings", "Paramètres");
     this.Text("Tandem-Settings-Saved", "Enregistrés dans tandem.ini dès leur modification");

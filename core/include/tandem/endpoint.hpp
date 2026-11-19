@@ -9,6 +9,7 @@
 // game owns its own V (PlayerState); the host's game owns the shared world.
 
 #include "tandem/activity.hpp"
+#include "tandem/comms.hpp"
 #include "tandem/consistency.hpp"
 #include "tandem/devices.hpp"
 #include "tandem/protocol.hpp"
@@ -420,6 +421,21 @@ struct TimeSkipVoted {
 struct TimeSkipEnded {
   proto::TimeSkipResult result;
 };
+// Comms (docs/architecture/comms.md). Another player's ping (never our own);
+// a tag or reveal of a player linked with us (only then); another player's
+// link consent or waypoint, when it changes (never our own).
+struct MarkFrom {
+  proto::Mark mark;
+};
+struct TagFrom {
+  proto::Tag tag;
+};
+struct RemoteLink {
+  proto::Link link;
+};
+struct RemoteWaypoint {
+  proto::Waypoint waypoint;
+};
 } // namespace events
 
 // Who this game is in the session, and what it has installed (the mock
@@ -466,7 +482,8 @@ using SessionEvent = std::variant<
     events::TrafficLeft, events::TrafficChanged, events::TrafficHitBy, events::RemoteHeat,
     events::CrimeReported, events::RemotePresence, events::RemoteCue, events::HostNpcReaction,
     events::RemoteInstall, events::JoinRefused, events::RemoteActivity, events::TimeSkipAsked,
-    events::TimeSkipVoted, events::TimeSkipEnded, events::Trade>;
+    events::TimeSkipVoted, events::TimeSkipEnded, events::Trade, events::MarkFrom, events::TagFrom,
+    events::RemoteLink, events::RemoteWaypoint>;
 
 class Endpoint {
 public:
@@ -713,6 +730,23 @@ public:
   // none sent yet is up).
   proto::Life LifeOf(proto::PlayerId player) const;
   const std::map<proto::PlayerId, proto::Vitals> &Lives() const { return m_lives; }
+
+  // Comms (docs/architecture/comms.md). Our ping, to every other player
+  // (`from` filled in; the host holds each guest to comms::kHostMark* and
+  // drops the rest). False: not sent (not in a session).
+  bool SendMark(proto::Mark mark);
+  // Our tag or reveal, to the players linked with us only.
+  void SendTag(proto::Tag tag);
+  // Our link consent and our waypoint (kind None: none). Kept: sent now if
+  // we are in the session, else as soon as we are; the host hands
+  // everyone's to late joiners.
+  void SetLocalLink(proto::Link link);
+  void SetLocalWaypoint(proto::Waypoint waypoint);
+  // Everyone's consent and waypoint as this game knows them (us included).
+  const std::map<proto::PlayerId, proto::Link> &CommsLinks() const { return m_commsLinks; }
+  const std::map<proto::PlayerId, proto::Waypoint> &Waypoints() const { return m_waypoints; }
+  // Host: marks and tags it dropped for coming too fast.
+  std::uint64_t CommsDropped() const { return m_commsDropped; }
 
   // Consistency (docs/architecture/consistency.md). Our world was rebuilt around our V
   // (proto::kEpoch* reason): what was in flight about the old one is void.
@@ -1101,6 +1135,30 @@ private:
   void SendLocalVitalsNow();
   // Host: every player is down or out: GameOver to all, once per loss.
   void CheckLost(std::vector<SessionEvent> &out);
+  // Comms: our link consent and waypoint, and everyone's (host: the record
+  // for late joiners); host, each guest's rate of marks and tags.
+  std::optional<proto::Link> m_localLink;
+  std::uint32_t m_linkRevision{};
+  std::map<proto::PlayerId, proto::Link> m_commsLinks;
+  std::optional<proto::Waypoint> m_localWaypoint;
+  std::uint32_t m_waypointRevision{};
+  std::map<proto::PlayerId, proto::Waypoint> m_waypoints;
+  std::map<proto::PlayerId, comms::Limiter> m_markRate, m_tagRate;
+  std::uint64_t m_commsDropped{};
+  void SendLocalLinkNow();
+  void SendLocalWaypointNow();
+  // `from` and `to` each consent to the other (our own consent is ours).
+  bool LinkedPair(proto::PlayerId from, proto::PlayerId to) const;
+  // Host: a tag to the players linked with its sender (and our game, when
+  // linked: true).
+  bool DeliverTag(const proto::Tag &tag, net::PeerId except);
+  // A player is gone or back from a crash: its comms state with it.
+  void ForgetComms(proto::PlayerId player);
+  // Host: a guest's Mark, Tag, Link or Waypoint; a player back from a
+  // crash starting with none (told to all but its new connection).
+  void OnGuestComms(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
+                    std::vector<SessionEvent> &out);
+  void EndCommsOf(proto::PlayerId player, net::PeerId peer, std::vector<SessionEvent> &out);
   // Host: the session's difficulty and its NPCs' poise, for late joiners.
   std::optional<proto::Difficulty> m_difficulty;
   // The session's rules (host: its own, for late joiners; guest: the host's).

@@ -226,6 +226,7 @@ public class TandemHacks extends ScriptableSystem {
     ArrayPush(this.m_uploads, upload);
     TandemHacks.HoldBeingHacked(npc, upload, puppet.GetEntityID());
     TandemNative.SendNpcHackState(event.npc, event.player, event.action, 0, event.seconds);
+    TandemCommsNative.PartnerUpload(event.npc, event.player, event.action, 0, event.seconds);
     TandemNative.Log(s"hacks: player \(event.player) uploads \(TDBID.ToStringDEBUG(event.action)) on npc \(event.npc) (\(event.seconds) s, \(ahead) other upload(s) on it)");
   }
 
@@ -268,6 +269,7 @@ public class TandemHacks extends ScriptableSystem {
       if TandemOwn.Npc(game, upload.npc) {
         let alive = IsDefined(npc) && !npc.IsDead();
         TandemNative.SendNpcHackState(upload.npc, upload.player, upload.action, alive ? 1 : 2, 0.0);
+        TandemCommsNative.PartnerUpload(upload.npc, upload.player, upload.action, alive ? 1 : 2, 0.0);
         TandemNative.Log(s"hacks: player \(upload.player)'s upload of \(TDBID.ToStringDEBUG(upload.action)) on npc \(upload.npc) \(alive ? "done" : "failed")");
       }
       if IsDefined(npc) && !this.Uploading(upload.npc) && !npc.HasActiveQuickHackUpload() {
@@ -302,6 +304,8 @@ public class TandemHacks extends ScriptableSystem {
       TandemNative.Log(s"hacks: the host \(TandemHacks.StepName(event.state)) our upload of \(what) on npc \(event.npc)");
       return;
     }
+    // A partner's: its indicator, tinted, while we are linked (Comms.reds).
+    TandemCommsNative.PartnerUpload(event.npc, event.player, event.action, event.state, event.seconds);
     if event.state == 0 {
       let upload = new TandemUpload();
       upload.npc = event.npc;
@@ -350,6 +354,7 @@ public class TandemHacks extends ScriptableSystem {
     }
     let who = TandemHacks.PlayerOf(game, evt.instigatorEntityID);
     TandemNative.SendNpcStatus(id, who, effect, true);
+    TandemCommsNative.PartnerEffect(id, who, effect, true, TandemComms.EffectSeconds(npc, effect));
     // A guest's loud quickhack: what the game does for ours.
     if who != 0u && who != hacks.You() && !ArrayContains(tags, n"Stealth") {
       hacks.Victim(npc, id, who, effect);
@@ -366,6 +371,7 @@ public class TandemHacks extends ScriptableSystem {
     let id = TandemHacks.NpcOf(npc.GetGame(), npc.GetEntityID());
     if id != 0u {
       TandemNative.SendNpcStatus(id, 0u, evt.staticData.GetID(), false);
+      TandemCommsNative.PartnerEffect(id, 0u, evt.staticData.GetID(), false, 0.0);
     }
   }
 
@@ -410,6 +416,19 @@ public class TandemHacks extends ScriptableSystem {
   private func MirrorEffect(game: GameInstance, event: TandemHackEvent) -> Void {
     let proxy = TandemHacks.NpcEntity(game, event.npc);
     let what = TDBID.ToStringDEBUG(event.action);
+    // A partner's effect: its indicator, tinted, while linked (Comms.reds;
+    // the remaining time read once the proxy has it).
+    let applied = event.state == 1;
+    if applied && IsDefined(proxy) && !proxy.IsDead() && !StatusEffectSystem.ObjectHasStatusEffect(proxy, event.action) {
+      let puppet = TandemNpcs.PuppetOf(game, event.player);
+      TandemHacks.Put(proxy, event.action, IsDefined(puppet) ? puppet.GetEntityID() : EntityID());
+      let mirrored = new TandemMirroredEffect();
+      mirrored.npc = event.npc;
+      mirrored.effect = event.action;
+      ArrayPush(this.m_mirrored, mirrored);
+      TandemNative.Log(s"hacks: npc \(event.npc) has \(what) from player \(event.player): on its proxy");
+    }
+    TandemCommsNative.PartnerEffect(event.npc, event.player, event.action, applied, applied ? TandemComms.EffectSeconds(proxy, event.action) : 0.0);
     if event.state == 1 {
       if !IsDefined(proxy) || proxy.IsDead() {
         return;

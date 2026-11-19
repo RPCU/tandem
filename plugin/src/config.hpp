@@ -56,6 +56,11 @@
 //                        ; loads that save (only when you chose to leave)
 //   trade = off          ; on: trade items and eddies with the player beside you
 //                        ; (docs/architecture/trade.md); off: requests are refused
+//   link = auto          ; who sees your scanner tags and Ping reveals
+//                        ; (docs/architecture/comms.md): auto, every partner
+//                        ; (until you break it); ask, the partners you link with
+//                        ; (a request they accept); off, nobody
+//   pings = on           ; off: you neither send nor see pings
 
 #include "tandem/progress.hpp"
 #include "tandem/relay.hpp"
@@ -127,6 +132,10 @@ struct Config {
   // Who may drive our cars (Vehicles.reds, garage.md): any partner (crew),
   // only with us aboard, or nobody.
   proto::Lend lend{proto::Lend::Crew};
+  // Comms (docs/architecture/comms.md): the link's default, and pings.
+  enum class Link { Auto, Ask, Off };
+  Link link{Link::Auto};
+  bool pings{true};
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;

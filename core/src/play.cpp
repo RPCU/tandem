@@ -444,6 +444,10 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
           return host(m.player) && us(m.target);
         } else if constexpr (std::is_same_v<M, proto::Regroup>) {
           return host(m.from) && (m.to == proto::kNoPlayer || us(m.to));
+        } else if constexpr (std::is_same_v<M, proto::Mark>) {
+          return host(m.from); // the host's pings (a guest's NPC targets match)
+        } else if constexpr (std::is_same_v<M, proto::Waypoint>) {
+          return host(m.player);
         } else if constexpr (std::is_same_v<M, proto::AreaHit>) {
           return host(m.from) && us(m.player);
         } else if constexpr (std::is_same_v<M, proto::ChoiceCursor> ||

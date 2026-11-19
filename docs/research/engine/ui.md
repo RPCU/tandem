@@ -176,3 +176,131 @@ Line numbers are `~/.cache/tandem/ref/gamescripts/vanilla/final.reds` (2.50).
   `0x142790df8`, `IsAdditionalContentEnabled` `0x140fa5744`.
 - To see in game: that it answers true in the main menu already, and false
   with the DLC unticked in the store's client.
+
+### 13.39 Pings, tags, reveals and waypoints, for comms (2026-11-19, read in final.reds, not run)
+
+Line numbers are `~/.cache/tandem/ref/gamescripts/vanilla/final.reds`
+(2.50). All [2.5-untested]: written into `scripts/tandem/Comms.reds`
+(docs/architecture/comms.md), not yet seen in game.
+
+- **The cut multiplayer's ping.** `gamedataMappinVariant` keeps
+  `CPO_PingDoorVariant` 143, `CPO_PingGoHereVariant` 144,
+  `CPO_PingLootVariant` 145 next to `CPO_RemotePlayerVariant` 146
+  (`:1319`); `gamedataPingType` (`:5539`: Device, Door, Elevator, Junction,
+  Location, Loot, Trap) names `PingTypes.*` records (`Ping_Record`:
+  `WorldIconName`, `MinimapIconName`, `VoTriggerName`, `:397255`). The
+  input was `MP_TriggerPing`, released outside focus mode
+  (`PlayerPuppet.OnActionMultiplayer`, `:40546`), into the native
+  `PingSystem.TriggerPing` (`:248036`, a replicated system with
+  `IsPingSystemEnabled`); its mappin class `gamemappinsPingSystemMappin`
+  draws from `multi\gameplay\gui\widgets\world_mappins\pingsystem_mappin.inkwidget`
+  (`:398585`). tandem uses none of it but the variant
+  `CPO_PingGoHereVariant` (never registered in single player: UI wraps on
+  it touch no vanilla marker). Whether `MP_TriggerPing` is bound in 2.50's
+  single-player input contexts, and whether the `multi\` widgets ship, is
+  not known.
+- **The scanner's tag.** `FocusModeTaggingSystem` (`:108750`) listens to
+  `TagButton` on the player from attach (`Register`,
+  `RegisterInputListenerWithOwner`, `:108839`) and acts only in focus mode
+  (`OnActionWithOwner` checks `PlayerStateMachine.Vision == 1`, `:108960`):
+  outside the scanner the key is the game's but unused by it.
+  `TagObject(target)` / `UntagObject(target)` / `UntagAll()` (private,
+  `:108846`) do the work: `ScanningController.TagObject`, a
+  `RevealObjectEvent` (reason `tag`), the scanner blackboard's
+  `LastTaggedTarget`, `HUDManager` (`TagStatusNotification`) and the
+  `TaggedObjectsList` blackboard. Everything else tags through
+  `GameObject.TagObject` (`:12873`: a queued `TagObjectRequest`, checked
+  by `CanBeTagged`); `CanTag` needs the `HasCybereye` stat and no
+  `GameplayRestriction.NoScanning`. Wrapping the three private methods
+  catches every tag; applying a partner's through an added method calls
+  the same private ones synchronously.
+- **Reveals with a lifetime.** `RevealObjectEvent` (`:104459`: `reveal`,
+  `reason` = `gameVisionModeSystemRevealIdentifier {sourceEntityId,
+reason}`, script field `lifetime`) goes to `GameObject.RevealObject`
+  (`:104032`), which removes itself after `lifetime` when it is > 0
+  (`RemoveRevealWithDelay`). The automatic tagging perk reveals a noticer
+  this way for 15 s (reason `AutomaticTagging`, `:40840`).
+- **The Ping quickhack.** `PingSquadEffector` (`:315552`): `ActionOn` reads
+  the squad (`AISquadHelper.GetSquadmatesID` into `m_squadMembers`) and
+  `MarkSquad(mark, root)` applies or removes the ping status effect
+  (`GetPingLevel`) on each member; the effects with the gameplay tag
+  `Ping` are what `RefreshPingEffector` refreshes (`:315815`). Devices
+  come from `EffectExecutor_PingNetwork` (`:492950`) as network links
+  (`RegisterPingNetworkLinkRequest`), the beams. The remaining time:
+  `StatusEffect.GetRemainingDuration` (`:83702`) of the root's effect
+  tagged `Ping`.
+- **Mappins.** `MappinSystem` (`:51096`): `RegisterMappin(data, position)`,
+  `RegisterMappinWithObject(data, object, slot, offset)` (the mappin
+  follows the entity), `UnregisterMappin`, `GetManuallyTrackedMappinID`
+  (the world map's custom pin is that one, `CustomPositionVariant`: the
+  autodrive code unregisters it so, `:216600`). `MappinData` (`IMappinData`)
+  has `scriptData: MappinScriptData`, a scripted subclass allowed
+  (vanilla's `GameplayRoleMappinData`, `:205649`), read back with
+  `IMappin.GetScriptData()`. Icons: `MappinUIUtils.MappinToTexturePart`
+  (`:276382`) maps a variant to a part of the mappin atlas (`quest`,
+  `dynamic_event` for the custom pin, `car`, `Hit`, `Use`, `resource`,
+  `failed_crossing`…); each controller sets it in `UpdateIcon`
+  (`QuestMappinController` in the world, `MinimapPOIMappinController`,
+  `BaseWorldMapMappinController` `:276215`), so a wrap that runs after it
+  can set another part by the mappin's script data. Which of those parts
+  read well as a ping's icon is for the eye.
+- **Look-at.** `TargetingSystem.GetLookAtObject(instigator, withLOS,
+ignoreTransparent)` and `GetLookAtPosition` (`:108382`); the camera's
+  forward `CameraSystem.GetActiveCameraForward` (`:174229`).
+- **UI sounds** played with `GameObject.PlaySoundEvent(player, name)`
+  (2D): the map's own `ui_menu_map_pin_created` / `ui_menu_map_pin_on`,
+  `ui_hacking_access_granted`, `ui_hacking_close`, `ui_phone_sms`,
+  `ui_jingle_chip_malfunction` all occur in vanilla calls; how each sounds
+  as a ping is for the ear.
+- **The quickhack panel's list** (for "Mark target", 2026-11-19, read, not
+  run). Each target builds its own list in `SendQuickhackCommands`:
+  - `ScriptedPuppet` (`:23719`: `GetAllChoices`, then
+    `TranslateChoicesIntoQuickSlotCommands` against
+    `RPGManager.GetPlayerQuickHackListWithQuality`, the deck's programs);
+  - `VehicleObject` (`:88238`) and `Device` (`:100092`): `GetRemoteActions`,
+    then `QuickHackableHelper.TranslateActionsIntoQuickSlotCommands`.
+
+  Each sends one `RevealInteractionWheel` (`:118949`: `lookAtObject`,
+  `commands: [QuickhackData]`, `shouldReveal`) to the UI. There
+  `QuickhacksListGameController.OnQuickhackStarted` (`:206512` class)
+  populates the list from `commands` (`PopulateData`). If `commands[0]`
+  has `m_noQuickhackData` (no program at all: `LocKey#42171`), the list is
+  hidden for the "no quickhacks" page.
+
+  `QuickhackData` (`:106119`) is a plain script class. The list item reads
+  `m_title`, `m_icon` (a TweakDB id, through `RequestSetImage`),
+  `m_category` (guarded by `IsDefined`), `m_cost`, `m_costRaw`, `m_type`.
+  Choosing an entry calls `ApplyQuickHack(shouldUseUI)`: the accept
+  animation, then `QuickSlotCommandUsed { action = m_action }` queued to
+  `m_actionOwner`. That action is what uploads, costs RAM and can trace.
+  `ApplyQuickhackSelection` sends the target a `QHackWheelItemChangedEvent`
+  carrying the entry, whose `m_action` the target reads for area-hack
+  previews (`:105969`). An entry with no action is safe once those two are
+  bypassed.
+
+  The Ping program's own record, for an icon: `QuickHack.FreePingHack`
+  (`ObjectActionUI().CaptionIcon().TexturePartID()`, `HackCategory()`).
+
+- **The quickhack indicator over a target** (for a partner's quickhacks,
+  2026-11-19, read, not run).
+  - A device's upload and duration are role mappins of its
+    `GameplayRoleComponent`: `QuickHackVariant` (`Mappins.DeviceMappinDefinition`)
+    and `Zzz15_QuickHackDurationVariant` (`Mappins.DeviceMappinHackDurationDefinition`,
+    `:102631`). They are toggled from `UploadProgramProgressEvent`
+    (`:102495`: state, `progressBarType` UPLOAD or DURATION, `duration`,
+    the action's interaction icon).
+  - A vehicle registers one itself (`VehicleComponent.CreateQuickHackMappin`,
+    `:94765`): `Mappins.InteractionMappinDefinition`, `QuickHackVariant`,
+    a `GameplayRoleMappinData` as script data (`m_textureID`,
+    `m_duration`, `m_progressBarType`, `m_progressBarContext` QuickHack,
+    `m_visibleThroughWalls`), on `GetQuickHackIndicatorSlotName()`, which
+    every `GameObject` has (`:13308`).
+  - The widget is `QuickHackMappinController` (`:398821`): `OnIntro` sets
+    the icon on `iconWidget` and `m_iconWidgetActive`; `UpdateView` reads
+    `m_data.m_action.m_IsAppliedByMonowire` for the upload state, so an
+    entry with no action must not reach it; the bar `m_bar` is scaled by
+    the private `OnStatsDataUpdated(progress)`, which a stat pool listener
+    calls. An added method can call it to drive the bar from elsewhere.
+- **Player colours on ink** (for the identity colour):
+  `inkWidgetRef.SetTintColor(widget, HDRColor)`, as `polish` does for the
+  marker's icon.

@@ -57,6 +57,28 @@ public class TandemMarkers extends ScriptableSystem {
     return Equals(variant, gamedataMappinVariant.CPO_RemotePlayerVariant);
   }
 
+  // Each player's colour, by id (the same in every game): the marker's icon
+  // in the world and on the minimap, so four markers tell four players
+  // apart at a glance; pings, team target and quickhacks (Comms.reds) share
+  // it. The hues of the game's own HUD.
+  public static func ColorOf(player: Uint32) -> HDRColor {
+    switch player {
+      case 1u: return new HDRColor(0.369, 0.965, 1.0, 1.0); // cyan
+      case 2u: return new HDRColor(1.0, 0.882, 0.31, 1.0); // yellow
+      case 3u: return new HDRColor(0.369, 1.0, 0.565, 1.0); // green
+      case 4u: return new HDRColor(1.0, 0.38, 0.75, 1.0); // pink
+      case 5u: return new HDRColor(1.0, 0.56, 0.2, 1.0); // orange
+      case 6u: return new HDRColor(0.66, 0.5, 1.0, 1.0); // violet
+      case 7u: return new HDRColor(1.0, 0.33, 0.33, 1.0); // red
+      default: return new HDRColor(1.0, 1.0, 1.0, 1.0);
+    }
+  }
+
+  // Ours or a ping's or a waypoint's (Comms.reds): drawn the same way.
+  public static func IsTandem(variant: gamedataMappinVariant) -> Bool {
+    return TandemMarkers.IsOurs(variant) || TandemComms.IsOurs(variant);
+  }
+
   public static func Get(game: GameInstance) -> ref<TandemMarkers> {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemMarkers") as TandemMarkers;
   }
@@ -123,6 +145,9 @@ public class TandemMarkers extends ScriptableSystem {
 
   // The player a mappin marks, by name ("" if it is not one of ours).
   public static func NameOf(mappin: wref<IMappin>) -> String {
+    if IsDefined(mappin) && TandemComms.IsOurs(mappin.GetVariant()) {
+      return TandemComms.LabelOf(mappin);
+    }
     if !IsDefined(mappin) || !TandemMarkers.IsOurs(mappin.GetVariant()) {
       return "";
     }
@@ -130,21 +155,6 @@ public class TandemMarkers extends ScriptableSystem {
     return IsDefined(markers) ? markers.PlayerName(mappin.GetNewMappinID()) : "";
   }
 
-  // Each player's colour, by id (the same in every game): the marker's icon
-  // in the world and on the minimap, so four markers tell four players
-  // apart at a glance. The hues of the game's own HUD.
-  public static func ColorOf(player: Uint32) -> HDRColor {
-    switch player {
-      case 1u: return new HDRColor(0.369, 0.965, 1.0, 1.0); // cyan
-      case 2u: return new HDRColor(1.0, 0.882, 0.31, 1.0); // yellow
-      case 3u: return new HDRColor(0.369, 1.0, 0.565, 1.0); // green
-      case 4u: return new HDRColor(1.0, 0.38, 0.75, 1.0); // pink
-      case 5u: return new HDRColor(1.0, 0.56, 0.2, 1.0); // orange
-      case 6u: return new HDRColor(0.66, 0.5, 1.0, 1.0); // violet
-      case 7u: return new HDRColor(1.0, 0.33, 0.33, 1.0); // red
-      default: return new HDRColor(1.0, 1.0, 1.0, 1.0);
-    }
-  }
 
   // The player a mappin marks (0 if it is not one of ours): Travel.reds.
   public static func PlayerOf(mappin: wref<IMappin>) -> Uint32 {
@@ -338,7 +348,7 @@ public class TandemMarkers extends ScriptableSystem {
 // In the world: the quest marker widget, with your car's profile.
 @wrapMethod(WorldMappinsContainerController)
 public func CreateMappinUIProfile(mappin: wref<IMappin>, mappinVariant: gamedataMappinVariant, customData: ref<MappinControllerCustomData>) -> MappinUIProfile {
-  if TandemMarkers.IsOurs(mappinVariant) {
+  if TandemMarkers.IsTandem(mappinVariant) {
     return MappinUIProfile.Create(r"base\\gameplay\\gui\\widgets\\mappins\\quest\\default_mappin.inkwidget", t"MappinUISpawnProfile.Always", t"WorldMappinUIProfile.Vehicle");
   }
   return wrappedMethod(mappin, mappinVariant, customData);
@@ -347,7 +357,7 @@ public func CreateMappinUIProfile(mappin: wref<IMappin>, mappinVariant: gamedata
 // On the minimap: the point-of-interest widget, at any distance.
 @wrapMethod(MinimapContainerController)
 public func CreateMappinUIProfile(mappin: wref<IMappin>, mappinVariant: gamedataMappinVariant, customData: ref<MappinControllerCustomData>) -> MappinUIProfile {
-  if TandemMarkers.IsOurs(mappinVariant) {
+  if TandemMarkers.IsTandem(mappinVariant) {
     return MappinUIProfile.Create(r"base\\gameplay\\gui\\widgets\\minimap\\minimap_poi_mappin.inkwidget", t"MappinUISpawnProfile.Always", t"MinimapMappinUIProfile.Default");
   }
   return wrappedMethod(mappin, mappinVariant, customData);
@@ -368,6 +378,9 @@ protected func Update() -> Void {
 public final static func MappinToTexturePart(mappinVariant: gamedataMappinVariant) -> CName {
   if TandemMarkers.IsOurs(mappinVariant) {
     return TandemMarkers.Icon();
+  }
+  if TandemComms.IsOurs(mappinVariant) {
+    return n"dynamic_event"; // each kind's own: Comms.reds, UpdateIcon
   }
   return wrappedMethod(mappinVariant);
 }
@@ -404,7 +417,7 @@ protected cb func OnUpdate() -> Bool {
 private final func GetDesiredOpacityAndInteractivity(out opacity: Float, out interactive: Bool) {
   wrappedMethod(opacity, interactive);
   let mappin = this.GetMappin();
-  if IsDefined(mappin) && TandemMarkers.IsOurs(mappin.GetVariant()) {
+  if IsDefined(mappin) && TandemMarkers.IsTandem(mappin.GetVariant()) {
     opacity = 1.0;
     interactive = true;
   }
@@ -415,24 +428,25 @@ private final func GetDesiredOpacityAndInteractivity(out opacity: Float, out int
 private final func UpdateTooltip(tooltipType: WorldMapTooltipType, controller: wref<BaseWorldMapMappinController>) {
   wrappedMethod(tooltipType, controller);
   if IsDefined(controller) {
-    let name = TandemMarkers.NameOf(controller.GetMappin());
+    let mappin = controller.GetMappin();
+    let name = TandemMarkers.NameOf(mappin);
     if NotEquals(name, "") && IsDefined(this.m_tooltipController) {
-      this.m_tooltipController.TandemTitle(name);
+      let description = TandemComms.DescriptionOf(mappin);
+      this.m_tooltipController.TandemTitle(name, NotEquals(description, "") ? description : TandemText.Get("Marker-Description"));
     }
   }
 }
 
 @addMethod(WorldMapTooltipContainer)
-public final func TandemTitle(title: String) -> Void {
+public final func TandemTitle(title: String, description: String) -> Void {
   let tooltip = this.m_defaultTooltipController as WorldMapTooltipController;
   if IsDefined(tooltip) {
-    tooltip.TandemTitle(title);
+    tooltip.TandemTitle(title, description);
   }
 }
 
 @addMethod(WorldMapTooltipController)
-public final func TandemTitle(title: String) -> Void {
+public final func TandemTitle(title: String, description: String) -> Void {
   inkTextRef.SetText(this.m_titleText, title);
-  inkTextRef.SetText(this.m_descText, TandemText.Get("Marker-Description"));
-
+  inkTextRef.SetText(this.m_descText, description);
 }

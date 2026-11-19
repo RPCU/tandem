@@ -1,0 +1,11 @@
+// Pings and partners' waypoints (scripts/tandem/Comms.reds,
+// docs/architecture/comms.md): the same definition as a remote player's
+// marker (markers.tweak), shown in the world, on the minimap and on the
+// world map. The script falls back to the base record when this one is
+// missing.
+
+Mappins.TandemPingMappin : Mappins.CPO_RemotePlayerMappinDefinition {
+  showInWorld = true;
+  showOnMinimap = true;
+  showOnMap = true;
+}

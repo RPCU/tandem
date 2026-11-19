@@ -70,17 +70,26 @@
   distance text, rewritten after each native update: watch for flicker)
   and on the map tooltip, and that the marker follows a seated player's car
   copy.
+- **Identity colour** (`TandemMarkers.ColorOf`): one colour per player id,
+  the same in every game. In order from id 1: cyan, yellow, green, pink,
+  orange, violet, red, then white. It tints a player's pings, waypoint,
+  team target and quickhack indicators ([`comms.md`](comms.md)). The
+  `polish` branch gives the marker the same function and palette; on
+  merging, keep one. To check in game: readability against the game's own
+  reds and cyans, and colour-blind pairs. Red/green (ids 3 and 7) and
+  yellow/green (2 and 3) are the risky pairs, which is why the name always
+  comes with the colour.
 
 ## Open problems
 
-- **Players linking up (later).** One V can send the other a request to
-  connect, in the game's own style (a neural link, like jacking in with a
-  partner); once accepted, the two share what a linked crew would: the Ping
-  quickhack's highlights and what each one scans or tags shows on both
-  HUDs, and later more (shared marks, a netrunner seeing through the
-  other's optics, quickhacks relayed through a partner's link). Either side
-  can break the link at any time. The link is a per-pair state the host
-  relays; what it shares is decided feature by feature.
+- **Players linking up.** Written (2026-11-19, to test in game):
+  [`comms.md`](comms.md). A V asks another to link by aiming at them with
+  the scanner's tag key (or is linked from the start, `link = auto`); once
+  both consent, the Ping quickhack's reveals and what each one scans and
+  tags show on both HUDs. Either side can break the link at any time. The
+  link is each player's consent, kept and relayed by the host. Later, on
+  the same link: a netrunner seeing through the other's optics,
+  quickhacks relayed through a partner's link.
 - **Every way a V moves, on the puppet.** Walking on flat ground works; the
   rest must too: stairs and slopes, ladders, climbing and vaulting
   (mantling ledges), jumps and double jumps, falls and landings, sliding,

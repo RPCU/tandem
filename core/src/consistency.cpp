@@ -170,6 +170,27 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
           .Add(a.anchor.x)
           .Add(a.anchor.y)
           .Add(a.anchor.z);
+  // Comms: links that share with someone, waypoints that are set (an off
+  // link and no waypoint count like one never heard of).
+  if (players.links) {
+    hash.Add(std::uint64_t{0xAB});
+    for (const auto &[id, l] : *players.links)
+      if (id != self && (l.mode != proto::LinkMode::Off || !l.players.empty())) {
+        hash.Add(std::uint64_t{id}).Add(std::uint64_t{static_cast<std::uint8_t>(l.mode)});
+        for (const auto other : l.players)
+          hash.Add(std::uint64_t{other});
+      }
+  }
+  if (players.waypoints) {
+    hash.Add(std::uint64_t{0xAC});
+    for (const auto &[id, w] : *players.waypoints)
+      if (id != self && w.kind != proto::WaypointKind::None)
+        hash.Add(std::uint64_t{id})
+            .Add(std::uint64_t{static_cast<std::uint8_t>(w.kind)})
+            .Add(w.position.x)
+            .Add(w.position.y)
+            .Add(w.position.z);
+  }
   return hash.Value();
 }
 
@@ -261,7 +282,8 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<Throw>(message) || std::holds_alternative<ThrowEnd>(message) ||
          std::holds_alternative<Defended>(message) || std::holds_alternative<TimeSkip>(message) ||
          std::holds_alternative<TimeSkipVote>(message) ||
-         std::holds_alternative<TimeSkipResult>(message) || IsTrade(message);
+         std::holds_alternative<TimeSkipResult>(message) || IsTrade(message) ||
+         std::holds_alternative<Mark>(message) || std::holds_alternative<Tag>(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

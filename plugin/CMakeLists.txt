@@ -36,6 +36,8 @@ add_library(tandem SHARED
   src/progress_natives.cpp
   src/trade.cpp
   src/trade_natives.cpp
+  src/comms.cpp
+  src/comms_natives.cpp
   src/engine/layout.cpp
   src/engine/animation.cpp
   src/engine/controller.cpp

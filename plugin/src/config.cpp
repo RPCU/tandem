@@ -185,6 +185,22 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.leave = progress::LeaveMode::Reload;
     else
       return Bad("leave is stay, save or reload");
+  } else if (key == "link") {
+    if (value == "auto")
+      config.link = Config::Link::Auto;
+    else if (value == "ask")
+      config.link = Config::Link::Ask;
+    else if (value == "off")
+      config.link = Config::Link::Off;
+    else
+      return Bad("link is auto, ask or off");
+  } else if (key == "pings") {
+    if (value == "on" || value == "true")
+      config.pings = true;
+    else if (value == "off" || value == "false")
+      config.pings = false;
+    else
+      return Bad("pings is on or off");
   } else if (key == "compat") {
     // Developers only: off lets a session start whatever the startup check
     // found (another game version, an older Codeware or TweakXL).

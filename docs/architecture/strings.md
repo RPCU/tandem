@@ -412,6 +412,33 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Saves-Failed` | Co-op: the game could not be saved. Save it yourself to keep what your V earned. | Coop : la partie n'a pas pu être sauvegardée. Sauvegardez vous-même pour garder ce que votre V a gagné. | Saves.reds |
 | `Saves-WhenYouCan` | Co-op: save your game when you can, to keep what your V earned. | Coop : sauvegardez dès que possible, pour garder ce que votre V a gagné. | Saves.reds |
 | `Saves-NotRestored` | Co-op: your game could not be put back as it was. Load your last save. | Coop : votre partie n'a pas pu être remise comme avant. Chargez votre dernière sauvegarde. | Saves.reds |
+| `Comms-Enemy` | Enemy | Ennemi | Comms.reds |
+| `Comms-Device` | Device | Appareil | Comms.reds |
+| `Comms-Loot` | Loot | Butin | Comms.reds |
+| `Comms-Vehicle` | Vehicle | Véhicule | Comms.reds |
+| `Comms-Danger` | Danger | Danger | Comms.reds |
+| `Comms-Target` | Target | Cible | Comms.reds |
+| `Comms-Here` | Here | Ici | Comms.reds |
+| `Comms-PingOf` | {1}: {2} | {1} : {2} | Comms.reds |
+| `Comms-YourPing` | Your ping | Votre signal | Comms.reds |
+| `Comms-TheirPing` | {1}'s ping | Signal de {1} | Comms.reds |
+| `Comms-YourTarget` | Your team target | Votre cible d'équipe | Comms.reds |
+| `Comms-TheirTarget` | {1}'s target: focus it | Cible de {1} : concentrez-vous dessus | Comms.reds |
+| `Comms-MarkTitle` | Mark target | Marquer la cible | Comms.reds |
+| `Comms-ClearTitle` | Clear the team mark | Retirer la marque d'équipe | Comms.reds |
+| `Comms-MarkDescription` | Show your linked partners this target to focus: marked on their HUD and outlined, until it goes down, you mark another or you choose it again. No RAM, no trace. | Montre cette cible à vos partenaires liés : marquée sur leur ATH et soulignée, jusqu'à ce qu'elle tombe, que vous en marquiez une autre ou que vous la choisissiez de nouveau. Sans RAM, sans traçage. | Comms.reds |
+| `Comms-ClearDescription` | Take this target's mark off your partners' HUDs. | Retire la marque de cette cible de l'ATH de vos partenaires. | Comms.reds |
+| `Comms-OnlyShared` | Only shared targets can be marked | Seules les cibles partagées peuvent être marquées | Comms.reds |
+| `Comms-LinksOff` | Links are off (tandem.ini) | Les liens sont désactivés (tandem.ini) | Comms.reds |
+| `Comms-Linked` | Linked with {1}: scans and pings are shared | Lié à {1} : analyses et signaux partagés | Comms.reds |
+| `Comms-LinkBroken` | Link with {1} broken | Lien avec {1} rompu | Comms.reds |
+| `Comms-LinkSent` | Link request sent to {1} | Demande de lien envoyée à {1} | Comms.reds |
+| `Comms-LinkAsked` | {1} asks to link: share scans and pings | {1} demande un lien : partager analyses et signaux | Comms.reds |
+| `Comms-LinkWith` | Link with {1} | Se lier à {1} | Comms.reds |
+| `Comms-WaypointOf` | {1}'s waypoint | Point de passage de {1} | Comms.reds |
+| `Comms-PinPlaced` | The map pin {1} placed | Le repère placé par {1} | Comms.reds |
+| `Comms-PlaceTracked` | The place {1} tracks | Le lieu que suit {1} | Comms.reds |
+| `Comms-WaypointSet` | {1} set a waypoint | {1} a placé un point de passage | Comms.reds |
 | `Travel-Blocked` | You can't fast travel right now | Voyage rapide impossible pour l'instant | Text.reds, Travel.reds |
 
 ### The settings page
