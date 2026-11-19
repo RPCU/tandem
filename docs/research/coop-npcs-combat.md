@@ -55,35 +55,37 @@ natives are ordinary local setters we can call.
 
 ### 1.1 Global predicates
 
-| Function                                                            | Where                               | Note                                        |
-| ------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------- |
-| `IsMultiplayer()`, `IsClient()`, `IsServer()`, `IsHost()` (globals) | `final.reds:107959-107975`, `97967` | native, no handler in the dump `[R]`        |
-| `worldRuntimeInfo.IsMultiplayer/IsClient/IsServer()`                | `final.reds:109101-109105`          | `@ 0x140ee4808 / 0x1410790c8 / 0x1411fab68` |
-| `entEntity.IsReplicated()`                                          | `final.reds:11248`                  | `@ 0x1412265d4`                             |
-| `entEntity.IsControlledByAnyPeer()`                                 | `final.reds:11256`                  | `@ 0x14108c64c`                             |
-| `entEntity.IsControlledByLocalPeer()`                               | `final.reds:11258`                  | `@ 0x140ff79f0`                             |
-| `entEntity.IsControlledByAnotherClient()`                           | `final.reds:11260`                  | `@ 0x14039ca54`                             |
-| `gameObject.IsPlayerControlled()`                                   | RTTI                                | `@ 0x140e38910`                             |
-| `gamedataStatusEffect_Record.Replicated()`                          | RTTI                                | per-record flag, `@ 0x140eb987c`            |
-| `gamedataItem_Record.ReplicateWhenNotActive()`                      | RTTI                                | `@ 0x1428c8cb0`                             |
-| `entIComponent.isReplicable`                                        | RTTI `+0x8c`                        | per-component flag                          |
+<!-- prettier-ignore -->
+| Function | Where | Note |
+| --- | --- | --- |
+| `IsMultiplayer()`, `IsClient()`, `IsServer()`, `IsHost()` (globals) | `final.reds:107959-107975`, `97967` | native, no handler in the dump `[R]` |
+| `worldRuntimeInfo.IsMultiplayer/IsClient/IsServer()` | `final.reds:109101-109105` | `@ 0x140ee4808 / 0x1410790c8 / 0x1411fab68` |
+| `entEntity.IsReplicated()` | `final.reds:11248` | `@ 0x1412265d4` |
+| `entEntity.IsControlledByAnyPeer()` | `final.reds:11256` | `@ 0x14108c64c` |
+| `entEntity.IsControlledByLocalPeer()` | `final.reds:11258` | `@ 0x140ff79f0` |
+| `entEntity.IsControlledByAnotherClient()` | `final.reds:11260` | `@ 0x14039ca54` |
+| `gameObject.IsPlayerControlled()` | RTTI | `@ 0x140e38910` |
+| `gamedataStatusEffect_Record.Replicated()` | RTTI | per-record flag, `@ 0x140eb987c` |
+| `gamedataItem_Record.ReplicateWhenNotActive()` | RTTI | `@ 0x1428c8cb0` |
+| `entIComponent.isReplicable` | RTTI `+0x8c` | per-component flag |
 
 **Do not flip `IsMultiplayer()`** (already in §8): about 120 script sites
 branch on these. The ones that matter for combat, as a map of what the
 vanilla client/server split was:
 
-| Site                                                | Line          | What the MP branch does                                                                                          |
-| --------------------------------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `DamageSystem.DealDamages`                          | 85771-85776   | `forReal = !IsClient()`: **a client computes the hit but does not drain the pool**                               |
-| `GameObject.OnHitUI`                                | 12435-12441   | a client shows no damage numbers from its own pipeline                                                           |
-| `DamageSystem.ProcessClientHit / ProcessClientKill` | 84546-84556   | numbers and kill feed come from `ServerHitData`/`ServerKillData`, only if `instigator.IsControlledByLocalPeer()` |
-| `DamageSystem.ConvertHitDataToDamageInfo`           | 84487-84544   | references a target only if `IsReplicated()` or static id                                                        |
-| `ScriptedPuppet.SquadUpdate`                        | 21780-21794   | no squads in MP                                                                                                  |
-| `PlayerCombatController.ActivateCombat/OutOfCombat` | 242876-242925 | no health-regen modifier swap in MP                                                                              |
-| death menu `OnDisplayDeathMenu`                     | 347380-347394 | **no death menu in MP**                                                                                          |
-| `PlayerPuppet.OnGameAttached`                       | 40101-40121   | input listeners only if local peer or host                                                                       |
-| `DEBUG_DamageInputReceiver`                         | 243341        | kill cheats only when not a client                                                                               |
-| time dilation helpers                               | 240310-240449 | blocked in MP (see §8 of engine-knowledge)                                                                       |
+<!-- prettier-ignore -->
+| Site | Line | What the MP branch does |
+| --- | --- | --- |
+| `DamageSystem.DealDamages` | 85771-85776 | `forReal = !IsClient()`: **a client computes the hit but does not drain the pool** |
+| `GameObject.OnHitUI` | 12435-12441 | a client shows no damage numbers from its own pipeline |
+| `DamageSystem.ProcessClientHit / ProcessClientKill` | 84546-84556 | numbers and kill feed come from `ServerHitData`/`ServerKillData`, only if `instigator.IsControlledByLocalPeer()` |
+| `DamageSystem.ConvertHitDataToDamageInfo` | 84487-84544 | references a target only if `IsReplicated()` or static id |
+| `ScriptedPuppet.SquadUpdate` | 21780-21794 | no squads in MP |
+| `PlayerCombatController.ActivateCombat/OutOfCombat` | 242876-242925 | no health-regen modifier swap in MP |
+| death menu `OnDisplayDeathMenu` | 347380-347394 | **no death menu in MP** |
+| `PlayerPuppet.OnGameAttached` | 40101-40121 | input listeners only if local peer or host |
+| `DEBUG_DamageInputReceiver` | 243341 | kill cheats only when not a client |
+| time dilation helpers | 240310-240449 | blocked in MP (see §8 of engine-knowledge) |
 
 `[I]` The vanilla design is exactly tandem's: the client runs the whole hit
 pipeline for feel (reactions, VFX) with `forReal = false`, the server's pools
@@ -94,15 +96,16 @@ are the truth, and feedback (numbers, kill) comes back from the server.
 `+0x38 persistentID: Uint64`, `+0x40 recordID: TweakDBID` — **an entity was
 announced by persistent id + TweakDB record**, the same pair tandem plans.
 
-| Class (size)                                           | Fields                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gamePuppetReplicatedState` (0xe8)                     | `actionsBuffer: gameActionsReplicationBuffer` +0x50, `animEventsState` +0x68, `entityEventsState` +0x88, `initialOrientation: EulerAngles` +0xa8, `initialLocation: Vector3` +0xb4, `initialAppearance: CName` +0xc0, `health: Float` +0xc8, `armor: Float` +0xcc, `hasCPOMissionData` +0xd0, `CPOMissionVotedHistory` +0xd8 |
-| `gameNpcPuppetReplicatedState` (0x100)                 | the above + `weaponStates: gameWeaponsReplicatedState` +0xe8                                                                                                                                                                                                                                                                 |
-| `gamePlayerPuppetReplicatedState` (0xe8)               | nothing added                                                                                                                                                                                                                                                                                                                |
-| `gameMuppetReplicatedState` (0x320)                    | the CPO test player ("muppet"): `Muppet.ReplicateInputStates`, `Muppet.UseLoadout`                                                                                                                                                                                                                                           |
-| `gameDeviceBaseReplicationProxy` (0x88)                | `scriptState: gameDeviceReplicatedState`, `versionId`, `versionTimestamp: netTime`, initial transform                                                                                                                                                                                                                        |
-| `gameweaponGrenadeReplicatedState` (0xa0)              | `instigator`, `itemID`, `currentTransform`, `exploded`, `launched`                                                                                                                                                                                                                                                           |
-| `netEntityReplicatedState`, `mpPersistentTestBoxState` | generic / test                                                                                                                                                                                                                                                                                                               |
+<!-- prettier-ignore -->
+| Class (size) | Fields |
+| --- | --- |
+| `gamePuppetReplicatedState` (0xe8) | `actionsBuffer: gameActionsReplicationBuffer` +0x50, `animEventsState` +0x68, `entityEventsState` +0x88, `initialOrientation: EulerAngles` +0xa8, `initialLocation: Vector3` +0xb4, `initialAppearance: CName` +0xc0, `health: Float` +0xc8, `armor: Float` +0xcc, `hasCPOMissionData` +0xd0, `CPOMissionVotedHistory` +0xd8 |
+| `gameNpcPuppetReplicatedState` (0x100) | the above + `weaponStates: gameWeaponsReplicatedState` +0xe8 |
+| `gamePlayerPuppetReplicatedState` (0xe8) | nothing added |
+| `gameMuppetReplicatedState` (0x320) | the CPO test player ("muppet"): `Muppet.ReplicateInputStates`, `Muppet.UseLoadout` |
+| `gameDeviceBaseReplicationProxy` (0x88) | `scriptState: gameDeviceReplicatedState`, `versionId`, `versionTimestamp: netTime`, initial transform |
+| `gameweaponGrenadeReplicatedState` (0xa0) | `instigator`, `itemID`, `currentTransform`, `exploded`, `launched` |
+| `netEntityReplicatedState`, `mpPersistentTestBoxState` | generic / test |
 
 Scripts name the class to use: `NPCPuppet.GetReplicatedStateClass()` returns
 `n"gameNpcPuppetReplicatedState"` (`final.reds:125366`), `PlayerPuppet`
@@ -112,17 +115,18 @@ returns `n"gamePlayerPuppetReplicatedState"` (`39370`).
 
 `+0x10 componentName: CName`, `+0x18 enabled: Bool`.
 
-| Class                                                                                                                                                                  | Fields                                                                                                                                                                                                                                                                                          |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gameAINetStateComponentReplicatedState` (0x80)                                                                                                                        | eight `gameNetAIState {value: Int32, prevValue: Int32, time: Float}`: `replHighLevelState` +0x20, `replUpperBodyState` +0x2c, `replStanceState` +0x38, `replHitReactionModeState` +0x44, `replBehaviorState` +0x50, `replPhaseState` +0x5c, `replDefenseMode` +0x68, `replLocomotionMode` +0x74 |
-| `entAnimationControllerReplicatedState` (0xc0)                                                                                                                         | `animWrapperVarsState`, look-at requests (`entReplicatedLookAtAdd/Remove`), `animFeaturesState: entReplicatedAnimFeaturesState`, `inputSettersState` (Bool/Float/Int/Vector)                                                                                                                    |
-| `moveMovePoliciesComponentReplicatedState` (0x60)                                                                                                                      | `movePolicies: moveReplicatedMovePoliciesState` — items `{key: Uint64, policies: handle:movePolicies}`                                                                                                                                                                                          |
-| `entRagdollComponentReplicatedState` (0x38)                                                                                                                            | `transforms: array:Transform`, `isSleeping: Bool`                                                                                                                                                                                                                                               |
-| `gameStatusEffectComponentReplicatedState` (0x40)                                                                                                                      | `replicatedInfo: array {statusEffectRecordID: TweakDBID, stackCount: Uint32, source: CName}`                                                                                                                                                                                                    |
-| `gameWeakspotComponentReplicatedState` (0x30)                                                                                                                          | `array {weakSpotRecordID: Uint64, wsHealthValue: Float, LastDamageInstigator: whandle:gamePuppet}`                                                                                                                                                                                              |
-| `gameAttachmentSlotsReplicatedState` (0x38)                                                                                                                            | `stateVersion`, `slots: array:gameAttachmentSlotReplicatedState`                                                                                                                                                                                                                                |
-| `gamestateMachineComponentReplicatedState` (0x1a980)                                                                                                                   | the whole PSM `stateContext`; natives `MP.RequestItem`, `MP.RequestReload`                                                                                                                                                                                                                      |
-| `gameScanningComponentReplicatedState`, `gameFPPCameraComponentReplicatedState`, `gameTransformAnimatorComponentReplicatedState`, `netDefaultComponentReplicatedState` | scanning, camera, animated transforms, default                                                                                                                                                                                                                                                  |
+<!-- prettier-ignore -->
+| Class | Fields |
+| --- | --- |
+| `gameAINetStateComponentReplicatedState` (0x80) | eight `gameNetAIState {value: Int32, prevValue: Int32, time: Float}`: `replHighLevelState` +0x20, `replUpperBodyState` +0x2c, `replStanceState` +0x38, `replHitReactionModeState` +0x44, `replBehaviorState` +0x50, `replPhaseState` +0x5c, `replDefenseMode` +0x68, `replLocomotionMode` +0x74 |
+| `entAnimationControllerReplicatedState` (0xc0) | `animWrapperVarsState`, look-at requests (`entReplicatedLookAtAdd/Remove`), `animFeaturesState: entReplicatedAnimFeaturesState`, `inputSettersState` (Bool/Float/Int/Vector) |
+| `moveMovePoliciesComponentReplicatedState` (0x60) | `movePolicies: moveReplicatedMovePoliciesState` — items `{key: Uint64, policies: handle:movePolicies}` |
+| `entRagdollComponentReplicatedState` (0x38) | `transforms: array:Transform`, `isSleeping: Bool` |
+| `gameStatusEffectComponentReplicatedState` (0x40) | `replicatedInfo: array {statusEffectRecordID: TweakDBID, stackCount: Uint32, source: CName}` |
+| `gameWeakspotComponentReplicatedState` (0x30) | `array {weakSpotRecordID: Uint64, wsHealthValue: Float, LastDamageInstigator: whandle:gamePuppet}` |
+| `gameAttachmentSlotsReplicatedState` (0x38) | `stateVersion`, `slots: array:gameAttachmentSlotReplicatedState` |
+| `gamestateMachineComponentReplicatedState` (0x1a980) | the whole PSM `stateContext`; natives `MP.RequestItem`, `MP.RequestReload` |
+| `gameScanningComponentReplicatedState`, `gameFPPCameraComponentReplicatedState`, `gameTransformAnimatorComponentReplicatedState`, `netDefaultComponentReplicatedState` | scanning, camera, animated transforms, default |
 
 **The CPO wire model of an NPC** was therefore: record + persistent id +
 initial transform + appearance; health and armor; eight AI state integers;
@@ -136,17 +140,18 @@ Replicated items carry `entReplicatedItem {entity: whandle +0x08, netTime
 
 ### 1.4 Replication helpers callable from scripts
 
-| Function                                                                                                                                                                                                    | Handler                                                    |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `gameObject.ReplicateAnimFeature(obj, inputName: CName, value: animAnimFeature)`                                                                                                                            | `0x140d36680`                                              |
-| `gameObject.ReplicateAnimEvent(obj, eventName: CName)`                                                                                                                                                      | `0x140e3eb80`                                              |
-| `gameObject.QueueReplicatedEvent(evt: redEvent)`                                                                                                                                                            | `0x14114abc8`                                              |
-| `gameObject.ReplicateInputFloat/Bool/Int/Vector(obj, inputName, value)`                                                                                                                                     | `0x140e1ad78`, `0x142a1dc74`, `0x142a1dd80`, `0x142a1de8c` |
-| script callbacks `gameObject.OnEventReplicated(evt)`, `OnAnimFeatureReplicated(inputName, value)`, `OnAnimEventReplicated(eventName)`                                                                       | script                                                     |
-| script globals `ApplyFeatureToReplicate`, `SetInput{Bool,Int,Float,Vector}ToReplicate`, `PushEventToReplicate`, `StartReplicatedEffectEvent`, `StopReplicatedEffectEvent`, `BreakReplicatedEffectLoopEvent` | script                                                     |
-| `MPReplicateComboAttack(position, instigator)`                                                                                                                                                              | no handler                                                 |
-| `gameWeakspotObject.SetReplicationInstigator / GetReplicationInstigator`                                                                                                                                    | `0x142a88dbc`, `0x142a88d9c`                               |
-| `gameAINetStateComponent.Get/SetReplicated*State` (16 natives)                                                                                                                                              | §3.1                                                       |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `gameObject.ReplicateAnimFeature(obj, inputName: CName, value: animAnimFeature)` | `0x140d36680` |
+| `gameObject.ReplicateAnimEvent(obj, eventName: CName)` | `0x140e3eb80` |
+| `gameObject.QueueReplicatedEvent(evt: redEvent)` | `0x14114abc8` |
+| `gameObject.ReplicateInputFloat/Bool/Int/Vector(obj, inputName, value)` | `0x140e1ad78`, `0x142a1dc74`, `0x142a1dd80`, `0x142a1de8c` |
+| script callbacks `gameObject.OnEventReplicated(evt)`, `OnAnimFeatureReplicated(inputName, value)`, `OnAnimEventReplicated(eventName)` | script |
+| script globals `ApplyFeatureToReplicate`, `SetInput{Bool,Int,Float,Vector}ToReplicate`, `PushEventToReplicate`, `StartReplicatedEffectEvent`, `StopReplicatedEffectEvent`, `BreakReplicatedEffectLoopEvent` | script |
+| `MPReplicateComboAttack(position, instigator)` | no handler |
+| `gameWeakspotObject.SetReplicationInstigator / GetReplicationInstigator` | `0x142a88dbc`, `0x142a88d9c` |
+| `gameAINetStateComponent.Get/SetReplicated*State` (16 natives) | §3.1 |
 
 `[I]` The `…ToReplicate` script helpers are the **catalogue of what NPC
 scripts consider animation-relevant**: every call site of
@@ -162,17 +167,18 @@ damage, god-mode, debug-cheats, journal, ping, time, mappin and quests
 systems (interface + implementation each). Their shared states derive from
 `gameIGameSystemReplicatedState`:
 
-| Shared state                                                  | Fields                                                                                                  |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `gameDamageSystemSharedState`                                 | `hitHistory: array:gamedamageServerHitData`, `killHistory: array:gamedamageServerKillData`              |
-| `gamedamageServerHitData` (0x70)                              | `id: Uint32` +0x40, `damageInfos: array:gameuiDamageInfo` +0x48, `instigator: whandle:gameObject` +0x58 |
-| `gamedamageServerKillData` (0x78)                             | `id: Uint32`, `killInfo: gameuiKillInfo`                                                                |
-| `gameGodModeSharedState`                                      | `datas: array {entity: whandle, flags: Int32}`                                                          |
-| `gameTimeSystemReplicatedState`                               | `paused: Bool`, `gameTime: GameTime`                                                                    |
-| `questQuestsSystemReplicatedState`                            | `replicatedQuestPrefabs: array:questQuestPrefabsEntry`                                                  |
-| `gamePingSystemReplicatedState`                               | `replicatedPingEntries: array:gamePingEntry`                                                            |
-| `gamemappinsMappinSystemReplicatedState`                      | mappins, quest mappin manager state                                                                     |
-| `gameJournalManagerSharedState`, `gameDebugCheatsSharedState` | —                                                                                                       |
+<!-- prettier-ignore -->
+| Shared state | Fields |
+| --- | --- |
+| `gameDamageSystemSharedState` | `hitHistory: array:gamedamageServerHitData`, `killHistory: array:gamedamageServerKillData` |
+| `gamedamageServerHitData` (0x70) | `id: Uint32` +0x40, `damageInfos: array:gameuiDamageInfo` +0x48, `instigator: whandle:gameObject` +0x58 |
+| `gamedamageServerKillData` (0x78) | `id: Uint32`, `killInfo: gameuiKillInfo` |
+| `gameGodModeSharedState` | `datas: array {entity: whandle, flags: Int32}` |
+| `gameTimeSystemReplicatedState` | `paused: Bool`, `gameTime: GameTime` |
+| `questQuestsSystemReplicatedState` | `replicatedQuestPrefabs: array:questQuestPrefabsEntry` |
+| `gamePingSystemReplicatedState` | `replicatedPingEntries: array:gamePingEntry` |
+| `gamemappinsMappinSystemReplicatedState` | mappins, quest mappin manager state |
+| `gameJournalManagerSharedState`, `gameDebugCheatsSharedState` | — |
 
 Shots were replicated as `gameReplicatedShotData {timeStamp: netTime,
 attackId: TweakDBID, target: whandle:gameObject, targetLocalOffset: Vector3}`
@@ -182,24 +188,25 @@ a ray. `[I]` Good shape for tandem's `Hit` message.
 
 ### 1.6 Sessions, players, spawning
 
-| Class                                                                                                                                                                     | What                                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `mpGameSession`, `mpServerGameSession`, `mpClientGameSession` (: `gameBaseGameSession`)                                                                                   | session objects, no script API                                                                                                                                                           |
-| `mpPlayerManager` (: `gameIPlayerManager`)                                                                                                                                | `GetPlayerNicknameByGameObject` `@ 0x142bed1c0`; `PrespawnRequest(gamePlayerSpawnParams)`, `PrespawnRequestAccepted/Denied`, `SpawnRequest`, `SpawnRequestAccepted/Denied` (no handlers) |
-| `mpPlayer`, `mpLocalPlayer`, `mpRemotePlayer`, `mpServerPlayer` (: `gamePlayer`)                                                                                          | player records                                                                                                                                                                           |
-| `netEntitySystem` (: `worldIRuntimeSystem`, 0x90)                                                                                                                         | the entity replication runtime system; no script API                                                                                                                                     |
-| `gameClientEntitySpawnSystem` (: `gameIClientEntitySpawnSystem`)                                                                                                          | client-side spawner; no script API                                                                                                                                                       |
-| `gameServerBlackboardUpdateProxy`                                                                                                                                         | blackboard replication proxy                                                                                                                                                             |
-| `gameaimAssistAimAssistRemotePlayer`, `gamemappinsRemotePlayerMappin`                                                                                                     | remote-player aim assist config and mappin                                                                                                                                               |
-| `gamecarryReplicatedEntitySetAttachmentTo{Entity,Node,World}`                                                                                                             | body-carry attachment replication                                                                                                                                                        |
-| `gameinteractionsEnableClientSideInteractionEvent`                                                                                                                        | interaction made client-side                                                                                                                                                             |
-| `cpPlayerSystem.FindPlayerControlledObjects(position, radius, includeLocalPlayers, includeRemotePlayers, out objs)`                                                       | `@ 0x142e687dc`: the player system knows "remote players"                                                                                                                                |
-| `cpPlayerSystem.LocalPlayerControlExistingObject(entityID)`                                                                                                               | `@ 0x142e689e8`: make the local player control an existing entity (used by `TakeOverControlSystem`)                                                                                      |
-| `gamePlayerControlledComponent` (0x98), `AICTreeNodePlayerControlledDefinition`                                                                                           | a component and a **behaviour-tree node meaning "this puppet is driven by a player, not by AI"**                                                                                         |
-| quest nodes `questMultiplayerAIDirector*`, `questMultiplayerHeist*`, `questMultiplayerTeleportPuppet*`, `questMultiplayerChoiceToken*`, `questMultiplayerJunctionDialog*` | CPO heist quest nodes                                                                                                                                                                    |
-| `Sample_Replicated_*`, `mpPersistentTestBox*`, `mpCMultiplayerDebugFunctions`                                                                                             | samples and tests                                                                                                                                                                        |
-| menus `gsmMenuState_Multiplayer*`, `gsmState_AutoJoinServer`, `FindServersMenuGameController`, `inkServerInfo`                                                            | server browser leftovers                                                                                                                                                                 |
-| device scripts `Door/SecurityTurret/WindowBlinders.ApplyReplicatedState`, `SecurityTurret.Replicate{IsShooting,Health,IsOn,IsDead}`                                       | devices replicated a small script state (`final.reds:171242-171451`)                                                                                                                     |
+<!-- prettier-ignore -->
+| Class | What |
+| --- | --- |
+| `mpGameSession`, `mpServerGameSession`, `mpClientGameSession` (: `gameBaseGameSession`) | session objects, no script API |
+| `mpPlayerManager` (: `gameIPlayerManager`) | `GetPlayerNicknameByGameObject` `@ 0x142bed1c0`; `PrespawnRequest(gamePlayerSpawnParams)`, `PrespawnRequestAccepted/Denied`, `SpawnRequest`, `SpawnRequestAccepted/Denied` (no handlers) |
+| `mpPlayer`, `mpLocalPlayer`, `mpRemotePlayer`, `mpServerPlayer` (: `gamePlayer`) | player records |
+| `netEntitySystem` (: `worldIRuntimeSystem`, 0x90) | the entity replication runtime system; no script API |
+| `gameClientEntitySpawnSystem` (: `gameIClientEntitySpawnSystem`) | client-side spawner; no script API |
+| `gameServerBlackboardUpdateProxy` | blackboard replication proxy |
+| `gameaimAssistAimAssistRemotePlayer`, `gamemappinsRemotePlayerMappin` | remote-player aim assist config and mappin |
+| `gamecarryReplicatedEntitySetAttachmentTo{Entity,Node,World}` | body-carry attachment replication |
+| `gameinteractionsEnableClientSideInteractionEvent` | interaction made client-side |
+| `cpPlayerSystem.FindPlayerControlledObjects(position, radius, includeLocalPlayers, includeRemotePlayers, out objs)` | `@ 0x142e687dc`: the player system knows "remote players" |
+| `cpPlayerSystem.LocalPlayerControlExistingObject(entityID)` | `@ 0x142e689e8`: make the local player control an existing entity (used by `TakeOverControlSystem`) |
+| `gamePlayerControlledComponent` (0x98), `AICTreeNodePlayerControlledDefinition` | a component and a **behaviour-tree node meaning "this puppet is driven by a player, not by AI"** |
+| quest nodes `questMultiplayerAIDirector*`, `questMultiplayerHeist*`, `questMultiplayerTeleportPuppet*`, `questMultiplayerChoiceToken*`, `questMultiplayerJunctionDialog*` | CPO heist quest nodes |
+| `Sample_Replicated_*`, `mpPersistentTestBox*`, `mpCMultiplayerDebugFunctions` | samples and tests |
+| menus `gsmMenuState_Multiplayer*`, `gsmState_AutoJoinServer`, `FindServersMenuGameController`, `inkServerInfo` | server browser leftovers |
+| device scripts `Door/SecurityTurret/WindowBlinders.ApplyReplicatedState`, `SecurityTurret.Replicate{IsShooting,Health,IsOn,IsDead}` | devices replicated a small script state (`final.reds:171242-171451`) |
 
 `[I]` Leads worth an in-game probe, in order: (a) what `IsReplicated()` and
 `IsControlledBy*()` return today for V, NPCs and our puppets; (b) whether an
@@ -214,22 +221,23 @@ exists as a live instance.
 
 ### 2.1 What an NPC's brain is made of
 
-| Piece                 | Class                                                                                                                                | Access                                                                               |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| behaviour tree agent  | `AIHumanComponent : AICAgent : gameComponent` (0x5b8); script `AIHumanComponent extends AIComponent` (`final.reds:159862`, `143623`) | `ScriptedPuppet.GetAIControllerComponent()`                                          |
-| state integers        | `NPCStatesComponent extends AINetStateComponent` (`167844`)                                                                          | §3.1                                                                                 |
-| senses                | `senseComponent` (0x1a0), script `SenseComponent` (`155475`)                                                                         | `gamePuppet.GetSenses()` `@ 0x140e3936c`, `GetSensesComponent()`                     |
-| being seen            | `senseVisibleObjectComponent`                                                                                                        | `gamePuppet.GetVisibleObject()` `@ 0x142ae5810`                                      |
-| threats               | `AITargetTrackerComponent`, script `TargetTrackingExtension` (`156462`, `156594`)                                                    | `gamePuppet.GetTargetTracker()` `@ 0x142ae57b4`                                      |
-| reactions to stimuli  | `ReactionManagerComponent` (script, `143735`)                                                                                        | `GetStimReactionComponent()`                                                         |
-| stimuli emitted       | `StimBroadcasterComponent` (script, `149801`)                                                                                        | `GetStimBroadcasterComponent()`                                                      |
-| movement              | `movePoliciesComponent` (0x600), `moveComponent`                                                                                     | `AddPolicies/PopPolicies/GetTopPolicies` `@ 0x14101ce98 / 0x1408d53fc / 0x142c1814c` |
-| attitude              | `gameAttitudeAgent`                                                                                                                  | `gamePuppet.GetAttitude()` `@ 0x140199460`                                           |
-| hit reactions         | `HitReactionComponent` (script, `183465`)                                                                                            | `m_hitReactionComponent`                                                             |
-| squads                | `SquadMemberComponent` + `AISquadHelper`                                                                                             | `GetSquadMemberComponent()`                                                          |
-| crowd behaviour       | `gameCrowdMemberComponent` (0x220), script `CrowdMemberBaseComponent` (empty, `217858`)                                              | §2.5                                                                                 |
-| saved component state | `gameComponentsStateSaveComponent` (0x90, no properties, no functions)                                                               | —                                                                                    |
-| persistent state      | `ScriptedPuppetPS : gamePuppetPS` (`GetIsDead/SetIsDead`, `GetWasIncapacitated`, `IsDefeatMechanicActive`)                           | `GetPuppetPS()`, `GetPS()`                                                           |
+<!-- prettier-ignore -->
+| Piece | Class | Access |
+| --- | --- | --- |
+| behaviour tree agent | `AIHumanComponent : AICAgent : gameComponent` (0x5b8); script `AIHumanComponent extends AIComponent` (`final.reds:159862`, `143623`) | `ScriptedPuppet.GetAIControllerComponent()` |
+| state integers | `NPCStatesComponent extends AINetStateComponent` (`167844`) | §3.1 |
+| senses | `senseComponent` (0x1a0), script `SenseComponent` (`155475`) | `gamePuppet.GetSenses()` `@ 0x140e3936c`, `GetSensesComponent()` |
+| being seen | `senseVisibleObjectComponent` | `gamePuppet.GetVisibleObject()` `@ 0x142ae5810` |
+| threats | `AITargetTrackerComponent`, script `TargetTrackingExtension` (`156462`, `156594`) | `gamePuppet.GetTargetTracker()` `@ 0x142ae57b4` |
+| reactions to stimuli | `ReactionManagerComponent` (script, `143735`) | `GetStimReactionComponent()` |
+| stimuli emitted | `StimBroadcasterComponent` (script, `149801`) | `GetStimBroadcasterComponent()` |
+| movement | `movePoliciesComponent` (0x600), `moveComponent` | `AddPolicies/PopPolicies/GetTopPolicies` `@ 0x14101ce98 / 0x1408d53fc / 0x142c1814c` |
+| attitude | `gameAttitudeAgent` | `gamePuppet.GetAttitude()` `@ 0x140199460` |
+| hit reactions | `HitReactionComponent` (script, `183465`) | `m_hitReactionComponent` |
+| squads | `SquadMemberComponent` + `AISquadHelper` | `GetSquadMemberComponent()` |
+| crowd behaviour | `gameCrowdMemberComponent` (0x220), script `CrowdMemberBaseComponent` (empty, `217858`) | §2.5 |
+| saved component state | `gameComponentsStateSaveComponent` (0x90, no properties, no functions) | — |
+| persistent state | `ScriptedPuppetPS : gamePuppetPS` (`GetIsDead/SetIsDead`, `GetWasIncapacitated`, `IsDefeatMechanicActive`) | `GetPuppetPS()`, `GetPS()` |
 
 `AICAgent` natives (all with handlers) — the complete script surface of the
 brain (`final.reds:143624-143703`): `SetBehaviorArgument/GetBehaviorArgument`,
@@ -249,19 +257,20 @@ useInheritance, success)`, `GetEnqueuedOrExecutingCommand`,
 RTTI function list; the name pool has no such string either. The switches
 that do exist:
 
-| Switch                                                                                                                        | Effect                                                                                                                                              | Source                                                     |
-| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `entIComponent.Toggle(on: Bool)` `@ 0x1404c94f4`, `IsEnabled()`                                                               | generic component on/off; exists on every component, including `AIHumanComponent`, `senseComponent`, `movePoliciesComponent`, `entRagdollComponent` | RTTI                                                       |
-| `SenseComponent.ToggleComponent(condition)`                                                                                   | `SetHearingEnabled(condition)` + `Toggle(condition)`                                                                                                | `final.reds:155650`                                        |
-| `SenseComponent.ToggleSenses(condition)`                                                                                      | `Toggle(condition)` only                                                                                                                            | `155655`                                                   |
-| `SenseComponent.SetHearingEnabled(enabled)`                                                                                   | hearing only, `@ 0x14121f764`                                                                                                                       | `155496`                                                   |
-| `SenseComponent.RemoveSenseMappin()`, `RequestRemovingSenseMappin()`, `RemoveHearingMappin()`                                 | removes the detection-eye mappin                                                                                                                    | `155546-155550`                                            |
-| `senseComponent.enableBeingDetectable` (+0x140), `forceDisableUI` (+0x141), `hideUIElements` (+0x68), `enabledSenses` (+0x69) | properties                                                                                                                                          | RTTI                                                       |
-| `reactionPreset = ReactionPresets.NoReaction` (record)                                                                        | no stim reactions; **not enough alone on 2.5** (engine-knowledge §2)                                                                                | measured by NCO                                            |
-| `gameStoryTier.Cinematic` (`AICAgent.GetStoryTier`)                                                                           | `ScriptedPuppet.IsOnAutonomousAI()` is "tier == Gameplay" (`21139`): scenes take NPCs off autonomous AI                                             | `[I]` no setter found in scripts; the scene system sets it |
-| status effect type `AndroidTurnOff`                                                                                           | `ToggleSenses(false)`, leaves squad, `IsActive` false (`21540-21546`); androids only in vanilla                                                     | `[S]`                                                      |
-| `BaseStatusEffect.Unconscious` / `Defeated`                                                                                   | `IsActiveInternal()` false (`21067`) — but they also play the downed animation                                                                      | `[S]`                                                      |
-| an always-active `AIMoveToCommand`, or an engine movement controller                                                          | the tree yields movement (engine-knowledge §2-3, what tandem's player puppet uses)                                                                  | `[2.5-verified]` there                                     |
+<!-- prettier-ignore -->
+| Switch | Effect | Source |
+| --- | --- | --- |
+| `entIComponent.Toggle(on: Bool)` `@ 0x1404c94f4`, `IsEnabled()` | generic component on/off; exists on every component, including `AIHumanComponent`, `senseComponent`, `movePoliciesComponent`, `entRagdollComponent` | RTTI |
+| `SenseComponent.ToggleComponent(condition)` | `SetHearingEnabled(condition)` + `Toggle(condition)` | `final.reds:155650` |
+| `SenseComponent.ToggleSenses(condition)` | `Toggle(condition)` only | `155655` |
+| `SenseComponent.SetHearingEnabled(enabled)` | hearing only, `@ 0x14121f764` | `155496` |
+| `SenseComponent.RemoveSenseMappin()`, `RequestRemovingSenseMappin()`, `RemoveHearingMappin()` | removes the detection-eye mappin | `155546-155550` |
+| `senseComponent.enableBeingDetectable` (+0x140), `forceDisableUI` (+0x141), `hideUIElements` (+0x68), `enabledSenses` (+0x69) | properties | RTTI |
+| `reactionPreset = ReactionPresets.NoReaction` (record) | no stim reactions; **not enough alone on 2.5** (engine-knowledge §2) | measured by NCO |
+| `gameStoryTier.Cinematic` (`AICAgent.GetStoryTier`) | `ScriptedPuppet.IsOnAutonomousAI()` is "tier == Gameplay" (`21139`): scenes take NPCs off autonomous AI | `[I]` no setter found in scripts; the scene system sets it |
+| status effect type `AndroidTurnOff` | `ToggleSenses(false)`, leaves squad, `IsActive` false (`21540-21546`); androids only in vanilla | `[S]` |
+| `BaseStatusEffect.Unconscious` / `Defeated` | `IsActiveInternal()` false (`21067`) — but they also play the downed animation | `[S]` |
+| an always-active `AIMoveToCommand`, or an engine movement controller | the tree yields movement (engine-knowledge §2-3, what tandem's player puppet uses) | `[2.5-verified]` there |
 
 What the vanilla game does when an NPC dies is the reference list of "things
 to switch off" (`ScriptedPuppet.OnIncapacitated`, `final.reds:21797-21834`):
@@ -371,16 +380,17 @@ Crowd fear on a guest then comes for free from the host's AI.
 getters and setters are thin wrappers over the native replicated slots
 (`final.reds:167900-167980`):
 
-| State        | Native pair (`gameAINetStateComponent`)          | Handlers (get / set)          | Enum                        |
-| ------------ | ------------------------------------------------ | ----------------------------- | --------------------------- |
-| high level   | `Get/SetReplicatedHighLevelState(Int32) -> Bool` | `0x140f788c4` / `0x140dbda00` | `gamedataNPCHighLevelState` |
-| upper body   | `Get/SetReplicatedUpperBodyState`                | `0x140d6cc68` / `0x140dbda80` | `gamedataNPCUpperBodyState` |
-| stance       | `Get/SetReplicatedStanceState`                   | `0x140fe0fcc` / `0x140dbd880` | `gamedataNPCStanceState`    |
-| hit reaction | `Get/SetReplicatedHitReactionModeState`          | `0x141158be0` / `0x140dbd900` | `EHitReactionMode`          |
-| behaviour    | `Get/SetReplicatedBehaviorState`                 | `0x142a2a208` / `0x142a2a274` | `gamedataNPCBehaviorState`  |
-| phase        | `Get/SetReplicatedPhaseState`                    | `0x142a2a250` / `0x142a2a374` | `ENPCPhaseState`            |
-| defense mode | `Get/SetReplicatedDefenseMode`                   | `0x142a2a22c` / `0x142a2a2f4` | `gamedataDefenseMode`       |
-| locomotion   | `Get/SetReplicatedLocomotionMode`                | `0x14111dd20` / `0x140dbd980` | `gamedataLocomotionMode`    |
+<!-- prettier-ignore -->
+| State | Native pair (`gameAINetStateComponent`) | Handlers (get / set) | Enum |
+| --- | --- | --- | --- |
+| high level | `Get/SetReplicatedHighLevelState(Int32) -> Bool` | `0x140f788c4` / `0x140dbda00` | `gamedataNPCHighLevelState` |
+| upper body | `Get/SetReplicatedUpperBodyState` | `0x140d6cc68` / `0x140dbda80` | `gamedataNPCUpperBodyState` |
+| stance | `Get/SetReplicatedStanceState` | `0x140fe0fcc` / `0x140dbd880` | `gamedataNPCStanceState` |
+| hit reaction | `Get/SetReplicatedHitReactionModeState` | `0x141158be0` / `0x140dbd900` | `EHitReactionMode` |
+| behaviour | `Get/SetReplicatedBehaviorState` | `0x142a2a208` / `0x142a2a274` | `gamedataNPCBehaviorState` |
+| phase | `Get/SetReplicatedPhaseState` | `0x142a2a250` / `0x142a2a374` | `ENPCPhaseState` |
+| defense mode | `Get/SetReplicatedDefenseMode` | `0x142a2a22c` / `0x142a2a2f4` | `gamedataDefenseMode` |
+| locomotion | `Get/SetReplicatedLocomotionMode` | `0x14111dd20` / `0x140dbd980` | `gamedataLocomotionMode` |
 
 Enum values (RTTI, 2.50):
 
@@ -534,16 +544,17 @@ ignore cover objects.
 Natives of `gameStatusEffectSystem` (RTTI; script `StatusEffectSystem`,
 `final.reds:51168`):
 
-| Function                                                                                                                                                                                                         | Handler                                     |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `ApplyStatusEffect(objID: EntityID, statusEffectID: TweakDBID, instigatorID: TweakDBID, instigatorEntityID: EntityID, applyCount: Uint32, direction: Vector4, isSavable: Bool, proxyEntityID: EntityID) -> Bool` | `0x140b04fe8`                               |
-| `RemoveStatusEffect(objID, statusEffectID, removeCount: Uint32) -> Bool`                                                                                                                                         | `0x140b04d40`                               |
-| `RemoveAllStatusEffectOfType(objID, statusEffectType)`                                                                                                                                                           | `0x14063c688`                               |
-| `GetAppliedEffects(objID, out [StatusEffect])`                                                                                                                                                                   | `0x140e39a18`                               |
-| `GetAppliedEffectsWithID / OfType / OfTypeName / WithTag`                                                                                                                                                        | —                                           |
-| `HasStatusEffect(objID, id)`, `HasStatusEffectOfType`, `HasStatusEffectWithTag(objID, tag)`                                                                                                                      | `0x1401ad058`, `0x140cd3284`, `0x140cf9ff4` |
-| `RegisterListener(objID, gameIStatusEffectListener)`                                                                                                                                                             | `0x140e6f578`                               |
-| `SetStatusEffectRemainingDuration(objID, id, duration) -> Bool`                                                                                                                                                  | `0x140c2b2a4`                               |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `ApplyStatusEffect(objID: EntityID, statusEffectID: TweakDBID, instigatorID: TweakDBID, instigatorEntityID: EntityID, applyCount: Uint32, direction: Vector4, isSavable: Bool, proxyEntityID: EntityID) -> Bool` | `0x140b04fe8` |
+| `RemoveStatusEffect(objID, statusEffectID, removeCount: Uint32) -> Bool` | `0x140b04d40` |
+| `RemoveAllStatusEffectOfType(objID, statusEffectType)` | `0x14063c688` |
+| `GetAppliedEffects(objID, out [StatusEffect])` | `0x140e39a18` |
+| `GetAppliedEffectsWithID / OfType / OfTypeName / WithTag` | — |
+| `HasStatusEffect(objID, id)`, `HasStatusEffectOfType`, `HasStatusEffectWithTag(objID, tag)` | `0x1401ad058`, `0x140cd3284`, `0x140cf9ff4` |
+| `RegisterListener(objID, gameIStatusEffectListener)` | `0x140e6f578` |
+| `SetStatusEffectRemainingDuration(objID, id, duration) -> Bool` | `0x140c2b2a4` |
 
 Script helpers: `StatusEffectHelper.ApplyStatusEffect(target, id, opt delay)`
 and overloads with instigator (`final.reds:168953-169008`),
@@ -769,11 +780,12 @@ DamageSystem.RegisterSyncListener(listener, registereeID, callbackType,
 
 Three interception points, from earliest to latest:
 
-| Point                                                                         | How                                                                                                   | Keeps                                                                                               | Loses                                         |
-| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `NPCPuppet.OnHit` (wrap, don't chain)                                         | drop the event for proxies                                                                            | nothing local                                                                                       | hit reaction, blood, numbers, computed damage |
-| add `hitFlag.DealNoDamage` in a `PreProcess` sync listener or an `OnHit` wrap | `Process` returns at once                                                                             | hit reaction/VFX (`ReactToHitProcess` still runs for non-players)                                   | the computed damage (modifiers never run)     |
-| **wrap `DamageSystem.DealDamages`**                                           | for a proxy target call `StatPoolsManager.ApplyDamage(hitEvent, false, lost)` then `SendDamageEvents` | **the full computed hit** (armor, crit, headshot, weak spot, range, perks), reactions, VFX, numbers | nothing; the pool is untouched                |
+<!-- prettier-ignore -->
+| Point | How | Keeps | Loses |
+| --- | --- | --- | --- |
+| `NPCPuppet.OnHit` (wrap, don't chain) | drop the event for proxies | nothing local | hit reaction, blood, numbers, computed damage |
+| add `hitFlag.DealNoDamage` in a `PreProcess` sync listener or an `OnHit` wrap | `Process` returns at once | hit reaction/VFX (`ReactToHitProcess` still runs for non-players) | the computed damage (modifiers never run) |
+| **wrap `DamageSystem.DealDamages`** | for a proxy target call `StatPoolsManager.ApplyDamage(hitEvent, false, lost)` then `SendDamageEvents` | **the full computed hit** (armor, crit, headshot, weak spot, range, perks), reactions, VFX, numbers | nothing; the pool is untouched |
 
 The third is what the engine's own client did (`forReal = !IsClient()`), and
 it yields exactly what the host needs. `[I]` Recommended:
@@ -893,20 +905,21 @@ question 5.
 
 ### 5.1 `gameStatPoolsSystem` (RTTI; script `StatPoolsSystem`, `final.reds:83540`)
 
-| Function                                                                                                                                                                                | Handler                      |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `GetStatPoolValue(objID: StatsObjectID, statPoolType, opt perc: Bool = true) -> Float`                                                                                                  | `0x1404ca364`                |
-| `GetStatPoolMaxPointValue(objID, type) -> Float`                                                                                                                                        | `0x1409b2094`                |
-| `HasStatPoolValueReachedMin(objID, type) -> Bool`                                                                                                                                       | `0x140c49d20`                |
-| `HasStatPoolValueReachedCustomLimit(objID, type) -> Bool`                                                                                                                               | `0x142ac97f8`                |
-| `RequestSettingStatPoolValue(objID, type, newValue: Float, instigator: wref<GameObject>, opt perc: Bool, opt ignoreCustomLimit: Bool)`                                                  | `0x1405f0bfc`                |
-| `RequestSettingStatPoolValueIgnoreChangeMode(objID, type, newValue, instigator, opt perc)`                                                                                              | `0x140567674`                |
-| `RequestSettingStatPoolValueCustomLimit(objID, type, newValue, instigator, opt perc)`                                                                                                   | `0x1410f3678`                |
-| `RequestChangingStatPoolValue(objID, type, diff: Float, instigator, forceChunkTransfering: Bool, opt perc: Bool, opt ignoreCustomLimit: Bool)`                                          | `0x140ced80c`                |
-| `RequestSettingStatPoolMinValue / MaxValue(objID, type, instigator)`                                                                                                                    | `0x14184adc0`, `0x142ac9eb0` |
-| `RequestSettingModifier(objID, type, modType: gameStatPoolModificationTypes, modifier: StatPoolModifier)`, `RequestSettingModifierWithRecord`, `RequestResetingModifier`, `GetModifier` | regen/decay                  |
-| `RequestRegisteringListener(objID, type, listener: IStatPoolsListener)` / `RequestUnregisteringListener`                                                                                | `0x140ce72bc`, `0x1402f033c` |
-| `RequestAddingStatPool(objID, recordID, opt force)`, `RequestRemovingStatPool`, `IsStatPoolAdded`, `ToPercentage`, `ToPoints`                                                           | —                            |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `GetStatPoolValue(objID: StatsObjectID, statPoolType, opt perc: Bool = true) -> Float` | `0x1404ca364` |
+| `GetStatPoolMaxPointValue(objID, type) -> Float` | `0x1409b2094` |
+| `HasStatPoolValueReachedMin(objID, type) -> Bool` | `0x140c49d20` |
+| `HasStatPoolValueReachedCustomLimit(objID, type) -> Bool` | `0x142ac97f8` |
+| `RequestSettingStatPoolValue(objID, type, newValue: Float, instigator: wref<GameObject>, opt perc: Bool, opt ignoreCustomLimit: Bool)` | `0x1405f0bfc` |
+| `RequestSettingStatPoolValueIgnoreChangeMode(objID, type, newValue, instigator, opt perc)` | `0x140567674` |
+| `RequestSettingStatPoolValueCustomLimit(objID, type, newValue, instigator, opt perc)` | `0x1410f3678` |
+| `RequestChangingStatPoolValue(objID, type, diff: Float, instigator, forceChunkTransfering: Bool, opt perc: Bool, opt ignoreCustomLimit: Bool)` | `0x140ced80c` |
+| `RequestSettingStatPoolMinValue / MaxValue(objID, type, instigator)` | `0x14184adc0`, `0x142ac9eb0` |
+| `RequestSettingModifier(objID, type, modType: gameStatPoolModificationTypes, modifier: StatPoolModifier)`, `RequestSettingModifierWithRecord`, `RequestResetingModifier`, `GetModifier` | regen/decay |
+| `RequestRegisteringListener(objID, type, listener: IStatPoolsListener)` / `RequestUnregisteringListener` | `0x140ce72bc`, `0x1402f033c` |
+| `RequestAddingStatPool(objID, recordID, opt force)`, `RequestRemovingStatPool`, `IsStatPoolAdded`, `ToPercentage`, `ToPoints` | — |
 
 Note the default of `perc` differs by caller: `GetStatPoolValue(id, Health,
 false)` returns points, and `Revive` uses `RequestSettingStatPoolValue(…,
@@ -993,18 +1006,19 @@ IsAboutToDieOrDefeated()` (`125872-125886`).
 
 Forcing functions:
 
-| Function                                                                                                | Line           | Effect                                                                                                                 |
-| ------------------------------------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `NPCPuppet.Kill(opt instigator, opt skipNPCDeathAnim, opt disableNPCRagdoll)`                           | 125843         | returns if stat `IsInvulnerable > 0`; `MarkForDeath()`, `SetIsDefeatMechanicActive(false)`, then `ScriptedPuppet.Kill` |
-| `ScriptedPuppet.Kill(…)`                                                                                | 21286          | `RequestSettingStatPoolValueIgnoreChangeMode(Health, 0.0, instigator)`                                                 |
-| `ScriptedPuppet.SoftKill(…)`                                                                            | 21306          | health to 0 (or 1 with a second heart) via `RequestSettingStatPoolValue`                                               |
-| `NPCPuppet.MarkForDeath()` / `MarkForDefeat()`                                                          | 125868, 125876 | set `m_shouldDie` / `m_shouldBeDefeated` only                                                                          |
-| `NPCPuppet.SetIsDefeatMechanicActive(active, opt isInitialisation)`                                     | 125895         | custom Health limit 0.1 or 0.0                                                                                         |
-| `ScriptedPuppet.SendDefeatedEvent(obj)`                                                                 | 21645          | queues `DefeatedEvent`                                                                                                 |
-| `StatusEffectHelper.ApplyStatusEffect(npc, t"BaseStatusEffect.Defeated" / "Unconscious" / "ForceKill")` | —              | the vanilla ways to defeat / knock out / force-kill                                                                    |
-| `ScriptedPuppet.SetSkipDeathAnimation(value)`                                                           | 23165          | no death animation                                                                                                     |
-| `gamePuppet.HideIrreversibly()`                                                                         | 19392          | native `@ 0x142ae5918`: corpse removed from view                                                                       |
-| `ResurrectEvent` → `OnResurrect`                                                                        | 21836          | un-defeat (used for `DefeatedWithRecover`)                                                                             |
+<!-- prettier-ignore -->
+| Function | Line | Effect |
+| --- | --- | --- |
+| `NPCPuppet.Kill(opt instigator, opt skipNPCDeathAnim, opt disableNPCRagdoll)` | 125843 | returns if stat `IsInvulnerable > 0`; `MarkForDeath()`, `SetIsDefeatMechanicActive(false)`, then `ScriptedPuppet.Kill` |
+| `ScriptedPuppet.Kill(…)` | 21286 | `RequestSettingStatPoolValueIgnoreChangeMode(Health, 0.0, instigator)` |
+| `ScriptedPuppet.SoftKill(…)` | 21306 | health to 0 (or 1 with a second heart) via `RequestSettingStatPoolValue` |
+| `NPCPuppet.MarkForDeath()` / `MarkForDefeat()` | 125868, 125876 | set `m_shouldDie` / `m_shouldBeDefeated` only |
+| `NPCPuppet.SetIsDefeatMechanicActive(active, opt isInitialisation)` | 125895 | custom Health limit 0.1 or 0.0 |
+| `ScriptedPuppet.SendDefeatedEvent(obj)` | 21645 | queues `DefeatedEvent` |
+| `StatusEffectHelper.ApplyStatusEffect(npc, t"BaseStatusEffect.Defeated" / "Unconscious" / "ForceKill")` | — | the vanilla ways to defeat / knock out / force-kill |
+| `ScriptedPuppet.SetSkipDeathAnimation(value)` | 23165 | no death animation |
+| `gamePuppet.HideIrreversibly()` | 19392 | native `@ 0x142ae5918`: corpse removed from view |
+| `ResurrectEvent` → `OnResurrect` | 21836 | un-defeat (used for `DefeatedWithRecover`) |
 
 `gameeventsDeathEvent` (0x50): `instigator: whandle:gameObject` +0x40.
 `gamePotentialDeathEvent`: `instigator` (`final.reds:203299`). Scripts create
@@ -1228,14 +1242,15 @@ true`, and health forced to 0.
 
 To replace this with "downed, revive":
 
-| Must be blocked                                                        | How                                                                                                                                                                                                 |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| V actually dying (state machine `Dead`, death camera)                  | `GodModeSystem.AddGodMode(V, gameGodModeType.Immortal, n"tandem")` while in a session with ≥ 2 players (§8: the only layer that also survives scripted kills, falls, drowning)                      |
+<!-- prettier-ignore -->
+| Must be blocked | How |
+| --- | --- |
+| V actually dying (state machine `Dead`, death camera) | `GodModeSystem.AddGodMode(V, gameGodModeType.Immortal, n"tandem")` while in a session with ≥ 2 players (§8: the only layer that also survives scripted kills, falls, drowning) |
 | `hitFlag.IgnoreImmortalityModes` attacks and `Kill()`/`ForceKill` on V | wrap `PlayerPuppet.OnDeath` as a last resort: if it fires anyway, revive (`RequestSettingStatPoolValue(V, Health, pct, null, true)`, the body of private `PlayerPuppet.Revive(percAmount)` `45327`) |
-| the death menu and checkpoint reload                                   | quest fact `block_death_menu = 1` (`283760`) — a vanilla switch; plus a wrap of `OnDisplayDeathMenu`                                                                                                |
-| the second heart firing during a downed state                          | it is a god-mode override (`n"SecondHeart"`); decide whether a second heart means "self-revive once" in co-op                                                                                       |
-| `GameplayRestriction.BlockAllMenu` on death                            | not applied if `OnDeath` never runs (see §8: downed deliberately without it)                                                                                                                        |
-| autosave invalidation                                                  | same                                                                                                                                                                                                |
+| the death menu and checkpoint reload | quest fact `block_death_menu = 1` (`283760`) — a vanilla switch; plus a wrap of `OnDisplayDeathMenu` |
+| the second heart firing during a downed state | it is a god-mode override (`n"SecondHeart"`); decide whether a second heart means "self-revive once" in co-op |
+| `GameplayRestriction.BlockAllMenu` on death | not applied if `OnDeath` never runs (see §8: downed deliberately without it) |
+| autosave invalidation | same |
 
 Entering downed: a Health `CustomValueStatPoolsListener` at ≈1 % on V →
 apply `BaseStatusEffect.Defeated` (works on the player per §8) + restrictions
@@ -1294,17 +1309,18 @@ dynamicEntityUniqueName: CName, slotName, sceneActorContextName, type}`
 
 ### 7.2 Who spawns NPCs
 
-| Source                                                    | Engine class / node                                                                                                                                                                    | Ids                                    | Script control                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| placed spawners                                           | `worldPopulationSpawnerNode {objectRecordId: TweakDBID +0x38, appearanceName: CName +0x40, spawnOnStart +0x48, alwaysSpawned +0x49, spawnInView +0x4a, prefetchAppearance, isVehicle}` | static                                 | Codeware `WorldStateSystem.ActivatePopulationSpawner / DeactivatePopulationSpawner / ResetPopulationSpawner(NodeRef)`, `GetPopulationSpawner(NodeRef) -> PopulationSpawnerWrapper` (`IsActive`, `GetRecordID`, `GetAppearanceName`, `GetTransform`, `GetSpawnedEntityIDs`, …) `[C]`                                                                                                                                                                                                                                                                                     |
-| communities (encounters, gangs, vendors, scripted crowds) | `worldCommunityRegistryNode`, `gameCommunitySystem`, `communitySpawnEntry`, phases and time periods                                                                                    | static per entry slot `[I]`            | Codeware `GetCommunity(NodeRef) -> CommunityWrapper` (`GetEntries()`, `GetActiveEntityIDs()`), `CommunityEntryWrapper` (`IsActive`, `GetName`, `GetPhases`, `GetSpawnedEntityIDs`, `GetSpawningEntityIDs`, `GetReservedEntityIDs`), `ActivateCommunity / DeactivateCommunity(NodeRef, opt entry)`, `ResetCommunity`, `SetCommunityPhase(NodeRef, entry, phase)` `[C]`                                                                                                                                                                                                   |
-| quest spawn nodes                                         | `questSpawnManagerNodeDefinition` with `questSpawnSet_NodeType`, `questSpawner_NodeType`, `questCommunityTemplate_NodeType`                                                            | as the community/spawner they activate | follow the host's quest (milestone 6)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ambient crowd                                             | `gameCommunitySystem` + `gamePopulationSystem` (0x20d0, no script API); priorities `gamePopulationEntityPriority`: Quest 0, Community 1, Crowd 2                                       | dynamic                                | `CommunitySystem.ChangeDensityModifier(Float)` `@ 0x142bcd748`, `ResetDensityModifier()`, `EnableDynamicCrowdNullArea(areaLocalBBox: Box, areaLocalToWorld: WorldTransform, savable: Bool, duration: Float) -> Uint64` `@ 0x142bcd848`, `DisableCrowdNullArea(areaId)` (`final.reds:315504-315516`); quest nodes `questCrowdManagerNodeType_ControlCrowd`, `_EnableNullArea`                                                                                                                                                                                            |
-| police                                                    | `gamePreventionSpawnSystem` (script `PreventionSpawnSystem`, `189163`)                                                                                                                 | dynamic                                | `RequestUnitSpawn(recordID, spawnTransform) -> Uint32` `@ 0x140fdfe80`, `RequestChaseVehicle`, `RequestRoadBlockadeSpawn`, `RequestAVSpawn*`, `RequestDespawn(entityID)`, `RequestDespawnAll(aggressive)`, `CancelAllSpawnRequests()`, **`TogglePreventionActive(isActive)`** `@ 0x141197534`, `TogglePreventionCrowdSpawns(toggle)`, `GetNumberOfSpawnedPreventionUnits()`, `IsEntityRegistered(id)`, `MarkAsDead(id)`, `RegisterEntityDeathCallback(scriptable, functionName, entityID)`; result struct `gameSpawnRequestResult {requestID, success, spawnedObjects}` |
-| dynamic events (gang chases)                              | `gameDynamicSpawnSystem` (0x150): `GetNumberOfSpawnedUnits()`, `IsEntityRegistered(id)`; quest nodes `questDynamicVehicleSpawn/Despawn/DespawnAll_NodeType`                            | dynamic                                | script callbacks `SpawnRequestFinished`, `SpawnCallback`, `ChangeAttitude`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| companions                                                | `gameCompanionSystem`: `SpawnSubcharacter(recordID, offset, offsetDir)`, `SpawnSubcharacterOnPosition(recordID, pos)`, `DespawnSubcharacter`, `DespawnAll`, `GetSpawnedEntities`       | dynamic                                | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| stubs (far, not streamed)                                 | `gameEntityStubSystem`, `gameEntityStubComponent(PS)` (`GetSpawnerID()` `@ 0x142a257e0`), `gameEntityStubClass`: Other 0, Puppet 1, Vehicle 2                                          | —                                      | none                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| mods                                                      | Codeware `DynamicEntitySystem` (below); dev-only `exEntitySpawner.Spawn/SpawnRecord/Despawn` (no handlers)                                                                             | dynamic                                | —                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+<!-- prettier-ignore -->
+| Source | Engine class / node | Ids | Script control |
+| --- | --- | --- | --- |
+| placed spawners | `worldPopulationSpawnerNode {objectRecordId: TweakDBID +0x38, appearanceName: CName +0x40, spawnOnStart +0x48, alwaysSpawned +0x49, spawnInView +0x4a, prefetchAppearance, isVehicle}` | static | Codeware `WorldStateSystem.ActivatePopulationSpawner / DeactivatePopulationSpawner / ResetPopulationSpawner(NodeRef)`, `GetPopulationSpawner(NodeRef) -> PopulationSpawnerWrapper` (`IsActive`, `GetRecordID`, `GetAppearanceName`, `GetTransform`, `GetSpawnedEntityIDs`, …) `[C]` |
+| communities (encounters, gangs, vendors, scripted crowds) | `worldCommunityRegistryNode`, `gameCommunitySystem`, `communitySpawnEntry`, phases and time periods | static per entry slot `[I]` | Codeware `GetCommunity(NodeRef) -> CommunityWrapper` (`GetEntries()`, `GetActiveEntityIDs()`), `CommunityEntryWrapper` (`IsActive`, `GetName`, `GetPhases`, `GetSpawnedEntityIDs`, `GetSpawningEntityIDs`, `GetReservedEntityIDs`), `ActivateCommunity / DeactivateCommunity(NodeRef, opt entry)`, `ResetCommunity`, `SetCommunityPhase(NodeRef, entry, phase)` `[C]` |
+| quest spawn nodes | `questSpawnManagerNodeDefinition` with `questSpawnSet_NodeType`, `questSpawner_NodeType`, `questCommunityTemplate_NodeType` | as the community/spawner they activate | follow the host's quest (milestone 6) |
+| ambient crowd | `gameCommunitySystem` + `gamePopulationSystem` (0x20d0, no script API); priorities `gamePopulationEntityPriority`: Quest 0, Community 1, Crowd 2 | dynamic | `CommunitySystem.ChangeDensityModifier(Float)` `@ 0x142bcd748`, `ResetDensityModifier()`, `EnableDynamicCrowdNullArea(areaLocalBBox: Box, areaLocalToWorld: WorldTransform, savable: Bool, duration: Float) -> Uint64` `@ 0x142bcd848`, `DisableCrowdNullArea(areaId)` (`final.reds:315504-315516`); quest nodes `questCrowdManagerNodeType_ControlCrowd`, `_EnableNullArea` |
+| police | `gamePreventionSpawnSystem` (script `PreventionSpawnSystem`, `189163`) | dynamic | `RequestUnitSpawn(recordID, spawnTransform) -> Uint32` `@ 0x140fdfe80`, `RequestChaseVehicle`, `RequestRoadBlockadeSpawn`, `RequestAVSpawn*`, `RequestDespawn(entityID)`, `RequestDespawnAll(aggressive)`, `CancelAllSpawnRequests()`, **`TogglePreventionActive(isActive)`** `@ 0x141197534`, `TogglePreventionCrowdSpawns(toggle)`, `GetNumberOfSpawnedPreventionUnits()`, `IsEntityRegistered(id)`, `MarkAsDead(id)`, `RegisterEntityDeathCallback(scriptable, functionName, entityID)`; result struct `gameSpawnRequestResult {requestID, success, spawnedObjects}` |
+| dynamic events (gang chases) | `gameDynamicSpawnSystem` (0x150): `GetNumberOfSpawnedUnits()`, `IsEntityRegistered(id)`; quest nodes `questDynamicVehicleSpawn/Despawn/DespawnAll_NodeType` | dynamic | script callbacks `SpawnRequestFinished`, `SpawnCallback`, `ChangeAttitude` |
+| companions | `gameCompanionSystem`: `SpawnSubcharacter(recordID, offset, offsetDir)`, `SpawnSubcharacterOnPosition(recordID, pos)`, `DespawnSubcharacter`, `DespawnAll`, `GetSpawnedEntities` | dynamic | — |
+| stubs (far, not streamed) | `gameEntityStubSystem`, `gameEntityStubComponent(PS)` (`GetSpawnerID()` `@ 0x142a257e0`), `gameEntityStubClass`: Other 0, Puppet 1, Vehicle 2 | — | none |
+| mods | Codeware `DynamicEntitySystem` (below); dev-only `exEntitySpawner.Spawn/SpawnRecord/Despawn` (no handlers) | dynamic | — |
 
 Spawner events: `gameEntitySpawnerEvent {spawnedEntityId: EntityID +0x40,
 eventType: gameEntitySpawnerEventType (Spawn 2, Despawn 3, Death 4)}`;
@@ -1342,12 +1358,13 @@ attitude, status effects.
 
 Per ARCHITECTURE ("guests' own spawning is suppressed") `[I]`:
 
-| Source                                    | Guest-side switch                                                                                                      | Risk                                                                    |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| ambient crowd                             | `ChangeDensityModifier(0.0)` (restore with `ResetDensityModifier()`); or a large `EnableDynamicCrowdNullArea` around V | does a 0 modifier fully stop spawns? does it also stop traffic? test    |
-| police                                    | `PreventionSpawnSystem.TogglePreventionActive(false)`, `CancelAllSpawnRequests()`, `RequestDespawnAll(true)`           | the script `PreventionSystem` must also be kept at heat 0 (milestone 4) |
-| dynamic events                            | no switch found; they are started by quests/`gameAIDirectorSystem`                                                     | open                                                                    |
-| communities, placed spawners (static ids) | **two candidate designs**, below                                                                                       | the hard part                                                           |
+<!-- prettier-ignore -->
+| Source | Guest-side switch | Risk |
+| --- | --- | --- |
+| ambient crowd | `ChangeDensityModifier(0.0)` (restore with `ResetDensityModifier()`); or a large `EnableDynamicCrowdNullArea` around V | does a 0 modifier fully stop spawns? does it also stop traffic? test |
+| police | `PreventionSpawnSystem.TogglePreventionActive(false)`, `CancelAllSpawnRequests()`, `RequestDespawnAll(true)` | the script `PreventionSystem` must also be kept at heat 0 (milestone 4) |
+| dynamic events | no switch found; they are started by quests/`gameAIDirectorSystem` | open |
+| communities, placed spawners (static ids) | **two candidate designs**, below | the hard part |
 
 For **static** NPCs the id is shared, so a guest does not need a separately
 spawned proxy: the guest's own copy of the entity _is_ the proxy, provided
@@ -1419,7 +1436,7 @@ choiceEvent.activator)` (`22557`); then `OnInventoryEmptyEvent` (`23451`),
 
 ### 8.2 "Each player loots their own copy"
 
-**Decided and built 2026-11-18** (ARCHITECTURE.md, Loot;
+**Decided and built 2026-11-18** (../architecture/loot.md, Loot;
 `scripts/tandem/Loot.reds`): per-player loot as below; dropped weapons
 per player; quest and important items (Quest tag, keycards, iconics) go
 to every player's inventory whoever loots them (`SharedItem`, user's rule
@@ -1440,14 +1457,15 @@ This falls out of the proxy design with almost no messages `[I]`:
 
 What still needs a rule:
 
-| Case                                                                  | Rule                                                                                                                                                                           |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| quest items on a corpse (`hasQuestItems`)                             | the host's pickup advances the quest; a guest's copy must not (quests follow the host). Either strip quest-tagged items from guests' proxies or forward the pickup to the host |
-| iconic weapons, unique drops                                          | policy decision: per-player copies duplicate uniques (most co-op games allow it)                                                                                               |
-| corpse disappears on the host (despawn, disposal) while a guest loots | the proxy is removed by `NpcRemoved`; keep it while its loot UI is open or drop a loot bag (`DropLootBag()`) before deleting                                                   |
-| a guest joins after the kill                                          | the proxy is announced already dead; `GenerateLoot()` runs at attach for an incapacitated NPC (`125562`) — the vanilla path for loading a save                                 |
-| world containers                                                      | not NPCs; static ids, each game has its own contents — out of scope here                                                                                                       |
-| shared money/XP                                                       | per player, local (authority table)                                                                                                                                            |
+<!-- prettier-ignore -->
+| Case | Rule |
+| --- | --- |
+| quest items on a corpse (`hasQuestItems`) | the host's pickup advances the quest; a guest's copy must not (quests follow the host). Either strip quest-tagged items from guests' proxies or forward the pickup to the host |
+| iconic weapons, unique drops | policy decision: per-player copies duplicate uniques (most co-op games allow it) |
+| corpse disappears on the host (despawn, disposal) while a guest loots | the proxy is removed by `NpcRemoved`; keep it while its loot UI is open or drop a loot bag (`DropLootBag()`) before deleting |
+| a guest joins after the kill | the proxy is announced already dead; `GenerateLoot()` runs at attach for an incapacitated NPC (`125562`) — the vanilla path for loading a save |
+| world containers | not NPCs; static ids, each game has its own contents — out of scope here |
+| shared money/XP | per player, local (authority table) |
 
 ---
 
@@ -1617,25 +1635,26 @@ HackAble()` needs the proxy "active, not crowd, aggressive or connected"
 
 ## 10. Summary
 
-| Topic             | Host side                                                                                           | Guest side                                                                                          | Suppress on guests                                                            |
-| ----------------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| NPC brain         | unchanged                                                                                           | harmless record or `Toggle(false)` on AI/senses/bump; engine movement controller                    | senses, reactions, squads, security link, takedown/hack interactions          |
-| state integers    | wrap/poll the 8 `NPCStatesComponent` values                                                         | `NPCPuppet.Change…State(proxy, v)` (or native setters + anim feature)                               | `OnDead()` before the host's death message                                    |
-| attitude          | send group + attitude to each player                                                                | `SetAttitudeGroup`, `SetAttitudeTowards(V, …)`                                                      | —                                                                             |
-| weapons           | send `WeaponRight/Left` items on change                                                             | same item in the proxy's slot                                                                       | —                                                                             |
-| status effects    | wrap `OnStatusEffectApplied/Removed`                                                                | apply/remove on the proxy                                                                           | on-hit effects from local hits; DoT damage                                    |
-| guest hits an NPC | build `gameHitEvent` with instigator = guest's puppet, exact damage; or pool change + `SetMyKiller` | wrap `DamageSystem.DealDamages`: `ApplyDamage(evt, false, …)`, enqueue `Hit` if V is the instigator | pool drain, poise, on-hit effects, police heat, instant kill                  |
-| health            | listener or snapshot, percent                                                                       | `RequestSettingStatPoolValue(…, pct, null, true)`; regen modifier off                               | reaching the defeat/death limit before the host says so                       |
-| death / defeat    | wrap `NPCPuppet.OnDeath`, `OnDefeated`; send kind, killer, last hit                                 | `proxy.Kill(…)` / apply `Defeated`(+`Unconscious`)                                                  | `RewardKiller`, data tracking, prevention, `MarkDeadBody` unless local killer |
-| ragdoll           | send start + impulse, then rest transform                                                           | `QueueEvent(CreateForceRagdollEvent(…))`, correct at rest                                           | ragdoll damage to V from proxies                                              |
-| dismemberment     | wrap `DismembermentComponent.RequestDismemberment`                                                  | call it on the proxy                                                                                | local prediction of dismemberment; perk buff unless local killer              |
-| NPC hits a guest  | wrap `DealDamages` for guest puppets: compute, don't drain, send `PlayerDamage`                     | re-run the hit on V with the proxy as instigator (`QueueHitEvent`)                                  | hits on V by proxies that did not come from the host                          |
-| V's death         | —                                                                                                   | `Immortal` god mode, `block_death_menu`, downed state, revive requests                              | death menu, checkpoint reload, `BlockAllMenu`                                 |
-| identity          | static hash or assign `NetId`                                                                       | static: adopt local copy; dynamic: spawn proxy by (record, appearance)                              | crowd density 0, prevention off                                               |
-| loot              | own roll                                                                                            | own roll on the proxy's corpse (`ProcessLoot` runs locally)                                         | quest items on guests' corpses                                                |
-| combat state of V | send `TrackedAsHostile(PlayerId)`                                                                   | feed `PlayerCombatController`                                                                       | —                                                                             |
-| takedown          | apply effect (kill/unconscious) from the guest's puppet                                             | play locally, forward `FillTakedownData`                                                            | effect on the proxy; layers until implemented                                 |
-| quickhack         | apply completion effects from the guest's puppet                                                    | panel/RAM/upload local, forward at `CompleteAction`                                                 | local completion effects; quickhack damage in forwarded hits                  |
+<!-- prettier-ignore -->
+| Topic | Host side | Guest side | Suppress on guests |
+| --- | --- | --- | --- |
+| NPC brain | unchanged | harmless record or `Toggle(false)` on AI/senses/bump; engine movement controller | senses, reactions, squads, security link, takedown/hack interactions |
+| state integers | wrap/poll the 8 `NPCStatesComponent` values | `NPCPuppet.Change…State(proxy, v)` (or native setters + anim feature) | `OnDead()` before the host's death message |
+| attitude | send group + attitude to each player | `SetAttitudeGroup`, `SetAttitudeTowards(V, …)` | — |
+| weapons | send `WeaponRight/Left` items on change | same item in the proxy's slot | — |
+| status effects | wrap `OnStatusEffectApplied/Removed` | apply/remove on the proxy | on-hit effects from local hits; DoT damage |
+| guest hits an NPC | build `gameHitEvent` with instigator = guest's puppet, exact damage; or pool change + `SetMyKiller` | wrap `DamageSystem.DealDamages`: `ApplyDamage(evt, false, …)`, enqueue `Hit` if V is the instigator | pool drain, poise, on-hit effects, police heat, instant kill |
+| health | listener or snapshot, percent | `RequestSettingStatPoolValue(…, pct, null, true)`; regen modifier off | reaching the defeat/death limit before the host says so |
+| death / defeat | wrap `NPCPuppet.OnDeath`, `OnDefeated`; send kind, killer, last hit | `proxy.Kill(…)` / apply `Defeated`(+`Unconscious`) | `RewardKiller`, data tracking, prevention, `MarkDeadBody` unless local killer |
+| ragdoll | send start + impulse, then rest transform | `QueueEvent(CreateForceRagdollEvent(…))`, correct at rest | ragdoll damage to V from proxies |
+| dismemberment | wrap `DismembermentComponent.RequestDismemberment` | call it on the proxy | local prediction of dismemberment; perk buff unless local killer |
+| NPC hits a guest | wrap `DealDamages` for guest puppets: compute, don't drain, send `PlayerDamage` | re-run the hit on V with the proxy as instigator (`QueueHitEvent`) | hits on V by proxies that did not come from the host |
+| V's death | — | `Immortal` god mode, `block_death_menu`, downed state, revive requests | death menu, checkpoint reload, `BlockAllMenu` |
+| identity | static hash or assign `NetId` | static: adopt local copy; dynamic: spawn proxy by (record, appearance) | crowd density 0, prevention off |
+| loot | own roll | own roll on the proxy's corpse (`ProcessLoot` runs locally) | quest items on guests' corpses |
+| combat state of V | send `TrackedAsHostile(PlayerId)` | feed `PlayerCombatController` | — |
+| takedown | apply effect (kill/unconscious) from the guest's puppet | play locally, forward `FillTakedownData` | effect on the proxy; layers until implemented |
+| quickhack | apply completion effects from the guest's puppet | panel/RAM/upload local, forward at `CompleteAction` | local completion effects; quickhack damage in forwarded hits |
 
 Engine-provided shapes to copy into the protocol (§1): NPC announcement =
 (persistent id, record, appearance, initial transform, health, armor); AI

@@ -1,4 +1,4 @@
-// The shared world (docs/ARCHITECTURE.md, milestone 4): the host's game time
+// The shared world (docs/architecture/world.md, milestone 4): the host's game time
 // and weather, followed by every guest. Weather by name through Codeware's
 // WeatherSystem (engine-knowledge.md / coop-quests-world.md §8).
 
@@ -25,6 +25,15 @@ public class TandemWorld {
     } else {
       this.Follow();
     }
+  }
+
+  // The recorder, solo (System.reds RecordTick): what a host would share.
+  public func RecordTick(now: Float) -> Void {
+    if now - this.m_lastCheck < 2.0 {
+      return;
+    }
+    this.m_lastCheck = now;
+    this.Share(now);
   }
 
   public static func GameSeconds(game: GameInstance) -> Int32 {

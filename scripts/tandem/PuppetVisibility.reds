@@ -1,5 +1,5 @@
 // Why each remote player's puppet is hidden: one set of reasons per puppet,
-// so that one feature never shows what another hid (docs/ARCHITECTURE.md,
+// so that one feature never shows what another hid (docs/architecture/elsewhere.md,
 // other worlds). Reasons: n"private" (our private scene, Story.reds),
 // n"elsewhere" (another world, ours or theirs, Elsewhere.reds), n"noseat"
 // (no free seat in a car here, System.reds), n"nolook" (no body look yet:

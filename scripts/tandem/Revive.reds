@@ -1,4 +1,4 @@
-// Down, revive, respawn (docs/ARCHITECTURE.md "Down and out", milestone 8).
+// Down, revive, respawn (docs/architecture/revive.md "Down and out", milestone 8).
 //
 // Each game owns its own V's life. In a session with another player our V
 // cannot die the engine's way: it is Immortal through a god-mode override of
