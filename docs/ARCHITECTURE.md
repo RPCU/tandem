@@ -157,26 +157,27 @@ within half the timeout (2.5 s), without reporting an end in between
 
 The owner simulates; everyone else displays.
 
-| State                                                        | Owner                     | Others                                                             |
-| ------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------ |
-| a V: transform, stance, aim, animation                       | that player's game        | puppet, interpolated                                               |
-| a V: appearance, equipment, cyberware                        | that player's game        | applied on the puppet when it changes                              |
-| a V: health, death, downed                                   | that player's game        | shown; revives are requests to the owner                           |
-| a V: level, XP, perks, inventory, money                      | that player's game (save) | not shared: each player keeps their own level                      |
-| a vehicle someone drives                                     | the driver's game         | puppet vehicle, passengers mounted                                 |
-| a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game        | copy, riders and NPCs seated; host's scene: a seat or a ride along |
-| an NCART train (scripted transit)                            | each rider's own game     | never shared: puppet in a train of ours, else hidden               |
-| a parked or AI vehicle                                       | host                      | proxy                                                              |
-| NPCs: AI, position, health, death                            | host                      | **proxy with its AI off**, driven by the host                      |
-| spawns: crowds, traffic, encounters                          | host                      | guests' own spawning is suppressed                                 |
-| quests: facts, journal, phases, scenes                       | host                      | followed, never run on their own                                   |
-| time of day, weather, police heat                            | host                      | applied (wanted level: open, see below)                            |
-| a V's time abilities (Sandevistan…)                          | that player's game        | shown on the puppet; never slow anyone's world                     |
-| an NPC's speed in a time bubble                              | host                      | proxies animated at the same speed                                 |
-| NPC shots at a V                                             | the V's game              | host's NPC decides to fire; see below                              |
-| loot: corpses and containers                                 | each player's game        | rolled per player: each loots their own copy                       |
-| items a V drops on purpose                                   | host                      | lie in every game; the first pickup keeps it                       |
-| quest and important items, rewards                           | every player's own V      | whoever gets one, every V gets it                                  |
+| State                                                        | Owner                     | Others                                                                   |
+| ------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------------ |
+| a V: transform, stance, aim, animation                       | that player's game        | puppet, interpolated                                                     |
+| a V: appearance, equipment, cyberware                        | that player's game        | applied on the puppet when it changes                                    |
+| a V: health, death, downed                                   | that player's game        | shown; revives are requests to the owner                                 |
+| a V: level, XP, perks, inventory, money                      | that player's game (save) | not shared: each player keeps their own level                            |
+| a vehicle someone drives                                     | the driver's game         | puppet vehicle, passengers mounted                                       |
+| a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game        | copy, riders and NPCs seated; host's scene: a seat or a ride along       |
+| an NCART train (scripted transit)                            | each rider's own game     | never shared: puppet in a train of ours, else hidden                     |
+| a parked or AI vehicle                                       | host                      | proxy                                                                    |
+| NPCs: AI, position, health, death                            | host                      | **proxy with its AI off**, driven by the host                            |
+| spawns: crowds, traffic, encounters                          | host                      | guests' own spawning is suppressed                                       |
+| quests: facts, journal, phases, scenes                       | host                      | followed, never run on their own                                         |
+| time of day, weather, police heat                            | host                      | applied (wanted level: open, see below)                                  |
+| a V's time abilities (Sandevistan…)                          | that player's game        | shown on the puppet; never slow anyone's world                           |
+| an NPC's speed in a time bubble                              | host                      | proxies animated at the same speed                                       |
+| NPC shots at a V                                             | the V's game              | host's NPC decides to fire; see below                                    |
+| loot: corpses and containers                                 | each player's game        | rolled per player: each loots their own copy                             |
+| items a V drops on purpose                                   | host                      | lie in every game; the first pickup keeps it                             |
+| quest and important items, rewards                           | every player's own V      | whoever gets one, every V gets it                                        |
+| devices: doors, lifts, cameras, turrets, barrels, the alarm  | host                      | own copy first, then the host's word: [devices](architecture/devices.md) |
 
 **Enemy level** (decided 2026-11-18): enemies the host spawns and runs are
 scaled to the **mean of the character levels of the players in the
