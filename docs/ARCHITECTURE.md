@@ -1415,6 +1415,15 @@ hand).
 | scenarios   | the real game against the mock player, checked on the game's log                        | `task scenario -- all`            |
 | in game     | deploy the DLL, read its log                                                            | `task deploy`, `task logs`        |
 
+**Two real games on the game machine**, one hosting and one joining over
+loopback, are planned and not yet tried:
+[`architecture/two-instances.md`](architecture/two-instances.md) holds the
+findings, the setup (`tools/instance.sh`: a game folder and a prefix per
+instance, outside Steam, kept off the player's files) and the first-try
+checklist. For it the plugin reads `TANDEM_CONFIG`, `TANDEM_CMD`,
+`TANDEM_PORT` and `TANDEM_LOG` from its environment
+(`core/include/tandem/instance.hpp`).
+
 **Scenarios** (`tools/scenario.sh`, `tools/scenarios/*.sh`) are the
 in-game regression suite: each one puts the game in a role, drives the
 mock player and expects log lines within a time limit. Restarts happen

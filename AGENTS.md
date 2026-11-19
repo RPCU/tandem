@@ -24,8 +24,8 @@ scripts/       redscript, installed to r6/scripts/tandem (Natives.reds mirrors p
 tweaks/        TweakXL records, installed to r6/tweaks/tandem (the puppet records, their attitude groups, the player marker)
 dist/          files installed next to the DLL (tandem.ini)
 cmake/         clang-cl-msvc.cmake: the Windows cross toolchain
-docs/          ARCHITECTURE.md, research/ (engine facts, sources; data/: RTTI and skeleton dumps)
-tools/         game.sh (drive the game), scenario.sh + scenarios/ (in-game tests), check-natives.py, scripts-check.sh, re/ (read-only reverse engineering, see its README)
+docs/          ARCHITECTURE.md, architecture/ (two-instances.md: two games on one machine), research/ (engine facts, sources; data/: RTTI and skeleton dumps)
+tools/         game.sh (drive the game), scenario.sh + scenarios/ (in-game tests), instance.sh (more games on the game machine, apart from the player's; untested there), check-natives.py, scripts-check.sh, re/ (read-only reverse engineering, see its README)
 vendor/        submodules: RED4ext.SDK, RedLib, enet, zpp_bits, doctest
 ```
 
@@ -154,6 +154,15 @@ natives:check` reads every pair).
 
 ### In-game testing
 
+- **Two real games** (planned, not yet tried on anya):
+  `docs/architecture/two-instances.md`. `tools/instance.sh` builds and runs
+  instances apart from the player's game (own game folder, own prefix,
+  outside Steam, sandboxed off the player's files); it refuses while a game
+  it did not start runs and kills only its own processes. `tools/game.sh`
+  and `tools/scenario.sh` know one game and kill it **by name**: never run
+  them while instances run. The plugin takes `TANDEM_CONFIG`, `TANDEM_CMD`,
+  `TANDEM_PORT` and `TANDEM_LOG` from the environment
+  (`core/include/tandem/instance.hpp`).
 - **The loop:** change, `task test`, then `task scenario -- NAME` (or
   `all`) for what the change touches. `tools/scenario.sh` deploys, switches
   the game's role, restarts only when the DLL, scripts, tweaks or role
