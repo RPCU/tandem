@@ -1906,6 +1906,28 @@ struct NpcLevel { // Event channel
   friend bool operator==(const NpcLevel &, const NpcLevel &) = default;
 };
 
+// ---- Vendors (docs/architecture/progression.md, "Vendors") ----
+// A shared NPC is a vendor placed in the world (a shop, a ripperdoc, a
+// clothing store): its entity's static id, the same in every game. A player
+// whose game shows it as a proxy opens its own game's vendor of that entity,
+// as in single player: its own stock, prices, street cred gates and money
+// (tandem/vendors.hpp). Its owner to the players linked with it, once per
+// NPC, with the NPC's other records (late joiners, a link that forms); kept
+// until the NPC is gone.
+//
+// kVendorDead (npc 0): the host's word that the vendor of that entity died
+// in the session, to everyone. Each game keeps its own copy hidden until the
+// session ends (the same dead stay dead); kept for the session, for late
+// joiners. Never a guest's to say: the host derives it from the owner's
+// NpcGone.
+inline constexpr std::uint8_t kVendorDead = 1;
+struct NpcVendor { // Event channel
+  NpcId npc{};
+  std::uint64_t entity{}; // EntityID hash (static: placed in the world)
+  std::uint8_t flags{};   // kVendorDead
+  friend bool operator==(const NpcVendor &, const NpcVendor &) = default;
+};
+
 // ---- Trade between two players (docs/architecture/trade.md) ----
 // Two players standing together give, swap or sell items and eddies. The
 // host arbitrates (tandem/trade.hpp): one asks, the other accepts, each
@@ -2510,15 +2532,15 @@ using Message = std::variant<
     TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
-    BreachResult>;
+    BreachResult, NpcVendor>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended), a level
-// (PlayerLevel … NpcLevel), a car's lending (CarLend) or an NPC's scale
-// (NpcScale): one path in endpoint.hpp too.
+// (PlayerLevel … NpcLevel), a car's lending (CarLend), an NPC's scale
+// (NpcScale) or a vendor (NpcVendor): one path in endpoint.hpp too.
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);

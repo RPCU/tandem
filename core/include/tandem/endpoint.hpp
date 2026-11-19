@@ -659,9 +659,15 @@ public:
   // word on one of its NPCs, kept for late joiners until the NPC goes.
   // NpcScale is an owner's word on an NPC it runs (tandem/scaling.hpp; one
   // whose spawn has not reached us yet is said right after it), to everyone
-  // who sees that NPC, kept for late joiners until it goes. CarLend too: ours, kept and said as
-  // soon as we are in; the host stamps who, keeps everyone's (late joiners, resyncs) and tells all.
-  // False when nothing was sent (not ours to say, nobody to send to, refused by the rules).
+  // who sees that NPC, kept for late joiners until it goes. CarLend too: ours,
+  // kept and said as soon as we are in; the host stamps who, keeps everyone's
+  // (late joiners, resyncs) and tells all. NpcVendor: an owner's word that one
+  // of its NPCs is a placed vendor, to the players linked with it, kept with
+  // the NPC's records until it goes (one whose spawn is still on its way is
+  // said right after it); never a dead one (the host derives those from the
+  // owner's NpcGone, tells everyone and keeps them for the session). False
+  // when nothing was sent (not ours to say, nobody to send to, refused by the
+  // rules).
   bool SendCombat(proto::Message message);
   // The session's rules as this game knows them (the host's own; a guest's,
   // what the host said; none yet: every flag off).
@@ -682,6 +688,10 @@ public:
   // Who may drive each player's cars, as they said (a guest's own is not
   // kept here; the host's is).
   const std::map<proto::PlayerId, proto::CarLend> &CarLends() const { return m_lends; }
+  // The shared NPCs that are placed vendors (their entities), and the
+  // entities whose vendor died in the session (docs/architecture/progression.md).
+  const std::map<proto::NpcId, proto::NpcVendor> &NpcVendors() const { return m_npcVendors; }
+  const std::map<std::uint64_t, proto::NpcVendor> &DeadVendors() const { return m_deadVendors; }
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
   // Our V's time ability (Sandevistan...). Kept: sent now if we are in the
@@ -1422,6 +1432,18 @@ private:
   std::map<proto::NpcId, proto::NpcLevel> m_npcLevels;
   // Host: levels said of NPCs whose spawn has not been sent yet.
   std::map<proto::NpcId, proto::NpcLevel> m_npcLevelsEarly;
+  // Vendors: the shared NPCs that are placed vendors (an owner's word, kept
+  // with the NPC's records), ours said before their spawn went, and the
+  // session's dead vendors by entity (host: derived and told to everyone;
+  // guest: as the host said them).
+  std::map<proto::NpcId, proto::NpcVendor> m_npcVendors;
+  std::map<proto::NpcId, proto::NpcVendor> m_npcVendorsEarly;
+  std::map<std::uint64_t, proto::NpcVendor> m_deadVendors;
+  // Host: vendors knocked out (their records go; a later death still counts).
+  std::map<proto::NpcId, proto::NpcVendor> m_downVendors;
+  // Host: an NPC's owner said it is gone (reason: proto::NpcGone's): a vendor
+  // that died is the session's to remember. Before the NPC's records go.
+  void NoteVendorGone(const proto::NpcGone &gone, std::vector<SessionEvent> *out);
   void SendLocalLevelNow();
   void UpdateSessionLevel(std::vector<SessionEvent> &out);
   // Cars: ours (kept until we are in), everyone's (host: what it relays;

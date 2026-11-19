@@ -209,6 +209,11 @@ public class TandemTradeTable {
     TandemNative.Log(s"trade: \(this.NameOf(target)) is beside us: trade prompt shown");
   }
 
+  // Our prompt is up (Vendors.reds gives way to it).
+  public func Prompting() -> Bool {
+    return this.m_target != 0u;
+  }
+
   private func HidePrompt() -> Void {
     if this.m_target == 0u {
       return;

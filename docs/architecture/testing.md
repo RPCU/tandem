@@ -270,6 +270,15 @@ decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
   would apply are logged (it has no world: taken as run).
   `tests/peer_breach.sh`; scenarios `breach-guest`, `breach-host`
   (`architecture/devices.md`, "Breach Protocol").
+- **Vendors** (host; `progression.md`, "Vendors"): `--vendor
+REC@X,Y,Z#ENTITY` shares one NPC of REC standing at X,Y,Z once a guest
+  is there, said to be the placed vendor ENTITY (hex, as the game's
+  `tools/game.sh cmd vendor near` logs its own nearest vendor), so the
+  game as a guest opens its own vendor of it; `--vendor-dies N` kills it N
+  s after a guest is there (every game hears that vendor died). What it
+  hears of vendors is logged. In game: `tools/game.sh cmd vendor`,
+  `vendor near`, `vendor goto`, `vendor open`, `vendor close`; scenario
+  `vendor-guest`.
 
 - **Vehicle combat** (`vehicle-combat.md`; `tests/peer_wheels.sh`):
   `--mode drive --car-damage N` dents our car N s after it sits (a flat

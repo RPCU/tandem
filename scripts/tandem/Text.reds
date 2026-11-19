@@ -458,6 +458,11 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Trade-Not-Iconic", "an iconic or important item");
     this.Text("Tandem-Trade-Not-Hidden", "not an item to trade");
     this.Text("Tandem-Trade-Not-Unsellable", "it cannot be sold");
+    this.Text("Tandem-Vendor-Trade", "Trade");
+    this.Text("Tandem-Vendor-Dead", "{1} is dead");
+    this.Text("Tandem-Vendor-NotNow", "You can't trade with {1} right now");
+    this.Text("Tandem-Vendor-NotHere", "{1} doesn't trade with you yet");
+    this.Text("Tandem-Vendor-Locked", "{1}'s shop isn't open to you yet");
     this.Text("Tandem-Trade-Not-Equipped", "unequip it first");
     this.Text("Tandem-Trade-Not-Single", "it cannot be given");
     this.Text("Tandem-Trade-Not-UsedUp", "it would be used up");
@@ -754,6 +759,11 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Trade-Not-Iconic", "un objet iconique ou important");
     this.Text("Tandem-Trade-Not-Hidden", "pas un objet à échanger");
     this.Text("Tandem-Trade-Not-Unsellable", "il ne peut pas être vendu");
+    this.Text("Tandem-Vendor-Trade", "Commercer");
+    this.Text("Tandem-Vendor-Dead", "{1} est mort");
+    this.Text("Tandem-Vendor-NotNow", "Impossible de commercer avec {1} pour l'instant");
+    this.Text("Tandem-Vendor-NotHere", "{1} ne commerce pas encore avec vous");
+    this.Text("Tandem-Vendor-Locked", "La boutique de {1} ne vous est pas encore ouverte");
     this.Text("Tandem-Trade-Not-Equipped", "déséquipez-le d'abord");
     this.Text("Tandem-Trade-Not-Single", "il ne peut pas être donné");
     this.Text("Tandem-Trade-Not-UsedUp", "il serait consommé");

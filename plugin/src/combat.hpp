@@ -5,6 +5,7 @@
 // apart from Runtime, like the story: its own messages (proto::IsCombat).
 
 #include "tandem/protocol.hpp"
+#include "tandem/vendors.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -45,9 +46,17 @@ public:
   // scripts take the session's word.
   void NoteLend(const proto::CarLend &lend);
   proto::Lend LendOf(proto::PlayerId player);
+  // The session's vendors (proto::NpcVendor, tandem/vendors.hpp), noted the
+  // same way: each shared NPC's placed entity, the vendors that died.
+  void NoteVendor(const proto::NpcVendor &vendor);
+  std::uint64_t VendorOf(proto::NpcId npc);
+  bool VendorDead(std::uint64_t entity);
+  std::vector<std::uint64_t> TakeDeadVendors();
+  void ClearVendors();
 
 private:
   std::map<proto::PlayerId, proto::Lend> m_lends;
+  vendors::Book m_vendors;
   struct Inbound {
     proto::Message message;
     std::uint64_t arrivalUs{};

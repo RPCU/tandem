@@ -56,6 +56,9 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
                       std::is_same_v<M, p::NpcShotAt> || std::is_same_v<M, p::NpcActionReply> ||
                       std::is_same_v<M, p::NpcReaction> || std::is_same_v<M, p::NpcScale>)
           return {x.npc};
+        else if constexpr (std::is_same_v<M, p::NpcVendor>)
+          // A live vendor is its owner's word; a death names no NPC.
+          return x.npc != 0 ? std::vector<p::NpcId>{x.npc} : std::vector<p::NpcId>{};
         else if constexpr (std::is_same_v<M, p::SharedItem>)
           return x.kind == p::kSharedOnCorpse ? std::vector<p::NpcId>{x.npc}
                                               : std::vector<p::NpcId>{};

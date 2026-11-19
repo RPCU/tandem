@@ -1,6 +1,6 @@
-// What scripts/tandem/Levels.reds, Scaling.reds and Saves.reds call:
-// `TandemProgress` static functions (docs/architecture/progression.md, and
-// npcs.md for enemy scaling). Declared on the
+// What scripts/tandem/Levels.reds, Scaling.reds, Saves.reds and Vendors.reds
+// call: `TandemProgress` static functions (docs/architecture/progression.md,
+// and npcs.md for enemy scaling). Declared on the
 // script side in scripts/tandem/ProgressNatives.reds: keep the two in sync
 // (tools/check-natives.py reads every pair). All of these run on the game
 // thread; the level messages only queue (the hit outcomes' queue).
@@ -15,7 +15,9 @@
 #include "tandem/progress.hpp"
 #include "tandem/scaling.hpp"
 #include "tandem/vehicle.hpp"
+#include "tandem/vendors.hpp"
 
+#include <RED4ext/Scripting/Natives/Generated/ent/EntityID.hpp>
 #include <RedLib.hpp>
 
 #include <algorithm>
@@ -164,6 +166,57 @@ struct TandemProgress : Red::IScriptable {
         {.lend = word, .ownerAboard = ownerAboard, .ownerInSession = ownerInSession});
   }
 
+  // ---- vendors (docs/architecture/progression.md, "Vendors") ----
+
+  // Owner: one of our NPCs is a vendor placed in the world (its entity's
+  // static id), for the players whose games show it as a proxy.
+  static void SendVendor(std::uint32_t npc, Red::EntityID entity) {
+    if (npc != 0 && entity.hash != 0)
+      Combat::Get().Send(proto::NpcVendor{.npc = npc, .entity = entity.hash});
+  }
+  // The placed entity of a shared NPC its owner named a vendor (0: none).
+  static Red::EntityID VendorOf(std::uint32_t npc) {
+    return Red::EntityID(Combat::Get().VendorOf(npc));
+  }
+  // The session says that entity's vendor died.
+  static bool VendorDead(Red::EntityID entity) { return Combat::Get().VendorDead(entity.hash); }
+  // The vendors (entity hashes) the session said died since the last call.
+  static Red::DynArray<std::uint64_t> TakeDeadVendors() {
+    Red::DynArray<std::uint64_t> out;
+    for (const auto entity : Combat::Get().TakeDeadVendors())
+      out.EmplaceBack(entity);
+    return out;
+  }
+  // A new session: the last one's vendors are forgotten.
+  static void VendorsReset() { Combat::Get().ClearVendors(); }
+  // May our V trade with that vendor now (vendors::Shop: 0 open, 1 not a
+  // vendor, 2 no placed vendor, 3 out of reach, 4 dead, 5 not now, 6 not in
+  // our world, 7 locked for us)?
+  static std::int32_t VendorShop(bool vendorRecord, Red::EntityID entity, float distance,
+                                 bool proxyDead, bool sessionDead, bool free, bool ownFound,
+                                 bool ownVendor, bool ownAlive, bool accessible) {
+    return static_cast<std::int32_t>(vendors::Decide({.vendorRecord = vendorRecord,
+                                                      .entity = entity.hash,
+                                                      .distance = distance,
+                                                      .proxyDead = proxyDead,
+                                                      .sessionDead = sessionDead,
+                                                      .free = free,
+                                                      .ownFound = ownFound,
+                                                      .ownVendor = ownVendor,
+                                                      .ownAlive = ownAlive,
+                                                      .accessible = accessible}));
+  }
+  static bool VendorPrompts(std::int32_t shop) {
+    return shop >= 0 && shop <= static_cast<std::int32_t>(vendors::Shop::Locked) &&
+           vendors::Prompts(static_cast<vendors::Shop>(shop));
+  }
+  static Red::CString VendorShopName(std::int32_t shop) {
+    if (shop < 0 || shop > static_cast<std::int32_t>(vendors::Shop::Locked))
+      return Red::CString("?");
+    return Red::CString(vendors::NameOf(static_cast<vendors::Shop>(shop)));
+  }
+  static float VendorReach() { return vendors::kReach; }
+
   // ---- saves ----
 
   // tandem.ini `leave`: 0 stay, 1 save, 2 reload.
@@ -223,6 +276,15 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemProgress, "TandemProgress", {
   RTTI_METHOD(SendCarLend);
   RTTI_METHOD(CarLendOf);
   RTTI_METHOD(MayDrive);
+  RTTI_METHOD(SendVendor);
+  RTTI_METHOD(VendorOf);
+  RTTI_METHOD(VendorDead);
+  RTTI_METHOD(TakeDeadVendors);
+  RTTI_METHOD(VendorsReset);
+  RTTI_METHOD(VendorShop);
+  RTTI_METHOD(VendorPrompts);
+  RTTI_METHOD(VendorShopName);
+  RTTI_METHOD(VendorReach);
   RTTI_METHOD(LeaveMode);
   RTTI_METHOD(LeaveTick);
   RTTI_METHOD(LeaveLocked);

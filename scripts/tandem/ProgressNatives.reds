@@ -39,6 +39,24 @@ public native class TandemProgress extends IScriptable {
   public static native func SendCarLend(lend: Int32)
   public static native func CarLendOf(player: Uint32) -> Int32
   public static native func MayDrive(lend: Int32, ownerAboard: Bool, ownerInSession: Bool) -> Bool
+  // Vendors (docs/architecture/progression.md, Vendors.reds). Owner: one of
+  // our NPCs is a vendor placed in the world (its static entity). The placed
+  // entity of a shared NPC (0: none said); whether the session says that
+  // entity's vendor died; the deaths heard since the last call (entity
+  // hashes); a new session forgets the last one's.
+  public static native func SendVendor(npc: Uint32, entity: EntityID)
+  public static native func VendorOf(npc: Uint32) -> EntityID
+  public static native func VendorDead(entity: EntityID) -> Bool
+  public static native func TakeDeadVendors() -> array<Uint64>
+  public static native func VendorsReset()
+  // May our V trade with that vendor now (core/vendors.hpp)? 0 open, 1 not
+  // a vendor, 2 no placed vendor, 3 out of reach, 4 dead, 5 not now, 6 not
+  // in our world, 7 locked for us. Whether that answer shows the prompt;
+  // its name, for the log; how close our V stands to trade.
+  public static native func VendorShop(vendorRecord: Bool, entity: EntityID, distance: Float, proxyDead: Bool, sessionDead: Bool, free: Bool, ownFound: Bool, ownVendor: Bool, ownAlive: Bool, accessible: Bool) -> Int32
+  public static native func VendorPrompts(shop: Int32) -> Bool
+  public static native func VendorShopName(shop: Int32) -> String
+  public static native func VendorReach() -> Float
   // tandem.ini `leave`: 0 stay, 1 save, 2 reload.
   public static native func LeaveMode() -> Int32
   // One step of our way out of a session (core/progress.hpp). left: what

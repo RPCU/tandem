@@ -216,6 +216,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_saves: ref<TandemSaves>;
   // Trade with the player beside us (Trade.reds).
   private let m_trade: ref<TandemTradeTable>;
+  // Shops: our own vendor behind a partner's (Vendors.reds).
+  private let m_vendors: ref<TandemVendors>;
 
   private func OnAttach() -> Void {
     if TandemNative.IsConfigured() {
@@ -364,6 +366,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_presence.Start(this.GetGameInstance());
     this.m_trade = new TandemTradeTable();
     this.m_trade.Start(this.GetGameInstance(), this);
+    this.m_vendors = new TandemVendors();
+    this.m_vendors.Start(this.GetGameInstance(), this);
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -459,6 +463,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_trade.End();
     }
     this.m_trade = null;
+    if IsDefined(this.m_vendors) {
+      this.m_vendors.End();
+    }
+    this.m_vendors = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -774,6 +782,10 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_trade;
   }
 
+  public func Vendors() -> ref<TandemVendors> {
+    return this.m_vendors;
+  }
+
   // Pings, the link, shared tags, waypoints (Comms.reds).
   public func Comms() -> ref<TandemComms> {
     return this.m_comms;
@@ -946,6 +958,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_trade) && this.m_playing {
       this.m_trade.Tick(this.Now(), this.m_you);
     }
+    // Shops (after the trade's prompt, which comes first).
+    if IsDefined(this.m_vendors) && this.m_playing {
+      this.m_vendors.Tick(this.Now(), this.m_you);
+    }
     TandemNative.PerfMark(17);
     this.TickAttitudes();
     TandemNative.PerfMark(18);
@@ -1009,6 +1025,14 @@ public class TandemSystem extends ScriptableSystem {
       let story = TandemStorySystem.Get(this.GetGameInstance());
       if IsDefined(story) {
         story.GarageCommand(command);
+      }
+      return;
+    }
+    if StrBeginsWith(command, "vendor") {
+      if IsDefined(this.m_vendors) {
+        this.m_vendors.Command(command);
+      } else {
+        TandemNative.Log("vendor: not in a session");
       }
       return;
     }
