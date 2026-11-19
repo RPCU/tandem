@@ -10,7 +10,7 @@
 public abstract class TandemReactions {
   // The remote player whose puppet this is (0: none, or not the host).
   public static func GuestOf(game: GameInstance, object: wref<GameObject>) -> Uint32 {
-    if !TandemNative.IsHost() || !IsDefined(object) {
+    if !IsDefined(object) {
       return 0u;
     }
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
@@ -64,7 +64,7 @@ public abstract class TandemReactions {
 
   // Host: a whistle (Bait) a guest put on our NPC: who to walk to.
   public static func WhistleCaster(owner: ref<GameObject>) -> ref<GameObject> {
-    if !TandemNative.IsHost() || !IsDefined(owner) {
+    if !IsDefined(owner) {
       return null;
     }
     let effects: array<ref<StatusEffect>>;
@@ -134,7 +134,7 @@ public const final func CanAvoidCombatWithGag() -> Bool {
 @wrapMethod(PlayerPuppet)
 protected cb func OnDodgeToAvoidCombatEvent(evt: ref<DodgeToAvoidCombatEvent>) -> Bool {
   let npc = TandemTakedowns.Get(this.GetGame()).NpcOf(GameInstance.FindEntityByID(this.GetGame(), evt.npcID) as GameObject);
-  if npc == 0u || TandemNative.IsHost() {
+  if npc == 0u || TandemOwn.Npc(this.GetGame(), npc) {
     return wrappedMethod(evt);
   }
   let system = GameInstance.GetScriptableSystemsContainer(this.GetGame()).Get(n"TandemSystem") as TandemSystem;
@@ -164,7 +164,7 @@ protected cb func OnDodgeToAvoidCombatEvent(evt: ref<DodgeToAvoidCombatEvent>) -
 protected cb func OnStatPoolMinValueReached(value: Float) -> Bool {
   // Guest: a proxy's poise follows the host's (NpcPoise, Outcomes.reds);
   // whose finisher it is comes from the host, as a cue.
-  if IsDefined(this.npc) && !TandemNative.IsHost() && TandemTakedowns.Get(this.npc.GetGame()).NpcOf(this.npc) != 0u {
+  if IsDefined(this.npc) && TandemOwn.IsProxy(this.npc.GetGame(), this.npc.GetEntityID()) {
     return true;
   }
   if IsDefined(this.npc) {

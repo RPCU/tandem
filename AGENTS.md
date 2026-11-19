@@ -175,6 +175,9 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 
 ### Authority
 
+- NPCs are owned per NPC, by the game that runs them, not by the host
+  (`docs/architecture/regions.md`): in scripts ask `TandemOwn` or
+  `TandemNpcs.Owns`, never `TandemNative.IsHost()`, about an NPC.
 - Follow the table in `docs/ARCHITECTURE.md`: one owner per piece of state.
   Do not introduce "each game simulates its own copy and we sync the
   result" for shared world state.

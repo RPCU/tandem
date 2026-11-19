@@ -1305,6 +1305,106 @@ struct ActorPose {
   friend bool operator==(const ActorPose &, const ActorPose &) = default;
 };
 
+// ---- Per-player regions (docs/architecture/regions.md) ----
+// Each game runs the NPCs around its own V; players whose Vs are near each
+// other are linked and see each other's NPCs as proxies. "The host's NPCs"
+// in the messages above reads "the owner's NPCs": the endpoint routes by
+// owner (tandem/regions.hpp, Endpoint::NpcOwner).
+
+// Which players are linked (host to everyone, Event channel, on change; kept
+// for late joiners): `pairs` holds two player ids per link, lower id first.
+inline constexpr std::size_t kMaxRegionPairs = 32;
+struct Regions {
+  std::uint32_t revision{};
+  std::vector<PlayerId> pairs;
+  friend bool operator==(const Regions &, const Regions &) = default;
+};
+
+// Who runs an NPC, when it is not the game that announced it (host to every
+// player that sees the NPC; kept for late joiners). From an owner to the
+// host, with kNpcPinned: this NPC of mine never changes owner (a quest or
+// story NPC, a police unit).
+inline constexpr std::uint8_t kNpcPinned = 1;
+struct NpcOwner {
+  NpcId npc{};
+  PlayerId owner{};
+  std::uint8_t flags{}; // kNpc*
+  friend bool operator==(const NpcOwner &, const NpcOwner &) = default;
+};
+
+// Host to an NPC's owner: hand it over to `to` (its V is leaving the NPC,
+// `to`'s is near). The owner answers with NpcHandoverState, or refuses with
+// NpcHandoverDone.
+struct NpcHandover {
+  NpcId npc{};
+  PlayerId to{};
+  friend bool operator==(const NpcHandover &, const NpcHandover &) = default;
+};
+
+struct NpcEffectState {
+  std::uint64_t record{}; // TweakDB id of the status effect record
+  float remaining{};      // seconds left (0: no duration, or unknown)
+  std::uint8_t stacks{1};
+  friend bool operator==(const NpcEffectState &, const NpcEffectState &) = default;
+};
+
+// The NPC as its owner leaves it (giver to host, host to the new owner): the
+// giver has switched its brain off and keeps its body as a proxy; the
+// receiver switches its proxy's brain on and applies this. Also what the
+// host sends the heir of an owner that vanished, built from the session's
+// record (kHandoverBlind: nobody read the NPC, no target).
+inline constexpr std::uint8_t kHandoverCombat = 1, kHandoverDefeated = 2, kHandoverUnconscious = 4,
+                              kHandoverBlind = 8, kHandoverInherited = 16;
+struct NpcHandoverState {
+  NpcId npc{};
+  PlayerId from{}; // set by the host from the connection
+  PlayerId to{};
+  Vec3 position;
+  float yaw{};
+  float health{-1.f};       // fraction of its maximum (negative: unknown, keep the proxy's)
+  float poise{-1.f};        // the same for its guard
+  std::uint8_t flags{};     // kHandover*
+  PlayerId target{};        // the V it fights (kNoPlayer: none)
+  std::uint8_t hostileTo{}; // bit (player - 1): hostile to that V
+  std::uint8_t highLevel{}; // gamedataNPCHighLevelState
+  std::vector<NpcEffectState> effects; // at most kMaxNpcEffects
+  friend bool operator==(const NpcHandoverState &, const NpcHandoverState &) = default;
+};
+
+// The new owner to the host: I run it (accepted), or I cannot (no body: it
+// is gone). The giver to the host, accepted false: it stays mine for now (a
+// quest NPC, held, seated, mid-takedown).
+struct NpcHandoverDone {
+  NpcId npc{};
+  bool accepted{};
+  friend bool operator==(const NpcHandoverDone &, const NpcHandoverDone &) = default;
+};
+
+// Host to one guest, with each round of digests: the NPCs that guest owns as
+// the host's record has them (tandem/consistency.hpp, NpcDigest). The guest
+// hashes its own list; when they differ twice in a row it sends its set again
+// (NpcSet, then each spawn, health and hold).
+struct OwnedDigest {
+  std::uint32_t seq{};
+  std::uint32_t npcs{};
+  std::uint16_t count{};
+  friend bool operator==(const OwnedDigest &, const OwnedDigest &) = default;
+};
+
+// A player's world has a quest of its own running where its V stands (a gig
+// it started: docs/architecture/quest-carryover.md, "Whose gig is it"): it
+// keeps its region. While held, it ranks first where regions overlap (the
+// others' games hold back there, the host's too), none of its NPCs is handed
+// over, and it leads its group: its world's quests are the ones played.
+// Sent by that player's game when it changes (Event channel); the host
+// stamps the player, keeps who holds for late joiners (a player who leaves
+// holds nothing) and relays it.
+struct RegionHold {
+  PlayerId player{};
+  bool held{};
+  friend bool operator==(const RegionHold &, const RegionHold &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -1314,7 +1414,8 @@ using Message = std::variant<
     NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
     Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
     Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit,
-    SceneState, SceneCast, SceneLine, ActorPose, DeviceState, DeviceUse, DeviceSet, DeviceDigest>;
+    SceneState, SceneCast, SceneLine, ActorPose, DeviceState, DeviceUse, DeviceSet, DeviceDigest,
+    Regions, NpcOwner, NpcHandover, NpcHandoverState, NpcHandoverDone, OwnedDigest, RegionHold>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine):
 // endpoint.hpp relays these through one path.

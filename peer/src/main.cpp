@@ -27,6 +27,13 @@
 //           --metro-for): the train is never shared, so your game shows the
 //           puppet hidden with a notice (or in your train if you ride one
 //           there), skipping halfway, and back where the ride ends
+//   region  a player with a region of its own (docs/architecture/regions.md):
+//           stands --region-far metres from your V with --region-npcs NPCs it
+//           runs itself (announced, moved, hurt and killed by this process),
+//           walks up to your V --region-walk-at seconds in (its NPCs with
+//           it), and off again at --region-leave-at, leaving them with you:
+//           the host then hands them over. It gives and takes NPCs as a game
+//           would, and logs every step ("region: ...")
 //   course  runs a scripted course ahead of your V, every way a V moves:
 //           jumps, a double jump, a ledge climb, a drop, a ladder, swimming
 //           and diving, an elevator, a slide and a dodge, then back to the
@@ -104,6 +111,8 @@
 #include "tandem/scene.hpp"
 #include "tandem/shaping.hpp"
 
+#include "tandem/regions.hpp"
+
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -131,7 +140,7 @@ using tandem::proto::Vec3;
 
 volatile std::sig_atomic_t g_stop = 0;
 
-enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Metro, Watch, Idle };
+enum class Mode { Mirror, Ghost, Front, Drive, Course, Path, Metro, Watch, Region, Idle };
 
 struct Options {
   bool host{};
@@ -233,6 +242,15 @@ struct Options {
   std::string lootQuest; // "our V" loots one of this record (a quest item), once
   int takeItemsSeconds{-1};
   int removeCorpsesSeconds{-1};
+  // region: how far from the other V we start, how many NPCs of which
+  // record we run, when we walk up to it and when we leave them there.
+  float regionFar{1000.f};
+  std::optional<Vec3> regionAt;
+  int regionNpcs{3};
+  std::string regionRecord{"Character.kab_tyger_claws_biker1_ranged1_saratoga_ma"};
+  int regionWalkAtSeconds{10};
+  int regionLeaveAtSeconds{-1};
+  float regionSpeed{25.f};
   bool check{}; // parse the options, then exit
   // Down and out: our V goes down (revivable) or out N s after another player
   // is there (-1: never); a downed other V is revived after N s (-1: never).
@@ -309,7 +327,16 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --relay-token HEX  host: one of the relay's host tokens (tandem-relay token)\n"
          "  --code CODE        join: the host's join code (needs --relay)\n"
          "  --mode M           mirror | ghost | front | drive | course | path | metro |\n"
-         "                     watch | idle (default mirror)\n"
+         "                     watch | region | idle (default mirror)\n"
+         "  --region-far M     region: start this far from the other V (default 1000)\n"
+         "  --region-at X,Y,Z  region: around this point instead of where the other V\n"
+         "                     first stood (so two mock players can meet)\n"
+         "  --region-npcs N    region: run this many NPCs of our own (default 3)\n"
+         "  --region-record R  region: their character record\n"
+         "  --region-walk-at S region: walk up to the other V this long in (default 10;\n"
+         "                     -1: stay away)\n"
+         "  --region-leave-at S region: walk off again, leaving the NPCs (default -1: never)\n"
+         "  --region-speed V   region: how fast it walks, m/s (default 25)\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
          "  --look L           random | echo: random clothes of its own (default), on a\n"
@@ -726,6 +753,20 @@ Options Parse(int argc, char **argv) {
       options.areaHitSeconds = Number<int>(value);
     else if (flag == "--npc")
       options.npcRecord = std::string(value);
+    else if (flag == "--region-far")
+      options.regionFar = Number<float>(value);
+    else if (flag == "--region-at")
+      options.regionAt = Point(flag, value);
+    else if (flag == "--region-npcs")
+      options.regionNpcs = std::clamp(Number<int>(value), 0, 32);
+    else if (flag == "--region-record")
+      options.regionRecord = std::string(value);
+    else if (flag == "--region-walk-at")
+      options.regionWalkAtSeconds = Number<int>(value);
+    else if (flag == "--region-leave-at")
+      options.regionLeaveAtSeconds = Number<int>(value);
+    else if (flag == "--region-speed")
+      options.regionSpeed = std::max(0.1f, Number<float>(value));
     else if (flag == "--detect-at")
       options.detectAtSeconds = Number<int>(value);
     else if (flag == "--detect-for")
@@ -782,6 +823,8 @@ Options Parse(int argc, char **argv) {
         options.mode = Mode::Metro;
       else if (value == "watch")
         options.mode = Mode::Watch;
+      else if (value == "region")
+        options.mode = Mode::Region;
       else
         Usage(std::format("unknown mode {}", value));
     } else if (flag == "--metro-at")
@@ -1698,6 +1741,152 @@ private:
   std::vector<Line> m_lines;
 };
 
+// --mode region: the NPCs this mock player runs itself, as a game does for the
+// NPCs around its V (docs/architecture/regions.md): announced once in the
+// session, moved ten times a second, hurt and killed by the others' strikes,
+// given away when the host asks and taken over when it says so.
+class RegionNpcs {
+public:
+  explicit RegionNpcs(const Options &options) : m_options(options) {}
+
+  void Tick(tandem::Endpoint &endpoint, std::uint64_t nowUs, const Vec3 &at, bool follow) {
+    namespace proto = tandem::proto;
+    if (!endpoint.IsJoined())
+      return;
+    if (!m_announced) {
+      m_announced = true;
+      for (int i = 0; i < m_options.regionNpcs; ++i) {
+        const auto id =
+            tandem::regions::MakeNpcId(endpoint.You(), static_cast<std::uint32_t>(i + 1));
+        m_npcs[id] = {.position = Around(at, i), .slot = i};
+        endpoint.SendNpcSpawn({.npc = id,
+                               .record = TweakDBID(m_options.regionRecord),
+                               .position = m_npcs[id].position});
+        endpoint.SendNpcHealth({.npc = id, .health = 1.f});
+      }
+      Log("region: running {} NPC(s) of our own ({}), ids from {}", m_options.regionNpcs,
+          m_options.regionRecord, tandem::regions::MakeNpcId(endpoint.You(), 1));
+    }
+    if (nowUs - m_lastStatesUs < 100'000)
+      return;
+    m_lastStatesUs = nowUs;
+    proto::NpcStates states;
+    for (auto &[id, npc] : m_npcs) {
+      // With us while we walk up; where they are once we leave them, and
+      // the ones we took over stay where they were handed to us.
+      if (follow && npc.slot >= 0)
+        npc.position = Around(at, npc.slot);
+      states.npcs.push_back({.npc = id, .position = npc.position});
+    }
+    endpoint.SendNpcStates(std::move(states));
+  }
+
+  // True: the event was about the NPCs we run, and is dealt with.
+  bool On(const tandem::SessionEvent &event, tandem::Endpoint &endpoint) {
+    namespace proto = tandem::proto;
+    namespace events = tandem::events;
+    if (const auto *linked = std::get_if<events::RegionsChanged>(&event)) {
+      std::string who;
+      for (const auto player : linked->linked)
+        who += (who.empty() ? "" : ", ") + std::to_string(player);
+      Log("region: linked with {}", who.empty() ? "nobody" : "player " + who);
+      return true;
+    }
+    if (const auto *give = std::get_if<events::NpcGive>(&event)) {
+      const auto it = m_npcs.find(give->npc);
+      if (it == m_npcs.end()) {
+        endpoint.RefuseNpc(give->npc);
+        return true;
+      }
+      endpoint.GiveNpc({.npc = give->npc,
+                        .to = give->to,
+                        .position = it->second.position,
+                        .health = it->second.health,
+                        .flags = proto::kHandoverCombat,
+                        .target = give->to,
+                        .hostileTo = static_cast<std::uint8_t>(1u << ((give->to - 1) & 7)),
+                        .highLevel = 2});
+      Log("region: handed npc {} over to player {} (health {:.2f})", give->npc, give->to,
+          it->second.health);
+      m_npcs.erase(it);
+      return true;
+    }
+    if (const auto *take = std::get_if<events::NpcTake>(&event)) {
+      const auto &state = take->state;
+      auto &npc = m_npcs[state.npc];
+      npc.slot = -1;
+      if ((state.flags & proto::kHandoverBlind) == 0)
+        npc.position = state.position;
+      else if (const auto known = endpoint.SharedNpcs().find(state.npc);
+               known != endpoint.SharedNpcs().end())
+        npc.position = known->second.position;
+      npc.health = state.health >= 0.f ? state.health : 1.f;
+      endpoint.AdoptNpc(state.npc, true);
+      Log("region: took npc {} over from player {} (health {:.2f}, {} effect(s), target "
+          "player {}{})",
+          state.npc, state.from, npc.health, state.effects.size(), state.target,
+          state.flags & proto::kHandoverInherited ? ", inherited" : "");
+      return true;
+    }
+    if (const auto *owner = std::get_if<events::NpcOwnerChanged>(&event)) {
+      if (owner->was == endpoint.You() && m_npcs.erase(owner->npc) > 0)
+        Log("region: npc {} is no longer ours (now player {}'s)", owner->npc, owner->owner);
+      else
+        Log("region: npc {} is now run by player {} (was {})", owner->npc, owner->owner,
+            owner->was);
+      return true;
+    }
+    // Strikes and hits on the NPCs we run: health down, dead at zero.
+    proto::NpcId hit = 0;
+    proto::PlayerId by = 0;
+    float damage = 0.f;
+    if (const auto *plain = std::get_if<events::NpcHitBy>(&event)) {
+      hit = plain->hit.npc;
+      by = plain->hit.player;
+      damage = plain->hit.damage;
+    } else if (const auto *combat = std::get_if<events::Combat>(&event)) {
+      if (const auto *strike = std::get_if<proto::NpcStrike>(&combat->message)) {
+        hit = strike->npc;
+        by = strike->player;
+        damage = strike->damage;
+      }
+    }
+    const auto it = m_npcs.find(hit);
+    if (hit == 0 || it == m_npcs.end())
+      return false;
+    it->second.health = std::max(0.f, it->second.health - damage / 100.f);
+    Log("region: player {} hit our npc {}: {:.0f} damage, health {:.2f}", by, hit, damage,
+        it->second.health);
+    if (it->second.health <= 0.f) {
+      endpoint.SendNpcGone({.npc = hit, .reason = proto::kGoneDead, .killer = by});
+      Log("region: our npc {} died (killer: player {})", hit, by);
+      m_npcs.erase(it);
+    } else {
+      endpoint.SendNpcHealth({.npc = hit, .health = it->second.health});
+    }
+    return true;
+  }
+
+  std::size_t Running() const { return m_npcs.size(); }
+
+private:
+  struct Npc {
+    Vec3 position;
+    float health{1.f};
+    int slot{-1}; // where it stands around us (-1: taken over, it stays put)
+  };
+  // A ring 3 m around our V.
+  static Vec3 Around(const Vec3 &at, int slot) {
+    const float angle = 0.9f * static_cast<float>(slot);
+    return {at.x + 3.f * std::cos(angle), at.y + 3.f * std::sin(angle), at.z};
+  }
+
+  const Options &m_options;
+  std::map<tandem::proto::NpcId, Npc> m_npcs;
+  bool m_announced{};
+  std::uint64_t m_lastStatesUs{};
+};
+
 // What the mock player does with the states it hears.
 class Puppeteer {
 public:
@@ -1743,6 +1932,10 @@ public:
       return std::nullopt;
     return m_heard.back().second.position;
   }
+  std::optional<Vec3> m_regionAnchor;
+  std::uint64_t m_regionStartUs{}, m_regionLastUs{};
+  float m_regionX{};
+  bool m_regionLeaving{};
   // --path: the saved states to replay.
   void SetPath(std::vector<PlayerState> path) { m_path = std::move(path); }
 
@@ -1780,9 +1973,46 @@ public:
       return Metro(nowUs);
     case Mode::Watch:
       return Watch();
+    case Mode::Region:
+      return Region(nowUs);
     }
     return std::nullopt;
   }
+
+  // region: far from the other V (where it first stood), then up to it, then
+  // off again. A straight walk along X at --region-speed.
+  std::optional<PlayerState> Region(std::uint64_t nowUs) {
+    if (m_heard.empty() && !m_options.regionAt)
+      return std::nullopt;
+    if (!m_regionAnchor) {
+      m_regionAnchor = m_options.regionAt ? *m_options.regionAt : m_heard.back().second.position;
+      m_regionStartUs = m_regionLastUs = nowUs;
+      m_regionX = m_options.regionFar;
+    }
+    const auto seconds = static_cast<double>(nowUs - m_regionStartUs) / 1e6;
+    m_regionLeaving =
+        m_options.regionLeaveAtSeconds >= 0 && seconds >= m_options.regionLeaveAtSeconds;
+    const bool near = !m_regionLeaving && m_options.regionWalkAtSeconds >= 0 &&
+                      seconds >= m_options.regionWalkAtSeconds;
+    const float goal = near ? std::min(8.f, m_options.regionFar) : m_options.regionFar;
+    const float step = m_options.regionSpeed * static_cast<float>(nowUs - m_regionLastUs) / 1e6f;
+    m_regionLastUs = nowUs;
+    const float before = m_regionX;
+    if (m_regionX > goal)
+      m_regionX = std::max(goal, m_regionX - step);
+    else
+      m_regionX = std::min(goal, m_regionX + step);
+    PlayerState out;
+    out.position = {m_regionAnchor->x + m_regionX, m_regionAnchor->y, m_regionAnchor->z};
+    if (m_regionX != before)
+      out.velocity = {m_regionX < before ? -m_options.regionSpeed : m_options.regionSpeed, 0.f,
+                      0.f};
+    // Facing the other V (-X).
+    out.orientation = tandem::sync::FromYaw(std::numbers::pi_v<float> / 2.f);
+    return out;
+  }
+  // region: we are walking off (our NPCs stay where they are).
+  bool RegionLeaving() const { return m_regionLeaving; }
 
   // watch: where the other V is, 30 m under it (or --offset): out of
   // sight, out of every NPC's reach, never in anyone's way, while the host
@@ -2503,6 +2733,9 @@ int main(int argc, char **argv) {
   std::optional<std::chrono::steady_clock::time_point> joinedAt;
 
   Puppeteer puppeteer(options);
+  std::optional<RegionNpcs> regionNpcs;
+  if (options.mode == Mode::Region)
+    regionNpcs.emplace(options);
   // --play: when it began, recorded NPCs as this session's, where our V is.
   std::optional<std::uint64_t> playStartUs;
   std::map<tandem::proto::NpcId, tandem::proto::NpcId> playNpcs;
@@ -2714,6 +2947,9 @@ int main(int argc, char **argv) {
 
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
+      // region: what concerns the NPCs we run.
+      if (regionNpcs && regionNpcs->On(event, *endpoint))
+        continue;
       std::visit(
           [&](const auto &e) {
             using E = std::decay_t<decltype(e)>;
@@ -3368,6 +3604,9 @@ int main(int argc, char **argv) {
       if (state) {
         endpoint->SendLocalState(*state);
         lastSent = state->position;
+        if (regionNpcs)
+          regionNpcs->Tick(*endpoint, tandem::net::NowUs(), state->position,
+                           !puppeteer.RegionLeaving());
       }
       if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip)) {
         endpoint->SendLocalPose(*pose);

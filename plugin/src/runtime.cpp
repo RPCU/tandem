@@ -200,10 +200,7 @@ void Runtime::Stop() {
     m_npcReplies.clear();
     m_actionEvents.clear();
     m_npcDetected.clear();
-    m_detectingUs = 0;
-    m_npcStatesAtUs = 0;
     m_awarenessOfUs.clear();
-    m_awarenessAtUs = 0;
     m_localAwareness.reset();
     m_localStealth.reset();
     m_stealth.clear();
@@ -796,7 +793,7 @@ std::vector<proto::ShotHit> Runtime::TakeShotHits() {
 std::uint8_t Runtime::NpcDetected(proto::NpcId npc) {
   std::lock_guard _(m_lock);
   const auto it = m_npcDetected.find(npc);
-  return it == m_npcDetected.end() ? 0 : it->second;
+  return it == m_npcDetected.end() ? 0 : it->second.first;
 }
 
 void Runtime::SubmitNpcStates(const proto::NpcStates &states) {
@@ -1017,18 +1014,16 @@ std::vector<proto::Message> Runtime::TakeDevices() {
 
 void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you) {
   {
-    // The states list every NPC the host shares: who is not in them
-    // detects nobody any more.
+    // Each owner's states list every NPC it shares, ten times a second: an
+    // NPC not heard of for a second detects nobody any more.
+    const auto now = HostNowUs();
     std::lock_guard _(m_lock);
-    m_npcDetected.clear();
-    m_detectingUs = 0;
-    const auto ours = you >= 1 && you <= 8 ? static_cast<std::uint8_t>(1u << (you - 1)) : 0;
-    for (const auto &entry : states.npcs) {
-      m_npcDetected[entry.npc] = entry.detected;
-      if (entry.detected & ours)
-        ++m_detectingUs;
-    }
-    m_npcStatesAtUs = HostNowUs();
+    m_detectedFor = you;
+    for (const auto &entry : states.npcs)
+      m_npcDetected[entry.npc] = {entry.detected, now};
+    std::erase_if(m_npcDetected, [&](const auto &entry) {
+      return static_cast<std::int64_t>(now - entry.second.second) > 1'000'000;
+    });
   }
   // Each NPC is a track of its own, drawn like a remote player.
   for (const auto &entry : states.npcs) {
@@ -1086,29 +1081,37 @@ std::vector<proto::NpcShot> Runtime::TakeNpcShots() {
 std::int32_t Runtime::NpcsDetectingUs() {
   const auto now = HostNowUs();
   std::lock_guard _(m_lock);
-  // The host went quiet (or left): nobody can be hunting us on its say.
+  // An owner that went quiet (or left): nobody can be hunting us on its say.
   // (Signed: the clock offset may move a stamp a little into the future.)
-  return !m_npcStatesAtUs || static_cast<std::int64_t>(now - m_npcStatesAtUs) > 3'000'000
-             ? 0
-             : m_detectingUs;
+  const auto you = m_detectedFor;
+  const auto ours = you >= 1 && you <= 8 ? static_cast<std::uint8_t>(1u << (you - 1)) : 0;
+  std::int32_t detecting = 0;
+  for (const auto &[npc, entry] : m_npcDetected)
+    if ((entry.first & ours) && static_cast<std::int64_t>(now - entry.second) <= 3'000'000)
+      ++detecting;
+  return detecting;
 }
 
 float Runtime::NpcAwarenessOfUs(proto::NpcId npc) {
   const auto now = HostNowUs();
   std::lock_guard _(m_lock);
-  if (!m_awarenessAtUs || static_cast<std::int64_t>(now - m_awarenessAtUs) > 1'000'000)
-    return 0.f;
   const auto it = m_awarenessOfUs.find(npc);
-  return it == m_awarenessOfUs.end() ? 0.f : it->second;
+  if (it == m_awarenessOfUs.end() || static_cast<std::int64_t>(now - it->second.second) > 1'000'000)
+    return 0.f;
+  return it->second.first;
 }
 
 void Runtime::PushNpcAwareness(const proto::NpcAwareness &awareness, proto::PlayerId you) {
+  // Each owner lists the NPCs noticing someone, five times a second: one
+  // left out is no longer noticing us, and its entry goes stale.
+  const auto now = HostNowUs();
   std::lock_guard _(m_lock);
-  m_awarenessOfUs.clear();
   for (const auto &entry : awareness.entries)
     if (entry.player == you)
-      m_awarenessOfUs[entry.npc] = static_cast<float>(entry.level) / 255.f;
-  m_awarenessAtUs = HostNowUs();
+      m_awarenessOfUs[entry.npc] = {static_cast<float>(entry.level) / 255.f, now};
+  std::erase_if(m_awarenessOfUs, [&](const auto &entry) {
+    return static_cast<std::int64_t>(now - entry.second.second) > 400'000;
+  });
 }
 
 void Runtime::SubmitNpcAwareness(proto::NpcAwareness awareness) {
@@ -1236,10 +1239,7 @@ void Runtime::ResetSession() {
     m_hackOutbox.clear();
     m_hackEvents.clear();
     m_npcDetected.clear();
-    m_detectingUs = 0;
-    m_npcStatesAtUs = 0;
     m_awarenessOfUs.clear();
-    m_awarenessAtUs = 0;
     m_localAwareness.reset();
     m_localNoises.clear();
     m_remoteNoises.clear();

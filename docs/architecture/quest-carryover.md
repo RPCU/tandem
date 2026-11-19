@@ -287,9 +287,11 @@ on`: one `quest trace: phase` line per phase met (its node path, its
    a second payment when the host later runs a gig the guest finished at
    home, and the other way round through the host's game.
 
-What the `regions` work must provide (asked here on 2026-11-19; that
-branch's `regions.md` answers each point, see "Interface for `regions`"
-above; `../research/coop-regions.md` is its research):
+What the `regions` work must provide (`../research/coop-regions.md` is
+its research; [`regions.md`](regions.md), "Gigs: grouped or apart, and
+holding a region", is how each point is met: `TandemRegions.IsApart()`,
+`TandemRegions.Leader()`, `TandemRegions.Hold(true)` when a gig phase of
+our own world starts where our V stands):
 
 - **grouped or apart**, per player, as one fact both the freeze and the
   mirrors can read, with hysteresis (a gig must not flip owner at a

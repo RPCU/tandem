@@ -572,13 +572,13 @@ private:
 
   std::atomic<std::int64_t> m_clockOffsetUs{0};
   std::atomic<std::uint64_t> m_lastFrameUs{0};
-  std::map<proto::NpcId, std::uint8_t> m_npcDetected;  // under m_lock
-  std::int32_t m_detectingUs{};                        // m_lock
-  std::uint64_t m_npcStatesAtUs{};                     // m_lock (host clock)
-  std::map<proto::NpcId, float> m_awarenessOfUs;       // m_lock
-  std::uint64_t m_awarenessAtUs{};                     // m_lock (host clock)
-  std::optional<proto::NpcAwareness> m_localAwareness; // m_lock
-  std::optional<proto::Stealth> m_localStealth;        // m_lock
+  // Each NPC's word with when it came (host clock): every owner lists only
+  // its own NPCs, so an entry ends by going stale, not by being left out.
+  std::map<proto::NpcId, std::pair<std::uint8_t, std::uint64_t>> m_npcDetected;  // m_lock
+  proto::PlayerId m_detectedFor{};                                               // m_lock
+  std::map<proto::NpcId, std::pair<float, std::uint64_t>> m_awarenessOfUs;       // m_lock
+  std::optional<proto::NpcAwareness> m_localAwareness;                           // m_lock
+  std::optional<proto::Stealth> m_localStealth;                                  // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Stealth>> m_stealth; // m_lock
   std::vector<proto::Noise> m_localNoises;                                       // m_lock
   std::vector<consistency::Timed<proto::Noise>> m_remoteNoises;                  // m_lock

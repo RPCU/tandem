@@ -68,13 +68,11 @@ public class TandemShots {
   // Every frame of the session (TandemTime.Update).
   public func Tick() -> Void {
     let now = this.Now();
-    if TandemNative.IsHost() {
-      this.Prune(now);
-      this.ShowReports();
-    } else {
-      this.FireIncoming(now);
-      this.FinishCatchUps(now);
-    }
+    // The NPCs we run fire at other Vs; the proxies we show fire at ours.
+    this.Prune(now);
+    this.ShowReports();
+    this.FireIncoming(now);
+    this.FinishCatchUps(now);
   }
 
   // ---- host ----
@@ -84,7 +82,7 @@ public class TandemShots {
   // the hit here. The host still fires it, for its own view (the flash, the
   // sound, the NPC's ammo and timing): its hit on the puppet is dropped.
   public func Announce(owner: wref<GameObject>, weapon: wref<WeaponObject>, target: ref<GameObject>, tbh: Float, trigger: gamedataTriggerMode, attack: TweakDBID) -> Void {
-    if !TandemNative.IsHost() || !IsDefined(owner) || !IsDefined(weapon) || !IsDefined(target) {
+    if !IsDefined(owner) || !IsDefined(weapon) || !IsDefined(target) || !TandemOwn.Entity(this.m_game, owner.GetEntityID()) {
       return;
     }
     let system = this.System();
@@ -113,7 +111,7 @@ public class TandemShots {
   // decided here (ProcessPipeline, Combat.reds). Our own report-driven hit
   // reaction carries DealNoDamage and passes.
   public func SimulatedByGuest(hitEvent: ref<gameHitEvent>) -> Bool {
-    if !TandemNative.IsHost() || !IsDefined(hitEvent) || !IsDefined(hitEvent.target) || hitEvent.attackData.HasFlag(hitFlag.DealNoDamage) {
+    if !IsDefined(hitEvent) || !IsDefined(hitEvent.target) || hitEvent.attackData.HasFlag(hitFlag.DealNoDamage) {
       return false;
     }
     if !AttackData.IsRangedOrDirect(hitEvent.attackData.GetAttackType()) {
@@ -333,7 +331,7 @@ public class TandemShots {
   // A projectile from a proxy's shot is set up: at the shot's speed, faster
   // for a moment so it flies where the host's timeline has it.
   public func SetUp(bullet: ref<ItemObject>, shooter: wref<GameObject>) -> Bool {
-    if TandemNative.IsHost() || !IsDefined(bullet) || !IsDefined(shooter) {
+    if !IsDefined(bullet) || !IsDefined(shooter) {
       return false;
     }
     let i = ArraySize(this.m_firedBy) - 1;
@@ -377,7 +375,7 @@ public class TandemShots {
   // A hit on our V from a proxy's shot (DealDamages, Combat.reds): the host
   // shows it on our puppet.
   public func Report(hitEvent: ref<gameHitEvent>) -> Void {
-    if TandemNative.IsHost() || !IsDefined(hitEvent) || hitEvent.target != GetPlayer(this.m_game) {
+    if !IsDefined(hitEvent) || hitEvent.target != GetPlayer(this.m_game) {
       return;
     }
     let from = hitEvent.attackData.GetInstigator();
