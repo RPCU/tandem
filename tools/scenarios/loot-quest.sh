@@ -6,7 +6,7 @@ expect 'joined \(player [0-9]+' 20
 expect_peer 'looted quest item Items.Preset_Overture_Kerry: shared' 30
 # Theirs: in our V's inventory too (we are the host: our quests see it).
 expect 'loot: player [0-9]+ shares item 0x[0-9a-f]+ x1 \(looted, npc 0\)' 10
-expect 'loot: tandem-peer looted Items.Preset_Overture_Kerry x1: (given to our V \(true\)|we have it already)' 10
+expect 'loot: tandem-peer looted Items.Preset_Overture_Kerry( x1: given to our V \(true\)|: we have it already)' 10
 # Ours: the player gets it.
 cmd loot share Items.Preset_Lexington_Wilson
 expect 'loot: we got Items.Preset_Lexington_Wilson x1: every player gets it' 10
