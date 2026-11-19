@@ -45,8 +45,10 @@
   dies after 3 s (no V is up); after a lost session a guest gives the
   host's reload 120 s. No save is made while our V is down or out
   (`TandemSystem.IsSavingLocked`), so a game killed there reloads from
-  before the fight like any death. A reviver that vanishes takes its revive
-  with it (bar gone); a downed player that vanishes is removed with the
+  before the fight like any death. Several players may revive one V at
+  once: its bar shows the first, then the next when that one stops. A
+  reviver that vanishes takes its revive with it (the bar goes to the next,
+  or away); a downed player that vanishes is removed with the
   usual "NAME left the session". **Up is one state** (fixed 2026-11-19,
   after a run left the screen dark): getting up (a revive, a respawn, the
   game's stand-up after Second Heart) clears in one place everything of
