@@ -15,7 +15,8 @@ expect 'travel: declined offer' 5
 expect_peer 'player 1 declined: stays' 10
 # Free to stay apart; then we go to them (the map's "Join" does the same).
 pause 5
-cmd regroup 2
+# By name: ids are the host's count of joins (24 after a day of scenarios).
+cmd regroup tandem-peer
 expect 'travel: regroup with tandem-peer: on the way' 5
 expect_peer 'player 1 is on the way' 10
 expect 'travel: arrived next to tandem-peer' 60

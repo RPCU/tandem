@@ -86,6 +86,8 @@ public class TandemTravel {
   private let m_lastPoint: TweakDBID;
   private let m_lastMarker: Uint64;
   private let m_lastArrival: Vector4;
+  // The last player who made us an offer or answered ours (test commands).
+  private let m_partner: Uint32;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -252,6 +254,7 @@ public class TandemTravel {
     if e.player == this.m_you {
       return;
     }
+    this.m_partner = e.player;
     let at = new Vector4(e.x, e.y, e.z, 1.0);
     if e.reason == 0 && TDBID.IsValid(e.point) {
       this.NoteArrival(e.player, e.point, e.marker, at);
@@ -284,6 +287,7 @@ public class TandemTravel {
   }
 
   private func Answered(e: TandemRegroup) -> Void {
+    this.m_partner = e.player;
     let name = this.NameOf(e.player);
     if e.accepted {
       TandemNative.Log(s"travel: \(name) is on the way (offer \(e.offer))");
@@ -632,11 +636,39 @@ public class TandemTravel {
     } else if Equals(command, "regroup offer") {
       this.Offer(0u, 1, "");
     } else if StrBeginsWith(command, "regroup") {
-      // The host is player 1; a host's first guest is player 2.
-      let player = StrLen(command) > 8 ? Cast<Uint32>(StringToInt(StrAfterFirst(command, " "))) : (this.m_you == 1u ? 2u : 1u);
+      let player = this.PlayerNamed(StrLen(command) > 8 ? StrAfterFirst(command, " ") : "");
+      if player == 0u {
+        TandemNative.Log("travel: regroup with nobody: no such player here");
+        return;
+      }
       let going = this.JoinPlayer(player);
       TandemNative.Log(s"travel: regroup with \(this.NameOf(player)): \(going ? "on the way" : "not possible")");
     }
+  }
+
+  // A player by id or name; none given: the last one who made us an offer or
+  // answered ours, else the first with a puppet here. Ids are the host's
+  // count of joins (a host that saw others come and go hands out 24), so
+  // tests name players rather than guess their id. 0: nobody.
+  private func PlayerNamed(text: String) -> Uint32 {
+    let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
+    let players: array<Uint32>;
+    if IsDefined(system) {
+      players = system.PuppetPlayers();
+    }
+    if StrLen(text) == 0 {
+      if this.m_partner != 0u {
+        return this.m_partner;
+      }
+      return ArraySize(players) > 0 ? players[0] : 0u;
+    }
+    for player in players {
+      if Equals(TandemNative.PlayerName(player), text) {
+        return player;
+      }
+    }
+    let id = StringToInt(text);
+    return id > 0 ? Cast<Uint32>(id) : 0u;
   }
 }
 
