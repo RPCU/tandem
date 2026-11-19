@@ -2775,6 +2775,15 @@ Line numbers are the 2.50 `final.reds` dump's. All [2.5-untested].
   0.078 of 78 (the 0.1 % custom limit) instead of killing it, and never
   reached `RequestDismemberment`; the next strike killed it. So a lethal
   strike now calls `Kill` and cuts the limb itself. [2.5-verified]
+- `gameDismBodyPart`'s native values are not the scripts' 0..5: `EnumInt`
+  of `LEFT_ARM` logged 14, and a thrown body's own dismemberment 7168
+  (several parts at once), 2026-11-19. Map by name
+  (`TandemOutcomes.PartIndex` / `PartOf`), never `IntEnum` from 0..5.
+  [2.5-verified]
+- A strike on an NPC the host's damage system flags `DealNoDamage`
+  (invulnerable, or friendly-fire ignored) changes nothing: the first
+  NPC near the test field (488.85 health) took one strike and then none
+  (2026-11-19); the log line now says which check refused. [2.5-untested]
 - What keeps V whole: `PlayerPuppet` has no `HitReactionComponent` (it
   extends `AIMandatoryComponents`, NPC-only) and no
   `DismembermentComponent` (`ScriptedPuppet` requests `Dismemberment0701`,

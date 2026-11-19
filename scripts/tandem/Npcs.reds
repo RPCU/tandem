@@ -21,6 +21,9 @@ public class TandemNpcKnown {
   // The last guest who hit it, and when: its killer when the game names none.
   public let lastHitBy: Uint32;
   public let lastHitAt: Float;
+  // When our own V last hit it (KillerOf: a guest's later hit or takedown
+  // wins over the game naming our V).
+  public let lastOwnHitAt: Float;
   // The vehicle carrying our V it was seen seated in, and the seat, as
   // sent (NpcSeat): Panam at the wheel of the quest car we ride in.
   public let seatVehicle: EntityID;
@@ -534,6 +537,12 @@ public class TandemNpcs {
     let killer = body.GetKiller() as GameObject;
     if IsDefined(killer) {
       if killer == player {
+        // The game names our V for deaths it cannot place (a guest's
+        // takedown or strike finished it): a guest's hit after our V's last
+        // one is the kill.
+        if known.lastHitBy != 0u && this.m_now - known.lastHitAt < 8.0 && known.lastHitAt > known.lastOwnHitAt {
+          return known.lastHitBy;
+        }
         return this.m_you;
       }
       let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
@@ -542,7 +551,7 @@ public class TandemNpcs {
         return who;
       }
     }
-    return known.lastHitBy != 0u && this.m_now - known.lastHitAt < 3.0 ? known.lastHitBy : 0u;
+    return known.lastHitBy != 0u && this.m_now - known.lastHitAt < 8.0 ? known.lastHitBy : 0u;
   }
 
   // Status effects guests' hits put on our NPCs. (Their hits themselves are
@@ -955,6 +964,14 @@ public class TandemNpcs {
     if IsDefined(known) {
       known.lastHitBy = player;
       known.lastHitAt = this.m_now;
+    }
+  }
+
+  // Host: our own V hit one of our shared NPCs (Combat.reds).
+  public func NoteOwnHit(id: EntityID) -> Void {
+    let known = this.Find(id);
+    if IsDefined(known) {
+      known.lastOwnHitAt = this.m_now;
     }
   }
 

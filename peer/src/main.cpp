@@ -2132,6 +2132,10 @@ int main(int argc, char **argv) {
   std::set<tandem::proto::NpcId> grabRefused;
   std::set<tandem::proto::NpcId> bodies; // join: the host's NPCs that died, still lying there
   std::optional<tandem::proto::NpcId> hitTarget;
+  // --hit-npcs: strikes on each NPC since its health last changed; NPCs
+  // that never change (invulnerable) are left alone.
+  std::map<tandem::proto::NpcId, int> unanswered;
+  std::set<tandem::proto::NpcId> unhurt;
   std::set<tandem::proto::NpcId> burnt;
   std::map<tandem::proto::NpcId, std::uint8_t> detection;
   // Stealth: --npc's NPC (where the guest was first heard), the NPCs last
@@ -2644,6 +2648,7 @@ int main(int argc, char **argv) {
                   e.hit.npc, e.hit.physical, e.hit.thermal, e.hit.electric, e.hit.chemical,
                   e.hit.attackType, e.hit.flags, e.hit.attack);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcHealth>) {
+              unanswered[e.health.npc] = 0;
               if (options.hitNpcsSeconds)
                 Log("npc {} health {:.0f}%", e.health.npc, e.health.health * 100.f);
               if (!options.recordFile.empty())
@@ -3233,8 +3238,22 @@ int main(int argc, char **argv) {
     if (options.hitNpcsSeconds && !options.host && endpoint->IsJoined() && !liveNpcs.empty() &&
         now >= nextHit) {
       nextHit = now + std::chrono::seconds(options.hitNpcsSeconds);
-      if (!hitTarget || !liveNpcs.contains(*hitTarget))
-        hitTarget = *liveNpcs.begin();
+      // An NPC whose health no strike moves (a quest NPC, invulnerable) is
+      // given up after a few; the newest NPCs first (a scenario's spawns).
+      if (hitTarget && unanswered[*hitTarget] >= 4 && unhurt.insert(*hitTarget).second)
+        Log("npc {}: no health change after 4 hits, trying another", *hitTarget);
+      if (!hitTarget || !liveNpcs.contains(*hitTarget) || unhurt.contains(*hitTarget)) {
+        hitTarget.reset();
+        for (auto it = liveNpcs.rbegin(); it != liveNpcs.rend() && !hitTarget; ++it)
+          if (!unhurt.contains(*it))
+            hitTarget = *it;
+        if (!hitTarget) {
+          unhurt.clear(); // all tried: start over
+          hitTarget = *liveNpcs.rbegin();
+        }
+        unanswered[*hitTarget] = 0;
+      }
+      ++unanswered[*hitTarget];
       const auto strike = StrikeOf(options.strike, *hitTarget);
       endpoint->SendCombat(strike);
       Log("hit npc {} ({}): {:.0f} health, {:.0f} poise, flags {:#x}", *hitTarget, options.strike,
