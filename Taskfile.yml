@@ -96,8 +96,10 @@ tasks:
 
   package:
     desc: "Release for players: build/package/tandem-<build>.zip (the game's layout) and its symbols zip"
-    deps: [build:plugin]
     cmds:
+      # Forced: the DLL is named after the commit, which build:plugin's
+      # sources do not see (a docs-only commit would leave the old name).
+      - "{{.TASK_EXE}} --force build:plugin"
       - task: package:files
 
   package:files:

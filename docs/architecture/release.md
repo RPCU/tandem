@@ -62,8 +62,12 @@ Rules the packer enforces (it stops with a message):
   the commit).
 
 `task package` builds the plugin here first; `task package:files` packages
-the DLL already in `build/` (after `tools/build.sh build:plugin`). Both run
-`natives:check` and `scripts:check`.
+the DLL already in `build/` (after `tools/build.sh --force build:plugin`).
+Both run `natives:check` and `scripts:check`. The build is named at CMake's
+configure from the commit, which `build:plugin`'s sources do not see: after
+a commit that touched no source the task is skipped and the DLL keeps the
+old name, so the packer refuses it. Hence `--force` (`task package` forces
+it itself).
 
 The scripts ship whole, `Probe.reds`, `VehicleProbe.reds` and
 `TestReset.reds` included: `System.reds` refers to their classes, so
@@ -78,7 +82,7 @@ still installs `dist/tandem.ini` as `tandem.ini` with `--ignore-existing`.
 ### Cutting a release
 
 1. Bump `project(tandem VERSION …)` if the release number changes; commit.
-2. `tools/build.sh build:plugin test`, then `task relay:test k8s:check`.
+2. `tools/build.sh --force build:plugin test`, then `task relay:test k8s:check`.
 3. `task package:files` (or `task package` to build here).
 4. Install the zip into a clean game folder and go through
    [`playtest.md`](../playtest.md) with a second player.

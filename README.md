@@ -36,7 +36,7 @@ task k8s:check                   # deploy/kubernetes/base
 ## Release
 
 ```sh
-tools/build.sh build:plugin test # build (here or on the game machine) and test
+tools/build.sh --force build:plugin test # build (here or on anya), test
 task package:files               # build/package/tandem-<build>.zip + symbols zip
 ```
 
