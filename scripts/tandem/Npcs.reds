@@ -1241,4 +1241,9 @@ public class TandemNpcs {
   public func AnimsReport() -> String {
     return this.m_anims.Report();
   }
+
+  // (test) Host: an NPC in a workspot near V to share (NpcAnims.Seek).
+  public func SeekWorkspot(range: Float) -> Bool {
+    return this.m_anims.Seek(range);
+  }
 }

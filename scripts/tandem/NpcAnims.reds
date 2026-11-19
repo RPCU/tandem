@@ -267,6 +267,45 @@ public class TandemNpcAnims {
     return a.highLevel == b.highLevel && a.upperBody == b.upperBody && a.stance == b.stance && a.flags == b.flags && Equals(a.weapon, b.weapon) && a.target == b.target && a.workspot == b.workspot && a.workspotEntry == b.workspotEntry;
   }
 
+  // (test) Host: someone sitting, leaning or smoking to share. The nearest
+  // NPC playing a workspot within `range` m of V; when it is beyond the
+  // sharing range, V is moved to 40 m of it, on V's side (where V stood is
+  // street, where the NPC sits may not be). False: nobody in a workspot.
+  public func Seek(range: Float) -> Bool {
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      return false;
+    }
+    let workspots = GameInstance.GetWorkspotSystem(this.m_game);
+    let from = player.GetWorldPosition();
+    let best: ref<NPCPuppet>;
+    let bestDistance = range + 1.0;
+    let seen = 0;
+    for npc in player.GetNPCsAroundObject(range) {
+      if !npc.IsDead() && workspots.IsActorInWorkspot(npc) {
+        seen += 1;
+        let distance = Vector4.Distance(npc.GetWorldPosition(), from);
+        if distance < bestDistance {
+          bestDistance = distance;
+          best = npc;
+        }
+      }
+    }
+    if !IsDefined(best) {
+      TandemNative.Log(s"npc seek: nobody in a workspot within \(range) m");
+      return false;
+    }
+    let at = best.GetWorldPosition();
+    let moved = bestDistance > 50.0;
+    if moved {
+      let keep = 40.0 / bestDistance;
+      let to = new Vector4(at.X + (from.X - at.X) * keep, at.Y + (from.Y - at.Y) * keep, at.Z + (from.Z - at.Z) * keep, 1.0);
+      GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, TandemYawAngles(player.GetWorldYaw()));
+    }
+    TandemNative.Log(s"npc seek: \(seen) in a workspot, the nearest \(TDBID.ToStringDEBUG(best.GetRecordID())) \(bestDistance) m away\(moved ? ", V moved to 40 m of it" : "")");
+    return true;
+  }
+
   // ---- guest ----
 
   // Each frame: the host's new states and shots, onto the proxies that are

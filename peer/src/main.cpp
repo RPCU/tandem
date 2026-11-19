@@ -1245,7 +1245,9 @@ std::string Describe(const tandem::proto::Message &message) {
 // names (gamedataNPCHighLevelState, gamedataNPCUpperBodyState,
 // gamedataNPCStanceState) or numbers; shoot=N fires N shots, five a second;
 // workspot takes the resource path hash (as the game logs it, 0x… or
-// decimal), the tree entry and the animation name.
+// decimal), the tree entry and the animation name. With a script, the
+// recording's own animation states and shots are not sent: the script alone
+// decides, whichever NPCs were recorded.
 class NpcAnimScript {
 public:
   struct Line {
@@ -3214,12 +3216,16 @@ int main(int argc, char **argv) {
           }
         } else if (const auto *health = std::get_if<tandem::proto::NpcHealth>(&message))
           endpoint->SendNpcHealth(*health);
+        // The recording's own animation states and shots, unless --anims
+        // scripts them: then the script alone says how the NPCs animate.
         else if (auto *recorded = std::get_if<tandem::proto::NpcAnims>(&message)) {
-          std::erase_if(recorded->npcs,
-                        [&](const auto &anim) { return deadNpcs.contains(anim.npc); });
-          endpoint->SendNpcAnims(*recorded);
+          if (anims.Size() == 0) {
+            std::erase_if(recorded->npcs,
+                          [&](const auto &anim) { return deadNpcs.contains(anim.npc); });
+            endpoint->SendNpcAnims(*recorded);
+          }
         } else if (const auto *shot = std::get_if<tandem::proto::NpcShot>(&message)) {
-          if (!deadNpcs.contains(shot->npc))
+          if (anims.Size() == 0 && !deadNpcs.contains(shot->npc))
             endpoint->SendNpcShot(*shot);
         }
       }
