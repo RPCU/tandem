@@ -6,6 +6,7 @@
 | unit | protocol round trips, strict decoding, sizes | `task test` |
 | loopback | real host + guests over UDP in one process: join, relay, clock, leave | `task test` |
 | bad link | smoothing and reliable channels through a shaped link (loss, jitter) | `task test` |
+| netcode | bandwidth budget of typical sessions, smoothness metrics at 30/80/150 ms, fragments, outages (`netcode.md`) | `task test` |
 | relay | protocol, codes, limits, amplification, real sockets, race detector | `task relay:test` |
 | via relay | a real relay process: join by code, fallback from direct, mock players | `task test` (`relay-loopback`) |
 | mock player | `tandem-peer` as host or guest against the real game | `task peer -- host --mode mirror` |
@@ -146,7 +147,8 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   gets are answered by `--regroup-answer yes|no|ignore` (yes: it goes
   there).
 - **A bad network** (any mode): `--latency MS`, `--jitter MS`,
-  `--loss PERCENT`, `--reorder PERCENT`, each way. A UDP relay with a link
+  `--loss PERCENT` (`--burst N`: in bursts of N datagrams on average),
+  `--reorder PERCENT`, each way. A UDP relay with a link
   model on each direction (`net::Shaper`, `core/src/shaping.cpp`) sits
   between the mock player's endpoint and the others (host: on the port the
   game joins; guest: a local port its endpoint joins), so ENet itself
@@ -159,6 +161,11 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   pose's bone within 0.0001 rad; over real UDP at 40 ms, 15% lost, 200
   reliable changes each way all arrive, in order, once. Scenarios
   `front-badlink`, `drive-badlink`, `npcs-guest-badlink`.
+- **Traffic** (any mode): each report has a `traffic:` line (kbit/s each
+  way with headers, datagrams/s, the largest message types), `--traffic`
+  the whole table, the exit the whole run's; `--legacy-wire` sends as
+  before the netcode work. `tandem-peer traffic FILE...` measures what a
+  recording takes on the wire, legacy and compact (`netcode.md`).
 - Loot (any mode): `--loot-quest RECORD` has "its V" loot a quest item
   (every other player gets it); `--drop-item RECORD` drops one RECORD as a shared world
   item 1.5 m in front of the other V; `--take-items N` picks up (claims)

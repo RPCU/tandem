@@ -64,5 +64,5 @@ idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
   private_actors, private_scenes, public_scenes, time_host; `relay`,
   `relay_token`, `join` for the relay and join codes; `recorder`,
   `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`, see
-  `recordings.md`): the defaults, and the test harness's session. The
-  default is solo.
+  `recordings.md`; `log = warn|info|debug`, see `netcode.md`): the
+  defaults, and the test harness's session. The default is solo.

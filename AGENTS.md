@@ -68,7 +68,10 @@ build lock) and copies the DLL, `.pdb` and `tandem-peer` back; then
   never reorder or remove. Any change to an existing message bumps
   `kProtocolVersion`. Add the message to `NameOf`, pick its channel in
   `ChannelOf`, add a round-trip case to `tests/protocol_test.cpp`.
-- High-rate messages stay small (`PlayerState` < 64 bytes is tested).
+- High-rate messages stay small (`PlayerState` < 64 bytes is tested). A
+  stream sent every frame or tick goes in `tests/budget_test.cpp` (64
+  kbit/s each way) with a relevance rate; compact wire forms are encoded
+  and decoded inside `Endpoint` (`docs/architecture/netcode.md`).
 - Consistency (`docs/architecture/consistency.md`): a state message is
   idempotent (the receiver drops a repeat); a new domain of host-owned state
   goes into the host's digests and its resync (`Endpoint::DigestFor`,
@@ -121,6 +124,9 @@ build lock) and copies the DLL, `.pdb` and `tandem-peer` back; then
   reads every pair; redscript itself never sees the DLL.
 - Native structs hold no `Vector4`/`Quaternion` fields: the script VM aligns
   struct locals to 8 and a 16-byte aligned field crashes it.
+- A line per puppet, proxy, hit, shot or frame is `log::Debug` /
+  `TandemNative.LogDebug` (`log = debug`, which the test roles set);
+  `info` is quiet (`netcode.md`, Frame cost).
 
 ### In-game testing
 

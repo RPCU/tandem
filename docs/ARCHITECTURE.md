@@ -254,6 +254,7 @@ plugin") and its open problems.
 
 - `session.md`: handshake, liveness, slots and returning players, reaching each other (direct, relay fallback), solo is vanilla (nothing acts without a session), `tandem.ini` keys. For connection and session code.
 - `smoothing.md`: the host clock, interpolation delay, extrapolation, teleports, movement flags and puppet placement, rates. For anything that draws a remote V, NPC or vehicle.
+- `netcode.md`: bandwidth (traffic counters, the 64 kbit/s budget and its table, compact wire forms, relevance and still rates, coalescing), smoothness metrics on shaped links, lag-compensated reach, frame-cost profiling (`cmd perf`), log levels, large reliable messages and outages. For anything that sends at a rate, draws remote motion, or logs.
 - `consistency.md`: digests, resync, idempotent application, epochs, the audit of every synced state with its guard, unplanned disconnects. For any new or changed state message.
 - `players.md`: body poses, weapons, looks, player markers; open: linking up, every way a V moves, cyberware and perks.
 - `vehicles.md`: driven vehicles, seats, the radio; open: getting in and out, combat in vehicles.
