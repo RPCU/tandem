@@ -198,6 +198,9 @@ struct Options {
   std::string npcHack{"AIQuickHack.HackRevealPosition"};
   int hackCarSeconds{0};
   std::string storyFile;         // host: a scripted story (tools/scenarios/story-host.story)
+  std::string restrictions;      // host: story restrictions on its V (REC[,REC]), as steps
+  double restrictAt{2.0};        // ...this long after a guest is in
+  double restrictFor{0.0};       // ...lifted after this long (0: never)
   int answerSeconds{-1};         // join: answer the host's ringing call after this long (-1: never)
   std::uint32_t replyEntry{};    // join: reply to the text with this choice entry hash
   int suggestIndex{-1};          // join: suggest this option of every hub (-1: never)
@@ -432,6 +435,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     seconds\n"
          "  --story FILE       host: play a scripted story (journal, calls, lines, hubs,\n"
          "                     rewards; format in tools/scenarios/story-host.story)\n"
+         "  --restrict REC[,REC]  host: its story puts these gameplay restrictions on its V\n"
+         "                     (GameplayRestriction.NoCombat,...): guests in its moment wear\n"
+         "                     them; join: logs the host's set as heard\n"
+         "  --restrict-at S    --restrict: S seconds after a guest is in (default 2)\n"
+         "  --restrict-for S   --restrict: lifted after S seconds (default 0: kept)\n"
          "  --answer N         join: answer the host's ringing call after N seconds\n"
          "  --reply HASH       join: reply to a text with this choice entry (journal hash)\n"
          "  --suggest N        join: suggest option N of every choice hub the host shows\n"
@@ -926,6 +934,12 @@ Options Parse(int argc, char **argv) {
       options.code = *code;
     } else if (flag == "--story") {
       options.storyFile = value;
+    } else if (flag == "--restrict") {
+      options.restrictions = value;
+    } else if (flag == "--restrict-at") {
+      options.restrictAt = Number<double>(value);
+    } else if (flag == "--restrict-for") {
+      options.restrictFor = Number<double>(value);
     } else if (flag == "--go-down") {
       options.goDownSeconds = Number<int>(value);
     } else if (flag == "--go-out") {
@@ -1310,6 +1324,9 @@ private:
 //   pick ID INDEX                the host picks (every hub closes)
 //   tier N                       the host's scene tier (1..5)
 //   reward RECORD [QUESTHASH]    a quest reward for every guest
+//   restrict REC[,REC]|off       the gameplay restrictions the host's story
+//                                has on its V now (GameplayRestriction.NoCombat:
+//                                weapons away); off: lifted
 //   effect RECORD on|off         a story status effect on the host's V
 //                                (a relic glitch: BaseStatusEffect.JohnnySicknessLow)
 //   replacer on|off              the host plays as Johnny (StoryState flag)
@@ -1554,6 +1571,17 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
     if (step.verb == "replacer" && !a.empty())
       return proto::StoryState{.tier = 1,
                                .flags = a[0] == "on" ? proto::kStoryReplacer : std::uint8_t{0}};
+    if (step.verb == "restrict" && !a.empty()) {
+      proto::StoryRestrictions set;
+      if (a[0] != "off")
+        for (std::size_t start = 0; start <= a[0].size();) {
+          const auto comma = std::min(a[0].find(',', start), a[0].size());
+          if (comma > start)
+            set.effects.push_back(TweakDBID(a[0].substr(start, comma - start)));
+          start = comma + 1;
+        }
+      return set;
+    }
     if (step.verb == "effect" && a.size() >= 2)
       return proto::StoryEffect{.effect = TweakDBID(a[0]), .applied = a[1] == "on"};
     if (step.verb == "world" && !a.empty()) {
@@ -1612,6 +1640,14 @@ std::string Describe(const tandem::proto::Message &message) {
   if (const auto *effect = std::get_if<proto::StoryEffect>(&message))
     return std::format("story effect: {:#x} {} on player {}", effect->effect,
                        effect->applied ? "on" : "off", effect->player);
+  if (const auto *set = std::get_if<proto::StoryRestrictions>(&message)) {
+    std::string effects;
+    for (const auto effect : set->effects)
+      effects += std::format(" {:#x}", effect);
+    return set->effects.empty() ? std::format("story restrictions: none on player {}", set->player)
+                                : std::format("story restrictions: {} on player {}:{}",
+                                              set->effects.size(), set->player, effects);
+  }
   if (const auto *scene = std::get_if<proto::SceneState>(&message))
     return scene->scene == 0
                ? std::format("scene: play {} over{}", scene->play,
@@ -2778,6 +2814,19 @@ int main(int argc, char **argv) {
       return 1;
     }
     Log("story: {} steps from {}", story.size(), options.storyFile);
+  }
+  // --restrict: two more steps of the host's story, in time order.
+  if (!options.restrictions.empty()) {
+    story.push_back({.at = options.restrictAt,
+                     .verb = "restrict",
+                     .args = {options.restrictions},
+                     .rest = options.restrictions});
+    if (options.restrictFor > 0.0)
+      story.push_back({.at = options.restrictAt + options.restrictFor,
+                       .verb = "restrict",
+                       .args = {"off"},
+                       .rest = "off"});
+    std::ranges::stable_sort(story, {}, &StoryStep::at);
   }
   // join: the call to answer, and when.
   std::optional<std::pair<std::uint64_t, std::chrono::steady_clock::time_point>> toAnswer;
