@@ -8,6 +8,7 @@ add_library(tandem_core STATIC
   src/consistency.cpp
   src/endpoint.cpp
   src/story.cpp
+  src/scene.cpp
   src/combat.cpp
   src/interpolation.cpp
   src/movement.cpp
