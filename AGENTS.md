@@ -30,29 +30,30 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 
 ## Commands (Taskfile.yml)
 
-| Task                 | What                                                         |
-| -------------------- | ------------------------------------------------------------ |
-| `task build`         | plugin + Linux build                                         |
-| `task build:plugin`  | `build/windows/plugin/tandem.dll` (+ `.pdb`)                 |
-| `task test`          | core tests (unit + loopback UDP + through a real relay)      |
-| `task peer -- …`     | run the mock player (`host --mode mirror` by default)        |
-| `task relay:run`     | a local relay open to any host (testing only)                |
-| `task relay:test`    | relay vet + tests with the race detector                     |
-| `task pilot:test`    | the test pilot: vet, tests, every routine on its simulator   |
-| `task relay:image`   | relay OCI image via Nix (`result-relay-image`)               |
-| `task k8s:check`     | render the kustomize base and validate it (kubeconform)      |
-| `task check`         | all of the above, and the four checks below                  |
-| `task natives:check` | each `*Natives.reds` matches its `.cpp` (types, fields)      |
-| `task scripts:check` | compile `scripts/tandem` as the game does (seconds, no game) |
-| `task strings:check` | player-facing texts only from `Text.reds`, English + French  |
-| `task docs:check`    | doc links and § numbers resolve; no fact lost since HEAD     |
-| `task scenario -- …` | in-game scenarios against the mock player (NAME, all, list)  |
-| `task sim -- …`      | the simulated second game against the real one (`sim.md`)    |
-| `task sim:fuzz K=N`  | N seeds of simulated games against each other, refereed      |
-| `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
-| `task logs`          | follow the plugin's log on the game machine                  |
-| `task package`       | the release zip and its symbols zip (`build/package/`)       |
-| `task ccache:stats`  | this machine's compiler cache: size, hits (`:clear` empties) |
+| Task                    | What                                                         |
+| ----------------------- | ------------------------------------------------------------ |
+| `task build`            | plugin + Linux build                                         |
+| `task build:plugin`     | `build/windows/plugin/tandem.dll` (+ `.pdb`)                 |
+| `task test`             | core tests (unit + loopback UDP + through a real relay)      |
+| `task peer -- …`        | run the mock player (`host --mode mirror` by default)        |
+| `task relay:run`        | a local relay open to any host (testing only)                |
+| `task relay:test`       | relay vet + tests with the race detector                     |
+| `task pilot:test`       | the test pilot: vet, tests, every routine on its simulator   |
+| `task relay:image`      | relay OCI image via Nix (`result-relay-image`)               |
+| `task k8s:check`        | render the kustomize base and validate it (kubeconform)      |
+| `task check`            | all of the above, and the four checks below                  |
+| `task natives:check`    | each `*Natives.reds` matches its `.cpp` (types, fields)      |
+| `task scripts:check`    | compile `scripts/tandem` as the game does (seconds, no game) |
+| `task strings:check`    | player-facing texts only from `Text.reds`, English + French  |
+| `task docs:check`       | doc links and § numbers resolve; no fact lost since HEAD     |
+| `task mods:check DIR=…` | other mods' script hooks against tandem's (conflicts)        |
+| `task scenario -- …`    | in-game scenarios against the mock player (NAME, all, list)  |
+| `task sim -- …`         | the simulated second game against the real one (`sim.md`)    |
+| `task sim:fuzz K=N`     | N seeds of simulated games against each other, refereed      |
+| `task deploy`           | copy the DLL to the game machine (`GAME_HOST`, default anya) |
+| `task logs`             | follow the plugin's log on the game machine                  |
+| `task package`          | the release zip and its symbols zip (`build/package/`)       |
+| `task ccache:stats`     | this machine's compiler cache: size, hits (`:clear` empties) |
 
 Run what your change can break before saying it works: `task test` for
 `core/`, `task build:plugin` for anything compiled into the DLL,
