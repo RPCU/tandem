@@ -54,11 +54,33 @@ commit=$(git rev-parse --short=7 HEAD)
 # A build runs in a systemd scope of its own with a low CPU and IO weight:
 # nice does not reach across cgroups, so niced builds still starved the test
 # games (tools/instance.sh scopes) to 9 fps and pushed them into swap. While
-# a test instance runs, one slot only (memory).
-# shellcheck disable=SC2029 # expanded here on purpose
-ssh "$host" "cd $remote && $jobs TANDEM_XWIN=\$HOME/.cache/tandem/xwin \
-  TANDEM_COMMIT=$commit flock /tmp/tandem-src-$name.lock tools/build-slot.sh \$(pgrep -f '[t]andem-instances/' >/dev/null && echo 1 || echo $slots) \
-  systemd-run --user --scope --quiet -p CPUWeight=10 -p IOWeight=10 nice -n 19 devenv shell -- task $*"
+# a test instance runs, one slot only (memory). The compile slot is held
+# for compiling only: the tests then run in a pool of their own
+# (TANDEM_TEST_SLOTS, default 6), since they mostly wait on real time and
+# held a compile slot idle for minutes. The integration worktree (the merge
+# queue, everyone's critical path) may also use one slot nobody else takes.
+builds=() tests=''
+for task in "$@"; do
+  if [ "$task" = test ]; then tests=1; else builds+=("$task"); fi
+done
+if [ -n "$tests" ]; then
+  case " ${builds[*]} " in *" build "* | *" build:linux "*) ;; *) builds+=(build:linux) ;; esac
+fi
+[ "$name" = integration ] && slots=$((slots + 1))
+in_slot() {
+  local pool=$1 count=$2
+  shift 2
+  # shellcheck disable=SC2029 # expanded here on purpose
+  ssh "$host" "cd $remote && $jobs TANDEM_XWIN=\$HOME/.cache/tandem/xwin TANDEM_COMMIT=$commit TANDEM_SLOT_POOL=$pool \
+    flock /tmp/tandem-src-$name.lock tools/build-slot.sh $count \
+    systemd-run --user --scope --quiet -p CPUWeight=10 -p IOWeight=10 nice -n 19 devenv shell -- task $*"
+}
+if [ ${#builds[@]} -gt 0 ]; then
+  in_slot build "\$(pgrep -f '[t]andem-instances/' >/dev/null && echo 1 || echo $slots)" "${builds[@]}"
+fi
+if [ -n "$tests" ]; then
+  in_slot test "${TANDEM_TEST_SLOTS:-6}" test
+fi
 
 for task in "$@"; do
   case $task in
