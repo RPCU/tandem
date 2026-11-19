@@ -99,6 +99,11 @@ public class TandemSystem extends ScriptableSystem {
   private let m_attachedAt: Float;
   // (tools/game.sh cmd record NAME) a record every puppet spawns from.
   private let m_recordOverride: String;
+  // Players whose puppet is a stand-in body (TandemStandIn{Wa,Ma}: no look
+  // of theirs, none of that body seen), and the puppets to build again,
+  // as one or as their V, once DrivePuppets is done with the list.
+  private let m_standInPlayers: array<Uint32>;
+  private let m_rebuild: array<Uint32>;
   private let m_gates: ref<TandemGates>;
   private let m_vehicleProbe: ref<TandemVehicleProbe>;
   private let m_leaving: array<ref<TandemLeaving>>;
@@ -554,6 +559,7 @@ public class TandemSystem extends ScriptableSystem {
       this.CheckPuppets();
     }
     this.DrivePuppets();
+    this.Rebuild();
     // Our ride and the others' (the NCART, rides, quest scene vehicles).
     if IsDefined(this.m_transit) && this.m_playing {
       this.m_transit.Tick(this.Now(), this, this.m_puppets);
@@ -1486,6 +1492,7 @@ public class TandemSystem extends ScriptableSystem {
           if IsDefined(this.m_visibility) {
             this.m_visibility.Forget(event.player);
           }
+          ArrayRemove(this.m_standInPlayers, event.player);
           break;
         case 4:
           this.m_you = event.player;
@@ -1524,6 +1531,7 @@ public class TandemSystem extends ScriptableSystem {
           if IsDefined(this.m_visibility) {
             this.m_visibility.End();
           }
+          ArrayClear(this.m_standInPlayers);
           ArrayClear(this.m_missingPlayers);
           ArrayClear(this.m_missingSince);
           break;
@@ -1638,6 +1646,11 @@ public class TandemSystem extends ScriptableSystem {
 
     let spec = new DynamicEntitySpec();
     let record = Equals(this.m_recordOverride, "") ? TandemNative.PuppetRecord(body) : this.m_recordOverride;
+    if ArrayContains(this.m_standInPlayers, player) && Equals(this.m_recordOverride, "") {
+      record = body == 2 ? "Character.TandemStandInMa" : "Character.TandemStandInWa";
+      // A whole body: not hidden for want of a look.
+      TandemVisibility.Show(game, player, n"nolook", 0.3);
+    }
     spec.recordID = TDBID.Create(record);
     spec.position = position;
     spec.orientation = local.GetWorldOrientation();
@@ -1911,6 +1924,31 @@ public class TandemSystem extends ScriptableSystem {
     }
   }
 
+  public func IsStandInRecord(record: String) -> Bool {
+    return StrBeginsWith(record, "Character.TandemStandIn");
+  }
+
+  // Puppets to build again (a stand-in body, or their V back), the way the
+  // "respawn" command does: same player, same name, a new body.
+  private func Rebuild() -> Void {
+    if ArraySize(this.m_rebuild) == 0 {
+      return;
+    }
+    for player in this.m_rebuild {
+      for puppet in this.m_puppets {
+        if puppet.player == player && !this.JoinPending(player) {
+          let join = new TandemJoin();
+          join.player = puppet.player;
+          join.name = puppet.name;
+          join.body = puppet.body;
+          ArrayPush(this.m_joins, join);
+          TandemNative.Log(s"player \(player): puppet built again (\(ArrayContains(this.m_standInPlayers, player) ? "a stand-in body" : "their V"))");
+        }
+      }
+    }
+    ArrayClear(this.m_rebuild);
+  }
+
   // A whole body for a puppet whose player's look gave none (no
   // character-creator keys, as the mock player's random look; or they
   // failed): the last real look of that body seen (ours or another
@@ -1933,8 +1971,18 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     if keys < 0 {
-      if !TandemVisibility.IsHidden(game, puppet.player) {
-        TandemNative.Log(s"player \(puppet.player): \(why), and no stand-in body: hidden until a look comes");
+      // Last: a whole NPC body of V's skeleton in place of V's (the donor's
+      // own look: TandemStandIn{Wa,Ma}, tweaks/tandem/puppet.tweak), built
+      // once DrivePuppets is done. Hidden meanwhile; hidden for good only if
+      // even that body cannot be built.
+      if !ArrayContains(this.m_standInPlayers, puppet.player) {
+        ArrayPush(this.m_standInPlayers, puppet.player);
+        if !ArrayContains(this.m_rebuild, puppet.player) {
+          ArrayPush(this.m_rebuild, puppet.player);
+        }
+        TandemNative.Log(s"player \(puppet.player): \(why), and no V body to stand in: the donor's body instead");
+      } else if !TandemVisibility.IsHidden(game, puppet.player) {
+        TandemNative.Log(s"player \(puppet.player): \(why), and no stand-in body at all: hidden until a look comes");
       }
       TandemVisibility.Hide(game, puppet.player, n"nolook", 0.0);
       return -1;
@@ -2153,6 +2201,18 @@ public class TandemSystem extends ScriptableSystem {
     }
     puppet.appearanceChanges = TandemNative.RemoteAppearanceChanges(puppet.player);
     let items = TandemNative.RemoteItems(puppet.player);
+    // A stand-in body (no look of theirs before): their V again once their
+    // look has a body; until then it keeps the donor's own clothes.
+    if this.IsStandInRecord(puppet.record) {
+      if TandemNative.RemoteLookKeys(puppet.player) > 0 {
+        ArrayRemove(this.m_standInPlayers, puppet.player);
+        if !ArrayContains(this.m_rebuild, puppet.player) {
+          ArrayPush(this.m_rebuild, puppet.player);
+        }
+        TandemNative.Log(s"player \(puppet.player): their look has a body now: their V again");
+      }
+      return;
+    }
     let keys = TandemNative.ApplyRemoteLook(entity, puppet.player);
     if keys >= 0 {
       // Theirs (0: what it already wears).

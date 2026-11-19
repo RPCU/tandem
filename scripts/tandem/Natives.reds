@@ -434,6 +434,8 @@ public native class TandemNative extends IScriptable {
   // A stand-in look of that body (1 female, 2 male) when a player's own is
   // missing or failed: the last real one seen (-1: none yet).
   public static native func ApplyStandInLook(entity: ref<Entity>, body: Int32) -> Int32
+  // How many body keys the player's latest look has (0: none).
+  public static native func RemoteLookKeys(player: Uint32) -> Int32
   public static native func PoseSource(entity: ref<Entity>)
   public static native func PoseBind(player: Uint32, entity: ref<Entity>)
   public static native func PoseLoop(player: Uint32)

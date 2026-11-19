@@ -952,9 +952,14 @@ revive down|hold|report`; scenarios `revive-peer`, `revive-game`,
   their own, so clothes are never shown on no body: a look with no keys
   (the mock player's random look) or keys that fail get a stand-in body,
   the last real look of that body seen this game (ours or another
-  player's), else ours when our body is theirs; with none the puppet stays
-  hidden (`PuppetVisibility.reds`, reason `nolook`) and is tried again every
-  2 s until a look comes. Hiding fades the body and its item entities
+  player's), else ours when our body is theirs, else the donor's whole NPC
+  body (`Character.TandemStandIn{Wa,Ma}`: Panam's or Kerry's, V's skeleton,
+  in its own clothes), built again as their V once their look has keys. A
+  puppet is hidden for want of a look (`PuppetVisibility.reds`, reason
+  `nolook`) only while that body is built, or if it cannot be. The mock
+  player's random look wears a real V body: the keys of every look it hears
+  are kept per body (`~/.cache/tandem/looks/{female,male}.keys`,
+  `--look-keys DIR`). Hiding fades the body and its item entities
   together, then hides every mesh of both.
 - **Player markers** (`scripts/tandem/Markers.reds`,
   `tweaks/tandem/markers.tweak`): every remote player has a marker in the
