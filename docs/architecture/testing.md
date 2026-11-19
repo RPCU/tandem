@@ -16,6 +16,8 @@
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
 
+The autopilot (our real V played without a human, for recordings and scenarios): [autopilot.md](autopilot.md).
+
 **Scenarios** (`tools/scenario.sh`, `tools/scenarios/*.sh`) are the
 in-game regression suite: each one puts the game in a role, drives the
 mock player and expects log lines within a time limit. Restarts happen

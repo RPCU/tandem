@@ -30,6 +30,13 @@
 #                          start, else the NPC recording REPLAY (- for none); the
 #                          scenario's own ARGS on top. $sessioned says which
 #   cmd TEXT               a tandem command in the game
+#   pilot ROUTINE [FLAGS]  the test pilot plays ROUTINE on our real V
+#                          (tools/pilot/routines/ROUTINE.pilot, through
+#                          tools/game.sh pilot run): it walks, drives, fights
+#                          while the mock player plays the other side; the
+#                          scenario fails when the routine does. A scenario
+#                          that uses it says "# needs the pilot" (all leaves
+#                          those out unless PILOT=1)
 #   expect REGEX [SECS]    a game log line since the scenario began (default
 #                          30 s); fails at once if the watchdog reports a
 #                          silent game thread
@@ -71,6 +78,7 @@ fail() {
   mkdir -p "$out"
   since >"$out/game.log" 2>/dev/null || true
   tail -n +$((peer_mark + 1)) .cache/peer.log >"$out/peer.log" 2>/dev/null || true
+  [ -z "$piloted" ] || cp .cache/pilot.log "$out/pilot.log" 2>/dev/null || true
   $game shot "scenario-fail" >/dev/null 2>&1 && cp .cache/shots/scenario-fail.png "$out/" || true
   if grep -q 'watchdog: game thread silent' "$out/game.log" 2>/dev/null; then
     $game bt >/dev/null 2>&1 && cp .cache/re/bt.txt "$out/bt.txt" || true
@@ -117,6 +125,18 @@ peer2() {
   echo "  second mock player: $* (.cache/peer2.log)"
 }
 cmd() { $game cmd "$*" >/dev/null || fail "command not taken: $*"; }
+# The pilot's own log (each step, its checks, the pad's safety) is kept in
+# .cache/pilot.log and goes with a failure's evidence.
+piloted=''
+pilot() {
+  local status=0
+  piloted=1
+  mkdir -p .cache
+  echo "  pilot: $*"
+  $game pilot run "$@" >.cache/pilot.log 2>&1 || status=$?
+  grep -E 'WARN|PASS|FAIL|SAVE' .cache/pilot.log | sed 's/^/  /' || true
+  [ "$status" = 0 ] || fail "the pilot's routine $1 did not pass (.cache/pilot.log)"
+}
 reset() {
   local result status=0
   result=$($game test-reset 2>&1) || status=$?
@@ -265,11 +285,20 @@ list)
     # Host scenarios first, then guest ones: one role switch, fewer restarts.
     # A scenario marked "# runs last" (it leaves the game on a death screen)
     # comes after all the others.
+    # Scenarios that need the pilot (a virtual pad on the game machine) only
+    # with PILOT=1.
     mapfile -t names < <(
       grep -l '^ensure host' tools/scenarios/*.sh | xargs grep -L '^# runs last' | xargs -n1 basename | sed 's/\.sh$//'
       grep -L '^ensure host' tools/scenarios/*.sh | xargs grep -L '^# runs last' | xargs -n1 basename | sed 's/\.sh$//'
       grep -l '^# runs last' tools/scenarios/*.sh | xargs -n1 basename | sed 's/\.sh$//'
     )
+    if [ -z "${PILOT:-}" ]; then
+      kept=()
+      for name in "${names[@]}"; do
+        grep -q '^# needs the pilot' "tools/scenarios/$name.sh" || kept+=("$name")
+      done
+      names=("${kept[@]}")
+    fi
   fi
   passed=0 total=0 failures=()
   for name in "${names[@]}"; do

@@ -103,6 +103,8 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.39 | Pings, tags, reveals and waypoints, for comms                   | `ui.md`             |
 | 13.41 | Vehicle combat: the hooks and setters                           | `vehicles.md`       |
 | 13.45 | Gameplay restrictions, and a guest wearing the host's           | `story.md`          |
+| 14.1  | What a script can do                                            | `autopilot.md`      |
+| 14.2  | Virtual input                                                   | `autopilot.md`      |
 
 ## Top traps (one line each)
 

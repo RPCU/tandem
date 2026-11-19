@@ -148,6 +148,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_testHostile: array<EntityID>;
   // "test reset" (TestReset.reds): one known state before each scenario.
   private let m_testReset: ref<TandemTestReset>;
+  // The test pilot (Pilot.reds): our V played by tools/pilot.
+  private let m_pilot: ref<TandemPilot>;
   private let m_lastHostileReport: Float;
   // (test) the attitude group puppets are put in instead of their own
   // ("puppet group NAME"; "puppet group" alone: their own again).
@@ -529,6 +531,11 @@ public class TandemSystem extends ScriptableSystem {
   // (Outcomes.reds), and a game killed there must load its own save as it
   // was. Nor while the host's difficulty is still on after a session.
   private func IsSavingLocked() -> Bool {
+    // The test pilot played in this game (Pilot.reds): nothing of a test
+    // reaches the player's saves, until the game ends.
+    if TandemPilotNative.SavesLocked() {
+      return true;
+    }
     if this.m_leftDown || (IsDefined(this.m_revive) && this.m_revive.IsDown()) {
       return true;
     }
@@ -793,12 +800,16 @@ public class TandemSystem extends ScriptableSystem {
         this.m_playing = true;
         TandemNative.Log("playing (solo)");
       }
+      // The test pilot plays without a session too, every frame.
+      if this.PilotOn() {
+        this.m_pilot.Tick();
+      }
       if TandemNative.Recording() {
         this.RecordTick();
         this.Schedule(0.0);
       } else {
         this.EndRecording();
-        this.Schedule(0.25);
+        this.Schedule(this.PilotOn() ? 0.0 : 0.25);
       }
       return;
     }
@@ -920,6 +931,9 @@ public class TandemSystem extends ScriptableSystem {
     this.TickProxyTests();
     this.TickHostileTests();
     this.HandleCommand();
+    if this.PilotOn() {
+      this.m_pilot.Tick();
+    }
     if IsDefined(this.m_testReset) {
       this.m_testReset.Tick(this.Now());
     }
@@ -934,15 +948,24 @@ public class TandemSystem extends ScriptableSystem {
 
   // ---- commands from the developer (tools/game.sh cmd), twice a second ----
 
+  public func PilotOn() -> Bool {
+    return IsDefined(this.m_pilot) && this.m_pilot.IsOn();
+  }
+
   private func HandleCommand() -> Void {
     let now = EngineTime.ToFloat(GameInstance.GetSimTime(this.GetGameInstance()));
-    if now - this.m_lastCommandCheck < 0.45 {
+    // Twice a second; every frame while the test pilot plays (its actions
+    // and heartbeat come through here).
+    let due = now - this.m_lastCommandCheck >= 0.45;
+    if !due && !this.PilotOn() {
       return;
     }
-    this.m_lastCommandCheck = now;
-    if this.m_inGame {
-      this.BindPoses();
-      this.SeatRideNpc();
+    if due {
+      this.m_lastCommandCheck = now;
+      if this.m_inGame {
+        this.BindPoses();
+        this.SeatRideNpc();
+      }
     }
     let command = TandemNative.TakeCommand();
     if Equals(command, "") {
@@ -968,6 +991,15 @@ public class TandemSystem extends ScriptableSystem {
       } else {
         TandemNative.Log("trade: not in a session");
       }
+      return;
+    }
+    // The test pilot (Pilot.reds): pilot on | off | beat | probe | N ACTION.
+    if StrBeginsWith(command, "pilot") {
+      if !IsDefined(this.m_pilot) {
+        this.m_pilot = new TandemPilot();
+        this.m_pilot.Init(this.GetGameInstance(), this);
+      }
+      this.m_pilot.Command(command);
       return;
     }
     if StrBeginsWith(command, "time ") {
@@ -1773,6 +1805,9 @@ public class TandemSystem extends ScriptableSystem {
   // (test reset) every test's leftovers here and in the modules this owns:
   // spawned NPCs and probes, test worlds and abilities, the revive cooldown.
   public func ClearTestState() -> Void {
+    if IsDefined(this.m_pilot) {
+      this.m_pilot.Off("test reset");
+    }
     let entities = GameInstance.GetDynamicEntitySystem();
     if IsDefined(this.m_time) {
       this.m_time.ResetTest();

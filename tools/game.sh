@@ -35,6 +35,19 @@
 #                              start NAME ... record stop) to recordings/play/NAME.tplay
 #   tools/game.sh fetch-recordings [--since YYYYMMDD]  the recorder's segments
 #                              (recorder = on) and their index to recordings/auto/
+#   tools/game.sh pilot ...    the test pilot plays our V without a human
+#                              (tools/pilot, docs/architecture/autopilot.md):
+#                              run ROUTINE [FLAGS] | record NAME ROUTINE |
+#                              session NAME ROUTINE | dry ROUTINE | check |
+#                              start [FLAGS] (hold the pad between routines,
+#                              from before the game starts) | stop | status |
+#                              pad [SECONDS] | build
+#                              (ROUTINE: a name in tools/pilot/routines or a
+#                              file; PILOT_FLAGS). Only on a game this script
+#                              started, or with PILOT_INSTANCE=NAME on
+#                              instance NAME of tools/instance.sh (its game
+#                              folder, keys on its own gamescope display;
+#                              cmd, log and fetch-play go to it too)
 #   tools/game.sh cmd TEXT     a command for tandem in the running game:
 #                              respawn | inspect | bodies | probe | probe stop | despawn |
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
@@ -70,6 +83,12 @@ set -euo pipefail
 
 host=${GAME_HOST:-anya}
 dir=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
+# PILOT_INSTANCE=NAME: an instance of tools/instance.sh instead of the Steam
+# game (docs/architecture/autopilot.md, "Two real games").
+instance=${PILOT_INSTANCE:-main}
+if [ "$instance" != main ] && [ -z "${GAME_DIR:-}" ]; then
+  dir=$(tools/instance.sh dir "$instance") || exit 1
+fi
 shots=.cache/shots
 
 remote() { ssh "$host" "$@"; }
@@ -93,7 +112,25 @@ wait_log() {
     if [ -n \"\$f\" ] && [ \"\$f\" != '$3' ] && grep -m1 -E '$pattern' \"\$f\"; then exit 0; fi; sleep 1; done; exit 1"
 }
 
+# ---- whose game it is ----
+# The test pilot (below) only ever drives a game this script started: start
+# writes that game's pid and start time to the pilot's cache folder on the
+# game machine (never in the game's folder), stop removes it, and the pilot
+# refuses a running game that is not the one written there (the player's).
+pilot_dir=.cache/tandem/pilot/$instance # on the game machine, under $HOME
+pilot_bin=build/linux/pilot/tandem-pilot
+
+own() {
+  remote "mkdir -p $pilot_dir; p=\$(pgrep -f '^[A-Z]:.*Cyberpunk2077[.]exe' | head -1); [ -n \"\$p\" ] || exit 1; \
+    echo \"\$p \$(sed 's/.*) //' /proc/\$p/stat | awk '{ print \$20 }')\" > $pilot_dir/game.owner"
+}
+unown() { remote "rm -f $pilot_dir/game.owner" || true; }
+
+# (keep_pilot: start's own stop leaves a serving pilot up, with its pad:
+# the game about to start must see it.)
 stop() {
+  [ -n "${keep_pilot:-}" ] || pilot_stop >/dev/null 2>&1 || true
+  unown
   if running; then
     remote 'pkill -KILL -f "[C]yberpunk2077.exe"; for i in $(seq 1 15); do pgrep -f "[C]yberpunk2077.exe" >/dev/null || exit 0; sleep 1; done; exit 1'
     echo "game stopped"
@@ -101,7 +138,7 @@ stop() {
 }
 
 start() {
-  stop
+  keep_pilot=1 stop
   local since
   since=$(remote "cd '$dir'; ls -t red4ext/logs/tandem-*.log 2>/dev/null | head -1")
   remote 'pid=$(pgrep -f "steam.sh" | head -1)
@@ -130,6 +167,8 @@ start() {
     remote "grep -A4 '\\[ERROR' '$dir/r6/logs/redscript_rCURRENT.log' | head -20" >&2 || true
     exit 1
   fi
+  # The game process exists now: it is ours, for the pilot.
+  own || echo "the game's process was not found: the pilot will refuse this game" >&2
   if ! wait_log 'in game' 25 "$since" >/dev/null; then
     start_by_keys
   fi
@@ -274,6 +313,154 @@ fetch_recordings() {
   echo "recordings/auto: $copied segment(s) copied, $(find recordings/auto -maxdepth 1 -name '*.ts*' -o -name '*.tplay' | wc -l) here"
 }
 
+# ---- the test pilot ----
+# tandem-pilot is built here (a static binary), copied with the routine to
+# the pilot's cache folder on the game machine and run there, next to the
+# game: its control loop reads the plugin's state file and holds a virtual
+# gamepad with no network in between. It exists there only while it runs.
+
+pilot_build() {
+  mkdir -p "$(dirname "$pilot_bin")"
+  CGO_ENABLED=0 go build -C tools/pilot -trimpath -o "$PWD/$pilot_bin" ./cmd/tandem-pilot
+}
+
+# A routine by name (tools/pilot/routines/NAME.pilot) or by file.
+pilot_routine() {
+  if [ -f "$1" ]; then
+    echo "$1"
+  elif [ -f "tools/pilot/routines/$1.pilot" ]; then
+    echo "tools/pilot/routines/$1.pilot"
+  else
+    echo "no routine $1 (a file, or a name in tools/pilot/routines)" >&2
+    return 1
+  fi
+}
+
+# The Sway session's environment on the game machine (the pilot asks sway
+# which window has the focus), as start takes it for Steam.
+session_env='pid=$(pgrep -f "steam.sh" | head -1); eval "$(tr "\0" "\n" < /proc/$pid/environ | grep -E "^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|SWAYSOCK)=" | sed "s/^/export /")"'
+
+# pilot_run ROUTINE [FLAGS]: the routine on the game's V; its log on stdout,
+# its result as the exit status. -tt: Ctrl-C here, or a lost connection,
+# reaches the pilot as a hang-up: it releases the pad and stops.
+pilot_run() {
+  local routine
+  routine=$(pilot_routine "${1:?pilot run ROUTINE [FLAGS]}")
+  shift
+  pilot_build
+  "$pilot_bin" check "$routine" >/dev/null
+  running || {
+    echo "the game is not running" >&2
+    exit 1
+  }
+  remote "mkdir -p $pilot_dir"
+  rsync -t "$pilot_bin" "$routine" "$host:$pilot_dir/"
+  ssh -tt "$host" "$session_env; cd $pilot_dir && exec ./tandem-pilot run --instance '$instance' --game-dir '$dir' ${PILOT_FLAGS:-} $* '$(basename "$routine")'" </dev/null | tr -d '\r'
+}
+
+# pilot_start [FLAGS]: a pilot that stays up between routines, holding the
+# pad (tandem-pilot serve): start it before the game when the game only
+# takes a pad it saw at launch. "pilot run" then goes through it, with these
+# flags. It ends on "pilot stop", "stop", or 15 minutes without a routine.
+pilot_start() {
+  pilot_build
+  remote "mkdir -p $pilot_dir"
+  rsync -t "$pilot_bin" "$host:$pilot_dir/"
+  remote "$session_env; cd $pilot_dir && nohup ./tandem-pilot serve --instance '$instance' --game-dir '$dir' ${PILOT_FLAGS:-} $* >serve.log 2>&1 & sleep 3; cat $pilot_dir/serve.log"
+}
+
+# The pilot of this instance, if one runs: asked to stop (it releases the
+# pad), then killed.
+pilot_stop() {
+  # An instance's keys: let go of anything a pilot killed outright held.
+  if [ "$instance" != main ] && [ -x "$pilot_bin" ]; then
+    remote "$session_env; cd $pilot_dir 2>/dev/null && ./tandem-pilot release --instance '$instance' --game-dir '$dir' ${PILOT_FLAGS:-}" || true
+  fi
+  remote "p=\$(cat $pilot_dir/lock 2>/dev/null); [ -n \"\$p\" ] && [ \"\$(cat /proc/\$p/comm 2>/dev/null)\" = tandem-pilot ] || { echo 'no pilot runs'; exit 0; }; \
+    kill \$p; for i in \$(seq 1 30); do [ -e /proc/\$p ] || { echo 'pilot stopped'; exit 0; }; sleep 0.1; done; kill -KILL \$p; echo 'pilot killed'"
+}
+
+pilot_status() {
+  remote "$session_env; cd $pilot_dir 2>/dev/null || { echo 'no pilot was ever installed here'; exit 0; }; \
+    p=\$(cat lock 2>/dev/null); if [ -n \"\$p\" ] && [ \"\$(cat /proc/\$p/comm 2>/dev/null)\" = tandem-pilot ]; then echo \"a pilot runs (pid \$p)\"; else echo 'no pilot runs'; fi; \
+    ./tandem-pilot owner --instance '$instance' --game-dir '$dir' 2>&1; ./tandem-pilot state --game-dir '$dir' 2>&1; true"
+}
+
+# pilot_record NAME ROUTINE: a gameplay recording with no human (a session
+# is needed: role host records alone): recordings/play/NAME.tplay.
+pilot_record() {
+  local name=${1:?pilot record NAME ROUTINE} status=0
+  shift
+  cmd "record start $name" >/dev/null
+  pilot_run "$@" || status=$?
+  cmd "record stop" >/dev/null
+  sleep 1
+  fetch_play "$name"
+  return "$status"
+}
+
+# pilot_session NAME ROUTINE: a recorded host session with no human: the
+# recording guest joins from here, out of sight, while the pilot plays the
+# host's V: recordings/session/NAME.tsession.
+pilot_session() {
+  local name=${1:?pilot session NAME ROUTINE} status=0 address guest
+  shift
+  address=$(getent ahostsv4 "$host" | awk 'NR == 1 { print $1 }')
+  mkdir -p recordings/session .cache
+  build/linux/peer/tandem-peer join "$address:27450" --mode watch --name watcher \
+    --record-session "recordings/session/$name.tsession" >.cache/pilot-session.log 2>&1 &
+  guest=$!
+  for _ in $(seq 1 20); do
+    grep -q 'recording the session' .cache/pilot-session.log && break
+    sleep 0.5
+  done
+  if ! grep -q 'recording the session' .cache/pilot-session.log; then
+    kill "$guest" 2>/dev/null || true
+    echo "the recording guest did not join (.cache/pilot-session.log)" >&2
+    exit 1
+  fi
+  cmd "ride hide" >/dev/null
+  pilot_run "$@" || status=$?
+  kill -INT "$guest" 2>/dev/null || true
+  wait "$guest" 2>/dev/null || true
+  cmd "ride show" >/dev/null
+  grep 'session saved' .cache/pilot-session.log || echo "no session saved (.cache/pilot-session.log)" >&2
+  return "$status"
+}
+
+pilot() {
+  local what=${1:-}
+  [ $# -gt 0 ] && shift
+  case $what in
+  build) pilot_build && echo "$pilot_bin" ;;
+  check)
+    pilot_build
+    if [ $# -eq 0 ]; then set -- tools/pilot/routines/*.pilot; fi
+    "$pilot_bin" check "$@"
+    ;;
+  dry)
+    pilot_build
+    "$pilot_bin" dry "$(pilot_routine "${1:?pilot dry ROUTINE}")"
+    ;;
+  run) pilot_run "$@" ;;
+  start) pilot_start "$@" ;;
+  record) pilot_record "$@" ;;
+  session) pilot_session "$@" ;;
+  stop) pilot_stop ;;
+  status) pilot_status ;;
+  pad)
+    pilot_build
+    remote "mkdir -p $pilot_dir"
+    rsync -t "$pilot_bin" "$host:$pilot_dir/"
+    ssh -tt "$host" "cd $pilot_dir && exec ./tandem-pilot pad --instance '$instance' ${PILOT_FLAGS:-} ${1:-10}" </dev/null | tr -d '\r'
+    ;;
+  *)
+    echo "pilot: run ROUTINE [FLAGS] | record NAME ROUTINE | session NAME ROUTINE | dry ROUTINE | check [ROUTINE...] | start [FLAGS] | stop | status | pad [SECONDS] | build" >&2
+    exit 2
+    ;;
+  esac
+}
+
 log() {
   remote "cd '$dir'; tail -n ${1:-40} \"\$(ls -t red4ext/logs/tandem-*.log | head -1)\""
 }
@@ -322,6 +509,8 @@ role() {
     text="role = join"$'\n'"address = $address"$'\nport = 27450\nname = V\n'
     ;;
   player)
+    # Testing is over: no pilot, no pad left behind.
+    pilot_stop >/dev/null 2>&1 || true
     remote "[ -e '$ini.player' ] && mv '$ini.player' '$ini'; head -1 '$ini'"
     return
     ;;
@@ -452,6 +641,10 @@ fetch-recordings)
 peer)
   shift
   peer "$@"
+  ;;
+pilot)
+  shift
+  pilot "$@"
   ;;
 cmd)
   shift

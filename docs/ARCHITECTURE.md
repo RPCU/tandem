@@ -76,7 +76,7 @@ task touches ([Topic files](#topic-files)).
 | `dist/` | files installed next to the DLL (`tandem.ini`, shipped as `tandem.default.ini`) and `INSTALL.md`, the players' guide | `task package` |
 | `cmake/` | `clang-cl-msvc.cmake`: the Windows cross toolchain | — |
 | `docs/` | this core; `architecture/`: one file per subsystem; `relay.md` (operating a relay), `playtest.md` (the first two-machine session); `research/`: engine facts with sources, design research, `data/` (RTTI and skeleton dumps) | `task docs:check` |
-| `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `check-strings.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `package.py` (`task package`), `re/` (read-only reverse engineering, see its README) | — |
+| `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `check-strings.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `package.py` (`task package`), `re/` (read-only reverse engineering, see its README), `pilot/` (the test pilot that plays our V: `architecture/autopilot.md`) | — |
 | `vendor/` | git submodules: RED4ext.SDK, RedLib, ENet, zpp_bits, doctest | — |
 
 The build is Linux-only: the plugin is cross-compiled with clang-cl and
@@ -313,6 +313,7 @@ plugin") and its open problems.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.
 - `two-instances.md`: two real games on the game machine (tried 2026-11-19: they play a session over loopback; a guest froze once, starts under load trip the engine's watchdog): results and measurements, findings, the setup (`tools/instance.sh`: a game folder and a prefix per instance, outside Steam, sandboxed off the player's files), the first-try checklist; the plugin's `TANDEM_CONFIG`, `TANDEM_CMD`, `TANDEM_PORT`, `TANDEM_LOG` (`core/include/tandem/instance.hpp`).
 - `release.md`: packaging (`task package`, the release and symbols zips), the startup check (game version, dependencies, Phantom Liberty, required on every game), what a join compares (protocol and Phantom Liberty refuse; build, files and mod lists warn), bug reports (`tandem-report`), what the game has not run yet. For release, compatibility and report code.
+- `autopilot.md`: the test pilot that plays our real V without a human (recordings, scenarios): script-level actions, a virtual pad, the plugin's state stream, routines with checks, its safety, two-instance runs, the first-run checklist.
 
 Beside them, for people rather than code: `dist/INSTALL.md` (the players' guide, shipped in the zip), [`relay.md`](relay.md) (operating a relay: tokens, systemd, firewall, the image), [`playtest.md`](playtest.md) (the first two-machine session, a checklist).
 

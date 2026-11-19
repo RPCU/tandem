@@ -158,6 +158,18 @@ tasks:
       - go vet ./...
       - go test -race -count=1 ./...
 
+  pilot:test:
+    desc: Test the test pilot (Go, race detector; every routine on its simulator)
+    dir: tools/pilot
+    cmds:
+      - go vet ./...
+      - go test -race -count=1 ./...
+
+  pilot:
+    desc: "The test pilot plays the game's V (task pilot -- run street | dry street | check; tools/game.sh pilot)"
+    cmds:
+      - tools/game.sh pilot {{.CLI_ARGS}}
+
   relay:run:
     desc: Run the relay locally, open to any host (testing only)
     dir: relay
@@ -185,6 +197,7 @@ tasks:
     cmds:
       - task: test
       - task: relay:test
+      - task: pilot:test
       - task: build:plugin
       - task: natives:check
       - task: strings:check

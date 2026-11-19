@@ -1,0 +1,41 @@
+# Every way a V moves that needs no place: jumps, a double jump, dodges,
+# a slide, for the "movement" recording. Climbs, ladders and water need a
+# spot: teleport there and add walk steps.
+limit 180
+needs veh == 0
+calibrate move
+# A jump on the spot, then a running one.
+press a
+until air == 1 timeout 1
+until air == 0 timeout 4
+stick left 0 1
+wait 0.6
+press a
+until air == 1 timeout 1
+# The second press in the air is the double jump, for a V with the legs.
+wait 0.25
+press a
+until air == 0 timeout 5
+stick left 0 0
+walk ~0 ~0
+# A dodge to each side (two quick presses of B with a direction held).
+stick left 1 0
+press b 0.05
+press b 0.05
+stick left 0 0
+wait 0.8
+stick left -1 0
+press b 0.05
+press b 0.05
+stick left 0 0
+wait 0.8
+# A slide: sprint, then crouch.
+walk ~0 ~10 pace sprint
+stick left 0 -1
+press l3
+wait 0.5
+press b
+wait 1.2
+stick left 0 0
+optional until crouch == 0 timeout 1
+walk ~0 ~0

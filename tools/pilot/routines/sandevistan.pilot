@@ -1,0 +1,16 @@
+# The Sandevistan (or whatever operating system V wears): on, a sprint in
+# slowed time, and its end.
+limit 120
+needs veh == 0
+optional act ability
+wait 0.5
+if dilated == 0
+  # The pad's way: both bumpers.
+  hold lb rb
+  wait 0.2
+  release lb rb
+end
+until dilated == 1 timeout 5
+walk ~0 ~10 pace sprint
+walk ~0 ~0 pace sprint
+until dilated == 0 timeout 60
