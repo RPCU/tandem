@@ -4,7 +4,7 @@ Damage and destruction, guns in and on vehicles, a guest on someone else's
 gun, collisions between players' cars and with NPCs, NPC vehicles chasing
 a player, bikes, and every hard way out of a vehicle. Engine facts and
 their tags: [`research/engine/vehicles.md`](../research/engine/vehicles.md)
-§13.30. **Nothing here has run in the game yet** (written while the game
+§13.32. **Nothing here has run in the game yet** (written while the game
 machine was in use): the core, the mock player and the tests are done and
 pass, the scripts compile, the plugin builds; the scenarios at the end are
 what to run first.
@@ -45,7 +45,7 @@ message changed, no version bump.
 | `Gunner`        | Event (kept)    | owner → all                          | who holds the vehicle's gunner seat                                                                                                 |
 | `GunnerAim`     | State, 20 Hz    | the gunner's game → all              | yaw and pitch relative to the vehicle, trigger held                                                                                 |
 | `VehicleBump`   | Event, one-shot | a driver's game → the other driver's | the push our car gave theirs, when (host clock)                                                                                     |
-| `NpcRam`        | Event, one-shot | the driver's game → area owner       | our car ran into one of its NPCs: the car's velocity, knocked down or lethal                                                        |
+| `NpcRam`        | Event, one-shot | the driver's game → the NPC's owner  | our car ran into one of its NPCs: the car's velocity, knocked down or lethal                                                        |
 | `Chase`         | Event (kept)    | area owner → all                     | one of its vehicles chases a player (kNoPlayer: over)                                                                               |
 
 ## Damage and destruction
@@ -141,7 +141,8 @@ shot; a real one on the owner's game would be a second, unwanted hit).
 - **A car into an NPC.** On the driver's game the proxy is hit by the
   game's own vehicle hit (the damage goes to the NPC's owner as
   `NpcStrike`, as any hit on a proxy); the physical half goes as `NpcRam`
-  with the car's velocity: the owner knocks its real NPC down and throws it
+  with the car's velocity, to the game that runs that NPC (with per-player
+  regions, `regions.md`, the owner the session names for it): it knocks its real NPC down and throws it
   along that velocity (ragdoll and impulse). Knock-down from 4 m/s; the
   game's own kill thresholds (25 m/s, 20 for crowd and civilians) say
   lethal.
@@ -255,6 +256,9 @@ Not built, in the order I would do them:
   window's state yet).
 - A guest's summoned car (`SpawnPlayerVehicle`) shared as its own: today
   any car a V drives is shared as that V's.
+- Chases and the shared vehicles of a guest that owns its own region
+  (`regions.md`): the session still takes world vehicles and chases from
+  the host only (`traffic.md`, "Who owns an area", the hand-over).
 - Quickhacks on vehicles stay `VehicleHack` (`combat.md`); a remote
   driver's car-to-NPC rams by an AI car (a guest's Delamain) are the ride's
   game's like any car.

@@ -1,5 +1,8 @@
 #include "tandem/consistency.hpp"
 
+#include "tandem/regions.hpp"
+
+#include <algorithm>
 #include <bit>
 
 namespace tandem::consistency {
@@ -38,9 +41,18 @@ std::uint32_t WorldDigest(const std::optional<proto::World> &world,
 
 std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
                         const std::map<proto::NpcId, proto::NpcHealth> &health,
-                        const std::map<proto::NpcId, proto::NpcHold> &holds) {
+                        const std::map<proto::NpcId, proto::NpcHold> &holds,
+                        const std::map<proto::NpcId, proto::PlayerId> &owners,
+                        const NpcFilter &only, std::uint16_t *count) {
   Hasher hash;
+  std::size_t counted = 0;
   for (const auto &[id, spawn] : npcs) {
+    const auto announcer = regions::Announcer(id);
+    const auto owned = owners.find(id);
+    const auto owner = owned == owners.end() ? announcer : owned->second;
+    if (only && !only(id, owner))
+      continue;
+    ++counted;
     hash.Add(std::uint64_t{id}).Add(spawn.record).Add(spawn.appearance);
     // Health of the NPCs shared now only: what the host said of one that
     // died or went is no one's business.
@@ -50,7 +62,12 @@ std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
       hash.Add(std::uint64_t{0xE0})
           .Add(std::uint64_t{it->second.player})
           .Add(std::uint64_t{static_cast<std::uint8_t>(it->second.how)});
+    // Handed over: whoever runs it now.
+    if (owner != announcer)
+      hash.Add(std::uint64_t{0xE1}).Add(std::uint64_t{owner});
   }
+  if (count)
+    *count = static_cast<std::uint16_t>(std::min<std::size_t>(counted, 0xFFFF));
   return hash.Value();
 }
 
@@ -213,8 +230,13 @@ bool IsOneShot(const proto::Message &message) {
          // A shot at a V, and its hit: each one counts.
          std::holds_alternative<NpcShotAt>(message) || std::holds_alternative<ShotHit>(message) ||
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
-         std::holds_alternative<NpcStrike>(message) || std::holds_alternative<NpcWound>(message) ||
-         std::holds_alternative<AreaHit>(message) ||
+         // A request to operate a device: asked once (its answer is state).
+         std::holds_alternative<DeviceUse>(message) || std::holds_alternative<NpcStrike>(message) ||
+         std::holds_alternative<NpcWound>(message) || std::holds_alternative<AreaHit>(message) ||
+         // A hand-over's steps: each is acted on once (docs/architecture/regions.md).
+         std::holds_alternative<NpcHandover>(message) ||
+         std::holds_alternative<NpcHandoverState>(message) ||
+         std::holds_alternative<NpcHandoverDone>(message) ||
          // A hit on a shared vehicle, a claim on one, a crime: each counts.
          std::holds_alternative<TrafficHit>(message) ||
          std::holds_alternative<TrafficClaim>(message) || std::holds_alternative<Crime>(message) ||

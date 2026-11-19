@@ -749,3 +749,85 @@ TEST_CASE("scene replay: survive encoding, story messages but the poses, bounded
   CHECK_FALSE(Decode(Encode(SceneState{.rate = 1000.f})).has_value());
   CHECK_FALSE(Decode(Encode(SceneState{.rate = std::nanf("")})).has_value());
 }
+
+TEST_CASE("devices: survive encoding, small, reliable, and only known states pass") {
+  RoundTrips(DeviceState{.entity = 0x1122334455667788ULL,
+                         .cls = 0x99AABBCCDDEEFF00ULL,
+                         .status = kDeviceUnpowered,
+                         .flags = kDeviceOpen | kDeviceHacked | kDeviceGlitching,
+                         .value = 12,
+                         .revision = 7,
+                         .by = 3,
+                         .how = kDeviceQuiet});
+  RoundTrips(DeviceState{.entity = 1, .cls = 2, .status = kDeviceDisabled, .how = kDeviceAsk});
+  RoundTrips(DeviceUse{.entity = 0x1122334455667788ULL,
+                       .cls = 0x99AABBCCDDEEFF00ULL,
+                       .status = kDeviceOn,
+                       .flags = kDeviceLocked,
+                       .value = -1,
+                       .seen = 4,
+                       .player = 2});
+  RoundTrips(DeviceSet{.count = 300});
+  RoundTrips(DeviceDigest{.count = 300, .hash = 0xDEADBEEF});
+  for (const Message &message : {Message{DeviceState{}}, Message{DeviceUse{}}, Message{DeviceSet{}},
+                                 Message{DeviceDigest{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(IsReliable(message));
+    CHECK_FALSE(IsStory(message));
+    CHECK_FALSE(IsCombat(message));
+  }
+  CHECK(std::string(NameOf(DeviceState{})) == "DeviceState");
+  CHECK(std::string(NameOf(DeviceUse{})) == "DeviceUse");
+  CHECK(std::string(NameOf(DeviceSet{})) == "DeviceSet");
+  CHECK(std::string(NameOf(DeviceDigest{})) == "DeviceDigest");
+  // A whole record goes to a late joiner: each device is a few dozen bytes.
+  CHECK(Encode(DeviceState{}).size() <= 36);
+  CHECK(Encode(DeviceUse{}).size() <= 36);
+  CHECK(Encode(DeviceDigest{}).size() <= 12);
+  // A status, a state bit or a way of travelling this version does not know.
+  CHECK_FALSE(Decode(Encode(DeviceState{.status = 2})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceState{.status = -3})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceState{.flags = 0x800})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceState{.how = 3})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceUse{.flags = 0x8000})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceUse{.status = 5})).has_value());
+}
+
+TEST_CASE("region messages survive encoding, are reliable and bounded") {
+  RoundTrips(Regions{.revision = 4, .pairs = {1, 2, 2, 3}});
+  RoundTrips(NpcOwner{.npc = 0x01000007, .owner = 3, .flags = kNpcPinned});
+  RoundTrips(NpcHandover{.npc = 9, .to = 2});
+  RoundTrips(NpcHandoverState{.npc = 9,
+                              .from = 1,
+                              .to = 2,
+                              .position = {1.f, 2.f, 3.f},
+                              .yaw = 0.5f,
+                              .health = 0.4f,
+                              .poise = 0.9f,
+                              .flags = kHandoverCombat,
+                              .target = 2,
+                              .hostileTo = 3,
+                              .highLevel = 2,
+                              .effects = {{.record = 77, .remaining = 3.5f, .stacks = 2}}});
+  RoundTrips(NpcHandoverDone{.npc = 9, .accepted = true});
+  RoundTrips(OwnedDigest{.seq = 5, .npcs = 0xABCDEF01, .count = 12});
+  RoundTrips(RegionHold{.player = 3, .held = true});
+  for (const Message message : {Message{Regions{}}, Message{NpcOwner{}}, Message{NpcHandover{}},
+                                Message{NpcHandoverState{}}, Message{NpcHandoverDone{}},
+                                Message{OwnedDigest{}}, Message{RegionHold{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK_FALSE(IsStory(message));
+    CHECK_FALSE(IsCombat(message));
+  }
+  CHECK(std::string(NameOf(Regions{})) == "Regions");
+  CHECK(std::string(NameOf(NpcHandoverState{})) == "NpcHandoverState");
+  CHECK(std::string(NameOf(OwnedDigest{})) == "OwnedDigest");
+  // An odd list is not pairs; a state carries a bounded list of effects.
+  CHECK_FALSE(Decode(Encode(Regions{.pairs = {1, 2, 3}})).has_value());
+  NpcHandoverState big;
+  big.effects.resize(kMaxNpcEffects + 1);
+  CHECK_FALSE(Decode(Encode(big)).has_value());
+  // Appended: the protocol version did not move.
+  CHECK(kProtocolVersion == 6);
+  CHECK(Message(Regions{}).index() == Message(DeviceDigest{}).index() + 1);
+}

@@ -405,8 +405,9 @@ TEST_CASE("an NPC's hit on a guest reaches that guest only, whole") {
   // Nobody to send to: the host's own V, a player not in the session.
   CHECK_FALSE(host->SendPlayerHit({.player = host->You(), .physical = 1.f}));
   CHECK_FALSE(host->SendPlayerHit({.player = 42, .physical = 1.f}));
-  // A guest never sends one: the NPCs are the host's.
+  // A guest never sends one for no NPC, nor for an NPC it does not run.
   CHECK_FALSE(b->SendPlayerHit({.player = a->You(), .physical = 99.f}));
+  CHECK_FALSE(b->SendPlayerHit({.player = a->You(), .npc = 7, .physical = 99.f}));
 
   std::vector<proto::PlayerHit> atA, atB, atHost;
   PumpFor({host.get(), a.get(), b.get()}, 500ms, [&](std::size_t i, const auto &events) {

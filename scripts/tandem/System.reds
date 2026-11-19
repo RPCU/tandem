@@ -328,6 +328,11 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(loot) {
       loot.Begin();
     }
+    // Devices and world objects (Devices.reds).
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.Begin();
+    }
   }
 
   private final func OnPlayerDetach(request: ref<PlayerDetachRequest>) -> Void {
@@ -351,6 +356,12 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     TandemNative.PoseSource(null);
+    // Guest: every device the session changed, back as our own save had it
+    // (before the plugin stops: nothing of this goes to anyone).
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.End(worldStays);
+    }
     this.m_inGame = false;
     this.m_you = 0u;
     this.RemoveAllPuppets();
@@ -599,7 +610,7 @@ public class TandemSystem extends ScriptableSystem {
 
   // Guest: our hit takes the last of this proxy's health (Combat.reds).
   public func PredictKill(npc: Uint32) -> Void {
-    if IsDefined(this.m_npcs) && this.m_you != 0u && !TandemNative.IsHost() {
+    if IsDefined(this.m_npcs) && this.m_you != 0u {
       this.m_npcs.PredictKill(npc);
     }
   }
@@ -695,6 +706,11 @@ public class TandemSystem extends ScriptableSystem {
     TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
     if IsDefined(this.m_revive) && this.m_playing {
       this.m_revive.Tick(this.Now(), this.m_you);
+    }
+    // Devices (Devices.reds); 0: not in a session yet, or the world loads.
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this.m_playing ? this.m_you : 0u);
     }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
@@ -871,8 +887,16 @@ public class TandemSystem extends ScriptableSystem {
       }
     } else if Equals(command, "pose hook") {
       TandemNative.PoseHook();
+    } else if Equals(command, "region hold on") || Equals(command, "region hold off") {
+      // (test) what the quest work says when a gig of our own world starts
+      // or ends where our V stands: we keep our region meanwhile.
+      TandemRegions.Hold(Equals(command, "region hold on"));
+      TandemNative.Log(s"\(command)");
+    } else if Equals(command, "region") {
+      let linked = TandemRegions.Linked();
+      TandemNative.Log(s"region: \(TandemRegions.IsApart() ? "apart" : "grouped"), leader player \(TandemRegions.Leader()), linked with \(ArraySize(linked)) player(s), area \(TandemRegions.OwnsArea() ? "ours" : s"player \(TandemRegions.AreaOwner(this.m_you))'s"), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
     } else if Equals(command, "npc count") {
-      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed)");
+      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
     } else if StrBeginsWith(command, "wheels") {
       // (test, Wheels.reds) "wheels": vehicle combat as we have it; "wheels
       // shoot": our shot on the first remote car copy; "wheels gun": our V
@@ -1320,6 +1344,9 @@ public class TandemSystem extends ScriptableSystem {
     } else if StrBeginsWith(command, "elsewhere") && IsDefined(this.m_elsewhere) {
       // Elsewhere.reds: elsewhere test PLACE|off, elsewhere state.
       this.m_elsewhere.Command(command);
+    } else if StrBeginsWith(command, "device") {
+      // Devices.reds: device, device near [KIND], device open|close|... [KIND].
+      TandemDevices.Get(this.GetGameInstance()).Command(command);
     } else if StrBeginsWith(command, "story") || StrBeginsWith(command, "quest") {
       // Story.reds: story …, quest freeze on|off, quest report.
       TandemStorySystem.Get(this.GetGameInstance()).Command(command);
@@ -1821,6 +1848,12 @@ public class TandemSystem extends ScriptableSystem {
             TandemCoop.Notice(this.GetGameInstance(), s"Co-op session ended: \(event.name)");
           }
           this.m_you = 0u;
+          // Guest: the devices the session changed, back as our own save
+          // had them (Devices.reds); the world stays.
+          let ended = TandemDevices.Get(this.GetGameInstance());
+          if IsDefined(ended) {
+            ended.End(true);
+          }
           if IsDefined(this.m_time) {
             this.m_time.End();
           }

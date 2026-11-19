@@ -7,6 +7,7 @@ add_library(tandem_core STATIC
   src/relay.cpp
   src/consistency.cpp
   src/endpoint.cpp
+  src/endpoint_regions.cpp
   src/story.cpp
   src/carryover.cpp
   src/scene.cpp
@@ -24,7 +25,10 @@ add_library(tandem_core STATIC
   src/instance.cpp
   src/traffic.cpp
   src/vehicle_combat.cpp
-  src/endpoint_vehicles.cpp)
+  src/endpoint_vehicles.cpp
+
+  src/devices.cpp
+  src/regions.cpp)
 target_include_directories(tandem_core PUBLIC include)
 target_link_libraries(tandem_core PUBLIC enet zpp_bits)
 target_compile_features(tandem_core PUBLIC cxx_std_23)

@@ -35,6 +35,10 @@ declare -A value=(
   ["--heat"]=3 ["--heat-at"]=5 ["--heat-for"]=20 ["--crime-at"]=8
   ["--car-damage"]=5 ["--exit-at"]=8 ["--exit-kind"]=knocked ["--bump"]=3 ["--shoot-cars"]=4
   ["--gunner"]=5 ["--gunner-seat"]=seat_back_left ["--ram-npcs"]=3 ["--chase"]=5
+  ["--device"]="1a2b3c4d5e6f7788:DoorControllerPS:open,unlocked@8" ["--device-answer"]=closed ["--device-after"]=2
+  ["--region-far"]=1000 ["--region-npcs"]=3 ["--region-record"]=Character.x ["--region-walk-at"]=10
+  ["--region-leave-at"]=20 ["--region-speed"]=25
+  ["--region-at"]="1,2,3"
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true
 [ -n "$flags" ] || {

@@ -239,6 +239,12 @@ void Recording::DrainSolo() {
     add(std::move(message));
   for (auto &message : runtime.TakeLootOutbox())
     add(std::move(message));
+  // Devices: the host's word on ours (a guest's question or request has
+  // nobody to go to).
+  for (auto &message : runtime.TakeDeviceOutbox())
+    if (const auto *state = std::get_if<proto::DeviceState>(&message);
+        state && state->how != proto::kDeviceAsk)
+      add(std::move(message));
   if (auto vitals = runtime.TakeLocalVitals())
     add(*vitals);
   for (auto &revive : runtime.TakeLocalRevives())

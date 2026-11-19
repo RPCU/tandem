@@ -89,7 +89,9 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.27 | The NCART metro, rides and quest vehicles                       | `transit.md`      |
 | 13.28 | Firing an NPC's shot from a proxy                               | `combat.md`       |
 | 13.29 | What a quest's completion is made of, and what quests test      | `story.md`        |
-| 13.30 | Vehicle combat: the hooks and setters                           | `vehicles.md`     |
+| 13.30 | Devices and world objects                                       | `devices.md`      |
+| 13.31 | Per-player regions: brains, state, pins, crowd                  | `regions.md`      |
+| 13.32 | Vehicle combat: the hooks and setters                           | `vehicles.md`     |
 
 Traffic, parked cars and the prevention system (2026-11-19, scripts and RTTI only): [`engine/traffic-police.md`](engine/traffic-police.md), numbered on its own (its "§1.2" is that file's):
 

@@ -246,6 +246,25 @@ public native struct TandemRegroup {
   native let accepted: Bool;
 }
 
+public native struct TandemDeviceEvent {
+  // 1 (guest) the host's word, 2 (host) a guest asks what it is, 3 (host) a
+  // guest made it this, 4 (guest) the host sends its record again
+  native let kind: Int32;
+  native let entity: EntityID;
+  // its persistent state's class
+  native let cls: CName;
+  // EDeviceStatus
+  native let status: Int32;
+  // the kDevice* state bits (Devices.reds)
+  native let flags: Int32;
+  // floor, station, security state (-1: none)
+  native let value: Int32;
+  // 1: who changed it last (0: the world); 2, 3: who asks
+  native let player: Uint32;
+  // 1: a record to set, not a change to play
+  native let quiet: Bool;
+}
+
 public native struct TandemLootEvent {
   // 1 a stack of a shared world item, 2 a stack taken, 3 an important item
   // another player got, 4 (guest) one on the host's corpse of NPC `id`
@@ -365,6 +384,14 @@ public native class TandemNative extends IScriptable {
   public static native func TakeWorldItem(id: Uint32, stack: Int32)
   public static native func TakeLootEvents() -> array<TandemLootEvent>
   public static native func SendSharedItem(kind: Int32, npc: Uint32, record: TweakDBID, seed: Uint32, quantity: Int32)
+  // Devices (Devices.reds): what one of ours is now (host; by: the player
+  // whose request made it so), what our V made one (guest), one that came
+  // into our world (guest), and what the session says of them.
+  public static native func EntityHex(entity: EntityID) -> String
+  public static native func ReportDevice(entity: EntityID, cls: CName, status: Int32, flags: Int32, value: Int32, by: Uint32)
+  public static native func UseDevice(entity: EntityID, cls: CName, status: Int32, flags: Int32, value: Int32)
+  public static native func AskDevice(entity: EntityID, cls: CName, status: Int32, flags: Int32, value: Int32)
+  public static native func TakeDeviceEvents() -> array<TandemDeviceEvent>
   public static native func You() -> Uint32
   public static native func SendVitals(life: Int32, flags: Int32)
   public static native func OtherPlayers() -> array<Uint32>

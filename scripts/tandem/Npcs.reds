@@ -1,12 +1,19 @@
-// One set of NPCs (docs/architecture/npcs.md, milestone 5). The host's game runs
-// them; it announces each NPC near its V to the guests and sends where they
-// all are ten times a second. A guest shows each one as a proxy: the same
-// record and appearance with its brain off (TandemProxies.Pacify), moved by
-// tandem's controller like a remote player.
+// One set of NPCs (docs/architecture/npcs.md, milestone 5; per-player regions:
+// docs/architecture/regions.md). Every game runs the NPCs around its own V
+// (m_known): it announces each one to the players linked with it and sends
+// where they all are ten times a second. The others show each one as a
+// proxy (m_proxies): the same record and appearance with its brain off
+// (TandemProxies.Pacify), moved by tandem's controller like a remote player.
+// "The host" in the comments below reads "the NPC's owner": the host's game
+// was the only owner before regions.
 //
-// Fights: a guest's hit on a proxy goes to the host (Combat.reds), which
-// applies it to the real NPC with its whole outcome (Outcomes.reds); health,
-// poise, wounds, knock-outs and death come back to every guest.
+// Fights: a hit on a proxy goes to its owner (Combat.reds), which applies it
+// to the real NPC with its whole outcome (Outcomes.reds); health, poise,
+// wounds, knock-outs and death come back to everyone who sees it.
+//
+// An NPC changes owner when its owner's V leaves it with another player
+// near (Regions.reds: Give, Take): the giver's body becomes a proxy in
+// place, the receiver's proxy wakes up.
 
 public class TandemNpcKnown {
   public let id: EntityID;
@@ -31,6 +38,14 @@ public class TandemNpcKnown {
   // Whose vehicle that is, as sent: a player, or a shared world vehicle
   // (TandemStreet.SeatOwner).
   public let seatOwner: Uint32;
+  // Regions. A proxy we took over: one of our spawned entities (deleted when
+  // it leaves the shared world), when its brain was switched on (0: checked
+  // already), and until when a body spawned again for it may be missing.
+  public let managed: Bool;
+  public let wokeAt: Float;
+  public let pendingUntil: Float;
+  public let record: TweakDBID;
+  public let appearance: CName;
 }
 
 public class TandemNpcProxy {
@@ -68,6 +83,10 @@ public class TandemNpcProxy {
   // and when the host's health for it said it lives (0: no such doubt).
   public let predictedAt: Float;
   public let doubtAt: Float;
+  // Regions: its body is the game's own entity (an NPC of ours we handed
+  // over): never deleted, hidden when its proxy goes, woken up when the
+  // session ends.
+  public let native: Bool;
 }
 
 // A proxy taken out of its seat, deleted a moment later (a body is deleted
@@ -83,9 +102,14 @@ public class TandemNpcs {
   private let m_next: Uint32;
   private let m_last: Float;
   private let m_proxies: array<ref<TandemNpcProxy>>;
-  // Guest: its own NPCs are never the world's (the host's proxies are), so
-  // its crowd is turned off and what still spawns is hidden.
-  private let m_quiet: Bool;
+  // Regions: our V is inside a higher-ranked linked player's region: that
+  // game populates the streets we both see, so our crowd is turned off and
+  // what still spawns there is hidden. Alone in our region, our crowd is on.
+    private let m_quiet: Bool;
+  // Since when a linked player that outranks us has been unplaced (0: none
+  // is), and whether we now take it to be with us.
+  private let m_unplacedSince: Float;
+  private let m_assumeTogether: Bool;
   private let m_lastQuiet: Float;
   private let m_hidden: Int32;
   private let m_hiddenIds: array<EntityID>;
@@ -145,36 +169,61 @@ public class TandemNpcs {
   public func Tick(now: Float, you: Uint32) -> Void {
     this.m_you = you;
     this.m_now = now;
-    if TandemNative.IsHost() {
-      this.TakeHits();
-      if now - this.m_last >= 0.1 {
-        this.m_last = now;
-        this.Share();
-      }
-    } else {
-      if !this.m_quiet {
-        this.m_quiet = true;
-        GameInstance.GetCommunitySystem(this.m_game).ChangeDensityModifier(0.0);
-        TandemNative.Log("npcs: guest, own crowd off");
-      }
-      // Not while our V is in another world (Elsewhere.reds): the NPCs
-      // around it are that world's, and hiding is for good.
-      // On the NCART our train is our own (Transit.reds): its passengers
-      // stay, as the host's stay on its train.
-      if now - this.m_lastQuiet >= 0.5 && !TandemElsewhere.Inside(this.m_game) && !this.OnMetro() {
-        this.m_lastQuiet = now;
-        this.HideOwn();
-      }
-      this.Follow(now);
-      this.TakePlayerHits();
-      if now - this.m_lastCheck >= 1.0 {
-        this.m_lastCheck = now;
-        this.Check(now);
-      }
+    // Who runs which NPC first (regions): a hand-over moves an NPC between
+    // the two lists below.
+    this.TakeRegionEvents(now);
+    // The owner's side: the NPCs our game runs.
+    this.TakeHits();
+    if now - this.m_last >= 0.1 {
+      this.m_last = now;
+      this.UpdateQuiet();
+      this.Share();
+    }
+    // The proxies' side: the NPCs the players linked with us run.
+    this.Follow(now);
+    this.TakePlayerHits();
+    if now - this.m_lastCheck >= 1.0 {
+      this.m_lastCheck = now;
+      this.Check(now);
     }
     let outcomes = TandemOutcomes.Of(this.m_game);
     if IsDefined(outcomes) {
       outcomes.Tick(now, you, this);
+    }
+  }
+
+  // A new id of our own range: our player id minus one in the top 8 bits
+  // (tandem/regions.hpp MakeNpcId; the host's are as they always were, and
+  // so are the recorder's, solo: m_you 0).
+  private func NewId() -> Uint32 {
+    let slot = this.m_you > 1u ? this.m_you - 1u : 0u;
+    let id = slot * 16777216u + this.m_next;
+    this.m_next += 1u;
+    return id;
+  }
+
+  // The body of a proxy: one of our spawned entities, or (handed over in
+  // place) the game's own.
+  public func ProxyBody(id: EntityID) -> ref<Entity> {
+    let body = GameInstance.GetDynamicEntitySystem().GetEntity(id);
+    if !IsDefined(body) {
+      body = GameInstance.FindEntityByID(this.m_game, id);
+    }
+    return body;
+  }
+
+  // A proxy leaves: deleted when it is ours; a body of the game's own (an
+  // NPC of ours we handed over) is hidden for good instead: it belongs to
+  // another player's world now.
+  private func Dispose(proxy: ref<TandemNpcProxy>) -> Void {
+    if proxy.native {
+      let body = GameInstance.FindEntityByID(this.m_game, proxy.id) as ScriptedPuppet;
+      if IsDefined(body) && !ArrayContains(this.m_hiddenIds, proxy.id) {
+        body.HideIrreversibly();
+        ArrayPush(this.m_hiddenIds, proxy.id);
+      }
+    } else {
+      GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
     }
   }
 
@@ -258,7 +307,16 @@ public class TandemNpcs {
     for proxy in this.m_proxies {
       TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(proxy.npc));
       this.Unseat(proxy);
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
+      if proxy.native {
+        // Ours before we handed it over, and nobody runs it any more: back
+        // to our own game.
+        let own = GameInstance.FindEntityByID(this.m_game, proxy.id) as ScriptedPuppet;
+        if IsDefined(own) && !proxy.dead {
+          TandemProxies.Wake(own);
+        }
+      } else {
+        GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
+      }
     }
     for leaving in this.m_leaving {
       GameInstance.GetDynamicEntitySystem().DeleteEntity(leaving.id);
@@ -276,7 +334,7 @@ public class TandemNpcs {
   // just taken out of a car copy was not seen to hurt (§13.6: the vehicle's
   // deletion does); seated proxies only exist with a ride going on.
   private func Unseat(proxy: ref<TandemNpcProxy>) -> Void {
-    let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as GameObject;
+    let body = this.ProxyBody(proxy.id) as GameObject;
     if EntityID.IsDefined(proxy.seatedIn) && IsDefined(body) {
       TandemVehicles.Unseat(this.m_game, body, proxy.seatedIn, proxy.seatedSlot);
     }
@@ -301,29 +359,91 @@ public class TandemNpcs {
     return this.m_hidden;
   }
 
-  // ---- guest ----
+  // ---- regions: our crowd, and what we hold back ----
 
-  // Our own NPCs near V (encounters, communities, what the crowd spawned
-  // before it was off): brain off and out of sight for good. The host's
-  // version of each one comes as a proxy.
-  private func HideOwn() -> Void {
+  // Our crowd is off while our V is deep inside a higher-ranked linked
+  // player's region (that game populates what we both see), and back on once
+  // we are out of it. Alone in our region our game is the single-player game.
+  private func UpdateQuiet() -> Void {
     let player = GetPlayer(this.m_game);
     if !IsDefined(player) {
       return;
     }
-    let entities = GameInstance.GetDynamicEntitySystem();
-    for npc in player.GetNPCsAroundObject(TandemNpcs.Range()) {
-      let id = npc.GetEntityID();
-      if !entities.IsManaged(id) && !ArrayContains(this.m_hiddenIds, id) {
-        TandemProxies.Pacify(npc);
-        npc.HideIrreversibly();
-        ArrayPush(this.m_hiddenIds, id);
-        this.m_hidden += 1;
+    let range = this.m_quiet ? TandemRegionRules.Radius() : TandemRegionRules.QuietIn();
+    let unplaced = false;
+    let by = TandemRegionRules.CoveredBy(player.GetWorldPosition(), range, unplaced);
+    // A player that outranks us and has said nothing of where it is: we
+    // wait three seconds, then take it to be with us (a host that sends no
+    // state, as before regions; a mock host standing idle).
+    if unplaced {
+      if this.m_unplacedSince <= 0.0 {
+        this.m_unplacedSince = this.m_now;
+      }
+    } else {
+      this.m_unplacedSince = 0.0;
+    }
+    this.m_assumeTogether = unplaced && this.m_now - this.m_unplacedSince >= 3.0;
+    if unplaced && !this.m_assumeTogether {
+      return;
+    }
+    if by != 0u && !this.m_quiet {
+      this.m_quiet = true;
+      GameInstance.GetCommunitySystem(this.m_game).ChangeDensityModifier(0.0);
+      TandemNative.Log(s"npcs: guest, own crowd off (inside player \(by)'s region)");
+    } else if by == 0u && this.m_quiet {
+      this.m_quiet = false;
+      GameInstance.GetCommunitySystem(this.m_game).ResetDensityModifier();
+      TandemNative.Log("npcs: own region, own crowd on");
+    }
+  }
+
+  // An NPC of ours that we do not add to the shared world: brain off and out
+  // of sight for good (a new spawn inside a higher-ranked player's region,
+  // or the twin of an NPC that player runs).
+  private func Suppress(npc: ref<ScriptedPuppet>) -> Void {
+    let id = npc.GetEntityID();
+    if ArrayContains(this.m_hiddenIds, id) {
+      return;
+    }
+    TandemProxies.Pacify(npc);
+    npc.HideIrreversibly();
+    ArrayPush(this.m_hiddenIds, id);
+    this.m_hidden += 1;
+  }
+
+  // A proxy of a higher-ranked player's NPC appears where one of ours of the
+  // same record stands still: the same placed NPC (a vendor at its stall) in
+  // both games. Ours gives way, the proxy stands in its place.
+  private func MergeTwin(owner: Uint32, record: TweakDBID, at: Vector4) -> Void {
+    if !TandemRegionRules.Outranks(owner, this.m_you) {
+      return;
+    }
+    for known in this.m_known {
+      if !known.dead && !known.down && !known.managed {
+        let own = GameInstance.FindEntityByID(this.m_game, known.id) as ScriptedPuppet;
+        if IsDefined(own) && own.GetRecordID() == record && Vector4.Distance(own.GetWorldPosition(), at) < 2.5 && !TandemRegionRules.Engaged(this.m_game, own) {
+          TandemNative.SendNpcGone(known.npc, 0, 0u);
+          this.m_anims.Forget(known.npc);
+          this.Suppress(own);
+          this.ForgetKnown(known.npc);
+          TandemNative.Log(s"regions: our npc \(known.npc) is the twin of player \(owner)'s: ours gives way");
+          return;
+        }
       }
     }
   }
 
-  // ---- host ----
+  private func ForgetKnown(npc: Uint32) -> Void {
+    let kept: array<ref<TandemNpcKnown>>;
+    for known in this.m_known {
+      if known.npc != npc {
+        ArrayPush(kept, known);
+      }
+    }
+    this.m_known = kept;
+  }
+
+  // ---- the owner's side ----
 
   private func Share() -> Void {
     let player = GetPlayer(this.m_game);
@@ -349,27 +469,62 @@ public class TandemNpcs {
     let sampling = this.m_anims.Due(this.m_now);
     // Our V away from its body in another world (Elsewhere.reds): the NPCs
     // around it are that world's, none is shared, and the shared ones go.
-    let around = player.GetNPCsAroundObject(TandemNpcs.Range());
+    // Out to where an NPC leaves the shared world: one we run stays ours
+    // until then (a hand-over is asked before, regions.hpp kLose).
+    let around = player.GetNPCsAroundObject(TandemRegionRules.Lose());
     if TandemElsewhere.AwayFromBody(this.m_game) {
       ArrayClear(around);
     }
+    let here = player.GetWorldPosition();
+    // Inside another world (cyberspace, a braindance) the NPCs are that
+    // world's: none is hidden, as before.
+    let hides = !riding && !TandemElsewhere.Inside(this.m_game);
     for npc in around {
       let id = npc.GetEntityID();
-      // The remote players' puppets are not the host's world (cars are not
-      // listed, the host has no proxies); the dead are handled below.
-      if ArraySize(ids) < 64 && !riding && !this.IsPuppet(id) && !npc.IsDead() {
-        let known = this.Find(id);
-        if !IsDefined(known) {
+      let known = this.Find(id);
+      // New to us: ours to add to the shared world when it is in our region
+      // (the radius), is not a remote player's puppet, a proxy or one we
+      // hold back, and no higher-ranked linked player's region covers it.
+      let ours = IsDefined(known);
+      if !ours && ArraySize(ids) < 64 && !riding && !npc.IsDead() && !this.IsPuppet(id) && !this.IsProxyEntity(id) && !ArrayContains(this.m_hiddenIds, id) && Vector4.Distance(npc.GetWorldPosition(), here) <= TandemNpcs.Range() {
+        let unplaced = false;
+        let by = hides ? TandemRegionRules.CoveredBy(npc.GetWorldPosition(), TandemRegionRules.Radius(), unplaced) : 0u;
+        if unplaced && !this.m_assumeTogether {
+          // We do not know yet whether a higher-ranked player's region
+          // covers it: neither announced nor held back this round.
+        } else if by != 0u && !TandemRegionRules.Engaged(this.m_game, npc) {
+          this.Suppress(npc);
+        } else {
           known = new TandemNpcKnown();
           known.id = id;
-          known.npc = this.m_next;
+          known.npc = this.NewId();
           known.health = -1.0;
           known.poise = -1.0;
-          this.m_next += 1u;
+          known.record = npc.GetRecordID();
+          known.appearance = npc.GetCurrentAppearanceName();
           ArrayPush(this.m_known, known);
           TandemNative.SendNpcSpawn(known.npc, npc.GetRecordID(), npc.GetCurrentAppearanceName(), npc.GetWorldPosition(), npc.GetWorldOrientation());
+          // A quest or story NPC, a police unit: ours for good.
+          if TandemRegionRules.Pinned(npc) {
+            TandemRegions.Pin(known.npc);
+          }
+          ours = true;
         }
+      }
+      // One we run stays ours past what one message carries (64): it is
+      // left out of this round's states, not dropped.
+      if ours && !riding && !npc.IsDead() {
         known.seen = true;
+      }
+      // The dead are handled below.
+      if ours && ArraySize(ids) < 64 && !riding && !npc.IsDead() {
+        // Taken over a moment ago: did its brain come back?
+        if known.wokeAt > 0.0 && this.m_now - known.wokeAt >= 1.5 {
+          known.wokeAt = 0.0;
+          if !TandemProxies.Awake(npc) {
+            this.Respawn(known, npc);
+          }
+        }
         ArrayPush(ids, known.npc);
         ArrayPush(positions, npc.GetWorldPosition());
         ArrayPush(orientations, npc.GetWorldOrientation());
@@ -404,7 +559,7 @@ public class TandemNpcs {
     // goes), or gone.
     let kept: array<ref<TandemNpcKnown>>;
     for known in this.m_known {
-      if known.seen {
+      if known.seen || known.pendingUntil > this.m_now {
         ArrayPush(kept, known);
       } else {
         let body = GameInstance.FindEntityByID(this.m_game, known.id) as ScriptedPuppet;
@@ -422,6 +577,11 @@ public class TandemNpcs {
         } else {
           TandemNative.SendNpcGone(known.npc, 0, 0u);
           this.m_anims.Forget(known.npc);
+          // A proxy we took over is one of our spawned entities: the game
+          // would never stream it out.
+          if known.managed {
+            entities.DeleteEntity(known.id);
+          }
         }
       }
     }
@@ -589,10 +749,11 @@ public class TandemNpcs {
     return known.lastHitBy != 0u && this.m_now - known.lastHitAt < 8.0 ? known.lastHitBy : 0u;
   }
 
-  // Status effects guests' hits put on our NPCs. (Their hits themselves are
-  // strikes: Outcomes.reds.)
+  // Status effects other players' hits put on our NPCs (new ones come with
+  // the NPC events, in Follow). Their hits themselves are strikes:
+  // Outcomes.reds.
   private func TakeHits() -> Void {
-    // Effects that waited for their guest's puppet.
+    // Effects that waited for their player's puppet.
     let waiting = this.m_pendingEffects;
     let since = this.m_pendingSince;
     ArrayClear(this.m_pendingEffects);
@@ -608,14 +769,6 @@ public class TandemNpcs {
         }
       }
       i += 1;
-    }
-    for event in TandemNative.TakeNpcEvents() {
-      if event.kind == 5 {
-        if !this.ApplyEffect(event) {
-          ArrayPush(this.m_pendingEffects, event);
-          ArrayPush(this.m_pendingSince, this.m_now);
-        }
-      }
     }
   }
 
@@ -664,7 +817,13 @@ public class TandemNpcs {
   private func Follow(now: Float) -> Void {
     let entities = GameInstance.GetDynamicEntitySystem();
     for event in TandemNative.TakeNpcEvents() {
-      if event.kind == 4 {
+      if event.kind == 5 {
+        // On an NPC we run: another player's hit put a status effect on it.
+        if !this.ApplyEffect(event) {
+          ArrayPush(this.m_pendingEffects, event);
+          ArrayPush(this.m_pendingSince, this.m_now);
+        }
+      } else if event.kind == 4 {
         let proxy = this.FindProxy(event.npc);
         if IsDefined(proxy) {
           proxy.health = event.amount;
@@ -688,12 +847,26 @@ public class TandemNpcs {
       } else if event.kind == 1 {
         // Never two proxies of one NPC (a spawn after the checks put it
         // back already).
+        let at = new Vector4(event.x, event.y, event.z, 1.0);
+        let player = GetPlayer(this.m_game);
         if IsDefined(this.FindProxy(event.npc)) {
           TandemNative.Log(s"consistency: spawn of npc \(event.npc) ignored, its proxy exists");
+        } else if IsDefined(this.FindNpc(event.npc)) {
+          // One we run (handed over to us before its announcement came).
+        } else if IsDefined(player) && Vector4.Distance(player.GetWorldPosition(), at) > 250.0 {
+          // Too far to show (we just joined and the host does not know yet
+          // where we are): the checks spawn it if it is still ours to show.
         } else {
-          this.SpawnProxy(event.npc, event.record, event.appearance, new Vector4(event.x, event.y, event.z, 1.0), new Quaternion(event.i, event.j, event.k, event.r));
+          // Its owner as the session has it; until it says, the game that
+          // announced it (the top bits of its id).
+          let owner = TandemRegions.OwnerOf(event.npc);
+          if owner == 0u {
+            owner = event.npc / 16777216u + 1u;
+          }
+          this.MergeTwin(owner, event.record, at);
+          this.SpawnProxy(event.npc, event.record, event.appearance, at, new Quaternion(event.i, event.j, event.k, event.r));
         }
-      } else {
+      } else if event.kind == 2 {
         this.Remove(event.npc);
       }
     }
@@ -701,7 +874,7 @@ public class TandemNpcs {
     // Brain off and our controller on, as soon as each proxy exists.
     for proxy in this.m_proxies {
       if !proxy.ready {
-        let npc = entities.GetEntity(proxy.id) as ScriptedPuppet;
+        let npc = this.ProxyBody(proxy.id) as ScriptedPuppet;
         if IsDefined(npc) && proxy.seenAt <= 0.0 {
           proxy.seenAt = now;
           // Brain off at once: a proxy never acts on its own.
@@ -730,7 +903,7 @@ public class TandemNpcs {
     let game = this.m_game;
     let entities = GameInstance.GetDynamicEntitySystem();
     if proxy.reattachAt > 0.0 && now >= proxy.reattachAt && !GameInstance.GetMountingFacility(game).IsMountedToAnything(proxy.id) {
-      let body = entities.GetEntity(proxy.id);
+      let body = this.ProxyBody(proxy.id);
       if IsDefined(body) {
         TandemNative.AttachController(TandemNative.NpcPuppetId(proxy.npc), body);
       }
@@ -739,7 +912,7 @@ public class TandemNpcs {
     if !proxy.seatChanged || now < proxy.seatRetryAt {
       return;
     }
-    let npc = entities.GetEntity(proxy.id) as GameObject;
+    let npc = this.ProxyBody(proxy.id) as GameObject;
     if !IsDefined(npc) {
       return;
     }
@@ -802,7 +975,7 @@ public class TandemNpcs {
     if !IsDefined(proxy) || !proxy.ready || proxy.dead {
       return null;
     }
-    return GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
+    return this.ProxyBody(proxy.id) as ScriptedPuppet;
   }
 
   // The proxy entity of a host NPC, alive or dead (Loot.reds).
@@ -857,12 +1030,14 @@ public class TandemNpcs {
       } else {
         proxy.orphanSince = 0.0;
       }
-      if keep && proxy.seenAt > 0.0 && !IsDefined(entities.GetEntity(proxy.id)) {
+      if keep && proxy.seenAt > 0.0 && !IsDefined(this.ProxyBody(proxy.id)) {
         if proxy.goneSince <= 0.0 {
           proxy.goneSince = now;
         } else if now - proxy.goneSince >= 3.0 {
           TandemNative.Log(s"consistency: proxy \(proxy.npc) lost its body\(proxy.dead ? ", corpse dropped" : ", spawned again")");
           keep = false;
+          // (A body of the game's own that streamed out comes back as one
+          // of ours.)
           if !proxy.dead {
             ArrayPush(lost, proxy.npc);
           }
@@ -874,15 +1049,15 @@ public class TandemNpcs {
         ArrayPush(kept, proxy);
       } else {
         TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(proxy.npc));
-        entities.DeleteEntity(proxy.id);
+        this.Dispose(proxy);
       }
     }
     this.m_proxies = kept;
-    // What the host shares and we do not show.
+    // What the players linked with us share and we do not show.
     let missing: array<Uint32>;
     let since: array<Float>;
     for npc in TandemSync.SharedNpcs() {
-      if !IsDefined(this.FindProxy(npc.npc)) {
+      if !IsDefined(this.FindProxy(npc.npc)) && !IsDefined(this.FindNpc(npc.npc)) {
         let first = this.MissingSince(npc.npc, now);
         if ArrayContains(lost, npc.npc) || now - first >= 2.0 {
           let half = npc.yaw * 0.5;
@@ -924,18 +1099,6 @@ public class TandemNpcs {
     return ArraySize(npcs);
   }
 
-  // Every NPC the host shares that we show (Police.reds: which of them
-  // are officers that see our V).
-  public func ProxyIds() -> array<Uint32> {
-    let out: array<Uint32>;
-    for proxy in this.m_proxies {
-      if !proxy.dead {
-        ArrayPush(out, proxy.npc);
-      }
-    }
-    return out;
-  }
-
   private func FindProxy(npc: Uint32) -> ref<TandemNpcProxy> {
     for proxy in this.m_proxies {
       if proxy.npc == npc {
@@ -951,7 +1114,7 @@ public class TandemNpcs {
     if proxy.health < 0.0 || proxy.dead {
       return;
     }
-    let npc = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
+    let npc = this.ProxyBody(proxy.id) as ScriptedPuppet;
     if IsDefined(npc) {
       GameInstance.GetStatPoolsSystem(this.m_game).RequestSettingStatPoolValue(Cast<StatsObjectID>(proxy.id), gamedataStatPoolType.Health, MaxF(proxy.health * 100.0, 0.1), null, true);
     }
@@ -971,7 +1134,7 @@ public class TandemNpcs {
     if proxy.poise < 0.0 || proxy.dead {
       return;
     }
-    let npc = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
+    let npc = this.ProxyBody(proxy.id) as ScriptedPuppet;
     if IsDefined(npc) {
       GameInstance.GetStatPoolsSystem(this.m_game).RequestSettingStatPoolValue(Cast<StatsObjectID>(proxy.id), gamedataStatPoolType.Poise, proxy.poise * 100.0, null, true);
     }
@@ -988,7 +1151,7 @@ public class TandemNpcs {
     }
     proxy.down = true;
     TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
-    let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
+    let body = this.ProxyBody(proxy.id) as ScriptedPuppet;
     if IsDefined(body) {
       StatusEffectHelper.ApplyStatusEffect(body, t"BaseStatusEffect.Unconscious");
       // A takedown still playing on it (Takedowns.reds) lays it down itself.
@@ -1069,7 +1232,7 @@ public class TandemNpcs {
     proxy.dead = true;
     this.m_anims.Drop(npc);
     TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
-    let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
+    let body = this.ProxyBody(proxy.id) as ScriptedPuppet;
     // Our kill: the game credits our V (on-kill perks, its own feedback) and
     // pays the skill XP our hits on it queued (Combat.reds): RewardKiller
     // sends our V TargetNeutraliziedEvent, which processes the queue for this
@@ -1098,7 +1261,7 @@ public class TandemNpcs {
     let bestDistance = 1000000.0;
     let player = GetPlayer(this.m_game);
     for proxy in this.m_proxies {
-      let npc = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
+      let npc = this.ProxyBody(proxy.id) as ScriptedPuppet;
       if !proxy.dead && IsDefined(npc) && NotEquals(GameObject.GetAttitudeBetween(npc, player), EAIAttitude.AIA_Friendly) {
         let distance = Vector4.Distance(npc.GetWorldPosition(), at);
         if distance < bestDistance {
@@ -1110,12 +1273,12 @@ public class TandemNpcs {
     return best;
   }
 
-  // A shared NPC's session id by its entity, dead or alive (host: ours;
-  // guest: a proxy), 0: none; and back (Takedowns.reds).
+  // A shared NPC's session id by its entity, dead or alive (one we run, or
+  // a proxy), 0: none; and back (Takedowns.reds).
   public func NpcOf(id: EntityID) -> Uint32 {
-    if TandemNative.IsHost() {
-      let known = this.Find(id);
-      return IsDefined(known) ? known.npc : 0u;
+    let known = this.Find(id);
+    if IsDefined(known) {
+      return known.npc;
     }
     for proxy in this.m_proxies {
       if proxy.id == id {
@@ -1126,19 +1289,27 @@ public class TandemNpcs {
   }
 
   public func EntityOf(npc: Uint32) -> EntityID {
-    if TandemNative.IsHost() {
-      let known = this.FindNpc(npc);
-      if IsDefined(known) {
-        return known.id;
-      }
-    } else {
-      let proxy = this.FindProxy(npc);
-      if IsDefined(proxy) {
-        return proxy.id;
-      }
+    let known = this.FindNpc(npc);
+    if IsDefined(known) {
+      return known.id;
+    }
+    let proxy = this.FindProxy(npc);
+    if IsDefined(proxy) {
+      return proxy.id;
     }
     let none = EntityID.FromHash(0ul);
     return none;
+  }
+
+  // Regions: we run this shared NPC (false: a proxy, or none), by its
+  // session id or its entity. What "TandemNative.IsHost()" used to stand for
+  // wherever an NPC is concerned.
+  public func Owns(npc: Uint32) -> Bool {
+    return npc != 0u && IsDefined(this.FindNpc(npc));
+  }
+
+  public func OwnsEntity(id: EntityID) -> Bool {
+    return IsDefined(this.Find(id));
   }
 
   // The NPC a proxy stands for (0: not a live proxy). Combat.reds sends hits
@@ -1152,23 +1323,23 @@ public class TandemNpcs {
     return 0u;
   }
 
-  // Quickhacks (Hacks.reds): the entity of a session NPC (host: the real
-  // one; guest: its live proxy), and the other way round.
+  // Quickhacks (Hacks.reds): the entity of a live session NPC (the real
+  // one when we run it, else its proxy), and the other way round.
   public func EntityOfNpc(npc: Uint32) -> EntityID {
-    if TandemNative.IsHost() {
-      let known = this.FindNpc(npc);
-      return IsDefined(known) ? known.id : EntityID();
+    let known = this.FindNpc(npc);
+    if IsDefined(known) {
+      return known.id;
     }
     let proxy = this.FindProxy(npc);
     return IsDefined(proxy) && !proxy.dead ? proxy.id : EntityID();
   }
 
   public func NpcOfEntity(id: EntityID) -> Uint32 {
-    if !TandemNative.IsHost() {
-      return this.NpcOfProxy(id);
-    }
     let known = this.Find(id);
-    return IsDefined(known) && !known.dead ? known.npc : 0u;
+    if IsDefined(known) {
+      return known.dead ? 0u : known.npc;
+    }
+    return this.NpcOfProxy(id);
   }
 
   private func Remove(npc: Uint32) -> Void {
@@ -1177,8 +1348,10 @@ public class TandemNpcs {
       if proxy.npc == npc {
         this.m_anims.Drop(npc);
         TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
-        let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as GameObject;
-        if EntityID.IsDefined(proxy.seatedIn) && IsDefined(body) {
+        let body = this.ProxyBody(proxy.id) as GameObject;
+        if proxy.native {
+          this.Dispose(proxy);
+        } else if EntityID.IsDefined(proxy.seatedIn) && IsDefined(body) {
           // Out of its seat first, deleted once off it (ProcessLeaving).
           TandemVehicles.Unseat(this.m_game, body, proxy.seatedIn, proxy.seatedSlot);
           let leaving = new TandemNpcLeaving();
@@ -1211,7 +1384,7 @@ public class TandemNpcs {
     proxy.predictedAt = this.m_now;
     proxy.doubtAt = 0.0;
     TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
-    let body = GameInstance.GetDynamicEntitySystem().GetEntity(proxy.id) as ScriptedPuppet;
+    let body = this.ProxyBody(proxy.id) as ScriptedPuppet;
     if IsDefined(body) {
       body.Kill(GetPlayer(this.m_game), false, false);
       // Its loot is ours to roll, as for a death the host told us of (Die):
@@ -1228,7 +1401,7 @@ public class TandemNpcs {
     for proxy in this.m_proxies {
       if proxy.predictedAt > 0.0 && proxy.doubtAt > 0.0 && now - proxy.predictedAt > 1.5 {
         let entities = GameInstance.GetDynamicEntitySystem();
-        let old = entities.GetEntity(proxy.id) as GameObject;
+        let old = this.ProxyBody(proxy.id) as GameObject;
         let spec = new DynamicEntitySpec();
         spec.recordID = proxy.record;
         spec.appearanceName = proxy.appearance;
@@ -1244,7 +1417,8 @@ public class TandemNpcs {
         spec.spawnInView = true;
         spec.active = true;
         ArrayPush(spec.tags, n"Tandem.Proxy");
-        entities.DeleteEntity(proxy.id);
+        this.Dispose(proxy);
+        proxy.native = false;
         proxy.id = entities.CreateEntity(spec);
         proxy.ready = false;
         proxy.seenAt = 0.0;
@@ -1261,21 +1435,13 @@ public class TandemNpcs {
     return this.m_proxies;
   }
 
-  // (Time.reds) The live NPCs this game shares (host: the ones it lists;
-  // guest: its proxies), and their entities in the same order.
+  // (Time.reds) The live NPCs this game runs, and their entities in the
+  // same order: their owner slows them inside a time bubble.
   public func TimeIds() -> array<Uint32> {
     let out: array<Uint32>;
-    if TandemNative.IsHost() {
-      for known in this.m_known {
-        if !known.dead {
-          ArrayPush(out, known.npc);
-        }
-      }
-    } else {
-      for proxy in this.m_proxies {
-        if !proxy.dead {
-          ArrayPush(out, proxy.npc);
-        }
+    for known in this.m_known {
+      if !known.dead {
+        ArrayPush(out, known.npc);
       }
     }
     return out;
@@ -1283,35 +1449,311 @@ public class TandemNpcs {
 
   public func TimeEntities() -> array<EntityID> {
     let out: array<EntityID>;
-    if TandemNative.IsHost() {
-      for known in this.m_known {
-        if !known.dead {
-          ArrayPush(out, known.id);
-        }
-      }
-    } else {
-      for proxy in this.m_proxies {
-        if !proxy.dead {
-          ArrayPush(out, proxy.id);
-        }
+    for known in this.m_known {
+      if !known.dead {
+        ArrayPush(out, known.id);
       }
     }
     return out;
   }
 
+  // The live proxies this game shows, and their entities in the same order:
+  // animated at the speed their owner's bubble gives them (Police.reds: which
+  // of them are officers that see our V).
+  public func ProxyIds() -> array<Uint32> {
+    let out: array<Uint32>;
+    for proxy in this.m_proxies {
+      if !proxy.dead {
+        ArrayPush(out, proxy.npc);
+      }
+    }
+    return out;
+  }
+
+  public func ProxyEntities() -> array<EntityID> {
+    let out: array<EntityID>;
+    for proxy in this.m_proxies {
+      if !proxy.dead {
+        ArrayPush(out, proxy.id);
+      }
+    }
+    return out;
+  }
+
+  // The shared NPCs here: the ones we run and the proxies we show.
   public func Count() -> Int32 {
-    return TandemNative.IsHost() ? ArraySize(this.m_known) : ArraySize(this.m_proxies);
+    return ArraySize(this.m_known) + ArraySize(this.m_proxies);
+  }
+
+  public func OwnedCount() -> Int32 {
+    return ArraySize(this.m_known);
+  }
+
+  public func ProxyCount() -> Int32 {
+    return ArraySize(this.m_proxies);
   }
 
   public func Clear() -> Void {
     for proxy in this.m_proxies {
       TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(proxy.npc));
       this.Unseat(proxy);
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
+      this.Dispose(proxy);
     }
     ArrayClear(this.m_proxies);
     ArrayClear(this.m_known);
     this.m_anims.Clear();
+  }
+
+  // ---- regions: hand-overs (docs/architecture/regions.md §4) ----
+
+  private func TakeRegionEvents(now: Float) -> Void {
+    for event in TandemRegions.TakeEvents() {
+      if event.kind == 1 {
+        this.Give(event.npc, event.player);
+      } else if event.kind == 2 {
+        this.Take(event);
+      } else if event.kind == 3 && event.was == this.m_you {
+        this.Lost(event.npc, event.player);
+      }
+    }
+  }
+
+  // The host asks us to hand one of our NPCs over to `to` (our V is leaving
+  // it, theirs is near). Its state is read, its brain switched off, and its
+  // body stays here as the proxy of what is now their NPC: nothing pops.
+  private func Give(npc: Uint32, to: Uint32) -> Void {
+    let none: array<TweakDBID>;
+    let noTimes: array<Float>;
+    let noStacks: array<Int32>;
+    let known = this.FindNpc(npc);
+    let body = IsDefined(known) ? GameInstance.FindEntityByID(this.m_game, known.id) as ScriptedPuppet : null;
+    if !IsDefined(known) || !IsDefined(body) {
+      // Nothing of it here to read (it streamed out with us): they take it
+      // as their proxy shows it (flag 8: blind).
+      this.ForgetKnown(npc);
+      this.m_anims.Forget(npc);
+      TandemRegions.Give(npc, to, 0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 8, 0u, 0, 0, none, noTimes, noStacks);
+      TandemNative.Log(s"regions: handover out: npc \(npc) to player \(to), no body here (blind)");
+      return;
+    }
+    // Ours for now: a corpse or a body knocked out stays where it fell; a
+    // quest NPC, one held, in a takedown or seated is not to be moved; nor
+    // while our V is in another world.
+    let takedowns = TandemTakedowns.Get(this.m_game);
+    let pinned = TandemRegionRules.Pinned(body);
+    if TandemRegions.Holds(this.m_you) || known.dead || known.down || body.IsDead() || pinned || EntityID.IsDefined(known.seatVehicle) || (IsDefined(takedowns) && takedowns.Holds(npc)) || TandemElsewhere.AwayFromBody(this.m_game) {
+      if pinned {
+        TandemRegions.Pin(npc);
+      }
+      TandemRegions.Refuse(npc);
+      TandemNative.Log(s"regions: handover of npc \(npc) to player \(to) refused\(pinned ? " (pinned)" : "")");
+      return;
+    }
+    let id = known.id;
+    let pools = GameInstance.GetStatPoolsSystem(this.m_game);
+    let health = pools.GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Health, true) / 100.0;
+    let poise = pools.GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Poise, true) / 100.0;
+    let flags = 0;
+    if NPCPuppet.IsInCombat(body) {
+      flags += 1;
+    }
+    if ScriptedPuppet.IsDefeated(body) {
+      flags += 2;
+    }
+    // Whom it fights (the new owner first) and whom it is hostile to.
+    let player = GetPlayer(this.m_game);
+    let watched = this.Watched(player);
+    let target = 0u;
+    let hostileTo = 0;
+    let p = 1u;
+    let bit = 1;
+    for v in watched {
+      if IsDefined(v) {
+        if NPCPuppet.IsInCombatWithTarget(body, v) && (target == 0u || p == to) {
+          target = p;
+        }
+        if Equals(GameObject.GetAttitudeBetween(body, v), EAIAttitude.AIA_Hostile) {
+          hostileTo += bit;
+        }
+      }
+      p += 1u;
+      bit *= 2;
+    }
+    // Its status effects that run out (burning, poison, a stun): the ones
+    // with time left, as many as a message carries.
+    let effects: array<TweakDBID>;
+    let remaining: array<Float>;
+    let stacks: array<Int32>;
+    for effect in StatusEffectHelper.GetAppliedEffects(body) {
+      let left = effect.GetRemainingDuration();
+      let record = effect.GetRecord();
+      if left > 0.1 && IsDefined(record) && ArraySize(effects) < 8 {
+        ArrayPush(effects, record.GetID());
+        ArrayPush(remaining, left);
+        ArrayPush(stacks, Cast<Int32>(effect.GetStackCount()));
+      }
+    }
+    let at = body.GetWorldPosition();
+    let highLevel = EnumInt(body.GetHighLevelStateFromBlackboard());
+    // Brain off; our controller moves it from the new owner's states.
+    TandemProxies.Pacify(body);
+    let proxy = new TandemNpcProxy();
+    proxy.npc = npc;
+    proxy.id = id;
+    proxy.native = !known.managed;
+    proxy.health = health;
+    proxy.poise = poise;
+    proxy.record = body.GetRecordID();
+    proxy.appearance = body.GetCurrentAppearanceName();
+    // Its rig is loaded: the controller goes on at the next pass.
+    proxy.seenAt = this.m_now - 2.0;
+    ArrayPush(this.m_proxies, proxy);
+    this.ForgetKnown(npc);
+    this.m_anims.Forget(npc);
+    TandemRegions.Give(npc, to, at.X, at.Y, at.Z, Deg2Rad(body.GetWorldYaw()), health, poise, flags, target, hostileTo, highLevel, effects, remaining, stacks);
+    TandemNative.Log(s"regions: handover out: npc \(npc) to player \(to), health \(health), effects \(ArraySize(effects)), target player \(target)");
+  }
+
+  // An NPC we showed as a proxy is ours to run from now (handed over, or
+  // inherited from an owner that is gone): its brain is switched back on and
+  // it gets the state that came with it. Same body: nothing pops.
+  private func Take(event: TandemRegionEvent) -> Void {
+    let npc = event.npc;
+    let proxy = this.FindProxy(npc);
+    let body = IsDefined(proxy) ? this.ProxyBody(proxy.id) as ScriptedPuppet : null;
+    if !IsDefined(proxy) || !IsDefined(body) || proxy.dead || body.IsDead() || TandemElsewhere.AwayFromBody(this.m_game) {
+      // Nothing here to wake up: it goes for everyone rather than stay with
+      // an owner that does not run it.
+      if IsDefined(proxy) {
+        this.Remove(npc);
+      }
+      TandemRegions.Adopt(npc, false);
+      TandemNative.Log(s"regions: handover in: npc \(npc) from player \(event.player) refused, no live proxy here");
+      return;
+    }
+    TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
+    this.Unseat(proxy);
+    this.m_anims.Drop(npc);
+    let known = new TandemNpcKnown();
+    known.id = proxy.id;
+    known.npc = npc;
+    known.health = -1.0;
+    known.poise = -1.0;
+    known.seen = true;
+    known.down = proxy.down;
+    known.managed = !proxy.native;
+    known.wokeAt = this.m_now;
+    known.record = proxy.record;
+    known.appearance = proxy.appearance;
+    ArrayPush(this.m_known, known);
+    let kept: array<ref<TandemNpcProxy>>;
+    for other in this.m_proxies {
+      if other.npc != npc {
+        ArrayPush(kept, other);
+      }
+    }
+    this.m_proxies = kept;
+    TandemProxies.Wake(body);
+    this.Restore(body, event);
+    TandemRegions.Adopt(npc, true);
+    TandemNative.Log(s"regions: handover in: npc \(npc) from player \(event.player) health \(event.health) effects \(event.effects) target player \(event.target)\((event.flags & 16) != 0 ? " (inherited)" : "")");
+  }
+
+  // What came with an NPC taken over, put on its body here: health, guard,
+  // the status effects with the time they had left, whom it is hostile to
+  // and whom it fights (as tandem's test ganger is set on a puppet,
+  // System.reds). What its behaviour tree was doing is not carried: it
+  // decides again from its target.
+  private func Restore(body: ref<ScriptedPuppet>, event: TandemRegionEvent) -> Void {
+    let id = body.GetEntityID();
+    let pools = GameInstance.GetStatPoolsSystem(this.m_game);
+    if event.health >= 0.0 {
+      pools.RequestSettingStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Health, MaxF(event.health * 100.0, 0.1), null, true);
+    }
+    if event.poise >= 0.0 {
+      pools.RequestSettingStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Poise, event.poise * 100.0, null, true);
+    }
+    let effects = GameInstance.GetStatusEffectSystem(this.m_game);
+    for effect in TandemRegions.EffectsOf(event.npc) {
+      if !StatusEffectSystem.ObjectHasStatusEffect(body, effect.record) {
+        StatusEffectHelper.ApplyStatusEffect(body, effect.record);
+      }
+      if effect.remaining > 0.0 {
+        effects.SetStatusEffectRemainingDuration(id, effect.record, effect.remaining);
+      }
+    }
+    let player = GetPlayer(this.m_game);
+    let watched = this.Watched(player);
+    let p = 1u;
+    let bit = 1;
+    for v in watched {
+      if IsDefined(v) && (event.hostileTo & bit) != 0 {
+        GameObject.ChangeAttitudeToHostile(body, v);
+      }
+      if IsDefined(v) && p == event.target {
+        GameObject.ChangeAttitudeToHostile(body, v);
+        TargetTrackingExtension.InjectThreat(body, v);
+      }
+      p += 1u;
+      bit *= 2;
+    }
+  }
+
+  // A proxy we took over whose brain did not come back (its AI component
+  // stays off): spawned again in place from its record, the old body deleted
+  // in the same frame. One frame of swap instead of a frozen NPC.
+  private func Respawn(known: ref<TandemNpcKnown>, old: ref<ScriptedPuppet>) -> Void {
+    if !known.managed || !TDBID.IsValid(known.record) {
+      TandemNative.Log(s"regions: npc \(known.npc) did not wake up (its own body: left as it is)");
+      return;
+    }
+    let entities = GameInstance.GetDynamicEntitySystem();
+    let pools = GameInstance.GetStatPoolsSystem(this.m_game);
+    let health = pools.GetStatPoolValue(Cast<StatsObjectID>(known.id), gamedataStatPoolType.Health, true);
+    let spec = new DynamicEntitySpec();
+    spec.recordID = known.record;
+    spec.appearanceName = known.appearance;
+    spec.position = old.GetWorldPosition();
+    spec.orientation = old.GetWorldOrientation();
+    spec.alwaysSpawned = true;
+    spec.persistState = false;
+    spec.persistSpawn = false;
+    spec.spawnInView = true;
+    spec.active = true;
+    ArrayPush(spec.tags, n"Tandem.Adopted");
+    entities.DeleteEntity(known.id);
+    known.id = entities.CreateEntity(spec);
+    known.pendingUntil = this.m_now + 3.0;
+    known.health = health / 100.0;
+    TandemNative.Log(s"regions: npc \(known.npc) did not wake up: spawned again in place");
+  }
+
+  // An NPC we ran is no longer ours without our giving it (our world was
+  // rebuilt, or the session let go of it). Someone runs it now: its body, if
+  // it is still here, becomes their proxy. Nobody does: it is ours alone
+  // again, and is announced afresh if it is still around.
+  private func Lost(npc: Uint32, owner: Uint32) -> Void {
+    let known = this.FindNpc(npc);
+    if !IsDefined(known) {
+      return;
+    }
+    let body = GameInstance.FindEntityByID(this.m_game, known.id) as ScriptedPuppet;
+    this.ForgetKnown(npc);
+    this.m_anims.Forget(npc);
+    if owner != 0u && IsDefined(body) && !body.IsDead() {
+      TandemProxies.Pacify(body);
+      let proxy = new TandemNpcProxy();
+      proxy.npc = npc;
+      proxy.id = known.id;
+      proxy.native = !known.managed;
+      proxy.health = -1.0;
+      proxy.poise = -1.0;
+      proxy.record = body.GetRecordID();
+      proxy.appearance = body.GetCurrentAppearanceName();
+      proxy.seenAt = this.m_now - 2.0;
+      ArrayPush(this.m_proxies, proxy);
+    }
+    TandemNative.Log(s"regions: npc \(npc) is no longer ours (now player \(owner)'s)");
   }
 
   public func AnimsReport() -> String {

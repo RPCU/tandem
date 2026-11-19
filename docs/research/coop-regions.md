@@ -7,6 +7,8 @@ the map, one world"): the world around each V is run by that V's own game
 game runs it when they are together; ownership hands over cleanly as they
 move; lasting facts go to the host's record of the world.
 
+**What was built from this: [`../architecture/regions.md`](../architecture/regions.md); the engine facts it uses: [`engine/regions.md`](engine/regions.md).**
+
 **Status: desk research, 2026-11-18. Nothing here was run in game.** It
 builds on what tandem already does and has measured (engine-knowledge §13,
 milestone 5) and on [`coop-npcs-combat.md`](coop-npcs-combat.md) and

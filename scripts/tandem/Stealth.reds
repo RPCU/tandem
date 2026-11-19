@@ -66,7 +66,7 @@ public func TandemSetHostTracked(tracked: Bool) -> Bool {
 public final func TriggerSingleBroadcast(contextOwner: wref<GameObject>, gdStimType: gamedataStimType, opt radius: Float, opt investigateData: stimInvestigateData, opt propagationChange: Bool) -> Void {
   wrappedMethod(contextOwner, gdStimType, radius, investigateData, propagationChange);
   let owner = this.GetOwner();
-  if IsDefined(owner) && owner.IsPlayer() && TandemNative.IsStarted() && !TandemNative.IsHost() {
+  if IsDefined(owner) && owner.IsPlayer() && TandemNative.IsStarted() {
     let stealth = TandemStealth.Of(owner.GetGame());
     if IsDefined(stealth) {
       stealth.OwnNoise(gdStimType, radius, propagationChange);
@@ -139,11 +139,9 @@ public class TandemStealth {
       this.SendOurs(player);
     }
     this.FollowOthers(player);
-    if TandemNative.IsHost() {
-      this.HearGuests();
-    } else {
-      this.FollowHost(player, npcs);
-    }
+    // The NPCs we run hear the other Vs; the proxies we show notice ours.
+    this.HearGuests();
+    this.FollowHost(player, npcs);
   }
 
   // The session is over: our V is nobody's target any more.
@@ -367,7 +365,7 @@ public class TandemStealth {
     }
     // Fully blocking (the relic): the NPCs hunting them lose them, as
     // vanilla drops V from its hostile NPCs' trackers.
-    if (flags & 2) != 0 && (state.flags & 2) == 0 && TandemNative.IsHost() {
+    if (flags & 2) != 0 && (state.flags & 2) == 0 {
       let dropped = 0;
       for npc in player.GetNPCsAroundObject(TandemNpcs.Range()) {
         let tracker = npc.GetTargetTrackerComponent();

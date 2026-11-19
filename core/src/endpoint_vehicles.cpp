@@ -192,12 +192,16 @@ void Endpoint::SendVehicleBump(proto::VehicleBump bump) {
 }
 
 void Endpoint::SendNpcRam(proto::NpcRam ram) {
-  if (!IsJoined() || m_ended || OwnsArea() || !m_npcs.contains(ram.npc))
+  if (!IsJoined() || m_ended || !m_npcs.contains(ram.npc) || OwnsNpc(ram.npc))
     return; // our own NPCs are hit by our own game
   if (!Finite(ram.velocity) || !Finite(ram.position))
     return;
   ram.player = m_you;
-  Send(m_hostPeer, ram);
+  // To the NPC's owner (regions: whoever runs it now), through the host.
+  if (IsHost())
+    RouteToOwner(ram.npc, ram, m_you);
+  else
+    Send(m_hostPeer, ram);
 }
 
 void Endpoint::SendChase(const proto::Chase &chase) {
@@ -420,10 +424,11 @@ void Endpoint::OnGuestVehicles(net::PeerId peer, proto::PlayerId player,
                      Send(*to, relayed);
                  },
                  [&](const proto::NpcRam &ram) {
-                   // The NPC's owner applies it: us (AreaOwner).
+                   // The NPC's owner applies it: us, or the guest that runs
+                   // it (regions), passed on.
                    auto mine = ram;
                    mine.player = player;
-                   if (OwnsArea() && m_npcs.contains(mine.npc) && Finite(mine.velocity))
+                   if (Finite(mine.velocity) && RouteToOwner(mine.npc, mine, player))
                      out.push_back(events::NpcRamBy{mine});
                  },
                  [](const auto &) {}, // a chase is the area owner's to say
@@ -492,7 +497,11 @@ void Endpoint::OnHostVehicles(const proto::Message &message, std::vector<Session
                    if (bump.other == m_you && bump.player != m_you)
                      out.push_back(events::VehicleBumpBy{bump});
                  },
-                 [](const proto::NpcRam &) {}, // the area owner's to apply
+                 [&](const proto::NpcRam &ram) {
+                   // Passed on to us: we run that NPC (regions).
+                   if (ram.player != m_you && OwnsNpc(ram.npc))
+                     out.push_back(events::NpcRamBy{ram});
+                 },
                  [&](const proto::Chase &chase) {
                    const auto it = m_chases.find(chase.vehicle);
                    if (chase.target == proto::kNoPlayer) {

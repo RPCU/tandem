@@ -572,11 +572,9 @@ public class TandemWheelsSync {
     return true;
   }
 
-  // The area owner: a player's car ran into our NPC on their screen.
+  // The NPC's owner (the session only hands it to the game that runs the
+  // NPC): a player's car ran into our NPC on their screen.
   private func OnRam(event: TandemWheelsEvent, system: ref<TandemSystem>) -> Void {
-    if !TandemArea.Owns() {
-      return;
-    }
     let npc = GameInstance.FindEntityByID(this.m_game, system.NpcEntity(event.npc)) as ScriptedPuppet;
     if !IsDefined(npc) || npc.IsDead() {
       return;

@@ -322,6 +322,20 @@ TEST_CASE("a session recording keeps a host's world, not the transport's") {
   // A timed hub's start moves with the replay.
   const auto hub = play::AdaptSession(proto::ChoiceHub{.timedStartUs = 100}, mapping, 50);
   CHECK(std::get<proto::ChoiceHub>(*hub).timedStartUs == 150);
+  // The host's word on a device is replayed, by whoever of this session did
+  // it (another guest's doing: the world's); the bookkeeping is not.
+  const auto door = play::AdaptSession(
+      proto::DeviceState{.entity = 7, .cls = 8, .flags = proto::kDeviceOpen, .by = 3}, mapping, 0);
+  REQUIRE(door);
+  CHECK(std::get<proto::DeviceState>(*door).by == 2);
+  const auto other =
+      play::AdaptSession(proto::DeviceState{.entity = 7, .cls = 8, .by = 4}, mapping, 0);
+  REQUIRE(other);
+  CHECK(std::get<proto::DeviceState>(*other).by == proto::kNoPlayer);
+  CHECK_FALSE(play::AdaptSession(proto::DeviceState{.how = proto::kDeviceAsk}, mapping, 0));
+  CHECK_FALSE(play::KeepsSession(proto::DeviceUse{}));
+  CHECK_FALSE(play::KeepsSession(proto::DeviceDigest{}));
+  CHECK_FALSE(play::KeepsSession(proto::DeviceSet{}));
 }
 
 TEST_CASE("a host's session recorded by one guest replays the same to another") {

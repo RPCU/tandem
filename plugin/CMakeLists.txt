@@ -27,6 +27,8 @@ add_library(tandem SHARED
   src/sync_natives.cpp
   src/street_natives.cpp
   src/wheels_natives.cpp
+  src/regions.cpp
+  src/region_natives.cpp
   src/engine/layout.cpp
   src/engine/animation.cpp
   src/engine/controller.cpp
