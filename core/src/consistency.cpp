@@ -194,7 +194,9 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<NpcShotAt>(message) || std::holds_alternative<ShotHit>(message) ||
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
          std::holds_alternative<NpcStrike>(message) || std::holds_alternative<NpcWound>(message) ||
-         std::holds_alternative<AreaHit>(message);
+         std::holds_alternative<AreaHit>(message) ||
+         // A trade's every step counts (each names its trade: tandem/trade.hpp).
+         IsTrade(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

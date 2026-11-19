@@ -2,6 +2,7 @@
 
 #include "tandem/elsewhere.hpp"
 #include "tandem/play.hpp"
+#include "tandem/progress.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -49,6 +50,11 @@ template <class T> bool Keep(std::map<proto::PlayerId, T> &kept, const T &value)
   return true;
 }
 
+bool IsTradeRequest(const proto::Message &message) {
+  const auto *trade = std::get_if<proto::Trade>(&message);
+  return trade && trade->verb == proto::TradeVerb::Request;
+}
+
 // Guest requests that aim at the host's world as it was: void once it
 // moved on to another epoch (proto::Epoch).
 bool AimsAtWorld(const proto::Message &message) {
@@ -58,7 +64,9 @@ bool AimsAtWorld(const proto::Message &message) {
          std::holds_alternative<proto::NpcStrike>(message) ||
          std::holds_alternative<proto::ShotHit>(message) ||
          std::holds_alternative<proto::NpcAction>(message) ||
-         std::holds_alternative<proto::Noise>(message);
+         std::holds_alternative<proto::Noise>(message) ||
+         // A request to trade with a player beside us, as our world was.
+         IsTradeRequest(message);
 }
 } // namespace
 
@@ -166,8 +174,11 @@ std::vector<SessionEvent> Endpoint::Update(std::chrono::milliseconds wait) {
       Send(m_hostPeer, proto::Ping{now});
     }
   }
-  if (IsHost() && !m_ended)
+  if (IsHost() && !m_ended) {
     SendDigests();
+    // Requests that lapsed, commits to say again.
+    RouteTrade(m_trades.Tick(net::NowUs()), out);
+  }
   return out;
 }
 
@@ -242,6 +253,9 @@ void Endpoint::BumpEpoch(std::uint8_t reason) {
                            .firstNpcSeq = m_npcSeq + 1});
     // A check soon after the world settles.
     m_nextDigestUs = std::min(m_nextDigestUs, net::NowUs() + Us(m_timing.digest) / 2);
+    // Our V is no longer beside whoever it traded with.
+    if (reason != proto::kEpochJoin)
+      RouteTrade(m_trades.Drop(m_you, proto::TradeReason::Away), m_pending);
   } else {
     Send(
         m_hostPeer,
@@ -288,6 +302,14 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
     }
     if (proto::IsCombat(message)) {
       OnGuestCombat(player, message, out);
+      return;
+    }
+    if (proto::IsTrade(message)) {
+      // Its seat's word, in its own name; a commit is never a guest's.
+      if (const auto *trade = std::get_if<proto::Trade>(&message))
+        RouteTrade(m_trades.On(player, *trade, net::NowUs(), Present()), out);
+      else if (const auto *offer = std::get_if<proto::TradeOffer>(&message))
+        RouteTrade(m_trades.On(player, *offer, net::NowUs()), out);
       return;
     }
 
@@ -467,6 +489,9 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      m_lives[player] = relayed;
                      Broadcast(relayed, event.peer);
                      out.push_back(events::RemoteVitals{relayed});
+                     // Down or out: not at a trade table any more.
+                     if (relayed.life != proto::Life::Up)
+                       RouteTrade(m_trades.Drop(player, proto::TradeReason::Down), out);
                      CheckLost(out);
                    },
                    [&](const proto::Revive &revive) {
@@ -522,6 +547,8 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                        out.push_back(events::EpochChanged{relayed});
                        // Its world was rebuilt: check it soon.
                        m_digestSoon.insert(player);
+                       // ...and it is no longer beside whoever it traded with.
+                       RouteTrade(m_trades.Drop(player, proto::TradeReason::Away), out);
                      }
                    },
                    [](const auto &) {},
@@ -579,6 +606,11 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   // stays hidden anywhere).
   EndElsewhereOf(player, out, true);
   m_lives.erase(player);
+  // The session's level is the mean of those who are left.
+  m_levels.erase(player);
+  UpdateSessionLevel(out);
+  // Its trades close for the other side (one already decided stands).
+  RouteTrade(m_trades.Drop(player, proto::TradeReason::Gone), out);
   // It may have been reviving someone (it cannot say it stopped: a player
   // can vanish at any moment): every downed V hears its revive is off.
   for (const auto &[id, vitals] : m_lives) {
@@ -735,6 +767,8 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       Send(peer, *m_world);
     if (m_difficulty)
       Send(peer, *m_difficulty);
+    if (m_sessionLevel)
+      Send(peer, *m_sessionLevel);
     // What lies in the world (its taken stacks at quantity 0). Loot is not
     // in the digests: the host arbitrates each claim (ClaimWorldItem).
     if (!resync)
@@ -755,6 +789,8 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       Send(peer, health);
     for (const auto &[npc, poise] : m_npcPoise)
       Send(peer, poise);
+    for (const auto &[npc, level] : m_npcLevels)
+      Send(peer, level);
     for (const auto &[npc, hold] : m_npcHolds)
       Send(peer, hold);
     // In a resync, who is not held (its copy may say otherwise).
@@ -843,6 +879,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
     out.push_back(events::Story{message});
     return;
   }
+  if (proto::IsTrade(message)) {
+    HearTrade(message, out);
+    return;
+  }
   if (proto::IsCombat(message)) {
     // The host's word on its NPCs and rules; an area hit only when on us.
     if (std::holds_alternative<proto::NpcStrike>(message))
@@ -854,6 +894,23 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
       if (m_difficulty == *difficulty)
         return;
       m_difficulty = *difficulty;
+    }
+    // Levels are state too: a repeat (a resync) is applied nowhere. A
+    // player's own level is never relayed.
+    if (std::holds_alternative<proto::PlayerLevel>(message))
+      return;
+    if (const auto *session = std::get_if<proto::SessionLevel>(&message)) {
+      if (m_sessionLevel == *session)
+        return;
+      m_sessionLevel = *session;
+    }
+    if (const auto *level = std::get_if<proto::NpcLevel>(&message)) {
+      if (!m_npcs.contains(level->npc))
+        return; // of an NPC that is gone
+      if (const auto it = m_npcLevels.find(level->npc);
+          it != m_npcLevels.end() && it->second == *level)
+        return;
+      m_npcLevels[level->npc] = *level;
     }
     out.push_back(events::Combat{message});
     return;
@@ -881,6 +938,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             SendLocalElsewhereNow();
             SendLocalVitalsNow();
             SendLocalTransitNow();
+            SendLocalLevelNow();
             // What overtook the Welcome, in the order it came.
             for (const auto &early : std::exchange(m_early, {}))
               OnGuestMessage(early, out);
@@ -994,6 +1052,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             m_npcHolds.erase(gone.npc);
             if (m_npcs.erase(gone.npc) > 0) {
               m_npcHealth.erase(gone.npc);
+              m_npcLevels.erase(gone.npc);
               if (gone.reason == 1)
                 m_corpses.insert(gone.npc); // stays until the host's corpse goes
               out.push_back(events::HostNpcGone{gone});
@@ -1018,6 +1077,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 continue;
               }
               m_npcHealth.erase(it->first);
+              m_npcLevels.erase(it->first);
               m_npcHolds.erase(it->first);
               out.push_back(events::HostNpcGone{{.npc = it->first, .reason = 0}});
               it = m_npcs.erase(it);
@@ -1305,6 +1365,11 @@ void Endpoint::SendNpcSpawn(const proto::NpcSpawn &spawn) {
     return;
   m_npcs[spawn.npc] = spawn;
   Broadcast(spawn);
+  // Its level, if the game said it first.
+  if (const auto early = m_npcLevelsEarly.extract(spawn.npc)) {
+    m_npcLevels[spawn.npc] = early.mapped();
+    Broadcast(early.mapped());
+  }
 }
 
 void Endpoint::SendNpcStates(proto::NpcStates states) {
@@ -1330,6 +1395,8 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
   m_npcSeats.erase(gone.npc);
   m_npcAnims.erase(gone.npc);
   m_npcPoise.erase(gone.npc);
+  m_npcLevels.erase(gone.npc);
+  m_npcLevelsEarly.erase(gone.npc);
   Broadcast(gone);
 }
 
@@ -1637,6 +1704,8 @@ void Endpoint::SendLocalVitalsNow() {
   if (IsHost()) {
     Broadcast(*m_localVitals);
     CheckLost(m_pending);
+    if (m_localVitals->life != proto::Life::Up)
+      RouteTrade(m_trades.Drop(m_you, proto::TradeReason::Down), m_pending);
   } else {
     Send(m_hostPeer, *m_localVitals);
   }
@@ -1957,14 +2026,115 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
       out.push_back(events::Combat{mine});
     else if (const auto peer = PeerOf(mine.player); peer && mine.player != player)
       Send(*peer, mine);
+  } else if (const auto *level = std::get_if<proto::PlayerLevel>(&message)) {
+    // Its V's level: the session's is the mean of everyone's.
+    m_levels[player] = level->level;
+    UpdateSessionLevel(out);
   }
-  // Wounds, poise and the difficulty are the host's to say.
+  // Wounds, poise, the difficulty and the NPCs' levels are the host's to say.
+}
+
+std::set<proto::PlayerId> Endpoint::Present() const {
+  std::set<proto::PlayerId> present;
+  for (const auto &[player, info] : m_players)
+    present.insert(player);
+  return present;
+}
+
+// Host: the table's word, to each player it is for.
+void Endpoint::RouteTrade(const std::vector<trade::Out> &outs, std::vector<SessionEvent> &out) {
+  for (const auto &[to, message] : outs) {
+    if (to == m_you)
+      HearTrade(message, out);
+    else if (const auto peer = PeerOf(to))
+      Send(*peer, message);
+  }
+}
+
+// The host's word for our seat. A commit is acknowledged every time it
+// comes and reported to the game once: a trade is never applied twice.
+void Endpoint::HearTrade(const proto::Message &message, std::vector<SessionEvent> &out) {
+  if (const auto *commit = std::get_if<proto::TradeCommit>(&message)) {
+    const bool fresh = m_tradesApplied.insert(commit->id).second;
+    if (fresh)
+      out.push_back(events::Trade{message});
+    const proto::Trade applied{.id = commit->id, .from = m_you, .verb = proto::TradeVerb::Applied};
+    if (IsHost())
+      RouteTrade(m_trades.On(m_you, applied, net::NowUs(), Present()), out);
+    else
+      Send(m_hostPeer, applied);
+    return;
+  }
+  out.push_back(events::Trade{message});
+}
+
+bool Endpoint::SendTrade(proto::Message message) {
+  if (!IsJoined() || m_ended)
+    return false;
+  // Who says it is who we are.
+  if (auto *trade = std::get_if<proto::Trade>(&message)) {
+    trade->from = m_you;
+    if (IsHost())
+      RouteTrade(m_trades.On(m_you, *trade, net::NowUs(), Present()), m_pending);
+    else
+      Send(m_hostPeer, message);
+    return true;
+  }
+  if (auto *offer = std::get_if<proto::TradeOffer>(&message)) {
+    offer->player = m_you;
+    if (IsHost())
+      RouteTrade(m_trades.On(m_you, *offer, net::NowUs()), m_pending);
+    else
+      Send(m_hostPeer, message);
+    return true;
+  }
+  return false; // a commit is the table's to send; anything else is not a trade
+}
+
+void Endpoint::SendLocalLevelNow() {
+  if (!m_localLevel || !IsJoined() || m_ended)
+    return;
+  if (IsHost())
+    UpdateSessionLevel(m_pending);
+  else
+    Send(m_hostPeer, proto::PlayerLevel{.player = m_you, .level = *m_localLevel});
+}
+
+void Endpoint::UpdateSessionLevel(std::vector<SessionEvent> &out) {
+  if (!IsHost() || m_ended)
+    return;
+  if (m_localLevel)
+    m_levels[m_you] = *m_localLevel;
+  // A player that has not said its level yet is left out of the mean.
+  std::vector<std::uint8_t> levels;
+  for (const auto &[player, level] : m_levels)
+    levels.push_back(level);
+  if (levels.empty())
+    return;
+  const proto::SessionLevel session{.level = progress::MeanLevel(levels),
+                                    .players = static_cast<std::uint8_t>(levels.size())};
+  if (m_sessionLevel == session)
+    return;
+  m_sessionLevel = session;
+  Broadcast(session);
+  out.push_back(events::Combat{session});
 }
 
 bool Endpoint::SendCombat(proto::Message message) {
   if (m_tap && play::Keeps(message))
     m_tap(message);
+  if (const auto *level = std::get_if<proto::PlayerLevel>(&message)) {
+    // Our V's: kept, and said as soon as we are in the session.
+    if (level->level == 0 || level->level > proto::kMaxLevel)
+      return false;
+    m_localLevel = level->level;
+    SendLocalLevelNow();
+    return IsJoined() && !m_ended;
+  }
   if (!IsJoined() || m_ended || !proto::IsCombat(message))
+    return false;
+  // The session's level is the host's endpoint's to work out.
+  if (std::holds_alternative<proto::SessionLevel>(message))
     return false;
   if (auto *area = std::get_if<proto::AreaHit>(&message)) {
     if (area->player == m_you)
@@ -1992,6 +2162,21 @@ bool Endpoint::SendCombat(proto::Message message) {
     m_npcPoise[poise->npc] = *poise;
   if (const auto *difficulty = std::get_if<proto::Difficulty>(&message))
     m_difficulty = *difficulty;
+  if (const auto *level = std::get_if<proto::NpcLevel>(&message)) {
+    // Of an NPC we share, and only when it changes. One we are about to
+    // share (its spawn is on its way from the game by another queue): kept,
+    // and said right after the spawn.
+    if (!m_npcs.contains(level->npc)) {
+      if (m_npcLevelsEarly.size() >= 256)
+        m_npcLevelsEarly.clear();
+      m_npcLevelsEarly[level->npc] = *level;
+      return false;
+    }
+    if (const auto it = m_npcLevels.find(level->npc);
+        it != m_npcLevels.end() && it->second == *level)
+      return true;
+    m_npcLevels[level->npc] = *level;
+  }
   Broadcast(message);
   return true;
 }

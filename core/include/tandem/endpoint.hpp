@@ -12,6 +12,7 @@
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
 #include "tandem/story.hpp"
+#include "tandem/trade.hpp"
 
 #include <cstdint>
 #include <functional>
@@ -185,6 +186,12 @@ struct RemoteTimeEffect {
 struct Combat {
   proto::Message message;
 };
+// Trade (tandem/trade.hpp): what the host says to our seat at the table: a
+// Trade or a TradeOffer of the trade we are in or asked into, or a
+// TradeCommit to apply (reported once per trade, however often it comes).
+struct Trade {
+  proto::Message message;
+};
 // Another player went into another world, changed it or came back (place
 // City), or left while away. Never reported for our own.
 struct RemoteElsewhere {
@@ -301,7 +308,7 @@ using SessionEvent = std::variant<
     events::WorldItemTakenBy, events::SharedItemFrom, events::RemoteVitals, events::ReviveBy,
     events::SessionLost, events::HostNpcAnims, events::HostNpcShot, events::Combat, events::Resync,
     events::EpochChanged, events::RemoteElsewhere, events::RemoteTransit, events::HostNpcSeat,
-    events::ShotAtUs, events::ShotHitBy>;
+    events::ShotAtUs, events::ShotHitBy, events::Trade>;
 
 class Endpoint {
 public:
@@ -388,8 +395,24 @@ public:
   // Hit outcomes (proto::IsCombat). Guest: NpcStrike to the host. Host:
   // NpcWound, NpcPoise, Difficulty to every guest (the last two kept for
   // late joiners). Either: AreaHit to its victim's game, through the host.
+  // Levels travel here too (tandem/progress.hpp): PlayerLevel is our V's,
+  // kept and said to the host as soon as we are in the session (the host
+  // keeps everyone's and tells all the session's level when their mean
+  // changes: SessionLevel, never a game's to say); NpcLevel is the host's
+  // word on one of its NPCs, kept for late joiners until the NPC goes.
   // False when nothing was sent (not ours to say, nobody to send to).
   bool SendCombat(proto::Message message);
+  // Trade between two players (proto::IsTrade; tandem/trade.hpp). What our
+  // seat says (a Trade or a TradeOffer; who we are is stamped here) goes to
+  // the host's table; the host's own goes straight into it. A TradeCommit
+  // is the table's alone to send. False when nothing was sent.
+  bool SendTrade(proto::Message message);
+  // Host: the table (who is trading, what was committed).
+  const trade::Table &Trades() const { return m_trades; }
+  // The level the host scales its NPCs to (none: not said yet), and the
+  // host's level for each NPC it shares.
+  const std::optional<proto::SessionLevel> &SessionLevel() const { return m_sessionLevel; }
+  const std::map<proto::NpcId, proto::NpcLevel> &NpcLevels() const { return m_npcLevels; }
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
   // Our V's time ability (Sandevistan...). Kept: sent now if we are in the
@@ -642,6 +665,24 @@ private:
   std::map<proto::NpcId, proto::NpcPoise> m_npcPoise;
   void OnGuestCombat(proto::PlayerId player, const proto::Message &message,
                      std::vector<SessionEvent> &out);
+  // Levels: ours (kept until we are in the session); host: each player's,
+  // their mean as last said, and its NPCs' levels; guest: the last two as
+  // the host said them.
+  std::optional<std::uint8_t> m_localLevel;
+  std::map<proto::PlayerId, std::uint8_t> m_levels;
+  std::optional<proto::SessionLevel> m_sessionLevel;
+  std::map<proto::NpcId, proto::NpcLevel> m_npcLevels;
+  // Host: levels said of NPCs whose spawn has not been sent yet.
+  std::map<proto::NpcId, proto::NpcLevel> m_npcLevelsEarly;
+  void SendLocalLevelNow();
+  void UpdateSessionLevel(std::vector<SessionEvent> &out);
+  // Trade. Host: the table, and its word passed on (to our own game: an
+  // event). Every game: the trades whose commit it has applied.
+  trade::Table m_trades;
+  std::set<proto::TradeId> m_tradesApplied;
+  void RouteTrade(const std::vector<trade::Out> &outs, std::vector<SessionEvent> &out);
+  void HearTrade(const proto::Message &message, std::vector<SessionEvent> &out);
+  std::set<proto::PlayerId> Present() const;
   // Consistency: our world epoch; guest, the host's and the first NpcStates
   // of it; host, the host epoch each guest has seen and its own epoch.
   std::uint32_t m_epoch{1};

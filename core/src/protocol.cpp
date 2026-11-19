@@ -11,6 +11,18 @@ std::vector<std::byte> Encode(const Message &message) {
   return bytes;
 }
 
+namespace {
+// A trade offer within the wire's limits (what it may hold: trade::Valid).
+bool Fits(const TradeOffer &offer) {
+  if (offer.items.size() > kMaxTradeItems)
+    return false;
+  for (const auto &item : offer.items)
+    if (item.stats.size() > kMaxTradeStats || item.parts.size() > kMaxTradeParts)
+      return false;
+  return true;
+}
+} // namespace
+
 std::optional<Message> Decode(std::span<const std::byte> bytes) {
   Message message;
   auto in = zpp::bits::in(bytes);
@@ -85,6 +97,23 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *transit = std::get_if<Transit>(&message);
       transit && transit->kind > TransitKind::Along)
     return std::nullopt;
+  if (const auto *level = std::get_if<PlayerLevel>(&message);
+      level && (level->level == 0 || level->level > kMaxLevel))
+    return std::nullopt;
+  if (const auto *level = std::get_if<SessionLevel>(&message);
+      level && (level->level == 0 || level->level > kMaxLevel || level->players == 0))
+    return std::nullopt;
+  if (const auto *level = std::get_if<NpcLevel>(&message);
+      level && !(level->level >= 0.f && level->level <= 2.f * kMaxLevel))
+    return std::nullopt;
+  if (const auto *trade = std::get_if<Trade>(&message);
+      trade && (trade->verb > TradeVerb::Applied || trade->reason > TradeReason::Off))
+    return std::nullopt;
+  if (const auto *offer = std::get_if<TradeOffer>(&message); offer && !Fits(*offer))
+    return std::nullopt;
+  if (const auto *commit = std::get_if<TradeCommit>(&message);
+      commit && (!Fits(commit->first) || !Fits(commit->second)))
+    return std::nullopt;
   return message;
 }
 
@@ -112,8 +141,15 @@ bool IsStory(const Message &message) {
 }
 
 bool IsCombat(const Message &message) {
-  return message.index() >= Message(NpcStrike{}).index() &&
-         message.index() <= Message(AreaHit{}).index();
+  return (message.index() >= Message(NpcStrike{}).index() &&
+          message.index() <= Message(AreaHit{}).index()) ||
+         (message.index() >= Message(PlayerLevel{}).index() &&
+          message.index() <= Message(NpcLevel{}).index());
+}
+
+bool IsTrade(const Message &message) {
+  return std::holds_alternative<Trade>(message) || std::holds_alternative<TradeOffer>(message) ||
+         std::holds_alternative<TradeCommit>(message);
 }
 
 bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::State; }
@@ -134,7 +170,8 @@ const char *NameOf(const Message &message) {
       "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",    "NpcWound",
       "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",       "ResyncRequest",
       "NpcSet",         "Epoch",          "Elsewhere",    "Transit",      "NpcSeat",
-      "NpcShotAt",      "ShotHit"};
+      "NpcShotAt",      "ShotHit",        "PlayerLevel",  "SessionLevel", "NpcLevel",
+      "Trade",          "TradeOffer",     "TradeCommit"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }
