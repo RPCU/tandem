@@ -5,6 +5,7 @@
 #include "ports.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/progress.hpp"
+#include "tandem/vehicle.hpp"
 
 #include <doctest/doctest.h>
 
@@ -429,4 +430,139 @@ TEST_CASE("an NPC's level reaches every guest once, late joiners too, and goes w
   CHECK(late->NpcLevels().at(7).level == 35.f);
   CHECK(a->NpcLevels().size() == 1);
   CHECK(heard.Npcs(2).size() == 1);
+}
+
+TEST_CASE("a vehicle unlock goes to the guest it is for, never to all, never from a guest") {
+  using namespace proto;
+  const VehicleUnlock unlock{.vehicle = 0xCA7, .quest = 100};
+  const auto decoded = Decode(Encode(unlock));
+  REQUIRE(decoded.has_value());
+  CHECK(std::get<VehicleUnlock>(*decoded) == unlock);
+  CHECK(IsStory(unlock));
+  CHECK_FALSE(IsTrade(unlock));
+  CHECK(ChannelOf(unlock) == Channel::Event);
+  CHECK(consistency::IsOneShot(unlock));
+  CHECK(Message(VehicleUnlock{}).index() == Message(TradeCommit{}).index() + 1); // appended
+  CHECK(std::string_view(NameOf(unlock)) == "VehicleUnlock");
+
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE((host && a && b));
+  std::map<std::size_t, std::vector<VehicleUnlock>> heard;
+  const auto collect = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+    for (const auto &event : events)
+      if (const auto *story = std::get_if<events::Story>(&event))
+        if (const auto *v = std::get_if<VehicleUnlock>(&story->message))
+          heard[i].push_back(*v);
+  };
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return a->Players().size() == 3 && b->Players().size() == 3;
+  }));
+  // To a (it took part); not to everyone; a guest cannot send one.
+  host->SendStory(unlock, a->You());
+  host->SendStory(VehicleUnlock{.vehicle = 0xBAD}); // no one named: nobody
+  a->SendStory(VehicleUnlock{.vehicle = 0xBAD}, b->You());
+  PumpFor({host.get(), a.get(), b.get()}, 300ms, collect);
+  REQUIRE(heard[1].size() == 1);
+  CHECK(heard[1][0] == unlock);
+  CHECK(heard[0].empty());
+  CHECK(heard[2].empty());
+  // A late joiner is not told of a vehicle it did not earn.
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  PumpFor({host.get(), a.get(), b.get(), late.get()}, 500ms, collect);
+  CHECK(heard[3].empty());
+  CHECK(heard[1].size() == 1);
+}
+
+TEST_CASE("a partner may drive a car by its owner's word: crew, with the owner, never") {
+  using proto::Lend;
+  using sync::DriveAsk;
+  using sync::MayDrive;
+  // Crew (the default): aboard or not, while the owner is in the session.
+  CHECK(MayDrive({.lend = Lend::Crew, .ownerAboard = true, .ownerInSession = true}));
+  CHECK(MayDrive({.lend = Lend::Crew, .ownerAboard = false, .ownerInSession = true}));
+  CHECK(MayDrive(DriveAsk{.ownerInSession = true}));
+  // With the owner: only with them aboard.
+  CHECK(MayDrive({.lend = Lend::WithOwner, .ownerAboard = true, .ownerInSession = true}));
+  CHECK_FALSE(MayDrive({.lend = Lend::WithOwner, .ownerAboard = false, .ownerInSession = true}));
+  // Never, and a car whose owner left (no one's): nobody.
+  CHECK_FALSE(MayDrive({.lend = Lend::Never, .ownerAboard = true, .ownerInSession = true}));
+  CHECK_FALSE(MayDrive({.lend = Lend::Crew, .ownerAboard = false, .ownerInSession = false}));
+  CHECK_FALSE(MayDrive({.lend = Lend::Crew, .ownerAboard = true, .ownerInSession = false}));
+}
+
+TEST_CASE("each player's lending reaches everyone once, late joiners too, and goes with them") {
+  using namespace proto;
+  const CarLend never{.player = 3, .lend = Lend::Never};
+  const auto decoded = Decode(Encode(never));
+  REQUIRE(decoded.has_value());
+  CHECK(std::get<CarLend>(*decoded) == never);
+  CHECK(IsCombat(never));
+  CHECK_FALSE(IsStory(never));
+  CHECK(ChannelOf(never) == Channel::Event);
+  CHECK_FALSE(consistency::IsOneShot(never)); // state: a repeat is applied nowhere
+  CHECK(Message(CarLend{}).index() == std::variant_size_v<Message> - 1);
+  CHECK(std::string_view(NameOf(never)) == "CarLend");
+  // Out of range: refused on the wire and by the endpoint.
+  auto bad = Encode(CarLend{.lend = Lend::Never});
+  bad.back() = std::byte{7};
+  CHECK_FALSE(Decode(bad).has_value());
+
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  CHECK_FALSE(host->SendCombat(CarLend{.lend = static_cast<Lend>(9)}));
+  CHECK(host->SendCombat(CarLend{.player = 77, .lend = Lend::WithOwner})); // who: stamped
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE_MESSAGE(a, error);
+  // Said before it is in: kept, said as it joins.
+  CHECK_FALSE(a->SendCombat(CarLend{.player = 1, .lend = Lend::Never}));
+  Heard heard;
+  const auto lends = [&](std::size_t game) {
+    std::vector<CarLend> out;
+    for (const auto &message : heard.at[game])
+      if (const auto *lend = std::get_if<CarLend>(&message))
+        out.push_back(*lend);
+    return out;
+  };
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return host->CarLends().size() == 2 && a->CarLends().size() == 1;
+  }));
+  CHECK(host->CarLends().at(host->You()).lend == Lend::WithOwner);
+  CHECK(host->CarLends().at(a->You()).lend == Lend::Never); // a's own id, not 1
+  CHECK(a->CarLends().at(host->You()).lend == Lend::WithOwner);
+  CHECK_FALSE(a->CarLends().contains(a->You()));
+  // Said again: nothing new anywhere.
+  CHECK(a->SendCombat(CarLend{.lend = Lend::Never}));
+  CHECK(host->SendCombat(CarLend{.lend = Lend::WithOwner}));
+  PumpFor({host.get(), a.get()}, 150ms, std::ref(heard));
+  CHECK(lends(0).size() == 1); // the host's game heard a's once
+  CHECK(lends(1).size() == 1); // a's game heard the host's once
+
+  // A late joiner hears both; a changes its mind; a vanishes.
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error, kFast);
+  REQUIRE_MESSAGE(b, error);
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return b->CarLends().size() == 2;
+  }));
+  CHECK(a->SendCombat(CarLend{.lend = Lend::Crew}));
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return b->CarLends().at(a->You()).lend == Lend::Crew;
+  }));
+  const auto aId = a->You();
+  a.reset();
+  REQUIRE(Pump({host.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return !host->CarLends().contains(aId) && !b->CarLends().contains(aId);
+  }));
+  CHECK(b->CarLends().size() == 1);
 }

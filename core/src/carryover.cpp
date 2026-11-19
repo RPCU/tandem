@@ -8,7 +8,8 @@ namespace {
 //   1  entry: [tag | kind 8 | own 7 | completed 1 | rewards 8 | quest 32],
 //             then [host 32]
 //   2  paid:  [tag | quest 32], then the reward record
-constexpr std::uint64_t kEntry = 1, kPaid = 2;
+//   3  vehicle: [tag | owned 1 | kept 1 | quest 32], then the vehicle record
+constexpr std::uint64_t kEntry = 1, kPaid = 2, kVehicle = 3;
 constexpr int kTagShift = 56;
 } // namespace
 
@@ -72,6 +73,29 @@ std::vector<std::pair<std::uint64_t, std::int32_t>> Ledger::TakeSessionItems() {
   return out;
 }
 
+bool Ledger::NoteVehicle(std::uint64_t record, std::uint32_t quest, bool owned) {
+  if (record == 0)
+    return false;
+  return m_vehicles.try_emplace(record, Vehicle{record, quest, owned, false}).second;
+}
+
+void Ledger::KeepVehicle(std::uint64_t record) {
+  if (const auto it = m_vehicles.find(record); it != m_vehicles.end())
+    it->second.kept = true;
+}
+
+const Vehicle *Ledger::FindVehicle(std::uint64_t record) const {
+  const auto it = m_vehicles.find(record);
+  return it == m_vehicles.end() ? nullptr : &it->second;
+}
+
+std::vector<Vehicle> Ledger::Vehicles() const {
+  std::vector<Vehicle> out;
+  for (const auto &[record, vehicle] : m_vehicles)
+    out.push_back(vehicle);
+  return out;
+}
+
 const Entry *Ledger::Find(std::uint32_t quest) const {
   const auto it = m_entries.find(quest);
   return it == m_entries.end() ? nullptr : &it->second;
@@ -106,6 +130,11 @@ std::vector<std::uint64_t> Ledger::Pack() const {
     words.push_back(kPaid << kTagShift | quest);
     words.push_back(reward);
   }
+  for (const auto &[record, v] : m_vehicles) {
+    words.push_back(kVehicle << kTagShift | std::uint64_t{v.owned} << 41 |
+                    std::uint64_t{v.kept} << 40 | v.quest);
+    words.push_back(record);
+  }
   return words;
 }
 
@@ -134,6 +163,15 @@ void Ledger::Unpack(std::span<const std::uint64_t> words) {
     case kPaid:
       m_paid.insert({quest, tail});
       break;
+    case kVehicle: {
+      if (tail == 0)
+        break;
+      const Vehicle vehicle{tail, quest, ((head >> 41) & 1) != 0, ((head >> 40) & 1) != 0};
+      const auto [it, fresh] = m_vehicles.try_emplace(tail, vehicle);
+      if (!fresh) // merged: kept on either side is kept
+        it->second.kept |= vehicle.kept;
+      break;
+    }
     default:
       break;
     }
@@ -148,6 +186,15 @@ JoinNote NoteFor(const StoryMark &host, const StoryMark &guest) {
   if (guest.mainDone >= host.mainDone + kAheadBy)
     return JoinNote::HostBehind;
   return JoinNote::None;
+}
+
+std::uint32_t HostHash(std::string_view name) {
+  std::uint32_t hash = 2166136261u;
+  for (const char c : name) {
+    hash ^= static_cast<std::uint8_t>(c);
+    hash *= 16777619u;
+  }
+  return hash;
 }
 
 bool Ep1Missing(const StoryMark &host, const StoryMark &guest) { return host.ep1 && !guest.ep1; }

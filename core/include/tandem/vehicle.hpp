@@ -5,6 +5,9 @@
 // the driver stays in the seat), interpolated between the two states around
 // that moment; short gaps are extrapolated along the velocity (500 ms, as
 // docs/architecture/smoothing.md says for vehicles), then the car holds.
+//
+// And whose wheel it is (docs/architecture/garage.md): who may drive a
+// partner's car.
 
 #include "tandem/protocol.hpp"
 
@@ -19,6 +22,17 @@ struct VehicleView {
   proto::Vec3 velocity;
   bool extrapolated{};
 };
+
+// May a partner take the wheel of `owner`'s car? Its owner's word
+// (proto::CarLend; Crew when it said none), whether the owner sits in that
+// car now, and whether the owner is still in the session (a car whose owner
+// left is no one's: nobody drives it off).
+struct DriveAsk {
+  proto::Lend lend{proto::Lend::Crew};
+  bool ownerAboard{};
+  bool ownerInSession{};
+};
+bool MayDrive(const DriveAsk &ask);
 
 class VehicleTrack {
 public:

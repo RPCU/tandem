@@ -353,7 +353,8 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                       std::is_same_v<M, proto::VehicleState> || std::is_same_v<M, proto::Stealth> ||
                       std::is_same_v<M, proto::TimeEffect> || std::is_same_v<M, proto::Elsewhere> ||
                       std::is_same_v<M, proto::Vitals> || std::is_same_v<M, proto::Pause> ||
-                      std::is_same_v<M, proto::Epoch> || std::is_same_v<M, proto::StoryEffect>)
+                      std::is_same_v<M, proto::Epoch> || std::is_same_v<M, proto::StoryEffect> ||
+                      std::is_same_v<M, proto::CarLend>)
           return host(m.player);
         else if constexpr (std::is_same_v<M, proto::VehicleRadio>) {
           later(m.trackStartUs);
@@ -427,6 +428,7 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                              std::is_same_v<M, proto::Difficulty> ||
                              std::is_same_v<M, proto::Journal> ||
                              std::is_same_v<M, proto::Tracked> ||
+                             std::is_same_v<M, proto::VehicleUnlock> ||
                              std::is_same_v<M, proto::QuestReward>) {
           return true;
         } else {
@@ -445,8 +447,10 @@ void ApplyHost(Endpoint &endpoint, const proto::Message &message, proto::PlayerI
     return;
   }
   if (proto::IsStory(message)) {
-    endpoint.SendStory(
-        message, std::holds_alternative<proto::QuestReward>(message) ? guest : proto::kNoPlayer);
+    endpoint.SendStory(message, std::holds_alternative<proto::QuestReward>(message) ||
+                                        std::holds_alternative<proto::VehicleUnlock>(message)
+                                    ? guest
+                                    : proto::kNoPlayer);
     return;
   }
   if (proto::IsCombat(message)) {

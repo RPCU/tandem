@@ -111,6 +111,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *offer = std::get_if<TradeOffer>(&message); offer && !Fits(*offer))
     return std::nullopt;
+  if (const auto *lend = std::get_if<CarLend>(&message); lend && lend->lend > Lend::Never)
+    return std::nullopt;
   if (const auto *commit = std::get_if<TradeCommit>(&message);
       commit && (!Fits(commit->first) || !Fits(commit->second)))
     return std::nullopt;
@@ -137,14 +139,16 @@ Channel ChannelOf(const Message &message) {
 bool IsStory(const Message &message) {
   return (message.index() >= Message(Journal{}).index() &&
           message.index() <= Message(QuestReward{}).index()) ||
-         std::holds_alternative<StoryEffect>(message);
+         std::holds_alternative<StoryEffect>(message) ||
+         std::holds_alternative<VehicleUnlock>(message);
 }
 
 bool IsCombat(const Message &message) {
   return (message.index() >= Message(NpcStrike{}).index() &&
           message.index() <= Message(AreaHit{}).index()) ||
          (message.index() >= Message(PlayerLevel{}).index() &&
-          message.index() <= Message(NpcLevel{}).index());
+          message.index() <= Message(NpcLevel{}).index()) ||
+         std::holds_alternative<CarLend>(message);
 }
 
 bool IsTrade(const Message &message) {
@@ -156,22 +160,22 @@ bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::
 
 const char *NameOf(const Message &message) {
   constexpr const char *names[] = {
-      "Hello",          "Welcome",        "Refused",      "Ping",         "Pong",
-      "Roster",         "PlayerState",    "Bye",          "PoseState",    "Appearance",
-      "Held",           "Shot",           "Seat",         "VehicleState", "World",
-      "NpcSpawn",       "NpcStates",      "NpcGone",      "NpcHit",       "NpcHealth",
-      "NpcEffect",      "Pause",          "VehicleRadio", "PlayerHit",    "NpcAwareness",
-      "Stealth",        "Noise",          "NpcHack",      "NpcHackState", "NpcStatus",
-      "PlayerHack",     "VehicleHack",    "Journal",      "Tracked",      "PhoneCall",
-      "PhoneAction",    "PhoneReply",     "Subtitle",     "ChoiceHub",    "ChoiceCursor",
-      "StoryState",     "QuestReward",    "TimeEffect",   "StoryEffect",  "NpcAction",
-      "NpcActionReply", "NpcHold",        "NpcCue",       "Regroup",      "RegroupAnswer",
-      "WorldItem",      "WorldItemTaken", "SharedItem",   "Vitals",       "Revive",
-      "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",    "NpcWound",
-      "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",       "ResyncRequest",
-      "NpcSet",         "Epoch",          "Elsewhere",    "Transit",      "NpcSeat",
-      "NpcShotAt",      "ShotHit",        "PlayerLevel",  "SessionLevel", "NpcLevel",
-      "Trade",          "TradeOffer",     "TradeCommit"};
+      "Hello",          "Welcome",        "Refused",      "Ping",          "Pong",
+      "Roster",         "PlayerState",    "Bye",          "PoseState",     "Appearance",
+      "Held",           "Shot",           "Seat",         "VehicleState",  "World",
+      "NpcSpawn",       "NpcStates",      "NpcGone",      "NpcHit",        "NpcHealth",
+      "NpcEffect",      "Pause",          "VehicleRadio", "PlayerHit",     "NpcAwareness",
+      "Stealth",        "Noise",          "NpcHack",      "NpcHackState",  "NpcStatus",
+      "PlayerHack",     "VehicleHack",    "Journal",      "Tracked",       "PhoneCall",
+      "PhoneAction",    "PhoneReply",     "Subtitle",     "ChoiceHub",     "ChoiceCursor",
+      "StoryState",     "QuestReward",    "TimeEffect",   "StoryEffect",   "NpcAction",
+      "NpcActionReply", "NpcHold",        "NpcCue",       "Regroup",       "RegroupAnswer",
+      "WorldItem",      "WorldItemTaken", "SharedItem",   "Vitals",        "Revive",
+      "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",     "NpcWound",
+      "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",        "ResyncRequest",
+      "NpcSet",         "Epoch",          "Elsewhere",    "Transit",       "NpcSeat",
+      "NpcShotAt",      "ShotHit",        "PlayerLevel",  "SessionLevel",  "NpcLevel",
+      "Trade",          "TradeOffer",     "TradeCommit",  "VehicleUnlock", "CarLend"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

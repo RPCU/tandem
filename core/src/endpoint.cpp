@@ -606,6 +606,8 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   // stays hidden anywhere).
   EndElsewhereOf(player, out, true);
   m_lives.erase(player);
+  // Its cars are no one's to lend any more.
+  m_lends.erase(player);
   // The session's level is the mean of those who are left.
   m_levels.erase(player);
   UpdateSessionLevel(out);
@@ -728,6 +730,7 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     others(m_radios);
     others(m_stealth);
     others(m_transits); // who rides what (only rides that are on)
+    others(m_lends);    // who may drive whose cars
     // Who is in their pause menu (the newcomer itself is not), and in a
     // resync who is not (its copy may say otherwise).
     for (const auto paused : m_paused)
@@ -899,6 +902,11 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
     // player's own level is never relayed.
     if (std::holds_alternative<proto::PlayerLevel>(message))
       return;
+    if (const auto *lend = std::get_if<proto::CarLend>(&message)) {
+      if (lend->player != m_you && lend->player != proto::kNoPlayer)
+        NoteLend(*lend, out);
+      return;
+    }
     if (const auto *session = std::get_if<proto::SessionLevel>(&message)) {
       if (m_sessionLevel == *session)
         return;
@@ -939,6 +947,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             SendLocalVitalsNow();
             SendLocalTransitNow();
             SendLocalLevelNow();
+            SendLocalLendNow();
             // What overtook the Welcome, in the order it came.
             for (const auto &early : std::exchange(m_early, {}))
               OnGuestMessage(early, out);
@@ -982,6 +991,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 m_radios.erase(id);
                 m_stealth.erase(id);
                 m_transits.erase(id);
+                m_lends.erase(id);
                 m_lives.erase(id);
                 m_story.Forget(id);
                 out.push_back(events::PlayerLeft{id});
@@ -1855,6 +1865,9 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
     m_calls.Update(*call);
     message = *m_calls.Call();
   }
+  // A vehicle is credited to the guests that took part, one by one.
+  if (std::holds_alternative<proto::VehicleUnlock>(message) && to == proto::kNoPlayer)
+    return;
   if (to != proto::kNoPlayer) {
     // One guest (a reward): not part of the story a joiner gets.
     for (const auto &[peer, player] : m_playerOfPeer)
@@ -2074,6 +2087,11 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     // Its V's level: the session's is the mean of everyone's.
     m_levels[player] = level->level;
     UpdateSessionLevel(out);
+  } else if (const auto *lend = std::get_if<proto::CarLend>(&message)) {
+    // Its own cars: who says is the connection, never the message.
+    auto mine = *lend;
+    mine.player = player;
+    NoteLend(mine, out);
   }
   // Wounds, poise, the difficulty and the NPCs' levels are the host's to say.
 }
@@ -2144,6 +2162,30 @@ void Endpoint::SendLocalLevelNow() {
     Send(m_hostPeer, proto::PlayerLevel{.player = m_you, .level = *m_localLevel});
 }
 
+void Endpoint::SendLocalLendNow() {
+  if (!m_localLend || !IsJoined() || m_ended)
+    return;
+  const proto::CarLend lend{.player = m_you, .lend = *m_localLend};
+  if (IsHost()) {
+    if (const auto it = m_lends.find(m_you); it != m_lends.end() && it->second == lend)
+      return;
+    m_lends[m_you] = lend;
+    Broadcast(lend);
+  } else {
+    Send(m_hostPeer, lend);
+  }
+}
+
+bool Endpoint::NoteLend(const proto::CarLend &lend, std::vector<SessionEvent> &out) {
+  if (const auto it = m_lends.find(lend.player); it != m_lends.end() && it->second == lend)
+    return false;
+  m_lends[lend.player] = lend;
+  if (IsHost())
+    Broadcast(lend);
+  out.push_back(events::Combat{lend});
+  return true;
+}
+
 void Endpoint::UpdateSessionLevel(std::vector<SessionEvent> &out) {
   if (!IsHost() || m_ended)
     return;
@@ -2174,6 +2216,13 @@ bool Endpoint::SendCombat(proto::Message message) {
       return false;
     m_localLevel = level->level;
     SendLocalLevelNow();
+    return IsJoined() && !m_ended;
+  }
+  if (const auto *lend = std::get_if<proto::CarLend>(&message)) {
+    if (lend->lend > proto::Lend::Never)
+      return false;
+    m_localLend = lend->lend;
+    SendLocalLendNow();
     return IsJoined() && !m_ended;
   }
   if (!IsJoined() || m_ended || !proto::IsCombat(message))

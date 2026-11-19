@@ -400,6 +400,8 @@ public:
   // keeps everyone's and tells all the session's level when their mean
   // changes: SessionLevel, never a game's to say); NpcLevel is the host's
   // word on one of its NPCs, kept for late joiners until the NPC goes.
+  // CarLend too: ours, kept and said as soon as we are in; the host stamps
+  // who, keeps everyone's (late joiners, resyncs) and tells all.
   // False when nothing was sent (not ours to say, nobody to send to).
   bool SendCombat(proto::Message message);
   // Trade between two players (proto::IsTrade; tandem/trade.hpp). What our
@@ -413,6 +415,9 @@ public:
   // host's level for each NPC it shares.
   const std::optional<proto::SessionLevel> &SessionLevel() const { return m_sessionLevel; }
   const std::map<proto::NpcId, proto::NpcLevel> &NpcLevels() const { return m_npcLevels; }
+  // Who may drive each player's cars, as they said (a guest's own is not
+  // kept here; the host's is).
+  const std::map<proto::PlayerId, proto::CarLend> &CarLends() const { return m_lends; }
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
   // Our V's time ability (Sandevistan...). Kept: sent now if we are in the
@@ -685,6 +690,14 @@ private:
   std::map<proto::NpcId, proto::NpcLevel> m_npcLevelsEarly;
   void SendLocalLevelNow();
   void UpdateSessionLevel(std::vector<SessionEvent> &out);
+  // Cars: ours (kept until we are in), everyone's (host: what it relays;
+  // guest: what the host said). Who said is never the game's to claim.
+  std::optional<proto::Lend> m_localLend;
+  std::map<proto::PlayerId, proto::CarLend> m_lends;
+  void SendLocalLendNow();
+  // A player's lending heard (host: from its connection): kept, passed on,
+  // given to our game. False: a repeat, nothing done.
+  bool NoteLend(const proto::CarLend &lend, std::vector<SessionEvent> &out);
   // Trade. Host: the table, and its word passed on (to our own game: an
   // event). Every game: the trades whose commit it has applied.
   trade::Table m_trades;

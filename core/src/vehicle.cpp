@@ -54,4 +54,18 @@ VehicleView VehicleTrack::At(std::uint64_t renderUs) const {
   view.extrapolated = true;
   return view;
 }
+
+bool MayDrive(const DriveAsk &ask) {
+  if (!ask.ownerInSession)
+    return false;
+  switch (ask.lend) {
+  case proto::Lend::Crew:
+    return true;
+  case proto::Lend::WithOwner:
+    return ask.ownerAboard;
+  case proto::Lend::Never:
+    return false;
+  }
+  return false;
+}
 } // namespace tandem::sync

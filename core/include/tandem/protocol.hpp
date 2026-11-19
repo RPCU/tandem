@@ -1266,6 +1266,32 @@ struct TradeCommit {
   friend bool operator==(const TradeCommit &, const TradeCommit &) = default;
 };
 
+// A vehicle came into the host's garage (a quest, a gig or a fixer gave
+// it; docs/architecture/garage.md). Host to each guest that took part in
+// the quest it belongs to (the reward rule), never to everyone, never from
+// a guest: the guest's game credits it in its ledger, once (Event channel,
+// with the story's messages).
+struct VehicleUnlock {
+  std::uint64_t vehicle{}; // TweakDB id of the vehicle record (the garage's)
+  std::uint32_t quest{};   // journal hash of its quest (0: unknown)
+  friend bool operator==(const VehicleUnlock &, const VehicleUnlock &) = default;
+};
+
+// Who may drive a player's own cars (docs/architecture/garage.md): each
+// game says its own (tandem.ini `lend`), the host stamps who and keeps
+// everyone's for late joiners; a repeat is applied nowhere; forgotten when
+// the player goes. With the levels: per-player progression state.
+enum class Lend : std::uint8_t {
+  Crew = 0,      // any partner, the owner aboard or not (the default)
+  WithOwner = 1, // only with the owner aboard
+  Never = 2,     // nobody but the owner
+};
+struct CarLend {
+  PlayerId player{};
+  Lend lend{Lend::Crew};
+  friend bool operator==(const CarLend &, const CarLend &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -1275,13 +1301,13 @@ using Message = std::variant<
     NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
     Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
     Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit,
-    PlayerLevel, SessionLevel, NpcLevel, Trade, TradeOffer, TradeCommit>;
+    PlayerLevel, SessionLevel, NpcLevel, Trade, TradeOffer, TradeCommit, VehicleUnlock, CarLend>;
 
-// A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
-// through one path.
+// A story message (Journal … QuestReward, StoryEffect, VehicleUnlock):
+// endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
-// A hit outcome message (NpcStrike … AreaHit) or a level (PlayerLevel …
-// NpcLevel): one path in endpoint.hpp too.
+// A hit outcome message (NpcStrike … AreaHit), a level (PlayerLevel …
+// NpcLevel) or a car's lending (CarLend): one path in endpoint.hpp too.
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);

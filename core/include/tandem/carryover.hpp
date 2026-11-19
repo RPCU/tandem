@@ -14,6 +14,7 @@
 #include <optional>
 #include <set>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -64,6 +65,17 @@ struct Entry {
   friend bool operator==(const Entry &, const Entry &) = default;
 };
 
+// A vehicle a host's quest put in the host's garage while the guest took
+// part (docs/architecture/garage.md). Credited once; kept in the guest's own
+// garage only when its game was told to (tandem.ini vehicle_rewards = keep).
+struct Vehicle {
+  std::uint64_t record{}; // TweakDB id of the vehicle record
+  std::uint32_t quest{};  // journal hash of its quest (0: unknown)
+  bool owned{};           // the guest's own garage had it already
+  bool kept{};            // unlocked in the guest's own garage by co-op
+  friend bool operator==(const Vehicle &, const Vehicle &) = default;
+};
+
 // Why a reward is, or is not, paid to the guest.
 enum class Pay : std::uint8_t {
   Yes,
@@ -97,6 +109,14 @@ public:
   std::vector<std::pair<std::uint64_t, std::int32_t>> TakeSessionItems();
   bool HasSessionItems() const { return !m_sessionItems.empty(); }
 
+  // A vehicle earned with a host. True the first time (whoever the host,
+  // however often it is said); the first note stands.
+  bool NoteVehicle(std::uint64_t record, std::uint32_t quest, bool owned);
+  // It was unlocked in the guest's own garage.
+  void KeepVehicle(std::uint64_t record);
+  const Vehicle *FindVehicle(std::uint64_t record) const;
+  std::vector<Vehicle> Vehicles() const;
+
   const Entry *Find(std::uint32_t quest) const;
   std::vector<Entry> Entries() const;
   // Open-world content finished in co-op that the guest's own world has not
@@ -110,14 +130,19 @@ public:
   std::vector<std::uint64_t> Pack() const;
   void Unpack(std::span<const std::uint64_t> words);
   friend bool operator==(const Ledger &a, const Ledger &b) {
-    return a.m_entries == b.m_entries && a.m_paid == b.m_paid;
+    return a.m_entries == b.m_entries && a.m_paid == b.m_paid && a.m_vehicles == b.m_vehicles;
   }
 
 private:
   std::map<std::uint32_t, Entry> m_entries;
   std::set<std::pair<std::uint32_t, std::uint64_t>> m_paid; // quest, reward
   std::map<std::uint64_t, std::int32_t> m_sessionItems;
+  std::map<std::uint64_t, Vehicle> m_vehicles;
 };
+
+// The host's name as an entry keeps it (FNV-1a, 32 bits): "done with NAME"
+// is told by comparing with the name of a host in a later session.
+std::uint32_t HostHash(std::string_view name);
 
 // Joining a host whose story is elsewhere (design "edge cases"): what the
 // guest is told before it joins. Main quests done on each side, and whether

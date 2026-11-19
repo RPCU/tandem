@@ -182,6 +182,7 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<PhoneReply>(message) || std::holds_alternative<Subtitle>(message) ||
          std::holds_alternative<ChoiceCursor>(message) ||
          std::holds_alternative<QuestReward>(message) ||
+         std::holds_alternative<VehicleUnlock>(message) ||
          // Takedowns, regroup, loot, revive, hit outcomes: each counts.
          std::holds_alternative<NpcAction>(message) ||
          std::holds_alternative<NpcActionReply>(message) ||
