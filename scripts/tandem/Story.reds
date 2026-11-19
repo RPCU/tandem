@@ -27,6 +27,9 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_phone: ref<TandemPhone>;
   private let m_dialogue: ref<TandemDialogue>;
   private let m_scenes: ref<TandemScenes>;
+  // Story restrictions (Restrictions.reds): the host's reported, a guest's
+  // worn while in the host's moment.
+  private let m_restrictions: ref<TandemRestrictions>;
 
   // Host: the journal snapshot is owed (sent once the world plays), and the
   // changes since the last tick, sent together.
@@ -139,6 +142,8 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_dialogue.Start(this.GetGameInstance(), this);
     this.m_scenes = new TandemScenes();
     this.m_scenes.Start(this.GetGameInstance(), this);
+    this.m_restrictions = new TandemRestrictions();
+    this.m_restrictions.Start(this.GetGameInstance(), this);
     // Journal changes: the host sends them; every game keeps the last quest
     // that moved (rewards, below).
     this.Listen();
@@ -259,6 +264,21 @@ public class TandemStorySystem extends ScriptableSystem {
   // Scene replay (Scenes.reds): the host's scenes for its guests.
   public func Scenes() -> ref<TandemScenes> {
     return this.m_scenes;
+  }
+
+  public func Restrictions() -> ref<TandemRestrictions> {
+    return this.m_restrictions;
+  }
+
+  // Grouped with the host (the same world; regions: not apart).
+  public func Grouped() -> Bool {
+    return !this.m_apart;
+  }
+
+  // The host's scene tier as heard, private scenes included (a guest
+  // inside one's area is held as well: Restrictions.reds).
+  public func HostTierRaw() -> Int32 {
+    return this.m_hostTier;
   }
 
   public func JournalOf() -> wref<JournalManager> {
@@ -383,6 +403,13 @@ public class TandemStorySystem extends ScriptableSystem {
         case 42:
           this.OnHostEffect(event.reward, event.flags != 0);
           break;
+        case 43:
+          // The host's story restrictions (worn at the next check while in
+          // its moment, Restrictions.reds).
+          if !this.m_isHost {
+            TandemNative.Log(s"story: the host has \(event.index) story restriction(s) on");
+          }
+          break;
         case 50:
         case 51:
         case 52:
@@ -453,6 +480,8 @@ public class TandemStorySystem extends ScriptableSystem {
     }
     // The scene our game plays, for the guests to watch (Scenes.reds).
     this.m_scenes.HostTick(this.Now(), this.m_ourTier, this.m_inPrivate, this.m_dialogue.HubOpen());
+    // The restrictions on our V a guest beside it shares.
+    this.m_restrictions.HostTick(this.Now(), this.m_ourTier);
   }
 
   // JournalManager callbacks (signature of JournalNotificationQueue's,
@@ -799,23 +828,22 @@ public class TandemStorySystem extends ScriptableSystem {
     }
     if NotEquals(wantCombat, this.m_holdCombat) {
       this.m_holdCombat = wantCombat;
-      if wantCombat {
-        StatusEffectHelper.ApplyStatusEffect(player, t"GameplayRestriction.NoCombat");
-      } else {
-        StatusEffectHelper.RemoveStatusEffect(player, t"GameplayRestriction.NoCombat");
-      }
       TandemNative.Log(s"story: weapons \(wantCombat ? "lowered" : "free") (host tier \(this.m_hostTier), \(distance) m)");
     }
-    // A status effect: script god mode does not protect V (engine-knowledge
-    // §13.11).
-    if NotEquals(wantGod, this.m_holdGod) {
-      this.m_holdGod = wantGod;
-      if wantGod {
-        StatusEffectHelper.ApplyStatusEffect(player, t"BaseStatusEffect.Invulnerable");
-      } else {
-        StatusEffectHelper.RemoveStatusEffect(player, t"BaseStatusEffect.Invulnerable");
-      }
+    // Invulnerable is a status effect: script god mode does not protect V
+    // (engine-knowledge §13.11).
+    this.m_holdGod = wantGod;
+    // Both go on and off with the host's story restrictions, through one
+    // ledger (Restrictions.reds): an effect held for both, or our own
+    // game's, is never taken off by the other.
+    let holds: array<TweakDBID>;
+    if wantCombat {
+      ArrayPush(holds, t"GameplayRestriction.NoCombat");
     }
+    if wantGod {
+      ArrayPush(holds, t"BaseStatusEffect.Invulnerable");
+    }
+    this.m_restrictions.GuestTick(this.Now(), holds);
     // Far from a cinematic: offered to join (once per scene).
     if tier >= 4 && (distance < 0.0 || distance > 100.0) {
       if !this.m_offerShown {
@@ -853,13 +881,8 @@ public class TandemStorySystem extends ScriptableSystem {
   }
 
   private func ReleaseHolds() -> Void {
-    let player = GetPlayer(this.GetGameInstance());
-    if IsDefined(player) && this.m_holdCombat {
-      StatusEffectHelper.RemoveStatusEffect(player, t"GameplayRestriction.NoCombat");
-    }
-    if IsDefined(player) && this.m_holdGod {
-      StatusEffectHelper.RemoveStatusEffect(player, t"BaseStatusEffect.Invulnerable");
-    }
+    // The holds and the host's restrictions: what we put on comes off.
+    this.m_restrictions.Leave();
     this.m_holdCombat = false;
     this.m_holdGod = false;
     this.CloseOffer();
@@ -1368,6 +1391,20 @@ public class TandemStorySystem extends ScriptableSystem {
       TandemNative.Log(s"story: test private scene \(this.m_forcedPrivate ? "on" : "off")");
     } else if StrBeginsWith(command, "story scene") {
       this.m_scenes.Command(command);
+    } else if Equals(command, "story restrict") {
+      this.m_restrictions.Report();
+    } else if StrBeginsWith(command, "story restrict on ") || StrBeginsWith(command, "story restrict off ") {
+      // (test) a restriction on our own V, as a quest would put it on: the
+      // host reports it to its guests.
+      let turnOn = StrBeginsWith(command, "story restrict on ");
+      let record = TDBID.Create(StrAfterFirst(StrAfterFirst(command, "restrict "), " "));
+      let player = GetPlayer(game);
+      if turnOn {
+        StatusEffectHelper.ApplyStatusEffect(player, record);
+      } else {
+        StatusEffectHelper.RemoveStatusEffect(player, record);
+      }
+      TandemNative.Log(s"story: test restriction \(TDBID.ToStringDEBUG(record)) \(turnOn ? "on" : "off") our V");
     } else if Equals(command, "story join") {
       this.AcceptOffer();
     } else if Equals(command, "story state") {
@@ -1416,6 +1453,14 @@ protected cb func OnRewardEvent(evt: ref<RewardEvent>) -> Bool {
 @wrapMethod(PlayerPuppet)
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
   let result = wrappedMethod(evt);
+  // A restriction on our V while we wear the host's (Restrictions.reds).
+  if TandemRestrictions.IsRestriction(evt.staticData) || (IsDefined(evt.staticData) && evt.staticData.GetID() == t"BaseStatusEffect.Invulnerable") {
+    let guest = TandemStorySystem.Get(this.GetGame());
+    let own = GetPlayer(this.GetGame());
+    if IsDefined(guest) && guest.IsGuest() && IsDefined(own) && this.GetEntityID() == own.GetEntityID() {
+      guest.Restrictions().OnApplied(evt.staticData, evt.isNewApplication);
+    }
+  }
   if evt.isNewApplication && TandemStorySystem.IsStoryEffect(evt.staticData) {
     let story = TandemStorySystem.Get(this.GetGame());
     let player = GetPlayer(this.GetGame());
@@ -1429,6 +1474,13 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
 @wrapMethod(PlayerPuppet)
 protected cb func OnStatusEffectRemoved(evt: ref<RemoveStatusEffect>) -> Bool {
   let result = wrappedMethod(evt);
+  if TandemRestrictions.IsRestriction(evt.staticData) || (IsDefined(evt.staticData) && evt.staticData.GetID() == t"BaseStatusEffect.Invulnerable") {
+    let guest = TandemStorySystem.Get(this.GetGame());
+    let own = GetPlayer(this.GetGame());
+    if IsDefined(guest) && guest.IsGuest() && IsDefined(own) && this.GetEntityID() == own.GetEntityID() {
+      guest.Restrictions().OnRemoved(evt.staticData, evt.isFinalRemoval);
+    }
+  }
   if evt.isFinalRemoval && TandemStorySystem.IsStoryEffect(evt.staticData) {
     let story = TandemStorySystem.Get(this.GetGame());
     let player = GetPlayer(this.GetGame());
