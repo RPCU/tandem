@@ -122,6 +122,16 @@ Config LoadConfig(const std::filesystem::path &path) {
         config.scenePrivacy = false;
       else
         log::Warn("tandem.ini:{}: scene_privacy is on or off", number);
+    } else if (key == "scene_replay") {
+      if (value == "on" || value == "true")
+        config.sceneReplay = config.scenePoses = true;
+      else if (value == "noposes") {
+        config.sceneReplay = true;
+        config.scenePoses = false;
+      } else if (value == "off" || value == "false")
+        config.sceneReplay = false;
+      else
+        log::Warn("tandem.ini:{}: scene_replay is on, noposes or off", number);
     } else if (key == "time_host") {
       if (value == "bubble")
         config.timeHostFull = false;

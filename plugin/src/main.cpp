@@ -121,7 +121,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     // when asked for, and which scene each game plays (scene privacy).
     // Whatever the role (a session may be chosen in the co-op menu): it
     // passes through until a session turns it on.
-    if (runtime.config.questFreeze || runtime.config.scenePrivacy) {
+    if (runtime.config.questFreeze || runtime.config.scenePrivacy || runtime.config.sceneReplay) {
       engine::SetScenePrivacy({runtime.config.privateActors, runtime.config.privateScenes,
                                runtime.config.publicScenes});
       engine::InstallQuestFreeze(sdk, handle, runtime.config.questFreezeAllow,
