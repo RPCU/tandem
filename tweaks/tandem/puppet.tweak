@@ -86,6 +86,37 @@ Character.TandemDonorMa : Character.Kerry {
   tags -= [ "Invulnerable", "Immortal" ];
 }
 
+// A stand-in body for a remote V whose look has no body keys when none of
+// that body was seen (System.reds StandIn): the donor's own whole NPC body
+// (V's skeleton, NPC locomotion of its own, its own clothes), with the
+// puppet's other traits: no name, no UI, V's attitude group, no barks.
+// Never invisible for want of a look; their V again once a look comes.
+Character.TandemStandInWa : Character.Panam {
+  reactionPreset = "ReactionPresets.NoReaction";
+  tags -= [ "Invulnerable", "Immortal" ];
+  displayName = "";
+  fullDisplayName = "";
+  alternativeDisplayName = "";
+  baseAttitudeGroup = "tandem_player";
+  affiliation = "Factions.Unaffiliated";
+  voiceTag = "";
+  hideUIElements = true;
+  hideUIDetection = true;
+}
+
+Character.TandemStandInMa : Character.Kerry {
+  reactionPreset = "ReactionPresets.NoReaction";
+  tags -= [ "Invulnerable", "Immortal" ];
+  displayName = "";
+  fullDisplayName = "";
+  alternativeDisplayName = "";
+  baseAttitudeGroup = "tandem_player";
+  affiliation = "Factions.Unaffiliated";
+  voiceTag = "";
+  hideUIElements = true;
+  hideUIDetection = true;
+}
+
 // For tests: Panam herself, no customisation. Proves the movement controller
 // on a rig with the full NPC locomotion set (tandem.ini puppet_female = ...).
 Character.TandemPuppetTest : Character.Panam {

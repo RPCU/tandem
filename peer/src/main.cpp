@@ -141,6 +141,7 @@ struct Options {
   // Our own look: random clothes (so tests see a V of its own, not a copy
   // of the other player), or an echo of theirs.
   bool echoLook{};
+  std::string lookKeys; // --look-keys DIR ("": the default)
   std::optional<unsigned> lookSeed;
   int driveSeconds{0}; // drive: get out after this long (0: never)
   // drive: the car's radio (ERadioStationList index, -1 off); unset: none sent
@@ -285,8 +286,12 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     idle (default mirror)\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
-         "  --look L           random | echo: random clothes of its own (default), or a\n"
-         "                     copy of the other player's look (mirror, front)\n"
+         "  --look L           random | echo: random clothes of its own (default), on a\n"
+         "                     real V body of its --body (the keys in --look-keys),\n"
+         "                     or a copy of the other player's look (mirror, front)\n"
+         "  --look-keys DIR    where female.keys / male.keys are kept (default\n"
+         "                     ~/.cache/tandem/looks): the body keys of a real V,\n"
+         "                     saved from every look heard with keys\n"
          "  --seed N           --look random: the same outfit every time for N\n"
          "  --offset X,Y,Z     mirror: metres added to your position (default 2,0,0)\n"
          "  --delay MS         mirror: extra delay before copying (default 0)\n"
@@ -584,6 +589,8 @@ Options Parse(int argc, char **argv) {
         options.radioStation = station;
       else
         Usage(std::format("--radio: no station {}", value));
+    } else if (flag == "--look-keys") {
+      options.lookKeys = value;
     } else if (flag == "--look") {
       if (value == "echo")
         options.echoLook = true;
@@ -1712,11 +1719,59 @@ private:
 };
 } // namespace
 
-// A look of our own: no face keys (the puppet keeps its record's face and
-// body) and one random piece per slot from clothing records the game's own
-// scripts name (their crafting specs end in _Crafting; the item is the same
-// name without it).
-tandem::proto::Appearance RandomLook(tandem::proto::Body body, unsigned seed) {
+// The body keys of a real V (face, body, arms: the game's appearance keys,
+// a resource path hash and a name hash each), one file per body type:
+// "RESOURCE DEFINITION" in hex, one key a line. Saved from every look heard
+// with keys (a game's own V: 15 of them), so a random look wears a real
+// body; a file may also be written by hand.
+std::filesystem::path LookKeysDir(const std::string &option) {
+  if (!option.empty())
+    return option;
+  if (const char *cache = std::getenv("XDG_CACHE_HOME"); cache && *cache)
+    return std::filesystem::path(cache) / "tandem" / "looks";
+  if (const char *home = std::getenv("HOME"); home && *home)
+    return std::filesystem::path(home) / ".cache" / "tandem" / "looks";
+  return "looks";
+}
+
+std::filesystem::path LookKeysFile(const std::filesystem::path &dir, tandem::proto::Body body) {
+  return dir / (body == tandem::proto::Body::Male ? "male.keys" : "female.keys");
+}
+
+std::vector<tandem::proto::AppearanceKey> LoadLookKeys(const std::filesystem::path &file) {
+  std::vector<tandem::proto::AppearanceKey> keys;
+  std::ifstream in(file);
+  for (std::string resource, definition; in >> resource >> definition;) {
+    try {
+      keys.push_back({std::stoull(resource, nullptr, 16), std::stoull(definition, nullptr, 16)});
+    } catch (const std::exception &) {
+      return {};
+    }
+  }
+  if (keys.size() > tandem::proto::kMaxAppearanceKeys)
+    keys.resize(tandem::proto::kMaxAppearanceKeys);
+  return keys;
+}
+
+void SaveLookKeys(const std::filesystem::path &file,
+                  const std::vector<tandem::proto::AppearanceKey> &keys) {
+  if (keys.empty() || LoadLookKeys(file) == keys)
+    return;
+  std::error_code error;
+  std::filesystem::create_directories(file.parent_path(), error);
+  std::ofstream out(file, std::ios::trunc);
+  for (const auto &key : keys)
+    out << std::format("{:016x} {:016x}\n", key.resource, key.definition);
+  if (out)
+    Log("look: {} body keys saved to {}", keys.size(), file.string());
+}
+
+// A look of our own: a real V body of ours when its keys are known (else
+// none: the game puts a stand-in body on the puppet) and one random piece
+// per slot from clothing records the game's own scripts name (their
+// crafting specs end in _Crafting; the item is the same name without it).
+tandem::proto::Appearance RandomLook(tandem::proto::Body body, unsigned seed,
+                                     std::vector<tandem::proto::AppearanceKey> keys) {
   static const std::vector<std::vector<std::string_view>> slots = {
       {"Items.FormalShirt_01_rich_06", "Items.FormalShirt_02_basic_03",
        "Items.LooseShirt_01_rich_02", "Items.Fixer_01_Set_TShirt"},
@@ -1736,7 +1791,7 @@ tandem::proto::Appearance RandomLook(tandem::proto::Body body, unsigned seed) {
       {"", "", "Items.Glasses_01_basic_03", "Items.Glasses_03_basic_06"},
   };
   std::mt19937 random(seed);
-  tandem::proto::Appearance look{.body = body};
+  tandem::proto::Appearance look{.body = body, .look = std::move(keys)};
   std::string picked;
   for (const auto &slot : slots) {
     const auto name = slot[random() % slot.size()];
@@ -1745,7 +1800,7 @@ tandem::proto::Appearance RandomLook(tandem::proto::Body body, unsigned seed) {
     look.items.push_back(TweakDBID(name));
     picked += std::format(" {}", name.substr(6));
   }
-  Log("our look: random (seed {}):{}", seed, picked);
+  Log("our look: random (seed {}), {} body keys:{}", seed, look.look.size(), picked);
   return look;
 }
 
@@ -1852,9 +1907,13 @@ int main(int argc, char **argv) {
     Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice",
         options.drop * 100, options.dup * 100);
   }
+  // --look random: the same clothes all session; its body keys from the
+  // cache, or as soon as a look of its body is heard.
+  const auto lookKeysDir = LookKeysDir(options.lookKeys);
+  const auto lookSeed = options.lookSeed.value_or(std::random_device{}());
+  auto ownKeys = LoadLookKeys(LookKeysFile(lookKeysDir, options.body));
   if (!options.echoLook)
-    endpoint->SetLocalAppearance(
-        RandomLook(options.body, options.lookSeed.value_or(std::random_device{}())));
+    endpoint->SetLocalAppearance(RandomLook(options.body, lookSeed, ownKeys));
   // --strike blade: our puppet holds a katana, so the host's NPC reacts to
   // (and is cut by) a blade: its hit reaction reads the attacker's weapon.
   if (options.strike == "blade") {
@@ -2147,6 +2206,14 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteAppearance>) {
               Log("look from player {}: {} keys, {} items", e.appearance.player,
                   e.appearance.look.size(), e.appearance.items.size());
+              // A real V's body keys: kept for random looks of that body.
+              if (!e.appearance.look.empty() && e.appearance.body != tandem::proto::Body::Unknown) {
+                SaveLookKeys(LookKeysFile(lookKeysDir, e.appearance.body), e.appearance.look);
+                if (!options.echoLook && ownKeys.empty() && e.appearance.body == options.body) {
+                  ownKeys = e.appearance.look;
+                  endpoint->SetLocalAppearance(RandomLook(options.body, lookSeed, ownKeys));
+                }
+              }
               if (options.echoLook &&
                   (options.mode == Mode::Mirror || options.mode == Mode::Front)) {
                 auto echo = e.appearance;

@@ -614,6 +614,13 @@ struct TandemNative : Red::IScriptable {
     return engine::ScheduleLook(entity, appearance->look);
   }
 
+  // How many body keys the player's latest look has (0: none, or no look).
+  static std::int32_t RemoteLookKeys(std::uint32_t player) {
+    std::uint32_t changes = 0;
+    const auto appearance = Runtime::Get().RemoteAppearance(player, changes);
+    return appearance ? static_cast<std::int32_t>(appearance->look.size()) : 0;
+  }
+
   // A stand-in for a puppet whose own look is missing or failed (body: 1
   // female, 2 male): the last real look of that body this game has seen.
   // Answers the keys scheduled (0: already worn), -1 when there is none.
@@ -1853,6 +1860,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RemoteItems);
   RTTI_METHOD(ApplyRemoteLook);
   RTTI_METHOD(ApplyStandInLook);
+  RTTI_METHOD(RemoteLookKeys);
   RTTI_METHOD(PoseSource);
   RTTI_METHOD(PoseBind);
   RTTI_METHOD(PoseLoop);
