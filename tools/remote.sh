@@ -8,8 +8,9 @@
 # The working tree (tracked and untracked files, submodules, not ignored
 # ones) is synced to ~/.cache/tandem/src/<worktree name> on GAME_HOST, the
 # Windows sysroot to ~/.cache/tandem/xwin (once), and the task runs inside
-# devenv under anya's own build lock, at low priority so a running game
-# keeps its frames. Nothing is written inside the game's directory.
+# devenv in one of anya's build slots (tools/build-slot.sh: TANDEM_REMOTE_SLOTS,
+# default 3, each CMAKE_BUILD_PARALLEL_LEVEL jobs, default 5; one task at a
+# time per worktree), at low priority so a running game keeps its frames. Nothing is written inside the game's directory.
 # build/windows/plugin/tandem.{dll,pdb} come back into this tree, so
 # `task deploy` and tools/scenario.sh pick them up; after build, build:linux
 # or test, so does build/linux/peer/tandem-peer (scenarios run it here).
@@ -22,8 +23,10 @@ remote=".cache/tandem/src/$name" # relative to the remote home
 xwin=${TANDEM_XWIN:-$HOME/.cache/tandem/xwin}
 [ $# -gt 0 ] || set -- build:plugin
 
-# Never while someone plays there: a build takes the game's frames.
-if ssh "$host" 'pgrep -f "[C]yberpunk2077.exe" >/dev/null' && [ -z "${TANDEM_REMOTE_WHILE_PLAYING:-}" ]; then
+# Never while someone plays there: a build takes the game's frames. Our own
+# test instances (tools/instance.sh, under tandem-instances/) are not someone.
+if ssh "$host" 'pgrep -af "[C]yberpunk2077.exe" | grep -v tandem-instances | grep -q .' &&
+  [ -z "${TANDEM_REMOTE_WHILE_PLAYING:-}" ]; then
   echo "remote: the game runs on $host: build here instead (tools/build.sh picks)" >&2
   exit 1
 fi
@@ -41,10 +44,11 @@ ssh "$host" mkdir -p "$remote"
   git ls-files -z --others --exclude-standard
 } | rsync -a --from0 --files-from=- --ignore-missing-args . "$host:$remote/"
 
-jobs=${CMAKE_BUILD_PARALLEL_LEVEL:-10}
+jobs=${CMAKE_BUILD_PARALLEL_LEVEL:-5}
+slots=${TANDEM_REMOTE_SLOTS:-3}
 # shellcheck disable=SC2029 # expanded here on purpose
 ssh "$host" "cd $remote && CMAKE_BUILD_PARALLEL_LEVEL=$jobs TANDEM_XWIN=\$HOME/.cache/tandem/xwin \
-  flock /tmp/tandem-build.lock nice -n 19 devenv shell -- task $*"
+  flock /tmp/tandem-src-$name.lock tools/build-slot.sh $slots nice -n 19 devenv shell -- task $*"
 
 for task in "$@"; do
   case $task in
