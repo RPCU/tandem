@@ -105,6 +105,7 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.45 | Gameplay restrictions, and a guest wearing the host's           | `story.md`          |
 | 13.50 | Enemy scaling: the stats and how modifiers stack                | `combat.md`         |
 | 13.60 | Breach Protocol: where a breach's outcome becomes effects       | `combat.md`         |
+| 13.70 | World vehicles changing hands, the owner's turret, passenger combat in a copy | `vehicles.md` |
 | 13.80 | Vendors: what the shop's screen is bound to, from a proxy       | `ui.md`             |
 | 14.1  | What a script can do                                            | `autopilot.md`      |
 | 14.2  | Virtual input                                                   | `autopilot.md`      |

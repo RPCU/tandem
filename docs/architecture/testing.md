@@ -85,8 +85,13 @@ scenario. A scenario that needs another spot teleports after it.
   stays away) and off again at `--region-leave-at S` (default -1: never),
   leaving its NPCs with you, at `--region-speed` m/s (default 25). It gives
   and takes NPCs as a game would and logs every step (`region: …`).
-  Scenarios `regions-apart`, `regions-meet`, `regions-vanish`; two of them
-  meet in `tests/peer_regions.sh`.
+  `--region-cars N` runs N world vehicles of its own round its V (of
+  `--traffic-vehicle`, announced once it owns its area, `traffic.md`), left
+  behind with the NPCs; `--region-driver` seats its last NPC at the wheel of
+  the first, `--region-chase` has that one chase the first player it meets.
+  It gives and takes vehicles as a game would (`street: …`).
+  Scenarios `regions-apart`, `regions-meet`, `regions-vanish`,
+  `wheels-guest-area`; two of them meet in `tests/peer_regions.sh`.
 - **course** — runs a scripted course ahead of your V with every way a V
   moves, each with the state machine's own values: jumps, a double jump, a
   1.5 m ledge climb, a drop, a 4 m ladder, swimming and diving, an

@@ -17,6 +17,11 @@ note "carry: $(since | grep -oE 'ride: (carried by the copy|the copy has no trun
 cmd ride
 expect 'ride: .*carried by player 1' 5
 shot scene-ride-along
+# Carried along, never armed (no seat to fight from: NoWeapons, NoCombat).
+cmd wheels draw
+expect 'wheels: draw: our V is in no vehicle|wheels: draw .*no weapons true, no combat true' 5
+pause 2
+reject 'wheels: our weapons in vehicle [0-9]+: mode [1-9]'
 # The scene ends: out, beside the car, every restriction off.
 expect_peer 'out of the car' 60
 expect "ride: out of player 1's ride along \(the ride is over\)" 10

@@ -139,7 +139,7 @@ The owner simulates; everyone else displays.
 | a player's garage (owned cars, unlocks) | that player's game (save) | a partner may drive one by its owner's word (`lend`); the garage stays the owner's (`architecture/garage.md`) |
 | a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game | copy, riders and NPCs seated; host's scene: a seat or a ride along |
 | an NCART train (scripted transit) | each rider's own game | never shared: puppet in a train of ours, else hidden |
-| a world vehicle: traffic, parked, police, a wreck | the owner of its area (`Endpoint::AreaOwner`) | proxy, or their own instance of a placed vehicle; the first player to get in has it (`architecture/traffic.md`) |
+| a world vehicle: traffic, parked, police, a wreck, a chase car | the game that runs it: the owner of its area (`Endpoint::AreaOwner`) that announced it, until it is handed over as an NPC is (its riders with it) | proxy, or their own instance of a placed vehicle; the first player to get in has it (`architecture/traffic.md`) |
 | NPCs: AI, position, health, death | the game that runs it (spawned it, or took it over; quest NPCs: host) | **proxy with its AI off** in the linked games, driven by its owner (`architecture/regions.md`) |
 | spawns: crowds, encounters | each game around its own V | held back only where a higher-ranked linked player's region covers it |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
@@ -291,9 +291,9 @@ plugin") and its open problems.
 - `players.md`: body poses, weapons, looks, player markers; open: linking up, every way a V moves, cyberware and perks.
 - `vehicles.md`: driven vehicles, seats, the radio; open: getting in and out, combat in vehicles.
 - `transit.md`: rides a game runs (cabs, AVs, quest vehicles), the NCART metro.
-- `traffic.md`: traffic, parked cars and wrecks shared by the owner of their area (untested in game): the budget, collisions, a car a player takes, occupants, explosions; who owns an area (`AreaOwner`).
+- `traffic.md`: traffic, parked cars and wrecks shared by the owner of their area (untested in game): the budget, collisions, a car a player takes, occupants, explosions; who owns an area (`AreaOwner`); several owners (a guest's street), hand-overs when players meet and part.
 - `police.md`: police heat per player (untested in game): how a crime finds its V, a wanted V in an area another game owns, what a follower no longer spawns.
-- `vehicle-combat.md`: vehicle damage and destruction, shooting from vehicles and mounted weapons, a guest on another player's gun, collisions (players' cars, rams on NPCs), NPC vehicle chases, bikes, bailing out and being thrown out.
+- `vehicle-combat.md`: vehicle damage and destruction, shooting from vehicles and mounted weapons, a guest on another player's gun (the owner's real guns fire for it), passenger combat in a partner's car copy, collisions (players' cars, rams on NPCs), NPC vehicle chases, bikes, bailing out and being thrown out.
 - `world.md`: time of day and weather; open: the guest acting on the world, NCPD chases, saves.
 - `time.md`: the pause menu, slowed time (time bubbles, the scanner's bubble); open: what the partner lives with when a V scans (mitigations to decide), every time dilation, other timeline and menu, NPC shots simulated by the target's game.
 - `npcs.md`: enemy level, enemy scaling (the count of players near, the multipliers, the host's rule), NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
