@@ -126,7 +126,7 @@ public class TandemTravel {
     }
     let at = local.GetWorldPosition();
     // Still by the point we arrived at: joiners can travel by it.
-    let point: TweakDBID;
+    let point = TDBID.None();
     let marker = 0ul;
     if TDBID.IsValid(this.m_lastPoint) && Vector4.Distance(at, this.m_lastArrival) < 50.0 {
       point = this.m_lastPoint;
@@ -146,7 +146,7 @@ public class TandemTravel {
     }
     at.W = 1.0;
     // By the point they arrived at, if they are still near it.
-    let point: TweakDBID;
+    let point = TDBID.None();
     let marker = 0ul;
     for arrival in this.m_arrivals {
       if arrival.player == player && Vector4.Distance(arrival.position, at) < 100.0 {

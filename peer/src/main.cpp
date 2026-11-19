@@ -1894,7 +1894,11 @@ int main(int argc, char **argv) {
       std::chrono::steady_clock::now() + std::chrono::seconds(options.areaHitSeconds);
   std::set<tandem::proto::NpcId> deadNpcs;
   std::map<tandem::proto::NpcId, Vec3> npcAt; // join: where the host's NPCs are
-  std::set<tandem::proto::NpcId> bodies;      // join: the host's NPCs that died, still lying there
+  // join: when each was last in the host's states (dead and far NPCs are
+  // not), and the NPCs whose grab the host refused (not asked again).
+  std::map<tandem::proto::NpcId, std::chrono::steady_clock::time_point> npcSeen;
+  std::set<tandem::proto::NpcId> grabRefused;
+  std::set<tandem::proto::NpcId> bodies; // join: the host's NPCs that died, still lying there
   std::optional<tandem::proto::NpcId> hitTarget;
   std::set<tandem::proto::NpcId> burnt;
   std::map<tandem::proto::NpcId, std::uint8_t> detection;
@@ -2155,8 +2159,10 @@ int main(int argc, char **argv) {
               if (!options.recordFile.empty())
                 recording.Add(e.states);
               // Who each NPC has detected, when it changes.
-              for (const auto &entry : e.states.npcs)
+              for (const auto &entry : e.states.npcs) {
                 npcAt[entry.npc] = entry.position;
+                npcSeen[entry.npc] = std::chrono::steady_clock::now();
+              }
               for (const auto &entry : e.states.npcs)
                 if (auto &seen = detection[entry.npc]; seen != entry.detected) {
                   Log("npc {} has detected players {:#x}", entry.npc, entry.detected);
@@ -2296,8 +2302,10 @@ int main(int argc, char **argv) {
                   e.reply.accepted ? std::string("accepted")
                                    : std::format("refused ({})", e.reply.reason));
               if (!e.reply.accepted) {
-                if (grab.npc == e.reply.npc)
+                if (grab.npc == e.reply.npc) {
                   grab.step = 0;
+                  grabRefused.insert(grab.npc);
+                }
                 if (carry.npc == e.reply.npc)
                   carry.step = 0;
                 puppeteer.Beside(std::nullopt);
@@ -2836,9 +2844,21 @@ int main(int argc, char **argv) {
     // --grab-npcs: walk up to one NPC, grab it two seconds later (the other
     // games must see us beside it first), take it down two seconds after.
     if (options.grabNpcsSeconds && !options.host && endpoint->IsJoined()) {
-      if (grab.step == 0 && now >= nextGrab && !liveNpcs.empty()) {
+      // The target: an NPC the host shares where it stands now (in its last
+      // second of states: alive and near), not one it refused already. The
+      // first in id order was a body far away, refused forever (2026-11-18).
+      std::optional<tandem::proto::NpcId> target;
+      for (const auto npc : liveNpcs)
+        if (!target && !grabRefused.contains(npc) && npcSeen.contains(npc) &&
+            now - npcSeen[npc] < 1s)
+          target = npc;
+      if (!target && !grabRefused.empty() && grab.step == 0 && now >= nextGrab) {
+        Log("every NPC in view refused a grab: trying them again");
+        grabRefused.clear();
+      }
+      if (grab.step == 0 && now >= nextGrab && target) {
         nextGrab = now + std::chrono::seconds(options.grabNpcsSeconds);
-        grab = {*liveNpcs.begin(), 1, now + 2s};
+        grab = {*target, 1, now + 2s};
         Log("walk up to npc {}", grab.npc);
       } else if (grab.step == 1 && now >= grab.at) {
         grab.step = 2;

@@ -1175,8 +1175,11 @@ public class TandemSystem extends ScriptableSystem {
     if !IsDefined(player) {
       return;
     }
-    let record: TweakDBID;
-    let slot: CName;
+    // Set explicitly: a TweakDBID local left unset is not zero in the
+    // script VM (on foot the seat went out as a perk's record, 2026-11-18,
+    // and puppets of an echoed seat sat in a phantom car, never moving).
+    let record = TDBID.None();
+    let slot = n"None";
     let owner = 0u;
     let car: wref<VehicleObject>;
     // On the NCART no seat is sent: every game rides its own train
