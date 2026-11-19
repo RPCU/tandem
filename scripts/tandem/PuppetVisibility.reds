@@ -1,7 +1,9 @@
 // Why each remote player's puppet is hidden: one set of reasons per puppet,
 // so that one feature never shows what another hid (docs/ARCHITECTURE.md,
 // other worlds). Reasons: n"private" (our private scene, Story.reds),
-// n"elsewhere" (another world, ours or theirs, Elsewhere.reds).
+// n"elsewhere" (another world, ours or theirs, Elsewhere.reds), n"noseat"
+// (no free seat in a car here, System.reds), n"nolook" (no body look yet:
+// clothes alone are never shown, System.reds StandIn).
 //
 // The first reason hides the puppet: it fades out the animation system's
 // way (GameObject.ToggleForcedVisibilityInAnimSystemEvent, final.reds:14005,
@@ -83,7 +85,7 @@ public class TandemVisibility {
     if ArraySize(hidden.reasons) == 1 {
       let body = this.BodyOf(player);
       if IsDefined(body) {
-        GameObject.ToggleForcedVisibilityInAnimSystemEvent(body, n"tandem_hidden", false, fade);
+        TandemVisibility.Fade(this.m_game, body, false, fade);
         hidden.body = body.GetEntityID();
       }
       hidden.hardAt = this.m_now + fade;
@@ -112,7 +114,24 @@ public class TandemVisibility {
     let body = this.BodyOf(hidden.player);
     if IsDefined(body) {
       TandemElsewhere.HideBody(this.m_game, body, false);
-      GameObject.ToggleForcedVisibilityInAnimSystemEvent(body, n"tandem_hidden", true, fade);
+      TandemVisibility.Fade(this.m_game, body, true, fade);
+    }
+  }
+
+  // The animation system's fade, on the body and on what it wears and
+  // holds (item entities of their own: a fade of the body alone left its
+  // clothes in the air until the meshes went).
+  public static func Fade(game: GameInstance, body: ref<GameObject>, visible: Bool, time: Float) -> Void {
+    GameObject.ToggleForcedVisibilityInAnimSystemEvent(body, n"tandem_hidden", visible, time);
+    let transactions = GameInstance.GetTransactionSystem(game);
+    let slots = TandemOutfit.Slots();
+    ArrayPush(slots, t"AttachmentSlots.WeaponRight");
+    ArrayPush(slots, t"AttachmentSlots.WeaponLeft");
+    for slot in slots {
+      let item = transactions.GetItemInSlot(body, slot);
+      if IsDefined(item) {
+        GameObject.ToggleForcedVisibilityInAnimSystemEvent(item, n"tandem_hidden", visible, time);
+      }
     }
   }
 
@@ -125,7 +144,7 @@ public class TandemVisibility {
       if IsDefined(body) {
         if body.GetEntityID() != hidden.body {
           hidden.body = body.GetEntityID();
-          GameObject.ToggleForcedVisibilityInAnimSystemEvent(body, n"tandem_hidden", false, 0.0);
+          TandemVisibility.Fade(this.m_game, body, false, 0.0);
         }
         if now >= hidden.hardAt {
           TandemElsewhere.HideBody(this.m_game, body, true);

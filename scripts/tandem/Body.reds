@@ -217,6 +217,15 @@ public class TandemBodies {
       }
     }
     TandemNative.Log(s"body: donor \(donor.record) set gates:\(gates)");
+    // (measure) the donor's meshes, by class and name: which of them are a
+    // whole default body and head, for a puppet left without a look.
+    let meshes = "";
+    for component in components {
+      if IsDefined(component as IVisualComponent) && StrContains(NameToString(component.GetClassName()), "Mesh") {
+        meshes += s" \(NameToString(component.GetName()))";
+      }
+    }
+    TandemNative.Log(s"body: donor \(donor.record) meshes:\(meshes)");
     donor.ready = true;
     TandemNative.Log(s"body: donor \(donor.record) captured, \(ArraySize(donor.rootSets)) root and \(ArraySize(donor.extensionSets)) extension sets, state features \(TandemBodies.Names(donor.stateFeatures)), visible object \(IsDefined(donor.visible))");
   }

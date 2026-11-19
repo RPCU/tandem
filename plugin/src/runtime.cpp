@@ -321,7 +321,19 @@ bool Runtime::LocalPoseHeld() const {
 
 void Runtime::SubmitLocalAppearance(proto::Appearance appearance) {
   std::lock_guard _(m_lock);
+  NoteStandIn(appearance);
   m_localAppearance = std::move(appearance);
+}
+
+void Runtime::NoteStandIn(const proto::Appearance &appearance) {
+  if (!appearance.look.empty() && appearance.body != proto::Body::Unknown)
+    m_standIns[appearance.body] = appearance.look;
+}
+
+std::vector<proto::AppearanceKey> Runtime::StandInLook(proto::Body body) const {
+  std::lock_guard _(m_lock);
+  const auto it = m_standIns.find(body);
+  return it == m_standIns.end() ? std::vector<proto::AppearanceKey>{} : it->second;
 }
 
 std::optional<proto::Appearance> Runtime::TakeLocalAppearance() {
@@ -334,6 +346,7 @@ void Runtime::PushRemoteAppearance(const proto::Appearance &appearance) {
   auto &[changes, latest] = m_appearances[appearance.player];
   ++changes;
   latest = appearance;
+  NoteStandIn(appearance);
 }
 
 std::optional<proto::Appearance> Runtime::RemoteAppearance(proto::PlayerId player,
