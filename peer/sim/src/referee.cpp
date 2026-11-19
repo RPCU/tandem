@@ -237,6 +237,20 @@ void Referee::NeedNpc(p::NpcId npc, const char *what) {
         std::format("{} names npc {}, which the host never announced", what, npc));
 }
 
+void Referee::NeedShown(p::NpcId npc, const char *what) {
+  // Out of our view (it went "away": a link broke, its region's edge, a
+  // resync's set), and not back: its owner's word on it is for the games
+  // that show it (regions.md, "What travels where").
+  const auto known = m_npcs.find(npc);
+  if (known == m_npcs.end() || known->second.live || known->second.dead ||
+      known->second.goneReason != p::kGoneAway ||
+      m_nowUs - known->second.goneUs < m_options.limits.notSharedGraceUs)
+    return;
+  Add("authority.not-shared",
+      std::format("{} names npc {}, which the host no longer shares with us ({:.1f} s ago)", what,
+                  npc, static_cast<double>(m_nowUs - known->second.goneUs) / 1e6));
+}
+
 void Referee::NeedPlayer(p::PlayerId player, const char *what) {
   if (player != p::kNoPlayer && !m_everPlayers.contains(player))
     Add("ids.unknown-player",
@@ -375,7 +389,10 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
   if (AsksOwner(message) && OwnerOf(NpcOf(message)) != m_self)
     Add("authority.not-owner", std::format("the host passed us {} for npc {}, which player {} runs",
                                            name, NpcOf(message), OwnerOf(NpcOf(message))));
-  if (p::ChannelOf(message) != p::Channel::State)
+  // (The host's record letting go of one of ours, NpcGone "away": nobody
+  // could take it over, or our set named one it no longer holds.)
+  const auto *letGo = std::get_if<p::NpcGone>(&message);
+  if (p::ChannelOf(message) != p::Channel::State && !(letGo && letGo->reason == p::kGoneAway))
     for (const auto npc : OwnedBy(message))
       if (OwnerOf(npc) == m_self && !std::holds_alternative<p::NpcSpawn>(message)) {
         Add("authority.not-owner",
@@ -798,17 +815,22 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
             notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::PlayerHit>) {
           forUs(m.player);
-          if (m.npc != 0)
+          if (m.npc != 0) {
             NeedNpc(m.npc, name);
+            NeedShown(m.npc, name);
+          }
         } else if constexpr (std::is_same_v<M, p::PlayerHack>) {
           forUs(m.player);
           NeedNpc(m.npc, name);
+          NeedShown(m.npc, name);
         } else if constexpr (std::is_same_v<M, p::NpcCue>) {
           forUs(m.player);
           NeedNpc(m.npc, name);
+          NeedShown(m.npc, name);
         } else if constexpr (std::is_same_v<M, p::NpcShotAt>) {
           forUs(m.player);
           NeedNpc(m.npc, name);
+          NeedShown(m.npc, name);
           if (!m_shotsAt.insert({m.npc, m.timeUs}).second)
             Add("oneshot.duplicate",
                 std::format("npc {}'s shot at us of {} came twice", m.npc, m.timeUs));
@@ -892,8 +914,10 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
         } else if constexpr (std::is_same_v<M, p::RegionHold>) {
           notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::NpcAnims>) {
-          for (const auto &anim : m.npcs)
+          for (const auto &anim : m.npcs) {
             NeedNpc(anim.npc, name);
+            NeedShown(anim.npc, name);
+          }
         } else if constexpr (std::is_same_v<M, p::NpcSeat>) {
           if (m.owner != p::kNoPlayer)
             NeedNpc(m.npc, name);
