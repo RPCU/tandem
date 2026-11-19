@@ -178,6 +178,8 @@ The owner simulates; everyone else displays.
 | items a V drops on purpose                                   | host                      | lie in every game; the first pickup keeps it                       |
 | quest and important items, rewards                           | every player's own V      | whoever gets one, every V gets it                                  |
 
+Traffic, parked cars and wrecks, and police heat (per player), are designed in [`architecture/traffic.md`](architecture/traffic.md) and [`architecture/police.md`](architecture/police.md): they replace the rows "a parked or AI vehicle" and "police heat" above.
+
 **Enemy level** (decided 2026-11-18): enemies the host spawns and runs are
 scaled to the **mean of the character levels of the players in the
 session**, not to the host's level. Each game reports its V's level to the

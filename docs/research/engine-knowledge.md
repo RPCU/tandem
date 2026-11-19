@@ -512,6 +512,8 @@ holstered_strong…, character_customization, personal_link_*, *_launcher, *_man
 
 ## 6. Vehicles
 
+Traffic, parked cars and the prevention system (2026-11-19, scripts and RTTI only): [`engine/traffic-police.md`](engine/traffic-police.md).
+
 **Sync model**: the occupant with authority (driver) simulates locally and sends the vehicle transform
 as movement; everyone else runs the car **kinematic** and drives it with `ForceMoveTo` every frame.
 Authority = parentage on the server + `authority_epoch` bumped on transfer (revoke before assign; late
