@@ -20,7 +20,8 @@
   NPC melee sound `AI_PlayMeleeAttackSound`), no projectile. Hits are
   separate (milestone 5). Verified in game 2026-11-18: held weapon, shots
   (28 in one session), reloads (start and end), quick melee; melee-weapon
-  swings and every sound still to check.
+  swings and every sound still to check. What else a puppet is heard and
+  seen doing (steps, voice, bullets, flinches, the party HUD): `presence.md`.
 - **Looks** (`engine/look.cpp`, `scripts/tandem/Outfit.reds`): a V's face
   and body travel as the appearance keys the game's appearance changer takes
   (a resource path hash and a name hash each: the same in every copy of the

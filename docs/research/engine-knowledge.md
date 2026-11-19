@@ -24,7 +24,8 @@ was copied; each fact names where it came from.
 **Tags**: [2.5-verified] = NCO notes say it ran on 2.5, or CW uses it today; [2.31-only] = decoded/used
 on 2.31 and not re-verified (or known different) on 2.5; [broken-on-2.5] = recorded as crashing/failing
 on 2.5; [unverified] = built, never proven live; [2.5-untested] = read from the 2.50 game's own
-scripts, not yet run in game.
+scripts, not yet run in game; [to-hear] / [to-see] = built, only a person in the game can tell
+whether it sounds or looks right; [native] = decided inside the engine, no script lever found.
 
 **The 2.31→2.5 rule NCO learned the hard way** (`code/client/Game/CharacterCustomizationSystem.h:111-119`):
 "Every raw offset, hand-numbered vtable slot and engine-struct mimic in the client was decoded on 2.31
@@ -94,6 +95,7 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.32 | Traffic and world vehicles                                      | `traffic-police.md` |
 | 13.33 | Police: the prevention system                                   | `traffic-police.md` |
 | 13.34 | Traffic and police: open questions (need the game)              | `traffic-police.md` |
+| 13.35 | Presence: a remote V seen and heard                             | `presence.md`       |
 
 ## Top traps (one line each)
 

@@ -120,13 +120,23 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *crime = std::get_if<Crime>(&message);
       crime && (crime->kind < CrimeKind::Witness || crime->kind > CrimeKind::Kill))
     return std::nullopt;
+  if (const auto *cue = std::get_if<Cue>(&message);
+      cue && (cue->kind < CueKind::Trace || cue->kind > CueKind::MeleeHit))
+    return std::nullopt;
+  if (const auto *reaction = std::get_if<NpcReaction>(&message);
+      reaction && reaction->type > kReactionMax)
+    return std::nullopt;
   return message;
 }
 
 Channel ChannelOf(const Message &message) {
   if (const auto *journal = std::get_if<Journal>(&message); journal && journal->snapshot)
     return Channel::Bulk;
-  return std::holds_alternative<PlayerState>(message) ||
+  // A twitch is one of many; the reactions that change how an NPC stands
+  // (a knockdown, a death, a ragdoll) must arrive.
+  if (const auto *reaction = std::get_if<NpcReaction>(&message))
+    return reaction->type == kReactionTwitch ? Channel::State : Channel::Event;
+  return std::holds_alternative<PlayerState>(message) || std::holds_alternative<Cue>(message) ||
                  std::holds_alternative<PoseState>(message) ||
                  std::holds_alternative<Shot>(message) ||
                  std::holds_alternative<VehicleState>(message) ||
@@ -254,7 +264,10 @@ const char *NameOf(const Message &message) {
                                    "TrafficClaim",
                                    "TrafficSet",
                                    "Heat",
-                                   "Crime"};
+                                   "Crime",
+                                   "Presence",
+                                   "Cue",
+                                   "NpcReaction"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

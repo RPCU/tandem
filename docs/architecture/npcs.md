@@ -40,8 +40,8 @@ game (whether health, damage and loot follow the stat).
   hides only new spawns in that overlap. Built and tested without the
   game; the verified runs above are of the host-only build.
   Open: police (`PreventionSpawnSystem`), quest NPCs the guest needs to
-  talk to (milestone 6), hit reactions and ragdolls from other players'
-  hits (`combat.md`).
+  talk to (milestone 6). Hit reactions and ragdolls from other players'
+  hits: built, untested in game (`presence.md`, `combat.md`).
 - **NPC animation** (`scripts/tandem/NpcAnims.reds`, engine-knowledge
   §13.21): the pose stream is too heavy for dozens of NPCs, so the host
   sends what an NPC's animation graph reads and the proxy's own graph

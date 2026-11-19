@@ -22,6 +22,8 @@ add_library(tandem SHARED
   src/story.cpp
   src/story_natives.cpp
   src/elsewhere_natives.cpp
+  src/presence.cpp
+  src/presence_natives.cpp
   src/combat.cpp
   src/combat_natives.cpp
   src/sync_natives.cpp

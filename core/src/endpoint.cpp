@@ -415,6 +415,21 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                      Broadcast(relayed, event.peer);
                      out.push_back(events::RemoteStealth{relayed});
                    },
+                   [&](const proto::Presence &presence) {
+                     // A guest only speaks for its own V.
+                     auto relayed = presence;
+                     relayed.player = player;
+                     if (!Keep(m_presences, relayed))
+                       return;
+                     Broadcast(relayed, event.peer);
+                     out.push_back(events::RemotePresence{relayed});
+                   },
+                   [&](const proto::Cue &cue) {
+                     auto relayed = cue;
+                     relayed.player = player;
+                     Broadcast(relayed, event.peer);
+                     out.push_back(events::RemoteCue{relayed});
+                   },
                    [&](const proto::Pause &pause) {
                      // A guest only pauses in its own name.
                      const proto::Pause relayed{player, pause.paused};
@@ -610,6 +625,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   }
   m_radios.erase(player);
   m_stealth.erase(player);
+  m_presences.erase(player);
   m_transits.erase(player);
   // Our NPCs seated in its vehicle: out (its copy stays parked elsewhere).
   for (auto it = m_npcSeats.begin(); it != m_npcSeats.end();) {
@@ -768,6 +784,7 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     others(m_seats);
     others(m_radios);
     others(m_stealth);
+    others(m_presences);
     others(m_transits); // who rides what (only rides that are on)
     others(m_heat);     // who is wanted (only levels above 0)
     // Who is in their pause menu (the newcomer itself is not), and in a
@@ -980,6 +997,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             SendLocalRadioNow();
             SendLocalPausedNow();
             SendLocalStealthNow();
+            SendLocalPresenceNow();
             SendLocalTimeNow();
             SendLocalElsewhereNow();
             SendLocalVitalsNow();
@@ -1028,6 +1046,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 m_seats.erase(id);
                 m_radios.erase(id);
                 m_stealth.erase(id);
+                m_presences.erase(id);
                 m_transits.erase(id);
                 EndHeatOf(id, out, false);
                 m_lives.erase(id);
@@ -1181,6 +1200,14 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (stealth.player != m_you && Keep(m_stealth, stealth))
               out.push_back(events::RemoteStealth{stealth});
           },
+          [&](const proto::Presence &presence) {
+            if (presence.player != m_you && Keep(m_presences, presence))
+              out.push_back(events::RemotePresence{presence});
+          },
+          [&](const proto::Cue &cue) {
+            if (cue.player != m_you)
+              out.push_back(events::RemoteCue{cue});
+          },
           [&](const proto::NpcActionReply &reply) {
             out.push_back(events::NpcActionAnswered{reply});
           },
@@ -1208,6 +1235,9 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           },
           [&](const proto::NpcAnims &anims) { out.push_back(events::HostNpcAnims{anims}); },
           [&](const proto::NpcShot &shot) { out.push_back(events::HostNpcShot{shot}); },
+          [&](const proto::NpcReaction &reaction) {
+            out.push_back(events::HostNpcReaction{reaction});
+          },
           [&](const proto::Pause &pause) {
             if (pause.player != m_you && NotePaused(pause.player, pause.paused))
               out.push_back(events::PauseChanged{pause});
@@ -1665,6 +1695,13 @@ void Endpoint::SendNpcAnims(const proto::NpcAnims &anims) {
     SayNpc(known);
 }
 
+void Endpoint::SendNpcReaction(const proto::NpcReaction &reaction) {
+  // The NPC's owner's word, for the games linked with it (regions.md).
+  if (!IsJoined() || m_ended || !m_npcs.contains(reaction.npc) || !OwnsNpc(reaction.npc))
+    return;
+  SayNpc(reaction);
+}
+
 void Endpoint::SendNpcShot(const proto::NpcShot &shot) {
   Record(shot);
   if (!IsJoined() || m_ended || !OwnsNpc(shot.npc))
@@ -1867,6 +1904,38 @@ void Endpoint::SendLocalPausedNow() {
     Broadcast(proto::Pause{m_you, m_localPaused});
   else
     Send(m_hostPeer, proto::Pause{m_you, m_localPaused});
+}
+
+void Endpoint::SetLocalPresence(proto::Presence presence) {
+  if (m_tap)
+    m_tap(presence);
+  presence.revision = ++m_presenceRevision;
+  m_localPresence = presence;
+  SendLocalPresenceNow();
+}
+
+void Endpoint::SendLocalPresenceNow() {
+  if (!m_localPresence || !IsJoined() || m_ended)
+    return;
+  m_localPresence->player = m_you;
+  m_presences[m_you] = *m_localPresence;
+  if (IsHost())
+    Broadcast(*m_localPresence);
+  else
+    Send(m_hostPeer, *m_localPresence);
+}
+
+void Endpoint::SendLocalCue(proto::Cue cue) {
+  if (m_tap)
+    m_tap(cue);
+  if (!IsJoined() || m_ended)
+    return;
+  cue.player = m_you;
+  cue.seq = ++m_cueSeq;
+  if (IsHost())
+    Broadcast(cue);
+  else
+    Send(m_hostPeer, cue);
 }
 
 void Endpoint::SetLocalStealth(proto::Stealth stealth) {
@@ -2732,6 +2801,8 @@ std::vector<proto::Message> Endpoint::LocalSnapshot() const {
     out.emplace_back(*m_localRadio);
   if (m_localStealth)
     out.emplace_back(*m_localStealth);
+  if (m_localPresence)
+    out.emplace_back(*m_localPresence);
   if (m_localTime.abilities)
     out.emplace_back(m_localTime);
   if (m_localTransit && m_localTransit->kind != proto::TransitKind::None)

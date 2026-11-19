@@ -406,6 +406,12 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   if IsDefined(shots) && shots.SimulatedByGuest(hitEvent) {
     return;
   }
+  // Any game: a bullet drawn here for someone else's shot (Presence.reds).
+  // Its shooter's game decided what it hit.
+  let presence = TandemPresenceSync.Of(game);
+  if IsDefined(presence) && presence.Cosmetic(hitEvent) {
+    return;
+  }
   // Host: what a guest's game computed already (its effects' ticks and
   // explosions, its car copy's collisions) arrives as strikes.
   if TandemOutcomes.IsGuestComputed(game, hitEvent) {

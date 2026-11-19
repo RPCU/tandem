@@ -141,7 +141,8 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   front of the guest and `--detect-at N [--detect-for M]` makes the NPCs
   it sends notice the guests (meter rising over 2 s), detect them for M s
   (default 10), then lose them; `--camo N` turns "its optical camo" on for
-  5 s; as guest, `--shoot N` fires a gunshot (shot and noise) every N s.
+  5 s; `--shoot N` fires a gunshot every N s (the shot, where its bullet
+  ended, and as guest its noise).
   Stealth, noises and the host's awareness of it are logged.
 - **Takedowns**: `join --grab-npcs N` grabs one of the host's NPCs every N
   s (standing by it) and takes it down two seconds later, lethal and
@@ -170,6 +171,16 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   pose's bone within 0.0001 rad; over real UDP at 40 ms, 15% lost, 200
   reliable changes each way all arrive, in order, once. Scenarios
   `front-badlink`, `drive-badlink`, `npcs-guest-badlink`.
+- **Presence** (any mode; `presence.md`): `--hold RECORD` puts an item in
+  its V's right hand (a weapon, so `--shoot` and `--melee` are seen and
+  heard), `--holster-at N` puts it away N s after another player is there
+  and draws it 5 s later; `--shoot N` also sends where the bullet ended (a
+  `Cue` 6 m past the other V), `--melee N` swings every N s and lands it (a
+  `Cue`); `--hurt N` takes a quarter of its V's health every N s (full
+  again under 30%), `--menu-at N` is "in a menu" N s in, for 5 s (both as
+  `Presence`); `host --react-npcs N` has one of the NPCs it sends play a
+  hit reaction every N s (twitch, impact, stagger, knockdown, ragdoll, its
+  end). Presence, cues and non-twitch reactions it hears are logged.
 - Loot (any mode): `--loot-quest RECORD` has "its V" loot a quest item
   (every other player gets it); `--drop-item RECORD` drops one RECORD as a shared world
   item 1.5 m in front of the other V; `--take-items N` picks up (claims)

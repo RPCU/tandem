@@ -133,6 +133,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_stealth: ref<TandemStealth>;
   // Down, revive, respawn (Revive.reds).
   private let m_revive: ref<TandemRevive>;
+  // Seen and heard: the puppets' sounds, flinches, the party HUD (Presence.reds).
+  private let m_presence: ref<TandemPresenceSync>;
   // Hit outcomes: strikes, wounds, poise, difficulty, area hits (Outcomes.reds).
   private let m_outcomes: ref<TandemOutcomes>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
@@ -299,6 +301,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_stealth.Start(this.GetGameInstance());
     this.m_revive = new TandemRevive();
     this.m_revive.Start(this.GetGameInstance(), this);
+    this.m_presence = new TandemPresenceSync();
+    this.m_presence.Start(this.GetGameInstance());
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -379,6 +383,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_revive.Stop();
     }
     this.m_revive = null;
+    if IsDefined(this.m_presence) {
+      this.m_presence.Stop();
+    }
+    this.m_presence = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -625,6 +633,10 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_travel;
   }
 
+  public func Presence() -> ref<TandemPresenceSync> {
+    return this.m_presence;
+  }
+
   public func Revive() -> ref<TandemRevive> {
     return this.m_revive;
   }
@@ -717,6 +729,11 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     this.DrivePuppets();
+    // What the puppets are heard doing, their flinches, the party HUD
+    // (Presence.reds), on real time as the NPCs are.
+    if IsDefined(this.m_presence) && this.m_playing {
+      this.m_presence.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this, this.m_you);
+    }
     this.Rebuild();
     // Our ride and the others' (the NCART, rides, quest scene vehicles).
     if IsDefined(this.m_transit) && this.m_playing {
@@ -1311,6 +1328,12 @@ public class TandemSystem extends ScriptableSystem {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {
       this.RemoveAllPuppets();
+    } else if StrBeginsWith(command, "presence") {
+      // Presence.reds: presence report | steps auto|on|off | vo NAME |
+      // sound NAME | fx NAME | flinch | bullet | hud ... | react TYPE.
+      if IsDefined(this.m_presence) {
+        this.m_presence.Command(StrAfterFirst(command, "presence "), this);
+      }
     } else if StrBeginsWith(command, "revive") {
       // Revive.reds: revive down | hold | report.
       if IsDefined(this.m_revive) {
@@ -1766,6 +1789,9 @@ public class TandemSystem extends ScriptableSystem {
           if IsDefined(this.m_visibility) {
             this.m_visibility.Forget(event.player);
           }
+          if IsDefined(this.m_presence) {
+            this.m_presence.Forget(event.player);
+          }
           ArrayRemove(this.m_standInPlayers, event.player);
           break;
         case 4:
@@ -1811,6 +1837,9 @@ public class TandemSystem extends ScriptableSystem {
           }
           if IsDefined(this.m_visibility) {
             this.m_visibility.End();
+          }
+          if IsDefined(this.m_presence) {
+            this.m_presence.End();
           }
           ArrayClear(this.m_standInPlayers);
           ArrayClear(this.m_missingPlayers);
@@ -2493,6 +2522,9 @@ public class TandemSystem extends ScriptableSystem {
           let entity = entities.GetEntity(puppet.id) as GameObject;
           if IsDefined(entity) {
             TandemWeapons.Fire(entity, shot.left, shot.effect);
+            if IsDefined(this.m_presence) {
+              this.m_presence.Fired(shot.player, entity, shot.left, shot.effect, EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())));
+            }
           }
         }
       }
@@ -2604,6 +2636,9 @@ public class TandemSystem extends ScriptableSystem {
     TandemNative.PoseBind(puppet.player, null);
     TandemNative.UnregisterPuppet(puppet.player);
     TandemMarkers.Hide(game, puppet.player);
+    if IsDefined(this.m_presence) {
+      this.m_presence.Forget(puppet.player);
+    }
     if IsDefined(this.m_attitudes) {
       this.m_attitudes.Release(puppet.player);
     }

@@ -1586,6 +1586,82 @@ struct Crime {                                   // Event channel
   friend bool operator==(const Crime &, const Crime &) = default;
 };
 
+// ---- Presence (docs/architecture/presence.md) ----
+
+// What the others' party HUD shows of a V that no other message carries,
+// sent by that player's game when it changes (Event channel; the host
+// stamps the player, keeps everyone's latest for late joiners and relays
+// it). `health` is the share of its health pool, 0..255 (0: none left;
+// presence.hpp HealthCode). A fall of it is also how the others' puppets
+// know their V was hurt (the grunt, the flinch). Not part of a digest: the
+// next change repairs it.
+inline constexpr std::uint8_t kPresenceMenu = 1;   // in a full-screen menu (inventory, map…)
+inline constexpr std::uint8_t kPresencePhoto = 2;  // in photo mode
+inline constexpr std::uint8_t kPresenceCombat = 4; // in combat
+struct Presence {
+  PlayerId player{};
+  std::uint32_t revision{};
+  std::uint8_t health{255};
+  std::uint8_t flags{}; // kPresence*
+  friend bool operator==(const Presence &, const Presence &) = default;
+};
+
+// Something a V did at one moment that neither its pose nor another message
+// tells the others, for them to see and hear on its puppet (State channel:
+// a late one is worth nothing; the host stamps the player and relays it).
+// Footsteps, jumps, landings, climbs, dashes, draws and pain are NOT sent:
+// every game derives them from PlayerState, Held, Vitals, TimeEffect and
+// Presence (presence.hpp Observer).
+enum class CueKind : std::uint8_t {
+  // A shot's end, right after its Shot: `at` is where the bullet stopped
+  // (the tracer's end, the impact and its decal); arg: kTrace*.
+  Trace = 1,
+  // A melee swing landed: `at` where; arg: kTrace* (what it hit).
+  MeleeHit = 2,
+};
+inline constexpr std::uint8_t kTraceLeftHand = 1;  // from the left hand's weapon
+inline constexpr std::uint8_t kTraceCharacter = 2; // it ended on a character (flesh, no decal)
+inline constexpr std::uint8_t kTraceNothing = 4;   // it hit nothing: `at` is as far as it flew
+struct Cue {
+  PlayerId player{};
+  std::uint32_t seq{};
+  CueKind kind{};
+  std::uint8_t arg{};
+  Vec3 at;
+  friend bool operator==(const Cue &, const Cue &) = default;
+};
+
+// How one of the host's NPCs reacts to a hit, in the game's own terms: the
+// hit reaction its HitReactionComponent and AI chose (a twitch, an impact, a
+// stagger, a knockdown, its death animation, a ragdoll), with the animation
+// feature that plays it (AnimFeature_HitReactionsData). A guest's brain-off
+// proxy cannot choose one (the reaction tasks are its AI's): it plays the
+// host's. Host to guests. A twitch goes on the State channel (many, and a
+// late one is worth nothing), the others on the Event channel (a lost
+// knockdown or death would leave the proxy standing).
+inline constexpr std::uint8_t kReactionRagdollEnd = 0; // it is out of its ragdoll
+inline constexpr std::uint8_t kReactionTwitch = 1, kReactionRagdoll = 6, kReactionDeath = 7,
+                              kReactionMax = 11;  // animHitReactionType
+inline constexpr std::uint8_t kReactionTurns = 1; // useInitialRotation
+struct NpcReaction {
+  NpcId npc{};
+  PlayerId by{};           // whose hit (kNoPlayer: an NPC's, the world's, unknown)
+  std::uint8_t type{};     // animHitReactionType (Twitch 1, Impact 2, Stagger 3, Pain 4,
+                           // Knockdown 5, Ragdoll 6, Death 7, Block 8, GuardBreak 9, Parry 10,
+                           // Bump 11), or kReactionRagdollEnd
+  std::int8_t direction{}; // EAIHitDirection (Left 0, Back 1, Right 2, Front 3)
+  std::int8_t intensity{}; // EAIHitIntensity (Light 0, Medium 1, Heavy 2, Explosion 3)
+  std::int8_t bodyPart{};  // EAIHitBodyPart (Head 1 … RightLeg 6)
+  std::int8_t variation{}; // animVariation
+  std::int8_t source{};    // EAIHitSource (Ranged 0, MeleeSharp 1, MeleeBlunt 2, QuickMelee 3)
+  std::uint8_t stance{};   // 0 standing, 1 crouching
+  std::uint8_t moveSpeed{}, moveDirection{}; // npcMovementSpeed, npcMovementDirection
+  std::uint8_t flags{};                      // kReaction*
+  float angle{};                             // angleToAttack
+  Vec3 way;                                  // hitDirectionWs; a ragdoll: the impulse that threw it
+  friend bool operator==(const NpcReaction &, const NpcReaction &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -1598,7 +1674,7 @@ using Message = std::variant<
     SceneState, SceneCast, SceneLine, ActorPose, DeviceState, DeviceUse, DeviceSet, DeviceDigest,
     Regions, NpcOwner, NpcHandover, NpcHandoverState, NpcHandoverDone, OwnedDigest, RegionHold,
     TrafficSpawn, TrafficStates, TrafficGone, TrafficStatus, TrafficHit, TrafficClaim, TrafficSet,
-    Heat, Crime>;
+    Heat, Crime, Presence, Cue, NpcReaction>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine):
 // endpoint.hpp relays these through one path.

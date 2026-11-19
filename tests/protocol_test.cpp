@@ -767,3 +767,54 @@ TEST_CASE("region messages survive encoding, are reliable and bounded") {
   CHECK(kProtocolVersion == 6);
   CHECK(Message(Regions{}).index() == Message(DeviceDigest{}).index() + 1);
 }
+
+TEST_CASE("presence, cues and NPC reactions round-trip, on the right channels, and stay small") {
+  RoundTrips(Presence{
+      .player = 2, .revision = 9, .health = 128, .flags = kPresenceMenu | kPresenceCombat});
+  RoundTrips(Cue{.player = 3,
+                 .seq = 77,
+                 .kind = CueKind::Trace,
+                 .arg = kTraceLeftHand | kTraceCharacter,
+                 .at = {1.5f, -2.5f, 30.f}});
+  RoundTrips(Cue{.player = 1, .seq = 1, .kind = CueKind::MeleeHit, .at = {4.f, 5.f, 6.f}});
+  const NpcReaction stagger{.npc = 12,
+                            .by = 2,
+                            .type = 3,
+                            .direction = 3,
+                            .intensity = 2,
+                            .bodyPart = 4,
+                            .variation = 1,
+                            .source = -1,
+                            .stance = 1,
+                            .moveSpeed = 2,
+                            .moveDirection = 1,
+                            .flags = kReactionTurns,
+                            .angle = 91.5f,
+                            .way = {0.f, -1.f, 0.f}};
+  RoundTrips(stagger);
+
+  // Health and the menu are state: kept and never dropped. A cue is of the
+  // moment, one per shot: unreliable and small.
+  CHECK(ChannelOf(Presence{}) == Channel::Event);
+  CHECK(IsReliable(Presence{}));
+  CHECK(ChannelOf(Cue{.kind = CueKind::Trace}) == Channel::State);
+  CHECK(Encode(Cue{.kind = CueKind::Trace}).size() < 32);
+  CHECK(Encode(Presence{}).size() < 16);
+  // A twitch is one of many; a knockdown, a death or a ragdoll must arrive.
+  CHECK(ChannelOf(NpcReaction{.type = kReactionTwitch}) == Channel::State);
+  CHECK(ChannelOf(stagger) == Channel::Event);
+  CHECK(IsReliable(NpcReaction{.type = kReactionDeath}));
+  CHECK(IsReliable(NpcReaction{.type = kReactionRagdoll}));
+  CHECK(IsReliable(NpcReaction{.type = kReactionRagdollEnd}));
+  CHECK(Encode(stagger).size() < 40);
+  CHECK_FALSE(IsStory(Presence{}));
+  CHECK_FALSE(IsCombat(NpcReaction{}));
+
+  // Kinds the receiver does not know are refused, not guessed at.
+  CHECK_FALSE(Decode(Encode(Cue{.kind = static_cast<CueKind>(0)})).has_value());
+  CHECK_FALSE(Decode(Encode(Cue{.kind = static_cast<CueKind>(3)})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcReaction{.type = kReactionMax + 1})).has_value());
+  CHECK(std::string_view(NameOf(Presence{})) == "Presence");
+  CHECK(std::string_view(NameOf(Cue{})) == "Cue");
+  CHECK(std::string_view(NameOf(NpcReaction{})) == "NpcReaction");
+}
