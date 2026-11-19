@@ -163,6 +163,16 @@ natives:check` reads every pair).
   a screenshot, and every thread's backtrace if the game thread stopped.
   Add a scenario (`tools/scenarios/*.sh`, a few lines) for each feature
   you verify in game, so it stays verified.
+- **Every scenario starts from `test reset`** (`tools/game.sh test-reset`,
+  `scripts/tandem/TestReset.reds`): the save loads as the player left it
+  (in a car, mid-mission, wanted, downed) and each scenario leaves state
+  behind, so `tools/scenario.sh` stops the last mock player and resets
+  before each scenario (and `ensure` after a fresh start): V out of any
+  vehicle or workspot, up and healed, effects, police heat, test worlds,
+  test abilities, the revive cooldown and the tests' NPCs and car copies
+  cleared, at the test field (`teleport home`), standing still. A game
+  that is not `test reset: ready` fails the scenario. A scenario that needs
+  another spot (a recording's start) teleports after it.
 - The plugin's watchdog logs `watchdog: game thread silent` when the game
   thread stops ticking for 5 s (`plugin/src/runtime.hpp`).
 - `tools/game.sh role host|join|player` picks the game's `tandem.ini` (the

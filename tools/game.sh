@@ -20,6 +20,9 @@
 #                              hot-reloads scripts-only changes, restarts only
 #                              when the DLL, tweaks or role changed
 #   tools/game.sh healthy      the game plays and its game thread ticks
+#   tools/game.sh test-reset   one known state (cmd test reset: on foot, up, healed,
+#                              at the test field, tests' leftovers gone); prints
+#                              its result, fails unless "ready"
 #   tools/game.sh bt           every game thread's backtrace (winedbg inside the
 #                              game's container) to .cache/re/bt.txt, tandem's
 #                              frames named from its .pdb. A game that "freezes"
@@ -38,7 +41,7 @@
 #                              ride (our ride, the vehicle's seats, the others' rides) |
 #                              ride hide | ride show (every puppet out of sight and back) |
 #                              ride npc [RECORD] (an NPC into a free seat of our vehicle) |
-#                              teleport home | teleport X Y Z [YAW] |
+#                              teleport home | teleport X Y Z [YAW] | test reset |
 #                              record start NAME | record stop (our V's play, for
 #                              tandem-peer --play) |
 #                              proxy test [record] | proxy clear |
@@ -342,6 +345,26 @@ ensure() {
   start
   remote "cd '$dir/red4ext/plugins/tandem'; echo '$now $want' > .started; echo '$dll' > .started-dll; \
     echo '$(cat tweaks/tandem/*.tweak | sha256sum | cut -c1-16)' > .started-tweaks"
+  # The save loads as the player left it (in a car, mid-mission, wanted...).
+  test_reset || echo "the game is not in its test state" >&2
+}
+
+# One known state for a test (scripts/tandem/TestReset.reds): V on foot,
+# up, healed, at the test field, the tests' leftovers gone. Prints the
+# game's answer; fails unless it is "ready".
+test_reset() {
+  local before line
+  before=$(remote "cd '$dir'; grep -cE 'test reset: (ready|failed)' \"\$(ls -t red4ext/logs/tandem-*.log | head -1)\"" || true)
+  cmd test reset >/dev/null
+  line=$(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); for i in \$(seq 1 45); do \
+    if [ \"\$(grep -cE 'test reset: (ready|failed)' \"\$f\")\" -gt ${before:-0} ]; then \
+    grep -E 'test reset: (ready|failed)' \"\$f\" | tail -1; exit 0; fi; sleep 1; done; exit 1") || {
+    echo "test reset: no answer within 45 s" >&2
+    return 1
+  }
+  echo "${line#*] }"
+  case $line in *'test reset: ready'*) return 0 ;; esac
+  return 1
 }
 
 # TANDEM_PREBUILT=1: install the DLL already in build/ (tools/remote.sh
@@ -381,6 +404,7 @@ ensure)
   ensure "${@:?host or join}"
   ;;
 healthy) healthy && echo healthy ;;
+test-reset) test_reset ;;
 reload) reload ;;
 fetch-play) fetch_play "${2:-}" ;;
 peer)

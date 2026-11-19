@@ -733,6 +733,15 @@ public class TandemTime {
     this.m_sentScale = 1.0;
   }
 
+  // (test reset) the test dilation of "time test" off.
+  public func ResetTest() -> Void {
+    if this.m_testUntil > 0.0 {
+      this.m_testUntil = 0.0;
+      GameInstance.GetTimeSystem(this.m_game).UnsetTimeDilation(n"sandevistan", n"None");
+      TandemNative.Log("time: test dilation off (test reset)");
+    }
+  }
+
   public func Stop() -> Void {
     this.End();
     if this.m_testUntil > 0.0 {

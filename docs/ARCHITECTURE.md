@@ -1412,6 +1412,24 @@ only when the build or the role changed (one restart per role for a whole
 run), so a run takes minutes. A failure keeps its evidence (logs,
 a screenshot, every thread's backtrace when the plugin's watchdog saw the
 game thread stop). Each feature verified in game gets a scenario.
+Every scenario starts from one known state, `tools/game.sh test-reset`
+(`cmd test reset`, `scripts/tandem/TestReset.reds`), run after the last
+scenario's mock player is stopped and after any fresh start: the save
+loads as the player left it and each scenario leaves state behind. It
+takes V out of any vehicle (an instant unmount, then the workspot exit) or
+workspot; ends the test private scene and quest freeze, test worlds
+(Elsewhere), the test dilation and `god on`; resets revive (`revive
+fresh`: up, no cooldown); heals V and removes bleeding, burning,
+crippling and other lasting effects; asks the police to stand down;
+deletes the tests' NPCs (`Tandem.Test`, `npc hostile`, `proxy test`,
+`ride npc`) and the car copies nobody drives (parked, or an earlier
+player's; once nobody sits in them); then teleports V to the test field
+(-915.0 1879.5 36.19) and waits until it has stood still there for 1.5 s
+(3 s at least: the world streams in). It logs `test reset: ready (on
+foot, at the test field, …)` listing what it could not clear (a scene,
+combat, a grapple, a body carried, police heat, a menu or the phone open,
+time dilated, health), or `test reset: failed (…)`, which fails the
+scenario. A scenario that needs another spot teleports after it.
 
 `tandem-peer` modes:
 

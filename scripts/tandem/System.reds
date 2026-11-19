@@ -134,6 +134,8 @@ public class TandemSystem extends ScriptableSystem {
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
   private let m_testNpcs: array<EntityID>;
   private let m_testHostile: array<EntityID>;
+  // "test reset" (TestReset.reds): one known state before each scenario.
+  private let m_testReset: ref<TandemTestReset>;
   private let m_lastHostileReport: Float;
   // (test) the attitude group puppets are put in instead of their own
   // ("puppet group NAME"; "puppet group" alone: their own again).
@@ -600,6 +602,9 @@ public class TandemSystem extends ScriptableSystem {
     this.TickProxyTests();
     this.TickHostileTests();
     this.HandleCommand();
+    if IsDefined(this.m_testReset) {
+      this.m_testReset.Tick(this.Now());
+    }
     if IsDefined(this.m_probe) {
       this.m_probe.Tick();
     }
@@ -893,6 +898,11 @@ public class TandemSystem extends ScriptableSystem {
       TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
     } else if StrBeginsWith(command, "takedown") {
       TandemTakedowns.Get(this.GetGameInstance()).Command(command);
+    } else if Equals(command, "test reset") {
+      if !IsDefined(this.m_testReset) {
+        this.m_testReset = new TandemTestReset();
+      }
+      this.m_testReset.Start(this.GetGameInstance(), this, this.Now());
     } else if Equals(command, "vehicle clear") {
       // (experiment) delete the parked car copies: this froze the game
       // (engine-knowledge §13.6); run tools/game.sh bt if it does again.
@@ -1339,6 +1349,66 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_npcs) {
       this.m_npcs.Forget(hit);
     }
+  }
+
+  // (test reset) every test's leftovers here and in the modules this owns:
+  // spawned NPCs and probes, test worlds and abilities, the revive cooldown.
+  public func ClearTestState() -> Void {
+    let entities = GameInstance.GetDynamicEntitySystem();
+    if IsDefined(this.m_time) {
+      this.m_time.ResetTest();
+    }
+    if IsDefined(this.m_elsewhere) {
+      this.m_elsewhere.Command("elsewhere test off");
+    }
+    if IsDefined(this.m_revive) {
+      this.m_revive.Command("revive fresh");
+    }
+    if IsDefined(this.m_vehicleProbe) {
+      this.RunCommand("vehicle probe stop");
+    }
+    for id in this.m_testNpcs {
+      entities.DeleteEntity(id);
+    }
+    ArrayClear(this.m_testNpcs);
+    ArrayClear(this.m_testHostile);
+    this.m_hostileReports = 0;
+    for test in this.m_proxyTests {
+      entities.DeleteEntity(test.id);
+    }
+    ArrayClear(this.m_proxyTests);
+    if EntityID.IsDefined(this.m_rideNpc) {
+      entities.DeleteEntity(this.m_rideNpc);
+      this.m_rideNpc = EntityID.FromHash(0ul);
+    }
+    // "npc spawn" gangers and "npc hostile" NPCs.
+    entities.DeleteTagged(n"Tandem.Test");
+    this.m_recordOverride = "";
+    this.m_puppetGroup = n"None";
+    TandemNative.Log("test reset: test NPCs, worlds, abilities and revive state cleared");
+  }
+
+  // (test reset) car copies nobody drives any more: the parked ones and any
+  // left by an earlier scenario's player (never one a leaving puppet's
+  // removal still holds, nor one a puppet drives).
+  public func ClearTestCars() -> Void {
+    let entities = GameInstance.GetDynamicEntitySystem();
+    let deleted = 0;
+    for id in entities.GetTaggedIDs(n"Tandem.Vehicle") {
+      let leaving = false;
+      for gone in this.m_leaving {
+        if gone.car == id {
+          leaving = true;
+        }
+      }
+      if this.CarOwner(id) == 0u && !leaving {
+        entities.DeleteEntity(id);
+        deleted += 1;
+      }
+    }
+    ArrayClear(this.m_parked);
+    this.m_rideCar = EntityID.FromHash(0ul);
+    TandemNative.Log(s"test reset: \(deleted) car copies deleted");
   }
 
   private func CarOwner(id: EntityID) -> Uint32 {

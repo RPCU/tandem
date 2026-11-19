@@ -6,6 +6,11 @@
 #   tools/scenario.sh NAME...       run these, in order
 #   tools/scenario.sh all           run every one, host scenarios first
 #
+# Every scenario starts from one known state: the mock player of the one
+# before is stopped, then tools/game.sh test-reset (V on foot, up, healed,
+# at the test field, the tests' leftovers gone); a game that is not
+# "ready" fails the scenario. A game started by `ensure` is reset too.
+#
 # A scenario is a bash file of steps:
 #   ensure host|join [KEY=VALUE...]  the game runs this build in this role,
 #                          with these extra tandem.ini keys (restarts
@@ -98,6 +103,12 @@ peer() {
   peer_mark=0
 }
 cmd() { $game cmd "$*" >/dev/null || fail "command not taken: $*"; }
+reset() {
+  local result status=0
+  result=$($game test-reset 2>&1) || status=$?
+  echo "  ${result:-test reset: no answer}"
+  [ "$status" = 0 ] || fail "the game is not in its test state"
+}
 played=0
 play() {
   local name=$1 file=recordings/play/$1.tplay address beside
@@ -180,6 +191,12 @@ run() {
   set +e
   (
     set -e
+    # The last scenario's player leaves, and the game comes to its test state.
+    pkill -x tandem-peer 2>/dev/null || true
+    if $game healthy >/dev/null 2>&1; then
+      mark
+      reset
+    fi
     # shellcheck source=/dev/null
     source "$file"
   )
