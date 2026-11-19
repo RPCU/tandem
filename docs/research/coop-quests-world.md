@@ -15,14 +15,15 @@ fact to `[2.5-verified]` in `engine-knowledge.md` once it is checked in game.
 
 ## Sources
 
-| Cited as          | What                                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------- |
-| `final.reds:LINE` | decompiled vanilla scripts, `~/.cache/tandem/ref/gamescripts/vanilla/final.reds`              |
-| `rtti: Class`     | `tools/re/run tools/re/rtti.py class Class` on `.cache/re/rtti.json` (live dump, game 2.50)   |
-| `@ 0x14…`         | native handler address from that dump (image base as shipped; Proton loads at preferred base) |
-| `CW path`         | Codeware source (MIT), `~/.cache/tandem/ref/codeware`, checkout `60c4ab5` (2026-11-14)        |
-| `names.txt`       | `.cache/re/names.txt`, the game's CName pool                                                  |
-| `§7`, `§9`, `§11` | sections of `engine-knowledge.md`                                                             |
+<!-- prettier-ignore -->
+| Cited as | What |
+| --- | --- |
+| `final.reds:LINE` | decompiled vanilla scripts, `~/.cache/tandem/ref/gamescripts/vanilla/final.reds` |
+| `rtti: Class` | `tools/re/run tools/re/rtti.py class Class` on `.cache/re/rtti.json` (live dump, game 2.50) |
+| `@ 0x14…` | native handler address from that dump (image base as shipped; Proton loads at preferred base) |
+| `CW path` | Codeware source (MIT), `~/.cache/tandem/ref/codeware`, checkout `60c4ab5` (2026-11-14) |
+| `names.txt` | `.cache/re/names.txt`, the game's CName pool |
+| `§7`, `§9`, `§11` | sections of `engine-knowledge.md` |
 
 Reading the RTTI dump:
 
@@ -64,16 +65,17 @@ multiplayer. They are **not usable as a transport** (nothing drives them),
 but they are CDPR's own answer to "what does a host send for this system",
 and they match the authority table in `ARCHITECTURE.md` closely. `[2.5-rtti]`
 
-| System (`: gameIReplicatedGameSystem`) | Replicated-state class                                                                                                  | Fields                                                                                                                                                  |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `questQuestsSystem`                    | `questQuestsSystemReplicatedState`                                                                                      | `replicatedQuestPrefabs: [questQuestPrefabsEntry{nodeRef: worldGlobalNodeRef, loadingMode: worldQuestPrefabLoadingMode}]`                               |
-| `gameJournalManager`                   | `gameJournalManagerSharedState`                                                                                         | `entryData: [gameJournalSharedStateData{pathHash: Uint32, entryState: gameJournalEntryState}]`, `trackedQuestPath: Uint32`                              |
-| `gameTimeSystem`                       | `gameTimeSystemReplicatedState`                                                                                         | `paused: Bool`, `gameTime: GameTime`                                                                                                                    |
-| `gamemappinsMappinSystem`              | `gamemappinsMappinSystemReplicatedState`                                                                                | `mappinState: [gameNewMappinID]`, `mappinWithJournalState: [Uint32]`                                                                                    |
-| (inside the mappin system)             | `gamemappinsQuestMappinManagerReplicatedState`                                                                          | `dynamicQuestMappinRepInfo: [{journalPathHash: Uint32, entity: whandle:entEntity}]`                                                                     |
-| `questWorldStateSystem`                | `questWorldStateSystemReplicatedState`                                                                                  | `nodeVisibilityMapArray: [{globalNodeRef, visible}]`, `isInMirrorsAreaMapArray`, `nodeCollisionMapArray`, `prefabVariants: [{…, variantNameKey, show}]` |
-| `gameGodModeSystem`, `gamePingSystem`  | (`gamePingSystemReplicatedState`)                                                                                       | —                                                                                                                                                       |
-| devices                                | `DoorReplicatedState`, `SecurityTurretReplicatedState`, `WindowBlindersReplicatedState` (`: gameDeviceReplicatedState`) | —                                                                                                                                                       |
+<!-- prettier-ignore -->
+| System (`: gameIReplicatedGameSystem`) | Replicated-state class | Fields |
+| --- | --- | --- |
+| `questQuestsSystem` | `questQuestsSystemReplicatedState` | `replicatedQuestPrefabs: [questQuestPrefabsEntry{nodeRef: worldGlobalNodeRef, loadingMode: worldQuestPrefabLoadingMode}]` |
+| `gameJournalManager` | `gameJournalManagerSharedState` | `entryData: [gameJournalSharedStateData{pathHash: Uint32, entryState: gameJournalEntryState}]`, `trackedQuestPath: Uint32` |
+| `gameTimeSystem` | `gameTimeSystemReplicatedState` | `paused: Bool`, `gameTime: GameTime` |
+| `gamemappinsMappinSystem` | `gamemappinsMappinSystemReplicatedState` | `mappinState: [gameNewMappinID]`, `mappinWithJournalState: [Uint32]` |
+| (inside the mappin system) | `gamemappinsQuestMappinManagerReplicatedState` | `dynamicQuestMappinRepInfo: [{journalPathHash: Uint32, entity: whandle:entEntity}]` |
+| `questWorldStateSystem` | `questWorldStateSystemReplicatedState` | `nodeVisibilityMapArray: [{globalNodeRef, visible}]`, `isInMirrorsAreaMapArray`, `nodeCollisionMapArray`, `prefabVariants: [{…, variantNameKey, show}]` |
+| `gameGodModeSystem`, `gamePingSystem` | (`gamePingSystemReplicatedState`) | — |
+| devices | `DoorReplicatedState`, `SecurityTurretReplicatedState`, `WindowBlindersReplicatedState` (`: gameDeviceReplicatedState`) | — |
 
 Reading: CDPR replicated the **journal as (path hash → state) pairs plus the
 tracked entry**, time as **(paused, seconds)**, the world as **quest prefabs
@@ -101,18 +103,19 @@ useSpecifiedStartPoint, isSpectator, nickname}`.
 `QuestsSystem` (`final.reds:46537-46555`, RTTI name `questQuestsSystem`, size
 0x300, `GameInstance.GetQuestsSystem(game)` at `final.reds:14212`):
 
-| Function                                                                              | Handler       | Notes                                           |
-| ------------------------------------------------------------------------------------- | ------------- | ----------------------------------------------- |
-| `GetFact(factName: CName) -> Int32`                                                   | `0x1402b0b68` | unset fact reads 0                              |
-| `GetFactStr(factName: String) -> Int32`                                               | `0x14184d134` | for names built at run time                     |
-| `SetFact(factName: CName, value: Int32)`                                              | `0x140e35ce8` |                                                 |
-| `SetFactStr(factName: String, value: Int32)`                                          | `0x141907130` |                                                 |
+<!-- prettier-ignore -->
+| Function | Handler | Notes |
+| --- | --- | --- |
+| `GetFact(factName: CName) -> Int32` | `0x1402b0b68` | unset fact reads 0 |
+| `GetFactStr(factName: String) -> Int32` | `0x14184d134` | for names built at run time |
+| `SetFact(factName: CName, value: Int32)` | `0x140e35ce8` | |
+| `SetFactStr(factName: String, value: Int32)` | `0x141907130` | |
 | `RegisterListener(factName: CName, listener: IScriptable, funcName: CName) -> Uint32` | `0x140255dac` | callback is `func(value: Int32)`; returns an id |
-| `UnregisterListener(factName: CName, id: Uint32)`                                     | `0x1411f6d44` |                                                 |
-| `RegisterEntity(factName: CName, entityId: EntityID) -> Uint32`                       | `0x140dd7fb8` | the entity receives a `FactChangedEvent`        |
-| `UnregisterEntity(factName: CName, callbackId: Uint32)`                               | `0x140ed9f44` |                                                 |
-| `GetGameplayTimerData(out seconds: Float, out percent: Float)`                        | `0x142ca0708` | the quest countdown timer                       |
-| `ExecuteNode(node: questNodeDefinition, opt inputSocket: CName)`                      | Codeware      | `CW scripts/Quest/QuestsSystem.reds`; see §6.1  |
+| `UnregisterListener(factName: CName, id: Uint32)` | `0x1411f6d44` | |
+| `RegisterEntity(factName: CName, entityId: EntityID) -> Uint32` | `0x140dd7fb8` | the entity receives a `FactChangedEvent` |
+| `UnregisterEntity(factName: CName, callbackId: Uint32)` | `0x140ed9f44` | |
+| `GetGameplayTimerData(out seconds: Float, out percent: Float)` | `0x142ca0708` | the quest countdown timer |
+| `ExecuteNode(node: questNodeDefinition, opt inputSocket: CName)` | Codeware | `CW scripts/Quest/QuestsSystem.reds`; see §6.1 |
 
 Global helpers (all go through the functions above): `SetFactValue(game,
 factName, factCount) -> Bool` (`final.reds:51977`), `GetFact(game, factName)
@@ -181,18 +184,19 @@ A name list built from quest graphs (the fork's approach) misses these; the
 (counted over `final.reds`). The written ones fall in groups; **the fork
 excluded script-written facts on purpose** (§7) and this is why:
 
-| Group                                      | Examples                                                                                                                          | Co-op treatment _(inferred)_                  |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| per-player combat telemetry                | `gmpl_npc_killed_by_player`, `gmpl_player_dodged`, `player_killed_npc`, `player_fired_a_weapon` (`final.reds:51665`)              | host's value only; guests never send          |
-| save migration flags ("retrofix")          | `IconicReworkCompleted`, `Perks2`, `Skills2`, `WardrobeInitialized`, `ConsumablesUpgraded`, … (CamelCase names)                   | **never sync**: they describe one save        |
-| tutorials                                  | `*_tutorial`, `tutorial_*`, `disable_tutorials`, `tutorials_were_disabled`                                                        | local; guest may set `disable_tutorials`      |
-| load marker                                | `game_was_loaded` set to 1 on player attach and back to 0 one second later (`final.reds:40203-40212`)                             | **never sync**                                |
-| police                                     | `wanted_level`, `wanted_chase_active` (`final.reds:139593-139609`), `prevention_quest_disabled`                                   | host's; follows from §9                       |
-| HUD toggles written by quests, read by HUD | `unlock_car_hud_dpad`, `dpad_hints_visibility_enabled`, `q000_started`, `disable_curve_bars` (listeners at `final.reds:269935-…`) | sync: they drive the guest's HUD              |
-| UI gates read by scripts                   | `map_blocked`, `radial_hub_menu_enabled`, `block_death_menu`, `q307_hub_disabled_except_journal`, `transmog_enabled`              | sync except `block_death_menu` (§11)          |
-| metro                                      | `ue_metro_active_station`, `ue_metro_next_station`, `ue_metro_show_line_*`                                                        | host's                                        |
-| progress counters                          | `maExperienceSum`, `stsExperienceSum`, `number_of_ripperdocs_visited`, `*_skillbook_bought_counter`, `courier_missions_done`      | per player or host: decide per fact           |
-| quest logic written from scripts           | `q305_*` (bunker), `mq058_opened_vvc`, `sq024_current_race_player_position`, `q112_oda_*`, `Kab08Minigame_program_uploaded`       | host's; guest input becomes a request to host |
+<!-- prettier-ignore -->
+| Group | Examples | Co-op treatment _(inferred)_ |
+| --- | --- | --- |
+| per-player combat telemetry | `gmpl_npc_killed_by_player`, `gmpl_player_dodged`, `player_killed_npc`, `player_fired_a_weapon` (`final.reds:51665`) | host's value only; guests never send |
+| save migration flags ("retrofix") | `IconicReworkCompleted`, `Perks2`, `Skills2`, `WardrobeInitialized`, `ConsumablesUpgraded`, … (CamelCase names) | **never sync**: they describe one save |
+| tutorials | `*_tutorial`, `tutorial_*`, `disable_tutorials`, `tutorials_were_disabled` | local; guest may set `disable_tutorials` |
+| load marker | `game_was_loaded` set to 1 on player attach and back to 0 one second later (`final.reds:40203-40212`) | **never sync** |
+| police | `wanted_level`, `wanted_chase_active` (`final.reds:139593-139609`), `prevention_quest_disabled` | host's; follows from §9 |
+| HUD toggles written by quests, read by HUD | `unlock_car_hud_dpad`, `dpad_hints_visibility_enabled`, `q000_started`, `disable_curve_bars` (listeners at `final.reds:269935-…`) | sync: they drive the guest's HUD |
+| UI gates read by scripts | `map_blocked`, `radial_hub_menu_enabled`, `block_death_menu`, `q307_hub_disabled_except_journal`, `transmog_enabled` | sync except `block_death_menu` (§11) |
+| metro | `ue_metro_active_station`, `ue_metro_next_station`, `ue_metro_show_line_*` | host's |
+| progress counters | `maExperienceSum`, `stsExperienceSum`, `number_of_ripperdocs_visited`, `*_skillbook_bought_counter`, `courier_missions_done` | per player or host: decide per fact |
+| quest logic written from scripts | `q305_*` (bunker), `mq058_opened_vvc`, `sq024_current_race_player_position`, `q112_oda_*`, `Kab08Minigame_program_uploaded` | host's; guest input becomes a request to host |
 
 Other writers that are not quest graphs: devices with fact operations
 (`FactInvoker`, `SFactOperationData`, `FactsDeviceOperation`,
@@ -244,44 +248,46 @@ _(inferred)_: on every join the host's snapshot must overwrite, including
 
 Queries (all `const`, all `[2.5-rtti]`):
 
-| Function                                                                                               | Handler                                                                    |
-| ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| `GetQuests(context: JournalRequestContext, out entries: [wref<JournalEntry>])`                         | `0x142be0588`                                                              |
-| `GetMetaQuests(context, out entries)`                                                                  | `0x142be01b4`                                                              |
-| `GetContacts(context, out entries)`                                                                    | `0x141206dfc`                                                              |
-| `GetConversations(contactEntry, out conversations)`                                                    | `0x142bdeeec`                                                              |
-| `GetMessagesAndChoices(conversationEntry, out messages, out choiceEntries)`                            | `0x142bdfbcc`                                                              |
-| `GetFlattenedMessagesAndChoices(contactEntry, out messages, out choiceEntries)`                        | `0x1409ba544`                                                              |
-| `GetOnscreens(context, out entries: [JournalOnscreensStructuredGroup], opt fallbackGroupName: CName)`  | `0x142be02a0`                                                              |
-| `GetTarots`, `GetCodexCategories`, `GetBriefings`, `GetInternetSites`, `GetInternetPages`              | —                                                                          |
-| `GetChildren(parentEntry, filter: JournalRequestStateFilter, out childEntries)`                        | `0x1409ba430`                                                              |
-| `GetParentEntry(childEntry) -> wref<JournalEntry>`                                                     | `0x1409bafac`                                                              |
-| `GetEntry(hash: Uint32) -> wref<JournalEntry>`                                                         | `0x1409ba0b8`                                                              |
-| `GetEntryByString(uniquePath: String, className: String) -> wref<JournalEntry>`                        | `0x142bdf528`                                                              |
-| `GetEntryHash(entry) -> Int32`                                                                         | `0x140fa60fc`                                                              |
-| `GetEntryState(entry) -> gameJournalEntryState`                                                        | `0x141164cf4`                                                              |
-| `GetEntryTimestamp(entry) -> GameTime`                                                                 | `0x141247db8`                                                              |
-| `IsEntryVisited(entry) -> Bool` / `SetEntryVisited(entry, value: Bool)`                                | `0x140362300` / `0x142be0d10`                                              |
-| `GetTrackedEntry() -> wref<JournalEntry>` / `IsEntryTracked(entry) -> Bool`                            | `0x1409bb0e0` / `0x142be0b54`                                              |
-| `GetObjectiveCurrentCounter(entry: wref<JournalQuestObjective>) -> Int32` / `GetObjectiveTotalCounter` | `0x140dc3c58` / `0x140dc3d58`                                              |
-| `GetIsObjectiveOptional(entry: wref<JournalQuestObjectiveBase>) -> Bool`                               | `0x140dc3ab0`                                                              |
-| `GetQuestType(entry) -> gameJournalQuestType`                                                          | `0x140ed71a0`                                                              |
-| `GetDistanceToNearestMappin(entry: wref<JournalQuestObjective>, opt filter) -> Float`                  | `0x142bdf180`                                                              |
-| `GetPointOfInterestMappinHashFromQuestHash(hash: Uint32) -> Uint32`                                    | `0x142be050c`                                                              |
-| `HasAnyDelayedStateChanges() -> Bool`                                                                  | `0x142be0b0c`                                                              |
-| `GetEntries(request: script_ref<JournalRequestContext>) -> [wref<JournalEntry>]`                       | Codeware (`CW scripts/Quest/JournalManager.reds`): every entry in one call |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `GetQuests(context: JournalRequestContext, out entries: [wref<JournalEntry>])` | `0x142be0588` |
+| `GetMetaQuests(context, out entries)` | `0x142be01b4` |
+| `GetContacts(context, out entries)` | `0x141206dfc` |
+| `GetConversations(contactEntry, out conversations)` | `0x142bdeeec` |
+| `GetMessagesAndChoices(conversationEntry, out messages, out choiceEntries)` | `0x142bdfbcc` |
+| `GetFlattenedMessagesAndChoices(contactEntry, out messages, out choiceEntries)` | `0x1409ba544` |
+| `GetOnscreens(context, out entries: [JournalOnscreensStructuredGroup], opt fallbackGroupName: CName)` | `0x142be02a0` |
+| `GetTarots`, `GetCodexCategories`, `GetBriefings`, `GetInternetSites`, `GetInternetPages` | — |
+| `GetChildren(parentEntry, filter: JournalRequestStateFilter, out childEntries)` | `0x1409ba430` |
+| `GetParentEntry(childEntry) -> wref<JournalEntry>` | `0x1409bafac` |
+| `GetEntry(hash: Uint32) -> wref<JournalEntry>` | `0x1409ba0b8` |
+| `GetEntryByString(uniquePath: String, className: String) -> wref<JournalEntry>` | `0x142bdf528` |
+| `GetEntryHash(entry) -> Int32` | `0x140fa60fc` |
+| `GetEntryState(entry) -> gameJournalEntryState` | `0x141164cf4` |
+| `GetEntryTimestamp(entry) -> GameTime` | `0x141247db8` |
+| `IsEntryVisited(entry) -> Bool` / `SetEntryVisited(entry, value: Bool)` | `0x140362300` / `0x142be0d10` |
+| `GetTrackedEntry() -> wref<JournalEntry>` / `IsEntryTracked(entry) -> Bool` | `0x1409bb0e0` / `0x142be0b54` |
+| `GetObjectiveCurrentCounter(entry: wref<JournalQuestObjective>) -> Int32` / `GetObjectiveTotalCounter` | `0x140dc3c58` / `0x140dc3d58` |
+| `GetIsObjectiveOptional(entry: wref<JournalQuestObjectiveBase>) -> Bool` | `0x140dc3ab0` |
+| `GetQuestType(entry) -> gameJournalQuestType` | `0x140ed71a0` |
+| `GetDistanceToNearestMappin(entry: wref<JournalQuestObjective>, opt filter) -> Float` | `0x142bdf180` |
+| `GetPointOfInterestMappinHashFromQuestHash(hash: Uint32) -> Uint32` | `0x142be050c` |
+| `HasAnyDelayedStateChanges() -> Bool` | `0x142be0b0c` |
+| `GetEntries(request: script_ref<JournalRequestContext>) -> [wref<JournalEntry>]` | Codeware (`CW scripts/Quest/JournalManager.reds`): every entry in one call |
 
 Mutations:
 
-| Function                                                                                                                           | Handler       |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
 | `ChangeEntryState(uniquePath: String, className: String, state: gameJournalEntryState, notifyOption: JournalNotifyOption) -> Bool` | `0x142bde5e4` |
-| `ChangeEntryStateByHash(hash: Uint32, state: gameJournalEntryState, notifyOption: JournalNotifyOption)`                            | `0x142bde814` |
-| `TrackEntry(entry: wref<JournalEntry>)`                                                                                            | `0x142be0de4` |
-| `UntrackEntry()`                                                                                                                   | `0x1421de690` |
-| `TrackPrevNextEntry(next: Bool)`                                                                                                   | `0x142be0ed4` |
-| `RegisterScriptCallback(obj: IScriptable, functionName: CName, type: gameJournalListenerType)`                                     | `0x1409f26d4` |
-| `UnregisterScriptCallback(obj: IScriptable, functionName: CName)`                                                                  | `0x140249760` |
+| `ChangeEntryStateByHash(hash: Uint32, state: gameJournalEntryState, notifyOption: JournalNotifyOption)` | `0x142bde814` |
+| `TrackEntry(entry: wref<JournalEntry>)` | `0x142be0de4` |
+| `UntrackEntry()` | `0x1421de690` |
+| `TrackPrevNextEntry(next: Bool)` | `0x142be0ed4` |
+| `RegisterScriptCallback(obj: IScriptable, functionName: CName, type: gameJournalListenerType)` | `0x1409f26d4` |
+| `UnregisterScriptCallback(obj: IScriptable, functionName: CName)` | `0x140249760` |
 
 **Correction to §7**: on 2.50 `ChangeEntryState` and `ChangeEntryStateByHash`
 are ordinary `public final native` script functions
@@ -296,14 +302,15 @@ through them.
 
 Enums `[2.5-rtti]`:
 
-| Enum                        | Values                                                                                                                                                 |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `gameJournalEntryState`     | Undefined 0, Inactive 1, Active 2, Succeeded 3, Failed 4                                                                                               |
-| `gameJournalNotifyOption`   | Undefined 0, DoNotNotify 1, Notify 2 (script alias `JournalNotifyOption`)                                                                              |
-| `gameJournalChangeType`     | Undefined 0, Direct 1, Indirect 2, IndirectDependent 3 (script alias `JournalChangeType`)                                                              |
-| `gameJournalListenerType`   | State 0, Visited 1, Tracked 2, Untracked 3, Counter 4, StateDelay 5, ObjectiveOptional 6, ChoiceEntry 7                                                |
-| `gameJournalQuestType`      | MainQuest 0, SideQuest 1, MinorQuest 2, StreetStory 3, CyberPsycho 4, Contract 5, VehicleQuest 6, ApartmentQuest 7, CourierQuest 8, CourierSideQuest 9 |
-| `gameJournalEntryUserState` | Undefined 0, Inactive 1, Active 2, Succeeded 3, Failed 4, Read 5, Open 6                                                                               |
+<!-- prettier-ignore -->
+| Enum | Values |
+| --- | --- |
+| `gameJournalEntryState` | Undefined 0, Inactive 1, Active 2, Succeeded 3, Failed 4 |
+| `gameJournalNotifyOption` | Undefined 0, DoNotNotify 1, Notify 2 (script alias `JournalNotifyOption`) |
+| `gameJournalChangeType` | Undefined 0, Direct 1, Indirect 2, IndirectDependent 3 (script alias `JournalChangeType`) |
+| `gameJournalListenerType` | State 0, Visited 1, Tracked 2, Untracked 3, Counter 4, StateDelay 5, ObjectiveOptional 6, ChoiceEntry 7 |
+| `gameJournalQuestType` | MainQuest 0, SideQuest 1, MinorQuest 2, StreetStory 3, CyberPsycho 4, Contract 5, VehicleQuest 6, ApartmentQuest 7, CourierQuest 8, CourierSideQuest 9 |
+| `gameJournalEntryUserState` | Undefined 0, Inactive 1, Active 2, Succeeded 3, Failed 4, Read 5, Open 6 |
 
 Request filters: `JournalRequestContext{stateFilter:
 JournalRequestStateFilter{inactive, active, succeeded, failed: Bool};
@@ -327,16 +334,17 @@ cb func X(hash: Uint32, className: CName,
 `className` is the RTTI name, e.g. `n"gameJournalQuest"`,
 `n"gameJournalPhoneMessage"`, `n"gameJournalInternetPage"`.
 
-| Listener type       | Fires when                      | Vanilla users (register line)                                                             |
-| ------------------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
-| `State`             | any entry changes state         | notification queue `:341338`, quest tracker `:405950`, phone `:348699`, browser `:258172` |
-| `StateDelay`        | a delayed change is scheduled   | messenger "typing…" `:348702`                                                             |
-| `Visited`           | `SetEntryVisited`               | `:328042`, `:341341`, `:475699`                                                           |
-| `Tracked`           | tracked entry changes           | world map `:358232`, quest tracker `:405953`, `:409830`                                   |
-| `Untracked`         | (no vanilla user)               | —                                                                                         |
-| `Counter`           | objective counter changes       | quest tracker `:405956`                                                                   |
-| `ObjectiveOptional` | objective optional flag changes | quest tracker `:405959`                                                                   |
-| `ChoiceEntry`       | a phone reply choice changes    | messenger `:348202`                                                                       |
+<!-- prettier-ignore -->
+| Listener type | Fires when | Vanilla users (register line) |
+| --- | --- | --- |
+| `State` | any entry changes state | notification queue `:341338`, quest tracker `:405950`, phone `:348699`, browser `:258172` |
+| `StateDelay` | a delayed change is scheduled | messenger "typing…" `:348702` |
+| `Visited` | `SetEntryVisited` | `:328042`, `:341341`, `:475699` |
+| `Tracked` | tracked entry changes | world map `:358232`, quest tracker `:405953`, `:409830` |
+| `Untracked` | (no vanilla user) | — |
+| `Counter` | objective counter changes | quest tracker `:405956` |
+| `ObjectiveOptional` | objective optional flag changes | quest tracker `:405959` |
+| `ChoiceEntry` | a phone reply choice changes | messenger `:348202` |
 
 `notifyOption == Notify` is what makes `JournalNotificationQueue` show the
 "new quest / quest updated / completed" toast
@@ -350,33 +358,34 @@ script alias `JournalEntry`, `final.reds:196957`); containers extend
 `gameJournalContainerEntry` (`entries: [handle]`), files
 `gameJournalFileEntry`. `[2.5-rtti]`
 
-| Class (script alias drops `game`)                                                                                               | Parent chain       | Fields / getters                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `gameJournalQuest`                                                                                                              | FileEntry          | `title`, `type: gameJournalQuestType`, `recommendedLevelID`, `districtID`; `GetTitle(journalManager)`, `GetType()`            |
-| `gameJournalQuestPhase`                                                                                                         | ContainerEntry     | `locationPrefabRef: NodeRef`                                                                                                  |
-| `gameJournalQuestObjectiveBase`                                                                                                 | ContainerEntry     | `description`, `counter: Uint32`, `optional`, `locationPrefabRef`, `districtID`, `itemID`; `GetDescription()`, `HasCounter()` |
-| `gameJournalQuestObjective`, `…SubObjective`                                                                                    | QuestObjectiveBase | —                                                                                                                             |
-| `gameJournalQuestDescription`, `…TitleModifier`, `…GuidanceMarker`                                                              | Entry              | —                                                                                                                             |
-| `gameJournalQuestMapPinBase`                                                                                                    | ContainerEntry     | `enableGPS: Bool`; `GetCaption()`                                                                                             |
-| `gameJournalQuestMapPin`                                                                                                        | QuestMapPinBase    | `slotName`, `mappinData: gamemappinsMappinData`, `offset: Vector3`, `uiAnimation`, **`reference: gameEntityReference`**       |
-| `gameJournalQuestMultiMapPin`, `…PointOfInterestMapPin`                                                                         | QuestMapPinBase    | —                                                                                                                             |
-| `gameJournalQuestMapPinLink`, `gameJournalQuestCodexLink`                                                                       | Entry              | `path: gameJournalPath`; `GetLinkPathHash() -> Uint32`                                                                        |
-| `gameJournalMetaQuest`, `…MetaQuestObjective`                                                                                   | FileEntry / Entry  | `GetTitle()`; data via `GetMetaQuestData(gamedataMetaQuest)`                                                                  |
-| `gameJournalContact`                                                                                                            | FileEntry          | `name`, `type: gameContactType`, `avatarID`, `isCallableDefault`; `IsKnown(jm)`, `IsCallable(jm)`                             |
-| `gameJournalPhoneConversation`                                                                                                  | ContainerEntry     | `GetTitle()`                                                                                                                  |
-| `gameJournalPhoneMessage`                                                                                                       | Entry              | `text`, `attachment: gameJournalPath`, `sender: gameMessageSender`, `delay: Float`, `isQuestImportant`                        |
-| `gameJournalPhoneChoiceGroup`, `…ChoiceEntry`                                                                                   | Container / Entry  | `GetText()`, `IsQuestImportant()`                                                                                             |
-| `gameJournalOnscreen` (**shards**), `…OnscreenGroup`                                                                            | Entry / FileEntry  | `tag`, `title`, `description`, `iconID`                                                                                       |
-| `gameJournalCodexCategory`, `…CodexGroup`, `…CodexEntry`, `…CodexDescription`                                                   | —                  | `title`, `imageId`, `linkImageId`                                                                                             |
-| `gameJournalTarot`, `…TarotGroup`                                                                                               | Entry / FileEntry  | `index`, `name`, `description`, `imagePart`, `isMinorArcana`                                                                  |
-| `gameJournalEmail`, `…EmailGroup`, `gameJournalFile`, `…FileGroup`                                                              | —                  | computer mail and files                                                                                                       |
-| `gameJournalInternetSite`, `…InternetPage`                                                                                      | FileEntry / Entry  | `GetAddress()`, `GetFactsToSet() -> [JournalFactNameValue]`                                                                   |
-| `gameJournalBriefing` + sections                                                                                                | FileEntry          | —                                                                                                                             |
-| `gameJournalPointOfInterestMappin`, `…PointOfInterestGroup`                                                                     | Entry              | open-world activity markers; phase via `gamedataMappinPhase`                                                                  |
-| `gameJournalContactModifierEntry`, `gameJournalImageEntry`, `gameJournalFolderEntry`, `…PrimaryFolderEntry`, `…RootFolderEntry` | —                  | structure                                                                                                                     |
+<!-- prettier-ignore -->
+| Class (script alias drops `game`) | Parent chain | Fields / getters |
+| --- | --- | --- |
+| `gameJournalQuest` | FileEntry | `title`, `type: gameJournalQuestType`, `recommendedLevelID`, `districtID`; `GetTitle(journalManager)`, `GetType()` |
+| `gameJournalQuestPhase` | ContainerEntry | `locationPrefabRef: NodeRef` |
+| `gameJournalQuestObjectiveBase` | ContainerEntry | `description`, `counter: Uint32`, `optional`, `locationPrefabRef`, `districtID`, `itemID`; `GetDescription()`, `HasCounter()` |
+| `gameJournalQuestObjective`, `…SubObjective` | QuestObjectiveBase | — |
+| `gameJournalQuestDescription`, `…TitleModifier`, `…GuidanceMarker` | Entry | — |
+| `gameJournalQuestMapPinBase` | ContainerEntry | `enableGPS: Bool`; `GetCaption()` |
+| `gameJournalQuestMapPin` | QuestMapPinBase | `slotName`, `mappinData: gamemappinsMappinData`, `offset: Vector3`, `uiAnimation`, **`reference: gameEntityReference`** |
+| `gameJournalQuestMultiMapPin`, `…PointOfInterestMapPin` | QuestMapPinBase | — |
+| `gameJournalQuestMapPinLink`, `gameJournalQuestCodexLink` | Entry | `path: gameJournalPath`; `GetLinkPathHash() -> Uint32` |
+| `gameJournalMetaQuest`, `…MetaQuestObjective` | FileEntry / Entry | `GetTitle()`; data via `GetMetaQuestData(gamedataMetaQuest)` |
+| `gameJournalContact` | FileEntry | `name`, `type: gameContactType`, `avatarID`, `isCallableDefault`; `IsKnown(jm)`, `IsCallable(jm)` |
+| `gameJournalPhoneConversation` | ContainerEntry | `GetTitle()` |
+| `gameJournalPhoneMessage` | Entry | `text`, `attachment: gameJournalPath`, `sender: gameMessageSender`, `delay: Float`, `isQuestImportant` |
+| `gameJournalPhoneChoiceGroup`, `…ChoiceEntry` | Container / Entry | `GetText()`, `IsQuestImportant()` |
+| `gameJournalOnscreen` (**shards**), `…OnscreenGroup` | Entry / FileEntry | `tag`, `title`, `description`, `iconID` |
+| `gameJournalCodexCategory`, `…CodexGroup`, `…CodexEntry`, `…CodexDescription` | — | `title`, `imageId`, `linkImageId` |
+| `gameJournalTarot`, `…TarotGroup` | Entry / FileEntry | `index`, `name`, `description`, `imagePart`, `isMinorArcana` |
+| `gameJournalEmail`, `…EmailGroup`, `gameJournalFile`, `…FileGroup` | — | computer mail and files |
+| `gameJournalInternetSite`, `…InternetPage` | FileEntry / Entry | `GetAddress()`, `GetFactsToSet() -> [JournalFactNameValue]` |
+| `gameJournalBriefing` + sections | FileEntry | — |
+| `gameJournalPointOfInterestMappin`, `…PointOfInterestGroup` | Entry | open-world activity markers; phase via `gamedataMappinPhase` |
+| `gameJournalContactModifierEntry`, `gameJournalImageEntry`, `gameJournalFolderEntry`, `…PrimaryFolderEntry`, `…RootFolderEntry` | — | structure |
 
-`gameJournalPath{realPath: String, className: CName, fileEntryIndex: Int32}`
-with `GetHash() -> Uint32` (`@ 0x142be4d2c`) is how quest nodes name an
+`gameJournalPath{realPath: String, className: CName, fileEntryIndex: Int32}` with
+`GetHash() -> Uint32` (`@ 0x142be4d2c`) is how quest nodes name an
 entry. _(inferred)_ The `Uint32` hash used by `GetEntry`,
 `ChangeEntryStateByHash` and the callbacks is this path hash: it depends only
 on the journal resources, so it is the same in every game with the same
@@ -387,16 +396,17 @@ game version and DLC. `GetEntryHash` returns it as `Int32`; cast with
 
 `questJournalNodeDefinition.type: questIJournal_NodeType` `[2.5-rtti]`:
 
-| Node type                                                                                              | Fields                                                                                                    |
-| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| `questJournalEntry_NodeType`                                                                           | `path: gameJournalPath`, `sendNotification: Bool`                                                         |
-| `questJournalQuestEntry_NodeType`                                                                      | `path`, `sendNotification`, `trackQuest: Bool`, `optional: Bool`, `version`                               |
-| `questJournalTrackQuest_NodeType`                                                                      | `path`                                                                                                    |
-| `questJournalBulkUpdate_NodeType`                                                                      | `path`, `requiredEntryType`, `requiredEntryState`, `newEntryState`, `sendNotification`, `propagateChange` |
-| `questJournalQuestObjectiveCounter_NodeType`                                                           | `path` (counter value comes from a fact)                                                                  |
-| `questJournalQuestSetObjectiveOptional_NodeType`, `…SetLockQuestObjective…`, `…PushPopQuestObjective…` | `path`, …                                                                                                 |
-| `questJournalChangeMappinPhase_NodeType`                                                               | `path`, `phase: gamedataMappinPhase`, `notifyUI: Bool`                                                    |
-| `questJournalContact_NodeType`                                                                         | contact known/callable                                                                                    |
+<!-- prettier-ignore -->
+| Node type | Fields |
+| --- | --- |
+| `questJournalEntry_NodeType` | `path: gameJournalPath`, `sendNotification: Bool` |
+| `questJournalQuestEntry_NodeType` | `path`, `sendNotification`, `trackQuest: Bool`, `optional: Bool`, `version` |
+| `questJournalTrackQuest_NodeType` | `path` |
+| `questJournalBulkUpdate_NodeType` | `path`, `requiredEntryType`, `requiredEntryState`, `newEntryState`, `sendNotification`, `propagateChange` |
+| `questJournalQuestObjectiveCounter_NodeType` | `path` (counter value comes from a fact) |
+| `questJournalQuestSetObjectiveOptional_NodeType`, `…SetLockQuestObjective…`, `…PushPopQuestObjective…` | `path`, … |
+| `questJournalChangeMappinPhase_NodeType` | `path`, `phase: gamedataMappinPhase`, `notifyUI: Bool` |
+| `questJournalContact_NodeType` | contact known/callable |
 
 Three things move without a `State` callback and need their own message:
 **objective counters** (`Counter` listener; no script setter exists, see
@@ -458,21 +468,22 @@ entry directly (mirrored by the fork's QuestMirror, §7).
 `MappinSystem` (`final.reds:51096-51154`, RTTI `gamemappinsMappinSystem`,
 size 0x184c0, `GameInstance.GetMappinSystem(game)`):
 
-| Function                                                                                                                 | Handler                                     |
-| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| `RegisterMappin(data: MappinData, position: Vector4) -> NewMappinID`                                                     | `0x140dd07c8`                               |
-| `RegisterMappinWithObject(data, object: wref<GameObject>, opt slotName: CName, opt offset: Vector3) -> NewMappinID`      | `0x140dd0984`                               |
-| `RegisterRemotePlayerMappin(data, playerObject: wref<GameObject>) -> NewMappinID`                                        | `0x142d452a4`                               |
-| `RegisterVehicleMappin`, `RegisterGrenadeMappin`, `RegisterFastTravelMappin(data, fastTravelData)`                       | —                                           |
-| `UnregisterMappin(id)`, `SetMappinActive(id, active)`, `SetMappinPosition(id, position: Vector4)`                        | `0x141311938`, `0x1409b72bc`, `0x142d45460` |
-| `ChangeMappinVariant(id, newVariant: gamedataMappinVariant)`, `SetMappinScriptData(id, scriptData)`                      | `0x142d44c54`, `0x141333c20`                |
-| `GetMappins(targetType: gamemappinsMappinTargetType, out mappins: [IMappin])`, `GetMappin(id) -> IMappin`                | `0x142d44e98`, `0x1422126f0`                |
-| `GetMappinFromObjective(phaseEntry, objectiveEntry) -> wref<IMappin>`, `GetMappinFromQuest(questEntry)`                  | `0x142d44d00`, `0x142d44df4`                |
-| `GetQuestMappinPositionsByObjective(objectiveHash: Uint32, out positions: [Vector3]) -> Bool`                            | `0x142d451b8`                               |
-| `GetQuestMappinPosition(mappinHash: Uint32, out position: Vector3) -> Bool`                                              | `0x142d450e0`                               |
-| `GetPointOfInterestMappinSavedState(hash, out mappinPhase: Uint16, out mappinVariant: Uint16, out active: Bool) -> Bool` | `0x142d44f68`                               |
-| `SetMappinTrackingAlternative(mappinID, targetMappinID)`, `GetManuallyTrackedMappinID()`, `UntrackMappin()`              | `0x1412acb6c`, `0x1422126c0`, `0x142212870` |
-| `GetAllMappins() -> [IMappin]`                                                                                           | Codeware                                    |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `RegisterMappin(data: MappinData, position: Vector4) -> NewMappinID` | `0x140dd07c8` |
+| `RegisterMappinWithObject(data, object: wref<GameObject>, opt slotName: CName, opt offset: Vector3) -> NewMappinID` | `0x140dd0984` |
+| `RegisterRemotePlayerMappin(data, playerObject: wref<GameObject>) -> NewMappinID` | `0x142d452a4` |
+| `RegisterVehicleMappin`, `RegisterGrenadeMappin`, `RegisterFastTravelMappin(data, fastTravelData)` | — |
+| `UnregisterMappin(id)`, `SetMappinActive(id, active)`, `SetMappinPosition(id, position: Vector4)` | `0x141311938`, `0x1409b72bc`, `0x142d45460` |
+| `ChangeMappinVariant(id, newVariant: gamedataMappinVariant)`, `SetMappinScriptData(id, scriptData)` | `0x142d44c54`, `0x141333c20` |
+| `GetMappins(targetType: gamemappinsMappinTargetType, out mappins: [IMappin])`, `GetMappin(id) -> IMappin` | `0x142d44e98`, `0x1422126f0` |
+| `GetMappinFromObjective(phaseEntry, objectiveEntry) -> wref<IMappin>`, `GetMappinFromQuest(questEntry)` | `0x142d44d00`, `0x142d44df4` |
+| `GetQuestMappinPositionsByObjective(objectiveHash: Uint32, out positions: [Vector3]) -> Bool` | `0x142d451b8` |
+| `GetQuestMappinPosition(mappinHash: Uint32, out position: Vector3) -> Bool` | `0x142d450e0` |
+| `GetPointOfInterestMappinSavedState(hash, out mappinPhase: Uint16, out mappinVariant: Uint16, out active: Bool) -> Bool` | `0x142d44f68` |
+| `SetMappinTrackingAlternative(mappinID, targetMappinID)`, `GetManuallyTrackedMappinID()`, `UntrackMappin()` | `0x1412acb6c`, `0x1422126c0`, `0x142212870` |
+| `GetAllMappins() -> [IMappin]` | Codeware |
 
 `gamemappinsMappinTargetType` {World 0, Minimap 1, Map 2}.
 `MappinData{mappinType: TweakDBID, variant: gamedataMappinVariant, active,
@@ -561,7 +572,7 @@ blackboard write (§7 has NCO's experience: block at `OnTriggerCall`, not at
 `PhoneSystem.OnTriggerCall`; **guest applies** by queuing the same
 `questTriggerCallRequest` to its own `PhoneSystem` — but the voice lines
 come from the scene the host runs, so this belongs with "scenes for guests"
-(open problem in ARCHITECTURE.md). **Guest must stop**: answering or
+(open problem in ../architecture/story.md). **Guest must stop**: answering or
 rejecting (it would write the `phonecall_*` fact locally); the host's choice
 decides.
 
@@ -605,18 +616,19 @@ player (filter that class out).
 
 ### 5.5 On-screen notifications
 
-| What                              | Quest node (host)                                                                                         | Script entry point (guest can call)                                                                                                                                                                             |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| quest toast (new/updated/done)    | journal node with `sendNotification`                                                                      | follows `ChangeEntryStateByHash(…, Notify)` through `JournalNotificationQueue.OnJournalUpdate` (`final.reds:341545`)                                                                                            |
-| warning / simple message          | `questWarningMessage_NodeType{message, localizedMessage, duration, show, instant, type}`                  | blackboard `UI_Notifications.WarningMessage` ← `SimpleScreenMessage{isShown, duration, message, isInstant, type}` (`final.reds:72993-73010`); vanilla example `PreventionSystem.ShowMessage` (`:141397-141406`) |
-| on-screen message                 | `questShowOnscreen_NodeType{message, localizedMessage, duration, show}`                                   | blackboard `UI_Notifications.OnscreenMessage`                                                                                                                                                                   |
-| custom quest notification         | `questShowCustomQuestNotification_NodeType{customQuestNotificationData{header, desc, icon, fluffHeader}}` | blackboard `UI_CustomQuestNotification.data` (`final.reds:312670`); UI event `CustomNotificationEvent{header, description}` (`:341580`)                                                                         |
-| level-up banner                   | `questShowLevelUpNotification_NodeType{levelUpData}`                                                      | `LevelUpNotificationQueue` (`final.reds:343216`)                                                                                                                                                                |
-| narrative event, location name    | `questShowNarrativeEvent_NodeType`, `questSetLocationName_NodeType`                                       | native                                                                                                                                                                                                          |
-| progress bar, countdown timer     | `questProgressBar_NodeType`, `questCountdownTimer_NodeType`                                               | `UIGameData.QuestTimerInitialDuration/CurrentDuration`; `QuestsSystem.GetGameplayTimerData`                                                                                                                     |
-| HUD entry visibility, input hints | `questSetHUDEntryVisibility_NodeType`, `questInputHint_NodeType`                                          | native                                                                                                                                                                                                          |
-| fades                             | `questSetFadeInOut_NodeType` (render FX manager)                                                          | native                                                                                                                                                                                                          |
-| item received                     | —                                                                                                         | `ItemsNotificationQueue` (`final.reds:339288`), fed by the local inventory                                                                                                                                      |
+<!-- prettier-ignore -->
+| What | Quest node (host) | Script entry point (guest can call) |
+| --- | --- | --- |
+| quest toast (new/updated/done) | journal node with `sendNotification` | follows `ChangeEntryStateByHash(…, Notify)` through `JournalNotificationQueue.OnJournalUpdate` (`final.reds:341545`) |
+| warning / simple message | `questWarningMessage_NodeType{message, localizedMessage, duration, show, instant, type}` | blackboard `UI_Notifications.WarningMessage` ← `SimpleScreenMessage{isShown, duration, message, isInstant, type}` (`final.reds:72993-73010`); vanilla example `PreventionSystem.ShowMessage` (`:141397-141406`) |
+| on-screen message | `questShowOnscreen_NodeType{message, localizedMessage, duration, show}` | blackboard `UI_Notifications.OnscreenMessage` |
+| custom quest notification | `questShowCustomQuestNotification_NodeType{customQuestNotificationData{header, desc, icon, fluffHeader}}` | blackboard `UI_CustomQuestNotification.data` (`final.reds:312670`); UI event `CustomNotificationEvent{header, description}` (`:341580`) |
+| level-up banner | `questShowLevelUpNotification_NodeType{levelUpData}` | `LevelUpNotificationQueue` (`final.reds:343216`) |
+| narrative event, location name | `questShowNarrativeEvent_NodeType`, `questSetLocationName_NodeType` | native |
+| progress bar, countdown timer | `questProgressBar_NodeType`, `questCountdownTimer_NodeType` | `UIGameData.QuestTimerInitialDuration/CurrentDuration`; `QuestsSystem.GetGameplayTimerData` |
+| HUD entry visibility, input hints | `questSetHUDEntryVisibility_NodeType`, `questInputHint_NodeType` | native |
+| fades | `questSetFadeInOut_NodeType` (render FX manager) | native |
+| item received | — | `ItemsNotificationQueue` (`final.reds:339288`), fed by the local inventory |
 
 All quest UI nodes are subtypes of `questIUIManagerNodeType` under
 `questUIManagerNodeDefinition`; the fork did **not** mirror that node class
@@ -651,39 +663,41 @@ Graph nodes are `questNodeDefinition` (`id: Uint16`) subclasses; "manager"
 nodes carry a typed payload in `type` (or `actions`). Full list from `rtti.py
 find 'quest.*NodeDefinition$'` (82 classes) `[2.5-rtti]`:
 
-| Group      | Node definitions                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| flow       | `questStartNodeDefinition`, `questEndNodeDefinition`, `questInputNodeDefinition`, `questOutputNodeDefinition`, `questPhaseNodeDefinition`, `questEmbeddedGraphNodeDefinition`, `questLogicalAnd/Xor/HubNodeDefinition`, `questSwitchNodeDefinition`, `questFlowControlNodeDefinition`, `questCutControlNodeDefinition`, `questRandomizerNodeDefinition`, `questDeletionMarkerNodeDefinition`, `questPlaceholderNodeDefinition`                                                                                                                     |
-| waiting    | `questPauseConditionNodeDefinition`, `questConditionNodeDefinition`, `questMinigameSateListenerNodeDefinition`                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| state      | `questFactsDBManagerNodeDefinition` (`questSetVar_NodeType{factName: String, value: Int32, setExactValue: Bool}`), `questJournalNodeDefinition`, `questMappinManagerNodeDefinition`, `questCheckpointNodeDefinition`, `questRewardManagerNodeDefinition`, `questAchievementManagerNodeDefinition`, `questItemManagerNodeDefinition`                                                                                                                                                                                                                |
-| scenes     | `questSceneNodeDefinition{sceneFile, sceneLocation, …}`, `questSceneManagerNodeDefinition`, `questPhoneManagerNodeDefinition`, `questAudioNodeDefinition`, `questAudioCharacterManagerNodeDefinition`, `questVoicesetManagerNodeDefinition`, `questRecordingNodeDefinition`                                                                                                                                                                                                                                                                        |
-| spawning   | `questSpawnManagerNodeDefinition`, `questDynamicSpawnSystemNodeDefinition`, `questPopulactionControllerNodeDefinition` (sic), `questCrowdManagerNodeDefinition`, `questInstancedCrowdControlNodeDefinition`                                                                                                                                                                                                                                                                                                                                        |
+<!-- prettier-ignore -->
+| Group | Node definitions |
+| --- | --- |
+| flow | `questStartNodeDefinition`, `questEndNodeDefinition`, `questInputNodeDefinition`, `questOutputNodeDefinition`, `questPhaseNodeDefinition`, `questEmbeddedGraphNodeDefinition`, `questLogicalAnd/Xor/HubNodeDefinition`, `questSwitchNodeDefinition`, `questFlowControlNodeDefinition`, `questCutControlNodeDefinition`, `questRandomizerNodeDefinition`, `questDeletionMarkerNodeDefinition`, `questPlaceholderNodeDefinition` |
+| waiting | `questPauseConditionNodeDefinition`, `questConditionNodeDefinition`, `questMinigameSateListenerNodeDefinition` |
+| state | `questFactsDBManagerNodeDefinition` (`questSetVar_NodeType{factName: String, value: Int32, setExactValue: Bool}`), `questJournalNodeDefinition`, `questMappinManagerNodeDefinition`, `questCheckpointNodeDefinition`, `questRewardManagerNodeDefinition`, `questAchievementManagerNodeDefinition`, `questItemManagerNodeDefinition` |
+| scenes | `questSceneNodeDefinition{sceneFile, sceneLocation, …}`, `questSceneManagerNodeDefinition`, `questPhoneManagerNodeDefinition`, `questAudioNodeDefinition`, `questAudioCharacterManagerNodeDefinition`, `questVoicesetManagerNodeDefinition`, `questRecordingNodeDefinition` |
+| spawning | `questSpawnManagerNodeDefinition`, `questDynamicSpawnSystemNodeDefinition`, `questPopulactionControllerNodeDefinition` (sic), `questCrowdManagerNodeDefinition`, `questInstancedCrowdControlNodeDefinition` |
 | characters | `questCharacterManagerNodeDefinition`, `questEntityManagerNodeDefinition`, `questPuppetAIManagerNodeDefinition`, `questBehaviourManagerNodeDefinition`, `questForcedBehaviourNodeDefinition`, `questClearForcedBehavioursNodeDefinition`, `questSendAICommandNodeDefinition`, `questCombatNodeDefinition`, `questMovePuppetNodeDefinition`, `questTeleportPuppetNodeDefinition`, `questRotateToNodeDefinition`, `questUseWorkspotNodeDefinition`, `questEquipItemNodeDefinition`, `questUnequipItemNodeDefinition`, `questPuppeteerNodeDefinition` |
-| vehicles   | `questVehicleNodeDefinition`, `questTeleportVehicleNodeDefinition`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| world      | `questWorldDataManagerNodeDefinition`, `questEnvironmentManagerNodeDefinition`, `questTimeManagerNodeDefinition`, `questTriggerManagerNodeDefinition`, `questInteractiveObjectManagerNodeDefinition`, `questTransformAnimatorNodeDefinition`, `questEventManagerNodeDefinition`, `questFXManagerNodeDefinition`, `questRenderFxManagerNodeDefinition`, `questVisionModesManagerNodeDefinition`                                                                                                                                                     |
-| game / UI  | `questGameManagerNodeDefinition`, `questUIManagerNodeDefinition`, `questMinigameNodeDefinition`                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| CDPR MP    | `questMultiplayerAIDirectorNodeDefinition`, `questMultiplayerChoiceTokenNodeDefinition`, `questMultiplayerHeistNodeDefinition`, `questMultiplayerJunctionDialogNodeDefinition`, `questMultiplayerTeleportPuppetNodeDefinition`                                                                                                                                                                                                                                                                                                                     |
-| debug      | `questDebugShowMessageNodeDefinition`, `questTestNodeDefinition`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| vehicles | `questVehicleNodeDefinition`, `questTeleportVehicleNodeDefinition` |
+| world | `questWorldDataManagerNodeDefinition`, `questEnvironmentManagerNodeDefinition`, `questTimeManagerNodeDefinition`, `questTriggerManagerNodeDefinition`, `questInteractiveObjectManagerNodeDefinition`, `questTransformAnimatorNodeDefinition`, `questEventManagerNodeDefinition`, `questFXManagerNodeDefinition`, `questRenderFxManagerNodeDefinition`, `questVisionModesManagerNodeDefinition` |
+| game / UI | `questGameManagerNodeDefinition`, `questUIManagerNodeDefinition`, `questMinigameNodeDefinition` |
+| CDPR MP | `questMultiplayerAIDirectorNodeDefinition`, `questMultiplayerChoiceTokenNodeDefinition`, `questMultiplayerHeistNodeDefinition`, `questMultiplayerJunctionDialogNodeDefinition`, `questMultiplayerTeleportPuppetNodeDefinition` |
+| debug | `questDebugShowMessageNodeDefinition`, `questTestNodeDefinition` |
 
 Payload types by manager (the ones relevant to world state):
 
-| Manager node                     | Payload types                                                                                                                                                                                                                                                                                                                                                                                     |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `questSpawnManager…`             | `questSpawner_NodeType{spawnerReference: NodeRef}`, `questSpawnSet_NodeType{reference: NodeRef, entryName, phaseName}`, `questCommunityTemplate_NodeType{spawnerReference, communityEntryName, communityEntryPhaseName}`, `questScene_NodeType`, `questLegacy_NodeType` (each wrapped in `questSpawnManagerNodeActionEntry{type}`)                                                                |
-| `questDynamicSpawnSystem…`       | `questDynamicVehicleSpawn_NodeType{VehicleData: [TweakDBID], waveTag: CName, spawnDirectionPreference, distanceRange: Vector2}`, `questDynamicVehicleDespawn_NodeType`, `questDynamicVehicleDespawnAll_NodeType`                                                                                                                                                                                  |
-| `questCrowdManager…`             | `questCrowdManagerNodeType_ControlCrowd{debugSource, action: questControlCrowdAction{Disable 0, Enable 1}, distantCrowdOnly}`, `questCrowdManagerNodeType_EnableNullArea{areaReference: NodeRef, enable}`                                                                                                                                                                                         |
-| `questPopulactionController…`    | `enable: Bool` on a referenced spawner object                                                                                                                                                                                                                                                                                                                                                     |
-| `questWorldDataManager…`         | `questShowWorldNode_NodeType{objectRef: NodeRef, isPlayer, show, componentName}`, `questTogglePrefabVariant_NodeType{params: [{prefabNodeRef: NodeRef, variantStates: [{name: CName, show: Bool}]}]}`, `questManageCollision_NodeType`, `questDisableTeleportingMonitoring_NodeType`                                                                                                              |
-| `questEnvironmentManager…`       | `questPlayEnv_SetWeather{weatherID: TweakDBID, source: CName, blendTime: Float, priority: Uint32, reset: Bool}`, `questPlayEnv_NodeType{params: {enable, envParams: rRef:worldEnvironmentAreaParameters, blendTime}}`, `questPlayEnv_OverrideGlobalLight`, `questPlayEnv_ForceRelitEnvProbe`                                                                                                      |
-| `questTimeManager…`              | `questSetTime_NodeType{source: CName, hours, minutes, seconds: Int32}`, `questPauseTime_NodeType{source, pause: Bool}`, `questShiftTime_NodeType{timeShiftType, preventVisualGlitch, hours, minutes, seconds: Uint32}`                                                                                                                                                                            |
-| `questGameManager…`              | `questTimeDilation_NodeType` (params `…_World`, `…_Player`, `…_Puppet`, `…_Entity`), `questGameplayRestrictions_NodeType{action, source, restrictionIDs: [TweakDBID]}`, `questContentTokenManager_NodeType`, `questLootPurge_NodeType`, `questReplacer_NodeType`, `questRumble_NodeType`, `questSetTimer_NodeType`, `questControlObject_NodeType`                                                 |
+<!-- prettier-ignore -->
+| Manager node | Payload types |
+| --- | --- |
+| `questSpawnManager…` | `questSpawner_NodeType{spawnerReference: NodeRef}`, `questSpawnSet_NodeType{reference: NodeRef, entryName, phaseName}`, `questCommunityTemplate_NodeType{spawnerReference, communityEntryName, communityEntryPhaseName}`, `questScene_NodeType`, `questLegacy_NodeType` (each wrapped in `questSpawnManagerNodeActionEntry{type}`) |
+| `questDynamicSpawnSystem…` | `questDynamicVehicleSpawn_NodeType{VehicleData: [TweakDBID], waveTag: CName, spawnDirectionPreference, distanceRange: Vector2}`, `questDynamicVehicleDespawn_NodeType`, `questDynamicVehicleDespawnAll_NodeType` |
+| `questCrowdManager…` | `questCrowdManagerNodeType_ControlCrowd{debugSource, action: questControlCrowdAction{Disable 0, Enable 1}, distantCrowdOnly}`, `questCrowdManagerNodeType_EnableNullArea{areaReference: NodeRef, enable}` |
+| `questPopulactionController…` | `enable: Bool` on a referenced spawner object |
+| `questWorldDataManager…` | `questShowWorldNode_NodeType{objectRef: NodeRef, isPlayer, show, componentName}`, `questTogglePrefabVariant_NodeType{params: [{prefabNodeRef: NodeRef, variantStates: [{name: CName, show: Bool}]}]}`, `questManageCollision_NodeType`, `questDisableTeleportingMonitoring_NodeType` |
+| `questEnvironmentManager…` | `questPlayEnv_SetWeather{weatherID: TweakDBID, source: CName, blendTime: Float, priority: Uint32, reset: Bool}`, `questPlayEnv_NodeType{params: {enable, envParams: rRef:worldEnvironmentAreaParameters, blendTime}}`, `questPlayEnv_OverrideGlobalLight`, `questPlayEnv_ForceRelitEnvProbe` |
+| `questTimeManager…` | `questSetTime_NodeType{source: CName, hours, minutes, seconds: Int32}`, `questPauseTime_NodeType{source, pause: Bool}`, `questShiftTime_NodeType{timeShiftType, preventVisualGlitch, hours, minutes, seconds: Uint32}` |
+| `questGameManager…` | `questTimeDilation_NodeType` (params `…_World`, `…_Player`, `…_Puppet`, `…_Entity`), `questGameplayRestrictions_NodeType{action, source, restrictionIDs: [TweakDBID]}`, `questContentTokenManager_NodeType`, `questLootPurge_NodeType`, `questReplacer_NodeType`, `questRumble_NodeType`, `questSetTimer_NodeType`, `questControlObject_NodeType` |
 | `questInteractiveObjectManager…` | `questDeviceManager_NodeType` (params `{objectRef: NodeRef, slotName, entityRef: gameEntityReference, deviceControllerClass: CName, deviceAction: CName, actionProperties: [{name, value: Variant, min, max}]}`), `questHackingManager_NodeType`, `questSetInteractionState_NodeType`, `questElevator_ManageNPCAttachment_NodeType`, `questSetConveyorState_NodeType`, `questCyberdrill_NodeType` |
-| `questItemManager…`              | `questAddRemoveItem_NodeType`, `questTransferItem_NodeType`, `questInjectLoot_NodeType`, `questLootTokenManager_NodeType`, `questReInitContainers_NodeType`, `questResetContainers_NodeType`, `questSetLootInteractionAccess_NodeType{objectRef, accessible}`, `questSetItemTags_NodeType`, `questDropItemFromSlot_NodeType`                                                                      |
-| `questRewardManager…`            | `questGiveReward_NodeType{rewards: [TweakDBID]}`                                                                                                                                                                                                                                                                                                                                                  |
-| `questEntityManager…`            | `…AddDevelopmentPoint_NodeType{value: Int32, type: gamedataDevelopmentPointType}`, `…LevelUpProficiency_NodeType{type}`, `…SetStat…`, `…MountPuppet…`, `…ChangeAppearance…`, `…ToggleComponent…`, `…SetDestructionState…`                                                                                                                                                                         |
-| `questSceneManager…`             | `questSetTier_NodeType{tier: GameplayTier, usePlayerWorkspot, useEnterAnim, useExitAnim, forceEmptyHands, …}`, `questSetTier2/3/4Params…`, `questSetFOV…`, `questPlayerLookAt…`, `questNPCLookAt…`                                                                                                                                                                                                |
-| `questCheckpoint…`               | on the node itself: `saveLock, ignoreSaveLocks, pointOfNoReturn, endGameSave, retryOnFailure: Bool`, `additionalEndGameRewardsTweak: [TweakDBID]`                                                                                                                                                                                                                                                 |
-| `questPhaseNodeDefinition`       | `phaseGraph`, `phaseInstancePrefabs: [questQuestPrefabEntry]`, `unfreezingTriggerNodeRef: NodeRef`, `phaseResource: raRef:questQuestPhaseResource`, `saveLock: Bool`                                                                                                                                                                                                                              |
+| `questItemManager…` | `questAddRemoveItem_NodeType`, `questTransferItem_NodeType`, `questInjectLoot_NodeType`, `questLootTokenManager_NodeType`, `questReInitContainers_NodeType`, `questResetContainers_NodeType`, `questSetLootInteractionAccess_NodeType{objectRef, accessible}`, `questSetItemTags_NodeType`, `questDropItemFromSlot_NodeType` |
+| `questRewardManager…` | `questGiveReward_NodeType{rewards: [TweakDBID]}` |
+| `questEntityManager…` | `…AddDevelopmentPoint_NodeType{value: Int32, type: gamedataDevelopmentPointType}`, `…LevelUpProficiency_NodeType{type}`, `…SetStat…`, `…MountPuppet…`, `…ChangeAppearance…`, `…ToggleComponent…`, `…SetDestructionState…` |
+| `questSceneManager…` | `questSetTier_NodeType{tier: GameplayTier, usePlayerWorkspot, useEnterAnim, useExitAnim, forceEmptyHands, …}`, `questSetTier2/3/4Params…`, `questSetFOV…`, `questPlayerLookAt…`, `questNPCLookAt…` |
+| `questCheckpoint…` | on the node itself: `saveLock, ignoreSaveLocks, pointOfNoReturn, endGameSave, retryOnFailure: Bool`, `additionalEndGameRewardsTweak: [TweakDBID]` |
+| `questPhaseNodeDefinition` | `phaseGraph`, `phaseInstancePrefabs: [questQuestPrefabEntry]`, `unfreezingTriggerNodeRef: NodeRef`, `phaseResource: raRef:questQuestPhaseResource`, `saveLock: Bool` |
 
 `questUniversalRef{entityReference: gameEntityReference, refLocalPlayer:
 Bool, mainPlayerObject: Bool}` is how nodes point at "an entity or the
@@ -703,15 +717,16 @@ and hashes are in §7 (`QuestPhaseInstance_ExecuteNode` 3227858325,
 
 ### 6.2 Spawn systems
 
-| System (getter)                                                    | Script-visible API                                                                                                                                                                                                                                                          |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gameCommunitySystem` (`GetCommunitySystem`, `final.reds:14168`)   | `EnableDynamicCrowdNullArea`, `DisableCrowdNullArea`, `ChangeDensityModifier`, `ResetDensityModifier` (§10). Nothing about communities.                                                                                                                                     |
-| `gamePopulationSystem` (size 0x20d0)                               | none                                                                                                                                                                                                                                                                        |
-| `gameDynamicSpawnSystem` (`GetDynamicSpawnSystem`, `:14206`)       | `GetNumberOfSpawnedUnits() -> Int32`, `IsEntityRegistered(id: EntityID) -> Bool`, `IsInUnmountingRange(position: Vector3) -> Bool`; script callbacks `SpawnRequestFinished(DSSSpawnRequestResult)`, `SpawnCallback(spawnedObject: GameObject)` (`final.reds:189584-189652`) |
-| `gamePreventionSpawnSystem` (`GetPreventionSpawnSystem`, `:14204`) | §9                                                                                                                                                                                                                                                                          |
-| `gameEntityStubSystem`, `gameEntitySpawnerEventsBroadcaster`       | none / events                                                                                                                                                                                                                                                               |
-| `gameWorldBoundarySystem` (size 0x88)                              | none (see below)                                                                                                                                                                                                                                                            |
-| Codeware `WorldStateSystem` (`GameInstance.GetWorldStateSystem()`) | below                                                                                                                                                                                                                                                                       |
+<!-- prettier-ignore -->
+| System (getter) | Script-visible API |
+| --- | --- |
+| `gameCommunitySystem` (`GetCommunitySystem`, `final.reds:14168`) | `EnableDynamicCrowdNullArea`, `DisableCrowdNullArea`, `ChangeDensityModifier`, `ResetDensityModifier` (§10). Nothing about communities. |
+| `gamePopulationSystem` (size 0x20d0) | none |
+| `gameDynamicSpawnSystem` (`GetDynamicSpawnSystem`, `:14206`) | `GetNumberOfSpawnedUnits() -> Int32`, `IsEntityRegistered(id: EntityID) -> Bool`, `IsInUnmountingRange(position: Vector3) -> Bool`; script callbacks `SpawnRequestFinished(DSSSpawnRequestResult)`, `SpawnCallback(spawnedObject: GameObject)` (`final.reds:189584-189652`) |
+| `gamePreventionSpawnSystem` (`GetPreventionSpawnSystem`, `:14204`) | §9 |
+| `gameEntityStubSystem`, `gameEntitySpawnerEventsBroadcaster` | none / events |
+| `gameWorldBoundarySystem` (size 0x88) | none (see below) |
+| Codeware `WorldStateSystem` (`GameInstance.GetWorldStateSystem()`) | below |
 
 Codeware's `WorldStateSystem` (`CW scripts/World/WorldStateSystem.reds`,
 `CW src/App/World/WorldStateSystem.cpp`) `[2.5-CW]`:
@@ -883,16 +898,17 @@ between frames, or observe `questTeleportPuppet` in an `ExecuteNode` hook).
 `GamePersistencySystem` (`final.reds:27519-27553`, RTTI
 `gamePersistencySystem`, size 0x290, `GameInstance.GetPersistencySystem`):
 
-| Function                                                                                  | Handler                           |
-| ----------------------------------------------------------------------------------------- | --------------------------------- |
-| `QueuePSEvent(targetID: PersistentID, psClassName: CName, evt: Event)`                    | `0x1408025a0`                     |
-| `QueuePSDeviceEvent(action: DeviceAction)`                                                | `0x141073a10`                     |
-| `QueueEntityEvent(targetEntity: EntityID, evt: Event)`                                    | `0x140c594e0`                     |
-| `GetConstAccessToPSObject(targetID: PersistentID, psClassName: CName) -> PersistentState` | `0x140802424`                     |
-| `ForgetObject(targetID: PersistentID, notifyEntity: Bool)`                                | `0x140abf394`                     |
-| `GetPersistentBool/Int/Float(targetEntity: PersistentID, psClassName, varName: CName)`    | `0x142a34940` / `…4634` / `…47b8` |
-| `SetPersistentBool/Int/Float(targetEntity, psClassName, varName, newValue)`               | `0x142a34e6c` / `…4b24` / `…4cc4` |
-| `EntityProxy_DisablePhysics(targetEntity: EntityID, disable: Bool)`                       | `0x14119ec0c`                     |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `QueuePSEvent(targetID: PersistentID, psClassName: CName, evt: Event)` | `0x1408025a0` |
+| `QueuePSDeviceEvent(action: DeviceAction)` | `0x141073a10` |
+| `QueueEntityEvent(targetEntity: EntityID, evt: Event)` | `0x140c594e0` |
+| `GetConstAccessToPSObject(targetID: PersistentID, psClassName: CName) -> PersistentState` | `0x140802424` |
+| `ForgetObject(targetID: PersistentID, notifyEntity: Bool)` | `0x140abf394` |
+| `GetPersistentBool/Int/Float(targetEntity: PersistentID, psClassName, varName: CName)` | `0x142a34940` / `…4634` / `…47b8` |
+| `SetPersistentBool/Int/Float(targetEntity, psClassName, varName, newValue)` | `0x142a34e6c` / `…4b24` / `…4cc4` |
+| `EntityProxy_DisablePhysics(targetEntity: EntityID, disable: Bool)` | `0x14119ec0c` |
 
 `PersistentState` (`final.reds:14118-14126`): `GetID() -> PersistentID`,
 `GetPersistencySystem()`, `GetGameInstance()`,
@@ -1098,21 +1114,22 @@ they follow the fact mirror, with the prefab caveat of §6.3.
 `TimeSystem` (`final.reds:53842-53921`, RTTI `gameTimeSystem`, size 0x6ebc0,
 `GameInstance.GetTimeSystem`):
 
-| Function                                                                                                                                                                                                                                    | Handler                                       |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `GetGameTime() -> GameTime`                                                                                                                                                                                                                 | `0x1412aec64`                                 |
-| `GetGameTimeStamp() -> Float`                                                                                                                                                                                                               | `0x1418432ac`                                 |
-| `GetSimTime() -> EngineTime`                                                                                                                                                                                                                | `0x140ebc124`                                 |
-| `SetGameTimeBySeconds(seconds: Int32)`                                                                                                                                                                                                      | `0x142aa9cd8`                                 |
-| `SetGameTimeByHMS(hours: Int32, minutes: Int32, seconds: Int32, opt reason: CName)`                                                                                                                                                         | `0x142aa9d50`                                 |
-| `SetGameTime()` (RTTI only; same handler as `SetGameTimeBySeconds`)                                                                                                                                                                         | `0x142aa9cd8`                                 |
-| `SetPausedState(paused: Bool, source: CName)` — **RTTI signature**; the script decl has no parameters (`final.reds:53918`)                                                                                                                  | `0x142aa9ea0`                                 |
-| `IsPausedState() -> Bool`                                                                                                                                                                                                                   | `0x142aa972c`                                 |
-| `RealTimeSecondsToGameTime(seconds: Float) -> GameTime`                                                                                                                                                                                     | `0x1418f0bd8`                                 |
-| `SetTimeDilation(reason, dilation, opt duration, easeInCurve, easeOutCurve, opt listener)` / `UnsetTimeDilation(reason, opt easeOutCurve)`                                                                                                  | `0x1407d62b0` / `0x1407d64f4`                 |
-| `SetTimeDilationOnLocalPlayerZero(…)` / `UnsetTimeDilationOnLocalPlayerZero(…)` / `SetIgnoreTimeDilationOnLocalPlayerZero(ignore)`                                                                                                          | `0x1408a0c90` / `0x1408a0aa0` / `0x14131b2f8` |
-| `IsTimeDilationActive(opt reason) -> Bool`, `GetActiveTimeDilation(opt reason, opt ignoreCurves) -> Float`                                                                                                                                  | `0x140e35e58`, `0x141190c94`                  |
-| `RegisterListener(entity, eventToDelay, expectedTime: GameTime, repeat: Int32, sendOldNoifications) -> Uint32`, `RegisterDelayedListener`, `RegisterIntervalListener`, `RegisterScriptableSystemIntervalListener`, `UnregisterListener(id)` | —                                             |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `GetGameTime() -> GameTime` | `0x1412aec64` |
+| `GetGameTimeStamp() -> Float` | `0x1418432ac` |
+| `GetSimTime() -> EngineTime` | `0x140ebc124` |
+| `SetGameTimeBySeconds(seconds: Int32)` | `0x142aa9cd8` |
+| `SetGameTimeByHMS(hours: Int32, minutes: Int32, seconds: Int32, opt reason: CName)` | `0x142aa9d50` |
+| `SetGameTime()` (RTTI only; same handler as `SetGameTimeBySeconds`) | `0x142aa9cd8` |
+| `SetPausedState(paused: Bool, source: CName)` — **RTTI signature**; the script decl has no parameters (`final.reds:53918`) | `0x142aa9ea0` |
+| `IsPausedState() -> Bool` | `0x142aa972c` |
+| `RealTimeSecondsToGameTime(seconds: Float) -> GameTime` | `0x1418f0bd8` |
+| `SetTimeDilation(reason, dilation, opt duration, easeInCurve, easeOutCurve, opt listener)` / `UnsetTimeDilation(reason, opt easeOutCurve)` | `0x1407d62b0` / `0x1407d64f4` |
+| `SetTimeDilationOnLocalPlayerZero(…)` / `UnsetTimeDilationOnLocalPlayerZero(…)` / `SetIgnoreTimeDilationOnLocalPlayerZero(ignore)` | `0x1408a0c90` / `0x1408a0aa0` / `0x14131b2f8` |
+| `IsTimeDilationActive(opt reason) -> Bool`, `GetActiveTimeDilation(opt reason, opt ignoreCurves) -> Float` | `0x140e35e58`, `0x141190c94` |
+| `RegisterListener(entity, eventToDelay, expectedTime: GameTime, repeat: Int32, sendOldNoifications) -> Uint32`, `RegisterDelayedListener`, `RegisterIntervalListener`, `RegisterScriptableSystemIntervalListener`, `UnregisterListener(id)` | — |
 
 `GameTime` is **one `Int32` of seconds since day 0** (`rtti: GameTime`,
 `seconds @0`): statics `MakeGameTime(days, hours, minutes, seconds)`,
@@ -1142,7 +1159,7 @@ hostClockUs)` only when it is off by more than a threshold (a set every
   and `SetPausedState(paused, n"tandem")` to follow quest clock pins.
 - **Guest must stop**: the wait menu (`TimeskipGameController`; or accept it
   as a request to the host), and any time dilation that slows the world
-  (ARCHITECTURE.md "slowed and stopped time"): the engine already separates
+  (../architecture/time.md "slowed and stopped time"): the engine already separates
   world dilation from `…OnLocalPlayerZero` (the local player), which is the
   hook for "a V's time effects are local".
 - Time listeners (`RegisterIntervalListener`) on the guest fire on the
@@ -1155,14 +1172,15 @@ hostClockUs)` only when it is off by more than a threshold (a set every
 `worldWeatherScriptInterface` (size 0x50), `GameInstance.GetWeatherSystem`
 (`final.reds:14314`). **Vanilla exposes only rain read-outs**:
 
-| Function                                                                            | Handler       |
-| ----------------------------------------------------------------------------------- | ------------- |
-| `RegisterWeatherListener(callback: WeatherScriptListener) -> Uint32`                | `0x14087072c` |
-| `UnregisterWeatherListener(callbackId: Uint32)`                                     | `0x1413e9070` |
-| `GetRainIntensity() -> Float`                                                       | `0x14297140c` |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `RegisterWeatherListener(callback: WeatherScriptListener) -> Uint32` | `0x14087072c` |
+| `UnregisterWeatherListener(callbackId: Uint32)` | `0x1413e9070` |
+| `GetRainIntensity() -> Float` | `0x14297140c` |
 | `GetRainIntensityType() -> worldRainIntensity` {NoRain 0, LightRain 1, HeavyRain 2} | `0x142971424` |
-| `GetRainMoisture() -> Float`                                                        | `0x14297143c` |
-| `GetRainPuddles() -> Float`                                                         | `0x142971478` |
+| `GetRainMoisture() -> Float` | `0x14297143c` |
+| `GetRainPuddles() -> Float` | `0x142971478` |
 
 `WeatherScriptListener` (`final.reds:252103-252107`):
 `OnRainIntensityChanged(rainIntensity: Float)`,
@@ -1250,17 +1268,18 @@ Plus `PreventionSystemHackerLoop` (vehicle hacking at high heat),
 
 ### 9.1 State and how to read it
 
-| What                | Where                                                                                                                                                                               |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| heat stage          | `m_heatStage: EPreventionHeatStage` {Heat_0 … Heat_5, Size 6, Invalid 7}; `GetHeatStage()`, `GetHeatStageAsInt() -> Uint32` (`final.reds:138892-138902`)                            |
-| chasing             | `IsChasingPlayer()` = heat ≠ Heat_0 (`:138856`); static `PreventionSystem.IsChasingPlayer(game)` (`:142191`)                                                                        |
-| star UI state       | `GetStarState() -> EStarState` (Default / Active / blinking / grey), `m_forceEternalGreyStars` (persistent)                                                                         |
-| enabled / locked    | `IsSystemEnabled()` (`m_systemEnabled`, persistent), `IsSystemLocked()`, `m_systemLockSources: [CName]` (persistent)                                                                |
-| crime score         | `m_totalCrimeScore: Float`, `m_crimeScoreMultiplierByQuest` (persistent)                                                                                                            |
-| quest blocks        | `m_blockOnFootSpawnByQuest`, `m_blockVehicleSpawnByQuest`, `m_blockReconDroneSpawnByQuest` (persistent), `m_minHeatLevel`, `m_maxHeatLevel`                                         |
-| UI blackboard       | `UI_WantedBar` (`final.reds:156450-156460`): `CurrentWantedLevel: Int`, `DeescalationStages: Int`, `CurrentChaseState: Name`, `BlinkingStarsDurationTime: Float`, `IsDogtown: Bool` |
-| facts               | `wanted_level` (the stage), `wanted_chase_active` (0/1) (`:139587-139609`), `prevention_quest_disabled`                                                                             |
-| last known position | `GetLastKnownPlayerPosition()`, `GetLastKnownPlayerVehicle()`                                                                                                                       |
+<!-- prettier-ignore -->
+| What | Where |
+| --- | --- |
+| heat stage | `m_heatStage: EPreventionHeatStage` {Heat_0 … Heat_5, Size 6, Invalid 7}; `GetHeatStage()`, `GetHeatStageAsInt() -> Uint32` (`final.reds:138892-138902`) |
+| chasing | `IsChasingPlayer()` = heat ≠ Heat_0 (`:138856`); static `PreventionSystem.IsChasingPlayer(game)` (`:142191`) |
+| star UI state | `GetStarState() -> EStarState` (Default / Active / blinking / grey), `m_forceEternalGreyStars` (persistent) |
+| enabled / locked | `IsSystemEnabled()` (`m_systemEnabled`, persistent), `IsSystemLocked()`, `m_systemLockSources: [CName]` (persistent) |
+| crime score | `m_totalCrimeScore: Float`, `m_crimeScoreMultiplierByQuest` (persistent) |
+| quest blocks | `m_blockOnFootSpawnByQuest`, `m_blockVehicleSpawnByQuest`, `m_blockReconDroneSpawnByQuest` (persistent), `m_minHeatLevel`, `m_maxHeatLevel` |
+| UI blackboard | `UI_WantedBar` (`final.reds:156450-156460`): `CurrentWantedLevel: Int`, `DeescalationStages: Int`, `CurrentChaseState: Name`, `BlinkingStarsDurationTime: Float`, `IsDogtown: Bool` |
+| facts | `wanted_level` (the stage), `wanted_chase_active` (0/1) (`:139587-139609`), `prevention_quest_disabled` |
+| last known position | `GetLastKnownPlayerPosition()`, `GetLastKnownPlayerVehicle()` |
 
 `ChangeHeatStage(newHeatStage, reason)` (`final.reds:140733-140767`, private)
 is the single place the stage changes: it clamps to min/max, writes
@@ -1275,18 +1294,19 @@ All are `ScriptableSystemRequest`s queued to `n"PreventionSystem"`
 (`PreventionSystem.QueueRequest(game, request, opt delay)`,
 `final.reds:142278`):
 
-| Request                                                                                                                                                                                                                                                              | Effect                                                                                                                                                                                              |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SetWantedLevel{m_wantedLevel: EPreventionHeatStage, m_forceGreyStars, m_resetGreyStars, m_forcePlayerPositionAsLastCrimePoint, m_forceIgnoreSecurityAreas}` (`:199475`)                                                                                             | **the quest way to force a stage**: `OnSetWantedLevel` (`:141996-142023`) enables the system and calls `ChangeHeatStage(level, "QuestEvent")`; `Heat_0` while chasing queues a forced de-escalation |
-| `TogglePreventionSystem{sourceName: CName, isActive: Bool}` (`:199462`)                                                                                                                                                                                              | adds/removes a named lock; any lock → `execInstructionOff()` = clear everything then disable (`:141967-141988`, `:142693`)                                                                          |
-| `PreventionConsoleInstructionRequest{instruction: EPreventionSystemInstruction, heatStage}` (`:199612`)                                                                                                                                                              | `Safe 0` (reset to no heat, despawn), `Active 1` (set stage), `Off 2`, `On 3`, `ReconPhaseOn/Off` (`:142531-142556`)                                                                                |
-| `PreventionForceDeescalateRequest{fakeBlinkingDuration, telemetryInfo}` (`:143060`)                                                                                                                                                                                  | drop to no heat with blinking stars                                                                                                                                                                 |
-| `PreventionMinMaxHeatLevels{minLvl, maxLvl, isDefault}` (`:199617`)                                                                                                                                                                                                  | clamp the stage                                                                                                                                                                                     |
-| `ClearPreventionSystemLocks`, `PreventionConsoleLockRequest`                                                                                                                                                                                                         | remove all locks / toggle the hard lock                                                                                                                                                             |
-| `TogglePreventionCrowdSpawns{toggle}`                                                                                                                                                                                                                                | → native `TogglePreventionCrowdSpawns` (police walking in crowds)                                                                                                                                   |
-| `TogglePreventionFreeArea`, `ToggleQuestPreventionTrigger`, `TogglePreventionGlobalQuestObjective`, `SetPreventionDifficulty`, `SetPreventionPath`, `SetBlockShootingFromVehicle`                                                                                    | quest controls                                                                                                                                                                                      |
-| `PreventionDamageRequest`, `PreventionCrimeWitnessRequest`, `PreventionCombatStartedRequest`, `PreventionVehicleStolenRequest`, `PreventionVisibilityRequest`, `PreventionRegisterRequest`, `PreventionSecurityAreaRequest`, `PreventionPoliceSecuritySystemRequest` | **the crime inputs** (`OnDamageInput`, `:140641`; statics `CreateNewDamageRequest`, `CrimeWitnessRequestToPreventionSystem`, `CombatStartedRequestToPreventionSystem`, `:142293-142376`)            |
-| `PreventionUnitSpawnedRequest`, `PreventionUnitDespawnedRequest`, `PreventionTickRequest`, timers                                                                                                                                                                    | internal                                                                                                                                                                                            |
+<!-- prettier-ignore -->
+| Request | Effect |
+| --- | --- |
+| `SetWantedLevel{m_wantedLevel: EPreventionHeatStage, m_forceGreyStars, m_resetGreyStars, m_forcePlayerPositionAsLastCrimePoint, m_forceIgnoreSecurityAreas}` (`:199475`) | **the quest way to force a stage**: `OnSetWantedLevel` (`:141996-142023`) enables the system and calls `ChangeHeatStage(level, "QuestEvent")`; `Heat_0` while chasing queues a forced de-escalation |
+| `TogglePreventionSystem{sourceName: CName, isActive: Bool}` (`:199462`) | adds/removes a named lock; any lock → `execInstructionOff()` = clear everything then disable (`:141967-141988`, `:142693`) |
+| `PreventionConsoleInstructionRequest{instruction: EPreventionSystemInstruction, heatStage}` (`:199612`) | `Safe 0` (reset to no heat, despawn), `Active 1` (set stage), `Off 2`, `On 3`, `ReconPhaseOn/Off` (`:142531-142556`) |
+| `PreventionForceDeescalateRequest{fakeBlinkingDuration, telemetryInfo}` (`:143060`) | drop to no heat with blinking stars |
+| `PreventionMinMaxHeatLevels{minLvl, maxLvl, isDefault}` (`:199617`) | clamp the stage |
+| `ClearPreventionSystemLocks`, `PreventionConsoleLockRequest` | remove all locks / toggle the hard lock |
+| `TogglePreventionCrowdSpawns{toggle}` | → native `TogglePreventionCrowdSpawns` (police walking in crowds) |
+| `TogglePreventionFreeArea`, `ToggleQuestPreventionTrigger`, `TogglePreventionGlobalQuestObjective`, `SetPreventionDifficulty`, `SetPreventionPath`, `SetBlockShootingFromVehicle` | quest controls |
+| `PreventionDamageRequest`, `PreventionCrimeWitnessRequest`, `PreventionCombatStartedRequest`, `PreventionVehicleStolenRequest`, `PreventionVisibilityRequest`, `PreventionRegisterRequest`, `PreventionSecurityAreaRequest`, `PreventionPoliceSecuritySystemRequest` | **the crime inputs** (`OnDamageInput`, `:140641`; statics `CreateNewDamageRequest`, `CrimeWitnessRequestToPreventionSystem`, `CombatStartedRequestToPreventionSystem`, `:142293-142376`) |
+| `PreventionUnitSpawnedRequest`, `PreventionUnitDespawnedRequest`, `PreventionTickRequest`, timers | internal |
 
 `execInstructionSafe(reason)` (`final.reds:142630-142668`) shows what "clear"
 means: despawn all police, zero the crime score, neutral attitudes, cancel
@@ -1298,21 +1318,22 @@ spawn requests, `ChangeHeatStage(Heat_0)`, reset the star UI and the
 Selected functions (full list: `rtti: gamePreventionSpawnSystem`, 50
 functions) `[2.5-rtti]`:
 
-| Function                                                                                                                                                                                                                                  | Handler                                     |
-| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `TogglePreventionActive(isActive: Bool)`                                                                                                                                                                                                  | `0x141197534`                               |
-| `TogglePreventionCrowdSpawns(toggle: Bool)`                                                                                                                                                                                               | `0x14184300c`                               |
-| `RequestUnitSpawn(recordID: TweakDBID, spawnTransform: WorldTransform) -> Uint32`                                                                                                                                                         | `0x140fdfe80`                               |
-| `RequestChaseVehicle(vehicleRecordID, passengersRecordIDs: [TweakDBID], strategy: BaseStrategyRequest) -> Uint32`                                                                                                                         | `0x1414aabd8`                               |
-| `RequestRoadBlockadeSpawn(vehiclessRecordIDs, spawnDistanceRange: Vector2, numberNPCsPerCar: Uint32) -> Uint32`                                                                                                                           | `0x142bc2e80`                               |
-| `RequestAVSpawn(recordID, spawnDistanceRange, useOffTrafficPoints) -> Uint32`, `RequestAVSpawnAtLocation(recordID, location: Vector3)`, `RequestAVSpawnPoints(scriptable, functionName, …)`                                               | `0x142bc2840`, `0x142bc2950`, `0x142bc2a38` |
-| `CancelSpawnRequest(requestID)`, `CancelAllSpawnRequests()`                                                                                                                                                                               | `0x142bc249c`, `0x142bc2490`                |
-| `RequestDespawn(entityID)`, `RequestDespawnVehicleAndPassengers(vehicle)`, `RequestDespawnAll(shouldUseAggressiveDespawn: Bool)`                                                                                                          | `0x142bc2cb4`, `0x142bc2d90`, `0x142bc2d20` |
-| `GetNumberOfSpawnedPreventionUnits() -> Int32`, `IsEntityRegistered(id) -> Bool`, `TryGetVehicleType(id, out DynamicVehicleType) -> Bool`                                                                                                 | `0x142bc25f0`, `0x14044cad4`, `0x141202a14` |
-| `RegisterEntityDeathCallback(scriptable, functionName: String, entityID)`, `MarkAsDead(entityID)`                                                                                                                                         | `0x140ab3020`, `0x142bc27d8`                |
-| `ToggleFreeArea(areaReference: NodeRef, enable)`, `TogglePreventionQuestTrigger(areaReference, enable)`, `IsPointInPreventionFreeArea(point: Vector4) -> Bool`                                                                            | `0x142bc2fb0`, `0x142bc310c`, `0x14192b4e0` |
-| `FindPursuitPointsRangeAsync(…)`, `IsPlayerOnHighway()`, `IsPlayerInDogTown()`, `GetNearestRoadFromPlayerInfo(out info)`, `NotifyPlayerMounted(isPlayerMounted)`, `ReinitAll()`                                                           | —                                           |
-| script callbacks called by native: `SpawnRequestFinished(requestResult: SpawnRequestResult)`, `DespawnCallback(entityID)`, `VehicleEarlyInit`, `RoadblockadeNPCEarlyInit`, `OnEnterPreventionQuestTrigger(disablePreventionSystem: Bool)` | `final.reds:189272-189339`                  |
+<!-- prettier-ignore -->
+| Function | Handler |
+| --- | --- |
+| `TogglePreventionActive(isActive: Bool)` | `0x141197534` |
+| `TogglePreventionCrowdSpawns(toggle: Bool)` | `0x14184300c` |
+| `RequestUnitSpawn(recordID: TweakDBID, spawnTransform: WorldTransform) -> Uint32` | `0x140fdfe80` |
+| `RequestChaseVehicle(vehicleRecordID, passengersRecordIDs: [TweakDBID], strategy: BaseStrategyRequest) -> Uint32` | `0x1414aabd8` |
+| `RequestRoadBlockadeSpawn(vehiclessRecordIDs, spawnDistanceRange: Vector2, numberNPCsPerCar: Uint32) -> Uint32` | `0x142bc2e80` |
+| `RequestAVSpawn(recordID, spawnDistanceRange, useOffTrafficPoints) -> Uint32`, `RequestAVSpawnAtLocation(recordID, location: Vector3)`, `RequestAVSpawnPoints(scriptable, functionName, …)` | `0x142bc2840`, `0x142bc2950`, `0x142bc2a38` |
+| `CancelSpawnRequest(requestID)`, `CancelAllSpawnRequests()` | `0x142bc249c`, `0x142bc2490` |
+| `RequestDespawn(entityID)`, `RequestDespawnVehicleAndPassengers(vehicle)`, `RequestDespawnAll(shouldUseAggressiveDespawn: Bool)` | `0x142bc2cb4`, `0x142bc2d90`, `0x142bc2d20` |
+| `GetNumberOfSpawnedPreventionUnits() -> Int32`, `IsEntityRegistered(id) -> Bool`, `TryGetVehicleType(id, out DynamicVehicleType) -> Bool` | `0x142bc25f0`, `0x14044cad4`, `0x141202a14` |
+| `RegisterEntityDeathCallback(scriptable, functionName: String, entityID)`, `MarkAsDead(entityID)` | `0x140ab3020`, `0x142bc27d8` |
+| `ToggleFreeArea(areaReference: NodeRef, enable)`, `TogglePreventionQuestTrigger(areaReference, enable)`, `IsPointInPreventionFreeArea(point: Vector4) -> Bool` | `0x142bc2fb0`, `0x142bc310c`, `0x14192b4e0` |
+| `FindPursuitPointsRangeAsync(…)`, `IsPlayerOnHighway()`, `IsPlayerInDogTown()`, `GetNearestRoadFromPlayerInfo(out info)`, `NotifyPlayerMounted(isPlayerMounted)`, `ReinitAll()` | — |
+| script callbacks called by native: `SpawnRequestFinished(requestResult: SpawnRequestResult)`, `DespawnCallback(entityID)`, `VehicleEarlyInit`, `RoadblockadeNPCEarlyInit`, `OnEnterPreventionQuestTrigger(disablePreventionSystem: Bool)` | `final.reds:189272-189339` |
 
 Saved native state: `gamePreventionSpawnSystemSavedState{areaIds: [Uint64]}`.
 The API is written around **"the player"** (`IsPlayerOnHighway`,
@@ -1361,18 +1382,19 @@ Authority: host ("police heat — host — applied").
 
 What exists `[2.5-rtti]` / `[2.5-script]`:
 
-| Lever                                                                                                                                                                                 | Where                                                       | Notes                                                                                                      |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `CommunitySystem.ChangeDensityModifier(modiefier: Float)` (sic) / `ResetDensityModifier()`                                                                                            | `final.reds:315514-315516`, `@ 0x142bcd748` / `0x142bcd998` | **never called by vanilla scripts**; a global crowd density scale _(inferred from the name)_; untested     |
-| `CommunitySystem.EnableDynamicCrowdNullArea(areaLocalBBox: Box, areaLocalToWorld: WorldTransform, savable: Bool, duration: Float) -> Uint64` / `DisableCrowdNullArea(areaId: Uint64)` | `final.reds:315505-315512`, `@ 0x142bcd848` / `0x142bcd7e4` | a box in which no crowd spawns; `savable` writes it to the save — pass false                               |
-| quest node `questCrowdManagerNodeType_ControlCrowd{action: Disable/Enable, distantCrowdOnly, debugSource}`                                                                            | `questCrowdManagerNodeDefinition`                           | the quests' "turn crowds off"; executable through Codeware `ExecuteNode` _(inferred, same family as §6.3)_ |
-| quest node `questCrowdManagerNodeType_EnableNullArea{areaReference: NodeRef, enable}`                                                                                                 | same                                                        | toggles a placed `worldCrowdNullAreaNode`                                                                  |
-| `questInstancedCrowdControlNodeDefinition{crowdVariantTag: CName, enable}`                                                                                                            | —                                                           | instanced (decorative) crowds                                                                              |
-| `questPopulactionControllerNodeDefinition{enable}`                                                                                                                                    | —                                                           | one spawner object                                                                                         |
-| Codeware `DeactivateCommunity` / `DeactivatePopulationSpawner`                                                                                                                        | §6.2                                                        | per community / spawner                                                                                    |
-| `PreventionSpawnSystem.TogglePreventionCrowdSpawns(false)`                                                                                                                            | §9.3                                                        | police in crowds                                                                                           |
-| `gameCrowdMemberComponent` on each crowd NPC; AI conditions `IsCrowdNPC`, `NPCIsCrowdPrereq`                                                                                          | —                                                           | to recognise a crowd NPC on the host                                                                       |
-| user setting crowd density (gameplay/performance)                                                                                                                                     | not in scripts (no `CrowdDensity` string in `final.reds`)   | engine-side option; reachable only through `UserSettings` by group/var name — needs the name               |
+<!-- prettier-ignore -->
+| Lever | Where | Notes |
+| --- | --- | --- |
+| `CommunitySystem.ChangeDensityModifier(modiefier: Float)` (sic) / `ResetDensityModifier()` | `final.reds:315514-315516`, `@ 0x142bcd748` / `0x142bcd998` | **never called by vanilla scripts**; a global crowd density scale _(inferred from the name)_; untested |
+| `CommunitySystem.EnableDynamicCrowdNullArea(areaLocalBBox: Box, areaLocalToWorld: WorldTransform, savable: Bool, duration: Float) -> Uint64` / `DisableCrowdNullArea(areaId: Uint64)` | `final.reds:315505-315512`, `@ 0x142bcd848` / `0x142bcd7e4` | a box in which no crowd spawns; `savable` writes it to the save — pass false |
+| quest node `questCrowdManagerNodeType_ControlCrowd{action: Disable/Enable, distantCrowdOnly, debugSource}` | `questCrowdManagerNodeDefinition` | the quests' "turn crowds off"; executable through Codeware `ExecuteNode` _(inferred, same family as §6.3)_ |
+| quest node `questCrowdManagerNodeType_EnableNullArea{areaReference: NodeRef, enable}` | same | toggles a placed `worldCrowdNullAreaNode` |
+| `questInstancedCrowdControlNodeDefinition{crowdVariantTag: CName, enable}` | — | instanced (decorative) crowds |
+| `questPopulactionControllerNodeDefinition{enable}` | — | one spawner object |
+| Codeware `DeactivateCommunity` / `DeactivatePopulationSpawner` | §6.2 | per community / spawner |
+| `PreventionSpawnSystem.TogglePreventionCrowdSpawns(false)` | §9.3 | police in crowds |
+| `gameCrowdMemberComponent` on each crowd NPC; AI conditions `IsCrowdNPC`, `NPCIsCrowdPrereq` | — | to recognise a crowd NPC on the host |
+| user setting crowd density (gameplay/performance) | not in scripts (no `CrowdDensity` string in `final.reds`) | engine-side option; reachable only through `UserSettings` by group/var name — needs the name |
 
 **Traffic has no switch.** `TrafficSystem` (script,
 `final.reds:317434-317446`, RTTI `worldTrafficScriptInterface`,
@@ -1400,7 +1422,7 @@ guests' own spawning is suppressed"):
   `ExecuteNode`; (3) a large dynamic null area around the guest's V, moved
   as it moves; (4) native work on `worldRuntimeSystemTraffic` for vehicles.
   None is verified; **traffic suppression has no known script or Codeware
-  path** and is the open item of ARCHITECTURE.md's "suppressing guests' own
+  path** and is the open item of ../architecture/npcs.md's "suppressing guests' own
   world simulation".
 - **Host sends** crowd and traffic entities as proxies with a budget
   (distance and relevance), like other NPCs.
@@ -1414,13 +1436,14 @@ guests' own spawning is suppressed"):
 
 There is **no `gameSaveSystem` class** in RTTI. Saving is reached through:
 
-| Entry point                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Where             |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| `gameAutoSaveSystem` (`GameInstance.GetAutoSaveSystem`, `final.reds:14320`, `:203129-203135`): `RequestCheckpoint() -> Bool` (`@ 0x142b4a398`), `RequestForcedCheckpoint() -> Bool` (`@ 0x142199c50`), `InvalidateAutoSaveRequests()` (`@ 0x142b4a390`)                                                                                                                                                                                                                                                                                                             | autosaves         |
-| `inkISystemRequestsHandler` (`GetSystemRequestsHandler()` on UI controllers, `final.reds:272564-272743`): `QuickSave()` (`@ 0x14279128c`), `ManualSave(saveName: String)`, `OverrideSave(saveId)`, `LoadSavedGame(saveId: Int32)`, `LoadLastCheckpoint(onlySamePlaythrough: Bool)` (`@ 0x142790f6c`), `HasLastCheckpoint() -> Bool` (`@ 0x142790dd4`), `RequestSavesForLoad()`, `RequestSavesCountSync() -> Int32`, `GetLatestSaveMetadata()`, `DeleteSavedGame(saveId)`, `GotoMainMenu()`, `PauseGame()`, `UnpauseGame()`, `IsGamePaused()`, `StartNewGame(state)` | menus             |
-| `GameObject.RequestAutoSave(isForced)`, `RequestAutoSaveWithDelay(value, maxAttempts, isForced)`, `OnAutoSaveEvent(evt: AutoSaveEvent)` (`final.reds:14091-14115`); `MenuUIUtils.RequestAutoSave(player, opt delay)` (`:236456`)                                                                                                                                                                                                                                                                                                                                    | script helpers    |
-| quest node `questCheckpointNodeDefinition{saveLock, ignoreSaveLocks, pointOfNoReturn, endGameSave, retryOnFailure, additionalEndGameRewardsTweak}`                                                                                                                                                                                                                                                                                                                                                                                                                  | story checkpoints |
-| `questPhaseNodeDefinition.saveLock`, `questSaveLock_ConditionType`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | quest-held locks  |
+<!-- prettier-ignore -->
+| Entry point | Where |
+| --- | --- |
+| `gameAutoSaveSystem` (`GameInstance.GetAutoSaveSystem`, `final.reds:14320`, `:203129-203135`): `RequestCheckpoint() -> Bool` (`@ 0x142b4a398`), `RequestForcedCheckpoint() -> Bool` (`@ 0x142199c50`), `InvalidateAutoSaveRequests()` (`@ 0x142b4a390`) | autosaves |
+| `inkISystemRequestsHandler` (`GetSystemRequestsHandler()` on UI controllers, `final.reds:272564-272743`): `QuickSave()` (`@ 0x14279128c`), `ManualSave(saveName: String)`, `OverrideSave(saveId)`, `LoadSavedGame(saveId: Int32)`, `LoadLastCheckpoint(onlySamePlaythrough: Bool)` (`@ 0x142790f6c`), `HasLastCheckpoint() -> Bool` (`@ 0x142790dd4`), `RequestSavesForLoad()`, `RequestSavesCountSync() -> Int32`, `GetLatestSaveMetadata()`, `DeleteSavedGame(saveId)`, `GotoMainMenu()`, `PauseGame()`, `UnpauseGame()`, `IsGamePaused()`, `StartNewGame(state)` | menus |
+| `GameObject.RequestAutoSave(isForced)`, `RequestAutoSaveWithDelay(value, maxAttempts, isForced)`, `OnAutoSaveEvent(evt: AutoSaveEvent)` (`final.reds:14091-14115`); `MenuUIUtils.RequestAutoSave(player, opt delay)` (`:236456`) | script helpers |
+| quest node `questCheckpointNodeDefinition{saveLock, ignoreSaveLocks, pointOfNoReturn, endGameSave, retryOnFailure, additionalEndGameRewardsTweak}` | story checkpoints |
+| `questPhaseNodeDefinition.saveLock`, `questSaveLock_ConditionType` | quest-held locks |
 
 (§7 said 2.31 scripts expose only `LoadLastCheckpoint`; on 2.50
 `LoadSavedGame(saveId)` and `ManualSave(saveName)` are declared as natives.)
@@ -1464,7 +1487,7 @@ when `HasLastCheckpoint()` (`:335186-335232`).
 
 ### 11.3 Co-op mapping
 
-ARCHITECTURE.md: "the host's save is the world; guests keep their character
+../architecture/world.md: "the host's save is the world; guests keep their character
 progression in their own saves."
 
 - **Guest must stop**:
@@ -1587,37 +1610,38 @@ Quest nodes that bypass rewards: `questEntityManagerAddDevelopmentPoint_NodeType
 
 ## 13. Summary table
 
-| State                                                                        | Owner                                 | Host reads with                                                                                  | Guest applies with                                                            | Guest must stop                                                             |
-| ---------------------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| quest facts                                                                  | host                                  | native `FactManager` store walk + `SetFact` vslot hook, or `RegisterEntity` + `FactChangedEvent` | `QuestsSystem.SetFact` / `SetFactStr` if different                            | quest graphs; local script writes become requests                           |
-| per-player facts (tutorial, retrofix, `game_was_loaded`, `block_death_menu`) | each player                           | —                                                                                                | —                                                                             | never synced                                                                |
-| journal entry states                                                         | host                                  | `RegisterScriptCallback(…, State)`; snapshot `GetEntries` / `GetQuests` + `GetChildren`          | `ChangeEntryStateByHash(hash, state, notify)`                                 | —                                                                           |
-| tracked objective                                                            | host default; per player allowed      | `RegisterScriptCallback(…, Tracked)` + `GetTrackedEntry`                                         | `TrackEntry(GetEntry(hash))`                                                  | optional: guest's own `TrackEntry`                                          |
-| objective counter / optional                                                 | host                                  | `Counter`, `ObjectiveOptional` callbacks; `GetObjectiveCurrentCounter`                           | no script setter (open)                                                       | —                                                                           |
-| quest map markers                                                            | host (via journal)                    | none; for spawned targets `QuestMappin.GetJournalPathHash` + entity                              | automatic from journal; fallback `RegisterMappin` / `SetMappinPosition`       | —                                                                           |
-| phone call                                                                   | host                                  | wrap `PhoneSystem.OnTriggerCall`                                                                 | queue `questTriggerCallRequest` (with scenes)                                 | answering/rejecting locally                                                 |
-| messages, shards, codex, tarot                                               | host (journal)                        | journal callbacks                                                                                | journal apply                                                                 | replies → request to host                                                   |
-| warnings / on-screen messages                                                | host                                  | wrap blackboard writes (`UI_Notifications`, `UI_CustomQuestNotification`)                        | same blackboard writes                                                        | —                                                                           |
-| tutorials                                                                    | each player                           | —                                                                                                | —                                                                             | `disable_tutorials = 1` locally                                             |
-| quest spawns (NPCs, vehicles)                                                | host                                  | Codeware `GetCommunity(…).GetActiveEntityIDs()`, entity spawn events; `EntityID.IsDynamic`       | proxy from announcement (`NetId`)                                             | communities / spawners (`DeactivateCommunity`, …)                           |
-| node visibility, prefab variants                                             | host                                  | (hook on `questWorldDataManager` node execution — open)                                          | Codeware `ToggleNode`, `ToggleVariant`                                        | —                                                                           |
-| quest prefabs (interiors)                                                    | host                                  | `questPhaseNodeDefinition.phaseInstancePrefabs` (open)                                           | no API (open)                                                                 | —                                                                           |
-| quest teleport / regroup                                                     | host                                  | position jump; node hook                                                                         | `TeleportationFacility.Teleport(player, pos, rot)`                            | —                                                                           |
-| device state (doors, lifts, terminals)                                       | host; guest acts optimistically       | hook `QueuePSDeviceEvent` / `QueuePSEvent`; `GetConstAccessToPSObject`                           | rebuild action + `QueuePSDeviceEvent`; fallback `SetPersistentBool/Int/Float` | deciding devices (security systems, turrets)                                |
-| loot containers (placed)                                                     | each player (own copy)                | PS events for lock/disable                                                                       | `QueuePSEvent`; `ContainerManager.InjectLoot` for quest items                 | —                                                                           |
-| loot drops (NPC)                                                             | host                                  | body inventory `TransactionSystem.GetItemList`                                                   | `LootManager.SpawnItemDropOfManyItems`                                        | proxies rolling their own loot                                              |
-| vendors, stash                                                               | each player                           | —                                                                                                | —                                                                             | —                                                                           |
-| fast travel                                                                  | host leads                            | wrap `FastTravelSystem.OnPerformFastTravelRequest`                                               | queue `PerformFastTravelRequest` or teleport                                  | `FastTravelSystem.AddFastTravelLock(n"tandem", game)`                       |
-| game time                                                                    | host                                  | `TimeSystem.GetGameTime()` (`GameTime.GetSeconds`), `IsPausedState()`                            | `SetGameTimeBySeconds`, `SetPausedState(paused, source)`                      | wait menu; world time dilation                                              |
-| weather                                                                      | host                                  | Codeware `GetWeatherState().name`                                                                | Codeware `SetWeather(name, blend, priority)`; `ResetWeather(true)` on leave   | own weather cycle (stopped by `SetWeather`)                                 |
-| police heat                                                                  | host                                  | `UI_WantedBar.CurrentWantedLevel` listener / `PreventionSystem.GetHeatStage()`                   | write `UI_WantedBar` + `wanted_level` facts (display only)                    | `TogglePreventionSystem{n"tandem", false}`; `TogglePreventionActive(false)` |
-| crimes by guests                                                             | host                                  | host-side hit handling; forwarded `Prevention…Request`s                                          | —                                                                             | local scoring (off with the system)                                         |
-| crowds                                                                       | host                                  | `gameCrowdMemberComponent` on NPCs → proxies                                                     | proxies                                                                       | `ChangeDensityModifier(0)` / `ControlCrowd` / null area (open)              |
-| traffic                                                                      | host                                  | vehicles → proxies                                                                               | proxies                                                                       | no known switch (open)                                                      |
-| saves                                                                        | host (world); each player (character) | —                                                                                                | —                                                                             | `SaveLocksManager.RequestSaveLockAdd(game, n"tandem")`; `block_death_menu`  |
-| quest rewards                                                                | per receiver                          | wrap `PlayerPuppet.OnRewardEvent` → reward TweakDBID                                             | `RPGManager.GiveReward(game, rewardID)`                                       | —                                                                           |
-| kill XP                                                                      | per receiver                          | `OnKillRewardEvent` on host NPCs                                                                 | `AddExperience` request                                                       | proxy deaths granting XP                                                    |
-| XP, perks, money, inventory                                                  | each player                           | —                                                                                                | —                                                                             | —                                                                           |
+<!-- prettier-ignore -->
+| State | Owner | Host reads with | Guest applies with | Guest must stop |
+| --- | --- | --- | --- | --- |
+| quest facts | host | native `FactManager` store walk + `SetFact` vslot hook, or `RegisterEntity` + `FactChangedEvent` | `QuestsSystem.SetFact` / `SetFactStr` if different | quest graphs; local script writes become requests |
+| per-player facts (tutorial, retrofix, `game_was_loaded`, `block_death_menu`) | each player | — | — | never synced |
+| journal entry states | host | `RegisterScriptCallback(…, State)`; snapshot `GetEntries` / `GetQuests` + `GetChildren` | `ChangeEntryStateByHash(hash, state, notify)` | — |
+| tracked objective | host default; per player allowed | `RegisterScriptCallback(…, Tracked)` + `GetTrackedEntry` | `TrackEntry(GetEntry(hash))` | optional: guest's own `TrackEntry` |
+| objective counter / optional | host | `Counter`, `ObjectiveOptional` callbacks; `GetObjectiveCurrentCounter` | no script setter (open) | — |
+| quest map markers | host (via journal) | none; for spawned targets `QuestMappin.GetJournalPathHash` + entity | automatic from journal; fallback `RegisterMappin` / `SetMappinPosition` | — |
+| phone call | host | wrap `PhoneSystem.OnTriggerCall` | queue `questTriggerCallRequest` (with scenes) | answering/rejecting locally |
+| messages, shards, codex, tarot | host (journal) | journal callbacks | journal apply | replies → request to host |
+| warnings / on-screen messages | host | wrap blackboard writes (`UI_Notifications`, `UI_CustomQuestNotification`) | same blackboard writes | — |
+| tutorials | each player | — | — | `disable_tutorials = 1` locally |
+| quest spawns (NPCs, vehicles) | host | Codeware `GetCommunity(…).GetActiveEntityIDs()`, entity spawn events; `EntityID.IsDynamic` | proxy from announcement (`NetId`) | communities / spawners (`DeactivateCommunity`, …) |
+| node visibility, prefab variants | host | (hook on `questWorldDataManager` node execution — open) | Codeware `ToggleNode`, `ToggleVariant` | — |
+| quest prefabs (interiors) | host | `questPhaseNodeDefinition.phaseInstancePrefabs` (open) | no API (open) | — |
+| quest teleport / regroup | host | position jump; node hook | `TeleportationFacility.Teleport(player, pos, rot)` | — |
+| device state (doors, lifts, terminals) | host; guest acts optimistically | hook `QueuePSDeviceEvent` / `QueuePSEvent`; `GetConstAccessToPSObject` | rebuild action + `QueuePSDeviceEvent`; fallback `SetPersistentBool/Int/Float` | deciding devices (security systems, turrets) |
+| loot containers (placed) | each player (own copy) | PS events for lock/disable | `QueuePSEvent`; `ContainerManager.InjectLoot` for quest items | — |
+| loot drops (NPC) | host | body inventory `TransactionSystem.GetItemList` | `LootManager.SpawnItemDropOfManyItems` | proxies rolling their own loot |
+| vendors, stash | each player | — | — | — |
+| fast travel | host leads | wrap `FastTravelSystem.OnPerformFastTravelRequest` | queue `PerformFastTravelRequest` or teleport | `FastTravelSystem.AddFastTravelLock(n"tandem", game)` |
+| game time | host | `TimeSystem.GetGameTime()` (`GameTime.GetSeconds`), `IsPausedState()` | `SetGameTimeBySeconds`, `SetPausedState(paused, source)` | wait menu; world time dilation |
+| weather | host | Codeware `GetWeatherState().name` | Codeware `SetWeather(name, blend, priority)`; `ResetWeather(true)` on leave | own weather cycle (stopped by `SetWeather`) |
+| police heat | host | `UI_WantedBar.CurrentWantedLevel` listener / `PreventionSystem.GetHeatStage()` | write `UI_WantedBar` + `wanted_level` facts (display only) | `TogglePreventionSystem{n"tandem", false}`; `TogglePreventionActive(false)` |
+| crimes by guests | host | host-side hit handling; forwarded `Prevention…Request`s | — | local scoring (off with the system) |
+| crowds | host | `gameCrowdMemberComponent` on NPCs → proxies | proxies | `ChangeDensityModifier(0)` / `ControlCrowd` / null area (open) |
+| traffic | host | vehicles → proxies | proxies | no known switch (open) |
+| saves | host (world); each player (character) | — | — | `SaveLocksManager.RequestSaveLockAdd(game, n"tandem")`; `block_death_menu` |
+| quest rewards | per receiver | wrap `PlayerPuppet.OnRewardEvent` → reward TweakDBID | `RPGManager.GiveReward(game, rewardID)` | — |
+| kill XP | per receiver | `OnKillRewardEvent` on host NPCs | `AddExperience` request | proxy deaths granting XP |
+| XP, perks, money, inventory | each player | — | — | — |
 
 ---
 

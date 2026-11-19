@@ -8,7 +8,7 @@
 @wrapMethod(ShootEvents)
 protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
-  if TandemNative.IsStarted() && IsDefined(scriptInterface.executionOwner as PlayerPuppet) {
+  if (TandemNative.IsStarted() || TandemNative.Recording()) && IsDefined(scriptInterface.executionOwner as PlayerPuppet) {
     let weapon = this.GetWeaponObject(scriptInterface);
     if IsDefined(weapon) {
       // gamedataFxAction: Shoot 16, SilencedShoot 17
@@ -25,7 +25,7 @@ protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: r
 @wrapMethod(ReloadEvents)
 protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
-  if TandemNative.IsStarted() && IsDefined(scriptInterface.executionOwner as PlayerPuppet) {
+  if (TandemNative.IsStarted() || TandemNative.Recording()) && IsDefined(scriptInterface.executionOwner as PlayerPuppet) {
     TandemNative.SendShot(false, 5);
   }
 }
@@ -33,7 +33,7 @@ protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: r
 @wrapMethod(ReloadEvents)
 protected func OnExit(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
-  if TandemNative.IsStarted() && IsDefined(scriptInterface.executionOwner as PlayerPuppet) {
+  if (TandemNative.IsStarted() || TandemNative.Recording()) && IsDefined(scriptInterface.executionOwner as PlayerPuppet) {
     TandemNative.SendShot(false, 11);
   }
 }
@@ -44,7 +44,7 @@ protected func OnExit(stateContext: ref<StateContext>, scriptInterface: ref<Stat
 @wrapMethod(MeleeAttackGenericEvents)
 public func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
-  if TandemNative.IsStarted() && IsDefined(scriptInterface.executionOwner as PlayerPuppet) {
+  if (TandemNative.IsStarted() || TandemNative.Recording()) && IsDefined(scriptInterface.executionOwner as PlayerPuppet) {
     TandemNative.SendShot(false, 200);
   }
 }
@@ -54,7 +54,7 @@ public func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateG
 @wrapMethod(QuickMeleeEvents)
 protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
   wrappedMethod(stateContext, scriptInterface);
-  if TandemNative.IsStarted() && IsDefined(scriptInterface.executionOwner as PlayerPuppet) {
+  if (TandemNative.IsStarted() || TandemNative.Recording()) && IsDefined(scriptInterface.executionOwner as PlayerPuppet) {
     TandemNative.SendShot(false, 201);
   }
 }

@@ -145,6 +145,12 @@ public class TandemStorySystem extends ScriptableSystem {
   }
 
   private final func OnPlayerDetach(request: ref<PlayerDetachRequest>) -> Void {
+    this.End();
+  }
+
+  // The story side off: the world goes away, or the co-op menu left the
+  // session and no other is chosen (solo is vanilla again).
+  public func End() -> Void {
     if !this.m_inGame {
       return;
     }
@@ -242,6 +248,12 @@ public class TandemStorySystem extends ScriptableSystem {
     return this.m_host;
   }
 
+  // We present the host's call (ringing or talking): its lines and hubs
+  // are everyone's on the call, wherever they stand (design §2.2, §2.4).
+  public func InHostCall() -> Bool {
+    return IsDefined(this.m_phone) && this.m_phone.Presenting();
+  }
+
   // The host is in a private scene (design §2.12): its lines and hubs are
   // its own.
   public func HostBusy() -> Bool {
@@ -307,6 +319,11 @@ public class TandemStorySystem extends ScriptableSystem {
           }
           this.EndPrivate();
           this.m_you = 0u;
+          // Left from the co-op menu with no other session chosen: solo again.
+          if !TandemStory.StoryOn() {
+            TandemNative.Log("story: off (no session)");
+            this.End();
+          }
           break;
         case 4:
           // Gone (it may have vanished mid-scene): no longer busy, nothing
@@ -1098,7 +1115,9 @@ public class TandemStorySystem extends ScriptableSystem {
   // Only for a quest we know (the host's quest hash is 0 when no quest
   // moved in the 10 s before its reward: then nothing is blocked later).
   public func AlreadyRewarded(reward: TweakDBID) -> Bool {
-    if this.InSession() || this.m_lastQuest == 0u || this.Now() - this.m_lastQuestAt > 10.0 {
+    // Solo is vanilla: the co-op ledger only holds back rewards while a
+    // session is chosen.
+    if !TandemStory.StoryOn() || this.InSession() || this.m_lastQuest == 0u || this.Now() - this.m_lastQuestAt > 10.0 {
       return false;
     }
     return this.Rewarded(reward, this.m_lastQuest);

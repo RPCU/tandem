@@ -3,7 +3,7 @@
 ensure join
 host_world - --mode idle
 if [ "$sessioned" != 1 ]; then
-  note 'no recorded session (recordings/session/city.tsession, ARCHITECTURE.md "A recorded host session"): nothing to replay'
+  note 'no recorded session (recordings/session/city.tsession, docs/architecture/recordings.md "A recorded host session"): nothing to replay'
   pause 3
   return 0
 fi
@@ -23,6 +23,8 @@ at_most 3 'resync: asking the host for'
 reject 'consistency: proxy [0-9]+ (has no NPC on the host|was missing)'
 # The end of the session takes the host's world away: no proxy left, our own
 # story back.
+# Only what comes after: the previous host's goodbye may be just past the start.
+mark
 pkill -x tandem-peer
 expect 'session ended' 60
 expect 'story: leaving the host.s story' 20

@@ -1,5 +1,5 @@
 // Hit reactions on proxies and puppets (docs/architecture/presence.md;
-// engine facts in docs/research/engine/presence.md §3).
+// engine facts in docs/research/engine/presence.md §13.30, Hit reactions).
 //
 // An NPC's reaction to a hit is chosen by its HitReactionComponent and
 // played by its AI: only the lightest (a twitch) is started by the

@@ -13,10 +13,12 @@ file(CREATE_LINK "${CMAKE_SOURCE_DIR}/vendor/RED4ext.SDK/include/RED4ext/RTTI" "
 add_library(tandem SHARED
   src/main.cpp
   src/config.cpp
+  src/log.cpp
   src/net_thread.cpp
   src/runtime.cpp
   src/natives.cpp
   src/addresses.cpp
+  src/recording.cpp
   src/story.cpp
   src/story_natives.cpp
   src/elsewhere_natives.cpp

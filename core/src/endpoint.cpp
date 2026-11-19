@@ -1213,6 +1213,7 @@ void Endpoint::BroadcastRoster() {
 }
 
 void Endpoint::SendLocalState(proto::PlayerState state) {
+  Record(state);
   if (m_tap)
     m_tap(state);
   if (!IsJoined() || m_ended)
@@ -1227,6 +1228,7 @@ void Endpoint::SendLocalState(proto::PlayerState state) {
 }
 
 void Endpoint::SendLocalPose(proto::PoseState pose) {
+  Record(pose);
   if (m_tap)
     m_tap(pose);
   if (!IsJoined() || m_ended)
@@ -1241,6 +1243,7 @@ void Endpoint::SendLocalPose(proto::PoseState pose) {
 }
 
 void Endpoint::SetLocalAppearance(proto::Appearance appearance) {
+  Record(appearance);
   if (m_tap)
     m_tap(appearance);
   appearance.revision = ++m_appearanceRevision;
@@ -1261,6 +1264,7 @@ void Endpoint::SendLocalAppearanceNow() {
 }
 
 void Endpoint::SetLocalHeld(proto::Held held) {
+  Record(held);
   if (m_tap)
     m_tap(held);
   held.revision = ++m_heldRevision;
@@ -1281,6 +1285,7 @@ void Endpoint::SendLocalHeldNow() {
 }
 
 void Endpoint::SetLocalSeat(proto::Seat seat) {
+  Record(seat);
   if (m_tap)
     m_tap(seat);
   seat.revision = ++m_seatRevision;
@@ -1303,6 +1308,7 @@ void Endpoint::SendLocalSeatNow() {
 }
 
 void Endpoint::SetLocalVehicleRadio(proto::VehicleRadio radio) {
+  Record(radio);
   if (m_tap)
     m_tap(radio);
   radio.revision = ++m_radioRevision;
@@ -1323,6 +1329,7 @@ void Endpoint::SendLocalRadioNow() {
 }
 
 void Endpoint::SetWorld(proto::World world) {
+  Record(world);
   if (!IsHost() || m_ended)
     return; // a guest's world is the host's
   world.revision = ++m_worldRevision;
@@ -1331,6 +1338,7 @@ void Endpoint::SetWorld(proto::World world) {
 }
 
 void Endpoint::SendNpcSpawn(const proto::NpcSpawn &spawn) {
+  Record(spawn);
   if (!IsHost() || m_ended)
     return;
   m_npcs[spawn.npc] = spawn;
@@ -1338,6 +1346,7 @@ void Endpoint::SendNpcSpawn(const proto::NpcSpawn &spawn) {
 }
 
 void Endpoint::SendNpcStates(proto::NpcStates states) {
+  Record(states);
   if (!IsHost() || m_ended)
     return;
   states.seq = ++m_npcSeq;
@@ -1352,6 +1361,7 @@ void Endpoint::SendNpcStates(proto::NpcStates states) {
 }
 
 void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
+  Record(gone);
   if (!IsHost() || m_ended)
     return;
   m_npcs.erase(gone.npc);
@@ -1364,6 +1374,7 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
 }
 
 void Endpoint::SendNpcAction(const proto::NpcAction &action) {
+  Record(action);
   if (m_tap)
     m_tap(action);
   if (IsHost() || !IsJoined() || m_ended)
@@ -1374,6 +1385,7 @@ void Endpoint::SendNpcAction(const proto::NpcAction &action) {
 }
 
 void Endpoint::SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply) {
+  Record(reply);
   if (!IsHost() || m_ended)
     return;
   if (const auto peer = PeerOf(player))
@@ -1381,6 +1393,7 @@ void Endpoint::SendNpcActionReply(proto::PlayerId player, const proto::NpcAction
 }
 
 void Endpoint::SendNpcHold(const proto::NpcHold &hold) {
+  Record(hold);
   if (!IsHost() || m_ended)
     return;
   if (hold.player == proto::kNoPlayer)
@@ -1391,6 +1404,7 @@ void Endpoint::SendNpcHold(const proto::NpcHold &hold) {
 }
 
 void Endpoint::SendNpcCue(const proto::NpcCue &cue) {
+  Record(cue);
   if (!IsHost() || m_ended || cue.player == m_you)
     return;
   if (const auto peer = PeerOf(cue.player))
@@ -1398,6 +1412,7 @@ void Endpoint::SendNpcCue(const proto::NpcCue &cue) {
 }
 
 void Endpoint::SendNpcHealth(const proto::NpcHealth &health) {
+  Record(health);
   if (!IsHost() || m_ended)
     return;
   m_npcHealth[health.npc] = health;
@@ -1405,6 +1420,7 @@ void Endpoint::SendNpcHealth(const proto::NpcHealth &health) {
 }
 
 void Endpoint::SendNpcAnims(const proto::NpcAnims &anims) {
+  Record(anims);
   if (!IsHost() || m_ended || anims.npcs.empty())
     return;
   // Only NPCs announced and not gone: a late joiner gets nothing it can't place.
@@ -1425,6 +1441,7 @@ void Endpoint::SendNpcReaction(const proto::NpcReaction &reaction) {
 }
 
 void Endpoint::SendNpcShot(const proto::NpcShot &shot) {
+  Record(shot);
   if (!IsHost() || m_ended || !m_npcs.contains(shot.npc))
     return;
   // The guest this NPC is shooting at fires the shot itself from its proxy
@@ -1439,6 +1456,7 @@ void Endpoint::SendNpcShot(const proto::NpcShot &shot) {
 }
 
 void Endpoint::SendNpcEffect(const proto::NpcEffect &effect) {
+  Record(effect);
   if (m_tap)
     m_tap(effect);
   if (IsHost() || !IsJoined() || m_ended)
@@ -1449,6 +1467,7 @@ void Endpoint::SendNpcEffect(const proto::NpcEffect &effect) {
 }
 
 bool Endpoint::SendPlayerHit(const proto::PlayerHit &hit) {
+  Record(hit);
   if (!IsHost() || m_ended || hit.player == m_you)
     return false; // our own V's hits are our game's
   const auto target = std::ranges::find_if(
@@ -1460,6 +1479,7 @@ bool Endpoint::SendPlayerHit(const proto::PlayerHit &hit) {
 }
 
 void Endpoint::SendNpcHit(const proto::NpcHit &hit) {
+  Record(hit);
   if (m_tap)
     m_tap(hit);
   if (IsHost() || !IsJoined() || m_ended)
@@ -1470,6 +1490,7 @@ void Endpoint::SendNpcHit(const proto::NpcHit &hit) {
 }
 
 void Endpoint::SendNpcHack(const proto::NpcHack &hack) {
+  Record(hack);
   if (m_tap)
     m_tap(hack);
   if (IsHost() || !IsJoined() || m_ended)
@@ -1480,18 +1501,21 @@ void Endpoint::SendNpcHack(const proto::NpcHack &hack) {
 }
 
 void Endpoint::SendNpcHackState(const proto::NpcHackState &state) {
+  Record(state);
   if (!IsHost() || m_ended)
     return;
   Broadcast(state);
 }
 
 void Endpoint::SendNpcStatus(const proto::NpcStatus &status) {
+  Record(status);
   if (!IsHost() || m_ended)
     return;
   Broadcast(status);
 }
 
 void Endpoint::SendPlayerHack(const proto::PlayerHack &hack) {
+  Record(hack);
   if (!IsHost() || m_ended)
     return;
   if (const auto peer = PeerOf(hack.player))
@@ -1499,6 +1523,7 @@ void Endpoint::SendPlayerHack(const proto::PlayerHack &hack) {
 }
 
 void Endpoint::SendVehicleHack(proto::VehicleHack hack) {
+  Record(hack);
   if (m_tap)
     m_tap(hack);
   if (!IsJoined() || m_ended || hack.driver == m_you)
@@ -1511,6 +1536,7 @@ void Endpoint::SendVehicleHack(proto::VehicleHack hack) {
 }
 
 bool Endpoint::SendNpcShotAt(proto::NpcShotAt shot) {
+  Record(shot);
   if (!IsHost() || m_ended || shot.player == m_you)
     return false; // shots at our own V are our game's
   const auto peer = PeerOf(shot.player);
@@ -1531,6 +1557,7 @@ bool Endpoint::SendNpcShotAt(proto::NpcShotAt shot) {
 }
 
 void Endpoint::SendShotHit(const proto::ShotHit &hit) {
+  Record(hit);
   if (m_tap)
     m_tap(hit);
   if (IsHost() || !IsJoined() || m_ended)
@@ -1548,6 +1575,7 @@ std::optional<net::PeerId> Endpoint::PeerOf(proto::PlayerId player) const {
 }
 
 void Endpoint::SendLocalVehicle(proto::VehicleState vehicle) {
+  Record(vehicle);
   if (m_tap)
     m_tap(vehicle);
   if (!IsJoined() || m_ended)
@@ -1562,6 +1590,7 @@ void Endpoint::SendLocalVehicle(proto::VehicleState vehicle) {
 }
 
 void Endpoint::SendLocalShot(proto::Shot shot) {
+  Record(shot);
   if (m_tap)
     m_tap(shot);
   if (!IsJoined() || m_ended)
@@ -1575,6 +1604,7 @@ void Endpoint::SendLocalShot(proto::Shot shot) {
 }
 
 void Endpoint::SetLocalPaused(bool paused) {
+  Record(proto::Pause{m_you, paused});
   if (paused == m_localPaused)
     return;
   m_localPaused = paused;
@@ -1626,6 +1656,7 @@ void Endpoint::SendLocalCue(proto::Cue cue) {
 }
 
 void Endpoint::SetLocalStealth(proto::Stealth stealth) {
+  Record(stealth);
   if (m_tap)
     m_tap(stealth);
   stealth.revision = ++m_stealthRevision;
@@ -1646,6 +1677,7 @@ void Endpoint::SendLocalStealthNow() {
 }
 
 void Endpoint::SendNpcAwareness(proto::NpcAwareness awareness) {
+  Record(awareness);
   if (!IsHost() || m_ended)
     return;
   awareness.seq = ++m_awarenessSeq;
@@ -1656,6 +1688,7 @@ void Endpoint::SendNpcAwareness(proto::NpcAwareness awareness) {
 }
 
 void Endpoint::SendNoise(const proto::Noise &noise) {
+  Record(noise);
   if (m_tap)
     m_tap(noise);
   if (IsHost() || !IsJoined() || m_ended)
@@ -1666,6 +1699,7 @@ void Endpoint::SendNoise(const proto::Noise &noise) {
 }
 
 void Endpoint::SendRegroup(proto::Regroup offer) {
+  Record(offer);
   if (!IsJoined() || m_ended)
     return;
   offer.from = m_you;
@@ -1680,6 +1714,7 @@ void Endpoint::SendRegroup(proto::Regroup offer) {
 }
 
 void Endpoint::SendRegroupAnswer(proto::RegroupAnswer answer) {
+  Record(answer);
   if (!IsJoined() || m_ended || answer.to == proto::kNoPlayer || answer.to == m_you)
     return;
   answer.from = m_you;
@@ -1690,6 +1725,7 @@ void Endpoint::SendRegroupAnswer(proto::RegroupAnswer answer) {
 }
 
 void Endpoint::SetLocalVitals(proto::Vitals vitals) {
+  Record(vitals);
   if (m_tap)
     m_tap(vitals);
   vitals.revision = ++m_vitalsRevision;
@@ -1711,6 +1747,7 @@ void Endpoint::SendLocalVitalsNow() {
 }
 
 void Endpoint::SendRevive(proto::Revive revive) {
+  Record(revive);
   if (m_tap)
     m_tap(revive);
   if (!IsJoined() || m_ended || revive.target == m_you)
@@ -1786,6 +1823,7 @@ void Endpoint::OnGuestStory(net::PeerId peer, proto::PlayerId player, const prot
 }
 
 void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
+  Record(message);
   if (!IsJoined() || m_ended || !proto::IsStory(message))
     return;
   if (!IsHost()) {
@@ -1829,6 +1867,7 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
   Broadcast(message);
 }
 void Endpoint::SetLocalTimeEffect(proto::TimeEffect effect) {
+  Record(effect);
   if (m_tap)
     m_tap(effect);
   effect = Sanitized(effect);
@@ -1877,6 +1916,7 @@ void Endpoint::EndTimeOf(proto::PlayerId player, std::vector<SessionEvent> &out,
 }
 
 void Endpoint::SetLocalTransit(proto::Transit transit) {
+  Record(transit);
   if (m_tap)
     m_tap(transit);
   transit.player = proto::kNoPlayer;
@@ -1912,6 +1952,7 @@ void Endpoint::NoteTransit(const proto::Transit &transit) {
 }
 
 void Endpoint::SendNpcSeat(const proto::NpcSeat &seat) {
+  Record(seat);
   if (!IsHost() || m_ended)
     return;
   if (seat.owner == proto::kNoPlayer) {
@@ -1926,6 +1967,7 @@ void Endpoint::SendNpcSeat(const proto::NpcSeat &seat) {
 }
 
 void Endpoint::DropWorldItem(proto::WorldItem item) {
+  Record(item);
   if (!IsJoined() || m_ended)
     return;
   item.id = 0;
@@ -1937,6 +1979,7 @@ void Endpoint::DropWorldItem(proto::WorldItem item) {
 }
 
 void Endpoint::TakeWorldItem(proto::WorldItemId id, std::uint8_t stack) {
+  Record(proto::WorldItemTaken{.id = id, .stack = stack, .taker = m_you});
   if (!IsJoined() || m_ended)
     return;
   if (IsHost())
@@ -1946,6 +1989,7 @@ void Endpoint::TakeWorldItem(proto::WorldItemId id, std::uint8_t stack) {
 }
 
 void Endpoint::SendSharedItem(proto::SharedItem item) {
+  Record(item);
   if (!IsJoined() || m_ended || !item.item.record)
     return;
   item.player = m_you;
@@ -2030,6 +2074,7 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
 }
 
 bool Endpoint::SendCombat(proto::Message message) {
+  Record(message);
   if (m_tap && play::Keeps(message))
     m_tap(message);
   if (!IsJoined() || m_ended || !proto::IsCombat(message))
@@ -2065,6 +2110,7 @@ bool Endpoint::SendCombat(proto::Message message) {
 }
 
 void Endpoint::SetLocalElsewhere(proto::Elsewhere state) {
+  Record(state);
   if (m_tap)
     m_tap(state);
   state = elsewhere::Sanitized(state);

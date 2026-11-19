@@ -4,6 +4,8 @@ ensure join
 host_world recordings/npcs.rec --mode idle --body female
 expect 'in the session as player' 30
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
+# Only what comes after: the previous host's goodbye may be just past the start.
+mark
 pkill -x tandem-peer
 expect 'session ended' 60
 expect 'coop notice: Co-op session ended' 5

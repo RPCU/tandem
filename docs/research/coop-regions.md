@@ -14,14 +14,15 @@ milestone 5) and on [`coop-npcs-combat.md`](coop-npcs-combat.md) and
 
 ## Sources and tags
 
-| Cited as          | What                                                                                          |
-| ----------------- | --------------------------------------------------------------------------------------------- |
-| `final.reds:LINE` | decompiled vanilla scripts of 2.50, `~/.cache/tandem/ref/gamescripts/vanilla/final.reds`      |
-| `CW path:LINE`    | Codeware source (MIT), `~/.cache/tandem/ref/codeware`, checkout `60c4ab5` (2026-11-14)        |
-| RTTI              | `data/rtti-natives-2.50.tsv`, `data/rtti-vtables-2.50.tsv` (live dump of 2.50)                |
-| `Npcs.reds:LINE`  | tandem's own scripts, `scripts/tandem/`; `protocol.hpp` is `core/include/tandem/protocol.hpp` |
-| `§13.x`           | sections of [`engine-knowledge.md`](engine-knowledge.md)                                      |
-| `NC §x`, `QW §x`  | sections of `coop-npcs-combat.md`, `coop-quests-world.md`                                     |
+<!-- prettier-ignore -->
+| Cited as | What |
+| --- | --- |
+| `final.reds:LINE` | decompiled vanilla scripts of 2.50, `~/.cache/tandem/ref/gamescripts/vanilla/final.reds` |
+| `CW path:LINE` | Codeware source (MIT), `~/.cache/tandem/ref/codeware`, checkout `60c4ab5` (2026-11-14) |
+| RTTI | `data/rtti-natives-2.50.tsv`, `data/rtti-vtables-2.50.tsv` (live dump of 2.50) |
+| `Npcs.reds:LINE` | tandem's own scripts, `scripts/tandem/`; `protocol.hpp` is `core/include/tandem/protocol.hpp` |
+| `§13.x` | sections of [`engine-knowledge.md`](engine-knowledge.md) |
+| `NC §x`, `QW §x` | sections of `coop-npcs-combat.md`, `coop-quests-world.md` |
 
 Tags: `[S]` read in the vanilla scripts, `[R]` read in the RTTI dump, `[C]`
 Codeware's source, `[T]` measured by tandem in game (2.5-verified in
@@ -124,18 +125,19 @@ streaming and AI cost). `[I]`
 Every row is a per-game system that already serves the local V; tandem
 only has to stop switching it off while the guest is apart.
 
-| System                         | Runs by itself for the local V because                                                                                                                                                 | Free while apart?                                                    |
-| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| ambient crowd                  | community/population systems spawn around the player (NC §7.2); `ResetDensityModifier()` restores it (`Npcs.reds:98-104`, `[T]`)                                                       | yes                                                                  |
-| communities, placed spawners   | open-world quest phases drive them: `open_world_global_commuinity_phase`, `city_entities`, `open_world_vendors`, `open_world_fixers` (`CW src/App/Quest/QuestPhaseRegistry.cpp:10-20`) | yes, **if** the guest's quest phases are not suppressed (§1.4)       |
-| encounters (gangs at a spot)   | same; members deterministic per spawner on one save (§13.7, `[T]`)                                                                                                                     | yes                                                                  |
-| NPC AI, senses, fights         | the guest's own NPCs with brains on, against its own V                                                                                                                                 | yes: the full single-player combat, no network in the loop           |
-| police                         | `PreventionSystem` chases `m_player`, the local V (`final.reds:138636`), spawns around it (QW §9.3)                                                                                    | yes, **if** the guest's prevention lock is lifted while apart (§5.1) |
-| traffic                        | `worldRuntimeSystemTraffic` (no switch, QW §10)                                                                                                                                        | yes (it is never off today)                                          |
-| vendors, stash, loot rolls     | per game and per player already (QW §7.3–7.6)                                                                                                                                          | yes                                                                  |
-| devices, doors, cameras        | each device's PS in the guest's game (QW §7.2)                                                                                                                                         | yes locally; lasting changes need reporting (§4)                     |
-| time, weather                  | already the host's (`World` message)                                                                                                                                                   | nothing to change                                                    |
-| XP, kill rewards, loot pickups | the guest's own V, its own save                                                                                                                                                        | yes, and simpler than today (no forwarding)                          |
+<!-- prettier-ignore -->
+| System | Runs by itself for the local V because | Free while apart? |
+| --- | --- | --- |
+| ambient crowd | community/population systems spawn around the player (NC §7.2); `ResetDensityModifier()` restores it (`Npcs.reds:98-104`, `[T]`) | yes |
+| communities, placed spawners | open-world quest phases drive them: `open_world_global_commuinity_phase`, `city_entities`, `open_world_vendors`, `open_world_fixers` (`CW src/App/Quest/QuestPhaseRegistry.cpp:10-20`) | yes, **if** the guest's quest phases are not suppressed (§1.4) |
+| encounters (gangs at a spot) | same; members deterministic per spawner on one save (§13.7, `[T]`) | yes |
+| NPC AI, senses, fights | the guest's own NPCs with brains on, against its own V | yes: the full single-player combat, no network in the loop |
+| police | `PreventionSystem` chases `m_player`, the local V (`final.reds:138636`), spawns around it (QW §9.3) | yes, **if** the guest's prevention lock is lifted while apart (§5.1) |
+| traffic | `worldRuntimeSystemTraffic` (no switch, QW §10) | yes (it is never off today) |
+| vendors, stash, loot rolls | per game and per player already (QW §7.3–7.6) | yes |
+| devices, doors, cameras | each device's PS in the guest's game (QW §7.2) | yes locally; lasting changes need reporting (§4) |
+| time, weather | already the host's (`World` message) | nothing to change |
+| XP, kill rewards, loot pickups | the guest's own V, its own save | yes, and simpler than today (no forwarding) |
 
 ### 1.4 What breaks
 
@@ -160,7 +162,7 @@ only has to stop switching it off while the guest is apart.
    nodes, QW §6.1) and quest prefabs (QW §6.3) exist only in the game
    running that phase. Apart, a main-story NPC near the guest does not
    exist on the guest unless its own story phase spawned it — and the
-   guest's story phases must follow the host (ARCHITECTURE, Saves). Rule:
+   guest's story phases must follow the host (../architecture/world.md, Saves). Rule:
    quest NPCs belong to the game running the quest and never hand over;
    the main story is played together.
 5. **Quest suppression must be per phase.** Milestone 6 plans to stop a
@@ -178,7 +180,7 @@ only has to stop switching it off while the guest is apart.
    the map instead: the leftover remote-player mappin
    (`RegisterRemotePlayerMappin`, `final.reds:45502-45508`, QW §1). `[I]`
 7. **World saving.** A guest's world-state saving is locked in a session
-   (ARCHITECTURE, Saves); what the guest's game changes apart is lost from
+   (../architecture/world.md, Saves); what the guest's game changes apart is lost from
    its own save, which is the rule anyway. Only the host's record must
    learn it (§4).
 
@@ -200,7 +202,7 @@ same entity on screen and only switches its brain off:
 `Toggle(false)`, `ClearThreats`), then tandem's movement controller drives
 it from the new owner's `NpcStates` like any proxy (`Npcs.reds:398-415`).
 Both steps are in use on 2.50: `Pacify` on a guest's own NPCs and on
-proxies, the controller on proxies (§13.9, ARCHITECTURE NPCs). `[T]` No
+proxies, the controller on proxies (§13.9, ../architecture/npcs.md NPCs). `[T]` No
 pop on the screen of the player who is near the NPC.
 
 **Proxy → real (the receiving game).** Two ways:
@@ -230,18 +232,19 @@ of Combat within a second, say).
 The snapshot is read on the giving game right before it pacifies the NPC
 and sent in one reliable message (§3.4).
 
-| State                               | Read on the giver                                                                                                                                                                       | Applied on the receiver                                                                                                                                                                                                                                                                   | Notes                                                                                                                                                    |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| position, yaw                       | `GetWorldPosition`, `GetWorldOrientation` (as `NpcStates`)                                                                                                                              | (a) already there; (b) spawn transform; `TeleportationFacility.Teleport` for corrections (QW §6.5)                                                                                                                                                                                        | the receiver must have navmesh there: `IsNavmeshStreamedInLocation` (`final.reds:196013`) as a precondition                                              |
-| health                              | `GetStatPoolValue(id, Health, true)` (`Npcs.reds:169`)                                                                                                                                  | `RequestSettingStatPoolValue(id, Health, pct, null, true)` (`Npcs.reds:435`, `[T]`)                                                                                                                                                                                                       | percent, as today; also Armor/Poise if wanted (NC §5.1)                                                                                                  |
-| status effects                      | `StatusEffectSystem.GetAppliedEffects(id, out effects)` (`final.reds:51192`); per effect `GetRecord`, `GetRemainingDuration`, `GetStackCount`, `GetInstigatorEntityID` (`:83696-83712`) | `ApplyStatusEffect(id, record, instigatorRecord, instigatorEntity, applyCount)` (`:51169-51178`), then `SetStatusEffectRemainingDuration(id, record, remaining)` (`:51210`)                                                                                                               | instigator mapped to the receiver's V or puppet; DoT ticks then come from the receiver's copy (the hit rules of ARCHITECTURE, Fights, still apply) `[I]` |
-| attitude to each V                  | `GameObject.GetAttitudeBetween(npc, v)` per V (as `Npcs.reds:466`)                                                                                                                      | `AttitudeAgent.SetAttitudeTowards(agentOfV, attitude)` (NC §3.2), `GameObject.ChangeAttitudeToHostile(npc, v)` (`final.reds:11816`)                                                                                                                                                       | per player, never the `player` group for puppets (§13.11)                                                                                                |
-| combat target                       | its `CombatTarget` behaviour argument (`GetThreats(false)` is not a usable measure, §13.11, `[T]`), or the top hostile threat (NC §3.3)                                                 | vanilla's pattern: `ChangeAttitudeToHostile`, `TargetTrackingExtension.InjectThreat(npc, target)` (`final.reds:156710`), `SetThreatPersistence` (`:156770`) — as in `AIActionHelper.SetCommandCombatTarget` (`:169949`); this is how tandem's test ganger fights a puppet (§13.11, `[T]`) | the target is the receiver's own V or a puppet; puppets are seen and hit since 2026-11-18 (§13.11)                                                       |
-| high-level state (combat, alerted…) | `NPCStatesComponent` getters (NC §3.1)                                                                                                                                                  | follows from the injected threat; `NPCPuppet.ChangeHighLevelState(obj, state)` (`final.reds:126331`) only for the proxy's look                                                                                                                                                            | not forced on a real NPC: its tree decides                                                                                                               |
-| defeated / unconscious / killer     | `IsDefeated`, `IsUnconscious`, `GetKiller` (NC §5.3)                                                                                                                                    | `SetIsDefeatMechanicActive`, `ApplyStatusEffect(BaseStatusEffect.Defeated / Unconscious)` (NC §5.3)                                                                                                                                                                                       | a dead NPC is never handed over: the corpse stays with its game, the death goes to the ledger                                                            |
-| weapons in hand                     | `GetItemInSlot(WeaponRight/Left)` (NC §3.4)                                                                                                                                             | the record's loadout comes with the spawn (`InitializeBaseInventory`, `final.reds:19862`); `AIEquipCommand` if different                                                                                                                                                                  | `ScriptedPuppetPS` keeps the loadout (`final.reds:24700-24704`)                                                                                          |
-| level (`PowerLevel`)                | the stat                                                                                                                                                                                | the same stat modifier as the host's level rule (ARCHITECTURE, Enemy level)                                                                                                                                                                                                               | otherwise the receiver rescales it to its own V                                                                                                          |
-| inventory, loot                     | —                                                                                                                                                                                       | —                                                                                                                                                                                                                                                                                         | loot is rolled per game at death (NC §8.1); nothing to carry                                                                                             |
+<!-- prettier-ignore -->
+| State | Read on the giver | Applied on the receiver | Notes |
+| --- | --- | --- | --- |
+| position, yaw | `GetWorldPosition`, `GetWorldOrientation` (as `NpcStates`) | (a) already there; (b) spawn transform; `TeleportationFacility.Teleport` for corrections (QW §6.5) | the receiver must have navmesh there: `IsNavmeshStreamedInLocation` (`final.reds:196013`) as a precondition |
+| health | `GetStatPoolValue(id, Health, true)` (`Npcs.reds:169`) | `RequestSettingStatPoolValue(id, Health, pct, null, true)` (`Npcs.reds:435`, `[T]`) | percent, as today; also Armor/Poise if wanted (NC §5.1) |
+| status effects | `StatusEffectSystem.GetAppliedEffects(id, out effects)` (`final.reds:51192`); per effect `GetRecord`, `GetRemainingDuration`, `GetStackCount`, `GetInstigatorEntityID` (`:83696-83712`) | `ApplyStatusEffect(id, record, instigatorRecord, instigatorEntity, applyCount)` (`:51169-51178`), then `SetStatusEffectRemainingDuration(id, record, remaining)` (`:51210`) | instigator mapped to the receiver's V or puppet; DoT ticks then come from the receiver's copy (the hit rules of ARCHITECTURE, Fights, still apply) `[I]` |
+| attitude to each V | `GameObject.GetAttitudeBetween(npc, v)` per V (as `Npcs.reds:466`) | `AttitudeAgent.SetAttitudeTowards(agentOfV, attitude)` (NC §3.2), `GameObject.ChangeAttitudeToHostile(npc, v)` (`final.reds:11816`) | per player, never the `player` group for puppets (§13.11) |
+| combat target | its `CombatTarget` behaviour argument (`GetThreats(false)` is not a usable measure, §13.11, `[T]`), or the top hostile threat (NC §3.3) | vanilla's pattern: `ChangeAttitudeToHostile`, `TargetTrackingExtension.InjectThreat(npc, target)` (`final.reds:156710`), `SetThreatPersistence` (`:156770`) — as in `AIActionHelper.SetCommandCombatTarget` (`:169949`); this is how tandem's test ganger fights a puppet (§13.11, `[T]`) | the target is the receiver's own V or a puppet; puppets are seen and hit since 2026-11-18 (§13.11) |
+| high-level state (combat, alerted…) | `NPCStatesComponent` getters (NC §3.1) | follows from the injected threat; `NPCPuppet.ChangeHighLevelState(obj, state)` (`final.reds:126331`) only for the proxy's look | not forced on a real NPC: its tree decides |
+| defeated / unconscious / killer | `IsDefeated`, `IsUnconscious`, `GetKiller` (NC §5.3) | `SetIsDefeatMechanicActive`, `ApplyStatusEffect(BaseStatusEffect.Defeated / Unconscious)` (NC §5.3) | a dead NPC is never handed over: the corpse stays with its game, the death goes to the ledger |
+| weapons in hand | `GetItemInSlot(WeaponRight/Left)` (NC §3.4) | the record's loadout comes with the spawn (`InitializeBaseInventory`, `final.reds:19862`); `AIEquipCommand` if different | `ScriptedPuppetPS` keeps the loadout (`final.reds:24700-24704`) |
+| level (`PowerLevel`) | the stat | the same stat modifier as the host's level rule (ARCHITECTURE, Enemy level) | otherwise the receiver rescales it to its own V |
+| inventory, loot | — | — | loot is rolled per game at death (NC §8.1); nothing to carry |
 
 ### 2.3 What cannot be carried
 
@@ -435,7 +438,7 @@ owner (through the host when the owner is a guest).
 
 ### 4.1 Where the host keeps them
 
-The host's save is the world (ARCHITECTURE, Saves). Facts a guest's game
+The host's save is the world (../architecture/world.md, Saves). Facts a guest's game
 reports must reach it even if the host never visits the place before the
 session ends. Two ways, both cheap: `[I]`
 
@@ -459,21 +462,22 @@ instead of a server: the same facts, no accounts.
 
 ### 4.2 The facts
 
-| Fact                                                    | Observed by the region owner                                                                                                                                                                                | Re-applied in another game                                                                                                                                                                                         | Kept by vanilla?                                                                                                                                                                                       |
-| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| death of a placed NPC (static id)                       | the death wrap already used (`NPCPuppet.OnDeath`, NC §5.3) or `IsDead()` in the 0.1 s scan (`Npcs.reds:184`); key `EntityID.ToHash`                                                                         | on attach: `Kill(null, skipNPCDeathAnim, …)` (`final.reds:125843`) so it lies dead; or before it streams in, `SetPersistentBool(PersistentID, n"ScriptedPuppetPS", n"m_isDead", true)` (QW §7.1) — effect untested | yes: `m_isDead`, `m_wasIncapacitated` are `persistent` (`final.reds:24687-24689`); on re-attach a corpse regenerates its loot and skips AI set-up (`:19847`, `:125562-125568`)                         |
-| death of an encounter member                            | as above; key = (community or spawner id, entry name, record): `gameEntityStubComponentPS.GetSpawnerID`, `GetOwnerCommunityEntryName` `[R]`, Codeware `CommunityEntryWrapper.GetSpawnedEntityIDs` (QW §6.2) | on attach of a member of the same entry and record, as above, counted per entry                                                                                                                                    | the community tracks it (Codeware resets activities with `DeactivateCommunity` + `ResetCommunity` + `ResetPersistentState`, `CW src/App/World/OpenWorldSystem.cpp:275-323`); no API to _mark_ one dead |
-| death of a crowd NPC                                    | —                                                                                                                                                                                                           | —                                                                                                                                                                                                                  | no (crowd is recycled, NC §2.5): not recorded                                                                                                                                                          |
-| device state (door opened, camera off, terminal hacked) | hook on `QueuePSDeviceEvent` / `QueuePSEvent` (QW §7.2)                                                                                                                                                     | rebuild the action, `QueuePSDeviceEvent`, or `SetPersistentBool/Int/Float` for plain fields (QW §7.2)                                                                                                              | yes (device PS)                                                                                                                                                                                        |
-| looted containers                                       | —                                                                                                                                                                                                           | —                                                                                                                                                                                                                  | per game; tandem's rule is "each player loots their own copy" (authority table, QW §7.3): nothing to send                                                                                              |
-| quest items taken                                       | `hasQuestItems` / `markAsQuest` containers (QW §7.3)                                                                                                                                                        | only matters to the quest's runner (§5.4)                                                                                                                                                                          | —                                                                                                                                                                                                      |
-| destroyed objects                                       | —                                                                                                                                                                                                           | —                                                                                                                                                                                                                  | `gameDestructionPersistencySystem` has no script functions (QW §7.2): **cannot be**, without reverse engineering                                                                                       |
-| police heat                                             | `ChangeHeatStage` wrap / `UI_WantedBar` (QW §9.1)                                                                                                                                                           | not re-applied: a chase is not world state (§5.1)                                                                                                                                                                  | no: saving is locked while chased (`final.reds:138868`, QW §9.4)                                                                                                                                       |
-| quest facts of a solo gig or hustle                     | the native `SetFact` hook or `RegisterEntity` listener (QW §2.1)                                                                                                                                            | `QuestsSystem.SetFact` on the host                                                                                                                                                                                 | yes (save)                                                                                                                                                                                             |
-| gig / hustle journal and map state                      | journal callbacks (QW §3.2); a hustle's POI mappin phase (`CW src/App/World/OpenWorldTracker.cpp:4-26`)                                                                                                     | `ChangeEntryStateByHash`; the mappin phase only natively (`Raw::MappinSystem::SetPoiMappinPhase`, `CW src/Red/MappinSystem.hpp:17`)                                                                                | yes                                                                                                                                                                                                    |
-| fixer progress                                          | the fixer's counter fact, named in TweakDB (`<fixer>.factCounterName`, read by `GetFixerVariantData`, `final.reds:276745-276746`)                                                                           | `SetFact`                                                                                                                                                                                                          | yes                                                                                                                                                                                                    |
-| a car parked by a player                                | the driver's `Seat` leaving, the car's last transform                                                                                                                                                       | §5.3                                                                                                                                                                                                               | the player's own car is per save (`VehicleSystem`, `final.reds:189898-189945`)                                                                                                                         |
-| time, weather                                           | host's already                                                                                                                                                                                              | —                                                                                                                                                                                                                  | —                                                                                                                                                                                                      |
+<!-- prettier-ignore -->
+| Fact | Observed by the region owner | Re-applied in another game | Kept by vanilla? |
+| --- | --- | --- | --- |
+| death of a placed NPC (static id) | the death wrap already used (`NPCPuppet.OnDeath`, NC §5.3) or `IsDead()` in the 0.1 s scan (`Npcs.reds:184`); key `EntityID.ToHash` | on attach: `Kill(null, skipNPCDeathAnim, …)` (`final.reds:125843`) so it lies dead; or before it streams in, `SetPersistentBool(PersistentID, n"ScriptedPuppetPS", n"m_isDead", true)` (QW §7.1) — effect untested | yes: `m_isDead`, `m_wasIncapacitated` are `persistent` (`final.reds:24687-24689`); on re-attach a corpse regenerates its loot and skips AI set-up (`:19847`, `:125562-125568`) |
+| death of an encounter member | as above; key = (community or spawner id, entry name, record): `gameEntityStubComponentPS.GetSpawnerID`, `GetOwnerCommunityEntryName` `[R]`, Codeware `CommunityEntryWrapper.GetSpawnedEntityIDs` (QW §6.2) | on attach of a member of the same entry and record, as above, counted per entry | the community tracks it (Codeware resets activities with `DeactivateCommunity` + `ResetCommunity` + `ResetPersistentState`, `CW src/App/World/OpenWorldSystem.cpp:275-323`); no API to _mark_ one dead |
+| death of a crowd NPC | — | — | no (crowd is recycled, NC §2.5): not recorded |
+| device state (door opened, camera off, terminal hacked) | hook on `QueuePSDeviceEvent` / `QueuePSEvent` (QW §7.2) | rebuild the action, `QueuePSDeviceEvent`, or `SetPersistentBool/Int/Float` for plain fields (QW §7.2) | yes (device PS) |
+| looted containers | — | — | per game; tandem's rule is "each player loots their own copy" (authority table, QW §7.3): nothing to send |
+| quest items taken | `hasQuestItems` / `markAsQuest` containers (QW §7.3) | only matters to the quest's runner (§5.4) | — |
+| destroyed objects | — | — | `gameDestructionPersistencySystem` has no script functions (QW §7.2): **cannot be**, without reverse engineering |
+| police heat | `ChangeHeatStage` wrap / `UI_WantedBar` (QW §9.1) | not re-applied: a chase is not world state (§5.1) | no: saving is locked while chased (`final.reds:138868`, QW §9.4) |
+| quest facts of a solo gig or hustle | the native `SetFact` hook or `RegisterEntity` listener (QW §2.1) | `QuestsSystem.SetFact` on the host | yes (save) |
+| gig / hustle journal and map state | journal callbacks (QW §3.2); a hustle's POI mappin phase (`CW src/App/World/OpenWorldTracker.cpp:4-26`) | `ChangeEntryStateByHash`; the mappin phase only natively (`Raw::MappinSystem::SetPoiMappinPhase`, `CW src/Red/MappinSystem.hpp:17`) | yes |
+| fixer progress | the fixer's counter fact, named in TweakDB (`<fixer>.factCounterName`, read by `GetFixerVariantData`, `final.reds:276745-276746`) | `SetFact` | yes |
+| a car parked by a player | the driver's `Seat` leaving, the car's last transform | §5.3 | the player's own car is per save (`VehicleSystem`, `final.reds:189898-189945`) |
+| time, weather | host's already | — | — |
 
 ### 4.3 What cannot be kept one
 
@@ -497,7 +501,7 @@ instead of a server: the same facts, no accounts.
   system of each game around `m_player` (`final.reds:138636`), its spawn
   system is written around "the player" (QW §9.3). Each game chases its
   own V with its own units; no message is needed except `Heat` for the
-  other's HUD and map. This also answers ARCHITECTURE's undecided "chases
+  other's HUD and map. This also answers ../architecture/world.md's undecided "chases
   when players are far apart": one wanted level per player while apart.
   `[S]` `[I]`
 - **The lock must follow the group, not the session.** The guest's lock
@@ -580,7 +584,7 @@ it needs:
    from starting it (its trigger zones, the fixer's call) is open. `[I]`
 3. **The outcome into the host's world**: the gig's facts, journal entry
    states, fixer counter, mappin phase, deaths (§4.2). Rewards stay the
-   guest's own (ARCHITECTURE, Quests together, gigs apart).
+   guest's own (../architecture/story.md, Quests together, gigs apart).
 4. **The host's quest graph agreeing with it.** This is the unknown. The
    host's copy of that quest never ran: its graph sits where it was (gig
    offered, say). Setting the gig's named facts and journal states may not

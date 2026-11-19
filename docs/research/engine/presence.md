@@ -1,8 +1,12 @@
-# Engine facts: presence (audio, hit reactions, bullets, HUD)
+# Presence
+
+Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
+
+### 13.30 Presence: a remote V seen and heard (2026-11-19, scripts and RTTI only)
 
 What the game offers to make a remote V **seen and heard** on its puppet,
-and a host's NPC on its proxy. The design is in
-[`../../architecture/presence.md`](../../architecture/presence.md).
+and a host's NPC on its proxy: audio, hit reactions, bullets, the HUD. The
+design is in [`../../architecture/presence.md`](../../architecture/presence.md).
 
 **Sources.** `final.reds:N` is line N of the decompiled 2.50 scripts
 (`~/.cache/tandem/ref/gamescripts/vanilla/final.reds`); `CW` is Codeware's
@@ -17,7 +21,7 @@ game can tell whether it sounds or looks right; [native] = decided inside
 the engine, no script lever found. Nothing here is [2.5-verified] yet: the
 game machine was off limits while this was written.
 
-## 1. Playing a sound on an entity, in 3D
+#### Playing a sound on an entity, in 3D
 
 - `GameObject.PlaySoundEvent(self, eventName)` queues an `AudioEvent`
   (`entAudioEvent`: `eventName`, `emitterName`, `nameData`, `floatData`,
@@ -59,30 +63,31 @@ this, sfx.Name())` when the effect is applied and stops them when it is
   `:12274`, `:12303`). So the sounds of an effect can be played on another
   entity without applying the effect. [2.5-untested]
 
-## 2. What makes each sound of a V
+#### What makes each sound of a V
 
-| Sound                   | Where it comes from in the game                                                                                                                                                                                                                                                                             | Lever for a puppet                                                                                                             | Tag                      |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------ |
-| Footsteps               | Animation: a clip's `animAnimEvent_FootPlant` raises `entFootPlantedEvent {customAction: CName, footSide: animEventSide}` on the entity (`RTTI`, `SDK`, `CW`); the footstep system (`gameFootstepSystem`, `audioFootstepsMetadata`) picks the sound from the surface, the footwear and the speed. No script | Queue `entFootPlantedEvent` on the puppet (constructible through `CW`)                                                         | [2.5-untested] [to-hear] |
-| …seen by scripts as     | `AudioEvent`s on the entity: `MinotaurMechComponent.OnAudioEvent` reads `enm_mech_minotaur_loco_fs_heavy` (`:292585`), the exoskeleton `lcm_npc_exo_*` (`:294097`)                                                                                                                                          | `@addMethod(NPCPuppet) cb OnAudioEvent` tells whether a puppet's own clips step audibly                                        | [2.5-untested]           |
-| Footsteps off / on      | `GameObject.PlaySoundEvent(player, n"disableFootsteps" / n"enableFootsteps")` (`:44277`)                                                                                                                                                                                                                    | A kill switch if the puppet's own and ours ever double                                                                         | [2.5-untested]           |
-| Jump                    | Animation only (`PushAnimationEvent(n"Jump")`, `:557420`); double, charged and hover jumps post `lcm_player_double_jump` (`:557507`, `:557584`, `:557740`) and the effect `charged_jump`                                                                                                                    | A foot plant; `lcm_player_double_jump` on the puppet                                                                           | [to-hear]                |
-| Landing                 | Voice `regularLanding`; hard: effect `landing_hard` + voice `hardLanding`; very hard: `landing_very_hard` + `veryhardLanding`; death: `landing_death` (`:281021-281058`, `:558026`)                                                                                                                         | Two foot plants, the voice, the effect by name                                                                                 | [to-hear] [to-see]       |
-| Dash, slide             | `lcm_dash` + effect `dash` (`:553664`), `lcm_dash_katana` (`:555501`); the end of a slide `lcm_fs_additional_slide_stop` (`:553426`); a plain dodge posts nothing                                                                                                                                           | The same events on the puppet                                                                                                  | [to-hear]                |
-| Climb, vault            | Voices `climbStart` (`:529542`), `Vault` (`:556460`)                                                                                                                                                                                                                                                        | The voice                                                                                                                      | [to-hear]                |
-| Shot                    | [native]: `WeaponObject.TriggerWeaponEffects(weapon, gamedataFxAction, opt blackboard)` (`:54864`) and `AI_ShootAt` (`:54056`) are natives; an NPC's shot also pushes the anim event `Shoot` to owner and weapon (`:173344`). No script names a shot sound                                                  | `TriggerWeaponEffects(Shoot / SilencedShoot)` + `PushEventToReplicate(weapon, n"Shoot")`; the real shot of §4 for the bullet   | [to-hear]                |
-| Automatic fire          | `weapon.SetupBurstFireSound(n)` once per burst (`:54044`, `:172952`); the loop ends with `TriggerWeaponEffects(ExitShoot)` (`AIWeapon.OnStopShooting`, `:173118`)                                                                                                                                           | `ExitShoot` 0.3 s after a puppet's last shot                                                                                   | [to-hear]                |
-| Reload                  | `TriggerWeaponEffects(EnterReload / ExitReload)` and the anim event `Reload` on the weapon (`:438283-438315`); no audio name in scripts                                                                                                                                                                     | The same                                                                                                                       | [to-hear]                |
-| Melee swing             | `weapon.AI_PlayMeleeAttackSound(isQuickMelee)` (native, `:54054`); V's effort is the voice `meleeAttack`                                                                                                                                                                                                    | Both                                                                                                                           | [to-hear]                |
-| Melee impact            | `TriggerWeaponEffects(weapon, MeleeHit, blackboard)` in the weapon's hit handler (`:55308`); blocks `MeleeBlock` (`:528203`); per-material impact audio is [native] (`gameaudioeventsHitEvent`)                                                                                                             | `MeleeHit` on the puppet's weapon when its player's swing landed (`PlayerPuppet.OnMeleeHitEvent`, `:45746`, is the local hook) | [to-hear]                |
-| Draw                    | [native]: `AudioNotifyItemEquippedEvent {itemName}` (`:316373`) is never built in scripts; the engine sends it when an item enters a slot                                                                                                                                                                   | Nothing to add if `AddItemToSlot` on the puppet triggers it                                                                    | [to-hear]                |
-| Holster                 | `AudioNotifyItemUnequippedEvent {itemName = record.EntityName()}` queued on the owner (`:59820`)                                                                                                                                                                                                            | The same event on the puppet                                                                                                   | [2.5-untested] [to-hear] |
-| Sandevistan, Kerenzikov | No audio is posted from scripts: the status effects `BaseStatusEffect.SandevistanPlayerBuff` (`:494085`) and `KerenzikovPlayerBuff` (`:525574`) carry their `SFX` records                                                                                                                                   | Their `SFX` names played on the puppet (§1)                                                                                    | [2.5-untested] [to-hear] |
-| Mantis blades, arms     | Items like any weapon: equip is the engine's notification, swings `AI_PlayMeleeAttackSound`; only relic-perk charges are script-posted (`w_cyb_mantis_spy_perk_charged`, `:55179`…)                                                                                                                         | Held + Shot as for any weapon                                                                                                  | [to-hear]                |
-| Pain                    | `PlayerPuppet.OnHitSounds`: voice `onPlayerHit` and `w_feedback_player_damage` (the hit's own 2D feedback) (`:42952`)                                                                                                                                                                                       | The voice only                                                                                                                 | [to-hear]                |
-| Flashlight              | None: vanilla V has only debug hooks for components its entity does not have (`OnTogglePlayerFlashlightEvent`, `:43071`, behind `!IsFinal()`). No weapon light exists                                                                                                                                       | Nothing to sync                                                                                                                | [2.5-untested]           |
+<!-- prettier-ignore -->
+| Sound | Where it comes from in the game | Lever for a puppet | Tag |
+| --- | --- | --- | --- |
+| Footsteps | Animation: a clip's `animAnimEvent_FootPlant` raises `entFootPlantedEvent {customAction: CName, footSide: animEventSide}` on the entity (`RTTI`, `SDK`, `CW`); the footstep system (`gameFootstepSystem`, `audioFootstepsMetadata`) picks the sound from the surface, the footwear and the speed. No script | Queue `entFootPlantedEvent` on the puppet (constructible through `CW`) | [2.5-untested] [to-hear] |
+| …seen by scripts as | `AudioEvent`s on the entity: `MinotaurMechComponent.OnAudioEvent` reads `enm_mech_minotaur_loco_fs_heavy` (`:292585`), the exoskeleton `lcm_npc_exo_*` (`:294097`) | `@addMethod(NPCPuppet) cb OnAudioEvent` tells whether a puppet's own clips step audibly | [2.5-untested] |
+| Footsteps off / on | `GameObject.PlaySoundEvent(player, n"disableFootsteps" / n"enableFootsteps")` (`:44277`) | A kill switch if the puppet's own and ours ever double | [2.5-untested] |
+| Jump | Animation only (`PushAnimationEvent(n"Jump")`, `:557420`); double, charged and hover jumps post `lcm_player_double_jump` (`:557507`, `:557584`, `:557740`) and the effect `charged_jump` | A foot plant; `lcm_player_double_jump` on the puppet | [to-hear] |
+| Landing | Voice `regularLanding`; hard: effect `landing_hard` + voice `hardLanding`; very hard: `landing_very_hard` + `veryhardLanding`; death: `landing_death` (`:281021-281058`, `:558026`) | Two foot plants, the voice, the effect by name | [to-hear] [to-see] |
+| Dash, slide | `lcm_dash` + effect `dash` (`:553664`), `lcm_dash_katana` (`:555501`); the end of a slide `lcm_fs_additional_slide_stop` (`:553426`); a plain dodge posts nothing | The same events on the puppet | [to-hear] |
+| Climb, vault | Voices `climbStart` (`:529542`), `Vault` (`:556460`) | The voice | [to-hear] |
+| Shot | [native]: `WeaponObject.TriggerWeaponEffects(weapon, gamedataFxAction, opt blackboard)` (`:54864`) and `AI_ShootAt` (`:54056`) are natives; an NPC's shot also pushes the anim event `Shoot` to owner and weapon (`:173344`). No script names a shot sound | `TriggerWeaponEffects(Shoot / SilencedShoot)` + `PushEventToReplicate(weapon, n"Shoot")`; the real shot of §4 for the bullet | [to-hear] |
+| Automatic fire | `weapon.SetupBurstFireSound(n)` once per burst (`:54044`, `:172952`); the loop ends with `TriggerWeaponEffects(ExitShoot)` (`AIWeapon.OnStopShooting`, `:173118`) | `ExitShoot` 0.3 s after a puppet's last shot | [to-hear] |
+| Reload | `TriggerWeaponEffects(EnterReload / ExitReload)` and the anim event `Reload` on the weapon (`:438283-438315`); no audio name in scripts | The same | [to-hear] |
+| Melee swing | `weapon.AI_PlayMeleeAttackSound(isQuickMelee)` (native, `:54054`); V's effort is the voice `meleeAttack` | Both | [to-hear] |
+| Melee impact | `TriggerWeaponEffects(weapon, MeleeHit, blackboard)` in the weapon's hit handler (`:55308`); blocks `MeleeBlock` (`:528203`); per-material impact audio is [native] (`gameaudioeventsHitEvent`) | `MeleeHit` on the puppet's weapon when its player's swing landed (`PlayerPuppet.OnMeleeHitEvent`, `:45746`, is the local hook) | [to-hear] |
+| Draw | [native]: `AudioNotifyItemEquippedEvent {itemName}` (`:316373`) is never built in scripts; the engine sends it when an item enters a slot | Nothing to add if `AddItemToSlot` on the puppet triggers it | [to-hear] |
+| Holster | `AudioNotifyItemUnequippedEvent {itemName = record.EntityName()}` queued on the owner (`:59820`) | The same event on the puppet | [2.5-untested] [to-hear] |
+| Sandevistan, Kerenzikov | No audio is posted from scripts: the status effects `BaseStatusEffect.SandevistanPlayerBuff` (`:494085`) and `KerenzikovPlayerBuff` (`:525574`) carry their `SFX` records | Their `SFX` names played on the puppet (§1) | [2.5-untested] [to-hear] |
+| Mantis blades, arms | Items like any weapon: equip is the engine's notification, swings `AI_PlayMeleeAttackSound`; only relic-perk charges are script-posted (`w_cyb_mantis_spy_perk_charged`, `:55179`…) | Held + Shot as for any weapon | [to-hear] |
+| Pain | `PlayerPuppet.OnHitSounds`: voice `onPlayerHit` and `w_feedback_player_damage` (the hit's own 2D feedback) (`:42952`) | The voice only | [to-hear] |
+| Flashlight | None: vanilla V has only debug hooks for components its entity does not have (`OnTogglePlayerFlashlightEvent`, `:43071`, behind `!IsFinal()`). No weapon light exists | Nothing to sync | [2.5-untested] |
 
-## 3. Hit reactions
+#### Hit reactions
 
 - The chain: `NPCPuppet.OnHitAnimation` (`:128385`) → `HitReactionRequest`
   → `HitReactionComponent.EvaluateHit` (`:184601`) → `GetReactionType`
@@ -137,7 +142,7 @@ impulse, radius)` (`:188128`), `CreateDisableRagdollEvent` (`:216196`);
   stream; a V has no hit reaction component (so no wounds: Outcomes.reds
   keeps a puppet's limbs).
 
-## 4. Bullets: tracer, impact, decal
+#### Bullets: tracer, impact, decal
 
 - No script draws a tracer, an impact or a decal. An NPC's shot is one
   native call, `weapon.AI_ShootAt(targetPositionProvider, targetObject,
@@ -174,7 +179,7 @@ instigator, opt withLOS, opt ignoreTransparent) -> Vector4` and
   `GetLookAtObject` (`:108386`, `:108382`), the game's own crosshair
   query. Zero when nothing is there. [2.5-untested]
 
-## 5. HUD
+#### HUD
 
 - Vanilla HUD bars are bound through the `.inkhud`: scripts rarely name
   their `.inkwidget`. The companion bar is the Flathead's only

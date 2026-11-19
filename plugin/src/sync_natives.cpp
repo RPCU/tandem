@@ -1,5 +1,5 @@
 // What scripts/tandem/Consistency.reds can call: `TandemSync` static
-// functions and their structs (docs/ARCHITECTURE.md, Consistency). Declared
+// functions and their structs (docs/architecture/consistency.md, Consistency). Declared
 // on the script side in scripts/tandem/SyncNatives.reds: keep the two in
 // sync (tools/check-natives.py reads every pair). All of these run on the
 // game thread.

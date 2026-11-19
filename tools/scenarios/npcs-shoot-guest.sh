@@ -14,6 +14,8 @@ expect 'shots: npc [0-9]+.s shot at us fired from its proxy' 20
 # own rules. Over a few shots at least one lands on a V standing still.
 expect 'shots: npc [0-9]+.s shot hit our V \(our game.s decision\), reported to the host' 20
 expect_peer 'player [0-9]+ reports npc [0-9]+.s shot hit their V' 5
+# Only what comes after: the previous host's goodbye may be just past the start.
+mark
 pkill -x tandem-peer
 expect 'session ended' 60
 reject 'watchdog: game thread silent'
