@@ -23,6 +23,10 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
   direnv: `devenv shell -- task <name>`.
 - Entering the shell **runs treefmt over the tree**: files you wrote get
   reformatted (`.clang-format`: LLVM style, 100 columns).
+- Every compile goes through **ccache**, one cache per machine shared by
+  all worktrees (`~/.cache/tandem/ccache`); `TANDEM_CCACHE=0` turns it off.
+  Settings, sizes and the debug-path caveat:
+  `docs/architecture/testing.md`, "The compiler cache".
 
 ## Commands (Taskfile.yml)
 
@@ -48,6 +52,7 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 | `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
 | `task logs`          | follow the plugin's log on the game machine                  |
 | `task package`       | the release zip and its symbols zip (`build/package/`)       |
+| `task ccache:stats`  | this machine's compiler cache: size, hits (`:clear` empties) |
 
 Run what your change can break before saying it works: `task test` for
 `core/`, `task build:plugin` for anything compiled into the DLL,
@@ -238,6 +243,10 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   answered from an unregistered address (a redirect is such an answer). An
   introduction (two answers to one request) goes only to members of the
   requester's own session, both together smaller than the request.
+- Behind a PROXY v2 tunnel (`--proxy-protocol`, playit.gg): only
+  `--trusted-proxies` speak for clients, and every rule about a player
+  (lookup limits, `Observed`, `Introduce`) uses the header's address, the
+  size rule the payload without the header (`relay/internal/relay/proxy.go`).
 - Replicas and regions share nothing and never talk to each other: the
   peers and regions lists are configuration, addresses not names (no DNS).
   The failed-lookup budget is the whole world's, split between replicas.

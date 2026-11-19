@@ -14,10 +14,17 @@ const (
 	dropUnknown
 	dropRate
 	dropNoChannel
+	// Behind a proxy: from an address not trusted to speak for clients, or
+	// a PROXY header that does not parse.
+	dropUntrusted
+	dropProxyHeader
 	dropReasons
 )
 
-var dropNames = [dropReasons]string{"malformed", "bad_token", "unknown_client", "rate_limited", "no_channel"}
+var dropNames = [dropReasons]string{
+	"malformed", "bad_token", "unknown_client", "rate_limited", "no_channel",
+	"untrusted_proxy", "proxy_header",
+}
 
 type lookupResult int
 
@@ -107,17 +114,17 @@ func (m *Metrics) dropped(reason dropReason) { m.drops[reason].Add(1) }
 
 // Snapshot is every counter at one moment (expvar shows it as JSON).
 type Snapshot struct {
-	Sessions, Clients int
-	Draining          bool
-	Packets, Bytes    uint64
-	Drops             map[string]uint64
-	CodesIssued       uint64
-	CodesReclaimed    uint64
-	Lookups           map[string]uint64
-	Refusals          map[string]uint64
-	Redirects         map[string]uint64
-	Introductions     uint64
-	Probes            uint64
+	Sessions, Clients, Flows int
+	Draining                 bool
+	Packets, Bytes           uint64
+	Drops                    map[string]uint64
+	CodesIssued              uint64
+	CodesReclaimed           uint64
+	Lookups                  map[string]uint64
+	Refusals                 map[string]uint64
+	Redirects                map[string]uint64
+	Introductions            uint64
+	Probes                   uint64
 }
 
 // Snapshot reads the counters, with the live session and client counts.
@@ -125,7 +132,7 @@ func (s *Server) Snapshot() Snapshot {
 	m := &s.Metrics
 	sessions, clients := s.Counts()
 	out := Snapshot{
-		Sessions: sessions, Clients: clients, Draining: s.Draining(),
+		Sessions: sessions, Clients: clients, Flows: s.flowCount(), Draining: s.Draining(),
 		CodesIssued: m.codes.Load(), CodesReclaimed: m.reclaimed.Load(), Introductions: m.introductions.Load(), Probes: m.probes.Load(),
 		Drops: map[string]uint64{}, Lookups: map[string]uint64{},
 		Refusals: map[string]uint64{}, Redirects: map[string]uint64{},
@@ -171,6 +178,7 @@ func (s *Server) WriteMetrics(w io.Writer) {
 	gauge("tandem_relay_sessions", "Open co-op sessions.", snap.Sessions)
 	gauge("tandem_relay_clients", "Registered hosts and guests.", snap.Clients)
 	gauge("tandem_relay_draining", "1 while the relay takes no new session (shutting down).", draining)
+	gauge("tandem_relay_proxy_flows", "Behind a proxy: its sockets whose client a PROXY header named.", snap.Flows)
 	counter("tandem_relay_forwarded_packets_total", "Datagrams forwarded.", snap.Packets)
 	counter("tandem_relay_forwarded_bytes_total", "Payload bytes forwarded.", snap.Bytes)
 	labelled("tandem_relay_dropped_total", "Datagrams dropped, by reason.", "reason", dropNames[:], snap.Drops)

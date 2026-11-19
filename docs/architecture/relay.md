@@ -229,6 +229,115 @@ NAT: "relay only"); fewer than two answers leave it unknown. The co-op
 menu shows it; it travels in `Addresses`' flags and `Introduce`, and two
 `Varies` sides skip punching.
 
+## Behind a gateway (kgateway)
+
+Asked 2026-11-19: run the relay behind kgateway without losing
+performance or adding latency. Researched the same day; the answer is
+**HTTP yes, UDP no** (`deploy/kubernetes/kgateway`).
+
+- **The relay needs each datagram's real source address**: it is the
+  client's identity (registration, the unregistered-address rule),
+  its lookup limits' source, what `Observed` reports and what `Introduce`
+  hands the other side for hole punching. Behind a UDP proxy every
+  datagram comes from the proxy. Envoy's udp_proxy keeps one upstream
+  socket per client session (sessions keyed by the client's 4-tuple,
+  replies sent back through it), so clients would still be told apart,
+  but all as the gateway's IP: one lookup budget for everyone (the 5-code
+  burst shared by every player), a connection check and introductions
+  naming the gateway, hole punching dead.
+- **kgateway routes no UDP** (v2.5.0, 3 Nov 2026, and its v2.5.2 patch of
+  13 Nov 2026, Envoy 1.39.6, Gateway API 1.7.0): UDPRoute is GA in Gateway
+  API since v1.6, but kgateway's support is an open pull request
+  (kgateway-dev/kgateway#14704, opened 12 Sep 2026). That PR translates a
+  UDPRoute to Envoy's udp_proxy with `idle_timeout: 60s` fixed (Envoy's
+  default is 1 minute; not configurable yet) and per-session, not
+  per-packet, balancing, and it explicitly skips the Gateway's proxy
+  protocol policy on UDP listeners ("TCP connection settings").
+- **Envoy cannot send the PROXY protocol on UDP** (udp_proxy API, Envoy
+  1.34 to 1.41-dev): its session filters are `dynamic_forward_proxy`,
+  `http_capsule`, `ext_authz`; the upstream PROXY protocol is a TCP
+  transport socket. The feature requests for UDP (envoyproxy/envoy#19004,
+  #38560, the latter for the listener side) were closed as not planned.
+  `use_original_src_ip` keeps the client's IP but not its port, needs
+  `CAP_NET_ADMIN` and routing the replies back through Envoy, and
+  kgateway does not expose it: not an option.
+- **So a `--proxy-protocol` mode was not built for kgateway**: nothing in
+  that stack would send the header. (It was built the same day for
+  playit.gg, which does: next section.) Other senders (nginx's stream module has
+  `proxy_protocol v2` since 1.31.4, but whether it applies to UDP
+  datagrams, and to each or only a session's first, is disputed:
+  nginx/nginx#1061) would work with it if they send v2 the same way.
+- **What works today**: the base's per-replica UDP LoadBalancers with
+  `externalTrafficPolicy: Local` (no hop added, addresses kept), and
+  kgateway for `/healthz`, `/readyz`, `/metrics`.
+
+Sources read (2026-11-19): Envoy's udp_proxy configuration and API
+reference (envoyproxy.io, `latest` = 1.41.0-dev, and v1.34.7);
+kgateway's v2.5 release blog (kgateway.dev); kgateway-dev/kgateway#14704;
+envoyproxy/envoy#19004, #36881, #38560; Gateway API's UDPRoute reference
+and the v1.6 release post (kubernetes.io); nginx's
+`ngx_stream_proxy_module` documentation and nginx/nginx#1061.
+
+## Behind a PROXY v2 tunnel (playit.gg)
+
+Asked 2026-11-19: expose the relay through playit.gg tunnels, which send
+the PROXY protocol v2 on UDP ("proxy protocol v1 is ignored on UDP
+tunnels", playit.gg/support/what-is-proxy-protocol).
+
+- **What playit's agent does** (playit-cloud/playit-agent,
+  `packages/agent_core/src/network/udp/udp_clients.rs`, read on master,
+  agent 2.0): one socket toward the local service per client flow (flows
+  keyed by the client's address, the tunnel's address and the tunnel),
+  and on creating it, **the header alone, as a datagram of its own**,
+  then the client's datagrams unchanged. Answers come back on that socket,
+  with no header, and go to the flow's client. A flow ends after 60 s
+  with both sides silent, or 90 s with one (our clients send every 10 s at
+  most: flows live). Agents up to 0.15 are reported to put the header in
+  front of every datagram instead (FH1-ReImagined/forza-live#11): both are
+  read.
+- **`--proxy-protocol`, `--trusted-proxies`** (`relay/internal/relay/proxy.go`;
+  default `127.0.0.1/32,::1/128`, the agent as a sidecar). A datagram that
+  starts like a header is taken only from a trusted proxy and only whole:
+  signature, version 2, command PROXY (LOCAL: dropped), family INET or
+  INET6 with its addresses and ports, TLVs skipped to the header's length.
+  A header alone records its flow (the proxy's socket → the client) and is
+  not answered; one with a payload gives the payload. Anything without a
+  header from an untrusted address is dropped (`untrusted_proxy`), a
+  broken header too (`proxy_header`).
+- **Who a client is**: it is registered by the proxy's socket for it
+  (unique per client: the agent's flow), so the data path is the same
+  lookup as without a proxy and answers go to that socket, no header. Its
+  real address (`client.public`, the header's) is what every rule that
+  is about the player uses: the lookup limits' source, `Observed` (the
+  connection check), `Introduce` (hole punching to the player itself, not
+  through playit), the logs. Behind a proxy, the "unregistered address"
+  rule is about the flow: data from a flow nobody registered is dropped.
+- **The size rule counts the payload**: a reply is never larger than the
+  request without its header (the header is the proxy's, not the
+  client's), and a header alone gets no answer.
+- **A relay that restarts under a running agent** never gets the flows'
+  headers again: their datagrams come from a trusted socket it has no
+  client for. They are served by the socket (registration, data: the
+  session goes on), but get no `Observed`, no introduction, and the
+  proxy's address as their lookup source, until the flow is new (a player
+  reconnecting). Not dropping them is what keeps the hold-and-resume of a
+  restart working.
+- **Cost**: allocation-free. The header-once agent adds one byte compare
+  to the data path; for header-on-every-datagram agents, data datagrams
+  skip the trust check and the address parse (only a registered socket
+  forwards, and only a trusted header registered it). Measured with the
+  laptop loaded (load 6), three runs each: `Forward` 84–90 ns,
+  `ForwardProxied/header-once` 82–85 ns, `header-every-datagram` 80–88 ns,
+  0 allocations, so within noise (under 10 %) of the direct path.
+- **Tests**: parsing (v4, v6, LOCAL, TLVs, truncated, wrong signature,
+  version, command, family, port 0, v1 text), trusted and untrusted
+  senders, every rule with proxied clients (registration, codes, data
+  both ways, `Observed`, introductions, lookups per real source, no
+  reflection), both agent behaviours, flows older than the relay, the
+  size rule; `relay/internal/proxyfwd`, a test-only stdlib forwarder doing
+  what the agent does, over real sockets (Go) and in front of a relay in
+  `tests/relay_loopback.sh` (tandem-peer hosting and joining through it).
+
 ## The packet path
 
 Measured on the laptop (Ryzen 7 6800U, 16 threads, Go 1.27, `go test

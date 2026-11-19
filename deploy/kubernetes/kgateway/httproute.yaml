@@ -1,0 +1,37 @@
+# /healthz, /readyz, /metrics: one ready replica (the fleet answers).
+# /replica-N/...: replica N itself (its own counters; 503 on /readyz while it
+# drains). Prometheus should still scrape the pods directly
+# (tandem-relay-pods): through the gateway, /metrics is one replica's.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tandem-relay-admin
+spec:
+  parentRefs:
+    - name: tandem-relay-admin
+  rules:
+    - matches:
+        - path: { type: Exact, value: /healthz }
+        - path: { type: Exact, value: /readyz }
+        - path: { type: Exact, value: /metrics }
+      backendRefs:
+        - name: tandem-relay-http
+          port: 8080
+    - matches:
+        - path: { type: PathPrefix, value: /replica-0/ }
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path: { type: ReplacePrefixMatch, replacePrefixMatch: / }
+      backendRefs:
+        - name: tandem-relay-0-http
+          port: 8080
+    - matches:
+        - path: { type: PathPrefix, value: /replica-1/ }
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path: { type: ReplacePrefixMatch, replacePrefixMatch: / }
+      backendRefs:
+        - name: tandem-relay-1-http
+          port: 8080
