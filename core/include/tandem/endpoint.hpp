@@ -949,6 +949,12 @@ public:
     return m_session->RelaySessionSecret();
   }
   bool ThroughRelay() const { return m_throughRelay; }
+  // Direct paths set up through the relay (tandem.ini's `direct`): see
+  // net::RelayOptions::direct. Changed in a session, at once.
+  void SetDirect(bool on) { m_session->SetDirect(on); }
+  // Host on a relay: another join code now (Relay()->codeSalt has a kept
+  // one's new salt).
+  void NewRelayCode() { m_session->NewRelayCode(); }
 
   void Leave(const std::string &reason = "left");
 

@@ -69,6 +69,14 @@
 //                        ; (until you break it); ask, the partners you link with
 //                        ; (a request they accept); off, nobody
 //   pings = on           ; off: you neither send nor see pings
+//   relay = a, b, c      ; several relays: a host registers on the nearest (its
+//                        ; probes' round trip), a guest asks each for the code
+//   code = new           ; keep: the host's join code is the relay's kept one for
+//                        ; its token, the same every session (code_salt picks
+//                        ; which; the co-op menu's New code moves it on)
+//   direct = auto        ; through a relay: try a direct path to the other side
+//                        ; (hole punching, docs/architecture/relay.md), the relay
+//                        ; kept as the fallback; off: always through the relay
 
 #include "tandem/presence.hpp"
 #include "tandem/progress.hpp"
@@ -94,6 +102,14 @@ struct Config {
   std::uint16_t relayPort{net::kDefaultRelayPort};
   net::RelayToken relayToken{};
   std::string joinCode;
+  // More relays (`relay = a, b, c`): "name[:port]" each, after the first.
+  std::vector<std::string> relayMore;
+  // Through the relay: a direct path set up by its introductions (`direct`).
+  bool direct{true};
+  // Host: the relay's kept code for our token (`code = keep`), and its salt
+  // (the "new code" action moves it on and saves it).
+  bool keepCode{false};
+  std::uint32_t codeSalt{0};
   std::string name{"V"};
   std::string puppetFemale{"Character.TandemPuppetWa"};
   std::string puppetMale{"Character.TandemPuppetMa"};

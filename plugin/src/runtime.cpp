@@ -222,6 +222,16 @@ std::string Runtime::RelayStatus() const {
   return m_relayStatus;
 }
 
+void Runtime::SetRelayDetails(RelayView view) {
+  std::lock_guard _(m_lock);
+  m_relayView = std::move(view);
+}
+
+Runtime::RelayView Runtime::RelayDetails() const {
+  std::lock_guard _(m_lock);
+  return m_relayView;
+}
+
 bool Runtime::JoinByCode(std::string_view text) {
   const auto code = net::NormalizeJoinCode(text);
   if (!code) {
@@ -257,7 +267,7 @@ namespace {
 // What a running session was set up with: changed for the next one.
 bool ForTheNextSession(std::string_view key) {
   return key == "name" || key == "relay" || key == "relay_token" || key == "story" ||
-         key == "time_host";
+         key == "time_host" || key == "code";
 }
 } // namespace
 
@@ -291,6 +301,10 @@ bool Runtime::ChangeSetting(const std::string &key, const std::string &value) {
     ApplySetting(config, key, stored, 0);
   if (key == "recorder")
     Recording::Get().SetEnabled(config.recorder);
+  if (key == "direct")
+    directOn = config.direct;
+  if (key == "code_salt")
+    codeSalt = config.codeSalt;
   const auto shown = key == "relay_token" ? std::string("(a token)") : stored;
   if (config.file.empty()) {
     log::Info("setting: {} = {} (no tandem.ini to save it in)", key, shown);

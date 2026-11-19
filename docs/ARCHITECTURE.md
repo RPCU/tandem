@@ -57,7 +57,8 @@ task touches ([Topic files](#topic-files)).
   redscript, `r6/scripts/tandem` (UI, events).
 - **Linux**: `tandem-peer` (`peer/`), the mock player, on the same `core/`.
 - **Kubernetes**: `tandem-relay` (`relay/`, Go), which forwards opaque
-  datagrams.
+  datagrams: a share-nothing fleet of replicas, each owning its sessions
+  and its shard of join codes.
 - Games and mock players talk UDP, direct or through the relay.
 
 <!-- prettier-ignore -->
@@ -309,7 +310,7 @@ plugin") and its open problems.
 - `strings.md`: every player-facing text (the inventory), the keyed table in English and French (`Text.reds`, Codeware's localization; ArchiveXL weighed), notices, input hints through the game's own bindings, the lint (`task strings:check`).
 - `travel.md`: fast travel together, regroup; region authority: `regions.md`.
 - `comms.md`: pings (the tag key outside the scanner), the link and what it shares (scanner tags, Ping reveals; `link = auto|ask|off`), waypoints, the danger callout; why no emotes, and no text chat (not wanted, the user's decision); the consistency of each.
-- `relay.md`: the relay's sessions, join codes, abuse limits, wire format, deployment, the game side.
+- `relay.md`: the relay's sessions, join codes, abuse limits, replicas (sharding, redirects, the entrance, drain, restarts), the packet path, wire format, deployment, the game side (a relay that goes silent is held through).
 - `testing.md`: test levels, scenarios, every `tandem-peer` mode and flag.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.
 - `two-instances.md`: two real games on the game machine (tried 2026-11-19: they play a session over loopback; a guest froze once, starts under load trip the engine's watchdog): results and measurements, findings, the setup (`tools/instance.sh`: a game folder and a prefix per instance, outside Steam, sandboxed off the player's files), the first-try checklist; the plugin's `TANDEM_CONFIG`, `TANDEM_CMD`, `TANDEM_PORT`, `TANDEM_LOG` (`core/include/tandem/instance.hpp`).

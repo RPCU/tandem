@@ -204,6 +204,11 @@ public:
 
   // tandem.ini, as loaded (the defaults; the choice below overrides the role).
   Config config;
+  // `direct` as the settings page last set it, for the net thread (applied
+  // to a running session at once).
+  std::atomic<bool> directOn{true};
+  // `code_salt` likewise (the New join code action moves it on).
+  std::atomic<std::uint32_t> codeSalt{0};
 
   // What is installed around us (tandem/compat.hpp), judged once when the
   // plugin loads (main.cpp) and only read afterwards, from any thread.
@@ -264,6 +269,19 @@ public:
   void SetRelay(std::string code, std::string status);
   std::string RelayCode() const;
   std::string RelayStatus() const;
+  // The rest of what the co-op menu shows of the relay link (net thread
+  // sets, game thread reads): the code is kept, the connection check
+  // (net::DirectOutlook), the direct paths up.
+  struct RelayView {
+    bool kept{};
+    std::string check;
+    std::int32_t direct{};
+  };
+  void SetRelayDetails(RelayView view);
+  RelayView RelayDetails() const;
+  // "New code" asked by the co-op menu (counted; the net thread acts on a
+  // change).
+  std::atomic<std::uint32_t> newCodeRequests{0};
   // Game thread (the settings page): change a tandem.ini key
   // (settings::IsEditable) and save it there. Applied at once, or, for what
   // a running session was set up with (name, relay, story, time_host), when
@@ -702,6 +720,7 @@ private:
   std::vector<std::string> m_differences; // m_compatLock
   proto::Body m_body{};                   // m_lock: the last Start's
   std::string m_relayCode, m_relayStatus; // m_lock
+  RelayView m_relayView;                  // m_lock
   std::optional<proto::PlayerState> m_local;
   std::vector<ScriptEvent> m_events;
 

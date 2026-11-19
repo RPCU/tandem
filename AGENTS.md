@@ -231,8 +231,13 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   a feature needs outbound traffic; say why in the manifest.
 - Never answer an unregistered address's data; never send a reply larger
   than the request that caused it (both tested). Only registration-type
-  requests (register, resolve a join code), padded to 64 bytes, are answered
-  from an unregistered address.
+  requests (register, resolve a join code, probe), padded to 64 bytes, are
+  answered from an unregistered address (a redirect is such an answer). An
+  introduction (two answers to one request) goes only to members of the
+  requester's own session, both together smaller than the request.
+- Replicas and regions share nothing and never talk to each other: the
+  peers and regions lists are configuration, addresses not names (no DNS).
+  The failed-lookup budget is the whole world's, split between replicas.
 - Join codes stay expensive to guess: keep the per-source and total lookup
   limits (`TestCodeGuessingIsSlow`, `TestCodeFailuresFromEveryoneAreCapped`)
   and the code space (6 characters of base32, `crypto/rand`).

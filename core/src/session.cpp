@@ -68,6 +68,8 @@ struct Session::Impl {
     traffic.wire[kReceived].bytes += std::exchange(host->totalReceivedData, 0);
     traffic.wire[kReceived].messages += std::exchange(host->totalReceivedPackets, 0);
   }
+  // The relay link was holding its peers at the last Poll().
+  bool relayHeld{};
 
   ~Impl() {
     relay.reset();
@@ -87,10 +89,17 @@ struct Session::Impl {
 
   // ENet's own timeout only fires when a reliable resend is due, and resends
   // back off exponentially: a dead peer took 5 to 30 s to go. Poll() drops a
-  // silent one at `timeoutMs`; ENet's stays as a backstop.
+  // silent one at `timeoutMs`; ENet's stays as a backstop. A peer reached
+  // through the relay outlives a relay that went silent and comes back
+  // (RelayLink::kHoldMs): its backstop is past the hold.
   void Watch(ENetPeer *peer) const {
     enet_peer_ping_interval(peer, std::max<enet_uint32>(timeoutMs / 10, 1));
-    enet_peer_timeout(peer, 0, timeoutMs, 2 * timeoutMs);
+    if (Relayed(peer)) {
+      const auto backstop = RelayLink::kHoldMs + 2 * timeoutMs;
+      enet_peer_timeout(peer, 0, backstop, backstop);
+    } else {
+      enet_peer_timeout(peer, 0, timeoutMs, 2 * timeoutMs);
+    }
   }
 
   // ENet doubles a reliable resend's wait at each try, without bound: after
@@ -115,6 +124,7 @@ struct Session::Impl {
         peer->nextTimeout = due;
     }
   }
+  bool Relayed(const ENetPeer *peer) const { return relay && relay->Carries(peer->address); }
 
   static enet_uint32 QuietMs(const ENetPeer *peer) {
     // lastReceiveTime is when the peer last acknowledged something.
@@ -301,6 +311,17 @@ std::vector<Event> Session::Poll(std::chrono::milliseconds timeout) {
   // Silent peers, and a host that never answered.
   auto *host = m_impl->host;
   const auto now = enet_time_get();
+  // The relay went silent: its peers are held, not judged, while the link
+  // asks it again. Once it answers, they get a moment to be heard (a ping
+  // each, at once: ENet's own resends have backed off meanwhile).
+  const bool held = m_impl->relay && m_impl->relay->Holding();
+  if (m_impl->relayHeld && !held) {
+    m_impl->judgeFromMs = now + m_impl->timeoutMs;
+    for (std::size_t i = 0; i < host->peerCount; ++i)
+      if (host->peers[i].state == ENET_PEER_STATE_CONNECTED && m_impl->Relayed(&host->peers[i]))
+        enet_peer_ping(&host->peers[i]);
+  }
+  m_impl->relayHeld = held;
   if (m_impl->lastPollMs && Since(now, m_impl->lastPollMs) > m_impl->timeoutMs / 4)
     m_impl->judgeFromMs = now + m_impl->timeoutMs / 4;
   else if (m_impl->judgeFromMs && Reached(now, *m_impl->judgeFromMs))
@@ -312,6 +333,8 @@ std::vector<Event> Session::Poll(std::chrono::milliseconds timeout) {
     const bool open = peer->state == ENET_PEER_STATE_CONNECTED ||
                       peer->state == ENET_PEER_STATE_DISCONNECT_LATER ||
                       peer->state == ENET_PEER_STATE_DISCONNECTING;
+    if (held && m_impl->Relayed(peer))
+      continue;
     if (open && Impl::QuietMs(peer) >= m_impl->timeoutMs) {
       events.push_back({Event::Kind::Disconnected, m_impl->IdOf(peer), std::nullopt});
       enet_peer_disconnect_now(peer, 0);
@@ -411,6 +434,16 @@ std::optional<RelayStatus> Session::Relay() const {
 
 std::optional<RelaySecret> Session::RelaySessionSecret() const {
   return m_impl->relay ? m_impl->relay->Secret() : std::nullopt;
+}
+
+void Session::SetDirect(bool on) {
+  if (m_impl->relay)
+    m_impl->relay->SetDirect(on);
+}
+
+void Session::NewRelayCode() {
+  if (m_impl->relay)
+    m_impl->relay->NewCode();
 }
 
 std::uint16_t Session::LocalPort() const {

@@ -1076,6 +1076,28 @@ struct TandemNative : Red::IScriptable {
 
   static Red::CString RelayStatus() { return Red::CString(Runtime::Get().RelayStatus().c_str()); }
 
+  // The relay link's details (Runtime::SetRelayDetails), and the "new code"
+  // action: a kept code's next salt is saved here (tandem.ini's code_salt),
+  // the net thread asks the relay.
+  static bool RelayCodeKept() { return Runtime::Get().RelayDetails().kept; }
+
+  static bool RelayNewCode() {
+    auto &runtime = Runtime::Get();
+    if (runtime.ChosenRole() != Config::Role::Host || runtime.RelayCode().empty())
+      return false;
+    if (runtime.config.keepCode)
+      runtime.ChangeSetting("code_salt", std::to_string(runtime.config.codeSalt + 1));
+    ++runtime.newCodeRequests;
+    log::Info("relay: a new join code asked for");
+    return true;
+  }
+
+  static Red::CString RelayCheck() {
+    return Red::CString(Runtime::Get().RelayDetails().check.c_str());
+  }
+
+  static std::int32_t RelayDirect() { return Runtime::Get().RelayDetails().direct; }
+
   // Gameplay recording (tandem/play.hpp, tools/game.sh cmd record start
   // NAME): our V's play, written by the net thread next to the DLL as
   // recordings/NAME.tplay. False: no session, or not a file name.
@@ -2096,6 +2118,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(IsTimeHostFull);
   RTTI_METHOD(RelayCode);
   RTTI_METHOD(RelayStatus);
+  RTTI_METHOD(RelayCodeKept);
+  RTTI_METHOD(RelayNewCode);
+  RTTI_METHOD(RelayCheck);
+  RTTI_METHOD(RelayDirect);
   RTTI_METHOD(JoinByCode);
   RTTI_METHOD(RecordStart);
   RTTI_METHOD(RecordStop);
