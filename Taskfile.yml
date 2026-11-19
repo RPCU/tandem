@@ -56,6 +56,20 @@ tasks:
     cmds:
       - build/linux/peer/tandem-peer {{.CLI_ARGS | default "host --mode mirror"}}
 
+  sim:
+    desc: "The simulated second game against the real one (task sim -- --role host --persona chaos --seed 3 --minutes 10)"
+    deps: [build:linux]
+    cmds:
+      - build/linux/peer/tandem-peer sim {{.CLI_ARGS | default "--role host"}}
+
+  sim:fuzz:
+    desc: "Simulated games against each other, K seeds (task sim:fuzz K=50 -- --seconds 60); fails on a referee: or sim-check: finding"
+    deps: [build:linux]
+    vars:
+      K: '{{.K | default "10"}}'
+    cmds:
+      - build/linux/peer/tandem-peer sim-fuzz --seeds {{.K}} --quiet {{.CLI_ARGS}}
+
   natives:check:
     desc: Check that scripts/tandem/Natives.reds matches plugin/src/natives.cpp
     cmds:

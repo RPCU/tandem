@@ -43,9 +43,12 @@
 #   expect_peer REGEX [SECS]  the same in the mock player's log
 #   expect_peer2 REGEX [SECS] the same in the second mock player's log
 #   reject REGEX           no such game log line so far
+#   reject_peer REGEX      no such mock player log line so far
 #   pause SECS             let time pass (still watching for a stall)
 #   shot NAME              a screenshot kept with the results
 #   note TEXT              a line in the report
+# Every scenario also rejects the mock player's `referee:` lines: the game
+# broke a protocol or authority rule (docs/architecture/sim.md).
 # A failed check stops the scenario and keeps the evidence under
 # .cache/scenarios/NAME-TIME/: the game's log since the start, the mock
 # player's log, a screenshot and, when the game thread went silent, every
@@ -65,7 +68,7 @@ dir=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
 remote() { ssh "$host" "$@"; }
 
 # The game log's lines since the mark (its file and line count at the start).
-mark_file='' mark_line=0
+mark_file='' mark_line=0 referee_from=0
 mark() {
   read -r mark_file mark_line < <(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); echo \"\$f \$(wc -l < \"\$f\")\"")
   peer_mark=$(wc -l <.cache/peer.log 2>/dev/null || echo 0)
@@ -117,7 +120,7 @@ ensure() {
 }
 peer() {
   $game peer "$@" | sed 's/^/  /'
-  peer_mark=0
+  peer_mark=0 referee_from=0
 }
 peer2() {
   mkdir -p .cache
@@ -229,6 +232,14 @@ reject() {
     echo "  ok, none: $1"
   fi
 }
+reject_peer() {
+  local from=${2:-$peer_mark}
+  if tail -n +$((from + 1)) .cache/peer.log 2>/dev/null | grep -qE "$1"; then
+    fail "unexpected (peer): $(tail -n +$((from + 1)) .cache/peer.log | grep -E "$1" | head -1 | cut -c1-160)"
+  else
+    echo "  ok, none (peer): $1"
+  fi
+}
 pause() {
   local start=$SECONDS
   while ((SECONDS - start < $1)); do
@@ -261,8 +272,11 @@ run() {
       mark
       reset
     fi
+    referee_from=$(wc -l <.cache/peer.log 2>/dev/null || echo 0)
     # shellcheck source=/dev/null
     source "$file"
+    # What the mock player heard broke no protocol or authority rule.
+    reject_peer 'referee: \[' "$referee_from"
   )
   status=$?
   set -e

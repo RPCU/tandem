@@ -120,6 +120,8 @@
 #include "tandem/presence.hpp"
 #include "tandem/scene.hpp"
 #include "tandem/shaping.hpp"
+#include "tandem/sim/game.hpp"
+#include "tandem/sim/referee.hpp"
 #include "tandem/traffic.hpp"
 #include "tandem/vehicle_combat.hpp"
 
@@ -429,7 +431,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
       << "usage: tandem-peer host [options]\n"
          "       tandem-peer join ADDRESS[:PORT] [options]\n"
          "       tandem-peer join --code CODE --relay HOST[:PORT] [options]\n"
-         "       tandem-peer play-info FILE   what a gameplay recording holds, where it starts\n\n"
+         "       tandem-peer play-info FILE   what a gameplay recording holds, where it starts\n"
+         "       tandem-peer sim --role host|join ...  a simulated second game (sim --help)\n"
+         "       tandem-peer sim-fuzz ...     simulated games against each other, seed by seed\n\n"
          "  --port N           UDP port (default 27450)\n"
          "  --relay HOST[:PORT] tandem-relay (default port 27460): host, also reachable\n"
          "                     through it (its join code is logged); join, used when\n"
@@ -2945,6 +2949,9 @@ int PlayInfo(const std::string &path) {
 int main(int argc, char **argv) {
   if (argc >= 3 && std::string_view(argv[1]) == "play-info")
     return PlayInfo(argv[2]);
+  // The simulated second game (docs/architecture/sim.md).
+  if (argc >= 2 && (std::string_view(argv[1]) == "sim" || std::string_view(argv[1]) == "sim-fuzz"))
+    return tandem::sim::SimMain(argv[1], std::vector<std::string_view>(argv + 2, argv + argc));
   auto options = Parse(argc, argv);
   if (options.check) {
     std::cout << "options ok\n";
@@ -3047,6 +3054,11 @@ int main(int argc, char **argv) {
     Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice",
         options.drop * 100, options.dup * 100);
   }
+  // The referee (docs/architecture/sim.md), in every mode: what the other
+  // games send us, checked against the protocol and the authority table;
+  // each breach is a `referee:` line, which scenarios reject.
+  tandem::sim::Referee referee(options.host, {.faulty = options.drop > 0.f || options.dup > 0.f});
+  referee.Attach(*endpoint);
   // --look random: the same clothes all session; its body keys from the
   // cache, or as soon as a look of its body is heard.
   const auto lookKeysDir = LookKeysDir(options.lookKeys);
@@ -4393,11 +4405,15 @@ int main(int argc, char **argv) {
                     e.chase.target == endpoint->You() ? " (us)" : "");
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
+              referee.End();
               g_stop = 1;
             }
           },
           event);
     }
+    referee.Tick();
+    for (const auto &finding : referee.Take())
+      Log("{}", finding.Line());
     if (auto relay = endpoint->Relay()) {
       relay->codeSecondsLeft = 0; // not a change worth a line
       if (relay != relayShown) {
@@ -6136,7 +6152,9 @@ int main(int argc, char **argv) {
         static_cast<double>(savedPlay.LastUs()) / 1e6);
     savedPlay.Close();
   }
+  referee.End();
   endpoint->Leave("tandem-peer stopped");
+  Log("referee summary: {} violation(s), {} hint(s)", referee.Violations(), referee.Hints());
   if (!options.recordFile.empty()) {
     if (recording.Finish())
       Log("recording saved: {} NPC messages, {} spawns, in {}", recording.Count(),

@@ -65,7 +65,7 @@ task touches ([Topic files](#topic-files)).
 | --- | --- | --- |
 | `core/` | protocol, transport (ENet), session (`Endpoint`); platform-independent C++23 | both CMake presets |
 | `plugin/` | the RED4ext plugin (`tandem.dll`, Windows x64): entry points, config, net thread; `report/`: `tandem-report.exe`, the bug report without the game | `windows` preset (clang-cl) |
-| `peer/` | `tandem-peer`, the mock player (Linux) | `linux` preset |
+| `peer/` | `tandem-peer`, the mock player (Linux); `peer/sim/`: the simulated second game (`tandem_sim`: referee, world, story, V, personas, coverage) | `linux` preset |
 | `tests/` | doctest unit and loopback tests of `core/` (Linux) | `linux` preset |
 | `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
@@ -314,6 +314,7 @@ plugin") and its open problems.
 - `two-instances.md`: two real games on the game machine (tried 2026-11-19: they play a session over loopback; a guest froze once, starts under load trip the engine's watchdog): results and measurements, findings, the setup (`tools/instance.sh`: a game folder and a prefix per instance, outside Steam, sandboxed off the player's files), the first-try checklist; the plugin's `TANDEM_CONFIG`, `TANDEM_CMD`, `TANDEM_PORT`, `TANDEM_LOG` (`core/include/tandem/instance.hpp`).
 - `release.md`: packaging (`task package`, the release and symbols zips), the startup check (game version, dependencies, Phantom Liberty, required on every game), what a join compares (protocol and Phantom Liberty refuse; build, files and mod lists warn), bug reports (`tandem-report`), what the game has not run yet. For release, compatibility and report code.
 - `autopilot.md`: the test pilot that plays our real V without a human (recordings, scenarios): script-level actions, a virtual pad, the plugin's state stream, routines with checks, its safety, two-instance runs, the first-run checklist.
+- `sim.md`: the simulated second game: the referee on every peer's wire, the host world, story director, simulated V and personas, `tandem-peer sim`, `sim-fuzz`, coverage.
 
 Beside them, for people rather than code: `dist/INSTALL.md` (the players' guide, shipped in the zip), [`relay.md`](relay.md) (operating a relay: tokens, systemd, firewall, the image), [`playtest.md`](playtest.md) (the first two-machine session, a checklist).
 
