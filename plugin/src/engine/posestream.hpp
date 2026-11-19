@@ -11,6 +11,7 @@
 #include <RED4ext/Scripting/Natives/entEntity.hpp>
 
 #include <cstdint>
+#include <string>
 
 namespace tandem::plugin::engine {
 // At plugin load: hook the entity animation job and the pose commit (by
@@ -25,4 +26,15 @@ void SetPoseSource(const RED4ext::Handle<RED4ext::ent::Entity> &entity);
 void BindPosePuppet(std::uint32_t player, const RED4ext::Handle<RED4ext::ent::Entity> &entity);
 // Log counters and checks since the last report.
 void PoseStreamReport();
+
+// Scene replay (docs/architecture/scene-replay.md), game thread. Host: the
+// NPC whose body is read as actor `npc` (null entity: no longer). Guest: the
+// proxy that shows actor `npc`'s pose while its stream lasts (null: its own
+// animation again). Both need the hooks (tandem.ini pose = on) and the same
+// layout checks as a player's pose; without them they do nothing.
+void SetPoseActorSource(std::uint32_t npc, const RED4ext::Handle<RED4ext::ent::Entity> &entity);
+void BindPoseActor(std::uint32_t npc, const RED4ext::Handle<RED4ext::ent::Entity> &entity);
+void ClearPoseActors();
+// Counters since the last report, in one line.
+std::string PoseActorsReport();
 } // namespace tandem::plugin::engine

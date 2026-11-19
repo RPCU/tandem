@@ -69,6 +69,7 @@
     `story::Participation`); each guest gives its own V the reward
     (`RPGManager.GiveReward`) once, and keeps it in a persistent ledger so
     its own story pays nothing again for it.
+  - _Scene replay_ (the scene's actors, voices and Johnny for a guest; `scene_replay = on`): [`scene-replay.md`](scene-replay.md).
   - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`,
     `story-private`, `story-private-host`.
 
