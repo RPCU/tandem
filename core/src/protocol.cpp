@@ -169,7 +169,11 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *end = std::get_if<ThrowEnd>(&message); end && end->how > ThrowEndKind::Gone)
     return std::nullopt;
-  if (const auto *rules = std::get_if<Rules>(&message); rules && (rules->flags & ~kRuleFlags) != 0)
+  if (const auto *rules = std::get_if<Rules>(&message);
+      rules && ((rules->flags & ~kRuleFlags) != 0 || rules->enemyHealth > kMaxEnemyHealth))
+    return std::nullopt;
+  if (const auto *scale = std::get_if<NpcScale>(&message);
+      scale && (scale->players == 0 || scale->players > kMaxPlayerId))
     return std::nullopt;
   if (const auto *defended = std::get_if<Defended>(&message);
       defended && (defended->how < DefendKind::Blocked || defended->how > DefendKind::Parried))
@@ -298,7 +302,7 @@ bool IsCombat(const Message &message) {
           message.index() <= Message(Defended{}).index()) ||
          (message.index() >= Message(PlayerLevel{}).index() &&
           message.index() <= Message(NpcLevel{}).index()) ||
-         std::holds_alternative<CarLend>(message);
+         std::holds_alternative<CarLend>(message) || std::holds_alternative<NpcScale>(message);
 }
 
 bool IsTrade(const Message &message) {
@@ -451,7 +455,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "PoseFrame",
                                    "NpcMotion",
                                    "PlayerMotion",
-                                   "VehicleMotion"};
+                                   "VehicleMotion",
+                                   "NpcScale"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

@@ -978,6 +978,8 @@ TEST_CASE("throws, their ends, the session's rules and a defence survive encodin
   RoundTrips(Throw{.player = 3, .id = 1, .kind = ThrowKind::Smart, .at = 1});
   RoundTrips(ThrowEnd{.player = 2, .id = 9, .how = ThrowEndKind::Stuck, .position = {1, 2, 3}});
   RoundTrips(Rules{.flags = kRuleFriendlyFire});
+  RoundTrips(Rules{.flags = kRuleFriendlyFire | kRuleEnemyScaling, .enemyHealth = 85});
+  CHECK(Rules{}.enemyHealth == 60);
   RoundTrips(Defended{.player = 2, .npc = 7, .how = DefendKind::Parried});
   CHECK(std::string_view(NameOf(Throw{})) == "Throw");
   CHECK(std::string_view(NameOf(ThrowEnd{})) == "ThrowEnd");
@@ -1006,7 +1008,9 @@ TEST_CASE("throws, rules and defences of kinds the receiver does not know are re
   CHECK_FALSE(Decode(bytes).has_value());
   bytes = Encode(ThrowEnd{.how = static_cast<ThrowEndKind>(3)});
   CHECK_FALSE(Decode(bytes).has_value());
-  bytes = Encode(Rules{.flags = 2});
+  bytes = Encode(Rules{.flags = 4});
+  CHECK_FALSE(Decode(bytes).has_value());
+  bytes = Encode(Rules{.flags = kRuleEnemyScaling, .enemyHealth = kMaxEnemyHealth + 1});
   CHECK_FALSE(Decode(bytes).has_value());
   bytes = Encode(Defended{.how = static_cast<DefendKind>(0)});
   CHECK_FALSE(Decode(bytes).has_value());
@@ -1136,4 +1140,20 @@ TEST_CASE("comms: pings, tags, links and waypoints survive encoding, small, reli
   CHECK_FALSE(
       Decode(Encode(Link{.players = std::vector<PlayerId>(kMaxLinkPlayers + 1, 2)})).has_value());
   CHECK_FALSE(Decode(Encode(Waypoint{.kind = static_cast<WaypointKind>(3)})).has_value());
+}
+
+TEST_CASE("enemy scaling: NpcScale survives encoding, is small and reliable, counts checked") {
+  RoundTrips(NpcScale{.npc = 0x01000007, .players = 3});
+  CHECK(std::string(NameOf(NpcScale{})) == "NpcScale");
+  CHECK(IsCombat(NpcScale{}));
+  CHECK_FALSE(IsStory(NpcScale{}));
+  CHECK(ChannelOf(NpcScale{}) == Channel::Event);
+  CHECK(IsReliable(NpcScale{}));
+  CHECK(Encode(NpcScale{.npc = 0xFFFFFFFF, .players = 4}).size() < 16);
+  // Appended after the netcode's compact forms.
+  CHECK(Message(NpcScale{}).index() > Message(VehicleMotion{}).index());
+  // Nobody, or more players than a session has ids for: refused.
+  CHECK_FALSE(Decode(Encode(NpcScale{.npc = 1, .players = 0})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcScale{.npc = 1, .players = kMaxPlayerId + 1})).has_value());
+  CHECK(Decode(Encode(NpcScale{.npc = 1, .players = kMaxPlayerId})).has_value());
 }

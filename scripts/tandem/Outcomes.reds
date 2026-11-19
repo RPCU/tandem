@@ -100,12 +100,13 @@ public class TandemOutcomes {
           TandemFight.SendDifficulty(level);
           TandemNative.Log(s"outcomes: the session plays at our difficulty \(level)");
         }
-        // The session's rules, tandem.ini's (friendly_fire).
+        // The session's rules, tandem.ini's (friendly_fire, enemy_scaling,
+        // enemy_scaling_health).
         let rules = TandemFight.ConfiguredRules();
         if rules != this.m_sentRules {
           this.m_sentRules = rules;
           TandemFight.SendRules(rules);
-          TandemNative.Log(s"outcomes: the session's rules: friendly fire \((rules & 1) != 0 ? "on" : "off")");
+          TandemNative.Log(s"outcomes: the session's rules: friendly fire \((rules & 1) != 0 ? "on" : "off"), enemy scaling \(TandemOutcomes.ScalingText(rules & 2, (rules / 256) % 256))");
         }
       }
     }
@@ -149,7 +150,7 @@ public class TandemOutcomes {
           this.Throws().Ended(event);
           break;
         case 8:
-          TandemNative.Log(s"outcomes: the host's rules: friendly fire \((event.flags & 1) != 0 ? "on" : "off")");
+          TandemNative.Log(s"outcomes: the host's rules: friendly fire \((event.flags & 1) != 0 ? "on" : "off"), enemy scaling \(TandemOutcomes.ScalingText(event.flags & 2, event.level))");
           break;
         case 9:
           this.TakeDefended(event, npcs);
@@ -162,10 +163,21 @@ public class TandemOutcomes {
             npcs.SetLevel(event.npc, event.damage);
           }
           break;
+        case 12:
+          npcs.SetScale(event.npc, Cast<Int32>(event.player));
+          break;
         default:
           break;
       }
     }
+  }
+
+  // "on, health +60 % per extra player" or "off", for the log.
+  public static func ScalingText(on: Int32, health: Int32) -> String {
+    if on == 0 {
+      return "off";
+    }
+    return s"on, health +\(health) % per extra player";
   }
 
   // Guest: the host's difficulty is on (ours waits): no save may carry it

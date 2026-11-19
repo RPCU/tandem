@@ -15,6 +15,121 @@ each NPC the host runs, moving its `PowerLevel` to the mean. To confirm in
 game (whether health, damage and loot follow the stat). Built 2026-11-19:
 `progression.md` ("Levels").
 
+## Enemy scaling
+
+**Enemies are tougher for each extra player near them** (asked
+2026-11-19: "add multiplier to enemies stats based on how many players
+joined"). Built and tested without the game (`core/scaling.hpp`,
+`scripts/tandem/Scaling.reds`); **not yet run in game**. The engine facts:
+`research/engine/combat.md` §13.50.
+
+| Players near the NPC | Health | Poise, stagger and knockdown thresholds | Armour | Damage it deals |
+| -------------------- | ------ | --------------------------------------- | ------ | --------------- |
+| 1                    | ×1     | ×1                                      | ×1     | ×1              |
+| 2                    | ×1.6   | ×1.25                                   | ×1.1   | ×1              |
+| 3                    | ×2.2   | ×1.5                                    | ×1.2   | ×1              |
+| 4                    | ×2.8   | ×1.75                                   | ×1.2   | ×1              |
+
+Health ×(1 + h·(n−1)) with h = 0.6 (`enemy_scaling_health`), poise and the
+hit reaction thresholds ×(1 + 0.25·(n−1)), armour +10 % per extra player up
+to +20 % (`scaling::For`; the constants are in `core/scaling.hpp`). Less
+than ×n health on purpose: players share targets and revive each other, and
+a fight with three should last about as long as one alone, not three times
+longer. Armour is capped low because it divides every hit on top of the
+health. **The damage an NPC deals is never scaled**: each V takes the hits
+it would alone (each game applies them by its own rules, `combat.md`).
+
+**Where it applies.** On the game that runs the NPC (the host, or the
+NPC's owner under regions, `regions.md`), to hostile NPCs only: an NPC in
+combat or hostile to any V, once seen so (sticky until it goes).
+Civilians, vendors, companions and allies are never scaled. Bosses
+(`NPCRarity` Boss: `ScriptedPuppet.IsBoss`), MaxTac, elites, officers and
+named enemies follow the same rule (decided: one rule, no exceptions);
+bosses and quest NPCs are pinned to their game (`TandemRegionRules.Pinned`),
+and the boss health bar shows the pool's share, which the scaling keeps.
+It is a runtime stat modifier on each NPC, the way the game's own
+difficulty, level and rarity scaling put theirs: one `Multiplier` modifier
+per stat (`Health`, `Poise`, `Armor`, `StaggerDamageThreshold`,
+`StaggerDamageThresholdInCover`, `KnockdownDamageThreshold`,
+`KnockdownDamageThresholdInCover`), which multiplies the stat's final value
+after every additive term, so the difficulty's and the level's count once
+and ours once on top. Never a record edit. A plain `AddModifier`: never
+saved; taken off when the NPC is no longer shared and when the session
+ends. The thresholds are percentages of the total health the NPC's
+`HitReactionComponent` read when it was attached, so their modifier is
+×poise × unscaled health ÷ that total (`scaling::ThresholdFactor`): in
+points, one hit must take a quarter more per extra player to stagger it,
+whatever that component read.
+
+**Who counts** (`scaling::Counter`, run on the owner twice a second,
+`TandemProgress.ScaleCount`). A V counts for an NPC from within 100 m of it,
+and stops beyond 130 m; or while it fights it (in combat with it, its top
+hostile threat, or it hit the NPC in the last 5 s), from anywhere, and for
+5 s after. 100 m: past the range most fights are fought at, inside the
+150 m at which players are linked (a counted V always sees the NPC as a
+proxy) and beyond the 90 m to which an owner keeps sharing it; 130 m: the
+hysteresis, still inside the link, so a V at the edge does not make the
+count flicker; the engagement rule keeps a sniper beyond it counted while it
+shoots. Only players of the session count (a player that left or vanished
+stops counting at once); the owner's V is always one. Positions are each V's
+here (ours, the puppets).
+
+**When the count changes** mid-fight, the stats follow at the next pass
+(within half a second) and the NPC keeps its share of health and poise: no
+instant heal, no drop (`scaling::KeepFraction`; the plugin reads and sets
+the pools in percent). An NPC that dies keeps nothing (its count, its word).
+
+**The other games.** The owner says the count (`NpcScale`, to everyone who
+sees the NPC, kept for late joiners until it goes, in the NPC digest when
+it is more than one). Every proxy of it carries the same modifiers: a
+guest's hit is computed against the proxy's armour (the attacker's game
+runs the target's armour, `combat.md`), and its kill prediction against the
+proxy's health. The health bar would be right without it (`NpcHealth` and
+`NpcPoise` carry fractions; a strike carries points, which the owner takes
+from its own scaled pool).
+
+**The host's rule.** `tandem.ini` `enemy_scaling = on|off` (on by default)
+and `enemy_scaling_health = 0.6` (advanced: ini only, 0 to 2.5), the host's
+for the whole session: `Rules` carries them (`kRuleEnemyScaling`,
+`enemyHealth` in whole percent; added before `Rules` was released, so no
+protocol bump), kept for late joiners and in the world digest. The settings
+page has it as a host setting (`Settings-EnemyScaling`), changed at once (the
+host sends `Rules` again; every owner puts the modifiers on or off within a
+second); a guest's page shows the host's.
+
+**Hand-overs** (`regions.md`): the modifiers stay on the body. The count the
+old owner said stays the NPC's word until the new owner counts; the new
+owner puts its own count on from the share of health that came with the
+NPC (`Restore`), which the modifiers' change keeps.
+
+**Not scaled: XP, loot and rewards.** Each player already gets their own
+(`progression.md`): loot is rolled per player, kill XP is the killer's,
+quest rewards each V's. Skill XP for damage is a share of the NPC's health
+pool, so a scaled NPC pays the same total as alone, split by who did the
+damage: in a group each V earns less per enemy than alone. **The user may
+want to revisit this** (e.g. an XP bonus per extra player near).
+
+Tests and tools: `tests/scaling_test.cpp` (the formula, the rule, the share
+kept, the thresholds, who counts and the hysteresis, the digest),
+`tests/endpoint_test.cpp` and `tests/regions_endpoint_test.cpp` (`Rules`
+carried to late joiners; `NpcScale` from an owner to everyone, said once,
+kept, gone, early before its spawn, the heir's word after a hand-over),
+`tests/protocol_test.cpp`; `tandem-peer --near-npc` (stand 4 m from a host
+NPC), `host --enemy-scaling on|off --enemy-scaling-health F`; scenario
+`enemy-scaling`; `tools/game.sh cmd npc scale` (the rule, each NPC's count,
+health, poise, armour and thresholds).
+
+To check in game: that the `Poise` stat is the poise pool's maximum (`npc
+scale` shows both); the boss bar and the NPC health bar after a count
+change; that the hit reaction component's total health is the unscaled one
+(`npc scale` shows it); how a 3-player fight feels with the defaults.
+
+Decisions (recommended first): one rule for bosses (yes, as built; a
+lighter boss curve is the alternative if bosses become sponges); the count
+radius 100/130 m (keep; move it to `enemy_scaling` keys if a quest's arena
+is larger); XP not scaled (keep for now, revisit after the first group
+session).
+
 ## Inside the plugin
 
 - **NPCs** (`scripts/tandem/Npcs.reds`, milestone 5): once the world

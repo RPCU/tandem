@@ -49,6 +49,10 @@
 //                        ; check found (tandem/compat.hpp)
 //   friendly_fire = off  ; host: on, the Vs' hits (shots, blades, explosions) hurt
 //                        ; each other (proto::Rules, every game follows the host's)
+//   enemy_scaling = on   ; host: hostile NPCs are tougher for each extra player near
+//                        ; them (health, poise, armour; tandem/scaling.hpp, Rules)
+//   enemy_scaling_health = 0.6 ; host, advanced (ini only): the health added per
+//                        ; extra player, 0..2.5 (0.6: x1.6 for two, x2.2 for three)
 //   notices = all        ; important: no news (rides, calls, pauses...); minimal: only
 //                        ; what asks for an answer or went wrong
 //   markers = on         ; off: no marker for the other players (HUD, minimap, map)
@@ -81,6 +85,7 @@
 #include "tandem/presence.hpp"
 #include "tandem/progress.hpp"
 #include "tandem/relay.hpp"
+#include "tandem/scaling.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -142,6 +147,10 @@ struct Config {
   // The session's rule when we host (proto::Rules; the settings page edits it):
   // the Vs hurt each other.
   bool friendlyFire{false};
+  // Enemy scaling (scripts/tandem/Scaling.reds; the settings page edits the
+  // first): on, and the health added per extra player near an NPC.
+  bool enemyScaling{true};
+  float enemyScalingHealth{scaling::kHealthPerPlayer};
   std::string notices{"all"};
   bool markers{true};
   presence::Nameplates nameplates{presence::Nameplates::Near};

@@ -364,7 +364,7 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
       [&](proto::NpcId, proto::PlayerId owner) {
         return owner != self && (!host || m_links.Linked(owner, self));
       },
-      &count);
+      &count, &m_npcScale);
   return {
       .epoch = host ? m_epoch : m_hostEpoch,
       .seq = m_digestSeq,
@@ -1389,6 +1389,15 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
         return;
       m_sessionLevel = *session;
     }
+    if (const auto *scale = std::get_if<proto::NpcScale>(&message)) {
+      // Of an NPC we know and do not run (our own word is ours), once.
+      if (!m_npcs.contains(scale->npc) || OwnsNpc(scale->npc))
+        return;
+      if (const auto it = m_npcScale.find(scale->npc);
+          it != m_npcScale.end() && it->second == *scale)
+        return;
+      m_npcScale[scale->npc] = *scale;
+    }
     if (const auto *level = std::get_if<proto::NpcLevel>(&message)) {
       if (!m_npcs.contains(level->npc))
         return; // of an NPC that is gone
@@ -1616,6 +1625,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (m_npcs.erase(gone.npc) > 0) {
               m_npcHealth.erase(gone.npc);
               m_npcLevels.erase(gone.npc);
+              m_npcScale.erase(gone.npc);
               if (gone.reason == 1)
                 m_corpses.insert(gone.npc); // stays until the host's corpse goes
               out.push_back(events::HostNpcGone{gone});
@@ -1642,6 +1652,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               }
               m_npcHealth.erase(it->first);
               m_npcLevels.erase(it->first);
+              m_npcScale.erase(it->first);
               m_npcHolds.erase(it->first);
               m_npcOwner.erase(it->first);
               m_npcBook.Forget(it->first);
@@ -2118,6 +2129,11 @@ void Endpoint::SendNpcSpawn(const proto::NpcSpawn &spawn) {
     if (IsHost())
       Broadcast(early.mapped());
   }
+  // Its scale, the same way (ours to say: we run it).
+  if (const auto early = m_npcScaleEarly.extract(spawn.npc)) {
+    m_npcScale[spawn.npc] = early.mapped();
+    SayNpc(early.mapped());
+  }
 }
 
 void Endpoint::SendNpcStates(proto::NpcStates states) {
@@ -2167,6 +2183,7 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
   m_npcCoder.Forget(gone.npc);
   m_npcLevels.erase(gone.npc);
   m_npcLevelsEarly.erase(gone.npc);
+  m_npcScaleEarly.erase(gone.npc);
   if (gone.reason == proto::kGoneAway)
     m_corpseOwner.erase(gone.npc);
   else
@@ -3376,6 +3393,17 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
       ShareNpc(message, player, *peer);
     if (Sees(m_you, player))
       out.push_back(events::Combat{message});
+  } else if (const auto *scale = std::get_if<proto::NpcScale>(&message)) {
+    // The scale of an NPC it runs: for who sees it, once.
+    if (!m_npcs.contains(scale->npc) || NpcOwner(scale->npc) != player)
+      return;
+    if (const auto it = m_npcScale.find(scale->npc); it != m_npcScale.end() && it->second == *scale)
+      return;
+    m_npcScale[scale->npc] = *scale;
+    if (const auto peer = PeerOf(player))
+      ShareNpc(message, player, *peer);
+    if (Sees(m_you, player))
+      out.push_back(events::Combat{message});
   } else if (const auto *area = std::get_if<proto::AreaHit>(&message)) {
     // To the victim's game: ours, or pass it on (never back to the
     // attacker), while the session's rules allow friendly fire.
@@ -3592,6 +3620,26 @@ bool Endpoint::SendCombat(proto::Message message) {
     if (!SpeaksFor(poise->npc))
       return false;
     m_npcPoise[poise->npc] = *poise;
+    SayNpc(message);
+    return true;
+  }
+  // An owner's word on its NPC's scale: once per change. One of our range
+  // whose spawn is still on its way from the game (another queue): kept, and
+  // said right after the spawn.
+  if (const auto *scale = std::get_if<proto::NpcScale>(&message)) {
+    if (!m_npcs.contains(scale->npc)) {
+      if (regions::Announcer(scale->npc) != m_you)
+        return false;
+      if (m_npcScaleEarly.size() >= 256)
+        m_npcScaleEarly.clear();
+      m_npcScaleEarly[scale->npc] = *scale;
+      return false;
+    }
+    if (!OwnsNpc(scale->npc))
+      return false;
+    if (const auto it = m_npcScale.find(scale->npc); it != m_npcScale.end() && it->second == *scale)
+      return true; // said already
+    m_npcScale[scale->npc] = *scale;
     SayNpc(message);
     return true;
   }

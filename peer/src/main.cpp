@@ -136,6 +136,7 @@
 
 #include "tandem/net_traffic.hpp"
 #include "tandem/regions.hpp"
+#include "tandem/scaling.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -200,7 +201,12 @@ struct Options {
   std::optional<int> difficulty;    // host: the session's gameDifficulty
   int areaHitSeconds{0};            // our "grenade" hits every other V this often (0: never)
   std::optional<bool> friendlyFire; // host: the session's rule (unset: none sent)
-  int throwSeconds{0};              // our V throws a grenade this often (0: never)
+  // host: enemy scaling, the session's rule (unset: none sent), and its health
+  // per extra player; join: stand beside one of the host's NPCs.
+  std::optional<bool> enemyScaling;
+  float enemyScalingHealth{tandem::scaling::kHealthPerPlayer};
+  bool nearNpc{};
+  int throwSeconds{0};                               // our V throws a grenade this often (0: never)
   std::string throwItem{"Items.GrenadeFragRegular"}; // --throw: what
   int smartSeconds{0};  // our V fires a smart round at an NPC this often (0: never)
   int defendSeconds{0}; // join: we parry, then block, an NPC's attack this often
@@ -522,6 +528,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --area-hit N       every N seconds our \"grenade\" hits every other player's V for\n"
          "                     20 physical (an explosion, applied by their game)\n"
          "  --friendly-fire X  host: the session's rule, on | off (the Vs hurt each other)\n"
+         "  --enemy-scaling X  host: the session's rule, on | off (hostile NPCs tougher for\n"
+         "                     each extra player near them)\n"
+         "  --enemy-scaling-health F  host: --enemy-scaling's health per extra player (0.6)\n"
+         "  --near-npc         join: stand 4 m from one of the host's NPCs (the one heard\n"
+         "                     first that is still there): it counts us near it\n"
          "  --throw N          every N seconds our V throws a grenade (--throw-item) 10 m\n"
          "                     ahead; it explodes 2 s later (the others launch a copy)\n"
          "  --throw-item REC   --throw: the grenade's record (Items.GrenadeFragRegular)\n"
@@ -922,6 +933,10 @@ Options Parse(int argc, char **argv) {
       options.scene = true;
       continue;
     }
+    if (flag == "--near-npc") {
+      options.nearNpc = true;
+      continue;
+    }
     if (flag == "--trade-offer") {
       options.tradeOffer = true;
       continue;
@@ -1079,6 +1094,18 @@ Options Parse(int argc, char **argv) {
         options.friendlyFire = false;
       else
         Usage(std::format("--friendly-fire: on or off, not {}", value));
+    } else if (flag == "--enemy-scaling") {
+      if (value == "on")
+        options.enemyScaling = true;
+      else if (value == "off")
+        options.enemyScaling = false;
+      else
+        Usage(std::format("--enemy-scaling: on or off, not {}", value));
+    } else if (flag == "--enemy-scaling-health") {
+      options.enemyScalingHealth = Number<float>(value);
+      if (!(options.enemyScalingHealth >= 0.f) ||
+          options.enemyScalingHealth > tandem::scaling::kMaxHealthPerPlayer)
+        Usage("--enemy-scaling-health is 0 to 2.5");
     } else if (flag == "--throw")
       options.throwSeconds = Number<int>(value);
     else if (flag == "--throw-item")
@@ -2945,8 +2972,12 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
     return std::format("player {}'s throw {} ends ({})", e->player, e->id,
                        static_cast<int>(e->how));
   if (const auto *r = std::get_if<proto::Rules>(&message))
-    return std::format("the session's rules: friendly fire {}",
-                       (r->flags & proto::kRuleFriendlyFire) ? "on" : "off");
+    return std::format("the session's rules: friendly fire {}, enemy scaling {} (health +{} % "
+                       "per extra player)",
+                       (r->flags & proto::kRuleFriendlyFire) ? "on" : "off",
+                       (r->flags & proto::kRuleEnemyScaling) ? "on" : "off", r->enemyHealth);
+  if (const auto *s = std::get_if<proto::NpcScale>(&message))
+    return std::format("npc {} is scaled for {} players", s->npc, s->players);
   if (const auto *d = std::get_if<proto::Defended>(&message))
     return std::format("player {} {} npc {}'s attack", d->player,
                        d->how == proto::DefendKind::Parried ? "parried" : "blocked", d->npc);
@@ -3355,6 +3386,7 @@ int main(int argc, char **argv) {
   // join: when each was last in the host's states (dead and far NPCs are
   // not), and the NPCs whose grab the host refused (not asked again).
   std::map<tandem::proto::NpcId, std::chrono::steady_clock::time_point> npcSeen;
+  std::optional<tandem::proto::NpcId> nearNpc; // join, --near-npc: the NPC we stand by
   std::set<tandem::proto::NpcId> grabRefused;
   std::set<tandem::proto::NpcId> bodies; // join: the host's NPCs that died, still lying there
   std::optional<tandem::proto::NpcId> hitTarget;
@@ -5509,6 +5541,27 @@ int main(int argc, char **argv) {
       puppeteer.Beside(npcAt[carry.npc]);
     else if (options.grabNpcsSeconds || options.carryNpcsSeconds)
       puppeteer.Beside(std::nullopt);
+    // --near-npc: 4 m from one of the host's NPCs (the first heard that is
+    // still there, alive and placed in the last second), wherever it walks.
+    if (options.nearNpc && !options.host && endpoint->IsJoined() && !grab.step && !carry.step) {
+      if (!nearNpc || !liveNpcs.contains(*nearNpc) || !npcSeen.contains(*nearNpc) ||
+          now - npcSeen[*nearNpc] > 1s) {
+        const auto before = nearNpc;
+        nearNpc.reset();
+        for (const auto npc : liveNpcs)
+          if (!nearNpc && npcSeen.contains(npc) && now - npcSeen[npc] < 1s)
+            nearNpc = npc;
+        if (nearNpc && nearNpc != before)
+          Log("we stand by npc {}", *nearNpc);
+      }
+      if (nearNpc && npcAt.contains(*nearNpc)) {
+        auto at = npcAt[*nearNpc];
+        at.x += 3.2f; // Beside adds 0.8 m
+        puppeteer.Beside(at);
+      } else {
+        puppeteer.Beside(std::nullopt);
+      }
+    }
     // --hold-npcs (host): our V grabs a replayed NPC, then takes it down.
     if (options.holdNpcsSeconds && options.host && endpoint->Players().size() > 1) {
       if (hold.step == 0 && now >= nextHold) {
@@ -5607,11 +5660,19 @@ int main(int argc, char **argv) {
           tandem::proto::Difficulty{.level = static_cast<std::uint8_t>(*options.difficulty)});
       Log("the session plays at difficulty {}", *options.difficulty);
     }
-    // --friendly-fire: the session's rule, kept by the endpoint for whoever joins.
-    if (options.friendlyFire && options.host && !rulesSent && endpoint->IsJoined()) {
-      rulesSent = endpoint->SendCombat(tandem::proto::Rules{
-          .flags = *options.friendlyFire ? tandem::proto::kRuleFriendlyFire : std::uint8_t{0}});
-      Log("the session's rules: friendly fire {}", *options.friendlyFire ? "on" : "off");
+    // --friendly-fire, --enemy-scaling: the session's rules, kept by the
+    // endpoint for whoever joins.
+    if ((options.friendlyFire || options.enemyScaling) && options.host && !rulesSent &&
+        endpoint->IsJoined()) {
+      const bool friendly = options.friendlyFire.value_or(false);
+      const auto rules = tandem::scaling::WithRule(
+          {.flags = friendly ? tandem::proto::kRuleFriendlyFire : std::uint8_t{0}},
+          options.enemyScaling.value_or(false), options.enemyScalingHealth);
+      rulesSent = endpoint->SendCombat(rules);
+      Log("the session's rules: friendly fire {}, enemy scaling {} (health +{} % per extra "
+          "player)",
+          friendly ? "on" : "off", options.enemyScaling.value_or(false) ? "on" : "off",
+          rules.enemyHealth);
     }
     // --throw: a grenade 10 m ahead of our V (+Y), exploding 2 s later.
     if (options.throwSeconds && endpoint->IsJoined() && now >= nextThrow) {

@@ -73,6 +73,11 @@ tandem does, with the scenario that checks it in game.
 Alone, or with everyone at the host's level, nothing is touched. Guests are
 told once ("Co-op: enemies are scaled to level N").
 
+Enemy scaling for the players near an NPC (`npcs.md`) is another
+modifier on the same NPCs, a Multiplier on health, poise and armour: it
+stacks with the level's (the level moves the base, ours multiplies the
+result) and pays no more XP or loot.
+
 What this does not do, on purpose: change anyone's own level, XP curve or
 gear; scale a quest's XP or a vendor's stock (each game's own); move an NPC
 of a fixed level (bosses the game itself does not scale).
@@ -192,7 +197,7 @@ built here.
    | holds      | combat lock, god mode, story effects held for the host's scenes                      | `ReleaseHolds`, `TakeOffEffects`                                              |
    | difficulty | the host's difficulty                                                                | `TandemOutcomes.End`                                                          |
    | bodies     | puppets, proxies, bodies on their way out                                            | `RemoveAllPuppets`, `TandemNpcs.End`, `ProcessLeaving`                        |
-   | levels     | level modifiers on our own NPCs (host)                                               | `TandemLevels.Release`                                                        |
+   | levels     | level and enemy scaling modifiers on our own NPCs (host, or a guest owner)           | `TandemLevels.Release`, `TandemScaling.End`                                   |
    | world      | the host's weather (our weather cycle is off while it is on), our crowd switched off | `TandemWorld.End` (**new**: the cycle stayed off for good), `TandemNpcs.Stop` |
    | down       | our V down, out or dying                                                             | Revive.reds                                                                   |
 
@@ -290,6 +295,7 @@ only saves after the steps above) and on the host (which saves any time):
 | ------------------------------------------------------------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Puppets, proxies, car copies, their items                                                        | no              | dynamic entities with `persistState` and `persistSpawn` off; a puppet's look and weapons are in its own inventory              |
 | NPC level modifiers                                                                              | no              | `AddModifier` (the saved kind is `AddSavedModifier`); taken off at the session's end                                           |
+| Enemy scaling modifiers (`npcs.md`)                                                              | no              | `AddModifier` too; taken off when an NPC is no longer shared and at the session's end                                          |
 | Attitudes of puppets and proxies                                                                 | no              | set on unsaved entities; group relations are never written (Attitudes.reds)                                                    |
 | The host's difficulty on a guest                                                                 | no              | given back at the session's end; a save is locked while it is on                                                               |
 | The host's journal on a guest, its frozen story                                                  | no              | restored and checked before saving unlocks; a mismatch keeps the lock                                                          |

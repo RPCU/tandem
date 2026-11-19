@@ -565,7 +565,9 @@ public class TandemSystem extends ScriptableSystem {
     if ArraySize(this.m_puppets) > 0 || ArraySize(this.m_leaving) > 0 || (IsDefined(this.m_npcs) && this.m_npcs.Count() > 0) {
       left += 4;
     }
-    if IsDefined(this.m_npcs) && this.m_npcs.Levels().On() > 0 {
+    // Level and enemy scaling modifiers on NPCs of ours (never saved, but
+    // a save waits for them to be off all the same).
+    if IsDefined(this.m_npcs) && (this.m_npcs.Levels().On() > 0 || this.m_npcs.Scaling().On() > 0) {
       left += 8;
     }
     if (IsDefined(this.m_world) && this.m_world.Borrowed()) || (IsDefined(this.m_npcs) && this.m_npcs.Quiet()) {
@@ -1154,6 +1156,14 @@ public class TandemSystem extends ScriptableSystem {
       // the quests' own way), "police calm".
       if IsDefined(this.m_police) {
         this.m_police.Command(command, this);
+      }
+    } else if Equals(command, "npc scale") {
+      // (test) enemy scaling (Scaling.reds): the rule, and each NPC we
+      // scale or show, with its health, poise, armour and thresholds.
+      if IsDefined(this.m_npcs) {
+        this.m_npcs.Scaling().Report();
+      } else {
+        TandemNative.Log("scaling: no NPCs (not in a world)");
       }
     } else if Equals(command, "npc anims") {
       TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");

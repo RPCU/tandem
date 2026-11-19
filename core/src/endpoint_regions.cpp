@@ -220,6 +220,8 @@ void Endpoint::ForgetNpc(proto::NpcId npc) {
   m_npcSeats.erase(npc);
   m_npcAnims.erase(npc);
   m_npcPoise.erase(npc);
+  m_npcScale.erase(npc);
+  m_npcScaleEarly.erase(npc);
   m_npcOwner.erase(npc);
   m_pinned.erase(npc);
   m_refusedUntilUs.erase(npc);
@@ -276,6 +278,8 @@ std::vector<proto::Message> Endpoint::NpcRecords(proto::NpcId npc) const {
     out.emplace_back(it->second);
   if (const auto it = m_npcPoise.find(npc); it != m_npcPoise.end())
     out.emplace_back(it->second);
+  if (const auto it = m_npcScale.find(npc); it != m_npcScale.end())
+    out.emplace_back(it->second);
   if (const auto it = m_npcHolds.find(npc); it != m_npcHolds.end())
     out.emplace_back(it->second);
   if (const auto it = m_npcAnims.find(npc); it != m_npcAnims.end())
@@ -296,6 +300,7 @@ void Endpoint::ShowNpcHere(proto::NpcId npc, std::vector<SessionEvent> &out) {
                    [&](const proto::NpcSpawn &m) { out.push_back(events::HostNpcSpawn{m}); },
                    [&](const proto::NpcHealth &m) { out.push_back(events::HostNpcHealth{m}); },
                    [&](const proto::NpcPoise &m) { out.push_back(events::Combat{m}); },
+                   [&](const proto::NpcScale &m) { out.push_back(events::Combat{m}); },
                    [&](const proto::NpcHold &m) { out.push_back(events::HostNpcHold{m}); },
                    [&](const proto::NpcAnims &m) { out.push_back(events::HostNpcAnims{m}); },
                    [&](const proto::NpcSeat &m) { out.push_back(events::HostNpcSeat{m}); },

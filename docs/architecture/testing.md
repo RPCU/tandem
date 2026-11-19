@@ -162,6 +162,11 @@ REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
   later (`Throw`, `ThrowEnd`: the others launch a copy); `--smart N` fires
   a smart round at an NPC it knows; `join --defend N` parries, then
   blocks, one of the host's NPCs' attacks every N s (`Defended`).
+  Enemy scaling (`npcs.md`): `join --near-npc` stands 4 m from one of the
+  host's NPCs (the first heard that is still there), so the host counts it
+  near; a guest logs each `NpcScale` ("npc N is scaled for P players");
+  `host --enemy-scaling on|off [--enemy-scaling-health F]` sets the rule
+  (`Rules`). Scenario `enemy-scaling`.
 - **Down and out** (any mode): `--go-down N` puts its V down N s after
   another player is there (it lies still until someone revives it);
   `--go-out N` puts it out instead, up again 10 s later; `--revive N`
