@@ -700,9 +700,9 @@ public class TandemTravel {
   }
 
   // A player by id or name; none given: the last one who made us an offer or
-  // answered ours, else the first with a puppet here. Ids are the host's
-  // count of joins (a host that saw others come and go hands out 24), so
-  // tests name players rather than guess their id. 0: nobody.
+  // answered ours, else the first with a puppet here. Ids go round 2..8 as
+  // players come and go, so tests name players rather than guess their id.
+  // 0: nobody.
   private func PlayerNamed(text: String) -> Uint32 {
     let system = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
     let players: array<Uint32>;
