@@ -267,12 +267,29 @@ struct RemoteTransit {
 struct HostNpcSeat {
   proto::NpcSeat seat;
 };
+// What another player's game has installed (host: a guest's; guest: the
+// host's), with what differs from ours in words for our player
+// (compat::Differences; empty: nothing known differs). Never blocks.
+struct RemoteInstall {
+  proto::PlayerId player{};
+  std::string name;
+  proto::Install install;
+  std::vector<std::string> differences;
+};
+// Host only: a game was refused for its protocol version, with the words
+// for our player (the guest got its own with the refusal).
+struct JoinRefused {
+  std::string name;
+  std::string notice;
+};
 } // namespace events
 
-// Who this game is in the session.
+// Who this game is in the session, and what it has installed (the mock
+// player and the tests: the build alone).
 struct Identity {
   std::string name;
   proto::Body body{};
+  proto::Install install{};
 };
 
 // Where a guest finds its host: directly, through a relay, or directly
@@ -301,7 +318,7 @@ using SessionEvent = std::variant<
     events::WorldItemTakenBy, events::SharedItemFrom, events::RemoteVitals, events::ReviveBy,
     events::SessionLost, events::HostNpcAnims, events::HostNpcShot, events::Combat, events::Resync,
     events::EpochChanged, events::RemoteElsewhere, events::RemoteTransit, events::HostNpcSeat,
-    events::ShotAtUs, events::ShotHitBy>;
+    events::ShotAtUs, events::ShotHitBy, events::RemoteInstall, events::JoinRefused>;
 
 class Endpoint {
 public:

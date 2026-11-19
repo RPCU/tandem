@@ -53,6 +53,8 @@ struct Hello {
   std::uint32_t magic{kMagic};
   std::uint16_t version{kProtocolVersion};
   std::string name;
+  // The guest's tandem build (compat::Build, "0.2.0+2fa03ca"): a host that
+  // refuses the protocol version can say which release that was.
   std::string gameVersion;
   Body body{};
   friend bool operator==(const Hello &, const Hello &) = default;
@@ -1136,6 +1138,20 @@ struct ShotHit {     // Event channel
   friend bool operator==(const ShotHit &, const ShotHit &) = default;
 };
 
+// What a game has installed, said once by each side after the Welcome (guest
+// to host, host to guest; never relayed): tandem/compat.hpp compares the two
+// and warns the players. 0 and "": unknown, never compared.
+inline constexpr std::size_t kMaxInstallText = 64;
+struct Install {           // Event channel
+  std::string build;       // tandem's build, "0.2.0+2fa03ca"
+  std::string game;        // the game executable's version, "3.0.88.46235"
+  std::uint64_t scripts{}; // r6/scripts/tandem: names and contents
+  std::uint64_t tweaks{};  // r6/tweaks/tandem
+  std::uint64_t mods{};    // the names of the other mods installed
+  std::uint16_t modCount{};
+  friend bool operator==(const Install &, const Install &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -1144,7 +1160,7 @@ using Message = std::variant<
     ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
     NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
     Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
-    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit>;
+    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit, Install>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.

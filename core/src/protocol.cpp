@@ -85,6 +85,10 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *transit = std::get_if<Transit>(&message);
       transit && transit->kind > TransitKind::Along)
     return std::nullopt;
+  if (const auto *install = std::get_if<Install>(&message);
+      install &&
+      (install->build.size() > kMaxInstallText || install->game.size() > kMaxInstallText))
+    return std::nullopt;
   return message;
 }
 
@@ -134,7 +138,7 @@ const char *NameOf(const Message &message) {
       "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",    "NpcWound",
       "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",       "ResyncRequest",
       "NpcSet",         "Epoch",          "Elsewhere",    "Transit",      "NpcSeat",
-      "NpcShotAt",      "ShotHit"};
+      "NpcShotAt",      "ShotHit",        "Install"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

@@ -1,5 +1,6 @@
 #include "tandem/endpoint.hpp"
 
+#include "tandem/compat.hpp"
 #include "tandem/elsewhere.hpp"
 #include "tandem/play.hpp"
 
@@ -64,7 +65,11 @@ bool AimsAtWorld(const proto::Message &message) {
 
 Endpoint::Endpoint(std::unique_ptr<net::Session> session, Identity identity, Timing timing)
     : m_session(std::move(session)), m_identity(std::move(identity)), m_timing(timing),
-      m_checker(Us(timing.resyncCooldown)) {}
+      m_checker(Us(timing.resyncCooldown)) {
+  // Every game says at least which build it is.
+  if (m_identity.install.build.empty())
+    m_identity.install.build = compat::Build();
+}
 
 std::unique_ptr<Endpoint> Endpoint::Host(Identity identity, std::uint16_t port, std::string &error,
                                          Timing timing, std::optional<net::RelayOptions> relay) {
@@ -291,242 +296,248 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
       return;
     }
 
-    std::visit(Overloaded{
-                   [&](const proto::Ping &ping) {
-                     Send(event.peer, proto::Pong{ping.sentUs, HostNowUs()});
-                   },
-                   [&](const proto::PlayerState &state) {
-                     // A guest only speaks for its own V.
-                     auto relayed = state;
-                     relayed.player = player;
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteState{relayed});
-                   },
-                   [&](const proto::PoseState &pose) {
-                     auto relayed = pose;
-                     relayed.player = player;
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemotePose{relayed});
-                   },
-                   [&](const proto::Appearance &appearance) {
-                     auto relayed = appearance;
-                     relayed.player = player;
-                     if (!Keep(m_appearances, relayed))
-                       return; // a repeat: nothing new for anyone
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteAppearance{relayed});
-                   },
-                   [&](const proto::Held &held) {
-                     auto relayed = held;
-                     relayed.player = player;
-                     if (!Keep(m_held, relayed))
-                       return; // a repeat: nothing new for anyone
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteHeld{relayed});
-                   },
-                   [&](const proto::Seat &seat) {
-                     auto relayed = seat;
-                     relayed.player = player;
-                     if (!Keep(m_seats, relayed))
-                       return; // a repeat: nothing new for anyone
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteSeat{relayed});
-                   },
-                   [&](const proto::VehicleState &vehicle) {
-                     auto relayed = vehicle;
-                     relayed.player = player;
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteVehicle{relayed});
-                   },
-                   [&](const proto::VehicleRadio &radio) {
-                     // A guest only speaks for the car it drives.
-                     auto relayed = radio;
-                     relayed.player = player;
-                     if (!Keep(m_radios, relayed))
-                       return; // a repeat: nothing new for anyone
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteVehicleRadio{relayed});
-                   },
-                   [&](const proto::Shot &shot) {
-                     auto relayed = shot;
-                     relayed.player = player;
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteShot{relayed});
-                   },
-                   [&](const proto::NpcHit &hit) {
-                     // For the host's game only: it owns the NPC.
-                     auto mine = hit;
-                     mine.player = player;
-                     out.push_back(events::NpcHitBy{mine});
-                   },
-                   [&](const proto::NpcEffect &effect) {
-                     auto mine = effect;
-                     mine.player = player;
-                     out.push_back(events::NpcEffectBy{mine});
-                   },
-                   [&](const proto::NpcHack &hack) {
-                     // For the host's game only: it owns the NPC.
-                     auto mine = hack;
-                     mine.player = player;
-                     out.push_back(events::NpcHackBy{mine});
-                   },
-                   [&](const proto::VehicleHack &hack) {
-                     // The driver's game owns the car: ours, or pass it on.
-                     auto mine = hack;
-                     mine.player = player;
-                     if (mine.driver == m_you)
-                       out.push_back(events::VehicleHackOn{mine});
-                     else if (const auto peer = PeerOf(mine.driver); peer && mine.driver != player)
-                       Send(*peer, mine);
-                   },
-                   [&](const proto::Stealth &stealth) {
-                     auto relayed = stealth;
-                     relayed.player = player;
-                     if (!Keep(m_stealth, relayed))
-                       return; // a repeat: nothing new for anyone
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteStealth{relayed});
-                   },
-                   [&](const proto::ShotHit &hit) {
-                     // For the host's game only: it shows the hit on the
-                     // puppet. A guest only reports hits on its own V.
-                     auto mine = hit;
-                     mine.player = player;
-                     out.push_back(events::ShotHitBy{mine});
-                   },
-                   [&](const proto::Noise &noise) {
-                     // For the host's game only: its NPCs hear it.
-                     auto mine = noise;
-                     mine.player = player;
-                     out.push_back(events::NoiseBy{mine});
-                   },
-                   [&](const proto::NpcAction &action) {
-                     // For the host's game only: it owns the NPC and answers.
-                     auto mine = action;
-                     mine.player = player;
-                     out.push_back(events::NpcActionBy{mine});
-                   },
-                   [&](const proto::Pause &pause) {
-                     // A guest only pauses in its own name.
-                     const proto::Pause relayed{player, pause.paused};
-                     if (!NotePaused(player, pause.paused))
-                       return;
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::PauseChanged{relayed});
-                   },
-                   [&](const proto::TimeEffect &time) {
-                     // A guest only bends time in its own name.
-                     auto relayed = Sanitized(time);
-                     relayed.player = player;
-                     if (!NoteTime(relayed))
-                       return;
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteTimeEffect{relayed});
-                   },
-                   [&](const proto::Elsewhere &away) {
-                     // A guest only goes elsewhere in its own name.
-                     auto relayed = elsewhere::Sanitized(away);
-                     relayed.player = player;
-                     if (!NoteElsewhere(relayed))
-                       return;
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteElsewhere{relayed});
-                   },
-                   [&](const proto::Regroup &offer) {
-                     // A guest only offers to come to itself.
-                     auto relayed = offer;
-                     relayed.from = player;
-                     if (relayed.to != player && Deliver(relayed, relayed.to, event.peer))
-                       out.push_back(events::RegroupOffered{relayed});
-                   },
-                   [&](const proto::RegroupAnswer &answer) {
-                     auto relayed = answer;
-                     relayed.from = player;
-                     if (relayed.to != player && relayed.to != proto::kNoPlayer &&
-                         Deliver(relayed, relayed.to, event.peer))
-                       out.push_back(events::RegroupAnswered{relayed});
-                   },
-                   [&](const proto::WorldItem &item) { AddWorldItem(player, item, out); },
-                   [&](const proto::SharedItem &shared) {
-                     // A guest speaks for its own V, and only of what it got.
-                     auto relayed = shared;
-                     relayed.player = player;
-                     relayed.kind = proto::kSharedLooted;
-                     relayed.npc = 0;
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::SharedItemFrom{relayed});
-                   },
-                   [&](const proto::WorldItemTaken &taken) {
-                     // A claim, in the guest's own name only.
-                     ClaimWorldItem(player, taken.id, taken.stack, event.peer, out);
-                   },
-                   [&](const proto::Vitals &vitals) {
-                     // A guest only speaks for its own V.
-                     auto relayed = vitals;
-                     relayed.player = player;
-                     m_lives[player] = relayed;
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteVitals{relayed});
-                     CheckLost(out);
-                   },
-                   [&](const proto::Revive &revive) {
-                     // The downed V's game decides; only a V that is down
-                     // can be revived (a cancel always passes).
-                     auto mine = revive;
-                     mine.player = player;
-                     if (mine.target == player || (mine.step != proto::ReviveStep::Cancel &&
-                                                   LifeOf(mine.target) != proto::Life::Down))
-                       return;
-                     if (mine.target == m_you)
-                       out.push_back(events::ReviveBy{mine});
-                     else if (const auto peer = PeerOf(mine.target))
-                       Send(*peer, mine);
-                   },
-                   [&](const proto::Transit &transit) {
-                     // A guest only rides in its own name.
-                     auto relayed = transit;
-                     relayed.player = player;
-                     NoteTransit(relayed);
-                     Broadcast(relayed, event.peer);
-                     out.push_back(events::RemoteTransit{relayed});
-                   },
-                   [&](const proto::Bye &) {
-                     RemovePlayer(event.peer, out); // gone now, not when ENet is done
-                     m_session->Disconnect(event.peer);
-                   },
-                   [&](const proto::ResyncRequest &request) {
-                     // At most one resync per cooldown and guest: a guest that
-                     // keeps asking (a bug) cannot flood the link.
-                     const auto now = net::NowUs();
-                     auto &last = m_resyncAtUs[player];
-                     if (last != 0 && now - last < Us(m_timing.resyncCooldown) / 2)
-                       return;
-                     last = now;
-                     const auto domains =
-                         static_cast<std::uint8_t>(request.domains & proto::kAllDomains);
-                     SendDomainsTo(event.peer, domains, true);
-                     out.push_back(events::Resync{player, domains});
-                   },
-                   [&](const proto::Epoch &epoch) {
-                     auto relayed = epoch;
-                     relayed.player = player;
-                     relayed.firstNpcSeq = 0;
-                     auto &seen = m_seenHost[player];
-                     seen = std::max(seen, std::min(epoch.seenHost, m_epoch));
-                     auto &theirs = m_guestEpoch[player];
-                     if (relayed.epoch == theirs)
-                       return;
-                     theirs = relayed.epoch;
-                     Broadcast(relayed, event.peer);
-                     if (relayed.reason != proto::kEpochJoin) {
-                       out.push_back(events::EpochChanged{relayed});
-                       // Its world was rebuilt: check it soon.
-                       m_digestSoon.insert(player);
-                     }
-                   },
-                   [](const auto &) {},
-               },
-               message);
+    std::visit(
+        Overloaded{
+            [&](const proto::Ping &ping) {
+              Send(event.peer, proto::Pong{ping.sentUs, HostNowUs()});
+            },
+            [&](const proto::PlayerState &state) {
+              // A guest only speaks for its own V.
+              auto relayed = state;
+              relayed.player = player;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteState{relayed});
+            },
+            [&](const proto::PoseState &pose) {
+              auto relayed = pose;
+              relayed.player = player;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemotePose{relayed});
+            },
+            [&](const proto::Appearance &appearance) {
+              auto relayed = appearance;
+              relayed.player = player;
+              if (!Keep(m_appearances, relayed))
+                return; // a repeat: nothing new for anyone
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteAppearance{relayed});
+            },
+            [&](const proto::Held &held) {
+              auto relayed = held;
+              relayed.player = player;
+              if (!Keep(m_held, relayed))
+                return; // a repeat: nothing new for anyone
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteHeld{relayed});
+            },
+            [&](const proto::Seat &seat) {
+              auto relayed = seat;
+              relayed.player = player;
+              if (!Keep(m_seats, relayed))
+                return; // a repeat: nothing new for anyone
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteSeat{relayed});
+            },
+            [&](const proto::VehicleState &vehicle) {
+              auto relayed = vehicle;
+              relayed.player = player;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteVehicle{relayed});
+            },
+            [&](const proto::VehicleRadio &radio) {
+              // A guest only speaks for the car it drives.
+              auto relayed = radio;
+              relayed.player = player;
+              if (!Keep(m_radios, relayed))
+                return; // a repeat: nothing new for anyone
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteVehicleRadio{relayed});
+            },
+            [&](const proto::Shot &shot) {
+              auto relayed = shot;
+              relayed.player = player;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteShot{relayed});
+            },
+            [&](const proto::NpcHit &hit) {
+              // For the host's game only: it owns the NPC.
+              auto mine = hit;
+              mine.player = player;
+              out.push_back(events::NpcHitBy{mine});
+            },
+            [&](const proto::NpcEffect &effect) {
+              auto mine = effect;
+              mine.player = player;
+              out.push_back(events::NpcEffectBy{mine});
+            },
+            [&](const proto::NpcHack &hack) {
+              // For the host's game only: it owns the NPC.
+              auto mine = hack;
+              mine.player = player;
+              out.push_back(events::NpcHackBy{mine});
+            },
+            [&](const proto::VehicleHack &hack) {
+              // The driver's game owns the car: ours, or pass it on.
+              auto mine = hack;
+              mine.player = player;
+              if (mine.driver == m_you)
+                out.push_back(events::VehicleHackOn{mine});
+              else if (const auto peer = PeerOf(mine.driver); peer && mine.driver != player)
+                Send(*peer, mine);
+            },
+            [&](const proto::Stealth &stealth) {
+              auto relayed = stealth;
+              relayed.player = player;
+              if (!Keep(m_stealth, relayed))
+                return; // a repeat: nothing new for anyone
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteStealth{relayed});
+            },
+            [&](const proto::ShotHit &hit) {
+              // For the host's game only: it shows the hit on the
+              // puppet. A guest only reports hits on its own V.
+              auto mine = hit;
+              mine.player = player;
+              out.push_back(events::ShotHitBy{mine});
+            },
+            [&](const proto::Install &install) {
+              // The guest's game against ours: said, never refused.
+              const auto &name = m_players[player].name;
+              out.push_back(events::RemoteInstall{
+                  player, name, install, compat::Differences(m_identity.install, install, name)});
+            },
+            [&](const proto::Noise &noise) {
+              // For the host's game only: its NPCs hear it.
+              auto mine = noise;
+              mine.player = player;
+              out.push_back(events::NoiseBy{mine});
+            },
+            [&](const proto::NpcAction &action) {
+              // For the host's game only: it owns the NPC and answers.
+              auto mine = action;
+              mine.player = player;
+              out.push_back(events::NpcActionBy{mine});
+            },
+            [&](const proto::Pause &pause) {
+              // A guest only pauses in its own name.
+              const proto::Pause relayed{player, pause.paused};
+              if (!NotePaused(player, pause.paused))
+                return;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::PauseChanged{relayed});
+            },
+            [&](const proto::TimeEffect &time) {
+              // A guest only bends time in its own name.
+              auto relayed = Sanitized(time);
+              relayed.player = player;
+              if (!NoteTime(relayed))
+                return;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteTimeEffect{relayed});
+            },
+            [&](const proto::Elsewhere &away) {
+              // A guest only goes elsewhere in its own name.
+              auto relayed = elsewhere::Sanitized(away);
+              relayed.player = player;
+              if (!NoteElsewhere(relayed))
+                return;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteElsewhere{relayed});
+            },
+            [&](const proto::Regroup &offer) {
+              // A guest only offers to come to itself.
+              auto relayed = offer;
+              relayed.from = player;
+              if (relayed.to != player && Deliver(relayed, relayed.to, event.peer))
+                out.push_back(events::RegroupOffered{relayed});
+            },
+            [&](const proto::RegroupAnswer &answer) {
+              auto relayed = answer;
+              relayed.from = player;
+              if (relayed.to != player && relayed.to != proto::kNoPlayer &&
+                  Deliver(relayed, relayed.to, event.peer))
+                out.push_back(events::RegroupAnswered{relayed});
+            },
+            [&](const proto::WorldItem &item) { AddWorldItem(player, item, out); },
+            [&](const proto::SharedItem &shared) {
+              // A guest speaks for its own V, and only of what it got.
+              auto relayed = shared;
+              relayed.player = player;
+              relayed.kind = proto::kSharedLooted;
+              relayed.npc = 0;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::SharedItemFrom{relayed});
+            },
+            [&](const proto::WorldItemTaken &taken) {
+              // A claim, in the guest's own name only.
+              ClaimWorldItem(player, taken.id, taken.stack, event.peer, out);
+            },
+            [&](const proto::Vitals &vitals) {
+              // A guest only speaks for its own V.
+              auto relayed = vitals;
+              relayed.player = player;
+              m_lives[player] = relayed;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteVitals{relayed});
+              CheckLost(out);
+            },
+            [&](const proto::Revive &revive) {
+              // The downed V's game decides; only a V that is down
+              // can be revived (a cancel always passes).
+              auto mine = revive;
+              mine.player = player;
+              if (mine.target == player || (mine.step != proto::ReviveStep::Cancel &&
+                                            LifeOf(mine.target) != proto::Life::Down))
+                return;
+              if (mine.target == m_you)
+                out.push_back(events::ReviveBy{mine});
+              else if (const auto peer = PeerOf(mine.target))
+                Send(*peer, mine);
+            },
+            [&](const proto::Transit &transit) {
+              // A guest only rides in its own name.
+              auto relayed = transit;
+              relayed.player = player;
+              NoteTransit(relayed);
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteTransit{relayed});
+            },
+            [&](const proto::Bye &) {
+              RemovePlayer(event.peer, out); // gone now, not when ENet is done
+              m_session->Disconnect(event.peer);
+            },
+            [&](const proto::ResyncRequest &request) {
+              // At most one resync per cooldown and guest: a guest that
+              // keeps asking (a bug) cannot flood the link.
+              const auto now = net::NowUs();
+              auto &last = m_resyncAtUs[player];
+              if (last != 0 && now - last < Us(m_timing.resyncCooldown) / 2)
+                return;
+              last = now;
+              const auto domains = static_cast<std::uint8_t>(request.domains & proto::kAllDomains);
+              SendDomainsTo(event.peer, domains, true);
+              out.push_back(events::Resync{player, domains});
+            },
+            [&](const proto::Epoch &epoch) {
+              auto relayed = epoch;
+              relayed.player = player;
+              relayed.firstNpcSeq = 0;
+              auto &seen = m_seenHost[player];
+              seen = std::max(seen, std::min(epoch.seenHost, m_epoch));
+              auto &theirs = m_guestEpoch[player];
+              if (relayed.epoch == theirs)
+                return;
+              theirs = relayed.epoch;
+              Broadcast(relayed, event.peer);
+              if (relayed.reason != proto::kEpochJoin) {
+                out.push_back(events::EpochChanged{relayed});
+                // Its world was rebuilt: check it soon.
+                m_digestSoon.insert(player);
+              }
+            },
+            [](const auto &) {},
+        },
+        message);
     break;
   }
   }
@@ -598,10 +609,18 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
 
 void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
                        std::vector<SessionEvent> &out) {
-  if (hello.magic != proto::kMagic || hello.version != proto::kProtocolVersion) {
-    Send(peer, proto::Refused{"protocol version " + std::to_string(hello.version) +
-                              ", the host runs " + std::to_string(proto::kProtocolVersion)});
+  if (hello.magic != proto::kMagic) {
+    Send(peer, proto::Refused{"not a tandem game"});
     m_session->Disconnect(peer);
+    return;
+  }
+  if (hello.version != proto::kProtocolVersion) {
+    // Both players read why, in words: the guest with the refusal, ours
+    // from the event (the guest's name and build came with its Hello).
+    Send(peer, proto::Refused{compat::RefusalForGuest(hello.version)});
+    m_session->Disconnect(peer);
+    out.push_back(events::JoinRefused{
+        hello.name, compat::RefusalForHost(hello.name, hello.version, hello.gameVersion)});
     return;
   }
 
@@ -643,6 +662,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
       CheckLost(out);
     }
     BroadcastRoster();
+    Send(peer, m_identity.install);
     SendSessionTo(peer);
     return;
   }
@@ -660,6 +680,8 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
   Send(peer, proto::Welcome{player, m_host, HostNowUs()});
   out.push_back(events::PlayerJoined{m_players[player]});
   BroadcastRoster();
+  // After the roster: the guest names us when it says what differs.
+  Send(peer, m_identity.install);
   SendSessionTo(peer);
   CheckLost(out); // a V up again
 }
@@ -790,8 +812,9 @@ void Endpoint::OnGuestEvent(const net::Event &event, std::vector<SessionEvent> &
   switch (event.kind) {
   case Kind::Connected:
     m_hostPeer = event.peer;
-    Send(m_hostPeer,
-         proto::Hello{.name = m_identity.name, .gameVersion = {}, .body = m_identity.body});
+    Send(m_hostPeer, proto::Hello{.name = m_identity.name,
+                                  .gameVersion = m_identity.install.build,
+                                  .body = m_identity.body});
     break;
   case Kind::Malformed:
     break; // the host may be newer; Refused will say so
@@ -871,6 +894,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             m_seq = m_poseSeq = m_vehicleSeq = m_shotSeq =
                 static_cast<std::uint32_t>(welcome.hostTimeUs / 1000);
             out.push_back(events::Joined{m_you, m_host});
+            Send(m_hostPeer, m_identity.install);
             SendLocalAppearanceNow();
             SendLocalHeldNow();
             SendLocalSeatNow();
@@ -888,6 +912,15 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           [&](const proto::Refused &refused) {
             m_ended = true;
             out.push_back(events::Ended{"refused: " + refused.reason});
+          },
+          [&](const proto::Install &install) {
+            // The host's game against ours: said, never a reason to leave.
+            const auto host = m_players.find(m_host);
+            const std::string name = host != m_players.end() && !host->second.name.empty()
+                                         ? host->second.name
+                                         : "The host";
+            out.push_back(events::RemoteInstall{
+                m_host, name, install, compat::Differences(m_identity.install, install, name)});
           },
           [&](const proto::Pong &pong) {
             const auto now = net::NowUs();

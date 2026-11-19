@@ -1,0 +1,6 @@
+#pragma once
+
+// Written by CMake at configure time (core/CMakeLists.txt); only
+// core/src/compat.cpp includes it, so a new commit rebuilds one file.
+#define TANDEM_RELEASE "@PROJECT_VERSION@"
+#define TANDEM_BUILD "@TANDEM_BUILD@"
