@@ -1136,15 +1136,108 @@ struct ShotHit {     // Event channel
   friend bool operator==(const ShotHit &, const ShotHit &) = default;
 };
 
-using Message = std::variant<
-    Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
-    Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
-    Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
-    PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle,
-    ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
-    NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
-    Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
-    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit>;
+// ---- Comms (docs/architecture/comms.md): pings, shared tags, waypoints ----
+
+// What a ping or a tag is about, named the same way in every game: one of the
+// host's shared NPCs (its proxy on a guest), a placed entity (its static
+// EntityID hash: the same in every game), or a player. A receiver that does
+// not find it falls back to the position that comes with it.
+enum class TargetKind : std::uint8_t { None = 0, Npc = 1, Entity = 2, Player = 3 };
+struct TargetRef {
+  TargetKind kind{};
+  std::uint64_t id{}; // NpcId, EntityID hash or PlayerId
+  friend bool operator==(const TargetRef &, const TargetRef &) = default;
+};
+
+// A ping: "look at this". Its kind picks the icon, sound and lifetime.
+enum class MarkKind : std::uint8_t {
+  None = 0, // withdrawn: the sender's mark `id` goes
+  Spot = 1, // a place
+  Enemy = 2,
+  Device = 3,
+  Loot = 4,
+  Vehicle = 5,
+  Danger = 6, // the same place or target, pinged twice in a row: "careful"
+};
+
+// The sender's game sends it to the host, which stamps `from`, holds each
+// guest to a rate (comms::Limiter) and passes it to every other player
+// (Event channel; a one-shot: never kept, never sent to a late joiner). A
+// Mark with the id of one shown replaces it (a ping turned into a danger).
+struct Mark {
+  PlayerId from{};
+  std::uint32_t id{}; // the sender's count of its marks
+  MarkKind kind{};
+  TargetRef target;
+  Vec3 position;          // where it is (the target's place when sent)
+  std::uint8_t seconds{}; // how long it shows (0: the kind's own; capped)
+  friend bool operator==(const Mark &, const Mark &) = default;
+};
+
+// What a player scanned and tagged, or what its Ping quickhack revealed:
+// outlined for the players linked with it (comms::Linked), and only those.
+// The host stamps `from` and delivers it to them; a one-shot, like Mark.
+enum class TagReason : std::uint8_t {
+  Scan = 0,   // the scanner's tag, until untagged
+  Reveal = 1, // a reveal (the Ping quickhack) for `seconds`
+};
+inline constexpr std::size_t kMaxTagTargets = 16;
+struct Tag {
+  PlayerId from{};
+  TagReason reason{};
+  bool on{};
+  std::uint8_t seconds{}; // Reveal: how long (0: until said off)
+  std::vector<TargetRef> targets;
+  friend bool operator==(const Tag &, const Tag &) = default;
+};
+
+// Whom a player shares its tags with (the link, docs/architecture/comms.md):
+// its own consent, sent by its game when it changes. Two players are linked
+// when each consents to the other. The host stamps `player`, keeps
+// everyone's for late joiners (players domain) and relays it.
+enum class LinkMode : std::uint8_t {
+  Off = 0,      // nobody
+  Listed = 1,   // the players in `players`
+  Everyone = 2, // everyone but the players in `players` (link = auto)
+};
+inline constexpr std::size_t kMaxLinkPlayers = 8;
+struct Link {
+  PlayerId player{};
+  std::uint32_t revision{};
+  LinkMode mode{};
+  std::vector<PlayerId> players;
+  friend bool operator==(const Link &, const Link &) = default;
+};
+
+// Where a player's own waypoint is (the map pin it placed, or the map point
+// it tracks), shown to the others as "NAME's waypoint". Sent by its game
+// when it changes (Event channel; kind None: no waypoint any more); the host
+// stamps `player`, keeps everyone's for late joiners (players domain) and
+// relays it.
+enum class WaypointKind : std::uint8_t {
+  None = 0,
+  Pin = 1,   // a map pin (the world map's custom position)
+  Point = 2, // a point of the map it tracks (a vendor, a fast travel point...)
+};
+struct Waypoint {
+  PlayerId player{};
+  std::uint32_t revision{};
+  WaypointKind kind{};
+  Vec3 position;
+  friend bool operator==(const Waypoint &, const Waypoint &) = default;
+};
+
+using Message =
+    std::variant<Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState,
+                 Appearance, Held, Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone,
+                 NpcHit, NpcHealth, NpcEffect, Pause, VehicleRadio, PlayerHit, NpcAwareness,
+                 Stealth, Noise, NpcHack, NpcHackState, NpcStatus, PlayerHack, VehicleHack, Journal,
+                 Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle, ChoiceHub, ChoiceCursor,
+                 StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction, NpcActionReply,
+                 NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
+                 Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise,
+                 Difficulty, AreaHit, Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit,
+                 NpcSeat, NpcShotAt, ShotHit, Mark, Tag, Link, Waypoint>;
 
 // A story message (Journal … QuestReward, StoryEffect): endpoint.hpp relays these
 // through one path.

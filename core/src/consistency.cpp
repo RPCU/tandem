@@ -118,6 +118,27 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
           .Add(e.anchor.x)
           .Add(e.anchor.y)
           .Add(e.anchor.z);
+  // Comms: links that share with someone, waypoints that are set (an off
+  // link and no waypoint count like one never heard of).
+  if (players.links) {
+    hash.Add(std::uint64_t{0xA9});
+    for (const auto &[id, l] : *players.links)
+      if (id != self && (l.mode != proto::LinkMode::Off || !l.players.empty())) {
+        hash.Add(std::uint64_t{id}).Add(std::uint64_t{static_cast<std::uint8_t>(l.mode)});
+        for (const auto other : l.players)
+          hash.Add(std::uint64_t{other});
+      }
+  }
+  if (players.waypoints) {
+    hash.Add(std::uint64_t{0xAA});
+    for (const auto &[id, w] : *players.waypoints)
+      if (id != self && w.kind != proto::WaypointKind::None)
+        hash.Add(std::uint64_t{id})
+            .Add(std::uint64_t{static_cast<std::uint8_t>(w.kind)})
+            .Add(w.position.x)
+            .Add(w.position.y)
+            .Add(w.position.z);
+  }
   return hash.Value();
 }
 
@@ -194,7 +215,9 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<NpcShotAt>(message) || std::holds_alternative<ShotHit>(message) ||
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
          std::holds_alternative<NpcStrike>(message) || std::holds_alternative<NpcWound>(message) ||
-         std::holds_alternative<AreaHit>(message);
+         std::holds_alternative<AreaHit>(message) ||
+         // A ping and a tag: each counts (a doubled ping would sound twice).
+         std::holds_alternative<Mark>(message) || std::holds_alternative<Tag>(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

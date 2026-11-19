@@ -2,6 +2,7 @@
 
 #include <zpp_bits.h>
 
+#include <algorithm>
 namespace tandem::proto {
 std::vector<std::byte> Encode(const Message &message) {
   std::vector<std::byte> bytes;
@@ -85,6 +86,21 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *transit = std::get_if<Transit>(&message);
       transit && transit->kind > TransitKind::Along)
     return std::nullopt;
+  // Comms: kinds the receiver does not know, lists past their caps.
+  const auto target = [](const TargetRef &ref) { return ref.kind <= TargetKind::Player; };
+  if (const auto *mark = std::get_if<Mark>(&message);
+      mark && (mark->kind > MarkKind::Danger || !target(mark->target)))
+    return std::nullopt;
+  if (const auto *tag = std::get_if<Tag>(&message);
+      tag && (tag->reason > TagReason::Reveal || tag->targets.size() > kMaxTagTargets ||
+              !std::ranges::all_of(tag->targets, target)))
+    return std::nullopt;
+  if (const auto *link = std::get_if<Link>(&message);
+      link && (link->mode > LinkMode::Everyone || link->players.size() > kMaxLinkPlayers))
+    return std::nullopt;
+  if (const auto *waypoint = std::get_if<Waypoint>(&message);
+      waypoint && waypoint->kind > WaypointKind::Point)
+    return std::nullopt;
   return message;
 }
 
@@ -134,7 +150,8 @@ const char *NameOf(const Message &message) {
       "GameOver",       "NpcAnims",       "NpcShot",      "NpcStrike",    "NpcWound",
       "NpcPoise",       "Difficulty",     "AreaHit",      "Digest",       "ResyncRequest",
       "NpcSet",         "Epoch",          "Elsewhere",    "Transit",      "NpcSeat",
-      "NpcShotAt",      "ShotHit"};
+      "NpcShotAt",      "ShotHit",        "Mark",         "Tag",          "Link",
+      "Waypoint"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

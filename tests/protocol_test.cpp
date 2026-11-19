@@ -558,3 +558,49 @@ TEST_CASE("a V in another world: survives encoding, small, reliable, not a story
   // A place this version does not know is refused.
   CHECK_FALSE(Decode(Encode(Elsewhere{.place = static_cast<Place>(5)})).has_value());
 }
+
+TEST_CASE("comms: pings, tags, links and waypoints survive encoding, small, reliable") {
+  RoundTrips(Mark{.from = 2,
+                  .id = 7,
+                  .kind = MarkKind::Enemy,
+                  .target = {TargetKind::Npc, 70001},
+                  .position = {-1234.5f, 678.25f, 12.f},
+                  .seconds = 15});
+  RoundTrips(Mark{.from = 1, .id = 1, .kind = MarkKind::None});
+  RoundTrips(Tag{.from = 3,
+                 .reason = TagReason::Reveal,
+                 .on = true,
+                 .seconds = 30,
+                 .targets = {{TargetKind::Npc, 12}, {TargetKind::Entity, 0xDEADBEEFCAFEull}}});
+  RoundTrips(Link{.player = 2, .revision = 4, .mode = LinkMode::Everyone, .players = {3}});
+  RoundTrips(Link{.player = 1, .mode = LinkMode::Listed, .players = {2, 3, 4}});
+  RoundTrips(Waypoint{
+      .player = 2, .revision = 9, .kind = WaypointKind::Pin, .position = {10.f, -20.f, 3.f}});
+  for (const Message message :
+       {Message{Mark{}}, Message{Tag{}}, Message{Link{}}, Message{Waypoint{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(IsReliable(message));
+    CHECK_FALSE(IsStory(message));
+    CHECK_FALSE(IsCombat(message));
+  }
+  CHECK(std::string(NameOf(Mark{})) == "Mark");
+  CHECK(std::string(NameOf(Tag{})) == "Tag");
+  CHECK(std::string(NameOf(Link{})) == "Link");
+  CHECK(std::string(NameOf(Waypoint{})) == "Waypoint");
+  // A ping is one small reliable packet; a squad's reveal fits in one too.
+  CHECK(Encode(Mark{}).size() < 40);
+  CHECK(Encode(Waypoint{}).size() < 32);
+  Tag squad{.targets = std::vector<TargetRef>(kMaxTagTargets, {TargetKind::Npc, 1})};
+  CHECK(Encode(squad).size() < 200);
+
+  // Kinds this version does not know, lists past their caps: refused.
+  CHECK_FALSE(Decode(Encode(Mark{.kind = static_cast<MarkKind>(7)})).has_value());
+  CHECK_FALSE(Decode(Encode(Mark{.target = {static_cast<TargetKind>(4), 1}})).has_value());
+  CHECK_FALSE(Decode(Encode(Tag{.reason = static_cast<TagReason>(2)})).has_value());
+  squad.targets.push_back({TargetKind::Npc, 2});
+  CHECK_FALSE(Decode(Encode(squad)).has_value());
+  CHECK_FALSE(Decode(Encode(Link{.mode = static_cast<LinkMode>(3)})).has_value());
+  CHECK_FALSE(
+      Decode(Encode(Link{.players = std::vector<PlayerId>(kMaxLinkPlayers + 1, 2)})).has_value());
+  CHECK_FALSE(Decode(Encode(Waypoint{.kind = static_cast<WaypointKind>(3)})).has_value());
+}

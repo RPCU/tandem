@@ -60,6 +60,10 @@ struct PlayersView {
   const std::map<proto::PlayerId, proto::Vitals> &lives;
   // Who is in another world (a V in the city counts like one never heard of).
   const std::map<proto::PlayerId, proto::Elsewhere> &elsewhere;
+  // Comms (docs/architecture/comms.md): each player's link consent and
+  // waypoint (none given: not hashed).
+  const std::map<proto::PlayerId, proto::Link> *links = nullptr;
+  const std::map<proto::PlayerId, proto::Waypoint> *waypoints = nullptr;
 };
 std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self);
 

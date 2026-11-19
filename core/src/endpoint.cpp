@@ -194,10 +194,10 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
       .world = consistency::WorldDigest(m_world, m_difficulty),
       .npcs = consistency::NpcDigest(m_npcs, m_npcHealth, m_npcHolds),
       .story = m_story.Digest(),
-      .players =
-          consistency::PlayersDigest({m_players, m_appearances, m_held, m_seats, m_radios,
-                                      m_stealth, m_paused, m_timeEffects, m_lives, m_elsewheres},
-                                     self),
+      .players = consistency::PlayersDigest({m_players, m_appearances, m_held, m_seats, m_radios,
+                                             m_stealth, m_paused, m_timeEffects, m_lives,
+                                             m_elsewheres, &m_links, &m_waypoints},
+                                            self),
       .npcCount = static_cast<std::uint16_t>(std::min<std::size_t>(m_npcs.size(), 0xFFFF)),
   };
 }
@@ -524,6 +524,10 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                        m_digestSoon.insert(player);
                      }
                    },
+                   [&](const proto::Mark &) { OnGuestComms(event.peer, player, message, out); },
+                   [&](const proto::Tag &) { OnGuestComms(event.peer, player, message, out); },
+                   [&](const proto::Link &) { OnGuestComms(event.peer, player, message, out); },
+                   [&](const proto::Waypoint &) { OnGuestComms(event.peer, player, message, out); },
                    [](const auto &) {},
                },
                message);
@@ -579,6 +583,9 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   // stays hidden anywhere).
   EndElsewhereOf(player, out, true);
   m_lives.erase(player);
+  // Its link and waypoint go with it (the others' games drop its marks,
+  // tags and waypoint on its PlayerLeft).
+  ForgetComms(player);
   // It may have been reviving someone (it cannot say it stopped: a player
   // can vanish at any moment): every downed V hears its revive is off.
   for (const auto &[id, vitals] : m_lives) {
@@ -634,6 +641,8 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     EndTimeOf(player, out, true);
     // ...in its body, in the city, until it says otherwise...
     EndElsewhereOf(player, out, true);
+    // ...with no waypoint and no link until its new game says so...
+    EndCommsOf(player, peer, out);
     // ...and its V is up until it says otherwise.
     if (LifeOf(player) != proto::Life::Up) {
       const proto::Vitals up{.player = player, .revision = m_lives[player].revision + 1};
@@ -696,6 +705,8 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     others(m_radios);
     others(m_stealth);
     others(m_transits); // who rides what (only rides that are on)
+    others(m_links);    // whom each shares tags with
+    others(m_waypoints);
     // Who is in their pause menu (the newcomer itself is not), and in a
     // resync who is not (its copy may say otherwise).
     for (const auto paused : m_paused)
@@ -724,6 +735,10 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
           Send(peer, proto::Vitals{.player = id});
         if (!m_transits.contains(id))
           Send(peer, proto::Transit{.player = id});
+        if (!m_links.contains(id))
+          Send(peer, proto::Link{.player = id});
+        if (!m_waypoints.contains(id))
+          Send(peer, proto::Waypoint{.player = id});
       }
     // Who is down or out (the newcomer's own is its game's).
     for (const auto &[id, vitals] : m_lives)
@@ -881,6 +896,8 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             SendLocalElsewhereNow();
             SendLocalVitalsNow();
             SendLocalTransitNow();
+            SendLocalLinkNow();
+            SendLocalWaypointNow();
             // What overtook the Welcome, in the order it came.
             for (const auto &early : std::exchange(m_early, {}))
               OnGuestMessage(early, out);
@@ -926,6 +943,8 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 m_transits.erase(id);
                 m_lives.erase(id);
                 m_story.Forget(id);
+                m_links.erase(id);
+                m_waypoints.erase(id);
                 out.push_back(events::PlayerLeft{id});
               }
             m_players = std::move(next);
@@ -1169,6 +1188,24 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           [&](const proto::Bye &bye) {
             m_ended = true;
             out.push_back(events::Ended{bye.reason});
+          },
+          [&](const proto::Mark &mark) {
+            if (mark.from != m_you && mark.from != proto::kNoPlayer)
+              out.push_back(events::MarkFrom{mark});
+          },
+          [&](const proto::Tag &tag) {
+            // The host delivers only what is for us; a link that broke on
+            // the way is checked again here.
+            if (tag.from != m_you && LinkedPair(tag.from, m_you))
+              out.push_back(events::TagFrom{tag});
+          },
+          [&](const proto::Link &link) {
+            if (link.player != m_you && Keep(m_links, link))
+              out.push_back(events::RemoteLink{link});
+          },
+          [&](const proto::Waypoint &waypoint) {
+            if (waypoint.player != m_you && Keep(m_waypoints, waypoint))
+              out.push_back(events::RemoteWaypoint{waypoint});
           },
           [](const auto &) {},
       },
@@ -1654,6 +1691,157 @@ void Endpoint::SendRegroupAnswer(proto::RegroupAnswer answer) {
     Deliver(answer, answer.to, 0);
   else
     Send(m_hostPeer, answer);
+}
+
+// Host: a guest's ping, tag, link consent or waypoint (comms.hpp), in its
+// own name only.
+void Endpoint::OnGuestComms(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
+                            std::vector<SessionEvent> &out) {
+  const auto rate = [&](std::map<proto::PlayerId, comms::Limiter> &rates, double burst,
+                        double perSecond) {
+    auto &limiter = rates.try_emplace(player, burst, perSecond).first->second;
+    if (limiter.Allow(net::NowUs()))
+      return true;
+    ++m_commsDropped;
+    return false;
+  };
+  if (const auto *mark = std::get_if<proto::Mark>(&message)) {
+    auto relayed = *mark;
+    relayed.from = player;
+    if (!rate(m_markRate, comms::kHostMarkBurst, comms::kHostMarksPerSecond))
+      return;
+    Broadcast(relayed, peer);
+    out.push_back(events::MarkFrom{relayed});
+  } else if (const auto *tag = std::get_if<proto::Tag>(&message)) {
+    auto relayed = *tag;
+    relayed.from = player;
+    if (!rate(m_tagRate, comms::kHostTagBurst, comms::kHostTagsPerSecond))
+      return;
+    if (DeliverTag(relayed, peer))
+      out.push_back(events::TagFrom{relayed});
+  } else if (const auto *link = std::get_if<proto::Link>(&message)) {
+    auto relayed = *link;
+    relayed.player = player;
+    if (!Keep(m_links, relayed))
+      return; // a repeat: nothing new for anyone
+    Broadcast(relayed, peer);
+    out.push_back(events::RemoteLink{relayed});
+  } else if (const auto *waypoint = std::get_if<proto::Waypoint>(&message)) {
+    auto relayed = *waypoint;
+    relayed.player = player;
+    if (!Keep(m_waypoints, relayed))
+      return;
+    Broadcast(relayed, peer);
+    out.push_back(events::RemoteWaypoint{relayed});
+  }
+}
+
+// Host: a player back from a crash has no waypoint and no link until its
+// new game says so (everyone hears it now; its new connection is spared).
+void Endpoint::EndCommsOf(proto::PlayerId player, net::PeerId peer,
+                          std::vector<SessionEvent> &out) {
+  if (m_waypoints.contains(player)) {
+    const proto::Waypoint none{.player = player};
+    Broadcast(none, peer);
+    out.push_back(events::RemoteWaypoint{none});
+  }
+  if (m_links.contains(player)) {
+    const proto::Link none{.player = player};
+    Broadcast(none, peer);
+    out.push_back(events::RemoteLink{none});
+  }
+  ForgetComms(player);
+}
+
+bool Endpoint::SendMark(proto::Mark mark) {
+  Record(mark);
+  if (!IsJoined() || m_ended)
+    return false;
+  mark.from = m_you;
+  if (IsHost())
+    Broadcast(mark);
+  else
+    Send(m_hostPeer, mark);
+  return true;
+}
+
+void Endpoint::SendTag(proto::Tag tag) {
+  Record(tag);
+  if (!IsJoined() || m_ended)
+    return;
+  tag.from = m_you;
+  if (tag.targets.size() > proto::kMaxTagTargets)
+    tag.targets.resize(proto::kMaxTagTargets);
+  if (IsHost())
+    DeliverTag(tag, 0);
+  else
+    Send(m_hostPeer, tag);
+}
+
+bool Endpoint::LinkedPair(proto::PlayerId from, proto::PlayerId to) const {
+  if (from == to)
+    return false;
+  const auto consent = [&](proto::PlayerId who, proto::PlayerId other) {
+    if (who == m_you && !IsHost())
+      return comms::Consents(m_localLink ? &*m_localLink : nullptr, other);
+    const auto it = m_links.find(who);
+    return comms::Consents(it == m_links.end() ? nullptr : &it->second, other);
+  };
+  return consent(from, to) && consent(to, from);
+}
+
+bool Endpoint::DeliverTag(const proto::Tag &tag, net::PeerId except) {
+  for (const auto &[peer, player] : m_playerOfPeer)
+    if (peer != except && player != tag.from && LinkedPair(tag.from, player))
+      Send(peer, tag);
+  return tag.from != m_you && LinkedPair(tag.from, m_you);
+}
+
+void Endpoint::ForgetComms(proto::PlayerId player) {
+  m_links.erase(player);
+  m_waypoints.erase(player);
+  m_markRate.erase(player);
+  m_tagRate.erase(player);
+}
+
+void Endpoint::SetLocalLink(proto::Link link) {
+  Record(link);
+  link.revision = ++m_linkRevision;
+  if (link.players.size() > proto::kMaxLinkPlayers)
+    link.players.resize(proto::kMaxLinkPlayers);
+  m_localLink = link;
+  SendLocalLinkNow();
+}
+
+void Endpoint::SendLocalLinkNow() {
+  if (!m_localLink || !IsJoined() || m_ended)
+    return;
+  m_localLink->player = m_you;
+  if (IsHost()) {
+    m_links[m_you] = *m_localLink;
+    Broadcast(*m_localLink);
+  } else {
+    Send(m_hostPeer, *m_localLink);
+  }
+}
+
+void Endpoint::SetLocalWaypoint(proto::Waypoint waypoint) {
+  Record(waypoint);
+  waypoint.revision = ++m_waypointRevision;
+  m_localWaypoint = waypoint;
+  SendLocalWaypointNow();
+}
+
+void Endpoint::SendLocalWaypointNow() {
+  if (!m_localWaypoint || !IsJoined() || m_ended)
+    return;
+  m_localWaypoint->player = m_you;
+  if (IsHost()) {
+    m_waypoints[m_you] = *m_localWaypoint;
+    Broadcast(*m_localWaypoint);
+  } else {
+    Send(m_hostPeer, *m_localWaypoint);
+  }
 }
 
 void Endpoint::SetLocalVitals(proto::Vitals vitals) {
