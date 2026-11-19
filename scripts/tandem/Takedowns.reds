@@ -519,6 +519,11 @@ public class TandemTakedowns extends ScriptableSystem {
     }
     TandemNative.Log(s"takedowns: player \(event.player) asks \(TandemTakedowns.KindName(kind)) on \(event.npc): \(answer)");
     if reason == 0 {
+      // Its death or knock-out is this player's (TandemNpcs.KillerOf).
+      let npcs = this.Npcs();
+      if IsDefined(npcs) {
+        npcs.NoteHitBy(event.npc, event.player);
+      }
       this.Apply(body, puppet, event);
     }
   }

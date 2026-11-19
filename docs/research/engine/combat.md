@@ -372,6 +372,15 @@ false)`. It is not gated by `forReal`, so a guest's hit drains its
 - Friendly fire: `CheckForQuickExit` (`:86416`) marks a hit on a friendly
   target `DealNoDamage` + `FriendlyFireIgnored` unless the hit has
   `hitFlag.FriendlyFire`. [2.5-untested]
+- `gameDismBodyPart`'s native values are not the scripts' 0..5: `EnumInt`
+  of `LEFT_ARM` logged 14, and a thrown body's own dismemberment 7168
+  (several parts at once), 2026-11-19. Map by name
+  (`TandemOutcomes.PartIndex` / `PartOf`), never `IntEnum` from 0..5.
+  [2.5-verified]
+- A strike on an NPC the host's damage system flags `DealNoDamage`
+  (invulnerable, or friendly-fire ignored) changes nothing: the first
+  NPC near the test field (488.85 health) took one strike and then none
+  (2026-11-19); the log line now says which check refused. [2.5-untested]
 
 ### 13.28 Firing an NPC's shot from a proxy (2026-11-18, scripts only)
 
