@@ -25,6 +25,8 @@ add_library(tandem SHARED
   src/combat.cpp
   src/combat_natives.cpp
   src/sync_natives.cpp
+  src/regions.cpp
+  src/region_natives.cpp
   src/engine/layout.cpp
   src/engine/animation.cpp
   src/engine/controller.cpp

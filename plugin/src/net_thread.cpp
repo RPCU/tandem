@@ -2,6 +2,7 @@
 #include "combat.hpp"
 #include "log.hpp"
 #include "recording.hpp"
+#include "regions.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
 
@@ -9,8 +10,10 @@
 #include "tandem/endpoint.hpp"
 #include "tandem/play.hpp"
 
+#include <map>
 #include <optional>
 #include <thread>
+#include <utility>
 
 namespace tandem::plugin {
 using namespace std::chrono_literals;
@@ -202,6 +205,7 @@ struct NetThread::Impl {
     auto &runtime = Runtime::Get();
     // Nothing queued for or from the last session reaches this one.
     runtime.ResetSession();
+    Regions::Get().Reset();
     std::string error;
     const Identity identity{config.name, body};
     const auto relay = RelayOf();
@@ -268,6 +272,9 @@ struct NetThread::Impl {
     auto nextReport = std::chrono::steady_clock::now() + 10s;
     auto nextStatus = std::chrono::steady_clock::now() + 500ms;
     bool ended = false;
+    // Our game announced or removed NPCs of its own: the owners the scripts
+    // read change with them.
+    bool announced = false;
     std::uint64_t silentSinceUs = 0;
     std::uint32_t reportedRequests = 0;
 
@@ -287,7 +294,7 @@ struct NetThread::Impl {
       }
       // 2 ms: states go out within a frame of the game handing them over.
       // `shared`: what the scripts' checks compare with changed.
-      bool shared = false;
+      bool shared = std::exchange(announced, false);
       for (const auto &event : endpoint->Update(2ms)) {
         std::visit(
             [&](const auto &e) {
@@ -536,7 +543,41 @@ struct NetThread::Impl {
               } else if constexpr (std::is_same_v<E, events::EpochChanged>) {
                 log::Info("epoch: player {}'s world was rebuilt ({}, epoch {})", e.epoch.player,
                           EpochReason(e.epoch.reason), e.epoch.epoch);
+              } else if constexpr (std::is_same_v<E, events::RegionsChanged>) {
+                std::string who;
+                for (const auto player : e.linked)
+                  who += (who.empty() ? "" : ", ") + std::to_string(player);
+                log::Info("regions: linked with {} (leader: player {})",
+                          who.empty() ? std::string("nobody: our world is our own")
+                                      : "player " + who,
+                          e.leader);
+                shared = true;
+                Regions::Get().SetLinked(e.linked);
+                Regions::Get().Push({.kind = RegionEvent::Kind::Linked});
+              } else if constexpr (std::is_same_v<E, events::NpcGive>) {
+                Regions::Get().Push(
+                    {.kind = RegionEvent::Kind::Give, .npc = e.npc, .player = e.to});
+              } else if constexpr (std::is_same_v<E, events::NpcTake>) {
+                log::Info("regions: npc {} is ours to run, from player {} ({})", e.state.npc,
+                          e.state.from,
+                          e.state.flags & proto::kHandoverInherited ? "inherited" : "handed over");
+                shared = true;
+                // Its track ends here: our game moves it from now on.
+                runtime.ForgetRemote(kNpcPuppetBase + e.state.npc);
+                Regions::Get().Push({.kind = RegionEvent::Kind::Take,
+                                     .npc = e.state.npc,
+                                     .player = e.state.from,
+                                     .state = e.state});
+              } else if constexpr (std::is_same_v<E, events::NpcOwnerChanged>) {
+                log::Info("regions: npc {} is now run by player {} (was {})", e.npc, e.owner,
+                          e.was);
+                shared = true;
+                Regions::Get().Push({.kind = RegionEvent::Kind::Owner,
+                                     .npc = e.npc,
+                                     .player = e.owner,
+                                     .was = e.was});
               } else if constexpr (std::is_same_v<E, events::Ended>) {
+                Regions::Get().Reset();
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
                 runtime.SetYou(0);
@@ -557,8 +598,6 @@ struct NetThread::Impl {
             },
             event);
       }
-      if (shared && !ended)
-        runtime.SetShared(endpoint->SharedNpcs(), endpoint->Players());
       if (const auto lost = runtime.TakeOverflows())
         log::Warn("consistency: {} event(s) dropped, a queue was full (the game was not taking "
                   "them); its checks put the proxies right",
@@ -641,6 +680,10 @@ struct NetThread::Impl {
       if (auto world = runtime.TakeWorld())
         endpoint->SetWorld(*world);
       for (const auto &message : runtime.TakeNpcOutbox()) {
+        // (The record's owners follow at the next pass: `announced`.)
+        if (std::holds_alternative<proto::NpcSpawn>(message) ||
+            std::holds_alternative<proto::NpcGone>(message))
+          announced = true;
         if (const auto *spawn = std::get_if<proto::NpcSpawn>(&message))
           endpoint->SendNpcSpawn(*spawn);
         else if (const auto *gone = std::get_if<proto::NpcGone>(&message))
@@ -665,10 +708,11 @@ struct NetThread::Impl {
           endpoint->SendNpcShot(*shot);
         else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
                  hit && !endpoint->SendPlayerHit(*hit))
-          log::Info("hit on player {} dropped: not a guest in the session", hit->player);
+          log::Info("hit on player {} dropped: not in the session, or not our NPC's", hit->player);
         else if (const auto *shot = std::get_if<proto::NpcShotAt>(&message);
                  shot && !endpoint->SendNpcShotAt(*shot))
-          log::Info("shot at player {} dropped: not a guest in the session", shot->player);
+          log::Info("shot at player {} dropped: not in the session, or not our NPC's",
+                    shot->player);
         else if (const auto *report = std::get_if<proto::ShotHit>(&message))
           endpoint->SendShotHit(*report);
       }
@@ -686,6 +730,39 @@ struct NetThread::Impl {
       }
       for (const auto &[player, reply] : runtime.TakeNpcReplies())
         endpoint->SendNpcActionReply(player, reply);
+      // Our answers on hand-overs, after what our game said of its NPCs (a
+      // pin follows its spawn).
+      for (auto &answer : Regions::Get().TakeAnswers()) {
+        shared = true;
+        if (auto *state = std::get_if<proto::NpcHandoverState>(&answer)) {
+          log::Info("regions: npc {} handed over to player {}", state->npc, state->to);
+          endpoint->GiveNpc(std::move(*state));
+        } else if (const auto *refuse = std::get_if<RegionRefuse>(&answer)) {
+          endpoint->RefuseNpc(refuse->npc);
+        } else if (const auto *adopt = std::get_if<RegionAdopt>(&answer)) {
+          if (!adopt->accepted)
+            log::Warn("regions: npc {} could not be taken over, it goes", adopt->npc);
+          endpoint->AdoptNpc(adopt->npc, adopt->accepted);
+        } else if (const auto *pin = std::get_if<RegionPin>(&answer)) {
+          endpoint->PinNpc(pin->npc);
+        } else if (const auto *hold = std::get_if<RegionHeld>(&answer)) {
+          log::Info("regions: our region is {}",
+                    hold->held ? "held (a quest of our own runs here)" : "no longer held");
+          endpoint->SetRegionHold(hold->held);
+        }
+      }
+      if (shared && !ended) {
+        // What our game shows as proxies (the NPCs of the owners linked with
+        // us), and who runs every NPC of the session's record, ours too.
+        runtime.SetShared(endpoint->ProxiedNpcs(), endpoint->Players());
+        std::map<proto::NpcId, proto::PlayerId> owners;
+        for (const auto &[npc, spawn] : endpoint->SharedNpcs())
+          owners[npc] = endpoint->NpcOwner(npc);
+        Regions::Get().SetOwners(std::move(owners));
+        Regions::Get().SetLinked(endpoint->Linked());
+        Regions::Get().SetGroup(endpoint->RegionLeader(), endpoint->RegionHolders());
+        Regions::Get().SetAreas(endpoint->AreaOwners());
+      }
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
       if (auto awareness = runtime.TakeNpcAwareness())
