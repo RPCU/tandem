@@ -103,6 +103,11 @@ public class TandemRevive {
     this.m_livesSeen = -1;
   }
 
+  // Another V is up: ours goes down instead of dying.
+  public func Protected() -> Bool {
+    return this.m_protected;
+  }
+
   // Our V is down or out (no save meanwhile: TandemSystem.IsSavingLocked).
   public func IsDown() -> Bool {
     return this.m_life != 0 || this.m_dying;

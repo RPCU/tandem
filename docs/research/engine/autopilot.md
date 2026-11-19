@@ -265,6 +265,24 @@ order to verify it in; update the tags here as each line is proven.
   honours script locks is not visible in script. `[2.5-untested]`: the
   pilot therefore also compares the save folder before and after each run.
 
+### 1.10 Where the state's fields come from `[2.5-untested]`
+
+All read on the game thread in `TandemPilot.WriteState`: position and
+heading from the player (or the vehicle of `VehicleComponent.GetVehicle`,
+its speed from `GetLinearVelocity`); the view from the camera system;
+`crouch`, `sprint`, `air` from the state machine blackboard's `Locomotion`
+(`gamePSMLocomotionStates`: Crouch 1, Sprint 2, Jump 4, DodgeAir 7,
+SlideFall 10) and `Fall`; `combat` from `Combat`, `ads` from `UpperBody`
+(`Aim`), `tier` from `HighLevel`, `takedown`, `carry`, `dead` (`Vitals`),
+`vstate` (`Vehicle`); `menu` from `UI_System.IsInMenu`; `call` from the
+phone system's last call phase; `choices`, `sel`, `prompt` from the
+`UIInteractions` blackboard; `auto` from `UI_AutodriveData`; `car` from
+`VehicleSummonData.SummonedVehicleEntityID`; `savelock` from
+`GameInstance.IsSavingLocked` (`final.reds:14340`); NPC counts from
+`GetNPCsAroundObject(30)` and `GameObject.GetAttitudeTowards`, not within
+2 s of a loading screen. The checklist's `show` steps are where each is
+first compared with what is on screen.
+
 ---
 
 ## 2. Virtual input

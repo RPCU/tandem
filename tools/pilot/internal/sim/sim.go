@@ -856,7 +856,7 @@ func (s *Sim) act(action string, args []string) string {
 			return "fail:too_far"
 		}
 		if !s.target.Dead {
-			return "fail:nothing_to_take"
+			return "fail:target_alive"
 		}
 		return "ok"
 	case "vendor":

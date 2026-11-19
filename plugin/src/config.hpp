@@ -71,6 +71,8 @@ struct Config {
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;
+  // pilot.state next to it: what the test pilot reads (pilot_natives.cpp).
+  std::filesystem::path pilotStateFile;
   std::filesystem::path recentFile;
 };
 

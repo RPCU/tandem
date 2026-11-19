@@ -465,7 +465,9 @@ struct TandemNative : Red::IScriptable {
     std::filesystem::remove(path, error);
     while (!line.empty() && (line.back() == '\r' || line.back() == ' '))
       line.pop_back();
-    log::Info("command: {}", line);
+    // (The test pilot's heartbeat comes every second: not logged.)
+    if (line != "pilot beat")
+      log::Info("command: {}", line);
     return Red::CString(line.c_str());
   }
 
