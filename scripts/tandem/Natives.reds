@@ -291,6 +291,12 @@ public native class TandemNative extends IScriptable {
   public static native func RecentHosts() -> array<TandemHost>
   public static native func LocalAddresses() -> array<String>
   public static native func DefaultPort() -> Int32
+  // Why co-op is off (the game's version, a missing or old mod; empty: it
+  // is not), what differs from the other players' games, and the bug report
+  // zip (its path from the game's folder; "": not written, see the log).
+  public static native func CompatProblems() -> array<String>
+  public static native func CompatWarnings() -> array<String>
+  public static native func WriteReport() -> String
   public static native func SendLocalState(position: Vector4, orientation: Quaternion, velocity: Vector4, locomotion: Int32, flags: Int32)
   public static native func TakeEvents() -> array<TandemEvent>
   public static native func RegisterPuppet(player: Uint32, id: EntityID)

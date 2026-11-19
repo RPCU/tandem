@@ -127,3 +127,27 @@ TEST_CASE("a game with nothing to report says so and writes no file") {
   CHECK_FALSE(result.error.empty());
   CHECK_FALSE(std::filesystem::exists(game.root / "reports" / "tandem-report-.zip"));
 }
+
+TEST_CASE("a session's summary says how it went, in lines") {
+  const auto text = report::Format({.build = "0.2.0+aaaaaaa",
+                                    .role = "join",
+                                    .relay = true,
+                                    .startedUtc = "2026-11-19 20:00:00",
+                                    .seconds = 3725,
+                                    .peakPlayers = 2,
+                                    .ended = "the host is gone",
+                                    .rttMs = 31,
+                                    .lossPercent = 0.5f,
+                                    .mismatches = 2,
+                                    .resyncs = 1,
+                                    .notes = {"Vee has other mods than you"}});
+  CHECK(text == "tandem: 0.2.0+aaaaaaa\n"
+                "role: join (through the relay)\n"
+                "started: 2026-11-19 20:00:00 UTC\n"
+                "lasted: 62 min 5 s\n"
+                "players at most: 2\n"
+                "ended: the host is gone\n"
+                "link to the host: 31 ms, 0.5% lost\n"
+                "consistency: 2 digest mismatch(es), 1 resync(s)\n"
+                "note: Vee has other mods than you\n");
+}

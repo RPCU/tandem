@@ -39,6 +39,24 @@ struct Entry {
 };
 std::vector<std::byte> Zip(const std::vector<Entry> &entries);
 
+// The last session in a few lines (last-session.txt next to the DLL,
+// written when a session ends): numbers and reasons; a player's name only
+// in a note about what differs between its game and ours.
+struct SessionSummary {
+  std::string build;
+  std::string role;       // host, join
+  bool relay{};           // through tandem-relay
+  std::string startedUtc; // "2026-11-19 20:00:00"
+  std::uint64_t seconds{};
+  std::size_t peakPlayers{}; // us included
+  std::string ended;         // why it ended
+  std::int32_t rttMs{-1};    // guest: to the host, last measured (-1: none)
+  float lossPercent{};
+  std::uint32_t mismatches{}, resyncs{}; // consistency: digests that differed, resyncs asked
+  std::vector<std::string> notes;        // what differed from the other players' games
+};
+std::string Format(const SessionSummary &summary);
+
 struct Options {
   std::filesystem::path game; // the game's folder
   std::filesystem::path out;  // where the zip goes (a folder, created)

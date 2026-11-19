@@ -1,13 +1,16 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "installed.hpp"
 #include "log.hpp"
 #include "net_thread.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
 
+#include "tandem/report.hpp"
 #include "tandem/session.hpp"
 
+#include <algorithm>
 #include <format>
 #include <fstream>
 #include <sstream>
@@ -47,6 +50,13 @@ void Runtime::Choose(SessionChoice choice) {
     log::Info("session: stopping for the new choice");
     Stop();
   }
+  // Nothing to choose while a startup problem keeps co-op off: the menu
+  // says why (CompatProblems), and the game stays the single-player one.
+  if (choice.role != Config::Role::Off && Blocked()) {
+    log::Warn("session: {} not chosen, co-op is off: {}", NameOf(choice.role),
+              installation.startup.problems.front());
+    choice = {.fromMenu = choice.fromMenu};
+  }
   std::lock_guard _(m_lock);
   m_choice = std::move(choice);
   std::string what;
@@ -58,6 +68,46 @@ void Runtime::Choose(SessionChoice choice) {
     what = std::format(" on UDP {}", m_choice.port);
   log::Info("session: chosen {}{}{}", NameOf(m_choice.role), what,
             m_choice.fromMenu ? " (co-op menu)" : " (tandem.ini)");
+}
+
+void Runtime::NoteDifference(std::string line) {
+  std::lock_guard _(m_compatLock);
+  if (std::ranges::find(m_differences, line) == m_differences.end() && m_differences.size() < 32)
+    m_differences.push_back(std::move(line));
+}
+
+void Runtime::ClearDifferences() {
+  std::lock_guard _(m_compatLock);
+  m_differences.clear();
+}
+
+std::vector<std::string> Runtime::Differences() const {
+  std::lock_guard _(m_compatLock);
+  return m_differences;
+}
+
+std::string Runtime::WriteReport(std::string &error) {
+  if (installation.game.empty()) {
+    error = "the game's folder is not known";
+    return {};
+  }
+  const auto result =
+      report::Write({.game = installation.game,
+                     .out = installation.game / "red4ext" / "plugins" / "tandem" / "reports",
+                     .versions = VersionsText(installation.facts, installation.startup,
+                                              installation.install, Differences())});
+  if (result.zip.empty()) {
+    error = result.error;
+    log::Warn("report: {}", error);
+    return {};
+  }
+  std::string names;
+  for (const auto &name : result.included)
+    names += names.empty() ? name : ", " + name;
+  // The path as the player finds it, from the game's folder.
+  const auto shown = result.zip.lexically_relative(installation.game).generic_string();
+  log::Info("report: written to {} ({})", shown, names);
+  return shown;
 }
 
 void Runtime::ResetChoice() {

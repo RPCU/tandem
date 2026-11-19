@@ -1204,6 +1204,8 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(verb, "leave") {
       this.CoopLeave();
       TandemNative.Log("coop: left the session");
+    } else if Equals(verb, "report") {
+      TandemNative.Log(s"coop: report: \(TandemNative.WriteReport())");
     } else {
       TandemNative.Log(s"coop: \(verb) needs the co-op menu open (the pause menu's or the main menu's)");
     }

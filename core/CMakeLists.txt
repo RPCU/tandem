@@ -31,15 +31,21 @@ set(TANDEM_BUILD_ID "" CACHE STRING "The build's name, instead of release+commit
 set(TANDEM_BUILD "${TANDEM_BUILD_ID}")
 if(NOT TANDEM_BUILD)
   set(TANDEM_BUILD "${PROJECT_VERSION}")
+  # A copy of the tree without its history (tools/remote.sh) is told the
+  # commit it was copied from.
+  set(_commit "$ENV{TANDEM_COMMIT}")
   find_package(Git QUIET)
-  if(GIT_EXECUTABLE)
+  if(NOT _commit AND GIT_EXECUTABLE)
     execute_process(
       COMMAND "${GIT_EXECUTABLE}" -C "${CMAKE_SOURCE_DIR}" rev-parse --short=7 HEAD
       OUTPUT_VARIABLE _commit OUTPUT_STRIP_TRAILING_WHITESPACE
       ERROR_QUIET RESULT_VARIABLE _failed)
-    if(NOT _failed AND _commit)
-      string(APPEND TANDEM_BUILD "+${_commit}")
+    if(_failed)
+      set(_commit "")
     endif()
+  endif()
+  if(_commit)
+    string(APPEND TANDEM_BUILD "+${_commit}")
   endif()
 endif()
 configure_file(src/tandem_build.hpp.in

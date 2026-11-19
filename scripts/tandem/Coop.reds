@@ -2,7 +2,8 @@
 //
 // Main menu (SingleplayerMenuGameController): a "Co-op" entry. Its pages
 // live in the menu's own list, the way the menu shows its items:
-//   Co-op   -> Host a game | Join a game | Play solo (once one is chosen) | Back
+//   Co-op   -> Host a game | Join a game | Play solo (once one is chosen) |
+//              Write a bug report | Back
 //   Host    -> Continue | Load game | Back      (the game's own load list)
 //   Join    -> recent hosts... | Enter an address | Back
 //   Save    -> Continue | Load game | Back      (the V to join with)
@@ -12,6 +13,13 @@
 // Pause menu (PauseMenuGameController): "Co-op" -> Host this game | Join a
 // game, or, in a session, Invite | Leave session. These start and stop the
 // session at once (TandemSystem.CoopHost / CoopJoin / CoopLeave).
+//
+// Compatibility (tandem/compat.hpp): when the plugin's startup check found
+// a problem (another game version, a missing or old mod) co-op is off: the
+// Co-op page says why in a popup and only offers the bug report. What
+// differs between the players' games is said on screen at the join (the
+// plugin's notices) and counted in the status panel. "Write a bug report"
+// writes the tandem-report zip (TandemNative.WriteReport).
 //
 // Both show a status panel (who is in the session, the ping) and take the
 // test harness's commands (tools/game.sh cmd coop ...): our system's tick
@@ -46,6 +54,7 @@ enum TandemCoopAction {
   HostNow = 9,
   Invite = 10,
   Leave = 11,
+  Report = 12,
 }
 
 // One of our entries in a menu's list: the vanilla item data (its label is
@@ -67,9 +76,35 @@ public class TandemCoop {
     return "";
   }
 
+  // Co-op is off (the game's version, a missing or old mod): why, as one
+  // text for a popup; "" when it is not.
+  public static func ProblemsText() -> String {
+    let text = "";
+    for problem in TandemNative.CompatProblems() {
+      if StrLen(text) > 0 {
+        text += "\n\n";
+      }
+      text += problem;
+    }
+    return text;
+  }
+
+  // The bug report, written now: what to tell the player.
+  public static func ReportText() -> String {
+    let path = TandemNative.WriteReport();
+    if StrLen(path) == 0 {
+      return "The report could not be written. tandem's log in red4ext/logs says why.";
+    }
+    return s"Written in the game's folder:\n\(path)\n\nIt holds tandem's log, the end of the redscript and RED4ext logs, the versions of the game and the mods tandem needs, tandem.ini without its relay token and join code, and the last session's summary. Attach it to your bug report.";
+  }
+
   // The session in a few lines, then who is in it.
   public static func StatusLines() -> array<String> {
     let lines: array<String>;
+    if ArraySize(TandemNative.CompatProblems()) > 0 {
+      ArrayPush(lines, "Co-op is off: a startup check failed");
+      return lines;
+    }
     let status = TandemNative.SessionStatus();
     let target = StrLen(status.joinCode) > 0 ? s"code \(status.joinCode)" : s"\(status.address):\(status.port)";
     if status.role == 1 {
@@ -95,6 +130,8 @@ public class TandemCoop {
         ArrayPush(lines, StrLen(host) > 0 ? s"In \(host)'s session" : s"In the session at \(target)");
       } else if status.state == 4 {
         ArrayPush(lines, s"\(target) not reached (\(status.detail)), trying again");
+      } else if status.state == 5 {
+        ArrayPush(lines, s"Could not join \(target)");
       } else {
         ArrayPush(lines, s"Connecting to \(target)...");
       }
@@ -114,6 +151,12 @@ public class TandemCoop {
         }
         ArrayPush(lines, line);
       }
+    }
+    // What differs from the other players' games: said on screen when it
+    // was found, and counted here (the log and the bug report have the words).
+    let differences = ArraySize(TandemNative.CompatWarnings());
+    if differences > 0 {
+      ArrayPush(lines, s"\(differences) difference(s) between your games: see tandem's log");
     }
     return lines;
   }
@@ -180,6 +223,12 @@ public class TandemCoop {
   public static func LogStatus() -> Void {
     for line in TandemCoop.StatusLines() {
       TandemNative.Log(s"coop: \(line)");
+    }
+    for problem in TandemNative.CompatProblems() {
+      TandemNative.Log(s"coop: off: \(problem)");
+    }
+    for warning in TandemNative.CompatWarnings() {
+      TandemNative.Log(s"coop: differs: \(warning)");
     }
     for host in TandemNative.RecentHosts() {
       TandemNative.Log(s"coop: recent host \(host.address):\(host.port) \(host.name)");
@@ -311,6 +360,9 @@ public class TandemCoopMenu {
         item.target = address;
       }
       this.Add("Enter a code or an address", TandemCoopAction.EnterAddress);
+    } else if ArraySize(TandemNative.CompatProblems()) > 0 {
+      // Co-op is off: nothing to host or join, only the report.
+      this.Add("Write a bug report", TandemCoopAction.Report);
     } else if this.inGame {
       if inSession {
         if TandemNative.SessionStatus().role == 1 {
@@ -321,12 +373,14 @@ public class TandemCoopMenu {
         this.Add("Host this game", TandemCoopAction.HostNow);
         this.Add("Join a game", TandemCoopAction.JoinPage);
       }
+      this.Add("Write a bug report", TandemCoopAction.Report);
     } else if Equals(this.page, TandemCoopPage.Coop) {
       this.Add("Host a game", TandemCoopAction.HostPage);
       this.Add("Join a game", TandemCoopAction.JoinPage);
       if TandemNative.SessionStatus().fromMenu {
         this.Add("Play solo", TandemCoopAction.Solo);
       }
+      this.Add("Write a bug report", TandemCoopAction.Report);
     } else {
       // Host, Save: the V to play.
       if saves > 0 {
@@ -644,6 +698,12 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
   TandemNative.Log(s"coop: main menu: \(item.label)");
   if Equals(action, TandemCoopAction.OpenCoop) {
     this.TandemGo(TandemCoopPage.Coop);
+    let problems = TandemCoop.ProblemsText();
+    if StrLen(problems) > 0 {
+      GenericMessageNotification.Show(this, "Co-op is off", problems, GenericMessageNotificationType.OK);
+    }
+  } else if Equals(action, TandemCoopAction.Report) {
+    GenericMessageNotification.Show(this, "Bug report", TandemCoop.ReportText(), GenericMessageNotificationType.OK);
   } else if Equals(action, TandemCoopAction.Back) {
     this.TandemGo(this.m_tandem.Up());
   } else if Equals(action, TandemCoopAction.HostPage) {
@@ -742,6 +802,8 @@ private func TandemCommand(command: String) -> Void {
   } else if Equals(verb, "solo") || Equals(verb, "leave") {
     TandemNative.Leave();
     this.TandemGo(TandemCoopPage.Root);
+  } else if Equals(verb, "report") {
+    TandemNative.Log(s"coop: report: \(TandemNative.WriteReport())");
   } else {
     TandemCoop.LogStatus();
     TandemNative.Log(s"coop: main menu page \(TandemCoopMenu.PageName(this.m_tandem.page)):\(this.m_tandem.ItemsText())");
@@ -885,6 +947,12 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
   }
   if Equals(action, TandemCoopAction.OpenCoop) {
     this.TandemGo(TandemCoopPage.Coop);
+    let problems = TandemCoop.ProblemsText();
+    if StrLen(problems) > 0 {
+      GenericMessageNotification.Show(this, "Co-op is off", problems, GenericMessageNotificationType.OK);
+    }
+  } else if Equals(action, TandemCoopAction.Report) {
+    GenericMessageNotification.Show(this, "Bug report", TandemCoop.ReportText(), GenericMessageNotificationType.OK);
   } else if Equals(action, TandemCoopAction.Back) {
     this.TandemGo(this.m_tandem.Up());
   } else if Equals(action, TandemCoopAction.HostNow) {

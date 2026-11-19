@@ -361,6 +361,33 @@ struct TandemNative : Red::IScriptable {
 
   static std::int32_t DefaultPort() { return Runtime::Get().config.port; }
 
+  // ---- compatibility and bug reports (tandem/compat.hpp, report.hpp) ----
+  // Why co-op is off (the game's version, a missing or old mod), one
+  // sentence each; empty: it is not.
+  static Red::DynArray<Red::CString> CompatProblems() {
+    Red::DynArray<Red::CString> out;
+    if (Runtime::Get().Blocked())
+      for (const auto &problem : Runtime::Get().installation.startup.problems)
+        out.EmplaceBack(problem.c_str());
+    return out;
+  }
+
+  // What differs between our game and the other players' (their tandem
+  // build, its files, their other mods), this session or the last.
+  static Red::DynArray<Red::CString> CompatWarnings() {
+    Red::DynArray<Red::CString> out;
+    for (const auto &line : Runtime::Get().Differences())
+      out.EmplaceBack(line.c_str());
+    return out;
+  }
+
+  // Writes the bug report zip; where it is (from the game's folder), or
+  // "" when it could not be written (the log says why).
+  static Red::CString WriteReport() {
+    std::string error;
+    return Red::CString(Runtime::Get().WriteReport(error).c_str());
+  }
+
   static void SendLocalState(Red::Vector4 position, Red::Quaternion orientation,
                              Red::Vector4 velocity, std::int32_t locomotion, std::int32_t flags) {
     proto::PlayerState state;
@@ -1741,6 +1768,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RecentHosts);
   RTTI_METHOD(LocalAddresses);
   RTTI_METHOD(DefaultPort);
+  RTTI_METHOD(CompatProblems);
+  RTTI_METHOD(CompatWarnings);
+  RTTI_METHOD(WriteReport);
   RTTI_METHOD(SendLocalState);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(RegisterPuppet);

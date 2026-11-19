@@ -296,6 +296,24 @@ std::vector<std::byte> Zip(const std::vector<Entry> &entries) {
   return out;
 }
 
+std::string Format(const SessionSummary &summary) {
+  std::string out;
+  out += std::format("tandem: {}\n", summary.build);
+  out += std::format("role: {}{}\n", summary.role, summary.relay ? " (through the relay)" : "");
+  out += std::format("started: {} UTC\n", summary.startedUtc);
+  out += std::format("lasted: {} min {} s\n", summary.seconds / 60, summary.seconds % 60);
+  out += std::format("players at most: {}\n", summary.peakPlayers);
+  out += std::format("ended: {}\n", summary.ended);
+  if (summary.rttMs >= 0)
+    out +=
+        std::format("link to the host: {} ms, {:.1f}% lost\n", summary.rttMs, summary.lossPercent);
+  out += std::format("consistency: {} digest mismatch(es), {} resync(s)\n", summary.mismatches,
+                     summary.resyncs);
+  for (const auto &note : summary.notes)
+    out += std::format("note: {}\n", note);
+  return out;
+}
+
 Result Write(const Options &options) {
   Result result;
   const auto &game = options.game;

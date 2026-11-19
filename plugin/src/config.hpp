@@ -28,6 +28,8 @@
 //                        ; the single-player slow motion whole on its own game (the
 //                        ; NPCs it shares follow the bubbles' rules); bubble puts its
 //                        ; world back to normal speed and slows only the NPCs
+//   compat = on          ; off (developers): start sessions whatever the startup
+//                        ; check found (tandem/compat.hpp)
 
 #include "tandem/relay.hpp"
 
@@ -68,6 +70,8 @@ struct Config {
   // bubbles only (false), or the whole single-player slow motion with what
   // is shared exempted (true).
   bool timeHostFull{true};
+  // The startup check (game version, needed mods) keeps co-op off on a problem.
+  bool compat{true};
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;

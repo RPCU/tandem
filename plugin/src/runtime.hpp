@@ -5,6 +5,7 @@
 
 #include "config.hpp"
 
+#include "tandem/compat.hpp"
 #include "tandem/consistency.hpp"
 #include "tandem/elsewhere.hpp"
 #include "tandem/hosts.hpp"
@@ -152,6 +153,28 @@ public:
 
   // tandem.ini, as loaded (the defaults; the choice below overrides the role).
   Config config;
+
+  // What is installed around us (tandem/compat.hpp), judged once when the
+  // plugin loads (main.cpp) and only read afterwards, from any thread.
+  struct Installation {
+    std::filesystem::path game; // the game's folder
+    compat::Facts facts;
+    compat::Startup startup;
+    proto::Install install; // what the other players are told
+  };
+  Installation installation;
+  // Co-op stays off: a startup problem (the game's version, a missing or
+  // old mod), unless tandem.ini says compat = off. No session is chosen or
+  // started, and the co-op menu says why (TandemNative.CompatProblems).
+  bool Blocked() const { return config.compat && installation.startup.Blocked(); }
+  // What differs between our game and another player's (net thread writes,
+  // one line each; kept for the menu and the report until the next session).
+  void NoteDifference(std::string line);
+  void ClearDifferences();
+  std::vector<std::string> Differences() const;
+  // The bug report (tandem/report.hpp), into reports/ next to the DLL. The
+  // zip's path; "" with `error` when nothing was written.
+  std::string WriteReport(std::string &error);
 
   // Game thread: the local V exists; start the chosen session once.
   void Start(proto::Body body);
@@ -496,6 +519,8 @@ private:
   SessionChoice m_choice; // m_lock
   SessionStatus m_status; // m_lock
   mutable std::mutex m_recentLock;
+  mutable std::mutex m_compatLock;
+  std::vector<std::string> m_differences; // m_compatLock
   proto::Body m_body{};                   // m_lock: the last Start's
   std::string m_relayCode, m_relayStatus; // m_lock
   std::optional<proto::PlayerState> m_local;
