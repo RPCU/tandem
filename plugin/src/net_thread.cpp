@@ -1,6 +1,7 @@
 #include "net_thread.hpp"
 #include "combat.hpp"
 #include "log.hpp"
+#include "recording.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
 
@@ -228,6 +229,10 @@ struct NetThread::Impl {
     std::string endReason;
     if (recorder.IsOpen())
       Tap(*endpoint);
+    // The recorder (recording.hpp): everything this endpoint says. Before
+    // the repeats below, so a segment starts with our V's look and seat.
+    if (Recording::Get().Enabled())
+      endpoint->SetRecordTap([](const proto::Message &message) { Recording::Get().Add(message); });
     if (lastAppearance)
       endpoint->SetLocalAppearance(*lastAppearance);
     if (lastHeld)
@@ -294,6 +299,7 @@ struct NetThread::Impl {
                   relaySecret = secret;
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.SetYou(e.you);
+                Recording::Get().Joined(endpoint->IsHost(), e.you, e.host);
                 runtime.PushEvent({ScriptEvent::Kind::InSession, e.you, {}, body});
                 Publish(SessionStatus::State::InSession, {}, endpoint.get());
                 // Joined: worth offering again (the host's name comes with the roster).

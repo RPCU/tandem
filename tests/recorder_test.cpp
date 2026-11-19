@@ -1,13 +1,14 @@
 // The recorder (tandem/recorder.hpp): segments, their index, the size cap,
 // and what a crash leaves.
 
+#include "ports.hpp"
+#include "tandem/endpoint.hpp"
 #include "tandem/play.hpp"
 #include "tandem/recorder.hpp"
 
 #include <doctest/doctest.h>
 
 #include <algorithm>
-
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -78,7 +79,9 @@ TEST_CASE("a segment is a readable recording of everything sent, and gets its in
   std::string error;
   const auto recording = play::Load(folder.path / segments[0], error);
   REQUIRE_MESSAGE(recording, error);
-  CHECK(recording->session);
+  CHECK(recording->header.kind == play::Kind::Session);
+  CHECK(recording->header.host == 1);
+  CHECK(recording->header.player == 0);
   CHECK_FALSE(recording->truncated);
   CHECK(recording->entries.size() == 6);
   CHECK(recording->header.startHostUs == kStart);
@@ -179,4 +182,24 @@ TEST_CASE("a folder it cannot make turns the recorder off, not the caller") {
   REQUIRE(logs.size() == 1);
   CHECK(logs[0].starts_with("recorder: off for this run"));
   std::filesystem::remove(folder.path);
+}
+
+TEST_CASE("the record tap hears what the host says about its V and its world, alone too") {
+  std::string error;
+  auto host = Endpoint::Host({"host"}, test::NextPort(), error);
+  REQUIRE_MESSAGE(host, error);
+  std::vector<proto::Message> heard;
+  host->SetRecordTap([&](const proto::Message &message) { heard.push_back(message); });
+  host->SendLocalState(At(3));
+  host->SetWorld(proto::World{.gameTimeSeconds = 7200});
+  host->SendNpcSpawn(proto::NpcSpawn{.npc = 3});
+  host->SetLocalPaused(true);
+  REQUIRE(heard.size() == 4);
+  CHECK(std::holds_alternative<proto::PlayerState>(heard[0]));
+  CHECK(std::get<proto::World>(heard[1]).gameTimeSeconds == 7200);
+  CHECK(std::get<proto::NpcSpawn>(heard[2]).npc == 3);
+  CHECK(std::get<proto::Pause>(heard[3]).paused);
+  host->SetRecordTap({});
+  host->SendLocalState(At(4));
+  CHECK(heard.size() == 4);
 }

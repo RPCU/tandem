@@ -11,10 +11,16 @@
 // Sandevistan...). Replaying hands the same messages to another Endpoint's
 // same calls, so the replayed player goes through the whole real path.
 //
+// A session recording (.tsession, Kind::Session) is the other side: every
+// message a real host sent to one guest (tandem-peer join --record-session),
+// replayed by a mock host to a real guest (host --play-session): the host's
+// V, its NPCs, its story, its world, its hits on us.
+//
 // File: header {u32 "TPLY", u16 version, u16 protocol version, u64 the host
-// clock when recording began, u32 the recorder's player id, u8 its body},
-// then per message {u64 microseconds since the start, u32 length, the
-// encoded message} (proto::Encode).
+// clock when recording began, u32 the recorder's player id, u8 its body;
+// version 2: u8 kind, u32 the host's player id}, then per message {u64
+// microseconds since the start, u32 length, the encoded message}
+// (proto::Encode). Version 1 files are plays.
 
 #include "tandem/protocol.hpp"
 
@@ -32,10 +38,12 @@ class Endpoint;
 
 namespace tandem::play {
 inline constexpr std::uint32_t kMagic = 0x594C5054; // "TPLY"
-// A recorded session (.tsession, tandem/recorder.hpp): the same layout, with
-// everything the game sent (its world too), not only its own V.
-inline constexpr std::uint32_t kSessionMagic = 0x53455354; // "TSES"
-inline constexpr std::uint16_t kVersion = 1;
+inline constexpr std::uint16_t kVersion = 2;
+
+enum class Kind : std::uint8_t {
+  Play = 0,    // a V's own play, as its game sent it (.tplay)
+  Session = 1, // what a host sent to a guest (.tsession)
+};
 
 struct Header {
   std::uint16_t version{kVersion};
@@ -43,6 +51,8 @@ struct Header {
   std::uint64_t startHostUs{}; // the recorder's host clock at the start
   proto::PlayerId player{};    // the recorder's player id in its session
   proto::Body body{};
+  Kind kind{Kind::Play};
+  proto::PlayerId host{}; // Session: the host's player id
 };
 
 struct Entry {
@@ -54,7 +64,6 @@ struct Recording {
   Header header;
   std::vector<Entry> entries;
   std::size_t skipped{}; // messages that did not decode (another protocol version)
-  bool session{};        // a .tsession (kSessionMagic): every kind of message
   bool truncated{};      // ended inside an entry (a crash while writing)
   std::uint64_t DurationUs() const { return entries.empty() ? 0 : entries.back().atUs; }
   // Where the V was first, and the time it was there.
@@ -68,8 +77,7 @@ bool Keeps(const proto::Message &message);
 // Writes a recording (the plugin's net thread; tandem-peer --save-play).
 class Writer {
 public:
-  bool Open(const std::filesystem::path &path, const Header &header, std::string &error,
-            std::uint32_t magic = kMagic);
+  bool Open(const std::filesystem::path &path, const Header &header, std::string &error);
   // `hostUs`: when it was sent, on the host clock (earlier than the start: at 0).
   void Add(std::uint64_t hostUs, const proto::Message &message);
   void Close();
@@ -110,6 +118,29 @@ std::optional<proto::Message> Adapt(proto::Message message, const Mapping &mappi
 
 // Hands a kept message to the Endpoint call its game made.
 void Apply(Endpoint &endpoint, const proto::Message &message);
+
+// ---- sessions ----
+
+// What a session recording keeps of what a guest hears: everything the host
+// says about its V and its world, not the transport's own (welcome, roster,
+// pings) nor the consistency checks (the replaying host makes its own).
+bool KeepsSession(const proto::Message &message);
+
+// How a replaying host stands for the recorded one.
+struct SessionMapping {
+  proto::PlayerId host{};  // the recorded host (Header::host)
+  proto::PlayerId you{};   // the recording guest (Header::player)
+  proto::PlayerId self{};  // the replaying host
+  proto::PlayerId guest{}; // the real guest the recording's "you" becomes (kNoPlayer: none yet)
+};
+
+// The message as the replaying host says it, `shiftUs` after it was
+// recorded; nullopt: nothing to say (another player's, or the transport's).
+std::optional<proto::Message> AdaptSession(proto::Message message, const SessionMapping &mapping,
+                                           std::int64_t shiftUs);
+
+// Hands it to the host Endpoint call that sends it (`guest`: a reward's).
+void ApplyHost(Endpoint &endpoint, const proto::Message &message, proto::PlayerId guest);
 
 // A recording's messages as their time comes, once each, lap after lap.
 class Player {

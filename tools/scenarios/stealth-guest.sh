@@ -1,7 +1,7 @@
 # As a guest: a host NPC noticing us fills our stealth meter, detecting us puts our V in combat, losing us takes it out
 # shellcheck shell=bash disable=SC2317
 ensure join
-peer host --mode idle --body female --npc Character.kab_tyger_claws_biker1_ranged1_saratoga_ma --detect-at 15 --detect-for 10
+host_world - --mode idle --body female --npc Character.kab_tyger_claws_biker1_ranged1_saratoga_ma --detect-at 15 --detect-for 10
 expect 'in the session as player' 30
 expect 'stealth: ours sent' 20
 expect_peer 'player [0-9]+ stealth: flags' 10

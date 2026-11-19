@@ -43,8 +43,10 @@ void Recording::GameLoaded(proto::Body body) {
         {.dir = m_dir,
          .segmentUs = m_segmentUs,
          .maxBytes = m_maxBytes,
-         .solo = Runtime::Get().ChosenRole() == Config::Role::Off,
-         .player = 1,
+         .solo = !m_session,
+         .kind = play::Kind::Session,
+         .player = proto::kNoPlayer,
+         .host = 1,
          .body = body},
         [](const std::string &line) { log::Info("{}", line); }, [this] { return Cost(); });
     if (!ok)
@@ -124,17 +126,24 @@ void Recording::TickEnd() {
   }
 }
 
-void Recording::SessionStarting() {
+void Recording::SessionStarting(bool guest) {
   std::lock_guard _(m_drain);
   m_session = true;
-  // A segment keeps one kind of play (and one clock).
-  m_recorder.Cut();
+  // A segment keeps one kind of play.
+  m_recorder.Switch(false, guest ? play::Kind::Play : play::Kind::Session, proto::kNoPlayer,
+                    guest ? proto::kNoPlayer : 1);
 }
 
 void Recording::SessionStopped() {
   std::lock_guard _(m_drain);
   m_session = false;
-  m_recorder.Cut();
+  m_recorder.Switch(true, play::Kind::Session, proto::kNoPlayer, 1);
+}
+
+void Recording::Joined(bool asHost, proto::PlayerId you, proto::PlayerId host) {
+  if (asHost)
+    return; // as set when it started
+  m_recorder.Switch(false, play::Kind::Play, you, host);
 }
 
 std::string Recording::Cost() {

@@ -17,6 +17,7 @@ add_library(tandem SHARED
   src/runtime.cpp
   src/natives.cpp
   src/addresses.cpp
+  src/recording.cpp
   src/story.cpp
   src/story_natives.cpp
   src/elsewhere_natives.cpp

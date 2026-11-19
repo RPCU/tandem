@@ -12,6 +12,7 @@
 namespace tandem::record {
 namespace {
 constexpr const char *kExtension = ".tsession";
+constexpr const char *kPlayExtension = ".tplay";
 constexpr const char *kIndex = "index.jsonl";
 
 std::int64_t UnixNow() {
@@ -53,7 +54,9 @@ std::string Escape(const std::string &text) {
   return out;
 }
 
-bool IsSegment(const std::filesystem::path &path) { return path.extension() == kExtension; }
+bool IsSegment(const std::filesystem::path &path) {
+  return path.extension() == kExtension || path.extension() == kPlayExtension;
+}
 } // namespace
 
 void Summary::Add(const proto::Message &message) {
@@ -70,6 +73,8 @@ void Summary::Add(const proto::Message &message) {
             // A teleport (fast travel, a load) is not distance moved.
             if (step < 50.f)
               distance += step;
+            else
+              ++teleports;
           }
           if (!first)
             first = m.position;
@@ -124,7 +129,7 @@ std::vector<std::string> Summary::Tags() const {
     tags.emplace_back("scene");
   if (calls > 0)
     tags.emplace_back("call");
-  if (travels > 0)
+  if (travels > 0 || teleports > 0)
     tags.emplace_back("fast travel");
   if (deaths > 0)
     tags.emplace_back("death");
@@ -148,11 +153,12 @@ std::string FormatIndex(const IndexLine &line) {
       "\"partial\":{},\"tags\":[{}],\"from\":{},\"to\":{},\"metres\":{:.0f},\"counts\":{{"
       "\"messages\":{},\"states\":{},\"poses\":{},\"shots\":{},\"hits\":{},\"npcs\":{},"
       "\"driving_s\":{},\"subtitles\":{},\"hubs\":{},\"calls\":{},\"journal\":{},"
-      "\"travels\":{},\"deaths\":{},\"items\":{}}}{}}}",
+      "\"travels\":{},\"teleports\":{},\"deaths\":{},\"items\":{}}}{}}}",
       Escape(line.file), Escape(line.started), line.seconds, line.bytes, line.solo, line.partial,
       tags, where(s.first), where(s.last), s.distance, s.messages, s.states, s.poses, s.shots,
       s.hits, s.npcSpawns, s.vehicleStates / 30, s.subtitles, s.choiceHubs, s.calls, s.journal,
-      s.travels, s.deaths, s.items, line.cost.empty() ? std::string() : ",\"cost\":" + line.cost);
+      s.travels, s.teleports, s.deaths, s.items,
+      line.cost.empty() ? std::string() : ",\"cost\":" + line.cost);
 }
 
 std::vector<std::string> IndexedFiles(const std::string &text) {
@@ -276,6 +282,20 @@ void Recorder::Cut() {
   }
 }
 
+void Recorder::Switch(bool solo, play::Kind kind, proto::PlayerId player, proto::PlayerId host) {
+  std::lock_guard _(m_lock);
+  try {
+    if (m_writer.IsOpen())
+      CloseSegment(false);
+  } catch (const std::exception &e) {
+    Fail(e.what());
+  }
+  m_options.solo = solo;
+  m_options.kind = kind;
+  m_options.player = player;
+  m_options.host = host;
+}
+
 void Recorder::Stop() {
   std::lock_guard _(m_lock);
   if (m_writer.IsOpen()) {
@@ -310,15 +330,20 @@ std::uint64_t Recorder::Segments() const {
 
 bool Recorder::OpenSegment(std::uint64_t hostUs) {
   const auto now = UnixNow();
-  auto name = SegmentName(now) + kExtension;
+  const auto *extension = m_options.kind == play::Kind::Play ? kPlayExtension : kExtension;
+  auto name = SegmentName(now) + extension;
   // Two segments in one second (a cut): the next free name.
   std::error_code ec;
   for (int i = 1; std::filesystem::exists(m_options.dir / name, ec) && i < 100; ++i)
-    name = std::format("{}-{}{}", SegmentName(now), i, kExtension);
+    name = std::format("{}-{}{}", SegmentName(now), i, extension);
   std::string error;
   if (!m_writer.Open(m_options.dir / name,
-                     {.startHostUs = hostUs, .player = m_options.player, .body = m_options.body},
-                     error, play::kSessionMagic)) {
+                     {.startHostUs = hostUs,
+                      .player = m_options.player,
+                      .body = m_options.body,
+                      .kind = m_options.kind,
+                      .host = m_options.host},
+                     error)) {
     Fail(error);
     return false;
   }

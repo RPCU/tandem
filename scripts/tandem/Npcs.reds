@@ -120,6 +120,17 @@ public class TandemNpcs {
     this.m_anims.Start(game, this);
   }
 
+  // The recorder, solo (System.reds RecordTick): the NPCs around our V as a
+  // host shares them, nothing else (no hits to take, no crowd change).
+  public func RecordTick(now: Float) -> Void {
+    this.m_you = 0u;
+    this.m_now = now;
+    if now - this.m_last >= 0.1 {
+      this.m_last = now;
+      this.Share();
+    }
+  }
+
   public func Tick(now: Float, you: Uint32) -> Void {
     this.m_you = you;
     this.m_now = now;

@@ -2430,9 +2430,23 @@ player, markerRef)` (192804), `UISystem.NotifyFastTravelStart()`
   (`m_requestAutoSafeAfterLoadingScreen`). Tandem wraps it to see our own
   fast travel, and repeats its steps for a point not on our map (no
   registration: the point stays undiscovered). Whether `TeleportToNode`
-  resolves a marker that is not streamed in, and whether
-  `NotifyFastTravelStart` alone brings up the fast travel loading screen,
-  is what the `travel` scenario will show. [2.5-untested]
+  resolves a marker that is not streamed in is unverified. [2.5-untested]
+- **A fast travel needs its loading screen type.** Every vanilla caller
+  queues `PerformFastTravelRequest` from a menu: the world map
+  (`WorldMapMenuGameController.FastTravel`, 358971) then broadcasts
+  `inkSetNextLoadingScreenEvent` with `inkLoadingScreenType.FastTravel`
+  (337318, enum 7866) and closes itself; the hub's fast travel list
+  (331840) closes the hub. Seen in game (2026-11-19, `regroup` and
+  `travel`): a request queued from gameplay with neither (tandem's
+  `travel` command) ran the loading screen (the game thread silent 16 s),
+  then the screen stayed black with no HUD while the game ran on; a
+  second one 70 s later, to a point near a place still streamed, showed
+  no loading screen at all, and the 80 m hop tandem made 1.5 s after it
+  kept it black. Tandem now sends that event (through
+  `UISystem.QueueEvent`) with every travel it starts and waits for
+  `FastTravelLoadingScreenFinished` before any further teleport. Whether
+  the event reaches the loading screen that way (the map broadcasts it
+  from a controller) is the next run's check. [2.5-untested]
 - **`FastTravelPointData`** (50954): `pointRecord` (TweakDB id, the same in
   every game), `markerRef` (`NodeRef`, a 64-bit hash: the same in every
   game; read and rebuilt by the natives `NodeRefHash` / `NodeRefOf`),

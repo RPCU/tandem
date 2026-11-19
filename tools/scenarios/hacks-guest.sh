@@ -1,7 +1,7 @@
 # As a guest: the host's NPC netrunner traces our V through its proxy, and our quickhack on a proxy goes to the host
 # shellcheck shell=bash disable=SC2317
 ensure join
-peer host --mode idle --body male --replay recordings/npcs.rec --hack-player 10
+host_world recordings/npcs.rec --mode idle --body male --hack-player 10
 expect 'in the session as player' 30
 expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
 # The host's NPC hacks our V: the game runs it from the proxy.

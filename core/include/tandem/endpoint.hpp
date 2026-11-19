@@ -495,6 +495,13 @@ public:
   // not anyone is there to get it). Empty: off, and free.
   using Tap = std::function<void(const proto::Message &)>;
   void SetTap(Tap tap) { m_tap = std::move(tap); }
+  // Session recording (tandem/play.hpp): as a guest, every message the host
+  // sent us, as it arrives, before it is acted on. Empty: off.
+  void SetReceivedTap(Tap tap) { m_receivedTap = std::move(tap); }
+  // The recorder (tandem/recorder.hpp): every call above that says
+  // something (about our V or, as the host, our world) hands `tap` the
+  // message as given, before anything is sent. Empty: off, and free.
+  void SetRecordTap(Tap tap) { m_recordTap = std::move(tap); }
   // Our V as it stands now (look, held items, seat, radio, stealth, time
   // ability, ride, life, elsewhere): what a recording begins with.
   std::vector<proto::Message> LocalSnapshot() const;
@@ -528,6 +535,12 @@ private:
   std::unique_ptr<net::Session> m_session;
   Identity m_identity;
   Tap m_tap;
+  Tap m_recordTap;
+  template <class M> void Record(const M &message) {
+    if (m_recordTap)
+      m_recordTap(proto::Message(message));
+  }
+  Tap m_receivedTap;
   Timing m_timing;
 
   proto::PlayerId m_you{proto::kNoPlayer};

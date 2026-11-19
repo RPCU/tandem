@@ -1222,8 +1222,10 @@ revive down|hold|fresh|report` (`fresh` forgets the 5-minute cooldown of
 - **Fast travel together** (`scripts/tandem/Travel.reds`, milestone 4):
   no tether. When our V arrives from a fast travel (seen where vanilla
   performs it, a wrap of `FastTravelSystem.PerformFastTravel`; arrived
-  once V has jumped and the world has run 1.5 s behind the loading
-  screen), the others get `Regroup` (reason fast travel, the point's
+  once V has jumped, the fast travel's loading screen has ended
+  (`FastTRavelSystem.FastTravelLoadingScreenFinished`, the signal vanilla's
+  own autosave waits for; 30 s at most) and the world has run 1.5 s after
+  it), the others get `Regroup` (reason fast travel, the point's
   record and marker node, where we stand; the host stamps the sender and
   delivers it to whom it is for). An offer shows the game's way: the HUD's
   on-screen message ("NAME fast travelled to POINT") and an input hint on
@@ -1242,17 +1244,71 @@ revive down|hold|fresh|report` (`fresh` forgets the 5-minute cooldown of
   fast travel point ("Join NAME"), joins them the same way. API for the
   story work: `TandemTravel.OfferRegroup(game, player, reason, label)`
   (reason 2: a story scene; `label` its title) and
-  `TandemTravel.RegroupTo(game, player)`. The host's world stays coherent
+  `TandemTravel.RegroupTo(game, player)`. Every fast travel tandem
+  starts asks for the fast travel loading screen first, as the world map
+  does (`inkSetNextLoadingScreenEvent`, type `FastTravel`), and nothing
+  moves V (no hop) before that loading screen has ended: in game
+  (2026-11-19) a travel started from gameplay without it left the screen
+  black for good after its loading screen, the game running on behind it.
+  The log says `travel: screen restored` on arrival (`still black?` when
+  no end of the loading screen came). The host's world stays coherent
   when the host travels away from a guest: the guest keeps playing; the
   host's NPCs around the old place go (`NpcGone`, out of range) and new
-  ones are shared around the host. Not yet verified in game (scenarios
-  `travel`, `regroup`; `tools/game.sh cmd travel`, `regroup [PLAYER]`,
+  ones are shared around the host. In game (2026-11-19): offers both
+  ways and declines work; the black screen above is fixed in the scripts,
+  to run again (scenarios `travel`, `regroup`; `tools/game.sh cmd travel`, `regroup [PLAYER]`,
   `regroup accept|decline|offer`).
+- **Solo is vanilla** (decided by the user, 2026-11-19). Installed with no
+  session (the default `role = off`, or after the co-op menu's Leave),
+  tandem does nothing to the game: no socket, no immortality or god mode,
+  no crowd, attitude, quest freeze, save lock, time or pause change, no
+  puppets, nothing on the HUD but the co-op menu's entry. What is
+  installed stays idle: the engine hooks pass through (the idle
+  controller's finds no puppet, the pose stream reads only with a source,
+  the quest node hook only notes which scene runs, its freeze off), the
+  running-state frame call needs a session, and every script wrap checks
+  a session before it departs from vanilla (audited 2026-11-19, every wrap
+  and system handler; fixed then: the fast travel's epoch and map hint,
+  the reward ledger and the story's listeners after a Leave, and a V's
+  own limbs). The startup line says so: `tandem: solo, passive (hooks
+idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
+  only reads `tandem.cmd` (developer commands: `where`, `teleport`,
+  `god`, `coop …`, `recorder …`). Starting a session (the menu, or
+  `role = host|join`) turns co-op on; leaving gives everything back.
+  Scenario `solo`.
+- **Recorder** (`recorder = on`; `plugin/src/recording.*`,
+  `core/src/recorder.cpp`): what this game plays, recorded for later
+  replays and tests, solo or in a session, without changing anything.
+  Solo, `TandemSystem.RecordTick` runs a host's senders as if a guest were
+  there (our V sampled as in a session, its look, held items, seat, car,
+  shots, pose stream; the world's time and weather; the NPCs around V
+  with `TandemNpcs.Share`; V's death) and a writer thread of the
+  recorder's own takes Runtime's outboxes, as the net thread would; in a
+  session the net thread's Endpoint hands it everything it says
+  (`Endpoint::SetRecordTap`). Segments of 10 minutes
+  (`recorder_segment_minutes`) in `recordings/auto/`, named by local time,
+  in the recordings' format (`tandem/play.hpp` version 2): solo or as
+  host a `.tsession` (`Kind::Session`, host 1, no guest), as a guest a
+  `.tplay` of its own V. Flushed every second, so a crash leaves at most
+  one segment, readable up to its last whole entry and indexed at the next
+  start. `recordings/auto/index.jsonl`: one line per segment, with where
+  (first and last position, metres moved), what happened (tags combat,
+  driving, scene, call, fast travel, death, loot, quest, and counts) and
+  the cost (the scripts' recording work per frame, average and maximum;
+  the writing time). Over `recorder_max_mb` (2048) the oldest go. Any
+  file error turns it off for the run (logged once), nothing else; it
+  writes only in its folder and never touches saves. The co-op menu shows
+  its state and switches it until the game closes. `tools/game.sh
+fetch-recordings [--since YYYYMMDD]` brings segments and the index
+  here; `tools/game.sh cmd recorder status|cut|on|off`; scenario
+  `recorder`. Not yet run in game. Not recorded solo yet (they only run in
+  a session): the story, time effects, fast travels as regroups, loot.
 - Configuration: `tandem.ini` next to the DLL (role, address, port, name,
   pose, story, quest_freeze, quest_freeze_allow, scene_privacy,
   private_actors, private_scenes, public_scenes, time_host; `relay`,
-  `relay_token`, `join` for the relay and join codes): the defaults, and
-  the test harness's session.
+  `relay_token`, `join` for the relay and join codes; `recorder`,
+  `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`): the
+  defaults, and the test harness's session. The default is solo.
 
 ## Talking to the engine safely
 
@@ -1467,6 +1523,8 @@ scenario. A scenario that needs another spot teleports after it.
   loop: your own jumps, ladders and swims on the puppet, over the same
   ground.
 - **idle** — connects and reports.
+- **watch** — follows the other V 30 m under it (or `--offset`): the
+  unseen guest of `--record-session` (below).
 - **play** — `--play FILE` replays a real V's play (a gameplay recording,
   below) as the mock player's own V, at its recorded positions: the
   puppet walks the real ground, drives real roads, fights where it
@@ -1625,6 +1683,67 @@ host` records alone). Everything the game asks its `Endpoint` to send
      Without a player, the same can be driven with `tools/game.sh cmd`
      (`teleport`, `vehicle …`, `npc punch`, `takedown …`, `hack npc`) and
      `tools/game.sh key`/`hold` (AZERTY), less naturally.
+
+- **Recorded host sessions** (`.tsession`, `play::Kind::Session`): the
+  real game as a guest facing a real host's recording instead of a
+  scripted mock host, in end-user conditions with one copy of the game.
+  `tandem-peer join ADDRESS --mode watch --record-session FILE` is a guest
+  that records every message the real host sends it, with its time (the
+  endpoint's `SetReceivedTap`; welcome, roster, pings and the consistency
+  checks are left out): the host's V and pose, look, held items, shots and
+  car; its NPCs' spawns, states, animations, shots, health, deaths, holds
+  and seats; hits and hacks on us; the world (time, weather), the story
+  (journal, tracked quest, calls, lines, hubs, scene tiers, story effects,
+  rewards), time abilities, stealth, awareness, fast travel and regroup
+  offers, loot, life and revives, rides, epochs. `watch` keeps the
+  recording guest 30 m under the host's V (or `--offset`): out of sight, out
+  of every NPC's reach, in nobody's way (the host shares the NPCs around
+  its own V, wherever its guests are). No plugin change: it is exactly what
+  a real host sends. `tandem-peer host --play-session FILE [--play-loop]`
+  then is that host for the guest that joins: its V on its body, its NPCs,
+  its story, at the recorded pace; the recorded guest's messages (a hit, a
+  hack, detection bits, a reward) go to the real guest, other players'
+  are dropped; the endpoint numbers and stamps everything on this
+  session's clock (absolute times inside move with it), its epochs and
+  digests are its own (the recorded epochs are bumped again); the NPC
+  world goes through the replay's path (an NPC the guest killed stays
+  dead), and what a guest asks (strikes, takedowns, hacks, revives) is
+  answered as the mock host always did, with `--npc`, `--detect-at`,
+  `--hit-you`, `--hold-npcs` … on top. Positions stay absolute:
+  `play-info` gives the teleport beside the host's start. Tests:
+  `tests/play_test.cpp` (a session recorded through one guest replays the
+  same to another), `tests/peer_play.sh` (record, `play-info`, replay,
+  record again). Files go to `recordings/session/` (not in git; about
+  25 KB/s, 20 MB for 15 minutes, uncompressed like a `.tplay`). In
+  scenarios, `host_world REPLAY ARGS…` hosts
+  `recordings/session/${SESSION:-city}.tsession` when it exists (V first
+  teleported beside it) and the NPC recording REPLAY otherwise:
+  `npcs-guest`, `npcs-hurt-guest`, `npcs-shoot-guest`, `npcs-punch`,
+  `hacks-guest`, `takedowns-guest`, `stealth-guest`, `desync-npcs`,
+  `desync-rejoin`; `session-guest` replays a whole session and checks
+  proxies come, the story is mirrored, at most 3 resyncs, no orphaned
+  proxy, no stall beyond loading screens, and the cleanup at its end. The
+  `story-*` scenarios keep their scripted stories (a session's story is
+  `session-guest`'s).
+
+  **A recorded host session** (about 15 minutes, by whoever plays; the game
+  as host; the commands are run here):
+  1. `tools/game.sh ensure host`, then `tools/game.sh test-reset` and
+     `tools/game.sh cmd ride hide` (no marker or puppet of the recording
+     guest on the player's screen).
+  2. `build/linux/peer/tandem-peer join "$(getent ahostsv4 anya | awk 'NR==1{print $1}')":27450
+--mode watch --name watcher --record-session recordings/session/city.tsession`
+     here (it logs `recording the session to …`).
+  3. Then play, in this order: walk 2 minutes through a crowded street
+     (Kabuki, Jig-Jig Street); take a gig or side job with a fight: shoot,
+     quickhack (Short Circuit, Blind), a melee hit, a takedown; the
+     Sandevistan if V has one; call a car, drive a few blocks, get out;
+     fast travel once (a loading screen is fine); answer a phone call;
+     talk to an NPC with dialogue choices (pick one); walk a minute more.
+  4. Ctrl-C the recording guest (`session saved: N messages, S s`), then
+     `tools/game.sh cmd ride show`.
+  5. `build/linux/peer/tandem-peer play-info recordings/session/city.tsession`
+     says what it holds; `tools/scenario.sh session-guest` replays it.
 
 - Planned — **the whole simulated second game**, so everything can be
   tested with one PC and one copy of the game. Built up as the protocol

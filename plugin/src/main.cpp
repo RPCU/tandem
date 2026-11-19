@@ -8,6 +8,7 @@
 #include "engine/scenes.hpp"
 #include "engine/trace.hpp"
 #include "log.hpp"
+#include "recording.hpp"
 #include "runtime.hpp"
 
 #include "tandem/protocol.hpp"
@@ -129,11 +130,33 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     }
     if (runtime.config.trace || runtime.config.mirror)
       engine::InstallTrace(sdk, handle, runtime.config.trace);
+    // The recorder (recording.hpp): its own key, whatever the role.
+    Recording::Get().Configure(runtime.config.recorder,
+                               PluginDirectory(handle) / "recordings" / "auto",
+                               runtime.config.recorderMaxMb << 20,
+                               std::uint64_t{runtime.config.recorderSegmentMinutes} * 60'000'000);
+    // What is installed, and that none of it acts without a session
+    // (docs/ARCHITECTURE.md, "Solo is vanilla").
+    {
+      std::string hooks = "idle-controller pass-through";
+      if (runtime.config.pose)
+        hooks += ", pose stream (reads only with a source)";
+      if (runtime.config.questFreeze || runtime.config.scenePrivacy)
+        hooks += ", quest node observer (freeze off)";
+      if (runtime.config.trace || runtime.config.mirror)
+        hooks += ", anim trace";
+      log::Info("tandem: {} (hooks idle: {}; script wraps gated on a session); recorder {}",
+                runtime.config.role == Config::Role::Off
+                    ? std::string("solo, passive")
+                    : std::format("co-op at load as {}", NameOf(runtime.config.role)),
+                hooks, runtime.config.recorder ? "on" : "off");
+    }
     // The session starts when scripts report a loaded game (TandemNative.Start).
     break;
   }
   case RED4ext::v1::EMainReason::Unload:
     Runtime::Get().Stop();
+    Recording::Get().Shutdown();
     engine::RemoveHooks(g_sdk, handle);
     engine::RemovePoseStream(g_sdk, handle);
     engine::RemoveTrace(g_sdk, handle);

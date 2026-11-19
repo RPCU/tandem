@@ -53,8 +53,7 @@ std::size_t Recording::Count(std::size_t messageIndex) const {
       entries, [&](const Entry &entry) { return entry.message.index() == messageIndex; }));
 }
 
-bool Writer::Open(const std::filesystem::path &path, const Header &header, std::string &error,
-                  std::uint32_t magic) {
+bool Writer::Open(const std::filesystem::path &path, const Header &header, std::string &error) {
   Close();
   std::error_code ec;
   if (path.has_parent_path())
@@ -68,13 +67,15 @@ bool Writer::Open(const std::filesystem::path &path, const Header &header, std::
   m_header = header;
   m_count = 0;
   m_lastUs = 0;
-  m_bytes = 21;
-  Put(m_out, magic);
+  m_bytes = 26; // the header
+  Put(m_out, kMagic);
   Put(m_out, header.version);
   Put(m_out, header.protocol);
   Put(m_out, header.startHostUs);
   Put(m_out, header.player);
   Put(m_out, static_cast<std::uint8_t>(header.body));
+  Put(m_out, static_cast<std::uint8_t>(header.kind));
+  Put(m_out, header.host);
   return true;
 }
 
@@ -116,17 +117,24 @@ std::optional<Recording> Load(const std::filesystem::path &path, std::string &er
   std::uint32_t magic = 0;
   std::uint8_t body = 0;
   auto &h = recording.header;
-  if (!Get(in, magic) || (magic != kMagic && magic != kSessionMagic) || !Get(in, h.version) ||
-      !Get(in, h.protocol) || !Get(in, h.startHostUs) || !Get(in, h.player) || !Get(in, body)) {
+  if (!Get(in, magic) || magic != kMagic || !Get(in, h.version) || !Get(in, h.protocol) ||
+      !Get(in, h.startHostUs) || !Get(in, h.player) || !Get(in, body)) {
     error = path.string() + ": not a gameplay recording";
     return std::nullopt;
   }
-  if (h.version != kVersion) {
+  if (h.version != kVersion && h.version != 1) {
     error = path.string() + ": recording version " + std::to_string(h.version);
     return std::nullopt;
   }
   h.body = static_cast<proto::Body>(body);
-  recording.session = magic == kSessionMagic;
+  if (h.version >= 2) {
+    std::uint8_t kind = 0;
+    if (!Get(in, kind) || !Get(in, h.host)) {
+      error = path.string() + ": truncated header";
+      return std::nullopt;
+    }
+    h.kind = static_cast<Kind>(kind);
+  }
   for (;;) {
     std::uint64_t at = 0;
     std::uint32_t size = 0;
@@ -279,6 +287,216 @@ void Apply(Endpoint &endpoint, const proto::Message &message) {
           endpoint.SendShotHit(m);
         else if constexpr (std::is_same_v<M, proto::Elsewhere>)
           endpoint.SetLocalElsewhere(m);
+      },
+      message);
+}
+
+bool KeepsSession(const proto::Message &message) {
+  return std::visit(
+      [](const auto &m) {
+        using M = std::decay_t<decltype(m)>;
+        return !(std::is_same_v<M, proto::Hello> || std::is_same_v<M, proto::Welcome> ||
+                 std::is_same_v<M, proto::Refused> || std::is_same_v<M, proto::Ping> ||
+                 std::is_same_v<M, proto::Pong> || std::is_same_v<M, proto::Roster> ||
+                 std::is_same_v<M, proto::Bye> || std::is_same_v<M, proto::Digest> ||
+                 std::is_same_v<M, proto::ResyncRequest> || std::is_same_v<M, proto::NpcSet> ||
+                 std::is_same_v<M, proto::NpcActionReply> ||
+                 std::is_same_v<M, proto::RegroupAnswer> || std::is_same_v<M, proto::GameOver> ||
+                 std::is_same_v<M, proto::WorldItemTaken> ||
+                 std::is_same_v<M, proto::PhoneAction> || std::is_same_v<M, proto::PhoneReply>);
+      },
+      message);
+}
+
+std::optional<proto::Message> AdaptSession(proto::Message message, const SessionMapping &mapping,
+                                           std::int64_t shiftUs) {
+  if (!KeepsSession(message))
+    return std::nullopt;
+  // The host's: ours now. Ours (the recording guest's): the real guest's.
+  const auto host = [&](proto::PlayerId id) { return id == mapping.host; };
+  const auto player = [&](proto::PlayerId &id) {
+    if (id == mapping.host)
+      id = mapping.self;
+    else if (id == mapping.you && mapping.guest != proto::kNoPlayer)
+      id = mapping.guest;
+    else if (id != proto::kNoPlayer)
+      return false;
+    return true;
+  };
+  const auto us = [&](proto::PlayerId &id) {
+    if (id != mapping.you || mapping.guest == proto::kNoPlayer)
+      return false;
+    id = mapping.guest;
+    return true;
+  };
+  const auto later = [&](std::uint64_t &us) {
+    if (us)
+      us = static_cast<std::uint64_t>(static_cast<std::int64_t>(us) + shiftUs);
+  };
+  // NPC detection bits (player - 1): the recorded players' to ours.
+  const auto bits = [&](std::uint8_t detected) {
+    std::uint8_t out = 0;
+    const auto move = [&](proto::PlayerId from, proto::PlayerId to) {
+      if (from >= 1 && from <= 8 && to >= 1 && to <= 8 && (detected & (1u << (from - 1))))
+        out |= static_cast<std::uint8_t>(1u << (to - 1));
+    };
+    move(mapping.host, mapping.self);
+    move(mapping.you, mapping.guest);
+    return out;
+  };
+  const bool keep = std::visit(
+      [&](auto &m) -> bool {
+        using M = std::decay_t<decltype(m)>;
+        if constexpr (std::is_same_v<M, proto::PlayerState> ||
+                      std::is_same_v<M, proto::PoseState> || std::is_same_v<M, proto::Appearance> ||
+                      std::is_same_v<M, proto::Held> || std::is_same_v<M, proto::Shot> ||
+                      std::is_same_v<M, proto::VehicleState> || std::is_same_v<M, proto::Stealth> ||
+                      std::is_same_v<M, proto::TimeEffect> || std::is_same_v<M, proto::Elsewhere> ||
+                      std::is_same_v<M, proto::Vitals> || std::is_same_v<M, proto::Pause> ||
+                      std::is_same_v<M, proto::Epoch> || std::is_same_v<M, proto::StoryEffect>)
+          return host(m.player);
+        else if constexpr (std::is_same_v<M, proto::VehicleRadio>) {
+          later(m.trackStartUs);
+          return host(m.player);
+        } else if constexpr (std::is_same_v<M, proto::Seat>) {
+          if (!host(m.player))
+            return false;
+          if (m.owner == mapping.host)
+            m.owner = proto::kNoPlayer; // its own car
+          return m.owner == proto::kNoPlayer;
+        } else if constexpr (std::is_same_v<M, proto::Transit>) {
+          return host(m.player) &&
+                 (m.kind == proto::TransitKind::None || m.kind == proto::TransitKind::Metro);
+        } else if constexpr (std::is_same_v<M, proto::NpcStates>) {
+          for (auto &entry : m.npcs)
+            entry.detected = bits(entry.detected);
+          return true;
+        } else if constexpr (std::is_same_v<M, proto::NpcAwareness>) {
+          std::erase_if(m.entries, [&](auto &entry) { return !us(entry.player); });
+          return !m.entries.empty();
+        } else if constexpr (std::is_same_v<M, proto::NpcGone>) {
+          if (!player(m.killer))
+            m.killer = proto::kNoPlayer;
+          return true;
+        } else if constexpr (std::is_same_v<M, proto::NpcHackState> ||
+                             std::is_same_v<M, proto::NpcStatus> ||
+                             std::is_same_v<M, proto::NpcWound>) {
+          if (!player(m.player))
+            m.player = proto::kNoPlayer;
+          return true;
+        } else if constexpr (std::is_same_v<M, proto::NpcHold>) {
+          return player(m.player);
+        } else if constexpr (std::is_same_v<M, proto::NpcSeat>) {
+          return player(m.owner);
+        } else if constexpr (std::is_same_v<M, proto::PlayerHit> ||
+                             std::is_same_v<M, proto::PlayerHack> ||
+                             std::is_same_v<M, proto::NpcCue> ||
+                             std::is_same_v<M, proto::NpcShotAt>) {
+          return us(m.player);
+        } else if constexpr (std::is_same_v<M, proto::Revive>) {
+          return host(m.player) && us(m.target);
+        } else if constexpr (std::is_same_v<M, proto::Regroup>) {
+          return host(m.from) && (m.to == proto::kNoPlayer || us(m.to));
+        } else if constexpr (std::is_same_v<M, proto::AreaHit>) {
+          return host(m.from) && us(m.player);
+        } else if constexpr (std::is_same_v<M, proto::ChoiceCursor> ||
+                             std::is_same_v<M, proto::StoryState>) {
+          return host(m.player);
+        } else if constexpr (std::is_same_v<M, proto::ChoiceHub>) {
+          later(m.timedStartUs);
+          return true;
+        } else if constexpr (std::is_same_v<M, proto::PhoneCall>) {
+          if (!player(m.answeredBy))
+            m.answeredBy = proto::kNoPlayer;
+          return true;
+        } else if constexpr (std::is_same_v<M, proto::Subtitle>) {
+          if (!player(m.speakerPlayer))
+            m.speakerPlayer = proto::kNoPlayer;
+          return true;
+        } else if constexpr (std::is_same_v<M, proto::WorldItem>) {
+          return host(m.dropper);
+        } else if constexpr (std::is_same_v<M, proto::SharedItem>) {
+          return host(m.player);
+        } else if constexpr (std::is_same_v<M, proto::World> ||
+                             std::is_same_v<M, proto::NpcSpawn> ||
+                             std::is_same_v<M, proto::NpcHealth> ||
+                             std::is_same_v<M, proto::NpcAnims> ||
+                             std::is_same_v<M, proto::NpcShot> ||
+                             std::is_same_v<M, proto::NpcPoise> ||
+                             std::is_same_v<M, proto::Difficulty> ||
+                             std::is_same_v<M, proto::Journal> ||
+                             std::is_same_v<M, proto::Tracked> ||
+                             std::is_same_v<M, proto::QuestReward>) {
+          return true;
+        } else {
+          return false;
+        }
+      },
+      message);
+  if (!keep)
+    return std::nullopt;
+  return message;
+}
+
+void ApplyHost(Endpoint &endpoint, const proto::Message &message, proto::PlayerId guest) {
+  if (Keeps(message) && !std::holds_alternative<proto::AreaHit>(message)) {
+    Apply(endpoint, message); // our own V, as a game sends it
+    return;
+  }
+  if (proto::IsStory(message)) {
+    endpoint.SendStory(
+        message, std::holds_alternative<proto::QuestReward>(message) ? guest : proto::kNoPlayer);
+    return;
+  }
+  if (proto::IsCombat(message)) {
+    endpoint.SendCombat(message);
+    return;
+  }
+  std::visit(
+      [&](const auto &m) {
+        using M = std::decay_t<decltype(m)>;
+        if constexpr (std::is_same_v<M, proto::World>)
+          endpoint.SetWorld(m);
+        else if constexpr (std::is_same_v<M, proto::NpcSpawn>)
+          endpoint.SendNpcSpawn(m);
+        else if constexpr (std::is_same_v<M, proto::NpcStates>)
+          endpoint.SendNpcStates(m);
+        else if constexpr (std::is_same_v<M, proto::NpcGone>)
+          endpoint.SendNpcGone(m);
+        else if constexpr (std::is_same_v<M, proto::NpcHealth>)
+          endpoint.SendNpcHealth(m);
+        else if constexpr (std::is_same_v<M, proto::NpcAnims>)
+          endpoint.SendNpcAnims(m);
+        else if constexpr (std::is_same_v<M, proto::NpcShot>)
+          endpoint.SendNpcShot(m);
+        else if constexpr (std::is_same_v<M, proto::NpcHackState>)
+          endpoint.SendNpcHackState(m);
+        else if constexpr (std::is_same_v<M, proto::NpcStatus>)
+          endpoint.SendNpcStatus(m);
+        else if constexpr (std::is_same_v<M, proto::NpcHold>)
+          endpoint.SendNpcHold(m);
+        else if constexpr (std::is_same_v<M, proto::NpcSeat>)
+          endpoint.SendNpcSeat(m);
+        else if constexpr (std::is_same_v<M, proto::NpcAwareness>)
+          endpoint.SendNpcAwareness(m);
+        else if constexpr (std::is_same_v<M, proto::PlayerHit>)
+          endpoint.SendPlayerHit(m);
+        else if constexpr (std::is_same_v<M, proto::PlayerHack>)
+          endpoint.SendPlayerHack(m);
+        else if constexpr (std::is_same_v<M, proto::NpcCue>)
+          endpoint.SendNpcCue(m);
+        else if constexpr (std::is_same_v<M, proto::NpcShotAt>)
+          endpoint.SendNpcShotAt(m);
+        else if constexpr (std::is_same_v<M, proto::Pause>)
+          endpoint.SetLocalPaused(m.paused);
+        else if constexpr (std::is_same_v<M, proto::Epoch>)
+          endpoint.BumpEpoch(m.reason);
+        else if constexpr (std::is_same_v<M, proto::Regroup>)
+          endpoint.SendRegroup(m);
+        else if constexpr (std::is_same_v<M, proto::WorldItem>)
+          endpoint.DropWorldItem(m);
+        else if constexpr (std::is_same_v<M, proto::SharedItem>)
+          endpoint.SendSharedItem(m);
       },
       message);
 }

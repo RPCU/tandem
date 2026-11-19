@@ -49,8 +49,11 @@ public:
 
   // Runtime::Start / Stop: the solo drain stops before the net thread takes
   // the outboxes, and the clock of a segment is never mixed.
-  void SessionStarting();
+  void SessionStarting(bool guest);
   void SessionStopped();
+  // The net thread: welcomed as `you` by `host` (a guest's segments are
+  // plays of its own V, a host's what it tells its guests).
+  void Joined(bool asHost, proto::PlayerId you, proto::PlayerId host);
 
 private:
   void Run(std::stop_token stop);

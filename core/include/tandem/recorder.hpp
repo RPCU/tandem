@@ -4,10 +4,13 @@
 // what the game sends, or would send to a guest, written as it plays, solo
 // or in a session, for later replays and tests.
 //
-// Segments: `<dir>/YYYYMMDD-HHMMSS.tsession`, one per `segmentSeconds` (10
-// minutes by default), in the .tplay layout (tandem/play.hpp) with the
-// session magic: play::Load reads them, a crash's partial one too (it ends
-// inside an entry at worst; flushed every second). Each closed segment gets
+// Segments: `<dir>/YYYYMMDD-HHMMSS.tsession`, one per `segmentUs` (10
+// minutes by default), in the recordings' format (tandem/play.hpp, version
+// 2): solo or hosting, a session recording (Kind::Session) of what this
+// game, as the host (`host`), would tell a guest, with no guest
+// (`player` 0); as a guest, a play (Kind::Play, `.tplay`) of its own V.
+// play::Load reads them, a crash's partial one too (it ends inside an
+// entry at worst; flushed every second). Each closed segment gets
 // a line in `<dir>/index.jsonl` (what happened in it, where, what recording
 // cost); a segment a crash left without one is indexed at the next start.
 // The oldest segments go once the folder is over `maxBytes`.
@@ -34,6 +37,7 @@ struct Summary {
   std::uint64_t messages{};
   std::uint64_t states{}, poses{}, shots{}, hits{}, npcSpawns{}, vehicleStates{};
   std::uint64_t subtitles{}, choiceHubs{}, calls{}, journal{}, travels{}, deaths{}, items{};
+  std::uint64_t teleports{}; // our V moved 50 m or more at once (a fast travel, a load)
   std::uint64_t world{};
   std::optional<proto::Vec3> first, last; // our V's positions
   double distance{};                      // metres our V moved (on foot or driving)
@@ -49,8 +53,10 @@ struct Options {
   std::uint64_t segmentUs{600'000'000}; // 10 minutes of host clock
   std::uint64_t maxBytes{2ull << 30};   // 2 GB
   std::uint64_t flushUs{1'000'000};
-  bool solo{}; // no session: the header says so (player 1)
-  proto::PlayerId player{1};
+  bool solo{}; // no session (in the index)
+  play::Kind kind{play::Kind::Session};
+  proto::PlayerId player{}; // Session: the guest it was for (0: none); Play: ours
+  proto::PlayerId host{1};  // the host's id (solo: ours)
   proto::Body body{};
 };
 
@@ -93,6 +99,9 @@ public:
   void Tick(std::uint64_t hostUs);
   // Closes the current segment now (the next message opens one).
   void Cut();
+  // What the next segments are (a session started or ended): closes the
+  // current one.
+  void Switch(bool solo, play::Kind kind, proto::PlayerId player, proto::PlayerId host);
   void Stop();
 
   bool Active() const;
