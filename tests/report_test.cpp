@@ -18,7 +18,7 @@ struct Game {
   std::filesystem::path root;
   Game() {
     root = std::filesystem::temp_directory_path() / std::format("tandem-report-{}", getpid()) /
-           "home" / "khoa" / "Cyberpunk 2077";
+           "home" / "valerie" / "Cyberpunk 2077";
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root);
   }
@@ -40,7 +40,7 @@ TEST_CASE("paths, user names and addresses are taken out of a text") {
   const std::filesystem::path game = "C:\\Games\\Cyberpunk 2077";
   CHECK(report::Redact("loaded c:/games/cyberpunk 2077/red4ext/plugins/tandem/tandem.dll", game) ==
         "loaded <game>/red4ext/plugins/tandem/tandem.dll");
-  CHECK(report::Redact("C:\\Users\\Victor Hang\\AppData\\x and /home/khoa/.steam/y", {}) ==
+  CHECK(report::Redact("C:\\Users\\Valerie Doe\\AppData\\x and /home/valerie/.steam/y", {}) ==
         "C:\\Users\\<user>\\AppData\\x and /home/<user>/.steam/y");
   CHECK(report::Redact("guest 203.0.113.7:27450 joined, relay 198.51.100.20.", {}) ==
         "guest 203.0.x.x:27450 joined, relay 198.51.x.x.");
@@ -108,7 +108,7 @@ TEST_CASE("the report holds the newest logs, the ini without secrets, and nothin
   CHECK(zip.find("relay_token = <removed>") != std::string::npos);
   CHECK(zip.find("abcdef") == std::string::npos);
   CHECK(zip.find("203.0.113.7") == std::string::npos);
-  CHECK(zip.find("khoa") == std::string::npos);
+  CHECK(zip.find("valerie") == std::string::npos);
   CHECK(zip.find("not ours") == std::string::npos);
   CHECK(zip.find("Jackie") == std::string::npos);
   CHECK(zip.find("binary") == std::string::npos);
