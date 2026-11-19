@@ -125,6 +125,7 @@ The owner simulates; everyone else displays.
 | a V: health, death, downed | that player's game | shown; revives are requests to the owner |
 | a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level |
 | a vehicle someone drives | the driver's game | puppet vehicle, passengers mounted |
+| a player's garage (owned cars, unlocks) | that player's game (save) | a partner may drive one by its owner's word (`lend`); the garage stays the owner's (`architecture/garage.md`) |
 | a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game | copy, riders and NPCs seated; host's scene: a seat or a ride along |
 | an NCART train (scripted transit) | each rider's own game | never shared: puppet in a train of ours, else hidden |
 | a parked or AI vehicle | host | proxy |
@@ -137,7 +138,8 @@ The owner simulates; everyone else displays.
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
 | items a V drops on purpose | host | lie in every game; the first pickup keeps it |
-| quest and important items, rewards | every player's own V | whoever gets one, every V gets it |
+| quest and important items, rewards | every player's own V | whoever gets one, every V gets it; a guest gives the host's quest props back on leaving (`architecture/quest-carryover.md`) |
+| what a guest did in co-op (the ledger) | the guest's game (save) | never shared: quests taken part in, rewards paid once, vehicles earned |
 
 Enemy level (the mean of the players' levels): `architecture/npcs.md`.
 
@@ -267,8 +269,9 @@ plugin") and its open problems.
 - `revive.md`: down, revive, respawn, shared game over.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, rewards; open: scenes for guests, story decisions, quests together.
 - `progression.md`: levels (enemies scaled to the mean of the players' levels), XP rules, economy (vendors, crafting, stash, garage, apartments), a guest's saves (the leave steps, crashes, what is never saved), decisions.
+- `garage.md`: owned vehicles: each player's garage, driving a partner's car, vehicles earned together (credited, or kept with `vehicle_rewards = keep`), purchases, PL deliveries, decisions.
 - `trade.md`: trade between two players: the prompt and the table, what may be traded, the host's two-phase arbitration, the protocol, what is not verified.
-- `quest-carryover.md`: (proposal) what a guest brings home: the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
+- `quest-carryover.md`: what a guest brings home (stage A1 built: the ledger in the save, rewards through it, quest props given back on leave): the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
 - `coop-menu.md`: the co-op menu, invites and join codes in game.
 - `travel.md`: fast travel together, regroup; open: region authority.

@@ -1,7 +1,8 @@
 # Quest carry-over: what a guest brings home
 
-**Status: proposal, 2026-11-19.** Desk research and one tested core module
-(`core/src/carryover.cpp`); nothing here ran in game. It re-evaluates the
+**Status: 2026-11-19, stage A1 built** (the ledger in the guest's save,
+rewards paid through it, quest props given back on leave: "Built" below);
+the rest is a proposal. Nothing here ran in game yet. It re-evaluates the
 story architecture (`story.md`, `../research/coop-quests-design.md`) for the
 user's request: _a player joins to help another in their world, and brings
 back what they earned when they play solo again; the host's progress should
@@ -267,28 +268,36 @@ the host.
   part in, not completed: rewards already paid stay paid, nothing is
   pending for the guest's world.
 
-### Interface for the script side (to build with the leave flow)
+### The script side (built)
 
-Natives on `TandemStory` (plugin, game thread), all thin calls into one
-`carry::Ledger`:
+Natives on `TandemStory` (`plugin/src/story_natives.cpp`, game thread), all
+thin calls into one `carry::Ledger`; the script is `Story.reds` (the
+persistent `m_ledger`) and `Loot.reds` (session props):
 
 <!-- prettier-ignore -->
 | Native | When |
 | --- | --- |
-| `CarryLoad(words: array<Uint64>)` | the story system attaches (a load): the save's ledger |
-| `CarryWords() -> array<Uint64>` | after any change: stored back into the persistent field |
-| `CarryQuest(quest, kind, own, host)` | a guest takes part in a quest's step (`QuestReward`, or a journal change of the host's quest while near): `own` from the baseline |
-| `CarryCompleted(quest)` | the host's quest reaches Succeeded with the guest near |
-| `CarryPay(quest, reward) -> Int32` | before `GiveReward` on a guest: 0 pay, 1 already paid, 2 done alone |
-| `CarryOwnPays(quest, reward) -> Bool` | the `OnRewardEvent` wrap in the guest's own story |
-| `CarrySessionItem(record, quantity)` | `Loot.reds` gives a guest a shared item tagged `Quest` or a keycard |
-| `CarryTakeSessionItems() -> array<…>` | the guest's leave, before the story is "back as it was": remove these from the inventory |
+| `CarryLoad(words: array<Uint64>)` | the story system starts (a load): the save's ledger; an older save's `m_rewarded` pairs move into it once (`MigrateRewards`) |
+| `CarryWords() -> array<Uint64>` | after any change: stored back into the persistent field (`Persist`) |
+| `CarryQuest(questHash, kind, own, host)` | a guest takes part in a quest's step: a `QuestReward`, or a mirrored journal change of the host's quest within 150 m of the host (`NoteJournal`); `own` is the guest's journal state before the mirror touched it (`OwnStateOf`), `kind` the journal's quest type, `host` the host's name (kept as `carry::HostHash`) |
+| `CarryCompleted(questHash)` | the host's quest entry itself goes Succeeded with the guest within 150 m |
+| `CarryPay(questHash, reward) -> Int32` | before `GiveReward` on a guest: 0 pay, 1 already paid, 2 done alone |
+| `CarryOwnPays(questHash, reward) -> Bool` | the `OnRewardEvent` wrap in the guest's own story (`AlreadyRewarded`) |
+| `CarrySessionItem(record, quantity)` | `Loot.reds` gives a guest a shared item tagged `Quest` or a keycard (`SessionProp`: never an iconic), or the guest loots one itself in the session |
+| `CarrySessionItems() -> array<TandemCarryItem>` | the guest's leave: taken out of the inventory (`TandemLoot.ReturnSessionItems`), and forgotten |
+| `CarryWith(questHash, host) -> Bool`, `CarryReport() -> String` | "done with NAME"; `tools/game.sh cmd story carry` |
 
-Order on leave (inside `TandemStorySystem.GuestLeave`, so the
-`progression` branch's `LeftOver` bit 1 still covers it): close the
-mirrors, **remove session items**, restore the journal, end the freeze,
-store `CarryWords`, then unlock. `Saves.reds` saves after that, by its own
-rules.
+Order on leave (inside `TandemStorySystem.GuestLeave`, so `LeftOver` bit 1
+still covers it): close the mirrors, **give the session props back**,
+release the holds, restore the journal, store the ledger's words, end the
+freeze, then unlock. `Saves.reds` saves after that, by its own rules. The
+co-op menu's "done with NAME" list is not built (the log has it).
+
+As proposed before it was built, the calls were `CarryQuest(quest, kind, own, host)`,
+`CarryCompleted(quest)`, `CarryPay(quest, reward) -> Int32`,
+`CarryOwnPays(quest, reward) -> Bool` and `CarryTakeSessionItems() -> array<…>`:
+the parameters are named `questHash` now (`quest` is a redscript keyword)
+and the last is `CarrySessionItems`.
 
 ## Edge cases, ruled
 
@@ -296,9 +305,9 @@ rules.
 | Case | Rule | Why |
 | --- | --- | --- |
 | host further ahead | the guest is told before joining ("NAME is further in the story: spoilers") when the host has 3 or more main quests more (`carry::NoteFor`); it may join | spoilers are the player's call; nothing of the host's story is applied to the guest anyway |
-| items and vehicles from quests the guest has not reached | reward items (iconics) are kept: tier 1. Quest props are removed on leave. Vehicles and apartments are unlocked by the host's quest graph for the host only; the guest gets none | a vehicle unlock is world state of a tier 3 quest (`VehicleSystem.EnablePlayerVehicle` from a quest node, not a reward record) |
+| items and vehicles from quests the guest has not reached | reward items (iconics) are kept: tier 1. Quest props are removed on leave. Apartments are the host's only. A vehicle the host's garage gets while the guest takes part is **credited** in the ledger, and unlocked in the guest's garage only with `vehicle_rewards = keep` (`garage.md`) | a vehicle unlock is world state of a tier 3 quest (`questEnablePlayerVehicle` from a quest node, not a reward record), and quests test the garage (`questVehicleAvailable_ConditionType`) |
 | the host is past the point of no return | told before joining ("NAME is playing the ending"); it may join and watch; tier 1 only; the ending's reward screen is the host's | the ending is one save's (`inkSaveType.PointOfNoReturn`); a guest's V returns to its own world as it was |
-| Phantom Liberty on one side only | host with, guest without: the join is refused ("needs Phantom Liberty") until the handshake can say which content is in play; guest with, host without: fine | journal hashes, reward and item records of the expansion do not exist in a game without it (`IsEP1`, `IsEp1Entry`); needs a flag in `Hello` (a protocol bump, the integrator's) |
+| Phantom Liberty on one side only | cannot happen: **required** (decided 2026-11-19); a game without it starts no session (`session.md`) | journal hashes, reward and item records of the expansion do not exist in a game without it (`IsEP1`, `IsEp1Entry`); checked locally, no protocol change |
 | host behind: the guest already did the quest | no quest reward (`Pay::DoneAlone`: its own journal had it Succeeded at join); kills, loot and their XP are still its own | "once per quest" in both directions; helping is still worth the loot |
 | divergent choices, romance, lifepath | never carried: tier 3. A choice made in the host's world is the host's | `story.md`, private scenes |
 | a quest failed or missed in the guest's world | credited, never applied (`OwnState::Failed` is not "available") | reviving a failed quest is writing quest state |
@@ -335,8 +344,8 @@ rules.
 | Stage | What | Needs |
 | --- | --- | --- |
 | A0 | the ledger and its rules (`core/carryover`) with tests | done |
-| A1 | natives and script: ledger in the save, pay rules through it, session items removed on leave, "done with NAME" list in the co-op menu | after `progression`'s leave flow merges (same files) |
-| A2 | join notes: the host's story mark in the handshake or a story message, the spoiler and ending notices, the Phantom Liberty refusal | a protocol change |
+| A1 | natives and script: ledger in the save, pay rules through it, session items removed on leave | **built** (in game: scenarios `carry-props`, `garage-guest`); the co-op menu's "done with NAME" list is not |
+| A2 | join notes: the host's story mark in the handshake or a story message, the spoiler and ending notices | a protocol change (Phantom Liberty needs none: required, checked locally) |
 | C2 | spike on a solo game: gig phases by their journal nodes (log the chain for ten gigs); then the freeze by ownership (gig phases run apart, wait grouped), own gig entries kept in the journal mirror | the game machine; `regions` for grouped or apart |
 | C1 | spikes on a solo game: mark a hustle done from outside (C1a); finish a gig through its own end facts (C1b) | the game machine, a day |
 | B | apply `Pending()` in the guest's world for the types that passed C1; drop duplicate iconics | C1 |
@@ -348,8 +357,8 @@ rules.
    yes. The alternative (write journal and facts now) risks the guest's
    save for a convenience.
 2. **Quest props leave the guest's inventory when it leaves the session?**
-   Recommended: yes (tag `Quest` and keycards only; iconics and every other
-   reward stay).
+   **Decided 2026-11-19: yes** (tag `Quest` and keycards from the host's
+   quests; iconics stay). Built.
 3. **A host behind: no quest reward for a quest the guest already finished
    alone?** Recommended: yes, none (loot and kill XP remain). Alternative:
    a reduced reward (money and XP only).
@@ -359,10 +368,11 @@ rules.
 5. **Duplicate unique items from the guest's own story later: accept a
    second copy for now?** Recommended: accept; revisit in stage B.
 6. **Whose gig: the world of the player who starts it (rule (a))?**
-   Recommended: yes. Grouped at the start, it is the region owner's (the
-   host's), with no prompt. Until per-player regions exist, guests start
-   no gigs of their own (rule (b)).
+   **Decided 2026-11-19: yes**; grouped at the start, it is the host's.
+   Until per-player regions exist, guests start no gigs of their own (rule
+   (b)).
 7. **A helper's own copy of a gig stays playable at home, paying nothing
-   again?** Recommended: yes (tier 2 credit).
+   again?** **Decided 2026-11-19: yes** (tier 2 credit; built:
+   `tests/carryover_test.cpp`, "a helper's own copy of a gig").
 8. **Skip offers (stage C) at all?** Recommended: not for main quests;
    decide after stage B for the rest.

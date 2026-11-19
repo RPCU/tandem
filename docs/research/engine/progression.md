@@ -247,3 +247,64 @@ itemData, amount)` (F:230246): a click (F:404634), the quantity picker
   storage mode, and `drop_item` / `disassemble_item` too, is [I].
 - Closing: `OnBack` spawns `OnVendorClose` on the menu event dispatcher
   (F:404126) [R].
+
+#### 13.30.9 The garage: owned vehicles
+
+- `VehicleSystem` (F:189898) natives: `SpawnActivePlayerVehicle(opt type)`,
+  `SpawnPlayerVehicle(opt type, opt vehicleID, opt spawnOnlyOnValidRoad)`,
+  `IsActivePlayerVehicleOnCooldown`, `IsPlayerVehicleOnCooldown`,
+  `ToggleSummonMode`, `DespawnPlayerVehicle(GarageVehicleID)`,
+  `UnregisterPlayerVehicle(GarageVehicleID)`, `EnablePlayerVehicle(vehicle:
+String, enable, opt despawnIfDisabling)`, `EnableAllPlayerVehicles`,
+  `GetPlayerVehicles(out)`, `GetPlayerUnlockedVehicles(out)`,
+  `IsVehiclePlayerUnlocked(recordID)`, `GetActivePlayerVehicle`,
+  `TogglePlayerActiveVehicle`, `TogglePlayerFavoriteVehicle`
+  (F:189901-189949) [R]. `PlayerVehicle` (F:240221): `recordID`,
+  `vehicleType`, `isUnlocked`, `destructionTimeStamp`... [R].
+  `GarageVehicleID` (F:318397) is `{name, recordID}` [R].
+- The garage list is TweakDB `Vehicle.vehicle_list.list` (F:395838) [R].
+  The unlocked set and each vehicle's health are saved in the RTTI class
+  `vehicleGarageComponentPS` (`unlockedVehicles`, `unlockedVehicleArray`)
+  [I, from the 2.50 RTTI dump].
+- **No script calls `EnablePlayerVehicle`**; the only script unlock is the
+  debug "unlock all" (`EnableAllPlayerVehicles`, F:402098) [R]. Reward
+  records carry no vehicle (`RewardBase_Record`, F:203626) [R]. Quests
+  unlock with the node `questEnablePlayerVehicle_NodeType {vehicle,
+enable, despawn, makePlayerActiveVehicle}` [R, RTTI]; which quest
+  unlocks which car is in the quest files [I].
+- **The autofixer** (`gameuiVehicleShopGameController.OnVehicleShopPurchase
+EventEvent`, F:484413): money ≥ price, `AvailabilityFact` > 0,
+  `OwnershipFact` == 0; removes the money, resets the discount, sets
+  `OwnershipFact` = 1 [R]. The garage unlock follows from a quest on that
+  fact [I]. The discount is one fact (named in the widget resource) lowered
+  by 25 per purchase (F:484520-484539) [R]. `VehicleOffer_Record`
+  (F:361804) [R]; unlock types `CourierMissions`, `Quest`, `StreetCred`
+  (F:5370) [R].
+- **Quests can test the garage**: `questVehicleAvailable_ConditionType
+{vehicleType: AnyCar | AnyMotorcycle | AnyVehicle | SpecificVehicle,
+vehicleName}` [R, RTTI]; also `questVehicleSummoned_ConditionType`,
+  `questVehicleSpawned_ConditionType` [R, RTTI].
+- Summon restrictions: `VehicleSystem.IsSummoningVehiclesRestricted`
+  (F:189967-190005): the fact `unlock_car_hud_dpad`, the garage state on
+  `VehicleSummonData.GarageState` (`SummonAvailable`), at least one unlocked
+  vehicle, remote control, the hotkey restriction tags [R]. The summoned
+  car's entity is `VehicleSummonData.SummonedVehicleEntityID` [R].
+- A destroyed garage vehicle: `destructionTimeStamp` against
+  `Vehicle.summon_setup.repairCooldownMax` (F:390144-390157); the repair is
+  native [R].
+- `DelamainTaxiSystem` (F:216881) uses a temporary garage vehicle and
+  unregisters it (F:216934) [R].
+- Codeware adds `VehicleSystem.EnablePlayerVehicleID(vehicleID: TweakDBID,
+enable, opt despawnIfDisabling)`, which checks the garage list and calls
+  the native `ToggleGarageVehicle` (`codeware/scripts/Vehicle/
+VehicleSystem.reds`) [R]. Whether enabling twice is a no-op, and whether
+  it shows the "new vehicle" toast, is [I].
+- PL car deliveries pay money through reward records named
+  `sa_ep1_courier_tier*`, scaled by the fact `courier_missions_done`
+  (F:37582-37593) [R].
+- Phantom Liberty installed: the global native `IsEP1() -> Bool`
+  (F:223600), which the game's own menus and loot use (F:35670, F:371063)
+  [R]. Whether it answers before a save is loaded (the main menu) is [I].
+- `JournalManager.GetQuestType(entry) -> gameJournalQuestType` (F:196730)
+  [R]; `TransactionSystem.RemoveItem(obj, itemID, amount)` (F:52042) [R]:
+  what the ledger's quest kinds and the props given back on leave use.
