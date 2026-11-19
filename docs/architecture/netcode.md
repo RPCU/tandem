@@ -100,8 +100,9 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
   30 m, 15 Hz to 80 m, 5 Hz to 200 m, then 1 Hz; states and cars every
   frame within 80 m, 15 Hz to 200 m, then 5 Hz. The receiver's pose is
   drawn `PoseTrack::IntervalUs` later when they come less often. A state
-  5 m or more from the last one sent (a teleport, a fast travel) goes at
-  once, near or far: per-player regions decide links from these places.
+  5 m or more from where the last one sent puts it by now (a teleport, a
+  fast travel) goes at once, near or far: per-player regions decide links
+  from these places.
 - **Still**: a V or a car that does not move goes 5 times a second; when it
   moves again the last held state goes first with its own time, so it
   leaves from where and when it stood. The receiver's interval estimate
