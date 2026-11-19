@@ -76,6 +76,10 @@ func serve(args []string) error {
 	regions := fs.String("regions", env("TANDEM_RELAY_REGIONS", ""),
 		"every region's entrance (ip:port), in region order, comma-separated (none: one region)")
 	region := fs.Int("region", 0, "this replica's region, an index in --regions (TANDEM_RELAY_REGION)")
+	fs.BoolVar(&cfg.ProxyProtocol, "proxy-protocol", env("TANDEM_RELAY_PROXY_PROTOCOL", "") == "on",
+		"behind a tunnel sending PROXY v2 headers (playit.gg): take each client's address from them")
+	trusted := fs.String("trusted-proxies", env("TANDEM_RELAY_TRUSTED_PROXIES", "127.0.0.1/32,::1/128"),
+		"with --proxy-protocol: the only senders taken (CIDRs, comma-separated; a sidecar's loopback by default)")
 	readers := fs.Int("readers", min(runtime.NumCPU(), 8), "sockets reading the UDP port at once (SO_REUSEPORT)")
 	drain := fs.Duration("drain-timeout", 60*time.Second,
 		"on SIGTERM, how long running sessions may go on (no new ones) before the relay exits")
@@ -106,6 +110,9 @@ func serve(args []string) error {
 		if cfg.Region, err = strconv.Atoi(v); err != nil {
 			return fmt.Errorf("TANDEM_RELAY_REGION: %q is not an index", v)
 		}
+	}
+	if cfg.TrustedProxies, err = parsePrefixes(*trusted); err != nil {
+		return err
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -214,6 +221,9 @@ func serve(args []string) error {
 	if len(front) > 0 {
 		attrs = append(attrs, "front", front[0].LocalAddr().String())
 	}
+	if cfg.ProxyProtocol {
+		attrs = append(attrs, "proxy_protocol", true, "trusted_proxies", *trusted)
+	}
 	log.Info("relay up", attrs...)
 	err = server.ServeAll(ctx, direct, front)
 
@@ -221,6 +231,21 @@ func serve(args []string) error {
 	defer cancel()
 	_ = web.Shutdown(shutdown)
 	return err
+}
+
+func parsePrefixes(text string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for _, field := range strings.Split(text, ",") {
+		if field = strings.TrimSpace(field); field == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(field)
+		if err != nil {
+			return nil, fmt.Errorf("--trusted-proxies: %q is not a CIDR", field)
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
 }
 
 func flagSet(fs *flag.FlagSet, name string) bool {

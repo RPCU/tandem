@@ -215,6 +215,10 @@ tasks:
     desc: Render and validate the Kubernetes manifests
     cmds:
       - kustomize build deploy/kubernetes/base | kubeconform -strict -summary -
+      # Gateway and HTTPRoute (Gateway API CRDs) have no schema kubeconform
+      # ships: rendered (kustomize checks their structure), not validated.
+      - kustomize build deploy/kubernetes/kgateway | kubeconform -strict -summary -skip Gateway,HTTPRoute -
+      - kustomize build deploy/kubernetes/playit | kubeconform -strict -summary -
 
   check:
     desc: Everything CI would run

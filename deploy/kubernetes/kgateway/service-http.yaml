@@ -1,0 +1,48 @@
+# The relay's HTTP port for the gateway: the fleet (any ready replica), and
+# each replica on its own (also while it is draining, so its /readyz says
+# so, and its /metrics are its own).
+apiVersion: v1
+kind: Service
+metadata:
+  name: tandem-relay-http
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: tandem-relay
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tandem-relay-0-http
+spec:
+  type: ClusterIP
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: tandem-relay
+    apps.kubernetes.io/pod-index: "0"
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tandem-relay-1-http
+spec:
+  type: ClusterIP
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: tandem-relay
+    apps.kubernetes.io/pod-index: "1"
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

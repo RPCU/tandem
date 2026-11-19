@@ -1,0 +1,37 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The relay with kgateway in front of its HTTP side (health, readiness,
+# metrics). Not its UDP side: kgateway (2.5.2, November 2026) has no
+# UDPRoute yet, and Envoy's udp_proxy cannot tell the relay who a datagram
+# came from (no PROXY protocol for UDP, in either direction). Behind it,
+# every player would look like the gateway, so per-source limits, the
+# connection check and hole punching would break. Players keep reaching
+# the replicas and the entrance through the base's UDP LoadBalancers:
+# no extra hop, no extra latency. docs/relay.md, "Behind kgateway".
+#
+# Use it as an overlay's base instead of ../base (namespace, image, peers,
+# host tokens as for the base).
+resources:
+  - ../base
+  - service-http.yaml
+  - gateway.yaml
+  - httproute.yaml
+
+patches:
+  # The gateway's own pods (kgateway puts them in the Gateway's namespace,
+  # labelled with the Gateway's name) may reach the relay's HTTP port.
+  - target:
+      kind: NetworkPolicy
+      name: tandem-relay
+    patch: |
+      - op: add
+        path: /spec/ingress/-
+        value:
+          from:
+            - podSelector:
+                matchLabels:
+                  gateway.networking.k8s.io/gateway-name: tandem-relay-admin
+          ports:
+            - port: 8080
+              protocol: TCP

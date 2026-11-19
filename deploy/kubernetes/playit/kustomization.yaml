@@ -1,0 +1,54 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The relay reached through playit.gg tunnels instead of LoadBalancers: in
+# each pod the playit agent (a sidecar) keeps an outbound connection to
+# playit, which hands it the players' datagrams for that replica's tunnel
+# (UDP, PROXY protocol v2), and the agent sends them to the relay on
+# 127.0.0.1 with a PROXY v2 header naming each player: the relay runs with
+# --proxy-protocol and trusts only the pod's loopback. docs/relay.md,
+# "Through playit.gg".
+#
+# Use it as your overlay's base in place of ../base, and provide:
+# - the Secret tandem-relay-playit: one agent secret key per replica, keys
+#   agent-0, agent-1 (one agent per replica: each forwards only its own
+#   replica's tunnel);
+# - the peers list: each replica's tunnel address, ip:port (below).
+resources:
+  - ../base
+
+configMapGenerator:
+  # Each replica's public address is its playit tunnel's (resolve the
+  # tunnel's name once: the relay makes no DNS query). Replace in your
+  # overlay.
+  - name: tandem-relay-peers
+    behavior: replace
+    literals:
+      - peers=192.0.2.20:30000,192.0.2.20:30001
+  - name: tandem-relay-playit
+    literals:
+      # Only the sidecar (the pod's loopback) speaks for players.
+      - trusted-proxies=127.0.0.1/32,::1/128
+
+patches:
+  - path: statefulset-playit.yaml
+  - path: networkpolicy-playit.yaml
+  # No LoadBalancer: players come through playit.
+  - patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: tandem-relay
+  - patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: tandem-relay-0
+  - patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: tandem-relay-1
