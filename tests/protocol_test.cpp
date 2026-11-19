@@ -344,6 +344,7 @@ TEST_CASE("takedown messages survive encoding") {
   RoundTrips(NpcHold{.npc = 7, .player = 2, .how = NpcHoldKind::Grappled, .name = 0xbeef});
   RoundTrips(NpcHold{.npc = 7});
   RoundTrips(NpcCue{.npc = 7, .player = 3, .cue = NpcCueKind::PoiseBroken});
+  RoundTrips(NpcCue{.npc = 7, .player = 2, .cue = NpcCueKind::OutOfSight});
   RoundTrips(NpcGone{.npc = 7, .reason = kGoneDisposed, .killer = 2});
 }
 
@@ -364,7 +365,8 @@ TEST_CASE("NPC actions travel reliably and unknown kinds are refused") {
   CHECK_FALSE(Decode(Encode(NpcActionReply{.kind = NpcActionKind{0}})).has_value());
   CHECK_FALSE(Decode(Encode(NpcHold{.how = NpcHoldKind{5}})).has_value());
   CHECK_FALSE(Decode(Encode(NpcCue{.cue = NpcCueKind{0}})).has_value());
-  CHECK_FALSE(Decode(Encode(NpcCue{.cue = NpcCueKind{3}})).has_value());
+  CHECK(Decode(Encode(NpcCue{.cue = NpcCueKind::OutOfSight})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcCue{.cue = NpcCueKind{4}})).has_value());
   // Small: a grapple is one request, not a stream.
   CHECK(Encode(NpcAction{}).size() < 64);
 }
@@ -763,8 +765,8 @@ TEST_CASE("region messages survive encoding, are reliable and bounded") {
   NpcHandoverState big;
   big.effects.resize(kMaxNpcEffects + 1);
   CHECK_FALSE(Decode(Encode(big)).has_value());
-  // Appended: the protocol version did not move.
-  CHECK(kProtocolVersion == 6);
+  // Appended after DeviceDigest (the version moved for NpcCueKind::OutOfSight,
+  // not for these).
   CHECK(Message(Regions{}).index() == Message(DeviceDigest{}).index() + 1);
 }
 

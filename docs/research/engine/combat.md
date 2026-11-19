@@ -406,3 +406,85 @@ muzzleOffset)` (54056), then the weapon effects. Its aiming needs the
 - A hit whose instigator is the proxy reaches the guest's own pipeline
   (`DealDamages`) like any NPC hit on V. `CheckForQuickExit` drops it if
   the proxy's attitude to V is friendly (86453). [2.5-untested]
+
+### 13.36 The Relic tree's levers (2026-11-19, read in final.reds, not run)
+
+- The tree is nine `Espionage_*` perks (`gamedataNewPerkType` 71-79,
+  `:4056-4064`); only six script sites name one (`:45572`, `:59798`,
+  `:204522`, `:219870`, `:224165`, `:250322`). The rest are stat flags set
+  by the perks' TweakDB records: `CanUseNewMeleewareAttackSpyTree`
+  (`:54661`, `:248568`, `:420484`), `CanPlayerExitCombatWithOpticalCamo` /
+  `BlockOpticalCamoRelicPerk` (`:44019-44025`), `CanPlayerDodgeOnDetection`
+  (`:39706`). [2.5-untested]
+- Three Relic arm-attack effects reach their target with **no
+  instigator**: `MantisBladesRelicDismemberment` after a leap
+  (`DamageSystem`, `:85964`: target not a player, instigator a player with
+  the perk, `JustLeaped`), `GorillaArmsOnePunchNPCMark` and
+  `MantisBladesGrandFinaleNPCMark` (`NPCPuppet
+.OnApplyRelicMeleewareDamageOnNPCEvent`, `:128082-128103`; the decompiler
+  nests the Mantis branch inside the Gorilla one). An
+  `ApplyStatusEffectEvent` for them has no `instigatorEntityID`.
+  [2.5-untested]
+- The Gorilla Arms and Mantis Blades charged attacks queue a new hit of the
+  player on their target after a delay
+  (`ApplyRelicMeleewareDamageToTarget`, `:552771`, flags `OnePunch` or
+  `GrandFinale` and `RelicGoldenNumbers`; `IsCloseEnoughForGrandFinale`
+  1.25 m and 3.5 m from the local player): ordinary hits. [2.5-untested]
+- The marks act only on a dead, defeated or about-to-be NPC
+  (`NPCPuppet.OnStatusEffectApplied`, `:126464-126476`): `OnePunchedMark`
+  ragdolls it (`HitReactionComponent.ProcessOnePunchAttackHitImpact`,
+  `:186189`, damage history from the last hit's instigator) and sends
+  `SetSlowMoForOnePunchAttackEvent` to `GetPlayer` after
+  `Items.StrongArms.slowMoDelay`, which sets the `deflect` time dilation
+  (`:39668-39679`); `GrandFinaleMark` applies
+  `MantisBladesInstantDismembermentSpyBuff` (`:186228`). [2.5-untested]
+- Any status effect tagged `Dismember` makes
+  `StatusEffectManagerComponent` (an NPC component) queue a
+  `ForcedDeathEvent`, cut the head (coarse) and start `blood_onscreen` on
+  the **local player** (`:321244-321266`). [2.5-untested]
+- Breaches (Vulnerability Analytics): `BreachFinderComponent` is a native
+  component **of the player** (`:204383`); it tracks one `BreachComponent`
+  on one NPC (`GetTrackedBreachComponent`, `GetTrackedBreachPuppet`). The
+  roll, the duration and the cooldown are the player's
+  (`NewPerks.CyberwareBreachParams.*`). `TryProcessBreachHit` (`:204452`)
+  takes ranged or melee hits, not headshots, needs a weapon and a
+  `PlayerPuppet` instigator, and adds `CriticalHit`, `WeakspotHit` and
+  `BreachHit`. The breach wears down from the `gameTargetDamageEvent` the
+  instigator gets (`OnDamageDealt`, `:204502`: `damage > 0` and the
+  `BreachHit` flag). Destroyed, it fires `Attacks.BreachEMPExplosion`
+  with the player as instigator and source, electric damage a share of
+  the breach's health (`SpawnFinalAttack`, `:204533`), or, with
+  `Espionage_Right_Perk_1_1`, `CyberwareBreachStreak` (`:204522`).
+  [2.5-untested]
+- An NPC's dismemberment tells its attacker with a `DismembermentInstigated`
+  event (`HitReactionComponent.NotifyAboutDismembermentInstigated`,
+  `:184341`), called right after `DismembermentComponent
+.RequestDismemberment` and **whatever that request did**
+  (`:185423-185437`, `:185548-185595`, `:185647`, `:185683`): a request we
+  refuse still tells. `PlayerPuppet.OnDismembermentInstigated` (`:45544`)
+  writes `PlayerPerkData.DismembermentInstigated` and gives the Relic's
+  Mantis Blades buff when the weapon is `Cyb_MantisBlades` and the target
+  was not dead yet. A request made outside the hit reaction (the
+  `Dismember` effects above) tells nobody. [2.5-untested]
+- Emergency Cloaking's exit (`:44019-44048`, `:39724-39733`): only while
+  `m_inCombat`; `PromoteOpticalCamoEffectorToCompletelyBlocking`,
+  `SetInvisible(true)`, `DeactivateThreat(player)` on the hostile NPCs of
+  the player's own tracker, then after
+  `Items.AdvancedOpticalCamoCommon.exitCombatDelay` (1.5 s)
+  `BaseStatusEffect.MemoryWipeExitCombat` on each (no instigator) and the
+  sound `ui_gmpl_stealth_avoid_combat`. [2.5-untested]
+- An effect tagged `ClearThreats` empties the NPC's whole target tracker
+  (`TargetTrackerComponent.ClearThreats`, `NPCPuppet.OnStatusEffectApplied`
+  `:126486-126489`), every V in it; `ExitCombatWithPerk` passes
+  `MemoryWipeExitCombat` on to its squadmates with the same instigator
+  (`:126490-126503`). Which wipes carry which tag is TweakDB. [I]
+- The second chance (Sensory Protocol): `CanAvoidCombatWithDodge`
+  (`:39705`) is the stat flag, crouching, and not in combat or within
+  `AIGeneralSettings.avoidCombatBuffer` of its start. An NPC entering
+  combat gives `SecondChancePerkTimeDilation` and queues three
+  `DodgeToAvoidCombatEvent`s at 1, 2 and 3 s (`NPCStatesComponent.OnCombat`,
+  `:168333-168349`); each succeeds if V just dodged
+  (`JustDodgedActiveBuffer`), the NPC's senses do not see V
+  (`IsAgentVisible`) and no cooldown runs: `MemoryWipeOnDodge` on the NPC,
+  the sound, the dilation removed, `DodgeOutOfSightCooldown` and
+  `SecondChancePerkCooldown` on V (`:39682-39696`). [2.5-untested]

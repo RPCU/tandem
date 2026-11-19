@@ -774,16 +774,21 @@ public class TandemNpcs {
 
   // A status effect a guest's hit put on our NPC: its behaviour here (stun,
   // panic, burning), from the guest's puppet, whose damage ticks we leave
-  // to the guest (Combat.reds). False: their puppet is not here yet.
+  // to the guest (Combat.reds). False: their puppet is not here yet. The
+  // Relic's marks act on the dead (Outcomes.reds IsRelicMark); a second
+  // chance's memory wipe is a request (Reactions.reds DodgedOutOfSight).
   private func ApplyEffect(event: TandemNpcEvent) -> Bool {
     let known = this.FindNpc(event.npc);
     let body = IsDefined(known) ? GameInstance.FindEntityByID(this.m_game, known.id) as ScriptedPuppet : null;
-    if !IsDefined(body) || body.IsDead() {
+    if !IsDefined(body) || (body.IsDead() && !TandemOutcomes.IsRelicMark(event.record)) {
       return true; // nothing left to apply it to
     }
     let instigator = TandemNpcs.PuppetOf(this.m_game, event.player);
     if !IsDefined(instigator) {
       return false;
+    }
+    if event.record == t"BaseStatusEffect.MemoryWipeOnDodge" && !TandemReactions.DodgedOutOfSight(body, instigator, event.npc, event.player) {
+      return true;
     }
     StatusEffectHelper.ApplyStatusEffect(body, event.record, instigator.GetEntityID());
     TandemNative.Log(s"npcs: \(event.npc) gets \(TDBID.ToStringDEBUG(event.record)) from player \(event.player)");

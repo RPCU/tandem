@@ -61,7 +61,7 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *hold = std::get_if<NpcHold>(&message); hold && hold->how > NpcHoldKind::Finisher)
     return std::nullopt;
   if (const auto *cue = std::get_if<NpcCue>(&message);
-      cue && (cue->cue < NpcCueKind::CombatStart || cue->cue > NpcCueKind::PoiseBroken))
+      cue && (cue->cue < NpcCueKind::CombatStart || cue->cue > NpcCueKind::OutOfSight))
     return std::nullopt;
   if (const auto *regroup = std::get_if<Regroup>(&message);
       regroup && regroup->label.size() > kMaxRegroupLabel)

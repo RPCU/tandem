@@ -363,7 +363,17 @@ private final func ProcessInstantKill(hitEvent: ref<gameHitEvent>) {
 // frame after the hit, so they are caught here, not in the damage pipeline.
 @wrapMethod(NPCPuppet)
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
+  // Host: a guest's one-punch slow motion stays theirs, and a V's way out
+  // of combat lets only that V go (Outcomes.reds, Stealth.reds: the Relic).
+  if TandemOutcomes.IsGuestsOnePunch(this, evt) {
+    let outcomes = TandemOutcomes.Of(this.GetGame());
+    if IsDefined(outcomes) {
+      outcomes.DropOnePunchSlowMo();
+    }
+  }
+  let others = TandemStealth.OthersHunted(this, evt);
   let result = wrappedMethod(evt);
+  TandemStealth.HuntAgain(this, others);
   // A V is never crippled or dismembered (Outcomes.reds KeepsLimbs).
   if IsDefined(evt.staticData) && TandemOutcomes.IsLimbEffect(evt.staticData) && TandemOutcomes.KeepsLimbs(this, s"status effect \(TDBID.ToStringDEBUG(evt.staticData.GetID()))") {
     StatusEffectHelper.RemoveStatusEffect(this, evt.staticData.GetID());
@@ -371,8 +381,12 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
   }
   if evt.isNewApplication && !evt.isAppliedOnSpawn && IsDefined(evt.staticData) {
     let player = GetPlayer(this.GetGame());
-    if IsDefined(player) && evt.instigatorEntityID == player.GetEntityID() {
-      let npc = TandemCombat.ProxyNpc(this.GetGame(), this);
+    // The Relic's arm attacks mark their target with no instigator
+    // (Outcomes.reds IsRelicMark): ours all the same, and on a proxy our
+    // hit has killed already too (the marks act on the dead).
+    let relic = !TandemNative.IsHost() && TandemOutcomes.IsRelicMark(evt.staticData.GetID());
+    if IsDefined(player) && (evt.instigatorEntityID == player.GetEntityID() || relic) {
+      let npc = relic ? TandemOutcomes.ProxyEvenDead(this.GetGame(), this) : TandemCombat.ProxyNpc(this.GetGame(), this);
       if npc != 0u {
         let ids: array<TweakDBID>;
         ArrayPush(ids, evt.staticData.GetID());

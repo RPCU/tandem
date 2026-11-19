@@ -15,7 +15,7 @@
 
 namespace tandem::proto {
 inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
-inline constexpr std::uint16_t kProtocolVersion = 6;
+inline constexpr std::uint16_t kProtocolVersion = 7;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -711,6 +711,8 @@ struct NpcHold { // Event channel
 enum class NpcCueKind : std::uint8_t {
   CombatStart = 1, // the NPC entered combat with them: second chance, gag
   PoiseBroken = 2, // their hit broke its guard: a finisher is offered
+  OutOfSight = 3,  // their dodge got them out of its sight: the memory wipe
+                   // they asked for (NpcEffect) is done, the rest is theirs
 };
 
 struct NpcCue { // Event channel
