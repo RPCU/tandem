@@ -27,7 +27,9 @@ struct Game {
   Endpoint *endpoint{};
   std::set<proto::NpcId> proxies, running;
   std::map<proto::NpcId, proto::NpcHandoverState> took;
-  std::map<proto::NpcId, proto::Vec3> where; // the NPCs we run
+  std::map<proto::NpcId, proto::Vec3> where;   // the NPCs we run
+  std::map<proto::NpcId, std::uint8_t> scales; // NpcScale heard (enemy scaling)
+  int scaleWords{};
   std::vector<proto::NpcId> asked;
   int duplicateSpawns{}, strayGones{}, hits{}, strikes{}, effects{}, hacks{}, actions{}, replies{},
       noises{}, playerHits{}, cues{}, shotsAt{}, shotHits{}, states{}, lost{}, playerHacks{},
@@ -63,9 +65,14 @@ struct Game {
         strikes += std::holds_alternative<proto::NpcStrike>(combat->message) ? 1 : 0;
         areaHits += std::holds_alternative<proto::AreaHit>(combat->message) ? 1 : 0;
         npcWords += std::holds_alternative<proto::NpcWound>(combat->message) ||
-                            std::holds_alternative<proto::NpcPoise>(combat->message)
+                            std::holds_alternative<proto::NpcPoise>(combat->message) ||
+                            std::holds_alternative<proto::NpcScale>(combat->message)
                         ? 1
                         : 0;
+        if (const auto *scale = std::get_if<proto::NpcScale>(&combat->message)) {
+          scales[scale->npc] = scale->players;
+          ++scaleWords;
+        }
       } else if (std::holds_alternative<events::HostPlayerHack>(event))
         ++playerHacks;
       // What an owner says about its NPC to the games that show it.
@@ -327,6 +334,7 @@ TEST_CASE("an owner's word on its NPC reaches only the games that show it") {
     owner.SendCombat(proto::NpcWound{.npc = npc, .part = 1, .wound = 1});
     owner.SendCombat(proto::NpcPoise{.npc = npc, .poise = 0.5f});
     owner.SendNpcHealth({.npc = npc, .health = 0.9f});
+    owner.SendCombat(proto::NpcScale{.npc = npc, .players = 2});
   };
   speak(*s->host, 1, b);
   speak(*s->a, theirs, b);
@@ -347,6 +355,10 @@ TEST_CASE("an owner's word on its NPC reaches only the games that show it") {
   CHECK(s->gb.shotsAt == 0);
   CHECK(s->gb.playerHacks == 0);
   CHECK(s->gb.npcWords == quiet);
+  CHECK(s->gb.scales.empty());
+  // The scale reached the games that show the NPC.
+  CHECK(s->ga.scales[1] == 2);
+  CHECK(s->h.scales[theirs] == 2);
   CHECK(s->gb.proxies.empty());
   CHECK(s->gb.duplicateSpawns == 0);
 }
@@ -821,4 +833,77 @@ TEST_CASE("grouped or apart: one fact per player, and a region held for a gig") 
   s->a.reset();
   REQUIRE(s->Until(
       [&] { return s->b->RegionHolders().empty() && s->host->RegionHolders().empty(); }, 4s));
+}
+
+TEST_CASE("an NPC's scale: its owner's word, to everyone who sees it, kept, and the heir's next") {
+  auto s = Start(true);
+  Place(*s->host, 0);
+  Place(*s->a, 40);
+  Place(*s->b, 20);
+  // Said before the spawn reached the endpoint (another queue in the game):
+  // kept, and said right after it.
+  const auto theirs = MakeNpcId(s->a->You(), 1);
+  CHECK_FALSE(s->a->SendCombat(proto::NpcScale{.npc = theirs, .players = 2}));
+  s->ga.Announce(1, {35.f, 0.f, 0.f});
+  s->h.Announce(1, {30.f, 0.f, 0.f});
+  REQUIRE(s->Until([&] { return s->h.scales.contains(theirs) && s->gb.scales.contains(theirs); }));
+  CHECK(s->h.scales[theirs] == 2);
+  CHECK(s->ga.scales.empty()); // never its own back
+
+  // The host's own: to both guests; a repeat is said once.
+  CHECK(s->host->SendCombat(proto::NpcScale{.npc = 1, .players = 3}));
+  CHECK(s->host->SendCombat(proto::NpcScale{.npc = 1, .players = 3}));
+  REQUIRE(s->Until([&] { return s->ga.scales[1] == 3 && s->gb.scales[1] == 3; }));
+  s->For(200ms);
+  CHECK(s->ga.scaleWords == 1);
+  // Only the owner speaks for it.
+  CHECK_FALSE(s->b->SendCombat(proto::NpcScale{.npc = 1, .players = 1}));
+  CHECK_FALSE(s->host->SendCombat(proto::NpcScale{.npc = theirs, .players = 4}));
+  s->For(200ms);
+  CHECK(s->ga.scales[1] == 3);
+  CHECK(s->h.scales[theirs] == 2);
+  // Every game keeps what it knows, the same: the digests agree.
+  CHECK(s->host->NpcScales().at(1).players == 3);
+  CHECK(s->b->NpcScales().at(1).players == 3);
+  CHECK(s->b->NpcScales().at(theirs).players == 2);
+
+  // A late joiner hears the scales with the NPCs.
+  s->a->Leave();
+  s->a.reset();
+  s->ga.endpoint = nullptr;
+  REQUIRE(s->Until([&] { return s->host->Players().size() == 2; }));
+  std::string error;
+  s->a = Endpoint::Join({"late"}, "127.0.0.1", s->host->LocalPort(), error, kQuick);
+  REQUIRE(s->a);
+  s->ga = Game{};
+  s->ga.endpoint = s->a.get();
+  Place(*s->a, 25);
+  REQUIRE(s->Until([&] { return s->ga.scales.contains(1); }));
+  CHECK(s->ga.scales[1] == 3);
+
+  // Gone: nobody keeps it.
+  s->host->SendNpcGone({.npc = 1, .reason = proto::kGoneDead});
+  REQUIRE(s->Until([&] { return !s->b->NpcScales().contains(1); }));
+  CHECK_FALSE(s->a->NpcScales().contains(1));
+  s->For(400ms);
+  CHECK(s->b->Checks().Requests() == 0);
+}
+
+TEST_CASE("a handed-over NPC keeps its scale until its new owner says its own") {
+  auto s = Start();
+  Place(*s->host, 0);
+  Place(*s->a, 40);
+  s->h.Announce(1, {30.f, 0.f, 0.f});
+  CHECK(s->host->SendCombat(proto::NpcScale{.npc = 1, .players = 2}));
+  REQUIRE(s->Until([&] { return s->ga.scales[1] == 2; }));
+  // The host walks off: the guest runs it, at the share of health it had.
+  Place(*s->host, -60);
+  REQUIRE(s->Until([&] { return s->a->OwnsNpc(1); }));
+  CHECK(s->ga.took.at(1).health == doctest::Approx(0.4f));
+  CHECK(s->a->NpcScales().at(1).players == 2);
+  // The old owner's word no longer counts; the new owner's does.
+  CHECK_FALSE(s->host->SendCombat(proto::NpcScale{.npc = 1, .players = 4}));
+  CHECK(s->a->SendCombat(proto::NpcScale{.npc = 1, .players = 1}));
+  REQUIRE(s->Until([&] { return s->h.scales[1] == 1; }));
+  CHECK(s->host->NpcScales().at(1).players == 1);
 }

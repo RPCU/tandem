@@ -157,9 +157,28 @@ public class TandemNpcs {
   private let m_missingSince: array<Float>;
   // Each V's level, the session's, and our NPCs' or proxies' (Levels.reds).
   private let m_levels: ref<TandemLevels>;
+  // Enemies tougher for each extra player near them (Scaling.reds).
+  private let m_scaling: ref<TandemScaling>;
 
   public func Levels() -> ref<TandemLevels> {
     return this.m_levels;
+  }
+
+  public func Scaling() -> ref<TandemScaling> {
+    return this.m_scaling;
+  }
+
+  // An owner's word: how many players one of its NPCs is scaled for, on its
+  // proxy if it is there.
+  public func SetScale(npc: Uint32, players: Int32) -> Void {
+    this.m_scaling.Word(npc, players);
+    let proxy = this.FindProxy(npc);
+    if IsDefined(proxy) && proxy.seenAt > 0.0 && !proxy.dead {
+      let body = this.ProxyBody(proxy.id) as ScriptedPuppet;
+      if IsDefined(body) {
+        this.m_scaling.Proxy(npc, body);
+      }
+    }
   }
 
   // Guest: the host's level for one of its NPCs, on its proxy if it is there.
@@ -191,6 +210,8 @@ public class TandemNpcs {
     this.m_anims.Start(game, this);
     this.m_levels = new TandemLevels();
     this.m_levels.Start(game);
+    this.m_scaling = new TandemScaling();
+    this.m_scaling.Start(game);
   }
 
   // The recorder, solo (System.reds RecordTick): the NPCs around our V as a
@@ -220,6 +241,7 @@ public class TandemNpcs {
     }
     // The proxies' side: the NPCs the players linked with us run.
     this.Follow(now);
+    this.m_scaling.Proxies(this, now);
     this.TakePlayerHits();
     if now - this.m_lastCheck >= 1.0 {
       this.m_lastCheck = now;
@@ -392,10 +414,11 @@ public class TandemNpcs {
     }
     ArrayClear(this.m_leaving);
     ArrayClear(this.m_proxies);
-    // Host: our NPCs are scaled to our V again.
+    // Host: our NPCs are scaled to our V again, and for one player.
     for known in this.m_known {
       this.m_levels.Release(known, known.id);
     }
+    this.m_scaling.End();
     ArrayClear(this.m_known);
     this.m_anims.Clear();
     ArrayClear(this.m_missingIds);
@@ -422,6 +445,7 @@ public class TandemNpcs {
       system.Outcomes().End();
     }
     this.m_levels.End();
+    this.m_scaling.End();
     ArrayClear(this.m_hiddenIds);
     if this.m_quiet {
       GameInstance.GetCommunitySystem(this.m_game).ResetDensityModifier();
@@ -547,6 +571,8 @@ public class TandemNpcs {
     // On the NCART none are listed: the ones known go (NpcGone, out of range).
     let riding = this.OnMetro();
     let sampling = this.m_anims.Due(this.m_now);
+    // Enemy scaling, twice a second, in a session only (not the recorder's).
+    let scaling = this.m_you != 0u && this.m_scaling.Due(this.m_now);
     // Our V away from its body in another world (Elsewhere.reds): the NPCs
     // around it are that world's, none is shared, and the shared ones go.
     // Out to where an NPC leaves the shared world: one we run stays ours
@@ -621,6 +647,10 @@ public class TandemNpcs {
         }
         // Scaled to the session's level, and its level told (Levels.reds).
         this.m_levels.Host(known, npc);
+        // Tougher for each extra player near it, said to all (Scaling.reds).
+        if scaling {
+          this.m_scaling.Own(npc, known.npc, watched, this.m_you, known.lastHitBy, known.lastHitAt, known.lastOwnHitAt, this.m_now);
+        }
         this.ShareSeat(known, npc, carrier);
         // Its guard, as its health (a guest's finisher checks the proxy's).
         let poise = pools.GetStatPoolValue(Cast<StatsObjectID>(id), gamedataStatPoolType.Poise, true) / 100.0;
@@ -654,6 +684,7 @@ public class TandemNpcs {
             let killer = this.KillerOf(body, known, player);
             TandemNative.SendNpcGone(known.npc, 1, killer);
             this.m_anims.Forget(known.npc);
+            this.m_scaling.Forget(known.npc);
             TandemNative.Log(s"npcs: \(known.npc) died (killer: player \(killer))");
             // A guest's kill we helped with: our share of the skill XP is
             // paid as a guest's is (Die), and does not stay queued in our
@@ -673,8 +704,9 @@ public class TandemNpcs {
           if known.managed {
             entities.DeleteEntity(known.id);
           }
-          // No longer shared: scaled to our V again.
+          // No longer shared: scaled to our V again, for one player.
           this.m_levels.Release(known, known.id);
+          this.m_scaling.Release(known.npc);
         }
       }
     }
@@ -981,9 +1013,10 @@ public class TandemNpcs {
           proxy.seenAt = now;
           // Brain off at once: a proxy never acts on its own.
           TandemProxies.Pacify(npc);
-          // The host's NPC's level first: its health is a share of the
-          // maximum that level gives.
+          // The host's NPC's level and scale first: its health is a share
+          // of the maximum they give.
           this.m_levels.Proxy(proxy, npc);
+          this.m_scaling.Proxy(proxy.npc, npc);
           this.ApplyHealth(proxy);
           this.ApplyPoise(proxy);
         }
@@ -1474,6 +1507,7 @@ public class TandemNpcs {
   private func Remove(npc: Uint32) -> Void {
     let kept: array<ref<TandemNpcProxy>>;
     this.m_levels.Forget(npc);
+    this.m_scaling.Forget(npc);
     for proxy in this.m_proxies {
       if proxy.npc == npc {
         this.m_anims.Drop(npc);
@@ -1747,6 +1781,9 @@ public class TandemNpcs {
     ArrayPush(this.m_proxies, proxy);
     this.ForgetKnown(npc);
     this.m_anims.Forget(npc);
+    // Its modifiers stay on the body: the count we said is the new owner's
+    // until it says its own.
+    this.m_scaling.Handed(npc);
     TandemRegions.Give(npc, to, at.X, at.Y, at.Z, Deg2Rad(body.GetWorldYaw()), health, poise, flags, target, hostileTo, highLevel, effects, remaining, stacks);
     TandemNative.Log(s"regions: handover out: npc \(npc) to player \(to), health \(health), effects \(ArraySize(effects)), target player \(target)");
   }
@@ -1791,6 +1828,9 @@ public class TandemNpcs {
     }
     this.m_proxies = kept;
     TandemProxies.Wake(body);
+    // Ours to count from now: the modifiers on the body stay until our own
+    // count differs, and the share of health that came with it is kept.
+    this.m_scaling.Handed(npc);
     this.Restore(body, event);
     TandemRegions.Adopt(npc, true);
     TandemNative.Log(s"regions: handover in: npc \(npc) from player \(event.player) health \(event.health) effects \(event.effects) target player \(event.target)\((event.flags & 16) != 0 ? " (inherited)" : "")");
@@ -1877,6 +1917,11 @@ public class TandemNpcs {
     let body = GameInstance.FindEntityByID(this.m_game, known.id) as ScriptedPuppet;
     this.ForgetKnown(npc);
     this.m_anims.Forget(npc);
+    if owner != 0u {
+      this.m_scaling.Handed(npc);
+    } else {
+      this.m_scaling.Release(npc);
+    }
     if owner != 0u && IsDefined(body) && !body.IsDead() {
       TandemProxies.Pacify(body);
       let proxy = new TandemNpcProxy();

@@ -119,6 +119,14 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.pose = false;
     else
       return Bad("pose is on or off");
+  } else if (key == "enemy_scaling_health") {
+    float health{};
+    auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), health);
+    if (ec != std::errc{} || end != value.data() + value.size() || !(health >= 0.f) ||
+        health > scaling::kMaxHealthPerPlayer)
+      return Bad("enemy_scaling_health is 0 to {} (the health added per extra player), not {}",
+                 scaling::kMaxHealthPerPlayer, value);
+    config.enemyScalingHealth = health;
   } else if (key == "recorder_max_mb" || key == "recorder_segment_minutes") {
     std::uint32_t number32{};
     auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), number32);
@@ -131,11 +139,12 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       return Bad("bad {} {}", key, value);
   } else if (key == "story" || key == "quest_freeze" || key == "recorder" ||
              key == "recorder_pose" || key == "friendly_fire" || key == "markers" ||
-             key == "party_hud") {
+             key == "party_hud" || key == "enemy_scaling") {
     auto &flag = key == "story"           ? config.story
                  : key == "quest_freeze"  ? config.questFreeze
                  : key == "recorder"      ? config.recorder
                  : key == "friendly_fire" ? config.friendlyFire
+                 : key == "enemy_scaling" ? config.enemyScaling
                  : key == "markers"       ? config.markers
                  : key == "party_hud"     ? config.partyHud
                                           : config.recorderPose;
@@ -298,6 +307,10 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return OnOff(config.recorder);
   if (key == "friendly_fire")
     return OnOff(config.friendlyFire);
+  if (key == "enemy_scaling")
+    return OnOff(config.enemyScaling);
+  if (key == "enemy_scaling_health")
+    return std::format("{:.2f}", config.enemyScalingHealth);
   if (key == "notices")
     return config.notices;
   if (key == "markers")

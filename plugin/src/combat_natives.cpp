@@ -12,6 +12,7 @@
 #include "runtime.hpp"
 
 #include "tandem/combat.hpp"
+#include "tandem/scaling.hpp"
 
 #include <RedLib.hpp>
 
@@ -55,7 +56,8 @@ enum Kind : std::int32_t {
   kRules = 8,
   kDefended = 9,
   kSessionLevel = 10,
-  kNpcLevel = 11
+  kNpcLevel = 11,
+  kNpcScale = 12
 };
 
 proto::Vec3 Vec(const Red::Vector4 &v) { return {v.X, v.Y, v.Z}; }
@@ -113,7 +115,7 @@ TandemFightEvent EventOf(const proto::Message &message) {
     out.x = e->position.x, out.y = e->position.y, out.z = e->position.z;
     out.id = e->id;
   } else if (const auto *r = std::get_if<proto::Rules>(&message)) {
-    out = {.kind = kRules, .flags = r->flags};
+    out = {.kind = kRules, .flags = r->flags, .level = r->enemyHealth};
   } else if (const auto *d = std::get_if<proto::Defended>(&message)) {
     out = {.kind = kDefended,
            .npc = d->npc,
@@ -123,6 +125,8 @@ TandemFightEvent EventOf(const proto::Message &message) {
     out = {.kind = kSessionLevel, .player = s->players, .level = s->level};
   } else if (const auto *n = std::get_if<proto::NpcLevel>(&message)) {
     out = {.kind = kNpcLevel, .npc = n->npc, .damage = n->level};
+  } else if (const auto *c = std::get_if<proto::NpcScale>(&message)) {
+    out = {.kind = kNpcScale, .npc = c->npc, .player = c->players};
   }
   return out;
 }
@@ -209,13 +213,21 @@ struct TandemFight : Red::IScriptable {
     Combat::Get().Send(proto::ThrowEnd{
         .id = id, .how = static_cast<proto::ThrowEndKind>(how), .position = Vec(position)});
   }
-  // Host: the session's rules (proto::kRule*), sent when they change.
-  static void SendRules(std::int32_t flags) {
-    Combat::Get().Send(proto::Rules{.flags = static_cast<std::uint8_t>(flags & proto::kRuleFlags)});
+  // Host: the session's rules, sent when they change: ConfiguredRules' word
+  // (proto::kRule* in the low byte, enemyHealth in the next).
+  static void SendRules(std::int32_t rules) {
+    Combat::Get().Send(proto::Rules{.flags = static_cast<std::uint8_t>(rules & proto::kRuleFlags),
+                                    .enemyHealth = static_cast<std::uint8_t>(std::min<std::int32_t>(
+                                        (rules >> 8) & 0xFF, proto::kMaxEnemyHealth))});
   }
-  // Host: the rules tandem.ini asks for (friendly_fire).
+  // Host: the rules tandem.ini asks for (friendly_fire, enemy_scaling,
+  // enemy_scaling_health), as one word: one number for the scripts to
+  // compare with what they sent.
   static std::int32_t ConfiguredRules() {
-    return Runtime::Get().config.friendlyFire ? proto::kRuleFriendlyFire : 0;
+    const auto &config = Runtime::Get().config;
+    proto::Rules rules{.flags = config.friendlyFire ? proto::kRuleFriendlyFire : std::uint8_t{0}};
+    rules = scaling::WithRule(rules, config.enemyScaling, config.enemyScalingHealth);
+    return rules.flags | rules.enemyHealth << 8;
   }
   // The session's rules as this game knows them: the Vs hurt each other.
   static bool FriendlyFire() { return combat::FriendlyFire(Combat::Get().Rules()); }

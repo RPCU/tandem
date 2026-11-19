@@ -14,11 +14,14 @@ public native struct TandemFightEvent {
   // round 3 smart round, flags: proto::kThrow*, attack: the item, x y z the
   // origin, dx dy dz the velocity, npc / target: the NPC / V it homes on);
   // 7 its end (player, id, level: 0 exploded 1 stuck 2 gone, x y z); 8 the
-  // session's rules (flags: proto::kRule*); 9 (host) a guest blocked (level
-  // 1) or parried (2) our NPC's attack (player, npc).
+  // session's rules (flags: proto::kRule*; level: the health percent per
+  // extra player of enemy scaling); 9 (host) a guest blocked (level 1) or
+  // parried (2) our NPC's attack (player, npc).
   // 10 the session's level (level: the mean of its players' levels; player:
   // how many they are); 11 (guest) a host NPC's power level (npc; damage:
-  // the level). Levels.reds takes the last two.
+  // the level). Levels.reds takes the last two. 12 an owner's word on one
+  // of its NPCs: how many players it is scaled for (npc, player: the
+  // count; Scaling.reds).
   native let kind: Int32;
   native let npc: Uint32;
   native let player: Uint32;
@@ -56,7 +59,9 @@ public native class TandemFight extends IScriptable {
   public static native func SendAreaHit(player: Uint32, physical: Float, thermal: Float, electric: Float, chemical: Float, attackType: Int32, flags: Int32, position: Vector4, direction: Vector4, attack: TweakDBID, weapon: TweakDBID)
   public static native func SendThrow(id: Uint32, kind: Int32, flags: Int32, item: TweakDBID, origin: Vector4, velocity: Vector4, npc: Uint32, at: Uint32)
   public static native func SendThrowEnd(id: Uint32, how: Int32, position: Vector4)
-  public static native func SendRules(flags: Int32)
+  // ConfiguredRules' word: proto::kRule* in the low byte, the health percent
+  // per extra player (enemy scaling) in the next.
+  public static native func SendRules(rules: Int32)
   public static native func ConfiguredRules() -> Int32
   public static native func FriendlyFire() -> Bool
   public static native func SendDefended(npc: Uint32, how: Int32)
