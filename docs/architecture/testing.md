@@ -112,6 +112,11 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   `vanish-down`, `vanish-drive`, `vanish-story`, `story-session-items`).
 - `--pause-at N [--pause-for M]` (any mode) opens "its pause menu" N s after
   another player is in the session, for M s (default 3): every game pauses.
+- `--sandevistan-at N` (any mode) switches "its Sandevistan" on N s after
+  another player is in the session, for `--sandevistan-for` s (default 5)
+  at `--sandevistan-scale` (default 0.25): a time bubble around its V
+  (scenario `time`); `--scan-at N` does the same with its scanner's slow
+  motion (scenario `time-scan`).
 - **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s
   as a strike, `--strike KIND` its outcome (`plain`, `nonlethal`, `cap`,
   `poise`, `head`, `blade`); as the host of a replay it applies strikes by

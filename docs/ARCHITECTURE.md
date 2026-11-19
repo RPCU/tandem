@@ -132,7 +132,7 @@ The owner simulates; everyone else displays.
 | spawns: crowds, traffic, encounters | host | guests' own spawning is suppressed |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
 | time of day, weather, police heat | host | applied (wanted level: open, `architecture/world.md`) |
-| a V's time abilities (Sandevistan…) | that player's game | shown on the puppet; never slow anyone's world |
+| a V's time abilities (Sandevistan, the scanner…) | that player's game | shown on the puppet; never slow anyone's world |
 | an NPC's speed in a time bubble | host | proxies animated at the same speed |
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
@@ -259,7 +259,7 @@ plugin") and its open problems.
 - `vehicles.md`: driven vehicles, seats, the radio; open: getting in and out, combat in vehicles.
 - `transit.md`: rides a game runs (cabs, AVs, quest vehicles), the NCART metro.
 - `world.md`: time of day and weather; open: the guest acting on the world, NCPD chases, saves.
-- `time.md`: the pause menu, slowed time (time bubbles); open: every time dilation, other timeline and menu, NPC shots simulated by the target's game.
+- `time.md`: the pause menu, slowed time (time bubbles, the scanner's bubble); open: what the partner lives with when a V scans (mitigations to decide), every time dilation, other timeline and menu, NPC shots simulated by the target's game.
 - `npcs.md`: enemy level, NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
 - `combat.md`: hits, outcomes, game rules for every hit, quickhacks.
 - `stealth.md`: takedowns, finishers, carried bodies, "the player" reactions, per-player detection.

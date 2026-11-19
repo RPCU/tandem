@@ -2,14 +2,14 @@
 
 // Time bubbles (docs/architecture/time.md, slowed and stopped time).
 //
-// In single player a Sandevistan or a Kerenzikov slows the whole world. In
-// a shared world the whole world would slow for every player, so instead
-// the NPCs around the V using it are slowed, for everyone, by the factor
-// the ability asks for: that V's bubble. The host applies it to its real
-// NPCs (per-entity time dilation, the one vanilla gives a single NPC); each
-// guest applies the same factors to its proxies so they animate at the
-// speed they move. Everything outside every bubble, and every V, keeps
-// normal speed.
+// In single player a Sandevistan, a Kerenzikov, a slow-motion perk or the
+// scanner slows the whole world. In a shared world the whole world would
+// slow for every player, so instead the NPCs around the V using it are
+// slowed, for everyone, by the factor the ability asks for: that V's
+// bubble. The host applies it to its real NPCs (per-entity time dilation,
+// the one vanilla gives a single NPC); each guest applies the same factors
+// to its proxies so they animate at the speed they move. Everything
+// outside every bubble, and every V, keeps normal speed.
 //
 // The rules, in one place so every game agrees:
 // - one bubble per V whose ability is on (scale < 1); it holds the NPCs

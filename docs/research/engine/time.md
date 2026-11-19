@@ -84,3 +84,64 @@ duration, easeIn, easeOut, ignoreGlobalDilation, useRealTime)`,
   holding it, and nothing holds it while waiting on the game thread. No
   loop in Time.reds or `TimeBubbles::Update` can run forever.
   [2.5-untested]
+
+### 13.40 The scanner's slow time (2026-11-19, scripts and RTTI only)
+
+Read from the 2.50 script dump and RTTI natives for the scanner's time
+bubble (`scripts/tandem/Time.reds`, `../architecture/time.md`); **not yet run
+in game**. The earlier reading is `coop-time.md` §2.3.
+
+- **One profile, no stat.** `TimeDilationFocusModeEvents.OnEnter`
+  (final.reds 529099-529156) takes its factor, the player's factor, the
+  curves and `applyTimeDilationToPlayer` from the TweakDB flats
+  `timeSystem.focusModeTimeDilation.*`, reason `focusMode` (the
+  `vehicleControlFocusModeTimeDilation` branch is overwritten right after,
+  as decompiled). No stat feeds it: the 2.50 `gamedataStatType` time
+  stats are the Sandevistan's, Kerenzikov's, `TimeDilationGeneric*`,
+  `TimeDilationOnDodges*`, `TimeDilationOnHealthDrop*` and
+  `TimeDilationWhenEnteringCombat*` (final.reds 2967-2986); the scanner's
+  own stats are `ScanTimeReduction` (how long a scan takes to complete,
+  `UI_PlayerScanningTime`, final.reds 198451), `ScanDepth`,
+  `KiroshiPierceScanAngle`, `KiroshiPierceScanRange` and
+  `KiroshiMaxZoomLevel`, none of them a speed. No script changes the
+  profile, so **no perk, implant or Kiroshi optics changes how much the
+  scanner slows time**: every build gets the same factor. Anything that
+  slows time on a trigger does it through `SetTimeDilationEffector` under
+  its own reason (§13.15), already a bubble. [2.5-untested]
+- **The same in and out of combat.** `TimeDilationFocusModeDecisions`
+  (final.reds 528796-528844) defines `IsPlayerInCombatState` and
+  `IsPlayerLookingAtQuickHackTarget` and calls neither. It enters in vision
+  mode, outside a braindance, when `enableTimeDilation` is set and
+  `ShouldActivate` holds: never in vehicle state 4
+  (`gamePSMVehicle.Transition`) or a takedown; with
+  `enableTimeDilationOnlyEnemyOrSensorVisible`, only while
+  `TargetingSystem.IsAnyEnemyOrSensorVisible` (a native, RTTI
+  `0x140d66acc`) is true; else while an active vehicle is in view
+  (`IsAnyActiveVehicleVisible`, `0x142ab6024`). It leaves when either
+  fails (`ToTimeDilationReady`). So the slow motion comes and goes as
+  enemies or sensors enter and leave the view, in combat or not. What the
+  native counts as an enemy (hostile only, or any NPC) is not read.
+  [2.5-untested]
+- **How it slows.** `OnUpdate` (final.reds 529159-529188) sets the global
+  dilation for 999 s, and only while no other dilation is active: one
+  already set (ours held at normal speed, another ability) keeps it from
+  setting its own. `SetTimeDilationGlobal` (final.reds 522191-522212)
+  exempts the player for `focusMode` unless `applyTimeDilationToPlayer`
+  (`SetIgnoreTimeDilationOnLocalPlayerZero(true)`), else the player gets
+  `playerTimeDilation`. `OnExit` and `OnForcedExit` unset it with the
+  profile's ease-out; `CleanUpTimeDilationEvent` leaves it while
+  `Vision == 1` (final.reds 43307). The Sandevistan may start during it
+  (its enter condition excepts `focusMode`, final.reds 523681).
+  [2.5-untested]
+- **The quickhack panel adds none.**
+  `QuickhacksListGameController.SetVisibility` queues PSM bools
+  `quickHackScreen` (final.reds 207262, 207281) and `HUDManager`
+  `quickHackChangeTarget` (49046, 49098), through
+  `PSMPostponedParameterBool` (207318); no script reads the first. The slow
+  motion while picking a quickhack is the same `focusMode` one.
+  [2.5-untested]
+- **Reading its factor.** `GetActiveTimeDilation(reason, ignoreCurves)`
+  (final.reds 53882): with `ignoreCurves` the factor asked for, not the
+  eased one. Time.reds sends that as the bubble's speed. The profile's
+  values were not read: the first scan of a session logs them
+  (`time: our abilities 8 (world speed X)`). [unverified]

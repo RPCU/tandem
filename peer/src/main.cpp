@@ -64,7 +64,8 @@
 // Sandevistan: --sandevistan-at switches "its Sandevistan" on that many
 // seconds into the session for --sandevistan-for seconds, at
 // --sandevistan-scale: the host slows the NPCs around its V (time bubble);
-// the time abilities it hears are logged.
+// --scan-at does the same with "its scanner" (the scanner's slow motion is
+// a bubble too). The time abilities it hears are logged.
 // Loot: --loot-quest has "its V" loot a quest item (everyone gets it);
 // --drop-item drops a shared world item in front of your V; --take-items
 // picks up what the others drop; as the host of a replay, --remove-corpses
@@ -189,15 +190,16 @@ struct Options {
   int sandevistanAtSeconds{-1};  // switch a Sandevistan on this long into the session (-1: never)
   int sandevistanForSeconds{5};  // ...for this long
   float sandevistanScale{0.25f}; // ...asking for this world speed
-  int grabNpcsSeconds{0};        // join: grab and take down one NPC this often (0: never)
-  int carryNpcsSeconds{0};       // join: pick up, carry and throw a body this often
-  int holdNpcsSeconds{0};        // host: our V grabs and takes down a replayed NPC this often
-  std::string playFile;          // --play: a real V's play (tandem/play.hpp)
-  bool playLoop{};               // ...again from the start at its end
-  Vec3 playOffset{};             // ...moved by this
-  std::string savePlayFile;      // record our own play there, as the plugin does
-  std::string pathFile;          // path: the path to replay
-  std::string savePathFile;      // save the states heard (your V's path) here
+  std::uint8_t timeAbility{tandem::proto::kTimeSandevistan}; // ...as this ability (--scan-at)
+  int grabNpcsSeconds{0};   // join: grab and take down one NPC this often (0: never)
+  int carryNpcsSeconds{0};  // join: pick up, carry and throw a body this often
+  int holdNpcsSeconds{0};   // host: our V grabs and takes down a replayed NPC this often
+  std::string playFile;     // --play: a real V's play (tandem/play.hpp)
+  bool playLoop{};          // ...again from the start at its end
+  Vec3 playOffset{};        // ...moved by this
+  std::string savePlayFile; // record our own play there, as the plugin does
+  std::string pathFile;     // path: the path to replay
+  std::string savePathFile; // save the states heard (your V's path) here
   // tandem-relay: its address, a host token (host), the session's code (join)
   std::optional<tandem::net::RelayOptions> relay;
   std::string code;
@@ -379,6 +381,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     the session: the host slows the NPCs around this V\n"
          "  --sandevistan-for N  --sandevistan-at: switch it off after N seconds (default 5)\n"
          "  --sandevistan-scale S  --sandevistan-at: the world speed it asks for (default 0.25)\n"
+         "  --scan-at N        as --sandevistan-at, with its scanner's slow motion instead\n"
+         "                     (--sandevistan-for and --sandevistan-scale apply)\n"
          "  --grab-npcs N      join: every N seconds grab one of the host's NPCs, then take it\n"
          "                     down (lethal, then non-lethal, in turn)\n"
          "  --carry-npcs N     join: every N seconds pick up a dead NPC, carry it, throw it\n"
@@ -558,7 +562,10 @@ Options Parse(int argc, char **argv) {
       options.sandevistanForSeconds = Number<int>(value);
     else if (flag == "--sandevistan-scale")
       options.sandevistanScale = Number<float>(value);
-    else if (flag == "--drop-item")
+    else if (flag == "--scan-at") {
+      options.sandevistanAtSeconds = Number<int>(value);
+      options.timeAbility = tandem::proto::kTimeScanning;
+    } else if (flag == "--drop-item")
       options.dropItem = std::string(value);
     else if (flag == "--loot-quest")
       options.lootQuest = std::string(value);
@@ -3316,8 +3323,10 @@ int main(int argc, char **argv) {
         Log("pause menu closed");
       }
     }
-    // --sandevistan-at: on, then off.
+    // --sandevistan-at (or --scan-at): on, then off.
     if (options.sandevistanAtSeconds >= 0 && sandevistanStep != PauseStep::Done) {
+      const char *ability =
+          options.timeAbility == tandem::proto::kTimeScanning ? "scanning" : "sandevistan";
       if (!togetherSince && endpoint->IsJoined() && endpoint->Players().size() > 1)
         togetherSince = now;
       const auto at = togetherSince
@@ -3325,15 +3334,15 @@ int main(int argc, char **argv) {
                           : std::chrono::steady_clock::time_point::max();
       if (sandevistanStep == PauseStep::Waiting && now >= at) {
         endpoint->SetLocalTimeEffect(
-            {.abilities = tandem::proto::kTimeSandevistan, .scale = options.sandevistanScale});
+            {.abilities = options.timeAbility, .scale = options.sandevistanScale});
         sandevistanStep = PauseStep::Paused;
-        Log("sandevistan on: world speed {:.2f} around us for {} s", options.sandevistanScale,
+        Log("{} on: world speed {:.2f} around us for {} s", ability, options.sandevistanScale,
             options.sandevistanForSeconds);
       } else if (sandevistanStep == PauseStep::Paused &&
                  now >= at + std::chrono::seconds(options.sandevistanForSeconds)) {
         endpoint->SetLocalTimeEffect({});
         sandevistanStep = PauseStep::Done;
-        Log("sandevistan off");
+        Log("{} off", ability);
       }
     }
     // --loot-quest: "our V" loots a quest item, once.
