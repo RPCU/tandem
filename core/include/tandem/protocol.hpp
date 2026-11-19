@@ -1866,6 +1866,162 @@ struct TimeSkipResult {
   friend bool operator==(const TimeSkipResult &, const TimeSkipResult &) = default;
 };
 
+// ---- Progression (docs/architecture/progression.md) ----
+// A V's character level (gamedataStatType.PowerLevel, 1..kMaxLevel), from
+// its own game when it changes (Event channel). The host stamps the player
+// from the connection and keeps it: enemies are scaled to the mean of the
+// session's levels (tandem/progress.hpp). Never relayed: a level is its
+// player's own business; guests hear the mean (SessionLevel).
+inline constexpr std::uint8_t kMaxLevel = 100;
+struct PlayerLevel { // Event channel
+  PlayerId player{};
+  std::uint8_t level{};
+  friend bool operator==(const PlayerLevel &, const PlayerLevel &) = default;
+};
+
+// The level the host scales its NPCs to: the mean of the levels of the
+// players in the session (the host's included), and how many they are.
+// Host to everyone when it changes (a join, a leave, a level-up); kept for
+// late joiners.
+struct SessionLevel { // Event channel
+  std::uint8_t level{};
+  std::uint8_t players{};
+  friend bool operator==(const SessionLevel &, const SessionLevel &) = default;
+};
+
+// A host NPC's power level as the host's game has it, scaling included: the
+// guests' proxies take the same, so both games compute a hit against the
+// same health, armour and damage. Host to everyone, when it is first known
+// and when it changes; kept for late joiners until the NPC is gone.
+struct NpcLevel { // Event channel
+  NpcId npc{};
+  float level{};
+  friend bool operator==(const NpcLevel &, const NpcLevel &) = default;
+};
+
+// ---- Trade between two players (docs/architecture/trade.md) ----
+// Two players standing together give, swap or sell items and eddies. The
+// host arbitrates (tandem/trade.hpp): one asks, the other accepts, each
+// puts up an offer, both confirm the same pair of offers, the host commits
+// and each game changes its own V's inventory, once. Event channel, every
+// message a one-shot named by its trade's id.
+using TradeId = std::uint32_t;
+// The asker's game numbers its trades: its player id above, its own count
+// below (the host checks the id is the sender's to make).
+inline constexpr std::uint32_t kTradeIdShift = 20;
+inline constexpr TradeId MakeTradeId(PlayerId asker, std::uint32_t count) {
+  return (asker << kTradeIdShift) | (count & ((1u << kTradeIdShift) - 1));
+}
+inline constexpr PlayerId TradeAsker(TradeId id) { return id >> kTradeIdShift; }
+
+inline constexpr std::size_t kMaxTradeItems = 12; // stacks in one offer
+inline constexpr std::size_t kMaxTradeStats = 12; // saved stats of one item
+inline constexpr std::size_t kMaxTradeParts = 8;  // parts installed in one item
+inline constexpr std::uint32_t kMaxTradeMoney = 99'999'999;
+
+// What makes an item more than its record and seed: a stat its game saved
+// on it (quality, tier, upgrades, level: gamedataStatType and its value)...
+struct TradeStat {
+  std::uint16_t stat{};
+  float value{};
+  friend bool operator==(const TradeStat &, const TradeStat &) = default;
+};
+// ...and a part the player installed in one of its slots (a mod, a scope).
+struct TradePart {
+  std::uint64_t slot{};   // TweakDB id of the attachment slot
+  std::uint64_t record{}; // TweakDB id of the part's item record
+  std::uint32_t seed{};   // its own random seed (0: none)
+  friend bool operator==(const TradePart &, const TradePart &) = default;
+};
+struct TradeItem {
+  ItemStack item; // record, seed, quantity (never 0)
+  std::vector<TradeStat> stats;
+  std::vector<TradePart> parts;
+  friend bool operator==(const TradeItem &, const TradeItem &) = default;
+};
+
+enum class TradeVerb : std::uint8_t {
+  Request,  // `from` asks `to` to trade (answered within 15 s, or it lapses)
+  Accept,   // `to` agrees: the trade is open
+  Confirm,  // I agree to the offers at revisions (mine, theirs)
+  Withdraw, // I no longer do
+  Close,    // the trade is over, nothing changed hands (reason)
+  Applied,  // I applied the commit (to the host only)
+};
+enum class TradeReason : std::uint8_t {
+  None,
+  Declined,  // the one asked said no
+  Cancelled, // a party closed it
+  Lapsed,    // the request was not answered in time
+  Away,      // the two are no longer together
+  Combat,    // a party is fighting
+  Down,      // a party is down or out
+  Gone,      // a party left the session
+  Busy,      // a party is in another trade
+  Invalid,   // an offer the host refused, or a table that cannot be committed
+  Idle,      // nobody touched it for too long
+  Over,      // the host knows no such trade (any more)
+  Off,       // a party's game does not trade (tandem.ini)
+};
+struct Trade {
+  TradeId id{};
+  PlayerId from{}; // who says it: set by the host from the connection
+  PlayerId to{};   // the other party
+  TradeVerb verb{};
+  TradeReason reason{};
+  std::uint32_t mine{}, theirs{}; // Confirm: the offers' revisions agreed to
+  friend bool operator==(const Trade &, const Trade &) = default;
+};
+
+// One party's side of the table, whole, each time it changes (a newer
+// revision replaces the older; any change takes both confirmations back).
+// `asks`: the eddies wanted in return (a sale): the other side's `money`
+// must be at least that for the host to commit.
+struct TradeOffer {
+  TradeId id{};
+  PlayerId player{}; // whose: set by the host from the connection
+  std::uint32_t revision{};
+  std::uint32_t money{};
+  std::uint32_t asks{};
+  std::vector<TradeItem> items;
+  friend bool operator==(const TradeOffer &, const TradeOffer &) = default;
+};
+
+// The host's word: both confirmed these two offers; each party gives what
+// its own says and takes what the other's says. Sent again until the party
+// answers Applied; a game applies a trade id once.
+struct TradeCommit {
+  TradeId id{};
+  TradeOffer first, second;
+  friend bool operator==(const TradeCommit &, const TradeCommit &) = default;
+};
+
+// A vehicle came into the host's garage (a quest, a gig or a fixer gave
+// it; docs/architecture/garage.md). Host to each guest that took part in
+// the quest it belongs to (the reward rule), never to everyone, never from
+// a guest: the guest's game credits it in its ledger, once (Event channel,
+// with the story's messages).
+struct VehicleUnlock {
+  std::uint64_t vehicle{}; // TweakDB id of the vehicle record (the garage's)
+  std::uint32_t quest{};   // journal hash of its quest (0: unknown)
+  friend bool operator==(const VehicleUnlock &, const VehicleUnlock &) = default;
+};
+
+// Who may drive a player's own cars (docs/architecture/garage.md): each
+// game says its own (tandem.ini `lend`), the host stamps who and keeps
+// everyone's for late joiners; a repeat is applied nowhere; forgotten when
+// the player goes. With the levels: per-player progression state.
+enum class Lend : std::uint8_t {
+  Crew = 0,      // any partner, the owner aboard or not (the default)
+  WithOwner = 1, // only with the owner aboard
+  Never = 2,     // nobody but the owner
+};
+struct CarLend {
+  PlayerId player{};
+  Lend lend{Lend::Crew};
+  friend bool operator==(const CarLend &, const CarLend &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -1879,14 +2035,19 @@ using Message = std::variant<
     Regions, NpcOwner, NpcHandover, NpcHandoverState, NpcHandoverDone, OwnedDigest, RegionHold,
     TrafficSpawn, TrafficStates, TrafficGone, TrafficStatus, TrafficHit, TrafficClaim, TrafficSet,
     Heat, Crime, Presence, Cue, NpcReaction, Install, Throw, ThrowEnd, Rules, Defended, Activity,
-    TimeSkip, TimeSkipVote, TimeSkipResult>;
+    TimeSkip, TimeSkipVote, TimeSkipResult, PlayerLevel, SessionLevel, NpcLevel, Trade, TradeOffer,
+    TradeCommit, VehicleUnlock, CarLend>;
 
-// A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine):
+// A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
+// VehicleUnlock):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
-// A hit outcome message (NpcStrike … AreaHit, Throw … Defended): one path in
+// A hit outcome message (NpcStrike … AreaHit, Throw … Defended), a level
+// (PlayerLevel … NpcLevel) or a car's lending (CarLend): one path in
 // endpoint.hpp too.
 bool IsCombat(const Message &message);
+// A trade message (Trade, TradeOffer, TradeCommit): one path as well.
+bool IsTrade(const Message &message);
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);

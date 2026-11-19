@@ -12,7 +12,8 @@ game an NPC's level is its `PowerLevel` stat (`gamedataStatType.PowerLevel`,
 set from its record's `PowerLevelMod`; scripts compare it with the
 target's, e.g. `GetPowerLevelDiff`): the likely lever is a stat modifier on
 each NPC the host runs, moving its `PowerLevel` to the mean. To confirm in
-game (whether health, damage and loot follow the stat).
+game (whether health, damage and loot follow the stat). Built 2026-11-19:
+`progression.md` ("Levels").
 
 ## Inside the plugin
 

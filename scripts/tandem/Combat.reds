@@ -59,6 +59,14 @@ public abstract class TandemCombat {
     return IsDefined(system) && system.IsForwardedHit(hitEvent);
   }
 
+  // Markers our game leaves on a target so that our V is paid its XP or
+  // reward once (RPGManager.AwardExperienceFromQuickhack, final.reds:37296;
+  // EffectExecutor_GivePlayerReward, :523580): each player's own business.
+  // On the host's NPC they would take the same XP away from the host's V.
+  public static func IsOwnMarker(effect: TweakDBID) -> Bool {
+    return effect == t"BaseStatusEffect.QuickhackExpHarvested" || effect == t"BaseStatusEffect.UtilityGrenadeRewardHarvested";
+  }
+
   public static func Flags(hitEvent: ref<gameHitEvent>) -> Int32 {
     let flags = 0;
     if hitEvent.attackData.HasFlag(hitFlag.WeakspotHit) || hitEvent.attackData.HasFlag(hitFlag.Headshot) {
@@ -381,7 +389,7 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
     StatusEffectHelper.RemoveStatusEffect(this, evt.staticData.GetID());
     return result;
   }
-  if evt.isNewApplication && !evt.isAppliedOnSpawn && IsDefined(evt.staticData) {
+  if evt.isNewApplication && !evt.isAppliedOnSpawn && IsDefined(evt.staticData) && !TandemCombat.IsOwnMarker(evt.staticData.GetID()) {
     let player = GetPlayer(this.GetGame());
     // The Relic's arm attacks mark their target with no instigator
     // (Outcomes.reds IsRelicMark): ours all the same, and on a proxy our

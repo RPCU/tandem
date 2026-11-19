@@ -16,6 +16,16 @@
   had someone seated in it froze the game): a car someone got out of stays
   parked. Puppets leave in steps over several frames (out of the seat, then
   the body).
+- **A partner's car** ([`garage.md`](garage.md), not run in game yet): a
+  parked copy remembers whose car it was; a V that takes the wheel of a
+  copy is checked against its owner's word (`CarLend`, `tandem.ini`
+  `lend`) and, allowed, its game drives the copy and sends its
+  `VehicleState`, its `Seat` naming the owner. The other games move their
+  copy of that car to the driver's state (`FollowLentCars`), the owner's
+  game its real car (the last own car its V drove), and stop following
+  the owner's state for it. An owner riding in its own car with nobody at
+  the wheel sends its car's state, so a car a partner parked stays where
+  it stopped.
 - **Radio** (`scripts/tandem/Radio.reds`, engine-knowledge §13.12): the
   driver owns the car's radio. While our V drives its own car, our game
   reads the car's receiver four times a second (on, station as an

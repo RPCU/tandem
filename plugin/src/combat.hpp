@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <vector>
 
@@ -32,7 +33,13 @@ public:
   proto::Rules Rules() const { return {.flags = m_rules.load(std::memory_order_relaxed)}; }
   // Throws dropped as stale since the start.
   std::uint32_t StaleThrows() const { return m_staleThrows.load(std::memory_order_relaxed); }
+  // Who may drive each player's cars (proto::CarLend, as the session said
+  // it; Crew for a player that said nothing). Game thread: noted as the
+  // scripts take the session's word.
+  void NoteLend(const proto::CarLend &lend);
+  proto::Lend LendOf(proto::PlayerId player);
 
+private:
 private:
   struct Inbound {
     proto::Message message;

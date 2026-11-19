@@ -234,6 +234,7 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<PhoneReply>(message) || std::holds_alternative<Subtitle>(message) ||
          std::holds_alternative<ChoiceCursor>(message) ||
          std::holds_alternative<QuestReward>(message) ||
+         std::holds_alternative<VehicleUnlock>(message) ||
          // Takedowns, regroup, loot, revive, hit outcomes: each counts.
          std::holds_alternative<NpcAction>(message) ||
          std::holds_alternative<NpcActionReply>(message) ||
@@ -260,7 +261,7 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<Throw>(message) || std::holds_alternative<ThrowEnd>(message) ||
          std::holds_alternative<Defended>(message) || std::holds_alternative<TimeSkip>(message) ||
          std::holds_alternative<TimeSkipVote>(message) ||
-         std::holds_alternative<TimeSkipResult>(message);
+         std::holds_alternative<TimeSkipResult>(message) || IsTrade(message);
 }
 
 void FaultyLink::Set(const Faults &faults) {

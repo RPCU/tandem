@@ -10,6 +10,11 @@ public class TandemWorld {
   private let m_sentWeather: CName;
   private let m_sentAt: Float;
   private let m_applied: Int32;
+  // Guest: how far the host's clock moved ours in all (our own would say
+  // the game time minus this), and whether the host's weather is on (the
+  // game's own weather cycle is off while it is).
+  private let m_timeOffset: Int32;
+  private let m_weatherSet: Bool;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -83,12 +88,42 @@ public class TandemWorld {
     let held = IsDefined(activities) && activities.HoldsClock();
     if host >= 0 && Abs(host - ours) > 60 && !held {
       GameInstance.GetTimeSystem(this.m_game).SetGameTimeBySeconds(host);
+      this.m_timeOffset += host - ours;
       TandemNative.Log(s"world: time set to the host's (\(host) s, was \(ours) s)");
     }
     let weather = TandemNative.HostWeather();
     if IsNameValid(weather) && NotEquals(weather, TandemWorld.Weather(this.m_game)) {
       let ok = GameInstance.GetWeatherSystem(this.m_game).SetWeather(weather, 10.0);
+      this.m_weatherSet = this.m_weatherSet || ok;
       TandemNative.Log(s"world: weather to the host's \(NameToString(weather)) (\(ok))");
     }
+  }
+
+  // Guest: the session is over. Our weather is the game's to cycle again at
+  // once (SetWeather turned the cycle off: a save made now would keep it
+  // off for good). Our clock goes back to what it would say had the host
+  // never set it, only when we left by choice (ours): a host that is lost
+  // may be back in seconds, and a clock that jumps twice is worse than one
+  // that is ahead meanwhile.
+  public func End(ours: Bool) -> Void {
+    if this.m_weatherSet {
+      let ok = GameInstance.GetWeatherSystem(this.m_game).ResetWeather(false, 10.0);
+      this.m_weatherSet = false;
+      TandemNative.Log(s"world: our weather is the game's again (\(ok))");
+    }
+    if ours && Abs(this.m_timeOffset) > 60 {
+      let own = TandemWorld.GameSeconds(this.m_game) - this.m_timeOffset;
+      if own > 0 {
+        GameInstance.GetTimeSystem(this.m_game).SetGameTimeBySeconds(own);
+        TandemNative.Log(s"world: our own clock back (\(own) s; the host's was \(this.m_timeOffset) s ahead)");
+      }
+      this.m_timeOffset = 0;
+    }
+    this.m_applied = 0;
+  }
+
+  // The host's weather is still on (no save meanwhile: Saves.reds).
+  public func Borrowed() -> Bool {
+    return this.m_weatherSet;
   }
 }

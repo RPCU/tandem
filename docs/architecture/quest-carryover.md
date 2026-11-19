@@ -1,7 +1,8 @@
 # Quest carry-over: what a guest brings home
 
-**Status: proposal, 2026-11-19.** Desk research and one tested core module
-(`core/src/carryover.cpp`); nothing here ran in game. It re-evaluates the
+**Status: 2026-11-19, stage A1 built** (the ledger in the guest's save,
+rewards paid through it, quest props given back on leave: "Built" below);
+the rest is a proposal. Nothing here ran in game yet. It re-evaluates the
 story architecture (`story.md`, `../research/coop-quests-design.md`) for the
 user's request: _a player joins to help another in their world, and brings
 back what they earned when they play solo again; the host's progress should
@@ -339,28 +340,36 @@ the host.
   part in, not completed: rewards already paid stay paid, nothing is
   pending for the guest's world.
 
-### Interface for the script side (to build with the leave flow)
+### The script side (built)
 
-Natives on `TandemStory` (plugin, game thread), all thin calls into one
-`carry::Ledger`:
+Natives on `TandemStory` (`plugin/src/story_natives.cpp`, game thread), all
+thin calls into one `carry::Ledger`; the script is `Story.reds` (the
+persistent `m_ledger`); the session items are script state of their own
+(the rows marked "script"):
 
 <!-- prettier-ignore -->
 | Native | When |
 | --- | --- |
-| `CarryLoad(words: array<Uint64>)` | the story system attaches (a load): the save's ledger |
-| `CarryWords() -> array<Uint64>` | after any change: stored back into the persistent field |
-| `CarryQuest(quest, kind, own, host)` | a guest takes part in a quest's step (`QuestReward`, or a journal change of the host's quest while near): `own` from the baseline |
-| `CarryCompleted(quest)` | the host's quest reaches Succeeded with the guest near |
-| `CarryPay(quest, reward) -> Int32` | before `GiveReward` on a guest: 0 pay, 1 already paid, 2 done alone |
-| `CarryOwnPays(quest, reward) -> Bool` | the `OnRewardEvent` wrap in the guest's own story |
+| `CarryLoad(words: array<Uint64>)` | the story system starts (a load): the save's ledger; an older save's `m_rewarded` pairs move into it once (`MigrateRewards`) |
+| `CarryWords() -> array<Uint64>` | after any change: stored back into the persistent field (`Persist`) |
+| `CarryQuest(questHash, kind, own, host)` | a guest takes part in a quest's step: a `QuestReward`, or a mirrored journal change of the host's quest within 150 m of the host (`NoteJournal`); `own` is the guest's journal state before the mirror touched it (`OwnStateOf`), `kind` the journal's quest type, `host` the host's name (kept as `carry::HostHash`) |
+| `CarryCompleted(questHash)` | the host's quest entry itself goes Succeeded with the guest within 150 m |
+| `CarryPay(questHash, reward) -> Int32` | before `GiveReward` on a guest: 0 pay, 1 already paid, 2 done alone |
+| `CarryOwnPays(questHash, reward) -> Bool` | the `OnRewardEvent` wrap in the guest's own story (`AlreadyRewarded`) |
+| `CarryWith(questHash, host) -> Bool`, `CarryReport() -> String` | "done with NAME"; `tools/game.sh cmd story carry` |
 | (script, built) `TandemStorySystem.NoteSessionItem(record, quantity)` | `Loot.reds`: a quest prop came into a guest's inventory (shared, or picked up) |
 | (script, built) `RemoveSessionItems()` | the guest's leave, first thing; and a load of a save that holds the list. These two replace the first draft's natives `CarrySessionItem(record, quantity)` and `CarryTakeSessionItems() -> array<…>`: the list must be in the save, so it is script state |
 
-Order on leave (inside `TandemStorySystem.GuestLeave`, so the
-`progression` branch's `LeftOver` bit 1 still covers it): close the
-mirrors, **remove session items**, restore the journal, end the freeze,
-store `CarryWords`, then unlock. `Saves.reds` saves after that, by its own
-rules.
+Order on leave (inside `TandemStorySystem.GuestLeave`, so `LeftOver` bit 1
+still covers it): close the mirrors, **give the session props back**,
+release the holds, restore the journal, store the ledger's words, end the
+freeze, then unlock. `Saves.reds` saves after that, by its own rules. The
+co-op menu's "done with NAME" list is not built (the log has it).
+
+As proposed before it was built, the calls were `CarryQuest(quest, kind, own, host)`,
+`CarryCompleted(quest)`, `CarryPay(quest, reward) -> Int32` and
+`CarryOwnPays(quest, reward) -> Bool`: the parameters are named `questHash`
+now (`quest` is a redscript keyword).
 
 ## Edge cases, ruled
 
@@ -368,7 +377,7 @@ rules.
 | Case | Rule | Why |
 | --- | --- | --- |
 | host further ahead | the guest is told before joining ("NAME is further in the story: spoilers") when the host has 3 or more main quests more (`carry::NoteFor`); it may join | spoilers are the player's call; nothing of the host's story is applied to the guest anyway |
-| items and vehicles from quests the guest has not reached | reward items (iconics) are kept: tier 1. Quest props are removed on leave. Vehicles and apartments are unlocked by the host's quest graph for the host only; the guest gets none | a vehicle unlock is world state of a tier 3 quest (`VehicleSystem.EnablePlayerVehicle` from a quest node, not a reward record) |
+| items and vehicles from quests the guest has not reached | reward items (iconics) are kept: tier 1. Quest props are removed on leave. Apartments are the host's only. A vehicle the host's garage gets while the guest takes part is **credited** in the ledger, and unlocked in the guest's garage only with `vehicle_rewards = keep` (`garage.md`) | a vehicle unlock is world state of a tier 3 quest (`questEnablePlayerVehicle` from a quest node, not a reward record), and quests test the garage (`questVehicleAvailable_ConditionType`) |
 | the host is past the point of no return | told before joining ("NAME is playing the ending"); it may join and watch; tier 1 only; the ending's reward screen is the host's | the ending is one save's (`inkSaveType.PointOfNoReturn`); a guest's V returns to its own world as it was |
 | Phantom Liberty | **required for every player** (decided by the user 2026-11-19): a game without it cannot join, checked at join by a flag in `Hello` (protocol 7, the release work). Both own it but only the host's story has begun it: a spoiler like any other, warned (`carry::NoteFor`), allowed; Dogtown rewards are tier 1, its gigs tier 2 credit, applied only once the guest's own story has opened Dogtown | no mixed ownership to handle (`IsEP1`, `IsEp1Entry` answer the same everywhere): journal hashes, reward and item records are the same in every game |
 | host behind: the guest already did the quest | no quest reward (`Pay::DoneAlone`: its own journal had it Succeeded at join); kills, loot and their XP are still its own | "once per quest" in both directions; helping is still worth the loot |
@@ -393,23 +402,18 @@ rules.
   important items are every player's" to the length of the session for
   items tagged `Quest` and keycards. Iconics stay. Decided by the user
   2026-11-19.
-- **`progression` branch** (uncommitted work read on 2026-11-19: `Saves.reds`,
-  `core/progress.hpp`): no contradiction. It owns _when_ the guest saves;
-  this owns _what must be true before_ (session items out, ledger words
-  stored). Its `LeftOver` bit for the story already gates the save on
-  `GuestLeave` having finished, and the session items go out at the top
-  of `GuestLeave`. For that branch when it merges (its `Story.reds` and
-  `System.reds` changes were uncommitted on 2026-11-19, so not edited
-  here): its `TandemStorySystem.LeftOver` adds one condition to bit 1,
-  `this.SessionItemsLeft() > 0`, so no save is made while the removal has
-  not run (no V at that moment); the story's `Tick` retries it outside a
-  session. Its `Begin` hunk (`CarryLoad`, the garage) and ours (the
-  session items' note) sit side by side in the same function, and its
-  `carryover_test.cpp` still calls `Ep1Missing`, which this branch
-  removed (Phantom Liberty is required): drop those three checks when
-  merging.
-- **`Story.reds` today** keeps `m_rewarded` / `m_rewardedQuests`: the
-  ledger replaces them (same rule, plus the host-behind case).
+- **`progression` branch** (merged with this on 2026-11-19): it owns
+  _when_ the guest saves (`Saves.reds`, `core/progress.hpp`); this owns
+  _what must be true before_ (session items out, ledger words stored).
+  `TandemStorySystem.LeftOver` bit 1 counts `this.SessionItemsLeft() > 0`, so no
+  save is made while the removal has not run (no V at that moment); the
+  story's `Tick` retries it outside a session. Its `Begin` loads the ledger
+  (`CarryLoad`, the garage) beside the session items' note; the
+  `carryover_test.cpp` checks of `Ep1Missing` are gone (Phantom Liberty is
+  required).
+- **`Story.reds`'s `m_rewarded` / `m_rewardedQuests`**: replaced by the
+  ledger (same rule, plus the host-behind case); an older save's pairs move
+  into it once (`MigrateRewards`).
 
 ## Stages
 
@@ -417,7 +421,7 @@ rules.
 | Stage | What | Needs |
 | --- | --- | --- |
 | A0 | the ledger and its rules (`core/carryover`) with tests | done |
-| A1 | session items removed on leave: done (script, persistent list; scenario `story-session-items`). Still to do: natives for the ledger in the save, pay rules through it, "done with NAME" list in the co-op menu | after `progression`'s leave flow merges (same files) |
+| A1 | natives and script: the ledger in the save, pay rules through it (`Story.reds`, the natives above); session items removed on leave (script, persistent list) | **built** (in game: scenarios `story-session-items`, `garage-guest`); the co-op menu's "done with NAME" list is not |
 | A2 | join notes: the host's story mark in the handshake or a story message, the spoiler and ending notices (Phantom Liberty itself is required at join: the release work, protocol 7) | a story message for the mark |
 | C2 | spike on a solo game: gig phases by their journal nodes. Tooling done: `tools/game.sh cmd quest trace on` logs each phase's chain and journal nodes. The freeze by ownership (gig phases run apart, wait grouped), the journal and phone rules for owned gigs: built behind "always grouped", so nothing changes until `regions` calls `TandemStorySystem.SetApart`; scenarios `quest-trace` (the spike's log), `story-gigs-apart` (the switch by hand) | the game machine for the spike; `regions` for grouped or apart |
 | C1 | spikes on a solo game: mark a hustle done from outside (C1a); finish a gig through its own end facts (C1b) | the game machine, a day |

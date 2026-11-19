@@ -360,6 +360,58 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Activities-WaitingFor` | Waiting for {1}... | En attente de {1}... | Activities.reds |
 | `Activities-Photo` | {1} is in photo mode | {1} est en mode photo | Activities.reds |
 | `Activities-Back` | {1} is back | {1} est de retour | Activities.reds |
+| `Activities-CantNow` | {1} can't skip time right now | {1} ne peut pas passer le temps pour l'instant | Activities.reds |
+| `Activities-Declined` | {1} declined | {1} a refusé | Activities.reds |
+| `Activities-NoAnswer` | {1} didn't answer | {1} n'a pas répondu | Activities.reds |
+| `Activities-Cancelled` | Time skip cancelled | Passage du temps annulé | Activities.reds |
+| `Activities-AlreadyAsking` | {1} is already asking to skip time | {1} demande déjà à passer le temps | Activities.reds |
+| `Activities-IsDown` | {1} is down | {1} est à terre | Activities.reds |
+| `Activities-Bending` | {1} is bending time | {1} ralentit le temps | Activities.reds |
+| `Activities-Elsewhere` | {1} is somewhere else | {1} est ailleurs | Activities.reds |
+| `Activities-Paused` | {1} paused the game | {1} a mis le jeu en pause | Activities.reds |
+| `Activities-CantSkip` | Time can't be skipped now | Impossible de passer le temps maintenant | Activities.reds |
+| `Trade-Prompt` | Trade | Échanger | Trade.reds |
+| `Trade-Asked` | Asked {1} to trade | Échange proposé à {1} | Trade.reds |
+| `Trade-Asks` | {1} wants to trade | {1} veut échanger | Trade.reds |
+| `Trade-HintWith` | Trade with {1} | Échanger avec {1} | Trade.reds |
+| `Trade-PriceMissing` | Trade: the asked price is not on the table | Échange : le prix demandé n'est pas sur la table | Trade.reds |
+| `Trade-Done` | Trade with {1} done | Échange avec {1} effectué | Trade.reds |
+| `Trade-Theirs` | That is {1}'s until you both agree | C'est à {1} tant que vous n'êtes pas d'accord tous les deux | Trade.reds |
+| `Trade-NotForTrade` | Not for trade: {1} | Pas échangeable : {1} | Trade.reds |
+| `Trade-OnTable` | It is on the table already | C'est déjà sur la table | Trade.reds |
+| `Trade-TableFull` | The table is full | La table est pleine | Trade.reds |
+| `Trade-YouHave` | You have {1} eddies | Vous avez {1} eddies | Trade.reds |
+| `Trade-InputGive` | Eddies you give (now {1}) | Eddies que vous donnez (actuellement {1}) | Trade.reds |
+| `Trade-InputAsk` | Eddies you ask for in return (now {1}) | Eddies que vous demandez en retour (actuellement {1}) | Trade.reds |
+| `Trade-Declined` | {1} declined to trade | {1} a refusé l'échange | Trade.reds |
+| `Trade-NoAnswer` | {1} did not answer | {1} n'a pas répondu | Trade.reds |
+| `Trade-TooFar` | Trade ended: {1} is too far | Échange terminé : {1} est trop loin | Trade.reds |
+| `Trade-Combat` | Trade ended: combat | Échange terminé : combat | Trade.reds |
+| `Trade-Down` | Trade ended: a player is down | Échange terminé : un joueur est à terre | Trade.reds |
+| `Trade-Left` | Trade ended: {1} left | Échange terminé : {1} est parti | Trade.reds |
+| `Trade-Busy` | {1} is trading with someone else | {1} échange déjà avec quelqu'un d'autre | Trade.reds |
+| `Trade-Refuses` | {1} does not trade | {1} n'échange pas | Trade.reds |
+| `Trade-Cancelled` | Trade cancelled | Échange annulé | Trade.reds |
+| `Trade-Not-Inventory` | not in your inventory | pas dans votre inventaire | Trade.reds |
+| `Trade-Not-Item` | not an item | pas un objet | Trade.reds |
+| `Trade-Not-Eddies` | eddies have their own line | les eddies ont leur propre ligne | Trade.reds |
+| `Trade-Not-Quest` | a quest item | un objet de quête | Trade.reds |
+| `Trade-Not-Iconic` | an iconic or important item | un objet iconique ou important | Trade.reds |
+| `Trade-Not-Hidden` | not an item to trade | pas un objet à échanger | Trade.reds |
+| `Trade-Not-Unsellable` | it cannot be sold | il ne peut pas être vendu | Trade.reds |
+| `Trade-Not-Equipped` | unequip it first | déséquipez-le d'abord | Trade.reds |
+| `Trade-Not-Single` | it cannot be given | il ne peut pas être donné | Trade.reds |
+| `Trade-Not-UsedUp` | it would be used up | il serait consommé | Trade.reds |
+| `Trade-Not-Charges` | it is counted in charges | il se compte en charges | Trade.reds |
+| `Garage-Credited` | {1} got a vehicle: noted as earned with them | {1} a obtenu un véhicule : noté comme gagné ensemble | Garage.reds, System.reds |
+| `Garage-Kept` | New vehicle in your garage, earned with {1} | Nouveau véhicule dans votre garage, gagné avec {1} | Garage.reds, System.reds |
+| `Garage-LendLeft` | {1}'s car: they left the session | Voiture de {1} : il a quitté la session | Garage.reds, System.reds |
+| `Garage-LendAboard` | {1}'s car: only with them aboard | Voiture de {1} : seulement avec lui à bord | Garage.reds, System.reds |
+| `Garage-LendKept` | {1}'s car: they keep it to themselves | Voiture de {1} : il la garde pour lui | Garage.reds, System.reds |
+| `Levels-Scaled` | Co-op: enemies are scaled to level {1} | Coop : les ennemis sont ajustés au niveau {1} | Levels.reds |
+| `Saves-Failed` | Co-op: the game could not be saved. Save it yourself to keep what your V earned. | Coop : la partie n'a pas pu être sauvegardée. Sauvegardez vous-même pour garder ce que votre V a gagné. | Saves.reds |
+| `Saves-WhenYouCan` | Co-op: save your game when you can, to keep what your V earned. | Coop : sauvegardez dès que possible, pour garder ce que votre V a gagné. | Saves.reds |
+| `Saves-NotRestored` | Co-op: your game could not be put back as it was. Load your last save. | Coop : votre partie n'a pas pu être remise comme avant. Chargez votre dernière sauvegarde. | Saves.reds |
 | `Travel-Blocked` | You can't fast travel right now | Voyage rapide impossible pour l'instant | Text.reds, Travel.reds |
 
 ### The settings page

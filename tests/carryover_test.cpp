@@ -131,3 +131,88 @@ TEST_CASE("a guest is told when the host's story is elsewhere") {
   CHECK(NoteFor({.mainDone = 6, .ep1Started = true}, {.mainDone = 5, .ep1Started = true}) ==
         JoinNote::None);
 }
+
+TEST_CASE("a vehicle earned with a host is credited once, and survives the save") {
+  Ledger ledger;
+  CHECK(ledger.NoteVehicle(0xCA7, 100, false));
+  CHECK_FALSE(ledger.NoteVehicle(0xCA7, 100, false)); // said again, a rejoin
+  CHECK_FALSE(
+      ledger.NoteVehicle(0xCA7, 200, true)); // another host, another quest: the first stands
+  CHECK_FALSE(ledger.NoteVehicle(0, 100, false));
+  REQUIRE(ledger.FindVehicle(0xCA7));
+  CHECK(ledger.FindVehicle(0xCA7)->quest == 100);
+  CHECK_FALSE(ledger.FindVehicle(0xCA7)->owned);
+  CHECK_FALSE(ledger.FindVehicle(0xCA7)->kept);
+  // One the guest's own garage had already: credited, nothing to keep.
+  CHECK(ledger.NoteVehicle(0xB1CE, 0, true));
+  CHECK(ledger.FindVehicle(0xB1CE)->owned);
+  CHECK(ledger.Vehicles().size() == 2);
+
+  // Kept in the guest's own garage (vehicle_rewards = keep): remembered.
+  ledger.KeepVehicle(0xCA7);
+  ledger.KeepVehicle(0xDEAD); // not one of ours: nothing
+  CHECK(ledger.FindVehicle(0xCA7)->kept);
+
+  // Through the save and back; twice over; with quests and rewards beside.
+  ledger.NoteQuest(100, QuestKind::SideQuest, OwnState::NotStarted, 0xAAAA);
+  CHECK(ledger.PayReward(100, 7) == Pay::Yes);
+  const auto words = ledger.Pack();
+  Ledger loaded;
+  loaded.Unpack(words);
+  loaded.Unpack(words);
+  CHECK(loaded == ledger);
+  CHECK(loaded.Vehicles() == ledger.Vehicles());
+  CHECK_FALSE(loaded.NoteVehicle(0xCA7, 100, false));
+  // A save from before it was kept, merged with one after: kept.
+  Ledger before;
+  before.NoteVehicle(0xCA7, 100, false);
+  before.Unpack(words);
+  CHECK(before.FindVehicle(0xCA7)->kept);
+  // A save from before the session forgets it: it can be earned again.
+  Ledger older;
+  CHECK(older.NoteVehicle(0xCA7, 100, false));
+}
+
+TEST_CASE("a helper's own copy of a gig stays playable at home and pays nothing again") {
+  // The guest helps the host's gig (decided: grouped at its start, it is
+  // the host's). Its own copy has not started.
+  constexpr std::uint32_t gig = 0x616;
+  constexpr std::uint64_t money = 0xED, item = 0x17E;
+  Ledger ledger;
+  const auto host = HostHash("Judy");
+  ledger.NoteQuest(gig, QuestKind::StreetStory, OwnState::NotStarted, host);
+  CHECK(ledger.PayReward(gig, money) == Pay::Yes);
+  CHECK(ledger.PayReward(gig, item) == Pay::Yes);
+  ledger.NoteCompleted(gig);
+  // Credited, never applied: its own world still offers the gig.
+  CHECK(ledger.Pending() == std::vector<std::uint32_t>{gig});
+  REQUIRE(ledger.Find(gig));
+  CHECK(ledger.Find(gig)->host == host);
+  CHECK(ledger.Find(gig)->rewards == 2);
+  // Played at home later (after a save and a load): the game's own rewards
+  // for it are held back, a reward co-op never paid is not.
+  Ledger home;
+  home.Unpack(ledger.Pack());
+  CHECK_FALSE(home.PayInOwnStory(gig, money));
+  CHECK_FALSE(home.PayInOwnStory(gig, item));
+  CHECK(home.PayInOwnStory(gig, 0xB0B));
+  CHECK(home.PayInOwnStory(0, money)); // no quest known: the game pays
+  // Helping another host through the same gig pays nothing either.
+  home.NoteQuest(gig, QuestKind::StreetStory, OwnState::Active, HostHash("Panam"));
+  CHECK(home.PayReward(gig, money) == Pay::AlreadyPaid);
+  CHECK(home.Find(gig)->host == host); // the first host stays
+}
+
+TEST_CASE("the host's name is kept as a stable hash; old rewards move into the ledger once") {
+  CHECK(HostHash("Judy") == HostHash("Judy"));
+  CHECK(HostHash("Judy") != HostHash("judy"));
+  CHECK(HostHash("") == 2166136261u);
+  CHECK(HostHash("a") == 0xE40C292Cu); // FNV-1a, as any other implementation
+  // A save from before the ledger kept (reward, quest) pairs: each goes in
+  // as paid, and stays paid.
+  Ledger ledger;
+  CHECK(ledger.PayReward(0x51DE, 0xAAA) == Pay::Yes);
+  CHECK(ledger.PayReward(0x51DE, 0xAAA) == Pay::AlreadyPaid);
+  CHECK_FALSE(ledger.PayInOwnStory(0x51DE, 0xAAA));
+  CHECK(ledger.Entries().empty()); // paid, but no quest taken part in
+}

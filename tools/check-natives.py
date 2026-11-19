@@ -27,6 +27,8 @@ CPP = [
     ROOT / "plugin/src/street_natives.cpp",
     ROOT / "plugin/src/presence_natives.cpp",
     ROOT / "plugin/src/activity_natives.cpp",
+    ROOT / "plugin/src/progress_natives.cpp",
+    ROOT / "plugin/src/trade_natives.cpp",
 ]
 REDS = [
     ROOT / "scripts/tandem/Natives.reds",
@@ -38,6 +40,8 @@ REDS = [
     ROOT / "scripts/tandem/StreetNatives.reds",
     ROOT / "scripts/tandem/PresenceNatives.reds",
     ROOT / "scripts/tandem/ActivityNatives.reds",
+    ROOT / "scripts/tandem/ProgressNatives.reds",
+    ROOT / "scripts/tandem/TradeNatives.reds",
 ]
 
 SCALARS = {

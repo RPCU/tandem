@@ -47,6 +47,17 @@ std::vector<proto::Message> Combat::TakeInbound() {
   return out;
 }
 
+void Combat::NoteLend(const proto::CarLend &lend) {
+  std::lock_guard _(m_lock);
+  m_lends[lend.player] = lend.lend;
+}
+
+proto::Lend Combat::LendOf(proto::PlayerId player) {
+  std::lock_guard _(m_lock);
+  const auto it = m_lends.find(player);
+  return it == m_lends.end() ? proto::Lend::Crew : it->second;
+}
+
 void Combat::Send(proto::Message message) {
   std::lock_guard _(m_lock);
   if (m_outbound.size() < kMaxQueued)

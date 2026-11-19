@@ -50,7 +50,14 @@
 //   nameplates = on      ; off: no name over the other players
 // The settings page (scripts/tandem/Coop.reds) changes some of them while the
 // game runs and saves them here (TandemNative.SetSetting, tandem/settings.hpp).
+//   leave = stay         ; a guest out of a session, once its own world is back
+//                        ; (docs/architecture/progression.md): stay goes on in
+//                        ; place; save also makes one quick save; reload then
+//                        ; loads that save (only when you chose to leave)
+//   trade = off          ; on: trade items and eddies with the player beside you
+//                        ; (docs/architecture/trade.md); off: requests are refused
 
+#include "tandem/progress.hpp"
 #include "tandem/relay.hpp"
 
 #include <cstdint>
@@ -110,6 +117,16 @@ struct Config {
   bool nameplates{true};
   // Where it was read from (the settings page writes there).
   std::filesystem::path file;
+  // What a guest's game does once it is out of a session (Saves.reds).
+  progress::LeaveMode leave{progress::LeaveMode::Stay};
+  // Trade between players (Trade.reds): off until checked in game.
+  bool trade{false};
+  // A vehicle a host's quest gave while we took part (Garage.reds): credited
+  // in our ledger (false), or unlocked in our own garage too (true).
+  bool vehicleRewardsKept{false};
+  // Who may drive our cars (Vehicles.reds, garage.md): any partner (crew),
+  // only with us aboard, or nobody.
+  proto::Lend lend{proto::Lend::Crew};
   // Not from the file: tandem.cmd next to it, a command for the running game;
   // recent.txt, the hosts this game joined (tandem/hosts.hpp).
   std::filesystem::path commandFile;

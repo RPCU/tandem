@@ -3,7 +3,8 @@
 #include <doctest/doctest.h>
 
 #include <cmath>
-
+#include <limits>
+#include <string>
 #include <string_view>
 
 using namespace tandem::proto;
@@ -921,4 +922,37 @@ TEST_CASE("activities and time skips: survive encoding, small, reliable, unknown
   CHECK_FALSE(Decode(Encode(TimeSkip{.reason = static_cast<SkipReason>(3)})).has_value());
   CHECK_FALSE(Decode(Encode(TimeSkipVote{.why = kSkipWhyMax + 1})).has_value());
   CHECK_FALSE(Decode(Encode(TimeSkipResult{.outcome = static_cast<SkipOutcome>(5)})).has_value());
+}
+
+TEST_CASE("levels survive encoding, are small reliable state, and refuse what is out of range") {
+  RoundTrips(PlayerLevel{.player = 2, .level = 37});
+  RoundTrips(SessionLevel{.level = 30, .players = 2});
+  RoundTrips(NpcLevel{.npc = 7, .level = 28.5f});
+  for (const Message message :
+       {Message(PlayerLevel{.level = 1}), Message(SessionLevel{.level = 1, .players = 1}),
+        Message(NpcLevel{})}) {
+    // They travel the hit outcomes' path (Endpoint::SendCombat).
+    CHECK(IsCombat(message));
+    CHECK_FALSE(IsStory(message));
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(Encode(message).size() < 16);
+  }
+  // Appended after every older message: no index moved.
+  CHECK(Message(PlayerLevel{}).index() == Message(TimeSkipResult{}).index() + 1);
+  CHECK(Message(Trade{}).index() == Message(NpcLevel{}).index() + 1);
+  CHECK(std::string(NameOf(PlayerLevel{})) == "PlayerLevel");
+  CHECK(std::string(NameOf(SessionLevel{})) == "SessionLevel");
+  CHECK(std::string(NameOf(NpcLevel{})) == "NpcLevel");
+  CHECK_FALSE(IsCombat(Digest{}));
+  CHECK_FALSE(IsCombat(ShotHit{}));
+
+  CHECK_FALSE(Decode(Encode(PlayerLevel{.level = 0})).has_value());
+  CHECK_FALSE(Decode(Encode(PlayerLevel{.level = kMaxLevel + 1})).has_value());
+  CHECK(Decode(Encode(PlayerLevel{.level = kMaxLevel})).has_value());
+  CHECK_FALSE(Decode(Encode(SessionLevel{.level = 0, .players = 1})).has_value());
+  CHECK_FALSE(Decode(Encode(SessionLevel{.level = 5, .players = 0})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcLevel{.npc = 1, .level = -1.f})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcLevel{.npc = 1, .level = 1000.f})).has_value());
+  CHECK_FALSE(Decode(Encode(NpcLevel{.npc = 1, .level = std::numeric_limits<float>::quiet_NaN()}))
+                  .has_value());
 }

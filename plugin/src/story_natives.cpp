@@ -14,6 +14,8 @@
 #include "runtime.hpp"
 #include "story.hpp"
 
+#include "tandem/carryover.hpp"
+
 #include <RedLib.hpp>
 
 #include <cmath>
@@ -65,6 +67,7 @@ enum Kind : std::int32_t {
   kState = 40,
   kReward = 41,
   kEffect = 42,
+  kVehicle = 43,
   kSceneBegin = 50,
   kSceneChange = 51,
   kSceneEnd = 52,
@@ -73,6 +76,13 @@ enum Kind : std::int32_t {
   kSceneVoice = 55,
   kSceneVoiceStop = 56,
 };
+
+// What our V earned in co-op (tandem/carryover.hpp): loaded from the save's
+// words by the script, stored back after each change.
+carry::Ledger &TheLedger() {
+  static carry::Ledger ledger;
+  return ledger;
+}
 
 // Scene replay: a guest's cue, as StoryNatives.reds lists it.
 void Flatten(const scene::Cue &cue, Red::DynArray<TandemStoryEvent> &out) {
@@ -218,6 +228,9 @@ void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
   } else if (const auto *reward = std::get_if<proto::QuestReward>(&m)) {
     out.EmplaceBack(TandemStoryEvent{
         .kind = kReward, .hash = reward->quest, .reward = Red::TweakDBID(reward->reward)});
+  } else if (const auto *unlock = std::get_if<proto::VehicleUnlock>(&m)) {
+    out.EmplaceBack(TandemStoryEvent{
+        .kind = kVehicle, .hash = unlock->quest, .reward = Red::TweakDBID(unlock->vehicle)});
   }
 }
 
@@ -348,6 +361,100 @@ struct TandemStory : Red::IScriptable {
     log::Info("reward: {:#x} (quest {:#x}) to {} guest(s)", reward.value, award.quest,
               award.players.size());
     return static_cast<std::int32_t>(award.players.size());
+  }
+
+  // Host: a vehicle came into our garage (a quest's, a gig's, a fixer's):
+  // the guests that took part are told, by the reward rule. Answers how many.
+  static std::int32_t VehicleUnlocked(Red::TweakDBID vehicle, float x, float y, float z) {
+    const auto award = Story::Get().Reward({x, y, z});
+    for (const auto player : award.players)
+      Story::Get().Send(proto::VehicleUnlock{.vehicle = vehicle.value, .quest = award.quest},
+                        player);
+    log::Info("garage: vehicle {:#x} (quest {:#x}) to {} guest(s)", vehicle.value, award.quest,
+              award.players.size());
+    return static_cast<std::int32_t>(award.players.size());
+  }
+  // tandem.ini vehicle_rewards = keep: a vehicle earned with a host is
+  // unlocked in our own garage too (credit: only noted in the ledger).
+  static bool VehicleRewardsKept() { return Runtime::Get().config.vehicleRewardsKept; }
+
+  // The ledger of what our V earned in co-op (docs/architecture/
+  // quest-carryover.md): the save's words in, the words to save out.
+  static void CarryLoad(Red::DynArray<std::uint64_t> words) {
+    auto &ledger = TheLedger();
+    ledger = {};
+    const std::vector<std::uint64_t> saved(words.begin(), words.end());
+    ledger.Unpack(saved);
+    log::Info("ledger: {} words from the save: {} quests, {} vehicles", saved.size(),
+              ledger.Entries().size(), ledger.Vehicles().size());
+  }
+  static Red::DynArray<std::uint64_t> CarryWords() {
+    Red::DynArray<std::uint64_t> out;
+    for (const auto word : TheLedger().Pack())
+      out.EmplaceBack(word);
+    return out;
+  }
+  // A vehicle earned with a host (owned: our own garage had it already).
+  // True the first time.
+  static bool CarryVehicle(Red::TweakDBID vehicle, std::uint32_t quest, bool owned) {
+    return TheLedger().NoteVehicle(vehicle.value, quest, owned);
+  }
+  // It was unlocked in our own garage.
+  static void CarryVehicleKept(Red::TweakDBID vehicle) { TheLedger().KeepVehicle(vehicle.value); }
+  // Every vehicle credited; whether one was kept.
+  static Red::DynArray<Red::TweakDBID> CarryVehicles() {
+    Red::DynArray<Red::TweakDBID> out;
+    for (const auto &vehicle : TheLedger().Vehicles())
+      out.EmplaceBack(Red::TweakDBID(vehicle.record));
+    return out;
+  }
+  static bool CarryVehicleIsKept(Red::TweakDBID vehicle) {
+    const auto *found = TheLedger().FindVehicle(vehicle.value);
+    return found && found->kept;
+  }
+
+  // Guest: we took part in a step of the host's quest (kind: its
+  // gameJournalQuestType; own: our own journal's state of it before the
+  // mirror, gameJournalEntryState: 1 not started, 2 active, 3 done, 4 failed).
+  // The first note stands.
+  static void CarryQuest(std::uint32_t quest, std::int32_t kind, std::int32_t own,
+                         Red::CString host) {
+    const auto state =
+        own >= 1 && own <= 4 ? static_cast<carry::OwnState>(own) : carry::OwnState::Unknown;
+    const auto type =
+        kind >= 0 && kind <= 9 ? static_cast<carry::QuestKind>(kind) : carry::QuestKind::Unknown;
+    TheLedger().NoteQuest(quest, type, state, carry::HostHash(host.c_str()));
+  }
+  // The host's quest reached its end with us.
+  static void CarryCompleted(std::uint32_t quest) { TheLedger().NoteCompleted(quest); }
+  // Guest: the host's reward for our V. 0 pay it (recorded now), 1 paid
+  // already in co-op, 2 we finished that quest alone before.
+  static std::int32_t CarryPay(std::uint32_t quest, Red::TweakDBID reward) {
+    return static_cast<std::int32_t>(TheLedger().PayReward(quest, reward.value));
+  }
+  // Our own story pays `reward` for `quest`: false when co-op paid it.
+  static bool CarryOwnPays(std::uint32_t quest, Red::TweakDBID reward) {
+    return TheLedger().PayInOwnStory(quest, reward.value);
+  }
+  // "done with NAME": the quest was played with a host of that name.
+  static bool CarryWith(std::uint32_t quest, Red::CString host) {
+    const auto *entry = TheLedger().Find(quest);
+    return entry && entry->host == carry::HostHash(host.c_str());
+  }
+  // One line for tools/game.sh cmd carry.
+  static Red::CString CarryReport() {
+    const auto &ledger = TheLedger();
+    std::size_t completed = 0, rewards = 0;
+    for (const auto &entry : ledger.Entries()) {
+      completed += entry.completed ? 1 : 0;
+      rewards += entry.rewards;
+    }
+    const auto line = std::format(
+        "ledger: {} quests taken part in ({} completed, {} rewards paid), {} pending for our "
+        "world, {} vehicles",
+        ledger.Entries().size(), completed, rewards, ledger.Pending().size(),
+        ledger.Vehicles().size());
+    return Red::CString(line.c_str());
   }
 
   // Host: a story status effect came onto our V (applied) or went.
@@ -576,6 +683,20 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SendState);
   RTTI_METHOD(QuestMoved);
   RTTI_METHOD(Reward);
+  RTTI_METHOD(VehicleUnlocked);
+  RTTI_METHOD(VehicleRewardsKept);
+  RTTI_METHOD(CarryLoad);
+  RTTI_METHOD(CarryWords);
+  RTTI_METHOD(CarryVehicle);
+  RTTI_METHOD(CarryVehicleKept);
+  RTTI_METHOD(CarryVehicles);
+  RTTI_METHOD(CarryVehicleIsKept);
+  RTTI_METHOD(CarryQuest);
+  RTTI_METHOD(CarryCompleted);
+  RTTI_METHOD(CarryPay);
+  RTTI_METHOD(CarryOwnPays);
+  RTTI_METHOD(CarryWith);
+  RTTI_METHOD(CarryReport);
   RTTI_METHOD(SendEffect);
   RTTI_METHOD(SceneClass);
   RTTI_METHOD(SetPrivate);

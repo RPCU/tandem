@@ -15,6 +15,7 @@
 #include "tandem/regions.hpp"
 #include "tandem/session.hpp"
 #include "tandem/story.hpp"
+#include "tandem/trade.hpp"
 
 #include <cstdint>
 #include <deque>
@@ -202,6 +203,12 @@ struct RemoteTimeEffect {
 // the host's NpcWound, NpcPoise, Difficulty, Rules, an AreaHit on our V,
 // another player's Throw and ThrowEnd.
 struct Combat {
+  proto::Message message;
+};
+// Trade (tandem/trade.hpp): what the host says to our seat at the table: a
+// Trade or a TradeOffer of the trade we are in or asked into, or a
+// TradeCommit to apply (reported once per trade, however often it comes).
+struct Trade {
   proto::Message message;
 };
 // Another player went into another world, changed it or came back (place
@@ -459,7 +466,7 @@ using SessionEvent = std::variant<
     events::TrafficLeft, events::TrafficChanged, events::TrafficHitBy, events::RemoteHeat,
     events::CrimeReported, events::RemotePresence, events::RemoteCue, events::HostNpcReaction,
     events::RemoteInstall, events::JoinRefused, events::RemoteActivity, events::TimeSkipAsked,
-    events::TimeSkipVoted, events::TimeSkipEnded>;
+    events::TimeSkipVoted, events::TimeSkipEnded, events::Trade>;
 
 class Endpoint {
 public:
@@ -561,12 +568,33 @@ public:
   // (Difficulty, Rules and the poise kept for late joiners). Either: AreaHit
   // to its victim's game, through the host, only while the session's rules
   // allow friendly fire; Throw and ThrowEnd to every other game, through
-  // the host. False when nothing was sent (not ours to say, nobody to send
-  // to, refused by the rules).
+  // the host. Levels travel here too (tandem/progress.hpp): PlayerLevel is
+  // our V's, kept and said to the host as soon as we are in the session (the
+  // host keeps everyone's and tells all the session's level when their mean
+  // changes: SessionLevel, never a game's to say); NpcLevel is the host's
+  // word on one of its NPCs, kept for late joiners until the NPC goes.
+  // CarLend too: ours, kept and said as soon as we are in; the host stamps
+  // who, keeps everyone's (late joiners, resyncs) and tells all. False when
+  // nothing was sent (not ours to say, nobody to send to, refused by the
+  // rules).
   bool SendCombat(proto::Message message);
   // The session's rules as this game knows them (the host's own; a guest's,
   // what the host said; none yet: every flag off).
   proto::Rules Rules() const { return m_rules.value_or(proto::Rules{}); }
+  // Trade between two players (proto::IsTrade; tandem/trade.hpp). What our
+  // seat says (a Trade or a TradeOffer; who we are is stamped here) goes to
+  // the host's table; the host's own goes straight into it. A TradeCommit
+  // is the table's alone to send. False when nothing was sent.
+  bool SendTrade(proto::Message message);
+  // Host: the table (who is trading, what was committed).
+  const trade::Table &Trades() const { return m_trades; }
+  // The level the host scales its NPCs to (none: not said yet), and the
+  // host's level for each NPC it shares.
+  const std::optional<proto::SessionLevel> &SessionLevel() const { return m_sessionLevel; }
+  const std::map<proto::NpcId, proto::NpcLevel> &NpcLevels() const { return m_npcLevels; }
+  // Who may drive each player's cars, as they said (a guest's own is not
+  // kept here; the host's is).
+  const std::map<proto::PlayerId, proto::CarLend> &CarLends() const { return m_lends; }
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
   // Our V's time ability (Sandevistan...). Kept: sent now if we are in the
@@ -1081,6 +1109,32 @@ private:
   std::map<proto::NpcId, proto::NpcPoise> m_npcPoise;
   void OnGuestCombat(proto::PlayerId player, const proto::Message &message,
                      std::vector<SessionEvent> &out);
+  // Levels: ours (kept until we are in the session); host: each player's,
+  // their mean as last said, and its NPCs' levels; guest: the last two as
+  // the host said them.
+  std::optional<std::uint8_t> m_localLevel;
+  std::map<proto::PlayerId, std::uint8_t> m_levels;
+  std::optional<proto::SessionLevel> m_sessionLevel;
+  std::map<proto::NpcId, proto::NpcLevel> m_npcLevels;
+  // Host: levels said of NPCs whose spawn has not been sent yet.
+  std::map<proto::NpcId, proto::NpcLevel> m_npcLevelsEarly;
+  void SendLocalLevelNow();
+  void UpdateSessionLevel(std::vector<SessionEvent> &out);
+  // Cars: ours (kept until we are in), everyone's (host: what it relays;
+  // guest: what the host said). Who said is never the game's to claim.
+  std::optional<proto::Lend> m_localLend;
+  std::map<proto::PlayerId, proto::CarLend> m_lends;
+  void SendLocalLendNow();
+  // A player's lending heard (host: from its connection): kept, passed on,
+  // given to our game. False: a repeat, nothing done.
+  bool NoteLend(const proto::CarLend &lend, std::vector<SessionEvent> &out);
+  // Trade. Host: the table, and its word passed on (to our own game: an
+  // event). Every game: the trades whose commit it has applied.
+  trade::Table m_trades;
+  std::set<proto::TradeId> m_tradesApplied;
+  void RouteTrade(const std::vector<trade::Out> &outs, std::vector<SessionEvent> &out);
+  void HearTrade(const proto::Message &message, std::vector<SessionEvent> &out);
+  std::set<proto::PlayerId> Present() const;
   // Consistency: our world epoch; guest, the host's and the first NpcStates
   // of it; host, the host epoch each guest has seen and its own epoch.
   std::uint32_t m_epoch{1};

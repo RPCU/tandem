@@ -43,6 +43,8 @@ declare -A value=(
   ["--heat"]=3 ["--heat-at"]=5 ["--heat-for"]=20 ["--crime-at"]=8
   ["--hurt"]=4 ["--melee"]=5 ["--menu-at"]=10 ["--react-npcs"]=3
   ["--hold"]=Items.x ["--holster-at"]=10
+  ["--level"]=30 ["--npc-level"]=25 ["--lend"]=owner ["--unlock-vehicle"]=Vehicle.x ["--trade-offer"]=--check ["--trade-accept"]=--check
+  ["--trade-give"]=Items.CommonMaterial1:2 ["--trade-money"]=100 ["--trade-asks"]=50
 )
 flags=$("$peer" --help 2>&1 | grep -oE '^  --[a-z-]+' | tr -d ' ' | sort -u) || true
 [ -n "$flags" ] || {

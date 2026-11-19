@@ -152,8 +152,18 @@ public class TandemSystem extends ScriptableSystem {
   // (test) "npc hostile": its attitude to our V (hostile unless "npc hostile puppets").
   private let m_hostileToV: Bool;
   private let m_hostileReports: Int32;
-  // Car copies their drivers left (kept: see ProcessLeaving).
+  // Car copies their drivers left (kept: see ProcessLeaving), and whose car
+  // each is (0: no one's, its owner left the session).
   private let m_parked: array<EntityID>;
+  private let m_parkedOwner: array<Uint32>;
+  // Garages (docs/architecture/garage.md): the last car of our own our V
+  // drove (a partner may drive it while we are away from it), the partner's
+  // car our V is at the wheel of now, the one we were refused (said once),
+  // and the partners our own game refused to follow at our wheel.
+  private let m_ownCar: EntityID;
+  private let m_wheel: EntityID;
+  private let m_wheelRefused: EntityID;
+  private let m_refusedDrivers: array<Uint32>;
   private let m_playing: Bool;
   // Our look as last sent.
   private let m_sentItems: array<TweakDBID>;
@@ -192,6 +202,11 @@ public class TandemSystem extends ScriptableSystem {
   private let m_lastPuppetCheck: Float;
   private let m_missingPlayers: array<Uint32>;
   private let m_missingSince: array<Float>;
+  // A guest's saves: locked in a session, and the way back to its own
+  // (Saves.reds).
+  private let m_saves: ref<TandemSaves>;
+  // Trade with the player beside us (Trade.reds).
+  private let m_trade: ref<TandemTradeTable>;
 
   private func OnAttach() -> Void {
     if TandemNative.IsConfigured() {
@@ -248,6 +263,8 @@ public class TandemSystem extends ScriptableSystem {
     if wanted && !TandemNative.IsConfigured() {
       TandemCoop.Notice(this.GetGameInstance(), "Session-NeedsExpansion");
     }
+    this.m_saves = new TandemSaves();
+    this.m_saves.Start(this.GetGameInstance(), this);
     // The recorder (its own key, solo or not) learns a game is loaded: it
     // starts if it is on (now, or when the co-op menu switches it on).
     this.m_recordReady = false;
@@ -289,6 +306,12 @@ public class TandemSystem extends ScriptableSystem {
     this.m_sentHeld = false;
     this.m_sentSeat = false;
     this.m_attachedAt = this.Now();
+    // Who may drive our cars (tandem.ini lend): said once, kept by the
+    // endpoint for whoever joins.
+    TandemProgress.SendCarLend(TandemProgress.OwnLend());
+    this.m_wheel = EntityID.FromHash(0ul);
+    this.m_wheelRefused = EntityID.FromHash(0ul);
+    ArrayClear(this.m_refusedDrivers);
     this.m_bodies = new TandemBodies();
     this.m_bodies.Start(this.GetGameInstance());
     this.m_world = new TandemWorld();
@@ -319,6 +342,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_revive.Start(this.GetGameInstance(), this);
     this.m_presence = new TandemPresenceSync();
     this.m_presence.Start(this.GetGameInstance());
+    this.m_trade = new TandemTradeTable();
+    this.m_trade.Start(this.GetGameInstance(), this);
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -344,6 +369,9 @@ public class TandemSystem extends ScriptableSystem {
   private final func OnPlayerDetach(request: ref<PlayerDetachRequest>) -> Void {
     this.m_attached = false;
     this.m_tickGen += 1;
+    if IsDefined(this.m_saves) {
+      this.m_saves.Stop();
+    }
     this.EndRecording();
     TandemNative.RecorderLeft();
     if !this.m_inGame {
@@ -384,6 +412,10 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     this.m_npcs = null;
+    // Our own weather and clock back (not for a world that is going away).
+    if IsDefined(this.m_world) && worldStays {
+      this.m_world.End(true);
+    }
     this.m_world = null;
     this.m_attitudes = null;
     if IsDefined(this.m_stealth) {
@@ -403,6 +435,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_presence.Stop();
     }
     this.m_presence = null;
+    if IsDefined(this.m_trade) {
+      this.m_trade.End();
+    }
+    this.m_trade = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -477,7 +513,39 @@ public class TandemSystem extends ScriptableSystem {
     if this.m_inGame && this.m_you != 0u && !TandemNative.IsHost() {
       return true;
     }
+    // Out of a session, until our own world is back (Saves.reds).
+    if IsDefined(this.m_saves) && this.m_saves.Locked() {
+      return true;
+    }
     return IsDefined(this.m_outcomes) && this.m_outcomes.FollowsHost();
+  }
+
+  // What a session left in our game (the bits are core/progress.hpp's
+  // kLeft*): while any is set, no save. Parked car copies are not counted:
+  // they are never deleted (deleting one froze the game) and never saved
+  // (persistState off).
+  public func LeftOver() -> Int32 {
+    let left = 0;
+    let story = TandemStorySystem.Get(this.GetGameInstance());
+    if IsDefined(story) {
+      left += story.LeftOver();
+    }
+    if IsDefined(this.m_outcomes) && this.m_outcomes.FollowsHost() {
+      left += 2;
+    }
+    if ArraySize(this.m_puppets) > 0 || ArraySize(this.m_leaving) > 0 || (IsDefined(this.m_npcs) && this.m_npcs.Count() > 0) {
+      left += 4;
+    }
+    if IsDefined(this.m_npcs) && this.m_npcs.Levels().On() > 0 {
+      left += 8;
+    }
+    if (IsDefined(this.m_world) && this.m_world.Borrowed()) || (IsDefined(this.m_npcs) && this.m_npcs.Quiet()) {
+      left += 32;
+    }
+    if this.m_leftDown || (IsDefined(this.m_revive) && this.m_revive.IsDown()) {
+      left += 64;
+    }
+    return left;
   }
 
   // ---- the co-op menu, in game (Coop.reds) ----
@@ -524,6 +592,9 @@ public class TandemSystem extends ScriptableSystem {
   // V that is down or out when it leaves dies the game's way (EndSession):
   // leaving is no way out of being down.
   public func CoopLeave() -> Void {
+    if IsDefined(this.m_saves) {
+      this.m_saves.Chosen();
+    }
     this.EndSession(true);
     TandemNative.Leave();
     TandemCoop.Notice(this.GetGameInstance(), "Session-YouLeft");
@@ -668,6 +739,10 @@ public class TandemSystem extends ScriptableSystem {
     this.m_sentAppearance = false;
   }
 
+  public func Trade() -> ref<TandemTradeTable> {
+    return this.m_trade;
+  }
+
   public func Revive() -> ref<TandemRevive> {
     return this.m_revive;
   }
@@ -683,6 +758,9 @@ public class TandemSystem extends ScriptableSystem {
       // frame while it records.
       this.ProcessLeaving();
       this.HandleCommand();
+      if IsDefined(this.m_saves) {
+        this.m_saves.Tick();
+      }
       // As in a session (tools/game.sh waits for this line).
       if !this.m_playing && this.Now() - this.m_attachedAt > 2.0 {
         this.m_playing = true;
@@ -712,6 +790,7 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     this.SampleLocal();
+    this.CheckWheel();
     this.SendAppearance();
     this.SendHeld();
     this.SendSeat();
@@ -765,6 +844,7 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_presence) && this.m_playing {
       this.m_presence.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this, this.m_you);
     }
+    this.FollowLentCars();
     this.Rebuild();
     // Our ride and the others' (the NCART, rides, quest scene vehicles).
     if IsDefined(this.m_transit) && this.m_playing {
@@ -794,6 +874,13 @@ public class TandemSystem extends ScriptableSystem {
       this.m_time.Update();
     }
 
+    if IsDefined(this.m_saves) {
+      this.m_saves.Tick();
+    }
+    // Trade with the player beside us (0: not in a session, nothing open).
+    if IsDefined(this.m_trade) && this.m_playing {
+      this.m_trade.Tick(this.Now(), this.m_you);
+    }
     this.TickAttitudes();
     this.ProcessLeaving();
     this.DrawShots();
@@ -834,9 +921,36 @@ public class TandemSystem extends ScriptableSystem {
   // Also from the pause menu (Coop.reds), which takes the commands while the
   // world, and so our tick, is paused.
   public func RunCommand(command: String) -> Void {
+    if StrBeginsWith(command, "garage") {
+      this.LogLends();
+      let story = TandemStorySystem.Get(this.GetGameInstance());
+      if IsDefined(story) {
+        story.GarageCommand(command);
+      }
+      return;
+    }
+    if StrBeginsWith(command, "trade") {
+      if IsDefined(this.m_trade) {
+        this.m_trade.Command(command);
+      } else {
+        TandemNative.Log("trade: not in a session");
+      }
+      return;
+    }
     if StrBeginsWith(command, "time ") {
       if IsDefined(this.m_time) {
         this.m_time.Command(command);
+      }
+      return;
+    }
+    if Equals(command, "progress") {
+      // Levels and saves, as they stand (docs/architecture/progression.md).
+      let player = GetPlayer(this.GetGameInstance());
+      TandemNative.Log(IsDefined(this.m_saves) ? this.m_saves.Report() : "saves: no world");
+      if IsDefined(this.m_npcs) {
+        TandemNative.Log(this.m_npcs.Levels().Report());
+      } else if IsDefined(player) {
+        TandemNative.Log(s"levels: ours \(RoundF(TandemLevels.LevelOf(this.GetGameInstance(), player.GetEntityID()))), not in a session");
       }
       return;
     }
@@ -1148,6 +1262,7 @@ public class TandemSystem extends ScriptableSystem {
         GameInstance.GetDynamicEntitySystem().DeleteEntity(car);
       }
       ArrayClear(this.m_parked);
+      ArrayClear(this.m_parkedOwner);
       TandemNative.Log("vehicle clear: done");
     } else if Equals(command, "where") {
       let player = GetPlayer(this.GetGameInstance());
@@ -1496,7 +1611,9 @@ public class TandemSystem extends ScriptableSystem {
     if !along && VehicleComponent.GetVehicle(game, player, car) && IsDefined(car) && !TandemTransit.IsMetro(game, player, car) {
       record = car.GetRecordID();
       VehicleComponent.GetMountedSlotName(game, player, slot);
-      owner = this.CarOwner(car.GetEntityID());
+      // A copy: its owner's car (driven or parked: a partner's car we ride
+      // or drive is theirs everywhere).
+      owner = this.CopyOwner(car.GetEntityID());
     }
     if this.m_sentSeat && record == this.m_sentVehicle && Equals(slot, this.m_sentSlot) && owner == this.m_sentOwner {
       return;
@@ -1661,6 +1778,7 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     ArrayClear(this.m_parked);
+    ArrayClear(this.m_parkedOwner);
     this.m_rideCar = EntityID.FromHash(0ul);
     TandemNative.Log(s"test reset: \(deleted) car copies deleted");
   }
@@ -1672,6 +1790,158 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     return 0u;
+  }
+
+  // Whose car a copy is, driven or parked (0: ours, the world's, or no
+  // one's: its owner left).
+  private func CopyOwner(id: EntityID) -> Uint32 {
+    let owner = this.CarOwner(id);
+    if owner != 0u {
+      return owner;
+    }
+    let i = 0;
+    while i < ArraySize(this.m_parked) {
+      if this.m_parked[i] == id && i < ArraySize(this.m_parkedOwner) {
+        return this.m_parkedOwner[i];
+      }
+      i += 1;
+    }
+    return 0u;
+  }
+
+  // A remote player other than `owner` is at the wheel of this car here.
+  private func DrivenByOther(id: EntityID, owner: Uint32) -> Bool {
+    for puppet in this.m_puppets {
+      if puppet.player != owner && EntityID.IsDefined(puppet.seatedIn) && puppet.seatedIn == id && VehicleComponent.IsDriverSlot(puppet.seatedSlot) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // The parked copy of `owner`'s car of that record nearest to `near` (30 m
+  // at most): the one a partner sat in, in its own game.
+  private func ParkedCopyOf(owner: Uint32, record: TweakDBID, near: Vector4) -> ref<GameObject> {
+    let entities = GameInstance.GetDynamicEntitySystem();
+    let best: ref<GameObject>;
+    let bestDistance = 30.0;
+    let i = 0;
+    while i < ArraySize(this.m_parked) && i < ArraySize(this.m_parkedOwner) {
+      if this.m_parkedOwner[i] == owner {
+        let car = entities.GetEntity(this.m_parked[i]) as VehicleObject;
+        if IsDefined(car) && car.GetRecordID() == record {
+          let distance = Vector4.Distance(car.GetWorldPosition(), near);
+          if distance < bestDistance {
+            best = car;
+            bestDistance = distance;
+          }
+        }
+      }
+      i += 1;
+    }
+    return best;
+  }
+
+  // Our V at the wheel of a partner's car (its copy here), once per car: by
+  // its owner's word (tandem.ini lend there: crew, only with them aboard,
+  // never; a car whose owner left is no one's). Allowed: our game drives it
+  // and says where it is, as for our own (SampleLocal), and every other game
+  // moves its own copy, the owner's game its real car (FollowLentCars).
+  // Refused: out of the seat where the car stands.
+  private func CheckWheel() -> Void {
+    let game = this.GetGameInstance();
+    let player = GetPlayer(game);
+    let none = EntityID.FromHash(0ul);
+    if !IsDefined(player) || this.m_you == 0u {
+      return;
+    }
+    let car: wref<VehicleObject>;
+    let at = none;
+    if VehicleComponent.GetVehicle(game, player, car) && IsDefined(car) && VehicleComponent.IsDriver(game, player) {
+      at = car.GetEntityID();
+    }
+    let owner = EntityID.IsDefined(at) ? this.CopyOwner(at) : 0u;
+    if owner == 0u {
+      if EntityID.IsDefined(this.m_wheel) {
+        TandemNative.Log("garage: our V left a partner's wheel");
+      }
+      this.m_wheel = none;
+      if !EntityID.IsDefined(at) {
+        this.m_wheelRefused = none;
+      }
+      return;
+    }
+    if at == this.m_wheel || at == this.m_wheelRefused {
+      return;
+    }
+    let name = this.NameOf(owner);
+    let aboard = TDBID.IsValid(TandemNative.RemoteSeatVehicle(owner)) && TandemNative.RemoteSeatOwner(owner) == owner;
+    let present = IsDefined(this.PuppetOf(owner));
+    let lend = TandemProgress.CarLendOf(owner);
+    if !TandemProgress.MayDrive(lend, aboard, present) {
+      this.m_wheelRefused = at;
+      let slot = n"None";
+      VehicleComponent.GetMountedSlotName(game, player, slot);
+      TandemVehicles.Unseat(game, player, at, slot);
+      TandemCoop.Notice(game, !present ? "Garage-LendLeft" : lend == 1 ? "Garage-LendAboard" : "Garage-LendKept", name);
+      TandemNative.Log(s"garage: \(name)'s car refused (lend \(lend), owner aboard \(aboard), in the session \(present)): our V out of the seat");
+      return;
+    }
+    this.m_wheel = at;
+    TandemNative.Log(s"garage: our V takes \(name)'s wheel (lend \(lend), owner aboard \(aboard)): our game drives it now");
+  }
+
+  // Our own word on a partner at our car's wheel (our game's check of what
+  // theirs checked: a word changed in between is refused here too).
+  private func LendsTo(driver: Uint32, car: EntityID) -> Bool {
+    let game = this.GetGameInstance();
+    let ours: wref<VehicleObject>;
+    let aboard = VehicleComponent.GetVehicle(game, GetPlayer(game), ours) && IsDefined(ours) && ours.GetEntityID() == car;
+    return TandemProgress.MayDrive(TandemProgress.OwnLend(), aboard, true);
+  }
+
+  // Cars a partner drives that are not their own (garage.md): moved to where
+  // the driver's game says, here as everywhere: our copy of a third
+  // player's car, or our own real car, which our game no longer drives.
+  private func FollowLentCars() -> Void {
+    let game = this.GetGameInstance();
+    for puppet in this.m_puppets {
+      if EntityID.IsDefined(puppet.seatedIn) && VehicleComponent.IsDriverSlot(puppet.seatedSlot) {
+        let owner = TandemNative.RemoteSeatOwner(puppet.player);
+        if owner != puppet.player && owner != 0u {
+          let allowed = owner != this.m_you || this.LendsTo(puppet.player, puppet.seatedIn);
+          if !allowed {
+            if !ArrayContains(this.m_refusedDrivers, puppet.player) {
+              ArrayPush(this.m_refusedDrivers, puppet.player);
+              TandemNative.Log(s"garage: \(this.NameOf(puppet.player)) at our car's wheel against our word (lend \(TandemProgress.OwnLend())): not followed");
+            }
+          } else {
+            let car = GameInstance.FindEntityByID(game, puppet.seatedIn) as GameObject;
+            if IsDefined(car) {
+              TandemVehicles.Follow(game, car, puppet.player);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private func NameOf(player: Uint32) -> String {
+    let name = TandemNative.PlayerName(player);
+    return StrLen(name) > 0 ? name : s"player \(player)";
+  }
+
+  // tools/game.sh cmd garage: who lends what (the rest is Garage.reds').
+  private func LogLends() -> Void {
+    let words = ["crew", "owner", "never"];
+    let own = TandemProgress.OwnLend();
+    let line = s"garage: our cars lent to \(words[Clamp(own, 0, 2)])";
+    for puppet in this.m_puppets {
+      let lend = TandemProgress.CarLendOf(puppet.player);
+      line += s"; \(this.NameOf(puppet.player)): \(words[Clamp(lend, 0, 2)])";
+    }
+    let wheel = EntityID.IsDefined(this.m_wheel) ? s", at the wheel of player \(this.CopyOwner(this.m_wheel))'s car" : "";
+    TandemNative.Log(s"\(line)\(wheel), \(ArraySize(this.m_parked)) parked copies");
   }
 
   // For Radio.reds: whose copy a car is (0: ours or the world's), the remote
@@ -1810,10 +2080,22 @@ public class TandemSystem extends ScriptableSystem {
 
     // Driving our own car, or riding a vehicle our game moves for us (an
     // AI, a scene: Transit.reds): its transform, for the copies elsewhere.
+    // Also a partner's car our V is at the wheel of (CheckWheel), and our
+    // own car while we ride in it with nobody at its wheel (a partner drove
+    // it: where it stopped is where it is, for everyone).
     let car: wref<VehicleObject>;
-    if VehicleComponent.GetVehicle(game, player, car) && IsDefined(car) && this.CarOwner(car.GetEntityID()) == 0u
-      && (VehicleComponent.IsDriver(game, player) || IsDefined(TandemTransit.Carried(game, this))) {
-      TandemNative.SendVehicle(car.GetWorldPosition(), car.GetWorldOrientation(), car.GetLinearVelocity());
+    if VehicleComponent.GetVehicle(game, player, car) && IsDefined(car) {
+      let id = car.GetEntityID();
+      let own = this.CopyOwner(id) == 0u;
+      let driving = VehicleComponent.IsDriver(game, player);
+      if own && driving {
+        this.m_ownCar = id;
+      }
+      if (own && (driving || IsDefined(TandemTransit.Carried(game, this))))
+        || (driving && EntityID.IsDefined(this.m_wheel) && id == this.m_wheel)
+        || (!driving && EntityID.IsDefined(this.m_ownCar) && id == this.m_ownCar && !this.DrivenByOther(id, 0u)) {
+        TandemNative.SendVehicle(car.GetWorldPosition(), car.GetWorldOrientation(), car.GetLinearVelocity());
+      }
     }
   }
 
@@ -1869,6 +2151,11 @@ public class TandemSystem extends ScriptableSystem {
           }
           if IsDefined(this.m_time) {
             this.m_time.End();
+          }
+          // Our weather is the game's again (the clock waits: the host may
+          // be back in a moment).
+          if IsDefined(this.m_world) {
+            this.m_world.End(false);
           }
           // Riding along: out, while the copy is still where it was.
           if IsDefined(this.m_transit) {
@@ -2086,7 +2373,7 @@ public class TandemSystem extends ScriptableSystem {
       if puppet.wantsSeat && this.Now() >= puppet.seatRetryAt {
         this.TrySeat(puppet);
       }
-      if EntityID.IsDefined(puppet.car) {
+    if EntityID.IsDefined(puppet.car) && puppet.car != this.m_wheel && !this.DrivenByOther(puppet.car, puppet.player) {
         let car = TandemTraffic.Body(this.GetGameInstance(), puppet.car);
         if IsDefined(car) {
           TandemVehicles.Follow(this.GetGameInstance(), car, puppet.player);
@@ -2446,12 +2733,20 @@ public class TandemSystem extends ScriptableSystem {
       let ours: wref<VehicleObject>;
       if VehicleComponent.GetVehicle(game, GetPlayer(game), ours) {
         vehicle = ours;
+      } else if EntityID.IsDefined(this.m_ownCar) {
+        // Our car while we are away from it: a partner took it (garage.md).
+        vehicle = GameInstance.FindEntityByID(game, this.m_ownCar) as GameObject;
       }
     } else {
       for other in this.m_puppets {
         if other.player == owner && EntityID.IsDefined(other.car) {
           vehicle = TandemTraffic.Body(game, other.car);
         }
+      }
+      // A third player's car its owner left parked: the copy nearest to
+      // where this partner sits in it.
+      if !IsDefined(vehicle) && IsDefined(body) {
+        vehicle = this.ParkedCopyOf(owner, TandemNative.RemoteSeatVehicle(puppet.player), body.GetWorldPosition());
       }
     }
     if !IsDefined(body) || !IsDefined(vehicle) {
@@ -2681,6 +2976,14 @@ public class TandemSystem extends ScriptableSystem {
       }
     }
     this.m_puppets = kept;
+    // Its parked cars are no one's now: nobody drives them off.
+    let i = 0;
+    while i < ArraySize(this.m_parkedOwner) {
+      if this.m_parkedOwner[i] == player {
+        this.m_parkedOwner[i] = 0u;
+      }
+      i += 1;
+    }
   }
 
   // Out of the plugin's hands at once (no more poses or movement), out of
@@ -2745,8 +3048,10 @@ public class TandemSystem extends ScriptableSystem {
         // (2026-11-18, two hang dumps; engine-knowledge.md §13.6). It stays
         // parked where the driver left it; parked cars belong to the host
         // later (ARCHITECTURE authority table).
-        this.EmptyCar(leaving.car);
+        this.EmptyCar(leaving.car, leaving.player);
         ArrayPush(this.m_parked, leaving.car);
+        // Still theirs while they are in the session (a partner may drive it).
+        ArrayPush(this.m_parkedOwner, IsDefined(this.PuppetOf(leaving.player)) ? leaving.player : 0u);
         TandemNative.Log(s"player \(leaving.player): car left parked");
       } else {
         TandemNative.Log(s"removed player \(leaving.player)");
@@ -2755,12 +3060,14 @@ public class TandemSystem extends ScriptableSystem {
     this.m_leaving = kept;
   }
 
-  // Takes every puppet out of a car that is about to go.
-  private func EmptyCar(car: EntityID) -> Void {
+  // Takes every puppet out of a car its driver left, but those still in it
+  // by their own seat (a partner at the wheel of `owner`'s car, its riders).
+  private func EmptyCar(car: EntityID, owner: Uint32) -> Void {
     let game = this.GetGameInstance();
     let none = EntityID.FromHash(0ul);
     for puppet in this.m_puppets {
-      if EntityID.IsDefined(puppet.seatedIn) && puppet.seatedIn == car {
+      let stays = owner != 0u && puppet.player != owner && TandemNative.RemoteSeatOwner(puppet.player) == owner && TDBID.IsValid(TandemNative.RemoteSeatVehicle(puppet.player));
+      if EntityID.IsDefined(puppet.seatedIn) && puppet.seatedIn == car && !stays {
         let body = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.id) as GameObject;
         if IsDefined(body) {
           TandemVehicles.Unseat(game, body, car, puppet.seatedSlot);

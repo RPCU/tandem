@@ -154,6 +154,14 @@ public class TandemOutcomes {
         case 9:
           this.TakeDefended(event, npcs);
           break;
+        case 10:
+          npcs.Levels().OnSession(event.level, Cast<Int32>(event.player));
+          break;
+        case 11:
+          if !TandemNative.IsHost() {
+            npcs.SetLevel(event.npc, event.damage);
+          }
+          break;
         default:
           break;
       }

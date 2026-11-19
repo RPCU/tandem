@@ -660,7 +660,7 @@ public class TandemLoot extends ScriptableSystem {
   // A quest's prop: tagged Quest, or a keycard. The game's quests test a V's
   // inventory for these (engine/story.md §13.29); an iconic is not one.
   public static func QuestProp(data: wref<gameItemData>) -> Bool {
-    if !IsDefined(data) {
+    if !IsDefined(data) || RPGManager.IsItemIconic(data) {
       return false;
     }
     return data.HasTag(n"Quest") || Equals(RPGManager.GetItemType(data.GetID()), gamedataItemType.Gen_Keycard);

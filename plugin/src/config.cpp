@@ -153,6 +153,38 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.timeHostFull = true;
     else
       return Bad("time_host is bubble or full");
+  } else if (key == "trade") {
+    if (value == "on" || value == "true")
+      config.trade = true;
+    else if (value == "off" || value == "false")
+      config.trade = false;
+    else
+      return Bad("trade is on or off");
+  } else if (key == "lend") {
+    if (value == "crew")
+      config.lend = proto::Lend::Crew;
+    else if (value == "owner")
+      config.lend = proto::Lend::WithOwner;
+    else if (value == "never")
+      config.lend = proto::Lend::Never;
+    else
+      return Bad("lend is crew, owner or never");
+  } else if (key == "vehicle_rewards") {
+    if (value == "keep")
+      config.vehicleRewardsKept = true;
+    else if (value == "credit")
+      config.vehicleRewardsKept = false;
+    else
+      return Bad("vehicle_rewards is credit or keep");
+  } else if (key == "leave") {
+    if (value == "stay")
+      config.leave = progress::LeaveMode::Stay;
+    else if (value == "save")
+      config.leave = progress::LeaveMode::Save;
+    else if (value == "reload")
+      config.leave = progress::LeaveMode::Reload;
+    else
+      return Bad("leave is stay, save or reload");
   } else if (key == "compat") {
     // Developers only: off lets a session start whatever the startup check
     // found (another game version, an older Codeware or TweakXL).

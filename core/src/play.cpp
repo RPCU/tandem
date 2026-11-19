@@ -388,7 +388,8 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                       std::is_same_v<M, proto::Vitals> || std::is_same_v<M, proto::Pause> ||
                       std::is_same_v<M, proto::Epoch> || std::is_same_v<M, proto::StoryEffect> ||
                       std::is_same_v<M, proto::Heat> || std::is_same_v<M, proto::Throw> ||
-                      std::is_same_v<M, proto::ThrowEnd> || std::is_same_v<M, proto::Activity>)
+                      std::is_same_v<M, proto::ThrowEnd> || std::is_same_v<M, proto::Activity> ||
+                      std::is_same_v<M, proto::CarLend>)
           return host(m.player);
         else if constexpr (std::is_same_v<M, proto::VehicleRadio>) {
           later(m.trackStartUs);
@@ -477,9 +478,11 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                              std::is_same_v<M, proto::NpcAnims> ||
                              std::is_same_v<M, proto::NpcShot> ||
                              std::is_same_v<M, proto::NpcPoise> ||
+                             std::is_same_v<M, proto::NpcLevel> ||
                              std::is_same_v<M, proto::Difficulty> ||
                              std::is_same_v<M, proto::Rules> || std::is_same_v<M, proto::Journal> ||
                              std::is_same_v<M, proto::Tracked> ||
+                             std::is_same_v<M, proto::VehicleUnlock> ||
                              std::is_same_v<M, proto::QuestReward> ||
                              // The host's street, as it was: the recorded
                              // host owned every vehicle, and so do we.
@@ -503,8 +506,10 @@ void ApplyHost(Endpoint &endpoint, const proto::Message &message, proto::PlayerI
     return;
   }
   if (proto::IsStory(message)) {
-    endpoint.SendStory(
-        message, std::holds_alternative<proto::QuestReward>(message) ? guest : proto::kNoPlayer);
+    endpoint.SendStory(message, std::holds_alternative<proto::QuestReward>(message) ||
+                                        std::holds_alternative<proto::VehicleUnlock>(message)
+                                    ? guest
+                                    : proto::kNoPlayer);
     return;
   }
   if (proto::IsCombat(message)) {

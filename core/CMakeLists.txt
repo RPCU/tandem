@@ -30,7 +30,9 @@ add_library(tandem_core STATIC
   src/traffic.cpp
   src/presence.cpp
   src/settings.cpp
-  src/activity.cpp)
+  src/activity.cpp
+  src/progress.cpp
+  src/trade.cpp)
 target_include_directories(tandem_core PUBLIC include)
 target_link_libraries(tandem_core PUBLIC enet zpp_bits)
 target_compile_features(tandem_core PUBLIC cxx_std_23)

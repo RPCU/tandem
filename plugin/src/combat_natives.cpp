@@ -53,7 +53,9 @@ enum Kind : std::int32_t {
   kThrow = 6,
   kThrowEnd = 7,
   kRules = 8,
-  kDefended = 9
+  kDefended = 9,
+  kSessionLevel = 10,
+  kNpcLevel = 11
 };
 
 proto::Vec3 Vec(const Red::Vector4 &v) { return {v.X, v.Y, v.Z}; }
@@ -117,6 +119,10 @@ TandemFightEvent EventOf(const proto::Message &message) {
            .npc = d->npc,
            .player = d->player,
            .level = static_cast<std::int32_t>(d->how)};
+  } else if (const auto *s = std::get_if<proto::SessionLevel>(&message)) {
+    out = {.kind = kSessionLevel, .player = s->players, .level = s->level};
+  } else if (const auto *n = std::get_if<proto::NpcLevel>(&message)) {
+    out = {.kind = kNpcLevel, .npc = n->npc, .damage = n->level};
   }
   return out;
 }
@@ -235,9 +241,15 @@ struct TandemFight : Red::IScriptable {
   // What the session said about hits since the last call.
   static Red::DynArray<TandemFightEvent> TakeEvents() {
     Red::DynArray<TandemFightEvent> out;
-    for (const auto &message : Combat::Get().TakeInbound())
+    for (const auto &message : Combat::Get().TakeInbound()) {
+      // Who may drive whose cars: kept here for the vehicle scripts.
+      if (const auto *lend = std::get_if<proto::CarLend>(&message)) {
+        Combat::Get().NoteLend(*lend);
+        continue;
+      }
       if (auto event = EventOf(message); event.kind != 0)
         out.EmplaceBack(event);
+    }
     return out;
   }
   // Host: the health points a guest's strike takes (core/combat.hpp).

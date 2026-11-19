@@ -26,8 +26,8 @@
     leaving (the guest quits or the host is gone) the journal and tracked
     entry go back, are checked, the freeze ends and saving unlocks. A
     mismatch keeps saving locked and says "load your last save". The
-    design's final step (write one "back from co-op" save and reload it) is
-    a logged TODO: the guest goes on in place.
+    design's final step (one save, then its reload) is `Saves.reds`'s, by
+    `tandem.ini` `leave` (`progression.md`, "Saves").
   - _Journal, tracker, markers_: the host's journal (snapshot at join,
     changes with their notify flag, so the guest gets the same toasts and
     sounds) and tracked quest; quest pins follow the journal. Shown only on

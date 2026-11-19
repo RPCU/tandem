@@ -16,6 +16,9 @@ public native struct TandemFightEvent {
   // 7 its end (player, id, level: 0 exploded 1 stuck 2 gone, x y z); 8 the
   // session's rules (flags: proto::kRule*); 9 (host) a guest blocked (level
   // 1) or parried (2) our NPC's attack (player, npc).
+  // 10 the session's level (level: the mean of its players' levels; player:
+  // how many they are); 11 (guest) a host NPC's power level (npc; damage:
+  // the level). Levels.reds takes the last two.
   native let kind: Int32;
   native let npc: Uint32;
   native let player: Uint32;

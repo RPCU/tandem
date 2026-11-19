@@ -448,8 +448,7 @@ public class TandemActivities {
       return;
     }
     this.m_asking = false;
-    let why = this.WhyNot(e);
-    this.Notice(why);
+    this.Notice(this.WhyNot(e), this.NameOf(e.by));
     if IsDefined(this.m_wheel) {
       let wheel = this.m_wheel;
       this.m_wheel = null;
@@ -458,33 +457,34 @@ public class TandemActivities {
     // A guest's bed: the host's clock comes back with its World.
   }
 
+  // The key of why a skip of ours did not happen (its {1}: who).
   private func WhyNot(e: TandemSkipEvent) -> String {
-    let name = this.NameOf(e.by);
     switch e.outcome {
       case 1:
-        return e.why == 2 ? s"\(name) can't skip time right now" : s"\(name) declined";
+        return e.why == 2 ? "Activities-CantNow" : "Activities-Declined";
       case 2:
-        return s"\(name) didn't answer";
+        return "Activities-NoAnswer";
       case 3:
-        return "Time skip cancelled";
+        return "Activities-Cancelled";
       default:
         break;
     }
     switch e.why {
       case 1:
-        return s"\(name) is already asking to skip time";
+        return "Activities-AlreadyAsking";
       case 3:
-        return s"\(name) is down";
+        return "Activities-IsDown";
       case 4:
-        return s"\(name) is bending time";
+        return "Activities-Bending";
       case 5:
-        return s"\(name) is somewhere else";
+        return "Activities-Elsewhere";
       case 6:
-        return s"\(name) paused the game";
+        return "Activities-Paused";
       default:
-        return "Time can't be skipped now";
+        return "Activities-CantSkip";
     }
   }
+
 
   // ---- time skips: theirs ----
 
