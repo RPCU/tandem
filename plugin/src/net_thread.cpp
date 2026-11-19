@@ -399,6 +399,11 @@ struct NetThread::Impl {
                 runtime.PushEvent({ScriptEvent::Kind::PlayerLeft, e.player, {}, {}});
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Left, .player = e.player});
                 Comms::Get().PushInbound({.kind = CommsInbound::Kind::Left, .player = e.player});
+              } else if constexpr (std::is_same_v<E, events::NamedAs>) {
+                // Another player has our name: the session shows us as "V (2)".
+                log::Info("the session shows us as {} ({} is taken)", e.shown, e.asked);
+                runtime.NotePlayerName(endpoint->You(), e.shown);
+                runtime.PushEvent({ScriptEvent::Kind::Renamed, endpoint->You(), e.shown, {}});
               } else if constexpr (std::is_same_v<E, events::PlayerReturned>) {
                 // Its puppet and seat stay; its new game sends its look again.
                 log::Info("{} is back on a new connection (player {})", e.player.name, e.player.id);

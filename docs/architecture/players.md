@@ -72,10 +72,11 @@
   copy.
 - **Identity colour** (`TandemMarkers.ColorOf`): one colour per player id,
   the same in every game. In order from id 1: cyan, yellow, green, pink,
-  orange, violet, red, then white. It tints a player's pings, waypoint,
-  team target and quickhack indicators ([`comms.md`](comms.md)). The
-  `polish` branch gives the marker the same function and palette; on
-  merging, keep one. To check in game: readability against the game's own
+  orange, violet, red, then white. It tints a player's marker, nameplate and
+  party entry ([`presence.md`](presence.md)), pings, waypoint, team target
+  and quickhack indicators ([`comms.md`](comms.md)). One definition
+  (`Markers.reds`; the `polish` and comms branches each had one, merged
+  into it: `tools/scripts-duplicates.py` refuses a second). To check in game: readability against the game's own
   reds and cyans, and colour-blind pairs. Red/green (ids 3 and 7) and
   yellow/green (2 and 3) are the risky pairs, which is why the name always
   comes with the colour.

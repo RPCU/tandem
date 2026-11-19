@@ -1,6 +1,8 @@
 #include "config.hpp"
 #include "log.hpp"
 
+#include "tandem/names.hpp"
+
 #include <charconv>
 #include <format>
 #include <fstream>
@@ -61,9 +63,11 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
     else
       return Bad("join is a join code like K7Q-2M9, not {}", value);
   } else if (key == "name") {
-    if (value.empty())
-      return Bad("name is empty");
-    config.name = value;
+    const auto name = names::Clean(value);
+    if (!name)
+      return Bad("name is 1 to {} characters, no control characters, ; or # ({}: {})",
+                 names::kMaxLength, names::Problem(value), value);
+    config.name = *name;
   } else if (key == "puppet_female")
     config.puppetFemale = value;
   else if (key == "puppet_male")
@@ -96,13 +100,13 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       return Bad("bad {} {}", key, value);
   } else if (key == "story" || key == "quest_freeze" || key == "recorder" ||
              key == "recorder_pose" || key == "friendly_fire" || key == "markers" ||
-             key == "nameplates") {
+             key == "party_hud") {
     auto &flag = key == "story"           ? config.story
                  : key == "quest_freeze"  ? config.questFreeze
                  : key == "recorder"      ? config.recorder
                  : key == "friendly_fire" ? config.friendlyFire
                  : key == "markers"       ? config.markers
-                 : key == "nameplates"    ? config.nameplates
+                 : key == "party_hud"     ? config.partyHud
                                           : config.recorderPose;
     if (value == "on" || value == "true")
       flag = true;
@@ -219,6 +223,16 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.compat = false;
     else
       return Bad("compat is on or off");
+  } else if (key == "nameplates") {
+    // on, true: what they were before near and always (tandem.ini files of then).
+    if (value == "near" || value == "on" || value == "true")
+      config.nameplates = presence::Nameplates::Near;
+    else if (value == "always")
+      config.nameplates = presence::Nameplates::Always;
+    else if (value == "off" || value == "false")
+      config.nameplates = presence::Nameplates::Off;
+    else
+      return Bad("nameplates is near, always or off");
   } else if (key == "notices") {
     if (value == "all" || value == "important" || value == "minimal")
       config.notices = value;
@@ -250,8 +264,12 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return config.notices;
   if (key == "markers")
     return OnOff(config.markers);
+  if (key == "party_hud")
+    return OnOff(config.partyHud);
   if (key == "nameplates")
-    return OnOff(config.nameplates);
+    return config.nameplates == presence::Nameplates::Always ? "always"
+           : config.nameplates == presence::Nameplates::Off  ? "off"
+                                                             : "near";
   if (key == "relay")
     return config.relay.empty() ? std::string()
            : config.relayPort == net::kDefaultRelayPort

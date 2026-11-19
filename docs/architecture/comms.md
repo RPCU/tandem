@@ -74,7 +74,8 @@ are the user's to confirm.
    adding entries means rebuilding its widget, `MAP:2407`-style staleness).
    Callouts by voice (V's own barks, the cut ping records'
    `VoTriggerName`) are a later polish, ears required.
-6. **Text chat: not now** (_recommendation_). The only text field is
+6. **Text chat: not wanted** (user decision 2026-11-19). Not built, and
+   not to build unless the user asks again. What was weighed: the only text field is
    Codeware's input in the game's message popup
    (`GenericMessageNotification.ShowInput`, [`coop-menu.md`](coop-menu.md)),
    which takes the screen and is no place to type in a fight; the HUD has
@@ -84,16 +85,20 @@ are the user's to confirm.
    later: a "Message" entry in the pause menu's co-op page, the popup's
    input, delivered as the HUD's on-screen message on the others' screens
    ("NAME: text", 120 characters, rate-limited like pings): one appended
-   message, no log. Build it only on request.
-7. **The party HUD** (`presence` branch, its design file
-   there) is not duplicated. Pings and waypoints are mappins: their
-   direction off screen is the mappin's own clamping at the screen's edge,
-   so no second arrow; names come from the same `TandemNative.PlayerName`.
-   On merging, the party entry is the natural place to show that a partner
-   is linked (a small mark beside the name, from
-   `TandemCommsNative.LinkState`), and the presence branch's "in a menu"
-   flag could hold back a ping's sound for a player in a menu; neither is
-   needed for this to work.
+   message, no log.
+7. **The party HUD shows the linked** ([`presence.md`](presence.md), Party
+   HUD). "When linked, the health bar of each player linked should be
+   displayed too, with their name": the party list has an entry (name,
+   health, state, off-screen arrow, in the partner's colour) for each
+   partner `TandemCommsNative.LinkState` says is linked. Health is on
+   screen only, in that list: the nameplate over a head is the name alone,
+   linked or not. An unlinked partner keeps its marker and its nameplate. A link broken (either side) or a partner
+   gone takes the entry away at the next frame. Pings and waypoints are
+   mappins: their direction off screen is the mappin's own clamping at the
+   screen's edge, so no second arrow; names come from the same
+   `TandemNative.PlayerName` (the session's shown names: "V (2)").
+   Presence's "in a menu" flag could still hold back a ping's sound for a
+   player in a menu.
 
 ## The team target: "Mark target"
 
@@ -159,12 +164,12 @@ players' quickhacks are visible only if the players decided to link."
 Built 2026-11-19, not run in game.
 
 - **One colour per player, everywhere** (`TandemMarkers.ColorOf`, by
-  player id: cyan, yellow, green, pink, orange, violet, red, then white).
-  It tints a player's pings, waypoint, team target and quickhacks. The
-  palette and its order are those of the `polish` branch, which colours
-  the player's marker with the same function name. Polish is not merged
-  into integration yet, so `Markers.reds` here has a copy: **on merging,
-  keep one** (`scripts:check` will say the function is defined twice).
+  player id: cyan, yellow, green, pink, orange, violet, red, then white;
+  one definition, in `Markers.reds`: `tools/scripts-duplicates.py` refuses a
+  second). It tints a player's marker, nameplate and party entry
+  (`PartyHud.reds`), pings, waypoint, team target and quickhacks. A ping's
+  icon is its sender's colour only (the marker's label wrap no longer
+  tints pings).
 - **What is shown.** A linked partner's quickhack on a shared NPC is drawn
   with the game's own quickhack indicator over its target:
   - the `QuickHackMappinController` widget a vehicle uses for an upload
@@ -312,6 +317,9 @@ The audit's rows ([`consistency.md`](consistency.md)), in short:
   on every board.
 
 ## Tests and scenarios
+
+- The party HUD's linked entries: scenario `hud-linked` (the mock player's
+  `--unlink-at N` breaks its links), presence.md.
 
 - `tests/comms_test.cpp`: the rate, lifetimes, the ping toggles (danger,
   take back, expiry, places within 2 m, the rate), the board (replace,

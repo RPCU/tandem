@@ -28,9 +28,22 @@ has been silent for **2 s** replaces that connection at once: the player
 keeps its id, so the others keep its puppet and seat (no `PlayerLeft`, no
 `PlayerJoined`; the host sees `PlayerReturned`), and the new game resends
 its look, held items and seat. A live player (heard within 2 s) cannot be
-replaced: a namesake joins as another player. A guest numbers its states
+replaced: a namesake joins as another player, shown as "a (2)". A returning
+player is matched by the name it asked for (`Hello::name`, sanitized), not
+the one the session shows it under. A guest numbers its states
 from the host clock's millisecond at its `Welcome`, so what it sends after
 coming back is newer than what it sent before.
+
+**Names** (`core/include/tandem/names.hpp`, [`presence.md`](presence.md),
+Names): the host sanitizes the name each `Hello` brings (controls and
+comment signs dropped, 16 characters at most, nothing left is `V`) and
+makes it unique: a name another player has (ASCII case aside) gets " (2)",
+" (3)", the first free number. The `Roster` carries the shown names; a
+guest that sees its own differ from what it asked for tells its player
+(`events::NamedAs`). No protocol change: the fields keep their meaning.
+Tests: "names are unique in a session…", "a returning player is matched by
+the name it asked for…" (`tests/endpoint_test.cpp`); scenario
+`names-duplicate`.
 
 **Player ids** are 1 (the host) to 8 (`proto::kMaxPlayerId`): the host
 hands guests the next free id after the last one it gave, 2..8 in turn
@@ -80,7 +93,7 @@ idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
   `pings` (`comms.md`); `relay`,
   `relay_token`, `join` for the relay and join codes; `recorder`,
   `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`, see
-  `recordings.md`; `friendly_fire`, `notices`, `markers`, `nameplates`,
+  `recordings.md`; `friendly_fire`, `notices`, `markers`, `nameplates`, `party_hud`,
   which the co-op menu's Settings page changes with some of the others,
   `coop-menu.md`; `log = warn|info|debug`, see `netcode.md`): the defaults, and the test harness's session. The
   default is solo. Every key with its default is in `dist/tandem.ini`

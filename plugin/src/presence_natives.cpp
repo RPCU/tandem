@@ -209,7 +209,15 @@ struct TandemPresence : Red::IScriptable {
   static std::int32_t RoundedMetres(float distance) {
     return static_cast<std::int32_t>(presence::RoundedMetres(distance));
   }
-  static float NameplateOpacity(float distance) { return presence::NameplateOpacity(distance); }
+  static float NameplateOpacity(float distance, std::int32_t mode) {
+    return presence::NameplateLookOf(distance, PlatesOf(mode)).opacity;
+  }
+  static float NameplateScale(float distance, std::int32_t mode) {
+    return presence::NameplateLookOf(distance, PlatesOf(mode)).scale;
+  }
+  static presence::Nameplates PlatesOf(std::int32_t mode) {
+    return static_cast<presence::Nameplates>(Clamped<std::uint8_t>(mode, 0, 2));
+  }
 
   RTTI_IMPL_TYPEINFO(TandemPresence);
   RTTI_IMPL_ALLOCATOR();
@@ -279,4 +287,5 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemPresence, "TandemPresence", {
   RTTI_METHOD(Project);
   RTTI_METHOD(RoundedMetres);
   RTTI_METHOD(NameplateOpacity);
+  RTTI_METHOD(NameplateScale);
 });

@@ -11,7 +11,12 @@
   next to the DLL, written when a host welcomes us) or "Enter an address"
   (the game's message popup with Codeware's text field,
   `GenericMessageNotification.ShowInput`), then the V's save; Play solo
-  drops the choice. Picking the save calls `TandemNative.StartHost(port)` /
+  drops the choice. The first time a player hosts or joins (main menu Host
+  a game / Join a game, pause menu Host this game / Join a game) while
+  `name` is still `V`, the menu first asks for a pseudo in the same popup
+  (title "Your co-op name", its rules; refused: asked again with the
+  reason; cancel: `V` for now), saved with `SetSetting`, once a game run
+  (`TandemNative.NameToAsk` / `NameAsked`; `presence.md`, Names). Picking the save calls `TandemNative.StartHost(port)` /
   `Join(address, port)`, which only choose; `TandemSystem` starts the
   session when the save loads. The pause menu gets "Co-op" too: Host this
   game / Join a game (start at once), Invite (this machine's addresses and
@@ -27,7 +32,9 @@
   system's delayed tick does not run in the main menu nor while paused),
   which also takes `tools/game.sh cmd coop ...` commands: `coop status`,
   `coop host [PORT]`, `coop join ADDRESS[:PORT]`, `coop leave` (in game,
-  any time), `coop menu PAGE`, `coop pick TEXT` (drive an open menu).
+  any time), `coop menu PAGE`, `coop pick TEXT` (drive an open menu),
+  `coop name [reset]`, `coop name answer TEXT`, `coop name cancel` (the name
+  prompt; scenario `names-prompt`).
   `tandem.ini`'s role stays the default (and the harness's): it is chosen
   at load, a menu choice replaces it until the player exits to the main
   menu. The engine hooks are installed whatever the role (they pass
@@ -54,7 +61,8 @@
   `#` is refused) through a file written aside, and applies it.
   `TandemNative.Setting(key)` reads one back.
 - **When it applies**: at once for `recorder`, `friendly_fire`, `notices`,
-  `markers`, `nameplates` (the scripts read them as they need them);
+  `markers`, `nameplates`, `party_hud` (the scripts read them as they need
+  them; the nameplates and the party list every frame);
   `name`, `relay`, `relay_token`, `story`, `time_host` are what a running
   session was set up with, so a change during one waits for its end (the
   label says "from the next session"); `quest_freeze` and `scene_privacy`
@@ -68,7 +76,13 @@
   players elsewhere, loot), `minimal` keeps only what asks for an answer or
   went wrong (`TandemText.Importance`); every notice is logged either way.
   `markers = off` takes the other players' markers off (HUD, minimap, map);
-  `nameplates = off` hides the name over them.
+  `nameplates` cycles near (to 12 m), always (any distance, smaller and
+  fainter) and off (no name over them, the marker's label neither);
+  `party_hud = off` hides the party list (`presence.md`, Layout); a
+  tandem.ini of before with `on` reads as near. The name's popup says its
+  rules ("1 to 16 characters…", `Name-Ask`) and a refusal why
+  (`Name-Invalid`); `tandem.ini`'s parser checks it (`names::Clean`) and
+  saves it trimmed.
 - **Only the page's keys** (`settings::IsEditable`): never `role`,
   `address`, `port` or `join`, which the co-op menu chooses, nor the test
   harness's keys; `TANDEM_PORT` and `TANDEM_CONFIG` keep working (the page

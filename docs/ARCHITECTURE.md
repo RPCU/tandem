@@ -302,13 +302,13 @@ plugin") and its open problems.
 - `garage.md`: owned vehicles: each player's garage, driving a partner's car, vehicles earned together (credited, or kept with `vehicle_rewards = keep`), purchases, PL deliveries, decisions.
 - `trade.md`: trade between two players: the prompt and the table, what may be traded, the host's two-phase arbitration, the protocol, what is not verified.
 - `quest-carryover.md`: what a guest brings home (stage A1 built: the ledger in the save, rewards through it, quest props given back on leave): the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
-- `presence.md` (`scripts/tandem/Presence.reds`, `PartyHud.reds`, `HitReactions.reds`): the partner seen and heard: a puppet's sounds, hit reactions on puppets and proxies, drawn bullets, the party HUD and nameplate, small details (flashlight, look-at, stances, holstering); the audit, what needs eyes and ears in game.
+- `presence.md` (`scripts/tandem/Presence.reds`, `PartyHud.reds`, `HitReactions.reds`): the partner seen and heard: a puppet's sounds, hit reactions on puppets and proxies, drawn bullets, the party HUD (linked partners) and nameplates (`nameplates = near|always|off`), names (the pseudo prompt, unique names: `core/include/tandem/names.hpp`), small details (flashlight, look-at, stances, holstering); the audit, what needs eyes and ears in game.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
 - `activities.md`: the rule table for activities outside combat and quests (time skips asked of everyone, workspots on puppets, minigames and screens, shops, mirror and wardrobe looks, photo mode, contests, clubs and joytoys), its decisions and what is built.
 - `coop-menu.md`: the co-op menu, its Settings page (saved to `tandem.ini`), invites and join codes in game.
 - `strings.md`: every player-facing text (the inventory), the keyed table in English and French (`Text.reds`, Codeware's localization; ArchiveXL weighed), notices, input hints through the game's own bindings, the lint (`task strings:check`).
 - `travel.md`: fast travel together, regroup; region authority: `regions.md`.
-- `comms.md`: pings (the tag key outside the scanner), the link and what it shares (scanner tags, Ping reveals; `link = auto|ask|off`), waypoints, the danger callout; why no emotes nor text chat yet; the consistency of each.
+- `comms.md`: pings (the tag key outside the scanner), the link and what it shares (scanner tags, Ping reveals; `link = auto|ask|off`), waypoints, the danger callout; why no emotes, and no text chat (not wanted, the user's decision); the consistency of each.
 - `relay.md`: the relay's sessions, join codes, abuse limits, wire format, deployment, the game side.
 - `testing.md`: test levels, scenarios, every `tandem-peer` mode and flag.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.

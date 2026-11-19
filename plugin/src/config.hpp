@@ -12,7 +12,9 @@
 //   recorder_pose = on   ; off: no body poses in the recordings
 //   address = 127.0.0.1  ; join: the host's address
 //   port = 27450
-//   name = V
+//   name = V             ; the name the others see: 1 to 16 characters, no ; or #
+//                        ; (tandem/names.hpp); the co-op menu asks for one while
+//                        ; it is V
 //   relay = relay.example.org:27460  ; tandem-relay: NAT fallback, join codes
 //   relay_token = <64 hex>           ; host: one of the relay's host tokens
 //   join = K7Q-2M9       ; join: the host's join code (through the relay;
@@ -50,7 +52,10 @@
 //   notices = all        ; important: no news (rides, calls, pauses...); minimal: only
 //                        ; what asks for an answer or went wrong
 //   markers = on         ; off: no marker for the other players (HUD, minimap, map)
-//   nameplates = on      ; off: no name over the other players
+//   nameplates = near    ; the name over the other players: near (to 12 m, gone at
+//                        ; 20 m), always (any distance in view, smaller and fainter
+//                        ; far away), off (on: near)
+//   party_hud = on       ; off: no party list (linked partners' health) on the HUD
 // The settings page (scripts/tandem/Coop.reds) changes some of them while the
 // game runs and saves them here (TandemNative.SetSetting, tandem/settings.hpp).
 //   leave = stay         ; a guest out of a session, once its own world is back
@@ -65,6 +70,7 @@
 //                        ; (a request they accept); off, nobody
 //   pings = on           ; off: you neither send nor see pings
 
+#include "tandem/presence.hpp"
 #include "tandem/progress.hpp"
 #include "tandem/relay.hpp"
 
@@ -122,7 +128,8 @@ struct Config {
   bool friendlyFire{false};
   std::string notices{"all"};
   bool markers{true};
-  bool nameplates{true};
+  presence::Nameplates nameplates{presence::Nameplates::Near};
+  bool partyHud{true};
   // Where it was read from (the settings page writes there).
   std::filesystem::path file;
   // What a guest's game does once it is out of a session (Saves.reds).
