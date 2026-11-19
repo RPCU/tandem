@@ -2515,6 +2515,55 @@ struct BreachResult {
   friend bool operator==(const BreachResult &, const BreachResult &) = default;
 };
 
+// ---- World vehicles of several owners (docs/architecture/traffic.md, "Who
+// owns an area"; regions.md, "Hand-over") ----
+//
+// A shared world vehicle is run by the game that announced it (its id's
+// owner) until the host hands it over, as an NPC is: its owner's V is
+// leaving it with another linked player near (regions::Taker), or its owner
+// is gone or its world rebuilt (regions::Heir). Both games already have a
+// body for it, the real one and the proxy: the giver keeps its body as a
+// proxy, the receiver's proxy becomes the real vehicle, with the state that
+// came with it. Nothing is spawned or deleted: no pop, no duplicate.
+
+// Who runs a shared vehicle now (host -> every player who sees it, and the
+// giver; kept with the NPC domain for late joiners and resyncs).
+struct TrafficOwnership {
+  TrafficId id{};
+  PlayerId owner{};
+  friend bool operator==(const TrafficOwnership &, const TrafficOwnership &) = default;
+};
+
+// Host -> the vehicle's owner: give it to `to`.
+struct TrafficHandover {
+  TrafficId id{};
+  PlayerId to{};
+  friend bool operator==(const TrafficHandover &, const TrafficHandover &) = default;
+};
+
+// How the giver leaves it (giver -> host -> receiver), or what the host's
+// record says of it when its owner is gone (kHandoverInherited).
+struct TrafficHandoverState {
+  TrafficId id{};
+  PlayerId from{}; // set by the host from the connection
+  PlayerId to{};
+  Vec3 position;
+  Quat orientation;
+  Vec3 velocity;           // m/s: a car that drove on drives on
+  float health{1.f};       // fraction, 0..1
+  std::uint16_t flags{};   // kTraffic* (kTrafficParked: no driver, it stays put)
+  std::uint8_t handover{}; // kHandoverInherited: built from the record, nobody read the car
+  friend bool operator==(const TrafficHandoverState &, const TrafficHandoverState &) = default;
+};
+
+// Receiver: it runs the vehicle now (or cannot: it goes). Giver: it will not
+// give it (accepted false: a player is getting in, it is claimed).
+struct TrafficHandoverDone {
+  TrafficId id{};
+  bool accepted{};
+  friend bool operator==(const TrafficHandoverDone &, const TrafficHandoverDone &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -2532,7 +2581,8 @@ using Message = std::variant<
     TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
-    BreachResult, NpcVendor>;
+    BreachResult, NpcVendor,
+    TrafficOwnership, TrafficHandover, TrafficHandoverState, TrafficHandoverDone>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions):

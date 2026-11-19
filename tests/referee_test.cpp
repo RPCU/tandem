@@ -120,6 +120,52 @@ TEST_CASE("referee: a guest may not say what is the host's") {
   CHECK(Rules(referee).empty());
 }
 
+TEST_CASE("referee: a shared vehicle's word is its owner's, wherever it was handed") {
+  // Host side: a guest speaks for the vehicles its game runs only.
+  auto host = Host();
+  const auto theirs = proto::MakeTrafficId(2, 1);
+  host.Received(2, proto::TrafficSpawn{.id = theirs, .record = 5}, kSecond);
+  host.Received(2, proto::TrafficStatus{.id = theirs, .health = 0.5f}, kSecond);
+  host.Received(2, proto::Chase{.vehicle = theirs, .target = 3}, kSecond);
+  CHECK(Rules(host).empty());
+  host.Received(3, proto::TrafficStatus{.id = theirs, .health = 0.f}, kSecond);
+  host.Received(3, proto::TrafficGone{.id = theirs}, kSecond);
+  host.Received(3, proto::TrafficSpawn{.id = proto::MakeTrafficId(2, 2)}, kSecond);
+  host.Received(3, proto::TrafficHandoverState{.id = theirs, .to = 1}, kSecond);
+  host.Received(3, proto::VehicleDamage{.vehicle = proto::StreetCar(theirs)}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>(5, "authority.not-owner"));
+  // Who runs it, and the ask to give it away, are the host's to say.
+  host.Received(2, proto::TrafficOwnership{.id = theirs, .owner = 2}, kSecond);
+  host.Received(2, proto::TrafficHandover{.id = theirs, .to = 3}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>(2, "authority.host-only"));
+  // Handed to player 3: its word from now on, 2's no longer.
+  host.Received(2, proto::TrafficHandoverState{.id = theirs, .to = 3}, kSecond);
+  host.Sent(0, proto::TrafficOwnership{.id = theirs, .owner = 3}, kSecond);
+  host.Received(3, proto::TrafficStatus{.id = theirs, .health = 0.4f}, kSecond);
+  host.Received(2, proto::TrafficStatus{.id = theirs, .health = 0.3f}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-owner"});
+
+  // Guest side: requests and hand-overs reach us only for what we run.
+  auto guest = Guest();
+  const auto ours = proto::MakeTrafficId(2, 1), hosts = proto::MakeTrafficId(1, 1);
+  guest.Sent(1, proto::TrafficSpawn{.id = ours}, kSecond);
+  guest.Received(1, proto::TrafficHit{.id = ours, .damage = 1.f}, kSecond);
+  guest.Received(1, proto::TrafficClaim{.id = ours}, kSecond);
+  guest.Received(1, proto::TrafficHandover{.id = ours, .to = 1}, kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::TrafficHit{.id = hosts, .damage = 1.f}, kSecond);
+  guest.Received(1, proto::TrafficHandover{.id = hosts, .to = 3}, kSecond);
+  guest.Received(1, proto::TrafficStatus{.id = ours, .health = 0.f}, kSecond);
+  guest.Received(1, proto::TrafficHandoverState{.id = hosts, .to = 3}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.not-owner", "authority.not-owner",
+                                                 "authority.not-owner", "authority.misdelivered"});
+  // The host's vehicle handed to us: ours from its state on.
+  guest.Received(1, proto::TrafficHandoverState{.id = hosts, .from = 1, .to = 2}, kSecond);
+  guest.Received(1, proto::TrafficHit{.id = hosts, .damage = 1.f}, kSecond);
+  guest.Received(1, proto::TrafficStatus{.id = hosts, .health = 0.f}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.not-owner"});
+}
+
 TEST_CASE("referee: the host may not say what only a guest asks") {
   auto referee = Guest();
   referee.Received(1, proto::ResyncRequest{1}, kSecond);

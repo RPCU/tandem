@@ -29,7 +29,9 @@ bool HostOnly(const p::Message &m) {
                p::Rules, p::SessionLevel, p::NpcLevel, p::TradeCommit, p::TimeSkipResult,
                p::VehicleUnlock, p::StoryRestrictions, p::NpcMotion,
                // Breach Protocol: the host's answer to a breach.
-               p::BreachResult>(m);
+               p::BreachResult,
+               // Who runs a shared vehicle, and the host asking it given away.
+               p::TrafficOwnership, p::TrafficHandover>(m);
 }
 
 // What only a guest sends, and the host never passes on.
@@ -73,12 +75,21 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
       m);
 }
 
-// A world vehicle its owner speaks for (traffic.md: the owner's id is in it).
+// A world vehicle its owner speaks for (traffic.md: the announcer's id is in
+// it, a hand-over moves it): what it is, how it stands, that it is gone, its
+// damage, whom it chases.
 std::optional<p::TrafficId> TrafficOwnedBy(const p::Message &m) {
   if (const auto *spawn = std::get_if<p::TrafficSpawn>(&m))
     return spawn->id;
   if (const auto *status = std::get_if<p::TrafficStatus>(&m))
     return status->id;
+  if (const auto *gone = std::get_if<p::TrafficGone>(&m))
+    return gone->id;
+  if (const auto *chase = std::get_if<p::Chase>(&m))
+    return chase->vehicle;
+  if (const auto *damage = std::get_if<p::VehicleDamage>(&m);
+      damage && p::IsStreetCar(damage->vehicle))
+    return p::TrafficOfSeat(damage->vehicle);
   return std::nullopt;
 }
 std::optional<p::TrafficId> TrafficAsked(const p::Message &m) {
@@ -111,7 +122,8 @@ p::PlayerId *SenderOf(p::Message &message) {
         using M = std::decay_t<decltype(m)>;
         if constexpr (std::is_same_v<M, p::AreaHit> || std::is_same_v<M, p::Regroup> ||
                       std::is_same_v<M, p::RegroupAnswer> ||
-                      std::is_same_v<M, p::NpcHandoverState> || std::is_same_v<M, p::Mark> ||
+                      std::is_same_v<M, p::NpcHandoverState> ||
+                      std::is_same_v<M, p::TrafficHandoverState> || std::is_same_v<M, p::Mark> ||
                       std::is_same_v<M, p::Tag> || std::is_same_v<M, p::TimeSkip> ||
                       std::is_same_v<M, p::TimeSkipVote> || std::is_same_v<M, p::Trade>)
           return &m.from;
@@ -284,6 +296,11 @@ p::PlayerId Referee::OwnerOf(p::NpcId npc) const {
   return it == m_owners.end() ? regions::Announcer(npc) : it->second;
 }
 
+p::PlayerId Referee::CarOwnerOf(p::TrafficId car) const {
+  const auto it = m_carOwners.find(car);
+  return it == m_carOwners.end() ? p::TrafficOwner(car) : it->second;
+}
+
 void Referee::Sent(p::PlayerId to, const p::Message &message, std::uint64_t nowUs) {
   m_nowUs = nowUs;
   ++m_sent[message.index()];
@@ -374,10 +391,26 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
           break;
         }
       }
-    if (const auto car = TrafficOwnedBy(message); car && p::TrafficOwner(*car) != from)
-      Add("authority.not-owner", std::format("player {} sent {} about vehicle {:#x}, which player "
-                                             "{} runs",
-                                             from, name, *car, p::TrafficOwner(*car)));
+    // ...and for the shared vehicles its game runs: a new one of its own
+    // range, else one it runs now (a hand-over moves it). A gone that is
+    // a claim it granted is its word too.
+    if (const auto car = TrafficOwnedBy(message); car) {
+      const bool spawn = std::holds_alternative<p::TrafficSpawn>(message);
+      const auto owner = spawn ? p::TrafficOwner(*car) : CarOwnerOf(*car);
+      if (owner != from)
+        Add("authority.not-owner", std::format("player {} sent {} about vehicle {:#x}, which "
+                                               "player {} runs",
+                                               from, name, *car, owner));
+    }
+    // A hand-over's state only from the vehicle's owner.
+    // (Dropped by the endpoint: it moves nothing, here either.)
+    if (const auto *given = std::get_if<p::TrafficHandoverState>(&message);
+        given && CarOwnerOf(given->id) != from) {
+      Add("authority.not-owner",
+          std::format("player {} gave vehicle {:#x} away, which player {} runs", from, given->id,
+                      CarOwnerOf(given->id)));
+      return;
+    }
     // A guest speaks in its own name only.
     auto stamped = message;
     if (auto *sender = SenderOf(stamped)) {
@@ -425,13 +458,25 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
             std::format("the host sent {} about npc {}, which our game runs", name, npc));
         break;
       }
-  if (const auto car = TrafficAsked(message); car && p::TrafficOwner(*car) != m_self)
+  if (const auto car = TrafficAsked(message); car && CarOwnerOf(*car) != m_self)
     Add("authority.not-owner", std::format("the host passed us {} for vehicle {:#x}, which player "
                                            "{} runs",
-                                           name, *car, p::TrafficOwner(*car)));
-  if (const auto car = TrafficOwnedBy(message); car && p::TrafficOwner(*car) == m_self)
+                                           name, *car, CarOwnerOf(*car)));
+  // (A spawn of ours sent back is a repeat the endpoint ignores.)
+  if (const auto car = TrafficOwnedBy(message);
+      car && CarOwnerOf(*car) == m_self && !std::holds_alternative<p::TrafficSpawn>(message))
     Add("authority.not-owner",
         std::format("the host sent {} about vehicle {:#x}, which our game runs", name, *car));
+  if (const auto *handover = std::get_if<p::TrafficHandover>(&message);
+      handover && CarOwnerOf(handover->id) != m_self)
+    Add("authority.not-owner", std::format("the host asks us to hand over vehicle {:#x}, which "
+                                           "player {} runs",
+                                           handover->id, CarOwnerOf(handover->id)));
+  if (const auto *given = std::get_if<p::TrafficHandoverState>(&message);
+      given && given->to != m_self)
+    Add("authority.misdelivered", std::format("the host gave us the state of vehicle {:#x}, which "
+                                              "goes to player {}",
+                                              given->id, given->to));
   if (const auto *crime = std::get_if<p::Crime>(&message); crime && crime->player != m_self)
     Add("authority.misdelivered",
         std::format("a crime of player {} came to us (player {})", crime->player, m_self));
@@ -512,6 +557,10 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           finite = std::isfinite(m.rate) && Finite(m.anchor) && std::isfinite(m.yaw) &&
                    std::isfinite(m.radius);
           inRange = !finite || (m.rate >= 0.f && m.rate <= p::kMaxSceneRate && m.tier <= 5);
+        } else if constexpr (std::is_same_v<M, p::TrafficHandoverState>) {
+          finite = Finite(m.position) && Finite(m.orientation) && Finite(m.velocity) &&
+                   std::isfinite(m.health);
+          inRange = !finite || (m.health >= 0.f && m.health <= 1.001f);
         } else if constexpr (std::is_same_v<M, p::NpcHandoverState>) {
           finite = Finite(m.position) && std::isfinite(m.yaw) && std::isfinite(m.health) &&
                    std::isfinite(m.poise);
@@ -1179,6 +1228,23 @@ void Referee::Note(const p::Message &message, bool sent) {
             m_owners[m.npc] = m.to;
           if (!sent && m.to == m_self)
             m_given.insert(m.npc);
+        } else if constexpr (std::is_same_v<M, p::TrafficOwnership>) {
+          m_carOwners[m.id] = m.owner;
+        } else if constexpr (std::is_same_v<M, p::TrafficHandoverState>) {
+          // As for an NPC: the giver's state makes the receiver its owner.
+          if (m.to != p::kNoPlayer)
+            m_carOwners[m.id] = m.to;
+          if (!sent && m.to == m_self)
+            m_carsGiven.insert(m.id);
+        } else if constexpr (std::is_same_v<M, p::TrafficHandoverDone>) {
+          // A receiver that cannot run it gives it up: the host's to end.
+          if (sent && !m.accepted && m_carsGiven.erase(m.id) > 0)
+            m_carOwners[m.id] = m_hostPlayer;
+          else if (sent)
+            m_carsGiven.erase(m.id);
+        } else if constexpr (std::is_same_v<M, p::TrafficGone>) {
+          m_carOwners.erase(m.id);
+          m_carsGiven.erase(m.id);
         } else if constexpr (std::is_same_v<M, p::NpcHandoverDone>) {
           // A receiver that cannot run what it was given gives it up: the
           // host speaks for it from then on (its end for everyone). A giver

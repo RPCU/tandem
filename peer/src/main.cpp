@@ -352,6 +352,13 @@ struct Options {
   // ...or this long after our own endpoint says we are linked (-1: never).
   int regionLeaveLinkedSeconds{-1};
   float regionSpeed{25.f};
+  // region: world vehicles of our own (docs/architecture/traffic.md, "Who
+  // owns an area"): this many cars round our V, the first one driven by our
+  // last NPC (--region-driver), chasing the first player we meet
+  // (--region-chase); left where they are when we walk off, like the NPCs.
+  int regionCars{0};
+  bool regionDriver{};
+  bool regionChase{};
   bool check{}; // parse the options, then exit
   // Down and out: our V goes down (revivable) or out N s after another player
   // is there (-1: never); a downed other V is revived after N s (-1: never).
@@ -499,6 +506,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     are linked (the host's Regions reached us: our NPCs' states\n"
          "                     flow), whatever the clock says\n"
          "  --region-speed V   region: how fast it walks, m/s (default 25)\n"
+         "  --region-cars N    region: run N world vehicles of our own round our V (the\n"
+         "                     --traffic-vehicle record), left behind with the NPCs\n"
+         "  --region-driver    region: our last NPC drives our first car (NpcSeat)\n"
+         "  --region-chase     region: our first car chases the first player we meet\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
          "  --look L           random | echo: random clothes of its own (default), on a\n"
@@ -1049,6 +1060,14 @@ Options Parse(int argc, char **argv) {
       options.rideAlong = true;
       continue;
     }
+    if (flag == "--region-driver") {
+      options.regionDriver = true;
+      continue;
+    }
+    if (flag == "--region-chase") {
+      options.regionChase = true;
+      continue;
+    }
     if (flag == "--play-loop") {
       options.playLoop = true;
       continue;
@@ -1245,6 +1264,8 @@ Options Parse(int argc, char **argv) {
       options.regionLeaveLinkedSeconds = Number<int>(value);
     else if (flag == "--region-speed")
       options.regionSpeed = std::max(0.1f, Number<float>(value));
+    else if (flag == "--region-cars")
+      options.regionCars = std::clamp(Number<int>(value), 0, 16);
     else if (flag == "--detect-at")
       options.detectAtSeconds = Number<int>(value);
     else if (flag == "--detect-for")
@@ -2422,6 +2443,41 @@ public:
       Log("region: running {} NPC(s) of our own ({}), ids from {}", m_options.regionNpcs,
           m_options.regionRecord, tandem::regions::MakeNpcId(endpoint.You(), 1));
     }
+    // Our street: cars round us, the first one driven by our first NPC; a
+    // game announces vehicles only where it runs the area round its V.
+    if (!m_carsAnnounced && m_options.regionCars > 0 && endpoint.OwnsArea()) {
+      m_carsAnnounced = true;
+      for (int i = 0; i < m_options.regionCars; ++i) {
+        const auto id = proto::MakeTrafficId(endpoint.You(), static_cast<std::uint32_t>(i + 1));
+        const bool driven = i == 0 && m_options.regionDriver && m_options.regionNpcs > 0;
+        m_cars[id] = {.position = CarAround(at, i),
+                      .slot = i,
+                      .flags = driven ? proto::kTrafficLights : proto::kTrafficParked};
+        endpoint.SendTrafficSpawn({.id = id,
+                                   .record = TweakDBID(m_options.trafficVehicle),
+                                   .position = m_cars[id].position,
+                                   .flags = m_cars[id].flags});
+        if (driven)
+          endpoint.SendNpcSeat(
+              {.npc = tandem::regions::MakeNpcId(endpoint.You(),
+                                                 static_cast<std::uint32_t>(m_options.regionNpcs)),
+               .owner = proto::TrafficSeatOwner(id),
+               .seat = CName("seat_front_left")});
+      }
+      Log("street: running {} vehicle(s) of our own, ids from {:#x}{}", m_options.regionCars,
+          proto::MakeTrafficId(endpoint.You(), 1),
+          m_options.regionDriver ? ", our last npc at the wheel of the first" : "");
+    }
+    // --region-chase: our first car goes after the first player we meet.
+    if (m_options.regionChase && !m_chased && !m_cars.empty()) {
+      const auto first = m_cars.begin()->first;
+      if (const auto linked = endpoint.Linked(); !linked.empty() && endpoint.OwnsTraffic(first)) {
+        m_chased = true;
+        endpoint.SendChase(
+            {.vehicle = first, .target = linked.front(), .flags = proto::kChaseRamming});
+        Log("street: our vehicle {:#x} chases player {}", first, linked.front());
+      }
+    }
     if (nowUs - m_lastStatesUs < 100'000)
       return;
     m_lastStatesUs = nowUs;
@@ -2434,6 +2490,19 @@ public:
       states.npcs.push_back({.npc = id, .position = npc.position});
     }
     endpoint.SendNpcStates(std::move(states));
+    // Our cars move with us (and say so) until we leave them.
+    proto::TrafficStates cars;
+    for (auto &[id, car] : m_cars) {
+      if (!follow || car.slot < 0)
+        continue;
+      const auto was = car.position;
+      car.position = CarAround(at, car.slot);
+      const Vec3 velocity{(car.position.x - was.x) * 10.f, (car.position.y - was.y) * 10.f, 0.f};
+      cars.cars.push_back(tandem::traffic::Pack(
+          {.id = id, .position = car.position, .orientation = {}, .velocity = velocity}));
+    }
+    if (!cars.cars.empty())
+      endpoint.SendTrafficStates(std::move(cars));
   }
 
   // True: the event was about the NPCs we run, and is dealt with.
@@ -2483,6 +2552,60 @@ public:
           state.flags & proto::kHandoverInherited ? ", inherited" : "");
       return true;
     }
+    // Our cars: given away, taken over, hit (traffic.md, "Who owns an area").
+    if (const auto *give = std::get_if<events::TrafficGive>(&event)) {
+      const auto it = m_cars.find(give->id);
+      if (it == m_cars.end()) {
+        endpoint.AnswerTraffic(give->id, false);
+        return true;
+      }
+      endpoint.GiveTraffic({.id = give->id,
+                            .to = give->to,
+                            .position = it->second.position,
+                            .health = it->second.health,
+                            .flags = it->second.flags});
+      Log("street: handed vehicle {:#x} over to player {} (health {:.2f})", give->id, give->to,
+          it->second.health);
+      m_cars.erase(it);
+      return true;
+    }
+    if (const auto *take = std::get_if<events::TrafficTake>(&event)) {
+      const auto &state = take->state;
+      m_cars[state.id] = {
+          .position = state.position, .health = state.health, .slot = -1, .flags = state.flags};
+      endpoint.AnswerTraffic(state.id, true);
+      Log("street: took vehicle {:#x} over from player {} (health {:.2f}, flags {:#x}{})", state.id,
+          state.from, state.health, state.flags,
+          state.handover & proto::kHandoverInherited ? ", inherited" : "");
+      return true;
+    }
+    if (const auto *owner = std::get_if<events::TrafficOwnerChanged>(&event)) {
+      if (owner->was == endpoint.You() && m_cars.erase(owner->id) > 0)
+        Log("street: vehicle {:#x} is no longer ours (now player {}'s)", owner->id, owner->owner);
+      else
+        Log("street: vehicle {:#x} is now run by player {} (was {})", owner->id, owner->owner,
+            owner->was);
+      return true;
+    }
+    if (const auto *hit = std::get_if<events::TrafficHitBy>(&event)) {
+      const auto it = m_cars.find(hit->hit.id);
+      if (it == m_cars.end())
+        return false;
+      it->second.health = std::max(0.f, it->second.health - hit->hit.damage / 1000.f);
+      if (it->second.health <= 0.f)
+        it->second.flags |= proto::kTrafficDestroyed;
+      endpoint.SendTrafficStatus(
+          {.id = hit->hit.id, .health = it->second.health, .flags = it->second.flags});
+      Log("street: player {} hit our vehicle {:#x} for {:.0f}: health {:.2f}", hit->hit.player,
+          hit->hit.id, hit->hit.damage, it->second.health);
+      return true;
+    }
+    if (const auto *left = std::get_if<events::TrafficLeft>(&event);
+        left && m_cars.erase(left->gone.id) > 0) {
+      Log("street: our vehicle {:#x} gone (reason {}, player {})", left->gone.id, left->gone.reason,
+          left->gone.player);
+      return true;
+    }
     if (const auto *owner = std::get_if<events::NpcOwnerChanged>(&event)) {
       if (owner->was == endpoint.You() && m_npcs.erase(owner->npc) > 0)
         Log("region: npc {} is no longer ours (now player {}'s)", owner->npc, owner->owner);
@@ -2530,6 +2653,19 @@ private:
     float health{1.f};
     int slot{-1}; // where it stands around us (-1: taken over, it stays put)
   };
+  struct Car {
+    Vec3 position;
+    float health{1.f};
+    int slot{-1}; // where it stands around us (-1: taken over, it stays put)
+    std::uint16_t flags{};
+  };
+  // A ring 6 m around our V, off the NPCs' ring.
+  static Vec3 CarAround(const Vec3 &at, int slot) {
+    const float angle = 0.5f + 1.1f * static_cast<float>(slot);
+    return {at.x + 6.f * std::cos(angle), at.y + 6.f * std::sin(angle), at.z};
+  }
+  std::map<tandem::proto::TrafficId, Car> m_cars;
+  bool m_chased{}, m_carsAnnounced{};
   // A ring 3 m around our V.
   static Vec3 Around(const Vec3 &at, int slot) {
     const float angle = 0.9f * static_cast<float>(slot);
@@ -5181,9 +5317,12 @@ int main(int argc, char **argv) {
           }
           if (now >= nextMountedShot) {
             nextMountedShot = now + 2s;
+            // 30 m ahead of the vehicle's driver (its game fires its real
+            // guns there: vehicle-combat.md, "A guest on someone else's gun").
+            const Vec3 at = otherV ? otherV->position : Vec3{};
             endpoint->SendMountedFire({.vehicle = gunnerCar,
                                        .weapon = TweakDBID("Items.Panzer_Cannon"),
-                                       .target = {0.f, 30.f, 0.f}});
+                                       .target = {at.x, at.y + 30.f, at.z + 1.f}});
             Log("gunner: fire");
           }
           if (t > 20.0) {

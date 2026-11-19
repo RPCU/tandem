@@ -31,6 +31,7 @@ add_library(tandem_core STATIC
   src/instance.cpp
   src/traffic.cpp
   src/vehicle_combat.cpp
+  src/endpoint_traffic.cpp
   src/endpoint_vehicles.cpp
   src/devices.cpp
   src/regions.cpp

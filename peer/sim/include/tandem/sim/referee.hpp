@@ -164,8 +164,10 @@ private:
   // An owner's word on an NPC that left our view (authority.not-shared).
   void NeedShown(proto::NpcId npc, const char *what);
   void NeedPlayer(proto::PlayerId player, const char *what);
-  // Who runs an NPC: its announcer, until the host says otherwise.
+  // Who runs an NPC: its announcer, until the host says otherwise. The same
+  // for a shared vehicle (traffic.md, "Who owns an area").
   proto::PlayerId OwnerOf(proto::NpcId npc) const;
+  proto::PlayerId CarOwnerOf(proto::TrafficId car) const;
   void Moved(proto::PlayerId subject);
 
   bool m_host{};
@@ -183,8 +185,10 @@ private:
   // The record.
   std::set<proto::PlayerId> m_players, m_everPlayers;
   std::map<proto::NpcId, Npc> m_npcs;
-  std::map<proto::NpcId, proto::PlayerId> m_owners; // NpcOwner said so
-  std::set<proto::NpcId> m_given;                   // handed to us, not yet run
+  std::map<proto::NpcId, proto::PlayerId> m_owners;        // NpcOwner said so
+  std::set<proto::NpcId> m_given;                          // handed to us, not yet run
+  std::map<proto::TrafficId, proto::PlayerId> m_carOwners; // TrafficOwnership said so
+  std::set<proto::TrafficId> m_carsGiven;                  // handed to us, not yet run
   std::map<proto::NpcId, Held> m_holds;
   std::map<proto::PlayerId, LifeOf> m_lives;
   std::map<proto::PlayerId, Since> m_time;
