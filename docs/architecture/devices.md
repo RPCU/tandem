@@ -169,7 +169,10 @@ world untouched.
 - Mock player: `tandem-peer … --device ENTITY:CLASS:WORDS[@SECONDS]`
   operates a device by id (a guest asks; a host says its own is that);
   `--device-answer WORDS --device-after N` changes back every device another
-  player just changed. It logs every device it hears of.
+  player just changed. It logs every device it hears of. As a host it has
+  no world: a guest's request is taken as said. `tests/peer_devices.sh`
+  (part of `task test`) runs a host and two guests through it. A recorded
+  host session (`--play-session`) replays the host's device words too.
 - In game: `tools/game.sh cmd device` (counts), `device near|goto|tell
 [KIND]`, `device open|close|lock|unlock|on|off|explode|distract|friendly|
 hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
