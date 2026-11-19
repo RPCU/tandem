@@ -73,6 +73,10 @@ struct PlayersView {
   const std::map<proto::PlayerId, proto::Elsewhere> &elsewhere;
   // Who is wanted (a V with no heat counts like one never heard of).
   const std::map<proto::PlayerId, proto::Heat> &heat;
+  // Who is linked with whom (Regions.pairs: regions.md): the same for every
+  // player. A lost Regions is otherwise never sent again until links change,
+  // and an owner that believes it is linked with nobody sends no NPC states.
+  const std::vector<proto::PlayerId> *links = nullptr;
 };
 std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self);
 

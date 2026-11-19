@@ -774,6 +774,12 @@ private:
   bool Sees(proto::PlayerId viewer, proto::PlayerId owner) const {
     return viewer != owner && m_links.Linked(viewer, owner);
   }
+  // Host: `viewer`'s game shows `npc` (in the shared record, its owner linked
+  // with it). An owner's word to one player about its NPC (a hit, a cue, a
+  // shot, a hack) goes only where this holds, like its states.
+  bool SharedWith(proto::NpcId npc, proto::PlayerId viewer) const {
+    return m_npcs.contains(npc) && Sees(viewer, NpcOwner(npc));
+  }
   // Host: an owner's word on its NPC, to every guest that sees it.
   void ShareNpc(const proto::Message &message, proto::PlayerId owner, net::PeerId except = 0);
   // An owner's word from our own game: to the host, or to whoever sees it.
@@ -857,6 +863,13 @@ private:
     int tries{};
   };
   std::map<proto::NpcId, Handover> m_handovers;
+  // Host: `npc` is being handed from or to `player`. Until it is done, that
+  // player's word on what it runs may not have caught up with our record:
+  // its set neither drops nor corrects it, and its owned digest leaves it out.
+  bool InHandover(proto::NpcId npc, proto::PlayerId player) const {
+    const auto it = m_handovers.find(npc);
+    return it != m_handovers.end() && (it->second.from == player || it->second.to == player);
+  }
   std::uint64_t m_handoversDone{}, m_inherited{};
   // Giver: what we gave, until we hear who owns it. Receiver: what we took.
   std::map<proto::NpcId, proto::NpcHandoverState> m_given;

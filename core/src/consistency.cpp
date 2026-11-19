@@ -158,6 +158,11 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
       hash.Add(std::uint64_t{id})
           .Add(std::uint64_t{h.stage})
           .Add(std::uint64_t{static_cast<std::uint8_t>(h.state)});
+  if (players.links) {
+    hash.Add(std::uint64_t{0xAA});
+    for (const auto id : *players.links)
+      hash.Add(std::uint64_t{id});
+  }
   return hash.Value();
 }
 

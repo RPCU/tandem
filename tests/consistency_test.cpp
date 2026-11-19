@@ -77,6 +77,14 @@ TEST_CASE("the players digest leaves out what is the viewer's own") {
   CHECK(consistency::PlayersDigest(view, 2) == away);
   heat[1] = {.player = 1, .stage = 2, .state = proto::HeatState::Searching};
   CHECK(consistency::PlayersDigest(view, 2) != away);
+
+  // Who is linked with whom (regions): a lost Regions is a difference.
+  std::vector<proto::PlayerId> pairs{1, 2}, none;
+  auto linked = view, apart = view;
+  linked.links = &pairs;
+  apart.links = &none;
+  CHECK(consistency::PlayersDigest(linked, 2) != consistency::PlayersDigest(apart, 2));
+  CHECK(consistency::PlayersDigest(linked, 2) == consistency::PlayersDigest(linked, 2));
 }
 
 TEST_CASE("the traffic digest follows the set, the records and how each vehicle stands") {

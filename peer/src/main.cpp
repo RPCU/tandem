@@ -31,7 +31,8 @@
 //           stands --region-far metres from your V with --region-npcs NPCs it
 //           runs itself (announced, moved, hurt and killed by this process),
 //           walks up to your V --region-walk-at seconds in (its NPCs with
-//           it), and off again at --region-leave-at, leaving them with you:
+//           it), and off again at --region-leave-at (or --region-leave-linked
+//           seconds after it is up by you and knows it is linked), leaving them with you:
 //           the host then hands them over. It gives and takes NPCs as a game
 //           would, and logs every step ("region: ...")
 //   course  runs a scripted course ahead of your V, every way a V moves:
@@ -263,6 +264,8 @@ struct Options {
   std::string regionRecord{"Character.kab_tyger_claws_biker1_ranged1_saratoga_ma"};
   int regionWalkAtSeconds{10};
   int regionLeaveAtSeconds{-1};
+  // ...or this long after our own endpoint says we are linked (-1: never).
+  int regionLeaveLinkedSeconds{-1};
   float regionSpeed{25.f};
   bool check{}; // parse the options, then exit
   // Down and out: our V goes down (revivable) or out N s after another player
@@ -283,7 +286,8 @@ struct Options {
   int deviceAfterSeconds{3};
   // Faults on what we send (docs/architecture/consistency.md, Consistency).
   float drop{}, dup{};
-  int vanishAtSeconds{-1}; // end without a goodbye this long into the session (-1: never)
+  std::uint32_t faultSeed{}; // 0: a new one each run (logged)
+  int vanishAtSeconds{-1};   // end without a goodbye this long into the session (-1: never)
   // The street (docs/architecture/traffic.md). Host: this many cars driving
   // round the guest, one more parked, of this record; the first one burns
   // and blows up this long in (-1: never). Guest: ram a shared vehicle this
@@ -374,6 +378,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --region-walk-at S region: walk up to the other V this long in (default 10;\n"
          "                     -1: stay away)\n"
          "  --region-leave-at S region: walk off again, leaving the NPCs (default -1: never)\n"
+         "  --region-leave-linked S region: walk off S seconds after our endpoint says we\n"
+         "                     are linked (the host's Regions reached us: our NPCs' states\n"
+         "                     flow), whatever the clock says\n"
          "  --region-speed V   region: how fast it walks, m/s (default 25)\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
@@ -532,6 +539,7 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     too, as a bug would lose them: digests and resyncs must heal it\n"
          "  --dup P            send a state message twice with probability P (0..1): it must\n"
          "                     be applied once\n"
+         "  --fault-seed N     the seed of --drop and --dup (default: a new one, logged)\n"
          "  --metro-at N       metro: board the NCART N seconds after another player is in\n"
          "                     (default 5): it stands beside your V until then\n"
          "  --metro-for N      metro: ride for N seconds (default 40), skipping (ten times\n"
@@ -760,7 +768,9 @@ Options Parse(int argc, char **argv) {
       if (!(p >= 0.f && p <= 1.f))
         Usage(std::format("{} is a probability (0..1), not {}", flag, value));
       (flag == "--drop" ? options.drop : options.dup) = p;
-    } else if (flag == "--hack-npcs")
+    } else if (flag == "--fault-seed")
+      options.faultSeed = Number<std::uint32_t>(value);
+    else if (flag == "--hack-npcs")
       options.hackNpcsSeconds = Number<int>(value);
     else if (flag == "--hack-action")
       options.hackAction = std::string(value);
@@ -858,6 +868,8 @@ Options Parse(int argc, char **argv) {
       options.regionWalkAtSeconds = Number<int>(value);
     else if (flag == "--region-leave-at")
       options.regionLeaveAtSeconds = Number<int>(value);
+    else if (flag == "--region-leave-linked")
+      options.regionLeaveLinkedSeconds = Number<int>(value);
     else if (flag == "--region-speed")
       options.regionSpeed = std::max(0.1f, Number<float>(value));
     else if (flag == "--detect-at")
@@ -2063,6 +2075,7 @@ public:
   std::uint64_t m_regionStartUs{}, m_regionLastUs{};
   float m_regionX{};
   bool m_regionLeaving{};
+  std::uint64_t m_regionLinkedUs{}, m_regionArrivedUs{};
   // --path: the saved states to replay.
   void SetPath(std::vector<PlayerState> path) { m_path = std::move(path); }
 
@@ -2117,8 +2130,17 @@ public:
       m_regionX = m_options.regionFar;
     }
     const auto seconds = static_cast<double>(nowUs - m_regionStartUs) / 1e6;
+    // Once leaving, for good (walking off unlinks us).
+    const bool wasLeaving = m_regionLeaving;
     m_regionLeaving =
-        m_options.regionLeaveAtSeconds >= 0 && seconds >= m_options.regionLeaveAtSeconds;
+        m_regionLeaving ||
+        (m_options.regionLeaveAtSeconds >= 0 && seconds >= m_options.regionLeaveAtSeconds) ||
+        (m_options.regionLeaveLinkedSeconds >= 0 && m_regionLinkedUs != 0 &&
+         m_regionArrivedUs != 0 &&
+         nowUs - std::max(m_regionLinkedUs, m_regionArrivedUs) >=
+             static_cast<std::uint64_t>(m_options.regionLeaveLinkedSeconds) * 1'000'000);
+    if (m_regionLeaving && !wasLeaving)
+      Log("region: walking off, leaving our NPCs where they are");
     const bool near = !m_regionLeaving && m_options.regionWalkAtSeconds >= 0 &&
                       seconds >= m_options.regionWalkAtSeconds;
     const float goal = near ? std::min(8.f, m_options.regionFar) : m_options.regionFar;
@@ -2129,6 +2151,9 @@ public:
       m_regionX = std::max(goal, m_regionX - step);
     else
       m_regionX = std::min(goal, m_regionX + step);
+    // Up by the other V (--region-leave-linked counts from then).
+    if (near && m_regionX == goal && m_regionArrivedUs == 0)
+      m_regionArrivedUs = nowUs;
     PlayerState out;
     out.position = {m_regionAnchor->x + m_regionX, m_regionAnchor->y, m_regionAnchor->z};
     if (m_regionX != before)
@@ -2140,6 +2165,13 @@ public:
   }
   // region: we are walking off (our NPCs stay where they are).
   bool RegionLeaving() const { return m_regionLeaving; }
+  // region: our endpoint says we are linked with someone (or no longer).
+  void SetRegionLinked(bool linked, std::uint64_t nowUs) {
+    if (!linked)
+      m_regionLinkedUs = 0;
+    else if (m_regionLinkedUs == 0)
+      m_regionLinkedUs = nowUs;
+  }
 
   // watch: where the other V is, 30 m under it (or --offset): out of
   // sight, out of every NPC's reach, never in anyone's way, while the host
@@ -2687,9 +2719,10 @@ int main(int argc, char **argv) {
     return 1;
   }
   if (options.drop > 0.f || options.dup > 0.f) {
-    endpoint->SetFaults({.drop = options.drop, .dup = options.dup, .seed = std::random_device{}()});
-    Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice",
-        options.drop * 100, options.dup * 100);
+    const auto seed = options.faultSeed != 0 ? options.faultSeed : std::random_device{}();
+    endpoint->SetFaults({.drop = options.drop, .dup = options.dup, .seed = seed});
+    Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice (seed {})",
+        options.drop * 100, options.dup * 100, seed);
   }
   // --look random: the same clothes all session; its body keys from the
   // cache, or as soon as a look of its body is heard.
@@ -3142,6 +3175,8 @@ int main(int argc, char **argv) {
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
       // region: what concerns the NPCs we run.
+      if (const auto *linked = std::get_if<tandem::events::RegionsChanged>(&event))
+        puppeteer.SetRegionLinked(!linked->linked.empty(), tandem::net::NowUs());
       if (regionNpcs && regionNpcs->On(event, *endpoint))
         continue;
       std::visit(

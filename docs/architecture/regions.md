@@ -189,6 +189,16 @@ host                 giver O                         receiver P
   A request that got no answer after the retries is dropped (the giver
   still owns the NPC; the next pass asks again if it still applies). The
   digests (§8) cover the owner map.
+- **Crossing the digests.** While a hand-over is in flight the two games'
+  word on who runs the NPC lags the host's record by design (the receiver
+  learns it owns the NPC from the state, which may be lost and sent again a
+  second later). So the host leaves that NPC out of the giver's and the
+  receiver's `OwnedDigest`, an owner's set (§8) never drops it, and a resync's
+  `NpcSet` to either still names it. Before this, an owner's set that
+  crossed the state made the host forget an NPC the receiver then woke up:
+  run for good by a guest whose spawns of it the host refused (another's
+  range of ids), a resend loop that never healed (the lossy loopback test
+  failed about one run in five).
 
 **In the scripts** (`Npcs.reds`, `Regions.reds`):
 
@@ -213,7 +223,10 @@ message changed; the endpoint routes by owner.
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NpcSpawn`, `NpcStates`, `NpcGone`, `NpcHealth`, `NpcAnims`, `NpcShot`, `NpcHold`, `NpcSeat`, `NpcPoise`, `NpcWound`, `NpcHackState`, `NpcStatus`, `NpcAwareness` | the owner → every player linked with it (a guest's go through the host, which checks the sender owns the NPC, keeps the record, and relays) |
 | `NpcHit`, `NpcStrike`, `NpcEffect`, `NpcHack`, `NpcAction`, `ShotHit`                                                                                             | any player → the owner (through the host; the host stamps the sender)                                                                       |
-| `PlayerHit`, `PlayerHack`, `NpcCue`, `NpcShotAt`, `NpcActionReply`                                                                                                | the owner → one player (through the host; replies go to whoever asked: the host remembers the asker of each forwarded `NpcAction`)          |
+| `PlayerHit`, `PlayerHack`, `NpcCue`, `NpcShotAt`                                                                                                                  | the owner → one player, only if that player's game shows the NPC (in the record, linked with its owner), through the host                   |
+| `NpcActionReply`                                                                                                                                                  | the owner → whoever asked (the host remembers the asker of each forwarded `NpcAction`), even if the link broke since: it asked              |
+| `ActorPose`                                                                                                                                                       | the host → the players linked with it (a scene actor is a pinned NPC of the host's)                                                         |
+| `AreaHit`, `PlayerHit` with no NPC (`npc` 0, host only)                                                                                                           | to the V hit, whatever the links: not an NPC's word (a V's grenade on another V; a hit of the host's world no NPC is shared for)            |
 | `Noise`                                                                                                                                                           | a player → every player linked with it: each owner's NPCs hear it from the puppet                                                           |
 | `SharedItem` on a corpse                                                                                                                                          | the owner → the players linked with it                                                                                                      |
 | `TimeEffect`                                                                                                                                                      | unchanged (to everyone); each owner slows its own NPCs inside the bubble                                                                    |
@@ -223,6 +236,19 @@ message changed; the endpoint routes by owner.
 
 `RegionHold` goes from a player's game to everyone (the host stamps and
 relays it, and keeps who holds for late joiners).
+
+**Only to the games that show the NPC.** Everything an owner says about its
+NPC goes where its states go: to the players its NPC is shared with
+(`Endpoint::SharedWith`: in the host's record, its owner linked with that
+player), the host's own game included. That holds for the word to one
+player too: a hit, a hack, a cue or a shot aimed at a V whose game does not
+show the NPC (a guest just past `kLinkOut`, one in another region, an NPC
+past its region's edge) is dropped by the host (`SendPlayerHit` and
+`SendNpcShotAt` return false, and the plugin logs it). Before, the endpoint
+passed these on whatever the links: the
+guest's game dropped the shot (shooter unknown) but took the hit of an NPC
+it never saw. Requests (`NpcHit`, `NpcStrike`, `NpcAction`…) still reach the
+owner whatever the asker shows: one in flight when a link breaks counts.
 
 `NpcStates` from a guest are renumbered by the host (one sequence for every
 receiver, so the epoch fence and the tracks keep working) and keep the
@@ -322,9 +348,18 @@ replaced. Twins of placed NPCs are merged at once (§3).
   NPCs that guest owns, as the host's record has them. The guest hashes its
   own list; a mismatch twice in a row makes it send its whole set again
   (`NpcSet` of its ids, then spawn, health, hold of each). The host drops
-  what the set no longer names. This is the same mechanism pointed the
-  other way, for what a guest's lost `NpcSpawn` or `NpcGone` would break.
-- **Links** are in the players digest, and sent with a players resync.
+  what the set no longer names, and answers what it names that the record
+  gives to another (`NpcOwner`: a word on a new owner that was lost) or no
+  longer holds and that is not of the guest's own range (`NpcGone`: its spawn
+  of it would be refused). Neither applies to an NPC in a hand-over with that
+  guest (§4). This is the same mechanism pointed the other way, for what a
+  guest's lost `NpcSpawn`, `NpcGone` or `NpcOwner` would break.
+- **Links** are in the players digest (`Regions.pairs`), and sent with a
+  players resync. They were said to be and were not: a lost `Regions` was
+  never sent again until the links changed, and an owner that believed it
+  was linked with nobody sent no NPC states, so the host decided hand-overs
+  from where its NPCs had been (`peer-regions` lossy stage, about one run in
+  three under load).
 - **Idempotence**: a repeated `NpcOwner`, `Regions`, `NpcHandoverState` or
   `NpcHandoverDone` changes nothing and raises no event. A spawn of a known
   NPC is not applied again. `NpcHandover*` are one-shots for the fault
@@ -450,12 +485,21 @@ Without the game (all in `task test`):
 - `regions_endpoint_test` (loopback UDP, real endpoints): a guest owns NPCs
   and the host shows them; apart, nothing is shared either way; meeting
   shares both sets; hits, effects, hacks, actions and replies reach the
-  owner and come back; a hand-over when the owner walks away, the same with
-  a third of all messages lost, a refusal; an owner that vanishes (heirs,
-  and nobody near); an owner's epoch; digests in both directions; the area owner around
-  each player as every endpoint sees it, with its hysteresis.
+  owner and come back; an owner's word on its NPC (hits, cues, shots,
+  hacks, animations, holds, wounds, poise, health) reaches no guest just
+  past the link distance, while a V's own area hit still does; a lost
+  `Regions` healed by the players digest; a hand-over when the owner walks
+  away, the same with a third of all messages lost (every NPC run by
+  exactly one game, whatever was lost; 50 runs in a row), a refusal; an old
+  owner that missed the word on the new one stops running it; an owner
+  that vanishes (heirs, and nobody near); an owner's epoch; digests in both
+  directions; the area owner around each player as every endpoint sees it,
+  with its hysteresis.
 - `peer_regions.sh`: two mock players, one hosting and one in
-  `--mode region`, far apart and then walking together, with `--drop`.
+  `--mode region`, far apart and then walking together, with `--drop`
+  (the lossy stage walks off once the guest knows it is linked,
+  `--region-leave-linked`, and waits as long as a few lost resyncs take;
+  `--fault-seed` replays a run's faults, whose seed is logged).
 
 In the game (one PC and the mock player):
 
