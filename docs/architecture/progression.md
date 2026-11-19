@@ -32,9 +32,9 @@ tandem does, with the scenario that checks it in game.
 | Quest, gig and NCPD rewards                                        | both players, once                                                                                       | each game pays its own V                      | `GiveReward` pays the local player by its own level (§13.38.2)                                                                                                                                       | was (`QuestReward`); **now through the carry-over ledger** in the guest's save (`quest-carryover.md`: once per quest and reward, whoever hosts; nothing for a quest the guest finished alone; a helper's own copy of a gig pays nothing again) |
 | Loot                                                               | rolled per player in their own game                                                                      | each player's game                            | picked-up items are scaled to the **picker** (§13.38.4); whether the NPC's level enters the native roll is not in the scripts                                                                        | was (Loot.reds). Open: measure a scaled NPC's drops in game                                                                                                                                                                                    |
 | Money                                                              | each player's own                                                                                        | that player's game                            | an item in V's inventory; bounties, shards and rewards pay the local player (§13.38.2, §13.38.5)                                                                                                     | nothing needed                                                                                                                                                                                                                                 |
-| Vendors: stock, prices, money                                      | each player's own; the NPC is the world's                                                                | each player's game (`MarketSystem`, its save) | a vendor is created per entity whose record has a vendor id; the buyer is always `GetPlayer` (§13.38.5)                                                                                              | **gap, not built**: see "Vendors" below                                                                                                                                                                                                        |
-| Ripperdocs                                                         | as vendors                                                                                               | each player's game                            | the same vendor, type ripperdoc; cyberware goes on the local V (§13.38.5)                                                                                                                            | the same gap                                                                                                                                                                                                                                   |
-| Vending machines, drop points                                      | each player's own device                                                                                 | each player's game                            | the game's own device, `GetPlayer` pays (§13.38.5)                                                                                                                                                   | nothing needed (gig hand-ins stay the host's: its quests)                                                                                                                                                                                      |
+| Vendors: stock, prices, money                                      | each player's own; the NPC is the world's                                                                | each player's game (`MarketSystem`, its save) | a vendor is created per entity whose record has a vendor id; the buyer is always `GetPlayer` (§13.38.5); the screen is bound to an entity, found by id (§13.80)                                      | **built, not run in game**: beside another game's vendor, our own game's vendor of the same placed entity opens (see "Vendors" below); scenario `vendor-guest`                                                                                 |
+| Ripperdocs, clothing stores                                        | as vendors                                                                                               | each player's game                            | the same vendor, type ripperdoc; cyberware goes on the local V (§13.38.5); the hub shows the ripperdoc's tabs for a vendor of that type (§13.80)                                                     | as vendors; the new look reaches the others when the screen closes (the look resend, `activities.md`)                                                                                                                                          |
+| Vending machines, drop points                                      | each player's own device                                                                                 | each player's game                            | the game's own device, `GetPlayer` pays, the can is dropped in that game's world (§13.38.5, §13.80)                                                                                                  | nothing needed (gig hand-ins stay the host's: its quests)                                                                                                                                                                                      |
 | Crafting, upgrading, disassembling                                 | each player's own                                                                                        | that player's game                            | `CraftingSystem` holds one craft book, the local player's (§13.38.5)                                                                                                                                 | nothing needed                                                                                                                                                                                                                                 |
 | Stash                                                              | each player's own                                                                                        | that player's game                            | a device of the player's own world with its own inventory (§13.38.5)                                                                                                                                 | nothing needed; reachable only in an apartment the player's own save has                                                                                                                                                                       |
 | Owned vehicles (details: [`garage.md`](garage.md))                 | each player's own garage; a partner drives one by its owner's word (`lend`)                              | that player's game                            | the native `VehicleSystem`, per save (§13.38.5)                                                                                                                                                      | was (a summoned car is its driver's; the others get a copy); built: lending, vehicles earned together credited in the ledger                                                                                                                   |
@@ -107,37 +107,97 @@ curve / constant / none); what a scaled NPC drops.
 - The host's own queued skill XP for NPCs a guest finished stayed in its
   **save** (the queue is persistent): fixed (paid as an assist).
 
-## Vendors (a gap)
+## Vendors
 
 Each player's own stock and money, with the vendor NPC shared in the world:
-that is how the game already keeps them (per game, per entity). What is
-missing is the way in:
+that is how the game already keeps them (per game, per entity: §13.38.5,
+§13.80). Before this was built, a guest near the host could not shop: its
+own placed vendor within 60 m of its V was hidden with every other NPC of
+its own (what `TandemNpcs.HideOwn` did; regions hide the twin, or what
+spawns inside the host's region),
+the host's vendor was a proxy (another entity, with the brain off), and no
+script opens an NPC's shop (§13.38.5): the "trade" choice is a quest or
+scene node of the guest's own, now hidden, vendor. Away from the host it
+always could.
 
-- on a guest, its own placed vendor within 60 m of its V is hidden with
-  every other NPC of its own (`TandemNpcs.HideOwn`), and the host's vendor
-  is a proxy: another entity, with the brain off;
-- no script opens an NPC's shop (§13.38.5): the "trade" choice is a quest or
-  scene node of the guest's own, now hidden, vendor.
+**What is built** (option 1 of the two weighed then, recommended and
+decided: a guest keeps its own vendors; `scripts/tandem/Vendors.reds`,
+`core/include/tandem/vendors.hpp`, `proto::NpcVendor`):
 
-So **a guest near the host cannot shop today**; away from the host (its own
-NPCs are not hidden beyond the host's 60 m) it can. Buying itself would
-work, wholly locally. The smallest fix, not built because it needs the game
-to choose between two unknowns:
+1. **The owner names the vendor.** A game that announces an NPC that is a
+   vendor (`ScriptedPuppet.IsVendor()`) placed in the world (a static
+   entity id, the same in every game) says its entity (`NpcVendor`), kept
+   with the NPC's records for late joiners, a link that forms and resyncs.
+   A spawned NPC of a vendor record is nobody's shop: never named.
+2. **Our own copy stays behind the proxy.** On a guest, its own placed
+   vendor gives way to the host's proxy as every twin does (`regions.md`
+   §3): brain off, hidden, never announced. It is still in the guest's
+   world, under the same entity id, with the guest's `MarketSystem` vendor.
+3. **The prompt.** Beside a vendor's proxy (2.5 m, in front of our V), the
+   game's interaction prompt says "Trade" under the vendor's name; a
+   partner's revive and a trade prompt come first. A press opens **our
+   own game's vendor of that entity**: `UISystem.RequestVendorMenu` (as
+   the drop point does) with our hidden copy's entity, so the screen finds
+   our copy, our save's stock, prices and sold items, our money, our
+   street cred gates (`Vendor.GetItemsForSale` asks our V). A ripperdoc is
+   the same vendor: its screen is the ripperdoc's, cyberware goes on our V.
+   Opening it on the proxy itself would wipe and restock the proxy's
+   inventory (`FillVendorInventory`) and leave a dead vendor entry in the
+   save at every respawn: never done.
+4. **Our story decides** (`vendors::Decide`, a notice for each):
+   - our world has no such vendor there (our story has not placed it, the
+     community does not spawn it yet): "doesn't trade with you yet";
+   - its record's access rules refuse our V (`MarketSystem.IsAccessible`,
+     `AccessPrereqs`): "isn't open to you yet";
+   - our own copy is dead in our world (our save killed it): "is dead";
+   - our V is fighting, down, in a scene, at a trade, away from its body:
+     "can't trade right now".
+5. **A vendor killed in the session is dead in every game** (the same dead
+   stay dead): the host hears the owner's `NpcGone` (dead; a knock-out
+   then a death too) and tells everyone `NpcVendor` with `kVendorDead`
+   (kept for the session: late joiners hear it). Each game hides its own
+   copy of that entity until the session ends, even apart from the host,
+   and again whenever it streams in. A guest's own save is untouched (it
+   never saves in a session; a hidden NPC is not saved): back in its own
+   world after the session the vendor stands again, as in its own story.
+6. **No vendor for a proxy.** A vendor NPC's body attaching to the world
+   asks `MarketSystem` for a vendor of its own (`NPCPuppet.PrepareVendor`):
+   for a proxy that would be a new entry in the saved list under a dynamic
+   id at every spawn, in the guest's save (and in the host's, for a guest's
+   vendor). The attach is skipped for our proxies, and a detach never
+   makes a vendor for a dynamic entity that never had one (§13.80).
+7. **Busy, and the look.** The vendor's screen is the shop activity
+   (`activities.md`: the puppet held where it stands, "busy in a shop");
+   leaving it sends our look again (a clothing store's or a ripperdoc's
+   purchase on the puppet); an unchanged look goes to nobody.
 
-1. keep a guest's own vendor NPCs (`ScriptedPuppet.IsVendor()`) out of
-   `HideOwn` and show no proxy for the host's vendor of the same record at
-   the same place: the guest's own scene opens its own shop, with its saved
-   stock; or
-2. an interaction of ours on a vendor proxy that opens the vendor menu
-   (`UISystem.RequestVendorMenu`, as the drop point does) on the guest's
-   own hidden vendor's entity when there is one. Opening it on the proxy
-   itself would wipe and restock the proxy's inventory
-   (`FillVendorInventory`) and leave a dead vendor entry in the guest's
-   save at every respawn.
+Vending machines and drop points need nothing: they are devices of the
+guest's own world (`devices.md`), the purchase its money, the can dropped
+in its world for its V (§13.80).
 
-Recommended: 1 (no new UI, the saved stock is kept, nothing lands in the
-save). A vendor the host killed would still stand in the guest's game:
-accepted, or hidden when the host says it died.
+Edge cases:
+
+- **A vendor the guest's story has not unlocked**: its own world decides
+  (above, 4): shut, with a notice.
+- **The host's vendor dies**: its proxy is a corpse (no prompt); the guest's
+  copy is hidden for the rest of the session (above, 5).
+- **A vendor handed over** (regions): the receiver's body is the proxy it
+  woke up, never a shop; the prompt is offered on it too, and opens the
+  receiver's own copy.
+- **Items with a modded record**: nothing crosses games. What a guest buys
+  is its own game's item from its own vendor's stock, so a record only
+  the host has never reaches it (no mod-compat resolver is in
+  `integration`); a vendor record missing in the guest's game is "not in
+  our world".
+
+Not built: the ripperdoc's chair for a partner's ripperdoc (the guest's
+screen opens where it stands; at its own ripperdoc, away from the host, the
+chair's scene plays as in solo); the vendor's greeting lines (its proxy has
+no voice of its own).
+
+To check in game (scenario `vendor-guest`): the prompt beside the proxy,
+our own vendor's stock and our money on the screen, a purchase and a sale,
+a ripperdoc's tabs, a locked vendor's notice, the dead vendor hidden.
 
 ## Doors (a gap)
 
@@ -286,23 +346,23 @@ the session from the Co-op menu, then quits.
 Nothing co-op-only may reach a save. What was checked, on a guest (which
 only saves after the steps above) and on the host (which saves any time):
 
-| State                                                                                            | Saved?          | Why not, or what handles it                                                                                                    |
-| ------------------------------------------------------------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Puppets, proxies, car copies, their items                                                        | no              | dynamic entities with `persistState` and `persistSpawn` off; a puppet's look and weapons are in its own inventory              |
-| NPC level modifiers                                                                              | no              | `AddModifier` (the saved kind is `AddSavedModifier`); taken off at the session's end                                           |
-| Attitudes of puppets and proxies                                                                 | no              | set on unsaved entities; group relations are never written (Attitudes.reds)                                                    |
-| The host's difficulty on a guest                                                                 | no              | given back at the session's end; a save is locked while it is on                                                               |
-| The host's journal on a guest, its frozen story                                                  | no              | restored and checked before saving unlocks; a mismatch keeps the lock                                                          |
-| Restrictions and holds on our V (scene holds, god mode, ride-along, story effects, revive floor) | no              | released at the session's end; "holds" keeps the lock until they are; a load clears what a save could have kept (Transit.reds) |
-| The host's weather on a guest                                                                    | no              | **fixed here**: the weather cycle is given back at the session's end, and the lock holds until it is                           |
-| The host's clock on a guest                                                                      | the number, yes | harmless: a clock ahead is a time skip; put back when the player leaves by choice                                              |
-| A guest's crowd switched off                                                                     | no              | given back at the session's end; "world" keeps the lock until it is                                                            |
-| Status effects a guest's hits put on the host's NPCs                                             | yes, on purpose | they are what happened to the host's world                                                                                     |
-| XP markers of a guest on the host's NPCs                                                         | no              | **fixed here**: no longer forwarded                                                                                            |
-| The host's queued skill XP for NPCs a guest killed                                               | no longer       | **fixed here**: paid as an assist                                                                                              |
-| The reward ledger                                                                                | yes, on purpose | a quest paid in co-op pays nothing again                                                                                       |
-| A vendor entry for a proxy in a guest's `MarketSystem`                                           | would be        | not created today (no way to open a shop on a proxy): the reason behind the vendor recommendation above                        |
-| A trade's table                                                                                  | no              | nothing moves before the commit ([`trade.md`](trade.md))                                                                       |
+| State                                                                                            | Saved?          | Why not, or what handles it                                                                                                     |
+| ------------------------------------------------------------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Puppets, proxies, car copies, their items                                                        | no              | dynamic entities with `persistState` and `persistSpawn` off; a puppet's look and weapons are in its own inventory               |
+| NPC level modifiers                                                                              | no              | `AddModifier` (the saved kind is `AddSavedModifier`); taken off at the session's end                                            |
+| Attitudes of puppets and proxies                                                                 | no              | set on unsaved entities; group relations are never written (Attitudes.reds)                                                     |
+| The host's difficulty on a guest                                                                 | no              | given back at the session's end; a save is locked while it is on                                                                |
+| The host's journal on a guest, its frozen story                                                  | no              | restored and checked before saving unlocks; a mismatch keeps the lock                                                           |
+| Restrictions and holds on our V (scene holds, god mode, ride-along, story effects, revive floor) | no              | released at the session's end; "holds" keeps the lock until they are; a load clears what a save could have kept (Transit.reds)  |
+| The host's weather on a guest                                                                    | no              | **fixed here**: the weather cycle is given back at the session's end, and the lock holds until it is                            |
+| The host's clock on a guest                                                                      | the number, yes | harmless: a clock ahead is a time skip; put back when the player leaves by choice                                               |
+| A guest's crowd switched off                                                                     | no              | given back at the session's end; "world" keeps the lock until it is                                                             |
+| Status effects a guest's hits put on the host's NPCs                                             | yes, on purpose | they are what happened to the host's world                                                                                      |
+| XP markers of a guest on the host's NPCs                                                         | no              | **fixed here**: no longer forwarded                                                                                             |
+| The host's queued skill XP for NPCs a guest killed                                               | no longer       | **fixed here**: paid as an assist                                                                                               |
+| The reward ledger                                                                                | yes, on purpose | a quest paid in co-op pays nothing again                                                                                        |
+| A vendor entry for a proxy in a guest's `MarketSystem`                                           | no              | **fixed here**: a proxy's attach request is skipped, a detach never makes one (Vendors.reds); a shop opens on our own copy only |
+| A trade's table                                                                                  | no              | nothing moves before the commit ([`trade.md`](trade.md))                                                                        |
 
 ## Decisions for the user
 
@@ -310,7 +370,10 @@ only saves after the steps above) and on the host (which saves any time):
    spare save. Recommended end state: `reload`.
 2. **The clock on leaving**: back to the guest's own timeline (built), or
    keep the host's time? Recommended: its own.
-3. **Vendors**: option 1 above (a guest keeps its own vendors).
+3. **Vendors**: option 1 above (a guest keeps its own vendors): decided
+   and built ("Vendors"). Open: a dead vendor stays hidden only for the
+   session (the host's save has it dead; a guest's own save keeps it
+   alive).
 4. **The host's quests in a guest's story**: no; later an offer for quests
    the guest had not started.
 5. **Assists**: skill XP only (built). Level XP and street cred for
@@ -327,10 +390,18 @@ only saves after the steps above) and on the host (which saves any time):
 
 - Core: `tests/progress_test.cpp` (the mean, the NPC and proxy modifiers,
   every path of the leave steps, the levels over a session: joins,
-  level-ups, leaves, a vanish, late joiners), `tests/protocol_test.cpp`.
+  level-ups, leaves, a vanish, late joiners), `tests/protocol_test.cpp`,
+  `tests/vendors_test.cpp` (every answer of `vendors::Decide`, the book,
+  `NpcVendor` on the wire; over a session: the host's and a guest's
+  vendor reach who sees them and late joiners, only the owner names one,
+  a death, a knock-out then a death, is everyone's once).
 - Mock player: `--level N` (its V's level), `host --npc-level L` (the
-  level it says its NPCs have).
+  level it says its NPCs have), `host --vendor REC@X,Y,Z#ENTITY` (a
+  vendor NPC of ours named as that placed entity), `--vendor-dies N`.
 - In game: `tools/game.sh cmd progress` logs the leave step, our lock, the
-  game's locks, what is left of a session, and the levels.
+  game's locks, what is left of a session, and the levels; `cmd vendor`
+  the vendors' proxies and their answer, `vendor near` / `goto` our own
+  nearest vendor, `vendor open` / `close` the shop.
 - Scenarios (not run yet): `levels-host`, `levels-guest`, `saves-leave`,
-  `story-session-items`, `trade-peer`, `garage-guest`, `garage-lend`.
+  `story-session-items`, `trade-peer`, `garage-guest`, `garage-lend`,
+  `vendor-guest`.

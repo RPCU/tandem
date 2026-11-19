@@ -106,6 +106,16 @@ game (whether health, damage and loot follow the stat). Built 2026-11-19:
   civilians friendly to the puppet, neutral to V, and no NPC near V
   (fixed since, to run again; engine-knowledge §13.17).
 
+- **Vendors** (`scripts/tandem/Vendors.reds`, `progression.md` "Vendors"):
+  a vendor placed in the world is named by its owner with its static
+  entity (`NpcVendor`, with the NPC's records). A player whose game shows
+  it as a proxy gets the game's "Trade" prompt beside it, which opens its
+  own game's vendor of that entity: its own copy, hidden behind the proxy
+  as a twin, keeps its own stock and prices. A proxy never gets a vendor
+  of its own in the save; a vendor that dies in the session is hidden in
+  every game until it ends. Built and tested without the game; scenario
+  `vendor-guest`.
+
 ## Open problems
 
 - **Suppressing guests' own world simulation** (crowds, traffic, encounters,

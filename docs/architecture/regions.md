@@ -132,7 +132,9 @@ host ran the first and guests the second.
    ours with the same record, ours gives way: it is hidden and no longer
    shared, and the proxy stands in its place. Matching by record and place
    is used for this only, on NPCs that stand still (ARCHITECTURE's warning
-   about matching waves stands: fighting NPCs are never matched).
+   about matching waves stands: fighting NPCs are never matched). A
+   vendor's twin keeps its shop: beside the proxy, our own hidden copy's
+   vendor opens (`progression.md`, "Vendors").
 3. _Heirs_ (§7): when an owner goes, the highest-ranked linked player near
    each of its NPCs takes it.
 

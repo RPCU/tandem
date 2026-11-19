@@ -129,6 +129,7 @@ The owner simulates; everyone else displays.
 | a V: appearance, equipment, cyberware | that player's game | applied on the puppet when it changes |
 | a V: health, death, downed | that player's game | shown; revives are requests to the owner |
 | a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level |
+| a shop: a vendor's stock, prices, sold items (vendors, ripperdocs, vending machines) | each player's game (save) | the vendor NPC is the world's; beside a partner's vendor, our own game's vendor of the same placed NPC opens; one killed in the session is hidden everywhere (`architecture/progression.md`) |
 | a vehicle someone drives | the driver's game | puppet vehicle, passengers mounted |
 | a player's garage (owned cars, unlocks) | that player's game (save) | a partner may drive one by its owner's word (`lend`); the garage stays the owner's (`architecture/garage.md`) |
 | a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game | copy, riders and NPCs seated; host's scene: a seat or a ride along |
