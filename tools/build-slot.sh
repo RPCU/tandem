@@ -9,7 +9,12 @@
 # descriptor until COMMAND exits. Waiting polls every 2 s: no queue order.
 # With TANDEM_JOBS=auto, COMMAND gets CMAKE_BUILD_PARALLEL_LEVEL = this
 # machine's cores shared among the slots busy when it starts (ours too): a
-# build alone takes every core, three take a third each.
+# build alone takes every core, three take a third each, and never more
+# jobs than free memory allows (TANDEM_JOB_GB per job, default 3: the
+# protocol's translation units take several GB each; parallel builds were
+# OOM-killed at 4 jobs). With TANDEM_SCOPE=low, COMMAND runs in a systemd
+# user scope with a low CPU and IO weight when one can be made (a user bus:
+# someone logged in), else just niced.
 set -euo pipefail
 
 # TANDEM_SLOT_POOL picks the pool: build (default; slot 0 is the old lock)
@@ -36,7 +41,17 @@ while :; do
           flock -n "$(lock "$j")" true || busy=$((busy + 1))
         done
         jobs=$(($(nproc) / busy))
-        export CMAKE_BUILD_PARALLEL_LEVEL=$((jobs > 2 ? jobs : 2))
+        mem=$(awk '/^MemAvailable:/ { print int($2 / 1048576) }' /proc/meminfo 2>/dev/null || echo 0)
+        bymem=$((mem / ${TANDEM_JOB_GB:-3}))
+        [ "$bymem" -lt "$jobs" ] && jobs=$bymem
+        export CMAKE_BUILD_PARALLEL_LEVEL=$((jobs > 1 ? jobs : 1))
+      fi
+      if [ "${TANDEM_SCOPE:-}" = low ]; then
+        if systemd-run --user --scope --quiet true 2>/dev/null; then
+          set -- systemd-run --user --scope --quiet -p CPUWeight=10 -p IOWeight=10 nice -n 19 "$@"
+        else
+          set -- nice -n 19 "$@"
+        fi
       fi
       echo "build-slot: slot $i of $slots${CMAKE_BUILD_PARALLEL_LEVEL:+, $CMAKE_BUILD_PARALLEL_LEVEL jobs}" >&2
       exec "$@"
