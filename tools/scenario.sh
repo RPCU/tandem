@@ -21,6 +21,12 @@
 #                          fetch-play), our V first teleported beside where it
 #                          starts; without that file, it joins with ARGS (a
 #                          synthetic --mode) instead. $played says which (1, 0)
+#   host_world REPLAY ARGS...  the mock host the game (a guest) joins: a real
+#                          host's recorded session, recordings/session/$SESSION
+#                          .tsession (default city; tandem-peer join --record-
+#                          session), our V first teleported beside its host's
+#                          start, else the NPC recording REPLAY (- for none); the
+#                          scenario's own ARGS on top. $sessioned says which
 #   cmd TEXT               a tandem command in the game
 #   expect REGEX [SECS]    a game log line since the scenario began (default
 #                          30 s); fails at once if the watchdog reports a
@@ -108,6 +114,35 @@ reset() {
   result=$($game test-reset 2>&1) || status=$?
   echo "  ${result:-test reset: no answer}"
   [ "$status" = 0 ] || fail "the game is not in its test state"
+}
+sessioned=0
+host_world() {
+  local replay=$1 file=recordings/session/${SESSION:-city}.tsession beside
+  shift
+  if [ ! -f "$file" ]; then
+    echo "  no $file: the synthetic host"
+    sessioned=0
+    if [ "$replay" = - ]; then peer host "$@"; else peer host --replay "$replay" "$@"; fi
+    return
+  fi
+  beside=$(build/linux/peer/tandem-peer play-info "$file" | sed -n 's/^beside: //p')
+  [ -n "$beside" ] || fail "$file holds no state of its host"
+  echo "  hosting the recorded session $file"
+  cmd "$beside"
+  expect 'teleport: ' 10
+  pause 5
+  sessioned=1
+  peer host --play-session "$file" "$@"
+}
+# at_most N REGEX: no more than N such game log lines so far.
+at_most() {
+  local count
+  count=$(since | grep -cE "$2" || true)
+  if [ "$count" -le "$1" ]; then
+    echo "  ok, $count (at most $1): $2"
+  else
+    fail "$count lines (more than $1): $2"
+  fi
 }
 played=0
 play() {

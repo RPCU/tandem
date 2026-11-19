@@ -1,7 +1,7 @@
 # Our V hits proxies as a guest: damage, status effects and instant kills go to the host; health, death and kill credit come back
 # shellcheck shell=bash disable=SC2317
 ensure join
-peer host --mode idle --body female --replay recordings/npcs.rec
+host_world recordings/npcs.rec --mode idle --body female
 expect 'puppet 6[0-9]{4}: clips walk' 60
 # A plain hit: damage computed here (our side and the proxy's armour), applied by the host.
 cmd npc punch 40

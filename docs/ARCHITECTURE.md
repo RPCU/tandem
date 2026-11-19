@@ -1477,6 +1477,8 @@ scenario. A scenario that needs another spot teleports after it.
   loop: your own jumps, ladders and swims on the puppet, over the same
   ground.
 - **idle** — connects and reports.
+- **watch** — follows the other V 30 m under it (or `--offset`): the
+  unseen guest of `--record-session` (below).
 - **play** — `--play FILE` replays a real V's play (a gameplay recording,
   below) as the mock player's own V, at its recorded positions: the
   puppet walks the real ground, drives real roads, fights where it
@@ -1635,6 +1637,67 @@ host` records alone). Everything the game asks its `Endpoint` to send
      Without a player, the same can be driven with `tools/game.sh cmd`
      (`teleport`, `vehicle …`, `npc punch`, `takedown …`, `hack npc`) and
      `tools/game.sh key`/`hold` (AZERTY), less naturally.
+
+- **Recorded host sessions** (`.tsession`, `play::Kind::Session`): the
+  real game as a guest facing a real host's recording instead of a
+  scripted mock host, in end-user conditions with one copy of the game.
+  `tandem-peer join ADDRESS --mode watch --record-session FILE` is a guest
+  that records every message the real host sends it, with its time (the
+  endpoint's `SetReceivedTap`; welcome, roster, pings and the consistency
+  checks are left out): the host's V and pose, look, held items, shots and
+  car; its NPCs' spawns, states, animations, shots, health, deaths, holds
+  and seats; hits and hacks on us; the world (time, weather), the story
+  (journal, tracked quest, calls, lines, hubs, scene tiers, story effects,
+  rewards), time abilities, stealth, awareness, fast travel and regroup
+  offers, loot, life and revives, rides, epochs. `watch` keeps the
+  recording guest 30 m under the host's V (or `--offset`): out of sight, out
+  of every NPC's reach, in nobody's way (the host shares the NPCs around
+  its own V, wherever its guests are). No plugin change: it is exactly what
+  a real host sends. `tandem-peer host --play-session FILE [--play-loop]`
+  then is that host for the guest that joins: its V on its body, its NPCs,
+  its story, at the recorded pace; the recorded guest's messages (a hit, a
+  hack, detection bits, a reward) go to the real guest, other players'
+  are dropped; the endpoint numbers and stamps everything on this
+  session's clock (absolute times inside move with it), its epochs and
+  digests are its own (the recorded epochs are bumped again); the NPC
+  world goes through the replay's path (an NPC the guest killed stays
+  dead), and what a guest asks (strikes, takedowns, hacks, revives) is
+  answered as the mock host always did, with `--npc`, `--detect-at`,
+  `--hit-you`, `--hold-npcs` … on top. Positions stay absolute:
+  `play-info` gives the teleport beside the host's start. Tests:
+  `tests/play_test.cpp` (a session recorded through one guest replays the
+  same to another), `tests/peer_play.sh` (record, `play-info`, replay,
+  record again). Files go to `recordings/session/` (not in git; about
+  25 KB/s, 20 MB for 15 minutes, uncompressed like a `.tplay`). In
+  scenarios, `host_world REPLAY ARGS…` hosts
+  `recordings/session/${SESSION:-city}.tsession` when it exists (V first
+  teleported beside it) and the NPC recording REPLAY otherwise:
+  `npcs-guest`, `npcs-hurt-guest`, `npcs-shoot-guest`, `npcs-punch`,
+  `hacks-guest`, `takedowns-guest`, `stealth-guest`, `desync-npcs`,
+  `desync-rejoin`; `session-guest` replays a whole session and checks
+  proxies come, the story is mirrored, at most 3 resyncs, no orphaned
+  proxy, no stall beyond loading screens, and the cleanup at its end. The
+  `story-*` scenarios keep their scripted stories (a session's story is
+  `session-guest`'s).
+
+  **A recorded host session** (about 15 minutes, by whoever plays; the game
+  as host; the commands are run here):
+  1. `tools/game.sh ensure host`, then `tools/game.sh test-reset` and
+     `tools/game.sh cmd ride hide` (no marker or puppet of the recording
+     guest on the player's screen).
+  2. `build/linux/peer/tandem-peer join "$(getent ahostsv4 anya | awk 'NR==1{print $1}')":27450
+--mode watch --name watcher --record-session recordings/session/city.tsession`
+     here (it logs `recording the session to …`).
+  3. Then play, in this order: walk 2 minutes through a crowded street
+     (Kabuki, Jig-Jig Street); take a gig or side job with a fight: shoot,
+     quickhack (Short Circuit, Blind), a melee hit, a takedown; the
+     Sandevistan if V has one; call a car, drive a few blocks, get out;
+     fast travel once (a loading screen is fine); answer a phone call;
+     talk to an NPC with dialogue choices (pick one); walk a minute more.
+  4. Ctrl-C the recording guest (`session saved: N messages, S s`), then
+     `tools/game.sh cmd ride show`.
+  5. `build/linux/peer/tandem-peer play-info recordings/session/city.tsession`
+     says what it holds; `tools/scenario.sh session-guest` replays it.
 
 - Planned — **the whole simulated second game**, so everything can be
   tested with one PC and one copy of the game. Built up as the protocol

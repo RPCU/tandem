@@ -272,3 +272,166 @@ TEST_CASE("a V's play recorded through one session replays the same through anot
     CHECK_MESSAGE(only(replayed, what) == only(watched, what), what);
   CHECK(only(watched, "state").size() == 10);
 }
+
+namespace {
+// What a guest gets from its host, in one line each.
+std::optional<Seen> HeardOf(const SessionEvent &event) {
+  if (const auto *e = std::get_if<events::RemoteState>(&event))
+    return Seen{"state", e->state.position.x, e->state.player};
+  if (const auto *e = std::get_if<events::RemoteAppearance>(&event))
+    return Seen{"look", 0.f, e->appearance.items.empty() ? 0 : e->appearance.items[0]};
+  if (const auto *e = std::get_if<events::HostNpcSpawn>(&event))
+    return Seen{"spawn", e->spawn.position.x, e->spawn.npc};
+  if (const auto *e = std::get_if<events::HostNpcStates>(&event))
+    return Seen{"npcs", e->states.npcs.empty() ? 0.f : e->states.npcs[0].position.x,
+                e->states.npcs.size()};
+  if (const auto *e = std::get_if<events::HostNpcGone>(&event))
+    return Seen{"gone", 0.f, e->gone.npc};
+  if (const auto *e = std::get_if<events::HostWorld>(&event))
+    return Seen{"world", 0.f, e->world.weather};
+  if (const auto *e = std::get_if<events::HitByNpc>(&event))
+    return Seen{"hit", e->hit.physical, e->hit.npc};
+  if (const auto *e = std::get_if<events::Story>(&event))
+    if (const auto *journal = std::get_if<proto::Journal>(&e->message);
+        journal && !journal->snapshot)
+      return Seen{"journal", 0.f, journal->entries.empty() ? 0 : journal->entries[0].hash};
+  return std::nullopt;
+}
+} // namespace
+
+TEST_CASE("a session recording keeps a host's world, not the transport's") {
+  CHECK(play::KeepsSession(proto::NpcSpawn{}));
+  CHECK(play::KeepsSession(proto::PlayerHit{}));
+  CHECK(play::KeepsSession(proto::Journal{}));
+  CHECK_FALSE(play::KeepsSession(proto::Welcome{}));
+  CHECK_FALSE(play::KeepsSession(proto::Digest{}));
+  CHECK_FALSE(play::KeepsSession(proto::Pong{}));
+
+  const play::SessionMapping mapping{.host = 1, .you = 3, .self = 1, .guest = 2};
+  // The host's V is ours; another guest's is not replayed.
+  CHECK(play::AdaptSession(proto::PlayerState{.player = 1}, mapping, 0));
+  CHECK_FALSE(play::AdaptSession(proto::PlayerState{.player = 4}, mapping, 0));
+  // A hit on the recording guest lands on the real one; on another, nowhere.
+  const auto hit = play::AdaptSession(proto::PlayerHit{.player = 3, .npc = 9}, mapping, 0);
+  CHECK(std::get<proto::PlayerHit>(*hit).player == 2);
+  CHECK_FALSE(play::AdaptSession(proto::PlayerHit{.player = 4}, mapping, 0));
+  // Who an NPC has detected follows the players.
+  const auto states = play::AdaptSession(proto::NpcStates{.npcs = {{.npc = 9, .detected = 0b101}}},
+                                         mapping, 0);                   // players 1 and 3
+  CHECK(std::get<proto::NpcStates>(*states).npcs[0].detected == 0b011); // players 1 and 2
+  // A timed hub's start moves with the replay.
+  const auto hub = play::AdaptSession(proto::ChoiceHub{.timedStartUs = 100}, mapping, 50);
+  CHECK(std::get<proto::ChoiceHub>(*hub).timedStartUs == 150);
+}
+
+TEST_CASE("a host's session recorded by one guest replays the same to another") {
+  const auto path = TempFile("session");
+  std::string error;
+  std::vector<Seen> heard;
+  {
+    const auto port = test::NextPort();
+    auto host = Endpoint::Host({"host", proto::Body::Male}, port, error);
+    REQUIRE_MESSAGE(host, error);
+    host->SetLocalAppearance({.body = proto::Body::Male, .items = {0xAB}});
+    host->SetWorld({.gameTimeSeconds = 3600, .weather = 0x77});
+    auto guest = Endpoint::Join({"recorder"}, "127.0.0.1", port, error);
+    REQUIRE_MESSAGE(guest, error);
+
+    // The recording guest's side (tandem-peer join --record-session).
+    play::Writer writer;
+    std::vector<proto::Message> early;
+    guest->SetReceivedTap([&](const proto::Message &m) {
+      if (!play::KeepsSession(m))
+        return;
+      if (writer.IsOpen())
+        writer.Add(guest->HostNowUs(), m);
+      else
+        early.push_back(m);
+    });
+    const auto seen = [&](std::size_t who, const SessionEvent &event) {
+      if (who == 1)
+        if (auto line = HeardOf(event))
+          heard.push_back(*line);
+    };
+    REQUIRE(PumpUntil({host.get(), guest.get()}, seen,
+                      [&] { return guest->IsJoined() && host->Players().size() == 2; }));
+    REQUIRE(writer.Open(path,
+                        {.startHostUs = guest->HostNowUs(),
+                         .player = guest->You(),
+                         .kind = play::Kind::Session,
+                         .host = guest->HostPlayer()},
+                        error));
+    for (const auto &m : early)
+      writer.Add(guest->HostNowUs(), m);
+
+    // The real host plays: its V, an NPC that walks, hits our guest and goes,
+    // a journal change.
+    host->SendNpcSpawn({.npc = 7, .record = 0x55, .position = {5, 0, 0}});
+    for (int i = 0; i < 6; ++i) {
+      host->SendLocalState({.position = {static_cast<float>(i), 0, 0}});
+      host->SendNpcStates({.npcs = {{.npc = 7, .position = {5.f + i, 0, 0}}}});
+      if (i == 2)
+        CHECK(host->SendPlayerHit({.player = guest->You(), .npc = 7, .physical = 10.f}));
+      if (i == 3)
+        host->SendStory(proto::Journal{.entries = {{.hash = 0xBEEF, .state = 1}}});
+      PumpUntil({host.get(), guest.get()}, seen, [] { return false; }, 30ms);
+    }
+    host->SendNpcGone({.npc = 7, .reason = proto::kGoneAway});
+    PumpUntil({host.get(), guest.get()}, seen, [] { return false; }, 300ms);
+    writer.Close();
+  }
+
+  auto recording = play::Load(path, error);
+  REQUIRE_MESSAGE(recording, error);
+  CHECK(recording->header.kind == play::Kind::Session);
+  CHECK(recording->header.host == 1);
+
+  // tandem-peer host --play-session: a mock host replays it to a real guest.
+  std::vector<Seen> replayed;
+  {
+    const auto port = test::NextPort();
+    auto replayer = Endpoint::Host({"replay", proto::Body::Male}, port, error);
+    REQUIRE_MESSAGE(replayer, error);
+    auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+    REQUIRE_MESSAGE(guest, error);
+    const auto seen = [&](std::size_t who, const SessionEvent &event) {
+      if (who == 1)
+        if (auto line = HeardOf(event))
+          replayed.push_back(*line);
+    };
+    REQUIRE(PumpUntil({replayer.get(), guest.get()}, seen,
+                      [&] { return guest->IsJoined() && replayer->Players().size() == 2; }));
+    const play::SessionMapping mapping{.host = recording->header.host,
+                                       .you = recording->header.player,
+                                       .self = replayer->You(),
+                                       .guest = guest->You()};
+    play::Player player(std::move(*recording));
+    const auto begin = std::chrono::steady_clock::now();
+    PumpUntil(
+        {replayer.get(), guest.get()}, seen,
+        [&] {
+          const auto elapsed =
+              static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                             std::chrono::steady_clock::now() - begin)
+                                             .count());
+          for (const auto *entry : player.Due(elapsed))
+            if (auto message = play::AdaptSession(entry->message, mapping, 0))
+              play::ApplyHost(*replayer, *message, mapping.guest);
+          return player.Done() && replayed.size() >= heard.size();
+        },
+        5s);
+  }
+  std::filesystem::remove(path);
+
+  const auto only = [](const std::vector<Seen> &all, const std::string &what) {
+    std::vector<Seen> out;
+    for (const auto &seen : all)
+      if (seen.what == what)
+        out.push_back(seen);
+    return out;
+  };
+  for (const auto *what : {"state", "look", "spawn", "npcs", "gone", "world", "hit", "journal"}) {
+    CHECK_MESSAGE(!only(heard, what).empty(), what);
+    CHECK_MESSAGE(only(replayed, what) == only(heard, what), what);
+  }
+}
