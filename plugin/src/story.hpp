@@ -71,6 +71,15 @@ public:
   std::vector<proto::Vec3> &Bodies() { return m_bodies; }
   std::vector<scene::ActorSample> &Actors() { return m_actors; }
 
+  // Story restrictions (docs/architecture/story.md, "Restrictions"), game
+  // thread. Guest: the host's set, what our V holds of it, whether it is in
+  // the host's moment (last check), the removals the script has to make.
+  // Host: the set last sent.
+  story::Restrictions &Restrictions() { return m_restrictions; }
+  bool &InMoment() { return m_inMoment; }
+  std::vector<std::uint64_t> &Removals() { return m_removals; }
+  std::vector<std::uint64_t> &Sent() { return m_sent; }
+
 private:
   std::vector<proto::PlayerId> GuestsNear(const proto::Vec3 &host) const;
 
@@ -78,6 +87,10 @@ private:
   scene::Replay m_replay;
   std::vector<proto::Vec3> m_bodies;
   std::vector<scene::ActorSample> m_actors;
+  story::Restrictions m_restrictions;
+  bool m_inMoment{};
+  std::vector<std::uint64_t> m_removals;
+  std::vector<std::uint64_t> m_sent;
 
   std::atomic_bool m_private{false};
   std::optional<proto::PlayerState> m_held; // net thread

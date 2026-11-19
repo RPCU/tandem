@@ -16,8 +16,10 @@
 
 #include <RedLib.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
+#include <utility>
 
 namespace Red {
 RTTI_MAP_TYPE_NAME(CRUID, "CRUID");
@@ -65,6 +67,7 @@ enum Kind : std::int32_t {
   kState = 40,
   kReward = 41,
   kEffect = 42,
+  kRestrictions = 43,
   kSceneBegin = 50,
   kSceneChange = 51,
   kSceneEnd = 52,
@@ -218,7 +221,22 @@ void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
   } else if (const auto *reward = std::get_if<proto::QuestReward>(&m)) {
     out.EmplaceBack(TandemStoryEvent{
         .kind = kReward, .hash = reward->quest, .reward = Red::TweakDBID(reward->reward)});
+  } else if (const auto *restrictions = std::get_if<proto::StoryRestrictions>(&m)) {
+    // The host's set, kept here for RestrictUpdate; the script hears how
+    // many (and acts on its next check).
+    Story::Get().Restrictions().Host(*restrictions);
+    out.EmplaceBack(
+        TandemStoryEvent{.kind = kRestrictions,
+                         .player = restrictions->player,
+                         .index = static_cast<std::int32_t>(restrictions->effects.size())});
   }
+}
+
+Red::DynArray<Red::TweakDBID> Ids(const std::vector<std::uint64_t> &effects) {
+  Red::DynArray<Red::TweakDBID> out;
+  for (const auto effect : effects)
+    out.EmplaceBack(Red::TweakDBID(effect));
+  return out;
 }
 
 std::uint8_t Byte(std::int32_t value) { return static_cast<std::uint8_t>(value); }
@@ -353,6 +371,93 @@ struct TandemStory : Red::IScriptable {
   // Host: a story status effect came onto our V (applied) or went.
   static void SendEffect(Red::TweakDBID effect, bool applied) {
     Story::Get().Send(proto::StoryEffect{.effect = effect.value, .applied = applied});
+  }
+
+  // ---- story restrictions (docs/architecture/story.md, "Restrictions") ----
+
+  // Host: the gameplay restrictions our story has on our V now (any order).
+  // Sent when the set changed; true then.
+  static bool SendRestrictions(Red::DynArray<Red::TweakDBID> effects) {
+    std::vector<std::uint64_t> set;
+    for (const auto &effect : effects)
+      set.push_back(effect.value);
+    std::ranges::sort(set);
+    set.erase(std::unique(set.begin(), set.end()), set.end());
+    if (set.size() > proto::kMaxStoryRestrictions)
+      set.resize(proto::kMaxStoryRestrictions);
+    auto &story = Story::Get();
+    if (set == story.Sent())
+      return false;
+    story.Sent() = set;
+    Story::Get().Send(proto::StoryRestrictions{.effects = std::move(set)});
+    return true;
+  }
+
+  // Host: `npc` acts in the scene we announce (scene replay's cast).
+  static bool SceneCasts(std::uint32_t npc) { return Story::Get().Stage().Casts(npc); }
+
+  // Guest, a few times a second: whether our V is in the host's story moment
+  // (core/story.hpp InMoment, with the staged scene when scene replay says
+  // where it is), and what to put on our V now: the host's set while in it,
+  // plus the scene tier's `holds`. What to take off: RestrictRemovals.
+  static Red::DynArray<Red::TweakDBID> RestrictUpdate(bool grouped, bool away, bool hostKnown,
+                                                      float hostX, float hostY, float hostZ,
+                                                      float x, float y, float z, std::int32_t tier,
+                                                      Red::DynArray<Red::TweakDBID> holds) {
+    auto &kept = Story::Get();
+    const auto &scene = kept.Replay().State();
+    const bool staged = scene.scene != 0 && (scene.flags & proto::kSceneStaged);
+    story::MomentInput in{.grouped = grouped,
+                          .away = away,
+                          .hostKnown = hostKnown,
+                          .host = {hostX, hostY, hostZ},
+                          .guest = {x, y, z},
+                          .tier = Byte(tier),
+                          .restricted = !kept.Restrictions().HostSet().empty(),
+                          .staged = staged,
+                          .anchor = scene.anchor,
+                          .radius = staged ? scene.radius : -1.f};
+    const bool was = kept.InMoment();
+    kept.InMoment() = story::InMoment(in, was);
+    if (kept.InMoment() != was)
+      log::Info("story: {} the host's story moment (tier {}, {} restriction(s))",
+                kept.InMoment() ? "in" : "out of", tier, kept.Restrictions().HostSet().size());
+    std::vector<std::uint64_t> wanted;
+    for (const auto &hold : holds)
+      wanted.push_back(hold.value);
+    auto change = kept.Restrictions().Update(kept.InMoment(), wanted);
+    kept.Removals().insert(kept.Removals().end(), change.remove.begin(), change.remove.end());
+    return Ids(change.apply);
+  }
+  // Guest: what to take off our V now (ours, no longer wanted), once.
+  static Red::DynArray<Red::TweakDBID> RestrictRemovals() {
+    return Ids(std::exchange(Story::Get().Removals(), {}));
+  }
+  // Guest: the session is over or the host gone: all of ours to take off
+  // (RestrictRemovals), the host's set forgotten.
+  static void RestrictLift() {
+    auto &story = Story::Get();
+    const auto change = story.Restrictions().Lift();
+    story.Removals().insert(story.Removals().end(), change.remove.begin(), change.remove.end());
+    story.InMoment() = false;
+  }
+  // Guest: our V had it already, or its own game put it on again: theirs.
+  static void RestrictTheirs(Red::TweakDBID effect) {
+    Story::Get().Restrictions().Theirs(effect.value);
+  }
+  // Guest: our V lost it, not through us.
+  static void RestrictGone(Red::TweakDBID effect) {
+    Story::Get().Restrictions().Gone(effect.value);
+  }
+  static bool RestrictHolds(Red::TweakDBID effect) {
+    return Story::Get().Restrictions().Holds(effect.value);
+  }
+  static bool RestrictOurs(Red::TweakDBID effect) {
+    return Story::Get().Restrictions().Ours(effect.value);
+  }
+  static bool RestrictInMoment() { return Story::Get().InMoment(); }
+  static Red::DynArray<Red::TweakDBID> RestrictHostSet() {
+    return Ids(Story::Get().Restrictions().HostSet());
   }
 
   // The scene our game plays now (its node ran in the last 3 s): 0 none or
@@ -577,6 +682,17 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(QuestMoved);
   RTTI_METHOD(Reward);
   RTTI_METHOD(SendEffect);
+  RTTI_METHOD(SendRestrictions);
+  RTTI_METHOD(SceneCasts);
+  RTTI_METHOD(RestrictUpdate);
+  RTTI_METHOD(RestrictRemovals);
+  RTTI_METHOD(RestrictLift);
+  RTTI_METHOD(RestrictTheirs);
+  RTTI_METHOD(RestrictGone);
+  RTTI_METHOD(RestrictHolds);
+  RTTI_METHOD(RestrictOurs);
+  RTTI_METHOD(RestrictInMoment);
+  RTTI_METHOD(RestrictHostSet);
   RTTI_METHOD(SceneClass);
   RTTI_METHOD(SetPrivate);
   RTTI_METHOD(PausePose);
