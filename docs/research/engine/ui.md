@@ -152,3 +152,27 @@ in game.
   the status panel is placed top right with margins in that space; a
   full-screen interactive widget would take the menu's input (NCO d6240d9d),
   so the panel is never interactive.
+
+### 13.37 Phantom Liberty: the game's own check (2026-11-19, read in final.reds, not run)
+
+Line numbers are `~/.cache/tandem/ref/gamescripts/vanilla/final.reds` (2.50).
+[2.5-untested]: used by `TandemCoop.ReportExpansion` (`scripts/tandem/Coop.reds`).
+
+- `inkISystemRequestsHandler` (`:272564`) has `IsAdditionalContentOwned`,
+  `IsAdditionalContentEnabled`, `IsAdditionalContentInstalled` and
+  `IsAdditionalContentReleased` (`:272710`…), each taking the content's
+  `CName`; the expansion is `n"EP1"`.
+- The main menu's banner (`SingleplayerMenuGameController.UpdateExpansionBannerState`,
+  `:386130`) reads Enabled → `ExpansionStatus.Downloaded`, else Owned →
+  `Owned`, else `Available`; the logo switches on
+  `IsAdditionalContentEnabled(n"EP1")` (`:340342`, `:386952`), as do the
+  in-game checks (`:363555`, `:370086`, `:376636`). Enabled is the test
+  the game itself uses for "this game has Phantom Liberty".
+- The handler is reached from any `inkIGameController` or
+  `inkMenuScenario` (`GetSystemRequestsHandler`, `:56686`, `:273464`);
+  Codeware adds `GameInstance.GetSystemRequestsHandler()` (a new
+  `inkMenuScenario`'s), usable from a scriptable system.
+- RTTI 2.50 (`data/rtti-natives-2.50.tsv`): `IsAdditionalContentOwned`
+  `0x142790df8`, `IsAdditionalContentEnabled` `0x140fa5744`.
+- To see in game: that it answers true in the main menu already, and false
+  with the DLC unticked in the store's client.

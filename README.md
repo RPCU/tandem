@@ -33,8 +33,20 @@ task relay:image                 # OCI image built with Nix
 task k8s:check                   # deploy/kubernetes/base
 ```
 
+## Release
+
+```sh
+tools/build.sh --force build:plugin test # build (here or on anya), test
+task package:files               # build/package/tandem-<build>.zip + symbols zip
+```
+
 ## Docs
 
+- [Installing and playing](dist/INSTALL.md) — for players: requirements, hosting and joining, troubleshooting
+- [Running a relay](docs/relay.md) — for whoever operates a tandem-relay
+- [Releases](docs/architecture/release.md) — packaging, compatibility checks, bug reports
+- [First two-player session](docs/playtest.md) — the checklist
+- [NOTICE](NOTICE) — third-party code and credits
 - [Architecture](docs/ARCHITECTURE.md) — authority model, threading, roadmap, and the index of the topic files in `docs/architecture/`
 - [Engine knowledge](docs/research/engine-knowledge.md) — what earlier projects learned about the engine, with sources: the index of `docs/research/engine/`
 - [AGENTS.md](AGENTS.md) — rules for AI agents working on this repository

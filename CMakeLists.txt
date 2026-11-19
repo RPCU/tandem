@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.28)
-project(tandem VERSION 0.1.0 LANGUAGES C CXX)
+# The release number: the plugin's version for RED4ext, the build's name
+# (core/CMakeLists.txt) and the package's file name (tools/package.py).
+project(tandem VERSION 0.2.0 LANGUAGES C CXX)
 
 option(TANDEM_BUILD_PLUGIN "Build the game plugin (Windows only)" OFF)
 option(TANDEM_BUILD_PEER "Build the mock player and the tests (Linux)" ON)

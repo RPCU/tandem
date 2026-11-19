@@ -15,6 +15,7 @@
 
 namespace tandem::proto {
 inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
+// 7: Hello.flags (Phantom Liberty), NpcCueKind::OutOfSight.
 inline constexpr std::uint16_t kProtocolVersion = 7;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
@@ -48,13 +49,23 @@ struct Quat {
   friend bool operator==(const Quat &, const Quat &) = default;
 };
 
-// Guest -> host, first message.
+// Hello::flags. The game has the Phantom Liberty expansion installed and
+// enabled: tandem needs it on every game (tandem/compat.hpp), so a host
+// refuses a guest without it.
+inline constexpr std::uint8_t kHelloExpansion = 1 << 0;
+
+// Guest -> host, first message. Its first two fields never move: a host of
+// any version reads them from a Hello it cannot decode (PeekHelloVersion)
+// and refuses it in words.
 struct Hello {
   std::uint32_t magic{kMagic};
   std::uint16_t version{kProtocolVersion};
   std::string name;
+  // The guest's tandem build (compat::Build, "0.2.0+2fa03ca"): a host that
+  // refuses the protocol version can say which release that was.
   std::string gameVersion;
   Body body{};
+  std::uint8_t flags{kHelloExpansion}; // kHello*
   friend bool operator==(const Hello &, const Hello &) = default;
 };
 
@@ -1664,6 +1675,20 @@ struct NpcReaction {
   friend bool operator==(const NpcReaction &, const NpcReaction &) = default;
 };
 
+// What a game has installed, said once by each side after the Welcome (guest
+// to host, host to guest; never relayed): tandem/compat.hpp compares the two
+// and warns the players. 0 and "": unknown, never compared.
+inline constexpr std::size_t kMaxInstallText = 64;
+struct Install {           // Event channel
+  std::string build;       // tandem's build, "0.2.0+2fa03ca"
+  std::string game;        // the game executable's version, "3.0.88.46235"
+  std::uint64_t scripts{}; // r6/scripts/tandem: names and contents
+  std::uint64_t tweaks{};  // r6/tweaks/tandem
+  std::uint64_t mods{};    // the names of the other mods installed
+  std::uint16_t modCount{};
+  friend bool operator==(const Install &, const Install &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -1676,7 +1701,7 @@ using Message = std::variant<
     SceneState, SceneCast, SceneLine, ActorPose, DeviceState, DeviceUse, DeviceSet, DeviceDigest,
     Regions, NpcOwner, NpcHandover, NpcHandoverState, NpcHandoverDone, OwnedDigest, RegionHold,
     TrafficSpawn, TrafficStates, TrafficGone, TrafficStatus, TrafficHit, TrafficClaim, TrafficSet,
-    Heat, Crime, Presence, Cue, NpcReaction>;
+    Heat, Crime, Presence, Cue, NpcReaction, Install>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine):
 // endpoint.hpp relays these through one path.
@@ -1686,6 +1711,9 @@ bool IsCombat(const Message &message);
 
 std::vector<std::byte> Encode(const Message &message);
 std::optional<Message> Decode(std::span<const std::byte> bytes);
+// The protocol version of a packet that is a tandem Hello, also one Decode
+// refuses (another version's layout); none: not a Hello.
+std::optional<std::uint16_t> PeekHelloVersion(std::span<const std::byte> bytes);
 
 // The channel a message travels on, and whether ENet must deliver it.
 Channel ChannelOf(const Message &message);

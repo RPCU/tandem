@@ -158,6 +158,15 @@ Config LoadConfig(const std::filesystem::path &path) {
         config.timeHostFull = true;
       else
         log::Warn("tandem.ini:{}: time_host is bubble or full", number);
+    } else if (key == "compat") {
+      // Developers only: off lets a session start whatever the startup check
+      // found (another game version, an older Codeware or TweakXL).
+      if (value == "on" || value == "true")
+        config.compat = true;
+      else if (value == "off" || value == "false")
+        config.compat = false;
+      else
+        log::Warn("tandem.ini:{}: compat is on or off", number);
     } else if (key == "trace") {
       config.trace = value == "on" || value == "true";
     } else if (key == "port") {

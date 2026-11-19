@@ -364,12 +364,34 @@ struct RemoteHeat {
 struct CrimeReported {
   proto::Crime crime;
 };
+// What another player's game has installed (host: a guest's; guest: the
+// host's), with what differs from ours in words for our player
+// (compat::Differences; empty: nothing known differs). Never blocks.
+struct RemoteInstall {
+  proto::PlayerId player{};
+  std::string name;
+  proto::Install install;
+  std::vector<std::string> differences;
+};
+// Host only: a game was refused for its protocol version, or because it
+// or ours lacks Phantom Liberty, with the words for our player (the guest
+// got its own with the refusal).
+struct JoinRefused {
+  std::string name;
+  std::string notice;
+};
 } // namespace events
 
-// Who this game is in the session.
+// Who this game is in the session, and what it has installed (the mock
+// player and the tests: the build alone).
 struct Identity {
   std::string name;
   proto::Body body{};
+  proto::Install install{};
+  // The game has Phantom Liberty installed and enabled (the mock player
+  // and the tests: yes). A host without it takes nobody; a guest without
+  // it is refused (compat::kExpansion*).
+  bool expansion{true};
 };
 
 // Where a guest finds its host: directly, through a relay, or directly
@@ -402,7 +424,8 @@ using SessionEvent = std::variant<
     events::DeviceRequested, events::DevicesReset, events::RegionsChanged, events::NpcGive,
     events::NpcTake, events::NpcOwnerChanged, events::TrafficSpawned, events::TrafficMoved,
     events::TrafficLeft, events::TrafficChanged, events::TrafficHitBy, events::RemoteHeat,
-    events::CrimeReported, events::RemotePresence, events::RemoteCue, events::HostNpcReaction>;
+    events::CrimeReported, events::RemotePresence, events::RemoteCue, events::HostNpcReaction,
+    events::RemoteInstall, events::JoinRefused>;
 
 class Endpoint {
 public:

@@ -46,13 +46,16 @@ ssh "$host" mkdir -p "$remote"
 
 jobs=${CMAKE_BUILD_PARALLEL_LEVEL:-5}
 slots=${TANDEM_REMOTE_SLOTS:-3}
+# The copy there has no history: the build is named after this commit
+# (core/CMakeLists.txt, TANDEM_COMMIT).
+commit=$(git rev-parse --short=7 HEAD)
 # A build runs in a systemd scope of its own with a low CPU and IO weight:
 # nice does not reach across cgroups, so niced builds still starved the test
 # games (tools/instance.sh scopes) to 9 fps and pushed them into swap. While
 # a test instance runs, one slot only (memory).
 # shellcheck disable=SC2029 # expanded here on purpose
 ssh "$host" "cd $remote && CMAKE_BUILD_PARALLEL_LEVEL=$jobs TANDEM_XWIN=\$HOME/.cache/tandem/xwin \
-  flock /tmp/tandem-src-$name.lock tools/build-slot.sh \$(pgrep -f '[t]andem-instances/' >/dev/null && echo 1 || echo $slots) \
+  TANDEM_COMMIT=$commit flock /tmp/tandem-src-$name.lock tools/build-slot.sh \$(pgrep -f '[t]andem-instances/' >/dev/null && echo 1 || echo $slots) \
   systemd-run --user --scope --quiet -p CPUWeight=10 -p IOWeight=10 nice -n 19 devenv shell -- task $*"
 
 for task in "$@"; do
@@ -61,6 +64,9 @@ for task in "$@"; do
     mkdir -p build/windows/plugin
     rsync -a "$host:$remote/build/windows/plugin/tandem.dll" "$host:$remote/build/windows/plugin/tandem.pdb" \
       build/windows/plugin/
+    # The bug report tool, for `task package` (absent in older trees).
+    rsync -a --ignore-missing-args "$host:$remote/build/windows/plugin/tandem-report.exe" \
+      "$host:$remote/build/windows/plugin/tandem-report.pdb" build/windows/plugin/
     echo "remote: build/windows/plugin/tandem.dll from $host" >&2
     ;;
   esac

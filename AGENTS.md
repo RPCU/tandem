@@ -40,6 +40,7 @@ Where things are (`core/`, `plugin/`, `peer/`, `tests/`, `relay/`, `nix/`,
 | `task scenario -- …` | in-game scenarios against the mock player (NAME, all, list)  |
 | `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
 | `task logs`          | follow the plugin's log on the game machine                  |
+| `task package`       | the release zip and its symbols zip (`build/package/`)       |
 
 Run what your change can break before saying it works: `task test` for
 `core/`, `task build:plugin` for anything compiled into the DLL,
@@ -69,6 +70,11 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
   `kProtocolVersion`. Add the message to `NameOf`, pick its channel in
   `ChannelOf`, add a round-trip case to `tests/protocol_test.cpp`.
 - High-rate messages stay small (`PlayerState` < 64 bytes is tested).
+- `Hello`'s first two fields (magic, version) never move: a host reads them
+  from a `Hello` it cannot decode and refuses it in words
+  (`PeekHelloVersion`).
+- Phantom Liberty is required on every game, checked at startup and at a
+  join; why and how: `docs/architecture/release.md`.
 - Consistency (`docs/architecture/consistency.md`): a state message is
   idempotent (the receiver drops a repeat); a new domain of host-owned state
   goes into the host's digests and its resync (`Endpoint::DigestFor`,

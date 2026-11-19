@@ -9,9 +9,13 @@
 #include "story.hpp"
 
 #include "tandem/combat.hpp"
+#include "tandem/compat.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/play.hpp"
+#include "tandem/report.hpp"
 
+#include <chrono>
+#include <fstream>
 #include <map>
 #include <optional>
 #include <thread>
@@ -190,6 +194,13 @@ struct NetThread::Impl {
         Publish(SessionStatus::State::Failed, ended);
         return;
       }
+      // Another tandem release than the host's, or no Phantom Liberty on
+      // one side: trying again changes nothing.
+      if (compat::IsFinalRefusal(ended)) {
+        log::Warn("not joining again: {}", ended);
+        Publish(SessionStatus::State::Failed, ended);
+        return;
+      }
       if (!config.joinCode.empty() && !relaySecret && codeTries >= 3) {
         log::Warn("not joining again: code {} led to no session",
                   net::DisplayJoinCode(config.joinCode));
@@ -212,7 +223,18 @@ struct NetThread::Impl {
     runtime.ResetSession();
     Regions::Get().Reset();
     std::string error;
-    const Identity identity{config.name, body};
+    // (Without Phantom Liberty no session starts, unless compat = off: then
+    // the other side refuses us, in words.)
+    const Identity identity{config.name, body, runtime.installation.install,
+                            runtime.Expansion() != compat::Expansion::Disabled &&
+                                runtime.Expansion() != compat::Expansion::Missing};
+    runtime.ClearDifferences();
+    report::SessionSummary summary{
+        .build = runtime.installation.install.build,
+        .role = NameOf(config.role),
+        .startedUtc = std::format("{:%Y-%m-%d %H:%M:%S}", std::chrono::floor<std::chrono::seconds>(
+                                                              std::chrono::system_clock::now()))};
+    const auto startedAt = std::chrono::steady_clock::now();
     const auto relay = RelayOf();
     // A guest with a join code goes through the relay, after the address
     // when tandem.ini gives one; without a code, to the address only.
@@ -235,7 +257,8 @@ struct NetThread::Impl {
     Publish(config.role == Config::Role::Host ? SessionStatus::State::InSession
                                               : SessionStatus::State::Connecting,
             {}, endpoint.get());
-    std::string endReason;
+    std::string endReason, refusal;
+    bool wasIn = false; // hosting, or welcomed by a host
     if (recorder.IsOpen())
       Tap(*endpoint);
     // The recorder (recording.hpp): everything this endpoint says. Before
@@ -314,6 +337,7 @@ struct NetThread::Impl {
                           endpoint->ThroughRelay() ? ", through the relay" : "");
                 if (const auto secret = endpoint->RelaySessionSecret())
                   relaySecret = secret;
+                wasIn = true;
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.SetYou(e.you);
                 Recording::Get().Joined(endpoint->IsHost(), e.you, e.host);
@@ -346,6 +370,23 @@ struct NetThread::Impl {
               } else if constexpr (std::is_same_v<E, events::PlayerReturned>) {
                 // Its puppet and seat stay; its new game sends its look again.
                 log::Info("{} is back on a new connection (player {})", e.player.name, e.player.id);
+              } else if constexpr (std::is_same_v<E, events::RemoteInstall>) {
+                // Another player's game against ours: told on screen, kept
+                // for the menu and the report; never a reason to refuse.
+                log::Info("{} (player {}) runs tandem {}, game {}, scripts {:016x}, tweaks "
+                          "{:016x}, {} other mod(s) {:016x}",
+                          e.name, e.player, e.install.build,
+                          e.install.game.empty() ? "?" : e.install.game, e.install.scripts,
+                          e.install.tweaks, e.install.modCount, e.install.mods);
+                for (const auto &line : e.differences) {
+                  runtime.NoteDifference(line);
+                  summary.notes.push_back(line);
+                  Notice(line, line, 600'000'000);
+                }
+              } else if constexpr (std::is_same_v<E, events::JoinRefused>) {
+                runtime.NoteDifference(e.notice);
+                summary.notes.push_back(e.notice);
+                Notice("refused " + e.name, e.notice);
               } else if constexpr (std::is_same_v<E, events::RemoteState>) {
                 runtime.PushRemote(e.state);
               } else if constexpr (std::is_same_v<E, events::RemotePose>) {
@@ -668,6 +709,18 @@ struct NetThread::Impl {
                   if (id != endpoint->You())
                     runtime.ForgetRemote(id);
                 runtime.PushEvent({ScriptEvent::Kind::SessionEnded, 0, e.reason, {}});
+                // Refused for our version or for Phantom Liberty: said on
+                // screen (the session's end is only said to a player who
+                // was in it).
+                if (compat::IsFinalRefusal(e.reason)) {
+                  const std::string_view words = e.reason;
+                  const auto text =
+                      "Could not join: " +
+                      std::string(words.substr(words.starts_with("refused: ") ? 9 : 0));
+                  refusal = text;
+                  summary.notes.push_back(text);
+                  Notice("version", text);
+                }
                 endReason = e.reason;
                 runtime.ResetSession();
                 ended = true;
@@ -677,6 +730,7 @@ struct NetThread::Impl {
       }
       if (street && !ended)
         runtime.SetSharedTraffic(endpoint->SharedTraffic(), endpoint->TrafficStatuses());
+      summary.peakPlayers = std::max(summary.peakPlayers, endpoint->Players().size());
       if (const auto lost = runtime.TakeOverflows())
         log::Warn("consistency: {} event(s) dropped, a queue was full (the game was not taking "
                   "them); its checks put the proxies right",
@@ -946,6 +1000,10 @@ struct NetThread::Impl {
       if (const auto now = std::chrono::steady_clock::now(); now >= nextReport) {
         nextReport = now + 10s;
         const auto link = endpoint->HostLinkStats();
+        if (link) {
+          summary.rttMs = static_cast<std::int32_t>(link->rttMs);
+          summary.lossPercent = link->packetLoss * 100;
+        }
         log::Info(
             "{} player(s){}", endpoint->Players().size(),
             link ? std::format(", rtt {} ms, loss {:.1f}%", link->rttMs, link->packetLoss * 100)
@@ -976,6 +1034,26 @@ struct NetThread::Impl {
     runtime.SetRemotePaused({});
     runtime.ClearRemoteElsewhere();
     runtime.SetRelay("", "");
+    summary.relay = endpoint->ThroughRelay() || (endpoint->IsHost() && relay.has_value());
+    summary.seconds = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                                                     std::chrono::steady_clock::now() - startedAt)
+                                                     .count());
+    summary.ended = !endReason.empty()      ? endReason
+                    : stop.stop_requested() ? "left (the co-op menu, or the game closed)"
+                                            : "the session ended";
+    summary.mismatches = endpoint->Checks().Mismatches();
+    summary.resyncs = endpoint->Checks().Requests();
+    // For the bug report (tandem/report.hpp): the last session only. Not a
+    // guest's tries at a host that is gone: they would write over the
+    // session that mattered every 5 s.
+    if (wasIn || !refusal.empty())
+      if (std::ofstream file(config.commandFile.parent_path() / "last-session.txt",
+                             std::ios::trunc);
+          file)
+        file << report::Format(summary);
+    // After the session's own reset, so the menu still says it.
+    if (!refusal.empty())
+      runtime.NoteDifference(refusal);
     endpoint->Leave(stop.stop_requested() ? "left the session" : "the game closed");
     // Stopped (the co-op menu's Leave, another choice, the game left): the
     // story side ends its session too (a guest gets its own story back).

@@ -394,15 +394,54 @@ struct TandemNative : Red::IScriptable {
 
   static std::int32_t DefaultPort() { return Runtime::Get().config.port; }
 
+  // ---- compatibility and bug reports (tandem/compat.hpp, report.hpp) ----
+  // Why co-op is off (the game's version, a missing or old mod), one
+  // sentence each; empty: it is not.
+  static Red::DynArray<Red::CString> CompatProblems() {
+    Red::DynArray<Red::CString> out;
+    if (Runtime::Get().Blocked())
+      for (const auto &problem : Runtime::Get().Problems())
+        out.EmplaceBack(problem.c_str());
+    return out;
+  }
+
+  // Phantom Liberty as the game's own menus know it (Coop.reds asks
+  // inkISystemRequestsHandler): 1 enabled, 2 owned but not installed or
+  // not enabled, 3 not owned. Without it co-op is off (CompatProblems).
+  static void SetExpansion(std::int32_t state) {
+    if (state >= 1 && state <= 3)
+      Runtime::Get().SetExpansion(static_cast<compat::Expansion>(state));
+  }
+
+  // What differs between our game and the other players' (their tandem
+  // build, its files, their other mods), this session or the last.
+  static Red::DynArray<Red::CString> CompatWarnings() {
+    Red::DynArray<Red::CString> out;
+    for (const auto &line : Runtime::Get().Differences())
+      out.EmplaceBack(line.c_str());
+    return out;
+  }
+
+  // Writes the bug report zip; where it is (from the game's folder), or
+  // "" when it could not be written (the log says why).
+  static Red::CString WriteReport() {
+    std::string error;
+    return Red::CString(Runtime::Get().WriteReport(error).c_str());
+  }
+
   // ---- the recorder (recording.hpp), whatever the role ----
-  // tandem.ini's recorder (or the co-op menu's switch) is on.
-  static bool RecorderOn() { return plugin::Recording::Get().Enabled(); }
+  // tandem.ini's recorder (or the co-op menu's switch) is on. Co-op off (a
+  // startup problem, no Phantom Liberty) keeps it off: tandem does nothing.
+  static bool RecorderOn() {
+    return !Runtime::Get().Blocked() && plugin::Recording::Get().Enabled();
+  }
   // Recording now (on, a game loaded, no error).
   static bool Recording() { return plugin::Recording::Get().Active(); }
   static bool RecorderPose() { return Runtime::Get().config.recorderPose; }
   // A game is loaded / its world is gone.
   static void RecorderStart(std::int32_t body) {
-    plugin::Recording::Get().GameLoaded(BodyOf(body));
+    if (!Runtime::Get().Blocked())
+      plugin::Recording::Get().GameLoaded(BodyOf(body));
   }
   static void RecorderLeft() { plugin::Recording::Get().GameLeft(); }
   // Around the scripts' recording work of a frame (its cost, per segment).
@@ -413,7 +452,10 @@ struct TandemNative : Red::IScriptable {
       plugin::Recording::Get().TickEnd();
   }
   static void RecorderCut() { plugin::Recording::Get().Cut(); }
-  static void RecorderSet(bool on) { plugin::Recording::Get().SetEnabled(on); }
+  static void RecorderSet(bool on) {
+    if (!on || !Runtime::Get().Blocked())
+      plugin::Recording::Get().SetEnabled(on);
+  }
   static Red::CString RecorderStatus() {
     return Red::CString(plugin::Recording::Get().Status().c_str());
   }
@@ -1870,6 +1912,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(RecentHosts);
   RTTI_METHOD(LocalAddresses);
   RTTI_METHOD(DefaultPort);
+  RTTI_METHOD(CompatProblems);
+  RTTI_METHOD(SetExpansion);
+  RTTI_METHOD(CompatWarnings);
+  RTTI_METHOD(WriteReport);
   RTTI_METHOD(RecorderOn);
   RTTI_METHOD(Recording);
   RTTI_METHOD(RecorderPose);

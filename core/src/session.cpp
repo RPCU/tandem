@@ -106,6 +106,8 @@ struct Session::Impl {
       auto message = proto::Decode(bytes);
       const auto kind = message ? Event::Kind::Received : Event::Kind::Malformed;
       events.push_back({kind, IdOf(event.peer), std::move(message)});
+      if (kind == Event::Kind::Malformed)
+        events.back().helloVersion = proto::PeekHelloVersion(bytes);
       enet_packet_destroy(event.packet);
       break;
     }
@@ -288,6 +290,19 @@ bool Session::Send(PeerId id, const proto::Message &message) {
   if (!packet)
     return false;
   if (enet_peer_send(peer, static_cast<enet_uint8>(proto::ChannelOf(message)), packet) != 0) {
+    enet_packet_destroy(packet);
+    return false;
+  }
+  return true;
+}
+
+bool Session::SendBytes(PeerId id, std::span<const std::byte> bytes) {
+  auto *peer = m_impl->PeerOf(id);
+  auto *packet =
+      peer ? enet_packet_create(bytes.data(), bytes.size(), ENET_PACKET_FLAG_RELIABLE) : nullptr;
+  if (!packet)
+    return false;
+  if (enet_peer_send(peer, static_cast<enet_uint8>(proto::Channel::Event), packet) != 0) {
     enet_packet_destroy(packet);
     return false;
   }

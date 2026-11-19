@@ -3633,6 +3633,12 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::CrimeReported>) {
               Log("police: the area's owner saw our V commit a crime (kind {}, npc {})",
                   static_cast<int>(e.crime.kind), e.crime.npc);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteInstall>) {
+              Log("{} (player {}) runs tandem {}", e.name, e.player, e.install.build);
+              for (const auto &line : e.differences)
+                Log("notice: {}", line);
+            } else if constexpr (std::is_same_v<E, tandem::events::JoinRefused>) {
+              Log("notice: {}", e.notice);
             } else if constexpr (std::is_same_v<E, tandem::events::Ended>) {
               Log("session ended: {}", e.reason);
               g_stop = 1;

@@ -126,7 +126,22 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *reaction = std::get_if<NpcReaction>(&message);
       reaction && reaction->type > kReactionMax)
     return std::nullopt;
+  if (const auto *install = std::get_if<Install>(&message);
+      install &&
+      (install->build.size() > kMaxInstallText || install->game.size() > kMaxInstallText))
+    return std::nullopt;
   return message;
+}
+
+std::optional<std::uint16_t> PeekHelloVersion(std::span<const std::byte> bytes) {
+  // The variant's index (Hello is the first alternative), then Hello's
+  // magic and version, little-endian.
+  const auto at = [&](std::size_t i) { return std::to_integer<std::uint32_t>(bytes[i]); };
+  if (bytes.size() < 7 || at(0) != Message(Hello{}).index())
+    return std::nullopt;
+  if ((at(1) | at(2) << 8 | at(3) << 16 | at(4) << 24) != kMagic)
+    return std::nullopt;
+  return static_cast<std::uint16_t>(at(5) | at(6) << 8);
 }
 
 Channel ChannelOf(const Message &message) {
@@ -267,7 +282,8 @@ const char *NameOf(const Message &message) {
                                    "Crime",
                                    "Presence",
                                    "Cue",
-                                   "NpcReaction"};
+                                   "NpcReaction",
+                                   "Install"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return names[message.index()];
 }

@@ -42,6 +42,9 @@ struct Event {
   std::optional<proto::Message> message;
   // Disconnected while connecting through the relay: why it failed.
   std::string reason;
+  // Malformed: the packet is a tandem Hello of this protocol version (one
+  // whose layout this build cannot decode).
+  std::optional<std::uint16_t> helloVersion;
 };
 
 struct Stats {
@@ -86,6 +89,9 @@ public:
 
   bool Send(PeerId peer, const proto::Message &message);
   void Broadcast(const proto::Message &message, PeerId except = 0);
+  // Bytes as they are, reliably, on the event channel: what a build with
+  // another protocol would send (tests).
+  bool SendBytes(PeerId peer, std::span<const std::byte> bytes);
   // A goodbye, once what was sent to the peer has arrived; it is reported
   // Disconnected when done.
   void Disconnect(PeerId peer);

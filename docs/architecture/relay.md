@@ -53,6 +53,7 @@ Wire format (`relay/internal/relay/wire.go`, big-endian, `TNR1` + type):
 | 10 `Secret`       | secret 16                             | relay → guest                |
 
 - **Observability**: JSON logs, `/healthz`, Prometheus `/metrics`.
+- **Running one** (tokens, systemd, the image, firewall, limits): [`docs/relay.md`](../relay.md).
 - **Shipping**: `nix-build -A relayImage` builds an OCI image with only the
   static binary and CA certificates, running as uid 65532.
 - **Kubernetes** (`deploy/kubernetes/base`): one replica (sessions live in

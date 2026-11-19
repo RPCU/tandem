@@ -7,10 +7,12 @@
 #include "engine/quests.hpp"
 #include "engine/scenes.hpp"
 #include "engine/trace.hpp"
+#include "installed.hpp"
 #include "log.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
 
+#include "tandem/compat.hpp"
 #include "tandem/instance.hpp"
 #include "tandem/protocol.hpp"
 
@@ -93,6 +95,37 @@ bool OnRunningUpdate(RED4ext::CGameApplication *) {
   return false; // ignored for the running state
 }
 
+// What is installed around us, judged and logged once (tandem/compat.hpp):
+// the game's version, the mods tandem needs, tandem's own files, and what the
+// other players will be told. A problem keeps co-op off; the co-op menu
+// says why.
+void CheckInstallation(tandem::plugin::Runtime &runtime, const std::filesystem::path &plugin) {
+  using namespace tandem;
+  using namespace tandem::plugin;
+  auto &found = runtime.installation;
+  found.game = GameDirectoryOf(plugin);
+  found.facts = GatherFacts(found.game, ModulePath(nullptr));
+  found.startup = compat::Check(found.facts);
+  found.install = compat::LocalInstall(found.game, found.facts.game);
+  log::Info("game {} (built for patch {}, {})",
+            found.facts.game ? compat::Format(*found.facts.game) : "version not read",
+            compat::kGamePatch, compat::Format(compat::kGame));
+  for (const auto &mod : found.facts.mods)
+    log::Info("{}: {}", mod.name,
+              !mod.present  ? "not installed"
+              : mod.version ? compat::Format(*mod.version)
+                            : "installed, version not read");
+  log::Info("tandem scripts {:016x}, tweaks {:016x}; {} other mod(s), list {:016x}",
+            found.install.scripts, found.install.tweaks, found.install.modCount,
+            found.install.mods);
+  for (const auto &warning : found.startup.warnings)
+    log::Warn("startup check: {}", warning);
+  for (const auto &problem : found.startup.problems)
+    log::Error("startup check: {}", problem);
+  if (found.startup.Blocked() && !runtime.config.compat)
+    log::Warn("startup check: ignored (compat = off in tandem.ini)");
+}
+
 bool OnRunningEdge(RED4ext::CGameApplication *) { return true; }
 RED4ext::v1::GameState g_running{&OnRunningEdge, &OnRunningUpdate, &OnRunningEdge};
 } // namespace
@@ -114,7 +147,8 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
                                   .command = Environment(tandem::instance::kCommandVariable),
                                   .log = Environment(tandem::instance::kLogVariable)});
     const bool ownLog = files.log.empty() || log::OpenFile(files.log);
-    log::Info("tandem {} loaded (protocol {})", TANDEM_VERSION, tandem::proto::kProtocolVersion);
+    log::Info("tandem {} loaded (protocol {})", tandem::compat::Build(),
+              tandem::proto::kProtocolVersion);
     if (!ownLog)
       log::Warn("{}: cannot write {}", tandem::instance::kLogVariable, files.log.string());
     if (files != tandem::instance::Resolve(PluginDirectory(handle), {}))
@@ -122,6 +156,15 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
                 files.command.string(), files.log.empty() ? "RED4ext's" : files.log.string());
 
     auto &runtime = Runtime::Get();
+    // A release ships its defaults as tandem.default.ini and never the
+    // player's own tandem.ini: the first start makes it, an update keeps it.
+    {
+      const auto defaults = PluginDirectory(handle) / "tandem.default.ini";
+      std::error_code ec;
+      if (!std::filesystem::exists(files.config, ec) && std::filesystem::exists(defaults, ec) &&
+          std::filesystem::copy_file(defaults, files.config, ec))
+        log::Info("{} created from tandem.default.ini", files.config.filename().string());
+    }
     runtime.config = LoadConfig(files.config);
     runtime.config.commandFile = files.command;
     runtime.config.recentFile = files.recent;
@@ -137,6 +180,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
         log::Warn("{}: bad port {}", tandem::instance::kPortVariable, narrow);
       }
     }
+    CheckInstallation(runtime, PluginDirectory(handle));
     runtime.ResetChoice();
     // A command left from an earlier run is not for this one.
     std::error_code ignored;
@@ -145,6 +189,12 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
               NameOf(runtime.config.role));
 
     Red::TypeInfoRegistrar::RegisterDiscovered();
+    // A startup problem: the natives stay (the scripts call them, the menu
+    // says what is wrong) and nothing else touches the game.
+    if (runtime.Blocked()) {
+      log::Error("co-op is off: no hook installed, the game runs as without tandem");
+      break;
+    }
     // Installed later, from the game thread (TandemNative.PoseHook).
     engine::SetPoseHookContext(sdk, handle);
     // Whatever the role: the co-op menu can start a session at any time, and
@@ -209,8 +259,14 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
 RED4EXT_C_EXPORT void RED4EXT_CALL Query(RED4ext::v1::PluginInfo *info) {
   info->name = L"tandem";
   info->author = L"tandem";
-  info->version = RED4EXT_V1_SEMVER(0, 2, 0);
-  info->runtime = RED4EXT_V1_RUNTIME_VERSION_LATEST;
+  info->version =
+      RED4EXT_V1_SEMVER(TANDEM_VERSION_MAJOR, TANDEM_VERSION_MINOR, TANDEM_VERSION_PATCH);
+  // Any game version: RED4ext would leave a plugin made for another patch
+  // out without a word in game, and our scripts would then call natives
+  // that are not there. We load, check the version ourselves
+  // (CheckInstallation, against the same file version RED4ext compares)
+  // and stay inert with a message in the co-op menu.
+  info->runtime = RED4EXT_V1_RUNTIME_VERSION_INDEPENDENT;
   info->sdk = RED4EXT_V1_SDK_VERSION_CURRENT;
 }
 

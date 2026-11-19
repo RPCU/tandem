@@ -1,0 +1,98 @@
+tandem: co-op for Cyberpunk 2077
+================================
+
+tandem is written from scratch. This file names the third-party code it is
+built with, the projects whose published code it learned from or uses at
+run time, and what it deliberately does not contain.
+
+tandem is not made, endorsed or supported by CD PROJEKT RED. Cyberpunk 2077
+is a trademark of CD PROJEKT S.A. tandem ships no game file and no game
+asset: the puppets, animations and sounds it uses are the ones already in
+the player's own game.
+
+
+1. Code built into what tandem ships
+------------------------------------
+
+The commit of each is the one `vendor/` is pinned to (git submodules); the
+full licence text is in the named file of that folder, and in
+THIRD-PARTY-LICENSES.txt of a release.
+
+  RED4ext.SDK        vendor/RED4ext.SDK   a34f0ad (1.0.0-29)   MIT
+    Copyright (c) 2020 - present Octavian Dima
+    https://github.com/wopss/RED4ext.SDK          LICENSE.md
+    In: tandem.dll (the game's types, the plugin API, the address library).
+    Its own THIRD_PARTY_LICENSES.md names D3D12 Memory Allocator (MIT,
+    Advanced Micro Devices), whose header its headers include.
+
+  RedLib             vendor/RedLib        48cb21d              MIT
+    Copyright (c) 2023 Pavel Siberx
+    https://github.com/psiberx/cp2077-red-lib     LICENSE
+    In: tandem.dll (RTTI registration of tandem's natives).
+    It carries nameof (MIT, Copyright (c) 2016 - 2023 Daniil Goncharov),
+    vendor/RedLib/vendor/nameof/LICENSE.
+
+  ENet               vendor/enet          5a9c537 (1.3.15+64)  MIT
+    Copyright (c) 2002-2024 Lee Salzman
+    https://github.com/lsalzman/enet              LICENSE
+    In: tandem.dll, tandem-report.exe, tandem-peer (the UDP transport).
+
+  zpp_bits           vendor/zpp_bits      4ccf2a7 (v4.7.7)     MIT
+    Copyright (c) 2021 Eyal Z
+    https://github.com/eyalz800/zpp_bits          LICENSE
+    In: tandem.dll, tandem-report.exe, tandem-peer (message encoding).
+
+tandem.dll and tandem-report.exe are linked statically against Microsoft's
+C and C++ run-time libraries (the redistributable static CRT and STL of
+the MSVC toolset).
+
+tandem-relay (relay/) uses the Go standard library only (BSD-3-Clause,
+Copyright (c) The Go Authors), compiled into its binary.
+
+
+2. Code used to build and test, not shipped to players
+------------------------------------------------------
+
+  doctest            vendor/doctest       d44d4f6 (v2.5.0)     MIT
+    Copyright (c) 2016-2023 Viktor Kirilov
+    https://github.com/doctest/doctest            LICENSE.txt
+    In: tandem-tests only.
+
+  redscript's compiler (scc) is built by nix/redscript.nix to check
+  tandem's scripts as the game would (MIT, jac3km4/redscript). It is not
+  part of a release: players install redscript themselves.
+
+
+3. Mods tandem needs at run time (not included, not modified)
+-------------------------------------------------------------
+
+Players install these themselves; tandem calls their public interfaces.
+
+  RED4ext    (MIT, Octavian Dima)   loads tandem.dll
+  redscript  (MIT, jac3km4)         compiles r6/scripts/tandem
+  Codeware   (MIT, Pavel Siberx)    script API tandem's scripts call
+  TweakXL    (MIT, Pavel Siberx)    loads r6/tweaks/tandem
+
+Codeware's source (MIT, https://github.com/psiberx/cp2077-codeware) was
+also read as a reference for how the engine works. Where tandem's own code
+follows something it shows (a function's name for an address-library
+hash, a structure's layout, the list of open-world quest phases, its hash
+of a quest node path), the source file says so in a comment next to it,
+and docs/research/engine-knowledge.md cites the file and commit. SharedPunk
+(MIT, alphanin9) is cited there the same way.
+
+
+4. What tandem does not contain
+-------------------------------
+
+No code in tandem comes from CyberpunkMP (Tilted Phoques), from Night City
+Online, or from the campaign fork of CyberpunkMP. Those projects are
+source-available under a licence that does not allow their code to be
+reused, and none of it was copied, translated or adapted here.
+
+What tandem did take from reading them is facts about the game: which
+address-library hash names which function, measured structure offsets,
+numbers, and what was observed to crash. Facts are not code. Each one is
+written down with its source and how far it has been verified in
+docs/research/ (engine-knowledge.md, nco-commits.md, campaign-fork.md),
+and the implementation built on it is tandem's own.

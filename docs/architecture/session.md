@@ -65,4 +65,6 @@ idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
   `relay_token`, `join` for the relay and join codes; `recorder`,
   `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`, see
   `recordings.md`): the defaults, and the test harness's session. The
-  default is solo.
+  default is solo. Every key with its default is in `dist/tandem.ini`
+  (shipped as `tandem.default.ini`) and `dist/INSTALL.md`; releases,
+  startup and join-time compatibility checks, bug reports: `release.md`.

@@ -21,6 +21,8 @@ template <class T> void RoundTrips(const T &value) {
 
 TEST_CASE("every message survives encoding") {
   RoundTrips(Hello{.name = "V", .gameVersion = "2.50", .body = Body::Male});
+  RoundTrips(Hello{.name = "V", .gameVersion = "0.2.0+2fa03ca", .flags = 0});
+  CHECK(Hello{}.flags == kHelloExpansion);
   RoundTrips(Welcome{.you = 2, .host = 1, .hostTimeUs = 123456789});
   RoundTrips(Refused{"full"});
   RoundTrips(Ping{42});
@@ -86,6 +88,15 @@ TEST_CASE("every message survives encoding") {
   // Shots change state (a hit, a dodge): never dropped, never doubled.
   CHECK(ChannelOf(NpcShotAt{}) == Channel::Event);
   CHECK(IsReliable(ShotHit{}));
+  RoundTrips(Install{.build = "0.2.0+2fa03ca",
+                     .game = "3.0.88.46235",
+                     .scripts = 0x1122334455667788,
+                     .tweaks = 2,
+                     .mods = 3,
+                     .modCount = 41});
+  CHECK(std::string(NameOf(Install{})) == "Install");
+  CHECK(IsReliable(Install{}));
+  CHECK_FALSE(Decode(Encode(Install{.build = std::string(kMaxInstallText + 1, 'x')})).has_value());
   CHECK(Encode(NpcShotAt{}).size() < 64);
   RoundTrips(TimeEffect{.player = 3, .abilities = kTimeScanning | kTimeSlowMo, .scale = 1.f});
   CHECK(std::string(NameOf(TimeEffect{})) == "TimeEffect");

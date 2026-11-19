@@ -64,18 +64,19 @@ task touches ([Topic files](#topic-files)).
 | Path | What | Built or checked by |
 | --- | --- | --- |
 | `core/` | protocol, transport (ENet), session (`Endpoint`); platform-independent C++23 | both CMake presets |
-| `plugin/` | the RED4ext plugin (`tandem.dll`, Windows x64): entry points, config, net thread | `windows` preset (clang-cl) |
+| `plugin/` | the RED4ext plugin (`tandem.dll`, Windows x64): entry points, config, net thread; `report/`: `tandem-report.exe`, the bug report without the game | `windows` preset (clang-cl) |
 | `peer/` | `tandem-peer`, the mock player (Linux) | `linux` preset |
 | `tests/` | doctest unit and loopback tests of `core/` (Linux) | `linux` preset |
 | `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
 | `deploy/kubernetes/base` | kustomize base for the relay | `task k8s:check` |
+| `deploy/systemd` | `tandem-relay.service`, the relay on a plain server (`docs/relay.md`) | — |
 | `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `RegionNatives.reds` `region_natives.cpp`, `StreetNatives.reds` `street_natives.cpp`, `PresenceNatives.reds` `presence_natives.cpp` | `task scripts:check`, `task natives:check` |
 | `tweaks/` | TweakXL records, installed to `r6/tweaks/tandem` (the puppet records, their attitude groups, the player marker) | — |
-| `dist/` | files installed next to the DLL (`tandem.ini`) | — |
+| `dist/` | files installed next to the DLL (`tandem.ini`, shipped as `tandem.default.ini`) and `INSTALL.md`, the players' guide | `task package` |
 | `cmake/` | `clang-cl-msvc.cmake`: the Windows cross toolchain | — |
-| `docs/` | this core; `architecture/`: one file per subsystem; `research/`: engine facts with sources, design research, `data/` (RTTI and skeleton dumps) | `task docs:check` |
-| `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `re/` (read-only reverse engineering, see its README) | — |
+| `docs/` | this core; `architecture/`: one file per subsystem; `relay.md` (operating a relay), `playtest.md` (the first two-machine session); `research/`: engine facts with sources, design research, `data/` (RTTI and skeleton dumps) | `task docs:check` |
+| `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `package.py` (`task package`), `re/` (read-only reverse engineering, see its README) | — |
 | `vendor/` | git submodules: RED4ext.SDK, RedLib, ENet, zpp_bits, doctest | — |
 
 The build is Linux-only: the plugin is cross-compiled with clang-cl and
@@ -292,6 +293,9 @@ plugin") and its open problems.
 - `testing.md`: test levels, scenarios, every `tandem-peer` mode and flag.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.
 - `two-instances.md`: two real games on the game machine (tried 2026-11-19: they play a session over loopback; a guest froze once, starts under load trip the engine's watchdog): results and measurements, findings, the setup (`tools/instance.sh`: a game folder and a prefix per instance, outside Steam, sandboxed off the player's files), the first-try checklist; the plugin's `TANDEM_CONFIG`, `TANDEM_CMD`, `TANDEM_PORT`, `TANDEM_LOG` (`core/include/tandem/instance.hpp`).
+- `release.md`: packaging (`task package`, the release and symbols zips), the startup check (game version, dependencies, Phantom Liberty, required on every game), what a join compares (protocol and Phantom Liberty refuse; build, files and mod lists warn), bug reports (`tandem-report`), what the game has not run yet. For release, compatibility and report code.
+
+Beside them, for people rather than code: `dist/INSTALL.md` (the players' guide, shipped in the zip), [`relay.md`](relay.md) (operating a relay: tokens, systemd, firewall, the image), [`playtest.md`](playtest.md) (the first two-machine session, a checklist).
 
 ## Research
 

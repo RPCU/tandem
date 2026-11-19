@@ -97,6 +97,7 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.34 | Traffic and police: open questions (need the game)              | `traffic-police.md` |
 | 13.35 | Presence: a remote V seen and heard                             | `presence.md`       |
 | 13.36 | The Relic tree's levers                                         | `combat.md`         |
+| 13.37 | Phantom Liberty: the game's own check                           | `ui.md`             |
 
 ## Top traps (one line each)
 

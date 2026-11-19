@@ -239,6 +239,13 @@ public class TandemSystem extends ScriptableSystem {
     }
     this.m_attached = true;
     this.m_leftDown = false;
+    // Before anything starts: without Phantom Liberty the plugin drops the
+    // session tandem.ini chose (and keeps the recorder off), and the player is told why nothing starts.
+    let wanted = TandemNative.IsConfigured();
+    TandemCoop.ReportExpansion();
+    if wanted && !TandemNative.IsConfigured() {
+      TandemCoop.Notice(this.GetGameInstance(), "Co-op is off: tandem needs Phantom Liberty on every player's game");
+    }
     // The recorder (its own key, solo or not) learns a game is loaded: it
     // starts if it is on (now, or when the co-op menu switches it on).
     this.m_recordReady = false;
@@ -259,6 +266,11 @@ public class TandemSystem extends ScriptableSystem {
   // menu in game).
   public func BeginSession() -> Void {
     if this.m_inGame || !this.m_attached {
+      return;
+    }
+    // No session chosen: the plugin refused it (co-op is off, a startup
+    // check failed: Coop.reds says why). The game stays as it is.
+    if !TandemNative.IsConfigured() {
       return;
     }
     let player = GetPlayer(this.GetGameInstance());
@@ -1416,6 +1428,8 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(verb, "leave") {
       this.CoopLeave();
       TandemNative.Log("coop: left the session");
+    } else if Equals(verb, "report") {
+      TandemNative.Log(s"coop: report: \(TandemNative.WriteReport())");
     } else {
       TandemNative.Log(s"coop: \(verb) needs the co-op menu open (the pause menu's or the main menu's)");
     }

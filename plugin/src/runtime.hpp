@@ -5,6 +5,7 @@
 
 #include "config.hpp"
 
+#include "tandem/compat.hpp"
 #include "tandem/consistency.hpp"
 #include "tandem/elsewhere.hpp"
 #include "tandem/hosts.hpp"
@@ -172,6 +173,36 @@ public:
 
   // tandem.ini, as loaded (the defaults; the choice below overrides the role).
   Config config;
+
+  // What is installed around us (tandem/compat.hpp), judged once when the
+  // plugin loads (main.cpp) and only read afterwards, from any thread.
+  struct Installation {
+    std::filesystem::path game; // the game's folder
+    compat::Facts facts;
+    compat::Startup startup;
+    proto::Install install; // what the other players are told
+  };
+  Installation installation;
+  // Phantom Liberty, as the game's menus report it (scripts:
+  // TandemCoop.ReportExpansion -> TandemNative.SetExpansion; game thread).
+  // Unknown until the first menu. Without it a chosen session is dropped.
+  void SetExpansion(compat::Expansion state);
+  compat::Expansion Expansion() const { return static_cast<compat::Expansion>(m_expansion.load()); }
+  // Co-op stays off: a startup problem (the game's version, a missing or
+  // old mod) or no Phantom Liberty, unless tandem.ini says compat = off. No
+  // session is chosen or started, and the co-op menu says why
+  // (TandemNative.CompatProblems).
+  bool Blocked() const { return config.compat && !Problems().empty(); }
+  // Why, one sentence each for the player (whatever compat says).
+  std::vector<std::string> Problems() const;
+  // What differs between our game and another player's (net thread writes,
+  // one line each; kept for the menu and the report until the next session).
+  void NoteDifference(std::string line);
+  void ClearDifferences();
+  std::vector<std::string> Differences() const;
+  // The bug report (tandem/report.hpp), into reports/ next to the DLL. The
+  // zip's path; "" with `error` when nothing was written.
+  std::string WriteReport(std::string &error);
 
   // Game thread: the local V exists; start the chosen session once.
   void Start(proto::Body body);
@@ -569,6 +600,8 @@ private:
   SessionChoice m_choice; // m_lock
   SessionStatus m_status; // m_lock
   mutable std::mutex m_recentLock;
+  mutable std::mutex m_compatLock;
+  std::vector<std::string> m_differences; // m_compatLock
   proto::Body m_body{};                   // m_lock: the last Start's
   std::string m_relayCode, m_relayStatus; // m_lock
   std::optional<proto::PlayerState> m_local;
@@ -618,6 +651,7 @@ private:
   std::vector<proto::NpcShot> m_npcShotsIn;                                             // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Appearance>> m_appearances; // m_lock
   std::atomic<proto::PlayerId> m_poseLoopback{0};
+  std::atomic<std::int32_t> m_expansion{0}; // compat::Expansion
   std::uint32_t m_loopSeq{};
   mutable std::mutex m_posesLock;
   std::map<proto::PlayerId, pose::PoseTrack> m_poses;

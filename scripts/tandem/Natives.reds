@@ -310,6 +310,15 @@ public native class TandemNative extends IScriptable {
   public static native func RecentHosts() -> array<TandemHost>
   public static native func LocalAddresses() -> array<String>
   public static native func DefaultPort() -> Int32
+  // Phantom Liberty as the game says (TandemCoop.ReportExpansion): 1 enabled,
+  // 2 owned but not installed or not enabled, 3 not owned.
+  public static native func SetExpansion(state: Int32)
+  // Why co-op is off (the game's version, a missing or old mod; empty: it
+  // is not), what differs from the other players' games, and the bug report
+  // zip (its path from the game's folder; "": not written, see the log).
+  public static native func CompatProblems() -> array<String>
+  public static native func CompatWarnings() -> array<String>
+  public static native func WriteReport() -> String
   // The recorder (tandem.ini recorder = on): independent of the session.
   public static native func RecorderOn() -> Bool
   public static native func Recording() -> Bool
