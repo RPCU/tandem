@@ -49,6 +49,10 @@ void Story::Note(const StoryInbound &inbound) {
     m_you = m_host = proto::kNoPlayer;
     m_others.clear();
     m_participation = {};
+    // The next session's scenes are counted from one again.
+    m_stage = {};
+    m_actors.clear();
+    m_bodies.clear();
     // Nobody's pose stays held for a private scene (the next session's
     // player 2 is someone else), and ours is no longer held back.
     for (auto &slot : m_posePaused)

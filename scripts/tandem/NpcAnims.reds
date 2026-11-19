@@ -37,14 +37,14 @@ public final static func Fire(
   // At a guest's puppet: that guest's game fires it and decides the hit
   // (Shots.reds). The cosmetic shot below then skips that guest (its proxy
   // fires for real): the endpoint leaves it out.
-  if IsDefined(weaponOwner) && IsDefined(target) && TandemNative.IsStarted() && TandemNative.IsHost() {
+  if IsDefined(weaponOwner) && IsDefined(target) && TandemNative.IsStarted() && TandemOwn.Entity(weaponOwner.GetGame(), weaponOwner.GetEntityID()) {
     let shots = TandemShots.Of(weaponOwner.GetGame());
     if IsDefined(shots) {
       shots.Announce(weaponOwner, weapon, target, tbhCoefficient, requestedTriggerMode, rangedAttack);
     }
   }
   wrappedMethod(weaponOwner, weapon, timeStamp, tbhCoefficient, requestedTriggerMode, targetPosition, target, rangedAttack, maxSpreadOverride, aimingDelay, offset, shouldTrackTarget, predictionTime, posProviderOverride, muzzleOffset, weaponCustomEvent);
-  if TandemNative.IsStarted() && TandemNative.IsHost() && IsDefined(weaponOwner) && IsDefined(weapon) && weapon.IsAttached() {
+  if TandemNative.IsStarted() && IsDefined(weaponOwner) && IsDefined(weapon) && weapon.IsAttached() && TandemOwn.Entity(weaponOwner.GetGame(), weaponOwner.GetEntityID()) {
     let at = targetPosition;
     if Vector4.IsZero(at) && IsDefined(target) {
       at = target.GetWorldPosition();
@@ -118,6 +118,9 @@ public class TandemNpcAnims {
   private let m_shots: Int32;
   private let m_applied: Int32;
   private let m_you: Uint32;
+
+  // Guest: the host's NPC shots whose bullet was drawn.
+  private let m_bullets: Int32;
 
   public static func Interval() -> Float {
     return 0.25;
@@ -331,6 +334,18 @@ public class TandemNpcAnims {
         this.Arm(body, this.FindProxy(shot.npc));
         TandemWeapons.Fire(body, false, shot.effect);
         this.m_shots += 1;
+        // Where the host's shot went: its bullet, drawn (tracer, impact,
+        // decal), deciding nothing here (Presence.reds).
+        let presence = TandemPresenceSync.Of(body.GetGame());
+        let weapon = TandemPresenceSync.WeaponOf(body, false);
+        if IsDefined(presence) && IsDefined(weapon) && weapon.IsAttached() && (shot.effect == 15 || shot.effect == 16 || shot.effect == 17) {
+          if presence.Bullet(body, weapon, new Vector4(shot.x, shot.y, shot.z, 1.0), now) {
+            this.m_bullets += 1;
+            if this.m_bullets == 1 || this.m_bullets % 50 == 0 {
+              TandemNative.Log(s"bullet: npc \(shot.npc)'s shot \(this.m_bullets) drawn from its proxy's weapon to (\(shot.x) \(shot.y) \(shot.z))");
+            }
+          }
+        }
       }
     }
     for proxy in this.m_proxies {

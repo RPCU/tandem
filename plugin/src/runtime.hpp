@@ -13,6 +13,7 @@
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
 #include "tandem/timebubble.hpp"
+#include "tandem/traffic.hpp"
 #include "tandem/vehicle.hpp"
 
 #include <array>
@@ -23,6 +24,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -90,6 +92,24 @@ struct RegroupEvent {
   Kind kind{};
   proto::Regroup offer;        // Offer
   proto::RegroupAnswer answer; // Answer
+};
+
+// World vehicles and police for the scripts (scripts/tandem/Traffic.reds,
+// Police.reds), net -> game thread: a shared vehicle appeared, went or
+// changed; a guest hit one of ours (area owner); the area's owner saw our
+// puppet commit a crime.
+struct StreetEvent {
+  enum class Kind : std::int32_t { Spawn = 1, Gone = 2, Status = 3, Hit = 4, Crime = 5 };
+  Kind kind{};
+  proto::TrafficSpawn spawn; // id set for every vehicle kind; Hit, Crime: position
+  std::int32_t flags{};      // Spawn, Status: kTraffic*; Hit: kTrafficHit*; Crime: kCrime*
+  std::int32_t reason{};     // Gone: kTraffic{Away,Taken,Removed}; Crime: proto::CrimeKind
+  proto::PlayerId player{};  // Gone taken: whose car; Hit: who
+  float amount{};            // Status: health 0..1; Hit: damage; Crime: share of health
+  proto::Vec3 vector;        // Hit: the push, or the way it went
+  proto::NpcId npc{};        // Crime: the victim or the witness
+  std::int32_t attack{};     // Crime: gamedataAttackType
+  std::uint64_t atUs{};      // when it arrived (steady clock): hits and crimes go stale
 };
 
 // NPC proxies use the player-puppet tracks and controller under these ids.
@@ -214,6 +234,19 @@ public:
   void PushRemotePose(const proto::PoseState &pose);
   bool PoseOf(proto::PlayerId player, pose::Pose &out);
   std::uint32_t PosesReceived(proto::PlayerId player);
+
+  // Scene replay (docs/architecture/scene-replay.md): the body poses of a
+  // scene's actors. Host: animation job threads -> net thread, the newest of
+  // each NPC. Guest: the net thread writes, animation job threads read, drawn
+  // as far in the past as the proxy's position; nothing once the stream has
+  // stopped for kActorPoseStaleUs (the proxy's own animation shows again).
+  static constexpr std::uint64_t kActorPoseStaleUs = 1'000'000;
+  void SubmitActorPose(proto::NpcId npc, const proto::PoseState &pose);
+  std::vector<proto::ActorPose> TakeActorPoses();
+  void PushActorPose(const proto::ActorPose &pose);
+  bool ActorPoseOf(proto::NpcId npc, pose::Pose &out);
+  void ForgetActorPoses();
+  std::uint32_t ActorPosesReceived();
 
   // Game thread -> net thread: our V's look, newest only (the endpoint keeps it
   // and sends it again to whoever joins).
@@ -341,6 +374,32 @@ public:
   // Guest: which players the host's NPC has detected (bit player - 1).
   std::uint8_t NpcDetected(proto::NpcId npc);
   void SubmitNpcStates(const proto::NpcStates &states);
+  // World vehicles and police (docs/architecture/traffic.md, police.md).
+  // game -> net: what the area's owner says of its vehicles (TrafficSpawn,
+  // TrafficGone, TrafficStatus, Crime), and anyone's TrafficHit and
+  // TrafficClaim. The owner's moving vehicles go through the packet budget
+  // here (game thread) and leave as one TrafficStates (newest only).
+  void SubmitStreet(proto::Message message);
+  std::vector<proto::Message> TakeStreetOutbox();
+  void SubmitTrafficCars(std::span<const traffic::Car> cars, std::span<const proto::Vec3> viewers);
+  std::optional<proto::TrafficStates> TakeTrafficStates();
+  // net -> game: events for the scripts, and each vehicle's track.
+  void PushStreetEvent(StreetEvent event);
+  std::vector<StreetEvent> TakeStreetEvents();
+  void PushTrafficStates(const proto::TrafficStates &states);
+  void ForgetTraffic(proto::TrafficId id);
+  // Where to draw a shared vehicle now (game thread).
+  sync::VehicleView TrafficOf(proto::TrafficId id);
+  // The session's record of the shared vehicles, for the scripts' checks.
+  void SetSharedTraffic(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
+                        const std::map<proto::TrafficId, proto::TrafficStatus> &status);
+  std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> SharedTraffic();
+  bool IsTrafficShared(proto::TrafficId id);
+  // Our V's wanted level, game -> net (newest only); everyone else's.
+  void SubmitLocalHeat(const proto::Heat &heat);
+  std::optional<proto::Heat> TakeLocalHeat();
+  void PushRemoteHeat(const proto::Heat &heat);
+  proto::Heat HeatOf(proto::PlayerId player);
   std::vector<proto::Message> TakeNpcOutbox();
   std::optional<proto::NpcStates> TakeNpcStates();
   void PushNpcEvent(const NpcEvent &event);
@@ -397,6 +456,9 @@ public:
   // spawns) and shots. Guest, net -> game: both queued for the scripts.
   void SubmitNpcAnim(const proto::NpcAnim &anim);
   void SubmitNpcShot(const proto::NpcShot &shot);
+  // Host, game -> net: a shared NPC's hit reaction, in order with the rest
+  // of the NPC outbox (presence.hpp keeps the guests' side).
+  void SubmitNpcReaction(const proto::NpcReaction &reaction);
   void PushNpcAnims(const proto::NpcAnims &anims);
   std::vector<proto::NpcAnim> TakeNpcAnims();
   void PushNpcShot(const proto::NpcShot &shot);
@@ -424,6 +486,17 @@ public:
   std::vector<proto::Message> TakeLootOutbox();
   void PushLoot(proto::Message message);
   std::vector<proto::Message> TakeLoot();
+
+  // Devices (scripts/tandem/Devices.reds). Game -> net: what a device of
+  // ours is now (host: DeviceState), what our V made one (guest: DeviceUse),
+  // one that came into our world (guest: DeviceState, kDeviceAsk). Net ->
+  // game: the host's word (DeviceState), a guest's question (DeviceState,
+  // kDeviceAsk) or request (DeviceUse), the record sent again (DeviceSet).
+  // Both queued, bounded.
+  void SubmitDevice(proto::Message message);
+  std::vector<proto::Message> TakeDeviceOutbox();
+  void PushDevice(proto::Message message);
+  std::vector<proto::Message> TakeDevices();
 
   // Our player id while in a session (0: none), set by the net thread.
   void SetYou(proto::PlayerId you) { m_you.store(you); }
@@ -521,6 +594,15 @@ private:
   std::uint32_t m_hostWorldChanges{};                                                // m_lock
   std::vector<proto::Message> m_npcOutbox;                                           // m_lock
   std::optional<proto::NpcStates> m_npcStates;                                       // m_lock
+  std::vector<proto::Message> m_streetOutbox;                                        // m_lock
+  std::optional<proto::TrafficStates> m_trafficStates;                               // m_lock
+  std::vector<StreetEvent> m_streetEvents;                                           // m_lock
+  std::map<proto::TrafficId, proto::TrafficSpawn> m_sharedTraffic;                   // m_lock
+  std::map<proto::TrafficId, proto::TrafficStatus> m_trafficStatus;                  // m_lock
+  std::optional<proto::Heat> m_localHeat;                                            // m_lock
+  std::map<proto::PlayerId, proto::Heat> m_heat;                                     // m_lock
+  traffic::Budget m_trafficBudget;                                                   // game thread
+  std::map<proto::TrafficId, sync::VehicleTrack> m_trafficTracks;                    // m_tracksLock
   std::vector<NpcEvent> m_npcEvents;                                                 // m_lock
   std::vector<consistency::Timed<proto::PlayerHit>> m_playerHits;                    // m_lock
   std::vector<proto::Message> m_hackOutbox;                                          // m_lock
@@ -528,8 +610,9 @@ private:
   std::vector<std::pair<proto::PlayerId, proto::NpcActionReply>> m_npcReplies;       // m_lock
   std::vector<ActionEvent> m_actionEvents;                                           // m_lock
   mutable std::mutex m_heldLock;
-  std::set<proto::PlayerId> m_heldPuppets;               // m_heldLock
-  std::vector<proto::Message> m_lootOutbox, m_lootInbox; // m_lock
+  std::set<proto::PlayerId> m_heldPuppets;                   // m_heldLock
+  std::vector<proto::Message> m_lootOutbox, m_lootInbox;     // m_lock
+  std::vector<proto::Message> m_deviceOutbox, m_deviceInbox; // m_lock
   std::atomic<proto::PlayerId> m_you{0};
   std::vector<proto::NpcAnim> m_npcAnimsIn;                                             // m_lock
   std::vector<proto::NpcShot> m_npcShotsIn;                                             // m_lock
@@ -538,19 +621,22 @@ private:
   std::uint32_t m_loopSeq{};
   mutable std::mutex m_posesLock;
   std::map<proto::PlayerId, pose::PoseTrack> m_poses;
+  std::map<proto::NpcId, pose::PoseTrack> m_actorPoses; // m_posesLock
+  std::map<proto::NpcId, proto::PoseState> m_actorOut;  // m_posesLock
+  std::uint32_t m_actorPosesIn{};                       // m_posesLock
 
   mutable std::mutex m_tracksLock;
   std::map<proto::PlayerId, sync::Track> m_tracks;
 
   std::atomic<std::int64_t> m_clockOffsetUs{0};
   std::atomic<std::uint64_t> m_lastFrameUs{0};
-  std::map<proto::NpcId, std::uint8_t> m_npcDetected;  // under m_lock
-  std::int32_t m_detectingUs{};                        // m_lock
-  std::uint64_t m_npcStatesAtUs{};                     // m_lock (host clock)
-  std::map<proto::NpcId, float> m_awarenessOfUs;       // m_lock
-  std::uint64_t m_awarenessAtUs{};                     // m_lock (host clock)
-  std::optional<proto::NpcAwareness> m_localAwareness; // m_lock
-  std::optional<proto::Stealth> m_localStealth;        // m_lock
+  // Each NPC's word with when it came (host clock): every owner lists only
+  // its own NPCs, so an entry ends by going stale, not by being left out.
+  std::map<proto::NpcId, std::pair<std::uint8_t, std::uint64_t>> m_npcDetected;  // m_lock
+  proto::PlayerId m_detectedFor{};                                               // m_lock
+  std::map<proto::NpcId, std::pair<float, std::uint64_t>> m_awarenessOfUs;       // m_lock
+  std::optional<proto::NpcAwareness> m_localAwareness;                           // m_lock
+  std::optional<proto::Stealth> m_localStealth;                                  // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Stealth>> m_stealth; // m_lock
   std::vector<proto::Noise> m_localNoises;                                       // m_lock
   std::vector<consistency::Timed<proto::Noise>> m_remoteNoises;                  // m_lock

@@ -79,7 +79,7 @@ public class TandemMarkers extends ScriptableSystem {
       }
       return null;
     }
-    return GameInstance.GetDynamicEntitySystem().GetEntity(system.CarOf(carrier)) as VehicleObject;
+    return TandemTraffic.Body(game, system.CarOf(carrier));
   }
 
   // ---- from TandemSystem: a puppet came, a puppet goes ----

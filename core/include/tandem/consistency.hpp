@@ -39,10 +39,20 @@ private:
 // it received). Positions are left out: they are state, newest wins.
 std::uint32_t WorldDigest(const std::optional<proto::World> &world,
                           const std::optional<proto::Difficulty> &difficulty = std::nullopt);
-// `holds`: who holds which NPC (grapples, carried bodies).
+// `holds`: who holds which NPC (grapples, carried bodies). `owners`: who runs
+// each NPC, where it is not the game that announced it (regions.hpp). With
+// `only`, the NPCs it accepts (id, owner) and no others: a guest is sent, and
+// hashes, the NPCs of the owners it is linked with.
+using NpcFilter = std::function<bool(proto::NpcId, proto::PlayerId)>;
 std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
                         const std::map<proto::NpcId, proto::NpcHealth> &health,
-                        const std::map<proto::NpcId, proto::NpcHold> &holds = {});
+                        const std::map<proto::NpcId, proto::NpcHold> &holds = {},
+                        const std::map<proto::NpcId, proto::PlayerId> &owners = {},
+                        const NpcFilter &only = {}, std::uint16_t *count = nullptr);
+// The shared world vehicles and how each stands (part of the NPC domain: a
+// difference is resynced with it).
+std::uint32_t TrafficDigest(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
+                            const std::map<proto::TrafficId, proto::TrafficStatus> &status);
 
 // The players as `self` sees them: everyone's look, held items, seat, radio,
 // stealth, pause menu and time ability but its own (a game is never sent
@@ -60,6 +70,8 @@ struct PlayersView {
   const std::map<proto::PlayerId, proto::Vitals> &lives;
   // Who is in another world (a V in the city counts like one never heard of).
   const std::map<proto::PlayerId, proto::Elsewhere> &elsewhere;
+  // Who is wanted (a V with no heat counts like one never heard of).
+  const std::map<proto::PlayerId, proto::Heat> &heat;
 };
 std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self);
 

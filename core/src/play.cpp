@@ -34,7 +34,11 @@ constexpr bool kKept =
     std::is_same_v<M, proto::Vitals> || std::is_same_v<M, proto::Revive> ||
     std::is_same_v<M, proto::NpcStrike> || std::is_same_v<M, proto::AreaHit> ||
     std::is_same_v<M, proto::Transit> || std::is_same_v<M, proto::ShotHit> ||
-    std::is_same_v<M, proto::Elsewhere>;
+    std::is_same_v<M, proto::Elsewhere> ||
+    // Our V's wanted level. Its hits and claims on shared vehicles
+    // (TrafficHit, TrafficClaim) are not kept: they name vehicles of the
+    // recorder's street, which no other session has.
+    std::is_same_v<M, proto::Heat>;
 } // namespace
 
 bool Keeps(const proto::Message &message) {
@@ -287,6 +291,8 @@ void Apply(Endpoint &endpoint, const proto::Message &message) {
           endpoint.SendShotHit(m);
         else if constexpr (std::is_same_v<M, proto::Elsewhere>)
           endpoint.SetLocalElsewhere(m);
+        else if constexpr (std::is_same_v<M, proto::Heat>)
+          endpoint.SetLocalHeat(m);
       },
       message);
 }
@@ -303,7 +309,12 @@ bool KeepsSession(const proto::Message &message) {
                  std::is_same_v<M, proto::NpcActionReply> ||
                  std::is_same_v<M, proto::RegroupAnswer> || std::is_same_v<M, proto::GameOver> ||
                  std::is_same_v<M, proto::WorldItemTaken> ||
-                 std::is_same_v<M, proto::PhoneAction> || std::is_same_v<M, proto::PhoneReply>);
+                 // Devices: the host's words are kept; the rest is the old
+                 // session's bookkeeping.
+                 std::is_same_v<M, proto::DeviceUse> || std::is_same_v<M, proto::DeviceSet> ||
+                 std::is_same_v<M, proto::DeviceDigest> || std::is_same_v<M, proto::PhoneAction> ||
+                 std::is_same_v<M, proto::PhoneReply> || std::is_same_v<M, proto::TrafficSet> ||
+                 std::is_same_v<M, proto::TrafficHit> || std::is_same_v<M, proto::TrafficClaim>);
       },
       message);
 }
@@ -353,7 +364,8 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                       std::is_same_v<M, proto::VehicleState> || std::is_same_v<M, proto::Stealth> ||
                       std::is_same_v<M, proto::TimeEffect> || std::is_same_v<M, proto::Elsewhere> ||
                       std::is_same_v<M, proto::Vitals> || std::is_same_v<M, proto::Pause> ||
-                      std::is_same_v<M, proto::Epoch> || std::is_same_v<M, proto::StoryEffect>)
+                      std::is_same_v<M, proto::Epoch> || std::is_same_v<M, proto::StoryEffect> ||
+                      std::is_same_v<M, proto::Heat>)
           return host(m.player);
         else if constexpr (std::is_same_v<M, proto::VehicleRadio>) {
           later(m.trackStartUs);
@@ -387,7 +399,18 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
         } else if constexpr (std::is_same_v<M, proto::NpcHold>) {
           return player(m.player);
         } else if constexpr (std::is_same_v<M, proto::NpcSeat>) {
-          return player(m.owner);
+          // In a shared vehicle (the street is replayed with its ids), or
+          // in a player's.
+          return proto::IsTrafficSeat(m.owner) || player(m.owner);
+        } else if constexpr (std::is_same_v<M, proto::TrafficGone>) {
+          // Taken by a player we have no part for: it just goes.
+          if (m.reason == proto::kTrafficTaken && !player(m.player)) {
+            m.reason = proto::kTrafficAway;
+            m.player = proto::kNoPlayer;
+          }
+          return true;
+        } else if constexpr (std::is_same_v<M, proto::Crime>) {
+          return us(m.player);
         } else if constexpr (std::is_same_v<M, proto::PlayerHit> ||
                              std::is_same_v<M, proto::PlayerHack> ||
                              std::is_same_v<M, proto::NpcCue> ||
@@ -417,6 +440,14 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
           return host(m.dropper);
         } else if constexpr (std::is_same_v<M, proto::SharedItem>) {
           return host(m.player);
+        } else if constexpr (std::is_same_v<M, proto::DeviceState>) {
+          // The host's word on a device (never a guest's question): ours
+          // to say again, by whoever of this session did it.
+          if (m.how == proto::kDeviceAsk)
+            return false;
+          if (!player(m.by))
+            m.by = proto::kNoPlayer;
+          return true;
         } else if constexpr (std::is_same_v<M, proto::World> ||
                              std::is_same_v<M, proto::NpcSpawn> ||
                              std::is_same_v<M, proto::NpcHealth> ||
@@ -426,7 +457,12 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                              std::is_same_v<M, proto::Difficulty> ||
                              std::is_same_v<M, proto::Journal> ||
                              std::is_same_v<M, proto::Tracked> ||
-                             std::is_same_v<M, proto::QuestReward>) {
+                             std::is_same_v<M, proto::QuestReward> ||
+                             // The host's street, as it was: the recorded
+                             // host owned every vehicle, and so do we.
+                             std::is_same_v<M, proto::TrafficSpawn> ||
+                             std::is_same_v<M, proto::TrafficStates> ||
+                             std::is_same_v<M, proto::TrafficStatus>) {
           return true;
         } else {
           return false;
@@ -497,6 +533,18 @@ void ApplyHost(Endpoint &endpoint, const proto::Message &message, proto::PlayerI
           endpoint.DropWorldItem(m);
         else if constexpr (std::is_same_v<M, proto::SharedItem>)
           endpoint.SendSharedItem(m);
+        else if constexpr (std::is_same_v<M, proto::DeviceState>)
+          endpoint.ReportDevice(m);
+        else if constexpr (std::is_same_v<M, proto::TrafficSpawn>)
+          endpoint.SendTrafficSpawn(m);
+        else if constexpr (std::is_same_v<M, proto::TrafficStates>)
+          endpoint.SendTrafficStates(m);
+        else if constexpr (std::is_same_v<M, proto::TrafficGone>)
+          endpoint.SendTrafficGone(m);
+        else if constexpr (std::is_same_v<M, proto::TrafficStatus>)
+          endpoint.SendTrafficStatus(m);
+        else if constexpr (std::is_same_v<M, proto::Crime>)
+          endpoint.SendCrime(m);
       },
       message);
 }

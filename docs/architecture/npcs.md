@@ -33,9 +33,15 @@ game (whether health, damage and loot follow the stat).
   is hidden for good (`HideIrreversibly`). When the session ends the
   proxies are deleted and the density reset. Verified 2026-11-18: 9–12 own
   NPCs hidden, 9–13 proxies shown, all proxies gone when the host left.
+  **Per-player regions replace the host-only half of this**
+  (`regions.md`): every game runs and announces the NPCs around its own V,
+  shows the NPCs of the players linked with it as proxies, keeps its crowd
+  on unless its V is deep in a higher-ranked linked player's region, and
+  hides only new spawns in that overlap. Built and tested without the
+  game; the verified runs above are of the host-only build.
   Open: police (`PreventionSpawnSystem`), quest NPCs the guest needs to
-  talk to (milestone 6), hit reactions and ragdolls from other players'
-  hits (`combat.md`).
+  talk to (milestone 6). Hit reactions and ragdolls from other players'
+  hits: built, untested in game (`presence.md`, `combat.md`).
 - **NPC animation** (`scripts/tandem/NpcAnims.reds`, engine-knowledge
   §13.21): the pose stream is too heavy for dozens of NPCs, so the host
   sends what an NPC's animation graph reads and the proxy's own graph
@@ -97,7 +103,9 @@ game (whether health, damage and loot follow the stat).
 ## Open problems
 
 - **Suppressing guests' own world simulation** (crowds, traffic, encounters,
-  quest phases) without breaking systems that expect them.
+  quest phases) without breaking systems that expect them. With regions
+  only the overlap of two regions is suppressed (`regions.md` §6); traffic
+  follows `Endpoint::AreaOwner`.
 - **A second V is welcome wherever the first is.** In co-op every V
   starts with the attitudes the player has: friendly to friendly NPCs
   (fixers, allies, quest characters, vendors), neutral to the neutral,

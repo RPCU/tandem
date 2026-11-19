@@ -3,14 +3,19 @@
 Can two copies of Cyberpunk 2077 run on anya at once, one hosting and one
 joining over loopback, so that tests put two real games against each other?
 
-**Status: researched offline (2026-11-19), nothing tried on anya.** The
-tooling (`tools/instance.sh`) was run only against a fake game tree. Every
-claim below carries a tag:
+**Status: tried on anya (2026-11-19), steps 0 to 8 of the
+[checklist](#first-try-lowest-risk-first).** One instance plays a save and
+hosts the mock player; two instances run at once and join over loopback,
+but of four starts of the guest one hung at start and one froze right
+after loading (see
+[Results](#results-on-anya-2026-11-19)). Every claim below carries a tag:
 
 - `[sourced]` — read in documentation or source code, linked.
 - `[reported]` — users say so (forums, a project's README), not confirmed.
 - `[inferred]` — follows from how Wine, Proton or the engine work.
 - `[offline]` — checked here, on the fake tree or in the unit tests.
+- `[anya]` — seen on anya, 2026-11-19 (patch 2.5, Proton CachyOS 11.0
+  through the Steam Linux Runtime 4, gamescope 3.17, an RX 6800 XT).
 - `[unknown]` — needs a try on anya; ranked in [Open unknowns](#open-unknowns).
 
 ## Verdict
@@ -29,6 +34,106 @@ claim below carries a tag:
 
 What decides it in practice is capacity (two games' memory, VRAM and CPU on
 one machine) and a handful of launch details that only a try will settle.
+
+## Results on anya (2026-11-19)
+
+**Works** `[anya]`:
+
+- **One instance, no tandem** (step 4): Proton CachyOS outside Steam,
+  through the Steam Linux Runtime 4 and `steam-run`, inside bubblewrap and a
+  nested gamescope, from a game folder whose archives are symbolic links.
+  The save loads; every mod loads (13 RED4ext plugins, redscript compiles
+  with no error); Steam's `content_log.txt` logs no "App Running" for any
+  start (it does for the player's own launches); nothing of the player's
+  changes (the `find` of step 2 prints nothing after every step), the cloud
+  folder included.
+- **The mark**: `TANDEM_INSTANCE_ID` reaches every process, the game's
+  included (its name in `/proc` is `GameThread`, not `Cyberpunk2077.exe`);
+  `status`, `stop` and the foreign-game check work on it.
+- **tandem in an instance** (step 5): deployed with
+  `GAME_DIR=… task deploy:files`; `b` hosts the mock player from the laptop
+  (`tandem-peer join anya --mode front`): the puppet walks, `cmd b where`
+  is taken.
+- **Two instances over loopback** (step 6): `a` hosts, `b` joins
+  `127.0.0.1:27450`: rtt 4 to 8 ms, no loss, each V sees the other (puppet,
+  marker), the host's story reaches the guest (Panam's call on both).
+- **Input per instance** (step 7): `tools/instance.sh xdo b key c` crouches
+  b's V only (a's log sees player 3 crouch, b's log sees no change of a's),
+  and the other way round. A click works the same way (Continue on the
+  menu); keys alone did not pick Continue (Return took the item under the
+  pointer: New Game).
+- **Headless** (step 8): `INSTANCE_DISPLAY=headless` (gamescope's headless
+  backend: no window in Sway) renders: `shot` takes the picture, `xdo`
+  reaches the game, `load` gets it in, it joined a's session (rtt 2 to 3 ms)
+  and tandem's watchdog stayed quiet. The pointer-only report of
+  [gamescope #1984](https://github.com/ValveSoftware/gamescope/issues/1984)
+  did not happen here.
+- **What the launch needed**, all in `tools/instance.sh` now: the game's
+  `bin/x64/GameServicesSteam.dll` left out of the copy (with it and no Steam
+  client the game exits at start or hangs on its logo); the Steam Linux
+  Runtime told the instance's folders (`STEAM_COMPAT_INSTALL_PATH`,
+  `PRESSURE_VESSEL_FILESYSTEMS_RW/RO`, else the game quits without a word);
+  `UMU_ID=0` and `PROTONFIXES_DISABLE=1` for Proton CachyOS without an app
+  id; gamescope, bubblewrap, xdotool and jq built from nixpkgs per instance
+  (`run/nix-*`), nothing installed on the system. The archives as symbolic
+  links load (ext4: no reflinks), and the copied prefix runs every mod.
+- **The game's resolution must be gamescope's**: the player's
+  `UserSettings.json` says 1152x720, which the game kept inside a 1280x720
+  gamescope, a window 64 pixels in (clicks offset). `settings` now writes
+  `Resolution` from `INSTANCE_SIZE` (it also failed before: jq is a
+  multi-output package, its link is `run/nix-jq-bin`).
+- **From launch to a loaded save** without a key from anywhere else:
+  `tools/instance.sh load NAME` (Load Begone, then a click on Continue, then
+  Space at the loading screen, as tandem's log tells).
+
+**Blocks or bites** `[anya]`:
+
+- **The guest froze once right after "playing"** (b joining a, its second
+  start of four): every thread of the game waits on its wineserver
+  (`anon_pipe_read`), 4% CPU, its log and net thread silent, so the host
+  drops it after 5 s ("b left the session"). Not tandem's watchdog line
+  either: the whole process stopped. Stacks in b's `run/bt.txt`
+  (`tools/instance.sh bt b`); no tandem frame in them but its idle net
+  thread. The next start of b, same roles, played. Cause unknown: the
+  machine was swapping at the time (below).
+- **Starting under load trips the engine's watchdog**: one start of b (with
+  a running and builds on all cores) stalled between the script compile and
+  the audio's start for over 120 s: `Watchdog timeout!` (engineWatchdog.cpp
+  224), a minidump in the instance's `ReportQueue`, the process left hanging
+  (the crash handler waits under Proton). The same phase takes about 50 s
+  alone and 2 min under load. b also hung once this way at its very first
+  start (the previous session, 12:39). 2 of about 10 starts.
+- **CPU: builds beat the games.** Other agents' builds on anya (three slots
+  at `-j5`, niced) run in ssh session scopes; the instances run in the user
+  manager's scopes. `nice` does not reach across cgroups, so the builds took
+  most of the CPU (pressure 72%) and both games fell to 9-10 fps, the GPU
+  10% busy. The scope's `CPUWeight=50` made it worse (now 100,
+  `INSTANCE_CPU_WEIGHT`): set to 400 on the running scopes, they rose to
+  13 and 17 fps at once, then 20 and 29 as the builds wound down (the two
+  effects not separated). A build slot that puts its build in a scope of low weight
+  (`systemd-run --user --scope -p CPUWeight=10`) would fix it at the source.
+- **Memory**: two games and the builds filled the 31 GB: 4 GB swapped, the
+  host's resident set fell from 6.4 to 2 GB. Two games alone fit: about
+  13 GB resident for both.
+
+**Measured** `[anya]` (720p, textures Low, 30 fps cap; idle machine: 5.7 GB
+of RAM used, 1.4 GB of VRAM):
+
+| What                                | one game, no tandem, textures High, 1152x720 | one game, tandem host + mock player | two games (each), builds running       |
+| ----------------------------------- | -------------------------------------------- | ----------------------------------- | -------------------------------------- |
+| game resident memory                | 6.4 GB                                       | 6.5 GB                              | 6.4 GB (b); a swapped to 2 to 3.3      |
+| scope memory (with page cache)      | 7.6 GB                                       | 7.4 GB                              | 7.8 GB (b)                             |
+| machine RAM used (over idle)        | +6.4 GB                                      | not separable (builds)              | 27 GB in all with builds, 4 GB swapped |
+| VRAM (amdgpu, the game's clients)   | 6.3 GB                                       | 3.2 GB                              | 3.5 GB; 8.4 GB used in all             |
+| CPU (5 s)                           | 3.9 cores                                    | 2.4 cores                           | 3.2 and 4.1 cores                      |
+| frame rate (Wine's present counter) | 30                                           | 29-30                               | 9-10, then 20 and 29 (see above)       |
+| start to the menu                   | 35 s                                         | 40 s                                | 3.5 min under load                     |
+| start to "playing"                  | not timed                                    | not timed                           | 4.5 to 5.5 min under load              |
+
+The VRAM is the textures: High at 1152x720 took 6.3 GB, Low at 1280x720
+3.2 GB. Two games fit the 16 GB card with room; RAM fits too without the
+builds. Frame rates come from `WINEDEBUG=-all,+fps` (Wine logs each present
+in `run/launch.log`; `tools/instance.sh stats` reads the last).
 
 ## Findings
 
@@ -65,7 +170,10 @@ shows it as running and counts playtime `[reported]`. So the instance is
 started with those variables removed, its copy of the game folder has no
 `steam_appid.txt`, and the Steam client's own folder (`~/.steam`) is hidden
 from it. With no way to reach the client, there are no achievements, no
-cloud and no "running" state `[inferred]`.
+cloud and no "running" state `[inferred]`; on anya Steam logged no "App
+Running" for any instance start `[anya]`. The game also needs its
+`GameServicesSteam.dll` gone: with it and no client it exits or hangs on
+its logo `[anya]`.
 
 **Launching Proton without Steam.** The `proton` script runs by hand with
 `STEAM_COMPAT_DATA_PATH` (any folder: the prefix) and the client's folder in
@@ -114,7 +222,8 @@ cache alone rule it out). Each instance gets its own folder and prefix.
 
 ### 3. Resources
 
-Not measured. What is known:
+Measured on anya: [Results](#results-on-anya-2026-11-19). What was known
+before:
 
 - CD Projekt's minimum for 2.x is 12 GB of RAM and a 6 GB card for 1080p low
   at 30 fps
@@ -174,13 +283,15 @@ of their own.
 
 - **Best: no OS input.** tandem's command file (`tandem.cmd`) and scripts
   drive a game from inside, per instance, whatever has focus. Load Begone
-  gets each game from launch to a loaded save without a key.
+  gets each game from launch to the main menu without a key; Continue
+  takes one click (`tools/instance.sh load`) `[anya]`.
 - **Keyboard and mouse: through gamescope's own X server.** Each nested
   gamescope runs an Xwayland of its own (`DISPLAY=:1`, `:2`…); XTEST events
   sent there (`DISPLAY=:2 xdotool key …`) reach that game only, focused in
   Sway or not ([foxclick](https://github.com/samarslan/foxclick),
   [pindu-launcher #423](https://github.com/Tim-van-Oudheusden/pindu-launcher/issues/423))
-  `[reported]`. `ydotool` (what `tools/game.sh key` uses) is a kernel input
+  `[reported]`; on anya keys and clicks reach that game only, the pointer in
+  the game window's coordinates `[anya]`. `ydotool` (what `tools/game.sh key` uses) is a kernel input
   device: it goes to whatever Sway has focused, one game at a time, and to
   the player's own windows. Not usable for two.
 - **Gamepads: one uinput device per bot**, each game seeing only its own.
@@ -195,6 +306,11 @@ of their own.
   `tools/instance.sh` already wraps the game in bubblewrap: the device
   binds are a few more arguments, left for when a bot needs a pad.
 - Without gamescope, Wayland focus decides: only the focused game gets keys.
+- The test pilot uses the same path: `PILOT_INSTANCE=NAME tools/game.sh
+pilot run ROUTINE` plays an instance's V by XTEST on that display
+  (`autopilot.md`, "Two real games"), or by a pad only that instance reads
+  (an SDL hint for now; the bubblewrap device binds above are the sturdier
+  way).
 
 ### 5. Risks to the player's install
 
@@ -216,7 +332,7 @@ things named: the install, the prefix, the cloud folder.
 ## Recommended setup
 
 ```
-/data/tandem-instances/NAME/           (TANDEM_INSTANCES; same filesystem as the game)
+/data/Steam/tandem-instances/NAME/     (TANDEM_INSTANCES; same filesystem as the game)
   .tandem-instance                     marks it as ours (destroy refuses without it); its pad
   game/                                the game folder: archive/ linked, the rest copied
   compatdata/                          its Proton prefix (STEAM_COMPAT_DATA_PATH)
@@ -250,10 +366,24 @@ tools/instance.sh create a            # and b; reads the player's install
 GAME_DIR="$(tools/instance.sh dir a)" task deploy:files
 tools/instance.sh role a host
 tools/instance.sh role b join         # 127.0.0.1
-tools/instance.sh start a; tools/instance.sh start b
+tools/instance.sh start a; tools/instance.sh load a   # to "playing"
+tools/instance.sh start b; tools/instance.sh load b   # once a plays
 tools/instance.sh log a; tools/instance.sh cmd b where
+tools/instance.sh stats a; tools/instance.sh shot b x.png; tools/instance.sh xdo b key c
+tools/instance.sh bt b                # a frozen game's stacks, to b's run/bt.txt
 tools/instance.sh stop a; tools/instance.sh destroy a
 ```
+
+**Changed from the plan**: the instances live in
+`/data/Steam/tandem-instances` (the default of `TANDEM_INSTANCES`, beside
+the Steam library), not in `/data/tandem-instances/b` as first written
+(`/data/tandem-instances/NAME/ (TANDEM_INSTANCES; same filesystem as the game)`):
+`/data` is root-owned. Paths under Wine follow
+(`Z:/data/tandem-instances/b/tandem.ini` is now under `Z:/data/Steam/`), and
+so does the check of step 2 (it read
+`find "/data/Steam/steamapps/common/Cyberpunk 2077" /data/Steam/steamapps/compatdata/1091500 -newer /data/tandem-instances/b/.tandem-instance | head`).
+And `tools/instance.sh start a; tools/instance.sh start b` became a start
+and a `load` each, the second once the first plays.
 
 `-n` prints every command instead of running it. From the laptop the script
 sends itself to anya over ssh; `GAME_HOST=local` runs it on the machine at
@@ -286,19 +416,19 @@ the game):
 | `TANDEM_PORT`   | the UDP port, over the file's                                           |
 | `TANDEM_LOG`    | a log file of tandem's own, besides RED4ext's `tandem-*.log`            |
 
-Paths are the game's: `Z:/data/tandem-instances/b/tandem.ini` under Wine. A
-relative path starts at the plugin's folder. Built and unit-tested; not run
-in a game `[unknown]`.
+Paths are the game's: `Z:/data/Steam/tandem-instances/b/tandem.ini` under
+Wine. A relative path starts at the plugin's folder. Built and unit-tested;
+not run in a game `[unknown]` (the instances on anya did not need them).
 
 ## Costs
 
-| Per instance | Estimate                                                                                                                                                                                     |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Disk         | the game folder without `archive/` plus the prefix: a few GB `[unknown]`; `create` prints the number and checks the room before copying. A full copy instead: the whole game, 70 GB and more |
-| RAM          | 8 to 10 GB `[unknown]` (limit: 14 GB)                                                                                                                                                        |
-| VRAM         | 3 to 5 GB at 720p low `[unknown]`                                                                                                                                                            |
-| CPU          | a few cores at 30 fps `[unknown]`                                                                                                                                                            |
-| Start        | as long as the player's game, plus shader compilation at the first start (a cache of its own)                                                                                                |
+| Per instance | Measured on anya `[anya]`                                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Disk         | 3.5 GB (the game folder without `archive/`, the prefix, one save); copied in about a minute. A full copy instead: the whole game, 70 GB and more |
+| RAM          | 6.5 GB resident, 7.5 GB with its page cache (limit: 14 GB)                                                                                       |
+| VRAM         | 3.2 to 3.5 GB at 720p, textures Low (6.3 GB with the player's High)                                                                              |
+| CPU          | 2.5 to 4 cores at 30 fps                                                                                                                         |
+| Start        | 35 to 40 s to the menu alone, 3.5 min under load; the first start compiles shaders (a cache of its own in `run/`)                                |
 
 ## Alternatives
 
@@ -326,34 +456,30 @@ in a game `[unknown]`.
 
 ## Open unknowns
 
-Ranked by how likely each is to stop the plan.
+Ranked by how likely each is to stop the plan. Settled on anya `[anya]`:
+Proton outside Steam (CachyOS, Steam Linux Runtime 4, `steam-run`,
+bubblewrap: they nest; `PROTON_DIR`, `INSTANCE_RUNTIME`, `INSTANCE_FHS`,
+`INSTANCE_LAUNCHER=umu` stay to peel layers off elsewhere); the game with
+the Steam client out of reach (once `GameServicesSteam.dll` is out); linked
+archives; the copied prefix; the mark (the systemd scope,
+`tandem-instance-NAME.scope`, is still stopped first); gamescope nested and
+headless on that GPU; XTEST input, mouse and keys.
 
-1. **Proton outside Steam on anya.** Which Proton, where the Steam Linux
-   Runtime is, whether the machine is NixOS (then `steam-run`), whether
-   the runtime, `steam-run` and our bubblewrap nest. `instance.sh` guesses
-   from the player's prefix (`config_info`) and takes `PROTON_DIR`,
-   `INSTANCE_RUNTIME`, `INSTANCE_FHS`, `INSTANCE_SANDBOX`,
-   `INSTANCE_LAUNCHER=umu` to peel layers off one at a time.
-2. **The game without the Steam client in reach.** Reported to run; under
-   Proton with `~/.steam` hidden it is `[unknown]`. If it stalls, try
-   `INSTANCE_HIDE_STEAM=0` (the app id variables stay removed).
-3. **Capacity.** RAM, VRAM and CPU for two. Measure with one, then two.
-4. **Linked archives.** Whether the engine and ArchiveXL read `archive/`
-   through symbolic links under Wine. Mod managers deploy this way on Linux
-   `[reported]`; if not, reflinks or `INSTANCE_MIRROR=copy`.
-5. **The copied prefix**: that RED4ext and every mod load in it as they do in
-   the player's.
-6. **The mark.** `stop` and the "is it ours" check rely on
-   `TANDEM_INSTANCE_ID` reaching every process's environment through the
-   runtime and Wine. If it does not, the systemd scope
-   (`tandem-instance-NAME.scope`) is the fallback for `stop`, and our own
-   game would look foreign (the tools then refuse: the safe side).
-7. **gamescope on anya**: installed? works nested on that GPU and that Sway?
-8. **Input**: XTEST into gamescope's X server reaching the game's raw mouse
-   input; what an unfocused game does without gamescope.
-9. **Sound**: two games play at once. A null sink per instance
-   (`INSTANCE_ENV='PULSE_SINK=…'`) if it matters.
-10. **tandem with two real games**: found by doing it. That is the point.
+1. **The guest's freeze after "playing"** (once in three): a whole-process
+   stop, every thread waiting on the wineserver. Is it the swapping machine,
+   the two wineservers, or tandem's guest path? Next: two games with no
+   build running, then the same roles swapped, `bt` at once when it stops.
+2. **Starts under load and the engine's 120 s watchdog**: start the second
+   game only once the first plays, and with no build on anya. A test runner
+   should detect it (no "system attached" within 3 minutes), `stop` and
+   start again.
+3. **Builds against games**: the build slots' processes need a scope of low
+   CPU weight (or the tests a time without builds); `nice` is not enough.
+4. **Sound**: two games play at once (unheard: anya's session streams
+   video only). A null sink per instance (`INSTANCE_ENV='PULSE_SINK=…'`) if
+   it matters.
+5. **Input without gamescope**: what an unfocused game does. Moot while
+   gamescope works.
 
 ## First try, lowest risk first
 
@@ -370,10 +496,10 @@ at the first surprise. Steps 0 and 1 change nothing on anya.
    the Proton in use, what is installed.
 1. **`tools/instance.sh -n create b`.** _Observe:_ the paths are the right
    ones, the size and the room it reports, no command outside
-   `/data/tandem-instances/b`.
+   `/data/Steam/tandem-instances/b`.
 2. **`tools/instance.sh create b`.** _Observe:_ "archives: reflink" or
    "link"; the save it took; then that nothing of the player's changed:
-   `find "/data/Steam/steamapps/common/Cyberpunk 2077" /data/Steam/steamapps/compatdata/1091500 -newer /data/tandem-instances/b/.tandem-instance | head`
+   `find "/data/Steam/steamapps/common/Cyberpunk 2077" /data/Steam/steamapps/compatdata/1091500 -newer /data/Steam/tandem-instances/b/.tandem-instance | head`
    prints nothing.
 3. **`tools/instance.sh -n start b`**, and read the command: the Proton,
    the runtime, the sandbox's binds.
@@ -407,7 +533,9 @@ host`, `start b`, `task peer -- join <anya>:27450 --mode front`.
    render (a screenshot from tandem or gamescope), does the engine's
    watchdog stay quiet.
 
-Afterwards: `tools/instance.sh status` shows nothing running; `destroy` each
+Done on 2026-11-19 (steps 0 to 8, [Results](#results-on-anya-2026-11-19));
+instances `a` and `b` stay on anya, roles host and join. Afterwards:
+`tools/instance.sh status` shows nothing running; `destroy` each
 instance when the disk is wanted back. Record what was learnt here, tag by
 tag, and in `docs/research/engine-knowledge.md` §12.
 

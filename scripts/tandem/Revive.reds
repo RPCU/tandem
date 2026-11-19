@@ -109,6 +109,15 @@ public class TandemRevive {
   }
 
   // Our V is down or out (no save meanwhile: TandemSystem.IsSavingLocked).
+  // Seconds left of our revive of `player` (-1: we are not reviving them):
+  // the party HUD's countdown.
+  public func HoldLeft(player: Uint32) -> Float {
+    if this.m_holding == 0u || this.m_holding != player {
+      return -1.0;
+    }
+    return MaxF(0.0, 10.0 - (this.m_now - this.m_holdAt));
+  }
+
   public func IsDown() -> Bool {
     return this.m_life != 0 || this.m_dying;
   }

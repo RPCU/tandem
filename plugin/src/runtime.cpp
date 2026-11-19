@@ -5,6 +5,8 @@
 #include "net_thread.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
+
+#include "presence.hpp"
 #include "story.hpp"
 
 #include "tandem/session.hpp"
@@ -200,10 +202,7 @@ void Runtime::Stop() {
     m_npcReplies.clear();
     m_actionEvents.clear();
     m_npcDetected.clear();
-    m_detectingUs = 0;
-    m_npcStatesAtUs = 0;
     m_awarenessOfUs.clear();
-    m_awarenessAtUs = 0;
     m_localAwareness.reset();
     m_localStealth.reset();
     m_stealth.clear();
@@ -217,6 +216,8 @@ void Runtime::Stop() {
     m_hackEvents.clear();
     m_lootOutbox.clear();
     m_lootInbox.clear();
+    m_deviceOutbox.clear();
+    m_deviceInbox.clear();
     m_npcAnimsIn.clear();
     m_npcShotsIn.clear();
     m_localPaused.reset();
@@ -268,6 +269,8 @@ void Runtime::Stop() {
   }
   std::lock_guard _(m_posesLock);
   m_poses.clear();
+  m_actorPoses.clear();
+  m_actorOut.clear();
 }
 
 bool Runtime::Started() const {
@@ -792,7 +795,7 @@ std::vector<proto::ShotHit> Runtime::TakeShotHits() {
 std::uint8_t Runtime::NpcDetected(proto::NpcId npc) {
   std::lock_guard _(m_lock);
   const auto it = m_npcDetected.find(npc);
-  return it == m_npcDetected.end() ? 0 : it->second;
+  return it == m_npcDetected.end() ? 0 : it->second.first;
 }
 
 void Runtime::SubmitNpcStates(const proto::NpcStates &states) {
@@ -985,20 +988,44 @@ std::vector<proto::Message> Runtime::TakeLoot() {
   return std::exchange(m_lootInbox, {});
 }
 
+void Runtime::SubmitDevice(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_deviceOutbox.size() < 2048)
+    m_deviceOutbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeDeviceOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_deviceOutbox, {});
+}
+
+void Runtime::PushDevice(proto::Message message) {
+  std::lock_guard _(m_lock);
+  // Room for a whole record at a join (devices::kMaxDevices) and more; what
+  // does not fit is put right by the device digest.
+  if (m_deviceInbox.size() < 8192)
+    m_deviceInbox.push_back(std::move(message));
+  else
+    ++m_overflows;
+}
+
+std::vector<proto::Message> Runtime::TakeDevices() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_deviceInbox, {});
+}
+
 void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you) {
   {
-    // The states list every NPC the host shares: who is not in them
-    // detects nobody any more.
+    // Each owner's states list every NPC it shares, ten times a second: an
+    // NPC not heard of for a second detects nobody any more.
+    const auto now = HostNowUs();
     std::lock_guard _(m_lock);
-    m_npcDetected.clear();
-    m_detectingUs = 0;
-    const auto ours = you >= 1 && you <= 8 ? static_cast<std::uint8_t>(1u << (you - 1)) : 0;
-    for (const auto &entry : states.npcs) {
-      m_npcDetected[entry.npc] = entry.detected;
-      if (entry.detected & ours)
-        ++m_detectingUs;
-    }
-    m_npcStatesAtUs = HostNowUs();
+    m_detectedFor = you;
+    for (const auto &entry : states.npcs)
+      m_npcDetected[entry.npc] = {entry.detected, now};
+    std::erase_if(m_npcDetected, [&](const auto &entry) {
+      return static_cast<std::int64_t>(now - entry.second.second) > 1'000'000;
+    });
   }
   // Each NPC is a track of its own, drawn like a remote player.
   for (const auto &entry : states.npcs) {
@@ -1030,6 +1057,11 @@ void Runtime::SubmitNpcShot(const proto::NpcShot &shot) {
   m_npcOutbox.push_back(shot);
 }
 
+void Runtime::SubmitNpcReaction(const proto::NpcReaction &reaction) {
+  std::lock_guard _(m_lock);
+  m_npcOutbox.push_back(reaction);
+}
+
 void Runtime::PushNpcAnims(const proto::NpcAnims &anims) {
   std::lock_guard _(m_lock);
   for (const auto &anim : anims.npcs)
@@ -1056,29 +1088,37 @@ std::vector<proto::NpcShot> Runtime::TakeNpcShots() {
 std::int32_t Runtime::NpcsDetectingUs() {
   const auto now = HostNowUs();
   std::lock_guard _(m_lock);
-  // The host went quiet (or left): nobody can be hunting us on its say.
+  // An owner that went quiet (or left): nobody can be hunting us on its say.
   // (Signed: the clock offset may move a stamp a little into the future.)
-  return !m_npcStatesAtUs || static_cast<std::int64_t>(now - m_npcStatesAtUs) > 3'000'000
-             ? 0
-             : m_detectingUs;
+  const auto you = m_detectedFor;
+  const auto ours = you >= 1 && you <= 8 ? static_cast<std::uint8_t>(1u << (you - 1)) : 0;
+  std::int32_t detecting = 0;
+  for (const auto &[npc, entry] : m_npcDetected)
+    if ((entry.first & ours) && static_cast<std::int64_t>(now - entry.second) <= 3'000'000)
+      ++detecting;
+  return detecting;
 }
 
 float Runtime::NpcAwarenessOfUs(proto::NpcId npc) {
   const auto now = HostNowUs();
   std::lock_guard _(m_lock);
-  if (!m_awarenessAtUs || static_cast<std::int64_t>(now - m_awarenessAtUs) > 1'000'000)
-    return 0.f;
   const auto it = m_awarenessOfUs.find(npc);
-  return it == m_awarenessOfUs.end() ? 0.f : it->second;
+  if (it == m_awarenessOfUs.end() || static_cast<std::int64_t>(now - it->second.second) > 1'000'000)
+    return 0.f;
+  return it->second.first;
 }
 
 void Runtime::PushNpcAwareness(const proto::NpcAwareness &awareness, proto::PlayerId you) {
+  // Each owner lists the NPCs noticing someone, five times a second: one
+  // left out is no longer noticing us, and its entry goes stale.
+  const auto now = HostNowUs();
   std::lock_guard _(m_lock);
-  m_awarenessOfUs.clear();
   for (const auto &entry : awareness.entries)
     if (entry.player == you)
-      m_awarenessOfUs[entry.npc] = static_cast<float>(entry.level) / 255.f;
-  m_awarenessAtUs = HostNowUs();
+      m_awarenessOfUs[entry.npc] = {static_cast<float>(entry.level) / 255.f, now};
+  std::erase_if(m_awarenessOfUs, [&](const auto &entry) {
+    return static_cast<std::int64_t>(now - entry.second.second) > 400'000;
+  });
 }
 
 void Runtime::SubmitNpcAwareness(proto::NpcAwareness awareness) {
@@ -1195,6 +1235,7 @@ std::uint32_t Runtime::TakeOverflows() {
 }
 
 void Runtime::ResetSession() {
+  PresenceState::Get().Reset();
   {
     std::lock_guard _(m_lock);
     m_localShots.clear();
@@ -1206,10 +1247,7 @@ void Runtime::ResetSession() {
     m_hackOutbox.clear();
     m_hackEvents.clear();
     m_npcDetected.clear();
-    m_detectingUs = 0;
-    m_npcStatesAtUs = 0;
     m_awarenessOfUs.clear();
-    m_awarenessAtUs = 0;
     m_localAwareness.reset();
     m_localNoises.clear();
     m_remoteNoises.clear();
@@ -1219,14 +1257,160 @@ void Runtime::ResetSession() {
     // Bags, claims, revives and offers name the old session's numbers.
     m_lootOutbox.clear();
     m_lootInbox.clear();
+    m_deviceOutbox.clear();
+    m_deviceInbox.clear();
     m_localRevives.clear();
     m_revives.clear();
     m_regroupOutbox.clear();
     m_regroupEvents.clear();
+    // The street: the next session's ids are other vehicles, and nobody is
+    // wanted in it until its game says so.
+    m_streetOutbox.clear();
+    m_trafficStates.reset();
+    m_streetEvents.clear();
+    m_sharedTraffic.clear();
+    m_trafficStatus.clear();
+    m_heat.clear();
   }
   // The NPCs' tracks: the next session's ids are other NPCs.
   std::lock_guard _(m_tracksLock);
   std::erase_if(m_tracks, [](const auto &entry) { return entry.first >= kNpcPuppetBase; });
+  m_trafficTracks.clear();
+}
+
+void Runtime::SubmitStreet(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_streetOutbox.size() < 2048)
+    m_streetOutbox.push_back(std::move(message));
+  else
+    ++m_overflows;
+}
+
+std::vector<proto::Message> Runtime::TakeStreetOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_streetOutbox, {});
+}
+
+void Runtime::SubmitTrafficCars(std::span<const traffic::Car> cars,
+                                std::span<const proto::Vec3> viewers) {
+  proto::TrafficStates states;
+  states.cars = m_trafficBudget.Pick(cars, viewers);
+  if (states.cars.empty())
+    return;
+  std::lock_guard _(m_lock);
+  m_trafficStates = std::move(states);
+}
+
+std::optional<proto::TrafficStates> Runtime::TakeTrafficStates() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_trafficStates, std::nullopt);
+}
+
+void Runtime::PushStreetEvent(StreetEvent event) {
+  event.atUs = net::NowUs();
+  std::lock_guard _(m_lock);
+  if (m_streetEvents.size() < 2048)
+    m_streetEvents.push_back(std::move(event));
+  else
+    ++m_overflows; // the scripts' checks put the proxies right (SharedTraffic)
+}
+
+std::vector<StreetEvent> Runtime::TakeStreetEvents() {
+  std::lock_guard _(m_lock);
+  // A hit or a crime that waited behind a loading screen is worth nothing:
+  // a pile of them at once would wreck a car, or cost five stars, the
+  // moment the world comes back. What is shared is state: always applied.
+  const auto now = net::NowUs();
+  const auto before = m_streetEvents.size();
+  std::erase_if(m_streetEvents, [&](const StreetEvent &event) {
+    const bool timed =
+        event.kind == StreetEvent::Kind::Hit || event.kind == StreetEvent::Kind::Crime;
+    return timed && now > event.atUs && now - event.atUs > 3'000'000;
+  });
+  if (const auto stale = before - m_streetEvents.size())
+    log::Info("consistency: {} vehicle hit(s) or crime(s) dropped, too old to apply", stale);
+  return std::exchange(m_streetEvents, {});
+}
+
+void Runtime::PushTrafficStates(const proto::TrafficStates &states) {
+  std::lock_guard _(m_tracksLock);
+  for (const auto &entry : states.cars) {
+    const auto car = traffic::Unpack(entry);
+    m_trafficTracks[entry.id].Push({.seq = states.seq,
+                                    .timeUs = states.timeUs,
+                                    .position = car.position,
+                                    .orientation = car.orientation,
+                                    .velocity = car.velocity});
+  }
+}
+
+void Runtime::ForgetTraffic(proto::TrafficId id) {
+  std::lock_guard _(m_tracksLock);
+  m_trafficTracks.erase(id);
+}
+
+sync::VehicleView Runtime::TrafficOf(proto::TrafficId id) {
+  // Drawn 200 ms in the past: two states of a 10 Hz stream around it even
+  // when one is late, and half a second of extrapolation when a far
+  // vehicle only gets every third packet (traffic::Budget).
+  constexpr std::uint64_t kDelayUs = 200'000;
+  const auto now = HostNowUs();
+  std::lock_guard _(m_tracksLock);
+  const auto car = m_trafficTracks.find(id);
+  if (car == m_trafficTracks.end())
+    return {};
+  return car->second.At(now > kDelayUs ? now - kDelayUs : 0);
+}
+
+void Runtime::SetSharedTraffic(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
+                               const std::map<proto::TrafficId, proto::TrafficStatus> &status) {
+  std::lock_guard _(m_lock);
+  m_sharedTraffic = traffic;
+  m_trafficStatus = status;
+}
+
+std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> Runtime::SharedTraffic() {
+  std::lock_guard _(m_lock);
+  std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> out;
+  out.reserve(m_sharedTraffic.size());
+  for (const auto &[id, spawn] : m_sharedTraffic) {
+    // Without a status it stands as it was announced.
+    proto::TrafficStatus status{
+        .id = id, .flags = static_cast<std::uint16_t>(spawn.flags & proto::kTrafficStatusMask)};
+    if (const auto it = m_trafficStatus.find(id); it != m_trafficStatus.end())
+      status = it->second;
+    out.emplace_back(spawn, status);
+  }
+  return out;
+}
+
+bool Runtime::IsTrafficShared(proto::TrafficId id) {
+  std::lock_guard _(m_lock);
+  return m_sharedTraffic.contains(id);
+}
+
+void Runtime::SubmitLocalHeat(const proto::Heat &heat) {
+  std::lock_guard _(m_lock);
+  m_localHeat = heat;
+}
+
+std::optional<proto::Heat> Runtime::TakeLocalHeat() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_localHeat, std::nullopt);
+}
+
+void Runtime::PushRemoteHeat(const proto::Heat &heat) {
+  std::lock_guard _(m_lock);
+  if (heat.stage == 0)
+    m_heat.erase(heat.player);
+  else
+    m_heat[heat.player] = heat;
+}
+
+proto::Heat Runtime::HeatOf(proto::PlayerId player) {
+  std::lock_guard _(m_lock);
+  const auto it = m_heat.find(player);
+  return it == m_heat.end() ? proto::Heat{.player = player} : it->second;
 }
 
 void Runtime::PushRemotePose(const proto::PoseState &pose) {
@@ -1247,9 +1431,69 @@ bool Runtime::PoseOf(proto::PlayerId player, pose::Pose &out) {
       delayUs = it->second.DelayUs();
   }
   const auto now = HostNowUs();
+  {
+    std::lock_guard _(m_posesLock);
+    const auto it = m_poses.find(player);
+    if (it == m_poses.end() || !it->second.At(now > delayUs ? now - delayUs : 0, out))
+      return false;
+  }
+  // A puppet that was just hit flinches over whatever it does (presence.hpp).
+  const auto lean = PresenceState::Get().LeanOf(player, now);
+  pose::LeanSpine(out, lean.pitch, lean.roll);
+  return true;
+}
+
+void Runtime::SubmitActorPose(proto::NpcId npc, const proto::PoseState &pose) {
   std::lock_guard _(m_posesLock);
-  const auto it = m_poses.find(player);
-  return it != m_poses.end() && it->second.At(now > delayUs ? now - delayUs : 0, out);
+  m_actorOut[npc] = pose;
+}
+
+std::vector<proto::ActorPose> Runtime::TakeActorPoses() {
+  std::vector<proto::ActorPose> out;
+  std::lock_guard _(m_posesLock);
+  out.reserve(m_actorOut.size());
+  for (const auto &[npc, state] : m_actorOut)
+    out.push_back(pose::ForActor(npc, state));
+  m_actorOut.clear();
+  return out;
+}
+
+void Runtime::PushActorPose(const proto::ActorPose &pose) {
+  std::lock_guard _(m_posesLock);
+  m_actorPoses[pose.npc].Push(pose::FromActor(pose));
+  ++m_actorPosesIn;
+}
+
+bool Runtime::ActorPoseOf(proto::NpcId npc, pose::Pose &out) {
+  // Drawn as far in the past as the proxy's position.
+  std::uint64_t delayUs = 100'000;
+  {
+    std::lock_guard _(m_tracksLock);
+    if (const auto it = m_tracks.find(kNpcPuppetBase + npc);
+        it != m_tracks.end() && !it->second.Empty())
+      delayUs = it->second.DelayUs();
+  }
+  const auto now = HostNowUs();
+  std::lock_guard _(m_posesLock);
+  const auto it = m_actorPoses.find(npc);
+  if (it == m_actorPoses.end())
+    return false;
+  // The stream stopped (the scene is over, the host is gone): the proxy is
+  // not left frozen in its last pose.
+  if (now > it->second.NewestUs() + delayUs + kActorPoseStaleUs)
+    return false;
+  return it->second.At(now > delayUs ? now - delayUs : 0, out);
+}
+
+void Runtime::ForgetActorPoses() {
+  std::lock_guard _(m_posesLock);
+  m_actorPoses.clear();
+  m_actorOut.clear();
+}
+
+std::uint32_t Runtime::ActorPosesReceived() {
+  std::lock_guard _(m_posesLock);
+  return std::exchange(m_actorPosesIn, 0);
 }
 
 std::uint32_t Runtime::PosesReceived(proto::PlayerId player) {
@@ -1291,6 +1535,7 @@ void Runtime::ForgetRemote(proto::PlayerId player) {
     m_tracks.erase(player);
     m_vehicles.erase(player);
   }
+  PresenceState::Get().Forget(player);
   std::lock_guard _(m_posesLock);
   m_poses.erase(player);
 }

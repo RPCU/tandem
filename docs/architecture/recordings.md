@@ -85,7 +85,8 @@ host` records alone). Everything the game asks its `Endpoint` to send
   and seats; hits and hacks on us; the world (time, weather), the story
   (journal, tracked quest, calls, lines, hubs, scene tiers, story effects,
   rewards), time abilities, stealth, awareness, fast travel and regroup
-  offers, loot, life and revives, rides, epochs. `watch` keeps the
+  offers, loot, life and revives, rides, epochs, devices (the host's word
+  on each; replayed by whoever of this session did it). `watch` keeps the
   recording guest 30 m under the host's V (or `--offset`): out of sight, out
   of every NPC's reach, in nobody's way (the host shares the NPCs around
   its own V, wherever its guests are). No plugin change: exactly what a
@@ -179,4 +180,5 @@ its state and switches it until the game closes. `tools/game.sh
 fetch-recordings [--since YYYYMMDD]` brings segments and the index
 here; `tools/game.sh cmd recorder status|cut|on|off`; scenario
 `recorder`. Not yet run in game. Not recorded solo yet (they only run in
-a session): the story, time effects, fast travels as regroups, loot.
+a session): the story, time effects, fast travels as regroups, loot,
+devices.

@@ -10,7 +10,7 @@
 public abstract class TandemReactions {
   // The remote player whose puppet this is (0: none, or not the host).
   public static func GuestOf(game: GameInstance, object: wref<GameObject>) -> Uint32 {
-    if !TandemNative.IsHost() || !IsDefined(object) {
+    if !IsDefined(object) {
       return 0u;
     }
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
@@ -50,6 +50,15 @@ public abstract class TandemReactions {
         StatusEffectHelper.ApplyStatusEffect(proxy, t"BaseStatusEffect.GagOpportunity");
         TandemNative.Log(s"reactions: \(npc) entered combat with us: gag");
       }
+    } else if cue == 3 {
+      // The host's NPC lost sight of us when we dodged: the success half of
+      // vanilla's second chance (PlayerPuppet.OnDodgeToAvoidCombatEvent,
+      // final.reds 39689-39696), its memory wipe done there.
+      GameObject.PlaySoundEvent(player, n"ui_gmpl_stealth_avoid_combat");
+      StatusEffectHelper.RemoveStatusEffect(player, t"BaseStatusEffect.SecondChancePerkTimeDilation");
+      StatusEffectHelper.ApplyStatusEffect(player, t"BaseStatusEffect.DodgeOutOfSightCooldown");
+      StatusEffectHelper.ApplyStatusEffect(player, t"BaseStatusEffect.SecondChancePerkCooldown");
+      TandemNative.Log(s"reactions: second chance taken on \(npc): out of its sight, its memory wiped");
     } else if cue == 2 {
       if player.HasFinisherAvailable() {
         StatusEffectHelper.ApplyStatusEffect(proxy, t"BaseStatusEffect.FinisherActiveStatusEffect");
@@ -62,9 +71,22 @@ public abstract class TandemReactions {
     }
   }
 
+  // Host: a guest's second chance on our NPC (OnDodgeToAvoidCombatEvent,
+  // below): its memory is wiped only if it does not see their puppet now,
+  // as vanilla asks of its own V (IsAgentVisible); false: refused.
+  public static func DodgedOutOfSight(body: ref<ScriptedPuppet>, puppet: ref<GameObject>, npc: Uint32, player: Uint32) -> Bool {
+    let senses = body.GetSensesComponent();
+    if IsDefined(senses) && senses.IsAgentVisible(puppet) {
+      TandemNative.Log(s"reactions: player \(player)'s second chance on \(npc) refused: it still sees them");
+      return false;
+    }
+    TandemNative.SendNpcCue(npc, player, 3);
+    return true;
+  }
+
   // Host: a whistle (Bait) a guest put on our NPC: who to walk to.
   public static func WhistleCaster(owner: ref<GameObject>) -> ref<GameObject> {
-    if !TandemNative.IsHost() || !IsDefined(owner) {
+    if !IsDefined(owner) {
       return null;
     }
     let effects: array<ref<StatusEffect>>;
@@ -128,35 +150,30 @@ public const final func CanAvoidCombatWithGag() -> Bool {
   return wrappedMethod();
 }
 
-// Guest: the second chance on a proxy. The proxy has no senses: the host's
-// detection says whether the NPC still sees us; the memory wipe goes to
-// the real NPC (vanilla: PlayerPuppet.OnDodgeToAvoidCombatEvent, 39682).
+// Guest: the second chance on a proxy. The proxy has no senses and the
+// host's NPC is the one that must not see us: vanilla's own conditions on
+// our side (we just dodged, no cooldown), then the memory wipe goes to the
+// host as a request (NpcEffect), which applies it only if its NPC does not
+// see our puppet and answers with the OutOfSight cue for the rest (OnCue).
+// (vanilla: PlayerPuppet.OnDodgeToAvoidCombatEvent, final.reds 39682. The
+// host's detected bit cannot stand for "sees us": it holds while the NPC is
+// in combat with us, which it has just entered.)
 @wrapMethod(PlayerPuppet)
 protected cb func OnDodgeToAvoidCombatEvent(evt: ref<DodgeToAvoidCombatEvent>) -> Bool {
   let npc = TandemTakedowns.Get(this.GetGame()).NpcOf(GameInstance.FindEntityByID(this.GetGame(), evt.npcID) as GameObject);
-  if npc == 0u || TandemNative.IsHost() {
+  if npc == 0u || TandemOwn.Npc(this.GetGame(), npc) {
     return wrappedMethod(evt);
   }
-  let system = GameInstance.GetScriptableSystemsContainer(this.GetGame()).Get(n"TandemSystem") as TandemSystem;
-  let you = IsDefined(system) ? system.You() : 0u;
-  let bit = 1;
-  let p = 1u;
-  while p < you {
-    bit *= 2;
-    p += 1u;
-  }
-  if you > 0u && you <= 8u && (TandemNative.NpcDetected(npc) & bit) != 0 {
-    return false; // it still sees us
-  }
-  let result = wrappedMethod(evt);
-  let proxy = GameInstance.FindEntityByID(this.GetGame(), evt.npcID) as GameObject;
-  if StatusEffectSystem.ObjectHasStatusEffect(proxy, t"BaseStatusEffect.MemoryWipeOnDodge") {
+  let justDodged = StatusEffectHelper.HasStatusEffectWithTagConst(this, n"JustDodgedActiveBuffer");
+  let cooldown = StatusEffectHelper.HasStatusEffectWithTagConst(this, n"DodgeOutOfSightCooldown");
+  let failure = StatusEffectHelper.HasStatusEffectWithTagConst(this, n"SecondChancePerkCooldown");
+  if justDodged && !cooldown && !failure {
     let ids: array<TweakDBID>;
     ArrayPush(ids, t"BaseStatusEffect.MemoryWipeOnDodge");
     TandemNative.SendNpcEffect(npc, ids);
-    TandemNative.Log(s"reactions: second chance taken on \(npc): its memory wiped");
+    TandemNative.Log(s"reactions: second chance on \(npc): we dodged, does it still see us?");
   }
-  return result;
+  return false;
 }
 
 // A guard broken by a guest's hit offers that guest the finisher, not our V.
@@ -164,7 +181,7 @@ protected cb func OnDodgeToAvoidCombatEvent(evt: ref<DodgeToAvoidCombatEvent>) -
 protected cb func OnStatPoolMinValueReached(value: Float) -> Bool {
   // Guest: a proxy's poise follows the host's (NpcPoise, Outcomes.reds);
   // whose finisher it is comes from the host, as a cue.
-  if IsDefined(this.npc) && !TandemNative.IsHost() && TandemTakedowns.Get(this.npc.GetGame()).NpcOf(this.npc) != 0u {
+  if IsDefined(this.npc) && TandemOwn.IsProxy(this.npc.GetGame(), this.npc.GetEntityID()) {
     return true;
   }
   if IsDefined(this.npc) {

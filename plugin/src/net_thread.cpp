@@ -1,7 +1,10 @@
 #include "net_thread.hpp"
+
 #include "combat.hpp"
 #include "log.hpp"
+#include "presence.hpp"
 #include "recording.hpp"
+#include "regions.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
 
@@ -9,8 +12,10 @@
 #include "tandem/endpoint.hpp"
 #include "tandem/play.hpp"
 
+#include <map>
 #include <optional>
 #include <thread>
+#include <utility>
 
 namespace tandem::plugin {
 using namespace std::chrono_literals;
@@ -29,6 +34,7 @@ struct NetThread::Impl {
   bool lastPaused{};
   std::optional<proto::TimeEffect> lastTime;
   std::optional<proto::Transit> lastTransit;
+  std::optional<proto::Heat> lastHeat;
   std::optional<proto::Elsewhere> lastElsewhere;
   // Guest through a relay: the session's secret, to join again after the
   // code expired.
@@ -89,7 +95,8 @@ struct NetThread::Impl {
     for (const auto &[bit, name] : {std::pair{proto::kDomainWorld, "world"},
                                     {proto::kDomainNpcs, "npcs"},
                                     {proto::kDomainStory, "story"},
-                                    {proto::kDomainPlayers, "players"}})
+                                    {proto::kDomainPlayers, "players"},
+                                    {proto::kDomainDevices, "devices"}})
       if (domains & bit)
         out += out.empty() ? name : std::string(", ") + name;
     return out.empty() ? "nothing" : out;
@@ -127,6 +134,7 @@ struct NetThread::Impl {
   }
 
   std::optional<proto::Vitals> lastVitals;
+  std::optional<proto::Presence> lastPresence;
 
   // Every other player in the session with its life (up unless it said
   // otherwise), for the game thread (Revive.reds). Cheap: the runtime keeps
@@ -202,6 +210,7 @@ struct NetThread::Impl {
     auto &runtime = Runtime::Get();
     // Nothing queued for or from the last session reaches this one.
     runtime.ResetSession();
+    Regions::Get().Reset();
     std::string error;
     const Identity identity{config.name, body};
     const auto relay = RelayOf();
@@ -249,10 +258,14 @@ struct NetThread::Impl {
       endpoint->SetLocalTimeEffect(*lastTime);
     if (lastTransit)
       endpoint->SetLocalTransit(*lastTransit);
+    if (lastHeat)
+      endpoint->SetLocalHeat(*lastHeat);
     if (lastElsewhere)
       endpoint->SetLocalElsewhere(*lastElsewhere);
     if (lastVitals)
       endpoint->SetLocalVitals(*lastVitals);
+    if (lastPresence)
+      endpoint->SetLocalPresence(*lastPresence);
     if (config.role == Config::Role::Host)
       log::Info("hosting on UDP {}{}", config.port,
                 relay ? std::format(", and through relay {}:{}", relay->address, relay->port) : "");
@@ -268,6 +281,9 @@ struct NetThread::Impl {
     auto nextReport = std::chrono::steady_clock::now() + 10s;
     auto nextStatus = std::chrono::steady_clock::now() + 500ms;
     bool ended = false;
+    // Our game announced or removed NPCs of its own: the owners the scripts
+    // read change with them.
+    bool announced = false;
     std::uint64_t silentSinceUs = 0;
     std::uint32_t reportedRequests = 0;
 
@@ -287,7 +303,8 @@ struct NetThread::Impl {
       }
       // 2 ms: states go out within a frame of the game handing them over.
       // `shared`: what the scripts' checks compare with changed.
-      bool shared = false;
+      bool shared = std::exchange(announced, false);
+      bool street = false;
       for (const auto &event : endpoint->Update(2ms)) {
         std::visit(
             [&](const auto &e) {
@@ -333,6 +350,8 @@ struct NetThread::Impl {
                 runtime.PushRemote(e.state);
               } else if constexpr (std::is_same_v<E, events::RemotePose>) {
                 runtime.PushRemotePose(e.pose);
+              } else if constexpr (std::is_same_v<E, events::HostActorPose>) {
+                runtime.PushActorPose(e.pose);
               } else if constexpr (std::is_same_v<E, events::RemoteHeld>) {
                 runtime.PushRemoteHeld(e.held);
               } else if constexpr (std::is_same_v<E, events::RemoteShot>) {
@@ -452,6 +471,50 @@ struct NetThread::Impl {
                 runtime.PushShotAt(e.shot);
               } else if constexpr (std::is_same_v<E, events::ShotHitBy>) {
                 runtime.PushShotHit(e.hit);
+              } else if constexpr (std::is_same_v<E, events::TrafficSpawned>) {
+                street = true;
+                runtime.PushStreetEvent(
+                    {.kind = StreetEvent::Kind::Spawn, .spawn = e.spawn, .flags = e.spawn.flags});
+              } else if constexpr (std::is_same_v<E, events::TrafficMoved>) {
+                runtime.PushTrafficStates(e.states);
+              } else if constexpr (std::is_same_v<E, events::TrafficLeft>) {
+                street = true;
+                if (e.gone.reason == proto::kTrafficTaken)
+                  log::Info("street: vehicle {:#x} is player {}'s car now", e.gone.id,
+                            e.gone.player);
+                runtime.PushStreetEvent({.kind = StreetEvent::Kind::Gone,
+                                         .spawn = {.id = e.gone.id},
+                                         .reason = e.gone.reason,
+                                         .player = e.gone.player});
+                runtime.ForgetTraffic(e.gone.id);
+              } else if constexpr (std::is_same_v<E, events::TrafficChanged>) {
+                street = true;
+                runtime.PushStreetEvent({.kind = StreetEvent::Kind::Status,
+                                         .spawn = {.id = e.status.id},
+                                         .flags = e.status.flags,
+                                         .amount = e.status.health});
+              } else if constexpr (std::is_same_v<E, events::TrafficHitBy>) {
+                runtime.PushStreetEvent({.kind = StreetEvent::Kind::Hit,
+                                         .spawn = {.id = e.hit.id, .position = e.hit.position},
+                                         .flags = e.hit.flags,
+                                         .player = e.hit.player,
+                                         .amount = e.hit.damage,
+                                         .vector = e.hit.impulse});
+              } else if constexpr (std::is_same_v<E, events::RemoteHeat>) {
+                log::Info("player {}: wanted level {} (state {})", e.heat.player, e.heat.stage,
+                          static_cast<int>(e.heat.state));
+                runtime.PushRemoteHeat(e.heat);
+              } else if constexpr (std::is_same_v<E, events::CrimeReported>) {
+                log::Info("police: our V's crime seen by the area's owner (kind {}, npc {})",
+                          static_cast<int>(e.crime.kind), e.crime.npc);
+                runtime.PushStreetEvent(
+                    {.kind = StreetEvent::Kind::Crime,
+                     .spawn = {.id = e.crime.traffic, .position = e.crime.position},
+                     .flags = e.crime.flags,
+                     .reason = static_cast<std::int32_t>(e.crime.kind),
+                     .amount = e.crime.amount,
+                     .npc = e.crime.npc,
+                     .attack = e.crime.attackType});
               } else if constexpr (std::is_same_v<E, events::HostNpcStates>) {
                 runtime.PushNpcStates(e.states, endpoint->You());
               } else if constexpr (std::is_same_v<E, events::HostNpcAwareness>) {
@@ -466,6 +529,12 @@ struct NetThread::Impl {
                 runtime.PushNpcAnims(e.anims);
               } else if constexpr (std::is_same_v<E, events::HostNpcShot>) {
                 runtime.PushNpcShot(e.shot);
+              } else if constexpr (std::is_same_v<E, events::HostNpcReaction>) {
+                PresenceState::Get().PushReaction(e.reaction);
+              } else if constexpr (std::is_same_v<E, events::RemotePresence>) {
+                PresenceState::Get().PushRemote(e.presence);
+              } else if constexpr (std::is_same_v<E, events::RemoteCue>) {
+                PresenceState::Get().PushCue(e.cue, net::NowUs());
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
                 log::Info("player {}: look of {} keys and {} items (revision {})",
                           e.appearance.player, e.appearance.look.size(), e.appearance.items.size(),
@@ -522,6 +591,21 @@ struct NetThread::Impl {
                           e.item.kind == proto::kSharedOnCorpse ? "on a corpse" : "looted",
                           e.item.npc);
                 runtime.PushLoot(e.item);
+              } else if constexpr (std::is_same_v<E, events::HostDevice>) {
+                runtime.PushDevice(e.state);
+              } else if constexpr (std::is_same_v<E, events::DeviceAsked>) {
+                auto asked = e.state;
+                asked.how = proto::kDeviceAsk;
+                runtime.PushDevice(asked);
+              } else if constexpr (std::is_same_v<E, events::DeviceRequested>) {
+                log::Info("devices: player {} operated {:x} ({:#x}): status {}, flags {:#x}, "
+                          "value {}",
+                          e.use.player, e.use.entity, e.use.cls, static_cast<int>(e.use.status),
+                          e.use.flags, e.use.value);
+                runtime.PushDevice(e.use);
+              } else if constexpr (std::is_same_v<E, events::DevicesReset>) {
+                log::Info("devices: the host sends its record again");
+                runtime.PushDevice(proto::DeviceSet{});
               } else if constexpr (std::is_same_v<E, events::Resync>) {
                 if (e.player == endpoint->You()) {
                   log::Info("resync: asking the host for {} (our copy differed from its digest)",
@@ -536,7 +620,41 @@ struct NetThread::Impl {
               } else if constexpr (std::is_same_v<E, events::EpochChanged>) {
                 log::Info("epoch: player {}'s world was rebuilt ({}, epoch {})", e.epoch.player,
                           EpochReason(e.epoch.reason), e.epoch.epoch);
+              } else if constexpr (std::is_same_v<E, events::RegionsChanged>) {
+                std::string who;
+                for (const auto player : e.linked)
+                  who += (who.empty() ? "" : ", ") + std::to_string(player);
+                log::Info("regions: linked with {} (leader: player {})",
+                          who.empty() ? std::string("nobody: our world is our own")
+                                      : "player " + who,
+                          e.leader);
+                shared = true;
+                Regions::Get().SetLinked(e.linked);
+                Regions::Get().Push({.kind = RegionEvent::Kind::Linked});
+              } else if constexpr (std::is_same_v<E, events::NpcGive>) {
+                Regions::Get().Push(
+                    {.kind = RegionEvent::Kind::Give, .npc = e.npc, .player = e.to});
+              } else if constexpr (std::is_same_v<E, events::NpcTake>) {
+                log::Info("regions: npc {} is ours to run, from player {} ({})", e.state.npc,
+                          e.state.from,
+                          e.state.flags & proto::kHandoverInherited ? "inherited" : "handed over");
+                shared = true;
+                // Its track ends here: our game moves it from now on.
+                runtime.ForgetRemote(kNpcPuppetBase + e.state.npc);
+                Regions::Get().Push({.kind = RegionEvent::Kind::Take,
+                                     .npc = e.state.npc,
+                                     .player = e.state.from,
+                                     .state = e.state});
+              } else if constexpr (std::is_same_v<E, events::NpcOwnerChanged>) {
+                log::Info("regions: npc {} is now run by player {} (was {})", e.npc, e.owner,
+                          e.was);
+                shared = true;
+                Regions::Get().Push({.kind = RegionEvent::Kind::Owner,
+                                     .npc = e.npc,
+                                     .player = e.owner,
+                                     .was = e.was});
               } else if constexpr (std::is_same_v<E, events::Ended>) {
+                Regions::Get().Reset();
                 Story::Get().PushInbound({.kind = StoryInbound::Kind::Ended});
                 log::Info("session ended: {}", e.reason);
                 runtime.SetYou(0);
@@ -557,8 +675,8 @@ struct NetThread::Impl {
             },
             event);
       }
-      if (shared && !ended)
-        runtime.SetShared(endpoint->SharedNpcs(), endpoint->Players());
+      if (street && !ended)
+        runtime.SetSharedTraffic(endpoint->SharedTraffic(), endpoint->TrafficStatuses());
       if (const auto lost = runtime.TakeOverflows())
         log::Warn("consistency: {} event(s) dropped, a queue was full (the game was not taking "
                   "them); its checks put the proxies right",
@@ -597,6 +715,10 @@ struct NetThread::Impl {
       }
       if (auto pose = runtime.TakeLocalPose(); pose && !Story::Get().Private())
         endpoint->SendLocalPose(*pose);
+      // Scene replay: the actors of the host's scene (none in a private one).
+      for (const auto &pose : runtime.TakeActorPoses())
+        if (!Story::Get().Private())
+          endpoint->SendActorPose(pose);
       if (auto appearance = runtime.TakeLocalAppearance()) {
         lastAppearance = *appearance;
         endpoint->SetLocalAppearance(std::move(*appearance));
@@ -641,6 +763,10 @@ struct NetThread::Impl {
       if (auto world = runtime.TakeWorld())
         endpoint->SetWorld(*world);
       for (const auto &message : runtime.TakeNpcOutbox()) {
+        // (The record's owners follow at the next pass: `announced`.)
+        if (std::holds_alternative<proto::NpcSpawn>(message) ||
+            std::holds_alternative<proto::NpcGone>(message))
+          announced = true;
         if (const auto *spawn = std::get_if<proto::NpcSpawn>(&message))
           endpoint->SendNpcSpawn(*spawn);
         else if (const auto *gone = std::get_if<proto::NpcGone>(&message))
@@ -663,12 +789,15 @@ struct NetThread::Impl {
           endpoint->SendNpcAnims(*anims);
         else if (const auto *shot = std::get_if<proto::NpcShot>(&message))
           endpoint->SendNpcShot(*shot);
+        else if (const auto *reaction = std::get_if<proto::NpcReaction>(&message))
+          endpoint->SendNpcReaction(*reaction);
         else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
                  hit && !endpoint->SendPlayerHit(*hit))
-          log::Info("hit on player {} dropped: not a guest in the session", hit->player);
+          log::Info("hit on player {} dropped: not in the session, or not our NPC's", hit->player);
         else if (const auto *shot = std::get_if<proto::NpcShotAt>(&message);
                  shot && !endpoint->SendNpcShotAt(*shot))
-          log::Info("shot at player {} dropped: not a guest in the session", shot->player);
+          log::Info("shot at player {} dropped: not in the session, or not our NPC's",
+                    shot->player);
         else if (const auto *report = std::get_if<proto::ShotHit>(&message))
           endpoint->SendShotHit(*report);
       }
@@ -686,8 +815,74 @@ struct NetThread::Impl {
       }
       for (const auto &[player, reply] : runtime.TakeNpcReplies())
         endpoint->SendNpcActionReply(player, reply);
+      // Our answers on hand-overs, after what our game said of its NPCs (a
+      // pin follows its spawn).
+      for (auto &answer : Regions::Get().TakeAnswers()) {
+        shared = true;
+        if (auto *state = std::get_if<proto::NpcHandoverState>(&answer)) {
+          log::Info("regions: npc {} handed over to player {}", state->npc, state->to);
+          endpoint->GiveNpc(std::move(*state));
+        } else if (const auto *refuse = std::get_if<RegionRefuse>(&answer)) {
+          endpoint->RefuseNpc(refuse->npc);
+        } else if (const auto *adopt = std::get_if<RegionAdopt>(&answer)) {
+          if (!adopt->accepted)
+            log::Warn("regions: npc {} could not be taken over, it goes", adopt->npc);
+          endpoint->AdoptNpc(adopt->npc, adopt->accepted);
+        } else if (const auto *pin = std::get_if<RegionPin>(&answer)) {
+          endpoint->PinNpc(pin->npc);
+        } else if (const auto *hold = std::get_if<RegionHeld>(&answer)) {
+          log::Info("regions: our region is {}",
+                    hold->held ? "held (a quest of our own runs here)" : "no longer held");
+          endpoint->SetRegionHold(hold->held);
+        }
+      }
+      if (shared && !ended) {
+        // What our game shows as proxies (the NPCs of the owners linked with
+        // us), and who runs every NPC of the session's record, ours too.
+        runtime.SetShared(endpoint->ProxiedNpcs(), endpoint->Players());
+        std::map<proto::NpcId, proto::PlayerId> owners;
+        for (const auto &[npc, spawn] : endpoint->SharedNpcs())
+          owners[npc] = endpoint->NpcOwner(npc);
+        Regions::Get().SetOwners(std::move(owners));
+        Regions::Get().SetLinked(endpoint->Linked());
+        Regions::Get().SetGroup(endpoint->RegionLeader(), endpoint->RegionHolders());
+        Regions::Get().SetAreas(endpoint->AreaOwners());
+      }
       if (auto npcs = runtime.TakeNpcStates())
         endpoint->SendNpcStates(*npcs);
+      // The street: what its owner says of its vehicles, then where they are.
+      bool streetSaid = false;
+      for (const auto &message : runtime.TakeStreetOutbox()) {
+        if (const auto *spawn = std::get_if<proto::TrafficSpawn>(&message)) {
+          endpoint->SendTrafficSpawn(*spawn);
+          streetSaid = true;
+        } else if (const auto *gone = std::get_if<proto::TrafficGone>(&message)) {
+          endpoint->SendTrafficGone(*gone);
+          runtime.ForgetTraffic(gone->id);
+          streetSaid = true;
+        } else if (const auto *status = std::get_if<proto::TrafficStatus>(&message)) {
+          endpoint->SendTrafficStatus(*status);
+          streetSaid = true;
+        } else if (const auto *hit = std::get_if<proto::TrafficHit>(&message)) {
+          endpoint->SendTrafficHit(*hit);
+        } else if (const auto *claim = std::get_if<proto::TrafficClaim>(&message)) {
+          endpoint->ClaimTraffic(claim->id, claim->seat);
+        } else if (const auto *crime = std::get_if<proto::Crime>(&message);
+                   crime && !endpoint->SendCrime(*crime)) {
+          log::Info("crime of player {} dropped: not a guest in the session", crime->player);
+        }
+      }
+      if (streetSaid)
+        runtime.SetSharedTraffic(endpoint->SharedTraffic(), endpoint->TrafficStatuses());
+      if (auto cars = runtime.TakeTrafficStates())
+        endpoint->SendTrafficStates(std::move(*cars));
+      if (auto heat = runtime.TakeLocalHeat()) {
+        lastHeat = heat;
+        if (heat->stage == 0)
+          lastHeat.reset();
+        endpoint->SetLocalHeat(*heat);
+        log::Info("our wanted level {} (state {})", heat->stage, static_cast<int>(heat->state));
+      }
       if (auto awareness = runtime.TakeNpcAwareness())
         endpoint->SendNpcAwareness(std::move(*awareness));
       if (auto stealth = runtime.TakeLocalStealth()) {
@@ -704,6 +899,16 @@ struct NetThread::Impl {
         else if (const auto *answer = std::get_if<proto::RegroupAnswer>(&message))
           endpoint->SendRegroupAnswer(*answer);
       }
+      for (auto &message : runtime.TakeDeviceOutbox()) {
+        if (const auto *state = std::get_if<proto::DeviceState>(&message)) {
+          if (state->how == proto::kDeviceAsk)
+            endpoint->AskDevice(*state);
+          else
+            endpoint->ReportDevice(*state);
+        } else if (const auto *use = std::get_if<proto::DeviceUse>(&message)) {
+          endpoint->UseDevice(*use);
+        }
+      }
       for (auto &message : runtime.TakeLootOutbox()) {
         if (auto *item = std::get_if<proto::WorldItem>(&message))
           endpoint->DropWorldItem(std::move(*item));
@@ -719,6 +924,12 @@ struct NetThread::Impl {
       }
       for (const auto &revive : runtime.TakeLocalRevives())
         endpoint->SendRevive(revive);
+      if (auto presence = PresenceState::Get().TakeLocal()) {
+        lastPresence = *presence;
+        endpoint->SetLocalPresence(*presence);
+      }
+      for (const auto &cue : PresenceState::Get().TakeLocalCues())
+        endpoint->SendLocalCue(cue);
       if (!ended)
         PublishLives(*endpoint);
       for (auto &message : Combat::Get().TakeOutbound())

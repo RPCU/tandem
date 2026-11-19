@@ -178,7 +178,15 @@ func (f *flags) gameDisplay(game guard.Process) (string, error) {
 	if f.display != "" {
 		return f.display, nil
 	}
-	display := guard.GameDisplay(f.proc, game.PID)
+	// An instance's own X server, as instance.sh finds it; else the game's
+	// DISPLAY.
+	display := ""
+	if f.inst != nil {
+		display = f.inst.Display()
+	}
+	if display == "" {
+		display = guard.GameDisplay(f.proc, game.PID)
+	}
 	if display == "" {
 		return "", fmt.Errorf("the game (pid %d) has no DISPLAY", game.PID)
 	}
@@ -368,7 +376,11 @@ func owner(args []string) (int, error) {
 		return 1, err
 	}
 	if f.inst != nil {
-		fmt.Printf("the running game (pid %d) is instance %s's, on display %s\n", game.PID, f.inst.Name, guard.GameDisplay(f.proc, game.PID))
+		display, err := f.gameDisplay(game)
+		if err != nil {
+			display = "none: " + err.Error()
+		}
+		fmt.Printf("the running game (pid %d) is instance %s's, on display %s\n", game.PID, f.inst.Name, display)
 		return 0, nil
 	}
 	fmt.Printf("the running game (pid %d) was started by our tools\n", game.PID)

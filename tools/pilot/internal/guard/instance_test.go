@@ -101,3 +101,17 @@ func TestPadReachesOnly(t *testing.T) {
 		t.Fatal("two games on one pad")
 	}
 }
+
+func TestInstanceDisplay(t *testing.T) {
+	dir := newInstance(t, "b", "")
+	inst, _ := FindInstance(filepath.Join(dir, "game"))
+	if inst.Display() != "" {
+		t.Fatal("no launch log: no display")
+	}
+	_ = os.MkdirAll(filepath.Join(dir, "run"), 0o755)
+	log := "[gamescope] [Info]  xwm: Starting Xwayland on :1\nwine: ...\n[gamescope] [Info]  xwm: Starting Xwayland on :3 (second start)\n"
+	_ = os.WriteFile(filepath.Join(dir, "run", "launch.log"), []byte(log), 0o644)
+	if got := inst.Display(); got != ":3" {
+		t.Fatalf("display %q", got)
+	}
+}

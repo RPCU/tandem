@@ -461,7 +461,7 @@ Risk: **B** blocker, **R** needs a rule, **C** cosmetic, **F** fine as is.
 | --- | --- | --- | --- | --- |
 | `Cool_Left_Milestone_2`, `Cool_Inbetween_Left_2` | Focus: aiming slows **the world** (`AimingStateEvents.OnEnter` `542818-542858`) | global time dilation | `coop-time.md` §2.4: owner-local, no world slow-down | B |
 | `Cool_Left_Perk_3_2` (Deadeye) | reload slow-mo, global (`547583`) | global time dilation | same | B |
-| second chance (`CanPlayerDodgeOnDetection`) | an NPC entering combat gives the player `SecondChancePerkTimeDilation`, a crouch dodge out of sight puts `MemoryWipeOnDodge` on the NPC (`168340-168360`, `39682-39699`) | uses `GetPlayer` on the NPC's game (§2.1), slows time, changes a host NPC | §2.1 + `coop-time.md` §2.4 | B |
+| second chance (`CanPlayerDodgeOnDetection`) | an NPC entering combat gives the player `SecondChancePerkTimeDilation`, a crouch dodge out of sight puts `MemoryWipeOnDodge` on the NPC (`168340-168360`, `39682-39699`) | uses `GetPlayer` on the NPC's game (§2.1), slows time, changes a host NPC | §2.1 + `coop-time.md` §2.4; done, §4 Relic tree (Sensory Protocol) | B → fixed, to verify |
 | gag on detection (`CanPlayerGagOnDetection`) | NPC gets `GagOpportunity` when it notices a perked player (`168360`); silent-kill stim radius 3 m (`526214`) | `GetPlayer` on the host | §2.1, §2.9 | R |
 | `Cool_Central_Milestone_3` (crouch-sprint) | crouch sprint and slide transitions (`289630`, `550988-553388`) | locomotion | pose stream; `LocomotionDetailed` `CrouchSprint` | F |
 | `Cool_Central_Perk_3_4` | stamina cost by locomotion (`281583`) | own V | — | F |
@@ -507,9 +507,72 @@ See §6 (quickhacks, queue, Overclock, cyberdeck).
 
 ## 4. Relic tree (Espionage)
 
-The Phantom Liberty tree. Its perks are `Espionage_*` (`3984-4176`);
+The Phantom Liberty tree (the DLC is required of every player, so both
+games have its records). Nine perks, `Espionage_*` (`3984-4176`);
 `PlayerDevelopmentData.IsEspionageMilestonePerk` (`81595-81597`) lists the
-three milestones [R].
+three milestones [R]. Only six script sites read them by name (`45572`,
+`59798`, `204522`, `219870`, `224165`, `250322`); the rest reaches the game
+through stat flags and status effects from TweakDB, not read here: those
+rows are classified by the mechanism they use.
+
+Each player's tree is its own: perks and Relic points live in that game's
+`PlayerDevelopmentSystem` (§1.1), nothing of them is sent. A player who has
+not unlocked the tree yet (story progress) beside one who has loses
+nothing and breaks nothing: every row below runs on the game of the V that
+owns the perk, and the other game only sees its results (strikes, effects,
+wounds, stealth, time bubbles), which need no perk on the receiving side.
+
+Audit of 2026-11-19, scripts only, none of it run in game. "Guest" and
+"host" name whose V uses the perk. W works, D degraded, B broken; "B →
+fixed" is what this pass changed. In-game names are the perk screen's
+[I] (the scripts name the enums only, Limits 2).
+
+### Relic tree
+
+<!-- prettier-ignore -->
+| Perk | Mechanism [R] | Host user | Guest user | State |
+| --- | --- | --- | --- | --- |
+| **Jailbreak** (`Espionage_Central_Milestone_1`) | stat flag `CanUseNewMeleewareAttackSpyTree` (`54661`, `248568`, `420484`): each arm's charged attack, below; the monowire's quickhack slot (`59798`, `224165`) | vanilla on its own NPCs; the guests see the health, wounds and deaths | each charged attack is our V's hit on proxies: strikes (ARCHITECTURE combat), kill credit by the strike's puppet; a V never loses a limb (`KeepsLimbs`, and now instant dismemberments too) | per arm, below |
+| Mantis Blades leap, **Spatial Mapping** (`Central_Perk_1_4`) | `CanPerformRelicLeap` (`248483`, `420479`), `MantisBladesInvulnerableLeapRelicBuff` on V; the hit after a leap puts `MantisBladesRelicDismemberment` on the target **with no instigator** (`85964`); the grand finale queues a hit on each NPC within 3.5 m and marks it `MantisBladesGrandFinaleNPCMark`, also with none (`128097-128101`), which on a dead NPC gives `MantisBladesInstantDismembermentSpyBuff` (`186228`); an effect tagged `Dismember` kills and beheads (`StatusEffectManagerComponent`, `321244-321266`); buff `Espionage_Central_Milestone_1_Buff_MantisBlades` on a limb our V cut from a live NPC (`45572`) and after a finisher (`250322`) | W | leap and invulnerability local: W (the proxy trails the host's NPC by the draw delay, so a leap at a running target lands a little behind: D, cosmetic). The two marks stayed on the proxy, whose limbs are the host's: **B → fixed**, forwarded (`TandemOutcomes.IsRelicMark`), from a proxy our hit has killed already too (`ProxyEvenDead`: they come a frame after the hit), and put on the host's NPC dead or not (`Npcs.ApplyEffect`); the host's NPC loses its head, `NpcWound` shows it on every proxy. The blood that beheading starts on "the local player's" screen (`321266`) was the host's: **B → fixed**, stopped on the host for a guest's kill (`IsGuestsDismemberment`). The buff: the proxy's own hit reaction tells our V of the limb (`NotifyAboutDismembermentInstigated` runs after the `RequestDismemberment` we refuse, `185423-185437`, `185548-185595`): W, nothing to add (an earlier draft told our V again on `NpcWound`: it would have counted every cut twice) | fixed, to verify |
+| Gorilla Arms charged punch, **Limiter Removal** (`Central_Perk_1_2`) | `ApplyRelicMeleewareDamageOnNPCEvent` (`128082`): a hit queued on an NPC within 1.25 m, `GorillaArmsOnePunchNPCMark` on human trash-to-elite targets, **no instigator** (`128094`); the mark on a dead or defeated NPC ragdolls it and sends `SetSlowMoForOnePunchAttackEvent` to "the player" (`126464-126472`), slow motion under the `deflect` reason (`39668-39679`) | W; slow motion local by the time rules (`deflect`, time.md); the guests' proxies die without the fling: D, cosmetic | the hit is our V's: a strike (computed once; the host drops what our puppet would compute, combat.md). The mark stayed on the proxy: **B → fixed**, forwarded, applied on the host's dead or knocked-out NPC (Gorilla Arms are blunt: usually knocked out). That mark would have sent the one-punch slow motion to the **host's** V: **B → fixed**, the host drops it (`TandemOutcomes.IsGuestsOnePunch`, `OnSetSlowMoForOnePunchAttackEvent`). Our own slow motion: `deflect`, local, no bubble (time.md). Another V's puppet as the target: friendly, no damage | fixed, to verify |
+| Monowire charged hit, **Data Tunneling** (`Central_Perk_1_3`) | `HasMonowireWithQuickhackSelected` (`54659`, `549229`): the charged hit applies the slotted quickhack at once (`m_IsAppliedByMonowire`, `398945`) and spreads it on light hits (`MonoWireQuickhackContagiousHittableTarget`, `127087`) | W | the quickhack's effects land on the proxy from our V and go as `NpcEffect`; spreading runs on our game only (combat.md, quickhacks). No upload, so no `NpcHack`, as in single player (no upload bar there either) | W, to verify |
+| Projectile Launch System charge, **Launch Capacity Override** (`Central_Perk_1_1`) | `ProjectileLauncherRound.SetAttackRecordBasedOnAction` picks `relicAttack` on a charged shot (`219870`) | W; the round is not drawn on the guests (no projectile sync): D, cosmetic | the explosion is our V's: a strike per proxy, `AreaHit` on another V's puppet. The round is not drawn on the others: D, cosmetic | D (cosmetic) |
+| **Emergency Cloaking** (`Espionage_Left_Milestone_Perk`) | `CanPlayerExitCombatWithOpticalCamo` unless `BlockOpticalCamoRelicPerk` (`44019-44048`): in combat the camo blocks fully, `SetInvisible`, each hostile NPC's tracker drops V, 1.5 s later `MemoryWipeExitCombat` on it (`39730`) and a sound; that effect's `ClearThreats` empties the NPC's tracker and its `ExitCombatWithPerk` passes it to the squad (`126486-126503`) | the wipe freed every guest those NPCs hunted too: **B → fixed**, the host puts the other Vs back on their trackers (`TandemStealth.OthersHunted` / `HuntAgain`); only the host's V leaves combat | `Stealth` carries camo and "fully blocking"; the host turns the puppet's visible object off and drops the puppet from the trackers of the NPCs around either V, and now resets their detection of it (`Npcs.Detected` would have held the guest in combat on a full meter): **D → fixed**. No memory wipe for a guest (it would free every V). Our combat state follows the host's detection. The "combat avoided" sound (vanilla's comes from our tracker's NPCs; proxies are not there): **D → fixed**, played when the host's NPCs let go | fixed, to verify |
+| **Sensory Protocol** (`Espionage_Left_Perk_1_2`) | stat flag `CanPlayerDodgeOnDetection` (`39706`: crouched, combat just started): an NPC entering combat gives `SecondChancePerkTimeDilation` and three `DodgeToAvoidCombatEvent`s (`168337-168349`); a dodge while the NPC does not see V (`IsAgentVisible`) wipes its memory (`MemoryWipeOnDodge`) with a sound and cooldowns (`39682-39696`) | W; the host's NPCs entering combat with a guest no longer offer it to the host's V (Reactions.reds). Its wipe freed every guest the NPC hunted: **B → fixed**, as Emergency Cloaking | the host sends `NpcCue` (combat start), our game slows time and queues the dodge checks. The check asked "has the host's NPC detected us", which includes being in combat with us, so it always refused: **B → fixed**, our game checks the dodge and cooldowns, the host checks its NPC's sight of our puppet (`TandemReactions.DodgedOutOfSight`) and answers `OutOfSight` (new `NpcCueKind`, protocol 7) for the sound and cooldowns. The slow motion is an effector dilation: Time.reds learns its reason as the game sets it, a time bubble like any other (time.md) | fixed, to verify |
+| **Vulnerability Analytics** (`Espionage_Right_Milestone_1`) | the V's own `BreachFinderComponent` (`204383`) rolls and tracks one breach on one NPC's `BreachComponent`; a ranged or melee hit on it (not a headshot, a weapon needed) is a forced crit and weak spot (`TryProcessBreachHit` `204452`, `ProcessBreachHit` `204478`); `OnDamageDealt` wears it down (`204502`); destroyed, it fires `Attacks.BreachEMPExplosion` from the V, electric damage a share of the breach's health (`SpawnFinalAttack` `204533`) | W | **per player, by the game's design**: the finder is the V's, so each player rolls, sees and hits their own breaches; the two players' are not the same and nothing is shared (the host's strikes from a guest's puppet carry no `PlayerPuppet` instigator, so they never touch the host's breach). On proxies the breach component is the proxy's own (same record); a hit on it is computed here with its crit and weak spot and sent as a strike with those flags; the wear needs the damage event our proxy path queues (Combat.reds `gameTargetDamageEvent`, with the `BreachHit` flag and the damage): W. The explosion is our V's: strikes on proxies, `AreaHit` on a puppet if its attack type is an area one. Whether the finder picks a brain-off proxy at all is native: to verify | W, to verify |
+| **Machine Learning** (`Espionage_Right_Perk_1_1`) | `CyberwareBreachStreak` on V when a breach is destroyed without its explosion (`204522`), stat `BreachStreakBuffBonus` (`GetBreachStreak`) | W | on our own V: W | W |
+
+**Weak spots, in short.** Breaches are each V's own: shown only to the V
+whose finder rolled them, on that V's game (on a guest, on the proxy). A
+guest's breach hit reaches the host as a strike carrying the weak-spot and
+crit flags and the damage the guest computed with the bonus; its explosion
+is the guest's area attack (strikes, `AreaHit` on a V). The other player
+neither sees nor can hit it, as two players' would be in any co-op game
+where the marking is a personal implant.
+
+**What stays degraded and why.** The launcher's round and the exact landing
+of a Mantis leap at a running target are cosmetic (no projectile sync;
+proxies are drawn a little late), and so is the fling of the host's
+Gorilla punch on the guests' proxies (status effects of the host's own V
+are not sent to proxies). A Gorilla Arms or Mantis Blades area does not hurt
+another V (friendly, as any melee hit). A guest's Emergency Cloaking does
+not wipe the host's NPCs' memory: per-player detection wins, the NPCs just
+lose that V.
+
+**To verify in game** (scenario `relic-guest` covers the forwarded mark,
+`relic-host` the host's answer to a guest's second chance; none of this
+was run): a breach shows on a proxy and wears down; the
+monowire's quickhack lands on the host's NPC; the Gorilla mark ragdolls the
+host's knocked-out NPC without slowing the host; a Mantis grand finale
+beheads on both games and the host sees no blood on its screen; Emergency
+Cloaking takes a guest out of combat while the host's V stays in it, and
+the host's cloak leaves the guest in it; Sensory Protocol slows time for
+the guest as a bubble and its dodge out of sight takes the guest out of
+combat, not the host; whether `MemoryWipeOnDodge` and
+`MantisBladesRelicDismemberment` carry the tags read above (TweakDB).
+
+**First reading (2026-11-18)**, kept for its line references; the rules
+it proposed are the ones the table above reports on.
 
 <!-- prettier-ignore -->
 | Perk (enum) | Mechanism [R] | Problem | Rule | Risk |
@@ -667,7 +730,8 @@ being slowed: open, see ../architecture/time.md.
 - **Mantis blades**: the leap writes `LeapedDistance` (`288771`) for
   `ModifyDamageWithLeapedDistance` (`305486`): attacker-local, fine. The
   relic finale puts `MantisBladesInstantDismembermentSpyBuff` on the NPC
-  (`186229`): dismemberment of a host NPC (§2.2) [R].
+  (`186229`): dismemberment of a host NPC (§2.2) [R]; handled in §4,
+  Relic tree.
 - **Gorilla arms**: the NPC's `OnePunchAttackLayer` interaction sets
   `CanOnePunch` on the local player's PSM blackboard (`22336-22355`);
   `GorillaArmsOnePunchNPCMark` (`128094`) makes the NPC ragdoll and sends
@@ -675,7 +739,8 @@ being slowed: open, see ../architecture/time.md.
   `186189-186234`) [R]. On the host the slow-mo would go to the host's V
   (§2.1). Rule: proxies keep the interaction for their guest; the mark is
   forwarded; the host ragdolls the real NPC with the puppet as instigator;
-  the slow-mo is dropped (`coop-time.md` §2.6). **Needs a rule.**
+  the slow-mo is dropped (`coop-time.md` §2.6). Done (2026-11-19, not
+  run): §4, Relic tree.
 - **Monowire**: `MonoWireQuickHackApplyEffector` (`307374`) uploads V's
   equipped quickhack on a charged hit and spreads it on light hits
   (`MonoWireQuickhackContagiousHittableTarget`); the contagion cleanup

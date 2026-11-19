@@ -246,7 +246,8 @@ fight`.
 
 ## Two real games
 
-Built, untried on the game machine: each instance of `tools/instance.sh`
+Built, the pilot itself untried on the game machine (the instances run
+there): each instance of `tools/instance.sh`
 ([`two-instances.md`](two-instances.md)) has its own pilot, and nothing in
 the pilot is global. `PILOT_INSTANCE=NAME tools/game.sh pilot …` drives
 instance NAME: `tools/game.sh` takes its game folder from
@@ -263,8 +264,11 @@ too), and `tandem-pilot` knows an instance by its folder
   (`INSTANCES/NAME/compatdata/…/Saved Games`, compared before and after).
 - **Input on its own display** (`--pad keys`, the default for an
   instance): gamescope gives each instance a nested Xwayland
-  (`DISPLAY=:N`, read from the game's environment) with that game alone
-  in it. The pilot speaks X11 to it (`internal/xtest`: XTEST's FakeInput,
+  (`DISPLAY=:N`, from the instance's `run/launch.log` as
+  `tools/instance.sh xdo` finds it, else the game's environment) with that
+  game alone in it. Keys and clicks sent there reach that game only:
+  measured on anya with `instance.sh xdo` (`two-instances.md`, step 7);
+  relative pointer motion (the look) is not measured yet. The pilot speaks X11 to it (`internal/xtest`: XTEST's FakeInput,
   standard library only) and plays the pad on a keyboard and a mouse
   (`pad.KeyDevice`): the left stick is W A S D, the right stick moves the
   pointer for as long as it is held, the triggers are the mouse buttons,
@@ -459,9 +463,11 @@ of step 0 once.
   watches the stream.
 - **Waypoints are relative to the test field** and unmeasured: `survey`
   first.
-- **Keys on an instance's display** are untried: whether Wine takes
-  XTEST's relative pointer motion as mouse look, and the default key
-  bindings (`pad.DefaultKeymap`, from memory), are measured in step 12. A
+- **Keys on an instance's display**: keys and clicks reach the game
+  there (anya, `instance.sh xdo`); whether Wine takes XTEST's relative
+  pointer motion as mouse look, and the default key bindings
+  (`pad.DefaultKeymap`, from memory; `c` crouches, as measured), are
+  measured in step 12. A
   pilot killed outright leaves its keys down on that display until
   `pilot stop` (XTEST does not release them when the client goes).
 - **The simulator proves the interpreter, not the game.** A routine that

@@ -156,6 +156,31 @@ func PadReachesOnly(proc string, self Process, vendor, product uint16) error {
 	return nil
 }
 
+// Display is the X server gamescope started for the instance, as its launch
+// log names it ("Starting Xwayland on :N", what tools/instance.sh xdo
+// uses); "" when it has none (not started in gamescope).
+func (i *Instance) Display() string {
+	data, err := os.ReadFile(filepath.Join(i.Dir, "run", "launch.log"))
+	if err != nil {
+		return ""
+	}
+	display := ""
+	for _, line := range strings.Split(string(data), "\n") {
+		_, rest, found := strings.Cut(line, "Starting Xwayland on :")
+		if !found {
+			continue
+		}
+		end := 0
+		for end < len(rest) && rest[end] >= '0' && rest[end] <= '9' {
+			end++
+		}
+		if end > 0 {
+			display = ":" + rest[:end]
+		}
+	}
+	return display
+}
+
 // GameDisplay is the X display the game draws on (its DISPLAY): under
 // gamescope, gamescope's own nested Xwayland, with nothing else in it.
 func GameDisplay(proc string, pid int) string {

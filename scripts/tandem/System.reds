@@ -118,6 +118,10 @@ public class TandemSystem extends ScriptableSystem {
   private let m_time: ref<TandemTime>;
   // The NCART, rides and quest vehicles (Transit.reds).
   private let m_transit: ref<TandemTransit>;
+  // World vehicles (Traffic.reds: kept for the game's whole run, it knows
+  // every vehicle of our world) and police heat (Police.reds).
+  private let m_traffic: ref<TandemTraffic>;
+  private let m_police: ref<TandemPolice>;
   // Our V and the others in other worlds (Elsewhere.reds), and why each
   // puppet is hidden (PuppetVisibility.reds: private scenes, other worlds).
   private let m_elsewhere: ref<TandemElsewhere>;
@@ -129,6 +133,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_stealth: ref<TandemStealth>;
   // Down, revive, respawn (Revive.reds).
   private let m_revive: ref<TandemRevive>;
+  // Seen and heard: the puppets' sounds, flinches, the party HUD (Presence.reds).
+  private let m_presence: ref<TandemPresenceSync>;
   // Hit outcomes: strikes, wounds, poise, difficulty, area hits (Outcomes.reds).
   private let m_outcomes: ref<TandemOutcomes>;
   // (test) hostile NPCs spawned by "npc hostile", and those made hostile.
@@ -190,6 +196,28 @@ public class TandemSystem extends ScriptableSystem {
   private func OnAttach() -> Void {
     if TandemNative.IsConfigured() {
       TandemNative.Log("system attached");
+    }
+    this.m_traffic = new TandemTraffic();
+    this.m_traffic.Start(this.GetGameInstance());
+    this.m_police = new TandemPolice();
+    this.m_police.Start(this.GetGameInstance());
+  }
+
+  public func Traffic() -> ref<TandemTraffic> {
+    return this.m_traffic;
+  }
+
+  public func Police() -> ref<TandemPolice> {
+    return this.m_police;
+  }
+
+  // The session's world vehicles and police units go with it.
+  private func EndStreet() -> Void {
+    if IsDefined(this.m_traffic) {
+      this.m_traffic.End();
+    }
+    if IsDefined(this.m_police) {
+      this.m_police.End();
     }
   }
 
@@ -275,6 +303,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_stealth.Start(this.GetGameInstance());
     this.m_revive = new TandemRevive();
     this.m_revive.Start(this.GetGameInstance(), this);
+    this.m_presence = new TandemPresenceSync();
+    this.m_presence.Start(this.GetGameInstance());
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -289,6 +319,11 @@ public class TandemSystem extends ScriptableSystem {
     let loot = TandemLoot.Get(this.GetGameInstance());
     if IsDefined(loot) {
       loot.Begin();
+    }
+    // Devices and world objects (Devices.reds).
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.Begin();
     }
   }
 
@@ -313,9 +348,16 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     TandemNative.PoseSource(null);
+    // Guest: every device the session changed, back as our own save had it
+    // (before the plugin stops: nothing of this goes to anyone).
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.End(worldStays);
+    }
     this.m_inGame = false;
     this.m_you = 0u;
     this.RemoveAllPuppets();
+    this.EndStreet();
     if !worldStays {
       // Nothing left to delete step by step.
       ArrayClear(this.m_leaving);
@@ -343,6 +385,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_revive.Stop();
     }
     this.m_revive = null;
+    if IsDefined(this.m_presence) {
+      this.m_presence.Stop();
+    }
+    this.m_presence = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -565,7 +611,7 @@ public class TandemSystem extends ScriptableSystem {
 
   // Guest: our hit takes the last of this proxy's health (Combat.reds).
   public func PredictKill(npc: Uint32) -> Void {
-    if IsDefined(this.m_npcs) && this.m_you != 0u && !TandemNative.IsHost() {
+    if IsDefined(this.m_npcs) && this.m_you != 0u {
       this.m_npcs.PredictKill(npc);
     }
   }
@@ -592,6 +638,10 @@ public class TandemSystem extends ScriptableSystem {
   // Fast travel together and regroup (Travel.reds).
   public func Travel() -> ref<TandemTravel> {
     return this.m_travel;
+  }
+
+  public func Presence() -> ref<TandemPresenceSync> {
+    return this.m_presence;
   }
 
   public func Revive() -> ref<TandemRevive> {
@@ -666,6 +716,11 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_revive) && this.m_playing {
       this.m_revive.Tick(this.Now(), this.m_you);
     }
+    // Devices (Devices.reds); 0: not in a session yet, or the world loads.
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this.m_playing ? this.m_you : 0u);
+    }
     if IsDefined(this.m_bodies) {
       this.m_bodies.Tick();
     }
@@ -674,7 +729,22 @@ public class TandemSystem extends ScriptableSystem {
     if this.m_playing && this.m_you != 0u {
       this.CheckPuppets();
     }
+    // The street, before the puppets' seats: a vehicle a player took is
+    // that player's car copy from this frame on.
+    if this.m_playing && this.m_you != 0u {
+      if IsDefined(this.m_traffic) {
+        this.m_traffic.Tick(this.Now(), this.m_you, this);
+      }
+      if IsDefined(this.m_police) {
+        this.m_police.Tick(this.Now(), this.m_you, this);
+      }
+    }
     this.DrivePuppets();
+    // What the puppets are heard doing, their flinches, the party HUD
+    // (Presence.reds), on real time as the NPCs are.
+    if IsDefined(this.m_presence) && this.m_playing {
+      this.m_presence.Tick(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())), this, this.m_you);
+    }
     this.Rebuild();
     // Our ride and the others' (the NCART, rides, quest scene vehicles).
     if IsDefined(this.m_transit) && this.m_playing {
@@ -849,8 +919,25 @@ public class TandemSystem extends ScriptableSystem {
       }
     } else if Equals(command, "pose hook") {
       TandemNative.PoseHook();
+    } else if Equals(command, "region hold on") || Equals(command, "region hold off") {
+      // (test) what the quest work says when a gig of our own world starts
+      // or ends where our V stands: we keep our region meanwhile.
+      TandemRegions.Hold(Equals(command, "region hold on"));
+      TandemNative.Log(s"\(command)");
+    } else if Equals(command, "region") {
+      let linked = TandemRegions.Linked();
+      TandemNative.Log(s"region: \(TandemRegions.IsApart() ? "apart" : "grouped"), leader player \(TandemRegions.Leader()), linked with \(ArraySize(linked)) player(s), area \(TandemRegions.OwnsArea() ? "ours" : s"player \(TandemRegions.AreaOwner(this.m_you))'s"), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
     } else if Equals(command, "npc count") {
-      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed)");
+      TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
+    } else if Equals(command, "street count") {
+      // (test) the world vehicles shared in the session, as we have them.
+      TandemNative.Log(s"street \(IsDefined(this.m_traffic) ? this.m_traffic.Report() : "count: no vehicles")");
+    } else if StrBeginsWith(command, "police") {
+      // (test) "police report", "police heat N" (our V wanted at N stars,
+      // the quests' own way), "police calm".
+      if IsDefined(this.m_police) {
+        this.m_police.Command(command, this);
+      }
     } else if Equals(command, "npc anims") {
       TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
     } else if StrBeginsWith(command, "npc seek") {
@@ -985,6 +1072,17 @@ public class TandemSystem extends ScriptableSystem {
         gods.RemoveGodMode(player.GetEntityID(), gameGodModeType.Immortal, n"Default");
       }
       TandemNative.Log(s"\(command)");
+    } else if Equals(command, "relic mark") {
+      // (test, coop-perks.md §4) the Relic's Gorilla Arms mark on the
+      // nearest proxy, put as the game does it: with no instigator.
+      let marker = GetPlayer(this.GetGameInstance());
+      let marked = IsDefined(this.m_npcs) ? this.m_npcs.NearestProxy(marker.GetWorldPosition()) : null;
+      if IsDefined(marked) {
+        StatusEffectHelper.ApplyStatusEffect(marked, t"BaseStatusEffect.GorillaArmsOnePunchNPCMark");
+        TandemNative.Log("relic mark: on the nearest proxy");
+      } else {
+        TandemNative.Log("relic mark: no proxy");
+      }
     } else if StrBeginsWith(command, "npc punch") {
       // (test) a hit from our V on the nearest proxy, through the game's
       // damage pipeline as a real one would go (Combat.reds): lethal
@@ -1029,7 +1127,7 @@ public class TandemSystem extends ScriptableSystem {
       let copy: ref<VehicleObject>;
       for puppet in this.m_puppets {
         if !IsDefined(copy) && EntityID.IsDefined(puppet.car) {
-          copy = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.car) as VehicleObject;
+          copy = TandemTraffic.Body(this.GetGameInstance(), puppet.car);
         }
       }
       TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
@@ -1077,7 +1175,7 @@ public class TandemSystem extends ScriptableSystem {
       let seated = false;
       for puppet in this.m_puppets {
         if !seated && EntityID.IsDefined(puppet.car) {
-          let car = GameInstance.GetDynamicEntitySystem().GetEntity(puppet.car) as VehicleObject;
+          let car = TandemTraffic.Body(this.GetGameInstance(), puppet.car);
           let player = GetPlayer(this.GetGameInstance());
           let slot = TandemVehicles.FreeSlot(this.GetGameInstance(), car, n"seat_front_right", player.GetEntityID());
           if IsDefined(car) && IsNameValid(slot) && !VehicleComponent.IsDriverSlot(slot) {
@@ -1273,6 +1371,12 @@ public class TandemSystem extends ScriptableSystem {
       TandemMarkers.Get(this.GetGameInstance()).Report();
     } else if Equals(command, "despawn") {
       this.RemoveAllPuppets();
+    } else if StrBeginsWith(command, "presence") {
+      // Presence.reds: presence report | steps auto|on|off | vo NAME |
+      // sound NAME | fx NAME | flinch | bullet | hud ... | react TYPE.
+      if IsDefined(this.m_presence) {
+        this.m_presence.Command(StrAfterFirst(command, "presence "), this);
+      }
     } else if StrBeginsWith(command, "revive") {
       // Revive.reds: revive down | hold | report.
       if IsDefined(this.m_revive) {
@@ -1281,6 +1385,9 @@ public class TandemSystem extends ScriptableSystem {
     } else if StrBeginsWith(command, "elsewhere") && IsDefined(this.m_elsewhere) {
       // Elsewhere.reds: elsewhere test PLACE|off, elsewhere state.
       this.m_elsewhere.Command(command);
+    } else if StrBeginsWith(command, "device") {
+      // Devices.reds: device, device near [KIND], device open|close|... [KIND].
+      TandemDevices.Get(this.GetGameInstance()).Command(command);
     } else if StrBeginsWith(command, "story") || StrBeginsWith(command, "quest") {
       // Story.reds: story …, quest freeze on|off, quest report.
       TandemStorySystem.Get(this.GetGameInstance()).Command(command);
@@ -1728,6 +1835,9 @@ public class TandemSystem extends ScriptableSystem {
           if IsDefined(this.m_visibility) {
             this.m_visibility.Forget(event.player);
           }
+          if IsDefined(this.m_presence) {
+            this.m_presence.Forget(event.player);
+          }
           ArrayRemove(this.m_standInPlayers, event.player);
           break;
         case 4:
@@ -1744,6 +1854,12 @@ public class TandemSystem extends ScriptableSystem {
             TandemCoop.Notice(this.GetGameInstance(), s"Co-op session ended: \(event.name)");
           }
           this.m_you = 0u;
+          // Guest: the devices the session changed, back as our own save
+          // had them (Devices.reds); the world stays.
+          let ended = TandemDevices.Get(this.GetGameInstance());
+          if IsDefined(ended) {
+            ended.End(true);
+          }
           if IsDefined(this.m_time) {
             this.m_time.End();
           }
@@ -1752,6 +1868,7 @@ public class TandemSystem extends ScriptableSystem {
             this.m_transit.End();
           }
           this.RemoveAllPuppets();
+          this.EndStreet();
           if IsDefined(this.m_npcs) {
             this.m_npcs.End();
           }
@@ -1766,6 +1883,9 @@ public class TandemSystem extends ScriptableSystem {
           }
           if IsDefined(this.m_visibility) {
             this.m_visibility.End();
+          }
+          if IsDefined(this.m_presence) {
+            this.m_presence.End();
           }
           ArrayClear(this.m_standInPlayers);
           ArrayClear(this.m_missingPlayers);
@@ -1960,7 +2080,7 @@ public class TandemSystem extends ScriptableSystem {
         this.TrySeat(puppet);
       }
       if EntityID.IsDefined(puppet.car) {
-        let car = entities.GetEntity(puppet.car) as GameObject;
+        let car = TandemTraffic.Body(this.GetGameInstance(), puppet.car);
         if IsDefined(car) {
           TandemVehicles.Follow(this.GetGameInstance(), car, puppet.player);
         }
@@ -2283,6 +2403,15 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log(s"player \(puppet.player): on foot");
       return;
     }
+    // A vehicle it took from the street is its car: the body we have of
+    // it (the real one when we own the area, our proxy otherwise).
+    if owner == puppet.player && !EntityID.IsDefined(puppet.car) && IsDefined(this.m_traffic) {
+      let taken = this.m_traffic.TakeAdopted(puppet.player);
+      if EntityID.IsDefined(taken) && IsDefined(TandemTraffic.Body(game, taken)) {
+        puppet.car = taken;
+        TandemNative.Log(s"player \(puppet.player): drives the vehicle it took from the street");
+      }
+    }
     if owner == puppet.player && !EntityID.IsDefined(puppet.car) {
       let at = TandemNative.RemoteVehiclePosition(puppet.player);
       if at.W == 0.0 && IsDefined(body) {
@@ -2305,7 +2434,7 @@ public class TandemSystem extends ScriptableSystem {
     let owner = TandemNative.RemoteSeatOwner(puppet.player);
     let vehicle: wref<GameObject>;
     if owner == puppet.player {
-      vehicle = entities.GetEntity(puppet.car) as GameObject;
+      vehicle = TandemTraffic.Body(game, puppet.car);
     } else if owner == this.m_you {
       let ours: wref<VehicleObject>;
       if VehicleComponent.GetVehicle(game, GetPlayer(game), ours) {
@@ -2314,7 +2443,7 @@ public class TandemSystem extends ScriptableSystem {
     } else {
       for other in this.m_puppets {
         if other.player == owner && EntityID.IsDefined(other.car) {
-          vehicle = entities.GetEntity(other.car) as GameObject;
+          vehicle = TandemTraffic.Body(game, other.car);
         }
       }
     }
@@ -2439,6 +2568,9 @@ public class TandemSystem extends ScriptableSystem {
           let entity = entities.GetEntity(puppet.id) as GameObject;
           if IsDefined(entity) {
             TandemWeapons.Fire(entity, shot.left, shot.effect);
+            if IsDefined(this.m_presence) {
+              this.m_presence.Fired(shot.player, entity, shot.left, shot.effect, EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())));
+            }
           }
         }
       }
@@ -2550,6 +2682,9 @@ public class TandemSystem extends ScriptableSystem {
     TandemNative.PoseBind(puppet.player, null);
     TandemNative.UnregisterPuppet(puppet.player);
     TandemMarkers.Hide(game, puppet.player);
+    if IsDefined(this.m_presence) {
+      this.m_presence.Forget(puppet.player);
+    }
     if IsDefined(this.m_attitudes) {
       this.m_attitudes.Release(puppet.player);
     }

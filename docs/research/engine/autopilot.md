@@ -366,12 +366,12 @@ than trust a button.
 ### 14.2.5 Two instances `[inference]`
 
 - Each instance under gamescope draws on gamescope's nested Xwayland,
-  whose `DISPLAY` its game inherits. An X server delivers XTEST's input to
-  its own clients only, so it reaches that game and nothing else, focus
-  or not `[documented]` for X; that Wine takes XTEST's keys and relative
-  pointer motion as the game's input is `[inference]` (Wine reads XInput2
-  raw events of the master pointer, to which the XTEST pointer is
-  attached). That display's keymap is gamescope's, which follows the
+  named in its launch log (`Starting Xwayland on :N`). XTEST's keys and
+  clicks sent there reach that game only, focused in Sway or not `[anya]`
+  (`tools/instance.sh xdo b key c` crouched b's V alone,
+  `two-instances.md`). That Wine takes XTEST's relative pointer motion as
+  mouse look is `[inference]` (Wine reads XInput2 raw events of the master
+  pointer, to which the XTEST pointer is attached). That display's keymap is gamescope's, which follows the
   desktop's (fr): the pilot looks keys up by keysym.
 - Whether gamescope's Xwayland asks for authorization is not known: the
   pilot uses the game's `XAUTHORITY` when set, else none.

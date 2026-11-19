@@ -53,6 +53,8 @@
 #                              pose stream | pose loop [off] | vehicle probe [stop] |
 #                              vehicle ride | vehicle unride | vehicle clear | where | npcs |
 #                              npc count | npc anims | npc seek [range] | markers |
+#                              region (apart or grouped, leader, area owner) |
+#                              region hold on | region hold off (a gig of ours here) |
 #                              ride (our ride, the vehicle's seats, the others' rides) |
 #                              ride hide | ride show (every puppet out of sight and back) |
 #                              ride npc [RECORD] (an NPC into a free seat of our vehicle) |
@@ -61,6 +63,13 @@
 #                              tandem-peer --play) |
 #                              proxy test [record] | proxy clear |
 #                              pose hook | pose report | pose watch [3] | pose copy [off] |
+#                              device (counts) | device near [KIND] | device goto [KIND] |
+#                              device tell [KIND] | device open|close|lock|unlock|on|off|
+#                              explode|distract|friendly|hostile [KIND] |
+#                              device floor N|other | device station N
+#                              (the nearest device of a KIND: door lift camera turret
+#                              barrel ap radio any; near prints its id for
+#                              tandem-peer --device, goto puts V beside it) |
 #                              coop status | coop host [PORT] | coop join ADDRESS[:PORT] |
 #                              coop leave | coop menu PAGE | coop pick TEXT
 #                              (the co-op menu: in game any time; menu and pick drive

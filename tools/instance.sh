@@ -5,8 +5,8 @@
 # hosting and one joining over loopback, put two real games against each
 # other (docs/architecture/two-instances.md).
 #
-# UNTESTED against the real game: only its logic was run, on a fake tree.
-# Follow the first-try checklist of docs/architecture/two-instances.md.
+# Tried on anya (2026-11-19): one instance plays and hosts the mock player;
+# two play a session over loopback (results in docs/architecture/two-instances.md).
 #
 #   tools/instance.sh [-n] VERB [NAME] [ARGS...]
 #
@@ -19,9 +19,13 @@
 #                        player's (after a game or mod update)
 #   role NAME off|host|join [ADDRESS] [KEY=VALUE...]
 #                        the instance's tandem.ini (join: 127.0.0.1 by default)
+#   settings NAME        light settings for a test game (low textures, no
+#                        sound); create does it
 #   start NAME           launch it (Proton, outside Steam, in gamescope when
 #                        there is one, in a sandbox that cannot write the
 #                        player's install, prefix or Steam cloud folder)
+#   load NAME            once started, from the menu to a loaded save (a click
+#                        through its own X server; tandem's log tells when)
 #   stop NAME            kill this instance's processes, and only those
 #   destroy NAME         stop it and delete its directory
 #   status               the instances, what runs, the memory left
@@ -29,6 +33,13 @@
 #                        GAME_DIR="$(tools/instance.sh dir b)" task deploy:files
 #   cmd NAME TEXT...     a tandem command for it (its own tandem.cmd)
 #   log NAME [N]         the last N lines of its tandem log (default 40)
+#   stats NAME           its memory, VRAM, CPU and frame rate now
+#   bt NAME              every thread's stack, to its run/bt.txt (a frozen game)
+#   xdo NAME ARGS...     xdotool on the instance's own X server (gamescope's):
+#                        keys and clicks reach this game only, focused or not
+#                        (xdo b key Return; xdo b mousemove 640 360 click 1)
+#   shot NAME FILE       a screenshot of the instance's own screen (PNG), to
+#                        FILE inside the instance's run/ folder
 #
 #   -n   dry run: print every command instead of running it. What it only
 #        reads (does the game run, which Proton, how much room) it still
@@ -51,7 +62,7 @@
 # Environment (all optional):
 #   GAME_DIR              the player's install (/data/Steam/steamapps/common/Cyberpunk 2077)
 #   TANDEM_INSTANCES      where instances live (a sibling of the Steam library:
-#                         /data/tandem-instances; the same filesystem as the
+#                         /data/Steam/tandem-instances; the same filesystem as the
 #                         game makes reflinks possible)
 #   USER_COMPATDATA       the player's prefix (<library>/steamapps/compatdata/1091500)
 #   STEAM_ROOT            the Steam client's folder (~/.local/share/Steam)
@@ -69,9 +80,14 @@
 #   INSTANCE_HIDE_STEAM   1 | 0: the Steam client is out of the game's sight
 #   INSTANCE_SCOPE        1 | 0: a systemd scope with a memory limit
 #   INSTANCE_MEMORY_MAX   14G          INSTANCE_MIN_FREE_MB  12000
+#   INSTANCE_CPU_WEIGHT   100: the scope's CPU weight. Builds over ssh run in
+#                         session scopes beside the user manager holding every
+#                         instance: their nice does not reach across cgroups
 #   INSTANCE_PORT         27450 (role)
 #   INSTANCE_GAME_ARGS    arguments for Cyberpunk2077.exe (none)
 #   INSTANCE_ENV          more VAR=VALUE for the game, space separated
+#   INSTANCE_SETTINGS     1 | 0: create applies settings (INSTANCE_TEXTURES Low,
+#                         INSTANCE_VOLUME 0)
 #   INSTANCE_PAD          the USB product id of the one pad the game reads
 #                         (Microsoft's vendor 045e; default: the first of
 #                         02d1 02dd 02ea 0b12 028f no other instance has).
@@ -109,8 +125,8 @@ if [ "$host" != local ]; then
   forward=(GAME_HOST=local)
   for variable in GAME_DIR TANDEM_INSTANCES USER_COMPATDATA STEAM_ROOT PROTON_DIR INSTANCE_MIRROR \
     INSTANCE_PREFIX INSTANCE_LAUNCHER INSTANCE_RUNTIME INSTANCE_FHS INSTANCE_DISPLAY INSTANCE_SIZE INSTANCE_FPS \
-    INSTANCE_SANDBOX INSTANCE_HIDE_STEAM INSTANCE_SCOPE INSTANCE_MEMORY_MAX INSTANCE_MIN_FREE_MB \
-    INSTANCE_PORT INSTANCE_GAME_ARGS INSTANCE_ENV INSTANCE_PAD INSTANCE_ALLOW_FOREIGN; do
+    INSTANCE_SANDBOX INSTANCE_HIDE_STEAM INSTANCE_SCOPE INSTANCE_MEMORY_MAX INSTANCE_CPU_WEIGHT INSTANCE_MIN_FREE_MB \
+    INSTANCE_PORT INSTANCE_GAME_ARGS INSTANCE_ENV INSTANCE_PAD INSTANCE_SETTINGS INSTANCE_TEXTURES INSTANCE_VOLUME INSTANCE_ALLOW_FOREIGN; do
     [ -z "${!variable+set}" ] || forward+=("$variable=${!variable}")
   done
   options=()
@@ -123,7 +139,7 @@ appid=1091500
 game=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
 game=${game%/}
 library=$(dirname "$(dirname "$(dirname "$game")")")
-root=${TANDEM_INSTANCES:-$(dirname "$library")/tandem-instances}
+root=${TANDEM_INSTANCES:-$library/tandem-instances}
 user_prefix=${USER_COMPATDATA:-$library/steamapps/compatdata/$appid}
 steam_root=${STEAM_ROOT:-$HOME/.local/share/Steam}
 saves_in_prefix='pfx/drive_c/users/steamuser/Saved Games/CD Projekt Red/Cyberpunk 2077'
@@ -184,6 +200,33 @@ write() {
   fi
 }
 
+# A program: the machine's own, else nixpkgs' (NixOS: built once and kept by
+# a GC root in the instance's run/; nothing is installed on the system).
+tool() {
+  local program=$1 package=${2:-$1} link
+  if command -v "$program" >/dev/null; then
+    command -v "$program"
+    return
+  fi
+  command -v nix >/dev/null || return 1
+  link=$inst/run/nix-$package
+  # A package with several outputs links each (nix-jq-bin, nix-jq-man).
+  if [ -x "$link-bin/bin/$program" ]; then
+    echo "$link-bin/bin/$program"
+    return
+  fi
+  if [ ! -x "$link/bin/$program" ]; then
+    inside "$link"
+    if [ "$dry" = 1 ]; then
+      note "dry run: would nix build nixpkgs#$package -o $link"
+    else
+      mkdir -p "$inst/run"
+      nix --extra-experimental-features 'nix-command flakes' build "nixpkgs#$package" -o "$link" >&2 || return 1
+    fi
+  fi
+  if [ -x "$link-bin/bin/$program" ]; then echo "$link-bin/bin/$program"; else echo "$link/bin/$program"; fi
+}
+
 # --- whose game is running ---------------------------------------------------
 
 # The instance a process belongs to ("" for a game we did not start).
@@ -241,8 +284,13 @@ mirror_game() {
     --exclude=/archive/ \
     --exclude=/r6/logs/ --exclude=/red4ext/logs/ --exclude='*.log' \
     --exclude=/red4ext/plugins/tandem/ --exclude=/r6/scripts/tandem/ --exclude=/r6/tweaks/tandem/ \
-    --exclude=/bin/x64/steam_appid.txt \
+    --exclude=/bin/x64/steam_appid.txt --exclude=/bin/x64/GameServicesSteam.dll \
     "$game/" "$inst/game/"
+  # The game's Steam services: with them and no Steam client the game exits
+  # at start (code 3) or hangs on its logo. Without them it runs with no
+  # platform (no achievements, no Steam cloud: what we want).
+  inside "$inst/game/bin/x64/GameServicesSteam.dll"
+  run rm -f -- "$inst/game/bin/x64/GameServicesSteam.dll"
 
   # The archives (most of the game's size) are only ever read.
   local how=${INSTANCE_MIRROR:-auto}
@@ -301,6 +349,15 @@ create() {
   fi
   inside "$inst/compatdata/$saves_in_prefix"
   run mkdir -p "$inst/compatdata/$saves_in_prefix"
+  # The folder's own files (user.gls: the first-run answers, the user
+  # agreement; EnabledMods.json, HDRUserSettings.json) are settings, not saves.
+  # Not steam_autocloud.vdf: Steam's mark of a cloud folder.
+  local file
+  if [ -d "$saves" ]; then
+    while IFS= read -r -d '' file; do
+      run cp -a -- "$file" "$inst/compatdata/$saves_in_prefix/"
+    done < <(find "$saves" -mindepth 1 -maxdepth 1 -type f ! -name steam_autocloud.vdf -print0)
+  fi
   if [ -n "$save" ]; then
     run cp -a -- "$saves/$save" "$inst/compatdata/$saves_in_prefix/$save"
     note "save: $save"
@@ -308,6 +365,7 @@ create() {
     note "no save copied: the instance starts on the main menu"
   fi
   role_file off
+  [ "${INSTANCE_SETTINGS:-1}" = 0 ] || settings
   note "created $inst"
   note "next: GAME_DIR=\"$inst/game\" task deploy:files; tools/instance.sh role $name host; tools/instance.sh start $name"
 }
@@ -379,6 +437,41 @@ pad_of() {
   echo "$pad"
 }
 
+# --- the game's settings ------------------------------------------------------
+
+# Light settings for a test game (two share one GPU), in the instance's own
+# UserSettings.json: low textures, no sound, and the resolution of its
+# gamescope screen (else the game keeps the player's shape inside it:
+# 1152x720, a window 64 pixels in, and xdo's coordinates shifted).
+# INSTANCE_TEXTURES, INSTANCE_VOLUME, INSTANCE_SIZE.
+settings() {
+  local file="$inst/compatdata/pfx/drive_c/users/steamuser/AppData/Local/CD Projekt Red/Cyberpunk 2077/UserSettings.json"
+  local textures=${INSTANCE_TEXTURES:-Low} volume=${INSTANCE_VOLUME:-0} size=${INSTANCE_SIZE:-1280x720} jq
+  if [ ! -f "$file" ]; then
+    note "no UserSettings.json yet: the game's defaults (run settings again after a first start)"
+    return 0
+  fi
+  inside "$file"
+  jq=$(tool jq) || die "no jq"
+  if [ "$dry" = 1 ]; then
+    echo "+ $jq: TextureQuality=$textures MasterVolume=$volume Resolution=$size in $file"
+    return 0
+  fi
+  # shellcheck disable=SC2016 # jq variables, not the shell's
+  "$jq" --arg textures "$textures" --argjson volume "$volume" --arg size "$size" '
+    .data |= map(.options |= map(
+      if .name == "TextureQuality" and (.values | index($textures)) != null
+      then .value = $textures | .index = (.values | index($textures))
+      elif .name == "MasterVolume" then .value = $volume
+      elif .name == "Resolution" then .value = $size
+      else . end))' "$file" >"$file.new" || {
+    rm -f -- "$file.new"
+    die "settings: $jq failed; $file left as it was"
+  }
+  mv -- "$file.new" "$file"
+  note "settings: textures $textures, volume $volume, resolution $size"
+}
+
 # --- start -------------------------------------------------------------------
 
 # The Proton the player's game runs with: its prefix names the files it
@@ -444,8 +537,23 @@ start() {
     "TANDEM_INSTANCE_ID=$inst"
     "STEAM_COMPAT_DATA_PATH=$inst/compatdata"
     "STEAM_COMPAT_CLIENT_INSTALL_PATH=$steam_root"
-    # RED4ext (winmm.dll) and the ASI loader (version.dll) are DLLs next to the exe.
-    'WINEDLLOVERRIDES=winmm,version=n,b'
+    # The Steam Linux Runtime shows the game only the folders it is told of
+    # (else: the working directory alone, and the game quits without a word).
+    "STEAM_COMPAT_INSTALL_PATH=$inst/game"
+    "PRESSURE_VESSEL_FILESYSTEMS_RW=$inst"
+    "PRESSURE_VESSEL_FILESYSTEMS_RO=$game"
+    # RED4ext (winmm.dll), the ASI loader (version.dll) and upscaler mods
+    # (dxgi.dll) are DLLs next to the exe; absent ones fall back to Wine's.
+    # lsteamclient off: the game must not reach the player's Steam client.
+    'WINEDLLOVERRIDES=winmm,version,dxgi=n,b;lsteamclient=d'
+    # A game with no Steam id for Proton (its "umu" path: started through
+    # umu.exe, no Steam bridge); the GE/CachyOS Protons know this one.
+    UMU_ID=0
+    # The player's launch option (their prefix's FSR4 files stay as they are).
+    PROTON_FSR4_UPGRADE=0
+    # GE and CachyOS Protons look their fixes up by Steam app id, which the
+    # instance does not have (the game has no fix of its own there).
+    PROTONFIXES_DISABLE=1
     "VKD3D_FRAME_RATE=$fps"
     "VKD3D_SHADER_CACHE_PATH=$inst/run"
   )
@@ -475,9 +583,19 @@ start() {
     local proton runtime=${INSTANCE_RUNTIME:-}
     proton=$(proton_dir)
     if [ -z "$runtime" ]; then
-      for runtime in "$library/steamapps/common/SteamLinuxRuntime_sniper" "$steam_root/steamapps/common/SteamLinuxRuntime_sniper" none; do
-        if [ "$runtime" = none ] || [ -x "$runtime/run" ]; then break; fi
+      # The runtime this Proton asks for (toolmanifest.vdf names its app),
+      # wherever Steam installed it; else sniper.
+      local tool_app manifest folder
+      tool_app=$(sed -n 's/.*"require_tool_appid"[[:space:]]*"\([0-9]*\)".*/\1/p' "$proton/toolmanifest.vdf" 2>/dev/null | head -1)
+      runtime=none
+      for folder in "$library" "$steam_root"; do
+        manifest=$folder/steamapps/appmanifest_${tool_app:-1628350}.acf
+        [ -f "$manifest" ] || continue
+        runtime=$folder/steamapps/common/$(sed -n 's/.*"installdir"[[:space:]]*"\(.*\)".*/\1/p' "$manifest" | head -1)
+        if [ -x "$runtime/run" ]; then break; fi
+        runtime=none
       done
+      [ "$runtime" != none ] || note "no Steam Linux Runtime found for this Proton (app ${tool_app:-?}): running without"
     fi
     # NixOS: Steam's programs need the FHS environment steam-run gives them.
     if [ "${INSTANCE_FHS:-auto}" = auto ] && command -v steam-run >/dev/null; then launch+=(steam-run); fi
@@ -496,8 +614,9 @@ start() {
   # only, and their prefix, Steam cloud folder and Steam client are not there.
   local sandbox=()
   if [ "${INSTANCE_SANDBOX:-1}" = 1 ]; then
-    command -v bwrap >/dev/null || die "no bwrap (bubblewrap) for the sandbox; INSTANCE_SANDBOX=0 runs without the guard"
-    sandbox=(bwrap --dev-bind / / --ro-bind "$game" "$game")
+    local bwrap
+    bwrap=$(tool bwrap bubblewrap) || die "no bwrap (bubblewrap) for the sandbox; INSTANCE_SANDBOX=0 runs without the guard"
+    sandbox=("$bwrap" --dev-bind / / --ro-bind "$game" "$game")
     [ ! -d "$user_prefix" ] || sandbox+=(--tmpfs "$user_prefix")
     local cloud
     for cloud in "$steam_root"/userdata/*/"$appid"; do
@@ -515,11 +634,13 @@ start() {
   # want, a frame limit, and input that does not depend on Sway's focus.
   local display=${INSTANCE_DISPLAY:-auto} screen=()
   if [ "$display" = auto ]; then
-    if command -v gamescope >/dev/null; then display=gamescope; else display=window; fi
+    if command -v gamescope >/dev/null || command -v nix >/dev/null; then display=gamescope; else display=window; fi
   fi
+  local gamescope=''
+  [ "$display" = window ] || gamescope=$(tool gamescope) || die "no gamescope (INSTANCE_DISPLAY=window runs without)"
   case $display in
-  gamescope) screen=(gamescope -w "$width" -h "$height" -W "$width" -H "$height" -r "$fps" --framerate-limit "$fps" --) ;;
-  headless) screen=(gamescope --backend headless -w "$width" -h "$height" -W "$width" -H "$height" -r "$fps" --framerate-limit "$fps" --) ;;
+  gamescope) screen=("$gamescope" -w "$width" -h "$height" -W "$width" -H "$height" -r "$fps" --framerate-limit "$fps" --) ;;
+  headless) screen=("$gamescope" --backend headless -w "$width" -h "$height" -W "$width" -H "$height" -r "$fps" --framerate-limit "$fps" --) ;;
   window) ;;
   *) die "INSTANCE_DISPLAY: auto, gamescope, headless or window" ;;
   esac
@@ -528,7 +649,7 @@ start() {
   local scope=()
   if [ "${INSTANCE_SCOPE:-1}" = 1 ] && command -v systemd-run >/dev/null; then
     scope=(systemd-run --user --scope --quiet --collect --unit "tandem-instance-$name"
-      -p "MemoryMax=${INSTANCE_MEMORY_MAX:-14G}" -p CPUWeight=50 --)
+      -p "MemoryMax=${INSTANCE_MEMORY_MAX:-14G}" -p "CPUWeight=${INSTANCE_CPU_WEIGHT:-100}" --)
   fi
 
   session_env
@@ -560,14 +681,15 @@ start() {
 # --- stop, destroy -----------------------------------------------------------
 
 stop() {
-  local list
+  local list scoped=0
   # Its scope first, when it has one: systemd kills the whole group.
   if systemctl --user --quiet is-active "tandem-instance-$name.scope" 2>/dev/null; then
     run systemctl --user stop "tandem-instance-$name.scope" || true
+    scoped=1
   fi
   list=$(pids | tr '\n' ' ')
   if [ -z "$list" ]; then
-    note "$name is not running"
+    if [ "$scoped" = 1 ]; then note "stopped $name"; else note "$name is not running"; fi
     return 0
   fi
   # shellcheck disable=SC2086 # a list of pids
@@ -616,6 +738,38 @@ status() {
   done
 }
 
+# What one instance costs now: the game's memory, the memory of its whole
+# scope, its VRAM (the amdgpu driver's per-client counts), its CPU over a
+# few seconds, and its last frame rate (when started with
+# INSTANCE_ENV=WINEDEBUG=-all,+fps: Wine logs it at each present).
+stats() {
+  exists
+  local list game pid
+  list=$(pids)
+  [ -n "$list" ] || die "$name is not running"
+  game=$(game_pid)
+  [ -z "$game" ] || echo "game: pid $game, $(awk '/^VmRSS:/ { print int($2 / 1024) " MB resident" }' "/proc/$game/status")"
+  local unit=tandem-instance-$name.scope
+  if systemctl --user --quiet is-active "$unit" 2>/dev/null; then
+    local before after
+    echo "scope: $(($(systemctl --user show -p MemoryCurrent --value "$unit") / 1048576)) MB (with page cache)"
+    before=$(systemctl --user show -p CPUUsageNSec --value "$unit")
+    sleep 5
+    after=$(systemctl --user show -p CPUUsageNSec --value "$unit")
+    echo "cpu: $(((after - before) / 50000000)) % of one core (5 s)"
+  fi
+  # VRAM: each DRM client once (a client's fd can be open in several processes).
+  local file
+  for pid in $list; do
+    for file in /proc/"$pid"/fdinfo/*; do
+      ! grep -qs '^drm-client-id:' "$file" || cat "$file" 2>/dev/null || true
+    done
+  done | awk '/^drm-client-id:/ { id = $2 } /^drm-memory-vram:/ && !(id in seen) { seen[id]; kib += $2 }
+    END { print "vram: " int(kib / 1024) " MB" }'
+  # "trace:fps:win32u_vkQueuePresentKHR 0x… @ approx 30.01fps, total 30.08fps"
+  sed -n 's/.*trace:fps:.*@ approx \([0-9.]*\)fps.*/fps: \1/p' "$inst/run/launch.log" 2>/dev/null | tail -1
+}
+
 command_file() {
   exists
   [ -n "$(pids)" ] || die "$name is not running"
@@ -646,9 +800,138 @@ log() {
   tail -n "${1:-40}" "$file"
 }
 
+# The game's process among this instance's: the largest (its name is its
+# main thread's, GameThread).
+game_pid() {
+  local pid
+  for pid in $(pids); do
+    awk -v pid="$pid" '/^VmRSS:/ { print $2, pid }' "/proc/$pid/status" 2>/dev/null || true
+  done | sort -rn | head -1 | cut -d' ' -f2
+}
+
+# Every thread's stack (winedbg, in the game's own namespaces and with its
+# own wineserver: the instance's), to run/bt.txt. As tools/game.sh bt.
+bt() {
+  exists
+  local game wineserver pid file=$inst/run/bt.txt
+  game=$(game_pid)
+  [ -n "$game" ] || die "$name is not running"
+  wineserver=$(for pid in $(pids); do [ "$(cat "/proc/$pid/comm" 2>/dev/null)" != wineserver ] || echo "$pid"; done | head -1)
+  [ -n "$wineserver" ] || die "$name: no wineserver among its processes"
+  inside "$file"
+  local wine env=() kv
+  wine=$(dirname "$(readlink -f "/proc/$wineserver/exe")")
+  while IFS= read -r -d '' kv; do
+    case $kv in WINESERVERSOCKET=* | LD_PRELOAD=* | WINELOADERNOEXEC=*) ;; *) env+=("$kv") ;; esac
+  done <"/proc/$game/environ"
+  in_game() { timeout 120 nsenter --preserve-credentials -U -m -r -t "$game" /usr/bin/env -i "${env[@]}" WINEDEBUG=-all "$wine/wine" winedbg "$@"; }
+  [ "$dry" = 0 ] || {
+    echo "+ winedbg in pid $game's namespaces: bt all > $file"
+    return 0
+  }
+  pid=$(in_game --command "info process" 2>/dev/null | awk '/Cyberpunk2077.exe/ { print $1 }')
+  [ -n "$pid" ] || die "winedbg does not see the game"
+  printf 'attach 0x%s\nbt all\ndetach\nquit\n' "$pid" | in_game 2>&1 |
+    grep -v "could not attach\|can.t debug several\|Either .detach" >"$file" || true
+  echo "$file: $(grep -c '^Backtracing' "$file") threads"
+}
+
+# This start's tandem log (the newest, written since the start).
+start_log() {
+  find "$inst/game/red4ext/logs" -maxdepth 1 -name 'tandem-*.log' -newer "$inst/run/pid" -printf '%T@ %p\n' 2>/dev/null |
+    sort -rn | head -1 | cut -d' ' -f2-
+}
+
+# wait_log PATTERN SECONDS [COUNT]: true once this start's tandem log has
+# COUNT lines (default 1) matching PATTERN (an extended regular expression).
+wait_log() {
+  local file
+  for _ in $(seq 1 "$2"); do
+    file=$(start_log)
+    [ -z "$file" ] || [ "$(grep -cE -- "$1" "$file")" -lt "${3:-1}" ] || return 0
+    sleep 1
+  done
+  return 1
+}
+
+# From launch to a loaded save, by the instance's own mouse and keys
+# (tandem deployed: its log says where the game is). Load Begone passes the
+# intro and title screens; on the menu a click on Continue (the top item,
+# at an eighth of the width and 40% of the height whatever the size) loads
+# the latest save; Space answers the loading screen's last prompt. Keys
+# alone do not do it here: the pointer rests where the menu has an item,
+# and Return takes that one (it was New Game).
+load() {
+  exists
+  [ -n "$(pids)" ] || die "$name is not running"
+  [ "$dry" = 0 ] || {
+    echo "+ wait for the menu; xdo: a click on Continue, then space until playing"
+    return 0
+  }
+  wait_log 'main menu world|in game' 300 || die "$name: no main menu in 5 minutes ($(start_log || true))"
+  if ! wait_log 'in game' 20; then
+    local size=${INSTANCE_SIZE:-1280x720}
+    local width=${size%x*} height=${size#*x}
+    # The first click can come before the menu takes clicks (a first start,
+    # its shaders still compiling): again until the load starts, which the
+    # script system's second "system attached" tells (the menu had the first;
+    # "in game" comes only once the world is in, minutes later on a first start).
+    local try
+    for try in 1 2 3 4 5; do
+      note "$name: on the menu, Continue ($try)"
+      xdo mousemove $((width / 8)) $((height * 2 / 5)) sleep 0.5 mousemove $((width / 8 + 1)) $((height * 2 / 5)) sleep 0.5 click 1 >/dev/null
+      ! wait_log 'system attached|in game' 20 2 || break
+    done
+  fi
+  wait_log 'in game' 300 || die "$name: the save did not load in 5 minutes"
+  local tries=0
+  until wait_log 'script. playing' 8; do
+    xdo key space >/dev/null
+    tries=$((tries + 1))
+    [ "$tries" -le 30 ] || die "$name: the save did not finish loading in 4 minutes"
+  done
+  note "$name: playing"
+}
+
+# The X server gamescope started for this instance (its launch log names it).
+x_display() {
+  local display
+  display=$(sed -n 's/.*Starting Xwayland on \(:[0-9][0-9]*\).*/\1/p' "$inst/run/launch.log" 2>/dev/null | tail -1)
+  [ -n "$display" ] || die "$name has no X server of its own (not started in gamescope?)"
+  echo "$display"
+}
+
+xdo() {
+  exists
+  [ -n "$(pids)" ] || die "$name is not running"
+  local display program
+  display=$(x_display)
+  program=$(tool xdotool) || die "no xdotool"
+  DISPLAY=$display run "$program" "$@"
+}
+
+shot() {
+  exists
+  [ -n "$(pids)" ] || die "$name is not running"
+  local file=$inst/run/${1:-shot.png} socket gamescope
+  inside "$file"
+  # gamescope takes it itself (X clients cannot read its composited screen).
+  socket=$(sed -n "s/.*Running compositor on wayland display '\\([^']*\\)'.*/\\1/p" "$inst/run/launch.log" 2>/dev/null | tail -1)
+  [ -n "$socket" ] || die "$name has no gamescope (INSTANCE_DISPLAY=window?)"
+  gamescope=$(tool gamescope) || die "no gamescope"
+  run rm -f -- "$file"
+  XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)} GAMESCOPE_WAYLAND_DISPLAY=$socket \
+    run timeout 10 "$(dirname "$gamescope")/gamescopectl" screenshot "$file" >/dev/null
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ ! -s "$file" ] || break
+    sleep 0.5
+  done
+  echo "$file"
+}
+
 case $verb in
 status) status ;;
-create | sync | role | start | stop | destroy | dir | cmd | log)
+create | sync | role | settings | start | load | stop | destroy | dir | cmd | log | stats | bt | xdo | shot)
   instance "${1:-}"
   shift
   case $verb in
@@ -659,7 +942,14 @@ create | sync | role | start | stop | destroy | dir | cmd | log)
     refuse_if_foreign
     role_file "$@"
     ;;
+  settings)
+    exists
+    refuse_if_foreign
+    [ -z "$(pids)" ] || die "$name is running: the game rewrites its settings on exit"
+    settings
+    ;;
   start) start ;;
+  load) load ;;
   stop)
     exists
     stop
@@ -674,10 +964,14 @@ create | sync | role | start | stop | destroy | dir | cmd | log)
     command_file "$@"
     ;;
   log) log "$@" ;;
+  stats) stats ;;
+  bt) bt ;;
+  xdo) xdo "$@" ;;
+  shot) shot "$@" ;;
   esac
   ;;
 *)
-  echo "instance: no verb $verb (create, sync, role, start, stop, destroy, status, dir, cmd, log)" >&2
+  echo "instance: no verb $verb (create, sync, role, settings, start, load, stop, destroy, status, dir, cmd, log, stats, bt, xdo, shot)" >&2
   exit 2
   ;;
 esac

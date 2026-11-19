@@ -194,12 +194,14 @@ TEST_CASE("the record tap hears what the host says about its V and its world, al
   host->SetWorld(proto::World{.gameTimeSeconds = 7200});
   host->SendNpcSpawn(proto::NpcSpawn{.npc = 3});
   host->SetLocalPaused(true);
-  REQUIRE(heard.size() == 4);
+  host->ReportDevice(proto::DeviceState{.entity = 5, .cls = 6, .flags = proto::kDeviceOpen});
+  REQUIRE(heard.size() == 5);
   CHECK(std::holds_alternative<proto::PlayerState>(heard[0]));
   CHECK(std::get<proto::World>(heard[1]).gameTimeSeconds == 7200);
   CHECK(std::get<proto::NpcSpawn>(heard[2]).npc == 3);
   CHECK(std::get<proto::Pause>(heard[3]).paused);
+  CHECK(std::get<proto::DeviceState>(heard[4]).entity == 5);
   host->SetRecordTap({});
   host->SendLocalState(At(4));
-  CHECK(heard.size() == 4);
+  CHECK(heard.size() == 5);
 }

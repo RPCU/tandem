@@ -421,6 +421,18 @@ public class TandemTime {
         }
         i += 1;
       }
+      // ...and the proxies of the NPCs the others run.
+      let shown = npcs.ProxyIds();
+      let bodies = npcs.ProxyEntities();
+      i = 0;
+      while i < ArraySize(shown) {
+        let proxy = npcs.ProxyBody(bodies[i]) as GameObject;
+        if IsDefined(proxy) {
+          ArrayPush(ids, shown[i]);
+          ArrayPush(positions, proxy.GetWorldPosition());
+        }
+        i += 1;
+      }
     }
     let changes = TandemNative.UpdateTimeBubbles(owners, scales, at, ids, positions);
     if ArraySize(changes) > 0 {
@@ -528,7 +540,8 @@ public class TandemTime {
       applied.seen = false;
     }
     let npcs = system.NpcsSync();
-    if IsDefined(npcs) && TandemNative.IsHost() {
+    // The NPCs we run: their owner slows them inside a bubble.
+    if IsDefined(npcs) {
       let shared = npcs.TimeIds();
       let entities = npcs.TimeEntities();
       let i = 0;

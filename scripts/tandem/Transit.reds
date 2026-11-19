@@ -445,7 +445,7 @@ public class TandemTransit {
     // off or got into a car of ours), or ridden (nothing chosen in time).
     if this.m_askedBy != 0u {
       let asker = this.m_askedBy;
-      let askedCar = GameInstance.GetDynamicEntitySystem().GetEntity(system.CarOf(asker)) as VehicleObject;
+      let askedCar = TandemTraffic.Body(this.m_game, system.CarOf(asker));
       let open = TandemNative.RemoteTransitKind(asker) == 3 && (TandemNative.RemoteTransitFlags(asker) & 2) != 0 && IsDefined(askedCar);
       if !open {
         TandemNative.Log(s"ride: player \(asker)'s ride ended before we chose");
@@ -462,7 +462,7 @@ public class TandemTransit {
     }
     for puppet in puppets {
       if TandemNative.RemoteTransitKind(puppet.player) == 3 && (TandemNative.RemoteTransitFlags(puppet.player) & 2) != 0 {
-        let car = GameInstance.GetDynamicEntitySystem().GetEntity(system.CarOf(puppet.player)) as VehicleObject;
+        let car = TandemTraffic.Body(this.m_game, system.CarOf(puppet.player));
         if IsDefined(car) && Vector4.Distance(car.GetWorldPosition(), player.GetWorldPosition()) <= 20.0 && !this.Answered(puppet.player) {
           this.Ask(puppet.player);
         }
@@ -570,7 +570,7 @@ public class TandemTransit {
     this.Ask(0u);
     let player = GetPlayer(this.m_game);
     let carId = system.CarOf(asker);
-    let car = GameInstance.GetDynamicEntitySystem().GetEntity(carId) as VehicleObject;
+    let car = TandemTraffic.Body(this.m_game, carId);
     if !IsDefined(player) || !IsDefined(car) {
       return;
     }

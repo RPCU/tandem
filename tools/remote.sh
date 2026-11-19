@@ -46,9 +46,14 @@ ssh "$host" mkdir -p "$remote"
 
 jobs=${CMAKE_BUILD_PARALLEL_LEVEL:-5}
 slots=${TANDEM_REMOTE_SLOTS:-3}
+# A build runs in a systemd scope of its own with a low CPU and IO weight:
+# nice does not reach across cgroups, so niced builds still starved the test
+# games (tools/instance.sh scopes) to 9 fps and pushed them into swap. While
+# a test instance runs, one slot only (memory).
 # shellcheck disable=SC2029 # expanded here on purpose
 ssh "$host" "cd $remote && CMAKE_BUILD_PARALLEL_LEVEL=$jobs TANDEM_XWIN=\$HOME/.cache/tandem/xwin \
-  flock /tmp/tandem-src-$name.lock tools/build-slot.sh $slots nice -n 19 devenv shell -- task $*"
+  flock /tmp/tandem-src-$name.lock tools/build-slot.sh \$(pgrep -f '[t]andem-instances/' >/dev/null && echo 1 || echo $slots) \
+  systemd-run --user --scope --quiet -p CPUWeight=10 -p IOWeight=10 nice -n 19 devenv shell -- task $*"
 
 for task in "$@"; do
   case $task in
