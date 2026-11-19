@@ -1,4 +1,4 @@
-// Consistency (docs/ARCHITECTURE.md): digests, resyncs, epochs, idempotent
+// Consistency (docs/architecture/consistency.md): digests, resyncs, epochs, idempotent
 // application, and sessions that converge although messages are lost or
 // sent twice. Unit tests, then a real host and guests over loopback UDP.
 

@@ -257,7 +257,7 @@ Built in this change:
 
 Not built, in the order I would do them:
 
-- **Probes first** (research file §3): parked crowd cars under density 0,
+- **Probes first** (research §13.32): parked crowd cars under density 0,
   the cost of 30–40 teleports a frame, a wheel-turning proxy.
 - Horn, indicators, headlights, doors (the flags have room; nothing sends
   them yet).

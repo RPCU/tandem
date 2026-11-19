@@ -6,7 +6,7 @@ helping them against the police earns you your own.
 
 Engine facts and their tags are in
 [`research/engine/traffic-police.md`](../research/engine/traffic-police.md)
-§2. **Nothing here has run in the game yet**: the core, the mock player and
+§13.31. **Nothing here has run in the game yet**: the core, the mock player and
 the tests are done and pass; the scripts compile; the scenarios at the end
 are what to run first.
 
@@ -39,7 +39,7 @@ wanted V in an area another game owns: today, a wanted guest.
 ## Crimes: the game's own checks, seeing the right player
 
 Vanilla attributes every crime to "the player" by asking `IsPlayer()` of
-whoever did it, or by taking the local V outright (research §2.1). In
+whoever did it, or by taking the local V outright (research §13.31, "How a crime is attributed"). In
 co-op each game has one real player and the others' puppets, which are
 not players. So:
 
@@ -70,8 +70,7 @@ not players. So:
 
 `Crime` has kinds for damage and a kill as well: unused today (the
 offender's game sees its own hits), kept for the cases found in game where
-it does not (a proxy that does not count as a civilian there, research §3
-question 8).
+it does not (a proxy that does not count as a civilian there, research §13.32 question 8).
 
 ## Being wanted in an area another game owns
 

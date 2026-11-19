@@ -1,6 +1,6 @@
 #pragma once
 
-// Keeping every game's copy of the shared state the same (docs/ARCHITECTURE.md,
+// Keeping every game's copy of the shared state the same (docs/architecture/consistency.md,
 // "Consistency"): the digests the host sends and the guests check, the
 // guest's decision to ask for a domain again, notices that never spam,
 // time-sensitive events that go stale, and the faults tests inject.

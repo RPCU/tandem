@@ -1,4 +1,4 @@
-// Quickhacks in a shared world (docs/ARCHITECTURE.md, "Quickhacks from two
+// Quickhacks in a shared world (docs/architecture/combat.md, "Quickhacks from two
 // players on one target"; docs/research/coop-perks.md §6).
 //
 // A guest's quickhack on a proxy runs in its own game as in solo: the

@@ -1,4 +1,4 @@
-// Scripted transit and quest vehicles (docs/ARCHITECTURE.md, "Scripted
+// Scripted transit and quest vehicles (docs/architecture/transit.md, "Scripted
 // transit and quest vehicles"; engine-knowledge.md §13.27).
 //
 // Our V's ride, sent as proto::Transit when it changes:

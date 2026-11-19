@@ -1,7 +1,7 @@
 # Bent, stopped and skipped time — what single-player does, per effect
 
 Research for the "Slowed and stopped time" open problem in
-[`../ARCHITECTURE.md`](../ARCHITECTURE.md). It lists every place the game
+[`../architecture/time.md`](../architecture/time.md). It lists every place the game
 slows, stops or skips time, how to see it from a plugin or redscript, how to
 suppress it, and a proposed co-op rule for each.
 
@@ -47,16 +47,17 @@ was run in game for this file**. Three more limits:
 All on `gameTimeSystem` (`GameInstance.GetTimeSystem`), script declarations at
 `final.reds:53842-53921`, natives confirmed in RTTI 2.50:
 
-| Scope                           | Native (RTTI 2.50 signature)                                                                                                                                 | Handler       |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
-| global (whole world)            | `SetTimeDilation(reason: CName, dilation: Float, duration: Float, easeInCurve: CName, easeOutCurve: CName, listener: handle:tickScriptTimeDilationListener)` | `0x1407d62b0` |
-|                                 | `UnsetTimeDilation(reason: CName, easeOutCurve: CName)`                                                                                                      | `0x1407d64f4` |
-| local player exempt from global | `SetIgnoreTimeDilationOnLocalPlayerZero(ignore: Bool)`                                                                                                       | `0x14131b2f8` |
-|                                 | `RestorePreviousIgnoreTimeDilationOnLocalPlayerZero()`                                                                                                       | `0x142aa9c50` |
-| local player's own factor       | `SetTimeDilationOnLocalPlayerZero(reason, dilation, duration, easeInCurve, easeOutCurve)`                                                                    | `0x1408a0c90` |
-|                                 | `UnsetTimeDilationOnLocalPlayerZero(reason, easeOutCurve)`                                                                                                   | `0x1408a0aa0` |
-| one entity                      | `gameTimeDilatable.SetIndividualTimeDilation(reason, dilation, duration, easeInCurve, easeOutCurve, ignoreGlobalDilation: Bool, useRealTime: Bool)`          | `0x142a14b90` |
-|                                 | `gameTimeDilatable.UnsetIndividualTimeDilation(easeOutCurve)`                                                                                                | `0x1414e1a14` |
+<!-- prettier-ignore -->
+| Scope | Native (RTTI 2.50 signature) | Handler |
+| --- | --- | --- |
+| global (whole world) | `SetTimeDilation(reason: CName, dilation: Float, duration: Float, easeInCurve: CName, easeOutCurve: CName, listener: handle:tickScriptTimeDilationListener)` | `0x1407d62b0` |
+| | `UnsetTimeDilation(reason: CName, easeOutCurve: CName)` | `0x1407d64f4` |
+| local player exempt from global | `SetIgnoreTimeDilationOnLocalPlayerZero(ignore: Bool)` | `0x14131b2f8` |
+| | `RestorePreviousIgnoreTimeDilationOnLocalPlayerZero()` | `0x142aa9c50` |
+| local player's own factor | `SetTimeDilationOnLocalPlayerZero(reason, dilation, duration, easeInCurve, easeOutCurve)` | `0x1408a0c90` |
+| | `UnsetTimeDilationOnLocalPlayerZero(reason, easeOutCurve)` | `0x1408a0aa0` |
+| one entity | `gameTimeDilatable.SetIndividualTimeDilation(reason, dilation, duration, easeInCurve, easeOutCurve, ignoreGlobalDilation: Bool, useRealTime: Bool)` | `0x142a14b90` |
+| | `gameTimeDilatable.UnsetIndividualTimeDilation(easeOutCurve)` | `0x1414e1a14` |
 
 - `dilation` is a multiplier on the time step: `1.0` normal, `0.0` frozen,
   above 1 faster (NPCs get `1.6`, `final.reds:457953`; the fast-forward key
@@ -153,17 +154,18 @@ Their shapes and lengths are engine data, not read.
 
 ### 1.5 Observing time dilation
 
-| What                        | How                                                                                                                                                                                                       |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| is a reason (or any) active | `TimeSystem.IsTimeDilationActive(opt reason) -> Bool` (`0x140e35e58`)                                                                                                                                     |
-| current factor              | `TimeSystem.GetActiveTimeDilation(opt reason, opt ignoreCurves) -> Float` (`0x141190c94`)                                                                                                                 |
-| one entity                  | `HasIndividualTimeDilation(opt reason)`, `GetTimeDilationValue()`, `IsIgnoringGlobalTimeDilation()`, `IsIgnoringTimeDilation()` on `gameTimeDilatable`                                                    |
-| end of a dilation           | a `TimeDilationListener` (script class over `tickScriptTimeDilationListener`) passed to `SetTimeDilation`; callback `OnFinished(reason: CName)` (`final.reds:497550-497559`, `535846-535876`)             |
-| Sandevistan on/off          | PSM blackboard `PlayerStateMachine.TimeDilation` (Int, `gamePSMTimeDilation`: 0 Default, 1 Sandevistan, 2.50: 2 Photomode); prereq `TimeDilationPSMPrereq` (`311836`)                                     |
-| PSM state                   | `GetStateMachineCurrentState(n"TimeDilation")`                                                                                                                                                            |
-| player events               | `CleanUpTimeDilationEvent` (player), `ResetTimeDilation { easeOut, global }` (NPC, `204655`, handled `128605`), `QuickHackTimeDilationOverride` (`208468`)                                                |
-| status effects              | `BaseStatusEffect.KerenzikovPlayerBuff`, type `gamedataStatusEffectType.Sandevistan`, tag `FocusedCoolPerkSE`, tag `DeadeyeQuickReloadSE`, `BaseStatusEffect.SecondChancePerkTimeDilation`, tag `Berserk` |
-| NPC side                    | AI action blackboard `AIAction.ownerTimeDilation`, `ownerGlobalTimeDilation` (`180109`)                                                                                                                   |
+<!-- prettier-ignore -->
+| What | How |
+| --- | --- |
+| is a reason (or any) active | `TimeSystem.IsTimeDilationActive(opt reason) -> Bool` (`0x140e35e58`) |
+| current factor | `TimeSystem.GetActiveTimeDilation(opt reason, opt ignoreCurves) -> Float` (`0x141190c94`) |
+| one entity | `HasIndividualTimeDilation(opt reason)`, `GetTimeDilationValue()`, `IsIgnoringGlobalTimeDilation()`, `IsIgnoringTimeDilation()` on `gameTimeDilatable` |
+| end of a dilation | a `TimeDilationListener` (script class over `tickScriptTimeDilationListener`) passed to `SetTimeDilation`; callback `OnFinished(reason: CName)` (`final.reds:497550-497559`, `535846-535876`) |
+| Sandevistan on/off | PSM blackboard `PlayerStateMachine.TimeDilation` (Int, `gamePSMTimeDilation`: 0 Default, 1 Sandevistan, 2.50: 2 Photomode); prereq `TimeDilationPSMPrereq` (`311836`) |
+| PSM state | `GetStateMachineCurrentState(n"TimeDilation")` |
+| player events | `CleanUpTimeDilationEvent` (player), `ResetTimeDilation { easeOut, global }` (NPC, `204655`, handled `128605`), `QuickHackTimeDilationOverride` (`208468`) |
+| status effects | `BaseStatusEffect.KerenzikovPlayerBuff`, type `gamedataStatusEffectType.Sandevistan`, tag `FocusedCoolPerkSE`, tag `DeadeyeQuickReloadSE`, `BaseStatusEffect.SecondChancePerkTimeDilation`, tag `Berserk` |
+| NPC side | AI action blackboard `AIAction.ownerTimeDilation`, `ownerGlobalTimeDilation` (`180109`) |
 
 There is no script or RTTI event fired on every `SetTimeDilation`
 (`gameTimeDilationEvent` exists in RTTI 2.50, size 0x68, with no reflected
@@ -189,11 +191,11 @@ In order of coverage:
    above.
 2. **Redscript `@wrapMethod`** on `TimeDilationHelper.SetTimeDilation`,
    `SetTimeDilationOnPlayer`, `SetTimeDilationWithProfile` (what NCO did,
-   `engine-knowledge.md:818`), plus `PlayerPuppet.SetSlowMo`, plus each
+   `engine-knowledge.md` §8), plus `PlayerPuppet.SetSlowMo`, plus each
    direct caller listed per effect below. More code, no raw address.
 3. **`IsMultiplayer()`**: the vanilla scripts already disable the helper and
    Sandevistan when it is true, but it gates 17 other script files (damage,
-   equipment, grenades…): do not flip it (`engine-knowledge.md:819`).
+   equipment, grenades…): do not flip it (`engine-knowledge.md` §8).
 
 ## 2. Time dilation, effect by effect
 
@@ -250,7 +252,7 @@ are.**
 - **Decided instead (2026-11-18)**: a time bubble. The NPCs around that V
   are slowed by its factor for everyone (per-entity dilation on the host),
   the owner keeps its slow motion on its own screen, no V is sped up.
-  Rules per mechanism: ARCHITECTURE.md (slowed and stopped time) and
+  Rules per mechanism: ../architecture/time.md (slowed and stopped time) and
   `scripts/tandem/Time.reds`.
 
 ### 2.2 Kerenzikov
@@ -675,7 +677,7 @@ isAffectedByTimeDilation = false)` runs on real time and still ticks
   wrapped; wrapping `OnInitialize` and calling `UnpauseGame()` inline
   removes the menu; calling it **0.25 s later** through a real-time
   `DelayCallback` works because the `SetMenuModeEvent` is consumed a frame
-  later (`engine-knowledge.md:895`, 2.31). Alternatives not tried by
+  later (`engine-knowledge.md` §9, 2.31). Alternatives not tried by
   anyone: `@replaceMethod` on the two `OnInitialize`/`PauseGameState`
   bodies without the call; a plugin hook on the native handler
   (`0x14192a468`) that returns early while a session is active — the
@@ -713,21 +715,22 @@ and no pause. `IsGamePaused()` is false during these; only
 
 ### 3.4 What each screen does
 
-| Screen                                            | Mechanism                                                                                                                          | Reference                              |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| pause menu (+ save/load/settings)                 | `PauseGame()`                                                                                                                      | `340149`                               |
-| shard reader popup                                | `PauseGame()`                                                                                                                      | `342319`                               |
-| hub: inventory, character, crafting, journal      | profile `hubMenu` (global + player), `Invulnerable`                                                                                | `336921`                               |
-| world map                                         | `n"WorldMap"` = 0.0, `Invulnerable`                                                                                                | `358237`                               |
-| time-skip wheel                                   | `n"TimeSkip"` = 0.0, `Invulnerable`                                                                                                | `383597`                               |
-| vendor / ripperdoc / wardrobe / appearance        | `n"VendorStash"` = 0.0 world and player                                                                                            | `404099`, `388041`, `384791`, `375605` |
-| tutorial popup (`pauseGame`)                      | `n"UI_TutorialPopup"` = 0.0                                                                                                        | `403342`                               |
-| weapon wheel, vehicle wheel, phone, message popup | profile `radialMenu`                                                                                                               | §2.8                                   |
-| radio popup                                       | profile `vehicleRadioMenu`                                                                                                         | `392091`                               |
-| breach minigame                                   | `n"minigame"` = 1.0e-5                                                                                                             | `481075`                               |
-| photo mode                                        | native; 2.50 PSM state `timeDilationPhotomode`                                                                                     | §2.17                                  |
-| braindance editor                                 | scene "rewindable section" (pause/speed/direction on `SceneSystemInterface`, `193104-193122`); another timeline, out of scope here | —                                      |
-| loading screen, death screen                      | not studied                                                                                                                        | —                                      |
+<!-- prettier-ignore -->
+| Screen | Mechanism | Reference |
+| --- | --- | --- |
+| pause menu (+ save/load/settings) | `PauseGame()` | `340149` |
+| shard reader popup | `PauseGame()` | `342319` |
+| hub: inventory, character, crafting, journal | profile `hubMenu` (global + player), `Invulnerable` | `336921` |
+| world map | `n"WorldMap"` = 0.0, `Invulnerable` | `358237` |
+| time-skip wheel | `n"TimeSkip"` = 0.0, `Invulnerable` | `383597` |
+| vendor / ripperdoc / wardrobe / appearance | `n"VendorStash"` = 0.0 world and player | `404099`, `388041`, `384791`, `375605` |
+| tutorial popup (`pauseGame`) | `n"UI_TutorialPopup"` = 0.0 | `403342` |
+| weapon wheel, vehicle wheel, phone, message popup | profile `radialMenu` | §2.8 |
+| radio popup | profile `vehicleRadioMenu` | `392091` |
+| breach minigame | `n"minigame"` = 1.0e-5 | `481075` |
+| photo mode | native; 2.50 PSM state `timeDilationPhotomode` | §2.17 |
+| braindance editor | scene "rewindable section" (pause/speed/direction on `SceneSystemInterface`, `193104-193122`); another timeline, out of scope here | — |
+| loading screen, death screen | not studied | — |
 
 **Rule (proposed) for all of §3.** No menu, popup or pause stops a co-op
 world. The pause menu opens over a running game for host and guests; the
@@ -799,7 +802,7 @@ the loading screen. **No game-time change in scripts**; whether the
 loading screen advances the clock is native and unknown. Requests:
 `PerformFastTravelRequest` (`237972`), locks `AddFastTravelLock(reason)`
 (`InCombat`, `InVehicle`, `PreventionSystem`). **Rule:** already decided in
-ARCHITECTURE.md (tether and regroup on fast travel); for time, nothing to
+../architecture/travel.md (tether and regroup on fast travel); for time, nothing to
 do unless §8 shows a clock jump.
 
 ### 4.4 Quest-driven time
@@ -807,11 +810,12 @@ do unless §8 shows a clock jump.
 Native quest nodes under `questTimeManagerNodeDefinition { type }` (RTTI
 2.50):
 
-| Node type                 | Fields                                                                                                                                      |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `questSetTime_NodeType`   | `source: CName`, `hours`, `minutes`, `seconds: Int32`                                                                                       |
+<!-- prettier-ignore -->
+| Node type | Fields |
+| --- | --- |
+| `questSetTime_NodeType` | `source: CName`, `hours`, `minutes`, `seconds: Int32` |
 | `questShiftTime_NodeType` | `timeShiftType: questETimeShiftType` (`ShiftByTime` 0, `ShiftToHour` 1), `preventVisualGlitch: Bool`, `hours`, `minutes`, `seconds: Uint32` |
-| `questPauseTime_NodeType` | `source: CName`, `pause: Bool`                                                                                                              |
+| `questPauseTime_NodeType` | `source: CName`, `pause: Bool` |
 
 Conditions: `questGameTimeDelay_ConditionType { days, hours, minutes,
 seconds }`, `questRealtimeDelay_ConditionType { hours, minutes, seconds,
@@ -842,7 +846,7 @@ does, as long as the host's world never pauses (§3).
   `GetRainMoisture()`, `GetRainPuddles()`,
   `RegisterWeatherListener(WeatherScriptListener)` (`252163`). The wheel
   shows a weather icon after a skip (`383799`, `383994`). Setting weather
-  is covered in `engine-knowledge.md:71-73` (Codeware setter, sticky forced
+  is covered in `engine-knowledge.md` §1 (Codeware setter, sticky forced
   state).
 
 ## 5. Game time itself
@@ -877,12 +881,12 @@ request, expectedHour, timeout, opt repeat)`, `UnregisterListener(id)`
 - **What a host would broadcast** (matches the engine's own
   `gameTimeSystemReplicatedState`):
   - `gameTime: Int32` seconds and the host-clock microsecond stamp at which
-    it was sampled (ARCHITECTURE.md: absolute times are integers);
+    it was sampled (../architecture/smoothing.md: absolute times are integers);
   - `paused: Bool` (the §3.2 clock pause);
   - the real-time ratio once, at `Welcome`, if it is found to be
     configurable;
   - on join, on every skip/set (reliable, with the reason CName), and at a
-    low rate (NCO used 30 s, `engine-knowledge.md:71`) to correct drift.
+    low rate (NCO used 30 s, `engine-knowledge.md` §1) to correct drift.
     Guests extrapolate between updates with the ratio and call
     `SetGameTimeBySeconds` only when the error exceeds a threshold, to avoid
     re-triggering whatever a set triggers.
@@ -891,14 +895,15 @@ request, expectedHour, timeout, opt repeat)`, `UnregisterListener(id)`
 
 Proposed additions to the table in ARCHITECTURE.md (not applied there):
 
-| State                                               | Owner              | Others                                          |
-| --------------------------------------------------- | ------------------ | ----------------------------------------------- |
+<!-- prettier-ignore -->
+| State | Owner | Others |
+| --- | --- | --- |
 | a V's time effects (Sandevistan, Kerenzikov, perks) | that player's game | shown as that V's state; never slow their world |
-| a V's menus, popups, photo mode                     | that player's game | nothing stops; V stays in the world             |
-| NPC individual time dilation                        | host               | result seen through the NPC's motion            |
-| quest time dilation, scene fast-forward             | host               | replicated event / followed                     |
-| game clock, clock pause, time skips                 | host               | applied; guests cannot skip                     |
-| session pause (if ever)                             | host, explicit     | applied to all                                  |
+| a V's menus, popups, photo mode | that player's game | nothing stops; V stays in the world |
+| NPC individual time dilation | host | result seen through the NPC's motion |
+| quest time dilation, scene fast-forward | host | replicated event / followed |
+| game clock, clock pause, time skips | host | applied; guests cannot skip |
+| session pause (if ever) | host, explicit | applied to all |
 
 ## 7. Summary table
 
@@ -906,38 +911,39 @@ Scope: **G** global (`SetTimeDilation`), **G−P** global with the local
 player exempt, **G+P** global plus an own player factor, **E** per entity,
 **Pause** `PauseGame`, **Clock** game time.
 
-| Effect                                  | Reason / trigger                                                         | Scope                | Detect                                                    | Proposed rule                                         |
-| --------------------------------------- | ------------------------------------------------------------------------ | -------------------- | --------------------------------------------------------- | ----------------------------------------------------- |
-| Sandevistan                             | `sandevistan`; `SandevistanEvents.OnEnter` `524119`                      | G−P                  | reason; PSM BB `TimeDilation == 1`                        | owner-local; owner sped up instead; others see fast V |
-| Kerenzikov                              | `kereznikov`; `KerenzikovEvents.OnEnter` `527831`                        | G+P                  | reason; PSM state `kerenzikov`; `KerenzikovPlayerBuff`    | owner-local; no world slow-down                       |
-| scanner / quickhack                     | `focusMode`; `TimeDilationFocusModeEvents` `529159`                      | G−P or G+P (TweakDB) | reason; PSM `Vision == 1`                                 | off in co-op (TweakXL flag)                           |
-| Cool focus perk                         | `focusedStatePerkDilation`; `542858`                                     | G                    | reason; tag `FocusedCoolPerkSE`                           | owner-local, dilation dropped                         |
-| Deadeye reload perk                     | `coolReloadPerkDilation`; `547583`                                       | G                    | reason; tag `DeadeyeQuickReloadSE`                        | owner-local, dilation dropped                         |
-| second chance perk                      | status `SecondChancePerkTimeDilation`; TweakDB                           | ?                    | status effect                                             | as effectors                                          |
-| melee hit stop                          | `meleeHit`; `PlayerPuppet.OnMeleeHitSloMo` `45789`                       | G                    | reason                                                    | dropped (TweakXL `enabled`)                           |
-| deflect / one-punch / boss finisher     | `deflect`; `39679`, `552917`, `554284`                                   | G                    | reason                                                    | dropped                                               |
-| breach minigame                         | `minigame` (1.0e-5); `481075`                                            | G                    | reason; BB `IsInMinigame`                                 | owner-local UI, real time                             |
-| network dive                            | `NetworkBreach`; set natively, unset `23064`                             | G (inferred)         | reason                                                    | owner-local, real time                                |
-| wheels, phone, popups                   | profile `radialMenu`; §2.8                                               | G+P                  | profile reason; `UIGameContext`                           | no dilation                                           |
-| radio popup                             | profile `vehicleRadioMenu`; `392091`                                     | G+P                  | profile reason                                            | no dilation                                           |
-| hub menu                                | profile `hubMenu`; `336921`, `338809`                                    | G+P                  | `SetMenuModeEvent(HubMenu)`; `IsInMenu`                   | no dilation; V vulnerable                             |
-| world map                               | `WorldMap` (0.0); `358237`                                               | G                    | reason                                                    | no freeze                                             |
-| time-skip wheel                         | `TimeSkip` (0.0); `383597`                                               | G                    | reason                                                    | no freeze; skip is host-only                          |
-| vendor, ripperdoc, wardrobe, appearance | `VendorStash` (0.0 / 0.0); `404099` `388041` `384791` `375605`           | G+P                  | reason                                                    | no freeze                                             |
-| tutorial popup                          | `UI_TutorialPopup` (0.0); `403342`                                       | G                    | reason                                                    | non-blocking                                          |
-| scene fast-forward                      | `SceneSystemFastForward` (native); `customFFTimeDilation` (10.0) `40303` | G                    | reasons; tag `FastForward`                                | host-only; off at first                               |
-| effector                                | TweakDB `reason`; `SetTimeDilationEffector` `307231`                     | G or G−P             | reason (e.g. `berserk`)                                   | owner-local                                           |
-| quest dilation                          | quest data; `questTimeDilation_NodeType`                                 | G / P / E            | `IsTimeDilationActive()` minus known                      | host, replicated event                                |
-| NPC Sandevistan / AI                    | record `Reason`; `AISubActionApplyTimeDilation` `427444`                 | E                    | `HasIndividualTimeDilation`                               | host-only NPC state                                   |
-| NPC hit reactions                       | `VeryStrongHit`, `MeleeLegKnockdown`                                     | E                    | same                                                      | host-only                                             |
-| dive executor                           | `None`, 0.05 for 2.5 s; `525204`                                         | E                    | same                                                      | host-only                                             |
-| photo mode                              | 2.50 PSM `timeDilationPhotomode`; native                                 | ?                    | `IsPhotoModeActive()`; BB `PhotoMode.IsActive`            | no freeze; maybe refused                              |
-| pause menu                              | `PauseGame()`; `340149`                                                  | Pause                | `IsGamePaused()`; `SetMenuModeEvent(PauseMenu)`           | never pauses a session                                |
-| shard popup                             | `PauseGame()`; `342319`                                                  | Pause                | `IsGamePaused()`                                          | never pauses                                          |
-| clock pause                             | `SetPausedState(paused, source)`; quest node                             | Clock                | `IsPausedState()`                                         | host, replicated                                      |
-| waiting                                 | `SetGameTimeByHMS(…, n"ui_menu_timeskip")`; `383727`                     | Clock                | `TimeSkipFinishEvent`; native `gameTimeSkipFinishedEvent` | host-only, replicated                                 |
-| sleeping, calls                         | quest nodes `questSetTime` / `questShiftTime`                            | Clock                | clock jump                                                | host-only, replicated                                 |
-| fast travel                             | `TeleportToNode`; `50415`                                                | none seen            | BB `FastTRavelSystem`                                     | tether/regroup (ARCHITECTURE.md)                      |
+<!-- prettier-ignore -->
+| Effect | Reason / trigger | Scope | Detect | Proposed rule |
+| --- | --- | --- | --- | --- |
+| Sandevistan | `sandevistan`; `SandevistanEvents.OnEnter` `524119` | G−P | reason; PSM BB `TimeDilation == 1` | owner-local; owner sped up instead; others see fast V |
+| Kerenzikov | `kereznikov`; `KerenzikovEvents.OnEnter` `527831` | G+P | reason; PSM state `kerenzikov`; `KerenzikovPlayerBuff` | owner-local; no world slow-down |
+| scanner / quickhack | `focusMode`; `TimeDilationFocusModeEvents` `529159` | G−P or G+P (TweakDB) | reason; PSM `Vision == 1` | off in co-op (TweakXL flag) |
+| Cool focus perk | `focusedStatePerkDilation`; `542858` | G | reason; tag `FocusedCoolPerkSE` | owner-local, dilation dropped |
+| Deadeye reload perk | `coolReloadPerkDilation`; `547583` | G | reason; tag `DeadeyeQuickReloadSE` | owner-local, dilation dropped |
+| second chance perk | status `SecondChancePerkTimeDilation`; TweakDB | ? | status effect | as effectors |
+| melee hit stop | `meleeHit`; `PlayerPuppet.OnMeleeHitSloMo` `45789` | G | reason | dropped (TweakXL `enabled`) |
+| deflect / one-punch / boss finisher | `deflect`; `39679`, `552917`, `554284` | G | reason | dropped |
+| breach minigame | `minigame` (1.0e-5); `481075` | G | reason; BB `IsInMinigame` | owner-local UI, real time |
+| network dive | `NetworkBreach`; set natively, unset `23064` | G (inferred) | reason | owner-local, real time |
+| wheels, phone, popups | profile `radialMenu`; §2.8 | G+P | profile reason; `UIGameContext` | no dilation |
+| radio popup | profile `vehicleRadioMenu`; `392091` | G+P | profile reason | no dilation |
+| hub menu | profile `hubMenu`; `336921`, `338809` | G+P | `SetMenuModeEvent(HubMenu)`; `IsInMenu` | no dilation; V vulnerable |
+| world map | `WorldMap` (0.0); `358237` | G | reason | no freeze |
+| time-skip wheel | `TimeSkip` (0.0); `383597` | G | reason | no freeze; skip is host-only |
+| vendor, ripperdoc, wardrobe, appearance | `VendorStash` (0.0 / 0.0); `404099` `388041` `384791` `375605` | G+P | reason | no freeze |
+| tutorial popup | `UI_TutorialPopup` (0.0); `403342` | G | reason | non-blocking |
+| scene fast-forward | `SceneSystemFastForward` (native); `customFFTimeDilation` (10.0) `40303` | G | reasons; tag `FastForward` | host-only; off at first |
+| effector | TweakDB `reason`; `SetTimeDilationEffector` `307231` | G or G−P | reason (e.g. `berserk`) | owner-local |
+| quest dilation | quest data; `questTimeDilation_NodeType` | G / P / E | `IsTimeDilationActive()` minus known | host, replicated event |
+| NPC Sandevistan / AI | record `Reason`; `AISubActionApplyTimeDilation` `427444` | E | `HasIndividualTimeDilation` | host-only NPC state |
+| NPC hit reactions | `VeryStrongHit`, `MeleeLegKnockdown` | E | same | host-only |
+| dive executor | `None`, 0.05 for 2.5 s; `525204` | E | same | host-only |
+| photo mode | 2.50 PSM `timeDilationPhotomode`; native | ? | `IsPhotoModeActive()`; BB `PhotoMode.IsActive` | no freeze; maybe refused |
+| pause menu | `PauseGame()`; `340149` | Pause | `IsGamePaused()`; `SetMenuModeEvent(PauseMenu)` | never pauses a session |
+| shard popup | `PauseGame()`; `342319` | Pause | `IsGamePaused()` | never pauses |
+| clock pause | `SetPausedState(paused, source)`; quest node | Clock | `IsPausedState()` | host, replicated |
+| waiting | `SetGameTimeByHMS(…, n"ui_menu_timeskip")`; `383727` | Clock | `TimeSkipFinishEvent`; native `gameTimeSkipFinishedEvent` | host-only, replicated |
+| sleeping, calls | quest nodes `questSetTime` / `questShiftTime` | Clock | clock jump | host-only, replicated |
+| fast travel | `TeleportToNode`; `50415` | none seen | BB `FastTRavelSystem` | tether/regroup (ARCHITECTURE.md) |
 
 ## 8. Open questions (each needs an in-game test)
 

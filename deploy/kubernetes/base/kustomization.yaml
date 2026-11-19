@@ -3,7 +3,7 @@ kind: Kustomization
 
 # The relay alone. An overlay sets the namespace, the image registry and the
 # load balancer annotations, and provides the host-token Secret (SOPS, an
-# external secret operator...): see docs/relay.md.
+# external secret operator...): see docs/architecture/relay.md.
 labels:
   - pairs:
       app.kubernetes.io/name: tandem-relay

@@ -13,7 +13,7 @@
 
 // Who runs the world around a player: its NPCs, its traffic, its police.
 // The host's game today, everywhere; with per-player regions
-// (docs/architecture/regions.md) the owner of the player's group. Traffic
+// (docs/research/coop-regions.md) the owner of the player's group. Traffic
 // and police are written against this alone.
 public abstract class TandemArea {
   // Our game runs the world around our V.
