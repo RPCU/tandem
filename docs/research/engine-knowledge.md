@@ -110,6 +110,7 @@ found through this table, each number once.
 | 13.75 | A status effect's look, without its gameplay                                  | `combat.md`         |
 | 13.80 | Vendors: what the shop's screen is bound to, from a proxy                     | `ui.md`             |
 | 13.85 | Apartment interactions: what runs them, what they change                      | `apartments.md`     |
+| 13.90 | The world's objects: a ping's beams, a turret's fire, physics destruction     | `devices.md`        |
 | 14.1  | What a script can do                                                          | `autopilot.md`      |
 | 14.2  | Virtual input                                                                 | `autopilot.md`      |
 

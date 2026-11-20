@@ -814,6 +814,14 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(devices) {
       devices.Drain();
     }
+    // The Ping quickhack's network pulses: shared with the linked while in
+    // a session (Comms.reds), else only taken off the queue.
+    let pings = TandemStreaming.TakeStreamed(TandemStreamKind.NetworkPing());
+    if IsDefined(this.m_comms) && this.m_playing && this.m_you != 0u {
+      for ping in pings {
+        this.m_comms.NetworkPinged(ping.entity);
+      }
+    }
   }
 
   public func OnTick(gen: Int32) -> Void {

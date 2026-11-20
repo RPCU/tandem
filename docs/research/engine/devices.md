@@ -186,3 +186,32 @@ isTilted}` (`: gameDeviceReplicatedState`). Nothing drives them, but they
    camera stops filling the meter).
 7. `Device.OnGameAttached` / `OnDetach` wrap cost while driving through the
    city (hundreds of attaches a minute), and the 32-a-frame look.
+
+### 13.90 The world's objects: a ping's beams, a turret's fire, physics destruction (2026-11-20, read in final.reds and the RTTI dump, not run)
+
+Tags as in §13.30. Line numbers: the 2.50 `final.reds`.
+
+#### The Ping quickhack's network beams
+
+- The quickhack on a device is the action `PingDevice` (118580); its state
+  passes it to an attached slave when the device itself is not in the
+  world (`OnActionPing`, 32755), else to the entity:
+  **`Device.OnActionPing`** (101250) → `PulseNetwork(true)` (101258).
+  On an NPC, `PuppetDeviceLinkPS.PingDevicesNetwork` (112687) queues the
+  same `PingDevice` to the NPC's access points: one entry for both.
+  [2.5-untested]
+- `PulseNetwork` queues a `StartPingingNetworkRequest` (source: the device,
+  `EPingType.SPACE`, `GetSpacePingDuration()`, 111440) to `NetworkSystem`
+  (109142, a scriptable system), which runs the game effect
+  `pingNetworkEffect` from the source (`AddActivePing`, 110543); its
+  executor `EffectExecutor_PingNetwork` (492950) registers a link (a beam)
+  from the source to each target in range. Nothing persistent but
+  `SetRevealedInNetworkPing` at the pulse's end (`revealNetworkAtEnd`).
+  [2.5-untested]
+- A quest fact `pingingNetworkDisabled` turns `PulseNetwork` off (101260).
+- `PulseNetwork` also runs from the scanner looking at a device
+  (`ShouldPulseNetwork`, 100279) and from the vision pulse (100325): those
+  are not the quickhack and are not shared.
+- To verify in game: the beams on the second game after `TandemPulseNetwork`
+  on its copy; that `OnActionPing` runs once per ping (not once per device
+  of the network).

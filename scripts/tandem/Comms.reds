@@ -659,6 +659,24 @@ public class TandemComms {
     TandemNative.Log(s"comms: ping quickhack \(on ? "revealed" : "ended on") \(sent) shared NPC(s) for the linked (\(seconds) s)");
   }
 
+  // Our Ping quickhack reached a device (Device.OnActionPing, queued by the
+  // wrap below): the network pulses from it, and its beams to the devices
+  // it is linked with are drawn in our game. The linked draw the same from
+  // their own copy of that device (Outline).
+  public func NetworkPinged(entity: EntityID) -> Void {
+    if this.m_you == 0u || !TandemCommsNative.AnyLinked() || !EntityID.IsStatic(entity) {
+      return;
+    }
+    let device = GameInstance.FindEntityByID(this.m_game, entity) as Device;
+    if !IsDefined(device) {
+      return;
+    }
+    let network = GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"NetworkSystem") as NetworkSystem;
+    let seconds = IsDefined(network) ? Cast<Int32>(network.GetSpacePingDuration()) + 1 : 10;
+    TandemCommsNative.Tag(1, true, Clamp(seconds, 3, 60), 0u, entity);
+    TandemNative.Log(s"comms: ping quickhack pulsed the network from device \(TandemNative.EntityHex(entity)) for the linked (\(seconds) s)");
+  }
+
   private func PingSeconds(root: ref<GameObject>) -> Int32 {
     let longest = 0.0;
     for effect in StatusEffectHelper.GetAppliedEffects(root) {
@@ -692,6 +710,13 @@ public class TandemComms {
       }
       evt.lifetime = on ? e.seconds : 0.0;
       target.QueueEvent(evt);
+      // A device a linked player's Ping reached: its network pulses from
+      // our copy of it too, with the beams our own network system draws.
+      let device = target as Device;
+      if on && IsDefined(device) {
+        device.TandemPulseNetwork();
+        TandemNative.Log(s"comms: network pulsed from device \(TandemNative.EntityHex(device.GetEntityID())) for a linked player's ping");
+      }
     }
     TandemNative.Log(s"comms: \(on ? "outlined" : "stopped outlining") \(e.type == 0 ? "a tag" : "a reveal") of a linked player (target kind \(e.targetKind))");
   }
@@ -1145,6 +1170,27 @@ public final func MarkSquad(mark: Bool, root: ref<GameObject>) {
       comms.Pinged(root, this.m_squadMembers, mark);
     }
   }
+}
+
+// The Ping quickhack on a device, or on an NPC of its network (the ping is
+// passed to the network's access point, PuppetDeviceLinkPS
+// .PingDevicesNetwork), ends here on a device: PulseNetwork draws the
+// beams. An entity's event handler: queued only, shared on the tick
+// (TandemComms.NetworkPinged).
+@wrapMethod(Device)
+protected cb func OnActionPing(evt: ref<PingDevice>) -> Bool {
+  let result = wrappedMethod(evt);
+  if TandemNative.IsStarted() {
+    TandemStreaming.QueueStreamed(TandemStreamKind.NetworkPing(), this.GetEntityID(), n"None", true);
+  }
+  return result;
+}
+
+// A linked player's ping reached this device in their game: the same pulse
+// from our copy (not a ping of ours: nothing is said back).
+@addMethod(Device)
+public func TandemPulseNetwork() -> Void {
+  this.PulseNetwork(true);
 }
 
 // ---- per-kind icons (Markers.reds draws our variant like a remote player's) ----

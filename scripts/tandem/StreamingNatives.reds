@@ -34,4 +34,6 @@ public abstract class TandemStreamKind {
   // A breach's outcome on a device, on an NPC (attached: won).
   public static func BreachDevice() -> Int32 { return 4; }
   public static func BreachNpc() -> Int32 { return 5; }
+  // The Ping quickhack reached a device: its network pulses from it.
+  public static func NetworkPing() -> Int32 { return 6; }
 }
