@@ -14,17 +14,18 @@ pass; the scripts compile; the scenarios at the end are what to run first.
 
 ## The rule
 
-| State                                              | Owner                         | Others                                                        |
-| -------------------------------------------------- | ----------------------------- | ------------------------------------------------------------- |
-| a traffic car, a parked car, a police car, a wreck | the owner of its area         | a proxy: a copy moved where the owner says                    |
-| a placed vehicle (static id, the same everywhere)  | the owner of its area         | their own instance of it, moved and damaged as the owner says |
-| who sits in it (driver, passengers, officers)      | the owner (they are its NPCs) | NPC proxies seated in the vehicle's proxy (`NpcSeat`)         |
-| a vehicle a player got into                        | that player's game, from then | the usual car copy (`Seat`, `VehicleState`)                   |
-| the player's own car in a crash                    | that player's game            | its copy                                                      |
-| the traffic car in that crash                      | the owner of its area         | proxy                                                         |
+| State                                              | Owner                                                                      | Others                                                        |
+| -------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| a traffic car, a parked car, a police car, a wreck | the game that announced it (the owner of its area then), until a hand-over | a proxy: a copy moved where the owner says                    |
+| a placed vehicle (static id, the same everywhere)  | the same                                                                   | their own instance of it, moved and damaged as the owner says |
+| who sits in it (driver, passengers, officers)      | the vehicle's owner (they are its NPCs, handed over with it)               | NPC proxies seated in the vehicle's proxy (`NpcSeat`)         |
+| a vehicle a player got into                        | that player's game, from then                                              | the usual car copy (`Seat`, `VehicleState`)                   |
+| the player's own car in a crash                    | that player's game                                                         | its copy                                                      |
+| the traffic car in that crash                      | its owner                                                                  | proxy                                                         |
 
-One decider per vehicle, as for NPCs: nobody simulates a competing copy, and
-a guest's own traffic stays off.
+One decider per vehicle, as for NPCs: nobody simulates a competing copy.
+Where a higher-ranked player's game runs the street, the others' crowd (and
+with it their traffic) is off, as for NPCs (`regions.md` §6).
 
 ### Who owns an area
 
@@ -39,19 +40,59 @@ one place:
 - scripts: `TandemArea.Owns()` and `OwnsAround(player)` (`Traffic.reds`),
   which ask `TandemRegions.OwnsArea()` and `AreaOwner(player)`.
 
-What is already shaped for several owners:
-a vehicle's id carries its owner (`MakeTrafficId(owner, counter)`: the
-owner's player id in the top byte), so two owners never collide and a
-request about a vehicle (`TrafficHit`, `TrafficClaim`) can be routed to its
-owner by the id alone. **Still to add:** the host relaying a guest-owner's
-announcements and those requests (one function each in `endpoint.cpp`,
-where the comment says so: `SendTraffic*` still share from the host only,
-so a guest that owns its area runs its own traffic, unshared), and a
-hand-over rule. Moving
-traffic is not worth handing over: when an area changes owner the old
-owner's cars go (`TrafficGone`) and the new owner's own traffic is announced;
-parked cars and wrecks, which a player may be looking at, are re-announced
-by the new owner at the same place from the old owner's list.
+### Several owners, and hand-overs
+
+Built in `core/src/endpoint_traffic.cpp` (`tests/traffic_regions_test.cpp`).
+A world vehicle is owned the way an NPC is (`regions.md` §3, §4), with the
+same rules and the same thresholds:
+
+- **Who announces.** A game announces a new vehicle of its world only while
+  it owns the area around its V (`OwnsArea`, checked by `SendTraffic*`): deep in a higher-ranked linked
+  player's region it adds nothing (that game announces the street). The id
+  carries the announcer (`MakeTrafficId(owner, counter)`: its player id in
+  the top byte), so two owners never collide.
+- **Who runs it** is the announcer until the host says otherwise
+  (`TrafficOwnership{id, owner}`); every endpoint keeps the map
+  (`Endpoint::TrafficOwnerOf`, `VehicleOwner`; scripts `TandemStreet.RunBy`,
+  `TandemWheels.OwnerOf`). Ownership is sticky: players meeting move nothing.
+- **What travels where.** The owner's word on its vehicles (spawn, states,
+  status, gone, damage, chases) goes to the host, which checks the sender
+  runs the vehicle, keeps the record and passes it to the players linked
+  with that owner (`ShareTraffic`); its own game shows the vehicle when it is
+  linked too. A guest linked with nobody sends no states, only its reliable
+  record (the host has it whole the moment a link forms). Requests (`TrafficHit`,
+  `TrafficClaim`, a tyre's `VehicleHit`, an `NpcRam` on a rider) go to the
+  vehicle's owner, whoever it is, through the host; the owner answers a claim
+  and every game hears `TrafficGone{taken}`.
+- **A link forms or breaks**: the newly linked player is sent the owner's
+  vehicles (spawns, owners, statuses, damage, chases); a broken link is a
+  `TrafficSet` of what it still sees, and the rest goes (`OnLinksChanged`).
+- **Hand-over** (host, every 250 ms, `ArbitrateTraffic`): a vehicle whose
+  owner's V is farther than 80 m (`kKeep`) and with a player linked with the
+  owner within 55 m (`kTake`) goes to the highest-ranked such player
+  (`regions::Taker`, on the vehicle's last place), never from an owner that
+  holds its region nor while a gunner is on its gun. The steps are the NPC
+  hand-over's, one message each (`TrafficHandover` to the giver,
+  `TrafficHandoverState` giver → host → receiver, `TrafficHandoverDone`
+  back, `TrafficOwnership` to everyone who sees it), retried 3 times after
+  1 s, a refusal left alone 5 s, a receiver that cannot run it lets it go
+  for everyone (`TrafficGone` away). **The riders go with it**: every NPC
+  seated in the vehicle and owned by the giver is moved to the receiver in
+  the same pass, still seated (no hand-over asks for a seated NPC), its
+  chase's target as its target.
+- **No pop, no duplicate.** Both games already have a body: the giver's real
+  car becomes its proxy (stopped in its lane: `TandemHold`, the crowd's own
+  `stop` pattern, then moved by the new owner's states); the receiver's proxy
+  becomes the real car, put where the giver left it with its health, woken
+  up with the giver's velocity and sent back into traffic the way a cab goes
+  free (`TandemDriveOn`: an impulse, then `AIVehicleJoinTrafficCommand`,
+  research §13.70). A parked car or a wreck stays where it stands. Its driver
+  wakes up in its seat (Npcs.reds keeps a rider seated on `Take`).
+- **An owner that vanishes, or whose world is rebuilt**: its vehicles go to
+  the highest-ranked player linked with it within 80 m of each
+  (`regions::Heir`, `kHandoverInherited`: the record's place and status);
+  the rest go when it vanished, or stay its own after a fast travel (its game
+  says what became of them).
 
 ## Options weighed
 
@@ -83,16 +124,22 @@ cost one message each until someone moves them.
 
 Appended to the protocol (`protocol.hpp`); no existing message changed.
 
-| Message         | Channel         | From → to               | What                                                                |
-| --------------- | --------------- | ----------------------- | ------------------------------------------------------------------- |
-| `TrafficSpawn`  | Event           | owner → all (kept)      | id, record, appearance, static entity id or 0, transform, flags     |
-| `TrafficStates` | State, 10 Hz    | owner → all             | the vehicles that move: id, position, rotation, velocity (28 bytes) |
-| `TrafficStatus` | Event           | owner → all (kept)      | health 0..1 and the lasting flags (wreck, siren, parked, panic…)    |
-| `TrafficGone`   | Event           | owner → all             | out of range, removed, or **taken** by a player                     |
-| `TrafficHit`    | Event, one-shot | a player's game → owner | damage and, for a ram, the push given                               |
-| `TrafficClaim`  | Event, one-shot | a player's game → owner | "my V is getting into this one"                                     |
-| `TrafficSet`    | Event           | owner → one guest       | opens a resync: every vehicle shared now                            |
-| `NpcSeat`       | (existing)      | owner → all (kept)      | `owner` with the top bit set names a shared vehicle, not a player   |
+| Message                | Channel         | From → to                              | What                                                                       |
+| ---------------------- | --------------- | -------------------------------------- | -------------------------------------------------------------------------- |
+| `TrafficSpawn`         | Event           | owner → all (kept)                     | id, record, appearance, static entity id or 0, transform, flags            |
+| `TrafficStates`        | State, 10 Hz    | owner → all                            | the vehicles that move: id, position, rotation, velocity (28 bytes)        |
+| `TrafficStatus`        | Event           | owner → all (kept)                     | health 0..1 and the lasting flags (wreck, siren, parked, panic…)           |
+| `TrafficGone`          | Event           | owner → all                            | out of range, removed, or **taken** by a player                            |
+| `TrafficHit`           | Event, one-shot | a player's game → owner                | damage and, for a ram, the push given                                      |
+| `TrafficClaim`         | Event, one-shot | a player's game → owner                | "my V is getting into this one"                                            |
+| `TrafficSet`           | Event           | host → one guest; a guest owner → host | opens a resync: every vehicle shown to it now; from a guest, its whole set |
+| `NpcSeat`              | (existing)      | owner → all (kept)                     | `owner` with the top bit set names a shared vehicle, not a player          |
+| `TrafficOwnership`     | Event           | host → all who see it (kept)           | who runs a vehicle now (absent: its announcer)                             |
+| `TrafficHandover`      | Event, one-shot | host → owner                           | give it to `to`                                                            |
+| `TrafficHandoverState` | Event, one-shot | giver → host → receiver                | place, orientation, velocity, health, flags (inherited: the host's record) |
+| `TrafficHandoverDone`  | Event, one-shot | receiver or giver → host               | runs it now (or cannot: it goes); a giver's refusal                        |
+
+"Owner → all" reads "owner → the players linked with it, through the host".
 
 ### Budget
 
@@ -224,20 +271,25 @@ from that moment: `NpcSeat` out, then its states as for any NPC.
 
 ## Consistency
 
-| How it diverges                                           | What the player would see                            | Guard                                                                                                    |
-| --------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| a late joiner                                             | an empty street                                      | spawns (at the latest transform), statuses and seats are kept and sent with the NPC domain               |
-| a spawn, a removal or a status lost (a bug, a full queue) | a missing car, a ghost, a car that should be a wreck | the shared set and each status are hashed into the NPC digest; a resync opens with `TrafficSet`          |
-| sent twice (a resync, a duplicate)                        | two cars in one place                                | a known id is not announced again; statuses equal to the copy are dropped; hits and claims are one-shots |
-| a state overtakes its `TrafficGone` (other channel)       | a car back from nowhere                              | states only for known ids                                                                                |
-| the owner's world is rebuilt (fast travel)                | cars drawn where the old street was                  | `TrafficStates` share the NPC states' numbering: `Epoch::firstNpcSeq` fences both                        |
-| a hit or a claim aimed at the owner's old world           | a wrong car damaged or taken                         | behind the epoch fence, like `NpcHit`                                                                    |
-| hits queued behind a loading screen                       | a car wrecked the moment the world is back           | dropped after 3 s                                                                                        |
-| a proxy's body streamed out or lost in our fast travel    | an invisible car                                     | the script's check against the session's record, once a second: spawned again after 3 s                  |
-| the owner vanishes                                        | frozen cars                                          | the session ends on the 5 s timeout; proxies go with it, our crowd and traffic come back                 |
-| a guest vanishes in a car it took                         | —                                                    | it was its car: it stays parked with its puppet's car copy, as any car of a player that left             |
-| a guest vanishes mid-claim                                | a car nobody drives                                  | the claim was granted or not; if granted the body is its (parked) car, if not nothing changed            |
-| a proxy that had an occupant must go                      | a crash (engine-knowledge §13.6)                     | never deleted: kept out of range and reused for the next vehicle of its record                           |
+| How it diverges                                           | What the player would see                            | Guard                                                                                                                                                      |
+| --------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a late joiner                                             | an empty street                                      | spawns (at the latest transform), statuses and seats are kept and sent with the NPC domain                                                                 |
+| a spawn, a removal or a status lost (a bug, a full queue) | a missing car, a ghost, a car that should be a wreck | the shared set and each status are hashed into the NPC digest; a resync opens with `TrafficSet`                                                            |
+| sent twice (a resync, a duplicate)                        | two cars in one place                                | a known id is not announced again; statuses equal to the copy are dropped; hits and claims are one-shots                                                   |
+| a state overtakes its `TrafficGone` (other channel)       | a car back from nowhere                              | states only for known ids                                                                                                                                  |
+| the owner's world is rebuilt (fast travel)                | cars drawn where the old street was                  | `TrafficStates` share the NPC states' numbering: `Epoch::firstNpcSeq` fences both                                                                          |
+| a hit or a claim aimed at the owner's old world           | a wrong car damaged or taken                         | behind the epoch fence, like `NpcHit`                                                                                                                      |
+| hits queued behind a loading screen                       | a car wrecked the moment the world is back           | dropped after 3 s                                                                                                                                          |
+| a proxy's body streamed out or lost in our fast travel    | an invisible car                                     | the script's check against the session's record, once a second: spawned again after 3 s                                                                    |
+| the owner vanishes                                        | frozen cars                                          | the session ends on the 5 s timeout; proxies go with it, our crowd and traffic come back                                                                   |
+| a guest vanishes in a car it took                         | —                                                    | it was its car: it stays parked with its puppet's car copy, as any car of a player that left                                                               |
+| a guest vanishes mid-claim                                | a car nobody drives                                  | the claim was granted or not; if granted the body is its (parked) car, if not nothing changed                                                              |
+| a proxy that had an occupant must go                      | a crash (engine-knowledge §13.6)                     | never deleted: kept out of range and reused for the next vehicle of its record                                                                             |
+| a guest owner's spawn or removal lost                     | a car missing for its linked players, or a ghost     | its vehicles are hashed into the `OwnedDigest` with its NPCs; twice different, it sends its whole set (`TrafficSet` from the guest, its spawns, statuses)  |
+| a hand-over step lost                                     | a car nobody runs, or run twice                      | one owner at every moment (the host moves it when the giver's state arrives); each step retried 3 times; a repeated state is answered with the same `Done` |
+| the receiver cannot run it, or leaves mid hand-over       | a frozen car                                         | it goes for everyone (`TrafficGone` away); a receiver that vanished is an owner that vanished                                                              |
+| a request aimed at the old owner                          | a hit or a claim lost                                | routed by the session's owner map at the host: the new owner gets it                                                                                       |
+| a guest's word about a vehicle it does not run            | a car moved or wrecked by two games                  | the host drops it (and the referee flags it: `authority.not-owner`)                                                                                        |
 
 ## Stages
 
@@ -259,21 +311,29 @@ Built in this change:
    vehicles (`Npcs.reds`), adoption in `System.reds`.
 5. **Scenarios**: `traffic-guest`, `traffic-host` (below).
 
+6. **Several owners** (`endpoint_traffic.cpp`): a guest that owns its area
+   shares its vehicles, requests go to each vehicle's owner, hand-overs
+   when players part (riders with the car), heirs when an owner goes, the
+   owned digest. Tests: `tests/traffic_regions_test.cpp`; mock player
+   `--mode region --region-cars N [--region-driver] [--region-chase]`;
+   scenario `wheels-guest-area`.
+
 Not built, in the order I would do them:
 
-- **Probes first** (research §13.34): parked crowd cars under density 0,
-  the cost of 30–40 teleports a frame, a wheel-turning proxy.
+- **Probes first** (research §13.34, §13.70): parked crowd cars under
+  density 0, the cost of 30–40 teleports a frame, a wheel-turning proxy, a
+  given crowd car held in its lane (`TandemHold`), a woken proxy joining
+  traffic (`TandemDriveOn`).
 - Horn, indicators, headlights, doors (the flags have room; nothing sends
   them yet).
-- The regions hand-over (above).
 - AVs and the rest that is not a car or a bike are left to each game.
 - A guest's own leftover vehicles (spawned before its crowd went off) are
   only counted in the log; nothing removes them (no known call does).
 
 ## Scenarios to run in game
 
-`tools/scenario.sh traffic-guest traffic-host` (with `police-guest
-police-host`, see `police.md`).
+`tools/scenario.sh traffic-guest traffic-host wheels-guest-area` (with
+`police-guest police-host`, see `police.md`).
 
 - **traffic-guest**: the game joins a mock host that drives four cars
   round V and parks one, with a driver in the first; one burns and blows
@@ -287,3 +347,12 @@ police-host`, see `police.md`).
   the guest's puppet with no second copy. Look for: the rammed driver's
   reaction, the evicted driver beside the door, the puppet at the wheel
   of the same car.
+- **wheels-guest-area**: the game hosts; a mock guest 400 m away owns its
+  area and runs three cars of its own (the first driven by its NPC, chasing
+  us once we meet). It walks up (its cars appear as proxies, its chase
+  reaches us), then off, leaving them by our V: handed over to our game.
+  Checks the proxies, the chase, the hand-over in and the driver inherited
+  in its seat, nothing refused. Look for: no car popping or doubling when
+  it changes hands, the driven one driving on in our traffic (or stopping:
+  note which), the driver still at the wheel, the giver's car on the mock's
+  side (a proxy now) not fighting its new owner.

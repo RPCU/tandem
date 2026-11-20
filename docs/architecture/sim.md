@@ -34,9 +34,17 @@ awaiting an answer) and reports each breach with its rule:
 It is on in every `tandem-peer` mode (findings logged as they come, a
 `referee summary:` at the end), in every `sim` game, and under the whole
 doctest suite (`tests/main.cpp`: every endpoint a test makes is watched
-through `Endpoint::SetCreationHook`, and the findings are listed by test at
-the end, `referee-suite:`; tests break rules on purpose, so it is a report;
-`TANDEM_REFEREE_SUITE=0` turns it off, `=1` also prints examples).
+through `Endpoint::SetCreationHook`). There a violation fails the test,
+unless the test breaks that rule on purpose and says so first,
+`test::ExpectReferee({"ids.unknown-npc"})` (`tests/referee_expect.hpp`);
+hints never fail. The findings are listed by test at the end
+(`referee-suite:`); `TANDEM_REFEREE_SUITE=0` turns it off, `=1` also prints
+examples.
+
+Each message has its speaker in `referee.cpp` (`SaidBy`: host only, guest
+only, or either, checked by its own rules); a message without one does not
+compile, and `tests/referee_test.cpp` checks that the other side may not
+say a host's or a guest's message.
 
 <!-- prettier-ignore -->
 | Rules | Checks |
@@ -165,11 +173,19 @@ On the existing loopback tests (2026-11-19, the whole suite watched):
   said Hello: a late joiner heard player 2's epoch before its Welcome and
   before the roster that brings player 2 (`ids.unknown-player`). Fixed:
   `Endpoint::Broadcast` on the host sends to the session's players only.
-- What is left is the tests' own doing (they break rules on purpose): NPC
-  7 never announced in the routing tests, forged pause names, answers to
-  regroup offers never made, a revive of a V that is not down, a death
-  sent twice, a third of the host's messages lost (`ids.unknown-npc` for
-  healths whose spawn was lost, `digest.resync-loop`).
+- What is left is the tests' own doing (they break rules on purpose),
+  each now named by its test (`ExpectReferee`): NPCs never announced in the
+  routing tests, forged pause names, answers to regroup offers never made,
+  a revive of a V that is not down, a death sent twice, a third of the
+  host's messages lost or doubled (`ids.unknown-npc` for healths whose
+  spawn was lost, `oneshot.seq-repeated`, `digest.resync-loop`), an old
+  owner speaking for an NPC it no longer runs.
+
+On 2026-11-20, before violations failed the suite (45 in 16 tests): the
+referee's `NpcSeat` rule took a shared world vehicle's seat
+(`kSeatInTraffic`, `traffic.md`) for an unknown player (fixed); two tests
+announced NPCs badly (an NPC respawned as another, a scene's actor never
+spawned; fixed in the tests); the rest as above. No bug in `core/`.
 
 With per-player regions merged, the referee learnt the owners' rules from
 the regions tests (a receiver learns it owns an NPC from the hand-over's

@@ -72,6 +72,8 @@
 #                              barrel ap radio any; near prints its id for
 #                              tandem-peer --device, goto puts V beside it) |
 #                              coop status | coop host [PORT] | coop join ADDRESS[:PORT] |
+#                              coop address [ADDRESS[:PORT]] (Join by address's answer;
+#                              empty: last_address) | coop set KEY VALUE | coop settings |
 #                              coop leave | coop menu PAGE | coop pick TEXT
 #                              (the co-op menu: in game any time; menu and pick drive
 #                              an open main or pause menu, pages root coop host join save) |

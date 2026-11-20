@@ -266,12 +266,19 @@ std::uint32_t Endpoint::OwnedHash(proto::PlayerId owner, std::uint16_t &count) c
   // an NPC being handed to or from it (host: the guest learns it owns one
   // from the giver's state, which may still be on its way or lost and sent
   // again; a guest's m_handovers is empty).
-  return consistency::NpcDigest(
-      m_npcs, {}, {}, m_npcOwner,
-      [&](proto::NpcId npc, proto::PlayerId theirs) {
-        return theirs == owner && !InHandover(npc, owner);
-      },
-      &count);
+  // ...and the same of the shared vehicles it runs (traffic.md).
+  std::uint16_t npcs = 0, cars = 0;
+  const auto hash = consistency::Hasher{}
+                        .Add(std::uint64_t{consistency::NpcDigest(
+                            m_npcs, {}, {}, m_npcOwner,
+                            [&](proto::NpcId npc, proto::PlayerId theirs) {
+                              return theirs == owner && !InHandover(npc, owner);
+                            },
+                            &npcs)})
+                        .Add(std::uint64_t{OwnedTrafficHash(owner, cars)})
+                        .Value();
+  count = static_cast<std::uint16_t>(std::min<unsigned>(0xFFFFu, unsigned{npcs} + cars));
+  return hash;
 }
 
 void Endpoint::ResendOwned() {
@@ -291,6 +298,7 @@ void Endpoint::ResendOwned() {
     if (m_pinned.contains(npc))
       Send(m_hostPeer, proto::NpcOwner{.npc = npc, .owner = m_you, .flags = proto::kNpcPinned});
   }
+  ResendOwnedTraffic();
 }
 
 // ---- host ----
@@ -378,6 +386,8 @@ void Endpoint::OnLinksChanged(const regions::Links &before, std::vector<SessionE
       for (const auto &[npc, owner] : m_corpseOwner)
         if (owner == id)
           out.push_back(events::HostNpcGone{{.npc = npc, .reason = proto::kGoneAway}});
+    // Its vehicles too (traffic.md).
+    OnTrafficLinksChanged(id, sees, out);
   }
 }
 
@@ -614,6 +624,9 @@ void Endpoint::Arbitrate(std::vector<SessionEvent> &out) {
     else if (const auto peer = PeerOf(owner))
       Send(*peer, proto::NpcHandover{.npc = npc, .to = taker});
   }
+
+  // The shared vehicles, by the same rule (endpoint_traffic.cpp).
+  ArbitrateTraffic(now, out);
 }
 
 bool Endpoint::OnOwnerMessage(net::PeerId peer, proto::PlayerId player,

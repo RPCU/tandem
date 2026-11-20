@@ -36,7 +36,9 @@ are the user's to confirm.
 2. **The link: automatic in a co-op pair, with a setting** (_user_).
    `tandem.ini` `link = auto` (default): every partner is linked from the
    start, until either side breaks it; `ask`: a link starts on a request
-   the other accepts; `off`: never. The request itself is the game's way:
+   the other accepts; `off`: never. `link` and `pings` are on the co-op
+   menu's Settings page, applied at once (a new default replaces the
+   consents given so far; `coop-menu.md`). The request itself is the game's way:
    aim at the partner's V and press the tag key (asks, accepts their
    request, or breaks the link); the partner sees the HUD's on-screen
    message "NAME asks to link: share scans and pings" and an input hint on

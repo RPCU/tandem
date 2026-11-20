@@ -96,16 +96,30 @@
       plain strings in `TandemRestrictText` until the localization table
       (`Text.reds`, branch `polish`) is here.
     - _The host's backstop_: while its V is in a scene or restricted, the
-      host refuses a guest's strike or takedown on one of the scene's
-      actors (scene replay's cast, or an NPC in a scene that is a quest NPC
-      or kept alive by god mode), logging `story: refused a guest's hit
-during the host's scene`.
+      host refuses a guest's strike, takedown or quickhack on one of the
+      scene's actors (scene replay's cast, or an NPC in a scene that is a
+      quest NPC or kept alive by god mode), logging `story: refused a guest's hit
+during the host's scene` (strikes, takedowns) or `story: refused a
+guest's quickhack during the host's scene` (player, NPC, the
+      quickhack's record), each at most once a second per kind of act. A
+      quickhack is refused whole: its upload (`NpcHack`: the host answers
+      it failed, `NpcHackState` step 2, as for an NPC out of reach, and
+      never holds the NPC "being hacked"), every effect it lands
+      (`NpcEffect` tagged `Quickhack`) and its damage ticks (strikes). A
+      guest's Breach Protocol, won or lost, leaves the actor alone too (its
+      daemons, its alert; logged as a quickhack, `breach`; `Breach.reds`
+      `OnNpc`): the network stays breached. The
+      rule is core's (`story::Backstop`, `IsSceneActor`; native
+      `TandemStory.BackstopRefuses`), tested in
+      `tests/restrictions_test.cpp`; `Restrictions.reds` reads what the NPC
+      is.
     - Static safe zones are not shared: they are a quest fact of the
       guest's own world (`CityAreaType`), which its own open-world phases
       set (to verify with the freeze on).
     - Tests: `tests/restrictions_test.cpp` (the moment, the ledger, the
       record, the endpoints: late joiner, lift, a lost lift, a vanished
-      host); mock player `--restrict REC[,REC] --restrict-at S
+      host; the backstop: who is an actor, each act refused in the moment
+      only, the log's rate per act); mock player `--restrict REC[,REC] --restrict-at S
 --restrict-for S` and the story verb `restrict`; scenarios
       `story-restrict-guest`, `story-restrict-host`; `tools/game.sh cmd
 story restrict` (report), `story restrict on|off REC` (a test
@@ -153,9 +167,139 @@ story restrict` (report), `story restrict on|off REC` (a test
     persistent list) and removed at the top of its leave, whether it chose
     to go or the host vanished, or at the next load of a save that holds
     the list. Iconics and rewards stay.
+  - _Quest interactions_ (`scripts/tandem/Interact.reds`,
+    `core/include/tandem/interact.hpp`, `plugin/src/engine/casts.cpp`;
+    engine facts §13.65; built 2026-11-19, nothing run in game). The quest
+    runs on the host and a grouped guest's own story waits, so a guest's V
+    using an object of the host's world (a quest switch, an objective item,
+    a quest container, the terminal an objective needs, a personal link)
+    changed its own copy only, and the host's quest did not move. Now the
+    guest asks and the host's game decides. **No list of quests or objects:
+    one rule, read from each game's own data at run time.**
+    - _Whose object it is_: the existing rules. Grouped
+      (`TandemStorySystem.Grouped()`; the regions' leader rule when it
+      merges), an entity placed in the world (`EntityID.IsStatic`: the same
+      id in every game, as devices are named) is the host's. Anything else
+      is the guest's own: its spawned things, and **everything while apart**
+      (its own gigs, `quest-carryover.md` decision 6): nothing is asked, its
+      game does it as solo. Characters are not asked about at all: a talk
+      is a scene's choice (the host's hub, `Dialogue.reds`, the host picks),
+      a takedown the combat path's.
+    - _The question_ (`QuestInteract`, appended, a story message; guest to
+      host, the answer to that guest alone, never relayed): the object's
+      static id, the choice (a device action's class and its action name;
+      for loot the loot action and the item's record), the interaction
+      layer, the guest's V's position and the time (host clock). Caught at
+      the two places every interaction of this kind goes through:
+      `Device.ExecuteAction(action, executor)` (prompts and screens alike)
+      and `Inventory.OnInteractionUsed` (an item taken from a placed
+      container or lying in the world: asked only for a quest prop, tag
+      `Quest` or a keycard; other loot is per player).
+    - _What the guest's own copy does meanwhile_: it does it at once, for
+      feel (the press, the pick-up), because every local effect on the
+      host's objects is mirrored state the host's word overrides (devices),
+      per player (loot), or deduplicated (quest props, `loot.md`). A
+      device's change is not said meanwhile (`TandemDevices.Hold`): if the
+      host performs it, the host's V's doing is the device's state (a toggle
+      is never applied twice); if not, it is asked of the host the usual
+      way. **The one exception: a choice that casts the doer** (the guest's
+      own game runs the same check as the host's, below): not run here, the
+      host is asked first.
+    - _The host's verdict_ (`Interact.reds` `Judge`, in this order):
+      missing (its game has no such object loaded, or no such choice for
+      its V now) → too far (the reach check, below) → **local** when its
+      copy is nothing of its quest (`GameObject.IsQuest()`, the game's own
+      quest mark a quest sets on the object; for loot, the item is not a
+      quest prop): the guest's copy is the whole of it → **host only** when
+      the object is in a scene now (`SceneSystemInterface.IsEntityInScene`)
+      or the action casts its doer (`TandemStory.ActionCasts`, below): the
+      guest's prompt shows greyed with "NAME must do this" and it watches
+      the host do it through scene replay → busy when the host's V is in a
+      workspot or a lore animation → **performed**: its own V does the same
+      action on its own copy with the game's own interaction code
+      (`Device.ExecuteAction` with the action found among the device's own
+      actions for its V by class and name; loot: `TransactionSystem.TakeItem`
+      or `TransferItem` of the quest prop into its V), so quests, facts and
+      loot move exactly as if its V had done it. The device record names the
+      guest as the doer (`TandemDevices.PerformedFor`: `DeviceState.by`).
+      What it did comes back through the existing sync: device state, the
+      quest prop shared (`loot.md`), the journal.
+    - _Casting the doer, read from the game's data_ (`engine/casts.cpp`,
+      §13.65): a device action reaches the device's entity as an event, and
+      the entity's own callback for that event's class is where the game
+      puts the doer in a workspot. The plugin finds those callbacks by the
+      class's event listeners (and by their parameter type) on the entity's
+      class chain and its state's, follows the functions they call (5
+      levels, 400 functions at most) through the compiled bytecode the game
+      holds, and answers yes when one of them calls the workspot system's
+      `PlayInDevice` / `PlayInDeviceSimple` or the device's `EnterWorkspot`
+      / `EnterWorkspotWithIK`: a personal-link jack-in, a computer's
+      engineering spot, a turret taken apart, a door forced with V's own
+      hands. Cached per (entity class, action class). Unknown (the layout is
+      not as measured, a class not found) counts as casting: the host does
+      it, and nothing of the host's V is moved by a guess.
+    - _Known for the session_ (`interact::Known`, on both sides): the
+      verdicts that say what a choice is (performed, host only, local), per
+      (object, choice kind). A known host-only or local choice is answered
+      at once by the guest's own endpoint (never asked again), and by the
+      host's without its game for another guest; a performed one is done by
+      the host's game each time (a switch flips twice). A known host-only
+      device prompt is greyed before it is pressed
+      (`ScriptableDeviceComponentPS.FinalizeGetActions`:
+      `SetInactiveWithReason`). The rest (taken, too far, missing, busy) is
+      of the moment and asked again.
+    - _The safety valve_: `tandem.ini` `quest_interact_hostonly` and
+      `quest_interact_allow`, TweakDB records of objects (host only always;
+      the host always does it, even unmarked or casting). **Empty by
+      default, and they should stay empty**: an entry means the generic
+      rule missed something, which is a bug to report.
+      `quest_interact = off` turns the whole path off (a guest's use stays
+      in its own world).
+    - _Edge cases, decided_:
+      - two players at one object: **first come, first served**, as the
+        devices' Ledger (`interact::Referee`): a question is the object's
+        while the host's game has it, and a performed use holds it 2 s; the
+        second player is told "someone else got there first", and its copy
+        is put right by the device record;
+      - a guest vanishing mid-request: its questions and holds go with it
+        (`Endpoint::RemovePlayer`); an answer the host's game gives later is
+        sent nowhere and nothing is learnt from it; what the host's V
+        already did stays done (the world's, as for a device);
+      - the host vanishing, or its game silent: a question with no answer in
+        3 s is the guest's own, as solo (a held casting choice is then run on
+        its own copy; a held device change is asked of the host the usual
+        way); the session's end settles every question the same way;
+      - too far: the guest's word on where its V stood is believed within
+        2 m of the host's own track of that V (its states, rewound to the
+        moment it chose: the time it says, bounded by netcode's 400 ms
+        rewind), else the track is used; the object must be within 4 m of it
+        (`interact::CheckReach`, the lag compensation of `lagcomp.hpp`);
+      - **an interaction that needs an item or a skill the guest has and the
+        host's V lacks**: the guest is the doer, so its own game's checks
+        count: its prompt was not "check failed" (the flag
+        `kInteractChecked`), and the host's V does the action without being
+        checked again (the action is executed directly, not through the
+        choice's check). The item itself is the session's anyway: the quest
+        props a guest holds came from the host's world and are on the host's
+        V too (`loot.md`); a quest prop from the guest's own story could open
+        a host's quest object early, which is accepted (the same key in two
+        worlds is the same quest's key).
+    - Tests: `tests/interact_test.cpp` (the known verdicts, first come, the
+      reach, the message; over loopback: performed each time, host only and
+      local known for the session, two guests at one object, a guest
+      vanishing mid-request, a guest never answers nor hears another's),
+      `tests/protocol_test.cpp`, `tests/referee_test.cpp` (a guest asks, the
+      host answers that guest alone), `tests/peer_interact.sh`; mock player
+      `--interact ENTITY:CHOICE[:DETAIL][@S]` (a guest's use) and
+      `--interact-answer performed|host-only|local|missing|busy|too-far|none`
+      (a host's verdict; local by default: it has no world); scenarios
+      `interact-guest-pickup`, `interact-guest-hostonly`,
+      `interact-apart-own-gig`; `tools/game.sh cmd story interact` (counts),
+      `story interact look [device]`, `story interact use [device]`.
   - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`,
     `story-private`, `story-private-host`, `story-session-items`,
-    `story-gigs-apart`, `story-restrict-guest`, `story-restrict-host`.
+    `story-gigs-apart`, `story-restrict-guest`, `story-restrict-host`,
+    `interact-guest-pickup`, `interact-guest-hostonly`, `interact-apart-own-gig`.
 
 ## Open problems
 

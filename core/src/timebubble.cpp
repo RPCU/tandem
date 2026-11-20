@@ -83,6 +83,28 @@ float TimeBubbles::PlayerFactor(proto::PlayerId player, float own, const proto::
   return std::min(1.f, strongest / own);
 }
 
+proto::PlayerId TimeBubbles::SlowedBy(proto::PlayerId player, float own,
+                                      const proto::Vec3 &position, std::span<const Owner> owners,
+                                      bool inside) {
+  if (!(PlayerFactor(player, own, position, owners, inside) < 1.f))
+    return proto::kNoPlayer;
+  const float reach = kRadius + (inside ? kMargin : 0.f);
+  proto::PlayerId by = proto::kNoPlayer;
+  float strongest = 1.f, nearest = 0.f;
+  for (const auto &owner : owners) {
+    if (owner.player == player || !(owner.scale < 1.f) || !Near(owner.position, position, reach))
+      continue;
+    const float scale = std::clamp(owner.scale, 0.05f, 1.f);
+    const float away = std::hypot(owner.position.x - position.x, owner.position.y - position.y);
+    if (by == proto::kNoPlayer || scale < strongest || (scale == strongest && away < nearest)) {
+      by = owner.player;
+      strongest = scale;
+      nearest = away;
+    }
+  }
+  return by;
+}
+
 float TimeBubbles::BubbleScale(std::uint8_t abilities, float scale) {
   if ((abilities & proto::kTimeBubbleAbilities) == 0 || !std::isfinite(scale) || !(scale < 1.f))
     return 1.f;

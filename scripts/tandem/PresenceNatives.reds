@@ -78,4 +78,10 @@ public native class TandemPresence extends IScriptable {
   // 2 off): its opacity (0: not shown) and its scale.
   public static native func NameplateOpacity(distance: Float, mode: Int32) -> Float;
   public static native func NameplateScale(distance: Float, mode: Int32) -> Float;
+  // Our V's status effects that show on it (any order): true when the set
+  // changed and goes out. Another player's set as last heard (sorted), and a
+  // count that moves on every change of anyone's.
+  public static native func SendStatusVisuals(records: array<TweakDBID>) -> Bool;
+  public static native func StatusVisualsOf(player: Uint32) -> array<TweakDBID>;
+  public static native func StatusChanges() -> Uint32;
 }

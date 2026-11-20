@@ -543,7 +543,7 @@ public class TandemTakedowns extends ScriptableSystem {
   private func SceneActor(body: ref<NPCPuppet>, event: TandemNpcAction) -> Bool {
     let story = TandemStorySystem.Get(this.GetGameInstance());
     return IsDefined(story) && IsDefined(story.Restrictions())
-      && story.Restrictions().RefusesHit(body, event.npc, event.player, TandemTakedowns.KindName(event.action));
+      && story.Restrictions().RefusesTakedown(body, event.npc, event.player, TandemTakedowns.KindName(event.action));
   }
 
   // The finisher's condition still holds here: its health is no higher than

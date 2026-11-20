@@ -91,6 +91,11 @@ public:
   static CatchUp ShotCatchUp(std::uint64_t firedUs, std::uint64_t nowUs);
   static float PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
                             std::span<const Owner> owners, bool inside = false);
+  // Whose bubble that is (the strongest other one within reach; the nearest
+  // of equals), when it slows the V at all (PlayerFactor under 1); else 0.
+  // The partner's cue names that player (time.md, "a cue while slowed").
+  static proto::PlayerId SlowedBy(proto::PlayerId player, float own, const proto::Vec3 &position,
+                                  std::span<const Owner> owners, bool inside = false);
   // The world speed a V's abilities ask for as a bubble (and as the `own`
   // of PlayerFactor): `scale` when any of them makes one
   // (proto::kTimeBubbleAbilities: the scanner too), else 1. Every game

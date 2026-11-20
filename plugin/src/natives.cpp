@@ -373,6 +373,13 @@ struct TandemNative : Red::IScriptable {
     return {Red::CString(target->address.c_str()), target->port, {}};
   }
 
+  // Why ParseAddress refuses it: "" (it does not), "empty", "port", "name",
+  // "ipv6" (hosts::Problem).
+  static Red::CString AddressProblem(Red::CString text) {
+    const auto checked = hosts::Check(text.c_str(), Runtime::Get().config.port);
+    return Red::CString(std::string(hosts::ProblemWord(checked.problem)).c_str());
+  }
+
   // No session (until the next choice, or tandem.ini's at the main menu).
   static void Leave() { Runtime::Get().Choose({.role = Config::Role::Off, .fromMenu = true}); }
 
@@ -1121,6 +1128,20 @@ struct TandemNative : Red::IScriptable {
                      .position = {ownerPositions[i].X, ownerPositions[i].Y, ownerPositions[i].Z}});
     return sync::TimeBubbles::PlayerFactor(player, own, {position.X, position.Y, position.Z}, who,
                                            inside);
+  }
+  // Whose bubble slows our V (the same arguments; 0: nobody's).
+  static std::uint32_t TimeSlowedBy(std::uint32_t player, float own, Red::Vector4 position,
+                                    Red::DynArray<std::uint32_t> owners,
+                                    Red::DynArray<float> scales,
+                                    Red::DynArray<Red::Vector4> ownerPositions, bool inside) {
+    std::vector<sync::TimeBubbles::Owner> who;
+    for (std::uint32_t i = 0; i < owners.Size() && i < scales.Size() && i < ownerPositions.Size();
+         ++i)
+      who.push_back({.player = owners[i],
+                     .scale = scales[i],
+                     .position = {ownerPositions[i].X, ownerPositions[i].Y, ownerPositions[i].Z}});
+    return sync::TimeBubbles::SlowedBy(player, own, {position.X, position.Y, position.Z}, who,
+                                       inside);
   }
   // The world speed a V's abilities ask for as a bubble (1: none): ours
   // as our `own`, and the others' (the scanner counts, tandem/timebubble.hpp).
@@ -2149,6 +2170,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(StartHost);
   RTTI_METHOD(Join);
   RTTI_METHOD(ParseAddress);
+  RTTI_METHOD(AddressProblem);
   RTTI_METHOD(Leave);
   RTTI_METHOD(ResetChoice);
   RTTI_METHOD(SessionStatus);
@@ -2294,6 +2316,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(TimeBubbleScale);
   RTTI_METHOD(TimeUnexplainedSlow);
   RTTI_METHOD(TimePlayerFactor);
+  RTTI_METHOD(TimeSlowedBy);
   RTTI_METHOD(IsTimeHostFull);
   RTTI_METHOD(RelayCode);
   RTTI_METHOD(RelayStatus);

@@ -20,12 +20,45 @@ What to know before offering one to others:
   who trust you, and play through one run by someone you trust.
 - **It sees the players' IP addresses**, and logs them: a host's when its
   session opens, closes or gets a join code, a guest's when it joins.
-- **Only holders of a host token can open a session**, so the relay is not
-  a free bandwidth service; guests need no token, only the host's code.
+- **Anyone can host, by default** (open mode): no account, no token. What
+  keeps it from being a free bandwidth service is below
+  ([Open mode](#open-mode)); `--require-token` closes it to token holders.
+  Guests never need a token, only the host's code.
+
+## Open mode
+
+A relay is open unless started with `--require-token`. A host with no token
+opens a session like this, and the relay keeps no account of anyone:
+
+- **A proof of work per session**: its registration is answered with a
+  challenge (stateless: a stamp, the difficulty and a MAC of both and the
+  host's address under a key drawn at start, 26 bytes for its 64). The
+  game finds a nonce such that SHA-256(challenge, its session, nonce)
+  starts with `--pow-bits` zero bits (17 by default: about 20 ms of a
+  desktop's CPU, a few tens on a slow one, spread over its network thread)
+  and registers with it. Each challenge opens one session, and only within
+  two minutes. Opening many sessions costs that much each, which is the
+  point.
+- **At most `--max-sessions-per-source` (2) open sessions per source** (an
+  IPv4 address, an IPv6 /64), and `--max-open-sessions` (192) in all
+  (`--max-sessions`, 256, counts every session). Past them the host is told
+  "the relay hosts as many sessions from your address as it may", or that
+  the relay is full.
+- **A bandwidth cap per guest link and direction**: `--open-kbps` (128,
+  twice what tandem sends) with `--open-burst-kb` (32) at once; the rest is
+  dropped (`tandem_relay_dropped_total{reason="bandwidth"}`). A session of
+  3 guests may move 3 × 128 kbit/s each way.
+- **Idle sessions end** after 2 minutes, as any.
+- Everything else holds as before: guests need the code, the code-guessing
+  limits, no answer to strangers' data, no answer larger than its request.
+
+Hosts with a **host token** skip all of it (no proof, no caps): give tokens
+to the people you host for, if you want them unlimited.
 
 ## Host tokens
 
-A host token is 32 random bytes, written as 64 hex digits:
+Optional (open mode), or required with `--require-token`. A host token is
+32 random bytes, written as 64 hex digits:
 
 ```sh
 tandem-relay token
@@ -33,9 +66,10 @@ tandem-relay token
 ```
 
 The relay reads a **token file** at start (`--host-tokens`, default
-`/etc/tandem-relay/host-tokens`): one token per line; empty lines and lines
-starting with `#` are ignored; a malformed line stops the relay with the
-line's number. It refuses to start with no token at all.
+`/etc/tandem-relay/host-tokens`; none, an empty path or a missing file in
+open mode): one token per line; empty lines and lines starting with `#` are
+ignored; a malformed line stops the relay with the line's number. With
+`--require-token` it refuses to start with no token at all.
 
 ```
 # alice
@@ -53,11 +87,25 @@ line's number. It refuses to start with no token at all.
   [Restarts and drain](#restarts-and-drain)).
 - A host puts their token in their game's `tandem.ini`
   (`relay_token = …`). It is never sent to guests. Treat it as a password:
-  it goes over the network in clear (see above), so do not reuse it.
-- `--allow-any-host` drops the token check. It exists for local testing
-  (`task relay:run`); never expose a relay started with it.
+  it goes over the network in clear (see above), so do not reuse it. Kept
+  join codes (`code = keep`) need one: they are a token's.
+- By hand, then as a service (the unit's drop-in, below, reads it):
 
-What players write in `red4ext/plugins/tandem/tandem.ini`:
+  ```sh
+  ./tandem-relay token > host-tokens
+  ./tandem-relay serve --udp=:27460 --http=127.0.0.1:8080 --host-tokens=./host-tokens
+  # {"time":"…","level":"INFO","msg":"relay up","udp":"[::]:27460","http":"127.0.0.1:8080","host_tokens":1}
+  sudo install -d -m 0700 /etc/tandem-relay
+  tandem-relay token | sudo tee /etc/tandem-relay/host-tokens >/dev/null
+  sudo chmod 0600 /etc/tandem-relay/host-tokens
+  ```
+
+- `--allow-any-host` drops the token check and the open mode's proof and
+  limits. It exists for local testing (`task relay:run`); never expose a
+  relay started with it.
+
+What players write in `red4ext/plugins/tandem/tandem.ini` (tandem ships
+with the public RPCU relay set: `relay = relay.rpcu.io:27460`):
 
 ```ini
 relay = relay.example.org:27460
@@ -86,23 +134,19 @@ nix-build -A relay
 Try it by hand:
 
 ```sh
-./tandem-relay token > host-tokens
-./tandem-relay serve --udp=:27460 --http=127.0.0.1:8080 --host-tokens=./host-tokens
-# {"time":"…","level":"INFO","msg":"relay up","udp":"[::]:27460","http":"127.0.0.1:8080","host_tokens":1}
+./tandem-relay serve --udp=:27460 --http=127.0.0.1:8080
+# {"time":"…","level":"INFO","msg":"relay up","udp":"[::]:27460",…,"host_tokens":0,"open":true,"pow_bits":17,…}
 curl -s 127.0.0.1:8080/healthz    # ok
 ```
 
 ### As a systemd service
 
 [`deploy/systemd/tandem-relay.service`](../deploy/systemd/tandem-relay.service)
-runs it as a throwaway user with no capability, a read-only system, a
-system-call filter and its own copy of the token file:
+runs it open, as a throwaway user with no capability, a read-only system
+and a system-call filter:
 
 ```sh
 sudo install -m 0755 tandem-relay /usr/local/bin/tandem-relay
-sudo install -d -m 0700 /etc/tandem-relay
-tandem-relay token | sudo tee /etc/tandem-relay/host-tokens >/dev/null
-sudo chmod 0600 /etc/tandem-relay/host-tokens
 sudo install -m 0644 deploy/systemd/tandem-relay.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now tandem-relay
@@ -111,7 +155,9 @@ journalctl -u tandem-relay -f        # JSON lines; "relay up" first
 
 The unit binds health and metrics to `127.0.0.1:8080`: change `--http` only
 if a Prometheus on another machine must scrape it, and then firewall it.
-It needs systemd 247 or newer (`LoadCredential`).
+Host tokens (optional) come with a drop-in that gives the service its own
+read-only copy of the token file (`LoadCredential`, systemd 247 or newer):
+the unit's header has it.
 
 ## Run it: Kubernetes
 
@@ -157,8 +203,9 @@ a ServiceAccount (no token mounted), a StatefulSet of 2 replicas, a UDP
 Service per replica, one for the fleet's entrance, a headless one for
 metrics, a PodDisruptionBudget, the peers ConfigMap and a NetworkPolicy
 (how replicas work: [Replicas](#replicas)). It is not deployable alone: an
-overlay provides the namespace, the image's registry, the token Secret,
-each replica's public address and the peers list naming them.
+overlay provides the namespace, the image's registry, each replica's
+public address and the peers list naming them, and (optionally) the token
+Secret.
 
 ```yaml
 # overlays/prod/kustomization.yaml
@@ -168,6 +215,7 @@ namespace: tandem
 resources:
   - ../../base
   - namespace.yaml # kind: Namespace, name: tandem
+  # optional (the relay is open without it):
   - host-tokens.yaml # the Secret below, from your secret store
 images:
   - name: tandem-relay
@@ -199,8 +247,11 @@ Players write the entrance's address (the `tandem-relay` Service, give it a
 DNS name) in `tandem.ini`; the replicas' addresses only travel in the
 relay's redirects.
 
-The Secret is named `tandem-relay-host-tokens`, with one key,
-`host-tokens`, holding the token file. Keep it out of git in clear: SOPS,
+The Secret is optional (the relay is open without it; the volume is
+`optional: true`). It is named `tandem-relay-host-tokens`, with one key,
+`host-tokens`, holding the token file; for a relay closed to token holders,
+add `--require-token` (or `TANDEM_RELAY_REQUIRE_TOKEN=on`) in the overlay.
+Keep it out of git in clear: SOPS,
 sealed-secrets or an external secret operator. For a first try:
 
 ```sh
@@ -518,24 +569,30 @@ those players, and one lookup budget between them.
 
 Flags of `tandem-relay serve`, with their defaults:
 
-| Flag                  | Default                                | What                                                                                                           |
-| --------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `--udp`               | `:27460`                               | UDP address players reach                                                                                      |
-| `--front`             | none (`TANDEM_RELAY_FRONT`)            | UDP address of the fleet's entrance (redirects only; needs `--peers`)                                          |
-| `--peers`             | none (`TANDEM_RELAY_PEERS`)            | every replica's public `ip:port`, in shard order                                                               |
-| `--shard`             | `0` (`TANDEM_RELAY_SHARD`)             | this replica's index in `--peers`, or a name ending in it                                                      |
-| `--readers`           | CPUs, at most 8                        | sockets reading the UDP port at once (`SO_REUSEPORT`, Linux)                                                   |
-| `--drain-timeout`     | `60s`                                  | on SIGTERM, how long running sessions may go on before the relay exits                                         |
-| `--proxy-protocol`    | off (`TANDEM_RELAY_PROXY_PROTOCOL=on`) | behind a tunnel sending PROXY v2 headers (playit.gg): each client's address from them                          |
-| `--trusted-proxies`   | `127.0.0.1/32,::1/128`                 | with `--proxy-protocol`, the only senders taken (CIDRs)                                                        |
-| `--http`              | `:8080`                                | HTTP address for `/healthz`, `/readyz`, `/metrics` and `/debug/vars`                                           |
-| `--host-tokens`       | `/etc/tandem-relay/host-tokens`        | the token file                                                                                                 |
-| `--max-sessions`      | `256`                                  | sessions open at once; the next host is refused                                                                |
-| `--idle`              | `2m`                                   | a client silent this long is forgotten (a session ends with its host)                                          |
-| `--code-ttl`          | `10m`                                  | how long a join code lives (the host's game renews it)                                                         |
-| `--code-lookup-burst` | `5`                                    | join-code lookups one source may make at once; then one per 6 s                                                |
-| `--max-code-failures` | `120`                                  | failed lookups per minute from everyone together, for the whole fleet; past it every lookup waits for the next |
-| `--allow-any-host`    | off                                    | no token check: local testing only                                                                             |
+| Flag                        | Default                                | What                                                                                                           |
+| --------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `--udp`                     | `:27460`                               | UDP address players reach                                                                                      |
+| `--front`                   | none (`TANDEM_RELAY_FRONT`)            | UDP address of the fleet's entrance (redirects only; needs `--peers`)                                          |
+| `--peers`                   | none (`TANDEM_RELAY_PEERS`)            | every replica's public `ip:port`, in shard order                                                               |
+| `--shard`                   | `0` (`TANDEM_RELAY_SHARD`)             | this replica's index in `--peers`, or a name ending in it                                                      |
+| `--readers`                 | CPUs, at most 8                        | sockets reading the UDP port at once (`SO_REUSEPORT`, Linux)                                                   |
+| `--drain-timeout`           | `60s`                                  | on SIGTERM, how long running sessions may go on before the relay exits                                         |
+| `--proxy-protocol`          | off (`TANDEM_RELAY_PROXY_PROTOCOL=on`) | behind a tunnel sending PROXY v2 headers (playit.gg): each client's address from them                          |
+| `--trusted-proxies`         | `127.0.0.1/32,::1/128`                 | with `--proxy-protocol`, the only senders taken (CIDRs)                                                        |
+| `--http`                    | `:8080`                                | HTTP address for `/healthz`, `/readyz`, `/metrics` and `/debug/vars`                                           |
+| `--host-tokens`             | `/etc/tandem-relay/host-tokens`        | the token file                                                                                                 |
+| `--max-sessions`            | `256`                                  | sessions open at once; the next host is refused                                                                |
+| `--idle`                    | `2m`                                   | a client silent this long is forgotten (a session ends with its host)                                          |
+| `--code-ttl`                | `10m`                                  | how long a join code lives (the host's game renews it)                                                         |
+| `--code-lookup-burst`       | `5`                                    | join-code lookups one source may make at once; then one per 6 s                                                |
+| `--max-code-failures`       | `120`                                  | failed lookups per minute from everyone together, for the whole fleet; past it every lookup waits for the next |
+| `--allow-any-host`          | off                                    | no token check, no proof of work, no open limits: local testing only                                           |
+| `--require-token`           | off (`TANDEM_RELAY_REQUIRE_TOKEN=on`)  | only hosts with a token (no open mode)                                                                         |
+| `--pow-bits`                | `17`                                   | open mode: the proof of work asked of a host, in bits (each one doubles its cost)                              |
+| `--max-open-sessions`       | `192`                                  | open mode: sessions opened with no token, at once                                                              |
+| `--max-sessions-per-source` | `2`                                    | open mode: sessions one IPv4 address or IPv6 /64 hosts with no token                                           |
+| `--open-kbps`               | `128`                                  | open mode: kbit/s per guest link and direction                                                                 |
+| `--open-burst-kb`           | `32`                                   | open mode: kB per guest link and direction at once                                                             |
 
 Fixed in the code (`relay/internal/relay/relay.go`, `DefaultConfig`):
 
@@ -570,20 +627,23 @@ metered server.
 - `GET /metrics` is the Prometheus text format (each replica its own:
   scrape the pods, `tandem-relay-pods`, not a load-balanced address):
 
-  | Metric                                    | Type    | What                                                                                                                              |
-  | ----------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
-  | `tandem_relay_sessions`                   | gauge   | open sessions                                                                                                                     |
-  | `tandem_relay_clients`                    | gauge   | registered hosts and guests                                                                                                       |
-  | `tandem_relay_draining`                   | gauge   | 1 while shutting down (no new session)                                                                                            |
-  | `tandem_relay_proxy_flows`                | gauge   | behind a proxy: its sockets whose client a PROXY header named                                                                     |
-  | `tandem_relay_forwarded_packets_total`    | counter | datagrams forwarded                                                                                                               |
-  | `tandem_relay_forwarded_bytes_total`      | counter | payload bytes forwarded                                                                                                           |
-  | `tandem_relay_dropped_total{reason}`      | counter | drops: `malformed`, `bad_token`, `unknown_client`, `rate_limited`, `no_channel`; behind a proxy `untrusted_proxy`, `proxy_header` |
-  | `tandem_relay_codes_issued_total`         | counter | join codes issued                                                                                                                 |
-  | `tandem_relay_codes_reclaimed_total`      | counter | codes given back to their host after a restart                                                                                    |
-  | `tandem_relay_code_lookups_total{result}` | counter | code lookups: `found`, `unknown`, `limited`, `redirected` (to the owner)                                                          |
-  | `tandem_relay_refused_total{reason}`      | counter | registrations refused: `no_session`, `session_full`, `too_many_sessions`, `session_taken`, `draining`                             |
-  | `tandem_relay_redirects_total{kind}`      | counter | registrations redirected: `host` (a new session), `guest` (a secret)                                                              |
+  | Metric                                    | Type    | What                                                                                                                                                       |
+  | ----------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `tandem_relay_sessions`                   | gauge   | open sessions                                                                                                                                              |
+  | `tandem_relay_clients`                    | gauge   | registered hosts and guests                                                                                                                                |
+  | `tandem_relay_draining`                   | gauge   | 1 while shutting down (no new session)                                                                                                                     |
+  | `tandem_relay_open_sessions`              | gauge   | sessions opened with no token (open mode)                                                                                                                  |
+  | `tandem_relay_challenges_total`           | counter | open mode: proof-of-work challenges sent                                                                                                                   |
+  | `tandem_relay_challenges_replayed_total`  | counter | open mode: proofs refused as used before                                                                                                                   |
+  | `tandem_relay_proxy_flows`                | gauge   | behind a proxy: its sockets whose client a PROXY header named                                                                                              |
+  | `tandem_relay_forwarded_packets_total`    | counter | datagrams forwarded                                                                                                                                        |
+  | `tandem_relay_forwarded_bytes_total`      | counter | payload bytes forwarded                                                                                                                                    |
+  | `tandem_relay_dropped_total{reason}`      | counter | drops: `malformed`, `bad_token`, `unknown_client`, `rate_limited`, `bandwidth` (open mode), `no_channel`; behind a proxy `untrusted_proxy`, `proxy_header` |
+  | `tandem_relay_codes_issued_total`         | counter | join codes issued                                                                                                                                          |
+  | `tandem_relay_codes_reclaimed_total`      | counter | codes given back to their host after a restart                                                                                                             |
+  | `tandem_relay_code_lookups_total{result}` | counter | code lookups: `found`, `unknown`, `limited`, `redirected` (to the owner)                                                                                   |
+  | `tandem_relay_refused_total{reason}`      | counter | registrations refused: `no_session`, `session_full`, `too_many_sessions`, `session_taken`, `draining`, `source_busy`                                       |
+  | `tandem_relay_redirects_total{kind}`      | counter | registrations redirected: `host` (a new session), `guest` (a secret)                                                                                       |
 
   Worth an alert: `bad_token` rising (someone trying to host without a
   token, or a typo in a friend's `tandem.ini`); `unknown` or `limited`
@@ -598,16 +658,17 @@ metered server.
 
 What the host's Co-op panel shows, and what it means here:
 
-| The game says                                     | Look at                                                                                    |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| the relay did not answer                          | DNS name, the UDP port (firewall, port forward, load balancer), is the relay running       |
-| the relay refused our host token (relay_token)    | the token is not in the file, or the relay was not restarted after adding it (`bad_token`) |
-| no session has this join code (wrong, or expired) | the guest's code is old: the host's panel shows the current one                            |
-| too many join attempts: try again in a minute     | the lookup limits; `limited` in the metrics                                                |
-| the relay has too many sessions open              | `--max-sessions`                                                                           |
-| the relay went silent: reconnecting               | a replica restarting (it comes back within seconds) or the path to it; `kubectl get pods`  |
-| the relay's replicas sent us on twice             | the replicas' `--peers` lists differ: give them all the same                               |
-| the relay is restarting: try again in a moment    | a relay on its own is draining                                                             |
+| The game says                                                | Look at                                                                                    |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| the relay did not answer                                     | DNS name, the UDP port (firewall, port forward, load balancer), is the relay running       |
+| the relay refused our host token (relay_token)               | the token is not in the file, or the relay was not restarted after adding it (`bad_token`) |
+| no session has this join code (wrong, or expired)            | the guest's code is old: the host's panel shows the current one                            |
+| too many join attempts: try again in a minute                | the lookup limits; `limited` in the metrics                                                |
+| the relay has too many sessions open                         | `--max-sessions`, or (hosts with no token) `--max-open-sessions`                           |
+| the relay hosts as many sessions from your address as it may | open mode: `--max-sessions-per-source` (2); a host token lifts it; `source_busy`           |
+| the relay went silent: reconnecting                          | a replica restarting (it comes back within seconds) or the path to it; `kubectl get pods`  |
+| the relay's replicas sent us on twice                        | the replicas' `--peers` lists differ: give them all the same                               |
+| the relay is restarting: try again in a moment               | a relay on its own is draining                                                             |
 
 From outside, `nc -u -v relay.example.org 27460` cannot tell much (the
 relay does not answer strangers, on purpose). The quickest end-to-end test

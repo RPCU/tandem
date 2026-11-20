@@ -11,13 +11,14 @@
 // Held, pain from Presence's health, going down from Vitals, time abilities
 // from TimeEffect. Only what the receiver cannot know is sent: where a
 // shot ended and what a melee swing landed on (Cue), health and the menu
-// (Presence).
+// (Presence), the status effects that show on a V (StatusVisuals).
 
 #include "tandem/movement.hpp"
 #include "tandem/protocol.hpp"
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace tandem::presence {
@@ -230,4 +231,19 @@ private:
   std::uint64_t m_atUs{};
   float m_pitch{}, m_roll{};
 };
+
+// ---- status effects seen on a puppet (StatusVisuals) ----
+
+// One set, said one way: sorted, without repeats or the null id, at most
+// proto::kMaxStatusVisuals of them (the lowest ids kept), as Decode wants.
+std::vector<std::uint64_t> StatusSet(std::vector<std::uint64_t> records);
+
+// What a puppet starts and stops showing as its V's set goes from `before`
+// to `after` (both sets as StatusSet makes them).
+struct StatusChange {
+  std::vector<std::uint64_t> started, ended;
+  friend bool operator==(const StatusChange &, const StatusChange &) = default;
+};
+StatusChange StatusDiff(std::span<const std::uint64_t> before,
+                        std::span<const std::uint64_t> after);
 } // namespace tandem::presence

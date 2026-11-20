@@ -4,6 +4,7 @@
 // leaves, under loss too, and an owner that vanishes leaves heirs.
 
 #include "ports.hpp"
+#include "referee_expect.hpp"
 #include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 
@@ -638,6 +639,8 @@ TEST_CASE("a receiver that cannot run the NPC: it goes for everyone, never left 
 }
 
 TEST_CASE("hand-overs go through although a third of everything is lost") {
+  // Lost and doubled on purpose: states twice, resyncs that a lossy link undoes.
+  test::ExpectReferee({"oneshot.seq-repeated", "digest.resync-loop"});
   auto s = Start();
   Place(*s->host, 0);
   Place(*s->a, 40);
@@ -776,6 +779,8 @@ TEST_CASE("an owner whose world is rebuilt leaves its NPCs to who stays; the hos
 }
 
 TEST_CASE("an old owner that missed the word on its NPC's new owner stops running it") {
+  // The old owner speaks for an NPC it no longer runs, on purpose: the host drops it.
+  test::ExpectReferee({"authority.not-owner"});
   auto s = Start();
   Place(*s->host, 0);
   Place(*s->a, 30);

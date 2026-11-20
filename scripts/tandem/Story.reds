@@ -99,6 +99,9 @@ public class TandemStorySystem extends ScriptableSystem {
   private persistent let m_ledger: array<Uint64>;
   // Our garage, and the host's news of it (Garage.reds).
   private let m_garage: ref<TandemGarage>;
+  // A guest's use of the host's objects, done by the host's game
+  // (Interact.reds).
+  private let m_interact: ref<TandemInteract>;
   // Session items (docs/architecture/quest-carryover.md): the host's quest
   // props (tag Quest, keycards) our V holds as a guest. Not ours to keep:
   // taken back out when we leave, and at the next load if a save ever held
@@ -162,6 +165,8 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_scenes.Start(this.GetGameInstance(), this);
     this.m_restrictions = new TandemRestrictions();
     this.m_restrictions.Start(this.GetGameInstance(), this);
+    this.m_interact = new TandemInteract();
+    this.m_interact.Start(this.GetGameInstance(), this);
     // Journal changes: the host sends them; every game keeps the last quest
     // that moved (rewards, below).
     this.Listen();
@@ -240,6 +245,9 @@ public class TandemStorySystem extends ScriptableSystem {
       if IsDefined(this.m_garage) {
         this.m_garage.Tick(this.Now(), this.m_isHost);
       }
+      if IsDefined(this.m_interact) {
+        this.m_interact.Tick();
+      }
     }
     this.Schedule();
   }
@@ -314,6 +322,10 @@ public class TandemStorySystem extends ScriptableSystem {
     return this.m_restrictions;
   }
 
+  public func Interact() -> ref<TandemInteract> {
+    return this.m_interact;
+  }
+
   // Grouped with the host (the same world; regions: not apart).
   public func Grouped() -> Bool {
     return !this.m_apart;
@@ -372,6 +384,9 @@ public class TandemStorySystem extends ScriptableSystem {
           }
           break;
         case 2:
+          if IsDefined(this.m_interact) {
+            this.m_interact.End();
+          }
           if !this.m_isHost && this.m_you != 0u {
             this.GuestLeave();
           }
@@ -463,6 +478,12 @@ public class TandemStorySystem extends ScriptableSystem {
           // A reward our game lacks (a mod's; said on screen): not given.
           if TDBID.IsValid(event.reward) {
             this.OnReward(event.reward, event.hash);
+          }
+          break;
+        case 60:
+        case 61:
+          if IsDefined(this.m_interact) {
+            this.m_interact.OnEvent(event);
           }
           break;
         case 43:
@@ -1553,6 +1574,8 @@ public class TandemStorySystem extends ScriptableSystem {
       TandemNative.Log(s"story: test private scene \(this.m_forcedPrivate ? "on" : "off")");
     } else if StrBeginsWith(command, "story scene") {
       this.m_scenes.Command(command);
+    } else if StrBeginsWith(command, "story interact") {
+      this.m_interact.Command(command);
     } else if Equals(command, "story restrict") {
       this.m_restrictions.Report();
     } else if StrBeginsWith(command, "story restrict on ") || StrBeginsWith(command, "story restrict off ") {

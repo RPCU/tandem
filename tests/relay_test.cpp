@@ -3,6 +3,7 @@
 // TANDEM_RELAY set (without it those cases are skipped). The rest needs none.
 
 #include "ports.hpp"
+#include "sha256.hpp"
 #include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 
@@ -12,6 +13,7 @@
 #include <cctype>
 #include <csignal>
 #include <cstdlib>
+#include <format>
 #include <functional>
 #include <thread>
 
@@ -188,6 +190,42 @@ TEST_CASE("join codes are read the way players type them") {
   CHECK_FALSE(net::NormalizeJoinCode("K7Q2MU")); // no U in Crockford's base32
   CHECK_FALSE(net::NormalizeJoinCode(""));
   CHECK(net::DisplayJoinCode("K7Q2M9") == "K7Q-2M9");
+}
+
+TEST_CASE("SHA-256, and what an open relay's proof of work costs here") {
+  const auto hex = [](const net::Sha256Digest &digest) {
+    std::string out;
+    for (const auto byte : digest)
+      out += std::format("{:02x}", byte);
+    return out;
+  };
+  const auto of = [&](std::string_view text) {
+    return hex(
+        net::Sha256(std::span(reinterpret_cast<const std::uint8_t *>(text.data()), text.size())));
+  };
+  // FIPS 180-2's examples: one block, two blocks (the padding spills over).
+  CHECK(of("") == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+  CHECK(of("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+  CHECK(of("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") ==
+        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+  CHECK(net::LeadingZeroBits(net::Sha256Digest{0, 0, 0x1F}) == 19);
+
+  // The relay's default difficulty (17 bits, relay.DefaultConfig), solved as
+  // RelayLink does: the mean of a few, for the record.
+  const auto start = std::chrono::steady_clock::now();
+  constexpr int kProofs = 4;
+  for (int proof = 0; proof < kProofs; ++proof) {
+    std::uint8_t message[40] = {static_cast<std::uint8_t>(proof)};
+    for (std::uint64_t nonce = 0;; ++nonce) {
+      for (int j = 0; j < 8; ++j)
+        message[32 + j] = static_cast<std::uint8_t>(nonce >> (56 - 8 * j));
+      if (net::LeadingZeroBits(net::Sha256(message)) >= 17)
+        break;
+    }
+  }
+  const auto took =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start);
+  MESSAGE("17-bit proof of work: " << took.count() / kProofs << " ms on average");
 }
 
 TEST_CASE("relay addresses and host tokens") {
@@ -637,6 +675,10 @@ TEST_SUITE("relay") {
     auto keep = *relay;
     keep.keepCode = true;
     keep.codeSalt = 41;
+    // A kept code is a token's (TANDEM_RELAY_TOKEN: one of the relay's).
+    if (const char *token = std::getenv("TANDEM_RELAY_TOKEN"))
+      if (const auto parsed = net::ParseRelayToken(token))
+        keep.token = *parsed;
     std::string kept;
     {
       auto host = Endpoint::Host({"host"}, NextPort(), error, {}, keep);

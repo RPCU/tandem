@@ -112,8 +112,9 @@ player's game, not a server: there is no dedicated game server.
 | Bulk    | reliable, ordered       | large one-offs (join snapshot) so they never hold up events |
 
 **Protocol** (`core/include/tandem/protocol.hpp`): every message is one
-alternative of a `std::variant`, serialized with zpp_bits. The variant index
-is the message id, so **messages are only ever appended**, and changing an
+alternative of a `std::variant`, serialized with zpp_bits (its variant
+form, written out in `protocol.cpp`: the index in one byte, then the
+message). The variant index is the message id, so **messages are only ever appended**, and changing an
 existing message bumps `kProtocolVersion`; a mismatched guest is refused with
 a reason. Decoding is strict: trailing or missing bytes reject the packet.
 
@@ -139,7 +140,7 @@ The owner simulates; everyone else displays.
 | a player's garage (owned cars, unlocks) | that player's game (save) | a partner may drive one by its owner's word (`lend`); the garage stays the owner's (`architecture/garage.md`) |
 | a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game | copy, riders and NPCs seated; host's scene: a seat or a ride along |
 | an NCART train (scripted transit) | each rider's own game | never shared: puppet in a train of ours, else hidden |
-| a world vehicle: traffic, parked, police, a wreck | the owner of its area (`Endpoint::AreaOwner`) | proxy, or their own instance of a placed vehicle; the first player to get in has it (`architecture/traffic.md`) |
+| a world vehicle: traffic, parked, police, a wreck, a chase car | the game that runs it: the owner of its area (`Endpoint::AreaOwner`) that announced it, until it is handed over as an NPC is (its riders with it) | proxy, or their own instance of a placed vehicle; the first player to get in has it (`architecture/traffic.md`) |
 | NPCs: AI, position, health, death | the game that runs it (spawned it, or took it over; quest NPCs: host) | **proxy with its AI off** in the linked games, driven by its owner (`architecture/regions.md`) |
 | spawns: crowds, encounters | each game around its own V | held back only where a higher-ranked linked player's region covers it |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
@@ -150,6 +151,7 @@ The owner simulates; everyone else displays.
 | a V busy: workspot, menu, minigame, photo mode | that player's game | puppet held where it sits, same workspot; photo mode stands only its own game still |
 | a V's home: its interactions (shower, bed, coffee…), decorations, buffs | that player's game (its save's apartment quest) | busy, its look as rendered; a bed's hours asked as a time skip; buffs never sent (`architecture/activities.md`) |
 | a V's time abilities (Sandevistan, the scanner…) | that player's game | shown on the puppet; never slow anyone's world |
+| a V's status effects that show (burning, shock, camo, a heal…) | that player's game | their look and sound played on the puppet, never their gameplay (`architecture/presence.md`) |
 | an NPC's speed in a time bubble | the NPC's owner | proxies animated at the same speed |
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | NPC melee at a V: whether it is blocked, parried, dodged | the V's game, at its proxy's swing | host's NPC decides to attack and recoils; `architecture/combat-coverage.md` |
@@ -161,6 +163,7 @@ The owner simulates; everyone else displays.
 | a V's pings, tags, link consent, waypoint | that player's game | shown; tags only to players linked with it (`architecture/comms.md`) |
 | quest and important items, rewards | every player's own V | whoever gets one, every V gets it; a guest gives the host's quest props (tag `Quest`, keycards) back when it leaves, and keeps iconics and rewards |
 | devices: doors, lifts, cameras, turrets, barrels, the alarm | host | own copy first, then the host's word; `architecture/devices.md` |
+| a guest's use of the host's objects while grouped (a quest switch, an objective item, a quest container, a terminal) | host's game: judged from its own data, done by its V on its own copy, first come first served | asks; its own copy does it at once for feel (not what would cast its V); a choice that casts the doer is host-only, greyed "NAME must do this"; apart, or on its own things: its own, as solo (`architecture/story.md`, "Quest interactions") |
 | what a guest did in co-op (the ledger) | the guest's game (save) | never shared: quests taken part in, rewards paid once, vehicles earned |
 
 Enemy level (the mean of the players' levels) and enemy scaling (tougher
@@ -292,9 +295,9 @@ plugin") and its open problems.
 - `players.md`: body poses, weapons, looks, player markers; open: linking up, every way a V moves, cyberware and perks.
 - `vehicles.md`: driven vehicles, seats, the radio; open: getting in and out, combat in vehicles.
 - `transit.md`: rides a game runs (cabs, AVs, quest vehicles), the NCART metro.
-- `traffic.md`: traffic, parked cars and wrecks shared by the owner of their area (untested in game): the budget, collisions, a car a player takes, occupants, explosions; who owns an area (`AreaOwner`).
+- `traffic.md`: traffic, parked cars and wrecks shared by the owner of their area (untested in game): the budget, collisions, a car a player takes, occupants, explosions; who owns an area (`AreaOwner`); several owners (a guest's street), hand-overs when players meet and part.
 - `police.md`: police heat per player (untested in game): how a crime finds its V, a wanted V in an area another game owns, what a follower no longer spawns.
-- `vehicle-combat.md`: vehicle damage and destruction, shooting from vehicles and mounted weapons, a guest on another player's gun, collisions (players' cars, rams on NPCs), NPC vehicle chases, bikes, bailing out and being thrown out.
+- `vehicle-combat.md`: vehicle damage and destruction, shooting from vehicles and mounted weapons, a guest on another player's gun (the owner's real guns fire for it), passenger combat in a partner's car copy, collisions (players' cars, rams on NPCs), NPC vehicle chases, bikes, bailing out and being thrown out.
 - `world.md`: time of day and weather; open: the guest acting on the world, NCPD chases, saves.
 - `time.md`: the pause menu, slowed time (time bubbles, the scanner's bubble); open: what the partner lives with when a V scans (mitigations to decide), every time dilation, other timeline and menu, NPC shots simulated by the target's game.
 - `npcs.md`: enemy level, enemy scaling (the count of players near, the multipliers, the host's rule), NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
@@ -311,7 +314,7 @@ plugin") and its open problems.
 - `garage.md`: owned vehicles: each player's garage, driving a partner's car, vehicles earned together (credited, or kept with `vehicle_rewards = keep`), purchases, PL deliveries, decisions.
 - `trade.md`: trade between two players: the prompt and the table, what may be traded, the host's two-phase arbitration, the protocol, what is not verified.
 - `quest-carryover.md`: what a guest brings home (stage A1 built: the ledger in the save, rewards through it, quest props given back on leave): the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
-- `presence.md` (`scripts/tandem/Presence.reds`, `PartyHud.reds`, `HitReactions.reds`): the partner seen and heard: a puppet's sounds, hit reactions on puppets and proxies, drawn bullets, the party HUD (linked partners) and nameplates (`nameplates = near|always|off`), names (the pseudo prompt, unique names: `core/include/tandem/names.hpp`), small details (flashlight, look-at, stances, holstering); the audit, what needs eyes and ears in game.
+- `presence.md` (`scripts/tandem/Presence.reds`, `PartyHud.reds`, `HitReactions.reds`, `StatusVisuals.reds`): the partner seen and heard: a puppet's sounds, hit reactions on puppets and proxies, drawn bullets, its V's status effects on it (`StatusVisuals`), the party HUD (linked partners) and nameplates (`nameplates = near|always|off`), names (the pseudo prompt, unique names: `core/include/tandem/names.hpp`), small details (flashlight, look-at, stances, holstering); the audit, what needs eyes and ears in game.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
 - `activities.md`: the rule table for activities outside combat and quests (time skips asked of everyone, workspots on puppets, minigames and screens, shops, mirror and wardrobe looks, photo mode, contests, clubs and joytoys), V's homes (the audit of every apartment interaction: shower, bed and two beds at once, coffee, stash, the cat…), its decisions and what is built.
 - `coop-menu.md`: the co-op menu, its Settings page (saved to `tandem.ini`), invites and join codes in game.
