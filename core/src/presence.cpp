@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <numbers>
 #include <utility>
 
@@ -353,5 +354,23 @@ Lean Flinch::At(std::uint64_t nowUs) const {
   const float envelope = std::exp(-6.f * t / length) * (1.f - t / length);
   const float swing = std::cos(kFrequency * t);
   return {m_pitch * envelope * swing, m_roll * envelope * swing};
+}
+
+std::vector<std::uint64_t> StatusSet(std::vector<std::uint64_t> records) {
+  std::erase(records, std::uint64_t{0});
+  std::ranges::sort(records);
+  const auto [first, last] = std::ranges::unique(records);
+  records.erase(first, last);
+  if (records.size() > proto::kMaxStatusVisuals)
+    records.resize(proto::kMaxStatusVisuals);
+  return records;
+}
+
+StatusChange StatusDiff(std::span<const std::uint64_t> before,
+                        std::span<const std::uint64_t> after) {
+  StatusChange change;
+  std::ranges::set_difference(after, before, std::back_inserter(change.started));
+  std::ranges::set_difference(before, after, std::back_inserter(change.ended));
+  return change;
 }
 } // namespace tandem::presence

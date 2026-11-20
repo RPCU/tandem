@@ -52,6 +52,7 @@ func TestAKeptCodeComesBackEverySession(t *testing.T) {
 func TestKeptCodesNeedATokenAndStayApart(t *testing.T) {
 	now := time.Now()
 	s := newServer(t)
+	s.cfg.Open = false // --require-token
 	if r := mustHandle(t, s, hostA, RegisterHostKeep(secret, [TokenSize]byte{9}, 1), now); r.Error != ErrBadToken {
 		t.Fatalf("no token: %+v", r)
 	}

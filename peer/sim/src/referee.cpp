@@ -289,7 +289,8 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::ThrowEnd> || std::is_same_v<M, p::Activity> ||
                            std::is_same_v<M, p::CarLend> || std::is_same_v<M, p::Link> ||
                            std::is_same_v<M, p::Waypoint> || std::is_same_v<M, p::Defended> ||
-                           std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::Breach>)
+                           std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::Breach> ||
+                           std::is_same_v<M, p::StatusVisuals>)
           return &m.player;
         else
           return nullptr;
@@ -319,16 +320,7 @@ constexpr p::PlayerId kTakenByUnknown = 0xFFFFFFFF;
 
 Speaker SpeakerOf(std::size_t index) { return kSaidBy.at(index); }
 
-const char *MessageName(std::size_t index) {
-  static const auto names = [] {
-    std::vector<const char *> out;
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-      (out.push_back(p::NameOf(p::Message(std::in_place_index<I>))), ...);
-    }(std::make_index_sequence<std::variant_size_v<p::Message>>{});
-    return out;
-  }();
-  return index < names.size() ? names[index] : "?";
-}
+const char *MessageName(std::size_t index) { return p::NameOfKind(index); }
 
 std::string Finding::Line() const {
   return std::format("{}: [{}] {}", hint ? "referee-hint" : "referee", rule, text);

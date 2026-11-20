@@ -26,7 +26,7 @@ still see or hear.
   draws and holsters from `Held`; pain from a fall of `Presence`'s health;
   going down from `Vitals`; time abilities from `TimeEffect`. None of it
   costs a byte.
-- **Sent: only what the receiver cannot know.** Three messages, appended
+- **Sent: only what the receiver cannot know.** Four messages, appended
   to the protocol with no version bump:
 
   <!-- prettier-ignore -->
@@ -35,6 +35,7 @@ still see or hear.
   | `Presence` | Event, kept for late joiners | < 16 | a V's health (a byte) and flags (in a menu, photo mode, in combat); at once on a loss or a flag, else 5 Hz at most |
   | `Cue` | State (a late one is worthless) | < 32 | where a shot's bullet ended; that a melee swing landed, and where |
   | `NpcReaction` | State for a twitch, else Event | < 40 | host only: the hit reaction one of its NPCs starts, as the animation feature the game filled |
+  | `StatusVisuals` | Event, kept for late joiners | < 160 | the status effects that show on a V (burning, shock, a heal's glow…): their record ids, the whole set on every change, at most 16 |
 
 - **Played by the game's own rules.** Every sound is queued on the puppet
   entity (`AudioEvent`, `SoundPlayVo`, `entFootPlantedEvent`,
@@ -221,6 +222,66 @@ holocall up`; `hud: party list hidden (party_hud off)`.
   player (`session.md`) is matched by the name it asked for, so it keeps
   "V (2)". A name freed by a player leaving is given again.
 
+### 8. Status effects
+
+What the owner's V wears that shows on it (burning, shock, EMP, poison,
+bleeding, overheat, the user's OverclockOverheat mod's burning, optical
+camo, a Sandevistan's or Kerenzikov's trail, Berserk, a heal's glow, any
+cyberware activation with a look) is seen on its puppet: the game's own
+effects for that status effect, never its gameplay
+(`scripts/tandem/StatusVisuals.reds`; engine facts
+[`../research/engine/combat.md`](../research/engine/combat.md) §13.75).
+
+- **Which ones, with no hand list.** A record shows when its own `VFX` list
+  names an effect, or one of its packages runs a visual effector:
+  `PlayVFXEffector` (its `vfxName`), `ApplyShaderEffector` (a material
+  override on the owner or its weapons), `ApplyShaderOnObjectEffector` on
+  its owner. Its `SFX` play with it. Every other effector is gameplay and
+  is left out. The same reading on both sides, from TweakDB alone
+  (`TandemStatusVisuals.Read`), so a vanilla record a mod applies (the
+  burning of OverclockOverheat) is the same case as the game's own.
+- **Sent as state.** Four times a second the owner's game lists its V's
+  applied effects that show (`StatusEffectHelper.GetAppliedEffects`) and
+  sends the set when it changes (`StatusVisuals`: sorted, at most 16,
+  `presence::StatusSet`; the host stamps the player, keeps everyone's
+  latest for late joiners and in a resync, an empty set too, and relays
+  it). A repeat is neither sent nor applied.
+- **Played, not applied.** The receiver plays each record the way
+  `GameObject.OnStatusEffectApplied` plays any status effect on a
+  character: `StartEffectEvent` for each VFX name, `PlaySoundEvent` for each
+  SFX name, and the visual effectors' own action (the material override as
+  a static game effect enabled for the puppet), then `BreakEffectLoopEvent`,
+  `StopSoundEvent` and the override off when the record leaves the set
+  (`presence::StatusDiff`). Names two records share are counted, so the
+  first to end does not break the other's. **Why not apply a copy of the
+  status effect to the puppet**: a real copy runs its damage ticks and stat
+  modifiers on the puppet, its AI reactions (an NPC on fire runs about),
+  and every hit on a puppet is forwarded to the V it stands for
+  (`Combat.reds`): the burn would hurt that V a second time. The events
+  alone are the effect's whole look with none of that.
+- **Optical camo** stays Stealth's (`stealth.md`): the puppet wears the camo
+  record itself, so it is as transparent as the V (the same record, its own
+  material), and the host's NPCs meet the vision blocker the V's game
+  decided on. The status visuals never send a record tagged
+  `CamoActiveOnPlayer`, and never play a record the puppet already wears
+  for real.
+- **Time abilities**: a Sandevistan's or Kerenzikov's record plays its
+  sounds once: whichever of the ability's sounds (`Ability`, from
+  `TimeEffect`) and the record's starts first keeps it.
+- **Consistency**: a hidden puppet (another world, a private scene's fade)
+  shows nothing until it is back; a rebuilt body starts afresh; a player
+  who leaves or vanishes takes its effects with it (`ForgetPlayer`); the
+  session's end stops every one and clears our sent set.
+- **A record the receiving game does not have** (a mod's, installed on one
+  side only) is skipped, with a notice once a session ("NAME shows an
+  effect this game doesn't know (a mod?): not shown.", `Status-Unknown`).
+  No mod-compat resolver is in integration yet; this is where one would
+  map such a record.
+- **Logs**: `status: our V shows N effect(s) to the others: …`, `status:
+player P shows REC on its puppet (E effect(s), S sound(s), M
+material(s))`, `… no longer shows REC …`, `status: first play of NAME on
+a puppet`, `status: player P's effects cleared (puppet gone)`.
+
 ## Tests
 
 - `tests/presence_test.cpp`: strides and gaits, a mock player with no
@@ -230,7 +291,8 @@ holocall up`; `hud: party list hidden (party_hud off)`.
   down, abilities, health in a byte, the send gate, the HUD's status
   priority, the bearing and its arrow, the screen projection, distances,
   the nameplate's fade, near / always / off (size and opacity by
-  distance), the flinch.
+  distance), the flinch; status visuals: one set (sorted, no repeat, the
+  bound), what starts and stops as it changes, a vanish.
 - `tests/names_test.cpp`: typed names (trim, length in characters, UTF-8,
   controls, comment signs), the default, what a host shows for anything
   sent, unique names.
@@ -240,10 +302,13 @@ holocall up`; `hud: party list hidden (party_hud off)`.
   returning player keeps its shown name.
 - `tests/pose_test.cpp`: the flinch leans the upper body about the body's
   axes and leaves hips and legs alone.
-- `tests/protocol_test.cpp`, `tests/endpoint_test.cpp`: the three messages
+- `tests/protocol_test.cpp`, `tests/endpoint_test.cpp`: the four messages
   round-trip, travel on the right channels, stay small, are stamped by the
-  host, reach late joiners (Presence) or never do (Cue), and only the host
-  sends reactions.
+  host, reach late joiners (Presence, StatusVisuals) or never do (Cue), and
+  only the host sends reactions; a status set refused unsorted, repeated or
+  over the bound; over loopback, a guest's set reaches the host stamped, a
+  repeat says nothing, a cleared set is an empty set, a late joiner hears
+  both, a vanished guest's goes everywhere.
 
 ## In game
 
@@ -261,10 +326,12 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | `names-duplicate` | two mock players named V and v beside our V: shown as V (2) and v (3), each told its own, markers and HUD entries under those names |
 | `presence-reactions` | as a guest: impact, stagger, knockdown, ragdoll and its end on a proxy |
 | `presence-reactions-host` | as host: a guest's hits make our NPCs react, and each reaction goes out |
+| `presence-status` | a partner burns, goes camo and heals: each record's visuals on its puppet, Stealth's camo worn for real, an unknown record skipped with its notice; our own V's effect sent; a vanish clears its puppet |
 
 By hand: `tools/game.sh cmd presence report | steps auto|on|off | vo NAME |
 sound NAME | fx NAME | flinch | bullet | hud [at X Y | fov h|v | camera] |
-react TYPE`; `coop name` (the name, and whether the menu would ask),
+react TYPE | status apply|remove REC | status block|unblock NAME |
+status report`; `coop name` (the name, and whether the menu would ask),
 `coop name reset` (ask again), `coop name answer TEXT` / `coop name
 cancel` (answer the open name popup), `coop set nameplates
 near|always|off`.
@@ -272,7 +339,8 @@ near|always|off`.
 The mock player: `--hold RECORD`, `--holster-at N`, `--shoot N` (now also
 as host, with the bullet's end), `--melee N`, `--hurt N`, `--menu-at N`,
 `--react-npcs N` (host), `--unlink-at N` (breaks its links), `--name NAME`
-(logs `the session shows us as …` when the host renamed it).
+(logs `the session shows us as …` when the host renamed it), `--status
+REC@FROM-TO[,…]` (status effects on its V), `--camo N --camo-record REC`.
 
 ## Open
 
@@ -289,3 +357,12 @@ as host, with the bullet's end), `--melee N`, `--hurt N`, `--menu-at N`,
 - Codeware's text field draws what is typed in capitals: whether its
   `GetText` gives the case typed (what is saved and shown) is to see in
   game.
+- Status effects, to see in game: that the player's records' effect names
+  resolve on the puppet's body (`player_*_tpp.ent`), and to a body effect,
+  not to the first-person screen effect the same name means on V's own
+  entity (a burning screen on the partner's view would be a bug: `presence
+status block NAME` keeps a name off while it is fixed); whether V's own
+  camo record runs its material on an NPC body; which records are on a V
+  all the time and so always sent (the first `status: our V shows` line);
+  whether Time.reds' guessed Sandevistan trail (`sandevistan_medium_00`) is
+  still needed once the record's own effect plays.

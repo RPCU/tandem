@@ -212,3 +212,25 @@ TEST_CASE("a shot that arrives late catches up with the host's timeline") {
   CHECK(TimeBubbles::ShotCatchUp(2'000'000, 1'000'000) == TimeBubbles::CatchUp{});
   CHECK(TimeBubbles::ShotCatchUp(1'000'000, 2'500'000) == TimeBubbles::CatchUp{});
 }
+
+TEST_CASE("the partner's cue names whose bubble slows its V, and nobody when none does") {
+  using tandem::proto::kNoPlayer;
+  const std::vector<Owner> owners{{.player = 1, .scale = 0.25f, .position = {0, 0, 0}},
+                                  {.player = 2, .scale = 0.5f, .position = {60, 0, 0}},
+                                  {.player = 3, .scale = 0.25f, .position = {100, 0, 0}}};
+  // The strongest around it; of two as strong, the nearer.
+  CHECK(TimeBubbles::SlowedBy(4, 1.f, {30, 0, 0}, owners) == 1);
+  CHECK(TimeBubbles::SlowedBy(4, 1.f, {90, 0, 0}, owners) == 3);
+  CHECK(TimeBubbles::SlowedBy(4, 1.f, {200, 0, 0}, owners) == 3); // 1 is out of reach
+  CHECK(TimeBubbles::SlowedBy(4, 1.f, {600, 0, 0}, owners) == kNoPlayer);
+  // Its own ability matches the bubble: not slowed, so no cue and no name.
+  CHECK(TimeBubbles::SlowedBy(4, 0.25f, {30, 0, 0}, owners) == kNoPlayer);
+  CHECK(TimeBubbles::SlowedBy(1, 0.25f, {0, 0, 0}, owners) == kNoPlayer);
+  // A weaker one is still slowed, by the ratio: the cue plays, naming the
+  // nearer of the two strongest (3 is 40 m away, 1 is 60 m).
+  CHECK(TimeBubbles::SlowedBy(2, 0.5f, {60, 0, 0}, owners) == 3);
+  // The margin on the way out, as PlayerFactor's.
+  const std::vector<Owner> one{{.player = 1, .scale = 0.2f, .position = {0, 0, 0}}};
+  CHECK(TimeBubbles::SlowedBy(2, 1.f, {160, 0, 0}, one) == kNoPlayer);
+  CHECK(TimeBubbles::SlowedBy(2, 1.f, {160, 0, 0}, one, true) == 1);
+}

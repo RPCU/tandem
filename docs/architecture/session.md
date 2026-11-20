@@ -64,7 +64,10 @@ through the relay by its **join code** (see [The relay](relay.md)). A guest
 joining by code goes through the relay; given the host's address too, it
 tries that first and switches to the relay when the host has not answered
 within half the timeout (2.5 s), without reporting an end in between
-(`JoinTarget` in `endpoint.hpp`).
+(`JoinTarget` in `endpoint.hpp`). Direct by hand: the co-op menu's Join by
+address (`coop-menu.md`), as `role = join` with `address` would, its last
+address kept as `last_address`. IPv4 only (ENet): an IPv6 address is
+refused in words (`hosts::Check`, `tests/hosts_test.cpp`).
 
 ## Inside the plugin
 
@@ -91,7 +94,7 @@ idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
   private_actors, private_scenes, public_scenes, time_host, friendly_fire
   (the host's session rule, `combat-coverage.md`); `enemy_scaling`,
   `enemy_scaling_health` (the host's too, `npcs.md`); `link`,
-  `pings` (`comms.md`); `relay`,
+  `pings` (`comms.md`); `last_address` (Join by address); `relay`,
   `relay_token`, `join` for the relay and join codes; `recorder`,
   `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`, see
   `recordings.md`; `friendly_fire`, `notices`, `markers`, `nameplates`, `party_hud`,

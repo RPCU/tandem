@@ -503,6 +503,19 @@ struct TandemStory : Red::IScriptable {
   // Host: `npc` acts in the scene we announce (scene replay's cast).
   static bool SceneCasts(std::uint32_t npc) { return Story::Get().Stage().Casts(npc); }
 
+  // Host: the backstop's word on a guest's act on an NPC (story::GuestAct: 0
+  // a strike, 1 a takedown, 2 a quickhack), with `moment` whether our V is
+  // in a restricted moment and what the NPC is (story::SceneActor): 0 let
+  // through, 1 refused, 2 refused and to be said in the log (once a second
+  // for each kind of act).
+  static std::int32_t BackstopRefuses(bool moment, bool cast, bool questNpc, bool kept,
+                                      bool inScene, std::int32_t act) {
+    const auto verdict = Story::Get().Backstop().Judge(
+        moment, {.cast = cast, .quest = questNpc, .kept = kept, .inScene = inScene},
+        static_cast<story::GuestAct>(std::clamp(act, 0, 2)), Runtime::Get().HostNowUs());
+    return verdict.refuse ? (verdict.log ? 2 : 1) : 0;
+  }
+
   // Guest, a few times a second: whether our V is in the host's story moment
   // (core/story.hpp InMoment, with the staged scene when scene replay says
   // where it is), and what to put on our V now: the host's set while in it,
@@ -805,6 +818,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SendEffect);
   RTTI_METHOD(SendRestrictions);
   RTTI_METHOD(SceneCasts);
+  RTTI_METHOD(BackstopRefuses);
   RTTI_METHOD(RestrictUpdate);
   RTTI_METHOD(RestrictRemovals);
   RTTI_METHOD(RestrictLift);
