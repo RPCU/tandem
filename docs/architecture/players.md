@@ -50,6 +50,19 @@
   is left off, the rest of the look is theirs. Resolved in the natives
   (`RemoteHeld`, `RemoteItems`, `ApplyRemoteLook`), told on screen once per
   partner and kind.
+- **What a look shows** (`TandemOutfit.Shown`, `Modest`): exactly what the
+  sender's game renders. The paper doll's visual item per area, unless the
+  slot is hidden: a scene that undresses V (a shower hides the slots or
+  takes the clothes off, engine-knowledge §13.85) removes them from the
+  look, and the underwear vanilla shows then (the bottom unless V has the
+  genitals option, the top in a censored game) is in it, since it is in
+  the paper doll's areas. Checked every 2 s, and four times a second
+  during an interaction and 5 s after (`activities.md`, "V's homes"), so
+  the puppet undresses and dresses with V. On the receiving side a
+  censored game (`IsNudityAllowed` false) adds the basic underwear
+  (`Items.Underwear_Basic_01_Top`, `_Bottom`) where the look leaves the
+  body bare: never more than the sender's game shows. To check in game:
+  that the puppet's record takes items in the underwear slots.
 - **Player markers** (`scripts/tandem/Markers.reds`,
   `tweaks/tandem/markers.tweak`): every remote player has a marker in the
   world, on the minimap and on the world map, the way the game marks your

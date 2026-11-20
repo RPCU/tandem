@@ -1665,8 +1665,9 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_revive) {
         this.m_revive.Command(command);
       }
-    } else if (StrBeginsWith(command, "skip ") || StrBeginsWith(command, "busy")) && IsDefined(this.m_activities) {
-      // Activities.reds: skip ask HOURS | skip accept | skip decline | busy KIND|off | busy report.
+    } else if (StrBeginsWith(command, "skip ") || StrBeginsWith(command, "busy") || StrBeginsWith(command, "apartment")) && IsDefined(this.m_activities) {
+      // Activities.reds: skip ask HOURS | skip accept | skip decline | busy KIND|off | busy report
+      // | apartment report.
       this.m_activities.Command(command);
     } else if StrBeginsWith(command, "elsewhere") && IsDefined(this.m_elsewhere) {
       // Elsewhere.reds: elsewhere test PLACE|off, elsewhere state.
@@ -3107,7 +3108,9 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     puppet.appearanceChanges = TandemNative.RemoteAppearanceChanges(puppet.player);
-    let items = TandemNative.RemoteItems(puppet.player);
+    // What their game shows (a shower: underwear, or less), never more; our
+    // own game's censorship on top (Outfit.reds).
+    let items = TandemOutfit.Modest(this.GetGameInstance(), TandemNative.RemoteItems(puppet.player));
     // A stand-in body (no look of theirs before): their V again once their
     // look has a body; until then it keeps the donor's own clothes.
     if this.IsStandInRecord(puppet.record) {

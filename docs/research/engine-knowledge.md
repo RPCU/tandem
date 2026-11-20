@@ -110,6 +110,7 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.70 | World vehicles changing hands, the owner's turret, passenger combat in a copy | `vehicles.md`       |
 | 13.75 | A status effect's look, without its gameplay                                  | `combat.md`         |
 | 13.80 | Vendors: what the shop's screen is bound to, from a proxy                     | `ui.md`             |
+| 13.85 | Apartment interactions: what runs them, what they change                      | `apartments.md`     |
 | 14.1  | What a script can do                                                          | `autopilot.md`      |
 | 14.2  | Virtual input                                                                 | `autopilot.md`      |
 

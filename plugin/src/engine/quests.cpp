@@ -32,8 +32,9 @@
 //   questQuestsSystem (0x300): +0x60 SharedSpinLock, +0x68 Handle<root phase>
 //
 // Which phases freeze: every phase but the root and the open-world ones
-// (Codeware's list, src/App/Quest/QuestPhaseRegistry.cpp:12-20, plus
-// tandem.ini quest_freeze_allow), and any phase under an open-world one
+// (Codeware's list, src/App/Quest/QuestPhaseRegistry.cpp:12-20, V's homes'
+// interactions, plus tandem.ini quest_freeze_allow), and any phase under an
+// open-world one
 // (by node path prefix, as Codeware's IsRelatedQuestNodePath). A phase is
 // recognised as open-world from its own resource or from an ancestor in
 // the context's phase stack (ExecuteGraph pushes each phase it runs).
@@ -91,6 +92,18 @@ constexpr const char *kOpenWorld[] = {
     R"(base\open_world\phases\city_entities\city_entities.questphase)",
     R"(base\open_world\vendors\open_world_vendors.questphase)",
     R"(base\quest\bugfixing\open_world_bugfixing.questphase)",
+};
+
+// V's homes: each player's own apartment interactions (the shower, the bed,
+// the coffee, the cat, the decorations) keep running on a frozen guest, as
+// its own surroundings do (docs/architecture/activities.md, "Apartments";
+// engine-knowledge §13.85). The four bought apartments' phases are not named
+// in the resource list: `quest trace on` logs them, quest_freeze_allow adds
+// them.
+constexpr const char *kPersonal[] = {
+    R"(base\quest\minor_quests\mq000\phases\mq000_vs_apartment_interactions.questphase)",
+    R"(base\quest\minor_quests\mq000\phases\mq000_vs_apartment_decorations.questphase)",
+    R"(dlc\dlc6_apart\phases\dlc6_apart_judy_apartment.questphase)",
 };
 
 using ExecuteNodeFn = std::uint8_t (*)(void *phase, void *node, void *context, const void *socket,
@@ -451,6 +464,8 @@ bool InstallQuestFreeze(const RED4ext::v1::Sdk *sdk, RED4ext::v1::PluginHandle h
   {
     std::lock_guard _(g_lock);
     for (const auto *path : kOpenWorld)
+      g_allowed.insert(RED4ext::ResourcePath(path).hash);
+    for (const auto *path : kPersonal)
       g_allowed.insert(RED4ext::ResourcePath(path).hash);
     for (const auto &path : allow)
       g_allowed.insert(RED4ext::ResourcePath(path.c_str()).hash);

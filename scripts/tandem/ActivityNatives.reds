@@ -46,4 +46,8 @@ public native class TandemActivity extends IScriptable {
   public static native func AnswerSkip(asker: Uint32, request: Uint32, accepted: Bool, why: Int32) -> Void;
   public static native func WithdrawSkip() -> Void;
   public static native func TakeSkips() -> array<TandemSkipEvent>;
+  // The scene our game plays now (its resource path hash; 0: none), and
+  // whether it is one of V's homes' interactions (the shower, the bed...).
+  public static native func OurScene() -> Uint64;
+  public static native func ApartmentScene(scene: Uint64) -> Bool;
 }

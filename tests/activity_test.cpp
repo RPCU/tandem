@@ -133,6 +133,33 @@ TEST_CASE("the time skip arbiter: every other player says yes, or nothing moves"
     CHECK(down->by == 1);
     CHECK_FALSE(arbiter.Open());
   }
+  SUBCASE("two beds at once: a sleeper still to answer joins the open one") {
+    REQUIRE_FALSE(arbiter.Ask(skip, false, {1, 2, 3}, {}, t0));
+    proto::TimeSkip bed{.from = 3,
+                        .request = 7,
+                        .reason = proto::SkipReason::Sleep,
+                        .fromSeconds = 10 * 3600,
+                        .toSeconds = 18 * 3600};
+    CHECK(arbiter.Joins(bed));
+    auto wheel = bed;
+    wheel.reason = proto::SkipReason::Wait;
+    CHECK_FALSE(arbiter.Joins(wheel)); // a wheel waits for its own hours
+    auto own = bed;
+    own.from = 2;
+    CHECK_FALSE(arbiter.Joins(own)); // the asker has no vote
+    auto stranger = bed;
+    stranger.from = 9;
+    CHECK_FALSE(arbiter.Joins(stranger)); // never asked (a late joiner)
+    // Its own request is refused, the open one is untouched until it votes.
+    const auto busy = arbiter.Ask(bed, false, {1, 2, 3}, {}, t0);
+    REQUIRE(busy);
+    CHECK(busy->why == proto::kSkipBusy);
+    CHECK(arbiter.Open()->from == 2);
+    CHECK_FALSE(arbiter.Vote({.from = 3, .asker = 2, .request = 1, .accepted = true}));
+    CHECK_FALSE(arbiter.Joins(bed)); // answered already
+    arbiter.Reset();
+    CHECK_FALSE(arbiter.Joins(bed)); // nothing open: a request of its own
+  }
   SUBCASE("something gets in the way while it is open") {
     REQUIRE_FALSE(arbiter.Ask(skip, false, {1, 2}, {}, t0));
     CHECK_FALSE(arbiter.Block({}));
@@ -360,6 +387,35 @@ TEST_CASE("a time skip is asked of every other player and applied only when all 
     REQUIRE(Pump(s.All(), Collect(heard, [&] { return !heard[1].ended.empty(); })));
     CHECK(heard[1].ended.front().outcome == proto::SkipOutcome::Applied);
   }
+}
+
+TEST_CASE("two players in two beds: the second sleep is a yes to the first") {
+  auto s = Three();
+  std::vector<Skips> heard;
+  const auto first = s.a->AskTimeSkip(proto::SkipReason::Sleep, 3600, 9 * 3600);
+  REQUIRE(Pump(s.All(), Collect(heard, [&] { return !heard[2].asked.empty(); })));
+  // b goes to bed too: its own request is refused to it alone, and the hours
+  // pass once the host agrees.
+  const auto second = s.b->AskTimeSkip(proto::SkipReason::Sleep, 3600, 8 * 3600);
+  REQUIRE(Pump(s.All(), Collect(heard, [&] { return !heard[2].ended.empty(); })));
+  CHECK(heard[2].ended.front().request == second);
+  CHECK(heard[2].ended.front().why == proto::kSkipBusy);
+  CHECK(heard[2].ended.front().by == s.a->You());
+  REQUIRE(Pump(s.All(), Collect(heard, [&] { return heard[1].votes.size() == 1; })));
+  CHECK(heard[1].votes.front().from == s.b->You());
+  CHECK(heard[1].votes.front().accepted);
+  REQUIRE(s.host->OpenTimeSkip());
+  s.host->AnswerTimeSkip(s.a->You(), first, true);
+  REQUIRE(Pump(s.All(), Collect(heard, [&] {
+                 return !heard[0].ended.empty() && !heard[1].ended.empty() &&
+                        heard[2].ended.size() == 2;
+               })));
+  for (const auto &h : heard) {
+    CHECK(h.ended.back().request == first);
+    CHECK(h.ended.back().outcome == proto::SkipOutcome::Applied);
+    CHECK(h.ended.back().toSeconds == 9 * 3600);
+  }
+  CHECK(heard[0].ended.size() == 1); // the second request never reached the host's game
 }
 
 TEST_CASE("a time skip nobody can take is refused at once, and only the asker hears") {

@@ -32,6 +32,39 @@ public abstract class TandemOutfit {
     return shown;
   }
 
+  // What a puppet wears in our game: the clothes its player's game shows,
+  // and, when our own game is censored (no nudity), the basic underwear
+  // wherever they leave the body bare, as our game does for our own V
+  // (EquipmentSystemPlayerData.GetPaperDollSlots, IsBuildCensored). Never
+  // more than theirs shows; less only where ours would never show it (a
+  // shower in theirs, uncensored, without underwear).
+  public static func Modest(game: GameInstance, records: array<TweakDBID>) -> array<TweakDBID> {
+    if GameInstance.GetCharacterCustomizationSystem(game).IsNudityAllowed() {
+      return records;
+    }
+    let top = false;
+    let bottom = false;
+    for record in records {
+      let area = EquipmentSystem.GetEquipAreaType(ItemID.FromTDBID(record));
+      if Equals(area, gamedataEquipmentArea.Outfit) {
+        top = true;
+        bottom = true;
+      } else if Equals(area, gamedataEquipmentArea.InnerChest) || Equals(area, gamedataEquipmentArea.OuterChest) || Equals(area, gamedataEquipmentArea.UnderwearTop) {
+        top = true;
+      } else if Equals(area, gamedataEquipmentArea.Legs) || Equals(area, gamedataEquipmentArea.UnderwearBottom) {
+        bottom = true;
+      }
+    }
+    let out = records;
+    if !top {
+      ArrayPush(out, t"Items.Underwear_Basic_01_Top");
+    }
+    if !bottom {
+      ArrayPush(out, t"Items.Underwear_Basic_01_Bottom");
+    }
+    return out;
+  }
+
   // Puts the records on `puppet` the way the game dresses a puppet of V
   // (EquipmentSystemPlayerData.ChangeAppearanceToItem): a preview copy, then
   // that copy in the item's placement slot. Answers how many were placed.

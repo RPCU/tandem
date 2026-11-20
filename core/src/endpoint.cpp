@@ -4159,8 +4159,17 @@ void Endpoint::OnTimeSkip(proto::TimeSkip skip, std::vector<SessionEvent> &out) 
   const bool fromHost = skip.from == m_you;
   const auto blocker =
       skip.reason == proto::SkipReason::Quest ? activity::Blocker{} : SkipBlocker();
+  // Two beds at once: the second sleeper's request is refused (one at a
+  // time) and is its yes to the open one, voted after the refusal so its
+  // game knows it joined before the hours pass.
+  std::optional<proto::TimeSkipVote> joins;
+  if (const auto &open = m_skips.Open(); open && m_skips.Joins(skip))
+    joins = proto::TimeSkipVote{
+        .from = skip.from, .asker = open->from, .request = open->request, .accepted = true};
   if (const auto ended = m_skips.Ask(skip, fromHost, std::move(voters), blocker, net::NowUs())) {
     EndTimeSkip(*ended, false, out);
+    if (joins)
+      OnTimeSkipVote(*joins, out);
     return;
   }
   // Open: everyone else is asked (the host's own game too).

@@ -53,6 +53,12 @@ public:
   std::optional<proto::TimeSkipResult> Ask(const proto::TimeSkip &skip, bool fromHost,
                                            std::set<proto::PlayerId> voters, Blocker blocker,
                                            std::uint64_t nowUs);
+  // Two beds at once: a player who goes to sleep while another's skip is
+  // open, and is still to answer it, wants the hours to pass too. Its own
+  // request is refused (one at a time, kSkipBusy, as Ask says) and counts as
+  // its yes to the open one (the caller votes it). Never a wheel's (it
+  // waits for its own hours), never the asker's own.
+  bool Joins(const proto::TimeSkip &skip) const;
   // An answer. The asker's own `false` withdraws its request. Returns the
   // result when it concludes; votes about another request are ignored.
   std::optional<proto::TimeSkipResult> Vote(const proto::TimeSkipVote &vote);

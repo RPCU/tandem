@@ -8,13 +8,17 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "activity.hpp"
+#include "engine/scenes.hpp"
 
 #include "tandem/activity.hpp"
 #include "tandem/interpolation.hpp"
 
 #include <RedLib.hpp>
 
+#include <RED4ext/ResourcePath.hpp>
+
 #include <algorithm>
+#include <array>
 
 namespace tandem::plugin {
 // A player's activity (proto::Activity; plain fields: the script VM aligns
@@ -63,6 +67,18 @@ TandemBusyState ToScript(const proto::Activity &state) {
   out.yaw = state.yaw;
   return out;
 }
+
+// The scenes V's homes run their interactions in (shower, bed, coffee, the
+// cat, the guitar...): docs/architecture/activities.md, "Apartments";
+// engine-knowledge §13.85. Read from the game's resource list (Codeware's
+// KnownHashes); the four bought apartments' own scenes are not named there.
+constexpr const char *kApartmentScenes[] = {
+    R"(base\quest\minor_quests\mq000\scenes\mq000_01_apartment.scene)",
+    R"(dlc\dlc6_apart\scenes\dlc6_apart_judy_apartment_interactions.scene)",
+    R"(base\open_world\scenes\mirrors\mirror_scene_v_penthouse.scene)",
+    R"(base\open_world\scenes\mirrors\mirror_scene_judys_apartment.scene)",
+    R"(base\open_world\scenes\mirrors\mirror_scene_peralez_penthouse.scene)",
+};
 
 TandemSkipEvent ToScript(const SkipEvent &event) {
   TandemSkipEvent out;
@@ -155,6 +171,20 @@ struct TandemActivity : Red::IScriptable {
     return out;
   }
 
+  // The scene our game plays now (its quest node ran in the last 3 s; 0:
+  // none, or the scene hook is out): its resource path hash.
+  static std::uint64_t OurScene() { return engine::ScenePlaying(3000); }
+  // That scene is one of V's homes' interactions.
+  static bool ApartmentScene(std::uint64_t scene) {
+    static const auto hashes = [] {
+      std::array<std::uint64_t, std::size(kApartmentScenes)> out{};
+      for (std::size_t i = 0; i < out.size(); ++i)
+        out[i] = RED4ext::ResourcePath(kApartmentScenes[i]).hash;
+      return out;
+    }();
+    return scene != 0 && std::ranges::find(hashes, scene) != hashes.end();
+  }
+
   RTTI_IMPL_TYPEINFO(TandemActivity);
   RTTI_IMPL_ALLOCATOR();
 };
@@ -195,4 +225,6 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemActivity, "TandemActivity", {
   RTTI_METHOD(AnswerSkip);
   RTTI_METHOD(WithdrawSkip);
   RTTI_METHOD(TakeSkips);
+  RTTI_METHOD(OurScene);
+  RTTI_METHOD(ApartmentScene);
 });

@@ -21,6 +21,11 @@
 //   asked. Each game whose clock moved starts a new epoch (the crowd is new).
 // - Leaving a mirror, the ripperdoc or the wardrobe sends our look again
 //   (TandemSystem.RefreshLook; an unchanged look is sent to nobody).
+// - Interactions (a workspot or a scene that holds our V: V's homes' shower,
+//   bed, coffee, the cat...) are traced from start to end: the scene, the
+//   clothes shown (a shower undresses V: our look goes again at once, and
+//   again when the clothes come back), the clock, the apartment buffs our V
+//   gained (status effects of type Housing; they stay ours).
 
 public class TandemBusyPuppet {
   public let player: Uint32;
@@ -83,6 +88,26 @@ public class TandemActivities {
   // Since when our V is in a workspot: told once it has settled into it
   // (its entry carries the body into the seat first).
   private let m_spotSince: Float;
+  // The device whose screen we use (a computer's, a terminal's: its
+  // EntityID hash), told with the rest.
+  private let m_device: Uint64;
+  // Our bed's jump was seen in this workspot: we lie asleep in it (kind 2).
+  private let m_sleeping: Bool;
+
+  // ---- the interaction we are in (a workspot, or a scene holding our V) ----
+  private let m_inter: Bool;
+  private let m_interSince: Float;
+  private let m_interScene: Uint64;
+  private let m_interSpot: Uint64;
+  private let m_interTier: Int32;
+  private let m_interClock: Int32;
+  private let m_interClothes: Int32;
+  private let m_interFewest: Int32;
+  private let m_interBuffs: array<TweakDBID>;
+  // When the last one ended: the look is watched a little longer (the
+  // clothes come back after the scene lets go).
+  private let m_interEnded: Float;
+  private let m_worn: array<TweakDBID>;
 
   // ---- the clock ----
   private let m_clockReady: Bool;
@@ -104,6 +129,9 @@ public class TandemActivities {
   private let m_wheelHours: Int32;
   // The wheel our yes is applying (its Apply goes through once).
   private let m_granting: wref<TimeskipGameController>;
+  // Two beds at once: our sleep counts as our yes to this player's open
+  // request (the host's arbiter joined it, activity::SkipArbiter::Joins).
+  private let m_joined: Uint32;
   // Another player's, waiting for our answer.
   private let m_prompt: ref<TandemSkipPrompt>;
   private let m_listening: Bool;
@@ -142,11 +170,13 @@ public class TandemActivities {
       this.HidePrompt();
       this.ReleaseAll();
       this.m_asking = false;
+      this.m_joined = 0u;
       this.m_wheel = null;
     }
     this.m_you = you;
     this.SampleOurs();
     this.WatchClock();
+    this.TrackInteraction();
     if you == 0u {
       return;
     }
@@ -195,6 +225,7 @@ public class TandemActivities {
     }
     let kind = 0;
     let flags = 0;
+    let device = 0ul;
     let workspot = 0ul;
     let entry = 0;
     let anim = n"None";
@@ -203,7 +234,14 @@ public class TandemActivities {
     if inSpot && !this.m_wasInSpot {
       this.m_spotSince = this.m_now;
     }
+    if !inSpot {
+      this.m_sleeping = false;
+    }
     let settled = inSpot && this.m_now - this.m_spotSince >= 1.0;
+    // A device's screen up close (a computer, a terminal, a smart window:
+    // Device.SetZoomBlackboardValues), and which device.
+    let psm = player.GetPlayerStateMachineBlackboard();
+    let zoomed = IsDefined(psm) && psm.GetBool(GetAllBlackboardDefs().PlayerStateMachine.IsUIZoomDevice);
     if this.m_test != 0 {
       kind = this.m_test;
       flags = 1;
@@ -213,11 +251,19 @@ public class TandemActivities {
     } else if this.m_menu != 0 {
       kind = this.m_menu;
       flags = 1;
+    } else if zoomed {
+      kind = 3;
+      flags = 1;
+      device = Cast<Uint64>(EntityID.GetHash(psm.GetEntityID(GetAllBlackboardDefs().PlayerStateMachine.UIZoomDeviceID)));
+    } else if settled && this.m_sleeping {
+      // Asleep in a bed: lying, held where it lies.
+      kind = 2;
+      flags = 3;
     } else if settled {
       kind = 1;
       flags = 1;
     }
-    if settled && (kind == 1 || kind == 4 || kind == 5) {
+    if settled && (kind == 1 || kind == 2 || kind == 4 || kind == 5) {
       let instance = spots.GetWorkspotInstance(player.GetEntityID());
       if IsDefined(instance) && IsDefined(instance.resource) {
         let path = instance.resource.path;
@@ -236,21 +282,105 @@ public class TandemActivities {
     if this.m_kind == 7 && kind != 7 {
       TandemSync.WorldRebuilt(4);
     }
-    if kind == this.m_kind && flags == this.m_flags && workspot == this.m_workspot && entry == this.m_entry {
+    if kind == this.m_kind && flags == this.m_flags && workspot == this.m_workspot && entry == this.m_entry && device == this.m_device {
       return;
     }
     // Held where it began: a seat's place, not wherever the animation
-    // carries the root.
+    // carries the root (from sitting to sleeping in the same bed: the same).
     if this.m_kind == 0 || kind == 0 || workspot != this.m_workspot {
       this.m_anchor = player.GetWorldPosition();
       this.m_facing = player.GetWorldOrientation();
     }
-    TandemActivity.SetOurs(kind, flags, 0ul, workspot, entry, anim, this.m_anchor, this.m_facing);
-    TandemNative.Log(s"activities: our V is busy \(TandemActivities.KindName(kind)) (flags \(flags), workspot \(workspot), entry \(entry))");
+    TandemActivity.SetOurs(kind, flags, device, workspot, entry, anim, this.m_anchor, this.m_facing);
+    TandemNative.Log(s"activities: our V is busy \(TandemActivities.KindName(kind)) (flags \(flags), workspot \(workspot), entry \(entry), device \(device))");
     this.m_kind = kind;
     this.m_flags = flags;
     this.m_workspot = workspot;
     this.m_entry = entry;
+    this.m_device = device;
+  }
+
+  // ---- the interaction we are in ----
+
+  // A workspot, or a scene that holds our V (tier 2 and up): V's homes'
+  // shower, bed, coffee machine, sink, couch, the cat, the guitar... One
+  // line when it begins, one when it ends with what it did: how long, the
+  // scene (an apartment's?), the clothes shown (fewest on the way: a shower
+  // undresses V), the clock, the apartment buffs gained. While it lasts
+  // and a little after, a change of the clothes shown sends our look at
+  // once (not at the next 2 s check): the others see V undressed when our
+  // game shows it so, and dressed again when it does.
+  private func TrackInteraction() -> Void {
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) || this.m_you == 0u {
+      this.m_inter = false;
+      return;
+    }
+    let tier = PlayerPuppet.GetSceneTier(player);
+    let inSpot = GameInstance.GetWorkspotSystem(this.m_game).IsActorInWorkspot(player);
+    let now = inSpot || tier >= 2;
+    let scene = TandemActivity.OurScene();
+    if now && !this.m_inter {
+      this.m_inter = true;
+      this.m_interSince = this.m_now;
+      this.m_interScene = scene;
+      this.m_interSpot = this.m_workspot;
+      this.m_interTier = tier;
+      this.m_interClock = TandemWorld.GameSeconds(this.m_game);
+      this.m_interBuffs = TandemActivities.HousingBuffs(player);
+      this.m_worn = TandemOutfit.Shown(player);
+      this.m_interClothes = ArraySize(this.m_worn);
+      this.m_interFewest = this.m_interClothes;
+      TandemNative.Log(s"activities: interaction begins (scene \(scene), apartment \(TandemActivity.ApartmentScene(scene)), tier \(tier), in a workspot \(inSpot), clothes \(this.m_interClothes))");
+    } else if now {
+      if this.m_interScene == 0ul && scene != 0ul {
+        this.m_interScene = scene;
+        TandemNative.Log(s"activities: interaction's scene \(scene) (apartment \(TandemActivity.ApartmentScene(scene)))");
+      }
+      if this.m_interSpot == 0ul && this.m_workspot != 0ul {
+        this.m_interSpot = this.m_workspot;
+      }
+      this.m_interTier = Max(this.m_interTier, tier);
+    } else if this.m_inter {
+      this.m_inter = false;
+      this.m_interEnded = this.m_now;
+      let gained = "";
+      for buff in TandemActivities.HousingBuffs(player) {
+        if !ArrayContains(this.m_interBuffs, buff) {
+          gained += s" \(TDBID.ToStringDEBUG(buff))";
+        }
+      }
+      let clothes = ArraySize(TandemOutfit.Shown(player));
+      let clock = TandemWorld.GameSeconds(this.m_game) - this.m_interClock;
+      TandemNative.Log(s"activities: interaction over after \(this.m_now - this.m_interSince) s (scene \(this.m_interScene), apartment \(TandemActivity.ApartmentScene(this.m_interScene)), workspot \(this.m_interSpot), tier up to \(this.m_interTier), clothes \(this.m_interClothes) -> \(this.m_interFewest) -> \(clothes), clock +\(clock) s, buffs gained:\(StrLen(gained) > 0 ? gained : " none"))");
+    }
+    // The clothes shown, while it lasts and for 5 s after.
+    if this.m_inter || this.m_now - this.m_interEnded < 5.0 {
+      let worn = TandemOutfit.Shown(player);
+      if !TandemOutfit.Same(worn, this.m_worn) {
+        this.m_worn = worn;
+        if this.m_inter {
+          this.m_interFewest = Min(this.m_interFewest, ArraySize(worn));
+        }
+        TandemNative.Log(s"activities: clothes shown now \(ArraySize(worn)): our look goes again");
+        if IsDefined(this.m_system) {
+          this.m_system.RefreshLook();
+        }
+      }
+    }
+  }
+
+  // The apartment buffs on `player` (status effects of type Housing: rested,
+  // refreshed, energized), by record.
+  public static func HousingBuffs(player: ref<PlayerPuppet>) -> array<TweakDBID> {
+    let out: array<TweakDBID>;
+    for effect in StatusEffectHelper.GetAppliedEffects(player) {
+      if IsDefined(effect) && IsDefined(effect.GetRecord()) && IsDefined(effect.GetRecord().StatusEffectType())
+        && Equals(effect.GetRecord().StatusEffectType().Type(), gamedataStatusEffectType.Housing) {
+        ArrayPush(out, effect.GetRecord().GetID());
+      }
+    }
+    return out;
   }
 
   private func InMenu() -> Bool {
@@ -279,7 +409,9 @@ public class TandemActivities {
     let expected = this.m_clock + Cast<Int32>(MaxF(real - this.m_clockAt, 0.0) * 8.0);
     let ahead = seconds - expected;
     let from = this.m_clock;
-    let wasInSpot = this.m_wasInSpot;
+    // A bed: a workspot, or one of V's homes' scenes (its bed is a scene's
+    // section: the workspot system may not know it).
+    let wasInSpot = this.m_wasInSpot || TandemActivity.ApartmentScene(TandemActivity.OurScene()) || (this.m_inter && TandemActivity.ApartmentScene(this.m_interScene));
     this.m_clock = seconds;
     this.m_clockAt = real;
     if this.m_expectJump {
@@ -291,14 +423,19 @@ public class TandemActivities {
     }
   }
 
-  // Our clock jumped without our asking: a bed (we were in a workspot) or a
-  // quest. A guest whose clock went to the host's was only corrected.
+  // Our clock jumped without our asking: a bed (we were in a workspot or an
+  // apartment's scene) or a quest. A guest whose clock went to the host's was
+  // only corrected.
   private func UnaskedJump(from: Int32, to: Int32, inSpot: Bool) -> Void {
     let host = TandemNative.IsHost();
     if !host && Abs(to - TandemNative.HostGameTime()) < 120 {
       return;
     }
-    TandemNative.Log(s"activities: our clock jumped \(from) -> \(to) s (\(inSpot ? "in a workspot: a bed" : "not in a workspot: the story"))");
+    TandemNative.Log(s"activities: our clock jumped \(from) -> \(to) s (\(inSpot ? "in a workspot or an apartment's scene: a bed" : "not in a workspot: the story"))");
+    if inSpot {
+      // Asleep: the others see our V lying in its bed until it gets up.
+      this.m_sleeping = true;
+    }
     if !inSpot {
       if host {
         // Our story moved the clock: said to everyone, never asked.
@@ -436,18 +573,42 @@ public class TandemActivities {
         } else if this.m_askMoved {
           TandemSync.WorldRebuilt(3); // our bed moved it already
         } else if e.reason != 2 {
-          this.MoveClock(delta, true);
+          // Our own bed (the host's, put back while the others thought):
+          // the hours pass the bed's way, which fast forwards nothing (its
+          // Rested buff stays). The wheel's way fast forwards our V.
+          this.MoveClock(delta, e.reason != 1);
         }
       } else {
-        this.MoveClock(delta, e.reason != 2);
+        // We went to bed too (joined): asleep, not waiting; our own bed's
+        // buff stays.
+        let joined = this.m_joined == e.asker;
+        this.m_joined = 0u;
+        this.MoveClock(delta, e.reason != 2 && !joined);
         this.Notice(e.reason == 2 ? "Activities-MovedOn" : (e.reason == 1 ? "Activities-Slept" : "Activities-Waited"), this.NameOf(e.asker), TandemActivities.Clock(TandemWorld.GameSeconds(this.m_game)));
       }
       return;
     }
     if !ours {
+      if this.m_joined == e.asker {
+        // The request our sleep joined ended without the hours.
+        this.m_joined = 0u;
+        this.Notice(this.WhyNot(e), this.NameOf(e.by));
+      }
       return;
     }
     this.m_asking = false;
+    if e.outcome == 4 && e.why == 1 && e.reason == 1 {
+      // Two beds at once: another player's request was open and we were to
+      // answer it; our sleep is our yes to it (the host's arbiter counted
+      // it), and its hours are ours when it is applied.
+      this.m_joined = e.by;
+      if IsDefined(this.m_prompt) && this.m_prompt.asker == e.by {
+        this.HidePrompt();
+      }
+      TandemNative.Log(s"activities: our sleep joins player \(e.by)'s time skip");
+      this.Notice("Activities-SleepWith", this.NameOf(e.by));
+      return;
+    }
     this.Notice(this.WhyNot(e), this.NameOf(e.by));
     if IsDefined(this.m_wheel) {
       let wheel = this.m_wheel;
@@ -670,7 +831,7 @@ public class TandemActivities {
     if anchored && this.m_now - busy.placedAt < 0.5 && !busy.ending {
       return true;
     }
-    let want = busy.state.kind == 1 || busy.state.kind == 4 || busy.state.kind == 5 ? busy.state.workspot : 0ul;
+    let want = busy.state.kind == 1 || busy.state.kind == 2 || busy.state.kind == 4 || busy.state.kind == 5 ? busy.state.workspot : 0ul;
     busy.spot.Step(this.m_game, body, 0u, want, busy.state.entry, this.m_now, s"activities: puppet \(busy.player)");
     if busy.ending && !busy.spot.Playing() && busy.spot.state == 0 {
       if busy.held {
@@ -725,8 +886,11 @@ public class TandemActivities {
 
   // ---- commands (tools/game.sh cmd) ----
   // skip ask HOURS | skip accept | skip decline | busy KIND|off | busy report
+  // | apartment report
   public func Command(command: String) -> Void {
-    if StrBeginsWith(command, "skip ask") {
+    if Equals(command, "apartment report") {
+      this.ReportApartment();
+    } else if StrBeginsWith(command, "skip ask") {
       let hours = StringToInt(StrAfterFirst(StrAfterFirst(command, " "), " "));
       let from = TandemWorld.GameSeconds(this.m_game);
       if this.m_you == 0u || hours <= 0 {
@@ -748,6 +912,29 @@ public class TandemActivities {
       this.m_test = Equals(what, "off") ? 0 : TandemActivities.KindNamed(what);
       TandemNative.Log(s"activities: (test) our V busy \(TandemActivities.KindName(this.m_test))");
     }
+  }
+
+  // What V's home shows of our V now: the scene it plays (an apartment's?),
+  // its tier and class, the workspot, the device screen, the clothes shown,
+  // the apartment buffs, the game's nudity setting, a time skip joined.
+  private func ReportApartment() -> Void {
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      TandemNative.Log("apartment: no V");
+      return;
+    }
+    let scene = TandemActivity.OurScene();
+    let buffs = "";
+    for buff in TandemActivities.HousingBuffs(player) {
+      buffs += s" \(TDBID.ToStringDEBUG(buff))";
+    }
+    let clothes = "";
+    for record in TandemOutfit.Shown(player) {
+      clothes += s" \(TDBID.ToStringDEBUG(record))";
+    }
+    let nudity = GameInstance.GetCharacterCustomizationSystem(this.m_game).IsNudityAllowed();
+    TandemNative.Log(s"apartment: scene \(scene) (apartment \(TandemActivity.ApartmentScene(scene)), class \(TandemStory.SceneClass())), tier \(PlayerPuppet.GetSceneTier(player)), ours \(TandemActivities.KindName(this.m_kind)) (workspot \(this.m_workspot), device \(this.m_device)), in an interaction \(this.m_inter), joined \(this.m_joined)");
+    TandemNative.Log(s"apartment: buffs:\(StrLen(buffs) > 0 ? buffs : " none"); clothes shown:\(StrLen(clothes) > 0 ? clothes : " none"); nudity allowed \(nudity)");
   }
 
   // ---- helpers ----
@@ -931,6 +1118,15 @@ protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable
 protected cb func OnSwitchToRipperDoc(opt userData: ref<IScriptable>) -> Bool {
   let result = wrappedMethod(userData);
   TandemMenus.Entered(5, n"ripperdoc", true);
+  return result;
+}
+
+// V's stash (Stash.OnOpenStash fills StorageBlackboard; the storage screen
+// opens through this scenario): a shop's screen, nothing worn changes.
+@wrapMethod(MenuScenario_Storage)
+protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable>) -> Bool {
+  let result = wrappedMethod(prevScenario, userData);
+  TandemMenus.Entered(5, n"stash", false);
   return result;
 }
 
