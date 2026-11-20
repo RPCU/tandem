@@ -461,6 +461,32 @@ TEST_CASE("referee: resync requests are budgeted at the pace of the endpoint's d
   CHECK(referee.Counts().contains("rate.over-budget"));
 }
 
+TEST_CASE("referee: a V's noises and its throws' paths: in its own name, sane, not a flood") {
+  auto referee = Host();
+  std::uint64_t now = kSecond;
+  // Footsteps four times a second and a grenade's path beside them: fine.
+  for (int i = 0; i < 12; ++i, now += kSecond / 4) {
+    referee.Received(2, proto::Noise{.stim = 26}, now);
+    referee.Received(
+        2, proto::ThrowPath{.id = 1, .position = {1.f, 2.f, 3.f}, .velocity = {0.f, 8.f, 2.f}},
+        now);
+  }
+  CHECK(Rules(referee).empty());
+  // In another player's name; a speed nothing thrown has; not a stimulus.
+  referee.Received(2, proto::ThrowPath{.player = 3, .id = 1}, now);
+  CHECK(Rules(referee) == std::vector<std::string>{"authority.not-yours"});
+  referee.Received(3, proto::ThrowPath{.id = 1, .velocity = {0.f, 900.f, 0.f}}, now);
+  referee.Received(3, proto::Noise{.stim = 99}, now);
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  referee.Received(3, proto::ThrowPath{.id = 1, .position = {nan, 0.f, 0.f}}, now);
+  CHECK(Rules(referee) ==
+        std::vector<std::string>{"value.range", "value.range", "value.not-finite"});
+  // A footstep every frame (ungated): over its budget, said once.
+  for (int i = 0; i < 400; ++i, now += kSecond / 120)
+    referee.Received(2, proto::Noise{.stim = 25}, now);
+  CHECK(Rules(referee) == std::vector<std::string>{"rate.over-budget"});
+}
+
 TEST_CASE("referee: states held and never released") {
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 1}, kSecond);

@@ -625,3 +625,31 @@ n"personalLinkPlayerWorkspot")` (F:99110-:99160; the action is
   objective's object is `IsQuest()` on the host; that the host's V doing a
   guest's action on a quest switch moves the quest; that a greyed prompt
   shows the reason. [2.5-untested]
+
+### 13.92 Contests: what the game's own data says of a fist fight, a race, a shooting competition (2026-11-20, read in final.reds, not run)
+
+- **Fist fights** (Beat on the Brat and every other brawl): the quest puts
+  the status effect `GameplayRestriction.FistFight` on V **and on each
+  opponent**. Vanilla reads it on both: an NPC wearing it is aggressive
+  whatever its preset (`ScriptedPuppet.IsAggressive`, `:21118`), is
+  defeated, never killed, by a hit from or on a wearer
+  (`NPCPuppet` `:128701`, `HitReactionComponent.CanDieCondition`
+  `:185843-185847`), cannot be taken down by a wearer (`:514051`); a
+  wearer's melee stimulus is ignored by bystanders (`:146182`); V's weapon
+  wheel is fists only (`:239572`); devices read the tag `FistFight` on V
+  (`:172198`, `:278038`). [2.5-untested]
+- **Shooting competitions**: a status effect tagged
+  `ShootingRangeCompetition` on V (`:246200`, `:542732`: the weapon states
+  read it; the competition's scope is `Items.Lexington_Shooting_
+Competition_scope`, `:71882`). [2.5-untested]
+- **Races**: `GameInstance.GetRacingSystem(game).IsRaceInProgress()`
+  (`RacingSystem`, `:189724`; also `IsAIVehicleRegistered(vehicle)`), read
+  by the vehicle states (`:246236`, `:287898`); the race's HUD is a
+  `VehicleRaceQuestEvent` on V's car (`vehicleRaceUI`: PreRaceSetup 0,
+  CountdownStart 1, RaceStart 2, RaceEnd 3, Disable 4; `:94639`); the quest
+  fact `sq024_current_race_checkpoint_fact_add` forwards checkpoints
+  (`:94632`). [2.5-untested]
+- So a contest is told with no list of quests: the restriction (or tag) on
+  our V, or the racing system's word. Arcade machines are minigames, a
+  cyberpsycho is a fight like any other, rides are workspots or vehicle
+  scenes: none is a contest here.

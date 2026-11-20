@@ -29,7 +29,7 @@ of it is shared. "Busy" is the `Activity` a player's game sends
 | V's homes: shower, bed, coffee, sink, the cat, the guitar… | each player's own apartment quest (`mq000`) | the table below | buffs stay on their own V | "V's homes" |
 | Hub menus: inventory, map, perks, crafting, journal | the player's game | busy (a menu); while its game stands still (those menus still pause it, `time.md`) its puppet idles on its own graph | nothing pauses for the others | built |
 | Photo mode | the photographer's game alone | "NAME is in photo mode", the puppet held and idling; "NAME is back" | the others keep playing; out of it, the photographer's game starts a new epoch, so a guest is checked at once (digest, resync) and drops NPC states it froze over; the host's photo mode stands its world still for everyone (it is the world) | built |
-| Contests: races, boxing duels, shooting ranges, cyberpsycho fights, rides | the player who starts it (its world, as a gig: `quest-carryover.md`) | busy (a contest, `device`: the opponent or the course) | proposed: the others may watch; their hits on a duel's opponent are dropped (one on one); a race or a range is that player's alone; a cyberpsycho is a fight like any other (the host's NPC, everyone helps) | rules only: the kind is on the wire, nothing sends it yet |
+| Contests: fist fights (boxing duels), street races, shooting competitions | the player who starts it (its world, as a gig: `quest-carryover.md`) | "NAME is in a fist fight: you can only watch" (a race, a shooting contest), "NAME's contest is over"; its puppet moves on as ever (nothing held) | the others watch with what they carry (a contest's restriction is never lent to a guest); a hit on a fist fight's opponent counts only from a V that is in a fist fight itself, anyone else's is dropped ("This is NAME's fight: your hits don't count"); a race or a range is that player's alone; a cyberpsycho is a fight like any other | built, not run ("Contests", `contest-duel`) |
 | Clubs (dance floors, bars) | the host (its NPCs) | the club's crowd and dancers as proxies | nothing special: the bar stool is a workspot | was |
 | Braindance clubs | the player in the chair | its body seated in the rig (a workspot), it is in a braindance (`elsewhere.md`) | its body stays visible, settled | was |
 | Joytoys | the player who pays | its private scene: the others see it busy where the scene began, their puppets near it fade (`story.md`, private scenes) | none | to verify: that a joytoy's scene classifies as private (its category tag) |
@@ -235,6 +235,48 @@ player's alone.
   `apartment-tour` (each interaction by hand, with the quest trace on):
   not yet run in game.
 
+## Contests
+
+`scripts/tandem/Contests.reds`; engine facts
+[`../research/engine/story.md`](../research/engine/story.md) §13.92.
+
+- **Detected from the game's own data, no list of quests.** Four times a
+  second on our own V: a fist fight is the restriction its quest puts on V
+  (`GameplayRestriction.FistFight`, or any status effect tagged
+  `FistFight`); a shooting competition a status effect tagged
+  `ShootingRangeCompetition`; a race the racing system's word
+  (`RacingSystem.IsRaceInProgress`). It goes out as our `Activity`: kind
+  `Contest`, `entry` its `proto::ContestSort` (Duel 1, Race 2, Range 3;
+  `activity::Sanitized` keeps it, drops any flag and anchor), `device` the
+  session's number of the duel's opponent when there is one alone. Photo
+  mode outranks it; a menu or a workspot does not.
+- **A duel's opponents are known by the game's own mark.** The quest puts
+  the same restriction on each opponent. The NPC's owner says so for the
+  games that show its proxy (`NpcStatus`, once a second for the NPCs it
+  runs near its V, and when the mark comes off), so the proxy wears it too:
+  on every game "a fist fight's opponent" is an NPC wearing
+  `GameplayRestriction.FistFight` (the twins: both), or the one a
+  `Contest` names.
+- **The rule.** A hit on an opponent counts only from a V that is in a fist
+  fight itself: ours when it wears the restriction, another player's when
+  its `Activity` says a duel. Anyone else's is dropped twice over: on the
+  hitter's own game where every hit enters (`DamageSystem.ProcessPipeline`,
+  `TandemContests.Watched`: nothing shown, nothing sent, a notice every 5 s
+  at most), and by the NPC's owner when a strike arrives all the same
+  (`TandemOutcomes.TakeStrike`). Two players each in a fist fight of their
+  own beside each other may hit each other's opponent: not told apart.
+- **A contest's restriction is its starter's alone**: a guest in the host's
+  story moment no longer wears `FistFight` or a shooting competition's
+  restriction (`TandemRestrictions.IsShared`), so a watcher keeps its
+  weapons and is never taken for a contestant.
+- **Open**: a watcher's quickhacks and takedowns on an opponent (vanilla
+  refuses the takedown to a wearer only); the opponent turning on a watcher
+  who stands in its way; a race's other cars as traffic of the starter's
+  area (`traffic.md`); nothing ends a contest for a starter who leaves.
+- **Testing**: `tests/activity_test.cpp` (the sort kept, nothing held);
+  `tandem-peer --contest duel|race|range`; `tools/game.sh cmd contest
+duel|race|range|off|report`; scenario `contest-duel`.
+
 ## Decisions
 
 **Decided by the user 2026-11-19**: every option in bold below, each as it
@@ -255,7 +297,7 @@ is built now.
 - Hub menus pausing their own game: **left as they are for now**
   (`time.md` keeps the open problem), with the puppet idling meanwhile.
 - Contests: **the starter's world, the others watch, hits on a duel's
-  opponent dropped** (to build next), or everyone may join a fight.
+  opponent dropped** (built: "Contests"), or everyone may join a fight.
 - A bed whose sleep the others refuse: **the buff stays, only the clock is
   refused**, or the buff taken off too.
 - Two beds at once: **the second sleep is that player's yes to the first,
@@ -283,8 +325,11 @@ is built now.
   props is heard only in the game that plays it; a guest with its own cat
   sees two in H10; nothing claims a bed or a shower, so two players can
   use the same one, each game showing its own V in it.
-- Contests: detecting a race, a duel, a range (their quests' facts or
-  status effects) and the duel's interference rule.
+- Contests, to verify in game: the restriction on V and on the opponent in
+  a Beat on the Brat fight (`cmd contest report` during one), the proxy
+  wearing it on the other game, a watcher's punch dropped with its notice,
+  the racing system's word during a street race, a shooting competition's
+  tag.
 - A fitting idle for a screen or a minigame when the pose stream is off
   (a tablet or phone workspot from the game files).
 - The wheel's own time dilation stands the asker's world still while it

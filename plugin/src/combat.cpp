@@ -42,6 +42,10 @@ std::vector<proto::Message> Combat::TakeInbound() {
       m_staleThrows.fetch_add(1, std::memory_order_relaxed);
       continue;
     }
+    // A late word on where a throw is: the next one, or its end, says more.
+    if (std::holds_alternative<proto::ThrowPath>(entry.message) &&
+        now - entry.arrivalUs > combat::kThrowPathStaleUs)
+      continue;
     out.push_back(std::move(entry.message));
   }
   return out;

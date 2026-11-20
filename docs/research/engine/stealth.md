@@ -170,3 +170,48 @@ target, effectName, effectTag, opt statusEffect)` (252966) runs
   `SenseComponent.ReevaluateDetectionOverwrite` (156337),
   `DamageSystem.IsImmune` (86146), `GorillaArmsOnePunchNPCMark` (126464),
   `DisposalDevice`'s local player (210051). [2.5-untested]
+
+### 13.91 A V's movement noise, and the gates that ask for the player (2026-11-20, read in final.reds, not run)
+
+- **What V gives out as it moves**, all through
+  `StimBroadcasterComponent.TriggerSingleBroadcast(owner, type)` with no
+  radius (the stimulus record's): `StandEvents.OnTick`, on the ground above
+  `footstepStimuliSpeedThreshold` (2.5 by default): `FootStepRegular` (25)
+  every tick, unless the stat `CanWalkSilently` ≥ 1 (`:550412`, `:281152`);
+  `SprintEvents`: `FootStepSprint` (26) every 0.2 s unless `CanRunSilently`
+  ≥ 1 (`:552267`, `:281136`), once entering a slide from a sprint
+  (`:553249`) and 0.15 s into a dodge (`:553725`); landings
+  (`BroadcastLandingStim`, `:289818`): `LandingRegular` (35), `LandingHard`
+  (34), `LandingVeryHard` (36, the death landing too), unless
+  `CanLandSilently` ≥ 1, the fall was under 1.2 m, or (regular) V lands
+  crouching. `CrouchEvents` broadcasts nothing: a crouched V is silent.
+  [2.5-untested]
+- **How an NPC takes a stimulus**: `ReactionManagerComponent.HandleStimEvent`
+  (`:143953`, queued as a script task, `PostPhysics`) →
+  `ShouldEventBeProcessed` (active, a reaction stim, a preset other than
+  `NoReaction`) → `ShouldStimBeProcessed` (`:144978`) → `ProcessStimParams`,
+  `ProcessReactionOutput`. Two of its gates ask for the player:
+  - tag `Stealth`: `ReactOnPlayerStealthStim(owner, source)` (`:148207`,
+    static) reads the attitude only when `source.IsPlayer()` (or a vehicle:
+    the local player's), then wants hostile, or neutral with a security
+    system whose zone the source trespasses. For any other source the
+    attitude is never read (it stays the enum's first value, friendly):
+    false.
+  - tag `PlayerOnly` (`:145046`): dropped unless the source is a device, a
+    player, or `stimInvestigateData.attackInstigator` is a player.
+    The stimulus records' tags and radii are TweakDB (`stims.*`), not in
+    scripts: tandem logs them once a kind from the event
+    (`StimuliEvent.IsTagInStimuli`, `radius`, `stimRecord.IsReactionStim()`).
+    [2.5-untested]
+- `attackInstigator` is read after the gates only by the ally-help paths
+  (`StimFilters.CanTriggerAllyHelp` / `NeutralHelp` / `EnemyHostility`:
+  gunshots, bullets, explosions, hits, calls, never footsteps or landings),
+  `ShouldIgnoreCombatStim` (returns at once for a source that is not a
+  player) and, later, by the reaction's behaviours (`:476979` turns the NPC
+  hostile to it): so it must be gone before `ProcessReactionOutput`. The
+  pipeline itself rewrites a stim event's fields in place
+  (`stimEvent.sourceObject = …`, `:146325`).
+- `StimBroadcasterComponentHelper.CreateStimEvent(owner, type, radius,
+investigateData, propagationChange)` and `ProcessSingleStimuliBroadcast`
+  are what `TriggerSingleBroadcast` runs (`:149948`): the same from any
+  entity with or without the component.

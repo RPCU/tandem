@@ -166,6 +166,9 @@ public class TandemOutcomes {
         case 12:
           npcs.SetScale(event.npc, Cast<Int32>(event.player));
           break;
+        case 13:
+          this.Throws().OnPath(event);
+          break;
         default:
           break;
       }
@@ -343,6 +346,13 @@ public class TandemOutcomes {
     let story = TandemStorySystem.Get(this.m_game);
     if IsDefined(story) && IsDefined(story.Restrictions())
       && story.Restrictions().RefusesHit(body, event.npc, event.player, "a strike") {
+      return;
+    }
+    // A fist fight's opponent takes hits from who is in the fight only
+    // (Contests.reds).
+    let contests = TandemContests.Of(this.m_game);
+    if IsDefined(contests) && contests.Refuses(body, event.npc, event.player, TandemNative.You()) {
+      contests.Dropped(event.npc, event.player, TandemNative.You());
       return;
     }
     npcs.NoteHitBy(event.npc, event.player);
