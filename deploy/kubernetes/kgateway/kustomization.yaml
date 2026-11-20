@@ -9,6 +9,7 @@ kind: Kustomization
 # connection check and hole punching would break. Players keep reaching
 # the replicas and the entrance through the base's UDP LoadBalancers:
 # no extra hop, no extra latency. docs/relay.md, "Behind kgateway".
+# Without UDP load balancers: the edge component, ../kgateway-edge.
 #
 # Use it as an overlay's base instead of ../base (namespace, image, peers,
 # host tokens as for the base).

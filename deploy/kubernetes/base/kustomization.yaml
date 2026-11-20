@@ -13,7 +13,9 @@ labels:
 
 resources:
   - serviceaccount.yaml
-  - statefulset.yaml
+  # The StatefulSet, in a kustomization of its own so that an overlay can
+  # make one per replica from it (../edge).
+  - relay
   - service.yaml
   - service-replicas.yaml
   - poddisruptionbudget.yaml
@@ -27,7 +29,3 @@ configMapGenerator:
   - name: tandem-relay-peers
     literals:
       - peers=192.0.2.10:27460,192.0.2.11:27460
-
-images:
-  - name: tandem-relay
-    newTag: 0.1.0

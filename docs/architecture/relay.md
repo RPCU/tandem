@@ -277,6 +277,57 @@ performance or adding latency. Researched the same day; the answer is
   `externalTrafficPolicy: Local` (no hop added, addresses kept), and
   kgateway for `/healthz`, `/readyz`, `/metrics`.
 
+## Relay pods on edge nodes (kernel forwarding)
+
+Asked 2026-11-19 for RPCU (OpenStack, NixOS, FluxCD, Kubernetes on
+Hetzner: no UDP load balancer, nothing on the hypervisors): the relay as
+pods, kgateway as the HTTP entry, and UDP routed so that the relay sees
+every player's own address and port, replies go back the same way, and no
+latency is added. Built the same day (`deploy/kubernetes/edge`, a
+component; `kgateway-edge`, it over the kgateway overlay); the operator's
+guide is [Relay pods behind kernel forwarding](../relay.md#relay-pods-behind-kernel-forwarding).
+
+- **The kernel forwards, nothing proxies**: a DNAT keeps the source and
+  conntrack undoes it on the replies. The two conditions: no SNAT or
+  masquerade on the way in, and replies leaving through the box that made
+  the DNAT.
+- **One StatefulSet per replica, each pinned to its node**
+  (`tandem.dev/relay-edge: "N"`, required node affinity), because a
+  replica's public address is its node's and one StatefulSet's pods share
+  one template. Each has one pod with the replica's ordinal
+  (`spec.ordinals.start`, Kubernetes 1.31), so `apps.kubernetes.io/pod-index`,
+  the shard and every Service selecting it stay as in the base; a
+  selector label of its own (`tandem.dev/relay-replica`) keeps their
+  selectors apart. Both come from the base's StatefulSet
+  (`base/relay`, a kustomization of its own for that), not a copy. Rejected:
+  one StatefulSet with a topology spread over the edge label (it spreads,
+  but cannot put ordinal N on node N, and a pod cannot read its node's
+  labels to take its shard from them).
+- **hostPort, not NodePort** (both documented): the client's default ports
+  on every edge address, the port open on the pod's node only, one DNAT by
+  the CNI whatever kube-proxy does. Cost: Pod Security `baseline` refuses
+  hostPort, so the namespace runs at `privileged` enforcement (or a policy
+  exception); NodePort with Local stays `restricted`.
+- **The address on another node** (a floating IP on the gateway node):
+  documented (an nftables DNAT there, a connection mark and a route table
+  on the pod's node for the replies), not built: pinning the replica on
+  that node needs none of it.
+- **DNS** (RPCU's dnsmasq) only names the addresses: the game resolves
+  each `relay =` name once per link (IPv4, `getaddrinfo`, the first
+  answer); `--peers` stay addresses.
+
+**Self-diagnosis** (`relay/internal/relay/sources.go`): nothing in the
+protocol shows an address was rewritten, but the addresses do. Every 10 s
+(with the sweep) the relay judges the registered clients and the sources
+of the minute's registration-type requests (registrations, lookups,
+probes: control traffic, each source once, at most 1024; the data path
+never samples, `TestForwardDoesNotSample`). At least 4 sources and most of
+them private, loopback, link-local, in 100.64.0.0/10 or in
+`--internal-cidrs` (`internal`), or at least 8 from one or two addresses
+(`few`): a warning once a minute naming one internal address, and
+`tandem_relay_source_nat_suspected` at 1. `--expect-public-clients=false`
+turns it off (a LAN; the loopback tests and `task relay:run` pass it).
+
 Sources read (2026-11-19): Envoy's udp_proxy configuration and API
 reference (envoyproxy.io, `latest` = 1.41.0-dev, and v1.34.7);
 kgateway's v2.5 release blog (kgateway.dev); kgateway-dev/kgateway#14704;
@@ -344,7 +395,9 @@ session to).
   `/debug/vars` (`expvar`).
 - **Running one** (tokens, systemd, the image, firewall, limits, replicas): [`docs/relay.md`](../relay.md).
 - **Shipping**: `nix-build -A relayImage` builds an OCI image with only the
-  static binary and CA certificates, running as uid 65532.
+  static binary and CA certificates, running as uid 65532;
+  `nix-build -A relayImageArm64` the same for arm64 (cross-compiled,
+  pushed with the other as one multi-arch tag).
 - **Kubernetes** (`deploy/kubernetes/base`): a StatefulSet of 2 (a stable
   ordinal is the shard and picks the replica's own Service; a Deployment's
   pods have no identity to hang an address on), `Parallel` pod management,

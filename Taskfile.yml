@@ -213,6 +213,9 @@ tasks:
       # Gateway and HTTPRoute (Gateway API CRDs) have no schema kubeconform
       # ships: rendered (kustomize checks their structure), not validated.
       - kustomize build deploy/kubernetes/kgateway | kubeconform -strict -summary -skip Gateway,HTTPRoute -
+      # The edge component (relay pods on the nodes holding the public
+      # addresses, hostPort) over the kgateway overlay.
+      - kustomize build deploy/kubernetes/kgateway-edge | kubeconform -strict -summary -skip Gateway,HTTPRoute -
 
   check:
     desc: Everything CI would run

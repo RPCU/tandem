@@ -282,6 +282,9 @@ the players' source addresses. In Kubernetes:
 | `NodePort` per replica, `externalTrafficPolicy: Local`        | a node's IP and the replica's port | only if the replica is pinned to that node (a node selector per ordinal is not possible in one StatefulSet: one StatefulSet per replica) |
 | `hostPort` (or `hostNetwork`) on nodes reserved for the relay | the node's IP                      | bare metal with fixed relay nodes, one replica per node                                                                                  |
 
+Both of the last two, with one StatefulSet per replica, are the edge
+overlay: [Relay pods behind kernel forwarding](#relay-pods-behind-kernel-forwarding).
+
 `externalTrafficPolicy: Cluster` (the default) hides players' addresses
 behind the node's: do not use it, the relay would see every player as a
 few addresses and limit them together. The entrance can be any UDP load
@@ -414,7 +417,414 @@ When kgateway gets UDP routes, putting the UDP ports behind it still
 needs the PROXY protocol on UDP, on every datagram or on each session's
 first, from Envoy. Until then, see the alternatives in the architecture
 notes (a UDP load balancer that keeps source addresses is what the base
-already asks for).
+already asks for). Without one: [Relay pods behind kernel forwarding](#relay-pods-behind-kernel-forwarding).
+
+## Relay pods behind kernel forwarding
+
+For a cluster with no UDP load balancer: RPCU (OpenStack, NixOS, FluxCD
+and Kubernetes on Hetzner), where Hetzner's cloud load balancers carry no
+UDP and nothing else may run on the hypervisors. The relay runs as pods
+on **edge nodes**, the nodes that hold the public addresses, and the
+kernel of each forwards the relay's UDP ports to its pod. kgateway stays
+the cluster's HTTP and TCP entry, on the same addresses (it listens on
+TCP, the relay on UDP: no port is shared).
+
+[`deploy/kubernetes/edge`](../deploy/kubernetes/edge) is that setup, a
+kustomize component; [`deploy/kubernetes/kgateway-edge`](../deploy/kubernetes/kgateway-edge)
+is it over the kgateway overlay, the base of an RPCU overlay.
+
+### Why the kernel, and not kgateway
+
+- **kgateway is Envoy, a proxy in user space**: it reads each datagram on
+  a socket of its own and sends a new one from another, so the relay sees
+  the proxy's address. The relay knows a player by the address and port
+  its datagrams come from (who registered, the per-source limits, the
+  connection check, the addresses it hands out for hole punching). A proxy
+  could still say who the player was in a PROXY protocol v2 header, but
+  Envoy has no PROXY protocol for UDP (closed as not planned), and
+  kgateway routes no UDP at all yet ([Behind kgateway](#behind-kgateway)).
+- **The kernel rewrites only the destination**: a DNAT (netfilter or
+  eBPF) changes where the datagram goes, never who sent it, so the pod
+  sees the player's own address and port. Conntrack remembers the
+  translation and undoes it on every reply, so the player hears back from
+  the address it wrote to (the game drops anything else). Nothing is copied
+  to user space on the way: no latency added beyond a lookup in the
+  kernel, and no process to scale.
+
+### The two rules that make it or break it
+
+1. **No SNAT or masquerade on the way in.** Anything that rewrites the
+   source makes every player one or two internal addresses: kube-proxy or
+   Cilium forwarding to another node with `externalTrafficPolicy: Cluster`,
+   a `masquerade` rule matching the forwarded packets on a gateway node,
+   a proxy. The relay then warns (below).
+2. **A symmetric return path.** A reply must leave through the box that
+   made the DNAT, so that its conntrack undoes it. A reply that takes
+   another way (the pod's node's own default route) leaves with the wrong
+   source, the node's or the pod's address, and the player's NAT or the
+   network's anti-spoofing drops it.
+
+| Setup                                                          | Rule 1 (no SNAT in)                                                                                        | Rule 2 (symmetric)                                  |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **`hostPort`, pod on the node with the address** (the overlay) | the DNAT matches the destination only; portmap masquerades hairpin traffic only (from the node or the pod) | the node is the pod's gateway: replies pass its NAT |
+| `NodePort`, `externalTrafficPolicy: Local`, pod on that node   | Local never forwards to another node, so never SNATs                                                       | same node                                           |
+| `NodePort` or `LoadBalancer`, `externalTrafficPolicy: Cluster` | **broken**: SNAT to the node on the hop to another                                                         | (symmetric, through the SNAT)                       |
+| Cilium `loadBalancer.mode=dsr`, Cluster                        | kept                                                                                                       | replies leave the backend's node directly (below)   |
+| Address on another node, DNAT there (below)                    | kept, as long as nothing masquerades the forwarded packets                                                 | only with policy routing on the pod's node          |
+
+**Pinning each replica to the node that holds its address avoids the last
+row entirely**: one node, one DNAT, one conntrack, no routing to add.
+
+### hostPort or NodePort
+
+The overlay uses **`hostPort`** (27460 and 27461 on the node, to the same
+ports in the pod):
+
+- the same ports on every edge address, the client's defaults: players
+  write `relay = relay.example.org` with no port, and the peers list is
+  `<address>:27460` for every replica;
+- the port is open on the node running the pod only, where a NodePort is
+  open on every node (dropped by all but one with Local) and takes ports
+  from the cluster-wide range, a pair per replica;
+- one DNAT on the path, made by the CNI's portmap plugin or Cilium,
+  whatever kube-proxy's mode.
+
+Its costs: Pod Security Admission's `baseline` and `restricted` levels
+refuse `hostPort`, so the relay's namespace needs
+`pod-security.kubernetes.io/enforce: privileged` (keep `warn` and `audit`
+at `restricted`), or a policy engine's exception for ports 27460 and 27461
+only (Kyverno, Gatekeeper); and one replica per node (the pinning gives
+that anyway).
+
+**`NodePort` with `externalTrafficPolicy: Local`** keeps the pod at
+`restricted`. In the overlay, remove the hostPorts and add a NodePort
+Service per replica, the pair of ports its own (`30460 + 2N` and the next,
+so the connection check's port + 1 is the replica's entrance):
+
+```yaml
+# kustomization.yaml (also: resources: [nodeports.yaml])
+patches:
+  - target: { kind: StatefulSet, labelSelector: tandem.dev/relay-replica }
+    patch: |
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+      - op: remove
+        path: /spec/template/spec/containers/0/ports/1/hostPort
+---
+# nodeports.yaml: replica 0 (replica 1: pod-index "1", 30462 and 30463)
+apiVersion: v1
+kind: Service
+metadata:
+  name: tandem-relay-0-udp
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  selector:
+    apps.kubernetes.io/pod-index: "0"
+  ports:
+    - {
+        name: game,
+        port: 27460,
+        targetPort: game,
+        nodePort: 30460,
+        protocol: UDP,
+      }
+    - {
+        name: front,
+        port: 27461,
+        targetPort: front,
+        nodePort: 30461,
+        protocol: UDP,
+      }
+```
+
+The peers are then `<node 0>:30460,<node 1>:30462`, and players write the
+port: `relay = relay.example.org:30460` (or widen the API server's
+`--service-node-port-range` to take 27460).
+
+### The edge overlay, step by step (RPCU)
+
+1. **Choose the edge nodes**: one per replica, each holding a public
+   address (its own, a Hetzner failover or additional IP routed to it, or
+   an OpenStack floating IP whose fixed address is the node's). The node
+   kgateway listens on is a good replica 0.
+2. **Label them** (and, to keep other workloads off, taint them; the relay
+   tolerates `tandem.dev/relay-edge`). Exactly one node per value: the
+   replica goes to the node with its number.
+
+   ```sh
+   kubectl label node edge-a tandem.dev/relay-edge=0
+   kubectl label node edge-b tandem.dev/relay-edge=1
+   ```
+
+3. **Fill in the peers** with those nodes' public addresses, in replica
+   order, in your overlay over `kgateway-edge` (namespace, image and host
+   tokens as for the base):
+
+   ```yaml
+   resources:
+     - ../../kgateway-edge
+   configMapGenerator:
+     - name: tandem-relay-peers
+       behavior: replace
+       literals:
+         - peers=203.0.113.10:27460,203.0.113.11:27460
+   ```
+
+4. **Open UDP 27460 and 27461** to those nodes, and nothing else new: the
+   OpenStack security group of their ports, and the nodes' firewall if it
+   filters forwarded packets (a hostPort's datagrams are DNATed and
+   forwarded to the pod, not delivered to the node: NixOS's firewall sees
+   them only with `networking.firewall.filterForward`). The base's
+   NetworkPolicy already lets UDP 27460 and 27461 in from anywhere; a DNAT
+   keeps the player's address, so the policy sees it as it is.
+5. **Let the namespace run hostPort** (above), and check that the CNI
+   provides it (below).
+6. **Name the entrance** in DNS ([DNS](#dns-dnsmasq)), commit, let Flux
+   apply it, and [verify](#verify-the-path).
+
+What the overlay does: one StatefulSet per replica (`tandem-relay-0`,
+`tandem-relay-1`: a StatefulSet has one pod template, so its pods cannot
+each be pinned to a node of their own), each of one pod whose ordinal is
+the replica's (`spec.ordinals.start`, Kubernetes 1.31 or newer), so the
+`apps.kubernetes.io/pod-index` label, the shard and every Service that
+selects it stay as in the base; a required node affinity on
+`tandem.dev/relay-edge: "N"`; the base's UDP LoadBalancers removed. Each
+edge address is a replica and an entrance at once: port 27460 takes the
+replica's sessions, and 27461 (its entrance, which only redirects) is the
+connection check's second port. Another replica: copy
+`deploy/kubernetes/edge/replica-1` to `replica-2`, change the numbers, add
+it to the component's `resources`, label a third node, and add its address
+to the peers.
+
+A node down takes its replica with it until it is back (the pod cannot
+move: its address is the node's); the others go on, and players whose
+`relay =` lists several edges register on one that answers.
+
+### kube-proxy: iptables and IPVS
+
+- **hostPort** is not kube-proxy's: the CNI makes it (portmap or its
+  own). kube-proxy matters for NodePort and externalIPs.
+- **iptables mode**: a NodePort with Local jumps to the node's own
+  endpoints only and never marks the packet for masquerade; a node with no
+  endpoint drops it. With Cluster, `KUBE-MARK-MASQ` marks what comes from
+  outside and `KUBE-POSTROUTING` masquerades it: rule 1 broken. Look:
+  `iptables -t nat -S | grep -e 27460 -e 30460`.
+- **IPVS mode**: the same policy semantics (Local: local real servers
+  only, no masquerade; Cluster: masqueraded through the same
+  `KUBE-MARK-MASQ`). `ipvsadm -Ln -u` lists the forwarding method as
+  `Masq`: that is IPVS's name for its DNAT, not a source rewrite.
+- **conntrack**: kube-proxy deletes the UDP conntrack entries of a
+  Service's removed endpoints, so a replaced pod is reached at once.
+
+### Cilium (eBPF)
+
+- With kube-proxy replacement, Cilium makes NodePort, externalIPs and
+  hostPort in eBPF on the receiving node (`hostPort.enabled`, on with
+  `kubeProxyReplacement=true`; without the replacement, chain the portmap
+  plugin, `cni.chainingMode=portmap`). hostPort and NodePort with Local
+  keep the source.
+- **`loadBalancer.mode`**: `snat` (the default) SNATs Cluster traffic
+  forwarded to another node: rule 1 broken. `hybrid` is DSR for TCP and
+  **SNAT for UDP**: broken for the relay. `dsr` keeps the source, and the
+  backend's node answers the player directly with the first node's address
+  as source: rule 2 then rests on the network letting a node send from an
+  address that is not its own, which OpenStack's port security (and most
+  clouds' anti-spoofing) forbids unless the ports have that address in
+  `allowed_address_pairs`. Prefer hostPort or Local.
+- Masquerading (`enableIPv4Masquerade`, `bpf.masquerade`, the ip-masq
+  agent) applies to connections pods open to the outside, not to replies on
+  a flow a player opened (those are reverse-NATed): leave it as it is.
+- BPF host routing (the default with eBPF and kube-proxy replacement)
+  sends pod traffic past the host's netfilter and `ip rule`s: the policy
+  routing below needs `bpf.hostLegacyRouting=true` on that node. Another
+  reason to pin.
+- Look: `kubectl -n kube-system exec ds/cilium -- cilium-dbg service list`
+  (the hostPort and NodePort entries), `cilium-dbg bpf ct list global | grep 27460`,
+  `cilium-dbg bpf nat list | grep 27460` (an entry there for a player's
+  flow is an SNAT).
+
+### The CNI portmap plugin
+
+Flannel, Calico with its iptables data plane, the bridge plugin, and Cilium
+in chaining mode make hostPort with portmap (`{"type": "portmap",
+"capabilities": {"portMappings": true}}` in the CNI configuration):
+
+- `CNI-HOSTPORT-DNAT` DNATs the port for any address of the node
+  (`--dst-type LOCAL`), including the fixed address behind an OpenStack
+  floating IP;
+- `CNI-HOSTPORT-MASQ` masquerades only hairpin traffic (from the node
+  itself or the pod's own network, `snat: true`), never a player's.
+- A UDP conntrack entry lives while datagrams keep coming, and the games
+  send every second: an entry made for a pod that was replaced would keep
+  the player's flow on the old pod's address. Check it once (replace a
+  pod, then `conntrack -L -p udp --orig-port-dst 27460` on its node must
+  show the new pod's address); if it does not, the restart hold cannot
+  work there (sessions start over after 20 s) and
+  `conntrack -D -p udp --orig-port-dst 27460` on the node fixes it at once.
+- Some eBPF data planes do not do hostPort (Calico's eBPF mode has had
+  this limitation): then NodePort with Local.
+
+Which CNI runs: `kubectl -n kube-system get ds`.
+
+### The public address on another node
+
+When the address is on a node that cannot run the replica (a Hetzner
+floating IP on the gateway node, G, and the pod on node R), G forwards the
+UDP ports to R with a DNAT, and R sends the replies back through G. Values
+below: the public address 203.0.113.10 on G, G's private address 10.0.0.11,
+R's 10.0.0.21; R runs the replica with its hostPorts.
+
+On **G**, DNAT only (no masquerade: check that no rule of G's, such as
+NixOS's `networking.nat`, matches the forwarded packets on their way out),
+with forwarding on (`net.ipv4.ip_forward = 1`):
+
+```
+table ip tandem-relay {
+  chain prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+    ip daddr 203.0.113.10 udp dport { 27460, 27461 } dnat to 10.0.0.21
+  }
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+    ip daddr 10.0.0.21 udp dport { 27460, 27461 } accept
+    ip saddr 10.0.0.21 udp sport { 27460, 27461 } accept
+  }
+}
+```
+
+On **R**, remember on the connection that it came through G, put the mark
+on its replies, and route marked packets back via G (table 2746, mark
+0x2746):
+
+```
+table ip tandem-relay {
+  chain prerouting {
+    type filter hook prerouting priority mangle; policy accept;
+    # Players reach 10.0.0.21 on these ports only through G.
+    ip daddr 10.0.0.21 udp dport { 27460, 27461 } ct state new ct mark set 0x2746
+    # The pod's replies on those connections: route them by the mark.
+    ct direction reply ct mark 0x2746 meta mark set 0x2746
+  }
+}
+```
+
+```sh
+ip rule add fwmark 0x2746 lookup 2746 priority 100
+ip route add default via 10.0.0.11 table 2746
+sysctl -w net.ipv4.conf.all.rp_filter=2   # if R's default route is on another interface
+```
+
+(On NixOS: `networking.nftables.tables` for the tables, and
+`systemd.network` routing policy rules and routes for the last two.) The
+reply leaves R towards G with R's address as source (portmap undoes its own
+DNAT), and G's conntrack gives it the public address back.
+
+- **Anti-spoofing**: G sends the players' datagrams to R with their own
+  source, not G's. OpenStack's port security drops that unless G's port
+  has `allowed_address_pairs` covering it (`openstack port set
+--allowed-address ip-address=0.0.0.0/0 <G's port>`) or port security is
+  off on it; a private layer-2 network (a Hetzner vSwitch) carries it as
+  is. Or join G and R with a tunnel (WireGuard, GRE: the outer source is
+  G), DNAT to R's tunnel address and match `iifname` of the tunnel on R.
+- **One public address for two replicas** works the same way with ports:
+  peers `203.0.113.10:27460,203.0.113.10:27462`, replica 0 on G itself
+  (hostPort), and on G `udp dport 27462 dnat to 10.0.0.21:27460` and
+  `udp dport 27463 dnat to 10.0.0.21:27461`.
+- With Cilium's BPF host routing, see above.
+
+Pinning the replica on G instead (label G `tandem.dev/relay-edge=0`) needs
+none of this.
+
+### DNS (dnsmasq)
+
+DNS only names the addresses: dnsmasq answers the game's lookup, and never
+carries a datagram of the relay, so the routing stays the DNAT above
+(hostPort, NodePort Local). The game resolves each name of `relay =` once,
+as its relay link starts, IPv4 only (`getaddrinfo`, the first answer), and
+talks to that address from then on: a changed record reaches a game at its
+next link. The relay's own `--peers` and `--regions` stay addresses
+(redirects carry addresses, and the relay makes no DNS query: no egress).
+
+```
+# /etc/dnsmasq.d/tandem-relay.conf
+# The entrance players write (relay = relay.example.org): one A record. An
+# AAAA is harmless; the game asks for IPv4 only.
+host-record=relay.example.org,203.0.113.10
+# Optional, one name per replica: for players who list several edges
+# (relay = edge-0.relay.example.org, edge-1.relay.example.org: a host
+# takes the one that answers first, so a node down is skipped), and for
+# looking at one.
+host-record=edge-0.relay.example.org,203.0.113.10
+host-record=edge-1.relay.example.org,203.0.113.11
+```
+
+A **split horizon** for players on the relay's own network (the inside
+dnsmasq answers the private address, the public DNS the public one):
+
+```
+# inside: the dnsmasq the LAN uses
+host-record=relay.example.org,10.0.0.11
+# outside: the zone's public record (or a dnsmasq with auth-zone)
+host-record=relay.example.org,203.0.113.10
+```
+
+Mind what follows from it: a player inside reaches the relay from a
+private address (counted by the warning below when most players do), its
+connection check and introductions name that address (no hole punching
+with an outside player; the relay carries them), and redirects carry the
+peers' public addresses, so inside players must reach those too (the
+router's hairpin NAT). A fleet used only inside is simpler with private
+peers and `--expect-public-clients=false`.
+
+### Verify the path
+
+1. **On the edge node**, while a player connects:
+   `tcpdump -ni any udp port 27460`. The player's public address is the
+   source both on the uplink and on the pod's interface (`veth*`, `lxc*`,
+   `cali*`), and the replies leave the uplink from the public address (or
+   the node's fixed address behind an OpenStack floating IP).
+2. **Conntrack**: `conntrack -L -p udp --orig-port-dst 27460`. Each flow
+   reads `src=<player> dst=<node> sport=<p> dport=27460 src=<pod> dst=<player>`:
+   a reply addressed to the player is no SNAT; a reply addressed to a
+   node's address is one. On Cilium, the `cilium-dbg` commands above.
+3. **The relay**: its logs name players by their public address and port
+   (`"session opened","host":"198.51.100.7:51234"`, `"guest joined"`),
+   `/metrics` has `tandem_relay_source_nat_suspected 0`, and no
+   `client addresses look NATed` warning appears.
+4. **The game**: the Co-op menu's connection check (and the plugin's log,
+   `relay: connection check: public 198.51.100.7:51234`) shows the
+   player's own public address, the one a "what is my IP" page shows.
+
+### When the relay says the addresses look NATed
+
+The relay looks at the addresses it is reached from: the players
+registered, and the sources of registrations, code lookups and probes
+(each source once a minute, at most 1024: never per packet). When at least
+4 are there and most are private, loopback, link-local or in
+100.64.0.0/10 (or in `--internal-cidrs`), or when at least 8 come from
+one or two addresses, it logs once a minute
+
+```json
+{
+  "level": "WARN",
+  "msg": "client addresses look NATed: hole punching and per-player limits will be wrong; see docs/relay.md, \"Relay pods behind kernel forwarding\" (--expect-public-clients=false on a LAN)",
+  "reason": "internal",
+  "sources": 6,
+  "internal": 6,
+  "addresses": 1,
+  "example": "10.42.0.1"
+}
+```
+
+and `tandem_relay_source_nat_suspected` is 1 (back to 0 once a minute's
+sources look right). `reason`: `internal` (mostly internal addresses: a
+masquerade or a proxy; `example` names one, often the node's or the CNI
+bridge's), or `few` (everyone from one or two addresses: an SNAT to a
+public address). Find the hop with the steps above. On a LAN, or for
+tests on 127.0.0.1, run with `--expect-public-clients=false`;
+`--internal-cidrs` adds a cluster network outside the private ranges
+(`--internal-cidrs=198.18.0.0/15`, or `TANDEM_RELAY_INTERNAL_CIDRS`).
 
 ## What to open on a firewall
 
@@ -446,22 +856,24 @@ already asks for).
 
 Flags of `tandem-relay serve`, with their defaults:
 
-| Flag                  | Default                         | What                                                                                                           |
-| --------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `--udp`               | `:27460`                        | UDP address players reach                                                                                      |
-| `--front`             | none (`TANDEM_RELAY_FRONT`)     | UDP address of the fleet's entrance (redirects only; needs `--peers`)                                          |
-| `--peers`             | none (`TANDEM_RELAY_PEERS`)     | every replica's public `ip:port`, in shard order                                                               |
-| `--shard`             | `0` (`TANDEM_RELAY_SHARD`)      | this replica's index in `--peers`, or a name ending in it                                                      |
-| `--readers`           | CPUs, at most 8                 | sockets reading the UDP port at once (`SO_REUSEPORT`, Linux)                                                   |
-| `--drain-timeout`     | `60s`                           | on SIGTERM, how long running sessions may go on before the relay exits                                         |
-| `--http`              | `:8080`                         | HTTP address for `/healthz`, `/readyz`, `/metrics` and `/debug/vars`                                           |
-| `--host-tokens`       | `/etc/tandem-relay/host-tokens` | the token file                                                                                                 |
-| `--max-sessions`      | `256`                           | sessions open at once; the next host is refused                                                                |
-| `--idle`              | `2m`                            | a client silent this long is forgotten (a session ends with its host)                                          |
-| `--code-ttl`          | `10m`                           | how long a join code lives (the host's game renews it)                                                         |
-| `--code-lookup-burst` | `5`                             | join-code lookups one source may make at once; then one per 6 s                                                |
-| `--max-code-failures` | `120`                           | failed lookups per minute from everyone together, for the whole fleet; past it every lookup waits for the next |
-| `--allow-any-host`    | off                             | no token check: local testing only                                                                             |
+| Flag                      | Default                              | What                                                                                                                                         |
+| ------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--udp`                   | `:27460`                             | UDP address players reach                                                                                                                    |
+| `--front`                 | none (`TANDEM_RELAY_FRONT`)          | UDP address of the fleet's entrance (redirects only; needs `--peers`)                                                                        |
+| `--peers`                 | none (`TANDEM_RELAY_PEERS`)          | every replica's public `ip:port`, in shard order                                                                                             |
+| `--shard`                 | `0` (`TANDEM_RELAY_SHARD`)           | this replica's index in `--peers`, or a name ending in it                                                                                    |
+| `--readers`               | CPUs, at most 8                      | sockets reading the UDP port at once (`SO_REUSEPORT`, Linux)                                                                                 |
+| `--drain-timeout`         | `60s`                                | on SIGTERM, how long running sessions may go on before the relay exits                                                                       |
+| `--http`                  | `:8080`                              | HTTP address for `/healthz`, `/readyz`, `/metrics` and `/debug/vars`                                                                         |
+| `--host-tokens`           | `/etc/tandem-relay/host-tokens`      | the token file                                                                                                                               |
+| `--max-sessions`          | `256`                                | sessions open at once; the next host is refused                                                                                              |
+| `--idle`                  | `2m`                                 | a client silent this long is forgotten (a session ends with its host)                                                                        |
+| `--code-ttl`              | `10m`                                | how long a join code lives (the host's game renews it)                                                                                       |
+| `--code-lookup-burst`     | `5`                                  | join-code lookups one source may make at once; then one per 6 s                                                                              |
+| `--max-code-failures`     | `120`                                | failed lookups per minute from everyone together, for the whole fleet; past it every lookup waits for the next                               |
+| `--allow-any-host`        | off                                  | no token check: local testing only                                                                                                           |
+| `--expect-public-clients` | on                                   | warn when client addresses look rewritten on the way ([NATed](#when-the-relay-says-the-addresses-look-nated)); `=false` on a LAN or in tests |
+| `--internal-cidrs`        | none (`TANDEM_RELAY_INTERNAL_CIDRS`) | prefixes counted as internal besides the private, loopback, link-local and 100.64.0.0/10 ones                                                |
 
 Fixed in the code (`relay/internal/relay/relay.go`, `DefaultConfig`):
 
@@ -496,19 +908,20 @@ metered server.
 - `GET /metrics` is the Prometheus text format (each replica its own:
   scrape the pods, `tandem-relay-pods`, not a load-balanced address):
 
-  | Metric                                    | Type    | What                                                                                                  |
-  | ----------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------- |
-  | `tandem_relay_sessions`                   | gauge   | open sessions                                                                                         |
-  | `tandem_relay_clients`                    | gauge   | registered hosts and guests                                                                           |
-  | `tandem_relay_draining`                   | gauge   | 1 while shutting down (no new session)                                                                |
-  | `tandem_relay_forwarded_packets_total`    | counter | datagrams forwarded                                                                                   |
-  | `tandem_relay_forwarded_bytes_total`      | counter | payload bytes forwarded                                                                               |
-  | `tandem_relay_dropped_total{reason}`      | counter | drops: `malformed`, `bad_token`, `unknown_client`, `rate_limited`, `no_channel`                       |
-  | `tandem_relay_codes_issued_total`         | counter | join codes issued                                                                                     |
-  | `tandem_relay_codes_reclaimed_total`      | counter | codes given back to their host after a restart                                                        |
-  | `tandem_relay_code_lookups_total{result}` | counter | code lookups: `found`, `unknown`, `limited`, `redirected` (to the owner)                              |
-  | `tandem_relay_refused_total{reason}`      | counter | registrations refused: `no_session`, `session_full`, `too_many_sessions`, `session_taken`, `draining` |
-  | `tandem_relay_redirects_total{kind}`      | counter | registrations redirected: `host` (a new session), `guest` (a secret)                                  |
+  | Metric                                    | Type    | What                                                                                                        |
+  | ----------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+  | `tandem_relay_sessions`                   | gauge   | open sessions                                                                                               |
+  | `tandem_relay_clients`                    | gauge   | registered hosts and guests                                                                                 |
+  | `tandem_relay_draining`                   | gauge   | 1 while shutting down (no new session)                                                                      |
+  | `tandem_relay_source_nat_suspected`       | gauge   | 1 while client addresses look rewritten on the way ([NATed](#when-the-relay-says-the-addresses-look-nated)) |
+  | `tandem_relay_forwarded_packets_total`    | counter | datagrams forwarded                                                                                         |
+  | `tandem_relay_forwarded_bytes_total`      | counter | payload bytes forwarded                                                                                     |
+  | `tandem_relay_dropped_total{reason}`      | counter | drops: `malformed`, `bad_token`, `unknown_client`, `rate_limited`, `no_channel`                             |
+  | `tandem_relay_codes_issued_total`         | counter | join codes issued                                                                                           |
+  | `tandem_relay_codes_reclaimed_total`      | counter | codes given back to their host after a restart                                                              |
+  | `tandem_relay_code_lookups_total{result}` | counter | code lookups: `found`, `unknown`, `limited`, `redirected` (to the owner)                                    |
+  | `tandem_relay_refused_total{reason}`      | counter | registrations refused: `no_session`, `session_full`, `too_many_sessions`, `session_taken`, `draining`       |
+  | `tandem_relay_redirects_total{kind}`      | counter | registrations redirected: `host` (a new session), `guest` (a secret)                                        |
 
   Worth an alert: `bad_token` rising (someone trying to host without a
   token, or a typo in a friend's `tandem.ini`); `unknown` or `limited`
@@ -523,16 +936,17 @@ metered server.
 
 What the host's Co-op panel shows, and what it means here:
 
-| The game says                                     | Look at                                                                                    |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| the relay did not answer                          | DNS name, the UDP port (firewall, port forward, load balancer), is the relay running       |
-| the relay refused our host token (relay_token)    | the token is not in the file, or the relay was not restarted after adding it (`bad_token`) |
-| no session has this join code (wrong, or expired) | the guest's code is old: the host's panel shows the current one                            |
-| too many join attempts: try again in a minute     | the lookup limits; `limited` in the metrics                                                |
-| the relay has too many sessions open              | `--max-sessions`                                                                           |
-| the relay went silent: reconnecting               | a replica restarting (it comes back within seconds) or the path to it; `kubectl get pods`  |
-| the relay's replicas sent us on twice             | the replicas' `--peers` lists differ: give them all the same                               |
-| the relay is restarting: try again in a moment    | a relay on its own is draining                                                             |
+| The game says                                                         | Look at                                                                                                   |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| the relay did not answer                                              | DNS name, the UDP port (firewall, port forward, load balancer), is the relay running                      |
+| the relay refused our host token (relay_token)                        | the token is not in the file, or the relay was not restarted after adding it (`bad_token`)                |
+| no session has this join code (wrong, or expired)                     | the guest's code is old: the host's panel shows the current one                                           |
+| too many join attempts: try again in a minute                         | the lookup limits; `limited` in the metrics                                                               |
+| the relay has too many sessions open                                  | `--max-sessions`                                                                                          |
+| the relay went silent: reconnecting                                   | a replica restarting (it comes back within seconds) or the path to it; `kubectl get pods`                 |
+| the relay's replicas sent us on twice                                 | the replicas' `--peers` lists differ: give them all the same                                              |
+| direct connections never come up, or everyone shares one lookup limit | the relay's `client addresses look NATed` warning: [NATed](#when-the-relay-says-the-addresses-look-nated) |
+| the relay is restarting: try again in a moment                        | a relay on its own is draining                                                                            |
 
 From outside, `nc -u -v relay.example.org 27460` cannot tell much (the
 relay does not answer strangers, on purpose). The quickest end-to-end test

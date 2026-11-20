@@ -1,0 +1,96 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# Relay pods on edge nodes: for a cluster without a UDP load balancer
+# (RPCU: OpenStack and Kubernetes on Hetzner), each replica runs on a node
+# that holds a public address, and the kernel of that node forwards UDP
+# 27460 (the replica) and 27461 (the entrance) to it with hostPort: a DNAT
+# that keeps each player's address and port, and conntrack sends the
+# replies back the way they came. No proxy, no extra hop. kgateway keeps
+# HTTP and TCP, on the same addresses: it listens on TCP, the relay on UDP.
+# docs/relay.md, "Relay pods behind kernel forwarding".
+#
+# A component: add it to an overlay built on ../base or ../kgateway
+# (../kgateway-edge is the latter). What the operator provides, as for the
+# base: the namespace, the image, the host-token Secret, and the peers
+# list, here every edge node's public address in replica order:
+#
+#   configMapGenerator:
+#     - name: tandem-relay-peers
+#       behavior: replace
+#       literals:
+#         - peers=<public IP of the node labelled "0">:27460,<... "1">:27460
+#
+# and the node labels, one node per replica, before the pods can start:
+#
+#   kubectl label node <node> tandem.dev/relay-edge=0
+#
+# A node may also be tainted tandem.dev/relay-edge=<N>:NoSchedule to keep
+# other workloads off it: the replicas tolerate it.
+
+# One StatefulSet per replica, each pinned to its node: a StatefulSet has
+# one pod template, so its pods cannot each have a node of their own, and
+# a replica's public address (its place in the peers list) is its node's.
+# Each keeps its ordinal (spec.ordinals.start), so everything the base
+# selects by apps.kubernetes.io/pod-index stays right.
+resources:
+  - replica-0
+  - replica-1
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: tandem-relay
+      app.kubernetes.io/part-of: tandem
+    includeSelectors: true
+
+patches:
+  # The base's own StatefulSet gives way to the ones above.
+  - target:
+      kind: StatefulSet
+      labelSelector: "!tandem.dev/relay-replica"
+    patch: |
+      $patch: delete
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: tandem-relay
+  # The base's UDP LoadBalancers: the nodes' own addresses replace them.
+  - patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: tandem-relay
+  - patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: tandem-relay-0
+  - patch: |
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: tandem-relay-1
+  # Every replica: its ports on its node's addresses (ports 0 and 1 of the
+  # base's container are game, 27460, and front, 27461), and the edge
+  # nodes' taint tolerated. The base's NetworkPolicy already lets UDP 27460
+  # and 27461 in from anywhere: a hostPort DNAT keeps the player's address,
+  # so the policy sees it as it is.
+  - target:
+      kind: StatefulSet
+      labelSelector: tandem.dev/relay-replica
+    patch: |
+      - op: add
+        path: /spec/template/spec/containers/0/ports/0/hostPort
+        value: 27460
+      - op: add
+        path: /spec/template/spec/containers/0/ports/1/hostPort
+        value: 27461
+      - op: add
+        path: /spec/template/spec/tolerations
+        value:
+          - key: tandem.dev/relay-edge
+            operator: Exists
+            effect: NoSchedule

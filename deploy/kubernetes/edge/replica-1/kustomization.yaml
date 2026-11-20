@@ -1,0 +1,41 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Replica 1: the base's StatefulSet, one pod, ordinal 1 (so the shard, the
+# pod-index label its Services select, and TANDEM_RELAY_SHARD stay as in
+# the base), on the node labelled tandem.dev/relay-edge: "1" only. Another
+# replica: copy this directory, change the number, add it to ../kustomization.yaml.
+resources:
+  - ../../base/relay
+
+nameSuffix: "-1"
+
+labels:
+  - pairs:
+      tandem.dev/relay-replica: "1"
+    includeSelectors: true
+
+patches:
+  - target:
+      kind: StatefulSet
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: add
+        path: /spec/ordinals
+        value:
+          start: 1
+      - op: add
+        path: /spec/template/spec/affinity/nodeAffinity
+        value:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: tandem.dev/relay-edge
+                    operator: In
+                    values: ["1"]
+      # The node labels keep the replicas apart (and the label above would
+      # narrow the base's anti-affinity to this pod alone).
+      - op: remove
+        path: /spec/template/spec/affinity/podAntiAffinity
