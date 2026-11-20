@@ -10,6 +10,7 @@
 
 #include "tandem/protocol.hpp"
 
+#include <cstddef>
 #include <map>
 #include <set>
 #include <utility>
@@ -130,4 +131,64 @@ proto::PlayerId Leader(const std::set<proto::PlayerId> &group, proto::PlayerId h
 proto::PlayerId AreaOwner(proto::PlayerId player, const std::set<proto::PlayerId> &players,
                           const Places &places, const Links &links, proto::PlayerId host = 1,
                           const Holders &holders = {}, proto::PlayerId current = proto::kNoPlayer);
+
+// ---- The overlap: what a game holds back (regions.md §6) ----
+
+// The region of a linked player that outranks us: its game populates the
+// world there (its crowd, its traffic), ours holds its own back.
+struct Cover {
+  proto::PlayerId by{};
+  proto::Vec3 center;
+  friend bool operator==(const Cover &, const Cover &) = default;
+};
+// The covers over `player`'s world: every player of `players` linked with
+// it that outranks it and whose place is known, highest rank first.
+std::vector<Cover> Covers(proto::PlayerId player, const std::set<proto::PlayerId> &players,
+                          const Places &places, const Links &links, proto::PlayerId host = 1,
+                          const Holders &holders = {});
+// The highest-ranked cover whose V is within `radius` of this point
+// (kNoPlayer: none): the game that populates it.
+proto::PlayerId CoveredBy(const proto::Vec3 &point, const std::vector<Cover> &covers,
+                          float radius = kRadius);
+
+// The share of its crowd a game keeps (the crowd system's density modifier)
+// when it cannot keep it out of the covers by place: all of it alone (1),
+// the part of its region no cover overlaps as its V nears one, none (0)
+// once its V is within kQuietIn of a cover's (`quiet`: it is at none now,
+// and stays there until beyond kRadius: the crowd's hysteresis). In steps of
+// a tenth, so that a walk does not change it every pass.
+float CrowdShare(const proto::Vec3 &self, const std::vector<Cover> &covers, bool quiet);
+
+// Null areas: boxes the crowd system spawns nothing in (pedestrians and
+// traffic), one over each cover, kept where that V is. An area is placed
+// with a lifetime and placed again before it runs out, or when its V has
+// moved a step: it ends by itself if we stop (a crash, a session's end
+// nobody tidied up).
+inline constexpr float kNullHalf = kRadius; // half the box's side, metres
+inline constexpr float kNullHeight = 40.f;  // half its height
+inline constexpr float kNullStep = 15.f;    // placed again when its V is this far from its centre
+inline constexpr float kNullLife = 12.f;    // seconds an area lasts
+inline constexpr float kNullRenew = 8.f;    // placed again after this long
+struct NullStep {
+  proto::PlayerId by{};
+  bool place{}; // true: put the area at `center` (the old one of `by`, if any, goes); false: remove
+                // it
+  proto::Vec3 center;
+  friend bool operator==(const NullStep &, const NullStep &) = default;
+};
+class NullAreas {
+public:
+  // What to change now, given the covers and the time (seconds).
+  std::vector<NullStep> Update(const std::vector<Cover> &covers, double now);
+  // Every area goes (the session ended, the feature was turned off).
+  std::vector<NullStep> Clear();
+  std::size_t Size() const { return m_areas.size(); }
+
+private:
+  struct Area {
+    proto::Vec3 center;
+    double at{};
+  };
+  std::map<proto::PlayerId, Area> m_areas;
+};
 } // namespace tandem::regions
