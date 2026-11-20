@@ -2581,8 +2581,8 @@ using Message = std::variant<
     TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
-    BreachResult, NpcVendor,
-    TrafficOwnership, TrafficHandover, TrafficHandoverState, TrafficHandoverDone>;
+    BreachResult, NpcVendor, TrafficOwnership, TrafficHandover, TrafficHandoverState,
+    TrafficHandoverDone>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions):

@@ -912,6 +912,33 @@ TEST_CASE("breaches: survive encoding, reliable one-shots, bounded, known flags 
   CHECK_FALSE(Decode(Encode(BreachResult{.verdict = BreachVerdict{3}})).has_value());
 }
 
+TEST_CASE("vehicles changing hands: survive encoding, reliable, small") {
+  RoundTrips(TrafficOwnership{.id = MakeTrafficId(2, 9), .owner = 3});
+  RoundTrips(TrafficHandover{.id = MakeTrafficId(2, 9), .to = 3});
+  RoundTrips(TrafficHandoverState{.id = MakeTrafficId(2, 9),
+                                  .from = 2,
+                                  .to = 3,
+                                  .position = {1, 2, 3},
+                                  .orientation = {0, 0, 0.6f, 0.8f},
+                                  .velocity = {4, 5, 6},
+                                  .health = 0.5f,
+                                  .flags = kTrafficLights,
+                                  .handover = kHandoverInherited});
+  RoundTrips(TrafficHandoverDone{.id = MakeTrafficId(2, 9), .accepted = true});
+  for (const Message &message : {Message{TrafficOwnership{}}, Message{TrafficHandover{}},
+                                 Message{TrafficHandoverState{}}, Message{TrafficHandoverDone{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(IsReliable(message));
+    CHECK_FALSE(IsStory(message));
+    CHECK_FALSE(IsCombat(message));
+    CHECK(Encode(message).size() <= 80);
+  }
+  CHECK(std::string(NameOf(TrafficOwnership{})) == "TrafficOwnership");
+  CHECK(std::string(NameOf(TrafficHandover{})) == "TrafficHandover");
+  CHECK(std::string(NameOf(TrafficHandoverState{})) == "TrafficHandoverState");
+  CHECK(std::string(NameOf(TrafficHandoverDone{})) == "TrafficHandoverDone");
+}
+
 TEST_CASE("region messages survive encoding, are reliable and bounded") {
   RoundTrips(Regions{.revision = 4, .pairs = {1, 2, 2, 3}});
   RoundTrips(NpcOwner{.npc = 0x01000007, .owner = 3, .flags = kNpcPinned});

@@ -474,10 +474,10 @@ const char *NameOfKind(std::size_t kind) {
                                    "Breach",
                                    "BreachResult",
                                    "NpcVendor",
-"TrafficOwnership",
-"TrafficHandover",
-"TrafficHandoverState",
-"TrafficHandoverDone"};
+                                   "TrafficOwnership",
+                                   "TrafficHandover",
+                                   "TrafficHandoverState",
+                                   "TrafficHandoverDone"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }
