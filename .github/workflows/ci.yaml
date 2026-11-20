@@ -9,6 +9,13 @@ name: CI
 on:
   push:
   pull_request:
+  # Run by hand ("Run workflow", tests: true) to also run core's tests.
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: Run core's tests (ctest) after the build
+        type: boolean
+        default: true
 
 # A newer push to the same branch or pull request cancels the older run.
 concurrency:
@@ -69,7 +76,11 @@ jobs:
           kustomize build deploy/kubernetes/playit | kubeconform -strict -summary -
 
   core:
-    name: core tests (Linux)
+    # Builds on every push. The tests (several minutes of real-time
+    # sessions, timing-sensitive) need more than the shared runner gives:
+    # they run on the game machine (tools/build.sh test) before a merge,
+    # here only when the workflow is run by hand.
+    name: core build (Linux)
     runs-on: ubuntu-latest
     # GCC 16, as in devenv: libstdc++'s distributions changed in 16
     # (generate_canonical), and the tests' seeded links (quality_test,
@@ -84,7 +95,11 @@ jobs:
           fetch-depth: 0 # the build is named after the commit (core/CMakeLists.txt)
 
       # Swap, ccache, CMAKE_BUILD_PARALLEL_LEVEL from the runner's memory.
+      # One compile at a time: the protocol's translation units take 6-7 GB
+      # with GCC, and three at once on the 16 GB runner swapped it to death.
       - uses: ./.github/actions/build-host
+        with:
+          job-gb: "16"
 
       # relay-loopback builds the relay with Go and runs sessions through it.
       - uses: actions/setup-go@v7
@@ -114,6 +129,7 @@ jobs:
         run: cmake --build --preset linux
 
       - name: Test
+        if: github.event_name == 'workflow_dispatch' && inputs.tests
         run: ctest --preset linux
 
       - uses: ./.github/actions/build-report
