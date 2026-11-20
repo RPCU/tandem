@@ -83,10 +83,18 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
 
 ### Protocol (`core/include/tandem/protocol.hpp`)
 
-- Messages are `std::variant` alternatives: **append new ones at the end**,
-  never reorder or remove. Any change to an existing message bumps
+- Messages are alternatives of `MessageVariant`: **append new ones at the
+  end**, never reorder or remove. Any change to an existing message bumps
   `kProtocolVersion`. Add the message to `NameOf`, pick its channel in
   `ChannelOf`, add a round-trip case to `tests/protocol_test.cpp`.
+- Code uses `proto::Message` (and `SessionEvent`), a `ClosedVariant`
+  (`tandem/closed_variant.hpp`): std::visit, get_if, holds_alternative and
+  index() work as on the variant, but its copies, moves and conversions are
+  compiled only in `core/src/message*.cpp` (`session_event*.cpp`). Keep it
+  that way: no `std::variant<…every message…>` by value elsewhere, no
+  `emplace`, no `in_place_index`; libstdc++ compiles each of those in O(N²)
+  for N alternatives, GBs of compiler memory per translation unit
+  (`docs/architecture/testing.md`, "Compile memory").
 - High-rate messages stay small (`PlayerState` < 64 bytes is tested). A
   stream sent every frame or tick goes in `tests/budget_test.cpp` (64
   kbit/s each way) with a relevance rate; compact wire forms are encoded
