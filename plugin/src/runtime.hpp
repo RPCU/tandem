@@ -654,6 +654,14 @@ public:
   void PushBreach(proto::Message message);
   std::vector<proto::Message> TakeBreaches();
 
+  // The world's objects (scripts/tandem/Objects.reds): glass and breakable
+  // scenery (proto::Fracture), a device's fire (proto::DeviceFire). Game ->
+  // net: ours. Net -> game: the others'. Both bounded.
+  void SubmitObject(proto::Message message);
+  std::vector<proto::Message> TakeObjectOutbox();
+  void PushObject(proto::Message message);
+  std::vector<proto::Message> TakeObjects();
+
   // Our player id while in a session (0: none), set by the net thread.
   void SetYou(proto::PlayerId you) { m_you.store(you); }
   proto::PlayerId You() const { return m_you.load(); }
@@ -808,6 +816,7 @@ private:
   std::vector<proto::Message> m_deviceOutbox, m_deviceInbox; // m_lock
   std::vector<proto::Breach> m_breachOutbox;                 // m_lock
   std::vector<proto::Message> m_breachInbox;                 // m_lock
+  std::vector<proto::Message> m_objectOutbox, m_objectInbox; // m_lock
   std::atomic<proto::PlayerId> m_you{0};
   std::vector<proto::NpcAnim> m_npcAnimsIn;                                             // m_lock
   std::vector<proto::NpcShot> m_npcShotsIn;                                             // m_lock

@@ -1275,6 +1275,30 @@ std::vector<proto::Message> Runtime::TakeBreaches() {
   return std::exchange(m_breachInbox, {});
 }
 
+void Runtime::SubmitObject(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_objectOutbox.size() < 512)
+    m_objectOutbox.push_back(std::move(message));
+}
+
+std::vector<proto::Message> Runtime::TakeObjectOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_objectOutbox, {});
+}
+
+void Runtime::PushObject(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_objectInbox.size() < 1024)
+    m_objectInbox.push_back(std::move(message));
+  else
+    ++m_overflows;
+}
+
+std::vector<proto::Message> Runtime::TakeObjects() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_objectInbox, {});
+}
+
 void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you) {
   {
     // Each owner's states list every NPC it shares, ten times a second: an

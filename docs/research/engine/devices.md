@@ -56,16 +56,17 @@ array:gamePersistentID`, `DoorControllerPS.openingTokens: [EntityID]`,
   ALERTED 2, COMBAT 3} (10407).
 - What tandem reads (all public, const):
 
-  | Class                         | Read with                                                                                                                                | Saved fields behind it                            |
-  | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-  | `ScriptableDeviceComponentPS` | `GetDeviceState()`, `GetDurabilityState()` (29507), `WasQuickHacked()` (30743), `IsQuickHacksExposed()` (28555), `IsGlitching()` (29665) | `m_deviceState`, `m_durabilityState`, …           |
-  | `DoorControllerPS` (134529)   | `IsOpen()`, `IsLocked()`, `IsSealed()` (134587–134607)                                                                                   | `isOpened @728`, `isLocked @729`, `isSealed @730` |
-  | `LiftControllerPS` (137644)   | `GetActiveFloor()` (138433), `GetTargetFloor()` (137796), `IsMoving()` (138445)                                                          | `activeFloor @784`, `movementState @792`          |
-  | `ExplosiveDeviceControllerPS` | `IsExploded()` (121176)                                                                                                                  | `m_exploded`                                      |
-  | `SensorDeviceControllerPS`    | `IsAttitudeChanged()` (153366): cameras (`SurveillanceCameraControllerPS`, 166500) and turrets (`SecurityTurretControllerPS`, 172039)    | `m_isAttitudeChanged`                             |
-  | `AccessPointControllerPS`     | `IsNetworkBreached()` (119102)                                                                                                           | `m_isBreached`                                    |
-  | `MediaDeviceControllerPS`     | `GetActiveStationIndex()` (259375): radios (`RadioControllerPS`, 477468), TVs (`TVControllerPS`, 259624)                                 | `m_activeStation`                                 |
-  | `SecuritySystemControllerPS`  | `GetSecurityState()` (114109)                                                                                                            | `m_securitySystemState`                           |
+  <!-- prettier-ignore -->
+  | Class | Read with | Saved fields behind it |
+  | --- | --- | --- |
+  | `ScriptableDeviceComponentPS` | `GetDeviceState()`, `GetDurabilityState()` (29507), `WasQuickHacked()` (30743), `IsQuickHacksExposed()` (28555), `IsGlitching()` (29665) | `m_deviceState`, `m_durabilityState`, … |
+  | `DoorControllerPS` (134529) | `IsOpen()`, `IsLocked()`, `IsSealed()` (134587–134607) | `isOpened @728`, `isLocked @729`, `isSealed @730` |
+  | `LiftControllerPS` (137644) | `GetActiveFloor()` (138433), `GetTargetFloor()` (137796), `IsMoving()` (138445) | `activeFloor @784`, `movementState @792` |
+  | `ExplosiveDeviceControllerPS` | `IsExploded()` (121176) | `m_exploded` |
+  | `SensorDeviceControllerPS` | `IsAttitudeChanged()` (153366): cameras (`SurveillanceCameraControllerPS`, 166500) and turrets (`SecurityTurretControllerPS`, 172039) | `m_isAttitudeChanged` |
+  | `AccessPointControllerPS` | `IsNetworkBreached()` (119102) | `m_isBreached` |
+  | `MediaDeviceControllerPS` | `GetActiveStationIndex()` (259375): radios (`RadioControllerPS`, 477468), TVs (`TVControllerPS`, 259624) | `m_activeStation` |
+  | `SecuritySystemControllerPS` | `GetSecurityState()` (114109) | `m_securitySystemState` |
 
   Offsets from the RTTI dump. [2.5-static]
 
@@ -165,7 +166,8 @@ isTilted}` (`: gameDeviceReplicatedState`). Nothing drives them, but they
 
 - Glass, covers and other breakable scenery are physics destruction
   (`gameDestructionPersistencySystem`: no script functions, no properties),
-  not `ScriptableDeviceComponentPS`: not synced. [2.5-static]
+  not `ScriptableDeviceComponentPS`: no state to sync, only the moment
+  they break (§13.90). [2.5-static]
 - Loot containers are `gameLootContainerBase` (`coop-quests-world.md`
   §7.3): per player, nothing sent.
 - Vehicles have a `ScriptableDeviceComponentPS` too (`VehicleComponentPS`):
@@ -215,3 +217,51 @@ Tags as in §13.30. Line numbers: the 2.50 `final.reds`.
 - To verify in game: the beams on the second game after `TandemPulseNetwork`
   on its copy; that `OnActionPing` runs once per ping (not once per device
   of the network).
+
+#### Physics destruction (glass, covers, breakable scenery)
+
+- Two kinds of breakable things [2.5-static]: a component of an entity
+  (`entPhysicalDestructionComponent`, 832 bytes: `destructionParams`,
+  `destructionLevelData`, `isEnabled`, `systemsToNotifyFlags`; script
+  functions `IsFractured()` and `TriggerDestruction(velocity)`, 290562) and
+  world nodes with no entity (`worldPhysicalDestructionNode`,
+  `worldInstancedDestructibleMeshNode`, `worldBakedDestructionNode`).
+  `gameDestructionPersistencySystem` has no script function and no
+  property.
+- An entity hears of its own component breaking:
+  `PhysicalDestructionEvent {componentName, levelOfDestruction}` (290568),
+  handled by `GameObject.OnPhysicalDestructionEvent` (13897, a sound
+  distraction stim) and overridden without a call to it in
+  `DestructibleMasterDevice` (279959), `DisplayGlass` (478292),
+  `BillboardDevice` (486393), `BaseDestructibleDevice` (489055),
+  `DestructibleRoadSign` (489246), `DestructibleMasterLight` (489517),
+  `RetractableAd` (490972), `ElectricLight` (491659), `Window` (496144),
+  `RoadBlock` (506454). [2.5-untested]
+- World geometry: the native `gameDestructibleSpotsSystem` calls its one
+  script function `OnNotifyAboutFracture(localPlayerObj, fracturePos)`
+  (315523; vanilla: a crowd stim when V is in a vehicle within 10 m).
+  Which nodes notify is their `systemsToNotifyFlags` _(inferred)_.
+  [2.5-untested]
+- A physics impulse with no attack: `CombatGadgetHelper.SpawnPhysicalImpulse`
+  (208535): the game effect `physicalImpulseSphere` with `radius` and
+  `position` in its shared data, run from a source object; grenades
+  (302899) and explosive devices (`DoPhysicsPulse`, 120641) use it beside
+  their attack. Other levers seen, not used: the events
+  `enteventsTriggerDestructionEvent {velocity}`, `ToggleImpulseDestruction`,
+  `PhysicalImpulseEvent {worldPosition, worldImpulse, radius}` (to an
+  entity), the effect executors `gameEffectExecutor_PhysicalFractureField`
+  and `_TriggerDestruction` (in effect resources, not reachable by name
+  from script), the quest node `questEntityManagerSetDestructionState`.
+  [2.5-static]
+- To verify in game (`tools/game.sh cmd glass …`):
+  1. `glass part` on a `DisplayGlass`, a `Window`, a road sign:
+     `TriggerDestruction(20)` breaks it, with its sound; no hit event.
+  2. `glass break` looking at a shop front's pane and at a bus shelter:
+     whether the impulse (1 m) shatters world glass; if not, the radius or
+     another lever.
+  3. Shooting those: `glass` counts a break told for each (the two hooks
+     fire), and how many notices one pane gives.
+  4. With a second game: the echo count rises on the receiver and nothing
+     comes back (`objects: … echo(es)`).
+  5. That an NPC or V beside a replayed break takes no damage and is not
+     staggered.

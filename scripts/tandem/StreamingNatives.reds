@@ -14,11 +14,26 @@ public native struct TandemStreamed {
   native let attached: Bool;
 }
 
+// Something that happened at a place, to an entity or between two (a piece
+// of the world breaking, a device's shot).
+public native struct TandemStreamedPoint {
+  native let entity: EntityID;
+  native let other: EntityID;
+  native let name: CName;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let value: Int32;
+}
+
 public native class TandemStreaming extends IScriptable {
   // From any thread: append to `kind`'s queue (TandemStreamKind).
   public static native func QueueStreamed(kind: Int32, entity: EntityID, cls: CName, attached: Bool)
   // Game thread: everything queued of `kind` since the last call, in order.
   public static native func TakeStreamed(kind: Int32) -> array<TandemStreamed>
+  // The same for what happened at a place (TandemPointKind).
+  public static native func QueuePoint(kind: Int32, entity: EntityID, other: EntityID, name: CName, position: Vector4, value: Int32)
+  public static native func TakePoints(kind: Int32) -> array<TandemStreamedPoint>
   // Game thread: we call `entity`'s wrapped callback ourselves until
   // SetPassing(no entity); its wrap asks IsPassing and lets that call through.
   public static native func SetPassing(entity: EntityID)
@@ -38,4 +53,15 @@ public abstract class TandemStreamKind {
   public static func BreachNpc() -> Int32 { return 6; }
   // The Ping quickhack reached a device: its network pulses from it.
   public static func NetworkPing() -> Int32 { return 7; }
+}
+
+// The point queues (kPointKinds in the .cpp).
+public abstract class TandemPointKind {
+  // A piece of the world broke (entity and name: the placed entity and its
+  // destruction component, when it is one).
+  public static func Fracture() -> Int32 { return 0; }
+  // A device fired its weapon (other: what at), turned to a target or let
+  // go of it (value: 0 idle, 1 aim).
+  public static func DeviceShot() -> Int32 { return 1; }
+  public static func DeviceAim() -> Int32 { return 2; }
 }

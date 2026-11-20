@@ -101,8 +101,8 @@ one run with `cmd presence vo onPlayerHit` decides.
 | fires a smart or lobbed round | flash, report | unchanged: their flight is not a line (**open**) | — |
 | (host) an NPC fires | flash, report, shells on the proxy | the same real shot from the proxy's weapon at the target the host already sends in `NpcShot` | as above; an NPC shot at our own V is still the one Shots.reds decides |
 
-What a drawn bullet breaks in the world (glass, a barrel) is each game's
-own, as before for props nobody shares.
+What breaks in the world is told and replayed whatever broke it
+(`devices.md`, "Glass and breakable scenery"); a barrel is a device.
 
 ### 4. Party HUD
 
