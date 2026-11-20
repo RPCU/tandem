@@ -134,6 +134,19 @@ skopeo copy docker-archive:result-relay-image \
   docker://registry.example.org/tandem/tandem-relay:0.1.0
 ```
 
+For arm64 nodes, `task relay:image:arm64` (`nix-build -A relayImageArm64
+-o result-relay-image-arm64`) builds the same image cross-compiled (the
+binary is static Go; Nix's binary cache has the cross toolchain). Push both
+under one multi-arch tag:
+
+```sh
+podman manifest create tandem-relay:0.1.0
+podman manifest add tandem-relay:0.1.0 docker-archive:result-relay-image
+podman manifest add tandem-relay:0.1.0 docker-archive:result-relay-image-arm64
+podman manifest push --all tandem-relay:0.1.0 \
+  docker://registry.example.org/tandem/tandem-relay:0.1.0
+```
+
 Without Nix, any builder that copies the static binary above into an empty
 image does the same job; keep it non-root, with no shell.
 

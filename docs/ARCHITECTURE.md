@@ -69,7 +69,7 @@ task touches ([Topic files](#topic-files)).
 | `peer/` | `tandem-peer`, the mock player (Linux); `peer/sim/`: the simulated second game (`tandem_sim`: referee, world, story, V, personas, coverage) | `linux` preset |
 | `tests/` | doctest unit and loopback tests of `core/` (Linux) | `linux` preset |
 | `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
-| `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
+| `nix/`, `default.nix` | relay package and OCI image (and its arm64 twin, `relayImageArm64`); redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
 | `deploy/kubernetes/base` | kustomize base for the relay; `kgateway/`: the base with kgateway in front of its HTTP side | `task k8s:check` |
 | `deploy/systemd` | `tandem-relay.service`, the relay on a plain server (`docs/relay.md`) | — |
 | `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `RegionNatives.reds` `region_natives.cpp`, `StreetNatives.reds` `street_natives.cpp`, `PresenceNatives.reds` `presence_natives.cpp`, `ActivityNatives.reds` `activity_natives.cpp`, `ProgressNatives.reds` `progress_natives.cpp`, `TradeNatives.reds` `trade_natives.cpp`, `CommsNatives.reds` `comms_natives.cpp` | `task scripts:check`, `task natives:check` |

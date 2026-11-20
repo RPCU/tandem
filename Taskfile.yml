@@ -195,6 +195,11 @@ tasks:
     cmds:
       - nix-build -A relayImage -o result-relay-image
 
+  relay:image:arm64:
+    desc: Build the relay's OCI image for arm64 with Nix (result-relay-image-arm64)
+    cmds:
+      - nix-build -A relayImageArm64 -o result-relay-image-arm64
+
   relay:load:
     desc: Load the relay image into podman
     deps: [relay:image]

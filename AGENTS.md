@@ -32,7 +32,7 @@ Where things are (`core/`, `plugin/`, `peer/`, `tests/`, `relay/`, `nix/`,
 | `task relay:run`     | a local relay open to any host (testing only)                |
 | `task relay:test`    | relay vet + tests with the race detector                     |
 | `task pilot:test`    | the test pilot: vet, tests, every routine on its simulator   |
-| `task relay:image`   | relay OCI image via Nix (`result-relay-image`)               |
+| `task relay:image`   | relay OCI image via Nix (`result-relay-image`; `:arm64` too) |
 | `task k8s:check`     | render the kustomize base and validate it (kubeconform)      |
 | `task check`         | all of the above, and the four checks below                  |
 | `task natives:check` | each `*Natives.reds` matches its `.cpp` (types, fields)      |
