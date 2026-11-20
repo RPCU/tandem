@@ -1,0 +1,94 @@
+# The ancestry of every game class scripts/tandem wraps (class < parent < ...),
+# from the decompiled scripts of game 2.50. tools/scripts-threads.py reads it to
+# tell what exists once per entity, component or persistent state; rewrite it
+# with `tools/scripts-threads.py --classes VANILLA.reds` when a wrap of a new
+# class is added (or add the line by hand).
+AIDeathReactionsTask < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
+AIHitReactionTask < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
+AISubActionApplyTimeDilation_Record_Implementation < IScriptable
+AIWeapon < IScriptable
+BackpackMainGameController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+BaseBullet < BaseProjectile < ItemObject < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+BaseGrenade < WeaponGrenade < ItemObject < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+BaseProjectile < ItemObject < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+BaseWorldMapMappinController < BaseInteractionMappinController < BaseMappinBaseController < inkLogicController < inkILogicController < IScriptable
+CallPolice < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
+DamageSystem < IDamageSystem < IReplicatedGameSystem < IGameSystem < IScriptable
+DeathDecisions < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
+DeathDecisionsWithResurrection < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
+Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
+DismembermentComponent < IComponent < IScriptable
+DisposalDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
+DropEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition < StateFunctor < IScriptable
+ExplosiveDeviceControllerPS < BasicDistractionDeviceControllerPS < ScriptableDeviceComponentPS < SharedGameplayPS < DeviceComponentPS < GameComponentPS < PersistentState < IScriptable
+FastTravelSystem < ScriptableSystem < IScriptableSystem < IScriptable
+FinisherAttackEvents < FinisherTransition < DefaultTransition < StateFunctor < IScriptable
+FocusModeTaggingSystem < ScriptableSystem < IScriptableSystem < IScriptable
+ForceMoveInCombatWhistleEffector < ForceMoveInCombatEffector < Effector < IScriptable
+FullscreenVendorGameController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+GameObject < GameEntity < Entity < IScriptable
+GrappleBreakFreeDecisions < GrappleStandEvents < LocomotionTakedownEvents < LocomotionEventsTransition < LocomotionTransition < DefaultTransition < StateFunctor < IScriptable
+GrappleBreakFreeEvents < GrappleStandEvents < LocomotionTakedownEvents < LocomotionEventsTransition < LocomotionTransition < DefaultTransition < StateFunctor < IScriptable
+GunnerEvents < VehicleEventsTransition < VehicleTransition < DefaultTransition < StateFunctor < IScriptable
+HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
+HitReactionComponent < AIMandatoryComponents < AIRelatedComponents < ScriptableComponent < GameComponent < IComponent < IScriptable
+ImmediateExitWithForceEvents < ExitingEventsBase < VehicleEventsTransition < VehicleTransition < DefaultTransition < StateFunctor < IScriptable
+InVehicleCombatDecorator < AIVehicleTaskAbstract < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
+Inventory < GameComponent < IComponent < IScriptable
+MarketSystem < IMarketSystem < ScriptableSystem < IScriptableSystem < IScriptable
+MeleeAttackGenericEvents < MeleeEventsTransition < MeleeTransition < DefaultTransition < StateFunctor < IScriptable
+MeleeProjectile < BaseProjectile < ItemObject < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+MenuScenario_ArcadeMinigame < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
+MenuScenario_BaseMenu < inkMenuScenario < IScriptable
+MenuScenario_CharacterCustomizationMirror < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
+MenuScenario_HubMenu < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
+MenuScenario_NetworkBreach < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
+MenuScenario_Storage < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
+MenuScenario_TimeSkip < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
+MenuScenario_Vendor < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
+MenuScenario_Wardrobe < MenuScenario_BaseMenu < inkMenuScenario < IScriptable
+MessengerDialogViewController < inkLogicController < inkILogicController < IScriptable
+MinimapContainerController < MappinsContainerController < inkProjectedHUDGameController < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+MinimapPOIMappinController < BaseMinimapMappinController < BaseMappinBaseController < inkLogicController < inkILogicController < IScriptable
+NPCPoiseListener < ScriptStatPoolsListener < IStatPoolsListener < IScriptable
+NPCPuppet < ScriptedPuppet < gamePuppet < gamePuppetBase < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+NPCStatesComponent < AINetStateComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
+PassengerEvents < VehicleEventsTransition < VehicleTransition < DefaultTransition < StateFunctor < IScriptable
+PauseMenuBackgroundGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+PauseMenuGameController < gameuiMenuItemListGameController < gameuiSaveHandlingController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+PhoneSystem < ScriptableSystem < IScriptableSystem < IScriptable
+PickUpEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition < StateFunctor < IScriptable
+PingSquadEffector < Effector < IScriptable
+PlayerPuppet < ScriptedPuppet < gamePuppet < gamePuppetBase < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+PreventionSystem < ScriptableSystem < IScriptableSystem < IScriptable
+ProjectileLauncherRound < ItemObject < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+QuestMappinController < BaseQuestMappinController < BaseInteractionMappinController < BaseMappinBaseController < inkLogicController < inkILogicController < IScriptable
+QuickHackMappinController < BaseInteractionMappinController < BaseMappinBaseController < inkLogicController < inkILogicController < IScriptable
+QuickMeleeEvents < WeaponEventsTransition < WeaponTransition < DefaultTransition < StateFunctor < IScriptable
+QuickhacksListGameController < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+ReleaseEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition < StateFunctor < IScriptable
+ReloadEvents < WeaponEventsTransition < WeaponTransition < DefaultTransition < StateFunctor < IScriptable
+ScriptableDeviceComponentPS < SharedGameplayPS < DeviceComponentPS < GameComponentPS < PersistentState < IScriptable
+ScriptedPuppet < gamePuppet < gamePuppetBase < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+SetTimeDilationEffector < Effector < IScriptable
+ShardNotificationController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+ShootEvents < WeaponEventsTransition < WeaponTransition < DefaultTransition < StateFunctor < IScriptable
+SingleplayerMenuGameController < MainMenuGameController < gameuiMenuItemListGameController < gameuiSaveHandlingController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+SpeedExitingEvents < ExitingEvents < ExitingEventsBase < VehicleEventsTransition < VehicleTransition < DefaultTransition < StateFunctor < IScriptable
+StatusEffectManagerComponent < AIMandatoryComponents < AIRelatedComponents < ScriptableComponent < GameComponent < IComponent < IScriptable
+StimBroadcasterComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
+TakedownGameEffectHelper < IScriptable
+TakedownReleasePreyEvents < LocomotionTakedownEvents < LocomotionEventsTransition < LocomotionTransition < DefaultTransition < StateFunctor < IScriptable
+ThrowEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition < StateFunctor < IScriptable
+TimeskipGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+UpdateWhistlePosition < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
+VehicleComponent < ScriptableDeviceComponent < DeviceComponent < GameComponent < IComponent < IScriptable
+VehicleComponentPS < ScriptableDeviceComponentPS < SharedGameplayPS < DeviceComponentPS < GameComponentPS < PersistentState < IScriptable
+VehicleObject < GameObject < GameEntity < Entity < IScriptable
+VendorDataManager < IScriptable
+VendorHubMenuGameController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+WorldMapMenuGameController < MappinsContainerController < inkProjectedHUDGameController < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+WorldMappinsContainerController < MappinsContainerController < inkProjectedHUDGameController < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+gameuiInventoryGameController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+gameuiVehicleShopGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+MappinUIUtils
