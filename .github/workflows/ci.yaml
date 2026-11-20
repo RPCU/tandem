@@ -1,9 +1,11 @@
 name: CI
 
-# What can run without the game or the Windows sysroot. The plugin
-# (tandem.dll) is not built here yet. `task scripts:check` compiles scripts/
-# against the game's own scripts and other mods' (on the game machine): it
-# cannot run here.
+# What can run without the game: the Go modules, the Kubernetes manifests,
+# core's tests and the mock player (Linux, GCC), the plugin (tandem.dll,
+# cross-compiled with clang-cl against the MSVC CRT and Windows SDK that xwin
+# fetches, as `task build:plugin` does) and the checks below. `task
+# scripts:check` compiles scripts/ against the game's own scripts and other
+# mods' (on the game machine): it cannot run here.
 on:
   push:
   pull_request:
@@ -119,6 +121,84 @@ jobs:
         with:
           path: ${{ runner.temp }}/ccache
           key: ccache-linux-${{ github.run_id }}-${{ github.run_attempt }}
+
+  plugin:
+    name: plugin (Windows, clang-cl)
+    runs-on: ubuntu-latest
+    env:
+      # devenv.nix's, from apt.llvm.org instead of Nix.
+      TANDEM_CLANG_CL: /usr/lib/llvm-20/bin/clang-cl
+      TANDEM_LLD_LINK: /usr/lib/llvm-20/bin/lld-link
+      TANDEM_LLVM_BIN: /usr/lib/llvm-20/bin
+      XWIN_VERSION: 0.9.0
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0 # the build is named after the commit (core/CMakeLists.txt)
+
+      - uses: ./.github/actions/build-host
+
+      - name: Install LLVM 20
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+          sudo bash "$RUNNER_TEMP/llvm.sh" 20
+          sudo apt-get install -y --no-install-recommends llvm-20 ninja-build
+          "$TANDEM_CLANG_CL" --version | head -1
+
+      # task sysroot. The MSVC CRT and the Windows SDK: Microsoft's licence
+      # is accepted for this repository's CI. SDK 10.0.26100 has no x86_64
+      # headers in xwin's manifest: 10.0.22621, as on the laptop.
+      - name: Sysroot location
+        run: echo "TANDEM_XWIN=$RUNNER_TEMP/xwin" >>"$GITHUB_ENV"
+
+      - id: sysroot
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/xwin
+          key: xwin-${{ env.XWIN_VERSION }}-x86_64-sdk-10.0.22621
+
+      - name: Fetch the sysroot
+        if: steps.sysroot.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xwin.tar.gz" \
+            "https://github.com/Jake-Shadle/xwin/releases/download/$XWIN_VERSION/xwin-$XWIN_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          echo "31e1033f30608ba6b821d17f1461042bd54c23424813c9b4e9ae15b6d32fa4cd  $RUNNER_TEMP/xwin.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/xwin.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/xwin-$XWIN_VERSION-x86_64-unknown-linux-musl/xwin" --accept-license \
+            --arch x86_64 --sdk-version 10.0.22621 --cache-dir "$RUNNER_TEMP/xwin-cache" \
+            splat --output "$TANDEM_XWIN"
+          du -sh "$TANDEM_XWIN"
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-plugin-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ccache-plugin-
+
+      # task build:plugin
+      - name: Configure
+        run: cmake --preset windows
+
+      - name: Build
+        run: cmake --build --preset windows
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tandem-${{ github.sha }}
+          path: |
+            build/windows/plugin/tandem.dll
+            build/windows/plugin/tandem.pdb
+          if-no-files-found: error
+
+      - uses: ./.github/actions/build-report
+        if: ${{ !cancelled() }}
+
+      - uses: actions/cache/save@v6
+        if: ${{ !cancelled() }}
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-plugin-${{ github.run_id }}-${{ github.run_attempt }}
 
   checks:
     name: docs, natives, strings
