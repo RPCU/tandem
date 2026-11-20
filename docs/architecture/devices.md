@@ -49,20 +49,21 @@ their state (on, off, friendly, destroyed, the alarm) is the host's.
 
 ## What is synced, and who owns it
 
-| Device (state class)                                                              | What is synced                                                                                                                           | Owner                                                                                                                                                   |
-| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Doors, gates, shutters (`DoorControllerPS`)                                       | open, locked, sealed; status                                                                                                             | host; a guest's own copy changes first                                                                                                                  |
-| Elevators (`LiftControllerPS`)                                                    | the floor it is at or going to (every game's cabin leaves together); status                                                              | host. Who rides: each V is carried by its own game's cabin, puppets are placed by their player's stream (the "in a moving elevator" placement)          |
-| Cameras, turrets (`SurveillanceCameraControllerPS`, `SecurityTurretControllerPS`) | on, off, unpowered, disabled (destroyed), friendly, hacked                                                                               | host. Seeing and shooting a V: that V's own game's copy                                                                                                 |
-| The alarm (`SecuritySystemControllerPS`)                                          | safe, alerted, combat                                                                                                                    | host. Raised by whichever game's device saw its V (on the host: as that V's puppet, where it stands, so the NPCs go there); called off by the host only |
-| Access points (`AccessPointControllerPS`), their networks                         | breached; each device's "quickhacks open" bit; what the breach's daemons did to each device (their own state)                            | host. Breached once for everyone; the datamine's money and shards go to who breached (rolled by that game, as corpses and containers are)               |
-| Computers, terminals (`ComputerControllerPS`, `TerminalControllerPS`)             | status, hacked; what they did to the devices they command (those devices' own state)                                                     | host. Reading mails and files: each player in their own game; a quest fact a read sets follows the story rules                                          |
-| Barrels, mines, traps (`ExplosiveDeviceControllerPS` and kin)                     | exploded (played as an explosion where it is in sight, a record elsewhere); status                                                       | host. The blast hurts each game's own V from its own copy, and NPCs in the host's game only                                                             |
-| Radios, TVs (`MediaDeviceControllerPS`)                                           | on, off; the station or channel                                                                                                          | host                                                                                                                                                    |
-| Lights, fuse boxes, generators, fans, vending machines, any other device          | status (on, off, unpowered, disabled), broken, hacked, distracting (a glitch: on the host a real distraction, so its NPCs come and look) | host. A vending machine's sale: the buyer's own game (money and item are that V's)                                                                      |
-| Glass, covers, breakable scenery                                                  | **nothing yet**: physics destruction, with no script state                                                                               | each game (open: see the end)                                                                                                                           |
-| Loot containers                                                                   | nothing (per player: `loot.md`)                                                                                                          | each player's game                                                                                                                                      |
-| Spawned devices (dynamic ids), vehicles                                           | nothing here (not the same entity in two games; vehicles have their own sync)                                                            | —                                                                                                                                                       |
+<!-- prettier-ignore -->
+| Device (state class) | What is synced | Owner |
+| --- | --- | --- |
+| Doors, gates, shutters (`DoorControllerPS`) | open, locked, sealed; status | host; a guest's own copy changes first |
+| Elevators (`LiftControllerPS`) | the floor it is at or going to (every game's cabin leaves together); status | host. Who rides: each V is carried by its own game's cabin, puppets are placed by their player's stream (the "in a moving elevator" placement) |
+| Cameras, turrets (`SurveillanceCameraControllerPS`, `SecurityTurretControllerPS`) | on, off, unpowered, disabled (destroyed), friendly, hacked | host. Seeing and shooting a V: that V's own game's copy |
+| The alarm (`SecuritySystemControllerPS`) | safe, alerted, combat | host. Raised by whichever game's device saw its V (on the host: as that V's puppet, where it stands, so the NPCs go there); called off by the host only |
+| Access points (`AccessPointControllerPS`), their networks | breached; each device's "quickhacks open" bit; what the breach's daemons did to each device (their own state) | host. Breached once for everyone; the datamine's money and shards go to who breached (rolled by that game, as corpses and containers are) |
+| Computers, terminals (`ComputerControllerPS`, `TerminalControllerPS`) | status, hacked; what they did to the devices they command (those devices' own state) | host. Reading mails and files: each player in their own game; a quest fact a read sets follows the story rules |
+| Barrels, mines, traps (`ExplosiveDeviceControllerPS` and kin) | exploded (played as an explosion where it is in sight, a record elsewhere); status | host. The blast hurts each game's own V from its own copy, and NPCs in the host's game only |
+| Radios, TVs (`MediaDeviceControllerPS`) | on, off; the station or channel | host |
+| Lights, fuse boxes, generators, fans, vending machines, any other device | status (on, off, unpowered, disabled), broken, hacked, distracting (a glitch: on the host a real distraction, so its NPCs come and look) | host. A vending machine's sale: the buyer's own game (money and item are that V's) |
+| Glass, covers, breakable scenery | the moment a piece breaks (`Fracture`): physics destruction has no script state | nobody: a break is for good, whoever's game saw it first tells the players linked with it ("Glass and breakable scenery") |
+| Loot containers | nothing (per player: `loot.md`) | each player's game |
+| Spawned devices (dynamic ids), vehicles | nothing here (not the same entity in two games; vehicles have their own sync) | — |
 
 A device is **named** by its entity's static id (64 bits, from the world
 file: the same in every game) and the class name of its state; its
@@ -70,15 +71,17 @@ file: the same in every game) and the class name of its state; its
 
 ## Messages (appended; no protocol version change)
 
-| Message        | Direction                    | What                                                                                                                                                                                                                       |
-| -------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DeviceState`  | host → guests                | the session's word on a device: status, state bits, one value, the host's revision of it, who changed it last, and `how` (live: it just happened, play it; quiet: a record, set it). Kept for late joiners. About 30 bytes |
-| `DeviceState`  | guest → host (`kDeviceAsk`)  | "this came into my world like this": the host answers with its own when they differ                                                                                                                                        |
-| `DeviceUse`    | guest → host                 | "my V made it this" with the revision the guest had seen. One-shot                                                                                                                                                         |
-| `DeviceDigest` | host → guests                | count and hash of the record, with every `Digest`                                                                                                                                                                          |
-| `DeviceSet`    | both                         | guest: send me the record again; host: here it comes, forget yours                                                                                                                                                         |
-| `Breach`       | any game → host → the others | a breach's outcome: the access point (or the NPC breached through the quickhack), the daemons and traps won, who breached; the host passes a granted one on (`kBreachApply`). One-shot ("Breach Protocol", below)          |
-| `BreachResult` | host → the breacher          | granted, or refused: breached first by whom                                                                                                                                                                                |
+<!-- prettier-ignore -->
+| Message | Direction | What |
+| --- | --- | --- |
+| `DeviceState` | host → guests | the session's word on a device: status, state bits, one value, the host's revision of it, who changed it last, and `how` (live: it just happened, play it; quiet: a record, set it). Kept for late joiners. About 30 bytes |
+| `DeviceState` | guest → host (`kDeviceAsk`) | "this came into my world like this": the host answers with its own when they differ |
+| `DeviceUse` | guest → host | "my V made it this" with the revision the guest had seen. One-shot |
+| `DeviceDigest` | host → guests | count and hash of the record, with every `Digest` |
+| `DeviceSet` | both | guest: send me the record again; host: here it comes, forget yours |
+| `Breach` | any game → host → the others | a breach's outcome: the access point (or the NPC breached through the quickhack), the daemons and traps won, who breached; the host passes a granted one on (`kBreachApply`). One-shot ("Breach Protocol", below) |
+| `BreachResult` | host → the breacher | granted, or refused: breached first by whom |
+| `Fracture` | any game → host → the linked | something broke: where, and the placed entity's destruction component when it is one. About 34 bytes; the host holds each guest to 48 then 24 a second |
 
 Sending the _state the device should be in_, not the action that was
 pressed, makes every message idempotent, makes a late joiner and a live
@@ -240,6 +243,42 @@ succeeded `AccessPointMiniGameStatus` with the programs). Engine facts:
   on one runs `RefreshSlaves` (the local blackboard's last daemons and the
   money), so `TandemDevices.Apply` never sends it there.
 
+## Glass and breakable scenery
+
+Built 2026-11-20, not run in game; engine facts §13.90 of the research
+file. Code: `scripts/tandem/Objects.reds` (`TandemObjectSync`),
+`plugin/src/objects_natives.cpp`, core `devices::Fractures`.
+
+- **No owner, no state**: destruction only goes one way, so a break is a
+  fact any game may state and every game applies at most once. The host
+  relays, stamps and rate-limits; it decides nothing.
+- **What is told.** A destruction component of a placed entity that breaks
+  (the engine's `PhysicalDestructionEvent` to its entity: the entity's
+  static id and the component's name, the same in every game), or a piece
+  of the world's own geometry, which has no name: the place the
+  destructible spots system gives (`OnNotifyAboutFracture`). Whatever broke
+  it: a bullet, a blast, a blade, a car.
+- **How the others break it**, hurting nobody: the named component's own
+  `TriggerDestruction` when it is not fractured yet; else a physics impulse
+  of 1 m at the place (`physicalImpulseSphere`, the one a grenade pushes
+  debris with: no attack, no hit). A break more than 200 m from our V is
+  dropped (not in our world).
+- **Echoes.** Replaying a break makes our game see one: a named part is
+  told once per session whoever broke it; a nameless piece is not told
+  within 1.5 m and 2 s of a replay, nor again within 0.75 m and 1.5 s of
+  one of ours (a pane goes in several pieces). A game says 24 then 12 a
+  second at most.
+- **Who hears**: the players linked with the sender (150 m: the place is in
+  their world). A late joiner, or a player who comes later, finds the
+  piece whole: open.
+- **Threads**: the hooks (11 `OnPhysicalDestructionEvent` handlers, the
+  spots system's notice) only queue (`TandemStreaming.QueuePoint`).
+- Tests: `tests/devices_test.cpp` ("fractures: …", "glass: …"),
+  `tests/peer_devices.sh`; the mock player's `--fracture
+[ENTITY:COMPONENT:]X,Y,Z[@S]`; in game `tools/game.sh cmd glass`,
+  `glass break` (the impulse at what V looks at), `glass part` (the
+  trigger on the entity V looks at); scenario `glass-guest`.
+
 ## Persistence: whose world it is afterwards
 
 Device state lives in each game's own save. In a session the **host's world
@@ -305,10 +344,12 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
 
 - **Not run in game.** Every engine call in `Devices.reds` is read from the
   2.50 scripts and compiles; the list to verify is §13.30, "To verify in game", of the research file.
-- **Glass and breakable scenery** have no script state. A remote shot is
-  drawn but does not break the other game's glass. Lever to try: replaying
-  the hit as a real physics hit at the glass, or the destruction
-  persistency system natively.
+- **Glass and breakable scenery, not run in game**: the list is §13.90,
+  "To verify in game". Unknown until then: whether every pane notifies
+  (`systemsToNotifyFlags` is per node), and whether the impulse alone
+  shatters world glass. Not built: what broke while a player was away or
+  before it joined (the engine's destruction persistency system has no
+  script side).
 - **A device's shots are not drawn for the others.** The host's turret aims
   at what it sees there; a guest sees its own copy fire at its own V. Two
   players watching one turret can see it aim at different people.
