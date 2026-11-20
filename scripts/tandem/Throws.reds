@@ -725,6 +725,7 @@ public class TandemThrows {
 // (host), or a copy to bind.
 @wrapMethod(BaseGrenade)
 protected cb func OnShoot(eventData: ref<gameprojectileShootEvent>) -> Bool {
+  TandemNative.HookRan(n"Throws.BaseGrenade.OnShoot");
   let result = wrappedMethod(eventData);
   let throws = TandemThrows.Of(this.GetGame());
   if !IsDefined(throws) {
@@ -761,6 +762,7 @@ protected cb func OnShoot(eventData: ref<gameprojectileShootEvent>) -> Bool {
 
 @wrapMethod(BaseGrenade)
 protected func Detonate(opt hitNormal: Vector4) {
+  TandemNative.HookRan(n"Throws.BaseGrenade.Detonate");
   let throws = TandemThrows.Of(this.GetGame());
   if IsDefined(throws) && !this.m_hasExploded && throws.IsOurObject(this) {
     throws.OnOurEnd(this, 0);
@@ -770,6 +772,7 @@ protected func Detonate(opt hitNormal: Vector4) {
 
 @wrapMethod(BaseGrenade)
 protected final func Release(opt isInstant: Bool) {
+  TandemNative.HookRan(n"Throws.BaseGrenade.Release");
   let throws = TandemThrows.Of(this.GetGame());
   if IsDefined(throws) && this.m_isAlive && throws.IsOurObject(this) {
     throws.OnOurEnd(this, 2);
@@ -820,6 +823,7 @@ public func TandemEnd(how: Int32, at: Vector4) -> Void {
 // A thrown knife or axe leaves the hand, straight or at a target.
 @wrapMethod(MeleeProjectile)
 protected cb func OnShoot(eventData: ref<gameprojectileShootEvent>) -> Bool {
+  TandemNative.HookRan(n"Throws.MeleeProjectile.OnShoot");
   let result = wrappedMethod(eventData);
   TandemThrows.OnProjectileShot(this, eventData, TandemThrows.KnifeKind());
   return result;
@@ -827,6 +831,7 @@ protected cb func OnShoot(eventData: ref<gameprojectileShootEvent>) -> Bool {
 
 @wrapMethod(MeleeProjectile)
 protected cb func OnShootTarget(eventData: ref<gameprojectileShootTargetEvent>) -> Bool {
+  TandemNative.HookRan(n"Throws.MeleeProjectile.OnShootTarget");
   let result = wrappedMethod(eventData);
   TandemThrows.OnProjectileShot(this, eventData, TandemThrows.KnifeKind());
   return result;
@@ -835,6 +840,7 @@ protected cb func OnShootTarget(eventData: ref<gameprojectileShootTargetEvent>) 
 // Stuck in a wall or a body: said once, where.
 @wrapMethod(MeleeProjectile)
 protected cb func OnCollision(eventData: ref<gameprojectileHitEvent>) -> Bool {
+  TandemNative.HookRan(n"Throws.MeleeProjectile.OnCollision");
   let result = wrappedMethod(eventData);
   let throws = TandemThrows.Of(this.GetGame());
   if IsDefined(throws) {
@@ -853,6 +859,7 @@ protected cb func OnCollision(eventData: ref<gameprojectileHitEvent>) -> Bool {
 // The owner picks it up (or its time is up): the copies go.
 @wrapMethod(MeleeProjectile)
 public final func TryToReleaseProjectile() {
+  TandemNative.HookRan(n"Throws.MeleeProjectile.TryToReleaseProjectile");
   let throws = TandemThrows.Of(this.GetGame());
   if IsDefined(throws) && !this.m_wasPicked && throws.IsOurObject(this) {
     throws.OnOurEnd(this, 2);
@@ -883,6 +890,7 @@ public func TandemEnd(how: Int32, at: Vector4) -> Void {
 // An arm launcher round, straight or tracking.
 @wrapMethod(ProjectileLauncherRound)
 protected cb func OnShoot(eventData: ref<gameprojectileShootEvent>) -> Bool {
+  TandemNative.HookRan(n"Throws.ProjectileLauncherRound.OnShoot");
   let result = wrappedMethod(eventData);
   TandemThrows.OnProjectileShot(this, eventData, TandemThrows.LauncherKind());
   return result;
@@ -890,6 +898,7 @@ protected cb func OnShoot(eventData: ref<gameprojectileShootEvent>) -> Bool {
 
 @wrapMethod(ProjectileLauncherRound)
 protected cb func OnShootTarget(eventData: ref<gameprojectileShootTargetEvent>) -> Bool {
+  TandemNative.HookRan(n"Throws.ProjectileLauncherRound.OnShootTarget");
   let result = wrappedMethod(eventData);
   TandemThrows.OnProjectileShot(this, eventData, TandemThrows.LauncherKind());
   return result;
@@ -897,6 +906,7 @@ protected cb func OnShootTarget(eventData: ref<gameprojectileShootTargetEvent>) 
 
 @wrapMethod(ProjectileLauncherRound)
 protected final func ExecuteGameEffect(projectilePosition: Vector4) {
+  TandemNative.HookRan(n"Throws.ProjectileLauncherRound.ExecuteGameEffect");
   let throws = TandemThrows.Of(this.GetGame());
   if IsDefined(throws) && throws.IsOurObject(this) {
     throws.OnOurEnd(this, 0);
@@ -906,6 +916,7 @@ protected final func ExecuteGameEffect(projectilePosition: Vector4) {
 
 @wrapMethod(ProjectileLauncherRound)
 protected final func Release() {
+  TandemNative.HookRan(n"Throws.ProjectileLauncherRound.Release");
   let throws = TandemThrows.Of(this.GetGame());
   if IsDefined(throws) && this.m_isAlive && throws.IsOurObject(this) {
     throws.OnOurEnd(this, 2);

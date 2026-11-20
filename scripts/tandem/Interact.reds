@@ -557,6 +557,7 @@ public func TandemExecute(action: ref<DeviceAction>, executor: ref<GameObject>) 
 // through here (Device.OnUIAction too). final.reds:98590.
 @wrapMethod(Device)
 protected const final func ExecuteAction(action: ref<DeviceAction>, opt executor: wref<GameObject>) -> Bool {
+  TandemNative.HookRan(n"Interact.Device.ExecuteAction");
   let interact = TandemInteract.Of(this.GetGame());
   if IsDefined(interact) && !interact.OnDeviceAction(this, action, executor) {
     return false;
@@ -567,6 +568,7 @@ protected const final func ExecuteAction(action: ref<DeviceAction>, opt executor
 // The choice form remembers the layer it came on. final.reds:98567.
 @wrapMethod(Device)
 protected const final func ExecuteAction(const choice: script_ref<InteractionChoice>, executor: wref<GameObject>, layerTag: CName) -> Void {
+  TandemNative.HookRan(n"Interact.Device.ExecuteAction.2");
   let interact = TandemInteract.Of(this.GetGame());
   if IsDefined(interact) {
     interact.ChoiceLayer(layerTag);
@@ -580,6 +582,7 @@ protected const final func ExecuteAction(const choice: script_ref<InteractionCho
 // An item taken from a placed container or the world. final.reds:69278.
 @wrapMethod(Inventory)
 protected cb final func OnInteractionUsed(evt: ref<InteractionChoiceEvent>) -> Bool {
+  TandemNative.HookRan(n"Interact.Inventory.OnInteractionUsed");
   let owner = this.GetEntity() as GameObject;
   if IsDefined(owner) {
     let interact = TandemInteract.Of(owner.GetGame());

@@ -398,6 +398,7 @@ public class TandemComms {
   // ---- the key ----
 
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    TandemNative.HookRan(n"Comms.TandemComms.OnAction");
     let name = ListenerAction.GetName(action);
     if Equals(name, n"PhoneInteract") {
       this.OnPhoneKey(action);
@@ -1289,6 +1290,7 @@ public final func TandemProgress(progress: Float) -> Void {
 
 @wrapMethod(QuickHackMappinController)
 protected cb func OnIntro() -> Bool {
+  TandemNative.HookRan(n"Comms.QuickHackMappinController.OnIntro");
   let result = wrappedMethod();
   let data = this.TandemData();
   if IsDefined(data) {

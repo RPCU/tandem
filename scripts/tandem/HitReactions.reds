@@ -285,6 +285,7 @@ public class TandemReactionsSync {
 // A twitch: the component's own (final.reds:187759).
 @wrapMethod(HitReactionComponent)
 protected final func SendTwitchDataToAnimationGraph() -> Void {
+  TandemNative.HookRan(n"HitReactions.HitReactionComponent.SendTwitchDataToAnimationGraph");
   wrappedMethod();
   TandemReactionsSync.Started(this.GetOwner(), this.m_animHitReaction, 1, this.GetHitInstigator(), new Vector4(0.0, 0.0, 0.0, 0.0));
 }
@@ -321,6 +322,7 @@ protected func PlayHitReactionAction(context: ScriptExecutionContext) -> Bool {
 // Ragdolls, whatever started them (a death, an explosion, a fall, a throw).
 @wrapMethod(NPCPuppet)
 protected cb func OnRagdollEnabledEvent(evt: ref<RagdollNotifyEnabledEvent>) -> Bool {
+  TandemNative.HookRan(n"HitReactions.NPCPuppet.OnRagdollEnabledEvent");
   let result = wrappedMethod(evt);
   if TandemNative.IsStarted() && TandemOwn.Entity(this.GetGame(), this.GetEntityID()) {
     let component = this.GetHitReactionComponent();
@@ -335,6 +337,7 @@ protected cb func OnRagdollEnabledEvent(evt: ref<RagdollNotifyEnabledEvent>) -> 
 
 @wrapMethod(NPCPuppet)
 protected cb func OnRagdollDisabledEvent(evt: ref<RagdollNotifyDisabledEvent>) -> Bool {
+  TandemNative.HookRan(n"HitReactions.NPCPuppet.OnRagdollDisabledEvent");
   let result = wrappedMethod(evt);
   if TandemNative.IsStarted() && TandemOwn.Entity(this.GetGame(), this.GetEntityID()) {
     TandemReactionsSync.Started(this, null, 0, null, new Vector4(0.0, 0.0, 0.0, 0.0));

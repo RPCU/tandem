@@ -1109,6 +1109,7 @@ public class TandemWheelsSync {
 // Our hit on a copy of a player's car, or a shared vehicle's tyre.
 @wrapMethod(VehicleObject)
 protected func DamagePipelineFinalized(evt: ref<gameHitEvent>) -> Void {
+  TandemNative.HookRan(n"Wheels.VehicleObject.DamagePipelineFinalized");
   wrappedMethod(evt);
   let wheels = TandemWheelsSync.Of(this.GetGame());
   if IsDefined(wheels) && wheels.InSession() {
@@ -1119,6 +1120,7 @@ protected func DamagePipelineFinalized(evt: ref<gameHitEvent>) -> Void {
 // Our car and another player's (its copy here) touched.
 @wrapMethod(VehicleObject)
 protected cb func OnVehicleBumpEvent(evt: ref<VehicleBumpEvent>) -> Bool {
+  TandemNative.HookRan(n"Wheels.VehicleObject.OnVehicleBumpEvent");
   let result = wrappedMethod(evt);
   let wheels = TandemWheelsSync.Of(this.GetGame());
   if IsDefined(wheels) && wheels.InSession() {
@@ -1131,6 +1133,7 @@ protected cb func OnVehicleBumpEvent(evt: ref<VehicleBumpEvent>) -> Bool {
 // our car running into an NPC we do not own tells its owner.
 @wrapMethod(GameObject)
 protected cb func OnVehicleHit(evt: ref<gameVehicleHitEvent>) -> Bool {
+  TandemNative.HookRan(n"Wheels.GameObject.OnVehicleHit");
   let wheels = TandemWheelsSync.Of(this.GetGame());
   if IsDefined(wheels) && wheels.InSession() && !wheels.VehicleHit(this, evt, TandemSystem.Of(this.GetGame())) {
     return false;
@@ -1156,6 +1159,7 @@ private final func DealDamages(hitEvent: ref<gameHitEvent>) {
 // Our car's dents and the parts it loses, for its copies.
 @wrapMethod(VehicleComponent)
 protected cb func OnGridDestruction(evt: ref<VehicleGridDestructionEvent>) -> Bool {
+  TandemNative.HookRan(n"Wheels.VehicleComponent.OnGridDestruction");
   let result = wrappedMethod(evt);
   let wheels = TandemWheelsSync.Of(this.GetVehicle().GetGame());
   if IsDefined(wheels) && wheels.InSession() {
@@ -1172,6 +1176,7 @@ protected cb func OnGridDestruction(evt: ref<VehicleGridDestructionEvent>) -> Bo
 
 @wrapMethod(VehicleComponent)
 protected cb func OnVehicleOnPartDetached(evt: ref<VehicleOnPartDetachedEvent>) -> Bool {
+  TandemNative.HookRan(n"Wheels.VehicleComponent.OnVehicleOnPartDetached");
   let result = wrappedMethod(evt);
   let wheels = TandemWheelsSync.Of(this.GetVehicle().GetGame());
   if IsDefined(wheels) && wheels.InSession() {
@@ -1183,6 +1188,7 @@ protected cb func OnVehicleOnPartDetached(evt: ref<VehicleOnPartDetachedEvent>) 
 // A vehicle's own weapon fired.
 @wrapMethod(VehicleComponent)
 protected cb func OnWeaponShootEvent(evt: ref<VehicleMountedWeaponShootEvent>) -> Bool {
+  TandemNative.HookRan(n"Wheels.VehicleComponent.OnWeaponShootEvent");
   let result = wrappedMethod(evt);
   let wheels = TandemWheelsSync.Of(this.GetVehicle().GetGame());
   if IsDefined(wheels) && wheels.InSession() {

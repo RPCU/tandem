@@ -755,6 +755,7 @@ public class TandemRevive {
   }
 
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    TandemNative.HookRan(n"Revive.TandemRevive.OnAction");
     if !Equals(ListenerAction.GetName(action), n"Choice1") {
       return false;
     }
@@ -1086,6 +1087,7 @@ protected const final func ToResurrect(const stateContext: ref<StateContext>, co
 
 @wrapMethod(PlayerPuppet)
 protected func OnResurrected() -> Void {
+  TandemNative.HookRan(n"Revive.PlayerPuppet.OnResurrected");
   wrappedMethod();
   TandemRevive.Resurrected(this);
 }

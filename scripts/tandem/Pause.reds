@@ -184,6 +184,7 @@ public class TandemPause {
 // PauseMenuBackgroundGameController): our menu's state goes to the others.
 @wrapMethod(PauseMenuBackgroundGameController)
 protected cb func OnInitialize() -> Bool {
+  TandemNative.HookRan(n"Pause.PauseMenuBackgroundGameController.OnInitialize");
   let result = wrappedMethod();
   TandemPause.MenuOpened(this.GetPlayerControlledObject());
   return result;
@@ -191,6 +192,7 @@ protected cb func OnInitialize() -> Bool {
 
 @wrapMethod(PauseMenuBackgroundGameController)
 protected cb func OnUninitialize() -> Bool {
+  TandemNative.HookRan(n"Pause.PauseMenuBackgroundGameController.OnUninitialize");
   let result = wrappedMethod();
   TandemPause.MenuClosed(this.GetPlayerControlledObject());
   return result;

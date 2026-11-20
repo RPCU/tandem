@@ -1109,6 +1109,7 @@ protected cb func OnDismembermentDebris(evt: ref<DismembermentDebrisEvent>) -> B
 // A guest's one-punch (Combat.reds marks it): its slow motion was theirs.
 @wrapMethod(PlayerPuppet)
 protected cb func OnSetSlowMoForOnePunchAttackEvent(evt: ref<SetSlowMoForOnePunchAttackEvent>) -> Bool {
+  TandemNative.HookRan(n"Outcomes.PlayerPuppet.OnSetSlowMoForOnePunchAttackEvent");
   let outcomes = TandemOutcomes.Of(this.GetGame());
   if IsDefined(outcomes) && outcomes.DropsOnePunchSlowMo() {
     TandemNative.Log("outcomes: a guest's one-punch slow motion kept off our V");

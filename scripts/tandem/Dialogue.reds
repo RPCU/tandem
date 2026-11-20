@@ -157,11 +157,13 @@ public class TandemDialogue {
   }
 
   protected cb func OnHubs(value: Variant) -> Bool {
+    TandemNative.HookRan(n"Dialogue.TandemDialogue.OnHubs");
     this.m_hubs = FromVariant<DialogChoiceHubs>(value);
     this.SendActiveHub();
   }
 
   protected cb func OnActiveHub(id: Int32) -> Bool {
+    TandemNative.HookRan(n"Dialogue.TandemDialogue.OnActiveHub");
     this.m_activeHub = id;
     this.SendActiveHub();
   }
@@ -310,6 +312,7 @@ public class TandemDialogue {
   // shows itself, under its real id (in our language: the better one). Ours
   // goes; no line is ever on screen twice.
   protected cb func OnOwnLine(value: Variant) -> Bool {
+    TandemNative.HookRan(n"Dialogue.TandemDialogue.OnOwnLine");
     if !this.m_story.IsGuest() {
       return false;
     }
@@ -430,6 +433,7 @@ public class TandemDialogue {
 
   // Our own cursor on the stand-in hub; apply marks a suggestion.
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    TandemNative.HookRan(n"Dialogue.TandemDialogue.OnAction");
     if !this.m_shown {
       return false;
     }

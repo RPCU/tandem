@@ -630,6 +630,7 @@ protected cb func OnHackTargetEvent(evt: ref<HackTargetEvent>) -> Bool {
 // Host: quickhack effects on our NPCs, for everyone (and a guest's alert).
 @wrapMethod(NPCPuppet)
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
+  TandemNative.HookRan(n"Hacks.NPCPuppet.OnStatusEffectApplied");
   let result = wrappedMethod(evt);
   TandemHacks.EffectApplied(this, evt);
   return result;

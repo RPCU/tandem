@@ -1,6 +1,7 @@
 // What redscript can call: `TandemNative` static functions and the
 // `TandemEvent` struct. Declared on the script side in scripts/tandem/Natives.reds:
-// keep the two in sync. All of these run on the game thread.
+// keep the two in sync. All of these run on the game thread, but HookRan and
+// OnGameThread (threads.hpp), which any thread calls.
 
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
@@ -18,6 +19,7 @@
 #include "perf.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
+#include "threads.hpp"
 
 #include "tandem/devices.hpp"
 #include "tandem/mods.hpp"
@@ -545,6 +547,7 @@ struct TandemNative : Red::IScriptable {
 
   static Red::DynArray<TandemEvent> TakeEvents() {
     Runtime::Get().NoteGameFrame();
+    threads::NoteTick();
     Red::DynArray<TandemEvent> out;
     for (auto &event : Runtime::Get().TakeEvents())
       out.EmplaceBack(TandemEvent{static_cast<std::int32_t>(event.kind), event.player,
@@ -1961,6 +1964,17 @@ struct TandemNative : Red::IScriptable {
   // A detail for `log = debug` only (log.hpp): per hit, shot, proxy.
   static void LogDebug(Red::CString text) { log::Debug("[script] {}", text.c_str()); }
 
+  // ---- the thread probe (threads.hpp; docs/architecture/testing.md) ----
+  // Any thread: are we on the game thread (the script tick's)?
+  static bool OnGameThread() { return threads::OnGameThread(); }
+  // Any thread, first in a hook that tools/scripts-threads.known lists:
+  // counted, and logged the first time it runs off the game thread.
+  static void HookRan(Red::CName name) {
+    threads::HookRan(name.hash, [](std::uint64_t hash) { return Red::CName(hash).ToString(); });
+  }
+  // tools/game.sh cmd threads, and a session's end: the hooks seen so far.
+  static void ThreadsReport() { threads::Report(); }
+
   // ---- frame cost and fairness (docs/architecture/netcode.md) ----
   // The script tick's section `section` begins (perf.hpp kTickSections; 0:
   // the tick begins, -1: it ends).
@@ -2424,6 +2438,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(NodeRefOf);
   RTTI_METHOD(Log);
   RTTI_METHOD(LogDebug);
+  RTTI_METHOD(OnGameThread);
+  RTTI_METHOD(HookRan);
+  RTTI_METHOD(ThreadsReport);
   RTTI_METHOD(PerfMark);
   RTTI_METHOD(PerfReport);
   RTTI_METHOD(InReach);

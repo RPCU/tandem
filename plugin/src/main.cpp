@@ -13,6 +13,7 @@
 #include "mods.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
+#include "threads.hpp"
 
 #include "tandem/compat.hpp"
 #include "tandem/instance.hpp"
@@ -91,6 +92,7 @@ struct ScriptFrame {
 };
 
 bool OnRunningUpdate(RED4ext::CGameApplication *) {
+  tandem::plugin::threads::NoteFrame();
   if (!tandem::plugin::Runtime::Get().Started())
     return false;
   Red::ScriptGameInstance game;

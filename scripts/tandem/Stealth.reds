@@ -69,6 +69,7 @@ public func TandemSetHostTracked(tracked: Bool) -> Bool {
 // (ShootEvents: Gunshot, SilencedGunshot, IllegalAction...) go to the host.
 @wrapMethod(StimBroadcasterComponent)
 public final func TriggerSingleBroadcast(contextOwner: wref<GameObject>, gdStimType: gamedataStimType, opt radius: Float, opt investigateData: stimInvestigateData, opt propagationChange: Bool) -> Void {
+  TandemNative.HookRan(n"Stealth.StimBroadcasterComponent.TriggerSingleBroadcast");
   wrappedMethod(contextOwner, gdStimType, radius, investigateData, propagationChange);
   let owner = this.GetOwner();
   if IsDefined(owner) && owner.IsPlayer() && TandemNative.IsStarted() {

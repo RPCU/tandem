@@ -142,6 +142,7 @@ public abstract class TandemReactions {
 // second chance or gag for it; the guest's game gets the cue.
 @wrapMethod(NPCStatesComponent)
 private final func OnCombat() -> Void {
+  TandemNative.HookRan(n"Reactions.NPCStatesComponent.OnCombat");
   let npc = this.GetPuppet() as NPCPuppet;
   let guest = 0u;
   if IsDefined(npc) {
