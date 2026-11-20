@@ -33,6 +33,10 @@
 //                        ; cast, voices and, with pose = on, the actors' bodies:
 //                        ; docs/architecture/scene-replay.md); poses: only the
 //                        ; actors' bodies are left out
+//   scene_camera = on    ; with scene_replay: off: a guest keeps its own eyes in
+//                        ; the host's cutscenes (no watch camera)
+//   scene_kbps = 22      ; with scene_replay, host: what a scene's streams (bodies,
+//                        ; the camera) may take on a guest's link, 8 to 2000
 //   private_actors = judy, panam, river, kerry, meredith  ; romance partners
 //   private_scenes = , public_scenes =  ; scene resource paths, comma-separated
 //   quest_freeze_gigs =  ; gig phase resources: they wait only while grouped
@@ -66,6 +70,10 @@
 //                        ; 20 m), always (any distance in view, smaller and fainter
 //                        ; far away), off (on: near)
 //   party_hud = on       ; off: no party list (linked partners' health) on the HUD
+//   death_ledger = on    ; off: placed NPCs another player killed in the session
+//                        ; stay alive in our game (ini only)
+//   death_bodies = on    ; off: no body where a placed NPC another player
+//                        ; killed in the last ten minutes fell (ini only)
 // The settings page (scripts/tandem/Coop.reds) changes some of them while the
 // game runs and saves them here (TandemNative.SetSetting, tandem/settings.hpp).
 //   leave = stay         ; a guest out of a session, once its own world is back
@@ -148,6 +156,11 @@ struct Config {
   bool scenePrivacy{true};
   bool sceneReplay{false};
   bool scenePoses{true}; // with sceneReplay
+  // With sceneReplay: a guest in the host's moment sees a cutscene through
+  // the host's camera; what the scene's streams may take on a link (0: the
+  // default, scene::kSceneBytesPerSecond).
+  bool sceneCamera{true};
+  std::uint32_t sceneKbps{0};
   std::vector<std::string> privateActors{"judy", "panam", "river", "kerry", "meredith"};
   std::vector<std::string> privateScenes, publicScenes;
   // How the host's own time dilations are played (Time.reds): its world in
@@ -168,6 +181,11 @@ struct Config {
   bool markers{true};
   presence::Nameplates nameplates{presence::Nameplates::Near};
   bool partyHud{true};
+  // The death ledger (regions.md §14): our own copies of the placed NPCs the
+  // session says died are kept out of our world, and a body lies where a
+  // recent one fell.
+  bool deathLedger{true};
+  bool deathBodies{true};
   // Where it was read from (the settings page writes there).
   std::filesystem::path file;
   // What a guest's game does once it is out of a session (Saves.reds).

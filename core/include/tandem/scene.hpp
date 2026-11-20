@@ -177,6 +177,8 @@ constexpr std::uint64_t StreamOf(proto::NpcId npc, std::uint8_t part) {
   return std::uint64_t{npc} << 8 | part;
 }
 inline constexpr std::uint64_t kCameraStream = ~std::uint64_t{0};
+// The camera is the picture: it matters more than any one body.
+inline constexpr float kCameraWeight = 3.f;
 
 // Splits the budget between the streams that are alive: each is served at
 // least every kSlowestUs (the heaviest-weighted first, while the budget

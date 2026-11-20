@@ -6,6 +6,7 @@
 // The rules are in core/ (tandem/regions.hpp, Endpoint); the game's side is
 // scripts/tandem/Regions.reds through region_natives.cpp.
 
+#include "tandem/ledger.hpp"
 #include "tandem/protocol.hpp"
 
 #include <map>
@@ -83,6 +84,18 @@ public:
   // player's region (0: no session, or nothing heard of it yet).
   proto::PlayerId AreaOwner(proto::PlayerId player);
 
+  // Placed NPCs and the death ledger (regions.md §14), as the session said
+  // them: noted on the game thread from the combat inbox, read by scripts.
+  void NotePlaced(const proto::NpcPlaced &placed);
+  // The static entity an NPC's owner named for it (0: none).
+  std::uint64_t PlacedOf(proto::NpcId npc);
+  void NoteDeath(const proto::NpcDeath &death);
+  // Whose game ran the placed NPC of that entity when it died (0: it lives).
+  proto::PlayerId DiedBy(std::uint64_t entity);
+  std::vector<proto::NpcDeath> Deaths();
+  // The deaths heard since the last call, once each.
+  std::vector<proto::NpcDeath> TakeDeaths();
+
 private:
   std::mutex m_lock;
   std::vector<RegionEvent> m_events;
@@ -92,5 +105,8 @@ private:
   proto::PlayerId m_leader{};
   std::set<proto::PlayerId> m_holders;
   std::map<proto::PlayerId, proto::PlayerId> m_areas;
+  std::map<proto::NpcId, std::uint64_t> m_placed;
+  ledger::Deaths m_deaths;
+  std::vector<proto::NpcDeath> m_deathNews;
 };
 } // namespace tandem::plugin

@@ -1,6 +1,7 @@
 #include "tandem/combat.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace tandem::combat {
 float StrikeLoss(const proto::NpcStrike &strike, float health, float maxHealth, bool immortal) {
@@ -42,5 +43,19 @@ std::uint64_t MeleeHoldUs(std::uint64_t proxyDelayUs, std::uint64_t transitUs) {
   if (proxyDelayUs <= transitUs)
     return 0;
   return std::min(proxyDelayUs - transitUs, kMaxMeleeHoldUs);
+}
+
+PathFix FollowPath(const proto::Vec3 &copy, const proto::ThrowPath &real) {
+  const float dx = copy.x - real.position.x, dy = copy.y - real.position.y,
+              dz = copy.z - real.position.z;
+  const float off = std::sqrt(dx * dx + dy * dy + dz * dz);
+  const float speed =
+      std::sqrt(real.velocity.x * real.velocity.x + real.velocity.y * real.velocity.y +
+                real.velocity.z * real.velocity.z);
+  if (!std::isfinite(off) || !std::isfinite(speed))
+    return PathFix::None;
+  if (speed < kThrowRestSpeed)
+    return off > kThrowRestSlack ? PathFix::Place : PathFix::None;
+  return off > kThrowPathSlack ? PathFix::Relaunch : PathFix::None;
 }
 } // namespace tandem::combat

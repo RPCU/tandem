@@ -369,7 +369,14 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
   return {
       .epoch = host ? m_epoch : m_hostEpoch,
       .seq = m_digestSeq,
-      .world = consistency::WorldDigest(m_world, m_difficulty, m_rules),
+      // The world, and the dead of the session (the ledger, regions.md §14).
+      .world =
+          m_deaths.Empty()
+              ? consistency::WorldDigest(m_world, m_difficulty, m_rules)
+              : consistency::Hasher{}
+                    .Add(std::uint64_t{consistency::WorldDigest(m_world, m_difficulty, m_rules)})
+                    .Add(std::uint64_t{m_deaths.Digest()})
+                    .Value(),
       // One domain: the shared vehicles are resynced with the NPCs.
       .npcs = consistency::Hasher{}
                   .Add(std::uint64_t{npcs})
@@ -1211,6 +1218,11 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       Send(peer, *m_rules);
     if (m_sessionLevel)
       Send(peer, *m_sessionLevel);
+    // The placed NPCs that died in the session, wherever they were: the
+    // same dead stay dead for a late joiner, and a resync brings back one
+    // that was lost.
+    for (const auto &death : m_deaths.InOrder())
+      Send(peer, death);
     // What lies in the world (its taken stacks at quantity 0). Loot is not
     // in the digests: the host arbitrates each claim (ClaimWorldItem).
     if (!resync)
@@ -1333,6 +1345,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
   // A session recording keeps what the host said in full: compact forms are
   // tapped once decoded (PoseState, NpcStates).
   if (m_receivedTap && !std::holds_alternative<proto::PoseFrame>(message) &&
+      !std::holds_alternative<proto::ActorFrame>(message) &&
       !std::holds_alternative<proto::NpcMotion>(message) &&
       !std::holds_alternative<proto::NpcStates>(message) &&
       !std::holds_alternative<proto::PlayerMotion>(message) &&
@@ -1400,6 +1413,8 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
       return;
     if (const auto *end = std::get_if<proto::ThrowEnd>(&message); end && end->player == m_you)
       return;
+    if (const auto *path = std::get_if<proto::ThrowPath>(&message); path && path->player == m_you)
+      return;
     // The difficulty and the rules are state: kept for the digests, said once.
     if (const auto *difficulty = std::get_if<proto::Difficulty>(&message)) {
       if (m_difficulty == *difficulty)
@@ -1441,6 +1456,19 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           it != m_npcLevels.end() && it->second == *level)
         return;
       m_npcLevels[level->npc] = *level;
+    }
+    // A placed NPC we show: said once. A death of the ledger: news once.
+    if (const auto *placed = std::get_if<proto::NpcPlaced>(&message)) {
+      if (!m_npcs.contains(placed->npc) || OwnsNpc(placed->npc))
+        return; // gone, or ours (our own word, back)
+      if (const auto it = m_npcPlaced.find(placed->npc);
+          it != m_npcPlaced.end() && it->second == *placed)
+        return;
+      m_npcPlaced[placed->npc] = *placed;
+    }
+    if (const auto *death = std::get_if<proto::NpcDeath>(&message)) {
+      if (!m_deaths.Note(*death))
+        return;
     }
     // A vendor of an NPC we show, or one that died: said once.
     if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
@@ -1667,6 +1695,25 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (m_npcs.contains(pose.npc))
               out.push_back(events::HostActorPose{pose});
           },
+          [&](const proto::ActorFrame &actor) {
+            // An actor's pose, delta coded: fenced and filtered as a whole
+            // one, then whole again for our game.
+            if (m_firstNpcSeq != 0 &&
+                static_cast<std::int32_t>(actor.frame.seq - m_firstNpcSeq) < 0)
+              return;
+            if (!m_npcs.contains(actor.npc))
+              return;
+            if (const auto decoded = m_actorDecoders[actor.npc].Decode(actor.frame)) {
+              const auto whole = pose::ForActor(actor.npc, *decoded);
+              if (m_receivedTap)
+                m_receivedTap(whole);
+              out.push_back(events::HostActorPose{whole});
+            }
+          },
+          [&](const proto::SceneCamera &camera) {
+            // The host's view of its cutscene: for the story's side of our game.
+            out.push_back(events::Story{camera});
+          },
           [&](const proto::NpcGone &gone) {
             if (OwnsNpc(gone.npc)) {
               // The host's record let go of one of ours (our world was
@@ -1681,6 +1728,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             m_given.erase(gone.npc);
             m_npcBook.Forget(gone.npc);
             m_npcVendors.erase(gone.npc);
+            m_npcPlaced.erase(gone.npc);
             if (m_npcs.erase(gone.npc) > 0) {
               m_npcHealth.erase(gone.npc);
               m_npcLevels.erase(gone.npc);
@@ -1713,6 +1761,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               m_npcLevels.erase(it->first);
               m_npcScale.erase(it->first);
               m_npcVendors.erase(it->first);
+              m_npcPlaced.erase(it->first);
               m_npcHolds.erase(it->first);
               m_npcOwner.erase(it->first);
               m_npcBook.Forget(it->first);
@@ -2168,6 +2217,11 @@ void Endpoint::SendNpcSpawn(const proto::NpcSpawn &spawn) {
     m_npcVendors[spawn.npc] = early.mapped();
     SayNpc(early.mapped());
   }
+  // ...and that it is placed in the world.
+  if (const auto early = m_npcPlacedEarly.extract(spawn.npc)) {
+    m_npcPlaced[spawn.npc] = early.mapped();
+    SayNpc(early.mapped());
+  }
 }
 
 void Endpoint::SendNpcStates(proto::NpcStates states) {
@@ -2201,12 +2255,64 @@ void Endpoint::SendNpcStates(proto::NpcStates states) {
   }
 }
 
+float Endpoint::ActorWeight(proto::NpcId npc) const {
+  const auto it = m_npcs.find(npc);
+  if (it == m_npcs.end())
+    return 1.f;
+  float nearest = -1.f;
+  for (const auto &[player, at] : m_positions) {
+    if (player == m_you)
+      continue;
+    const auto &actor = it->second.position;
+    const float d = std::hypot(at.x - actor.x, at.y - actor.y, at.z - actor.z);
+    if (nearest < 0.f || d < nearest)
+      nearest = d;
+  }
+  // Nobody's place known: as if near.
+  return nearest <= 15.f ? 1.f : nearest <= 40.f ? 0.5f : 0.25f;
+}
+
 void Endpoint::SendActorPose(proto::ActorPose pose) {
   if (!IsHost() || m_ended || !OwnsNpc(pose.npc))
     return;
+  if (!m_compact) {
+    pose.seq = ++m_npcSeq;
+    pose.timeUs = HostNowUs();
+    ShareNpc(pose, m_you); // the games that show the actor, as its states
+    return;
+  }
+  // The scene's streams share one budget: this body's turn, or not yet.
+  const auto now = net::NowUs();
+  const auto stream = scene::StreamOf(pose.npc, proto::kRigBody);
+  if (!m_scenePacer.Due(stream, ActorWeight(pose.npc), now))
+    return;
   pose.seq = ++m_npcSeq;
   pose.timeUs = HostNowUs();
-  ShareNpc(pose, m_you); // the games that show the actor, as its states
+  const auto [encoder, fresh] = m_actorEncoders.try_emplace(pose.npc);
+  if (fresh) // slower than a V's stream: a key every 2 s, bones within 0.006 rad kept
+    encoder->second.Pace(64, 2'000'000, 0.006f);
+  const proto::Message frame =
+      proto::ActorFrame{.npc = pose.npc, .frame = encoder->second.Encode(pose::FromActor(pose))};
+  m_scenePacer.Sent(stream, proto::Encode(frame).size(), now);
+  ShareNpc(frame, m_you);
+}
+
+void Endpoint::SendSceneCamera(proto::SceneCamera camera) {
+  if (!IsHost() || m_ended || camera.play == 0)
+    return;
+  const auto now = net::NowUs();
+  if (!m_scenePacer.Due(scene::kCameraStream, scene::kCameraWeight, now)) {
+    // A cut that is not sent is still a cut for the next view that is.
+    m_cameraCut = m_cameraCut || (camera.flags & proto::kCameraCut) != 0;
+    return;
+  }
+  if (std::exchange(m_cameraCut, false))
+    camera.flags |= proto::kCameraCut;
+  camera.seq = ++m_cameraSeq;
+  camera.timeUs = HostNowUs();
+  const proto::Message message = camera;
+  m_scenePacer.Sent(scene::kCameraStream, proto::Encode(message).size(), now);
+  Broadcast(message);
 }
 
 void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
@@ -2214,7 +2320,9 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
   if (!IsJoined() || m_ended || !SpeaksFor(gone.npc))
     return;
   NoteVendorGone(gone, nullptr);
+  NoteDeath(gone);
   ForgetNpc(gone.npc);
+  m_npcPlacedEarly.erase(gone.npc);
   m_npcCoder.Forget(gone.npc);
   m_npcLevels.erase(gone.npc);
   m_npcLevelsEarly.erase(gone.npc);
@@ -3693,6 +3801,12 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     out.push_back(events::Combat{mine});
     if (const auto peer = PeerOf(player))
       Broadcast(mine, *peer);
+  } else if (const auto *path = std::get_if<proto::ThrowPath>(&message)) {
+    auto mine = *path;
+    mine.player = player;
+    out.push_back(events::Combat{mine});
+    if (const auto peer = PeerOf(player))
+      Broadcast(mine, *peer);
   } else if (const auto *defended = std::get_if<proto::Defended>(&message)) {
     // For the attacker's owner: our game, or passed on.
     auto mine = *defended;
@@ -3721,6 +3835,25 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     auto mine = *lend;
     mine.player = player;
     NoteLend(mine, out);
+  } else if (const auto *placed = std::get_if<proto::NpcPlaced>(&message)) {
+    // An owner's word on its NPC, for who sees it.
+    if (!m_npcs.contains(placed->npc) || NpcOwner(placed->npc) != player)
+      return;
+    if (const auto it = m_npcPlaced.find(placed->npc);
+        it != m_npcPlaced.end() && it->second == *placed)
+      return;
+    m_npcPlaced[placed->npc] = *placed;
+    if (const auto peer = PeerOf(player))
+      ShareNpc(message, player, *peer);
+    if (Sees(m_you, player))
+      out.push_back(events::Combat{message});
+  } else if (const auto *death = std::get_if<proto::NpcDeath>(&message)) {
+    // A placed NPC of its own died: the ledger's, and everyone's to know.
+    // Only its owner's word (its NpcGone follows), never one stamped.
+    if (death->npc == 0 || death->order != 0 || !m_npcs.contains(death->npc) ||
+        NpcOwner(death->npc) != player)
+      return;
+    RecordDeath(*death, player, out);
   } else if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
     // An owner's word on its NPC, for who sees it; a death is never a
     // guest's to say (the host derives it from the owner's NpcGone).
@@ -3987,6 +4120,40 @@ bool Endpoint::SendCombat(proto::Message message) {
       Broadcast(message);
     else
       Send(m_hostPeer, message);
+    return true;
+  }
+  if (auto *path = std::get_if<proto::ThrowPath>(&message)) {
+    path->player = m_you;
+    if (IsHost())
+      Broadcast(message);
+    else
+      Send(m_hostPeer, message);
+    return true;
+  }
+  // A death of the ledger is the endpoint's to say (NoteDeath), never the game's.
+  if (std::holds_alternative<proto::NpcDeath>(message))
+    return false;
+  // One of our NPCs is placed in the world.
+  if (const auto *placed = std::get_if<proto::NpcPlaced>(&message)) {
+    if (placed->npc == 0 || placed->entity == 0)
+      return false;
+    if (!m_npcs.contains(placed->npc)) {
+      // Its spawn is on its way from the game by another queue: kept, and
+      // said right after it.
+      if (regions::Announcer(placed->npc) != m_you)
+        return false;
+      if (m_npcPlacedEarly.size() >= 256)
+        m_npcPlacedEarly.clear();
+      m_npcPlacedEarly[placed->npc] = *placed;
+      return false;
+    }
+    if (!OwnsNpc(placed->npc))
+      return false;
+    if (const auto it = m_npcPlaced.find(placed->npc);
+        it != m_npcPlaced.end() && it->second == *placed)
+      return true; // said already
+    m_npcPlaced[placed->npc] = *placed;
+    SayNpc(message);
     return true;
   }
   // One of our NPCs is a placed vendor (never a death: the host's to derive).

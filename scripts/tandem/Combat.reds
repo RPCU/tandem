@@ -446,6 +446,11 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   if IsDefined(presence) && presence.Cosmetic(hitEvent) {
     return;
   }
+  // A duel is its starter's: a hit on a fist fight's opponent from a V
+  // that is not in it is dropped (Contests.reds).
+  if TandemContests.Watched(game, hitEvent) {
+    return;
+  }
   // What another V's game computed already (its effects' ticks and
   // explosions, its thrown objects' copies, a guest's car copy's
   // collisions) arrives as strikes or AreaHit.

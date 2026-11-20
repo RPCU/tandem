@@ -189,6 +189,11 @@ TANDEM_SAID_BY(Either, TrafficHandoverDone)
 TANDEM_SAID_BY(Either, QuestInteract)
 TANDEM_SAID_BY(Either, Fracture)
 TANDEM_SAID_BY(Either, DeviceFire)
+TANDEM_SAID_BY(Either, ThrowPath)
+// A placed NPC: its owner's word. A death of the ledger: its owner's to the
+// host (unstamped), the host's to everyone (stamped): Received.
+TANDEM_SAID_BY(Either, NpcPlaced)
+TANDEM_SAID_BY(Either, NpcDeath)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -215,8 +220,11 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
                       std::is_same_v<M, p::PlayerHack> || std::is_same_v<M, p::NpcCue> ||
                       std::is_same_v<M, p::NpcShotAt> || std::is_same_v<M, p::NpcActionReply> ||
                       std::is_same_v<M, p::NpcReaction> || std::is_same_v<M, p::NpcScale> ||
-                      std::is_same_v<M, p::NpcLevel>)
+                      std::is_same_v<M, p::NpcLevel> || std::is_same_v<M, p::NpcPlaced>)
           return {x.npc};
+        else if constexpr (std::is_same_v<M, p::NpcDeath>)
+          // Its owner's report names its NPC; the host's word names none.
+          return x.npc != 0 ? std::vector<p::NpcId>{x.npc} : std::vector<p::NpcId>{};
         else if constexpr (std::is_same_v<M, p::NpcVendor>)
           // A live vendor is its owner's word; a death names no NPC.
           return x.npc != 0 ? std::vector<p::NpcId>{x.npc} : std::vector<p::NpcId>{};
@@ -318,7 +326,7 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::Breach> ||
                            std::is_same_v<M, p::StatusVisuals> ||
                            std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
-                           std::is_same_v<M, p::DeviceFire>)
+                           std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath>)
           return &m.player;
         else
           return nullptr;
@@ -543,7 +551,10 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
         (std::holds_alternative<p::DeviceFire>(message) &&
          std::get<p::DeviceFire>(message).kind <= p::DeviceFireKind::Shot) ||
         (std::holds_alternative<p::NpcOwner>(message) &&
-         !(std::get<p::NpcOwner>(message).flags & p::kNpcPinned))) {
+         !(std::get<p::NpcOwner>(message).flags & p::kNpcPinned)) ||
+        // A death of the ledger is stamped by the host alone.
+        (std::holds_alternative<p::NpcDeath>(message) &&
+         std::get<p::NpcDeath>(message).order != 0)) {
       Add("authority.host-only",
           std::format("player {} sent {}: only the host says that", from, name));
       return;
@@ -616,7 +627,9 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
       (std::holds_alternative<p::QuestInteract>(message) &&
        std::get<p::QuestInteract>(message).verdict == p::kInteractAsk) ||
       (std::holds_alternative<p::DeviceFire>(message) &&
-       std::get<p::DeviceFire>(message).kind > p::DeviceFireKind::Shot)) {
+       std::get<p::DeviceFire>(message).kind > p::DeviceFireKind::Shot) ||
+      // A death not stamped is its owner's report, for the host.
+      (std::holds_alternative<p::NpcDeath>(message) && std::get<p::NpcDeath>(message).order == 0)) {
     Add("authority.guest-only", std::format("the host sent {}: only a guest sends that", name));
     return;
   }
@@ -683,7 +696,7 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           timeUs = m.timeUs;
         } else if constexpr (std::is_same_v<M, p::PoseState>) {
           timeUs = m.timeUs;
-        } else if constexpr (std::is_same_v<M, p::NpcSpawn>) {
+        } else if constexpr (std::is_same_v<M, p::NpcSpawn> || std::is_same_v<M, p::NpcDeath>) {
           finite = Finite(m.position) && std::isfinite(m.yaw);
         } else if constexpr (std::is_same_v<M, p::NpcStates>) {
           timeUs = m.timeUs;
@@ -777,6 +790,14 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           timeUs = m.timeUs;
           // A device is named; a shot is stamped (the host clock).
           inRange = m.entity != 0 && (m.kind != p::DeviceFireKind::Shot || m.timeUs != 0);
+        } else if constexpr (std::is_same_v<M, p::ThrowPath>) {
+          // Nothing thrown flies faster than a launcher's round.
+          finite = Finite(m.position) && Finite(m.velocity);
+          inRange = !finite || (std::abs(m.velocity.x) <= 400.f &&
+                                std::abs(m.velocity.y) <= 400.f && std::abs(m.velocity.z) <= 400.f);
+        } else if constexpr (std::is_same_v<M, p::Noise>) {
+          finite = std::isfinite(m.radius);
+          inRange = !finite || (m.radius >= 0.f && m.stim < 65);
         }
       },
       message);
@@ -832,6 +853,10 @@ void Referee::CheckRate(p::PlayerId from, const p::Message &message, std::size_t
     budget = limits.digestHz;
   else if (std::holds_alternative<p::Ping>(message))
     budget = limits.pingHz;
+  else if (std::holds_alternative<p::Noise>(message))
+    budget = limits.noiseHz;
+  else if (std::holds_alternative<p::ThrowPath>(message))
+    budget = limits.throwPathHz;
   if (budget > 0.f) {
     // A relayed player's states count against that player.
     auto copy = message;
@@ -1063,6 +1088,19 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
                   std::format("network {:x} breached by player {} and by player {}", m.entity,
                               first->second, m.player));
           }
+        } else if constexpr (std::is_same_v<M, p::NpcDeath>) {
+          // The ledger: one death per placed NPC, the host's order for it
+          // never changing (a resync says the same again), never more than
+          // the cap in play. (By whom: maybe a player that left before we
+          // joined.)
+          const auto [known, fresh] = m_deaths.emplace(m.entity, m.order);
+          if (!fresh && known->second != m.order)
+            Add("ledger.changed",
+                std::format("the death of placed npc {:x} was number {} and is now number {}",
+                            m.entity, known->second, m.order));
+          if (fresh && m_deaths.size() > 2 * p::kMaxDeaths)
+            Add("ledger.unbounded", std::format("the host told us {} deaths: its ledger keeps {}",
+                                                m_deaths.size(), p::kMaxDeaths));
         } else if constexpr (std::is_same_v<M, p::BreachResult>) {
           const std::tuple key{m.entity, m.cls, m.npc};
           auto asked = m_breachesAsked.find(key);

@@ -9,6 +9,7 @@
 
 #include "combat.hpp"
 #include "log.hpp"
+#include "regions.hpp"
 #include "runtime.hpp"
 
 #include "tandem/combat.hpp"
@@ -57,7 +58,8 @@ enum Kind : std::int32_t {
   kDefended = 9,
   kSessionLevel = 10,
   kNpcLevel = 11,
-  kNpcScale = 12
+  kNpcScale = 12,
+  kThrowPath = 13
 };
 
 proto::Vec3 Vec(const Red::Vector4 &v) { return {v.X, v.Y, v.Z}; }
@@ -127,6 +129,11 @@ TandemFightEvent EventOf(const proto::Message &message) {
     out = {.kind = kNpcLevel, .npc = n->npc, .damage = n->level};
   } else if (const auto *c = std::get_if<proto::NpcScale>(&message)) {
     out = {.kind = kNpcScale, .npc = c->npc, .player = c->players};
+  } else if (const auto *path = std::get_if<proto::ThrowPath>(&message)) {
+    out = {.kind = kThrowPath, .player = path->player};
+    out.x = path->position.x, out.y = path->position.y, out.z = path->position.z;
+    out.dx = path->velocity.x, out.dy = path->velocity.y, out.dz = path->velocity.z;
+    out.id = path->id;
   }
   return out;
 }
@@ -213,6 +220,18 @@ struct TandemFight : Red::IScriptable {
     Combat::Get().Send(proto::ThrowEnd{
         .id = id, .how = static_cast<proto::ThrowEndKind>(how), .position = Vec(position)});
   }
+  // Where a thrown object of ours is now and how it moves (proto::ThrowPath),
+  // a few times a second while it flies.
+  static void SendThrowPath(std::uint32_t id, Red::Vector4 position, Red::Vector4 velocity) {
+    Combat::Get().Send(
+        proto::ThrowPath{.id = id, .position = Vec(position), .velocity = Vec(velocity)});
+  }
+  // A copy at `copy` against the real one's word: 0 leave it, 1 lay it
+  // there, 2 put it there flying on (combat::FollowPath).
+  static std::int32_t PathFix(Red::Vector4 copy, Red::Vector4 position, Red::Vector4 velocity) {
+    return static_cast<std::int32_t>(combat::FollowPath(
+        Vec(copy), proto::ThrowPath{.position = Vec(position), .velocity = Vec(velocity)}));
+  }
   // Host: the session's rules, sent when they change: ConfiguredRules' word
   // (proto::kRule* in the low byte, enemyHealth in the next).
   static void SendRules(std::int32_t rules) {
@@ -263,6 +282,16 @@ struct TandemFight : Red::IScriptable {
       // The session's vendors: kept here for Vendors.reds (TandemProgress).
       if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
         Combat::Get().NoteVendor(*vendor);
+        continue;
+      }
+      // Placed NPCs and the session's dead: kept for Npcs.reds and
+      // Ledger.reds (TandemRegions).
+      if (const auto *placed = std::get_if<proto::NpcPlaced>(&message)) {
+        Regions::Get().NotePlaced(*placed);
+        continue;
+      }
+      if (const auto *death = std::get_if<proto::NpcDeath>(&message)) {
+        Regions::Get().NoteDeath(*death);
         continue;
       }
       if (auto event = EventOf(message); event.kind != 0)
@@ -320,6 +349,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemFight, "TandemFight", {
   RTTI_METHOD(SendAreaHit);
   RTTI_METHOD(SendThrow);
   RTTI_METHOD(SendThrowEnd);
+  RTTI_METHOD(SendThrowPath);
+  RTTI_METHOD(PathFix);
   RTTI_METHOD(SendRules);
   RTTI_METHOD(ConfiguredRules);
   RTTI_METHOD(FriendlyFire);

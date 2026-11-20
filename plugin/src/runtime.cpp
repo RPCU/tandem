@@ -385,6 +385,7 @@ void Runtime::Stop() {
     m_localStealth.reset();
     m_stealth.clear();
     m_localNoises.clear();
+    m_noiseGate.Reset();
     m_remoteNoises.clear();
     m_sharedNpcs.clear();
     m_roster.clear();
@@ -1450,6 +1451,10 @@ std::optional<proto::Stealth> Runtime::RemoteStealth(proto::PlayerId player,
 
 void Runtime::SubmitLocalNoise(const proto::Noise &noise) {
   std::lock_guard _(m_lock);
+  // Footsteps come every frame of a run: a few a second are enough for an
+  // NPC to hear the V (presence::NoiseGate).
+  if (!m_noiseGate.ShouldSend(noise.stim, net::NowUs()))
+    return;
   if (m_localNoises.size() < 32)
     m_localNoises.push_back(noise);
 }
@@ -1544,6 +1549,7 @@ void Runtime::ResetSession() {
     m_awarenessOfUs.clear();
     m_localAwareness.reset();
     m_localNoises.clear();
+    m_noiseGate.Reset();
     m_remoteNoises.clear();
     m_sharedNpcs.clear();
     m_roster.clear();
@@ -1967,9 +1973,15 @@ bool Runtime::ActorPoseOf(proto::NpcId npc, pose::Pose &out) {
   const auto it = m_actorPoses.find(npc);
   if (it == m_actorPoses.end())
     return false;
+  // Its poses come as often as the scene's budget lets its stream go
+  // (scene::Pacer): drawn one of their intervals in the past, so that there
+  // are two to draw between.
+  const auto interval = it->second.IntervalUs();
+  if (interval > 50'000)
+    delayUs = std::max(delayUs, interval + 20'000);
   // The stream stopped (the scene is over, the host is gone): the proxy is
   // not left frozen in its last pose.
-  if (now > it->second.NewestUs() + delayUs + kActorPoseStaleUs)
+  if (now > it->second.NewestUs() + delayUs + std::max(kActorPoseStaleUs, 3 * interval))
     return false;
   return it->second.At(now > delayUs ? now - delayUs : 0, out);
 }

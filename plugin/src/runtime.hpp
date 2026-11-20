@@ -13,6 +13,7 @@
 #include "tandem/interpolation.hpp"
 #include "tandem/lagcomp.hpp"
 #include "tandem/pose.hpp"
+#include "tandem/presence.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/session.hpp"
 #include "tandem/timebubble.hpp"
@@ -847,6 +848,7 @@ private:
   std::optional<proto::Stealth> m_localStealth;                                  // m_lock
   std::map<proto::PlayerId, std::pair<std::uint32_t, proto::Stealth>> m_stealth; // m_lock
   std::vector<proto::Noise> m_localNoises;                                       // m_lock
+  presence::NoiseGate m_noiseGate;                                               // m_lock
   std::vector<consistency::Timed<proto::Noise>> m_remoteNoises;                  // m_lock
   // Consistency (m_lock): the session's record for the scripts' checks.
   std::map<proto::NpcId, proto::NpcSpawn> m_sharedNpcs;

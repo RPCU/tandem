@@ -461,6 +461,32 @@ TEST_CASE("referee: resync requests are budgeted at the pace of the endpoint's d
   CHECK(referee.Counts().contains("rate.over-budget"));
 }
 
+TEST_CASE("referee: a V's noises and its throws' paths: in its own name, sane, not a flood") {
+  auto referee = Host();
+  std::uint64_t now = kSecond;
+  // Footsteps four times a second and a grenade's path beside them: fine.
+  for (int i = 0; i < 12; ++i, now += kSecond / 4) {
+    referee.Received(2, proto::Noise{.stim = 26}, now);
+    referee.Received(
+        2, proto::ThrowPath{.id = 1, .position = {1.f, 2.f, 3.f}, .velocity = {0.f, 8.f, 2.f}},
+        now);
+  }
+  CHECK(Rules(referee).empty());
+  // In another player's name; a speed nothing thrown has; not a stimulus.
+  referee.Received(2, proto::ThrowPath{.player = 3, .id = 1}, now);
+  CHECK(Rules(referee) == std::vector<std::string>{"authority.not-yours"});
+  referee.Received(3, proto::ThrowPath{.id = 1, .velocity = {0.f, 900.f, 0.f}}, now);
+  referee.Received(3, proto::Noise{.stim = 99}, now);
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  referee.Received(3, proto::ThrowPath{.id = 1, .position = {nan, 0.f, 0.f}}, now);
+  CHECK(Rules(referee) ==
+        std::vector<std::string>{"value.range", "value.range", "value.not-finite"});
+  // A footstep every frame (ungated): over its budget, said once.
+  for (int i = 0; i < 400; ++i, now += kSecond / 120)
+    referee.Received(2, proto::Noise{.stim = 25}, now);
+  CHECK(Rules(referee) == std::vector<std::string>{"rate.over-budget"});
+}
+
 TEST_CASE("referee: states held and never released") {
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 1}, kSecond);
@@ -677,4 +703,37 @@ TEST_CASE("referee: a scene's props, camera and rig poses are the host's, about 
                                     .fov = 60.f},
                  kSecond);
   CHECK(Broke(guest, "value.not-finite"));
+}
+
+TEST_CASE("referee: the death ledger is stamped by the host, reported by an NPC's owner") {
+  // A guest hears deaths the host stamped: once each, the order never changing.
+  auto guest = Guest();
+  const proto::NpcDeath first{.entity = 0xA, .record = 1, .by = 3, .order = 1, .timeUs = 5};
+  guest.Received(1, first, kSecond);
+  guest.Received(1, first, 2 * kSecond); // a resync says the same again
+  CHECK(Rules(guest).empty());
+  auto moved = first;
+  moved.order = 2;
+  guest.Received(1, moved, 3 * kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ledger.changed"});
+  // Never an unstamped report passed on. One by a player that left before
+  // we joined is fine.
+  guest.Received(1, proto::NpcDeath{.npc = 7, .entity = 0xB}, 3 * kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.guest-only"});
+  guest.Received(1, proto::NpcDeath{.entity = 0xC, .by = 9, .order = 3}, 3 * kSecond);
+  CHECK(Rules(guest).empty());
+
+  // The host hears reports: of an NPC the sender runs, never stamped.
+  auto host = Host();
+  const auto theirs = regions::MakeNpcId(2, 1);
+  host.Received(2, proto::NpcSpawn{.npc = theirs, .record = 1}, kSecond);
+  host.Received(2, proto::NpcPlaced{.npc = theirs, .entity = 0xA}, kSecond);
+  host.Received(2, proto::NpcDeath{.npc = theirs, .entity = 0xA}, kSecond);
+  CHECK(Rules(host).empty());
+  host.Received(3, proto::NpcDeath{.npc = theirs, .entity = 0xA}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-owner"});
+  host.Received(3, proto::NpcPlaced{.npc = theirs, .entity = 0xD}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-owner"});
+  host.Received(2, first, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.host-only"});
 }

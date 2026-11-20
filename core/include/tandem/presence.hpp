@@ -16,6 +16,7 @@
 #include "tandem/movement.hpp"
 #include "tandem/protocol.hpp"
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -43,8 +44,17 @@ enum class Kind : std::uint8_t {
   Vault = 12,      // it went over an obstacle
   Dash = 13,       // a dodge or dash; arg: 1 in the air
   SlideEnd = 14,   // a slide came to its end
+  // Water (movement::Swim, the state machine's own word):
+  WaterEnter = 15, // arg: kWater* (under at once; already in when first seen)
+  WaterExit = 16,  // out of the water: onto the ground, or climbing out
+  Dive = 17,       // from the surface under it
+  Surface = 18,    // from under it back to the surface
+  Stroke = 19,     // one swimming stroke; arg: kStroke*
 };
 inline constexpr std::uint8_t kStepLeft = 0x10, kStepLadder = 0x20, kStepGaitMask = 0x0F;
+inline constexpr std::uint8_t kWaterUnder = 1; // WaterEnter: straight under the surface
+inline constexpr std::uint8_t kWaterQuiet = 2; // WaterEnter: it swam before we saw it (no splash)
+inline constexpr std::uint8_t kStrokeDiving = 1, kStrokeFast = 2;
 
 struct Event {
   Kind kind{};
@@ -69,6 +79,14 @@ public:
   static constexpr float kHurtGapSeconds = 0.35f; // at most one grunt per
   static constexpr float kHardFall = 9.f;         // m/s down: a hard landing
   static constexpr float kVeryHardFall = 14.f;
+  // Swimming: seconds between two strokes while it moves (the state
+  // machine's `timeBetween*Stroke` parameters are TweakDB's; these are
+  // their script defaults), the speed above which it swims fast, and below
+  // which it treads water (no stroke).
+  static constexpr float kStrokeSeconds = 1.f;
+  static constexpr float kFastStrokeSeconds = 0.6f;
+  static constexpr float kSwimFastSpeed = 3.2f; // m/s
+  static constexpr float kSwimIdleSpeed = 0.4f; // m/s
 
   // Once per frame: where the interpolated V is, how it moves
   // (PlayerState::flags), whether it crouches, the frame's length.
@@ -81,6 +99,7 @@ public:
 
   std::vector<Event> Take();
   Gait CurrentGait() const { return m_gait; }
+  movement::Swim Swimming() const { return m_swim; }
 
 private:
   void Emit(Kind kind, std::uint8_t arg = 0) { m_events.push_back({kind, arg}); }
@@ -97,6 +116,10 @@ private:
   float m_speed{};  // smoothed horizontal speed
   float m_sinceHurt{kHurtGapSeconds};
   Gait m_gait{Gait::Walk};
+  // water
+  movement::Swim m_swim{movement::Swim::None};
+  float m_sinceStroke{}; // seconds swum since the last stroke
+  float m_swimSpeed{};   // smoothed, all three axes
   // states
   std::optional<std::uint8_t> m_health;
   std::optional<std::uint64_t> m_right;
@@ -246,4 +269,36 @@ struct StatusChange {
 };
 StatusChange StatusDiff(std::span<const std::uint64_t> before,
                         std::span<const std::uint64_t> after);
+
+// ---- a V's noise, for the NPCs another game runs (proto::Noise) ----
+
+// gamedataStimType: what a V's own state machine broadcasts as it moves
+// (engine/stealth.md): a footstep at a run (every frame of it in vanilla),
+// at a sprint (every 0.2 s, a slide's and a dodge's start too), a landing by
+// how hard. A crouched V broadcasts none, nor one whose perks silence it:
+// the sender relays what its game gave out, so vanilla's rules hold.
+inline constexpr std::uint8_t kStimFootStepRegular = 25, kStimFootStepSprint = 26,
+                              kStimLandingHard = 34, kStimLandingRegular = 35,
+                              kStimLandingVeryHard = 36, kStimCount = 65;
+bool IsFootstep(std::uint8_t stim);
+bool IsLanding(std::uint8_t stim);
+inline bool IsMovementNoise(std::uint8_t stim) { return IsFootstep(stim) || IsLanding(stim); }
+
+// When a stimulus of our V is worth sending: footsteps (both kinds
+// together) four times a second, since an NPC that hears one hears the
+// next; any other kind at most ten times a second each (a burst of
+// gunshots is one noise). An unknown kind is never sent.
+class NoiseGate {
+public:
+  static constexpr std::uint64_t kFootstepGapUs = 250'000;
+  static constexpr std::uint64_t kGapUs = 100'000;
+
+  bool ShouldSend(std::uint8_t stim, std::uint64_t nowUs);
+  void Reset() { *this = {}; }
+
+private:
+  // By kind; the two footsteps share kStimFootStepRegular's.
+  std::array<std::uint64_t, kStimCount> m_atUs{};
+  std::array<bool, kStimCount> m_sent{};
+};
 } // namespace tandem::presence

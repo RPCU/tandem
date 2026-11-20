@@ -140,7 +140,8 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       return Bad("bad {} {}", key, value);
   } else if (key == "story" || key == "quest_freeze" || key == "quest_interact" ||
              key == "recorder" || key == "recorder_pose" || key == "friendly_fire" ||
-             key == "markers" || key == "party_hud" || key == "enemy_scaling") {
+             key == "markers" || key == "party_hud" || key == "enemy_scaling" ||
+             key == "death_ledger" || key == "death_bodies") {
     auto &flag = key == "story"            ? config.story
                  : key == "quest_freeze"   ? config.questFreeze
                  : key == "quest_interact" ? config.questInteract
@@ -149,6 +150,8 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
                  : key == "enemy_scaling"  ? config.enemyScaling
                  : key == "markers"        ? config.markers
                  : key == "party_hud"      ? config.partyHud
+                 : key == "death_ledger"   ? config.deathLedger
+                 : key == "death_bodies"   ? config.deathBodies
                                            : config.recorderPose;
     if (value == "on" || value == "true")
       flag = true;
@@ -195,6 +198,20 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.sceneReplay = false;
     else
       return Bad("scene_replay is on, noposes or off");
+  } else if (key == "scene_camera") {
+    if (value == "on" || value == "true")
+      config.sceneCamera = true;
+    else if (value == "off" || value == "false")
+      config.sceneCamera = false;
+    else
+      return Bad("scene_camera is on or off");
+  } else if (key == "scene_kbps") {
+    // What a scene's streams may take on a guest's link (8 to 2000 kbit/s).
+    int kbps = 0;
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), kbps);
+    if (error != std::errc{} || end != value.data() + value.size() || kbps < 8 || kbps > 2000)
+      return Bad("scene_kbps is a number from 8 to 2000");
+    config.sceneKbps = static_cast<std::uint32_t>(kbps);
   } else if (key == "time_host") {
     if (value == "bubble")
       config.timeHostFull = false;
@@ -329,6 +346,10 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return OnOff(config.markers);
   if (key == "party_hud")
     return OnOff(config.partyHud);
+  if (key == "death_ledger")
+    return OnOff(config.deathLedger);
+  if (key == "death_bodies")
+    return OnOff(config.deathBodies);
   if (key == "nameplates")
     return config.nameplates == presence::Nameplates::Always ? "always"
            : config.nameplates == presence::Nameplates::Off  ? "off"

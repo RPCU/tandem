@@ -1,6 +1,19 @@
 // The story's natives (plugin/src/story_natives.cpp). Keep the two in sync:
 // tools/check-natives.py checks them with Natives.reds.
 
+// The host's view of its cutscene, for a guest to show (on false: none).
+public native struct TandemSceneView {
+  native let on: Bool;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let i: Float;
+  native let j: Float;
+  native let k: Float;
+  native let r: Float;
+  native let fov: Float;
+}
+
 public native struct TandemStoryEvent {
   // 1 in the session (player: us, hash: the host), 2 session ended,
   // 3 player joined, 4 player left;
@@ -150,6 +163,10 @@ public native class TandemStory extends IScriptable {
   public static native func PausePose(player: Uint32, paused: Bool) -> Void;
   public static native func SceneReplay() -> Int32;
   public static native func SceneActor(npc: Uint32, x: Float, y: Float, z: Float, flags: Int32) -> Void;
+  public static native func SceneCameraOn() -> Bool;
+  public static native func SceneCameraSample(x: Float, y: Float, z: Float, i: Float, j: Float, k: Float, r: Float, fov: Float) -> Void;
+  public static native func SceneView() -> TandemSceneView;
+  public static native func SceneViews() -> Int32;
   public static native func SceneProp(key: Uint64, record: TweakDBID, holderNpc: Uint32, holderPlayer: Uint32, leftHand: Bool) -> Void;
   public static native func SceneHolds(npc: Uint32, player: Uint32) -> Bool;
   public static native func SceneSample(playing: Bool, isPrivate: Bool, tier: Int32, rate: Float, held: Bool, x: Float, y: Float, z: Float, yaw: Float) -> Int32;

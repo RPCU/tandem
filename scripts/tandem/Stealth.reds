@@ -13,8 +13,13 @@
 //   goes to the others (Stealth), and is put on its puppet there, where
 //   the host's NPC senses look: camouflaged, the puppet's visible object
 //   is off.
-// - Guest -> host: the stimuli its V gives out (gunshots...) are broadcast
-//   again from its puppet on the host (Noise).
+// - Every game: the stimuli its V gives out (gunshots, its footsteps at a
+//   run or a sprint, its landings: what its own state machine broadcast, so
+//   a crouched V or one whose perks silence it sends none) are broadcast
+//   again from its puppet on the games that run NPCs near it (Noise). There
+//   a puppet stands for the player it is where vanilla asks "is this the
+//   player's": a stealth stimulus is judged by the NPC's attitude to that
+//   puppet, a player-only one passes for it.
 
 // ---- our V's combat state, from the host's NPCs (guest) ----
 
@@ -74,6 +79,59 @@ public final func TriggerSingleBroadcast(contextOwner: wref<GameObject>, gdStimT
   }
 }
 
+// ---- a puppet's noises, heard by the NPCs we run ----
+
+// A stimulus tagged Stealth (a V's footsteps, its landing) is reacted to by
+// who is hostile to the player that made it, or neutral and guarding the
+// zone it trespasses; vanilla reads the attitude for the local player only
+// (final.reds:148207), so a puppet's would always be ignored.
+@wrapMethod(ReactionManagerComponent)
+public final static func ReactOnPlayerStealthStim(owner: wref<GameObject>, target: wref<GameObject>) -> Bool {
+  if TandemNative.IsStarted() && IsDefined(owner) && IsDefined(target) && TandemCombat.PuppetPlayer(owner.GetGame(), target) != 0u {
+    let attitude = GameObject.GetAttitudeBetween(owner, target);
+    if Equals(attitude, EAIAttitude.AIA_Hostile) {
+      return true;
+    }
+    return Equals(attitude, EAIAttitude.AIA_Neutral) && owner.IsConnectedToSecuritySystem() && owner.IsTargetTresspassingMyZone(target);
+  }
+  return wrappedMethod(owner, target);
+}
+
+// A stimulus tagged PlayerOnly is dropped unless its source, or the attack's
+// instigator it names, is a player (final.reds:145046). A puppet's movement
+// noise names none: for the length of that judgement our own V is lent as
+// the instigator (the stimuli this is done for, footsteps and landings, ask
+// nothing else of it: StimFilters), then taken back, so whatever the NPC
+// does next it does about the puppet.
+// job thread safe: it writes only the stimulus event this NPC's task carries, as the wrapped method's own pipeline does (stimEvent.sourceObject, final.reds:146325), and no state of ours
+@wrapMethod(ReactionManagerComponent)
+private final func ShouldStimBeProcessed(stimEvent: ref<StimuliEvent>, delayed: Bool) -> Bool {
+  if !TandemNative.IsStarted() || !IsDefined(stimEvent) || !TandemStealth.IsMovementNoise(stimEvent.GetStimType()) {
+    return wrappedMethod(stimEvent, delayed);
+  }
+  let owner = this.GetOwner();
+  let by = IsDefined(owner) ? TandemCombat.PuppetPlayer(owner.GetGame(), stimEvent.sourceObject) : 0u;
+  if by == 0u {
+    return wrappedMethod(stimEvent, delayed);
+  }
+  let lent = false;
+  let data = stimEvent.stimInvestigateData;
+  if stimEvent.IsTagInStimuli(n"PlayerOnly") && !IsDefined(data.attackInstigator) {
+    data.attackInstigator = GetPlayer(owner.GetGame());
+    stimEvent.stimInvestigateData = data;
+    lent = true;
+  }
+  let heard = wrappedMethod(stimEvent, delayed);
+  if lent {
+    data.attackInstigator = null;
+    stimEvent.stimInvestigateData = data;
+  }
+  if heard {
+    TandemNative.LogDebug(s"stealth: \(EntityID.ToDebugStringDecimal(owner.GetEntityID())) reacts to player \(by)'s \(EnumValueToString("gamedataStimType", Cast<Int64>(EnumInt(stimEvent.GetStimType()))))");
+  }
+  return heard;
+}
+
 // A remote player's stealth as put on their puppet.
 public class TandemStealthApplied {
   public let player: Uint32;
@@ -115,6 +173,8 @@ public class TandemStealth {
   // Host: noises heard since the last log line.
   private let m_noises: Int32;
   private let m_noiseLog: Float;
+  // The stimulus kinds whose record was described in the log (once each).
+  private let m_described: array<Int32>;
 
   // This game shows other games' NPCs (proxies) at the moment.
   public static func ShowsProxies(game: GameInstance) -> Bool {
@@ -476,6 +536,29 @@ public class TandemStealth {
 
   // ---- noises ----
 
+  // gamedataStimType: what a V's state machine broadcasts as it moves
+  // (presence::IsMovementNoise): FootStepRegular 25, FootStepSprint 26,
+  // LandingHard 34, LandingRegular 35, LandingVeryHard 36.
+  public static func IsMovementNoise(stim: gamedataStimType) -> Bool {
+    return Equals(stim, gamedataStimType.FootStepRegular) || Equals(stim, gamedataStimType.FootStepSprint)
+      || Equals(stim, gamedataStimType.LandingHard) || Equals(stim, gamedataStimType.LandingRegular)
+      || Equals(stim, gamedataStimType.LandingVeryHard);
+  }
+
+  // What a puppet's stimulus is by its record, once a kind: its reach, and
+  // the tags vanilla judges it by (see the wraps above).
+  private func Describe(puppet: ref<GameObject>, kind: Int32, radius: Float, propagation: Bool) -> Void {
+    if ArrayContains(this.m_described, kind) {
+      return;
+    }
+    ArrayPush(this.m_described, kind);
+    let data: stimInvestigateData;
+    let event = StimBroadcasterComponentHelper.CreateStimEvent(puppet, IntEnum<gamedataStimType>(kind), radius, data, propagation);
+    if IsDefined(event) {
+      TandemNative.Log(s"stealth: a puppet's \(EnumValueToString("gamedataStimType", Cast<Int64>(kind))): radius \(event.radius) m, reaction stim \(IsDefined(event.stimRecord) && event.stimRecord.IsReactionStim()), tags Stealth \(event.IsTagInStimuli(n"Stealth")), PlayerOnly \(event.IsTagInStimuli(n"PlayerOnly")), IgnoreFriendly \(event.IsTagInStimuli(n"IgnoreFriendly"))");
+    }
+  }
+
   // Guest: a stimulus our V gave out, to the host (each type at most ten
   // times a second).
   public func OwnNoise(stim: gamedataStimType, radius: Float, propagation: Bool) -> Void {
@@ -500,6 +583,7 @@ public class TandemStealth {
       if IsDefined(puppet) {
         let stim = IntEnum<gamedataStimType>(noise.stim);
         let data: stimInvestigateData;
+        this.Describe(puppet, noise.stim, noise.radius, noise.propagation);
         let broadcaster = puppet.GetStimBroadcasterComponent();
         if IsDefined(broadcaster) {
           broadcaster.TriggerSingleBroadcast(puppet, stim, noise.radius, data, noise.propagation);

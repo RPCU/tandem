@@ -1208,6 +1208,9 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(command, "region") {
       let linked = TandemRegions.Linked();
       TandemNative.Log(s"region: \(TandemRegions.IsApart() ? "apart" : "grouped"), leader player \(TandemRegions.Leader()), linked with \(ArraySize(linked)) player(s), area \(TandemRegions.OwnsArea() ? "ours" : s"player \(TandemRegions.AreaOwner(this.m_you))'s"), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
+    } else if Equals(command, "ledger") {
+      // (test) the session's dead as our game has them (Ledger.reds).
+      TandemNative.Log(IsDefined(this.m_npcs) ? this.m_npcs.LedgerReport() : "ledger: no session");
     } else if Equals(command, "npc count") {
       TandemNative.Log(s"npcs shared: \(IsDefined(this.m_npcs) ? this.m_npcs.Count() : 0), own hidden: \(IsDefined(this.m_npcs) ? this.m_npcs.Hidden() : 0), in the session's record: \(IsDefined(this.m_npcs) ? this.m_npcs.SharedCount() : 0) (\(IsDefined(this.m_npcs) ? this.m_npcs.SharedListed() : 0) listed), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
     } else if StrBeginsWith(command, "wheels") {
@@ -1693,14 +1696,20 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_presence) {
         this.m_presence.Command(StrAfterFirst(command, "presence "), this);
       }
+    } else if Equals(command, "throws report") {
+      // Throws.reds: ours in flight, path samples said, copies put back.
+      let throws = TandemThrows.Of(this.GetGameInstance());
+      if IsDefined(throws) {
+        throws.Report();
+      }
     } else if StrBeginsWith(command, "revive") {
       // Revive.reds: revive down | hold | report.
       if IsDefined(this.m_revive) {
         this.m_revive.Command(command);
       }
-    } else if (StrBeginsWith(command, "skip ") || StrBeginsWith(command, "busy") || StrBeginsWith(command, "apartment")) && IsDefined(this.m_activities) {
+    } else if (StrBeginsWith(command, "skip ") || StrBeginsWith(command, "busy") || StrBeginsWith(command, "apartment") || StrBeginsWith(command, "contest")) && IsDefined(this.m_activities) {
       // Activities.reds: skip ask HOURS | skip accept | skip decline | busy KIND|off | busy report
-      // | apartment report.
+      // | apartment report | contest duel|race|range|off|report.
       this.m_activities.Command(command);
     } else if StrBeginsWith(command, "elsewhere") && IsDefined(this.m_elsewhere) {
       // Elsewhere.reds: elsewhere test PLACE|off, elsewhere state.

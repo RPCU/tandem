@@ -11,6 +11,10 @@ namespace {
 using movement::Detailed;
 using movement::Placement;
 
+using movement::Swim;
+
+bool InWater(Swim swim) { return swim == Swim::Surface || swim == Swim::Diving; }
+
 bool IsJump(Detailed detailed) {
   return detailed == Detailed::Jump || detailed == Detailed::DoubleJump ||
          detailed == Detailed::ChargeJump || detailed == Detailed::HoverJump ||
@@ -44,6 +48,11 @@ void Observer::Move(const proto::Vec3 &position, std::uint16_t flags, bool crouc
     m_position = position;
     m_placement = placement;
     m_detailed = move.detailed;
+    // Already swimming when first seen: its water is there, with no splash.
+    m_swim = move.swim;
+    if (InWater(m_swim))
+      Emit(Kind::WaterEnter,
+           static_cast<std::uint8_t>(kWaterQuiet | (m_swim == Swim::Diving ? kWaterUnder : 0)));
     return;
   }
   const float dx = position.x - m_position.x, dy = position.y - m_position.y,
@@ -68,11 +77,48 @@ void Observer::Move(const proto::Vec3 &position, std::uint16_t flags, bool crouc
       Emit(Kind::SlideEnd);
   }
 
+  // In and out of the water, under and back up: the swimming states' own
+  // effects and sounds (engine/presence.md). Climbing out is out.
+  if (move.swim != m_swim) {
+    const bool was = InWater(m_swim), now = InWater(move.swim);
+    if (!was && now)
+      Emit(Kind::WaterEnter, move.swim == Swim::Diving ? kWaterUnder : 0);
+    else if (was && !now)
+      Emit(Kind::WaterExit);
+    else if (was && now)
+      Emit(move.swim == Swim::Diving ? Kind::Dive : Kind::Surface);
+    m_swim = move.swim;
+    m_sinceStroke = 0.f;
+  }
+
   // Put somewhere else (a teleport, a fast travel): nothing was walked.
   if (flat > kTeleport || std::abs(dz) > kTeleport || dt <= 0.f) {
     m_walked = 0.f;
     m_fall = 0.f;
     m_speed = 0.f;
+    m_swimSpeed = 0.f;
+    return;
+  }
+
+  // Swimming: a stroke every so often while it moves, faster when it
+  // swims fast; treading water makes none.
+  if (InWater(m_swim)) {
+    const float speed = std::sqrt(flat * flat + dz * dz) / dt;
+    m_swimSpeed += (speed - m_swimSpeed) * std::min(1.f, dt / 0.15f);
+    m_walked = 0.f;
+    m_fall = 0.f;
+    if (m_swimSpeed < kSwimIdleSpeed) {
+      // The first stroke after a rest comes soon.
+      m_sinceStroke = kStrokeSeconds * 0.5f;
+      return;
+    }
+    const bool fast = m_swimSpeed >= kSwimFastSpeed;
+    m_sinceStroke += dt;
+    if (m_sinceStroke >= (fast ? kFastStrokeSeconds : kStrokeSeconds)) {
+      m_sinceStroke = 0.f;
+      Emit(Kind::Stroke, static_cast<std::uint8_t>((m_swim == Swim::Diving ? kStrokeDiving : 0) |
+                                                   (fast ? kStrokeFast : 0)));
+    }
     return;
   }
 
@@ -372,5 +418,26 @@ StatusChange StatusDiff(std::span<const std::uint64_t> before,
   std::ranges::set_difference(after, before, std::back_inserter(change.started));
   std::ranges::set_difference(before, after, std::back_inserter(change.ended));
   return change;
+}
+
+bool IsFootstep(std::uint8_t stim) {
+  return stim == kStimFootStepRegular || stim == kStimFootStepSprint;
+}
+
+bool IsLanding(std::uint8_t stim) {
+  return stim == kStimLandingHard || stim == kStimLandingRegular || stim == kStimLandingVeryHard;
+}
+
+bool NoiseGate::ShouldSend(std::uint8_t stim, std::uint64_t nowUs) {
+  if (stim >= kStimCount)
+    return false;
+  const bool step = IsFootstep(stim);
+  const std::size_t slot = step ? kStimFootStepRegular : stim;
+  const auto gap = step ? kFootstepGapUs : kGapUs;
+  if (m_sent[slot] && nowUs - m_atUs[slot] < gap)
+    return false;
+  m_sent[slot] = true;
+  m_atUs[slot] = nowUs;
+  return true;
 }
 } // namespace tandem::presence

@@ -1,7 +1,9 @@
 #include "tandem/regions.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <numbers>
 
 namespace tandem::regions {
 float Distance(const proto::Vec3 &a, const proto::Vec3 &b) {
@@ -167,5 +169,77 @@ proto::PlayerId AreaOwner(proto::PlayerId player, const std::set<proto::PlayerId
       best = other;
   }
   return best;
+}
+
+std::vector<Cover> Covers(proto::PlayerId player, const std::set<proto::PlayerId> &players,
+                          const Places &places, const Links &links, proto::PlayerId host,
+                          const Holders &holders) {
+  std::vector<Cover> covers;
+  for (const auto other : players) {
+    if (other == player || !links.Linked(player, other) || !Outranks(other, player, host, holders))
+      continue;
+    const auto place = places.find(other);
+    if (place == places.end() || !place->second.known)
+      continue;
+    covers.push_back({.by = other, .center = place->second.position});
+  }
+  std::ranges::sort(
+      covers, [&](const Cover &a, const Cover &b) { return Outranks(a.by, b.by, host, holders); });
+  return covers;
+}
+
+proto::PlayerId CoveredBy(const proto::Vec3 &point, const std::vector<Cover> &covers,
+                          float radius) {
+  for (const auto &cover : covers)
+    if (Distance(point, cover.center) < radius)
+      return cover.by;
+  return proto::kNoPlayer;
+}
+
+float CrowdShare(const proto::Vec3 &self, const std::vector<Cover> &covers, bool quiet) {
+  float share = 1.f;
+  for (const auto &cover : covers) {
+    const float d = Distance(self, cover.center);
+    if (d < (quiet ? kRadius : kQuietIn))
+      return 0.f;
+    if (d >= 2.f * kRadius)
+      continue;
+    // Two discs of one radius, their centres d apart: the lens they share,
+    // as a part of one disc.
+    const float half = d / (2.f * kRadius);
+    const float lens = 2.f * std::acos(half) - 2.f * half * std::sqrt(1.f - half * half);
+    share = std::min(share, 1.f - lens / std::numbers::pi_v<float>);
+  }
+  return std::round(share * 10.f) / 10.f;
+}
+
+std::vector<NullStep> NullAreas::Update(const std::vector<Cover> &covers, double now) {
+  std::vector<NullStep> steps;
+  for (auto it = m_areas.begin(); it != m_areas.end();) {
+    const auto by = it->first;
+    if (std::ranges::any_of(covers, [&](const Cover &cover) { return cover.by == by; })) {
+      ++it;
+      continue;
+    }
+    steps.push_back({.by = by, .place = false, .center = it->second.center});
+    it = m_areas.erase(it);
+  }
+  for (const auto &cover : covers) {
+    const auto known = m_areas.find(cover.by);
+    if (known != m_areas.end() && now - known->second.at < kNullRenew &&
+        Distance(known->second.center, cover.center) < kNullStep)
+      continue;
+    m_areas[cover.by] = {.center = cover.center, .at = now};
+    steps.push_back({.by = cover.by, .place = true, .center = cover.center});
+  }
+  return steps;
+}
+
+std::vector<NullStep> NullAreas::Clear() {
+  std::vector<NullStep> steps;
+  for (const auto &[by, area] : m_areas)
+    steps.push_back({.by = by, .place = false, .center = area.center});
+  m_areas.clear();
+  return steps;
 }
 } // namespace tandem::regions

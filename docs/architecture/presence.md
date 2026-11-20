@@ -24,8 +24,9 @@ still see or hear.
   footsteps by gait, jumps, landings by how hard, climbs, vaults, dashes
   and the end of a slide from `PlayerState` (position and movement flags);
   draws and holsters from `Held`; pain from a fall of `Presence`'s health;
-  going down from `Vitals`; time abilities from `TimeEffect`. None of it
-  costs a byte.
+  going down from `Vitals`; time abilities from `TimeEffect`; swimming (in
+  and out of the water, under and back up, each stroke) from
+  `PlayerState`'s swimming state. None of it costs a byte.
 - **Sent: only what the receiver cannot know.** Four messages, appended
   to the protocol with no version bump:
 
@@ -63,7 +64,7 @@ still see or hear.
 | jumps, double or charged jump | silent | a plant on take-off; `lcm_player_double_jump` for the second or charged one | that `lcm_*` event is positional on a puppet |
 | lands | silent | two plants and V's landing effort (voice `regularLanding` / `hardLanding` / `veryhardLanding`), the `landing_hard` effects; hardness from the state machine's own landing state, else from the fall's speed | voice resolves on the puppet (see voices) |
 | dashes, slides, climbs, vaults | silent | `lcm_dash`, `lcm_fs_additional_slide_stop`, voices `climbStart`, `Vault` | as above |
-| swims | body follows; silent | no footsteps in water (unchanged otherwise) | swim sounds: **open** |
+| swims | body follows; silent | no footsteps in water; into the water: the swimming state's loop effect (`swimming_surface`) and the game's splash of a body in water (`w_melee_water_medium_splash`); a stroke a second while it moves (0.6 s swimming fast): `swimming_surface_stroke[_fast]` and a limb's splash (`w_bul_hit_water`); under: `swimming_enter_dive`, `swimming_diving`, its strokes' effects, no splash; back up: V's breath (`surface_from_dive`) and a splash; out: the loops stopped, a light splash. A V first seen swimming gets its loop with no splash; a hidden puppet's loops still follow it | which layer the puppet's body carries (the states' effects are named on V's own entity): `cmd presence swim both\|fx\|sound`; the stroke's cadence against the arms; that `surface_from_dive` is positional |
 | fires | the weapon's own effects (`TriggerWeaponEffects`: flash, shells, report — sounds never checked) | also the weapon's `Shoot` animation event, as the game pushes for an NPC's shot; the fire loop ended 0.3 s after the last shot (`ExitShoot`); the bullet itself (below) brings its own whizz and impact sounds | the right gun's report, 3D, occluded; no stuck loop on automatic fire; no doubled report |
 | reloads | `EnterReload` / `ExitReload` effects | also the weapon's `Reload` animation event | the reload is heard |
 | swings a melee weapon | the NPC swing sound (`AI_PlayMeleeAttackSound`) | also V's effort (voice `meleeAttack`) | — |
@@ -98,7 +99,7 @@ one run with `cmd presence vo onPlayerHit` decides.
 | The owner… | Partner sees today | After | Needs eyes |
 | --- | --- | --- | --- |
 | fires a hitscan weapon | flash, report, shells; no bullet | `Cue` Trace: where the crosshair's ray ended (the game's own look-at query). The partner's game fires a real NPC shot of the puppet's weapon at that point: the weapon's own tracer, impact, decal and sounds. No ammunition, the Vs present are not hit, its hits are dropped | tracer from the muzzle to the right place; decal; nothing takes damage |
-| fires a smart or lobbed round | flash, report | unchanged: their flight is not a line (**open**) | — |
+| fires a smart or lobbed round | flash, report | a smart round locked on what the others know homes on it from the puppet (`Throw` Smart); with no such lock (nothing locked, an NPC the others do not share) it is drawn as a plain round to where it was aimed (`Cue` Trace). A launcher's round and a grenade fly as copies (`Throw`, [`combat-coverage.md`](combat-coverage.md), "Throws"); a grenade's copy is kept on the real one's path (`ThrowPath`) | the guided round's bend; a copy put back on its path with no pause in the air (`combat-throw-bounce`) |
 | (host) an NPC fires | flash, report, shells on the proxy | the same real shot from the proxy's weapon at the target the host already sends in `NpcShot` | as above; an NPC shot at our own V is still the one Shots.reds decides |
 
 What breaks in the world is told and replayed whatever broke it
@@ -189,7 +190,7 @@ holocall up`; `hud: party list hidden (party_hud off)`.
 | look-at toward the aim | In the pose: head, neck and spine rotations are streamed as V's own body has them. Without a pose stream (the mock player) the body faces its heading. Nothing added |
 | crouch | Done before (stance → the NPC body's crouch wrappers); the sneak gait now sounds like one |
 | cover | V has no cover stance: leaning out is its pose. Nothing to add |
-| swimming, ladders | Placement done by the movement work; now a ladder is heard rung by rung and water is silent. Swim strokes and splashes: **open** |
+| swimming, ladders | Placement done by the movement work; a ladder is heard rung by rung, swimming by its splashes and strokes (row "swims") |
 | holstering | Seen through `Held` (the hand empties); now heard |
 
 ### 7. Names
@@ -287,7 +288,9 @@ a puppet`, `status: player P's effects cleared (puppet gone)`.
 - `tests/presence_test.cpp`: strides and gaits, a mock player with no
   flags, silence when still, swimming, sliding or teleported, the first
   step, jumps and landings by state and by fall speed, ladders, climbs and
-  dashes, pain from health (not from a gain or a tick), draws and holsters,
+  dashes, swimming (in, strokes by speed, under, back up, out, treading
+  water, a V first seen in the water), the noise gate (footsteps 4 a
+  second, other kinds 10), pain from health (not from a gain or a tick), draws and holsters,
   down, abilities, health in a byte, the send gate, the HUD's status
   priority, the bearing and its arrow, the screen projection, distances,
   the nameplate's fade, near / always / off (size and opacity by
@@ -319,6 +322,7 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 | --- | --- |
 | `presence-audio` | footsteps (their source), the shot and its bullet, pain and the flinch, holster and draw |
 | `presence-moves` | jump, landing, climb, the blade's swing and its impact |
+| `presence-swim` | into the water, strokes, a dive, back up, out: each heard on the puppet, its water gone with it |
 | `presence-hud` | the entry, health, menu, down, off screen with its arrow, the nameplate; logs the camera's projection |
 | `hud-layout` | screenshots of each case: the list under the health bar, below a holocall (compact), with the boss bar, with the choice hub (compact), the game's HUD hidden, `party_hud = off` |
 | `hud-linked` | a linked partner's entry with health, its plate the name alone; the link broken from its side: no entry, the plate stays; `nameplates = always`; a vanish takes plate and marker |
@@ -331,7 +335,7 @@ Scenarios (`tools/scenario.sh NAME`), each checking the game's log:
 By hand: `tools/game.sh cmd presence report | steps auto|on|off | vo NAME |
 sound NAME | fx NAME | flinch | bullet | hud [at X Y | fov h|v | camera] |
 react TYPE | status apply|remove REC | status block|unblock NAME |
-status report`; `coop name` (the name, and whether the menu would ask),
+status report`, `presence swim both|fx|sound`; `coop name` (the name, and whether the menu would ask),
 `coop name reset` (ask again), `coop name answer TEXT` / `coop name
 cancel` (answer the open name popup), `coop set nameplates
 near|always|off`.
@@ -345,9 +349,13 @@ REC@FROM-TO[,…]` (status effects on its V), `--camo N --camo-record REC`.
 ## Open
 
 - Everything tagged "needs ears / eyes" above.
-- Swim sounds; smart and lobbed rounds' flight; a remote V's footsteps as a
-  stimulus for the host's NPCs (their noise travels as `Noise` for
-  gunshots only).
+- Swimming, to hear in game: which of the two layers sounds on the puppet
+  (the states' effects, the splashes), then keep one as the default; the
+  stroke's cadence (the states' intervals are TweakDB's).
+- A remote V's movement noise (footsteps at a run and a sprint, landings)
+  travels as `Noise` like its gunshots, four footsteps a second
+  (`presence::NoiseGate`); whether the owner's NPCs react to it from a
+  puppet: [`stealth.md`](stealth.md).
 - The world marker and the party entry both say where the partner is: once
   both are seen in game, decide whether the entry's arrow replaces the
   marker's distance text.

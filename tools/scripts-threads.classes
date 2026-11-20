@@ -75,6 +75,7 @@ QuestMappinController < BaseQuestMappinController < BaseInteractionMappinControl
 QuickHackMappinController < BaseInteractionMappinController < BaseMappinBaseController < inkLogicController < inkILogicController < IScriptable
 QuickMeleeEvents < WeaponEventsTransition < WeaponTransition < DefaultTransition < StateFunctor < IScriptable
 QuickhacksListGameController < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+ReactionManagerComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
 ReleaseEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition < StateFunctor < IScriptable
 ReloadEvents < WeaponEventsTransition < WeaponTransition < DefaultTransition < StateFunctor < IScriptable
 RetractableAd < BaseAnimatedDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable

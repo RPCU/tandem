@@ -142,6 +142,7 @@ The owner simulates; everyone else displays.
 | an NCART train (scripted transit) | each rider's own game | never shared: puppet in a train of ours, else hidden |
 | a world vehicle: traffic, parked, police, a wreck, a chase car | the game that runs it: the owner of its area (`Endpoint::AreaOwner`) that announced it, until it is handed over as an NPC is (its riders with it) | proxy, or their own instance of a placed vehicle; the first player to get in has it (`architecture/traffic.md`) |
 | NPCs: AI, position, health, death | the game that runs it (spawned it, or took it over; quest NPCs: host) | **proxy with its AI off** in the linked games, driven by its owner (`architecture/regions.md`) |
+| the session's dead: placed NPCs killed or knocked out (the ledger) | recorded by the NPC's owner, kept by the host for the session | every game keeps its own copy out of its world (hidden, never killed: no save changes), with a body where a recent one fell (`architecture/regions.md` §14) |
 | spawns: crowds, encounters | each game around its own V | held back only where a higher-ranked linked player's region covers it |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
 | the story's gameplay restrictions (no weapons, no sprint… during the host's scene) | host (its V's, reported) | worn on its own V by a guest in the host's story moment, taken off when it leaves it (`architecture/story.md`) |
@@ -149,6 +150,7 @@ The owner simulates; everyone else displays.
 | a V's police heat: score, wanted level, stars | that player's game | told; the owner of the area sends police after that V alone (`architecture/police.md`) |
 | the clock: time skips (wheel, bed) | host's clock, asked of every other player | each agrees or not; applied in every game; the host's story only says so (`architecture/activities.md`) |
 | a V busy: workspot, menu, minigame, photo mode | that player's game | puppet held where it sits, same workspot; a guest's photo mode stands only its own game still, the host's stands the world still for everyone, with a notice (`architecture/activities.md`) |
+| a contest: a fist fight, a street race, a shooting competition | the player who starts it (read from its V: the fight's restriction, the racing system) | watch; a hit on a fist fight's opponent counts only from a V in a fist fight itself (`architecture/activities.md`, "Contests") |
 | a V's home: its interactions (shower, bed, coffee…), decorations, buffs | that player's game (its save's apartment quest) | busy, its look as rendered; a bed's hours asked as a time skip; buffs never sent (`architecture/activities.md`) |
 | a V's time abilities (Sandevistan, the scanner…) | that player's game | shown on the puppet; their slow motion is a time bubble: the NPCs and the other Vs within 150 m slowed, never a whole world (`architecture/time.md`) |
 | a V's status effects that show (burning, shock, camo, a heal…) | that player's game | their look and sound played on the puppet, never their gameplay (`architecture/presence.md`) |
@@ -301,7 +303,7 @@ plugin") and its open problems.
 - `world.md`: time of day and weather; open: the guest acting on the world, NCPD chases, saves.
 - `time.md`: the pause menu, slowed time (time bubbles, the scanner's bubble); what the partner lives with when a V scans (decided: as built, plus a cue); open: every time dilation, other timeline and menu, NPC shots simulated by the target's game.
 - `npcs.md`: enemy level, enemy scaling (the count of players near, the multipliers, the host's rule), NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
-- `regions.md`: per-player regions: links and their hysteresis, who owns an NPC, hand-over without a pop, what travels where, crowd density in the overlap, late joiners and vanishing owners, grouped or apart and holding a region for gigs, the area owner (traffic). For anything about an NPC's owner.
+- `regions.md`: per-player regions: links and their hysteresis, who owns an NPC, hand-over without a pop, what travels where, crowd density in the overlap, late joiners and vanishing owners, grouped or apart and holding a region for gigs, the area owner (traffic), twins, the death ledger. For anything about an NPC's owner.
 - `combat.md`: hits, outcomes, game rules for every hit, quickhacks.
 - `combat-coverage.md`: every way of fighting (weapon classes, melee, block and parry, throwables, grenades, launchers, cyberware, quickhacks, environment, finishers) by attacker and target, with its state and evidence; thrown objects' copies, friendly fire, NPC melee at a guest, companions.
 - `stealth.md`: takedowns, finishers, carried bodies, "the player" reactions, per-player detection.

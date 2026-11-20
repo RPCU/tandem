@@ -104,8 +104,12 @@ loaded crashed 5 launches in 6, and 0 in 7 without them (2026-11-20).
   behind with the NPCs; `--region-driver` seats its last NPC at the wheel of
   the first, `--region-chase` has that one chase the first player it meets.
   It gives and takes vehicles as a game would (`street: …`).
+  `--region-placed HEX` says its NPCs are placed in the world (static
+  entity ids HEX, HEX+1…: `NpcPlaced`), `--region-kill-at S` has its own V
+  kill its first NPC S seconds in: a placed one goes into the session's
+  death ledger (`ledger: …`, `regions.md` §14).
   Scenarios `regions-apart`, `regions-meet`, `regions-vanish`,
-  `wheels-guest-area`; two of them meet in `tests/peer_regions.sh`.
+  `wheels-guest-area`, `ledger-guest`; two of them meet in `tests/peer_regions.sh`.
 - **course** — runs a scripted course ahead of your V with every way a V
   moves, each with the state machine's own values: jumps, a double jump, a
   1.5 m ledge climb, a drop, a 4 m ladder, swimming and diving, an
@@ -178,7 +182,8 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   (`Rules`). `host --hit-you-melee on` makes `--hit-you`'s hits melee
   (the guest holds them for its proxy's swing). `--throw N [--throw-item
 REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
-  later (`Throw`, `ThrowEnd`: the others launch a copy); `--smart N` fires
+  later (`Throw`, `ThrowEnd`: the others launch a copy; `--throw-bounce`:
+  a second in it is 3 m off its arc and says so, `ThrowPath`); `--smart N` fires
   a smart round at an NPC it knows; `join --defend N` parries, then
   blocks, one of the host's NPCs' attacks every N s (`Defended`).
   Enemy scaling (`npcs.md`): `join --near-npc` stands 4 m from one of the
@@ -197,7 +202,8 @@ REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
   (default 10), then lose them; `--camo N` turns "its optical camo" on for
   5 s (`--camo-record REC` names its status effect, as a V's camo sends
   it); `--shoot N` fires a gunshot every N s (the shot, where its bullet
-  ended, and as guest its noise).
+  ended, and as guest its noise); `--footsteps` sends its V's footsteps
+  as noise while it runs or sprints (stims 25 and 26, 4 a second).
   Stealth, noises and the host's awareness of it are logged.
 - **Takedowns**: `join --grab-npcs N` grabs one of the host's NPCs every N
   s (standing by it) and takes it down two seconds later, lethal and
@@ -222,7 +228,9 @@ yes|no|ignore|sleep` (sleep: it goes to bed too, a sleep of its own to
   (`workspot`, `sleep`, `screen`, `minigame`, `shop`, `menu`, `photo`,
   `contest`) makes it busy `--activity-at N` s (default 3) after another
   player is there, anchored where it stands, for `--activity-for S` s
-  (default 15; 0: for good). A host story's `activity KIND [anchored]
+  (default 15; 0: for good); `--contest duel|race|range` makes that a
+  contest of a sort (a duel names the first NPC it knows as its opponent).
+  A host story's `activity KIND [anchored]
 [lying] [frozen]` and `skip HOURS [wait|sleep|quest]` do the same.
   The game side: `tools/game.sh cmd skip ask HOURS`, `skip accept`, `skip
 decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
