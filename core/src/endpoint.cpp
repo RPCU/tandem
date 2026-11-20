@@ -894,6 +894,9 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
     it = m_npcSeats.erase(it);
   }
   m_story.Forget(player);
+  // Its quest interactions with our game are void (what our game already
+  // did stays done, as for a device); the objects are free for the others.
+  m_interactReferee.Forget(player);
   ForgetStreams(player);
   m_seenHost.erase(player);
   m_guestEpoch.erase(player);
@@ -1327,6 +1330,15 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
     if (const auto *cursor = std::get_if<proto::ChoiceCursor>(&message);
         cursor && cursor->player == m_you)
       return;
+    // The host's verdict on one of our questions (never an ask, never
+    // another's): kept for the session, then our game hears it.
+    if (const auto *answer = std::get_if<proto::QuestInteract>(&message)) {
+      if (answer->verdict == proto::kInteractAsk || answer->player != m_you)
+        return;
+      m_interactKnown.Note(interact::KeyOf(*answer), answer->verdict);
+      out.push_back(events::Story{message});
+      return;
+    }
     // Our copy of the host's story (digests), and what it already has is
     // not applied again (a resync's snapshot of an unchanged journal).
     // Journal changes always pass: each one may notify.
@@ -2818,8 +2830,43 @@ void Endpoint::OnGuestStory(net::PeerId peer, proto::PlayerId player, const prot
     m_story.Note(relayed);
     Broadcast(relayed, peer);
     out.push_back(events::Story{relayed});
+  } else if (const auto *ask = std::get_if<proto::QuestInteract>(&message)) {
+    OnGuestInteract(peer, player, *ask, out);
   }
   // The rest (journal, calls, lines, hubs, rewards) is the host's to say.
+}
+
+void Endpoint::OnGuestInteract(net::PeerId peer, proto::PlayerId player, proto::QuestInteract ask,
+                               std::vector<SessionEvent> &out) {
+  // A guest asks; only the host answers.
+  if (ask.verdict != proto::kInteractAsk)
+    return;
+  ask.player = player;
+  auto answer = ask;
+  // Known for the session: the same answer, at once, without our game. (A
+  // performed choice is done again by our game each time.)
+  if (const auto known = m_interactKnown.Get(interact::KeyOf(ask));
+      known && *known != proto::kInteractPerformed) {
+    answer.verdict = *known;
+    ++m_interactInstant;
+    Send(peer, answer);
+    return;
+  }
+  // First come, first served: another player's use of it is with our game,
+  // or was answered a moment ago.
+  switch (m_interactReferee.Ask(ask.target, player, ask.seq, net::NowUs())) {
+  case interact::Referee::Claim::Granted:
+    out.push_back(events::Story{ask});
+    return;
+  case interact::Referee::Claim::Taken:
+    ++m_interactTaken;
+    answer.verdict = proto::kInteractTaken;
+    break;
+  case interact::Referee::Claim::Full:
+    answer.verdict = proto::kInteractBusy;
+    break;
+  }
+  Send(peer, answer);
 }
 
 void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
@@ -2836,9 +2883,36 @@ void Endpoint::SendStory(proto::Message message, proto::PlayerId to) {
       cursor->player = m_you;
     else if (auto *state = std::get_if<proto::StoryState>(&message))
       state->player = m_you;
-    else
+    else if (auto *ask = std::get_if<proto::QuestInteract>(&message)) {
+      if (ask->verdict != proto::kInteractAsk)
+        return;
+      ask->player = m_you;
+      // Known: host only or local is not asked again; our game hears the
+      // known verdict at once (a performed one is asked each time).
+      if (const auto known = m_interactKnown.Get(interact::KeyOf(*ask));
+          known && *known != proto::kInteractPerformed) {
+        auto answer = *ask;
+        answer.verdict = *known;
+        ++m_interactInstant;
+        m_pending.push_back(events::Story{answer});
+        return;
+      }
+    } else
       return;
     Send(m_hostPeer, message);
+    return;
+  }
+  if (auto *answer = std::get_if<proto::QuestInteract>(&message)) {
+    // Our game's verdict on a guest's question: to that guest alone, and
+    // only while the question is still here (its asker did not vanish).
+    if (answer->verdict == proto::kInteractAsk || to == proto::kNoPlayer || to == m_you)
+      return;
+    answer->player = to;
+    if (!m_interactReferee.Answered(answer->target, to, answer->seq, answer->verdict, net::NowUs()))
+      return;
+    m_interactKnown.Note(interact::KeyOf(*answer), answer->verdict);
+    if (const auto peer = PeerOf(to))
+      Send(*peer, *answer);
     return;
   }
   if (std::holds_alternative<proto::PhoneAction>(message) ||

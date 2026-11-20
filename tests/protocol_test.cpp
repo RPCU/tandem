@@ -718,6 +718,27 @@ TEST_CASE("story restrictions survive encoding, are a story message, and say one
   CHECK(Decode(Encode(many)).has_value());
 }
 
+TEST_CASE("a quest interaction survives encoding, is a story message, and is small") {
+  RoundTrips(QuestInteract{.target = 0x1122334455667788ULL,
+                           .choice = 0xAABB,
+                           .detail = 0xCCDD,
+                           .layer = 0xEE,
+                           .seq = 3,
+                           .position = {1.f, 2.f, 3.f},
+                           .timeUs = 99,
+                           .player = 2,
+                           .verdict = kInteractPerformed,
+                           .flags = kInteractLoot});
+  RoundTrips(QuestInteract{.target = 1});
+  CHECK(IsStory(QuestInteract{}));
+  CHECK(ChannelOf(QuestInteract{}) == Channel::Event);
+  CHECK(std::string(NameOf(QuestInteract{})) == "QuestInteract");
+  CHECK(Encode(QuestInteract{.target = 1}).size() <= 72);
+  CHECK_FALSE(Decode(Encode(QuestInteract{.target = 1, .verdict = 8})).has_value());
+  CHECK_FALSE(Decode(Encode(QuestInteract{.target = 1, .flags = 8})).has_value());
+  CHECK_FALSE(Decode(Encode(QuestInteract{})).has_value()); // no object
+}
+
 TEST_CASE("down-and-out messages survive encoding, reliably, and refuse what is out of range") {
   RoundTrips(Vitals{.player = 2, .revision = 7, .life = Life::Down, .flags = kVitalsInCombat});
   RoundTrips(Vitals{.player = 1, .revision = 1, .life = Life::Out});

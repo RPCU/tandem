@@ -136,6 +136,10 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *use = std::get_if<DeviceUse>(&message); use && !device(use->status, use->flags))
     return std::nullopt;
+  if (const auto *interact = std::get_if<QuestInteract>(&message);
+      interact && (interact->verdict > kInteractVerdictMax ||
+                   (interact->flags & ~kInteractFlags) != 0 || interact->target == 0))
+    return std::nullopt;
   if (const auto *regions = std::get_if<Regions>(&message);
       regions && (regions->pairs.size() > 2 * kMaxRegionPairs || regions->pairs.size() % 2 != 0))
     return std::nullopt;
@@ -286,6 +290,7 @@ bool IsStory(const Message &message) {
           message.index() <= Message(QuestReward{}).index()) ||
          std::holds_alternative<StoryEffect>(message) ||
          std::holds_alternative<StoryRestrictions>(message) ||
+         std::holds_alternative<QuestInteract>(message) ||
          (message.index() >= Message(SceneState{}).index() &&
           message.index() <= Message(SceneLine{}).index()) ||
          std::holds_alternative<VehicleUnlock>(message);
@@ -451,7 +456,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "PoseFrame",
                                    "NpcMotion",
                                    "PlayerMotion",
-                                   "VehicleMotion"};
+                                   "VehicleMotion",
+                                   "QuestInteract"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

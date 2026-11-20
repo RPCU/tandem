@@ -2431,6 +2431,45 @@ struct VehicleMotion {
   friend bool operator==(const VehicleMotion &, const VehicleMotion &) = default;
 };
 
+// ---- Quest interactions (docs/architecture/story.md, "Quest interactions") ----
+//
+// The quest runs on the host, so a guest's V using one of the host's
+// objects (grouped, a placed entity: the same in both games) moves nothing
+// of the host's quest by itself. The guest says what it chose (kInteractAsk,
+// guest to host); the host's game decides from its own data and answers
+// that guest alone with a verdict. Never relayed, a story message
+// (tandem/interact.hpp keeps the first-come rule and the verdicts known).
+//
+// QuestInteract::verdict. Ask: the guest's question. The rest are answers.
+inline constexpr std::uint8_t kInteractAsk = 0,
+                              kInteractPerformed = 1, // the host's V did it on the host's object
+    kInteractHostOnly = 2, // it would cast the doer in a scene or workspot: the host must
+    kInteractLocal = 3,    // nothing of the host's quest there: the guest's own copy is all
+    kInteractTaken = 4,    // another player's use of it came first
+    kInteractTooFar = 5,   // the guest's V was not where it could reach it
+    kInteractMissing = 6,  // the host's game has no such object or choice now
+    kInteractBusy = 7;     // the host's V cannot do it now (a scene, a workspot, a menu)
+inline constexpr std::uint8_t kInteractVerdictMax = kInteractBusy;
+// QuestInteract::flags.
+inline constexpr std::uint8_t kInteractChecked = 1, // the guest's own game passed the choice's
+                                                    // checks (a skill, an item its V holds)
+    kInteractCasts = 2, // the guest's own game says the choice casts the doer (not run there)
+    kInteractLoot = 4;  // a loot choice: `detail` is the item's TweakDB id
+inline constexpr std::uint8_t kInteractFlags = 7;
+struct QuestInteract {
+  std::uint64_t target{}; // the entity's static id (EntityID hash)
+  std::uint64_t choice{}; // what was chosen: the device action's class, or the loot action (CName)
+  std::uint64_t detail{}; // the action's name (CName), or the looted item's record (kInteractLoot)
+  std::uint64_t layer{};  // the interaction layer it was on (CName; 0: none)
+  std::uint32_t seq{};    // the asker's count of its questions: the answer names it
+  Vec3 position;          // ask: where the guest's V was when it chose
+  std::uint64_t timeUs{}; // ask: when, on the host clock
+  PlayerId player{};      // the asker (set by the host from the connection)
+  std::uint8_t verdict{}; // kInteract*
+  std::uint8_t flags{};   // kInteract* flags
+  friend bool operator==(const QuestInteract &, const QuestInteract &) = default;
+};
+
 using Message = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
@@ -2447,10 +2486,10 @@ using Message = std::variant<
     TimeSkip, TimeSkipVote, TimeSkipResult, PlayerLevel, SessionLevel, NpcLevel, Trade, TradeOffer,
     TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
-    Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion>;
+    Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, QuestInteract>;
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
-// VehicleUnlock, StoryRestrictions):
+// VehicleUnlock, StoryRestrictions, QuestInteract):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended), a level

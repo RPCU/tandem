@@ -54,6 +54,27 @@ Referee Host(std::uint64_t now = kSecond) {
 }
 } // namespace
 
+TEST_CASE("referee: a quest interaction is a guest's question and the host's answer to it") {
+  auto host = Host();
+  host.Received(2, proto::QuestInteract{.target = 9, .seq = 1, .player = 2}, kSecond);
+  CHECK(Rules(host).empty());
+  // A guest never answers, and asks in its own name only.
+  host.Received(2, proto::QuestInteract{.target = 9, .verdict = proto::kInteractPerformed},
+                kSecond);
+  host.Received(3, proto::QuestInteract{.target = 9, .seq = 2, .player = 2}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.host-only", "authority.not-yours"});
+  auto guest = Guest();
+  guest.Received(
+      1, proto::QuestInteract{.target = 9, .player = 2, .verdict = proto::kInteractHostOnly},
+      kSecond);
+  CHECK(Rules(guest).empty());
+  // The host never asks us, and never tells us another's answer.
+  guest.Received(1, proto::QuestInteract{.target = 9, .player = 2}, kSecond);
+  guest.Received(
+      1, proto::QuestInteract{.target = 9, .player = 3, .verdict = proto::kInteractLocal}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.guest-only", "authority.misdelivered"});
+}
+
 TEST_CASE("referee: a guest may not say what is the host's") {
   auto referee = Host();
   referee.Received(2, proto::NpcSpawn{.npc = 7}, kSecond);

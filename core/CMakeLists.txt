@@ -24,6 +24,7 @@ add_library(tandem_core STATIC
   src/traffic.cpp
   src/netcode.cpp
   src/net_traffic.cpp
+  src/interact.cpp
   src/lagcomp.cpp
   src/elsewhere.cpp
   src/compat.cpp

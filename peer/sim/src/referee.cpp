@@ -138,7 +138,7 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::ThrowEnd> || std::is_same_v<M, p::Activity> ||
                            std::is_same_v<M, p::CarLend> || std::is_same_v<M, p::Link> ||
                            std::is_same_v<M, p::Waypoint> || std::is_same_v<M, p::Defended> ||
-                           std::is_same_v<M, p::TradeOffer>)
+                           std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::QuestInteract>)
           return &m.player;
         else
           return nullptr;
@@ -330,6 +330,9 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
     if (HostOnly(message) ||
         (std::holds_alternative<p::DeviceState>(message) &&
          std::get<p::DeviceState>(message).how != p::kDeviceAsk) ||
+        // A quest interaction's verdict is the host's game's (a guest asks).
+        (std::holds_alternative<p::QuestInteract>(message) &&
+         std::get<p::QuestInteract>(message).verdict != p::kInteractAsk) ||
         (std::holds_alternative<p::NpcOwner>(message) &&
          !(std::get<p::NpcOwner>(message).flags & p::kNpcPinned))) {
       Add("authority.host-only",
@@ -382,8 +385,11 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
     m_lastDigestUs = nowUs;
     return;
   }
-  if (GuestOnly(message) || (std::holds_alternative<p::DeviceState>(message) &&
-                             std::get<p::DeviceState>(message).how == p::kDeviceAsk)) {
+  if (GuestOnly(message) ||
+      (std::holds_alternative<p::DeviceState>(message) &&
+       std::get<p::DeviceState>(message).how == p::kDeviceAsk) ||
+      (std::holds_alternative<p::QuestInteract>(message) &&
+       std::get<p::QuestInteract>(message).verdict == p::kInteractAsk)) {
     Add("authority.guest-only", std::format("the host sent {}: only a guest sends that", name));
     return;
   }
@@ -817,6 +823,9 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           forUs(m.player);
           if (m.npc != 0)
             NeedNpc(m.npc, name);
+        } else if constexpr (std::is_same_v<M, p::QuestInteract>) {
+          // The host's verdict on our own question, to us alone.
+          forUs(m.player);
         } else if constexpr (std::is_same_v<M, p::PlayerHack>) {
           forUs(m.player);
           NeedNpc(m.npc, name);

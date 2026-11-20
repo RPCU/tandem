@@ -12,6 +12,7 @@
 #include "tandem/comms.hpp"
 #include "tandem/consistency.hpp"
 #include "tandem/devices.hpp"
+#include "tandem/interact.hpp"
 #include "tandem/netcode.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
@@ -811,6 +812,18 @@ public:
   const devices::DigestCheck &DeviceChecks() const { return m_deviceCheck; }
   // Host: requests refused because someone else changed the device first.
   std::uint64_t DeviceStale() const { return m_deviceStale; }
+  // Quest interactions (tandem/interact.hpp; they travel as story messages,
+  // SendStory and events::Story). What is known of each object's choices:
+  // host, what its game answered (a known host-only or local choice is
+  // answered at once, without its game); guest, what the host answered (a
+  // known host-only or local choice is not asked again: events::Story
+  // brings the known verdict back at once). The host's referee (first come,
+  // first served); answers given without the game; asks refused because
+  // another player's use came first.
+  const interact::Known &InteractKnown() const { return m_interactKnown; }
+  const interact::Referee &InteractReferee() const { return m_interactReferee; }
+  std::uint64_t InteractInstant() const { return m_interactInstant; }
+  std::uint64_t InteractTaken() const { return m_interactTaken; }
   // Host: the world items still lying somewhere (taken stacks at quantity 0).
   const std::map<proto::WorldItemId, proto::WorldItem> &WorldItems() const { return m_worldItems; }
   // Down and out (docs/architecture/revive.md). Our V's life: kept, sent now if we
@@ -1311,6 +1324,12 @@ private:
   // Host: the story for late joiners, and who answered the call first.
   story::Record m_story;
   story::CallArbiter m_calls;
+  // Quest interactions (InteractKnown and the rest above).
+  interact::Known m_interactKnown;
+  interact::Referee m_interactReferee;
+  std::uint64_t m_interactInstant{}, m_interactTaken{};
+  void OnGuestInteract(net::PeerId peer, proto::PlayerId player, proto::QuestInteract ask,
+                       std::vector<SessionEvent> &out);
   void OnGuestStory(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
                     std::vector<SessionEvent> &out);
   // Host: the shared world items and who took each stack; events for our

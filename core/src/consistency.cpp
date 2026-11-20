@@ -269,6 +269,8 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
          // A request to operate a device: asked once (its answer is state).
          std::holds_alternative<DeviceUse>(message) || std::holds_alternative<NpcStrike>(message) ||
+         // A quest interaction: asked once, answered once (story.md).
+         std::holds_alternative<QuestInteract>(message) ||
          std::holds_alternative<NpcWound>(message) || std::holds_alternative<AreaHit>(message) ||
          // A hand-over's steps: each is acted on once (docs/architecture/regions.md).
          std::holds_alternative<NpcHandover>(message) ||

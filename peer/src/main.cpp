@@ -81,6 +81,12 @@
 // is), --device-answer WORDS changes back, --device-after seconds later,
 // every device another player just changed. A host has no world of its
 // own: a guest's request is taken as said. What it hears is logged.
+// Quest interactions (docs/architecture/story.md, "Quest interactions"):
+// --interact ENTITY:CHOICE[:DETAIL][@S] has a guest's V use the host's
+// object (asks the host; the verdict is logged, and a second ask of a
+// known one is answered at once); --interact-answer VERDICT is what a
+// host's game answers every guest (local by default: no world of ours;
+// performed, host-only, missing, busy, too-far or none, no answer).
 // Loot: --loot-quest has "its V" loot a quest item (everyone gets it);
 // --drop-item drops a shared world item in front of your V; --take-items
 // picks up what the others drop; as the host of a replay, --remove-corpses
@@ -349,6 +355,15 @@ struct Options {
   std::vector<DeviceOrder> devices;
   std::string deviceAnswer;
   int deviceAfterSeconds{3};
+  // Quest interactions: the uses to ask about (--interact), and what our
+  // game answers as a host (--interact-answer; -1: no answer at all).
+  struct InteractOrder {
+    std::uint64_t entity{}, choice{}, detail{};
+    int atSeconds{5};
+    bool done{};
+  };
+  std::vector<InteractOrder> interacts;
+  int interactAnswer{tandem::proto::kInteractLocal};
   // Faults on what we send (docs/architecture/consistency.md, Consistency).
   float drop{}, dup{};
   int vanishAtSeconds{-1}; // end without a goodbye this long into the session (-1: never)
@@ -635,6 +650,15 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --device-answer W  every device another player changes is made WORDS (as above)\n"
          "                     --device-after seconds later\n"
          "  --device-after N   see --device-answer (3)\n"
+         "  --interact SPEC    a guest's V uses the host's object, SPEC =\n"
+         "                     ENTITY:CHOICE[:DETAIL][@SECONDS]: ENTITY in hex, CHOICE the\n"
+         "                     action's class (or loot action) by name or 0x hash, DETAIL\n"
+         "                     its name or the item's record hash; SECONDS into the session\n"
+         "                     (5). Twice the same SPEC: the second is answered at once when\n"
+         "                     the first was host-only or local\n"
+         "  --interact-answer V a host's verdict on every guest's use: local (default: no world\n"
+         "                     of ours, the guest's copy is all), performed, host-only,\n"
+         "                     missing, busy, too-far, or none (silent)\n"
          "  --traffic-report   each report has the whole traffic table (by message type)\n"
          "  --legacy-wire      send as before the netcode work: every state every frame,\n"
          "                     whole poses and NPC lists (to compare the bandwidth)\n"
@@ -820,6 +844,66 @@ Options::DeviceOrder DeviceOrderOf(std::string_view spec) {
   return order;
 }
 
+// A CName by name, or by its hash as the logs print it (0x...).
+std::uint64_t NameOrHash(std::string_view flag, std::string_view text) {
+  if (text.starts_with("0x")) {
+    std::uint64_t hash{};
+    if (std::from_chars(text.data() + 2, text.data() + text.size(), hash, 16).ptr !=
+        text.data() + text.size())
+      Usage(std::format("{}: {} is not a hash", flag, text));
+    return hash;
+  }
+  return CName(text);
+}
+
+// --interact ENTITY:CHOICE[:DETAIL][@SECONDS]
+Options::InteractOrder InteractOrderOf(std::string_view spec) {
+  Options::InteractOrder order;
+  if (const auto at = spec.find('@'); at != std::string_view::npos) {
+    order.atSeconds = Number<int>(spec.substr(at + 1));
+    spec = spec.substr(0, at);
+  }
+  const auto first = spec.find(':');
+  if (first == std::string_view::npos)
+    Usage("--interact is ENTITY:CHOICE[:DETAIL][@SECONDS]");
+  auto entity = spec.substr(0, first);
+  if (entity.starts_with("0x"))
+    entity.remove_prefix(2);
+  if (std::from_chars(entity.data(), entity.data() + entity.size(), order.entity, 16).ptr !=
+          entity.data() + entity.size() ||
+      order.entity == 0)
+    Usage(std::format("--interact: {} is not an entity id in hex", entity));
+  auto rest = spec.substr(first + 1);
+  const auto second = rest.find(':');
+  order.choice = NameOrHash("--interact", rest.substr(0, second));
+  if (second != std::string_view::npos)
+    order.detail = NameOrHash("--interact", rest.substr(second + 1));
+  if (order.choice == 0)
+    Usage("--interact: no choice");
+  return order;
+}
+
+int InteractVerdictOf(std::string_view word) {
+  namespace proto = tandem::proto;
+  if (word == "performed")
+    return proto::kInteractPerformed;
+  if (word == "host-only")
+    return proto::kInteractHostOnly;
+  if (word == "local")
+    return proto::kInteractLocal;
+  if (word == "missing")
+    return proto::kInteractMissing;
+  if (word == "busy")
+    return proto::kInteractBusy;
+  if (word == "too-far")
+    return proto::kInteractTooFar;
+  if (word == "none")
+    return -1;
+  Usage(std::format("--interact-answer: {} is not performed, host-only, local, missing, busy, "
+                    "too-far or none",
+                    word));
+}
+
 Vec3 Point(std::string_view flag, std::string_view value) {
   float xyz[3]{};
   std::size_t start = 0;
@@ -1000,6 +1084,10 @@ Options Parse(int argc, char **argv) {
       options.deviceAnswer = std::string(value);
     } else if (flag == "--device-after")
       options.deviceAfterSeconds = Number<int>(value);
+    else if (flag == "--interact")
+      options.interacts.push_back(InteractOrderOf(value));
+    else if (flag == "--interact-answer")
+      options.interactAnswer = InteractVerdictOf(value);
     else if (flag == "--scan-at") {
       options.sandevistanAtSeconds = Number<int>(value);
       options.timeAbility = tandem::proto::kTimeScanning;
@@ -2089,6 +2177,10 @@ std::string Describe(const tandem::proto::Message &message) {
                        line->speakerPlayer ? std::format("player {}", line->speakerPlayer)
                                            : std::format("npc {}", line->speaker),
                        line->duration, line->play);
+  if (const auto *use = std::get_if<proto::QuestInteract>(&message))
+    return std::format("quest interaction: player {} on {:x} ({:#x}/{:#x}), question {}: {}",
+                       use->player, use->target, use->choice, use->detail, use->seq,
+                       tandem::interact::VerdictName(use->verdict));
   return "story: ?";
 }
 
@@ -3560,6 +3652,7 @@ int main(int argc, char **argv) {
   // Devices: when the session began for us (--device counts from it), and
   // the devices to change back (--device-answer: when, from what).
   std::optional<std::chrono::steady_clock::time_point> devicesFrom;
+  std::uint32_t interactSeq = 0; // --interact: our questions' numbers
   std::map<tandem::devices::Key,
            std::pair<std::chrono::steady_clock::time_point, tandem::devices::What>>
       deviceAnswers;
@@ -4226,6 +4319,21 @@ int main(int argc, char **argv) {
                                         .index = static_cast<std::int8_t>(options.suggestIndex),
                                         .kind = proto::kCursorSuggest});
                 Log("suggest option {} of hub {}", options.suggestIndex, hub->hub);
+              }
+              // Quest interactions: as a host (no world of ours), a guest's
+              // use answered as --interact-answer says; as a guest, the verdict.
+              if (const auto *use = std::get_if<proto::QuestInteract>(&e.message)) {
+                if (use->verdict == proto::kInteractAsk && options.host &&
+                    options.interactAnswer >= 0) {
+                  auto answer = *use;
+                  answer.verdict = static_cast<std::uint8_t>(options.interactAnswer);
+                  endpoint->SendStory(answer, use->player);
+                  Log("interact: player {}'s use of {:x}: {}", use->player, use->target,
+                      tandem::interact::VerdictName(answer.verdict));
+                } else if (use->verdict != proto::kInteractAsk) {
+                  Log("interact: the host on our use of {:x} (question {}): {}", use->target,
+                      use->seq, tandem::interact::VerdictName(use->verdict));
+                }
               }
               // As a scripted host: a guest's answer that counted.
               if (const auto *action = std::get_if<proto::PhoneAction>(&e.message);
@@ -5330,6 +5438,24 @@ int main(int argc, char **argv) {
         what = tandem::devices::WhatOf(*record);
       DeviceWords(order.words, what);
       operateDevice(key, what, "--device");
+    }
+    // --interact: each use at its time into the session (a guest asks).
+    for (auto &order : options.interacts) {
+      if (order.done || !devicesFrom || now < *devicesFrom + std::chrono::seconds(order.atSeconds))
+        continue;
+      order.done = true;
+      if (options.host) {
+        Log("--interact: a host does its own objects itself (nothing asked)");
+        continue;
+      }
+      endpoint->SendStory(tandem::proto::QuestInteract{.target = order.entity,
+                                                       .choice = order.choice,
+                                                       .detail = order.detail,
+                                                       .seq = ++interactSeq,
+                                                       .position = lastSent.value_or(Vec3{}),
+                                                       .timeUs = endpoint->HostNowUs()});
+      Log("interact: our V uses {:x} ({:#x}), question {}", order.entity, order.choice,
+          interactSeq);
     }
     for (auto it = deviceAnswers.begin(); it != deviceAnswers.end();) {
       if (now < it->second.first) {
