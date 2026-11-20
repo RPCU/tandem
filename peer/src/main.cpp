@@ -2060,6 +2060,10 @@ private:
 //                                name; HOLDER: host, an NPC id or own; left:
 //                                in its left hand); again with another
 //                                holder: handed over; prop N off: put away
+//   camera on [FOV]|cut|off      the host is in a cutscene: its camera's view
+//                                (behind and above the mock player) is sent
+//                                every frame (SceneCamera); cut: the next
+//                                view is another shot; off: no more views
 //   skip on|off                  the host fast-forwards the scene
 //   voice ID SPEAKER [SECONDS] [call]  a voiced line begins (ID: its string
 //                                id; SPEAKER: host, an NPC id or own)
@@ -2141,6 +2145,10 @@ struct SceneScript {
   tandem::scene::Stage stage;
   tandem::scene::HostSample sample;
   tandem::proto::NpcId own{}; // "own" in a .story file: the --npc NPC
+  // camera on: the view sent every frame; which side it looks from (a cut
+  // changes it).
+  bool camera{}, cameraCut{}, cameraSide{};
+  float cameraFov{50.f};
 };
 
 // A scene step (scene, cast, skip, voice, cut): what the host sends for it.
@@ -2194,6 +2202,17 @@ SceneMessages(const StoryStep &step, SceneScript &script, const tandem::proto::V
         script.sample.actors.push_back(actor);
       }
       return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "camera" && !a.empty()) {
+      if (a[0] == "cut") {
+        script.cameraCut = true;
+        script.cameraSide = !script.cameraSide;
+      } else {
+        script.camera = a[0] == "on";
+        if (a.size() > 1)
+          script.cameraFov = std::stof(a[1]);
+      }
+      return std::vector<proto::Message>{};
     }
     if (step.verb == "prop" && a.size() >= 2) {
       const auto key = std::stoull(a[0], nullptr, 0);
@@ -4007,7 +4026,7 @@ int main(int argc, char **argv) {
   std::uint64_t storyLine = 0;
   SceneScript sceneScript;
   sceneScript.own = kOwnNpc;
-  std::uint64_t actorPoses = 0;
+  std::uint64_t actorPoses = 0, cameraViews = 0;
   if (!options.storyFile.empty()) {
     story = LoadStory(options.storyFile, error);
     if (!error.empty()) {
@@ -4830,10 +4849,18 @@ int main(int argc, char **argv) {
               if (++actorPoses % 100 == 1)
                 Log("scene: {} actor pose(s) heard (npc {})", actorPoses, e.pose.npc);
             } else if constexpr (std::is_same_v<E, tandem::events::Story>) {
+              namespace proto = tandem::proto;
+              // The host's camera is a stream: counted, not listed.
+              if (const auto *camera = std::get_if<proto::SceneCamera>(&e.message)) {
+                if (++cameraViews % 60 == 1 || (camera->flags & proto::kCameraCut))
+                  Log("scene camera: {} view(s) heard (play {}, fov {:.0f}{})", cameraViews,
+                      camera->play, camera->fov,
+                      camera->flags & proto::kCameraCut ? ", a cut" : "");
+                return;
+              }
               Log("{}", Describe(e.message));
               if (!options.recordFile.empty())
                 recording.Add(e.message);
-              namespace proto = tandem::proto;
               if (const auto *call = std::get_if<proto::PhoneCall>(&e.message);
                   call && options.answerSeconds >= 0 && call->phase == 1 &&
                   call->answeredBy == proto::kNoPlayer)
@@ -5362,6 +5389,17 @@ int main(int argc, char **argv) {
         if (regionNpcs)
           regionNpcs->Tick(*endpoint, tandem::net::NowUs(), state->position,
                            !puppeteer.RegionLeaving());
+      }
+      // camera on: the host's view of its cutscene, from behind and above
+      // its V, on one side or the other.
+      if (options.host && sceneScript.stage.On() && sceneScript.camera && state) {
+        const float side = sceneScript.cameraSide ? -2.f : 2.f;
+        const tandem::scene::CameraView view{
+            {state->position.x + side, state->position.y - 3.f, state->position.z + 1.8f},
+            state->orientation,
+            sceneScript.cameraFov};
+        endpoint->SendSceneCamera(tandem::scene::PackCamera(
+            sceneScript.stage.Play(), view, std::exchange(sceneScript.cameraCut, false)));
       }
       if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip)) {
         endpoint->SendLocalPose(*pose);

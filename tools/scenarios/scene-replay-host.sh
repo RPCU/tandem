@@ -25,6 +25,11 @@ cmd story scene prop Items.FirstAidWhiffV0
 expect_peer 'scene prop: 1 \(0x[0-9a-f]+\) held by npc [0-9]+ \(play 1\)' 10
 cmd story scene prop off
 expect_peer 'scene prop: 1 \(0x[0-9a-f]+\) gone' 10
+# Our camera's view, as a cutscene's would be sent.
+cmd story scene camera on
+expect 'scene: test camera on' 5
+expect_peer 'scene camera: [0-9]+ view\(s\) heard \(play 1' 10
+cmd story scene camera off
 # A line of our V's: its voice for the guest, with the scene's play.
 cmd story line Hello from the scene
 expect 'scene: line voiced for the guests \(npc 0, player 1' 10

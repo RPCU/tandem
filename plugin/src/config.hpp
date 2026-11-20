@@ -33,6 +33,10 @@
 //                        ; cast, voices and, with pose = on, the actors' bodies:
 //                        ; docs/architecture/scene-replay.md); poses: only the
 //                        ; actors' bodies are left out
+//   scene_camera = on    ; with scene_replay: off: a guest keeps its own eyes in
+//                        ; the host's cutscenes (no watch camera)
+//   scene_kbps = 22      ; with scene_replay, host: what a scene's streams (bodies,
+//                        ; the camera) may take on a guest's link, 8 to 2000
 //   private_actors = judy, panam, river, kerry, meredith  ; romance partners
 //   private_scenes = , public_scenes =  ; scene resource paths, comma-separated
 //   quest_freeze_gigs =  ; gig phase resources: they wait only while grouped
@@ -148,6 +152,11 @@ struct Config {
   bool scenePrivacy{true};
   bool sceneReplay{false};
   bool scenePoses{true}; // with sceneReplay
+  // With sceneReplay: a guest in the host's moment sees a cutscene through
+  // the host's camera; what the scene's streams may take on a link (0: the
+  // default, scene::kSceneBytesPerSecond).
+  bool sceneCamera{true};
+  std::uint32_t sceneKbps{0};
   std::vector<std::string> privateActors{"judy", "panam", "river", "kerry", "meredith"};
   std::vector<std::string> privateScenes, publicScenes;
   // How the host's own time dilations are played (Time.reds): its world in

@@ -370,6 +370,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Story-Join", "Join {1}");
     this.Text("Tandem-Scene-InScene", "{1} is in a scene");
     this.Text("Tandem-Scene-Watch", "Watch the scene");
+    this.Text("Tandem-Scene-LeaveCamera", "Leave the camera");
     // Quest interactions: a guest's use of the host's objects.
     this.Text("Tandem-Interact-HostOnly", "{1} must do this");
     this.Text("Tandem-Interact-Taken", "{1}'s world: someone else got there first");
@@ -738,6 +739,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Story-Join", "Rejoindre {1}");
     this.Text("Tandem-Scene-InScene", "{1} est dans une scène");
     this.Text("Tandem-Scene-Watch", "Regarder la scène");
+    this.Text("Tandem-Scene-LeaveCamera", "Quitter la caméra");
     this.Text("Tandem-Interact-HostOnly", "{1} doit le faire");
     this.Text("Tandem-Interact-Taken", "Monde de {1} : quelqu'un d'autre a été plus rapide");
     this.Text("Tandem-Interact-TooFar", "Trop loin dans le monde de {1}");

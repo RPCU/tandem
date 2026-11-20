@@ -195,6 +195,20 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.sceneReplay = false;
     else
       return Bad("scene_replay is on, noposes or off");
+  } else if (key == "scene_camera") {
+    if (value == "on" || value == "true")
+      config.sceneCamera = true;
+    else if (value == "off" || value == "false")
+      config.sceneCamera = false;
+    else
+      return Bad("scene_camera is on or off");
+  } else if (key == "scene_kbps") {
+    // What a scene's streams may take on a guest's link (8 to 2000 kbit/s).
+    int kbps = 0;
+    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), kbps);
+    if (error != std::errc{} || end != value.data() + value.size() || kbps < 8 || kbps > 2000)
+      return Bad("scene_kbps is a number from 8 to 2000");
+    config.sceneKbps = static_cast<std::uint32_t>(kbps);
   } else if (key == "time_host") {
     if (value == "bubble")
       config.timeHostFull = false;
