@@ -104,3 +104,13 @@ In this order, each one decides a fallback:
 | `NPCPuppet.Kill(null, skipNPCDeathAnim = true, disableNPCRagdoll = false)` lays a just spawned dynamic NPC down with no death animation and no killer (no XP, no crime) | `final.reds:125843-125859`, `:21286` | `[2.5-untested]`: the ledger's bodies (`Ledger.reds` `Lay`), 0.5 s after the entity exists |
 | A dynamic NPC with `BaseStatusEffect.Unconscious` and a forced ragdoll lies there as a knocked-out body | as `TandemNpcs.KnockOut` on proxies | `[2.5-untested]` on a fresh spawn |
 | `DynamicEntitySystem.IsTagged(id, tag)` tells our bodies (`Tandem.Body`) from NPCs to share | Codeware, as `Tandem.Proxy` in `Vendors.reds` | `[2.5-compiled]` |
+
+### 13.95 The overlap: the crowd's density in parts, null areas, a despawn probe (2026-11-20, scripts only)
+
+| Fact | Source | Tag |
+| --- | --- | --- |
+| `CommunitySystem.ChangeDensityModifier(f)` with 0 < f < 1 thins the ambient crowd in proportion | `final.reds:315514`; never called by vanilla scripts | `[2.5-untested]` (0 is `[2.5-verified]`, §13.31 (d)); whether it scales traffic the same way is not known (`traffic-police.md` §13.32) |
+| `CommunitySystem.EnableDynamicCrowdNullArea(areaLocalBBox: Box, areaLocalToWorld: WorldTransform, savable: Bool, duration: Float) -> Uint64` makes a box no crowd spawns in; `DisableCrowdNullArea(id)` ends it | `final.reds:315505-315512`; never called by vanilla scripts (quests use `questCrowdManagerNodeType_EnableNullArea`) | `[2.5-compiled]`; `[2.5-untested]`: whether it covers traffic, whether crowd already inside leaves, what `duration` means (tandem passes 12 s and renews every 8 s, and disables by id as well), the cost of moving one every 15 m. `regions-overlap` with `overlap = area` answers |
+| `WorldTransform` is a native struct with no script fields: `SetIdentity` then `SetPosition` | `final.reds:11324-11330`, used at `:13865` | `[2.5-compiled]` |
+| `PreventionSpawnSystem.RequestDespawnVehicleAndPassengers(vehicle)` is only called by vanilla on police vehicles (`:193565`, `:324617` `JoinTrafficInPoliceVehicle`) | `final.reds:189228` | `[2.5-untested]` on a traffic car: the `overlap_despawn` probe; `cmd overlap` says how many asked cars are gone |
+| `VehicleObject.IsCrowdVehicle()`, `IsQuest()`, `IsPrevention()`, `IsDestroyed()` tell a traffic car to hold back | `final.reds:87817`, `:88972`, `:87731` | `[2.5-compiled]` |

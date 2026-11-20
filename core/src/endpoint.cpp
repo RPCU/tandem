@@ -1710,6 +1710,14 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               out.push_back(events::HostActorPose{whole});
             }
           },
+          [&](const proto::RigPose &pose) {
+            // A face, or a body on another rig: fenced and filtered as an
+            // actor's pose, for the story's side of our game.
+            if (m_firstNpcSeq != 0 && static_cast<std::int32_t>(pose.seq - m_firstNpcSeq) < 0)
+              return;
+            if (m_npcs.contains(pose.npc))
+              out.push_back(events::Story{pose});
+          },
           [&](const proto::SceneCamera &camera) {
             // The host's view of its cutscene: for the story's side of our game.
             out.push_back(events::Story{camera});
@@ -2295,6 +2303,39 @@ void Endpoint::SendActorPose(proto::ActorPose pose) {
       proto::ActorFrame{.npc = pose.npc, .frame = encoder->second.Encode(pose::FromActor(pose))};
   m_scenePacer.Sent(stream, proto::Encode(frame).size(), now);
   ShareNpc(frame, m_you);
+}
+
+void Endpoint::SendRigPose(proto::NpcId npc, std::uint8_t part, std::uint32_t rigHash,
+                           std::span<const rig::Bone> reference, std::span<const rig::Bone> pose) {
+  if (!IsHost() || m_ended || !OwnsNpc(npc) || part > proto::kRigFace || reference.empty() ||
+      reference.size() != pose.size() || pose.size() > proto::kMaxRigBones)
+    return;
+  const auto now = net::NowUs();
+  const auto stream = scene::StreamOf(npc, part);
+  if (!m_scenePacer.Due(stream, part == proto::kRigFace ? scene::kFaceWeight : ActorWeight(npc),
+                        now))
+    return;
+  auto &state = m_rigStreams[stream];
+  if (state.hash != rigHash || state.encoder.Bones() != reference.size()) {
+    state.hash = rigHash;
+    state.encoder.Reset(reference);
+  }
+  // Small frames often rather than large ones seldom: a tenth of a second
+  // of the stream's share each.
+  const auto cap =
+      static_cast<std::size_t>(std::clamp(m_scenePacer.Share(stream) / 10.f, 40.f, 240.f));
+  proto::RigPose said{.npc = npc,
+                      .part = part,
+                      .rig = rigHash,
+                      .bones = static_cast<std::uint16_t>(reference.size()),
+                      .data = state.encoder.Encode(pose, cap)};
+  if (said.data.empty())
+    return;
+  said.seq = ++m_npcSeq;
+  said.timeUs = HostNowUs();
+  const proto::Message message = std::move(said);
+  m_scenePacer.Sent(stream, proto::Encode(message).size(), now);
+  ShareNpc(message, m_you);
 }
 
 void Endpoint::SendSceneCamera(proto::SceneCamera camera) {

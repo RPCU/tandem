@@ -556,6 +556,7 @@ public class TandemStorySystem extends ScriptableSystem {
   // JournalManager callbacks (signature of JournalNotificationQueue's,
   // final.reds:341545).
   protected cb func OnJournalState(hash: Uint32, className: CName, notifyOption: JournalNotifyOption, changeType: JournalChangeType) -> Bool {
+    TandemNative.HookRan(n"Story.TandemStorySystem.OnJournalState");
     let entry = this.m_journal.GetEntry(hash);
     if !IsDefined(entry) {
       return false;
@@ -584,6 +585,7 @@ public class TandemStorySystem extends ScriptableSystem {
   }
 
   protected cb func OnJournalTracked(hash: Uint32, className: CName, notifyOption: JournalNotifyOption, changeType: JournalChangeType) -> Bool {
+    TandemNative.HookRan(n"Story.TandemStorySystem.OnJournalTracked");
     if this.IsHostInSession() {
       this.m_trackedOwed = true;
     }
@@ -956,6 +958,7 @@ public class TandemStorySystem extends ScriptableSystem {
   }
 
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    TandemNative.HookRan(n"Story.TandemStorySystem.OnAction");
     if this.m_offerOpen && Equals(ListenerAction.GetName(action), n"Choice1")
       && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_RELEASED) {
       this.AcceptOffer();
@@ -1612,6 +1615,7 @@ public class TandemStorySystem extends ScriptableSystem {
 // Our V's scene tier, for the others (final.reds:43746).
 @wrapMethod(PlayerPuppet)
 protected cb func OnSceneTierChange(newState: Int32) -> Bool {
+  TandemNative.HookRan(n"Story.PlayerPuppet.OnSceneTierChange");
   let result = wrappedMethod(newState);
   let story = TandemStorySystem.Get(this.GetGame());
   if IsDefined(story) && IsDefined(GetPlayer(this.GetGame())) && this.GetEntityID() == GetPlayer(this.GetGame()).GetEntityID() {

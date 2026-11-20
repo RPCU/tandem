@@ -141,18 +141,19 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
   } else if (key == "story" || key == "quest_freeze" || key == "quest_interact" ||
              key == "recorder" || key == "recorder_pose" || key == "friendly_fire" ||
              key == "markers" || key == "party_hud" || key == "enemy_scaling" ||
-             key == "death_ledger" || key == "death_bodies") {
-    auto &flag = key == "story"            ? config.story
-                 : key == "quest_freeze"   ? config.questFreeze
-                 : key == "quest_interact" ? config.questInteract
-                 : key == "recorder"       ? config.recorder
-                 : key == "friendly_fire"  ? config.friendlyFire
-                 : key == "enemy_scaling"  ? config.enemyScaling
-                 : key == "markers"        ? config.markers
-                 : key == "party_hud"      ? config.partyHud
-                 : key == "death_ledger"   ? config.deathLedger
-                 : key == "death_bodies"   ? config.deathBodies
-                                           : config.recorderPose;
+             key == "death_ledger" || key == "death_bodies" || key == "overlap_despawn") {
+    auto &flag = key == "story"             ? config.story
+                 : key == "quest_freeze"    ? config.questFreeze
+                 : key == "quest_interact"  ? config.questInteract
+                 : key == "recorder"        ? config.recorder
+                 : key == "friendly_fire"   ? config.friendlyFire
+                 : key == "enemy_scaling"   ? config.enemyScaling
+                 : key == "markers"         ? config.markers
+                 : key == "party_hud"       ? config.partyHud
+                 : key == "death_ledger"    ? config.deathLedger
+                 : key == "death_bodies"    ? config.deathBodies
+                 : key == "overlap_despawn" ? config.overlapDespawn
+                                            : config.recorderPose;
     if (value == "on" || value == "true")
       flag = true;
     else if (value == "off" || value == "false")
@@ -198,6 +199,13 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.sceneReplay = false;
     else
       return Bad("scene_replay is on, noposes or off");
+  } else if (key == "scene_rigs") {
+    if (value == "on" || value == "true")
+      config.sceneRigs = true;
+    else if (value == "off" || value == "false")
+      config.sceneRigs = false;
+    else
+      return Bad("scene_rigs is on or off");
   } else if (key == "scene_camera") {
     if (value == "on" || value == "true")
       config.sceneCamera = true;
@@ -299,6 +307,11 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.compat = false;
     else
       return Bad("compat is on or off");
+  } else if (key == "overlap") {
+    if (value == "density" || value == "area" || value == "off")
+      config.overlap = std::string(value);
+    else
+      return Bad("overlap is density, area or off");
   } else if (key == "nameplates") {
     // on, true: what they were before near and always (tandem.ini files of then).
     if (value == "near" || value == "on" || value == "true")
@@ -350,6 +363,10 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return OnOff(config.deathLedger);
   if (key == "death_bodies")
     return OnOff(config.deathBodies);
+  if (key == "overlap")
+    return config.overlap;
+  if (key == "overlap_despawn")
+    return OnOff(config.overlapDespawn);
   if (key == "nameplates")
     return config.nameplates == presence::Nameplates::Always ? "always"
            : config.nameplates == presence::Nameplates::Off  ? "off"

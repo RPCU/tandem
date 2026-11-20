@@ -25,7 +25,8 @@ pass; the scripts compile; the scenarios at the end are what to run first.
 
 One decider per vehicle, as for NPCs: nobody simulates a competing copy.
 Where a higher-ranked player's game runs the street, the others' crowd (and
-with it their traffic) is off, as for NPCs (`regions.md` §6).
+with it their traffic) is off or thinned, and their own cars there are held
+back, as for NPCs (`regions.md` §6).
 
 ### Who owns an area
 
@@ -327,8 +328,11 @@ Not built, in the order I would do them:
 - Horn, indicators, headlights, doors (the flags have room; nothing sends
   them yet).
 - AVs and the rest that is not a car or a bike are left to each game.
-- A guest's own leftover vehicles (spawned before its crowd went off) are
-  only counted in the log; nothing removes them (no known call does).
+- A game's own crowd cars where another game runs the street are held
+  back (never announced there) and kept from spawning (`regions.md` §6,
+  "The overlap, held back": `overlap`, `overlap_despawn`); one already
+  there is not removed (no known call does: the despawn probe is off by
+  default).
 
 ## Scenarios to run in game
 

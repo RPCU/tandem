@@ -145,6 +145,7 @@ public class TandemSaves {
   }
 
   protected cb func OnSavingComplete(success: Bool, locks: array<gameSaveLock>) -> Bool {
+    TandemNative.HookRan(n"Saves.TandemSaves.OnSavingComplete");
     if this.m_asked {
       this.m_saved = success ? 1 : -1;
       TandemNative.Log(s"save: the game says the save \(success ? "was written" : "failed")");

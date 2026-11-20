@@ -417,6 +417,8 @@ public class TandemSystem extends ScriptableSystem {
     if !this.m_inGame {
       return;
     }
+    // The thread probe's findings of this session, in the log.
+    TandemNative.ThreadsReport();
     TandemNative.PoseSource(null);
     // Guest: every device the session changed, back as our own save had it
     // (before the plugin stops: nothing of this goes to anyone).
@@ -1102,6 +1104,12 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.PerfReport();
       return;
     }
+    // The thread probe (tools/game.sh cmd threads): the hooks seen so far,
+    // off the game thread and on it only (testing.md), solo too.
+    if Equals(command, "threads") {
+      TandemNative.ThreadsReport();
+      return;
+    }
     if StrBeginsWith(command, "time ") {
       if IsDefined(this.m_time) {
         this.m_time.Command(command);
@@ -1208,6 +1216,12 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(command, "region") {
       let linked = TandemRegions.Linked();
       TandemNative.Log(s"region: \(TandemRegions.IsApart() ? "apart" : "grouped"), leader player \(TandemRegions.Leader()), linked with \(ArraySize(linked)) player(s), area \(TandemRegions.OwnsArea() ? "ours" : s"player \(TandemRegions.AreaOwner(this.m_you))'s"), ours \(IsDefined(this.m_npcs) ? this.m_npcs.OwnedCount() : 0), proxies \(IsDefined(this.m_npcs) ? this.m_npcs.ProxyCount() : 0)");
+    } else if Equals(command, "overlap") {
+      // (test) what our game holds back where another's region covers ours.
+      TandemNative.Log(IsDefined(this.m_npcs) ? this.m_npcs.OverlapReport() : "overlap: no session");
+      if IsDefined(this.m_traffic) {
+        TandemNative.Log(this.m_traffic.OverlapReport());
+      }
     } else if Equals(command, "ledger") {
       // (test) the session's dead as our game has them (Ledger.reds).
       TandemNative.Log(IsDefined(this.m_npcs) ? this.m_npcs.LedgerReport() : "ledger: no session");

@@ -33,6 +33,16 @@
 // docs/research/data/skeletons-2.50.txt), so the wire pose is the same; an
 // NPC whose skeleton lacks one of them is not read, and its proxy keeps its
 // own animation. Not yet verified in game on NPCs.
+//
+// Other rigs (tandem.ini scene_rigs, off by default; never run in game): a
+// speaking actor's face (the entity's "face_rig" animated component, whose
+// graph instance turns the facial tracks into its ~290 joints) and the body
+// of an actor that is not on the humanoid rig are read and written at the
+// commit of that component's own graph instance, whole rig, local space, by
+// bone index: the host's NPC and its proxy are the same record and
+// appearance, so the same rig resource (checked: the hash of its bone names
+// and their count). What travels is the bones off the rig's reference pose
+// (tandem/rigpose.hpp).
 
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
@@ -43,6 +53,7 @@
 #include "posestream.hpp"
 
 #include "tandem/pose.hpp"
+#include "tandem/rigpose.hpp"
 
 #include <RED4ext/RTTISystem.hpp>
 #include <RED4ext/Relocation.hpp>
@@ -56,6 +67,7 @@
 #include <cmath>
 #include <cstring>
 #include <format>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -252,6 +264,8 @@ void ReadSource(std::uintptr_t object) {
 struct ActorSource {
   std::atomic<std::uintptr_t> object{0};
   std::atomic<std::uint32_t> npc{0};
+  // Its skeleton is not the humanoid body: read by its rig instead (below).
+  std::atomic_bool otherRig{false};
   std::mutex lock; // the rest: job threads
   SourceMap map;
   std::chrono::steady_clock::time_point lastSend{};
@@ -282,6 +296,7 @@ void ReadActor(ActorSource &source, std::uintptr_t object) {
       source.map.usable = MapSource(skeleton, source.map);
       log::Info("pose stream: actor {}'s skeleton {:#x} ({}), {}", npc, skeleton, signature,
                 source.map.usable ? "mapped" : "not a body the stream knows: not sent");
+      source.otherRig.store(!source.map.usable, std::memory_order_release);
     }
     if (!source.map.usable) {
       g_actorSkips.fetch_add(1, std::memory_order_relaxed);
@@ -451,12 +466,173 @@ void WritePuppet(std::uint32_t player, std::uintptr_t instance, void *sampled) {
 }
 
 // A scene actor's proxy: the host's pose of that NPC while its stream lasts.
-void WriteActor(std::uint32_t npc, std::uintptr_t instance, void *sampled) {
+bool WriteActor(std::uint32_t npc, std::uintptr_t instance, void *sampled) {
   pose::Pose remote;
-  if (Runtime::Get().ActorPoseOf(npc, remote) && WritePose(remote, instance, sampled))
+  if (Runtime::Get().ActorPoseOf(npc, remote) && WritePose(remote, instance, sampled)) {
     g_actorWrites.fetch_add(1, std::memory_order_relaxed);
-  else
-    g_actorMisses.fetch_add(1, std::memory_order_relaxed);
+    return true;
+  }
+  g_actorMisses.fetch_add(1, std::memory_order_relaxed);
+  return false;
+}
+
+// ---- other rigs: a face, a body that is not the humanoid one ----
+
+constexpr std::size_t kMaxRigs = 40;
+constexpr auto kRigReadInterval = std::chrono::microseconds(40'000); // 25 a second at most
+
+// One graph instance read (host) or written (guest), whole rig.
+struct RigSlot {
+  std::atomic<std::uintptr_t> instance{0};
+  std::atomic<std::uint32_t> npc{0};
+  std::atomic<std::uint8_t> part{0};
+  std::atomic_bool source{false};
+  std::mutex lock;           // the rest: job threads; the game thread when it rebinds
+  std::uintptr_t mapped = 0; // the anim::Rig the fields below are of
+  bool usable = false;
+  std::uint32_t hash = 0;
+  std::shared_ptr<const std::vector<rig::Bone>> reference;
+  std::vector<std::uint8_t> skip; // Root, Trajectory: the entity is placed by its NPC states
+  std::vector<rig::Bone> scratch;
+  std::chrono::steady_clock::time_point lastRead{};
+};
+std::array<RigSlot, kMaxRigs> g_rigSlots;
+std::atomic_int g_rigCount{0}; // 0: the commit detour looks at no table
+std::atomic_uint64_t g_rigReads{0}, g_rigWrites{0}, g_rigBones{0};
+
+RigSlot *RigSlotOf(std::uintptr_t instance) {
+  for (auto &slot : g_rigSlots)
+    if (slot.instance.load(std::memory_order_acquire) == instance)
+      return &slot;
+  return nullptr;
+}
+
+// The rig's bones by name and its reference pose, local space. Under the
+// slot's lock.
+bool MapRig(std::uintptr_t rigAddress, RigSlot &slot) {
+  const auto *resource = reinterpret_cast<const RED4ext::anim::Rig *>(rigAddress);
+  const auto &names = resource->boneNames;
+  const auto count = names.Size();
+  if (count == 0 || count > proto::kMaxRigBones || !resource->referencePoseLS)
+    return false;
+  std::vector<std::uint64_t> hashes(count);
+  auto reference = std::make_shared<std::vector<rig::Bone>>(count);
+  slot.skip.assign(count, 0);
+  for (std::uint32_t i = 0; i < count; ++i) {
+    hashes[i] = names[i].hash;
+    const auto &t = resource->referencePoseLS[i];
+    (*reference)[i] = {{t.Translation.X, t.Translation.Y, t.Translation.Z},
+                       {t.Rotation.i, t.Rotation.j, t.Rotation.k, t.Rotation.r}};
+    if (names[i] == RED4ext::CName("Root") || names[i] == RED4ext::CName("Trajectory"))
+      slot.skip[i] = 1;
+  }
+  slot.hash = rig::RigHash(hashes);
+  slot.reference = std::move(reference);
+  return true;
+}
+
+// The sampled pose of a slot's instance: its bones, when it is the whole rig.
+Transform *RigBones(RigSlot &slot, std::uintptr_t instance, void *sampled, std::uint32_t &count) {
+  std::uintptr_t address = 0, bonesAddress = 0;
+  const auto base = reinterpret_cast<std::uintptr_t>(sampled);
+  if (!ReadAt(instance + kInstanceRig, address) || !ReadAt(base + kSampledCount, count) ||
+      !ReadAt(base + kSampledBones, bonesAddress) || address == 0 || count == 0 ||
+      count > proto::kMaxRigBones || bonesAddress < 0x10000 || (bonesAddress & 0xF) != 0)
+    return nullptr;
+  if (slot.mapped != address) {
+    slot.mapped = address;
+    slot.usable = MapRig(address, slot);
+    log::Info("pose stream: npc {}'s {} rig {:#x}: {} bones, {}", slot.npc.load(),
+              slot.part.load() == proto::kRigFace ? "face" : "body", address,
+              slot.reference ? slot.reference->size() : 0, slot.usable ? "mapped" : "not usable");
+  }
+  // A far character is sampled with fewer bones: nothing then.
+  if (!slot.usable || !slot.reference || count != slot.reference->size())
+    return nullptr;
+  return reinterpret_cast<Transform *>(bonesAddress);
+}
+
+bool ActorIsOtherRig(std::uint32_t npc);
+
+// Host: the rig's pose as its graph hands it over, for the guests.
+void ReadRig(RigSlot &slot, std::uintptr_t instance, void *sampled) {
+  const auto npc = slot.npc.load(std::memory_order_acquire);
+  const auto part = slot.part.load(std::memory_order_acquire);
+  // A body is read this way only when it is not the humanoid one.
+  if (npc == 0 || (part == proto::kRigBody && !ActorIsOtherRig(npc)))
+    return;
+  const std::unique_lock guard(slot.lock, std::try_to_lock);
+  if (!guard.owns_lock())
+    return;
+  const auto now = std::chrono::steady_clock::now();
+  if (now - slot.lastRead < kRigReadInterval)
+    return;
+  std::uint32_t count = 0;
+  const auto *bones = RigBones(slot, instance, sampled, count);
+  if (!bones)
+    return;
+  slot.lastRead = now;
+  std::vector<Transform> raw(count);
+  if (!CopyOut(bones, raw.data(), count * sizeof(Transform)))
+    return;
+  std::vector<rig::Bone> pose(count);
+  for (std::uint32_t i = 0; i < count; ++i)
+    pose[i] = slot.skip[i]
+                  ? (*slot.reference)[i]
+                  : rig::Bone{{raw[i].translation[0], raw[i].translation[1], raw[i].translation[2]},
+                              {raw[i].rotation[0], raw[i].rotation[1], raw[i].rotation[2],
+                               raw[i].rotation[3]}};
+  Runtime::Get().SubmitRigPose({npc, part, slot.hash, slot.reference, std::move(pose)});
+  g_rigReads.fetch_add(1, std::memory_order_relaxed);
+}
+
+// Guest: what the host said of the rig's bones, over the rig's own pose.
+bool WriteRig(RigSlot &slot, std::uintptr_t instance, void *sampled) {
+  const auto npc = slot.npc.load(std::memory_order_acquire);
+  if (npc == 0)
+    return false;
+  const std::unique_lock guard(slot.lock, std::try_to_lock);
+  if (!guard.owns_lock())
+    return false;
+  std::uint32_t count = 0;
+  auto *bones = RigBones(slot, instance, sampled, count);
+  if (!bones)
+    return false;
+  slot.scratch.resize(count);
+  for (std::uint32_t i = 0; i < count; ++i)
+    slot.scratch[i] = {
+        {bones[i].translation[0], bones[i].translation[1], bones[i].translation[2]},
+        {bones[i].rotation[0], bones[i].rotation[1], bones[i].rotation[2], bones[i].rotation[3]}};
+  const auto written =
+      Runtime::Get().ApplyRigPose(npc, slot.part.load(), slot.hash, *slot.reference, slot.scratch);
+  if (written == 0)
+    return false;
+  for (std::uint32_t i = 0; i < count; ++i) {
+    if (slot.skip[i])
+      continue;
+    const auto &bone = slot.scratch[i];
+    bones[i].translation[0] = bone.translation.x;
+    bones[i].translation[1] = bone.translation.y;
+    bones[i].translation[2] = bone.translation.z;
+    bones[i].rotation[0] = bone.rotation.i;
+    bones[i].rotation[1] = bone.rotation.j;
+    bones[i].rotation[2] = bone.rotation.k;
+    bones[i].rotation[3] = bone.rotation.r;
+  }
+  g_rigWrites.fetch_add(1, std::memory_order_relaxed);
+  g_rigBones.fetch_add(written, std::memory_order_relaxed);
+  return true;
+}
+
+void CommitRig(std::uintptr_t address, void *sampled) {
+  if (g_rigCount.load(std::memory_order_acquire) <= 0)
+    return;
+  if (auto *slot = RigSlotOf(address)) {
+    if (slot->source.load(std::memory_order_acquire))
+      ReadRig(*slot, address, sampled);
+    else
+      WriteRig(*slot, address, sampled);
+  }
 }
 
 void DetourCommit(void *instance, void *params, void *sampled, std::uint32_t lod) {
@@ -464,9 +640,21 @@ void DetourCommit(void *instance, void *params, void *sampled, std::uint32_t lod
   if (const auto player = BoundPlayer(address)) {
     const Perf::Scope timed(Work::PoseWrite);
     WritePuppet(player, address, sampled);
-  } else if (const auto npc = BoundActor(address))
-    WriteActor(npc, address, sampled);
+  } else if (const auto npc = BoundActor(address)) {
+    // No humanoid pose for it: a body on another rig, maybe.
+    if (!WriteActor(npc, address, sampled))
+      CommitRig(address, sampled);
+  } else
+    CommitRig(address, sampled);
   g_originalCommit(instance, params, sampled, lod);
+}
+
+bool ActorIsOtherRig(std::uint32_t npc) {
+  for (const auto &source : g_actorSources)
+    if (source.npc.load(std::memory_order_acquire) == npc &&
+        source.object.load(std::memory_order_acquire) != 0)
+      return source.otherRig.load(std::memory_order_acquire);
+  return false;
 }
 
 // ---- game thread ----
@@ -484,16 +672,22 @@ bool LayoutOk() {
   return g_layoutOk && g_jobTarget && g_commitTarget;
 }
 
-// The entity's root animated component.
-std::uintptr_t RootComponent(const RED4ext::Handle<RED4ext::ent::Entity> &entity) {
+// The entity's animated component of that name ("root", "face_rig").
+std::uintptr_t AnimatedComponent(const RED4ext::Handle<RED4ext::ent::Entity> &entity,
+                                 const char *name) {
   static auto *animatedClass = RED4ext::CRTTISystem::Get()->GetClass("entAnimatedComponent");
   if (!entity || !animatedClass)
     return 0;
   for (const auto &component : entity->components)
-    if (component && component->name == RED4ext::CName("root") &&
+    if (component && component->name == RED4ext::CName(name) &&
         component->GetType()->IsA(animatedClass))
       return reinterpret_cast<std::uintptr_t>(component.GetPtr());
   return 0;
+}
+
+// The entity's root animated component.
+std::uintptr_t RootComponent(const RED4ext::Handle<RED4ext::ent::Entity> &entity) {
+  return AnimatedComponent(entity, "root");
 }
 } // namespace
 
@@ -604,6 +798,7 @@ void SetPoseActorSource(std::uint32_t npc, const RED4ext::Handle<RED4ext::ent::E
   if (slot->object.exchange(0) != 0)
     g_actorSourceCount.fetch_sub(1);
   slot->npc.store(npc, std::memory_order_release);
+  slot->otherRig.store(false, std::memory_order_release);
   if (object != 0) {
     slot->object.store(object, std::memory_order_release);
     g_actorSourceCount.fetch_add(1);
@@ -642,12 +837,64 @@ void BindPoseActor(std::uint32_t npc, const RED4ext::Handle<RED4ext::ent::Entity
                      : std::string("released: its own animation again"));
 }
 
+void BindPoseRig(std::uint32_t npc, std::uint8_t part, bool source,
+                 const RED4ext::Handle<RED4ext::ent::Entity> &entity) {
+  std::uintptr_t instance = 0;
+  if (npc != 0 && entity && LayoutOk())
+    if (const auto component =
+            AnimatedComponent(entity, part == proto::kRigFace ? "face_rig" : "root"))
+      ReadAt(component + kComponentInstance, instance);
+  RigSlot *slot = nullptr;
+  for (auto &candidate : g_rigSlots)
+    if (candidate.npc.load() == npc && candidate.part.load() == part &&
+        candidate.source.load() == source && candidate.instance.load() != 0)
+      slot = &candidate;
+  if (!slot && instance != 0)
+    for (auto &candidate : g_rigSlots)
+      if (candidate.instance.load() == 0) {
+        slot = &candidate;
+        break;
+      }
+  if (!slot) {
+    if (instance != 0)
+      log::Warn("pose stream: no room for npc {}'s {} rig", npc,
+                part == proto::kRigFace ? "face" : "body");
+    return;
+  }
+  if (slot->instance.load() == instance && slot->npc.load() == npc)
+    return;
+  // Off first, then under the lock: a job thread never sees it half changed.
+  if (slot->instance.exchange(0) != 0)
+    g_rigCount.fetch_sub(1);
+  {
+    std::lock_guard guard(slot->lock);
+    slot->npc.store(npc, std::memory_order_release);
+    slot->part.store(part, std::memory_order_release);
+    slot->source.store(source, std::memory_order_release);
+    slot->mapped = 0;
+    slot->usable = false;
+    slot->reference.reset();
+    slot->lastRead = {};
+  }
+  if (instance != 0) {
+    slot->instance.store(instance, std::memory_order_release);
+    g_rigCount.fetch_add(1);
+  }
+  log::Info("pose stream: npc {}'s {} rig {}", npc, part == proto::kRigFace ? "face" : "body",
+            instance == 0
+                ? std::string("let go")
+                : std::format("{} on graph instance {:#x}", source ? "read" : "written", instance));
+}
+
 void ClearPoseActors() {
   for (auto &source : g_actorSources)
     if (source.object.exchange(0) != 0)
       g_actorSourceCount.fetch_sub(1);
   for (auto &binding : g_actorBindings)
     binding.instance.store(0, std::memory_order_release);
+  for (auto &slot : g_rigSlots)
+    if (slot.instance.exchange(0) != 0)
+      g_rigCount.fetch_sub(1);
 }
 
 std::string PoseActorsReport() {
@@ -656,11 +903,16 @@ std::string PoseActorsReport() {
     sources += source.object.load() != 0;
   for (const auto &binding : g_actorBindings)
     bound += binding.instance.load() != 0;
-  return std::format("{} actor(s) read ({} poses, {} skipped), {} proxy(ies) posed ({} writes, {} "
-                     "without a pose), {} poses heard",
-                     sources, g_actorReads.exchange(0), g_actorSkips.exchange(0), bound,
-                     g_actorWrites.exchange(0), g_actorMisses.exchange(0),
-                     Runtime::Get().ActorPosesReceived());
+  int rigs = 0;
+  for (const auto &slot : g_rigSlots)
+    rigs += slot.instance.load() != 0;
+  return std::format(
+      "{} actor(s) read ({} poses, {} skipped), {} proxy(ies) posed ({} writes, {} "
+      "without a pose), {} poses heard; {} other rig(s) bound ({} reads, {} writes "
+      "of {} bones, {} rig poses heard)",
+      sources, g_actorReads.exchange(0), g_actorSkips.exchange(0), bound, g_actorWrites.exchange(0),
+      g_actorMisses.exchange(0), Runtime::Get().ActorPosesReceived(), rigs, g_rigReads.exchange(0),
+      g_rigWrites.exchange(0), g_rigBones.exchange(0), Runtime::Get().RigPosesReceived());
 }
 
 void PoseStreamReport() {

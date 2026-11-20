@@ -239,6 +239,7 @@ public class TandemTradeTable {
   // The interaction key on the prompt asks; the phone key answers a
   // request (a press: released before the phone's own hold).
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    TandemNative.HookRan(n"Trade.TandemTradeTable.OnAction");
     let name = ListenerAction.GetName(action);
     if Equals(name, n"Choice1") {
       if ListenerAction.IsButtonJustPressed(action) && this.m_target != 0u && TandemTrade.TradeState() == 0 {
@@ -1052,6 +1053,7 @@ public final func TransferItem(source: wref<GameObject>, target: wref<GameObject
 // are the table's moves.
 @wrapMethod(FullscreenVendorGameController)
 protected cb func OnSetUserData(userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Trade.FullscreenVendorGameController.OnSetUserData");
   let result = wrappedMethod(userData);
   let table = TandemTradeTable.Of(GetGameInstance());
   if IsDefined(table) && IsDefined(this.m_storageUserData) && table.IsTable(this.m_storageUserData.storageObject) {
@@ -1074,6 +1076,7 @@ private final func SetTimeDilatation(enable: Bool) -> Void {
 
 @wrapMethod(FullscreenVendorGameController)
 protected cb func OnUninitialize() -> Bool {
+  TandemNative.HookRan(n"Trade.FullscreenVendorGameController.OnUninitialize");
   let table = TandemTradeTable.Of(GetGameInstance());
   if IsDefined(table) && this.m_tandemTrade {
     table.Unbind(this);
@@ -1094,6 +1097,7 @@ private let m_tandemAsking: Bool;
 // storage mode), the eddies we give, the eddies we ask for.
 @wrapMethod(FullscreenVendorGameController)
 protected cb func OnHandleGlobalRelease(evt: ref<inkPointerEvent>) -> Bool {
+  TandemNative.HookRan(n"Trade.FullscreenVendorGameController.OnHandleGlobalRelease");
   let table = TandemTradeTable.Of(GetGameInstance());
   if this.m_tandemTrade && IsDefined(table) && !IsDefined(this.m_tandemInput) {
     if evt.IsAction(n"sell_junk") {

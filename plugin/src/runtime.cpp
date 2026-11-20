@@ -1990,6 +1990,49 @@ void Runtime::ForgetActorPoses() {
   std::lock_guard _(m_posesLock);
   m_actorPoses.clear();
   m_actorOut.clear();
+  m_rigOut.clear();
+  m_rigTracks.clear();
+}
+
+void Runtime::SubmitRigPose(RigSample sample) {
+  const auto key = std::uint64_t{sample.npc} << 8 | sample.part;
+  std::lock_guard _(m_posesLock);
+  m_rigOut[key] = std::move(sample);
+}
+
+std::vector<Runtime::RigSample> Runtime::TakeRigPoses() {
+  std::vector<RigSample> out;
+  std::lock_guard _(m_posesLock);
+  out.reserve(m_rigOut.size());
+  for (auto &[key, sample] : m_rigOut)
+    out.push_back(std::move(sample));
+  m_rigOut.clear();
+  return out;
+}
+
+void Runtime::PushRigPose(const proto::RigPose &pose) {
+  const auto key = std::uint64_t{pose.npc} << 8 | pose.part;
+  std::lock_guard _(m_posesLock);
+  if (m_rigTracks[key].Push(pose))
+    ++m_rigPosesIn;
+}
+
+std::size_t Runtime::ApplyRigPose(proto::NpcId npc, std::uint8_t part, std::uint32_t rigHash,
+                                  std::span<const rig::Bone> reference, std::span<rig::Bone> pose) {
+  const auto key = std::uint64_t{npc} << 8 | part;
+  const auto now = HostNowUs();
+  std::lock_guard _(m_posesLock);
+  const auto it = m_rigTracks.find(key);
+  // The stream stopped (the line is over, the scene, the host is gone): the
+  // rig's own animation again.
+  if (it == m_rigTracks.end() || now > it->second.NewestUs() + 2 * kActorPoseStaleUs)
+    return 0;
+  return it->second.Apply(now, rigHash, reference, pose);
+}
+
+std::uint32_t Runtime::RigPosesReceived() {
+  std::lock_guard _(m_posesLock);
+  return std::exchange(m_rigPosesIn, 0);
 }
 
 std::uint32_t Runtime::ActorPosesReceived() {

@@ -936,10 +936,37 @@ struct TandemStory : Red::IScriptable {
   static void ActorSource(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
     if (SceneReplay() == 2 || !entity)
       engine::SetPoseActorSource(npc, entity);
+    // A body that is not the humanoid one is read by its own rig.
+    if (SceneRigs() || !entity)
+      engine::BindPoseRig(npc, proto::kRigBody, true, entity);
   }
   static void ActorBind(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
     if (SceneReplay() == 2 || !entity)
       engine::BindPoseActor(npc, entity);
+    if (SceneRigs() || !entity)
+      engine::BindPoseRig(npc, proto::kRigBody, false, entity);
+  }
+  // Faces and bodies on other rigs are streamed (tandem.ini scene_rigs,
+  // with the actors' bodies).
+  static bool SceneRigs() { return SceneReplay() == 2 && Runtime::Get().config.sceneRigs; }
+  // Host: the NPCs that speak a line of our scene now (and for half a
+  // second after it).
+  static Red::DynArray<std::uint32_t> SceneSpeakers() {
+    Red::DynArray<std::uint32_t> out;
+    for (const auto npc : Story::Get().Stage().Speakers(Runtime::Get().HostNowUs()))
+      out.EmplaceBack(npc);
+    return out;
+  }
+  // An actor's face (its "face_rig" animated component). Host: read while
+  // it speaks (null: no longer). Guest: the proxy's, written while the
+  // host's stream lasts (null: its own again).
+  static void FaceSource(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
+    if (SceneRigs() || !entity)
+      engine::BindPoseRig(npc, proto::kRigFace, true, entity);
+  }
+  static void FaceBind(std::uint32_t npc, Red::Handle<Red::ent::Entity> entity) {
+    if (SceneRigs() || !entity)
+      engine::BindPoseRig(npc, proto::kRigFace, false, entity);
   }
   static void ActorsClear() {
     engine::ClearPoseActors();
@@ -1097,6 +1124,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(KeepOut);
   RTTI_METHOD(ActorSource);
   RTTI_METHOD(ActorBind);
+  RTTI_METHOD(SceneRigs);
+  RTTI_METHOD(SceneSpeakers);
+  RTTI_METHOD(FaceSource);
+  RTTI_METHOD(FaceBind);
   RTTI_METHOD(ActorsClear);
   RTTI_METHOD(SceneReport);
   RTTI_METHOD(LineId);

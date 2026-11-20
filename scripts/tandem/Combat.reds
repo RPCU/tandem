@@ -380,6 +380,7 @@ private final func ProcessInstantKill(hitEvent: ref<gameHitEvent>) {
 // frame after the hit, so they are caught here, not in the damage pipeline.
 @wrapMethod(NPCPuppet)
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
+  TandemNative.HookRan(n"Combat.NPCPuppet.OnStatusEffectApplied");
   // The NPC's owner: another V's one-punch slow motion stays theirs, and a
   // V's way out of combat lets only that V go (Outcomes.reds, Stealth.reds:
   // the Relic).

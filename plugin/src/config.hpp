@@ -35,6 +35,8 @@
 //                        ; actors' bodies are left out
 //   scene_camera = on    ; with scene_replay: off: a guest keeps its own eyes in
 //                        ; the host's cutscenes (no watch camera)
+//   scene_rigs = off     ; with scene_replay = on: on: a speaking actor's face and
+//                        ; the bodies of drones and robots are streamed too
 //   scene_kbps = 22      ; with scene_replay, host: what a scene's streams (bodies,
 //                        ; the camera) may take on a guest's link, 8 to 2000
 //   private_actors = judy, panam, river, kerry, meredith  ; romance partners
@@ -70,6 +72,12 @@
 //                        ; 20 m), always (any distance in view, smaller and fainter
 //                        ; far away), off (on: near)
 //   party_hud = on       ; off: no party list (linked partners' health) on the HUD
+//   overlap = density    ; our own crowd and traffic where a higher-ranked linked
+//                        ; player's region covers ours: density (thinned by how much
+//                        ; is covered), area (a crowd null area over that region:
+//                        ; untested), off (only off deep inside it) (ini only)
+//   overlap_despawn = off ; on: our own crowd cars left inside such a region are
+//                        ; asked to despawn (a probe, untested) (ini only)
 //   death_ledger = on    ; off: placed NPCs another player killed in the session
 //                        ; stay alive in our game (ini only)
 //   death_bodies = on    ; off: no body where a placed NPC another player
@@ -160,6 +168,10 @@ struct Config {
   // the host's camera; what the scene's streams may take on a link (0: the
   // default, scene::kSceneBytesPerSecond).
   bool sceneCamera{true};
+  // With sceneReplay and scenePoses: speakers' faces and the bodies of
+  // actors on other rigs than the humanoid one (engine/posestream.cpp,
+  // "Other rigs"): never run in game, so off unless asked for.
+  bool sceneRigs{false};
   std::uint32_t sceneKbps{0};
   std::vector<std::string> privateActors{"judy", "panam", "river", "kerry", "meredith"};
   std::vector<std::string> privateScenes, publicScenes;
@@ -186,6 +198,14 @@ struct Config {
   // recent one fell.
   bool deathLedger{true};
   bool deathBodies{true};
+  // The overlap (regions.md §6): how our game keeps its own crowd and traffic
+  // out of a higher-ranked linked player's region. "density": the crowd's
+  // density follows how much of our region is covered; "area": a crowd null
+  // area over each cover (untested on 2.50); "off": as before (density 0
+  // only deep inside). And whether our own crowd cars left inside a cover
+  // are asked to despawn (a probe, untested).
+  std::string overlap{"density"};
+  bool overlapDespawn{false};
   // Where it was read from (the settings page writes there).
   std::filesystem::path file;
   // What a guest's game does once it is out of a session (Saves.reds).

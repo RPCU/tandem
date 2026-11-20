@@ -8,6 +8,7 @@
 #include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/pose.hpp"
+#include "tandem/rigpose.hpp"
 #include "tandem/scene.hpp"
 
 #include <doctest/doctest.h>
@@ -1106,4 +1107,200 @@ TEST_CASE("actor poses are paced and delta coded on the wire, whole for the gues
   // On the wire they are frames, never whole poses.
   CHECK(wire["ActorFrame"] >= 8);
   CHECK(wire["ActorPose"] == 0);
+}
+
+// ---- other rigs: a face, a body that is not the humanoid one ----
+
+namespace {
+// A 60-joint rig at rest, and a turn of `angle` about x.
+std::vector<rig::Bone> RestingRig() {
+  std::vector<rig::Bone> reference(60);
+  for (std::size_t i = 0; i < reference.size(); ++i)
+    reference[i].translation = {0.01f * static_cast<float>(i), 0.f, 0.02f};
+  return reference;
+}
+proto::Quat AboutX(float angle) { return {std::sin(angle / 2.f), 0.f, 0.f, std::cos(angle / 2.f)}; }
+const rig::Entry *EntryOf(const std::vector<rig::Entry> &entries, std::uint16_t bone) {
+  for (const auto &entry : entries)
+    if (entry.bone == bone)
+      return &entry;
+  return nullptr;
+}
+} // namespace
+
+TEST_CASE("a rig's pose on the wire: what moved, in its smallest form, within the cap") {
+  const auto reference = RestingRig();
+  rig::Encoder encoder;
+  encoder.Reset(reference);
+  encoder.Skip(0);
+  auto pose = reference;
+  // Nothing moved: a few bones in turn, each "at rest" in two bytes.
+  auto data = encoder.Encode(pose, 200);
+  auto entries = rig::Read(data, 60);
+  REQUIRE(entries);
+  CHECK(entries->size() == rig::kRefreshed);
+  CHECK(data.size() == 2 * rig::kRefreshed);
+  for (const auto &entry : *entries)
+    CHECK(entry.form == proto::kRigRest);
+
+  // A jaw opens, a lip moves 3 mm, a bone goes far; the root is never said.
+  pose[10].rotation = AboutX(0.3f);
+  pose[20].translation.z += 0.003f;
+  pose[30].translation = {2.f, 1.f, 0.5f};
+  pose[0].translation.x = 5.f;
+  data = encoder.Encode(pose, 200);
+  entries = rig::Read(data, 60);
+  REQUIRE(entries);
+  const auto *jaw = EntryOf(*entries, 10), *lip = EntryOf(*entries, 20),
+             *farOne = EntryOf(*entries, 30);
+  REQUIRE((jaw && lip && farOne));
+  CHECK(EntryOf(*entries, 0) == nullptr);
+  CHECK(jaw->form == proto::kRigTurn);
+  CHECK(lip->form == proto::kRigShift);
+  CHECK(farOne->form == proto::kRigWhole);
+  CHECK(pose::Angle(rig::Placed(*jaw, reference[10]).rotation, pose[10].rotation) < 0.006f);
+  CHECK(std::abs(rig::Placed(*lip, reference[20]).translation.z - pose[20].translation.z) <
+        0.0002f);
+  CHECK(std::abs(rig::Placed(*farOne, reference[30]).translation.x - 2.f) < 0.0003f);
+  CHECK(encoder.Moved() == 3);
+  // Said once: the next frame only goes on with its turn.
+  entries = rig::Read(encoder.Encode(pose, 200), 60);
+  REQUIRE(entries);
+  CHECK(entries->size() == rig::kRefreshed);
+
+  // Many bones at once and a small cap: the largest moves first.
+  for (std::size_t i = 31; i < 60; ++i)
+    pose[i].translation.z += 0.001f * static_cast<float>(i - 30);
+  data = encoder.Encode(pose, 40);
+  CHECK(data.size() <= 40);
+  entries = rig::Read(data, 60);
+  REQUIRE(entries);
+  CHECK(EntryOf(*entries, 59) != nullptr);
+  CHECK(EntryOf(*entries, 31) == nullptr);
+
+  // A frame that is not one: an entry cut short, a bone the rig has not.
+  data.pop_back();
+  CHECK_FALSE(rig::Read(data, 60).has_value());
+  CHECK_FALSE(rig::Read(encoder.Encode(pose, 200), 20).has_value());
+  // The rig's name: its bones' names, in order.
+  CHECK(rig::RigHash(std::vector<std::uint64_t>{1, 2, 3}) !=
+        rig::RigHash(std::vector<std::uint64_t>{1, 3, 2}));
+}
+
+TEST_CASE("a rig's pose on a proxy: it follows, lets go at rest, heals a lost frame") {
+  const auto reference = RestingRig();
+  rig::Encoder encoder;
+  encoder.Reset(reference);
+  rig::Track track;
+  const auto hash = rig::RigHash(std::vector<std::uint64_t>{1, 2, 3});
+  std::uint32_t seq = 0;
+  std::uint64_t now = kT0;
+  const auto send = [&](const std::vector<rig::Bone> &pose) {
+    return track.Push(proto::RigPose{.npc = 7,
+                                     .part = proto::kRigFace,
+                                     .seq = ++seq,
+                                     .timeUs = now,
+                                     .rig = hash,
+                                     .bones = 60,
+                                     .data = encoder.Encode(pose, 200)});
+  };
+  // The proxy's rig animates on its own (bone 40 idles).
+  auto own = reference;
+  own[40].translation.x += 0.001f;
+  auto shown = own;
+  const auto draw = [&](int frames) {
+    std::size_t written = 0;
+    for (int frame = 0; frame < frames; ++frame) {
+      now += 16'000;
+      shown = own;
+      written = track.Apply(now, hash, reference, shown);
+    }
+    return written;
+  };
+
+  auto host = reference;
+  host[10].rotation = AboutX(0.3f);
+  host[20].translation.z += 0.003f;
+  CHECK(send(host));
+  CHECK(draw(10) == 2);
+  CHECK(pose::Angle(shown[10].rotation, host[10].rotation) < 0.008f);
+  CHECK(std::abs(shown[20].translation.z - host[20].translation.z) < 0.0003f);
+  CHECK(shown[40].translation.x == own[40].translation.x); // not the host's to say
+  CHECK(track.Held() == 2);
+  // A body on another rig takes nothing.
+  shown = own;
+  CHECK(track.Apply(now, hash + 1, reference, shown) == 0);
+  std::vector<rig::Bone> small(10);
+  const auto smallReference = small;
+  CHECK(track.Apply(now, hash, smallReference, small) == 0);
+
+  // Back at rest on the host: the proxy's own animation again, let go.
+  CHECK(send(reference));
+  draw(40);
+  CHECK(track.Held() == 0);
+  CHECK(shown[10].rotation == own[10].rotation);
+  // An old frame is dropped.
+  CHECK_FALSE(track.Push(
+      proto::RigPose{.npc = 7, .part = proto::kRigFace, .seq = 1, .rig = hash, .bones = 60}));
+
+  // A frame is lost: the bone it said comes again when its turn does.
+  host = reference;
+  host[12].translation.z += 0.004f;
+  (void)encoder.Encode(host, 200); // never arrives
+  bool healed = false;
+  for (int frame = 0; frame < 30 && !healed; ++frame) {
+    CHECK(send(host));
+    draw(10);
+    healed = std::abs(shown[12].translation.z - host[12].translation.z) < 0.0005f;
+  }
+  CHECK(healed);
+}
+
+TEST_CASE("a face through the endpoints: the host's, of an NPC the guest knows") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(a);
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) {
+    return a->IsJoined() && host->Players().size() == 2;
+  }));
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->SharedNpcs().contains(7); }));
+  const std::vector<rig::Bone> reference(40);
+  auto pose = reference;
+  const auto hash = rig::RigHash(std::vector<std::uint64_t>{4, 5, 6});
+  rig::Track track;
+  int heard = 0, hostHeard = 0;
+  for (int frame = 0; frame < 60; ++frame) {
+    pose[5].translation.z = 0.004f * std::sin(static_cast<float>(frame) * 0.3f);
+    host->SendRigPose(7, proto::kRigFace, hash, reference, pose);
+    host->SendRigPose(55, proto::kRigFace, hash, reference, pose); // not shared: nothing
+    a->SendRigPose(7, proto::kRigFace, hash, reference, pose);     // a guest's word: nothing
+    Pump(
+        {host.get(), a.get()},
+        [&](std::size_t i, const auto &events) {
+          for (const auto &event : events)
+            if (const auto *story = std::get_if<events::Story>(&event))
+              if (const auto *said = std::get_if<proto::RigPose>(&story->message)) {
+                if (i == 0) {
+                  ++hostHeard;
+                } else {
+                  ++heard;
+                  CHECK(said->npc == 7);
+                  CHECK(said->part == proto::kRigFace);
+                  track.Push(*said);
+                }
+              }
+          return false;
+        },
+        8ms);
+  }
+  CHECK(hostHeard == 0);
+  CHECK(heard >= 3);
+  CHECK(heard < 60);
+  CHECK(track.Rig() == hash);
+  CHECK(track.Bones() == 40);
 }

@@ -102,7 +102,8 @@ idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
   `combat-coverage.md`); `enemy_scaling`, `enemy_scaling_health` (the
   host's too, `npcs.md`); `link`, `pings` (`comms.md`); `notices`
   (`coop-menu.md`), `markers` (`players.md`), `nameplates`, `party_hud`
-  (`presence.md`); `death_ledger`, `death_bodies` (`regions.md` §14);
+  (`presence.md`); `death_ledger`, `death_bodies` (`regions.md` §14), `overlap`,
+  `overlap_despawn` (`regions.md` §6);
   `leave` (`progression.md`); `vehicle_rewards`, `lend` (`garage.md`);
   `trade` (`trade.md`); `recorder`, `recorder_max_mb`,
   `recorder_segment_minutes`, `recorder_pose` (`recordings.md`);

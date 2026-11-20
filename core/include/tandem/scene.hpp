@@ -56,6 +56,8 @@ inline constexpr float kStageMoveMetres = 0.75f;
 inline constexpr std::uint64_t kStageEveryUs = 500'000;
 // A line hidden this long before its end was cut; later, it just ended.
 inline constexpr float kCutSeconds = 0.4f;
+// A speaker's face is streamed this long after its line.
+inline constexpr std::uint64_t kSpeakerTailUs = 500'000;
 
 class Stage {
 public:
@@ -74,6 +76,9 @@ public:
   const proto::SceneState &State() const { return m_state; }
   // `npc` acts in the scene announced now (its cast as last sent).
   bool Casts(proto::NpcId npc) const;
+  // The NPCs that speak a line of the scene now, or did until
+  // kSpeakerTailUs ago (their faces are streamed that long).
+  std::vector<proto::NpcId> Speakers(std::uint64_t hostNowUs) const;
 
 private:
   bool Speaking(std::uint64_t hostNowUs) const;
@@ -179,6 +184,8 @@ constexpr std::uint64_t StreamOf(proto::NpcId npc, std::uint8_t part) {
 inline constexpr std::uint64_t kCameraStream = ~std::uint64_t{0};
 // The camera is the picture: it matters more than any one body.
 inline constexpr float kCameraWeight = 3.f;
+// A speaker's face is where one looks: before a body.
+inline constexpr float kFaceWeight = 2.f;
 
 // Splits the budget between the streams that are alive: each is served at
 // least every kSlowestUs (the heaviest-weighted first, while the budget

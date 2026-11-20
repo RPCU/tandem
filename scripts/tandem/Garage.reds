@@ -152,6 +152,7 @@ public class TandemGarage {
 // in the next moments is bought, ours alone.
 @wrapMethod(gameuiVehicleShopGameController)
 protected cb func OnVehicleShopPurchaseEventEvent(evt: ref<VehicleShopPurchaseEvent>) -> Bool {
+  TandemNative.HookRan(n"Garage.gameuiVehicleShopGameController.OnVehicleShopPurchaseEventEvent");
   let story = TandemStorySystem.Get(GetGameInstance());
   if IsDefined(story) {
     story.OnVehicleBought();

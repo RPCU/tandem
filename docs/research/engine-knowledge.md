@@ -117,6 +117,7 @@ found through this table, each number once.
 | 13.92 | Contests: what the game's own data says of a fist fight, a race, a shooting competition | `story.md`          |
 | 13.93 | Swimming's effects and sounds, a projectile put on a path                               | `presence.md`       |
 | 13.94 | Placed NPCs: static ids, the ledger's hiding and bodies                                 | `regions.md`        |
+| 13.95 | The overlap: the crowd's density in parts, null areas, a despawn probe                  | `regions.md`        |
 
 ## Top traps (one line each)
 
