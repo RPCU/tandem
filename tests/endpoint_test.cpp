@@ -1951,7 +1951,10 @@ TEST_CASE("throws: each copy everywhere but the thrower's game; defences to the 
   heard.clear();
   // a throws a grenade (in someone else's name: stamped) and it explodes;
   // the host throws a knife; a parries NPC 7, and the host cannot.
+  // (and says where it is as it flies: its copies' path.)
   CHECK(a->SendCombat(proto::Throw{.player = 99, .id = 1, .kind = proto::ThrowKind::Grenade}));
+  CHECK(a->SendCombat(
+      proto::ThrowPath{.player = 99, .id = 1, .position = {1, 2, 3}, .velocity = {0, 4, 3}}));
   CHECK(a->SendCombat(proto::ThrowEnd{.id = 1, .how = proto::ThrowEndKind::Exploded}));
   CHECK(host->SendCombat(proto::Throw{.id = 5, .kind = proto::ThrowKind::Knife}));
   CHECK(a->SendCombat(proto::Defended{.npc = 7, .how = proto::DefendKind::Parried}));
@@ -1966,21 +1969,24 @@ TEST_CASE("throws: each copy everywhere but the thrower's game; defences to the 
   constexpr std::type_identity<proto::Throw> kThrow;
   constexpr std::type_identity<proto::ThrowEnd> kEnd;
   constexpr std::type_identity<proto::Defended> kDefended;
-  // The host: a's grenade and its end, a's parry; never its own knife.
+  constexpr std::type_identity<proto::ThrowPath> kPath;
+  // The host: a's grenade, its path and its end, a's parry; never its own knife.
   CHECK(count(0, kThrow, a->You()) == 1);
+  CHECK(count(0, kPath, a->You()) == 1);
   CHECK(count(0, kEnd, a->You()) == 1);
   CHECK(count(0, kDefended, a->You()) == 1);
   CHECK(count(0, kThrow, host->You()) == 0);
-  CHECK(heard[0].size() == 3);
+  CHECK(heard[0].size() == 4);
   // a: the host's knife only (its own grenade is its game's).
   CHECK(count(1, kThrow, host->You()) == 1);
   CHECK(heard[1].size() == 1);
-  // b: a's grenade and its end, the host's knife; no parry.
+  // b: a's grenade, its path and its end, the host's knife; no parry.
   CHECK(count(2, kThrow, a->You()) == 1);
+  CHECK(count(2, kPath, a->You()) == 1);
   CHECK(count(2, kEnd, a->You()) == 1);
   CHECK(count(2, kThrow, host->You()) == 1);
   CHECK(count(2, kDefended, a->You()) == 0);
-  CHECK(heard[2].size() == 3);
+  CHECK(heard[2].size() == 4);
 }
 
 namespace {

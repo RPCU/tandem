@@ -40,6 +40,22 @@ std::uint64_t MeleeHoldUs(std::uint64_t proxyDelayUs, std::uint64_t transitUs);
 // landed (its end, when it comes, finds no copy).
 inline constexpr std::uint64_t kThrowStaleUs = 1'000'000;
 
+// A copy of a thrown object against the real one's word (proto::ThrowPath).
+// The two fly the same arc from the same launch, so the copy is left alone
+// while it is within kThrowPathSlack of where the real one says it is (the
+// link's jitter at a throw's speed is well under it). Beyond it the copy
+// bounced off something the thrower's game does not have (or the reverse):
+// it is put on the real one's path, flying on from there (Relaunch), or laid
+// where the real one lies still (Place).
+inline constexpr float kThrowPathSlack = 1.5f; // m, in flight
+inline constexpr float kThrowRestSlack = 0.4f; // m, lying still
+inline constexpr float kThrowRestSpeed = 0.5f; // m/s: below it, it lies still
+enum class PathFix : std::uint8_t { None = 0, Place = 1, Relaunch = 2 };
+PathFix FollowPath(const proto::Vec3 &copy, const proto::ThrowPath &real);
+// A path sample older than this is not applied (a stall): the next one, or
+// the throw's end, says where it is.
+inline constexpr std::uint64_t kThrowPathStaleUs = 300'000;
+
 // The session's rules (proto::Rules).
 inline bool FriendlyFire(const proto::Rules &rules) {
   return (rules.flags & proto::kRuleFriendlyFire) != 0;

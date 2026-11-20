@@ -477,6 +477,12 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Activities-WaitingFor", "Waiting for {1}...");
     this.Text("Tandem-Activities-Photo", "{1} is in photo mode");
     this.Text("Tandem-Activities-Back", "{1} is back");
+    this.Text("Tandem-Contest-Duel", "{1} is in a fist fight: you can only watch");
+    this.Text("Tandem-Contest-Race", "{1} is in a race");
+    this.Text("Tandem-Contest-Range", "{1} is in a shooting contest");
+    this.Text("Tandem-Contest-Other", "{1} is in a contest");
+    this.Text("Tandem-Contest-Over", "{1}'s contest is over");
+    this.Text("Tandem-Contest-WatchOnly", "This is {1}'s fight: your hits don't count");
     this.Text("Tandem-Activities-CantNow", "{1} can't skip time right now");
     this.Text("Tandem-Activities-Declined", "{1} declined");
     this.Text("Tandem-Activities-NoAnswer", "{1} didn't answer");
@@ -842,6 +848,12 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Activities-WaitingFor", "En attente de {1}...");
     this.Text("Tandem-Activities-Photo", "{1} est en mode photo");
     this.Text("Tandem-Activities-Back", "{1} est de retour");
+    this.Text("Tandem-Contest-Duel", "{1} est en plein combat à mains nues : vous ne pouvez que regarder");
+    this.Text("Tandem-Contest-Race", "{1} fait une course");
+    this.Text("Tandem-Contest-Range", "{1} participe à un concours de tir");
+    this.Text("Tandem-Contest-Other", "{1} participe à une épreuve");
+    this.Text("Tandem-Contest-Over", "L'épreuve de {1} est terminée");
+    this.Text("Tandem-Contest-WatchOnly", "C'est le combat de {1} : vos coups ne comptent pas");
     this.Text("Tandem-Activities-CantNow", "{1} ne peut pas passer le temps pour l'instant");
     this.Text("Tandem-Activities-Declined", "{1} a refusé");
     this.Text("Tandem-Activities-NoAnswer", "{1} n'a pas répondu");

@@ -48,6 +48,9 @@ public:
     std::uint64_t rateWindowUs{3'000'000};
     float playerStateHz{80.f}, poseHz{80.f}, vehicleHz{80.f}, shotHz{60.f};
     float npcStatesHz{30.f}, awarenessHz{15.f}, digestHz{3.f}, pingHz{6.f};
+    // A V's noises (each kind gated by its game, footsteps to 4 a second)
+    // and its thrown objects' paths (4 a second an object in flight).
+    float noiseHz{40.f}, throwPathHz{24.f};
     float eventsHz{400.f};      // every reliable message together (hint)
     float bytesPerSecond{2e5f}; // everything together (hint)
     // At the game's digests (3 s); Attach raises it for an endpoint whose

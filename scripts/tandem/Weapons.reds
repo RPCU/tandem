@@ -13,13 +13,17 @@ protected final func OnEnter(stateContext: ref<StateContext>, scriptInterface: r
     if IsDefined(weapon) {
       // gamedataFxAction: Shoot 16, SilencedShoot 17
       TandemNative.SendShot(false, weapon.IsSilenced() ? 17 : 16);
-      // Where it ended: the others draw the bullet (Presence.reds).
-      TandemPresenceSync.ShotFired(scriptInterface.executionOwner, weapon, false);
       // A smart weapon's round homes on its lock on the others' games too
       // (Throws.reds); in a session only.
+      let guided = false;
       let throws = TandemThrows.Of(scriptInterface.executionOwner.GetGame());
       if IsDefined(throws) && Equals(RPGManager.GetWeaponEvolution(weapon.GetItemID()), gamedataWeaponEvolution.Smart) {
-        throws.OnOurSmartShot(weapon);
+        guided = throws.OnOurSmartShot(weapon);
+      }
+      // Any other shot, and a smart round with no lock the others know:
+      // where it ended, for the others to draw the bullet (Presence.reds).
+      if !guided {
+        TandemPresenceSync.ShotFired(scriptInterface.executionOwner, weapon, false);
       }
     }
   }

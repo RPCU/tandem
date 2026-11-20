@@ -58,6 +58,24 @@ TEST_CASE("a received activity says only what it can mean") {
   auto bare = activity::Sanitized({.kind = ActivityKind::Screen, .entry = 3, .anim = 8});
   CHECK(bare.entry == 0);
   CHECK(bare.anim == 0);
+  // A contest keeps its sort (in `entry`) and its opponent (in `device`),
+  // names no workspot and holds nobody; an unknown sort is some other one.
+  auto duel = activity::Sanitized({.player = 2,
+                                   .kind = ActivityKind::Contest,
+                                   .flags = proto::kActivityAnchored | proto::kActivityFrozen,
+                                   .device = 7,
+                                   .workspot = 4,
+                                   .entry = static_cast<std::uint32_t>(proto::ContestSort::Duel),
+                                   .anim = 8,
+                                   .anchor = {1, 2, 3},
+                                   .yaw = 1.f});
+  CHECK(duel == proto::Activity{.player = 2,
+                                .kind = ActivityKind::Contest,
+                                .device = 7,
+                                .entry = static_cast<std::uint32_t>(proto::ContestSort::Duel)});
+  CHECK(activity::Sanitized({.kind = ActivityKind::Contest, .entry = 99}).entry ==
+        static_cast<std::uint32_t>(proto::ContestSort::Other));
+  CHECK(activity::Sanitized({.kind = ActivityKind::Contest, .entry = 3}).entry == 3);
 }
 
 TEST_CASE("the time skip arbiter: every other player says yes, or nothing moves") {

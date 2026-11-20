@@ -14,6 +14,9 @@
 // grenade marker on the HUD, its smoke's vision blocker and its stimuli,
 // which on the host are what its NPCs see and hear of a guest's grenade.
 // A copy's fuse is held: it explodes when the real one did, where it did.
+// A grenade's path is said as it flies (proto::ThrowPath, four times a
+// second): a copy that strayed from it (it bounced off something one game
+// alone has) is put back on the real one's path.
 //
 // The host also sends its NPCs' grenades (kThrowByNpc), launched on the
 // guests from the NPC's proxy: the damage is the host's (PlayerHit).
@@ -46,6 +49,18 @@ public class TandemThrowCopy {
   public let endAt: Vector4;
 }
 
+// One of our real objects in flight, for its path (ThrowPath).
+public class TandemThrowTrack {
+  // Whether its path is said at all (grenades: what bounces and rolls).
+  public let says: Bool;
+  public let lastPosition: Vector4;
+  public let lastAt: Float;
+  public let saidAt: Float;
+  // It lay still when last said.
+  public let resting: Bool;
+  public let said: Int32;
+}
+
 public class TandemThrows {
   private let m_game: GameInstance;
   // Ours: the real objects in flight and their numbers.
@@ -53,6 +68,9 @@ public class TandemThrows {
   private let m_ours: array<wref<ItemObject>>;
   private let m_ourIds: array<Uint32>;
   private let m_ourStuck: array<Bool>;
+  private let m_ourTracks: array<ref<TandemThrowTrack>>;
+  private let m_pathsSaid: Int32;
+  private let m_pathsFixed: Int32;
   // Ours whose launch velocity the game did not give: measured over the
   // first frames (where it was, when).
   private let m_measuring: array<ref<TandemThrowCopy>>;
@@ -180,6 +198,7 @@ public class TandemThrows {
     ArrayPush(this.m_ours, object);
     ArrayPush(this.m_ourIds, copy.id);
     ArrayPush(this.m_ourStuck, false);
+    ArrayPush(this.m_ourTracks, this.Track(object, copy.kind, copy.since));
     if Vector4.Length(velocity) < 0.5 {
       // The game gave no velocity: measured over the next frames.
       ArrayPush(this.m_measuring, copy);
@@ -204,6 +223,7 @@ public class TandemThrows {
     ArrayPush(this.m_ours, object);
     ArrayPush(this.m_ourIds, copy.id);
     ArrayPush(this.m_ourStuck, false);
+    ArrayPush(this.m_ourTracks, this.Track(object, copy.kind, copy.since));
     if Vector4.Length(velocity) < 0.5 {
       ArrayPush(this.m_measuring, copy);
       ArrayPush(this.m_measuringObject, object);
@@ -212,25 +232,77 @@ public class TandemThrows {
     this.SendOurs(copy);
   }
 
+  private func Track(object: ref<ItemObject>, kind: Int32, now: Float) -> ref<TandemThrowTrack> {
+    let track = new TandemThrowTrack();
+    track.says = kind == TandemThrows.GrenadeKind();
+    track.lastPosition = object.GetWorldPosition();
+    track.lastAt = now;
+    track.saidAt = now;
+    return track;
+  }
+
+  // proto::kThrowPathHz: a path sample this often while it flies.
+  public static func PathGap() -> Float {
+    return 0.25;
+  }
+
+  // Every frame: where each of our grenades is and how it moves, said
+  // every PathGap while it flies, once more when it lies still. (Not at
+  // each bounce: a projectile's OnCollision may run on a job thread, and a
+  // bounce shows in the next sample anyway.)
+  private func SayPaths(now: Float) -> Void {
+    let i = 0;
+    while i < ArraySize(this.m_ours) {
+      let object = this.m_ours[i];
+      let track = this.m_ourTracks[i];
+      if IsDefined(object) && track.says && !this.m_ourStuck[i] && now - track.lastAt >= 0.04 {
+        let at = object.GetWorldPosition();
+        let velocity = (at - track.lastPosition) / (now - track.lastAt);
+        track.lastPosition = at;
+        track.lastAt = now;
+        let still = Vector4.Length(velocity) < 0.5;
+        let due = now - track.saidAt >= TandemThrows.PathGap();
+        // Lying still is said once; a throw measured at 300 m/s moved by a
+        // teleport, not by flying.
+        if due && !(still && track.resting) && Vector4.Length(velocity) < 300.0 {
+          if still {
+            velocity = new Vector4(0.0, 0.0, 0.0, 0.0);
+          }
+          TandemFight.SendThrowPath(this.m_ourIds[i], at, velocity);
+          track.saidAt = now;
+          track.resting = still;
+          track.said += 1;
+          this.m_pathsSaid += 1;
+          if track.said == 1 {
+            TandemNative.LogDebug(s"throws: our throw \(this.m_ourIds[i])'s path is said as it flies (\(Vector4.Length(velocity)) m/s now)");
+          }
+        }
+      }
+      i += 1;
+    }
+  }
+
   private func SendOurs(copy: ref<TandemThrowCopy>) -> Void {
     TandemFight.SendThrow(copy.id, copy.kind, copy.flags, copy.item, copy.origin, copy.velocity, copy.npc, copy.at);
     this.Once(n"ours", s"throws: our throw \(copy.id) (kind \(copy.kind), flags \(copy.flags), \(TDBID.ToStringDEBUG(copy.item))) sent, at \(Vector4.Length(copy.velocity)) m/s");
   }
 
   // Our smart weapon fired: the round homes on what it is locked on, on the
-  // others' games too (the shot's flash and sound go as a Shot).
-  public func OnOurSmartShot(weapon: ref<WeaponObject>) -> Void {
+  // others' games too (the shot's flash and sound go as a Shot). False: no
+  // lock the others know (nothing locked, or an NPC they do not share): the
+  // round is drawn as a plain one, to where it was aimed (Presence.reds).
+  public func OnOurSmartShot(weapon: ref<WeaponObject>) -> Bool {
     let player = GetPlayer(this.m_game);
     if !IsDefined(player) || !IsDefined(weapon) {
-      return;
+      return false;
     }
     let board = GameInstance.GetBlackboardSystem(this.m_game).Get(GetAllBlackboardDefs().UI_ActiveWeaponData);
     if !IsDefined(board) {
-      return;
+      return false;
     }
     let smart = FromVariant<ref<smartGunUIParameters>>(board.GetVariant(GetAllBlackboardDefs().UI_ActiveWeaponData.SmartGunParams));
     if !IsDefined(smart) {
-      return;
+      return false;
     }
     let chosen: wref<GameObject>;
     for target in smart.targets {
@@ -245,12 +317,13 @@ public class TandemThrows {
     let npc = TandemThrows.NpcOf(this.m_game, chosen);
     let at = npc == 0u ? TandemThrows.PlayerOf(this.m_game, chosen) : 0u;
     if npc == 0u && at == 0u {
-      return; // nothing locked that the others know: the Shot alone
+      return false; // nothing locked that the others know
     }
     let forward = GameInstance.GetCameraSystem(this.m_game).GetActiveCameraForward();
     TandemFight.SendThrow(this.m_next, TandemThrows.SmartKind(), TandemThrows.HomingFlag(), ItemID.GetTDBID(weapon.GetItemID()), weapon.GetWorldPosition(), forward, npc, at);
     this.m_next += 1u;
     this.Once(n"smart", s"throws: our smart round at npc \(npc) / player \(at) sent");
+    return true;
   }
 
   // Our real object ended (how: 0 exploded, 1 stuck, 2 gone).
@@ -273,6 +346,7 @@ public class TandemThrows {
     ArrayErase(this.m_ours, i);
     ArrayErase(this.m_ourIds, i);
     ArrayErase(this.m_ourStuck, i);
+    ArrayErase(this.m_ourTracks, i);
   }
 
   public func IsOurObject(object: ref<ItemObject>) -> Bool {
@@ -343,6 +417,37 @@ public class TandemThrows {
     }
   }
 
+  // Where the real one is now (ThrowPath): a copy that strayed from it is
+  // put on its path (TandemFight.PathFix: left alone within 1.5 m in flight,
+  // 0.4 m lying still).
+  public func OnPath(event: TandemFightEvent) -> Void {
+    for copy in this.m_copies {
+      if copy.player == event.player && copy.id == event.id {
+        let grenade = copy.object as BaseGrenade;
+        if !IsDefined(grenade) || copy.ended {
+          return;
+        }
+        let at = new Vector4(event.x, event.y, event.z, 1.0);
+        let velocity = new Vector4(event.dx, event.dy, event.dz, 0.0);
+        let here = grenade.GetWorldPosition();
+        let fix = TandemFight.PathFix(here, at, velocity);
+        if fix != 0 {
+          let record = TweakDBInterface.GetGrenadeRecord(copy.item);
+          let gravity = IsDefined(record) && IsDefined(record.DeliveryMethod()) ? record.DeliveryMethod().AccelerationZ() : -9.8;
+          grenade.TandemFollow(at, velocity, gravity, fix == 2);
+          this.m_pathsFixed += 1;
+          TandemNative.Log(s"throws: player \(copy.player)'s throw \(copy.id) was \(Vector4.Distance(here, at)) m off the real one's path: put on it (\(fix == 2 ? "flying on" : "lying still"))");
+        }
+        return;
+      }
+    }
+  }
+
+  // tools/game.sh cmd throws report
+  public func Report() -> Void {
+    TandemNative.Log(s"throws: ours in flight \(ArraySize(this.m_ours)), path samples said \(this.m_pathsSaid); copies here \(ArraySize(this.m_copies)), put back on their real path \(this.m_pathsFixed); stale throws dropped \(TandemFight.StaleThrows())");
+  }
+
   // The thrower's body here: a puppet, or (kThrowByNpc) the NPC's proxy.
   private func ThrowerOf(copy: ref<TandemThrowCopy>) -> ref<GameObject> {
     if (copy.flags & TandemThrows.ByNpcFlag()) != 0 {
@@ -356,6 +461,7 @@ public class TandemThrows {
   public func Tick() -> Void {
     let now = this.Now();
     this.Measure(now);
+    this.SayPaths(now);
     let i = 0;
     while i < ArraySize(this.m_copies) {
       let copy = this.m_copies[i];
@@ -604,6 +710,7 @@ public class TandemThrows {
     ArrayClear(this.m_ours);
     ArrayClear(this.m_ourIds);
     ArrayClear(this.m_ourStuck);
+    ArrayClear(this.m_ourTracks);
     ArrayClear(this.m_measuring);
     ArrayClear(this.m_measuringObject);
     ArrayClear(this.m_copies);
@@ -668,6 +775,31 @@ protected final func Release(opt isInstant: Bool) {
     throws.OnOurEnd(this, 2);
   }
   wrappedMethod(isInstant);
+}
+
+// A copy that strayed from the real one's path: put where the real one is,
+// flying on from there the real one's way (a parabola of its speed, as it
+// was launched: TandemThrows.LaunchGrenade), or lying still.
+@addMethod(BaseGrenade)
+public func TandemFollow(at: Vector4, velocity: Vector4, gravity: Float, flying: Bool) -> Void {
+  if !this.m_isAlive {
+    return;
+  }
+  let speed = Vector4.Length(velocity);
+  let way = speed > 0.01 ? velocity / speed : this.GetWorldForward();
+  let facing = Quaternion.BuildFromDirectionVector(way);
+  this.m_projectileComponent.ClearTrajectories();
+  GameInstance.GetTeleportationFacility(this.GetGame()).Teleport(this, at, Quaternion.ToEulerAngles(facing));
+  if !flying {
+    return;
+  }
+  // The trajectory starts from the component's desired transform
+  // (ProjectileComponent.SetDesiredTransform, as a homing miss does).
+  let from: Transform; // assigned on every path: position and orientation set below
+  Transform.SetPosition(from, at);
+  Transform.SetOrientation(from, facing);
+  this.m_projectileComponent.SetDesiredTransform(from);
+  this.m_projectileComponent.AddParabolic(ParabolicTrajectoryParams.GetAccelVelParabolicParams(new Vector4(0.0, 0.0, gravity, 0.0), speed));
 }
 
 // A copy's end: where the real one ended, as it ended.

@@ -189,6 +189,7 @@ TANDEM_SAID_BY(Either, TrafficHandoverDone)
 TANDEM_SAID_BY(Either, QuestInteract)
 TANDEM_SAID_BY(Either, Fracture)
 TANDEM_SAID_BY(Either, DeviceFire)
+TANDEM_SAID_BY(Either, ThrowPath)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -318,7 +319,7 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::Breach> ||
                            std::is_same_v<M, p::StatusVisuals> ||
                            std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
-                           std::is_same_v<M, p::DeviceFire>)
+                           std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath>)
           return &m.player;
         else
           return nullptr;
@@ -777,6 +778,14 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           timeUs = m.timeUs;
           // A device is named; a shot is stamped (the host clock).
           inRange = m.entity != 0 && (m.kind != p::DeviceFireKind::Shot || m.timeUs != 0);
+        } else if constexpr (std::is_same_v<M, p::ThrowPath>) {
+          // Nothing thrown flies faster than a launcher's round.
+          finite = Finite(m.position) && Finite(m.velocity);
+          inRange = !finite || (std::abs(m.velocity.x) <= 400.f &&
+                                std::abs(m.velocity.y) <= 400.f && std::abs(m.velocity.z) <= 400.f);
+        } else if constexpr (std::is_same_v<M, p::Noise>) {
+          finite = std::isfinite(m.radius);
+          inRange = !finite || (m.radius >= 0.f && m.stim < 65);
         }
       },
       message);
@@ -832,6 +841,10 @@ void Referee::CheckRate(p::PlayerId from, const p::Message &message, std::size_t
     budget = limits.digestHz;
   else if (std::holds_alternative<p::Ping>(message))
     budget = limits.pingHz;
+  else if (std::holds_alternative<p::Noise>(message))
+    budget = limits.noiseHz;
+  else if (std::holds_alternative<p::ThrowPath>(message))
+    budget = limits.throwPathHz;
   if (budget > 0.f) {
     // A relayed player's states count against that player.
     auto copy = message;

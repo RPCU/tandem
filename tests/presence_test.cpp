@@ -110,6 +110,93 @@ TEST_SUITE("presence") {
     CHECK(put.heard.empty());
   }
 
+  TEST_CASE("swimming is heard: into the water, strokes, under, back up, out") {
+    using movement::Swim;
+    Walk swim;
+    swim.For(1.f, 1.5f, Flags(Detailed::Stand));
+    swim.heard.clear();
+    // Into the water, then 5 s on the surface at 1.5 m/s: a stroke a second.
+    swim.For(5.f, 1.5f, Flags(Detailed::Stand, Swim::Surface));
+    REQUIRE(!swim.heard.empty());
+    CHECK(swim.heard.front() == Event{Kind::WaterEnter, 0});
+    CHECK(swim.Count(Kind::WaterEnter) == 1);
+    CHECK(swim.Count(Kind::Stroke) >= 4);
+    CHECK(swim.Count(Kind::Stroke) <= 5);
+    CHECK(swim.Count(Kind::Step) == 0);
+    CHECK(swim.heard.back() == Event{Kind::Stroke, 0});
+    // Under: once, and its strokes are a dive's.
+    swim.heard.clear();
+    swim.For(3.f, 1.f, Flags(Detailed::Stand, Swim::Diving), false, -0.5f);
+    CHECK(swim.Count(Kind::Dive) == 1);
+    CHECK(swim.Count(Kind::Stroke) >= 2);
+    CHECK(swim.heard.back() == Event{Kind::Stroke, presence::kStrokeDiving});
+    CHECK(swim.observer.Swimming() == Swim::Diving);
+    // Back up, then out (climbing out is out): each once, then footsteps.
+    swim.heard.clear();
+    swim.For(0.5f, 1.f, Flags(Detailed::Stand, Swim::Surface), false, 1.f);
+    swim.For(0.5f, 1.f, Flags(Detailed::Stand, Swim::Climbing));
+    swim.For(3.f, 1.5f, Flags(Detailed::Stand));
+    CHECK(swim.Count(Kind::Surface) == 1);
+    CHECK(swim.Count(Kind::WaterExit) == 1);
+    CHECK(swim.Count(Kind::WaterEnter) == 0);
+    CHECK(swim.Count(Kind::Step) >= 3);
+  }
+
+  TEST_CASE("swimming fast strokes faster, treading water makes none, a late joiner no splash") {
+    using movement::Swim;
+    Walk fast;
+    fast.For(0.1f, 0.f, Flags(Detailed::Stand));
+    fast.For(6.f, 4.f, Flags(Detailed::Stand, Swim::Surface));
+    CHECK(fast.Count(Kind::Stroke) >= 8);
+    CHECK(fast.heard.back() == Event{Kind::Stroke, presence::kStrokeFast});
+
+    Walk still;
+    still.For(0.1f, 0.f, Flags(Detailed::Stand));
+    still.For(5.f, 0.f, Flags(Detailed::Stand, Swim::Surface));
+    CHECK(still.Count(Kind::WaterEnter) == 1);
+    CHECK(still.Count(Kind::Stroke) == 0);
+
+    // First seen already under the surface: its water, quietly.
+    Walk late;
+    late.For(2.f, 0.f, Flags(Detailed::Stand, Swim::Diving));
+    REQUIRE(late.heard.size() == 1);
+    CHECK(late.heard[0] ==
+          Event{Kind::WaterEnter,
+                static_cast<std::uint8_t>(presence::kWaterQuiet | presence::kWaterUnder)});
+
+    // A mock player that fills no flags never swims.
+    Walk plain;
+    plain.For(3.f, 1.5f, 0);
+    CHECK(plain.Count(Kind::WaterEnter) == 0);
+    CHECK(plain.Count(Kind::Stroke) == 0);
+  }
+
+  TEST_CASE("a V's movement noise goes out a few times a second, other noises ten") {
+    presence::NoiseGate gate;
+    std::uint64_t now = 5'000'000;
+    int steps = 0, shots = 0, landings = 0;
+    // One second of a run: a footstep every frame, as vanilla broadcasts
+    // them, the sprint's among them; a gunshot every frame too.
+    for (int frame = 0; frame < 60; ++frame, now += 16'667) {
+      steps += gate.ShouldSend(
+          frame % 2 ? presence::kStimFootStepRegular : presence::kStimFootStepSprint, now);
+      shots += gate.ShouldSend(28, now);
+    }
+    CHECK(steps == 4);
+    CHECK(shots == 10);
+    // A landing is its own noise, at once, whatever the footsteps did.
+    landings += gate.ShouldSend(presence::kStimLandingHard, now);
+    landings += gate.ShouldSend(presence::kStimLandingRegular, now);
+    landings += gate.ShouldSend(presence::kStimLandingHard, now + 1000);
+    CHECK(landings == 2);
+    CHECK_FALSE(gate.ShouldSend(200, now)); // not a stimulus
+    CHECK(presence::IsMovementNoise(presence::kStimFootStepSprint));
+    CHECK(presence::IsMovementNoise(presence::kStimLandingVeryHard));
+    CHECK_FALSE(presence::IsMovementNoise(28));
+    gate.Reset();
+    CHECK(gate.ShouldSend(presence::kStimFootStepRegular, now));
+  }
+
   TEST_CASE("the first step after standing comes within a stride") {
     Walk walk;
     walk.For(1.f, 0.f, Flags(Detailed::Stand));

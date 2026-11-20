@@ -1401,6 +1401,8 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
       return;
     if (const auto *end = std::get_if<proto::ThrowEnd>(&message); end && end->player == m_you)
       return;
+    if (const auto *path = std::get_if<proto::ThrowPath>(&message); path && path->player == m_you)
+      return;
     // The difficulty and the rules are state: kept for the digests, said once.
     if (const auto *difficulty = std::get_if<proto::Difficulty>(&message)) {
       if (m_difficulty == *difficulty)
@@ -3765,6 +3767,12 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     out.push_back(events::Combat{mine});
     if (const auto peer = PeerOf(player))
       Broadcast(mine, *peer);
+  } else if (const auto *path = std::get_if<proto::ThrowPath>(&message)) {
+    auto mine = *path;
+    mine.player = player;
+    out.push_back(events::Combat{mine});
+    if (const auto peer = PeerOf(player))
+      Broadcast(mine, *peer);
   } else if (const auto *defended = std::get_if<proto::Defended>(&message)) {
     // For the attacker's owner: our game, or passed on.
     auto mine = *defended;
@@ -4055,6 +4063,14 @@ bool Endpoint::SendCombat(proto::Message message) {
   }
   if (auto *end = std::get_if<proto::ThrowEnd>(&message)) {
     end->player = m_you;
+    if (IsHost())
+      Broadcast(message);
+    else
+      Send(m_hostPeer, message);
+    return true;
+  }
+  if (auto *path = std::get_if<proto::ThrowPath>(&message)) {
+    path->player = m_you;
     if (IsHost())
       Broadcast(message);
     else
