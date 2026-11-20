@@ -554,6 +554,8 @@ ensure() {
   now=$(stamp)
   started=$(remote "cat '$dir/red4ext/plugins/tandem/.started' 2>/dev/null" || true)
   local current_role
+  # Not installed yet: the first deploy brings tandem and its tandem.ini.
+  remote "[ -e '$dir/red4ext/plugins/tandem/tandem.ini' ]" || deploy
   current_role=$(remote "sed -n 's/^role *= *//p' '$dir/red4ext/plugins/tandem/tandem.ini'")
   if [ "$current_role" != "$role_name" ] || [ "${started#* }" != "$want" ]; then
     role "$role_name" >/dev/null

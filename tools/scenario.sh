@@ -68,7 +68,7 @@ dir=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
 remote() { ssh "$host" "$@"; }
 
 # The game log's lines since the mark (its file and line count at the start).
-mark_file='' mark_line=0 referee_from=0
+mark_file='' mark_line=0 referee_from=0 peer_mark=0
 mark() {
   read -r mark_file mark_line < <(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); echo \"\$f \$(wc -l < \"\$f\")\"")
   peer_mark=$(wc -l <.cache/peer.log 2>/dev/null || echo 0)
