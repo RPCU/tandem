@@ -188,7 +188,7 @@ tasks:
     desc: Run the relay locally, open to any host (testing only)
     dir: relay
     cmds:
-      - go run ./cmd/tandem-relay serve --allow-any-host {{.CLI_ARGS}}
+      - go run ./cmd/tandem-relay serve --allow-any-host --expect-public-clients=false {{.CLI_ARGS}}
 
   relay:image:
     desc: Build the relay's OCI image with Nix (result-relay-image)
