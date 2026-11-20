@@ -10,6 +10,8 @@ add_library(tandem_core STATIC
   src/relay.cpp
   src/consistency.cpp
   src/endpoint.cpp
+  src/session_event.cpp
+  src/session_event_make.cpp
   src/endpoint_regions.cpp
   src/story.cpp
   src/carryover.cpp
