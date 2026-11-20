@@ -265,3 +265,52 @@ Tags as in §13.30. Line numbers: the 2.50 `final.reds`.
      comes back (`objects: … echo(es)`).
   5. That an NPC or V beside a replayed break takes no damage and is not
      staggered.
+
+#### A turret's fire
+
+- `SecurityTurret` (171182, a `SensorDevice`) holds its weapon in
+  `AttachmentSlots.WeaponRight` (`GiveWeaponToTurret`, 171366:
+  `Items.w_special_flak` unless its state names another). A locked target
+  (`OnTargetLocked`, 171425) starts `ShootStart` (171475), which sets the
+  anim feature `SecurityTurretData.Shoot` and runs `ShootAttachedWeapon`
+  (171530): `AIWeapon.Fire(this, weapon, simTime, 1.0, trigger, the
+target's position, the target, …)`, the anim event `Shoot`, the effect
+  `GetVfxNameOnShoot()`, then the next shot by a delayed event
+  (`TurretShootingIntervalEvent`) or after a burst's pause
+  (`TurretBurstShootingDelayEvent` → `ShootStart`). `ShootStop` (171492)
+  ends it. A player-controlled turret fires with the player as owner
+  (171608). The `SniperNest` (155212) fires as its player only.
+  [2.5-untested]
+- Targets (`SensorDevice`, 150628): a sensed object is recognized
+  (`RecognizeTarget`, 151700, private) and is interesting when the
+  security system says so (`ShouldReactToTarget`, 114173: its attitude
+  group's relation to the target's, blacklists, areas) or, with no system,
+  when the device is hostile to it; `RecognizeTarget(x, true)` (a quest's
+  forced target) is interesting whatever they say. The followed target is
+  `GetCurrentlyFollowedTarget()` (151041); `OnCurrentTargetAppears`
+  (151273, overridden at 171407) starts the lock; `LoseTarget(x, true)`
+  (151760) lets one go. Sensing treats the local player apart
+  (`OnDetectionRiseEvent`, 151470; `OnSecuritySystemSupport`, 151817).
+  [2.5-untested]
+- Aim is two look-ats (`CreateLookAt`, 152183, private: the vertical and
+  horizontal presets of its state) on an entity's `Chest` slot or on a
+  place (a metre is added to a place, 152207), with the anim feature's
+  `state = 0` (1: its idle sweep). [2.5-untested]
+- A puppet of a remote V has its own attitude group, a copy of the
+  player's with no relation records (§13.17): a security system reads it
+  friendly by group, so the host's turret does not take a puppet on its own
+  _(inferred)_; hence the forced target.
+- To verify in game (`tools/game.sh cmd turret …`, scenarios `turret-host`,
+  `turret-guest`):
+  1. `turret aim` and `turret shot` on a copy: it turns, one tracer leaves
+     its barrels, nothing takes damage.
+  2. As a guest in sight of a hostile turret: the copy locks V and stays
+     silent until the host's shots; V's health then falls by our own
+     game's hits; no shot before the host's word.
+  3. As a host: `turret engage` (and a real guest's `Seen`): the turret
+     turns to the puppet and fires; the puppet's player is hurt by its own
+     copy's shots only; our turret lets go on `Lost`.
+  4. The wraps of the private `ShootStart` and `CreateLookAt` take (scc
+     compiles them; that the game calls the wrapped ones is to see).
+  5. A friendly-turned turret: no copy locks a V; its shots at NPCs are
+     drawn on the guests.
