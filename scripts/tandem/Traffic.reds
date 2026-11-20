@@ -111,10 +111,16 @@ public class TandemTraffic {
   // Rams already told, by body: one hit per contact, not one per frame.
   private let m_ramBodies: array<EntityID>;
   private let m_ramAt: array<Float>;
-  private let m_ownLeft: Int32;
   // Hand-overs so far (the report).
   private let m_given: Int32;
   private let m_taken2: Int32;
+  // The overlap (regions.md §6): our crowd cars inside a higher-ranked
+  // linked player's region are held back (not announced while in there);
+  // how many now, and the ones asked to despawn (overlap_despawn).
+  private let m_heldBack: Int32;
+  private let m_despawnAsked: array<EntityID>;
+  private let m_despawn: Bool;
+  private let m_despawnRead: Bool;
 
   public static func ShareRange() -> Float {
     return 120.0;
@@ -211,6 +217,8 @@ public class TandemTraffic {
     ArrayClear(this.m_missingSince);
     ArrayClear(this.m_ramBodies);
     ArrayClear(this.m_ramAt);
+    ArrayClear(this.m_despawnAsked);
+    this.m_heldBack = 0;
     this.m_next = 1u;
   }
 
@@ -829,18 +837,8 @@ public class TandemTraffic {
       this.Retire(car);
       TandemNative.Log(s"street: check: vehicle \(car.id) is no longer shared: proxy removed");
     }
-    // Our own crowd's vehicles where another game runs the street: counted
-    // for the log (the crowd switch thins them, nothing removes them).
-    let left = 0;
-    for vehicle in this.m_live {
-      if IsDefined(vehicle) && vehicle.IsCrowdVehicle() && !IsDefined(this.FindBody(vehicle.GetEntityID())) {
-        left += 1;
-      }
-    }
-    if left != this.m_ownLeft && !TandemArea.Owns() {
-      this.m_ownLeft = left;
-      TandemNative.Log(s"street: \(left) crowd vehicle(s) of our own world around, \(ArraySize(this.m_cars)) shared");
-    }
+    // (Our own crowd's vehicles where another game runs the street are
+    // held back and counted in Share.)
   }
 
   // ---- ours: share the vehicles around the players ----
@@ -890,12 +888,21 @@ public class TandemTraffic {
     // New ones only where our game runs the area around our V (deep in a
     // higher-ranked player's region, its game announces the street).
     let live: array<wref<VehicleObject>>;
+    let heldBack = 0;
     for vehicle in this.m_live {
       if IsDefined(vehicle) {
         ArrayPush(live, vehicle);
         let body = vehicle.GetEntityID();
-        if owns && !away && !IsDefined(this.FindBody(body)) && this.Eligible(vehicle, body, entities) && ArraySize(this.m_cars) < TandemTraffic.MaxShared() {
-          let at = vehicle.GetWorldPosition();
+        let at = vehicle.GetWorldPosition();
+        // A car of our own crowd inside a higher-ranked linked player's
+        // region: that game runs the street there. Ours is held back (it
+        // is announced once it has driven out, if we run our area then).
+        let held = !away && !IsDefined(this.FindBody(body)) && this.HeldBack(vehicle, body, at, owns, entities);
+        if held {
+          heldBack += 1;
+          this.AskDespawn(vehicle, body);
+        }
+        if owns && !held && !away && !IsDefined(this.FindBody(body)) && this.Eligible(vehicle, body, entities) && ArraySize(this.m_cars) < TandemTraffic.MaxShared() {
           if TandemTraffic.Nearest(at, viewers) <= TandemTraffic.ShareRange() {
             let known = new TandemCar();
             known.id = TandemStreet.MakeId(this.m_you, this.m_next);
@@ -920,6 +927,10 @@ public class TandemTraffic {
       }
     }
     this.m_live = live;
+    if heldBack != this.m_heldBack {
+      this.m_heldBack = heldBack;
+      TandemNative.Log(s"street: \(heldBack) crowd vehicle(s) of our own held back (inside a higher-ranked player's region)");
+    }
     let kept: array<ref<TandemCar>>;
     for car in this.m_cars {
       if !car.mine || car.seen {
@@ -935,6 +946,51 @@ public class TandemTraffic {
     if ArraySize(ids) > 0 {
       TandemStreet.SendStates(ids, positions, orientations, velocities, viewers);
     }
+  }
+
+  // A car of our own crowd that our game keeps out of the shared world: a
+  // traffic car (not parked there before, not a quest's, the police's or a
+  // player's) inside the region of a linked player that outranks us, or
+  // anywhere near while that player's game runs our area.
+  private func HeldBack(vehicle: ref<VehicleObject>, body: EntityID, at: Vector4, owns: Bool, entities: ref<DynamicEntitySystem>) -> Bool {
+    if !vehicle.IsCrowdVehicle() || !this.Eligible(vehicle, body, entities) || vehicle.IsQuest() || vehicle.IsPrevention() || vehicle.IsDestroyed() {
+      return false;
+    }
+    if !owns {
+      return true;
+    }
+    let unplaced = false;
+    return TandemRegionRules.CoveredBy(at, TandemRegionRules.Radius(), unplaced) != 0u;
+  }
+
+  // (overlap_despawn = on, a probe) A held back car is asked to leave, once:
+  // the prevention system's own despawn of a vehicle and its passengers,
+  // which waits until nobody looks.
+  private func AskDespawn(vehicle: ref<VehicleObject>, body: EntityID) -> Void {
+    if !this.m_despawnRead {
+      this.m_despawnRead = true;
+      this.m_despawn = Equals(TandemNative.Setting("overlap_despawn"), "on");
+    }
+    if !this.m_despawn || ArrayContains(this.m_despawnAsked, body) {
+      return;
+    }
+    if ArraySize(this.m_despawnAsked) >= 256 {
+      ArrayErase(this.m_despawnAsked, 0);
+    }
+    ArrayPush(this.m_despawnAsked, body);
+    GameInstance.GetPreventionSpawnSystem(this.m_game).RequestDespawnVehicleAndPassengers(vehicle);
+    TandemNative.LogDebug(s"street: asked our crowd vehicle \(EntityID.ToDebugString(body)) to despawn (held back)");
+  }
+
+  // (test) the overlap as the street has it.
+  public func OverlapReport() -> String {
+    let gone = 0;
+    for body in this.m_despawnAsked {
+      if !IsDefined(GameInstance.FindEntityByID(this.m_game, body)) {
+        gone += 1;
+      }
+    }
+    return s"overlap: street: area \(TandemArea.Owns() ? "ours" : "another game's"), \(this.m_heldBack) crowd vehicle(s) of our own held back, \(ArraySize(this.m_despawnAsked)) asked to despawn (\(gone) gone since)";
   }
 
   // One of ours this round: how it stands, said when it changed.
@@ -1106,6 +1162,7 @@ protected cb func OnDetach() -> Bool {
 // Our V gets into a vehicle: a shared one becomes ours.
 @wrapMethod(VehicleObject)
 protected cb func OnMountingEvent(evt: ref<MountingEvent>) -> Bool {
+  TandemNative.HookRan(n"Traffic.VehicleObject.OnMountingEvent");
   let result = wrappedMethod(evt);
   let child = GameInstance.FindEntityByID(this.GetGame(), evt.request.lowLevelMountingInfo.childId) as GameObject;
   if IsDefined(child) && child.IsPlayer() {
@@ -1130,6 +1187,7 @@ protected func DamagePipelineFinalized(evt: ref<gameHitEvent>) -> Void {
 // A bump between the car our V drives and a shared vehicle.
 @wrapMethod(VehicleObject)
 protected cb func OnVehicleBumpEvent(evt: ref<VehicleBumpEvent>) -> Bool {
+  TandemNative.HookRan(n"Traffic.VehicleObject.OnVehicleBumpEvent");
   let result = wrappedMethod(evt);
   let traffic = TandemTraffic.Of(this.GetGame());
   if IsDefined(traffic) {

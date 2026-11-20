@@ -738,6 +738,7 @@ public class TandemActivities {
   // The phone key while a request is shown: a press agrees (as a regroup
   // offer's, Travel.reds); a hold is the phone's own.
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    TandemNative.HookRan(n"Activities.TandemActivities.OnAction");
     if !IsDefined(this.m_prompt) || !Equals(ListenerAction.GetName(action), n"PhoneInteract") {
       return false;
     }
@@ -1090,6 +1091,7 @@ private final func Cancel() {
 
 @wrapMethod(TimeskipGameController)
 protected cb func OnUninitialize() -> Bool {
+  TandemNative.HookRan(n"Activities.TimeskipGameController.OnUninitialize");
   let activities = TandemActivities.Of(this.m_gameInstance);
   if IsDefined(activities) {
     activities.WheelClosed(this);
@@ -1111,6 +1113,7 @@ public abstract class TandemMenus {
 
 @wrapMethod(MenuScenario_BaseMenu)
 protected cb func OnLeaveScenario(nextScenario: CName) -> Bool {
+  TandemNative.HookRan(n"Activities.MenuScenario_BaseMenu.OnLeaveScenario");
   let result = wrappedMethod(nextScenario);
   TandemMenus.Entered(0, n"None", false);
   return result;
@@ -1118,6 +1121,7 @@ protected cb func OnLeaveScenario(nextScenario: CName) -> Bool {
 
 @wrapMethod(MenuScenario_NetworkBreach)
 protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Activities.MenuScenario_NetworkBreach.OnEnterScenario");
   let result = wrappedMethod(prevScenario, userData);
   TandemMenus.Entered(4, n"network_breach", false);
   return result;
@@ -1125,6 +1129,7 @@ protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable
 
 @wrapMethod(MenuScenario_ArcadeMinigame)
 protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Activities.MenuScenario_ArcadeMinigame.OnEnterScenario");
   let result = wrappedMethod(prevScenario, userData);
   TandemMenus.Entered(4, n"arcade", false);
   return result;
@@ -1132,6 +1137,7 @@ protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable
 
 @wrapMethod(MenuScenario_Vendor)
 protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Activities.MenuScenario_Vendor.OnEnterScenario");
   let result = wrappedMethod(prevScenario, userData);
   // A clothing store's or a ripperdoc's purchase may change what the
   // others see: our look again on the way out (unchanged: sent to nobody).
@@ -1141,6 +1147,7 @@ protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable
 
 @wrapMethod(MenuScenario_Vendor)
 protected cb func OnSwitchToRipperDoc(opt userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Activities.MenuScenario_Vendor.OnSwitchToRipperDoc");
   let result = wrappedMethod(userData);
   TandemMenus.Entered(5, n"ripperdoc", true);
   return result;
@@ -1150,6 +1157,7 @@ protected cb func OnSwitchToRipperDoc(opt userData: ref<IScriptable>) -> Bool {
 // opens through this scenario): a shop's screen, nothing worn changes.
 @wrapMethod(MenuScenario_Storage)
 protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Activities.MenuScenario_Storage.OnEnterScenario");
   let result = wrappedMethod(prevScenario, userData);
   TandemMenus.Entered(5, n"stash", false);
   return result;
@@ -1157,6 +1165,7 @@ protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable
 
 @wrapMethod(MenuScenario_Wardrobe)
 protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Activities.MenuScenario_Wardrobe.OnEnterScenario");
   let result = wrappedMethod(prevScenario, userData);
   TandemMenus.Entered(5, n"wardrobe", true);
   return result;
@@ -1164,6 +1173,7 @@ protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable
 
 @wrapMethod(MenuScenario_CharacterCustomizationMirror)
 protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Activities.MenuScenario_CharacterCustomizationMirror.OnEnterScenario");
   let result = wrappedMethod(prevScenario, userData);
   TandemMenus.Entered(5, n"mirror", true);
   return result;
@@ -1171,6 +1181,7 @@ protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable
 
 @wrapMethod(MenuScenario_TimeSkip)
 protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Activities.MenuScenario_TimeSkip.OnEnterScenario");
   let result = wrappedMethod(prevScenario, userData);
   TandemMenus.Entered(6, n"time_skip", false);
   return result;
@@ -1178,6 +1189,7 @@ protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable
 
 @wrapMethod(MenuScenario_HubMenu)
 protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Activities.MenuScenario_HubMenu.OnEnterScenario");
   let result = wrappedMethod(prevScenario, userData);
   // The inventory, cyberware and wardrobe tabs change what the others see.
   TandemMenus.Entered(6, n"hub_menu", true);
@@ -1187,6 +1199,7 @@ protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable
 // A shard read in the world: a screen (its popup stops our game).
 @wrapMethod(ShardNotificationController)
 protected cb func OnInitialize() -> Bool {
+  TandemNative.HookRan(n"Activities.ShardNotificationController.OnInitialize");
   let result = wrappedMethod();
   TandemMenus.Entered(3, n"shard", false);
   return result;
@@ -1194,6 +1207,7 @@ protected cb func OnInitialize() -> Bool {
 
 @wrapMethod(ShardNotificationController)
 protected cb func OnUninitialize() -> Bool {
+  TandemNative.HookRan(n"Activities.ShardNotificationController.OnUninitialize");
   let result = wrappedMethod();
   TandemMenus.Entered(0, n"None", false);
   return result;

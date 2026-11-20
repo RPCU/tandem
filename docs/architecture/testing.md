@@ -16,7 +16,7 @@
 | regions | links, owners, hand-over (also with a third lost), a vanishing owner, digests both ways; two mock players meeting | `task test` |
 | natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere, region, street, presence, activity) | `task natives:check` |
 | scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods | `task scripts:check` |
-| threads | every script hook that may run on a job thread (per-entity, component and persistent-state wraps, `cb func`s, lifecycle methods, `Entity/*` callbacks) and all it calls: reads, the wrapped method, natives; no write to a system's state (`tools/scripts-threads.py`; `.known`: 86 hooks older than the check, unproven) | `task threads:check` |
+| threads | every script hook that may run on a job thread (per-entity, component and persistent-state wraps, `cb func`s, lifecycle methods, `Entity/*` callbacks) and all it calls: reads, the wrapped method, natives; no write to a system's state (`tools/scripts-threads.py`; `.known`: 84 hooks older than the check, unproven, each with the thread probe's call) | `task threads:check` |
 | references | every `TandemX.Name(…)` call names a declared function, every record of ours the scripts name is in `tweaks/tandem` (`tools/scripts-refs.py`: what scc and the game would say, in CI); every scenario's `--flags` exist in the mock player, its `cmd` words in the scripts, its helpers in `tools/scenario.sh` (`tools/scenarios-check.py`) | `task refs:check`, `task scenarios:check` |
 | other mods | every method another mod's redscript or CET Lua wraps, replaces or observes, against the ones tandem wraps: conflicts, order-sensitive, harmless chains (`tools/mods-check.py`, on any game folder or copy) | `task mods:check DIR=…` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
@@ -63,7 +63,46 @@ wraps. Each launch starts the game through Steam with the role's
 (neither: the menus were not passed); the game is killed each time. It
 prints `N launches, C crashes (…)` and fails unless C is 0 and one
 played. Wraps that changed script state on job threads while the save
-loaded crashed 5 launches in 6, and 0 in 7 without them (2026-11-20).
+loaded crashed 5 launches in 6, and 0 in 7 without them (2026-11-20). It
+also fails, naming them, when a launch's log has a `threads: hook … ran off
+the game thread` line (below).
+
+**The thread probe** (`plugin/src/threads.hpp`): which thread the hooks of
+`tools/scripts-threads.known` really run on. Each starts with
+`TandemNative.HookRan(n"File.Class.Method");` (`.2`: a second overload;
+`task threads:check` refuses a listed hook without it, and the call anywhere
+but first in a function of that name). The game thread is the script tick's
+(the frame update's until the first tick). In the game's log:
+
+- `threads: hook NAME ran off the game thread (thread A, the game thread is
+B)`: a warning, once per hook and launch, written from that thread at
+  once. `tools/game.sh launches` and every scenario fail on it.
+- `threads: N hooks off-thread: A×12, B×3` (calls so far): every 60 s when
+  one ran since the last, at a session's end and on `tools/game.sh threads`
+  (`cmd threads`, then the newest log's `threads:` lines; exit 1 on a hook
+  off the game thread; works after the game has quit too), followed there
+  by `threads: N hooks only on the game thread (thread B): C×40, …`.
+- `threads: the script tick runs on thread A, the frame update on B`, once
+  per world (`: not the same` when they differ). `the script tick moved
+from thread A to B`, then `changed thread N times` in the report: the
+  tick itself changes threads, and no line above means anything.
+- `N hook calls before a game thread was known, not judged`: before the
+  first frame.
+
+Reading a played session (`tools/game.sh threads` at its end):
+
+- a hook **off the game thread**: rework it to the queue pattern (it only
+  reads, calls the wrapped method and enqueues, `TandemStreaming.QueueStreamed`
+  or a native of its own; its system acts on the tick), drop its `HookRan`
+  and its line of `.known`;
+- a hook **only on the game thread**, with a count that shows the session
+  exercised it (a fight for the NPC hooks, a drive, the menus), over a whole
+  session: it may take the opt-out above it,
+  `// game thread only: seen on the game thread, <date>`, and lose its
+  `HookRan` and its line of `.known`. One clean session is evidence, not
+  proof: the hooks per NPC, vehicle or projectile also want a session with
+  many of them at once;
+- a hook in **neither** list never ran: it stays listed.
 
 `tandem-peer` modes (in every one the referee checks what the others send,
 `sim.md`; a `referee:` line fails any scenario):

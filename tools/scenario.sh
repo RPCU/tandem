@@ -48,7 +48,9 @@
 #   shot NAME              a screenshot kept with the results
 #   note TEXT              a line in the report
 # Every scenario also rejects the mock player's `referee:` lines: the game
-# broke a protocol or authority rule (docs/architecture/sim.md).
+# broke a protocol or authority rule (docs/architecture/sim.md), and the game
+# log's `threads: hook NAME ran off the game thread` lines (the thread probe,
+# docs/architecture/testing.md).
 # A failed check stops the scenario and keeps the evidence under
 # .cache/scenarios/NAME-TIME/: the game's log since the start, the mock
 # player's log, a screenshot and, when the game thread went silent, every
@@ -240,6 +242,14 @@ reject_peer() {
     echo "  ok, none (peer): $1"
   fi
 }
+# The thread probe (docs/architecture/testing.md): no script hook ran off the
+# game thread since the mark (each is logged the first time, then summed up).
+on_game_thread() {
+  local names
+  names=$(since | sed -n 's/.*threads: hook \([^ ]*\) ran off the game thread.*/\1/p' | sort -u | tr '\n' ' ' || true)
+  [ -n "$names" ] || names=$(since | sed -n 's/.*threads: [1-9][0-9]* hooks off-thread: //p' | tail -1 || true)
+  [ -z "$names" ] || fail "script hooks ran off the game thread (queue them, testing.md): $names"
+}
 pause() {
   local start=$SECONDS
   while ((SECONDS - start < $1)); do
@@ -277,6 +287,7 @@ run() {
     source "$file"
     # What the mock player heard broke no protocol or authority rule.
     reject_peer 'referee: \[' "$referee_from"
+    on_game_thread
   )
   status=$?
   set -e

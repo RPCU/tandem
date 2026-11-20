@@ -30,6 +30,25 @@ public native struct TandemRegionEffect {
   native let stacks: Int32;
 }
 
+// The region of a linked player that outranks us (regions.md §6): where its
+// V is. Its game populates the world there; ours holds its own back.
+public native struct TandemRegionCover {
+  native let player: Uint32;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+}
+
+// One change to the crowd's null areas: put `player`'s at (x, y, z), its old
+// one going (place), or take it away.
+public native struct TandemNullStep {
+  native let player: Uint32;
+  native let place: Bool;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+}
+
 // A placed NPC that died in the session (the ledger, regions.md §14): its
 // static entity, what it was, where it fell, whose game ran it, whether it
 // is knocked out (not dead) and how long ago (seconds).
@@ -74,6 +93,13 @@ public native class TandemRegions extends IScriptable {
   // this point (0: none). 2147483648 + player: one that outranks us has not
   // been placed yet: wait before deciding.
   public static native func CoveredBy(x: Float, y: Float, z: Float, radius: Float) -> Uint32
+  // The overlap (regions.md §6). Covers: the regions of the linked players
+  // that outrank us. CrowdShare: the share of our crowd we keep with our V
+  // there (1 all, 0 none; `quiet`: at none now). NullSteps: what to change
+  // about the crowd's null areas now (`on` false: every area goes).
+  public static native func Covers() -> array<TandemRegionCover>
+  public static native func CrowdShare(x: Float, y: Float, z: Float, quiet: Bool) -> Float
+  public static native func NullSteps(now: Float, on: Bool) -> array<TandemNullStep>
   // Placed NPCs, the death ledger, twins (regions.md §3, §14). Placed: one
   // of our NPCs is placed in the world (its static entity id). PlacedOf: the
   // entity an NPC's owner named (undefined: none). DiedBy: the session says

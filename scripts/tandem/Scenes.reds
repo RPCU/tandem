@@ -806,6 +806,7 @@ public class TandemScenes {
   }
 
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    TandemNative.HookRan(n"Scenes.TandemScenes.OnAction");
     // Watching through the host's camera: the key leaves it.
     if this.m_cameraLive && Equals(ListenerAction.GetName(action), n"Choice1")
       && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_RELEASED) {

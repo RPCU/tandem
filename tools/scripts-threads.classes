@@ -1,25 +1,33 @@
 # The ancestry of every game class scripts/tandem wraps (class < parent < ...),
 # from the decompiled scripts of game 2.50. tools/scripts-threads.py reads it to
-# tell what exists once per entity, component or persistent state; rewrite it
-# with `tools/scripts-threads.py --classes VANILLA.reds` when a wrap of a new
-# class is added (or add the line by hand).
+# tell what exists once per entity, component or persistent state. Rewrite it
+# with `tools/scripts-threads.py --classes VANILLA.reds` when a class is wrapped
+# for the first time, or add its line by hand (a class the decompiled scripts
+# do not declare: its name alone).
 AIDeathReactionsTask < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 AIHitReactionTask < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 AISubActionApplyTimeDilation_Record_Implementation < IScriptable
 AIWeapon < IScriptable
 BackpackMainGameController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 BaseBullet < BaseProjectile < ItemObject < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+BaseDestructibleDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 BaseGrenade < WeaponGrenade < ItemObject < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
 BaseProjectile < ItemObject < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
 BaseWorldMapMappinController < BaseInteractionMappinController < BaseMappinBaseController < inkLogicController < inkILogicController < IScriptable
+BillboardDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 CallPolice < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 DamageSystem < IDamageSystem < IReplicatedGameSystem < IGameSystem < IScriptable
 DeathDecisions < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
 DeathDecisionsWithResurrection < HighLevelTransition < DefaultTransition < StateFunctor < IScriptable
+DestructibleMasterDevice < InteractiveMasterDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
+DestructibleMasterLight < DestructibleMasterDevice < InteractiveMasterDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
+DestructibleRoadSign < BaseDestructibleDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 DismembermentComponent < IComponent < IScriptable
+DisplayGlass < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 DisposalDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 DropEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition < StateFunctor < IScriptable
+ElectricLight < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 ExplosiveDeviceControllerPS < BasicDistractionDeviceControllerPS < ScriptableDeviceComponentPS < SharedGameplayPS < DeviceComponentPS < GameComponentPS < PersistentState < IScriptable
 FastTravelSystem < ScriptableSystem < IScriptableSystem < IScriptable
 FinisherAttackEvents < FinisherTransition < DefaultTransition < StateFunctor < IScriptable
@@ -35,6 +43,7 @@ HitReactionComponent < AIMandatoryComponents < AIRelatedComponents < ScriptableC
 ImmediateExitWithForceEvents < ExitingEventsBase < VehicleEventsTransition < VehicleTransition < DefaultTransition < StateFunctor < IScriptable
 InVehicleCombatDecorator < AIVehicleTaskAbstract < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 Inventory < GameComponent < IComponent < IScriptable
+MappinUIUtils
 MarketSystem < IMarketSystem < ScriptableSystem < IScriptableSystem < IScriptable
 MeleeAttackGenericEvents < MeleeEventsTransition < MeleeTransition < DefaultTransition < StateFunctor < IScriptable
 MeleeProjectile < BaseProjectile < ItemObject < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
@@ -69,6 +78,8 @@ QuickhacksListGameController < inkHUDGameController < inkGameController < worldu
 ReactionManagerComponent < ScriptableComponent < GameComponent < IComponent < IScriptable
 ReleaseEvents < CarriedObjectEvents < CarriedObjectTransition < DefaultTransition < StateFunctor < IScriptable
 ReloadEvents < WeaponEventsTransition < WeaponTransition < DefaultTransition < StateFunctor < IScriptable
+RetractableAd < BaseAnimatedDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
+RoadBlock < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 ScriptableDeviceComponentPS < SharedGameplayPS < DeviceComponentPS < GameComponentPS < PersistentState < IScriptable
 ScriptedPuppet < gamePuppet < gamePuppetBase < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
 SetTimeDilationEffector < Effector < IScriptable
@@ -88,8 +99,9 @@ VehicleComponentPS < ScriptableDeviceComponentPS < SharedGameplayPS < DeviceComp
 VehicleObject < GameObject < GameEntity < Entity < IScriptable
 VendorDataManager < IScriptable
 VendorHubMenuGameController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+Window < Door < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 WorldMapMenuGameController < MappinsContainerController < inkProjectedHUDGameController < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 WorldMappinsContainerController < MappinsContainerController < inkProjectedHUDGameController < inkHUDGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
+gameDestructibleSpotsSystem < worldIDestructibleSpotsSystem < IGameSystem < IScriptable
 gameuiInventoryGameController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 gameuiVehicleShopGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
-MappinUIUtils

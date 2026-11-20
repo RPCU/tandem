@@ -37,6 +37,15 @@ check was written and are neither proven nor reworked yet: reported by
 --list, not failed. A hook listed there that no longer needs it fails (the
 list only shrinks).
 
+The thread probe (plugin/src/threads.hpp; docs/architecture/testing.md): each
+hook of that list starts with
+
+    TandemNative.HookRan(n"File.Class.Method");
+
+(".2" after the name for a second overload), and the game's log names those
+that ran off the game thread. Checked: every listed hook has the call, and
+the call is a function's first statement, under that function's name.
+
 Usage: tools/scripts-threads.py [DIR]         (exit 1 on a finding)
        tools/scripts-threads.py --list [DIR]  every checked hook and its verdict
        tools/scripts-threads.py --all [DIR]   and every change each can reach
@@ -56,6 +65,9 @@ ROOT = Path(__file__).resolve().parent.parent
 CLASSES = Path(__file__).with_suffix(".classes")
 KNOWN = Path(__file__).with_suffix(".known")
 OPT_OUT = re.compile(r"//\s*(game thread only|job thread safe):\s*(\S.{9,})")
+# The thread probe's call, and the same as a body's first statement.
+PROBE = re.compile(r'TandemNative\s*\.\s*HookRan\s*\(\s*n"([^"]*)"\s*\)')
+PROBE_FIRST = re.compile(r'\{\s*TandemNative\.HookRan\(n"([^"]*)"\);')
 
 # One instance per entity, component or persistent state.
 PER_ENTITY_ROOTS = {"Entity": "an entity", "IComponent": "a component", "PersistentState": "a persistent state"}
@@ -140,6 +152,8 @@ class Func:
     writes: list = field(default_factory=list)  # (line, what, a field of its own object)
     calls: list = field(default_factory=list)  # (line, [Func], text, how the receiver is held)
     reason: list = None  # why it changes state: [(Func, line, what)...]
+    probes: list = field(default_factory=list)  # the names its HookRan calls say
+    probe: str = ""  # the name its first statement, a HookRan call, says
 
     @property
     def label(self):
@@ -267,10 +281,15 @@ def parse(directory: Path):
             while i >= 0 and (lines[i].strip().startswith("//") or lines[i].lstrip().startswith("@")):
                 comment.append(lines[i].strip())
                 i -= 1
-            funcs.append(
-                Func(path, number, owner, m.group(2), hook, "cb" in mods, "static" in mods, "native" in mods,
+            f = Func(path, number, owner, m.group(2), hook, "cb" in mods, "static" in mods, "native" in mods,
                      params, returns, body, body_line, "\n".join(reversed(comment)))
-            )
+            if body:
+                # (The names are string contents: read from the unmasked text.)
+                text = raw[start:end]
+                f.probes = PROBE.findall(text)
+                if first := PROBE_FIRST.match(text):
+                    f.probe = first.group(1)
+            funcs.append(f)
         # Fields: in a type and in no function, or under @addField(Class).
         for m in FIELD_DECL.finditer(code):
             if any(a <= m.start() < b for a, b in bodies):
@@ -806,6 +825,14 @@ def main() -> int:
         elif f.cb and f.owner and not f.hook:
             targets.append((f, "a cb func, called by the engine"))
 
+    # The thread probe: only as a first statement, under its function's name.
+    for f in funcs:
+        name = f"{f.path.stem}.{f.owner}.{f.name}"
+        if f.probes and not (len(f.probes) == 1 and re.fullmatch(re.escape(name) + r"(\.\d+)?", f.probe)):
+            print(f"{show(f)}: {f.label}: TandemNative.HookRan is the first statement of a hook, once, "
+                  f'under its own name: TandemNative.HookRan(n"{name}");', file=sys.stderr)
+            problems += 1
+
     for f, why in targets:
         opt = OPT_OUT.search(f.comment)
         verdict = "ok"
@@ -818,6 +845,10 @@ def main() -> int:
             known[f.key] = True
             verdict = "KNOWN, neither proven nor reworked"
             counts["known"] += 1
+            if not f.probe:
+                print(f"{show(f)}: {f.label} is listed in {KNOWN.name} and does not start with the thread "
+                      f'probe: TandemNative.HookRan(n"{f.path.stem}.{f.owner}.{f.name}");', file=sys.stderr)
+                problems += 1
         else:
             problems += 1
             verdict = "CHANGES STATE"

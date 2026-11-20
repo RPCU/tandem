@@ -416,6 +416,14 @@ struct Options {
   std::vector<DeviceOrder> devices;
   std::string deviceAnswer;
   int deviceAfterSeconds{3};
+  // Glass and breakable scenery: what "breaks in our game", and when
+  // (--fracture).
+  struct FractureOrder {
+    tandem::proto::Fracture fracture;
+    int atSeconds{5};
+    bool done{};
+  };
+  std::vector<FractureOrder> fractures;
   // Breach Protocol: what to breach and when (--breach), with which daemons.
   struct BreachOrder {
     std::uint64_t entity{}, cls{};
@@ -761,6 +769,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --device-answer W  every device another player changes is made WORDS (as above)\n"
          "                     --device-after seconds later\n"
          "  --device-after N   see --device-answer (3)\n"
+         "  --fracture SPEC    something breaks in our game (glass, breakable scenery), SPEC =\n"
+         "                     [ENTITY:COMPONENT:]X,Y,Z[@SECONDS]: where, and for a part of a\n"
+         "                     placed entity its id in hex and its destruction component's\n"
+         "                     name; SECONDS into the session (5). The breaks it hears are\n"
+         "                     logged\n"
          "  --breach SPEC      Breach Protocol won, SPEC = ENTITY[:CLASS][@SECONDS] (an access\n"
          "                     point by its id in hex; CLASS AccessPointControllerPS) or\n"
          "                     npc=N[@SECONDS] (the quickhack on NPC N); SECONDS into the\n"
@@ -965,6 +978,32 @@ Options::DeviceOrder DeviceOrderOf(std::string_view spec) {
   tandem::devices::What probe;
   if (order.words.empty() || !DeviceWords(order.words, probe))
     Usage(std::format("--device: unknown state in {}", words));
+  return order;
+}
+
+// --fracture [ENTITY:COMPONENT:]X,Y,Z[@SECONDS]
+Options::FractureOrder FractureOrderOf(std::string_view spec) {
+  Options::FractureOrder order;
+  if (const auto at = spec.find('@'); at != std::string_view::npos) {
+    order.atSeconds = Number<int>(spec.substr(at + 1));
+    spec = spec.substr(0, at);
+  }
+  if (const auto place = spec.rfind(':'); place != std::string_view::npos) {
+    const auto part = spec.substr(0, place);
+    const auto colon = part.find(':');
+    if (colon == std::string_view::npos)
+      Usage("--fracture is [ENTITY:COMPONENT:]X,Y,Z[@SECONDS]");
+    auto entity = part.substr(0, colon);
+    if (entity.starts_with("0x"))
+      entity.remove_prefix(2);
+    if (std::from_chars(entity.data(), entity.data() + entity.size(), order.fracture.entity, 16)
+                .ptr != entity.data() + entity.size() ||
+        order.fracture.entity == 0)
+      Usage(std::format("--fracture: {} is not an entity id in hex", entity));
+    order.fracture.component = CName(part.substr(colon + 1));
+    spec = spec.substr(place + 1);
+  }
+  order.fracture.at = Point("--fracture", spec);
   return order;
 }
 
@@ -1281,6 +1320,8 @@ Options Parse(int argc, char **argv) {
       options.deviceAnswer = std::string(value);
     } else if (flag == "--device-after")
       options.deviceAfterSeconds = Number<int>(value);
+    else if (flag == "--fracture")
+      options.fractures.push_back(FractureOrderOf(value));
     else if (flag == "--breach")
       options.breach = BreachOrderOf(value);
     else if (flag == "--programs")
@@ -5213,6 +5254,12 @@ int main(int argc, char **argv) {
                   kVerdicts[static_cast<int>(r.verdict)], r.by);
               if (const auto decision = breachHolds.Answer(r))
                 breachSettled(*decision);
+            } else if constexpr (std::is_same_v<E, tandem::events::Fractured>) {
+              const auto &f = e.fracture;
+              Log("player {} broke {} at ({:.1f} {:.1f} {:.1f})", f.player,
+                  f.entity != 0 ? std::format("part {:#x} of {:x}", f.component, f.entity)
+                                : std::string("a piece of the world"),
+                  f.at.x, f.at.y, f.at.z);
             } else if constexpr (std::is_same_v<E, tandem::events::DevicesReset>) {
               Log("devices: the host sends its record again");
             } else if constexpr (std::is_same_v<E, tandem::events::Resync>) {
@@ -6231,6 +6278,15 @@ int main(int argc, char **argv) {
         what = tandem::devices::WhatOf(*record);
       DeviceWords(order.words, what);
       operateDevice(key, what, "--device");
+    }
+    // --fracture: each one at its time into the session.
+    for (auto &order : options.fractures) {
+      if (order.done || !devicesFrom || now < *devicesFrom + std::chrono::seconds(order.atSeconds))
+        continue;
+      order.done = true;
+      endpoint->SendFracture(order.fracture);
+      Log("something broke here at ({:.1f} {:.1f} {:.1f}), entity {:x} (--fracture)",
+          order.fracture.at.x, order.fracture.at.y, order.fracture.at.z, order.fracture.entity);
     }
     // --breach: its outcome, once, at its time into the session.
     if (options.breach && !options.breach->done && devicesFrom &&

@@ -102,8 +102,8 @@ one run with `cmd presence vo onPlayerHit` decides.
 | fires a smart or lobbed round | flash, report | a smart round locked on what the others know homes on it from the puppet (`Throw` Smart); with no such lock (nothing locked, an NPC the others do not share) it is drawn as a plain round to where it was aimed (`Cue` Trace). A launcher's round and a grenade fly as copies (`Throw`, [`combat-coverage.md`](combat-coverage.md), "Throws"); a grenade's copy is kept on the real one's path (`ThrowPath`) | the guided round's bend; a copy put back on its path with no pause in the air (`combat-throw-bounce`) |
 | (host) an NPC fires | flash, report, shells on the proxy | the same real shot from the proxy's weapon at the target the host already sends in `NpcShot` | as above; an NPC shot at our own V is still the one Shots.reds decides |
 
-What a drawn bullet breaks in the world (glass, a barrel) is each game's
-own, as before for props nobody shares.
+What breaks in the world is told and replayed whatever broke it
+(`devices.md`, "Glass and breakable scenery"); a barrel is a device.
 
 ### 4. Party HUD
 

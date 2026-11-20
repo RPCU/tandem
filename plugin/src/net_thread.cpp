@@ -869,6 +869,10 @@ struct NetThread::Impl {
                           e.result.entity, e.result.npc, static_cast<int>(e.result.verdict),
                           e.result.by);
                 runtime.PushBreach(e.result);
+              } else if constexpr (std::is_same_v<E, events::Fractured>) {
+                runtime.PushObject(e.fracture);
+              } else if constexpr (std::is_same_v<E, events::DeviceFired>) {
+                runtime.PushObject(e.fire);
               } else if constexpr (std::is_same_v<E, events::DevicesReset>) {
                 log::Info("devices: the host sends its record again");
                 runtime.PushDevice(proto::DeviceSet{});
@@ -1336,6 +1340,12 @@ struct NetThread::Impl {
         } else if (const auto *use = std::get_if<proto::DeviceUse>(&message)) {
           endpoint->UseDevice(*use);
         }
+      }
+      for (const auto &message : runtime.TakeObjectOutbox()) {
+        if (const auto *fracture = std::get_if<proto::Fracture>(&message))
+          endpoint->SendFracture(*fracture);
+        else if (const auto *fire = std::get_if<proto::DeviceFire>(&message))
+          endpoint->SendDeviceFire(*fire);
       }
       for (auto &breach : runtime.TakeBreachOutbox()) {
         log::Info("breach: ours of network {:x} ({:#x}), npc {}: {} daemon(s), {} trap(s), "

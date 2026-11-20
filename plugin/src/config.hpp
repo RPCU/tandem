@@ -72,6 +72,12 @@
 //                        ; 20 m), always (any distance in view, smaller and fainter
 //                        ; far away), off (on: near)
 //   party_hud = on       ; off: no party list (linked partners' health) on the HUD
+//   overlap = density    ; our own crowd and traffic where a higher-ranked linked
+//                        ; player's region covers ours: density (thinned by how much
+//                        ; is covered), area (a crowd null area over that region:
+//                        ; untested), off (only off deep inside it) (ini only)
+//   overlap_despawn = off ; on: our own crowd cars left inside such a region are
+//                        ; asked to despawn (a probe, untested) (ini only)
 //   death_ledger = on    ; off: placed NPCs another player killed in the session
 //                        ; stay alive in our game (ini only)
 //   death_bodies = on    ; off: no body where a placed NPC another player
@@ -192,6 +198,14 @@ struct Config {
   // recent one fell.
   bool deathLedger{true};
   bool deathBodies{true};
+  // The overlap (regions.md §6): how our game keeps its own crowd and traffic
+  // out of a higher-ranked linked player's region. "density": the crowd's
+  // density follows how much of our region is covered; "area": a crowd null
+  // area over each cover (untested on 2.50); "off": as before (density 0
+  // only deep inside). And whether our own crowd cars left inside a cover
+  // are asked to despawn (a probe, untested).
+  std::string overlap{"density"};
+  bool overlapDespawn{false};
   // Where it was read from (the settings page writes there).
   std::filesystem::path file;
   // What a guest's game does once it is out of a session (Saves.reds).

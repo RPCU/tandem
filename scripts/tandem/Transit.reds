@@ -522,6 +522,7 @@ public class TandemTransit {
   // The phone key pressed: ride. The reject key held: follow. (The phone's
   // own hold on the same key opens the phone: not for us.)
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    TandemNative.HookRan(n"Transit.TandemTransit.OnAction");
     if this.m_askedBy == 0u {
       return false;
     }

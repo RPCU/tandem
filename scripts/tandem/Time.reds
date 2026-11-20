@@ -1101,6 +1101,7 @@ public final static func SetAttackBasedOnTimeDilation(owner: wref<GameObject>, w
 
 @wrapMethod(BaseBullet)
 protected cb func OnProjectileInitialize(eventData: ref<gameprojectileSetUpEvent>) -> Bool {
+  TandemNative.HookRan(n"Time.BaseBullet.OnProjectileInitialize");
   let result = wrappedMethod(eventData);
   let time = TandemTime.Of(this.GetGame());
   if IsDefined(time) {
@@ -1111,6 +1112,7 @@ protected cb func OnProjectileInitialize(eventData: ref<gameprojectileSetUpEvent
 
 @wrapMethod(BaseProjectile)
 protected cb func OnProjectileInitialize(eventData: ref<gameprojectileSetUpEvent>) -> Bool {
+  TandemNative.HookRan(n"Time.BaseProjectile.OnProjectileInitialize");
   let result = wrappedMethod(eventData);
   let time = TandemTime.Of(this.GetGame());
   if IsDefined(time) {

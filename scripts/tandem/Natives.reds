@@ -559,6 +559,15 @@ public native class TandemNative extends IScriptable {
   public static native func NodeRefOf(hash: Uint64) -> NodeRef
   public static native func Log(text: String)
   public static native func LogDebug(text: String)
+  // The thread probe (plugin/src/threads.hpp; docs/architecture/testing.md).
+  // Any thread: are we on the game thread (the script tick's)?
+  public static native func OnGameThread() -> Bool
+  // Any thread, the first statement of a hook tools/scripts-threads.known
+  // lists (n"File.Class.Method"): counted, and logged the first time it runs
+  // off the game thread.
+  public static native func HookRan(name: CName)
+  // tools/game.sh cmd threads, and a session's end: the hooks seen so far.
+  public static native func ThreadsReport()
   public static native func PerfMark(section: Int32)
   public static native func PerfReport()
   public static native func InReach(player: Uint32, npc: Uint32, puppetAt: Vector4, npcAt: Vector4, limit: Float) -> Bool

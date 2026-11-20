@@ -1020,6 +1020,7 @@ public class TandemLoot extends ScriptableSystem {
 // queue when the menu closes; in a session it is dropped here, shared.
 @wrapMethod(BackpackMainGameController)
 protected cb func OnCloseMenu(userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Loot.BackpackMainGameController.OnCloseMenu");
   if TandemLoot.DropShared(this.m_player, this.m_itemDropQueue) {
     ArrayClear(this.m_itemDropQueue);
   }
@@ -1028,6 +1029,7 @@ protected cb func OnCloseMenu(userData: ref<IScriptable>) -> Bool {
 
 @wrapMethod(gameuiInventoryGameController)
 protected cb func OnCloseMenu(userData: ref<IScriptable>) -> Bool {
+  TandemNative.HookRan(n"Loot.gameuiInventoryGameController.OnCloseMenu");
   let logic = this.m_itemModeLogicController;
   if IsDefined(logic) && TandemLoot.DropShared(this.m_player, logic.m_itemDropQueue) {
     ArrayClear(logic.m_itemDropQueue);
@@ -1039,6 +1041,7 @@ protected cb func OnCloseMenu(userData: ref<IScriptable>) -> Bool {
 // go to every player (TandemLoot.Added).
 @wrapMethod(PlayerPuppet)
 protected cb func OnItemAddedToInventory(evt: ref<ItemAddedEvent>) -> Bool {
+  TandemNative.HookRan(n"Loot.PlayerPuppet.OnItemAddedToInventory");
   let result = wrappedMethod(evt);
   TandemLoot.Added(this, evt.itemID, evt.itemData);
   return result;

@@ -158,7 +158,6 @@ host ran the first and guests the second.
    never announced (`IsTwinOfProxy`), whatever the ranks: one owner per
    NPC. A vendor's twin keeps its shop: beside the proxy, our own hidden
    copy's vendor opens (`progression.md`, "Vendors").
-
 3. _Heirs_ (§7): when an owner goes, the highest-ranked linked player near
    each of its NPCs takes it.
 
@@ -250,23 +249,23 @@ host                 giver O                         receiver P
 "The host" in every NPC message now reads "the NPC's owner". No existing
 message changed; the endpoint routes by owner.
 
-| Messages                                                                                                                                                                                   | From → to                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Messages                                                                                                                                                                      | From → to                                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `NpcSpawn`, `NpcStates`, `NpcGone`, `NpcHealth`, `NpcAnims`, `NpcShot`, `NpcHold`, `NpcSeat`, `NpcPoise`, `NpcWound`, `NpcHackState`, `NpcStatus`, `NpcAwareness`, `NpcLevel`, `NpcPlaced` | the owner → every player linked with it (a guest's go through the host, which checks the sender owns the NPC, keeps the record, and relays) |
-| `NpcHit`, `NpcStrike`, `NpcEffect`, `NpcHack`, `NpcAction`, `ShotHit`, `Defended`                                                                                                          | any player → the owner (through the host; the host stamps the sender)                                                                       |
-| `PlayerHit`, `PlayerHack`, `NpcCue`, `NpcShotAt`                                                                                                                                           | the owner → one player, only if that player's game shows the NPC (in the record, linked with its owner), through the host                   |
-| `NpcActionReply`                                                                                                                                                                           | the owner → whoever asked (the host remembers the asker of each forwarded `NpcAction`), even if the link broke since: it asked              |
-| `ActorPose`                                                                                                                                                                                | the host → the players linked with it (a scene actor is a pinned NPC of the host's)                                                         |
-| `AreaHit`, `PlayerHit` with no NPC (`npc` 0, host only)                                                                                                                                    | to the V hit, whatever the links: not an NPC's word (a V's grenade on another V; a hit of the host's world no NPC is shared for)            |
-| `Noise`                                                                                                                                                                                    | a player → every player linked with it: each owner's NPCs hear it from the puppet                                                           |
-| `SharedItem` on a corpse                                                                                                                                                                   | the owner → the players linked with it                                                                                                      |
-| `TimeEffect`                                                                                                                                                                               | unchanged (to everyone); each owner slows its own NPCs inside the bubble                                                                    |
-| `Regions`, `NpcOwner`, `NpcHandover`, `OwnedDigest`, `TrafficOwnership`, `TrafficHandover`                                                                                                 | host → guests                                                                                                                               |
-| `TrafficSpawn`, `TrafficStates`, `TrafficStatus`, `TrafficGone`, `Chase`, a shared vehicle's `VehicleDamage`                                                                               | the vehicle's owner → every player linked with it (through the host, as for NPCs)                                                           |
-| `TrafficHit`, `TrafficClaim`, a shared vehicle's `VehicleHit` and `GunnerRequest`                                                                                                          | any player → the vehicle's owner                                                                                                            |
-| `TrafficHandoverState`, `TrafficHandoverDone`                                                                                                                                              | as `NpcHandoverState`, `NpcHandoverDone`                                                                                                    |
-| `NpcHandoverState`                                                                                                                                                                         | giver → host → receiver                                                                                                                     |
-| `NpcHandoverDone`                                                                                                                                                                          | giver or receiver → host                                                                                                                    |
+| `NpcHit`, `NpcStrike`, `NpcEffect`, `NpcHack`, `NpcAction`, `ShotHit`, `Defended`                                                                                             | any player → the owner (through the host; the host stamps the sender)                                                                       |
+| `PlayerHit`, `PlayerHack`, `NpcCue`, `NpcShotAt`                                                                                                                              | the owner → one player, only if that player's game shows the NPC (in the record, linked with its owner), through the host                   |
+| `NpcActionReply`                                                                                                                                                              | the owner → whoever asked (the host remembers the asker of each forwarded `NpcAction`), even if the link broke since: it asked              |
+| `ActorPose`                                                                                                                                                                   | the host → the players linked with it (a scene actor is a pinned NPC of the host's)                                                         |
+| `AreaHit`, `PlayerHit` with no NPC (`npc` 0, host only)                                                                                                                       | to the V hit, whatever the links: not an NPC's word (a V's grenade on another V; a hit of the host's world no NPC is shared for)            |
+| `Noise`                                                                                                                                                                       | a player → every player linked with it: each owner's NPCs hear it from the puppet                                                           |
+| `SharedItem` on a corpse                                                                                                                                                      | the owner → the players linked with it                                                                                                      |
+| `TimeEffect`                                                                                                                                                                  | unchanged (to everyone); each owner slows its own NPCs inside the bubble                                                                    |
+| `Regions`, `NpcOwner`, `NpcHandover`, `OwnedDigest`, `TrafficOwnership`, `TrafficHandover`                                                                                    | host → guests                                                                                                                               |
+| `TrafficSpawn`, `TrafficStates`, `TrafficStatus`, `TrafficGone`, `Chase`, a shared vehicle's `VehicleDamage`                                                                  | the vehicle's owner → every player linked with it (through the host, as for NPCs)                                                           |
+| `TrafficHit`, `TrafficClaim`, a shared vehicle's `VehicleHit` and `GunnerRequest`                                                                                             | any player → the vehicle's owner                                                                                                            |
+| `TrafficHandoverState`, `TrafficHandoverDone`                                                                                                                                 | as `NpcHandoverState`, `NpcHandoverDone`                                                                                                    |
+| `NpcHandoverState`                                                                                                                                                            | giver → host → receiver                                                                                                                     |
+| `NpcHandoverDone`                                                                                                                                                             | giver or receiver → host                                                                                                                    |
 
 `NpcDeath` goes from the NPC's owner to the host, and from the host to
 everyone, whatever the links (§14). `RegionHold` goes from a player's game to everyone (the host stamps and
@@ -334,6 +333,46 @@ companions, the session lost.
   did before regions. Where a player is comes from the session's states
   (`TandemRegions.CoveredBy`), not from its puppet: a puppet takes seconds
   to spawn.
+
+**The overlap, held back** (2026-11-20; built, not run in game). A _cover_
+is the region of a linked player that outranks us (`regions::Covers`,
+`TandemRegions.Covers()`): its game populates the world there. What ours
+does about its own ambient crowd and traffic, beyond the three rules above:
+
+- **Around a cover** (our V linked, not deep inside), by this game's
+  `overlap` setting (`tandem.ini`):
+  - `density` (default): the crowd's density modifier follows the part of
+    our region no cover overlaps (`regions::CrowdShare`: two discs of 60 m,
+    in tenths: 0.9 at 100 m, 0.6 at 60 m, 0.5 at 46 m, then 0 inside 45 m),
+    so the two crowds together are about one. The modifier is global: our
+    crowd thins on our far side too.
+  - `area`: a crowd null area (`CommunitySystem.EnableDynamicCrowdNullArea`,
+    a 120 × 120 × 80 m box, not saved) is kept over each cover: nothing of
+    ours spawns in it, pedestrian or car, and our far side is untouched.
+    The plugin plans them (`regions::NullAreas`, `TandemRegions.NullSteps`):
+    placed again when the cover's V has moved 15 m or after 8 s, each with a
+    lifetime of 12 s, so one ends by itself if our game stops renewing it.
+    Untested on 2.50 (`engine/regions.md` §13.95): opt-in.
+  - `off`: neither.
+- **A driver or a passenger** of a car of our world that is not shared is
+  never hidden at the wheel: it follows its vehicle (not announced while in
+  the cover, `TandemNpcs.RidesUnshared`).
+- **Our own traffic** (`Traffic.reds` `HeldBack`): a crowd car of ours inside
+  a cover, or anywhere while another game runs our area, is held back:
+  never announced while in there, announced like any other once it has
+  driven out and we run our area. Not quest, police, player or wrecked
+  vehicles, nor one a V sits in. With `overlap_despawn = on` (a probe, off
+  by default) each held back car is asked once to leave
+  (`PreventionSpawnSystem.RequestDespawnVehicleAndPassengers`).
+- **Restored when apart**: the covers go with the link (or the session):
+  density is reset, the null areas are disabled, held back cars are shared
+  again. NPCs hidden meanwhile stay hidden until they stream out (§10).
+- Nothing is switched in the crowd, traffic or prevention systems
+  themselves: the game's own levers only (a density, a null area), so what
+  expects a crowd (quests' own crowd nodes, fear reactions) keeps working.
+
+`tools/game.sh cmd overlap` reports the setting, the covers, the crowd's
+share, the null areas and the cars held back.
 
 **The area owner** is the same rule as one answer per player, for what is
 not an NPC: `Endpoint::AreaOwner(player)` (`regions::AreaOwner`) is the
@@ -515,17 +554,18 @@ belongs to the world of the player who starts it), and how each point is met.
 
 ## 11. Where the code is
 
-| Piece                                                  | Where                                                                                                                                                                  |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Constants, rank, links, hand-over, heir and area rules | `core/include/tandem/regions.hpp`, `core/src/regions.cpp`, `tests/regions_test.cpp`                                                                                    |
-| Messages                                               | `protocol.hpp`: `Regions`, `NpcOwner`, `NpcHandover`, `NpcHandoverState`, `NpcHandoverDone`, `OwnedDigest`, `RegionHold`                                               |
-| Ownership, routing, arbitration, retries               | `core/src/endpoint.cpp` (search "Regions"), `tests/regions_endpoint_test.cpp`                                                                                          |
-| Natives for scripts                                    | `plugin/src/region_natives.cpp` ↔ `scripts/tandem/RegionNatives.reds`                                                                                                  |
-| Owner and proxy sides in one game                      | `scripts/tandem/Npcs.reds`; give, take, suppression, twins: `scripts/tandem/Regions.reds`                                                                              |
-| World vehicles of several owners                       | `core/src/endpoint_traffic.cpp`, `tests/traffic_regions_test.cpp`, `scripts/tandem/Traffic.reds` (`traffic.md`)                                                        |
-| Mock player as an NPC owner                            | `tandem-peer --mode region` (`peer/src/main.cpp`), `tests/peer_regions.sh`                                                                                             |
+| Piece                                                  | Where                                                                                                                    |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| Constants, rank, links, hand-over, heir and area rules | `core/include/tandem/regions.hpp`, `core/src/regions.cpp`, `tests/regions_test.cpp`                                      |
+| Messages                                               | `protocol.hpp`: `Regions`, `NpcOwner`, `NpcHandover`, `NpcHandoverState`, `NpcHandoverDone`, `OwnedDigest`, `RegionHold` |
+| Ownership, routing, arbitration, retries               | `core/src/endpoint.cpp` (search "Regions"), `tests/regions_endpoint_test.cpp`                                            |
+| Natives for scripts                                    | `plugin/src/region_natives.cpp` ↔ `scripts/tandem/RegionNatives.reds`                                                    |
+| Owner and proxy sides in one game                      | `scripts/tandem/Npcs.reds`; give, take, suppression, twins: `scripts/tandem/Regions.reds`                                |
+| World vehicles of several owners                       | `core/src/endpoint_traffic.cpp`, `tests/traffic_regions_test.cpp`, `scripts/tandem/Traffic.reds` (`traffic.md`)          |
+| Mock player as an NPC owner                            | `tandem-peer --mode region` (`peer/src/main.cpp`), `tests/peer_regions.sh`                                               |
 | The death ledger, twins                                | `tandem/ledger.hpp`, `tandem/twins.hpp`, `NoteDeath` and `RecordDeath` in `core/src/endpoint_regions.cpp`, `scripts/tandem/Ledger.reds`, `tests/ledger_test.cpp` (§14) |
-| Scenarios                                              | `tools/scenarios/regions-apart.sh`, `regions-meet.sh`, `regions-vanish.sh`                                                                                             |
+| Scenarios                                              | `tools/scenarios/regions-apart.sh`, `regions-meet.sh`, `regions-vanish.sh`, `regions-overlap.sh`, `ledger-guest.sh`      |
+| The overlap                                            | `regions::Covers`, `CrowdShare`, `NullAreas` (`regions.hpp`); `TandemNpcs.UpdateQuiet`, `UpdateNullAreas`; `TandemTraffic.HeldBack` |
 
 ## 12. Testing
 
@@ -583,6 +623,12 @@ out of our world`, and with `LEDGER_AWAY`, once our V is teleported
   gave way (`the same placed NPC`: by identity). Two identical guards side
   by side need two real games (the mock player cannot stand NPCs on ours):
   expect two `is the twin of` lines naming two different NPCs of ours.
+- `regions-overlap`: the game joins a mock host 100 m away that walks up
+  and off again. Expect `own crowd at 0.9` (or, with `overlap = area`, a
+  `crowd null area … over player 1's region`), `own crowd off` deep inside,
+  `crowd vehicle(s) of our own held back` in `cmd overlap`, and the crowd
+  back after. Look for: the street's density while near (not doubled, not
+  empty), no driverless car, how fast the crowd returns.
 - `wheels-guest-area` (`traffic.md`): the peer owns its area and runs cars;
   they are shown as proxies when it comes near and handed over, driver
   seated, when it walks off.
@@ -605,9 +651,11 @@ See the tags in [`../research/engine/regions.md`](../research/engine/regions.md)
    session. Not kept: an NPC with a dynamic id (the crowd, and whatever
    else 2.50 gives one), the host's save.
 5. **Traffic and parked cars** follow the NPCs' ownership (`traffic.md`,
-   built, not run in game). What a game cannot turn off is its own crowd's
-   cars where another game runs the street: density 0 thins them, nothing
-   removes them.
+   built, not run in game). Our own crowd's cars where another game runs
+   the street are held back and kept from spawning (§6, "The overlap, held
+   back"); a car already there is only removed if the `overlap_despawn`
+   probe works (no call is known to remove one, `engine/traffic-police.md`
+   §13.32): until then it drives on, seen by us alone.
 6. **The epoch fence** covers requests aimed at the host's world only; a
    hit in flight at a guest owner whose world was just rebuilt is dropped
    by that guest because it no longer owns the NPC.

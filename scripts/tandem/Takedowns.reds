@@ -977,6 +977,7 @@ public final func PlayFinisherGameEffect(const targetPuppet: ref<GameObject>, in
 // The blunt "hold" finisher kills on the spot (final.reds 22433).
 @wrapMethod(ScriptedPuppet)
 private final func TriggerNewPerkFinisherBluntHold(playerPuppet: ref<PlayerPuppet>, npcPuppet: ref<NPCPuppet>) -> Void {
+  TandemNative.HookRan(n"Takedowns.ScriptedPuppet.TriggerNewPerkFinisherBluntHold");
   wrappedMethod(playerPuppet, npcPuppet);
   let none = TDBID.None();
   let noEntity = EntityID.FromHash(0ul);
@@ -1030,6 +1031,7 @@ protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<Sta
 // is the host's; the body goes into it on every game.
 @wrapMethod(DisposalDevice)
 protected cb func OnDisposeBody(evt: ref<DisposeBody>) -> Bool {
+  TandemNative.HookRan(n"Takedowns.DisposalDevice.OnDisposeBody");
   let result = wrappedMethod(evt);
   TandemDisposal.Sent(this, this.m_npcBody, n"None");
   return result;
@@ -1037,6 +1039,7 @@ protected cb func OnDisposeBody(evt: ref<DisposeBody>) -> Bool {
 
 @wrapMethod(DisposalDevice)
 protected cb func OnTakedownAndDisposeBody(evt: ref<TakedownAndDisposeBody>) -> Bool {
+  TandemNative.HookRan(n"Takedowns.DisposalDevice.OnTakedownAndDisposeBody");
   let result = wrappedMethod(evt);
   TandemDisposal.Sent(this, this.m_npcBody, n"kill");
   return result;
@@ -1044,6 +1047,7 @@ protected cb func OnTakedownAndDisposeBody(evt: ref<TakedownAndDisposeBody>) -> 
 
 @wrapMethod(DisposalDevice)
 protected cb func OnNonlethalTakedownAndDisposeBody(evt: ref<NonlethalTakedownAndDisposeBody>) -> Bool {
+  TandemNative.HookRan(n"Takedowns.DisposalDevice.OnNonlethalTakedownAndDisposeBody");
   let result = wrappedMethod(evt);
   TandemDisposal.Sent(this, this.m_npcBody, n"setUnconscious");
   return result;
