@@ -186,3 +186,22 @@ func TestForwardDoesNotSample(t *testing.T) {
 		t.Fatalf("%v allocations, %d sources sampled", allocs, len(s.watch.seen))
 	}
 }
+
+// Behind a PROXY v2 tunnel every datagram comes from the agent's loopback
+// sockets: the check judges the clients the headers name, not those.
+func TestProxiedSourcesAreTheHeaders(t *testing.T) {
+	s := proxied(t)
+	now := time.Now()
+	for i := range 8 {
+		agentH := netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(41000+2*i))
+		agentG := netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), uint16(41001+2*i))
+		flowOpens(t, s, agentH, netip.AddrPortFrom(netip.AddrFrom4([4]byte{198, 51, 100, byte(i + 1)}), 5000), now)
+		flowOpens(t, s, agentG, netip.AddrPortFrom(netip.AddrFrom4([4]byte{203, 0, 113, byte(i + 1)}), 6000), now)
+		sec := [SecretSize]byte{byte(i), 9}
+		mustHandle(t, s, agentH, RegisterHost(sec, token), now)
+		mustHandle(t, s, agentG, RegisterGuest(sec), now)
+	}
+	if v := s.checkSources(now); v.Reason != "" || v.Internal != 0 || v.Sources != 16 || s.SourceNATSuspected() {
+		t.Fatalf("%+v", v)
+	}
+}

@@ -888,7 +888,9 @@ bridge's), or `few` (everyone from one or two addresses: an SNAT to a
 public address). Find the hop with the steps above. On a LAN, or for
 tests on 127.0.0.1, run with `--expect-public-clients=false`;
 `--internal-cidrs` adds a cluster network outside the private ranges
-(`--internal-cidrs=198.18.0.0/15`, or `TANDEM_RELAY_INTERNAL_CIDRS`).
+(`--internal-cidrs=198.18.0.0/15`, or `TANDEM_RELAY_INTERNAL_CIDRS`). With `--proxy-protocol`
+the check reads the clients the headers name, never the tunnel agent's
+sockets.
 
 ### Through playit.gg
 
