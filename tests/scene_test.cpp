@@ -696,3 +696,178 @@ TEST_CASE("a guest that missed a scene's end is told by the resync that none pla
   CHECK(Count(atA.cues, Kind::ActorGone) == 2);
   CHECK(Count(atA.cues, Kind::End) == 1);
 }
+
+// ---- props (docs/architecture/scene-replay.md, "Props") ----
+
+TEST_CASE("the host's stage says what its actors hold: taken, handed over, put away") {
+  scene::Stage stage;
+  auto sample = Talk();
+  sample.props = {{.key = 900, .record = 0x61, .holder = 7}};
+  auto out = stage.Update(sample, kT0);
+  const auto *held = Find<proto::SceneProp>(out);
+  REQUIRE(held);
+  CHECK(*held == proto::SceneProp{.play = 1, .prop = 1, .record = 0x61, .holder = 7});
+  // The same again: nothing to say.
+  CHECK(Find<proto::SceneProp>(stage.Update(sample, kT0 + kSecond)) == nullptr);
+
+  // Handed to the host's V, in its left hand: the same prop, another holder.
+  sample.props = {{.key = 900, .record = 0x61, .holderPlayer = 1, .leftHand = true}};
+  out = stage.Update(sample, kT0 + 2 * kSecond);
+  held = Find<proto::SceneProp>(out);
+  REQUIRE(held);
+  CHECK(
+      *held ==
+      proto::SceneProp{
+          .play = 1, .prop = 1, .record = 0x61, .holderPlayer = 1, .flags = proto::kPropLeftHand});
+
+  // Another thing appears; the first is put away.
+  sample.props = {{.key = 901, .record = 0x62, .holder = 4}};
+  out = stage.Update(sample, kT0 + 3 * kSecond);
+  std::vector<proto::SceneProp> said;
+  for (const auto &message : out)
+    if (const auto *prop = std::get_if<proto::SceneProp>(&message))
+      said.push_back(*prop);
+  REQUIRE(said.size() == 2);
+  CHECK(said[0].prop == 1);
+  CHECK((said[0].flags & proto::kPropGone) != 0);
+  CHECK(said[1] == proto::SceneProp{.play = 1, .prop = 2, .record = 0x62, .holder = 4});
+
+  // The scene ends: its props go with it, unsaid; the next play counts anew.
+  out = stage.Update({}, kT0 + 4 * kSecond);
+  CHECK(Find<proto::SceneProp>(out) == nullptr);
+  sample.props = {{.key = 901, .record = 0x62, .holder = 4}};
+  out = stage.Update(sample, kT0 + 5 * kSecond);
+  REQUIRE(Find<proto::SceneProp>(out));
+  CHECK(Find<proto::SceneProp>(out)->play == 2);
+  CHECK(Find<proto::SceneProp>(out)->prop == 1);
+
+  // A private scene announces nothing, its props included.
+  scene::Stage own;
+  sample.isPrivate = true;
+  CHECK(own.Update(sample, kT0).empty());
+}
+
+TEST_CASE("a guest's replay puts props in hands and takes them back with the scene") {
+  scene::Replay replay;
+  replay.Note(proto::SceneState{.scene = kScene, .play = 3, .startUs = kT0, .tier = 4}, kT0);
+  replay.Note(proto::SceneCast{.play = 3, .actors = {{7, 0}}}, kT0);
+  const proto::SceneProp glass{.play = 3, .prop = 1, .record = 0x61, .holder = 7};
+  auto cues = replay.Note(glass, kT0);
+  REQUIRE(Count(cues, Kind::Prop) == 1);
+  CHECK(First(cues, Kind::Prop)->prop == glass);
+  CHECK(replay.Holds(7, proto::kNoPlayer));
+  CHECK_FALSE(replay.Holds(4, proto::kNoPlayer));
+  // A repeat (a resync) is not a second glass.
+  CHECK(replay.Note(glass, kT0).empty());
+  // Another play's prop is nobody's.
+  CHECK(replay.Note(proto::SceneProp{.play = 2, .prop = 5, .record = 1, .holder = 7}, kT0).empty());
+
+  // Handed to player 1.
+  auto handed = glass;
+  handed.holder = 0;
+  handed.holderPlayer = 1;
+  cues = replay.Note(handed, kT0 + kSecond);
+  REQUIRE(Count(cues, Kind::Prop) == 1);
+  CHECK(First(cues, Kind::Prop)->prop.holderPlayer == 1);
+  CHECK(replay.Holds(0, 1));
+  CHECK_FALSE(replay.Holds(7, proto::kNoPlayer));
+
+  // Gone: once, with what the guest held of it.
+  auto gone = handed;
+  gone.flags = proto::kPropGone;
+  cues = replay.Note(gone, kT0 + 2 * kSecond);
+  REQUIRE(Count(cues, Kind::PropGone) == 1);
+  CHECK(First(cues, Kind::PropGone)->prop.holderPlayer == 1);
+  CHECK(replay.Note(gone, kT0 + 2 * kSecond).empty());
+  CHECK(replay.Props() == 0);
+
+  // The scene's end takes what is still held, before the actors go.
+  replay.Note(glass, kT0 + 3 * kSecond);
+  cues = replay.Note(proto::SceneState{.play = 3}, kT0 + 4 * kSecond);
+  REQUIRE(Count(cues, Kind::PropGone) == 1);
+  const auto propGone = First(cues, Kind::PropGone) - cues.data();
+  const auto actorGone = First(cues, Kind::ActorGone) - cues.data();
+  CHECK(propGone < actorGone);
+  CHECK(replay.Props() == 0);
+  // So does a host that vanishes.
+  replay.Note(proto::SceneState{.scene = kScene, .play = 4, .startUs = kT0, .tier = 4}, kT0);
+  replay.Note(proto::SceneProp{.play = 4, .prop = 1, .record = 0x61, .holder = 7}, kT0);
+  CHECK(Count(replay.Reset(), Kind::PropGone) == 1);
+}
+
+TEST_CASE("the story record keeps a scene's props for a joiner and hashes them") {
+  story::Record host, guest;
+  const proto::SceneState state{.scene = kScene, .play = 2, .startUs = kT0, .tier = 4};
+  const proto::SceneProp glass{.play = 2, .prop = 1, .record = 0x61, .holder = 7};
+  for (auto *record : {&host, &guest}) {
+    CHECK(record->Note(state));
+    CHECK(record->Note(glass));
+    CHECK_FALSE(record->Note(glass));
+  }
+  CHECK(host.Digest() == guest.Digest());
+  const auto joiner = host.ForJoiner();
+  REQUIRE(joiner.size() == 2);
+  CHECK(std::get<proto::SceneProp>(joiner[1]) == glass);
+  // A hand-over the guest missed: the digests differ.
+  auto handed = glass;
+  handed.holder = 0;
+  handed.holderPlayer = 1;
+  CHECK(host.Note(handed));
+  CHECK(host.Digest() != guest.Digest());
+  CHECK(guest.Note(handed));
+  CHECK(host.Digest() == guest.Digest());
+  // Gone, once; of another play: not kept.
+  auto gone = handed;
+  gone.flags = proto::kPropGone;
+  CHECK(host.Note(gone));
+  CHECK_FALSE(host.Note(gone));
+  CHECK_FALSE(host.Note(proto::SceneProp{.play = 9, .prop = 1, .record = 1, .holder = 7}));
+  // The play's end takes its props.
+  CHECK(guest.Note(proto::SceneState{.play = 2}));
+  CHECK(guest.ForJoiner().empty());
+}
+
+TEST_CASE("a prop through the endpoints: only the host's word, and a joiner gets it") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(a);
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) {
+    return a->IsJoined() && host->Players().size() == 2;
+  }));
+  host->SendNpcSpawn({.npc = 7, .record = 1});
+  host->SendNpcSpawn({.npc = 4, .record = 2});
+  scene::Stage stage;
+  auto sample = Talk();
+  sample.props = {{.key = 900, .record = 0x61, .holder = 7}};
+  for (const auto &message : stage.Update(sample, host->HostNowUs()))
+    host->SendStory(message);
+  // A guest cannot put things in the scene's hands.
+  a->SendStory(proto::SceneProp{.play = 1, .prop = 9, .record = 5, .holder = 4});
+  Watcher atA;
+  std::size_t hostHeard = 0;
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 1)
+      atA.Take(*a, events);
+    else
+      for (const auto &event : events)
+        hostHeard += std::holds_alternative<events::Story>(event);
+    return Count(atA.cues, Kind::Prop) == 1;
+  }));
+  CHECK(hostHeard == 0);
+  CHECK(atA.replay.Holds(7, proto::kNoPlayer));
+
+  // A second guest arrives: the prop comes with the scene and its cast.
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(b);
+  Watcher atB;
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    if (i == 2)
+      atB.Take(*b, events);
+    return Count(atB.cues, Kind::Prop) == 1;
+  }));
+  CHECK(Count(atB.cues, Kind::Actor) == 2);
+  CHECK(atB.replay.Holds(7, proto::kNoPlayer));
+}

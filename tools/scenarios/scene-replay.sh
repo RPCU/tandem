@@ -11,9 +11,13 @@ expect "scene: the host's scene begins \(play 1, tier 4" 20
 expect 'story: weapons lowered' 10
 expect 'scene: actor 50000 joins' 10
 expect 'scene: actor 50000 follows the host.s pose' 15
+expect 'scene: prop 1 \(.*\) held by npc 50000, player 0' 10
+expect 'scene: prop 1 in the hand of npc 50000' 10
 expect 'subtitle: shown' 10
 expect 'scene: line voiced \(npc 50000, player 0, from 0' 10
 expect 'scene: line voiced \(npc 0, player 1' 10
+expect 'scene: prop 1 in the hand of npc 0, player 1' 10
+expect 'scene: prop 1 gone' 10
 expect 'scene: line cut' 15
 expect 'scene: the host skips ahead' 10
 cmd story scene report

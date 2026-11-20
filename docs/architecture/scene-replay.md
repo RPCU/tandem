@@ -92,12 +92,13 @@ guests. The first three are story messages (`proto::IsStory`): one path
 through `Endpoint::SendStory`, kept by `story::Record` for late joiners,
 reliable and ordered.
 
-| Message      | Channel | When                          | Carries                                                                                                                                              |
-| ------------ | ------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SceneState` | Event   | on every change               | the scene's resource path hash (0: none), its `play` number, host clock at its time 0, rate (fast-forward), the host's tier, flags, the staging area |
-| `SceneCast`  | Event   | whole, on every change        | `play`, the actors: `NpcId` and flags (ghost, hidden, posed)                                                                                         |
-| `SceneLine`  | Event   | a line begins, or is cut      | `play`, the line's string id, the speaker (`NpcId` or `PlayerId`), host clock when it began, its length, flags (cut, holocall, bark)                 |
-| `ActorPose`  | State   | ≤ 30 Hz per actor, unreliable | `NpcId`, seq, host-clock time, the body pose (a `PoseState`: 68 rotations of 6 bytes and the hips, 431 bytes)                                        |
+| Message      | Channel | When                                | Carries                                                                                                                                              |
+| ------------ | ------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SceneState` | Event   | on every change                     | the scene's resource path hash (0: none), its `play` number, host clock at its time 0, rate (fast-forward), the host's tier, flags, the staging area |
+| `SceneCast`  | Event   | whole, on every change              | `play`, the actors: `NpcId` and flags (ghost, hidden, posed)                                                                                         |
+| `SceneLine`  | Event   | a line begins, or is cut            | `play`, the line's string id, the speaker (`NpcId` or `PlayerId`), host clock when it began, its length, flags (cut, holocall, bark)                 |
+| `ActorPose`  | State   | ≤ 30 Hz per actor, unreliable       | `NpcId`, seq, host-clock time, the body pose (a `PoseState`: 68 rotations of 6 bytes and the hips, 431 bytes)                                        |
+| `SceneProp`  | Event   | a prop is held, changes hands, goes | `play`, the prop's number in the play, the item's TweakDB id, its holder (`NpcId` or `PlayerId`), flags (gone, left hand); a story message, 26 bytes |
 
 - `play` counts the host's scenes in a session. A scene played again is
   another play; a cast or a line names its play, so what belongs to a scene
@@ -139,6 +140,15 @@ reliable and ordered.
   subtitle hidden before its end is a cut. A line whose speaker is an NPC
   the host does not share is not voiced (nobody a guest could hear it
   from), unless it is a holocall.
+- **Props** (`HostProps`): what the actors hold. Two sources, both by name:
+  an item in an actor's `AttachmentSlots.WeaponLeft` (the right hand
+  already travels with `NpcAnims`); and an item entity (`gameItemObject`)
+  that attached while the scene plays (Codeware's `Entity/Attach`, queued
+  only: `TandemStreamKind.Prop`), that the scene system says is in a scene,
+  within 1.5 m of an actor or of our V and not already in that body's hand
+  slots: held by the nearest, right hand unless only the right is taken.
+  `scene::Stage` numbers each (the same number while it changes hands) and
+  says what changed; a prop no longer seen is gone.
 - **Changes only**: the stage says a staging area again only when it moved
   0.75 m and at most twice a second; the cast when it differs; the rest at
   once (fast-forward, a hub holding the scene's time, the tier).
@@ -158,6 +168,8 @@ without the game); the script applies them (`Scenes.reds`):
 | it no longer does | unbinds it: the proxy's own animation again                                                                                          |
 | a line begins     | queues the dialog line event on the speaker (the proxy, the host's puppet, or our own V for a holocall), from the right second       |
 | a line stops      | queues the stop event                                                                                                                |
+| a prop is held    | once the holder's body is there (an actor's proxy, a player's puppet), the item goes in its hand slot (`TandemWeapons.Hold`)         |
+| a prop is gone    | out of that hand, if it is still what the hand holds; every prop goes before the scene's end releases the actors                     |
 | the scene is over | every actor released, the offer closed                                                                                               |
 
 - A proxy keeps everything it had: its place still comes from the host's
@@ -174,6 +186,8 @@ without the game); the script applies them (`Scenes.reds`):
 - A proxy whose body is rebuilt (streamed out and back, a fast travel) is
   bound again on the next tick: the cast names NPCs, not entities.
 - The host's V is not in the cast: its puppet already shows its pose.
+- While a prop is in a proxy's hands `NpcAnims` leaves its right hand alone
+  (`TandemStory.SceneHolds`): the host's animation state says "no weapon".
 
 ## 5. Voice and subtitles
 
@@ -289,7 +303,9 @@ they change too often, and a wrong one heals with the next change.
 
 - **Protocol** (`core/include/tandem/protocol.hpp`): `SceneState`,
   `SceneCast`, `SceneLine`, `ActorPose`, appended; bounds checked in
-  `Decode` (32 actors, a rate between 0 and 16).
+  `Decode` (32 actors, a rate between 0 and 16). Second part, appended
+  (2026-11-20): `SceneProp` (built: props), and `ActorFrame`, `RigPose`,
+  `SceneCamera` (wire forms and core code in, nothing sends them yet: §12).
 - **Core** (`core/include/tandem/scene.hpp`, `core/src/scene.cpp`):
   `scene::Stage` (host), `scene::Replay` (guest), `scene::WatchSpot`,
   `scene::KeepOut`. `story::Record` keeps the scene, its cast and the
@@ -305,7 +321,7 @@ they change too often, and a wrong one heals with the next change.
 - **Scripts**: `Scenes.reds` (new), `Dialogue.reds` (the voice of each
   line, the stand-in subtitle ids and the dedupe), `Story.reds` (wiring).
 - **Mock player** (`peer/src/main.cpp`): story verbs `scene`, `cast`,
-  `skip`, `voice`, `cut`; its scene's actors take the pose it sends; as a
+  `prop`, `skip`, `voice`, `cut`; its scene's actors take the pose it sends; as a
   guest it logs what it hears.
 - **Config**: `scene_replay = off | on | noposes` (`tandem.ini`).
 
@@ -332,6 +348,10 @@ local space). **No new hook, hash or raw offset.**
 - the watch spot (beside the host, clear, facing the scene, on the host's
   floor, another one when taken) and the step out of an actor;
 - the record: what a joiner gets, the digest, repeats;
+- props: taken, handed over (the same number), put away, gone with the
+  scene, never in a private one; the guest's cues in order; the record and
+  its digest; through endpoints (only the host's word, a late joiner gets
+  them); the referee (an unknown holder);
 - through real endpoints over loopback UDP: a guest watches; a guest
   cannot speak for the scene; poses only for known NPCs and only from the
   host; a second guest joins 2 s in and seeks; the end; the host destroyed
@@ -369,7 +389,16 @@ detail of each):
    offer and the spot, an actor walking into the guest's V.
 6. Johnny (the first scene after the heist where he appears): his proxy
    on the guest, visible when he is on the host, his glitch both ways.
-7. The earlier story scenarios still pass (`story-guest`, `story-host`,
+7. Props. `scene-replay` (guest): `scene: prop 1 … in the hand of npc
+50000`, then handed to the host's puppet, then gone; someone looking
+   confirms the inhaler in the Tyger Claw's right hand, then in the host
+   puppet's left. `scene-replay-host`: `cmd story scene prop
+Items.FirstAidWhiffV0` says `scene prop: 1 … held by npc N`. In a real
+   scene with a glass or a shard (the first drink with Jackie): does
+   `scene: prop` appear in the host's log at all (is a scene prop a
+   `gameItemObject`, does `IsEntityInScene` say yes for it), with the right
+   holder and hand; and does the guest's proxy hold it the right way round.
+8. The earlier story scenarios still pass (`story-guest`, `story-host`,
    `story-johnny`, `story-private`): the subtitle path changed (stand-in
    ids).
 
@@ -382,12 +411,12 @@ detail of each):
   actor. Needs, in game (`tools/re/`, read-only): where the tracks sit in
   a sampled pose, and that writing them at the commit moves the face.
   Until then a speaking proxy keeps its idle face.
-- **Props the scene spawns** (a glass, a shard handed over): to announce
-  like NPCs, with an attachment to an actor's slot. Props the scene finds
-  in the world are there already; whether they move with the scene is to
-  see in game.
-- **Items in actors' hands**: `NpcAnims` already gives a proxy the weapon
-  its NPC holds; scene-equipped props are the case above.
+- **Props that nobody holds** (a bottle the scene spawns on a table), and a
+  held prop's exact grip: a held prop sits in the hand's attachment slot,
+  not on the scene's own slot and offset (`scneventsAttachPropToPerformer`
+  names a slot of the performer and an offset; nothing reflected reads
+  them from a running scene). Props the scene finds in the world are there
+  already; whether they move with the scene is to see in game.
 - **A watch camera**: for tier 5 cutscenes (the picture is a scene
   camera's, not V's eyes), follow the host's active camera
   (`coop-scenes.md` §2.4: sample it on the host, a free or activated
@@ -395,7 +424,12 @@ detail of each):
 - **The scene's section and its true clock**: `SceneState.section` is 0.
   A guest follows the host by what the host shows, so it is not needed
   for (b); it would be for (a).
-- **Whose voice V has** on another game (the `gender` field).
+- **Whose voice V has** on another game: `audioDialogLineEventData.gender`
+  (Int32 at +0xC) is in the RTTI only through Codeware
+  (`CW/src/App/Audio/audioDialogLineEventData.hpp`), not in its script
+  import, and its values are unknown. One try in game decides (a script
+  field added to the struct, 0 and 1 with `isPlayer` on a puppet of the
+  other body); until then the game picks.
 - **Actors far from the host's V** (over 30 m) and **non-humanoid
   actors** (drones, robots) are not posed.
 - **Approach (a)**, as a spike only, for scenes with no V in them.

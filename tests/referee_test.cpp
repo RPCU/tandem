@@ -394,6 +394,29 @@ TEST_CASE("referee: rates, sizes and values") {
   CHECK(Broke(guest, "value.range"));
 }
 
+TEST_CASE("referee: resync requests are budgeted at the pace of the endpoint's digests") {
+  // A test's timings, a digest every 100 ms: a guest may ask after each one
+  // (7 in 10 s with a third of everything lost was called over budget, the
+  // game's 6, in regions_endpoint_test).
+  const auto port = test::NextPort();
+  std::string error;
+  auto host =
+      Endpoint::Host({"host"}, port, error, Timing{.digest = 100ms, .resyncCooldown = 200ms});
+  REQUIRE_MESSAGE(host, error);
+  Referee referee(true);
+  referee.Attach(*host);
+  referee.Sent(2, proto::Welcome{.you = 2, .host = 1}, kSecond);
+  referee.Sent(0, proto::Roster{{{1, "us", {}}, {2, "a", {}}}}, kSecond);
+  auto now = kSecond;
+  for (int i = 0; i < 100; ++i, now += kSecond / 10)
+    referee.Received(2, proto::ResyncRequest{proto::kDomainNpcs}, now);
+  CHECK_FALSE(referee.Counts().contains("rate.over-budget"));
+  // Ten times faster than its digests come: over it.
+  for (int i = 0; i < 300; ++i, now += kSecond / 100)
+    referee.Received(2, proto::ResyncRequest{proto::kDomainNpcs}, now);
+  CHECK(referee.Counts().contains("rate.over-budget"));
+}
+
 TEST_CASE("referee: states held and never released") {
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 1}, kSecond);
@@ -582,4 +605,32 @@ TEST_CASE("referee: an NPC seated in a shared world vehicle names the vehicle, n
       1, proto::NpcSeat{.npc = 7, .owner = proto::TrafficSeatOwner(proto::MakeTrafficId(9, 1))},
       kSecond);
   CHECK(Rules(referee) == std::vector<std::string>{"ids.unknown-player"});
+}
+
+TEST_CASE("referee: a scene's props, camera and rig poses are the host's, about what it shares") {
+  auto host = Host();
+  host.Received(2, proto::SceneProp{.play = 1, .prop = 1, .record = 5, .holder = 7}, kSecond);
+  host.Received(2, proto::SceneCamera{.play = 1, .fov = 60.f}, kSecond);
+  host.Received(2, proto::RigPose{.npc = 7, .bones = 4}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>(3, "authority.host-only"));
+
+  auto guest = Guest();
+  guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 10}, kSecond);
+  guest.Received(1, proto::SceneProp{.play = 1, .prop = 1, .record = 5, .holder = 7}, kSecond);
+  guest.Received(1, proto::SceneProp{.play = 1, .prop = 1, .record = 5, .holderPlayer = 3},
+                 kSecond);
+  guest.Received(1, proto::SceneProp{.play = 1, .prop = 1, .flags = proto::kPropGone}, kSecond);
+  CHECK(Rules(guest).empty());
+  // Held by an NPC nobody announced, by a player who never was.
+  guest.Received(1, proto::SceneProp{.play = 1, .prop = 2, .record = 5, .holder = 99}, kSecond);
+  guest.Received(1, proto::SceneProp{.play = 1, .prop = 3, .record = 5, .holderPlayer = 9},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-npc", "ids.unknown-player"});
+  // A view that is not a number.
+  guest.Received(1,
+                 proto::SceneCamera{.play = 1,
+                                    .position = {std::numeric_limits<float>::infinity(), 0.f, 0.f},
+                                    .fov = 60.f},
+                 kSecond);
+  CHECK(Broke(guest, "value.not-finite"));
 }
