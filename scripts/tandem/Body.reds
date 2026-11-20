@@ -147,6 +147,10 @@ public class TandemBodies {
 
   // ---- the graft, on a job thread, before the entity is built ----
 
+  // job thread safe: it edits the template being built (the tick is too late)
+  // and each donor's Extract writes only its own TandemDonor, `ready` last;
+  // Graft, MakeVisible, Ready and Tick read a donor only once it is ready,
+  // and Recapture makes new ones.
   private cb func OnExtract(event: ref<EntityBuilderEvent>) {
     if !this.m_active {
       return;

@@ -296,3 +296,7 @@ jobs:
       # task strings:check
       - name: Player-facing strings
         run: python3 tools/check-strings.py
+
+      # task threads:check
+      - name: Script hooks that may run on job threads
+        run: python3 tools/scripts-threads.py
