@@ -17,6 +17,7 @@
 | natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere, region, street, presence, activity) | `task natives:check` |
 | scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods | `task scripts:check` |
 | threads | every script hook that may run on a job thread (per-entity, component and persistent-state wraps, `cb func`s, lifecycle methods, `Entity/*` callbacks) and all it calls: reads, the wrapped method, natives; no write to a system's state (`tools/scripts-threads.py`; `.known`: 86 hooks older than the check, unproven) | `task threads:check` |
+| references | every `TandemX.Name(…)` call names a declared function, every record of ours the scripts name is in `tweaks/tandem` (`tools/scripts-refs.py`: what scc and the game would say, in CI); every scenario's `--flags` exist in the mock player, its `cmd` words in the scripts, its helpers in `tools/scenario.sh` (`tools/scenarios-check.py`) | `task refs:check`, `task scenarios:check` |
 | other mods | every method another mod's redscript or CET Lua wraps, replaces or observes, against the ones tandem wraps: conflicts, order-sensitive, harmless chains (`tools/mods-check.py`, on any game folder or copy) | `task mods:check DIR=…` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
@@ -427,7 +428,7 @@ C++ builds (`AGENTS.md`, Git).
 - **Jobs:** `go` (relay and pilot: vet, race tests), `kubernetes` (the
   kustomize base and overlays, kubeconform), `docs, natives, strings`
   (`tools/docs-check.py links`, `check-natives.py`, `check-strings.py`,
-  `scripts-threads.py`),
+  `scripts-threads.py`, `scripts-refs.py`, `scenarios-check.py`),
   `core build (Linux)` (`task build:linux` with GCC 16, the devenv's: the
   tests' seeded links are measured with its libstdc++), then `core tests`
   in four jobs side by side on its binaries (`tandem-tests` in three
