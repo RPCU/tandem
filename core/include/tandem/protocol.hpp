@@ -2678,6 +2678,52 @@ struct StatusVisuals {
   friend bool operator==(const StatusVisuals &, const StatusVisuals &) = default;
 };
 
+// ---- The world's objects (docs/architecture/devices.md, "Glass and
+// breakable scenery", "A device's fire") ----
+
+// Something of the world broke in a game (a window, a cover, breakable
+// scenery): physics destruction, which has no script state. The game where
+// it broke says where and, when the piece is a destruction component of a
+// placed entity, which; every game that has the place in its world breaks
+// the same piece its own way (the component's own trigger, else a physics
+// impulse at the place), hurting nobody. Event channel; the host stamps
+// the player, holds each guest to a rate (devices.hpp) and passes it to the
+// players linked with it. A break is for good: a repeat changes nothing
+// (devices::Fractures drops it).
+struct Fracture {
+  PlayerId player{};         // whose game saw it break: set by the host from the connection
+  std::uint64_t entity{};    // the placed entity it is a part of (0: world geometry)
+  std::uint64_t component{}; // its destruction component's name (CName; 0: none)
+  Vec3 at;                   // where it broke
+  std::uint8_t level{};      // the entity's level of destruction (0: not said)
+  friend bool operator==(const Fracture &, const Fracture &) = default;
+};
+
+// A device that fires (a security turret) is the host's, as every device
+// is: what it turns to and shoots at is the host's turret's doing, and
+// every other game draws it on its own copy, which never fires on its own.
+// A shot at a V is fired for real by that V's game from its copy (the V's
+// game decides the hit, as for an NPC's shot: NpcShotAt); a shot at anyone
+// else is drawn and hurts nobody. Sensing stays each game's own (the game's
+// sensing code knows the local player only): a guest whose copy locked its
+// V says so, and the host's turret takes that V's puppet as a target.
+enum class DeviceFireKind : std::uint8_t {
+  Idle = 0, // host: it follows nobody any more
+  Aim = 1,  // host: it turned to `target` (said again every second while it does)
+  Shot = 2, // host: one shot of its weapon at `target`
+  Seen = 3, // guest: my copy of it has locked my V
+  Lost = 4, // guest: ...and no longer has
+};
+struct DeviceFire {
+  std::uint64_t entity{}; // the device's static id
+  DeviceFireKind kind{};
+  PlayerId player{};      // Seen, Lost: whose V (set by the host from the connection)
+  TargetRef target;       // Aim, Shot: a player's V, a shared NPC, a placed entity (None: `at`)
+  Vec3 at;                // Aim, Shot: where the target was on the host
+  std::uint64_t timeUs{}; // Shot: host clock when it fired
+  friend bool operator==(const DeviceFire &, const DeviceFire &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -2697,7 +2743,7 @@ using MessageVariant = std::variant<
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
-    TrafficHandoverState, TrafficHandoverDone, QuestInteract>;
+    TrafficHandoverState, TrafficHandoverDone, QuestInteract, Fracture, DeviceFire>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

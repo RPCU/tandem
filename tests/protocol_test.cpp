@@ -979,6 +979,42 @@ TEST_CASE("breaches: survive encoding, reliable one-shots, bounded, known flags 
   CHECK_FALSE(Decode(Encode(BreachResult{.verdict = BreachVerdict{3}})).has_value());
 }
 
+TEST_CASE("the world's objects: fractures and a device's fire survive encoding, small, known "
+          "kinds only") {
+  RoundTrips(Fracture{.player = 2,
+                      .entity = 0x1122334455667788ULL,
+                      .component = 0x99AABBCCDDEEFF00ULL,
+                      .at = {1.5f, -2.f, 30.f},
+                      .level = 2});
+  RoundTrips(Fracture{.at = {4.f, 5.f, 6.f}});
+  RoundTrips(DeviceFire{.entity = 7,
+                        .kind = DeviceFireKind::Shot,
+                        .target = {TargetKind::Player, 2},
+                        .at = {1.f, 2.f, 3.f},
+                        .timeUs = 123456789});
+  RoundTrips(DeviceFire{.entity = 7, .kind = DeviceFireKind::Lost, .player = 3});
+  CHECK(Message(Fracture{}).index() == Message(QuestInteract{}).index() + 1); // appended
+  CHECK(Message(DeviceFire{}).index() == Message(Fracture{}).index() + 1);
+  CHECK(std::string(NameOf(Fracture{})) == "Fracture");
+  CHECK(std::string(NameOf(DeviceFire{})) == "DeviceFire");
+  CHECK(ChannelOf(Fracture{}) == Channel::Event);
+  // A shot at a V is fired for real by that V's game: it must arrive. A
+  // shot at anyone else is drawn, and of the moment.
+  CHECK(ChannelOf(DeviceFire{.kind = DeviceFireKind::Shot, .target = {TargetKind::Player, 2}}) ==
+        Channel::Event);
+  CHECK(ChannelOf(DeviceFire{.kind = DeviceFireKind::Shot, .target = {TargetKind::Npc, 9}}) ==
+        Channel::State);
+  CHECK(ChannelOf(DeviceFire{.kind = DeviceFireKind::Shot}) == Channel::State);
+  for (const auto kind :
+       {DeviceFireKind::Idle, DeviceFireKind::Aim, DeviceFireKind::Seen, DeviceFireKind::Lost})
+    CHECK(ChannelOf(DeviceFire{.kind = kind}) == Channel::Event);
+  // A turret's burst is ten of these a second.
+  CHECK(Encode(Fracture{}).size() <= 36);
+  CHECK(Encode(DeviceFire{}).size() <= 48);
+  CHECK_FALSE(Decode(Encode(DeviceFire{.kind = static_cast<DeviceFireKind>(5)})).has_value());
+  CHECK_FALSE(Decode(Encode(DeviceFire{.target = {static_cast<TargetKind>(4), 1}})).has_value());
+}
+
 TEST_CASE("vehicles changing hands: survive encoding, reliable, small") {
   RoundTrips(TrafficOwnership{.id = MakeTrafficId(2, 9), .owner = 3});
   RoundTrips(TrafficHandover{.id = MakeTrafficId(2, 9), .to = 3});
