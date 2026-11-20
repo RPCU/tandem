@@ -53,6 +53,8 @@ public:
     float noiseHz{40.f}, throwPathHz{24.f};
     float eventsHz{400.f};      // every reliable message together (hint)
     float bytesPerSecond{2e5f}; // everything together (hint)
+    // At the game's digests (3 s); Attach raises it for an endpoint whose
+    // digests come faster (a guest may ask once per digest).
     std::uint32_t resyncsPer10s{6};
     // Sizes (encoded bytes).
     std::size_t playerStateBytes{64};

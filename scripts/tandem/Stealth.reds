@@ -103,6 +103,7 @@ public final static func ReactOnPlayerStealthStim(owner: wref<GameObject>, targe
 // the instigator (the stimuli this is done for, footsteps and landings, ask
 // nothing else of it: StimFilters), then taken back, so whatever the NPC
 // does next it does about the puppet.
+// job thread safe: it writes only the stimulus event this NPC's task carries, as the wrapped method's own pipeline does (stimEvent.sourceObject, final.reds:146325), and no state of ours
 @wrapMethod(ReactionManagerComponent)
 private final func ShouldStimBeProcessed(stimEvent: ref<StimuliEvent>, delayed: Bool) -> Bool {
   if !TandemNative.IsStarted() || !IsDefined(stimEvent) || !TandemStealth.IsMovementNoise(stimEvent.GetStimType()) {

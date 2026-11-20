@@ -2085,6 +2085,11 @@ private:
 //                                the mock player; with --pose or in mirror
 //                                and front modes, each takes the pose the
 //                                mock player sends (ActorPose)
+//   prop N RECORD HOLDER [left]  an actor of the scene holds something (N: our
+//                                number for it; RECORD: an item's TweakDB
+//                                name; HOLDER: host, an NPC id or own; left:
+//                                in its left hand); again with another
+//                                holder: handed over; prop N off: put away
 //   skip on|off                  the host fast-forwards the scene
 //   voice ID SPEAKER [SECONDS] [call]  a voiced line begins (ID: its string
 //                                id; SPEAKER: host, an NPC id or own)
@@ -2217,6 +2222,19 @@ SceneMessages(const StoryStep &step, SceneScript &script, const tandem::proto::V
             hostYaw + (static_cast<float>(i) - static_cast<float>(a.size() - 1) / 2.f) * spread;
         actor.position = {host.x - std::sin(angle) * 2.5f, host.y + std::cos(angle) * 2.5f, host.z};
         script.sample.actors.push_back(actor);
+      }
+      return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "prop" && a.size() >= 2) {
+      const auto key = std::stoull(a[0], nullptr, 0);
+      std::erase_if(script.sample.props, [&](const auto &prop) { return prop.key == key; });
+      if (a[1] != "off" && a.size() >= 3) {
+        const bool byHost = a[2] == "host";
+        script.sample.props.push_back({.key = key,
+                                       .record = TweakDBID(a[1]),
+                                       .holder = byHost ? 0 : npcOf(a[2]),
+                                       .holderPlayer = byHost ? hostPlayer : proto::kNoPlayer,
+                                       .leftHand = a.size() > 3 && a[3] == "left"});
       }
       return script.stage.Update(script.sample, hostNowUs);
     }
@@ -2444,6 +2462,12 @@ std::string Describe(const tandem::proto::Message &message) {
                        line->speakerPlayer ? std::format("player {}", line->speakerPlayer)
                                            : std::format("npc {}", line->speaker),
                        line->duration, line->play);
+  if (const auto *prop = std::get_if<proto::SceneProp>(&message))
+    return std::format("scene prop: {} ({:#x}) {} by {}{} (play {})", prop->prop, prop->record,
+                       prop->flags & proto::kPropGone ? "gone, last held" : "held",
+                       prop->holderPlayer ? std::format("player {}", prop->holderPlayer)
+                                          : std::format("npc {}", prop->holder),
+                       prop->flags & proto::kPropLeftHand ? ", left hand" : "", prop->play);
   if (const auto *use = std::get_if<proto::QuestInteract>(&message))
     return std::format("quest interaction: player {} on {:x} ({:#x}/{:#x}), question {}: {}",
                        use->player, use->target, use->choice, use->detail, use->seq,

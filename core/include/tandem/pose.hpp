@@ -85,6 +85,12 @@ public:
   static constexpr std::uint64_t kKeyUs = 500'000;
   static constexpr float kThreshold = 0.002f; // rad (0.11 degrees)
 
+  // Another cadence than a V's (a scene actor's stream is slower: scene::Pacer).
+  void Pace(std::uint32_t keyFrames, std::uint64_t keyUs, float threshold) {
+    m_everyFrames = keyFrames;
+    m_everyUs = keyUs;
+    m_threshold = threshold;
+  }
   // `pose` with its player, seq and timeUs set.
   proto::PoseFrame Encode(const proto::PoseState &pose);
   std::uint64_t Keys() const { return m_keys; }
@@ -96,6 +102,9 @@ private:
   std::uint32_t m_keySeq{}, m_sinceKey{};
   std::uint64_t m_keyUs{};
   std::uint64_t m_keys{}, m_frames{};
+  std::uint32_t m_everyFrames{kKeyFrames};
+  std::uint64_t m_everyUs{kKeyUs};
+  float m_threshold{kThreshold};
 };
 
 // The receiving end: a frame back to a whole PoseState. Keeps the last few
@@ -118,6 +127,11 @@ private:
   std::size_t m_count{}, m_next{};
   std::uint32_t m_otherKey{}, m_dropped{};
 };
+
+// A small turn from `from` to `to` as a rotation vector, in
+// proto::kPoseTurnStep steps (3 signed bytes); false when it does not fit.
+bool TurnOf(const proto::Quat &from, const proto::Quat &to, std::int8_t *out);
+proto::Quat Turned(const proto::Quat &from, const std::int8_t *turn);
 
 proto::Quat Normalized(const proto::Quat &q);
 proto::Quat Multiply(const proto::Quat &a, const proto::Quat &b);

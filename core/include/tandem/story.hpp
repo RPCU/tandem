@@ -52,8 +52,9 @@ private:
   std::map<std::uint64_t, proto::StoryEffect> m_effects; // on now
   std::optional<proto::SceneState> m_scene;              // playing now
   std::optional<proto::SceneCast> m_cast;
-  std::vector<proto::SceneLine> m_lines;   // begun and not cut, newest last
-  proto::StoryRestrictions m_restrictions; // on the host's V now (empty: none)
+  std::map<std::uint32_t, proto::SceneProp> m_props; // held in the play, by prop number
+  std::vector<proto::SceneLine> m_lines;             // begun and not cut, newest last
+  proto::StoryRestrictions m_restrictions;           // on the host's V now (empty: none)
 };
 // How many begun lines the record keeps (a joiner drops the ones that are
 // over: scene::Replay).

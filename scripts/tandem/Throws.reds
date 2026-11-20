@@ -14,9 +14,9 @@
 // grenade marker on the HUD, its smoke's vision blocker and its stimuli,
 // which on the host are what its NPCs see and hear of a guest's grenade.
 // A copy's fuse is held: it explodes when the real one did, where it did.
-// A grenade's path is said as it flies (proto::ThrowPath: after each bounce,
-// and a few times a second): a copy that strayed from it (it bounced off
-// something one game alone has) is put back on the real one's path.
+// A grenade's path is said as it flies (proto::ThrowPath, four times a
+// second): a copy that strayed from it (it bounced off something one game
+// alone has) is put back on the real one's path.
 //
 // The host also sends its NPCs' grenades (kThrowByNpc), launched on the
 // guests from the NPC's proxy: the damage is the host's (PlayerHit).
@@ -56,8 +56,6 @@ public class TandemThrowTrack {
   public let lastPosition: Vector4;
   public let lastAt: Float;
   public let saidAt: Float;
-  // It bounced: its new way is said once it shows (two samples later).
-  public let bouncedAt: Float;
   // It lay still when last said.
   public let resting: Bool;
   public let said: Int32;
@@ -240,7 +238,6 @@ public class TandemThrows {
     track.lastPosition = object.GetWorldPosition();
     track.lastAt = now;
     track.saidAt = now;
-    track.bouncedAt = -1.0;
     return track;
   }
 
@@ -249,17 +246,10 @@ public class TandemThrows {
     return 0.25;
   }
 
-  // One of our grenades bounced (its OnCollision): its new way is said as
-  // soon as it shows.
-  public func OnOurBounce(object: ref<ItemObject>) -> Void {
-    let i = ArrayFindFirst(this.m_ours, object);
-    if i >= 0 && this.m_ourTracks[i].says && this.m_ourTracks[i].bouncedAt < 0.0 {
-      this.m_ourTracks[i].bouncedAt = this.Now();
-    }
-  }
-
-  // Every frame: where each of our grenades is and how it moves, said after
-  // a bounce and every PathGap while it flies, once more when it lies still.
+  // Every frame: where each of our grenades is and how it moves, said
+  // every PathGap while it flies, once more when it lies still. (Not at
+  // each bounce: a projectile's OnCollision may run on a job thread, and a
+  // bounce shows in the next sample anyway.)
   private func SayPaths(now: Float) -> Void {
     let i = 0;
     while i < ArraySize(this.m_ours) {
@@ -271,8 +261,7 @@ public class TandemThrows {
         track.lastPosition = at;
         track.lastAt = now;
         let still = Vector4.Length(velocity) < 0.5;
-        let bounced = track.bouncedAt >= 0.0 && now - track.bouncedAt >= 0.04;
-        let due = bounced || now - track.saidAt >= TandemThrows.PathGap();
+        let due = now - track.saidAt >= TandemThrows.PathGap();
         // Lying still is said once; a throw measured at 300 m/s moved by a
         // teleport, not by flying.
         if due && !(still && track.resting) && Vector4.Length(velocity) < 300.0 {
@@ -281,7 +270,6 @@ public class TandemThrows {
           }
           TandemFight.SendThrowPath(this.m_ourIds[i], at, velocity);
           track.saidAt = now;
-          track.bouncedAt = -1.0;
           track.resting = still;
           track.said += 1;
           this.m_pathsSaid += 1;
@@ -787,17 +775,6 @@ protected final func Release(opt isInstant: Bool) {
     throws.OnOurEnd(this, 2);
   }
   wrappedMethod(isInstant);
-}
-
-// One of ours bounced: its path is said (TandemThrows.SayPaths).
-@wrapMethod(BaseGrenade)
-protected cb func OnCollision(eventData: ref<gameprojectileHitEvent>) -> Bool {
-  let result = wrappedMethod(eventData);
-  let throws = TandemThrows.Of(this.GetGame());
-  if IsDefined(throws) && this.m_isAlive {
-    throws.OnOurBounce(this);
-  }
-  return result;
 }
 
 // A copy that strayed from the real one's path: put where the real one is,

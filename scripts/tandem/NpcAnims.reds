@@ -516,6 +516,10 @@ public class TandemNpcAnims {
     if !IsDefined(proxy) {
       return;
     }
+    // The host's scene put something in its hands (Scenes.reds): left there.
+    if TandemStory.SceneHolds(proxy.npc, 0u) {
+      return;
+    }
     let want = proxy.anim.weapon;
     let have = TandemWeapons.Held(body, t"AttachmentSlots.WeaponRight");
     if NotEquals(want, have) {

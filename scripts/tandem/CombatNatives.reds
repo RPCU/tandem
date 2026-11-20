@@ -60,8 +60,7 @@ public native class TandemFight extends IScriptable {
   public static native func SendAreaHit(player: Uint32, physical: Float, thermal: Float, electric: Float, chemical: Float, attackType: Int32, flags: Int32, position: Vector4, direction: Vector4, attack: TweakDBID, weapon: TweakDBID)
   public static native func SendThrow(id: Uint32, kind: Int32, flags: Int32, item: TweakDBID, origin: Vector4, velocity: Vector4, npc: Uint32, at: Uint32)
   public static native func SendThrowEnd(id: Uint32, how: Int32, position: Vector4)
-  // Where a throw of ours is now (after a bounce, a few times a second in
-  // flight); and what a copy at `copy` does about the real one's word: 0
+  // Where a throw of ours is now (a few times a second in flight); and what a copy at `copy` does about the real one's word: 0
   // nothing, 1 lie there, 2 fly on from there.
   public static native func SendThrowPath(id: Uint32, position: Vector4, velocity: Vector4)
   public static native func PathFix(copy: Vector4, position: Vector4, velocity: Vector4) -> Int32

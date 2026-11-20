@@ -296,3 +296,15 @@ jobs:
       # task strings:check
       - name: Player-facing strings
         run: python3 tools/check-strings.py
+
+      # task threads:check
+      - name: Script hooks that may run on job threads
+        run: python3 tools/scripts-threads.py
+
+      # task refs:check (scc, task scripts:check, cannot run here)
+      - name: Script calls and TweakDB records of ours exist
+        run: python3 tools/scripts-refs.py
+
+      # task scenarios:check
+      - name: Scenarios name real flags, commands and helpers
+        run: python3 tools/scenarios-check.py

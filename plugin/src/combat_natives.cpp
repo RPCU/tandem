@@ -219,8 +219,8 @@ struct TandemFight : Red::IScriptable {
     Combat::Get().Send(proto::ThrowEnd{
         .id = id, .how = static_cast<proto::ThrowEndKind>(how), .position = Vec(position)});
   }
-  // Where a thrown object of ours is now and how it moves (proto::ThrowPath):
-  // after a bounce, and a few times a second while it flies.
+  // Where a thrown object of ours is now and how it moves (proto::ThrowPath),
+  // a few times a second while it flies.
   static void SendThrowPath(std::uint32_t id, Red::Vector4 position, Red::Vector4 velocity) {
     Combat::Get().Send(
         proto::ThrowPath{.id = id, .position = Vec(position), .velocity = Vec(velocity)});

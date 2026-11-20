@@ -279,4 +279,5 @@ trajectory (`:538565`). So a grenade copy is put on the real one's path by:
 (`DeliveryMethod().AccelerationZ()`) and the speed. Whether the trajectory
 starts from the desired transform or from where the entity was that frame
 is not in scripts. [2.5-untested] [to-see] A grenade's bounces arrive as
-`BaseGrenade.OnCollision(gameprojectileHitEvent)` (`:175816`).
+`BaseGrenade.OnCollision(gameprojectileHitEvent)` (`:175816`), a per-entity
+callback (not hooked: the path is sampled on the tick).

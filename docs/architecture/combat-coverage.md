@@ -165,8 +165,8 @@ grenades and every V's thrown object unseen on the other game) and the
   than 1 s in the queue (`combat::kThrowStaleUs`, a stall) is not launched.
 - **A grenade's copy follows the real one's path.** The thrower's game
   says where its grenade is and how it moves (`ThrowPath`, State channel:
-  after each bounce, `BaseGrenade.OnCollision`, and 4 times a second in
-  flight; once more when it lies still; the same for an owner's NPC's
+  4 times a second in flight (not at each bounce: a projectile's
+  `OnCollision` may run on a job thread, and the next sample shows it); once more when it lies still; the same for an owner's NPC's
   grenade). A copy within 1.5 m of it (0.4 m lying still) flies on
   untouched: the same arc on the same geometry. One that strayed (it
   bounced off a car one game alone has) is put on the real one's path

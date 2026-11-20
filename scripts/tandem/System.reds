@@ -229,6 +229,10 @@ public class TandemSystem extends ScriptableSystem {
     this.m_police.Start(this.GetGameInstance());
     this.m_wheels = new TandemWheelsSync();
     this.m_wheels.Start(this.GetGameInstance());
+    // Made here, not at its first use: hooks that may run on job threads
+    // ask for it (tools/scripts-threads.py).
+    this.m_outcomes = new TandemOutcomes();
+    this.m_outcomes.Start(this.GetGameInstance());
   }
 
   public func Wheels() -> ref<TandemWheelsSync> {
@@ -1853,10 +1857,6 @@ public class TandemSystem extends ScriptableSystem {
 
   // Hit outcomes (Outcomes.reds), and the session's NPCs for them.
   public func Outcomes() -> ref<TandemOutcomes> {
-    if !IsDefined(this.m_outcomes) {
-      this.m_outcomes = new TandemOutcomes();
-      this.m_outcomes.Start(this.GetGameInstance());
-    }
     return this.m_outcomes;
   }
 
