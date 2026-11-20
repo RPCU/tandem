@@ -411,8 +411,7 @@ first build is mostly hits on what another worktree compiled.
 ccache:stats` for the game machine's.
 - **What the build does for it:** ccache refuses every clang-cl `/clang:`
   option, so the C++23 flag is `/std:c++23preview`, the depfile is
-  `/showIncludes`, and core's constexpr limit is `-Xclang` (top-level and
-  `core/CMakeLists.txt`). C++ module scanning is off: nothing here is a
+  `/showIncludes` (top-level `CMakeLists.txt`). C++ module scanning is off: nothing here is a
   module, and it compiles with GCC's `-fmodules-ts`, which ccache refuses.
   The debug info is `/Z7` (in each object;
   `CMAKE_MSVC_DEBUG_INFORMATION_FORMAT`, `cmake/clang-cl-msvc.cmake`), not
@@ -426,3 +425,38 @@ ccache:stats` for the game machine's.
   Function names in `tandem.pdb` (`tools/game.sh bt`) are unaffected; a
   debugger looking for source lines may open the other worktree's file, or
   none if it is gone.
+
+## Compile memory
+
+`proto::Message` has ~140 alternatives and `SessionEvent` ~110. libstdc++'s
+`std::variant` compiles construction from an alternative, copy, move,
+assignment and `emplace` with one template recursion level per alternative:
+O(N²) instantiations for each, and GBs of compiler memory in every
+translation unit that copies a message. In CI (GCC 14, 16 GB runner) the
+heaviest units took 8–9 GB each (`protocol.cpp`, `endpoint.cpp`, the sim's
+`game.cpp`, `play_test.cpp`) and three in parallel had the runner killed.
+
+- **`ClosedVariant<V>`** (`core/include/tandem/closed_variant.hpp`) derives
+  from the variant and only declares those operations; they are defined in
+  `core/src/closed_variant_impl.hpp` and explicitly instantiated, one or two
+  per translation unit: `message.cpp` (copy, destruction, assignment as
+  destroy-and-construct, `==`), `message_move.cpp`, `message_make.cpp`
+  (from an alternative, through a table of `in_place_index` constructions),
+  and `session_event.cpp`, `session_event_make.cpp`. Everything else sees a
+  class with out-of-line members; `std::visit`, `std::get_if`,
+  `std::holds_alternative` and `index()` work on it as on its base
+  (`std::variant_size` and `std::variant_alternative` are specialized).
+- **Encoding** (`protocol.cpp`) writes zpp_bits' variant form itself (the
+  index in one byte, then the alternative) and decodes through a table of
+  readers, one per alternative. zpp_bits' own variant support checked
+  that every alternative has its own id at compile time, in O(N²) constexpr
+  steps (it needed `-fconstexpr-steps` and GCC's ops limit, both gone), and
+  decoded through `emplace`. The bytes are the same.
+- **Measured** with GCC 16 (`-O2 -g`, one file at a time, peak RSS),
+  before → after: `protocol.cpp` over 5.5 GB (killed) → 1.4 GB,
+  `endpoint.cpp` over 5.5 GB → 1.7 GB, `play.cpp` 3.3 → 1.0 GB, `session.cpp`
+  1.7 → 0.3 GB, `play_test.cpp` → 0.7 GB, the sim's `game.cpp` → 1.0 GB. The
+  new units: `message_make.cpp` 2.5 GB, `message.cpp` 1.8 GB,
+  `message_move.cpp` 1.4 GB, `session_event*.cpp` 1.7 GB each. CI's build
+  report (`.github/actions/build-report`) lists the heaviest compiles of
+  each run.
