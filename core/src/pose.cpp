@@ -263,7 +263,6 @@ proto::Quat UnpackQuat5(const std::uint8_t *in) {
   return Normalized({c[0], c[1], c[2], c[3]});
 }
 
-namespace {
 // A small turn from `from` to `to` as a rotation vector, in kPoseTurnStep
 // steps; false when it does not fit a byte each way.
 bool TurnOf(const proto::Quat &from, const proto::Quat &to, std::int8_t *out) {
@@ -292,6 +291,7 @@ proto::Quat Turned(const proto::Quat &from, const std::int8_t *turn) {
   return Normalized(Multiply(from, {v[0] * s, v[1] * s, v[2] * s, std::cos(angle / 2.f)}));
 }
 
+namespace {
 void SetCode(proto::PoseFrame &frame, std::size_t slot, std::uint8_t code) {
   frame.codes[slot / 4] |= static_cast<std::uint8_t>(code << (2 * (slot % 4)));
 }
@@ -300,15 +300,15 @@ void SetCode(proto::PoseFrame &frame, std::size_t slot, std::uint8_t code) {
 proto::PoseFrame PoseEncoder::Encode(const proto::PoseState &pose) {
   proto::PoseFrame frame{
       .player = pose.player, .seq = pose.seq, .timeUs = pose.timeUs, .hips = pose.hips};
-  const bool key = !m_haveKey || m_sinceKey + 1 >= kKeyFrames || pose.timeUs < m_keyUs ||
-                   pose.timeUs - m_keyUs >= kKeyUs;
+  const bool key = !m_haveKey || m_sinceKey + 1 >= m_everyFrames || pose.timeUs < m_keyUs ||
+                   pose.timeUs - m_keyUs >= m_everyUs;
   frame.key = key ? pose.seq : m_keySeq;
   frame.rotations.reserve(proto::kPoseBones * proto::kPoseFrameRotationBytes);
   std::uint8_t packed[proto::kPoseFrameRotationBytes];
   std::int8_t turn[3];
   for (std::size_t slot = 0; slot < proto::kPoseBones; ++slot) {
     const auto q = UnpackQuat(pose.rotations.data() + slot * proto::kPoseRotationBytes);
-    if (!key && Angle(q, m_key[slot]) <= kThreshold)
+    if (!key && Angle(q, m_key[slot]) <= m_threshold)
       continue; // kBoneKept
     if (!key && TurnOf(m_key[slot], q, turn)) {
       SetCode(frame, slot, proto::kBoneTurn);
