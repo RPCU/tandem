@@ -95,7 +95,11 @@ jobs:
           fetch-depth: 0 # the build is named after the commit (core/CMakeLists.txt)
 
       # Swap, ccache, CMAKE_BUILD_PARALLEL_LEVEL from the runner's memory.
+      # One compile at a time: the protocol's translation units take 6-7 GB
+      # with GCC, and three at once on the 16 GB runner swapped it to death.
       - uses: ./.github/actions/build-host
+        with:
+          job-gb: "16"
 
       # relay-loopback builds the relay with Go and runs sessions through it.
       - uses: actions/setup-go@v7
