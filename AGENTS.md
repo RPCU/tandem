@@ -54,12 +54,18 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 | `task package`       | the release zip and its symbols zip (`build/package/`)       |
 | `task ccache:stats`  | this machine's compiler cache: size, hits (`:clear` empties) |
 
-Run what your change can break before saying it works: `task test` for
-`core/`, `task build:plugin` for anything compiled into the DLL,
+Run what your change can break before saying it works. The C++ builds and
+tests run in **CI** (`.github/workflows/ci.yaml`, on every push and pull
+request): `core tests (Linux)` is `task test`, `plugin (Windows, clang-cl)`
+is `task build:plugin` (its `tandem.dll` and `.pdb` are the run's
+artifact). Do not run them on the laptop (it runs out of memory); push the
+branch and read the run (Git, below). Locally, the cheap ones:
 `task relay:test` for `relay/`, `task k8s:check` for `deploy/`,
-`task scripts:check` for `scripts/`, `task docs:check` for docs.
+`task natives:check`, `task strings:check` and `task docs:check`;
+`task scripts:check` for `scripts/` needs the game machine.
 
-`tools/build.sh TASK…` builds where there is room (Git, below).
+`tools/build.sh TASK…` builds where there is room (Git, below), when a
+build must happen outside CI (an in-game test on the game machine).
 `tools/remote.sh TASK…` runs a task on the game machine (more cores, its own
 build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
 `TANDEM_PREBUILT=1 tools/scenario.sh …` deploys that DLL as is. Details:
@@ -259,19 +265,23 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 ### Git
 
 - The public repository is `RPCU/tandem` on GitHub (remote `rpcu`). Work
-  on a branch (small, focused commits, hooks passing: treefmt, shellcheck),
-  push it, open a pull request into `main`; once CI is green and
-  `tools/build.sh build:plugin test` passed on the game machine, merge it
-  with `gh pr merge N --rebase --admin --delete-branch`.
-- CI (`.github/workflows/`) runs on every push and pull request: Go, the
-  manifests, the docs checks, and builds of core (Linux) and `tandem.dll`.
-  Core's tests need more than GitHub's shared runner: they run on the game
-  machine before a merge, in CI only when the workflow is run by hand.
+  on a branch in its own worktree, **commit** (small, focused commits,
+  hooks passing: treefmt, shellcheck), **push the branch** to `rpcu` and
+  open a pull request into `main` (`gh pr create`). CI
+  (`.github/workflows/`) runs on every push and pull request: Go, the
+  manifests, the docs checks, core's build and tests (Linux) and
+  `tandem.dll`; a newer push cancels the older run of the same ref. Watch
+  it (`gh run watch`, `gh run view --log-failed`; the job summary lists the
+  compiler cache's hits and the heaviest compiles), fix and push again
+  until every job is green (and, for a change to in-game behaviour, its
+  scenarios passed on the game machine), then merge it yourself with
+  `gh pr merge N --rebase --delete-branch`. Never push to `main` directly,
+  never merge a red pull request.
 - Parallel work: independent tasks (research, reverse engineering, a
   feature that needs no game) can run in separate agents, each in its own
   git worktree; the game machine is one shared resource, so in-game testing
   (deploys, `tools/scenario.sh`) stays with one agent at a time.
-- **Builds go through build slots** (`tools/build-slot.sh`): one on the
+- **Builds outside CI go through build slots** (`tools/build-slot.sh`): one on the
   laptop (14 GB of RAM, `-j8`), three on anya (`-j5` each, niced; one task
   at a time per worktree). Slot 0 is `/tmp/tandem-build.lock`. **Use
   `tools/build.sh TASK…`**: it runs the task on anya (`tools/remote.sh`)
