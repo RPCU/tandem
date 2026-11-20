@@ -394,6 +394,29 @@ TEST_CASE("referee: rates, sizes and values") {
   CHECK(Broke(guest, "value.range"));
 }
 
+TEST_CASE("referee: resync requests are budgeted at the pace of the endpoint's digests") {
+  // A test's timings, a digest every 100 ms: a guest may ask after each one
+  // (7 in 10 s with a third of everything lost was called over budget, the
+  // game's 6, in regions_endpoint_test).
+  const auto port = test::NextPort();
+  std::string error;
+  auto host =
+      Endpoint::Host({"host"}, port, error, Timing{.digest = 100ms, .resyncCooldown = 200ms});
+  REQUIRE_MESSAGE(host, error);
+  Referee referee(true);
+  referee.Attach(*host);
+  referee.Sent(2, proto::Welcome{.you = 2, .host = 1}, kSecond);
+  referee.Sent(0, proto::Roster{{{1, "us", {}}, {2, "a", {}}}}, kSecond);
+  auto now = kSecond;
+  for (int i = 0; i < 100; ++i, now += kSecond / 10)
+    referee.Received(2, proto::ResyncRequest{proto::kDomainNpcs}, now);
+  CHECK_FALSE(referee.Counts().contains("rate.over-budget"));
+  // Ten times faster than its digests come: over it.
+  for (int i = 0; i < 300; ++i, now += kSecond / 100)
+    referee.Received(2, proto::ResyncRequest{proto::kDomainNpcs}, now);
+  CHECK(referee.Counts().contains("rate.over-budget"));
+}
+
 TEST_CASE("referee: states held and never released") {
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 1}, kSecond);

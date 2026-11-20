@@ -371,9 +371,16 @@ void Referee::Attach(Endpoint &endpoint) {
       2 * us(timing.digest) + 2 * us(timing.resyncCooldown) + 4'000'000;
   m_options.limits.digestSilenceUs = 6 * us(timing.digest) + 2'000'000;
   // Digests at the endpoint's own pace (tests shorten it), with room.
-  if (timing.digest.count() > 0)
+  if (timing.digest.count() > 0) {
     m_options.limits.digestHz =
         std::max(m_options.limits.digestHz, 2.f * 1e6f / static_cast<float>(us(timing.digest)));
+    // A guest asks at most once per digest it hears (consistency::Checker,
+    // each domain once per cooldown): its requests follow the digests' pace,
+    // with the same room. 6 in 10 s at the game's 3 s.
+    m_options.limits.resyncsPer10s =
+        std::max(m_options.limits.resyncsPer10s,
+                 static_cast<std::uint32_t>(2 * 10'000'000 / us(timing.digest)));
+  }
   // A guest that vanished owes nothing once the host has noticed it is gone.
   m_options.limits.epochAckUs =
       std::max(m_options.limits.epochAckUs, us(timing.timeout) + 2'000'000);
