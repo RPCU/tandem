@@ -19,6 +19,7 @@
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/regions.hpp"
+#include "tandem/rigpose.hpp"
 #include "tandem/scene.hpp"
 #include "tandem/session.hpp"
 #include "tandem/story.hpp"
@@ -32,6 +33,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -680,6 +682,14 @@ public:
   // a watcher first), delta coded (ActorFrame); a guest's game hears whole
   // poses.
   void SendActorPose(proto::ActorPose pose);
+  // Host: one rig of an NPC we share, as its game animates it now (its
+  // face: proto::kRigFace; a body that is not the humanoid one: kRigBody):
+  // `pose` and the rig's `reference` pose in local space, in the rig's bone
+  // order; `rigHash` names the rig (rig::RigHash). Paced with the scene's other
+  // streams; what goes is the bones that moved (rig::Encoder, RigPose). A
+  // guest hears the RigPose as events::Story (it is not kept).
+  void SendRigPose(proto::NpcId npc, std::uint8_t part, std::uint32_t rigHash,
+                   std::span<const rig::Bone> reference, std::span<const rig::Bone> pose);
   // Host: the view of its game's camera in a cutscene (play, position,
   // orientation, fov, kCameraCut), as often as its game has one: paced
   // here (scene::Pacer), numbered and stamped, to every guest. A guest hears
@@ -1418,6 +1428,11 @@ private:
   scene::Pacer m_scenePacer;
   std::uint32_t m_cameraSeq{};
   bool m_cameraCut{};
+  struct RigStream {
+    rig::Encoder encoder;
+    std::uint32_t hash{};
+  };
+  std::map<std::uint64_t, RigStream> m_rigStreams;           // host, by scene::StreamOf
   std::map<proto::NpcId, pose::PoseEncoder> m_actorEncoders; // host
   std::map<proto::NpcId, pose::PoseDecoder> m_actorDecoders; // guest
   // How much an actor's body matters: by how far the nearest other V is.

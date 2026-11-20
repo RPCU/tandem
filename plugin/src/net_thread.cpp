@@ -799,6 +799,8 @@ struct NetThread::Impl {
                 // through the script's queue.
                 if (const auto *camera = std::get_if<proto::SceneCamera>(&e.message))
                   Story::Get().PushCamera(*camera);
+                else if (const auto *face = std::get_if<proto::RigPose>(&e.message))
+                  runtime.PushRigPose(*face);
                 else
                   Story::Get().PushInbound(
                       {.kind = StoryInbound::Kind::Message, .message = e.message});
@@ -1063,6 +1065,10 @@ struct NetThread::Impl {
       for (const auto &pose : runtime.TakeActorPoses())
         if (!Story::Get().Private())
           endpoint->SendActorPose(pose);
+      for (const auto &sample : runtime.TakeRigPoses())
+        if (!Story::Get().Private() && sample.reference)
+          endpoint->SendRigPose(sample.npc, sample.part, sample.hash, *sample.reference,
+                                sample.pose);
       if (const auto camera = Story::Get().TakeCamera(); camera && !Story::Get().Private())
         endpoint->SendSceneCamera(*camera);
       if (auto appearance = runtime.TakeLocalAppearance()) {

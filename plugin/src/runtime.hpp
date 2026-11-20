@@ -15,6 +15,7 @@
 #include "tandem/pose.hpp"
 #include "tandem/presence.hpp"
 #include "tandem/protocol.hpp"
+#include "tandem/rigpose.hpp"
 #include "tandem/session.hpp"
 #include "tandem/timebubble.hpp"
 #include "tandem/traffic.hpp"
@@ -353,6 +354,26 @@ public:
   bool ActorPoseOf(proto::NpcId npc, pose::Pose &out);
   void ForgetActorPoses();
   std::uint32_t ActorPosesReceived();
+  // Scene replay, other rigs (a face, a body that is not the humanoid one;
+  // engine/posestream.cpp). Host: animation job threads submit a rig's pose
+  // (the newest of each NPC's rig is kept), the net thread takes them.
+  // Guest: the net thread pushes what the host said, the job thread that
+  // commits the proxy's rig writes it over the rig's own pose (answers how
+  // many bones; 0: no stream, a stream stopped for kActorPoseStaleUs, or
+  // another rig). ForgetActorPoses forgets these too.
+  struct RigSample {
+    proto::NpcId npc{};
+    std::uint8_t part{};
+    std::uint32_t hash{}; // rig::RigHash of its bone names
+    std::shared_ptr<const std::vector<rig::Bone>> reference;
+    std::vector<rig::Bone> pose;
+  };
+  void SubmitRigPose(RigSample sample);
+  std::vector<RigSample> TakeRigPoses();
+  void PushRigPose(const proto::RigPose &pose);
+  std::size_t ApplyRigPose(proto::NpcId npc, std::uint8_t part, std::uint32_t rigHash,
+                           std::span<const rig::Bone> reference, std::span<rig::Bone> pose);
+  std::uint32_t RigPosesReceived();
 
   // Game thread -> net thread: our V's look, newest only (the endpoint keeps it
   // and sends it again to whoever joins).
@@ -821,6 +842,9 @@ private:
   std::map<proto::NpcId, pose::PoseTrack> m_actorPoses; // m_posesLock
   std::map<proto::NpcId, proto::PoseState> m_actorOut;  // m_posesLock
   std::uint32_t m_actorPosesIn{};                       // m_posesLock
+  std::map<std::uint64_t, RigSample> m_rigOut;          // m_posesLock, by npc and part
+  std::map<std::uint64_t, rig::Track> m_rigTracks;      // m_posesLock
+  std::uint32_t m_rigPosesIn{};                         // m_posesLock
 
   mutable std::mutex m_reachLock;
   lagcomp::Book m_reach; // m_reachLock: guests' Vs by player id, our NPCs by kNpcPuppetBase + id
