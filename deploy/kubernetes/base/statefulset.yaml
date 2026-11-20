@@ -122,7 +122,9 @@ spec:
       volumes:
         - name: host-tokens
           secret:
-            # One hex token per line, key `host-tokens`. Not in this base:
-            # provide it from your secret store.
+            # Optional (the relay is open by default): one hex token per
+            # line, key `host-tokens`, from your secret store. Its holders
+            # bypass the open limits; with --require-token, only they host.
             secretName: tandem-relay-host-tokens
+            optional: true
             defaultMode: 0400

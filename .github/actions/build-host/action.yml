@@ -3,17 +3,17 @@ description: >-
   Prepare a runner for the C++ builds: swap, ccache, as many compile jobs as
   its memory allows, and a log of every compile's peak memory.
 
-# The protocol's translation units (core/include/tandem/protocol.hpp: a
-# std::variant of every message, serialized by zpp_bits with raised constexpr
-# limits) take several GB each, and nearly every translation unit includes
-# it: run 44616559671 had the runner killed at 2 jobs with no swap. So the
-# job count follows memory, not cores, and the swap is there to slow an
-# unexpectedly heavy compile down rather than lose the runner.
+# Compiles took up to 9 GB each before proto::Message's own code was
+# confined to a few files (docs/architecture/testing.md, "Compile memory"):
+# run 44616559671 had the runner killed at 2 jobs with no swap. The
+# heaviest is now some 2.5 GB. The job count follows memory, not cores, and
+# the swap is there to slow an unexpectedly heavy compile down rather than
+# lose the runner.
 
 inputs:
   job-gb:
     description: GB of RAM per compile job (CMAKE_BUILD_PARALLEL_LEVEL = RAM / this, at most the cores)
-    default: "5"
+    default: "3"
   swap-gb:
     description: GB of swap to add
     default: "16"

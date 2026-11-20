@@ -112,8 +112,9 @@ player's game, not a server: there is no dedicated game server.
 | Bulk    | reliable, ordered       | large one-offs (join snapshot) so they never hold up events |
 
 **Protocol** (`core/include/tandem/protocol.hpp`): every message is one
-alternative of a `std::variant`, serialized with zpp_bits. The variant index
-is the message id, so **messages are only ever appended**, and changing an
+alternative of a `std::variant`, serialized with zpp_bits (its variant
+form, written out in `protocol.cpp`: the index in one byte, then the
+message). The variant index is the message id, so **messages are only ever appended**, and changing an
 existing message bumps `kProtocolVersion`; a mismatched guest is refused with
 a reason. Decoding is strict: trailing or missing bytes reject the packet.
 

@@ -98,7 +98,8 @@ public class TandemText {
       "the relay went silent: reconnecting", "lost the relay",
       "the relay's replicas sent us on twice (their peers lists disagree)",
       "the relay sent us to an address we cannot reach (IPv6)",
-      "the relay is restarting: try again in a moment"
+      "the relay is restarting: try again in a moment",
+      "the relay hosts as many sessions from your address as it may"
     ];
     let keys = [
       "Reason-Full", "Reason-HostGone", "Reason-Unreachable", "Reason-Connecting",
@@ -110,7 +111,8 @@ public class TandemText {
       "Reason-RelayReconnecting", "Reason-RelayLost",
       "Reason-RelayLoop",
       "Reason-RelayIpv6",
-      "Reason-RelayDraining"
+      "Reason-RelayDraining",
+      "Reason-RelaySourceBusy"
     ];
 
     let i = 0;
@@ -337,6 +339,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Reason-RelayLoop", "the relay's servers disagree (sent on twice)");
     this.Text("Tandem-Reason-RelayIpv6", "the relay sent us to an address we cannot reach (IPv6)");
     this.Text("Tandem-Reason-RelayDraining", "the relay is restarting: try again in a moment");
+    this.Text("Tandem-Reason-RelaySourceBusy", "the relay hosts as many sessions from your address as it may");
     this.Text("Tandem-Player-Unnamed", "Player {1}");
     // Names (the co-op menu's prompt; the host's (2), (3)).
     this.Text("Tandem-Name-Title", "Your co-op name");
@@ -539,7 +542,6 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-PartyHud", "Party list (linked partners' health)");
     this.Text("Tandem-Settings-Recorder", "Recorder");
     this.Text("Tandem-Settings-Relay", "Relay");
-    this.Text("Tandem-Settings-RelayToken", "Relay host token");
     this.Text("Tandem-Settings-Code", "Join code");
     this.Text("Tandem-Settings-Code-New", "new each session");
     this.Text("Tandem-Settings-Code-Keep", "kept (the same every session)");
@@ -655,6 +657,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Reason-RelayLoop", "les serveurs du relais se contredisent (renvoyé deux fois)");
     this.Text("Tandem-Reason-RelayIpv6", "le relais nous envoie vers une adresse injoignable (IPv6)");
     this.Text("Tandem-Reason-RelayDraining", "le relais redémarre : réessayez dans un instant");
+    this.Text("Tandem-Reason-RelaySourceBusy", "le relais héberge déjà autant de sessions de votre adresse qu'il le peut");
     this.Text("Tandem-Player-Unnamed", "Joueur {1}");
     this.Text("Tandem-Name-Title", "Votre nom en coop");
     this.Text("Tandem-Name-Ask", "Le nom que les autres joueurs voient au-dessus de votre V et dans leur liste d'équipe : 1 à 16 caractères (annuler : V pour l'instant)");
@@ -850,7 +853,6 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-PartyHud", "Liste du groupe (santé des partenaires liés)");
     this.Text("Tandem-Settings-Recorder", "Enregistreur");
     this.Text("Tandem-Settings-Relay", "Relais");
-    this.Text("Tandem-Settings-RelayToken", "Jeton d'hôte du relais");
     this.Text("Tandem-Settings-Code", "Code d'invitation");
     this.Text("Tandem-Settings-Code-New", "nouveau à chaque session");
     this.Text("Tandem-Settings-Code-Keep", "gardé (le même à chaque session)");

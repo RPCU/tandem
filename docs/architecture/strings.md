@@ -239,6 +239,7 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Reason-RelayNoCode` | no session has this join code (wrong, or expired) | aucune session n'a ce code d'invitation (erroné ou expiré) | Text.reds |
 | `Reason-RelayThrottled` | too many join attempts: try again in a minute | trop de tentatives : réessayez dans une minute | Text.reds |
 | `Reason-RelaySocket` | could not open a socket to the relay | impossible d'ouvrir une connexion vers le relais | Text.reds |
+| `Reason-RelaySourceBusy` | the relay hosts as many sessions from your address as it may | le relais héberge déjà autant de sessions de votre adresse qu'il le peut | Text.reds |
 
 ### Players
 
@@ -507,7 +508,6 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Settings-Pings` | Pings | Signaux | Settings.reds |
 | `Settings-Recorder` | Recorder | Enregistreur | Settings.reds |
 | `Settings-Relay` | Relay | Relais | Settings.reds |
-| `Settings-RelayToken` | Relay host token | Jeton d'hôte du relais | Settings.reds |
 | `Settings-Story` | Story sync | Histoire partagée | Settings.reds |
 | `Settings-QuestFreeze` | Pause your own story (guest) | Mettre votre histoire en pause (invité) | Settings.reds |
 | `Settings-ScenePrivacy` | Private scenes | Scènes privées | Settings.reds |

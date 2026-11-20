@@ -526,7 +526,8 @@ struct JoinTarget {
   std::optional<net::RelayOptions> relay;
 };
 
-using SessionEvent = std::variant<
+// What Update() reports. Code uses SessionEvent (below).
+using SessionEventVariant = std::variant<
     events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
     events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
     events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
@@ -551,6 +552,9 @@ using SessionEvent = std::variant<
     events::RemoteVehicleExit, events::RemoteVehicleCombat, events::RemoteMountedFire,
     events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered>;
+// Its copies, moves and conversions compiled in session_event.cpp only, as
+// proto::Message's (tandem/closed_variant.hpp).
+using SessionEvent = ClosedVariant<SessionEventVariant>;
 
 class Endpoint {
 public:
@@ -1517,3 +1521,5 @@ private:
   bool m_throughRelay{};
 };
 } // namespace tandem
+
+extern template class tandem::ClosedVariant<tandem::SessionEventVariant>;
