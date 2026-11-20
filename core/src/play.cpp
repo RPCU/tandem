@@ -482,6 +482,10 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
         } else if constexpr (std::is_same_v<M, proto::NpcVendor>) {
           // The host's vendors; a death is derived again from its NpcGone.
           return (m.flags & proto::kVendorDead) == 0;
+        } else if constexpr (std::is_same_v<M, proto::NpcPlaced>) {
+          // The host's placed NPCs; a death of the ledger is derived again
+          // from its NpcGone.
+          return true;
         } else if constexpr (std::is_same_v<M, proto::World> ||
                              std::is_same_v<M, proto::NpcSpawn> ||
                              std::is_same_v<M, proto::NpcHealth> ||

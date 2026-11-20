@@ -13,6 +13,7 @@
 #include "tandem/consistency.hpp"
 #include "tandem/devices.hpp"
 #include "tandem/interact.hpp"
+#include "tandem/ledger.hpp"
 #include "tandem/mods.hpp"
 #include "tandem/netcode.hpp"
 #include "tandem/pose.hpp"
@@ -757,6 +758,17 @@ public:
   // entities whose vendor died in the session (docs/architecture/progression.md).
   const std::map<proto::NpcId, proto::NpcVendor> &NpcVendors() const { return m_npcVendors; }
   const std::map<std::uint64_t, proto::NpcVendor> &DeadVendors() const { return m_deadVendors; }
+  // Placed NPCs and the death ledger (docs/architecture/regions.md §14).
+  // NpcPlaced goes through SendCombat: an owner's word that one of its NPCs
+  // is placed in the world (its entity's static id), to the players linked
+  // with it, kept with the NPC's records until it goes (one whose spawn is
+  // still on its way is said right after it). When our game then reports
+  // that NPC dead or knocked out (SendNpcGone), its death goes to the host,
+  // which records it and tells everyone, linked or not, and every later
+  // joiner: reported as events::Combat{NpcDeath}, to our own game too.
+  // NpcDeath is never a game's to say.
+  const std::map<proto::NpcId, proto::NpcPlaced> &PlacedNpcs() const { return m_npcPlaced; }
+  const ledger::Deaths &Deaths() const { return m_deaths; }
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
   // Our V's time ability (Sandevistan...). Kept: sent now if we are in the
@@ -1621,6 +1633,20 @@ private:
   // Host: an NPC's owner said it is gone (reason: proto::NpcGone's): a vendor
   // that died is the session's to remember. Before the NPC's records go.
   void NoteVendorGone(const proto::NpcGone &gone, std::vector<SessionEvent> *out);
+  // Placed NPCs (an owner's word, kept with the NPC's records), ours said
+  // before their spawn went, and the session's deaths (host: the record;
+  // guest: as the host said them).
+  std::map<proto::NpcId, proto::NpcPlaced> m_npcPlaced;
+  std::map<proto::NpcId, proto::NpcPlaced> m_npcPlacedEarly;
+  ledger::Deaths m_deaths;
+  // Our game says one of our NPCs is gone: a placed one that died or was
+  // knocked out goes into the ledger (host), or to the host (guest). Before
+  // the NPC's records go.
+  void NoteDeath(const proto::NpcGone &gone);
+  // Host: a death of player `by`'s NPC, into the ledger and to everyone
+  // (once per entity). `out`: our own game's events.
+  void RecordDeath(const proto::NpcDeath &death, proto::PlayerId by,
+                   std::vector<SessionEvent> &out);
   void SendLocalLevelNow();
   void UpdateSessionLevel(std::vector<SessionEvent> &out);
   // Cars: ours (kept until we are in), everyone's (host: what it relays;

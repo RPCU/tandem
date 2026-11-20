@@ -258,6 +258,15 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
       vendor && (vendor->entity == 0 || (vendor->flags & ~kVendorDead) != 0 ||
                  ((vendor->flags & kVendorDead) != 0) != (vendor->npc == 0)))
     return std::nullopt;
+  // A placed NPC names its NPC and its entity; a death its entity, and either
+  // its NPC (from its owner) or the host's stamp, never both.
+  if (const auto *placed = std::get_if<NpcPlaced>(&message);
+      placed && (placed->npc == 0 || placed->entity == 0))
+    return std::nullopt;
+  if (const auto *death = std::get_if<NpcDeath>(&message);
+      death && (death->entity == 0 || (death->flags & ~kDeathKnockedOut) != 0 ||
+                (death->npc != 0) != (death->order == 0) || (death->npc != 0 && death->by != 0)))
+    return std::nullopt;
   if (const auto *commit = std::get_if<TradeCommit>(&message);
       commit && (!Fits(commit->first) || !Fits(commit->second)))
     return std::nullopt;
@@ -365,7 +374,8 @@ bool IsCombat(const Message &message) {
          (message.index() >= kId<Throw> && message.index() <= kId<Defended>) ||
          (message.index() >= kId<PlayerLevel> && message.index() <= kId<NpcLevel>) ||
          std::holds_alternative<CarLend>(message) || std::holds_alternative<NpcScale>(message) ||
-         std::holds_alternative<NpcVendor>(message);
+         std::holds_alternative<NpcVendor>(message) || std::holds_alternative<NpcPlaced>(message) ||
+         std::holds_alternative<NpcDeath>(message);
 }
 
 bool IsTrade(const Message &message) {
@@ -529,7 +539,9 @@ const char *NameOfKind(std::size_t kind) {
                                    "TrafficHandover",
                                    "TrafficHandoverState",
                                    "TrafficHandoverDone",
-                                   "QuestInteract"};
+                                   "QuestInteract",
+                                   "NpcPlaced",
+                                   "NpcDeath"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }
