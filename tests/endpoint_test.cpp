@@ -1,6 +1,7 @@
 // A real host and real guests over loopback UDP, in one process.
 
 #include "ports.hpp"
+#include "referee_expect.hpp"
 #include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/scaling.hpp"
@@ -535,6 +536,8 @@ TEST_CASE("a guest's pause menu reaches the host and the other guest, stamped") 
 }
 
 TEST_CASE("a guest cannot pause or resume in someone else's name") {
+  // The guest forges another player's name on purpose.
+  test::ExpectReferee({"authority.not-yours"});
   const auto port = NextPort();
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error);
@@ -1300,6 +1303,8 @@ TEST_CASE(
 }
 
 TEST_CASE("a guest's takedown request reaches the host stamped; the answer only the asker") {
+  // NPC 7 is never spawned: only the routing is tested.
+  test::ExpectReferee({"ids.unknown-npc"});
   const auto port = NextPort();
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error);
@@ -1592,6 +1597,8 @@ TEST_CASE("down and out: a guest's life reaches everyone, stamped, and late join
 }
 
 TEST_CASE("down and out: a revive reaches the downed V's game only, and only while it is down") {
+  // A revive of a V that is not down, refused on purpose.
+  test::ExpectReferee({"authority.revive-not-down"});
   const auto port = NextPort();
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error);
@@ -1776,6 +1783,8 @@ TEST_CASE("down and out: up again after down, out and a respawn, a partner leavi
 }
 
 TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits to their V") {
+  // NPC 7 is never spawned: only the routing is tested.
+  test::ExpectReferee({"ids.unknown-npc"});
   const auto port = NextPort();
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error);
@@ -2200,7 +2209,7 @@ TEST_CASE(
 
   // The same shot's cosmetic NpcShot: b draws it on its proxy, a does not
   // (its proxy fires the shot itself).
-  host->SendNpcSpawn({.npc = 7});
+  host->SendNpcSpawn({.npc = 7, .record = 1});
   REQUIRE(host->SendNpcShotAt({.player = a->You(), .npc = 7}));
   host->SendNpcShot({.npc = 7, .effect = 16});
   bool aDrew = false, bDrew = false;

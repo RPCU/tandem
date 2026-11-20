@@ -80,7 +80,11 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
 - Messages are `std::variant` alternatives: **append new ones at the end**,
   never reorder or remove. Any change to an existing message bumps
   `kProtocolVersion`. Add the message to `NameOf`, pick its channel in
-  `ChannelOf`, add a round-trip case to `tests/protocol_test.cpp`.
+  `ChannelOf`, add a round-trip case to `tests/protocol_test.cpp`, and
+  give it its referee rules (`peer/sim/src/referee.cpp`): its `SaidBy`
+  line (who may send it: without one, the referee does not compile) and
+  its checks, with a case in `tests/referee_test.cpp`. A violation fails
+  any test that does not expect it (`test::ExpectReferee`).
 - High-rate messages stay small (`PlayerState` < 64 bytes is tested). A
   stream sent every frame or tick goes in `tests/budget_test.cpp` (64
   kbit/s each way) with a relevance rate; compact wire forms are encoded

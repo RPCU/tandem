@@ -11,7 +11,7 @@
 | via relay | a real relay process: join by code, fallback from direct, mock players | `task test` (`relay-loopback`) |
 | mock player | `tandem-peer` as host or guest against the real game | `task peer -- host --mode mirror` |
 | consistency | digests, resyncs, epochs, dedupe; convergence with a third lost; vanishing | `task test` |
-| referee | every message each test's endpoints hear, checked against the protocol and authority rules (`referee-suite:`) | `task test` |
+| referee | every message each test's endpoints hear, checked against the protocol and authority rules; a violation fails the test unless it calls `test::ExpectReferee` (`referee-suite:`) | `task test` |
 | sim | simulated games against each other, refereed (`sim.md`) | `task test`, `task sim:fuzz` |
 | regions | links, owners, hand-over (also with a third lost), a vanishing owner, digests both ways; two mock players meeting | `task test` |
 | natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere, region, street, presence, activity) | `task natives:check` |
