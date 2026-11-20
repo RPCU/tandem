@@ -71,7 +71,14 @@ struct TandemWheels : Red::IScriptable {
   static std::uint32_t StreetOf(std::uint32_t id) { return proto::StreetCar(id); }
   static bool IsStreet(std::uint32_t vehicle) { return proto::IsStreetCar(vehicle); }
   static std::uint32_t TrafficIdOf(std::uint32_t vehicle) { return proto::TrafficOfSeat(vehicle); }
-  static std::uint32_t OwnerOf(std::uint32_t vehicle) { return proto::OwnerOfVehicle(vehicle); }
+  // The game that runs it: a player's car its player's; a shared one its
+  // owner's as the session has it now (a hand-over moves it).
+  static std::uint32_t OwnerOf(std::uint32_t vehicle) {
+    if (proto::IsStreetCar(vehicle))
+      if (const auto owner = Runtime::Get().TrafficOwnerOf(proto::TrafficOfSeat(vehicle)))
+        return owner;
+    return proto::OwnerOfVehicle(vehicle);
+  }
 
   // ---- our own vehicles ----
 

@@ -69,7 +69,12 @@ scenarios at the end are the in-game checks to run.
   which of two copies of one placed NPC stays.
 - **Quest and story NPCs are the host's and never change owner** (pinned).
   So are NPCs that are held, mid-takedown or seated in a vehicle, for as
-  long as that lasts.
+  long as that lasts: a rider changes owner only with its vehicle.
+- **World vehicles follow the same rules** (traffic, parked cars, police
+  cars, chase cars: [`traffic.md`](traffic.md), "Several owners, and
+  hand-overs"): owned by the game that announced them (only where it owns
+  its area), shown to linked players, handed over by the same thresholds
+  with their state and their riders, inherited when their owner goes.
 
 ## 2. Regions and links
 
@@ -211,7 +216,12 @@ host                 giver O                         receiver P
 - _Take_: `TandemProxies.Wake` (the reverse of `Pacify`), controller
   detached, health, poise and effects applied, threat injected for the
   target (the way tandem's test ganger is set on a puppet), the entry moves
-  from `m_proxies` to `m_known`. If the brain does not come back within
+  from `m_proxies` to `m_known`. A rider of a shared vehicle that came with
+  its vehicle stays in its seat (it drives our car now); any other seat is
+  left.
+- _Vehicles_ (`Traffic.reds`): the giver's real car is kept as the proxy
+  (a crowd car held out of its lane); the receiver's proxy is put where the
+  giver left it, with its health, and drives on (`traffic.md`). If the brain does not come back within
   1.5 s (the AI component reports disabled), the NPC is spawned again in
   place from its record and the proxy deleted in the same frame: one frame
   of swap instead of a frozen enemy.
@@ -232,7 +242,10 @@ message changed; the endpoint routes by owner.
 | `Noise`                                                                                                                                                                       | a player → every player linked with it: each owner's NPCs hear it from the puppet                                                           |
 | `SharedItem` on a corpse                                                                                                                                                      | the owner → the players linked with it                                                                                                      |
 | `TimeEffect`                                                                                                                                                                  | unchanged (to everyone); each owner slows its own NPCs inside the bubble                                                                    |
-| `Regions`, `NpcOwner`, `NpcHandover`, `OwnedDigest`                                                                                                                           | host → guests                                                                                                                               |
+| `Regions`, `NpcOwner`, `NpcHandover`, `OwnedDigest`, `TrafficOwnership`, `TrafficHandover`                                                                                    | host → guests                                                                                                                               |
+| `TrafficSpawn`, `TrafficStates`, `TrafficStatus`, `TrafficGone`, `Chase`, a shared vehicle's `VehicleDamage`                                                                  | the vehicle's owner → every player linked with it (through the host, as for NPCs)                                                           |
+| `TrafficHit`, `TrafficClaim`, a shared vehicle's `VehicleHit` and `GunnerRequest`                                                                                             | any player → the vehicle's owner                                                                                                            |
+| `TrafficHandoverState`, `TrafficHandoverDone`                                                                                                                                 | as `NpcHandoverState`, `NpcHandoverDone`                                                                                                    |
 | `NpcHandoverState`                                                                                                                                                            | giver → host → receiver                                                                                                                     |
 | `NpcHandoverDone`                                                                                                                                                             | giver or receiver → host                                                                                                                    |
 
@@ -360,13 +373,14 @@ replaced. Twins of placed NPCs are merged at once (§3).
   hashes the NPCs it does not own the same way. A mismatch twice in a row
   asks for the domain again (`NpcSet`, spawns, owners…), as before.
 - **`OwnedDigest`** (host → each guest, with each round of digests): the
-  NPCs that guest owns, as the host's record has them. The guest hashes its
+  NPCs and the shared vehicles that guest owns, as the host's record has
+  them. The guest hashes its
   own list; a mismatch twice in a row makes it send its whole set again
-  (`NpcSet` of its ids, then spawn, health, hold of each). The host drops
-  what the set no longer names, and answers what it names that the record
+  (`NpcSet` of its ids, then spawn, health, hold of each; `TrafficSet` of its vehicles, then
+  their spawns and statuses). The host drops what the sets no longer name, and answers what it names that the record
   gives to another (`NpcOwner`: a word on a new owner that was lost) or no
   longer holds and that is not of the guest's own range (`NpcGone`: its spawn
-  of it would be refused). Neither applies to an NPC in a hand-over with that
+  of it would be refused). Neither applies to an NPC or a vehicle in a hand-over with that
   guest (§4). This is the same mechanism pointed the other way, for what a
   guest's lost `NpcSpawn`, `NpcGone` or `NpcOwner` would break.
 - **Links** are in the players digest (`Regions.pairs`), and sent with a
@@ -488,6 +502,7 @@ belongs to the world of the player who starts it), and how each point is met.
 | Ownership, routing, arbitration, retries               | `core/src/endpoint.cpp` (search "Regions"), `tests/regions_endpoint_test.cpp`                                            |
 | Natives for scripts                                    | `plugin/src/region_natives.cpp` ↔ `scripts/tandem/RegionNatives.reds`                                                    |
 | Owner and proxy sides in one game                      | `scripts/tandem/Npcs.reds`; give, take, suppression, twins: `scripts/tandem/Regions.reds`                                |
+| World vehicles of several owners                       | `core/src/endpoint_traffic.cpp`, `tests/traffic_regions_test.cpp`, `scripts/tandem/Traffic.reds` (`traffic.md`)          |
 | Mock player as an NPC owner                            | `tandem-peer --mode region` (`peer/src/main.cpp`), `tests/peer_regions.sh`                                               |
 | Scenarios                                              | `tools/scenarios/regions-apart.sh`, `regions-meet.sh`, `regions-vanish.sh`                                               |
 
@@ -515,6 +530,13 @@ Without the game (all in `task test`):
   (the lossy stage walks off once the guest knows it is linked,
   `--region-leave-linked`, and waits as long as a few lost resyncs take;
   `--fault-seed` replays a run's faults, whose seed is logged).
+  The guest also runs cars of its own (`--region-cars`, one driven by its
+  NPC): handed over to the host when it walks off.
+- `traffic_regions_test`: a guest that owns its area shares its vehicles
+  with linked players only, requests reach that guest, a meet and a part
+  (the vehicle and its driver handed over and back, no pop, no duplicate), a
+  third player, a refusal and a failed take, an owner that vanishes or
+  fast travels, the owned digest, a late joiner.
 
 In the game (one PC and the mock player):
 
@@ -530,6 +552,9 @@ In the game (one PC and the mock player):
 - `regions-vanish`: the peer owns NPCs next to the game and is killed
   without a goodbye. Expect the game to inherit them within 5 s
   ("inherited npc …"), none duplicated, none frozen.
+- `wheels-guest-area` (`traffic.md`): the peer owns its area and runs cars;
+  they are shown as proxies when it comes near and handed over, driver
+  seated, when it walks off.
 
 ## 13. Open points and risks
 
@@ -547,7 +572,10 @@ See the tags in [`../research/engine/regions.md`](../research/engine/regions.md)
    alone is alive in the other's game when they come later (coop-regions
    §4, the death ledger). The world is coherent while players can see each
    other; lasting facts are the next step.
-5. **Traffic and parked cars** are still each game's own (no switch found).
+5. **Traffic and parked cars** follow the NPCs' ownership (`traffic.md`,
+   built, not run in game). What a game cannot turn off is its own crowd's
+   cars where another game runs the street: density 0 thins them, nothing
+   removes them.
 6. **The epoch fence** covers requests aimed at the host's world only; a
    hit in flight at a guest owner whose world was just rebuilt is dropped
    by that guest because it no longer owns the NPC.

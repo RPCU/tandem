@@ -56,7 +56,8 @@ class Comms {
 public:
   static Comms &Get();
 
-  // At load, from tandem.ini (link, pings).
+  // From tandem.ini (link, pings): at load, and from the settings page. A
+  // new link default replaces our consents, sent at once in a session.
   enum class LinkDefault { Auto, Ask, Off };
   void Configure(LinkDefault link, bool pings);
 
@@ -132,4 +133,8 @@ private:
   std::vector<CommsEvent> m_events;
   std::uint64_t m_sentMarks{}, m_heardMarks{}, m_sentTags{}, m_heardTags{};
 };
+
+struct Config;
+// Comms::Configure with tandem.ini's link and pings.
+void ConfigureComms(const Config &config);
 } // namespace tandem::plugin

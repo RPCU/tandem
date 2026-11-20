@@ -943,6 +943,13 @@ public class TandemNpcs {
     if TandemCombat.IsOwnMarker(event.record) || !TDBID.IsValid(event.record) {
       return true;
     }
+    // A guest's quickhack landing on an actor of our V's scene, during it:
+    // refused like its upload (Hacks.reds, Restrictions.reds' backstop).
+    let record = TweakDBInterface.GetStatusEffectRecord(event.record);
+    if IsDefined(record) && record.GameplayTagsContains(n"Quickhack")
+      && TandemHacks.SceneRefuses(this.m_game, body, event.npc, event.player, event.record) {
+      return true;
+    }
     let instigator = TandemNpcs.PuppetOf(this.m_game, event.player);
     if !IsDefined(instigator) {
       return false;
@@ -1845,9 +1852,21 @@ public class TandemNpcs {
       return;
     }
     TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
-    this.Unseat(proxy);
+    // A rider of a shared vehicle handed to us with it (traffic.md, "Who
+    // owns an area") stays in its seat: it drives our car now. Any other
+    // seat is the giver's vehicle's: out of it.
+    let traffic = TandemTraffic.Of(this.m_game);
+    let rides = EntityID.IsDefined(proxy.seatedIn) && TandemStreet.IsStreetSeat(proxy.seatOwner) && IsDefined(traffic) && traffic.Mine(TandemStreet.CarOfSeat(proxy.seatOwner));
+    if !rides {
+      this.Unseat(proxy);
+    }
     this.m_anims.Drop(npc);
     let known = new TandemNpcKnown();
+    if rides {
+      known.seatVehicle = proxy.seatedIn;
+      known.seat = proxy.seatedSlot;
+      known.seatOwner = proxy.seatOwner;
+    }
     known.id = proxy.id;
     known.npc = npc;
     known.health = -1.0;
@@ -1973,6 +1992,14 @@ public class TandemNpcs {
       proxy.record = body.GetRecordID();
       proxy.appearance = body.GetCurrentAppearanceName();
       proxy.seenAt = this.m_now - 2.0;
+      // Still seated (a driver handed over with its vehicle): it stays in
+      // its seat, which is the proxy's seat now.
+      if EntityID.IsDefined(known.seatVehicle) && VehicleComponent.IsMountedToProvidedVehicle(this.m_game, known.id, GameInstance.FindEntityByID(this.m_game, known.seatVehicle) as VehicleObject) {
+        proxy.seatedIn = known.seatVehicle;
+        proxy.seatedSlot = known.seat;
+        proxy.seatOwner = known.seatOwner;
+        proxy.seatSlot = known.seat;
+      }
       ArrayPush(this.m_proxies, proxy);
     }
     TandemNative.Log(s"regions: npc \(npc) is no longer ours (now player \(owner)'s)");

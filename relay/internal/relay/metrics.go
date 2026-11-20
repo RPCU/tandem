@@ -18,12 +18,14 @@ const (
 	// a PROXY header that does not parse.
 	dropUntrusted
 	dropProxyHeader
+	// An open session's guest link over its bandwidth.
+	dropBandwidth
 	dropReasons
 )
 
 var dropNames = [dropReasons]string{
 	"malformed", "bad_token", "unknown_client", "rate_limited", "no_channel",
-	"untrusted_proxy", "proxy_header",
+	"untrusted_proxy", "proxy_header", "bandwidth",
 }
 
 type lookupResult int
@@ -48,10 +50,12 @@ const (
 	refusedTooMany
 	refusedTaken
 	refusedDraining
+	// Open mode: the source hosts as many sessions as it may.
+	refusedSourceBusy
 	refusals
 )
 
-var refusalNames = [refusals]string{"no_session", "session_full", "too_many_sessions", "session_taken", "draining"}
+var refusalNames = [refusals]string{"no_session", "session_full", "too_many_sessions", "session_taken", "draining", "source_busy"}
 
 type redirectKind int
 
@@ -88,6 +92,8 @@ type Metrics struct {
 	introductions atomic.Uint64
 	// Probes answered (round trips, connection checks).
 	probes atomic.Uint64
+	// Open mode: challenges sent, and proofs refused as used before.
+	challenges, replays atomic.Uint64
 }
 
 func (m *Metrics) codeIssued() { m.codes.Add(1) }
@@ -97,6 +103,10 @@ func (m *Metrics) codeReclaimed() { m.reclaimed.Add(1) }
 func (m *Metrics) introduced() { m.introductions.Add(1) }
 
 func (m *Metrics) probed() { m.probes.Add(1) }
+
+func (m *Metrics) challenged() { m.challenges.Add(1) }
+
+func (m *Metrics) replayed() { m.replays.Add(1) }
 
 func (m *Metrics) lookup(result lookupResult) { m.lookups[result].Add(1) }
 
@@ -114,17 +124,18 @@ func (m *Metrics) dropped(reason dropReason) { m.drops[reason].Add(1) }
 
 // Snapshot is every counter at one moment (expvar shows it as JSON).
 type Snapshot struct {
-	Sessions, Clients, Flows int
-	Draining                 bool
-	Packets, Bytes           uint64
-	Drops                    map[string]uint64
-	CodesIssued              uint64
-	CodesReclaimed           uint64
-	Lookups                  map[string]uint64
-	Refusals                 map[string]uint64
-	Redirects                map[string]uint64
-	Introductions            uint64
-	Probes                   uint64
+	Sessions, Clients, Flows, OpenSessions int
+	Draining                               bool
+	Packets, Bytes                         uint64
+	Drops                                  map[string]uint64
+	CodesIssued                            uint64
+	CodesReclaimed                         uint64
+	Lookups                                map[string]uint64
+	Refusals                               map[string]uint64
+	Redirects                              map[string]uint64
+	Introductions                          uint64
+	Probes                                 uint64
+	Challenges, Replays                    uint64
 }
 
 // Snapshot reads the counters, with the live session and client counts.
@@ -132,8 +143,9 @@ func (s *Server) Snapshot() Snapshot {
 	m := &s.Metrics
 	sessions, clients := s.Counts()
 	out := Snapshot{
-		Sessions: sessions, Clients: clients, Flows: s.flowCount(), Draining: s.Draining(),
+		Sessions: sessions, Clients: clients, Flows: s.flowCount(), OpenSessions: s.openCount(), Draining: s.Draining(),
 		CodesIssued: m.codes.Load(), CodesReclaimed: m.reclaimed.Load(), Introductions: m.introductions.Load(), Probes: m.probes.Load(),
+		Challenges: m.challenges.Load(), Replays: m.replays.Load(),
 		Drops: map[string]uint64{}, Lookups: map[string]uint64{},
 		Refusals: map[string]uint64{}, Redirects: map[string]uint64{},
 	}
@@ -187,6 +199,9 @@ func (s *Server) WriteMetrics(w io.Writer) {
 	labelled("tandem_relay_code_lookups_total", "Join code lookups, by result.", "result", lookupNames[:], snap.Lookups)
 	labelled("tandem_relay_refused_total", "Registrations refused, by reason.", "reason", refusalNames[:], snap.Refusals)
 	counter("tandem_relay_probes_total", "Probes answered (round trips, connection checks).", snap.Probes)
+	gauge("tandem_relay_open_sessions", "Sessions opened with no token (open mode).", snap.OpenSessions)
+	counter("tandem_relay_challenges_total", "Open mode: proof-of-work challenges sent.", snap.Challenges)
+	counter("tandem_relay_challenges_replayed_total", "Open mode: proofs refused as used before.", snap.Replays)
 	counter("tandem_relay_introductions_total", "Guests introduced to their host for a direct path.", snap.Introductions)
 	labelled("tandem_relay_redirects_total", "Registrations sent to another replica (or from the entrance to us).", "kind", redirectNames[:], snap.Redirects)
 }

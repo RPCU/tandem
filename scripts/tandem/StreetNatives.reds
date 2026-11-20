@@ -4,7 +4,9 @@
 // One thing that happened to a shared vehicle, or a crime of our V seen by
 // the area's owner.
 public native struct TandemStreetEvent {
-  // 1 spawn, 2 gone, 3 status, 4 hit (area owner), 5 crime (ours)
+  // 1 spawn, 2 gone, 3 status, 4 hit (its owner), 5 crime (ours), 6 give
+  // (the host asks us to give one of ours to `player`), 7 take (ours now:
+  // the giver's state), 8 owner changed (`player` runs it now, `reason` did)
   native let kind: Int32;
   native let id: Uint32;
   native let record: TweakDBID;
@@ -24,12 +26,13 @@ public native struct TandemStreetEvent {
   // 4 melee; crime: 1 the victim is police, 2 a vehicle
   native let flags: Int32;
   // gone: 0 out of range, 1 taken (it is `player`'s car now), 2 removed;
-  // crime: 1 witnessed, 2 combat with the police, 3 damage, 4 kill
+  // crime: 1 witnessed, 2 combat with the police, 3 damage, 4 kill; take:
+  // 16 inherited (its owner is gone: nobody read the car); owner: who ran it
   native let reason: Int32;
   native let player: Uint32;
-  // status: health 0..1; hit: damage; crime: the share of the victim's health
+  // status, take: health 0..1; hit: damage; crime: the share of the victim's health
   native let amount: Float;
-  // hit: the push given (collision, m/s) or the way it went
+  // hit: the push given (collision, m/s) or the way it went; take: its velocity
   native let dx: Float;
   native let dy: Float;
   native let dz: Float;
@@ -56,9 +59,12 @@ public native struct TandemStreetCar {
 }
 
 public native class TandemStreet extends IScriptable {
-  // A shared vehicle's id: its owner's player id and the owner's counter.
+  // A shared vehicle's id: its announcer's player id and its counter.
   public static native func MakeId(owner: Uint32, counter: Uint32) -> Uint32
+  // Who announced it (the id says), and who runs it now (a hand-over moves
+  // it; 0: not one the session knows).
   public static native func OwnerOf(id: Uint32) -> Uint32
+  public static native func RunBy(id: Uint32) -> Uint32
   // TandemNative.SendNpcSeat's owner for a seat in a shared vehicle, and back.
   public static native func SeatOwner(id: Uint32) -> Uint32
   public static native func IsStreetSeat(owner: Uint32) -> Bool
@@ -71,11 +77,16 @@ public native class TandemStreet extends IScriptable {
   // Anyone: we hit a vehicle another game owns; our V gets into one.
   public static native func SendHit(id: Uint32, damage: Float, flags: Int32, position: Vector4, impulse: Vector4)
   public static native func Claim(id: Uint32, seat: CName)
+  // Hand-over: one of ours as we leave it, to `to`; our answer to a give
+  // (false: we keep it) or a take (whether we run it now).
+  public static native func Give(id: Uint32, to: Uint32, position: Vector4, orientation: Quaternion, velocity: Vector4, health: Float, flags: Int32)
+  public static native func Answer(id: Uint32, accepted: Bool)
   public static native func TakeEvents() -> array<TandemStreetEvent>
   // Where to draw a shared vehicle now (W 0: nothing says).
   public static native func Position(id: Uint32) -> Vector4
   public static native func Orientation(id: Uint32) -> Quaternion
   public static native func Velocity(id: Uint32) -> Vector4
+  // The proxies we must show (the vehicles another game runs).
   public static native func Shared() -> array<TandemStreetCar>
   public static native func IsShared(id: Uint32) -> Bool
   // Police: our V's wanted level (0..5) and EStarState; another player's.

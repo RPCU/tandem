@@ -141,6 +141,19 @@ private:
   // Host: a kept code (asked for, and given).
   bool m_keepFailed{};
   bool m_codeKept{};
+  // Host on an open relay with no token: its challenge, the nonce being
+  // tried (a slice per Pump, so the net thread never stalls), and whether
+  // it holds.
+  struct Challenge {
+    std::uint8_t stamp[4]{};
+    std::uint8_t bits{};
+    std::uint8_t mac[16]{};
+  };
+  Challenge m_challenge;
+  bool m_solving{}, m_solved{};
+  std::uint64_t m_powNonce{};
+  void OnChallenge(const std::uint8_t *body, std::size_t length, enet_uint32 now);
+  void Solve(enet_uint32 now);
   ENetSocket m_outer{ENET_SOCKET_NULL};
   RelaySecret m_secret{};
   bool m_haveSecret{};

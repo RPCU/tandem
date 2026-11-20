@@ -24,6 +24,13 @@ func (s *Server) handleFront(from netip.AddrPort, b []byte, now time.Time) (outg
 	return s.handleOn(portFront, from, b, now)
 }
 
+// forgetForTest ends what an address registered (as its idling out would).
+func (s *Server) forgetForTest(addr netip.AddrPort) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.forget(addr)
+}
+
 func dialTest(t *testing.T, relay *net.UDPAddr) *net.UDPConn {
 	t.Helper()
 	c, err := net.DialUDP("udp", nil, relay)

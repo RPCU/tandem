@@ -1,6 +1,7 @@
 // A real host and real guests over loopback UDP, in one process.
 
 #include "ports.hpp"
+#include "referee_expect.hpp"
 #include "slowdown.hpp"
 #include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
@@ -536,6 +537,8 @@ TEST_CASE("a guest's pause menu reaches the host and the other guest, stamped") 
 }
 
 TEST_CASE("a guest cannot pause or resume in someone else's name") {
+  // The guest forges another player's name on purpose.
+  test::ExpectReferee({"authority.not-yours"});
   const auto port = NextPort();
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error);
@@ -1301,6 +1304,8 @@ TEST_CASE(
 }
 
 TEST_CASE("a guest's takedown request reaches the host stamped; the answer only the asker") {
+  // NPC 7 is never spawned: only the routing is tested.
+  test::ExpectReferee({"ids.unknown-npc"});
   const auto port = NextPort();
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error);
@@ -1593,6 +1598,8 @@ TEST_CASE("down and out: a guest's life reaches everyone, stamped, and late join
 }
 
 TEST_CASE("down and out: a revive reaches the downed V's game only, and only while it is down") {
+  // A revive of a V that is not down, refused on purpose.
+  test::ExpectReferee({"authority.revive-not-down"});
   const auto port = NextPort();
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error);
@@ -1777,6 +1784,8 @@ TEST_CASE("down and out: up again after down, out and a respawn, a partner leavi
 }
 
 TEST_CASE("hit outcomes: strikes to the host, wounds and rules to all, area hits to their V") {
+  // NPC 7 is never spawned: only the routing is tested.
+  test::ExpectReferee({"ids.unknown-npc"});
   const auto port = NextPort();
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error);
@@ -2201,7 +2210,7 @@ TEST_CASE(
 
   // The same shot's cosmetic NpcShot: b draws it on its proxy, a does not
   // (its proxy fires the shot itself).
-  host->SendNpcSpawn({.npc = 7});
+  host->SendNpcSpawn({.npc = 7, .record = 1});
   REQUIRE(host->SendNpcShotAt({.player = a->You(), .npc = 7}));
   host->SendNpcShot({.npc = 7, .effect = 16});
   bool aDrew = false, bDrew = false;
@@ -2308,6 +2317,67 @@ TEST_CASE("presence reaches everyone, stamped, and late joiners; cues are relaye
   guest->Leave();
   REQUIRE(Pump({host.get(), guest.get(), late.get()}, [&](std::size_t, const auto &) {
     return !host->Presences().contains(gone) && !late->Presences().contains(gone);
+  }));
+}
+
+TEST_CASE("status visuals reach everyone as one set, stamped, late joiners too; they go with "
+          "their player") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto guest = Endpoint::Join({"guest"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(guest, error);
+  // Set before joining, in any order with a repeat: one sorted set, sent once in.
+  guest->SetLocalStatusVisuals({30, 10, 30});
+  host->SetLocalStatusVisuals({5});
+  std::optional<proto::StatusVisuals> atHost, atGuest;
+  REQUIRE(Pump({host.get(), guest.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *v = std::get_if<events::RemoteStatusVisuals>(&event))
+        (i == 0 ? atHost : atGuest) = v->visuals;
+    return atHost && atGuest;
+  }));
+  CHECK(atHost->player == guest->You()); // a guest only speaks for its own V
+  CHECK(atHost->records == std::vector<std::uint64_t>{10, 30});
+  CHECK(atGuest->player == host->You());
+  CHECK(atGuest->records == std::vector<std::uint64_t>{5});
+
+  // The same set again says nothing; a change does, once; clearing is a
+  // change too (an empty set, not silence).
+  guest->SetLocalStatusVisuals({10, 30});
+  guest->SetLocalStatusVisuals({10});
+  guest->SetLocalStatusVisuals({});
+  std::vector<proto::StatusVisuals> changes;
+  PumpFor({host.get(), guest.get()}, 150ms, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *v = std::get_if<events::RemoteStatusVisuals>(&event); v && i == 0)
+        changes.push_back(v->visuals);
+  });
+  REQUIRE(changes.size() == 2);
+  CHECK(changes[0].records == std::vector<std::uint64_t>{10});
+  CHECK(changes[1].records.empty());
+  CHECK(host->StatusVisualsOf().at(guest->You()).records.empty());
+  guest->SetLocalStatusVisuals({42});
+
+  // A late joiner hears both sets as they are now.
+  auto late = Endpoint::Join({"late"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(late, error);
+  std::map<proto::PlayerId, proto::StatusVisuals> atLate;
+  REQUIRE(Pump({host.get(), guest.get(), late.get()}, [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *v = std::get_if<events::RemoteStatusVisuals>(&event); v && i == 2)
+        atLate[v->visuals.player] = v->visuals;
+    return atLate.size() == 2 && atLate.at(guest->You()).records.size() == 1;
+  }));
+  CHECK(atLate.at(guest->You()).records == std::vector<std::uint64_t>{42});
+  CHECK(atLate.at(host->You()).records == std::vector<std::uint64_t>{5});
+
+  // The guest vanishes: what showed on it goes with it, everywhere.
+  const auto gone = guest->You();
+  guest->Leave();
+  REQUIRE(Pump({host.get(), guest.get(), late.get()}, [&](std::size_t, const auto &) {
+    return !host->StatusVisualsOf().contains(gone) && !late->StatusVisualsOf().contains(gone);
   }));
 }
 

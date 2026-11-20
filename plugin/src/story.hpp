@@ -4,6 +4,7 @@
 // (scripts/tandem/Story.reds through plugin/src/story_natives.cpp). Kept
 // apart from Runtime: the story has its own messages and its own script.
 
+#include "tandem/interact.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/scene.hpp"
 #include "tandem/story.hpp"
@@ -11,6 +12,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <set>
@@ -79,9 +81,30 @@ public:
   bool &InMoment() { return m_inMoment; }
   std::vector<std::uint64_t> &Removals() { return m_removals; }
   std::vector<std::uint64_t> &Sent() { return m_sent; }
+  // Host: the backstop on a guest's acts on the scene's actors.
+  story::Backstop &Backstop() { return m_backstop; }
+
+  // Quest interactions (docs/architecture/story.md, "Quest interactions"),
+  // game thread. Guest: what the host answered of each object's choices
+  // (a known host-only prompt is greyed before it is pressed), our count of
+  // questions. Host: each guest's question as it came, and when (the reach
+  // check rewinds to it), until our game answers it.
+  struct HeldAsk {
+    proto::QuestInteract ask;
+    std::uint64_t arrivalUs{};
+  };
+  interact::Known &InteractKnown() { return m_interactKnown; }
+  std::uint32_t NextInteractSeq() { return ++m_interactSeq; }
+  std::map<std::pair<proto::PlayerId, std::uint32_t>, HeldAsk> &InteractAsks() {
+    return m_interactAsks;
+  }
 
 private:
   std::vector<proto::PlayerId> GuestsNear(const proto::Vec3 &host) const;
+
+  interact::Known m_interactKnown;
+  std::uint32_t m_interactSeq{};
+  std::map<std::pair<proto::PlayerId, std::uint32_t>, HeldAsk> m_interactAsks;
 
   scene::Stage m_stage;
   scene::Replay m_replay;
@@ -91,6 +114,7 @@ private:
   bool m_inMoment{};
   std::vector<std::uint64_t> m_removals;
   std::vector<std::uint64_t> m_sent;
+  story::Backstop m_backstop;
 
   std::atomic_bool m_private{false};
   std::optional<proto::PlayerState> m_held; // net thread

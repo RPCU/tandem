@@ -8,20 +8,18 @@
 //   - a guest in the host's story moment (core/story.hpp InMoment) wears the
 //     same effects on its own V, by the same records, so the game holsters
 //     and restricts it the game's way; it takes off only what it put on;
-//   - the host refuses a guest's hits on the scene's actors while its V is
-//     in that moment (a backstop).
+//   - the host refuses a guest's hits, takedowns and quickhacks on the
+//     scene's actors while its V is in that moment (a backstop).
 // Names checked against the 2.50 scripts (final.reds lines in the comments).
 
 public class TandemRestrictions {
   private let m_game: GameInstance;
   private let m_story: wref<TandemStorySystem>;
   // Host: when we last looked at our V, whether it has story restrictions on
-  // (that last look) and its scene tier, and when we last said we refused a
-  // guest's hit.
+  // (that last look) and its scene tier.
   private let m_lastScan: Float;
   private let m_restricted: Bool;
   private let m_tier: Int32;
-  private let m_lastRefusal: Float;
   // Guest: when we last checked the moment, whether its notice was shown,
   // and the effects we took off lately (their removal is not a loss).
   private let m_lastCheck: Float;
@@ -147,34 +145,52 @@ public class TandemRestrictions {
     return this.m_restricted || this.m_tier >= 2;
   }
 
-  // The host's backstop (Outcomes.reds, Takedowns.reds): while our V is in
-  // a restricted moment, a guest's hit on one of the scene's actors (scene
-  // replay's cast, or an NPC in a scene that the quest marks or keeps alive)
-  // is refused. A guest outside the moment fighting elsewhere is the combat
+  // The host's backstop (Outcomes.reds, Takedowns.reds, Hacks.reds, Npcs.reds;
+  // the rule: core/story.hpp Backstop): while our V is in a restricted
+  // moment, a guest's strike, takedown or quickhack on one of the scene's
+  // actors (scene replay's cast, or an NPC in a scene that the quest marks
+  // or keeps alive) is refused, and said in the log once a second for each
+  // kind. A guest outside the moment fighting elsewhere is the combat
   // path's, as always.
   public func RefusesHit(body: ref<ScriptedPuppet>, npc: Uint32, player: Uint32, what: String) -> Bool {
-    if !IsDefined(body) || !TandemNative.IsHost() || !this.HostMoment() {
+    return this.Refuses(body, npc, player, 0, "hit", what);
+  }
+
+  public func RefusesTakedown(body: ref<ScriptedPuppet>, npc: Uint32, player: Uint32, what: String) -> Bool {
+    return this.Refuses(body, npc, player, 1, "hit", what);
+  }
+
+  // A quickhack: its upload (NpcHack) and every effect it lands (NpcEffect
+  // tagged Quickhack); its damage ticks come as strikes.
+  public func RefusesHack(body: ref<ScriptedPuppet>, npc: Uint32, player: Uint32, what: String) -> Bool {
+    return this.Refuses(body, npc, player, 2, "quickhack", what);
+  }
+
+  // act: story::GuestAct (0 strike, 1 takedown, 2 quickhack).
+  private func Refuses(body: ref<ScriptedPuppet>, npc: Uint32, player: Uint32, act: Int32, kind: String, what: String) -> Bool {
+    if !IsDefined(body) || !TandemNative.IsHost() {
       return false;
     }
-    let actor = TandemStory.SceneCasts(npc);
-    if !actor {
+    let moment = this.HostMoment();
+    let cast = moment && TandemStory.SceneCasts(npc);
+    let questNpc = false;
+    let kept = false;
+    let inScene = false;
+    if moment && !cast {
       let id = body.GetEntityID();
       let scenes = GameInstance.GetSceneSystem(this.m_game).GetScriptInterface();
       let gods = GameInstance.GetGodModeSystem(this.m_game);
       // GameObject.IsQuest (final.reds:13517), GodModeSystem (:87673),
       // IsEntityInScene (:193151).
-      let kept = body.IsQuest() || gods.HasGodMode(id, gameGodModeType.Immortal)
-        || gods.HasGodMode(id, gameGodModeType.Invulnerable);
-      actor = kept && IsDefined(scenes) && scenes.IsEntityInScene(id);
+      questNpc = body.IsQuest();
+      kept = gods.HasGodMode(id, gameGodModeType.Immortal) || gods.HasGodMode(id, gameGodModeType.Invulnerable);
+      inScene = IsDefined(scenes) && scenes.IsEntityInScene(id);
     }
-    if actor {
-      let now = this.Now();
-      if now - this.m_lastRefusal > 1.0 {
-        this.m_lastRefusal = now;
-        TandemNative.Log(s"story: refused a guest's hit during the host's scene (player \(player), NPC \(npc), \(what))");
-      }
+    let verdict = TandemStory.BackstopRefuses(moment, cast, questNpc, kept, inScene, act);
+    if verdict == 2 {
+      TandemNative.Log(s"story: refused a guest's \(kind) during the host's scene (player \(player), NPC \(npc), \(what))");
     }
-    return actor;
+    return verdict != 0;
   }
 
   // ---- guest ----

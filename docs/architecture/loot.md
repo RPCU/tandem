@@ -31,7 +31,12 @@
   items**: noted as they come in (`TandemLoot.QuestProp`,
   `TandemStorySystem.NoteSessionItem`) and removed from its inventory
   when it leaves the session, before it can save, because its own quests
-  test its inventory for them (`quest-carryover.md`). **Rewards**
+  test its inventory for them (`quest-carryover.md`). A quest prop a guest
+  takes from a **placed** container or the world while grouped is a quest
+  interaction too (`story.md`, "Quest interactions"): the host's V takes
+  the host's copy of it out of the host's world (its quest sees the item
+  leave its object), the second copy co-op already gave taken back out as
+  above. **Rewards**
   (quest and gig rewards: items, money, XP, street cred) are the story's
   `QuestReward`: the host's game pays its own V as in solo and every
   guest that took part gets the same reward record through

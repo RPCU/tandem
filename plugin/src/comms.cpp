@@ -1,5 +1,6 @@
 #include "comms.hpp"
 
+#include "config.hpp"
 #include "log.hpp"
 
 #include <format>
@@ -14,11 +15,24 @@ void Comms::Configure(LinkDefault link, bool pings) {
   std::lock_guard _(m_lock);
   m_linkDefault = link;
   m_pings = pings;
-  m_own.mode = link == LinkDefault::Auto  ? proto::LinkMode::Everyone
-               : link == LinkDefault::Ask ? proto::LinkMode::Listed
-                                          : proto::LinkMode::Off;
+  const auto mode = link == LinkDefault::Auto  ? proto::LinkMode::Everyone
+                    : link == LinkDefault::Ask ? proto::LinkMode::Listed
+                                               : proto::LinkMode::Off;
+  if (mode == m_own.mode)
+    return;
+  // A new default starts over: each partner's consent is the default's.
+  m_own.mode = mode;
   m_own.players.clear();
-  m_links.SetOwn(m_own);
+  if (m_you != proto::kNoPlayer)
+    m_outbound.push_back(m_own);
+  Queue(m_links.SetOwn(m_own));
+}
+
+void ConfigureComms(const Config &config) {
+  Comms::Get().Configure(config.link == Config::Link::Auto  ? Comms::LinkDefault::Auto
+                         : config.link == Config::Link::Ask ? Comms::LinkDefault::Ask
+                                                            : Comms::LinkDefault::Off,
+                         config.pings);
 }
 
 void Comms::PushInbound(CommsInbound inbound) {

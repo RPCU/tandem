@@ -741,6 +741,50 @@ TEST_CASE("story restrictions survive encoding, are a story message, and say one
   CHECK(Decode(Encode(many)).has_value());
 }
 
+TEST_CASE("a quest interaction survives encoding, is a story message, and is small") {
+  RoundTrips(QuestInteract{.target = 0x1122334455667788ULL,
+                           .choice = 0xAABB,
+                           .detail = 0xCCDD,
+                           .layer = 0xEE,
+                           .seq = 3,
+                           .position = {1.f, 2.f, 3.f},
+                           .timeUs = 99,
+                           .player = 2,
+                           .verdict = kInteractPerformed,
+                           .flags = kInteractLoot});
+  RoundTrips(QuestInteract{.target = 1});
+  CHECK(IsStory(QuestInteract{}));
+  CHECK(ChannelOf(QuestInteract{}) == Channel::Event);
+  CHECK(std::string(NameOf(QuestInteract{})) == "QuestInteract");
+  CHECK(Encode(QuestInteract{.target = 1}).size() <= 72);
+  CHECK_FALSE(Decode(Encode(QuestInteract{.target = 1, .verdict = 8})).has_value());
+  CHECK_FALSE(Decode(Encode(QuestInteract{.target = 1, .flags = 8})).has_value());
+  CHECK_FALSE(Decode(Encode(QuestInteract{})).has_value()); // no object
+}
+
+TEST_CASE("status visuals survive encoding, are kept state, and say one set one way") {
+  RoundTrips(StatusVisuals{.player = 2, .revision = 4, .records = {0x10, 0x15e213846eULL}});
+  RoundTrips(StatusVisuals{.player = 1, .revision = 1});
+  CHECK(ChannelOf(StatusVisuals{}) == Channel::Event);
+  CHECK(IsReliable(StatusVisuals{}));
+  CHECK_FALSE(IsStory(StatusVisuals{}));
+  CHECK_FALSE(IsCombat(StatusVisuals{}));
+  CHECK(std::string(NameOf(StatusVisuals{})) == "StatusVisuals");
+  // Appended last, so every earlier message keeps its id (no version bump).
+  CHECK(Message(StatusVisuals{}).index() == Message(NpcVendor{}).index() + 1);
+  // Unsorted, repeated or too many: refused.
+  CHECK_FALSE(Decode(Encode(StatusVisuals{.records = {2, 1}})).has_value());
+  CHECK_FALSE(Decode(Encode(StatusVisuals{.records = {1, 1}})).has_value());
+  StatusVisuals many;
+  for (std::uint64_t i = 0; i <= kMaxStatusVisuals; ++i)
+    many.records.push_back(i + 1);
+  CHECK_FALSE(Decode(Encode(many)).has_value());
+  many.records.pop_back();
+  CHECK(Decode(Encode(many)).has_value());
+  // A full set is still a small event.
+  CHECK(Encode(many).size() < 160);
+}
+
 TEST_CASE("down-and-out messages survive encoding, reliably, and refuse what is out of range") {
   RoundTrips(Vitals{.player = 2, .revision = 7, .life = Life::Down, .flags = kVitalsInCombat});
   RoundTrips(Vitals{.player = 1, .revision = 1, .life = Life::Out});
@@ -933,6 +977,33 @@ TEST_CASE("breaches: survive encoding, reliable one-shots, bounded, known flags 
   CHECK_FALSE(Decode(Encode(traps)).has_value());
   CHECK_FALSE(Decode(Encode(Breach{.flags = 8})).has_value());
   CHECK_FALSE(Decode(Encode(BreachResult{.verdict = BreachVerdict{3}})).has_value());
+}
+
+TEST_CASE("vehicles changing hands: survive encoding, reliable, small") {
+  RoundTrips(TrafficOwnership{.id = MakeTrafficId(2, 9), .owner = 3});
+  RoundTrips(TrafficHandover{.id = MakeTrafficId(2, 9), .to = 3});
+  RoundTrips(TrafficHandoverState{.id = MakeTrafficId(2, 9),
+                                  .from = 2,
+                                  .to = 3,
+                                  .position = {1, 2, 3},
+                                  .orientation = {0, 0, 0.6f, 0.8f},
+                                  .velocity = {4, 5, 6},
+                                  .health = 0.5f,
+                                  .flags = kTrafficLights,
+                                  .handover = kHandoverInherited});
+  RoundTrips(TrafficHandoverDone{.id = MakeTrafficId(2, 9), .accepted = true});
+  for (const Message &message : {Message{TrafficOwnership{}}, Message{TrafficHandover{}},
+                                 Message{TrafficHandoverState{}}, Message{TrafficHandoverDone{}}}) {
+    CHECK(ChannelOf(message) == Channel::Event);
+    CHECK(IsReliable(message));
+    CHECK_FALSE(IsStory(message));
+    CHECK_FALSE(IsCombat(message));
+    CHECK(Encode(message).size() <= 80);
+  }
+  CHECK(std::string(NameOf(TrafficOwnership{})) == "TrafficOwnership");
+  CHECK(std::string(NameOf(TrafficHandover{})) == "TrafficHandover");
+  CHECK(std::string(NameOf(TrafficHandoverState{})) == "TrafficHandoverState");
+  CHECK(std::string(NameOf(TrafficHandoverDone{})) == "TrafficHandoverDone");
 }
 
 TEST_CASE("region messages survive encoding, are reliable and bounded") {

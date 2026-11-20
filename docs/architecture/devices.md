@@ -102,6 +102,12 @@ device the record does not have is answered from the host's own state
 game's own: a door closing itself): `UseDevice` says what the device is
 here now. What the host says is applied to our copy, loaded or not; what
 does not take (the game refused) is tried three times, then logged and left.
+A use of a placed device while grouped is also a quest interaction
+(`story.md`, "Quest interactions"): our V's change waits for the host's
+verdict (`TandemDevices.Hold`, 4 s at most). Performed: the host's V did the
+same action on its copy and its report (in our name, `PerformedFor`) is the
+device's word; anything else: our change is asked of the host as above
+(`Release`).
 
 **A partner's quickhack shows** on the device, in their colour, while the
 two are linked: the bits a guest's request (host) or the host's live word

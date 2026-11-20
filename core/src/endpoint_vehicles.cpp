@@ -2,7 +2,7 @@
 // says what about a vehicle, who hears it, what the host keeps for late
 // joiners and the digests, and what goes when a player or a vehicle does.
 // The rule is the authority table's: the game that simulates a vehicle owns
-// it (proto::OwnerOfVehicle); everyone else shows a copy and sends the owner
+// it (VehicleOwner); everyone else shows a copy and sends the owner
 // what they saw happen to it.
 
 #include "tandem/endpoint.hpp"
@@ -37,7 +37,7 @@ proto::VehicleDamage Sanitized(proto::VehicleDamage damage) {
 // ---- what this game says ----
 
 void Endpoint::SetVehicleDamage(proto::VehicleDamage damage) {
-  if (!IsJoined() || m_ended || proto::OwnerOfVehicle(damage.vehicle) != m_you)
+  if (!IsJoined() || m_ended || VehicleOwner(damage.vehicle) != m_you)
     return;
   // A shared vehicle's damage is said while it is shared, by its owner.
   if (proto::IsStreetCar(damage.vehicle) &&
@@ -56,16 +56,18 @@ void Endpoint::SetVehicleDamage(proto::VehicleDamage damage) {
     m_damageRevision = static_cast<std::uint32_t>(HostNowUs() / 1000);
   damage.revision = ++m_damageRevision;
   m_vehicleDamage[damage.vehicle] = damage;
-  if (IsHost())
-    Broadcast(damage);
-  else
+  if (!IsHost())
     Send(m_hostPeer, damage);
+  else if (proto::IsStreetCar(damage.vehicle))
+    ShareTraffic(damage, m_you); // to whoever shows our street
+  else
+    Broadcast(damage);
 }
 
 void Endpoint::SendVehicleHit(proto::VehicleHit hit) {
   if (!IsJoined() || m_ended)
     return;
-  const auto owner = proto::OwnerOfVehicle(hit.vehicle);
+  const auto owner = VehicleOwner(hit.vehicle);
   if (owner == m_you || owner == proto::kNoPlayer)
     return; // our own vehicles' hits are our game's
   hit.player = m_you;
@@ -140,7 +142,7 @@ void Endpoint::AskGunner(proto::VehicleRef vehicle, std::uint64_t seat, bool lea
     return;
   const proto::GunnerRequest request{
       .player = m_you, .vehicle = vehicle, .seat = seat, .leave = leave};
-  const auto owner = proto::OwnerOfVehicle(vehicle);
+  const auto owner = VehicleOwner(vehicle);
   if (owner == m_you)
     return; // our own vehicle: our V sits where it likes
   if (IsHost()) {
@@ -152,7 +154,7 @@ void Endpoint::AskGunner(proto::VehicleRef vehicle, std::uint64_t seat, bool lea
 }
 
 void Endpoint::FreeGunner(proto::VehicleRef vehicle) {
-  if (!IsJoined() || m_ended || proto::OwnerOfVehicle(vehicle) != m_you)
+  if (!IsJoined() || m_ended || VehicleOwner(vehicle) != m_you)
     return;
   if (const auto freed = m_turrets.Free(vehicle))
     SayGunner(*freed, m_pending);
@@ -205,7 +207,8 @@ void Endpoint::SendNpcRam(proto::NpcRam ram) {
 }
 
 void Endpoint::SendChase(const proto::Chase &chase) {
-  if (!OwnsArea() || !IsHost() || m_ended || !m_traffic.contains(chase.vehicle))
+  // The vehicle's owner says whom it chases: the game that runs it.
+  if (!IsJoined() || m_ended || !OwnsTraffic(chase.vehicle))
     return;
   const auto it = m_chases.find(chase.vehicle);
   if (chase.target == proto::kNoPlayer) {
@@ -217,7 +220,7 @@ void Endpoint::SendChase(const proto::Chase &chase) {
       return;
     m_chases[chase.vehicle] = chase;
   }
-  Broadcast(chase);
+  SayTraffic(chase);
 }
 
 // ---- records ----
@@ -284,7 +287,7 @@ void Endpoint::ForgetVehiclesOf(proto::PlayerId player, std::vector<SessionEvent
   // The seats it held, and the seats of its vehicle: free.
   std::vector<proto::VehicleRef> freed;
   for (const auto &[vehicle, gunner] : m_gunners)
-    if (gunner.gunner == player || proto::OwnerOfVehicle(vehicle) == player)
+    if (gunner.gunner == player || VehicleOwner(vehicle) == player)
       freed.push_back(vehicle);
   for (const auto &gunner : m_turrets.Release(player))
     if (!std::ranges::contains(freed, gunner.vehicle))
@@ -329,19 +332,29 @@ void Endpoint::OnGuestVehicles(net::PeerId peer, proto::PlayerId player,
                                const proto::Message &message, std::vector<SessionEvent> &out) {
   std::visit(Overloaded{
                  [&](const proto::VehicleDamage &damage) {
-                   // A guest only speaks for the vehicles it owns (its car).
-                   if (proto::OwnerOfVehicle(damage.vehicle) != player)
+                   // A guest only speaks for the vehicles it owns (its car,
+                   // the shared ones its game runs).
+                   if (VehicleOwner(damage.vehicle) != player)
+                     return;
+                   const bool street = proto::IsStreetCar(damage.vehicle);
+                   if (street && !m_traffic.contains(proto::TrafficOfSeat(damage.vehicle)))
                      return;
                    const auto kept = Sanitized(damage);
                    if (!NoteDamage(kept))
                      return; // a repeat, or older than what we have
-                   Broadcast(kept, peer);
-                   out.push_back(events::RemoteVehicleDamage{kept});
+                   if (!street) {
+                     Broadcast(kept, peer);
+                     out.push_back(events::RemoteVehicleDamage{kept});
+                   } else {
+                     ShareTraffic(kept, player, peer);
+                     if (Sees(m_you, player))
+                       out.push_back(events::RemoteVehicleDamage{kept});
+                   }
                  },
                  [&](const proto::VehicleHit &hit) {
                    auto mine = hit;
                    mine.player = player;
-                   const auto owner = proto::OwnerOfVehicle(mine.vehicle);
+                   const auto owner = VehicleOwner(mine.vehicle);
                    if (owner == player || owner == proto::kNoPlayer)
                      return;
                    if (owner == m_you) {
@@ -385,7 +398,7 @@ void Endpoint::OnGuestVehicles(net::PeerId peer, proto::PlayerId player,
                  [&](const proto::GunnerRequest &request) {
                    auto mine = request;
                    mine.player = player;
-                   const auto owner = proto::OwnerOfVehicle(mine.vehicle);
+                   const auto owner = VehicleOwner(mine.vehicle);
                    if (owner == player)
                      return;
                    if (owner == m_you)
@@ -395,7 +408,7 @@ void Endpoint::OnGuestVehicles(net::PeerId peer, proto::PlayerId player,
                  },
                  [&](const proto::Gunner &gunner) {
                    // Only the vehicle's owner gives its seats.
-                   if (proto::OwnerOfVehicle(gunner.vehicle) != player)
+                   if (VehicleOwner(gunner.vehicle) != player)
                      return;
                    if (gunner.gunner != proto::kNoPlayer && !m_players.contains(gunner.gunner))
                      return; // given to someone who has gone meanwhile
@@ -431,7 +444,28 @@ void Endpoint::OnGuestVehicles(net::PeerId peer, proto::PlayerId player,
                    if (Finite(mine.velocity) && RouteToOwner(mine.npc, mine, player))
                      out.push_back(events::NpcRamBy{mine});
                  },
-                 [](const auto &) {}, // a chase is the area owner's to say
+                 [&](const proto::Chase &chase) {
+                   // The vehicle's owner says whom it chases (the game that
+                   // runs it, a guest's since regions).
+                   if (!m_traffic.contains(chase.vehicle) ||
+                       TrafficOwnerOf(chase.vehicle) != player)
+                     return;
+                   const auto it = m_chases.find(chase.vehicle);
+                   if (chase.target == proto::kNoPlayer) {
+                     if (it == m_chases.end())
+                       return;
+                     m_chases.erase(it);
+                   } else {
+                     if (!m_players.contains(chase.target) ||
+                         (it != m_chases.end() && it->second == chase))
+                       return;
+                     m_chases[chase.vehicle] = chase;
+                   }
+                   ShareTraffic(chase, player, peer);
+                   if (Sees(m_you, player))
+                     out.push_back(events::ChaseChanged{chase});
+                 },
+                 [](const auto &) {},
              },
              message);
 }
@@ -440,7 +474,7 @@ void Endpoint::OnHostVehicles(const proto::Message &message, std::vector<Session
   std::visit(Overloaded{
                  [&](const proto::VehicleDamage &damage) {
                    // Ours is our game's: never taken from the network.
-                   if (proto::OwnerOfVehicle(damage.vehicle) == m_you)
+                   if (VehicleOwner(damage.vehicle) == m_you)
                      return;
                    const auto kept = Sanitized(damage);
                    if (proto::IsStreetCar(kept.vehicle) &&
@@ -450,7 +484,7 @@ void Endpoint::OnHostVehicles(const proto::Message &message, std::vector<Session
                      out.push_back(events::RemoteVehicleDamage{kept});
                  },
                  [&](const proto::VehicleHit &hit) {
-                   if (proto::OwnerOfVehicle(hit.vehicle) == m_you && hit.player != m_you)
+                   if (VehicleOwner(hit.vehicle) == m_you && hit.player != m_you)
                      out.push_back(events::VehicleHitBy{hit});
                  },
                  [&](const proto::VehicleExit &exit) {
@@ -478,13 +512,13 @@ void Endpoint::OnHostVehicles(const proto::Message &message, std::vector<Session
                  },
                  [&](const proto::GunnerRequest &request) {
                    // Relayed to us: we own the vehicle and give its seat.
-                   if (proto::OwnerOfVehicle(request.vehicle) == m_you && request.player != m_you)
+                   if (VehicleOwner(request.vehicle) == m_you && request.player != m_you)
                      GiveGunner(request, out);
                  },
                  [&](const proto::Gunner &gunner) {
                    // The host's word on our own vehicle's seat (it freed it when
                    // the gunner went) is our arbitration's too.
-                   if (proto::OwnerOfVehicle(gunner.vehicle) == m_you)
+                   if (VehicleOwner(gunner.vehicle) == m_you)
                      m_turrets.Set(gunner);
                    if (NoteGunner(gunner))
                      out.push_back(events::GunnerChanged{gunner});
@@ -503,6 +537,9 @@ void Endpoint::OnHostVehicles(const proto::Message &message, std::vector<Session
                      out.push_back(events::NpcRamBy{ram});
                  },
                  [&](const proto::Chase &chase) {
+                   // Ours is our game's to say.
+                   if (OwnsTraffic(chase.vehicle))
+                     return;
                    const auto it = m_chases.find(chase.vehicle);
                    if (chase.target == proto::kNoPlayer) {
                      if (it == m_chases.end())
@@ -547,16 +584,20 @@ void Endpoint::SendVehiclesTo(net::PeerId peer, proto::PlayerId them, std::uint8
       }
   }
   if (domains & proto::kDomainNpcs) {
-    // After the spawns (SendDomainsTo): how each shared vehicle is damaged
-    // and whom it chases; in a resync, which ones chase nobody.
+    // After the spawns (SendDomainsTo): how each shared vehicle it sees is
+    // damaged and whom it chases; in a resync, which ones chase nobody.
+    const auto shown = [&](proto::TrafficId id) {
+      return m_traffic.contains(id) && Sees(them, TrafficOwnerOf(id));
+    };
     for (const auto &[vehicle, damage] : m_vehicleDamage)
-      if (proto::IsStreetCar(vehicle))
+      if (proto::IsStreetCar(vehicle) && shown(proto::TrafficOfSeat(vehicle)))
         Send(peer, damage);
     for (const auto &[id, chase] : m_chases)
-      Send(peer, chase);
+      if (shown(id))
+        Send(peer, chase);
     if (resync)
       for (const auto &[id, spawn] : m_traffic)
-        if (!m_chases.contains(id))
+        if (!m_chases.contains(id) && shown(id))
           Send(peer, proto::Chase{.vehicle = id});
   }
 }
@@ -583,17 +624,23 @@ std::uint32_t Endpoint::VehiclePlayersDigest(proto::PlayerId self) const {
   return hash.Value();
 }
 
-std::uint32_t Endpoint::VehicleStreetDigest() const {
+std::uint32_t Endpoint::VehicleStreetDigest(proto::PlayerId self) const {
+  // The shared vehicles `self` shows (as TrafficDigestFor).
+  const auto shown = [&](proto::TrafficId id) {
+    const auto owner = TrafficOwnerOf(id);
+    return m_traffic.contains(id) && owner != self && (!IsHost() || m_links.Linked(owner, self));
+  };
   consistency::Hasher hash;
   for (const auto &[vehicle, damage] : m_vehicleDamage)
-    if (proto::IsStreetCar(vehicle))
+    if (proto::IsStreetCar(vehicle) && shown(proto::TrafficOfSeat(vehicle)))
       hash.Add(std::uint64_t{vehicle})
           .Add(std::uint64_t{damage.flags})
           .Add(std::uint64_t{damage.tyres})
           .Add(std::uint64_t{damage.parts.size()});
   hash.Add(std::uint64_t{0xB2});
   for (const auto &[id, chase] : m_chases)
-    hash.Add(std::uint64_t{id}).Add(std::uint64_t{chase.target}).Add(std::uint64_t{chase.flags});
+    if (shown(id))
+      hash.Add(std::uint64_t{id}).Add(std::uint64_t{chase.target}).Add(std::uint64_t{chase.flags});
   return hash.Value();
 }
 } // namespace tandem

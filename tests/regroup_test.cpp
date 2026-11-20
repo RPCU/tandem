@@ -1,6 +1,7 @@
 // Regroup offers and answers (milestone 4: fast travel together) over
 // loopback UDP: each reaches only whom it is for, stamped by the host.
 
+#include "referee_expect.hpp"
 #include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 
@@ -51,6 +52,8 @@ void Clear(std::vector<Heard> &heard) {
 } // namespace
 
 TEST_CASE("a regroup offer reaches whom it is for, stamped with who made it; answers go back") {
+  // Answers to offers never made: only the routing is tested.
+  test::ExpectReferee({"ids.unknown-offer"});
   std::string error;
   auto host = Endpoint::Host({"host"}, 0, error);
   REQUIRE_MESSAGE(host, error);

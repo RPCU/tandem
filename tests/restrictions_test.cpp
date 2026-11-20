@@ -198,6 +198,44 @@ TEST_CASE("the story record keeps the host's restrictions for joiners and hashes
   CHECK(record.Digest() == none);
 }
 
+TEST_CASE("the host's backstop refuses a guest's strikes, takedowns and quickhacks on actors") {
+  using story::GuestAct;
+  using story::SceneActor;
+  // Who is an actor: the cast, or a quest or god-mode NPC in a scene.
+  CHECK(story::IsSceneActor({.cast = true}));
+  CHECK(story::IsSceneActor({.quest = true, .inScene = true}));
+  CHECK(story::IsSceneActor({.kept = true, .inScene = true}));
+  CHECK_FALSE(story::IsSceneActor({.quest = true}));   // a quest NPC out of the scene
+  CHECK_FALSE(story::IsSceneActor({.inScene = true})); // an extra in the scene's area
+  CHECK_FALSE(story::IsSceneActor({}));
+
+  story::Backstop backstop;
+  const SceneActor actor{.quest = true, .inScene = true}, extra{.inScene = true};
+  // Outside the host's moment, or on someone else: the combat path's, as always.
+  CHECK(backstop.Judge(false, actor, GuestAct::Quickhack, 0) == story::Backstop::Verdict{});
+  CHECK(backstop.Judge(true, extra, GuestAct::Quickhack, 0) == story::Backstop::Verdict{});
+  CHECK(backstop.Refused(GuestAct::Quickhack) == 0);
+
+  // In it: every act refused; said once a second for each kind of act.
+  const std::uint64_t t = 5'000'000;
+  CHECK(backstop.Judge(true, actor, GuestAct::Quickhack, t) ==
+        story::Backstop::Verdict{.refuse = true, .log = true});
+  CHECK(backstop.Judge(true, actor, GuestAct::Quickhack, t + 300'000) ==
+        story::Backstop::Verdict{.refuse = true, .log = false});
+  // A strike in the same second (the quickhack's damage tick) has its own line.
+  CHECK(backstop.Judge(true, actor, GuestAct::Strike, t + 400'000) ==
+        story::Backstop::Verdict{.refuse = true, .log = true});
+  CHECK(backstop.Judge(true, {.cast = true}, GuestAct::Takedown, t + 500'000).log);
+  CHECK(backstop.Judge(true, actor, GuestAct::Quickhack, t + 1'000'000) ==
+        story::Backstop::Verdict{.refuse = true, .log = true});
+  CHECK(backstop.Refused(GuestAct::Quickhack) == 3);
+  CHECK(backstop.Refused(GuestAct::Strike) == 1);
+  CHECK(backstop.Refused(GuestAct::Takedown) == 1);
+  // The very first refusal is said even at time zero.
+  story::Backstop fresh;
+  CHECK(fresh.Judge(true, actor, GuestAct::Strike, 0).log);
+}
+
 TEST_CASE("restrictions through the endpoints: a guest, a late joiner, a lift, a vanished host") {
   const auto port = NextPort();
   std::string error;

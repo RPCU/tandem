@@ -55,8 +55,13 @@ std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
                         const std::map<proto::NpcId, proto::NpcScale> *scales = nullptr);
 // The shared world vehicles and how each stands (part of the NPC domain: a
 // difference is resynced with it).
+// `owners` and `only` as for NpcDigest (the owner of a vehicle with none
+// listed is its id's, proto::TrafficOwner); `count`, how many were hashed.
+using TrafficFilter = std::function<bool(proto::TrafficId, proto::PlayerId)>;
 std::uint32_t TrafficDigest(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
-                            const std::map<proto::TrafficId, proto::TrafficStatus> &status);
+                            const std::map<proto::TrafficId, proto::TrafficStatus> &status,
+                            const std::map<proto::TrafficId, proto::PlayerId> &owners = {},
+                            const TrafficFilter &only = {}, std::uint16_t *count = nullptr);
 
 // The players as `self` sees them: everyone's look, held items, seat, radio,
 // stealth, pause menu and time ability but its own (a game is never sent
