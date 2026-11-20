@@ -1,0 +1,89 @@
+name: Build host
+description: >-
+  Prepare a runner for the C++ builds: swap, ccache, as many compile jobs as
+  its memory allows, and a log of every compile's peak memory.
+
+# The protocol's translation units (core/include/tandem/protocol.hpp: a
+# std::variant of every message, serialized by zpp_bits with raised constexpr
+# limits) take several GB each, and nearly every translation unit includes
+# it: run 44616559671 had the runner killed at 2 jobs with no swap. So the
+# job count follows memory, not cores, and the swap is there to slow an
+# unexpectedly heavy compile down rather than lose the runner.
+
+inputs:
+  job-gb:
+    description: GB of RAM per compile job (CMAKE_BUILD_PARALLEL_LEVEL = RAM / this, at most the cores)
+    default: "5"
+  swap-gb:
+    description: GB of swap to add
+    default: "16"
+
+runs:
+  using: composite
+  steps:
+    - name: Swap
+      shell: bash
+      env:
+        SWAP_GB: ${{ inputs.swap-gb }}
+      run: |
+        # The larger temporary disk when the image has one.
+        dir=/mnt
+        avail=$(df -BG --output=avail "$dir" 2>/dev/null | tail -1 | tr -dc 0-9)
+        if [ "${avail:-0}" -lt $((SWAP_GB + 4)) ]; then dir=/; fi
+        sudo fallocate -l "${SWAP_GB}G" "$dir/tandem.swap"
+        sudo chmod 600 "$dir/tandem.swap"
+        sudo mkswap "$dir/tandem.swap" >/dev/null
+        sudo swapon "$dir/tandem.swap"
+        free -h
+
+    # The same ccache as devenv's (4.14): Ubuntu's 4.9 predates what
+    # CMakeLists.txt relies on for clang-cl.
+    - name: Install ccache
+      shell: bash
+      run: |
+        v=4.14.3
+        curl -fsSL -o "$RUNNER_TEMP/ccache.tar.xz" \
+          "https://github.com/ccache/ccache/releases/download/v$v/ccache-$v-linux-x86_64-glibc.tar.xz"
+        echo "c94a5688546883eee4c87764b34fa2eb18a4879421a51589c37538aed6312dfc  $RUNNER_TEMP/ccache.tar.xz" | sha256sum -c -
+        tar -xJf "$RUNNER_TEMP/ccache.tar.xz" -C "$RUNNER_TEMP"
+        sudo install "$RUNNER_TEMP/ccache-$v-linux-x86_64-glibc/ccache" /usr/local/bin/ccache
+        ccache --version | head -1
+
+    # The settings devenv.nix gives the laptop (docs/architecture/testing.md,
+    # "The compiler cache"), the cache in the runner's temporary directory
+    # (actions/cache saves and restores it), and a wrapper that logs each
+    # compile's peak memory (ccache runs it on a miss only).
+    - name: Configure ccache and the job count
+      shell: bash
+      env:
+        JOB_GB: ${{ inputs.job-gb }}
+      run: |
+        {
+          echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          echo "CCACHE_NOHASHDIR=1"
+          echo "CCACHE_DEPEND=1"
+          echo "CCACHE_MAXSIZE=1G"
+          echo "CCACHE_PREFIX=$RUNNER_TEMP/compile-mem"
+          echo "TANDEM_COMPILE_LOG=$RUNNER_TEMP/compile-mem.log"
+        } >>"$GITHUB_ENV"
+        cat >"$RUNNER_TEMP/compile-mem" <<'EOF'
+        #!/usr/bin/env bash
+        out=?
+        for ((i = 1; i <= $#; i++)); do
+          case ${!i} in
+            -o) j=$((i + 1)) && out=${!j} ;;
+            /Fo* | -Fo*) out=${!i:3} ;;
+          esac
+        done
+        exec /usr/bin/time -a -o "$TANDEM_COMPILE_LOG" -f "%M %e ${out##*/}" "$@"
+        EOF
+        chmod +x "$RUNNER_TEMP/compile-mem"
+        [ -x /usr/bin/time ] || { sudo apt-get update -q && sudo apt-get install -y -q time; }
+
+        ram=$(awk '/^MemTotal:/ { print int($2 / 1048576 + 0.5) }' /proc/meminfo)
+        jobs=$((ram / JOB_GB))
+        [ "$jobs" -gt "$(nproc)" ] && jobs=$(nproc)
+        [ "$jobs" -lt 1 ] && jobs=1
+        echo "CMAKE_BUILD_PARALLEL_LEVEL=$jobs" >>"$GITHUB_ENV"
+        echo "$(nproc) cores, ${ram} GB of RAM: $jobs compile jobs"

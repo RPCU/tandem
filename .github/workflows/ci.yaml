@@ -1,16 +1,17 @@
 name: CI
 
 # What can run without the game or the Windows sysroot. The plugin
-# (tandem.dll) is not built here: it is cross-compiled with clang-cl against
-# the MSVC CRT and Windows SDK that `task sysroot` fetches with xwin (Microsoft's
-# licence is accepted by whoever runs it), so it stays a local build
-# (`task build:plugin`, tools/build.sh). `task scripts:check` needs the
-# game's own scripts and is left out too.
+# (tandem.dll) is not built here yet. `task scripts:check` compiles scripts/
+# against the game's own scripts and other mods' (on the game machine): it
+# cannot run here.
 on:
   push:
-    branches: [main]
   pull_request:
-    branches: [main]
+
+# A newer push to the same branch or pull request cancels the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   go:
@@ -24,9 +25,9 @@ jobs:
       run:
         working-directory: ${{ matrix.module }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.module }}/go.mod
           cache: false # standard library only: no go.sum
@@ -44,9 +45,9 @@ jobs:
   kubernetes:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
           cache: false
@@ -71,17 +72,17 @@ jobs:
     env:
       CC: gcc-14
       CXX: g++-14
-      # The protocol's translation units take several GB each: more jobs
-      # than this get the compiler OOM-killed on a 16 GB runner.
-      CMAKE_BUILD_PARALLEL_LEVEL: 2
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
           fetch-depth: 0 # the build is named after the commit (core/CMakeLists.txt)
 
+      # Swap, ccache, CMAKE_BUILD_PARALLEL_LEVEL from the runner's memory.
+      - uses: ./.github/actions/build-host
+
       # relay-loopback builds the relay with Go and runs sessions through it.
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: relay/go.mod
           cache: false
@@ -90,6 +91,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends g++-14 ninja-build
+
+      # A new key each run, the newest earlier one restored: the cache
+      # follows the tree. Saved even when the build fails, so a rerun
+      # starts from what did compile.
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ccache-linux-
 
       # task test
       - name: Configure
@@ -101,13 +111,22 @@ jobs:
       - name: Test
         run: ctest --preset linux
 
+      - uses: ./.github/actions/build-report
+        if: ${{ !cancelled() }}
+
+      - uses: actions/cache/save@v6
+        if: ${{ !cancelled() }}
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-linux-${{ github.run_id }}-${{ github.run_attempt }}
+
   checks:
     name: docs, natives, strings
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.x"
 

@@ -1,0 +1,28 @@
+name: Build report
+description: >-
+  The compiler cache's hits and the heaviest compiles (peak memory, seconds),
+  in the log and in the job's summary. Pairs with build-host.
+
+runs:
+  using: composite
+  steps:
+    - name: Compiler cache and heaviest compiles
+      shell: bash
+      run: |
+        {
+          echo '### Compiler cache'
+          echo '```'
+          ccache --show-stats
+          echo '```'
+          if [ -s "$TANDEM_COMPILE_LOG" ]; then
+            echo "### Heaviest of $(wc -l <"$TANDEM_COMPILE_LOG") compiles (cache misses)"
+            echo '```'
+            sort -rn "$TANDEM_COMPILE_LOG" | head -15 |
+              awk '{ printf "%5.2f GB %6.1f s  %s\n", $1 / 1048576, $2, $3 }'
+            echo '```'
+          fi
+          echo '### Memory'
+          echo '```'
+          free -h
+          echo '```'
+        } | tee -a "$GITHUB_STEP_SUMMARY"
