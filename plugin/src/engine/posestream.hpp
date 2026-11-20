@@ -34,6 +34,13 @@ void PoseStreamReport();
 // layout checks as a player's pose; without them they do nothing.
 void SetPoseActorSource(std::uint32_t npc, const RED4ext::Handle<RED4ext::ent::Entity> &entity);
 void BindPoseActor(std::uint32_t npc, const RED4ext::Handle<RED4ext::ent::Entity> &entity);
+// Another rig of actor `npc` (part: proto::kRigFace its face, kRigBody a
+// body that is not the humanoid one). source: the host's NPC, read at its
+// rig's commit (a body only when its skeleton is not the humanoid one);
+// else a guest's proxy, written there while the host's stream lasts. Null
+// entity: let go. ClearPoseActors lets go of all.
+void BindPoseRig(std::uint32_t npc, std::uint8_t part, bool source,
+                 const RED4ext::Handle<RED4ext::ent::Entity> &entity);
 void ClearPoseActors();
 // Counters since the last report, in one line.
 std::string PoseActorsReport();

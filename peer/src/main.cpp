@@ -138,6 +138,7 @@
 #include "tandem/play.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/presence.hpp"
+#include "tandem/rigpose.hpp"
 #include "tandem/scene.hpp"
 #include "tandem/shaping.hpp"
 #include "tandem/sim/game.hpp"
@@ -2168,6 +2169,9 @@ private:
 //                                name; HOLDER: host, an NPC id or own; left:
 //                                in its left hand); again with another
 //                                holder: handed over; prop N off: put away
+//   face NPC on|off              that actor speaks: its face (a 40-joint
+//                                stand-in whose jaw opens and closes) is sent
+//                                as rig poses (RigPose) while it lasts
 //   camera on [FOV]|cut|off      the host is in a cutscene: its camera's view
 //                                (behind and above the mock player) is sent
 //                                every frame (SceneCamera); cut: the next
@@ -2255,6 +2259,8 @@ struct SceneScript {
   tandem::proto::NpcId own{}; // "own" in a .story file: the --npc NPC
   // camera on: the view sent every frame; which side it looks from (a cut
   // changes it).
+  // face NPC on: the actors whose faces are sent.
+  std::vector<tandem::proto::NpcId> faces;
   bool camera{}, cameraCut{}, cameraSide{};
   float cameraFov{50.f};
 };
@@ -2310,6 +2316,13 @@ SceneMessages(const StoryStep &step, SceneScript &script, const tandem::proto::V
         script.sample.actors.push_back(actor);
       }
       return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "face" && a.size() >= 2) {
+      const auto npc = npcOf(a[0]);
+      std::erase(script.faces, npc);
+      if (a[1] == "on")
+        script.faces.push_back(npc);
+      return std::vector<proto::Message>{};
     }
     if (step.verb == "camera" && !a.empty()) {
       if (a[0] == "cut") {
@@ -4172,7 +4185,7 @@ int main(int argc, char **argv) {
   std::uint64_t storyLine = 0;
   SceneScript sceneScript;
   sceneScript.own = kOwnNpc;
-  std::uint64_t actorPoses = 0, cameraViews = 0;
+  std::uint64_t actorPoses = 0, cameraViews = 0, rigPoses = 0;
   if (!options.storyFile.empty()) {
     story = LoadStory(options.storyFile, error);
     if (!error.empty()) {
@@ -5010,6 +5023,14 @@ int main(int argc, char **argv) {
                 Log("scene: {} actor pose(s) heard (npc {})", actorPoses, e.pose.npc);
             } else if constexpr (std::is_same_v<E, tandem::events::Story>) {
               namespace proto = tandem::proto;
+              // So is a face or a body on another rig.
+              if (const auto *said = std::get_if<proto::RigPose>(&e.message)) {
+                if (++rigPoses % 30 == 1)
+                  Log("scene rig: {} pose(s) heard (npc {}, {}, {} bytes of a rig of {} bones)",
+                      rigPoses, said->npc, said->part == proto::kRigFace ? "face" : "body",
+                      said->data.size(), said->bones);
+                return;
+              }
               // The host's camera is a stream: counted, not listed.
               if (const auto *camera = std::get_if<proto::SceneCamera>(&e.message)) {
                 if (++cameraViews % 60 == 1 || (camera->flags & proto::kCameraCut))
@@ -5572,6 +5593,24 @@ int main(int argc, char **argv) {
         if (regionNpcs)
           regionNpcs->Tick(*endpoint, tandem::net::NowUs(), state->position,
                            !puppeteer.RegionLeaving());
+      }
+      // face NPC on: a face of 40 joints at rest but its jaw (joint 5), which
+      // opens and closes four times a second, and a lip (joint 6).
+      if (options.host && sceneScript.stage.On() && !sceneScript.faces.empty()) {
+        static const std::vector<tandem::rig::Bone> reference(40);
+        static const std::uint32_t rigHash = [] {
+          std::vector<std::uint64_t> names(40);
+          for (std::size_t i = 0; i < names.size(); ++i)
+            names[i] = 0x1000 + i;
+          return tandem::rig::RigHash(names);
+        }();
+        const float beat = static_cast<float>(tandem::net::NowUs() % 1'000'000) / 1e6f * 25.f;
+        const float open = 0.15f * (1.f + std::sin(beat));
+        auto face = reference;
+        face[5].rotation = {std::sin(open / 2.f), 0.f, 0.f, std::cos(open / 2.f)};
+        face[6].translation.z = 0.003f * std::sin(beat);
+        for (const auto npc : sceneScript.faces)
+          endpoint->SendRigPose(npc, tandem::proto::kRigFace, rigHash, reference, face);
       }
       // camera on: the host's view of its cutscene, from behind and above
       // its V, on one side or the other.

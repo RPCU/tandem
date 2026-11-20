@@ -191,7 +191,7 @@ void Encoder::Skip(std::size_t bone) {
 std::size_t Encoder::Moved() const {
   std::size_t moved = 0;
   for (std::size_t bone = 0; bone < m_said.size(); ++bone)
-    moved += Error(m_said[bone], m_reference[bone]) > 0.f ? 1 : 0;
+    moved += Error(m_said[bone], m_reference[bone]) > 0.05f ? 1 : 0;
   return moved;
 }
 

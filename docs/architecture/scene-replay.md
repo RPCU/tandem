@@ -10,10 +10,13 @@ Engine facts and their sources: [`research/scene-replay.md`](../research/scene-r
 (read offline on 2.50; tags there). Earlier notes: `research/coop-scenes.md`,
 `research/coop-quests-design.md` §2.5, `research/pose-streaming.md`.
 
-**State (2026-11-19)**: designed, built through the protocol, the core
+**State (2026-11-20)**: designed, built through the protocol, the core
 logic, the plugin, the scripts and the mock player; tested without the
 game (loopback). **Nothing is verified in game.** It is off unless
-`tandem.ini` says `scene_replay = on`; the scenarios turn it on.
+`tandem.ini` says `scene_replay = on` (faces and other rigs: `scene_rigs =
+on` too); the scenarios turn it on. The second part (props, the watch
+camera, the budget, faces and other rigs) was merged without waiting for
+CI: its C++ has not been compiled by its author.
 
 ## Contents
 
@@ -76,10 +79,9 @@ a hook tandem already has and has verified:
   own language's recording);
 - the rest is bookkeeping the session already does for the story.
 
-What (b) does not give yet: **lipsync and facial animation** (an
-animation of the face rig's tracks, attached by the scene: nothing plays
-it by name outside one), and **props the scene spawns**. Both are listed
-in §12 with what would unblock them. (a) stays a research spike (research
+Faces (the face rig's pose, streamed: §5, "Faces, and bodies on other
+rigs") and props (§3, §4) were added on 2026-11-20; what is still missing
+is in §12. (a) stays a research spike (research
 file §9, last item), worth a look only for scenes with no V in them.
 
 The authority table's row is unchanged: _quests: facts, journal, phases,
@@ -237,6 +239,44 @@ without the game); the script applies them (`Scenes.reds`):
   the other body) is not controlled yet: research file §3, the `gender`
   field.
 
+### Faces, and bodies on other rigs
+
+`scene_rigs = on` (off by default: never run in game, and it adds work on
+the animation job threads).
+
+- **What is copied**: the pose a graph instance hands over at its commit,
+  whole rig, local space, by bone index. For a face that is the entity's
+  `face_rig` animated component, whose graph turns the facial tracks
+  (lipsync, expressions) into its joints (about 290); for an actor whose
+  skeleton lacks the humanoid body's bones (a drone, a robot) it is the
+  `root` component. The host's NPC and its proxy are the same record and
+  appearance, so the same rig resource: the stream names the rig (the hash
+  of its bone names, and their count) and a proxy on another rig takes
+  nothing.
+- **Host**: the faces of the actors that speak a line of the scene now
+  (`scene::Stage::Speakers`, half a second past the line, three at most),
+  and the root rig of every actor whose body the humanoid stream could not
+  map, are read at that instance's commit, 25 times a second at most
+  (`engine/posestream.cpp`, `ReadRig`). `Root` and `Trajectory` are never
+  said.
+- **On the wire** (`rig::Encoder` inside `Endpoint::SendRigPose`): each
+  bone against the rig's reference pose. A frame says the bones furthest
+  from what was last said of them (over 0.4 mm or 0.01 rad), the largest
+  first, within a tenth of a second of the stream's share (40 to 240
+  bytes), then three bones in turn whatever they do, so a lost frame heals
+  (a 290-joint face: within 10 s at 10 frames a second). No keys, no
+  acknowledgements. A face weighs 2 in the scene's budget.
+- **Guest**: every actor's proxy has its face bound (and its root, for a
+  body on another rig); at that instance's commit the bones the host moved
+  are written over the rig's own (`rig::Track`: each goes to where the
+  host put it with a 60 ms time constant; a bone the host put back at rest
+  blends back to the rig's own animation and is let go). No frame for 2 s:
+  nothing is written.
+- **What it costs in fidelity**: within the default budget a face gets 5
+  to 10 small frames a second: the jaw and the widest lip moves follow, fine
+  shapes lag. `scene_kbps` raises it. Wrinkle maps and the eyes' tracks are
+  not copied (float tracks: §12).
+
 ## 6. The guest's own V
 
 It is not an actor. It stands free, weapons lowered near a tier 3+ scene
@@ -340,8 +380,8 @@ they change too often, and a wrong one heals with the next change.
   `SceneCast`, `SceneLine`, `ActorPose`, appended; bounds checked in
   `Decode` (32 actors, a rate between 0 and 16). Second part, appended
   (2026-11-20): `SceneProp` (built: props),
-  `SceneCamera` (built: the watch camera), and `ActorFrame`, `RigPose`
-  (wire forms and core code in, nothing sends them yet: §12).
+  `SceneCamera` (the watch camera), `ActorFrame` (bodies on the wire),
+  `RigPose` (faces, other rigs).
 - **Core** (`core/include/tandem/scene.hpp`, `core/src/scene.cpp`):
   `scene::Stage` (host), `scene::Replay` (guest), `scene::WatchSpot`,
   `scene::KeepOut`. `story::Record` keeps the scene, its cast and the
@@ -356,6 +396,12 @@ they change too often, and a wrong one heals with the next change.
   `engine/scenes.cpp` (`ScenePlaying`), `config.cpp` (`scene_replay`).
 - **Scripts**: `Scenes.reds` (new), `Dialogue.reds` (the voice of each
   line, the stand-in subtitle ids and the dedupe), `Story.reds` (wiring).
+- **Faces and other rigs**: `core/src/rigpose.cpp` (`rig::Encoder`,
+  `rig::Track`), `Endpoint::SendRigPose` (heard as `events::Story`, put
+  straight in `Runtime`'s tracks by the net thread), `engine/posestream.cpp`
+  ("Other rigs": `BindPoseRig`, `ReadRig`, `WriteRig` on the commit hook,
+  behind the same layout checks plus the rig's bone count),
+  `TandemStory.FaceSource` / `FaceBind` / `SceneSpeakers`, `scene_rigs`.
 - **The watch camera**: `scene::CameraTrack`, `IsCut`, `PackCamera`,
   `scene::Pacer` (`core/src/scene.cpp`), `Endpoint::SendSceneCamera` (a
   guest hears it as `events::Story`; the plugin's net thread puts it
@@ -363,10 +409,11 @@ they change too often, and a wrong one heals with the next change.
   `TandemStory.SceneCameraSample` / `SceneView`, `Scenes.reds` (`Frame`,
   a per-frame tick only while a cutscene lasts).
 - **Mock player** (`peer/src/main.cpp`): story verbs `scene`, `cast`,
-  `prop`, `camera`, `skip`, `voice`, `cut`; its scene's actors take the pose it sends; as a
+  `prop`, `face`, `camera`, `skip`, `voice`, `cut`; its scene's actors take the pose it sends; as a
   guest it logs what it hears.
 - **Config** (`tandem.ini`): `scene_replay = off | on | noposes`;
-  `scene_camera = on | off` (the watch camera); `scene_kbps` (host: what a
+  `scene_camera = on | off` (the watch camera); `scene_rigs = off | on`
+  (faces, bodies on other rigs); `scene_kbps` (host: what a
   scene's streams may take on a guest's link, 22 by default, 8 to 2000).
 
 Engine access, by the rules: scripts and RTTI names (Codeware's imports);
@@ -392,6 +439,10 @@ local space). **No new hook, hash or raw offset.**
 - the watch spot (beside the host, clear, facing the scene, on the host's
   floor, another one when taken) and the step out of an actor;
 - the record: what a joiner gets, the digest, repeats;
+- rig poses: the smallest form of each move, the cap and its priority,
+  malformed frames; a proxy's rig follows, lets go at rest, takes nothing
+  of another rig, heals a lost frame; through endpoints (the host's only,
+  known NPCs only, paced);
 - the actors' bodies: paced and delta coded on the wire, whole for the
   guest's game (`scene_test`); the link with three actors and a camera
   within 64 kbit/s (`budget_test`, the scene row);
@@ -461,19 +512,34 @@ Items.FirstAidWhiffV0` says `scene prop: 1 … held by npc N`. In a real
    first-person body). As host (`scene-replay-host`: `cmd story scene
 camera on`), and in a real tier 5 cutscene: does
    `GetActiveCameraWorldTransform` follow the scene camera, and the cuts.
-9. The earlier story scenarios still pass (`story-guest`, `story-host`,
-   `story-johnny`, `story-private`): the subtitle path changed (stand-in
-   ids).
+9. Faces (`scene_rigs = on` on both games). **`task scenario --
+scene-face`**: the proxy's face rig is found and bound (`face rig
+0x…: N bones, mapped`: note N), rig poses are heard, the face is let
+   go; nothing moves (the mock's face is not the proxy's rig). Two games,
+   a real scene: the host's log says `npc N's face is read while it
+speaks` and `face rig …: N bones, mapped`; `cmd story scene report` on
+   the guest says `writes of B bones` with B > 0 while a line is spoken.
+   To see: does the proxy's mouth move with the line, and is anything
+   wrong with the face (a twisted jaw would mean the sampled pose of the
+   face rig is not what the proxy's graph hands over in the same order).
+   If B > 0 and nothing moves, the face joints are solved after the commit:
+   the float tracks are the lever (§12). A drone or a robot in a scene:
+   `not a body the stream knows` then `body rig …: mapped` on the host,
+   `writes` on the guest, and the proxy moves as the host's.
+10. The earlier story scenarios still pass (`story-guest`, `story-host`,
+    `story-johnny`, `story-private`): the subtitle path changed (stand-in
+    ids).
 
 ## 12. Not built, and what would unblock it
 
-- **Lipsync and faces.** The proxies' mouths do not move. The way that
-  fits what exists: stream the `face_rig` graph instance's sampled pose
-  like the root's, but its float tracks (the NPC skeleton has 427; the
-  mouth and jaw are a few dozen), as a second small message per speaking
-  actor. Needs, in game (`tools/re/`, read-only): where the tracks sit in
-  a sampled pose, and that writing them at the commit moves the face.
-  Until then a speaking proxy keeps its idle face.
+- **A face's float tracks** (wrinkle maps, pupils; and the whole face if
+  the game solves its joints after the commit): the commit copies them
+  from `[sampled+0x38]` (`engine/animation.md` §13.3, read from the code,
+  never from memory), their count is the rig's `trackNames`. Writing there
+  needs that pointer checked on the running game first (`tools/re/`).
+  Lipsync from the line's own animation (`m_/f_<string id>` in the
+  language's lipsync sets) stays out of reach: nothing reflected plays it
+  outside a scene (research file §4).
 - **Props that nobody holds** (a bottle the scene spawns on a table), and a
   held prop's exact grip: a held prop sits in the hand's attachment slot,
   not on the scene's own slot and offset (`scneventsAttachPropToPerformer`
@@ -491,9 +557,6 @@ camera on`), and in a real tier 5 cutscene: does
   import, and its values are unknown. One try in game decides (a script
   field added to the struct, 0 and 1 with `isPlayer` on a puppet of the
   other body); until then the game picks.
-- **Non-humanoid actors** (drones, robots) are not posed: `RigPose`
-  (any rig's bones against its reference pose, `core/src/rigpose.cpp`) is
-  on the wire and coded, nothing reads or writes it in the plugin yet.
 - **Approach (a)**, as a spike only, for scenes with no V in them.
 
 ## 13. Risks

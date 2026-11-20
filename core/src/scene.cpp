@@ -194,6 +194,17 @@ std::optional<proto::SceneLine> Stage::Hide(std::uint64_t line, std::uint64_t ho
   return spoken;
 }
 
+std::vector<proto::NpcId> Stage::Speakers(std::uint64_t hostNowUs) const {
+  std::vector<proto::NpcId> out;
+  if (!On())
+    return out;
+  for (const auto &[id, line] : m_lines)
+    if (line.speaker != 0 && IsScenes(line) && hostNowUs < EndOf(line) + kSpeakerTailUs &&
+        std::ranges::find(out, line.speaker) == out.end())
+      out.push_back(line.speaker);
+  return out;
+}
+
 // ---- guest ----
 
 bool Stage::Casts(proto::NpcId npc) const {

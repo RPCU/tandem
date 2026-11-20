@@ -193,9 +193,25 @@ animSets } +0x58 }` (`.lipmap`), by scene path and the actor's voicetag;
   `jaliLips`, and the facial poses (`lips_l_corner_up`, `eye_l_blink`…)
   (`skeletons`, the man base rig). An NPC's entity job runs three graph
   instances in order: `root`, `face_rig`, `deformations`
-  (engine-knowledge §13.3b). The face is the `face_rig` instance's sampled
-  pose: mostly tracks, few bones. [verified-2.5 for the lists; where the
-  tracks sit in the sampled pose is unknown]
+  (engine-knowledge §13.3b). [verified-2.5 for the lists]
+- **The face is joints.** The man base NPC's merged skeleton has about 290
+  face joints (`face_root_JNT`, `jaw_root_JNT`, `mid_J_jaw_JNT`,
+  `l_J_mug_lip_up_0_JNT`…: `skeletons`), the lower lips under the jaw.
+  They belong to the entity's `face_rig` `entAnimatedComponent`, defined
+  per appearance with its `.rig` and a `facialSetup` that turns the facial
+  tracks into joint transforms; lipsync animations are made for a facial
+  rig, not the body's
+  (`wiki/for-mod-creators-theory/files-and-what-they-do/file-formats/animations-.anims/facial-animations.md`,
+  `wiki/modding-guides/npcs/fixing-eye-clipping-in-npvs-by-replacing-facial-rigs.md:403-508`,
+  `generating-vanilla-lipsync-animation-sets.md:185-189`). [wiki, 2.5-rtti]
+- **So the face can be copied where the body is**: at the commit of the
+  `face_rig` component's graph instance (`[component+0x270]`), whose
+  sampled pose has the rig's bones at +0x30 in local space as every
+  instance's does (engine-knowledge §13.3). tandem streams that
+  (`RigPose`). Whether the joints are already solved in that pose, or the
+  game solves them from the tracks after the commit, is [unknown]: if
+  after, the float tracks at `[sampled+0x38]` ([2.5-static]: read from the
+  code, never checked in memory) are what to copy. [inferred; nothing run]
 
 ## 5. Body animation
 
@@ -338,16 +354,16 @@ whole quest design exists to prevent. Not built.
 **(b) The host says what its scene shows; the guest shows it on proxies.**
 Everything it needs exists by name or is already hooked:
 
-| What                   | How                                                                      | Evidence                              |
-| ---------------------- | ------------------------------------------------------------------------ | ------------------------------------- |
-| a scene is on          | the quest node hook sees `questSceneNodeDefinition` (as scene privacy)   | built, [2.5-untested]                 |
-| its actors             | `IsEntityInScene` over the NPCs the host shares                          | [2.5-untested]                        |
-| bodies                 | the pose stream, NPC → proxy, same rig                                   | §5: verified for V → puppet           |
-| voice                  | `gameaudioeventsDialogLine` on the proxy, by string id, with a seek time | §3: exists; effect to test            |
-| subtitles              | already mirrored; the guest's own if the event shows one                 | built                                 |
-| Johnny                 | his proxy, his workspot, his own effects                                 | §7: [inferred]                        |
-| lipsync, faces         | **missing**: the `face_rig` instance's tracks, streamed like the body    | §4: needs the game (where tracks sit) |
-| props the scene spawns | **missing**: to announce like NPCs                                       | §6                                    |
+| What                   | How                                                                      | Evidence                    |
+| ---------------------- | ------------------------------------------------------------------------ | --------------------------- |
+| a scene is on          | the quest node hook sees `questSceneNodeDefinition` (as scene privacy)   | built, [2.5-untested]       |
+| its actors             | `IsEntityInScene` over the NPCs the host shares                          | [2.5-untested]              |
+| bodies                 | the pose stream, NPC → proxy, same rig                                   | §5: verified for V → puppet |
+| voice                  | `gameaudioeventsDialogLine` on the proxy, by string id, with a seek time | §3: exists; effect to test  |
+| subtitles              | already mirrored; the guest's own if the event shows one                 | built                       |
+| Johnny                 | his proxy, his workspot, his own effects                                 | §7: [inferred]              |
+| lipsync, faces         | the `face_rig` instance's joints at its commit, streamed (`RigPose`)     | §4: built, [2.5-untested]   |
+| props the scene spawns | an item in a hand slot, an item entity in a scene (`SceneProp`)          | §6: built, [2.5-untested]   |
 
 (b) is what is built. Its cost is fidelity where the table says missing;
 its gain is that nothing of the story can run on a guest.

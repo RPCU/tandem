@@ -24,6 +24,9 @@ public class TandemSceneActor {
   // Guest: the proxy body bound to the pose stream.
   public let bound: Bool;
   public let boundTo: EntityID;
+  // Guest: the proxy's face follows the host's (scene_rigs).
+  public let faceOn: EntityID;
+  public let faced: Bool;
   // Guest: its proxy has been there; a ghost: shown now.
   public let seen: Bool;
   public let shown: Bool;
@@ -72,6 +75,9 @@ public class TandemScenes {
   private let m_test: Bool;
   // Host: item entities that appeared while our scene played (props), the
   // test prop (cmd story scene prop), whether we listen for them.
+  // Host: the NPCs whose faces are read (they speak) and until when.
+  private let m_rigs: Bool;
+  private let m_faces: array<Uint32>;
   private let m_propSeen: array<EntityID>;
   private let m_testProp: TweakDBID;
   private let m_propsListening: Bool;
@@ -108,6 +114,7 @@ public class TandemScenes {
     this.m_story = story;
     this.m_mode = TandemStory.SceneReplay();
     this.m_cameraMode = this.m_mode > 0 && TandemStory.SceneCameraOn();
+    this.m_rigs = TandemStory.SceneRigs();
     if this.m_mode > 0 {
       TandemNative.Log(s"scene: replay on\(this.m_mode == 2 ? ", with the actors' bodies" : "")");
       // Props: item entities appearing while our scene plays (host).
@@ -187,6 +194,7 @@ public class TandemScenes {
         }
       }
     }
+    this.HostFaces(actors, bodies);
     if playing && !ownOnly {
       this.HostProps(actors, bodies, scenes, player);
     } else {
@@ -321,6 +329,32 @@ public class TandemScenes {
     }
   }
 
+  // The faces of the actors that speak now (the plugin's stage knows the
+  // lines being spoken) are read, at most three at once; let go half a
+  // second after their line.
+  private func HostFaces(actors: array<Uint32>, bodies: array<ref<GameObject>>) -> Void {
+    if !this.m_rigs {
+      return;
+    }
+    let speakers = TandemStory.SceneSpeakers();
+    let i = ArraySize(this.m_faces) - 1;
+    while i >= 0 {
+      if !ArrayContains(speakers, this.m_faces[i]) || !ArrayContains(actors, this.m_faces[i]) {
+        TandemStory.FaceSource(this.m_faces[i], null);
+        ArrayErase(this.m_faces, i);
+      }
+      i -= 1;
+    }
+    for npc in speakers {
+      let at = ArrayFindFirst(actors, npc);
+      if at >= 0 && !ArrayContains(this.m_faces, npc) && ArraySize(this.m_faces) < 3 {
+        ArrayPush(this.m_faces, npc);
+        TandemStory.FaceSource(npc, bodies[at]);
+        TandemNative.Log(s"scene: npc \(npc)'s face is read while it speaks");
+      }
+    }
+  }
+
   public func HostLineHidden(line: Uint64) -> Void {
     if this.m_mode != 0 && TandemStory.SceneVoiceHide(line) {
       TandemNative.Log("scene: line cut for the guests");
@@ -333,6 +367,10 @@ public class TandemScenes {
       TandemStory.ActorSource(old, null);
     }
     ArrayClear(this.m_sources);
+    for face in this.m_faces {
+      TandemStory.FaceSource(face, null);
+    }
+    ArrayClear(this.m_faces);
     ArrayClear(this.m_propSeen);
     this.m_play = 0;
     this.m_hostTier = 0;
@@ -416,6 +454,10 @@ public class TandemScenes {
     if actor.bound {
       TandemStory.ActorBind(actor.npc, null);
       actor.bound = false;
+    }
+    if actor.faced {
+      TandemStory.FaceBind(actor.npc, null);
+      actor.faced = false;
     }
     // A ghost out of the scene is not there for the host either.
     if (actor.flags & 1) != 0 && actor.shown {
@@ -591,7 +633,17 @@ public class TandemScenes {
           TandemStory.ActorBind(actor.npc, null);
           actor.bound = false;
         }
+        if actor.faced {
+          TandemStory.FaceBind(actor.npc, null);
+          actor.faced = false;
+        }
       } else {
+        // Its face takes what the host says of it while it speaks.
+        if this.m_rigs && (!actor.faced || actor.faceOn != proxy.GetEntityID()) {
+          TandemStory.FaceBind(actor.npc, proxy);
+          actor.faced = true;
+          actor.faceOn = proxy.GetEntityID();
+        }
         if this.m_mode == 2 && (actor.flags & 4) != 0 && (!actor.bound || actor.boundTo != proxy.GetEntityID()) {
           TandemStory.ActorBind(actor.npc, proxy);
           actor.bound = true;

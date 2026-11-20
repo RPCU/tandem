@@ -199,6 +199,13 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.sceneReplay = false;
     else
       return Bad("scene_replay is on, noposes or off");
+  } else if (key == "scene_rigs") {
+    if (value == "on" || value == "true")
+      config.sceneRigs = true;
+    else if (value == "off" || value == "false")
+      config.sceneRigs = false;
+    else
+      return Bad("scene_rigs is on or off");
   } else if (key == "scene_camera") {
     if (value == "on" || value == "true")
       config.sceneCamera = true;

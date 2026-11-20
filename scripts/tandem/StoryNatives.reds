@@ -182,6 +182,10 @@ public native class TandemStory extends IScriptable {
   public static native func WatchSpot(hostX: Float, hostY: Float, hostZ: Float, x: Float, y: Float, z: Float) -> Vector4;
   public static native func KeepOut(x: Float, y: Float, z: Float, radius: Float, maxStep: Float) -> Vector4;
   public static native func ActorSource(npc: Uint32, entity: ref<Entity>) -> Void;
+  public static native func SceneRigs() -> Bool;
+  public static native func SceneSpeakers() -> array<Uint32>;
+  public static native func FaceSource(npc: Uint32, entity: ref<Entity>) -> Void;
+  public static native func FaceBind(npc: Uint32, entity: ref<Entity>) -> Void;
   public static native func ActorBind(npc: Uint32, entity: ref<Entity>) -> Void;
   public static native func ActorsClear() -> Void;
   public static native func SceneReport() -> String;
