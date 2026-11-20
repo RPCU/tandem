@@ -5,6 +5,7 @@
 #include "tandem/elsewhere.hpp"
 #include "tandem/names.hpp"
 #include "tandem/play.hpp"
+#include "tandem/presence.hpp"
 #include "tandem/progress.hpp"
 #include "tandem/traffic.hpp"
 
@@ -657,6 +658,15 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               Broadcast(relayed, event.peer);
               out.push_back(events::RemoteCue{relayed});
             },
+            [&](const proto::StatusVisuals &visuals) {
+              // A guest only speaks for its own V.
+              auto relayed = visuals;
+              relayed.player = player;
+              if (!Keep(m_statusVisuals, relayed))
+                return;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteStatusVisuals{relayed});
+            },
             [&](const proto::Activity &busy) {
               // A guest is only busy in its own name.
               auto relayed = activity::Sanitized(busy);
@@ -683,6 +693,8 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               out.push_back(events::RemoteInstall{
                   player, name, install, compat::Differences(m_identity.install, install, name)});
             },
+            [&](const proto::ModList &list) { OnModList(player, list, out); },
+            [&](const proto::Substitutes &substitutes) { OnSubstitutes(player, substitutes, out); },
             [&](const proto::Pause &pause) {
               // A guest only pauses in its own name.
               const proto::Pause relayed{player, pause.paused};
@@ -882,6 +894,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_radios.erase(player);
   m_stealth.erase(player);
   m_presences.erase(player);
+  m_statusVisuals.erase(player);
   m_transits.erase(player);
   // Our NPCs seated in its vehicle: out (its copy stays parked elsewhere).
   for (auto it = m_npcSeats.begin(); it != m_npcSeats.end();) {
@@ -1033,6 +1046,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     }
     BroadcastRoster();
     Send(peer, m_identity.install);
+    SendModsTo(peer);
     SendSessionTo(peer);
     return;
   }
@@ -1057,6 +1071,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
   BroadcastRoster();
   // After the roster: the guest names us when it says what differs.
   Send(peer, m_identity.install);
+  SendModsTo(peer);
   SendSessionTo(peer);
   CheckLost(out); // a V up again
 }
@@ -1109,10 +1124,11 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     others(m_radios);
     others(m_stealth);
     others(m_presences);
-    others(m_transits);   // who rides what (only rides that are on)
-    others(m_heat);       // who is wanted (only levels above 0)
-    others(m_lends);      // who may drive whose cars
-    others(m_commsLinks); // whom each shares tags with
+    others(m_statusVisuals); // what shows on each V (an empty set too)
+    others(m_transits);      // who rides what (only rides that are on)
+    others(m_heat);          // who is wanted (only levels above 0)
+    others(m_lends);         // who may drive whose cars
+    others(m_commsLinks);    // whom each shares tags with
     others(m_waypoints);
     // Who is in their pause menu (the newcomer itself is not), and in a
     // resync who is not (its copy may say otherwise).
@@ -1429,6 +1445,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 static_cast<std::uint32_t>(welcome.hostTimeUs / 1000);
             out.push_back(events::Joined{m_you, m_host});
             Send(m_hostPeer, m_identity.install);
+            SendModsTo(m_hostPeer);
             SendLocalAppearanceNow();
             SendLocalHeldNow();
             SendLocalSeatNow();
@@ -1436,6 +1453,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             SendLocalPausedNow();
             SendLocalStealthNow();
             SendLocalPresenceNow();
+            SendLocalStatusVisualsNow();
             SendLocalTimeNow();
             SendLocalElsewhereNow();
             SendLocalActivityNow();
@@ -1465,6 +1483,8 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             out.push_back(events::RemoteInstall{
                 m_host, name, install, compat::Differences(m_identity.install, install, name)});
           },
+          [&](const proto::ModList &list) { OnModList(m_host, list, out); },
+          [&](const proto::Substitutes &substitutes) { OnSubstitutes(m_host, substitutes, out); },
           [&](const proto::Pong &pong) {
             const auto now = net::NowUs();
             const auto rtt = now - pong.pingSentUs;
@@ -1510,6 +1530,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 m_radios.erase(id);
                 m_stealth.erase(id);
                 m_presences.erase(id);
+                m_statusVisuals.erase(id);
                 m_transits.erase(id);
                 EndHeatOf(id, out, false);
                 m_lends.erase(id);
@@ -1692,6 +1713,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           [&](const proto::Cue &cue) {
             if (cue.player != m_you)
               out.push_back(events::RemoteCue{cue});
+          },
+          [&](const proto::StatusVisuals &visuals) {
+            if (visuals.player != m_you && Keep(m_statusVisuals, visuals))
+              out.push_back(events::RemoteStatusVisuals{visuals});
           },
           [&](const proto::NpcActionReply &reply) {
             out.push_back(events::NpcActionAnswered{reply});
@@ -2169,6 +2194,95 @@ void Endpoint::SendNpcAction(const proto::NpcAction &action) {
   AskOwner(mine.npc, mine);
 }
 
+// ---- Other mods (docs/architecture/mod-compat.md) ----
+
+void Endpoint::SendModsTo(net::PeerId peer) {
+  if (!m_identity.tellsMods)
+    return;
+  // Hashes and categories: the names stay here until asked for.
+  proto::ModList list{.kind = proto::kModListed};
+  for (const auto &mod : m_identity.mods)
+    if (list.mods.size() < proto::kMaxModEntries)
+      list.mods.push_back({.hash = mod.hash, .categories = mod.categories});
+  Send(peer, list);
+}
+
+void Endpoint::OnModList(proto::PlayerId player, const proto::ModList &list,
+                         std::vector<SessionEvent> &out) {
+  const auto found = m_players.find(player);
+  const std::string name = found != m_players.end() && !found->second.name.empty()
+                               ? found->second.name
+                               : std::string(player == m_host ? "The host" : "A player");
+  switch (list.kind) {
+  case proto::kModListed: {
+    // Theirs against ours; a game that does not say its own compares nothing.
+    m_theirMods[player] = list.mods;
+    if (m_identity.tellsMods)
+      out.push_back(events::RemoteMods{player, name, mods::Compare(m_identity.mods, list.mods)});
+    break;
+  }
+  case proto::kModNamesAsked: {
+    // Only the names of our own mods, only those asked for.
+    proto::ModList names{.kind = proto::kModNames};
+    for (const auto &asked : list.mods)
+      for (const auto &mod : m_identity.mods)
+        if (mod.hash == asked.hash && names.mods.size() < proto::kMaxModEntries)
+          names.mods.push_back(mod);
+    if (const auto peer = IsHost() ? PeerOf(player) : std::optional(m_hostPeer))
+      Send(*peer, names);
+    break;
+  }
+  case proto::kModNames:
+    out.push_back(events::ModNamesFrom{player, name, list.mods});
+    break;
+  default:
+    break;
+  }
+}
+
+void Endpoint::AskModNames(proto::PlayerId player) {
+  if (!IsJoined() || m_ended)
+    return;
+  const auto theirs = m_theirMods.find(player);
+  if (theirs == m_theirMods.end())
+    return;
+  proto::ModList ask{.kind = proto::kModNamesAsked};
+  for (const auto hash : mods::Compare(m_identity.mods, theirs->second).theirsOnlyHashes)
+    ask.mods.push_back({.hash = hash});
+  if (ask.mods.empty())
+    return;
+  // Guests compare with the host only (like Install): a guest asks the host.
+  if (!IsHost())
+    Send(m_hostPeer, ask);
+  else if (const auto peer = PeerOf(player))
+    Send(*peer, ask);
+}
+
+void Endpoint::SendSubstitutes(proto::Substitutes substitutes) {
+  if (!IsJoined() || m_ended || substitutes.owner == m_you)
+    return;
+  substitutes.seer = m_you;
+  if (!IsHost())
+    Send(m_hostPeer, substitutes);
+  else if (const auto peer = PeerOf(substitutes.owner))
+    Send(*peer, substitutes);
+}
+
+void Endpoint::OnSubstitutes(proto::PlayerId player, proto::Substitutes substitutes,
+                             std::vector<SessionEvent> &out) {
+  // The host stamps who sees them and passes them to their owner only.
+  if (IsHost())
+    substitutes.seer = player;
+  if (substitutes.owner == m_you) {
+    const auto seer = m_players.find(substitutes.seer);
+    out.push_back(events::SubstitutesFrom{substitutes, seer != m_players.end() ? seer->second.name
+                                                                               : std::string()});
+  } else if (IsHost()) {
+    if (const auto peer = PeerOf(substitutes.owner))
+      Send(*peer, substitutes);
+  }
+}
+
 void Endpoint::SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply) {
   Record(reply);
   if (!IsJoined() || m_ended)
@@ -2464,6 +2578,28 @@ void Endpoint::SendLocalPresenceNow() {
     Broadcast(*m_localPresence);
   else
     Send(m_hostPeer, *m_localPresence);
+}
+
+void Endpoint::SetLocalStatusVisuals(std::vector<std::uint64_t> records) {
+  proto::StatusVisuals visuals{.records = presence::StatusSet(std::move(records))};
+  if (m_localStatusVisuals && m_localStatusVisuals->records == visuals.records)
+    return; // nothing new to show
+  if (m_tap)
+    m_tap(visuals);
+  visuals.revision = ++m_statusVisualsRevision;
+  m_localStatusVisuals = visuals;
+  SendLocalStatusVisualsNow();
+}
+
+void Endpoint::SendLocalStatusVisualsNow() {
+  if (!m_localStatusVisuals || !IsJoined() || m_ended)
+    return;
+  m_localStatusVisuals->player = m_you;
+  m_statusVisuals[m_you] = *m_localStatusVisuals;
+  if (IsHost())
+    Broadcast(*m_localStatusVisuals);
+  else
+    Send(m_hostPeer, *m_localStatusVisuals);
 }
 
 void Endpoint::SendLocalCue(proto::Cue cue) {
@@ -3782,6 +3918,8 @@ std::vector<proto::Message> Endpoint::LocalSnapshot() const {
     out.emplace_back(*m_localStealth);
   if (m_localPresence)
     out.emplace_back(*m_localPresence);
+  if (m_localStatusVisuals)
+    out.emplace_back(*m_localStatusVisuals);
   if (m_localTime.abilities)
     out.emplace_back(m_localTime);
   if (m_localTransit && m_localTransit->kind != proto::TransitKind::None)

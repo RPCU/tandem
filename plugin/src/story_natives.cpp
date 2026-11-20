@@ -11,6 +11,7 @@
 #include "engine/quests.hpp"
 #include "engine/scenes.hpp"
 #include "log.hpp"
+#include "mods.hpp"
 #include "runtime.hpp"
 #include "story.hpp"
 
@@ -229,11 +230,18 @@ void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
                                      .flags = effect->applied ? 1 : 0,
                                      .reward = Red::TweakDBID(effect->effect)});
   } else if (const auto *reward = std::get_if<proto::QuestReward>(&m)) {
-    out.EmplaceBack(TandemStoryEvent{
-        .kind = kReward, .hash = reward->quest, .reward = Red::TweakDBID(reward->reward)});
+    // A reward or a car our game lacks (a modded quest's): never given
+    // (none; the script skips it), never replaced by another.
+    constexpr proto::PlayerId host = 1; // the story's: the host's (always player 1)
+    out.EmplaceBack(TandemStoryEvent{.kind = kReward,
+                                     .hash = reward->quest,
+                                     .reward = Red::TweakDBID(ModRecords::Get().Resolve(
+                                         mods::Kind::Item, reward->reward, {}, host))});
   } else if (const auto *unlock = std::get_if<proto::VehicleUnlock>(&m)) {
-    out.EmplaceBack(TandemStoryEvent{
-        .kind = kVehicle, .hash = unlock->quest, .reward = Red::TweakDBID(unlock->vehicle)});
+    out.EmplaceBack(TandemStoryEvent{.kind = kVehicle,
+                                     .hash = unlock->quest,
+                                     .reward = Red::TweakDBID(ModRecords::Get().Resolve(
+                                         mods::Kind::Item, unlock->vehicle, {}, 1))}); // the host's
   } else if (const auto *restrictions = std::get_if<proto::StoryRestrictions>(&m)) {
     // The host's set, kept here for RestrictUpdate; the script hears how
     // many (and acts on its next check).
@@ -502,6 +510,19 @@ struct TandemStory : Red::IScriptable {
 
   // Host: `npc` acts in the scene we announce (scene replay's cast).
   static bool SceneCasts(std::uint32_t npc) { return Story::Get().Stage().Casts(npc); }
+
+  // Host: the backstop's word on a guest's act on an NPC (story::GuestAct: 0
+  // a strike, 1 a takedown, 2 a quickhack), with `moment` whether our V is
+  // in a restricted moment and what the NPC is (story::SceneActor): 0 let
+  // through, 1 refused, 2 refused and to be said in the log (once a second
+  // for each kind of act).
+  static std::int32_t BackstopRefuses(bool moment, bool cast, bool questNpc, bool kept,
+                                      bool inScene, std::int32_t act) {
+    const auto verdict = Story::Get().Backstop().Judge(
+        moment, {.cast = cast, .quest = questNpc, .kept = kept, .inScene = inScene},
+        static_cast<story::GuestAct>(std::clamp(act, 0, 2)), Runtime::Get().HostNowUs());
+    return verdict.refuse ? (verdict.log ? 2 : 1) : 0;
+  }
 
   // Guest, a few times a second: whether our V is in the host's story moment
   // (core/story.hpp InMoment, with the staged scene when scene replay says
@@ -805,6 +826,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SendEffect);
   RTTI_METHOD(SendRestrictions);
   RTTI_METHOD(SceneCasts);
+  RTTI_METHOD(BackstopRefuses);
   RTTI_METHOD(RestrictUpdate);
   RTTI_METHOD(RestrictRemovals);
   RTTI_METHOD(RestrictLift);

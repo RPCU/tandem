@@ -29,6 +29,18 @@
 //	Probe         (17) nonce (4) | zero padding to 64 bytes
 //	Observed      (18) nonce (4) | family (1) | address (4 or 16) | port (2)  relay -> client
 //	RegisterHostKeep (19) secret (16) | host token (32) | salt (4) | zero padding to 64 bytes
+//	Challenge     (20) stamp (4) | bits (1) | mac (16)  relay -> host
+//	RegisterHostOpen (21) secret (16) | stamp (4) | bits (1) | mac (16) | nonce (8) | zero padding to 64 bytes
+//
+// Open relays (Config.Open, the default): a host with no token is answered
+// a Challenge (26 bytes for its 64): a stamp (seconds), a difficulty and a
+// MAC of both and the host's address under a key drawn at start, so the
+// relay keeps nothing. The host finds a nonce such that SHA-256(mac |
+// secret | nonce) starts with `bits` zero bits and registers with
+// RegisterHostOpen; the relay checks the MAC, the stamp's age and the hash,
+// and takes each challenge once. Its session is capped (bandwidth per
+// guest link, sessions per source and in all); a host token bypasses all
+// of it.
 //
 // Kept codes: RegisterHostKeep registers like RegisterHost and gives the
 // session its host token's kept code (keptCode: derived from the token and
@@ -126,7 +138,12 @@ const (
 	typeProbe            msgType = 17
 	typeObserved         msgType = 18
 	typeRegisterHostKeep msgType = 19
+	typeChallenge        msgType = 20
+	typeRegisterHostOpen msgType = 21
 )
+
+// ChallengeMACSize is a Challenge's MAC, in bytes.
+const ChallengeMACSize = 16
 
 // KeptCodeLeft is a kept code's seconds left in a Code: it lives while its
 // host is registered.
@@ -163,6 +180,9 @@ const (
 	// The relay is shutting down and has no other replica to send a new
 	// session to: try again in a moment.
 	ErrDraining ErrorCode = 8
+	// An open relay: this address (an IPv4 address, an IPv6 /64) hosts as
+	// many sessions as it may.
+	ErrSourceBusy ErrorCode = 9
 )
 
 // CodeSize is a join code's length, in characters of codeAlphabet.
@@ -222,6 +242,11 @@ type datagram struct {
 	nonce uint32
 	// RegisterHostKeep.
 	salt uint32
+	// RegisterHostOpen: the challenge answered, and the nonce found.
+	stamp    uint32
+	bits     byte
+	mac      [ChallengeMACSize]byte
+	powNonce uint64
 }
 
 func parse(b []byte) (datagram, error) {
@@ -232,6 +257,15 @@ func parse(b []byte) (datagram, error) {
 	d.kind = msgType(b[4])
 	body := b[headerSize:]
 	switch d.kind {
+	case typeRegisterHostOpen:
+		if len(b) != registerSize {
+			return d, errMalformed
+		}
+		copy(d.secret[:], body[:SecretSize])
+		at := body[SecretSize:]
+		d.stamp, d.bits = binary.BigEndian.Uint32(at), at[4]
+		copy(d.mac[:], at[5:5+ChallengeMACSize])
+		d.powNonce = binary.BigEndian.Uint64(at[5+ChallengeMACSize:])
 	case typeRegisterHost, typeRegisterHostKeep:
 		if len(b) != registerSize {
 			return d, errMalformed
@@ -313,6 +347,27 @@ func RegisterHost(secret [SecretSize]byte, token [TokenSize]byte) []byte {
 	b = append(b, secret[:]...)
 	b = append(b, token[:]...)
 	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+// RegisterHostOpen builds a host's registration with no token: the
+// challenge it was given and the nonce that solves it (SolveChallenge).
+func RegisterHostOpen(secret [SecretSize]byte, c Reply, nonce uint64) []byte {
+	b := header(typeRegisterHostOpen, registerSize)
+	b = append(b, secret[:]...)
+	b = append(binary.BigEndian.AppendUint32(b, c.Stamp), c.Bits)
+	b = append(b, c.MAC[:]...)
+	b = binary.BigEndian.AppendUint64(b, nonce)
+	return append(b, make([]byte, registerSize-len(b))...)
+}
+
+// SolveChallenge finds the nonce a challenge asks for, for this secret
+// (clients; tests).
+func SolveChallenge(secret [SecretSize]byte, c Reply) uint64 {
+	for nonce := uint64(0); ; nonce++ {
+		if powHolds(c.MAC, secret, nonce, c.Bits) {
+			return nonce
+		}
+	}
 }
 
 // RegisterHostKeep builds a host's registration asking for its kept code.
@@ -502,6 +557,11 @@ type Reply struct {
 	PeerLAN    netip.AddrPort
 	// Observed: the client's address as the relay saw it (Nonce: the probe's).
 	Observed netip.AddrPort
+	// Challenge: what an open relay asks a host with no token to solve.
+	Challenged bool
+	Stamp      uint32
+	Bits       byte
+	MAC        [ChallengeMACSize]byte
 }
 
 // ParseReply decodes a relay -> client datagram.
@@ -547,6 +607,14 @@ func ParseReply(b []byte) (Reply, error) {
 			return Reply{}, errMalformed
 		}
 		return Reply{Redirect: netip.AddrPortFrom(addr, binary.BigEndian.Uint16(body[len(body)-2:]))}, nil
+	case typeChallenge:
+		if len(body) != 4+1+ChallengeMACSize {
+			return Reply{}, errMalformed
+		}
+		return Reply{
+			Challenged: true, Stamp: binary.BigEndian.Uint32(body), Bits: body[4],
+			MAC: [ChallengeMACSize]byte(body[5:]),
+		}, nil
 	case typeObserved:
 		var addr netip.Addr
 		switch {

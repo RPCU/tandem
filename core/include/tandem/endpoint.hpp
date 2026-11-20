@@ -12,6 +12,7 @@
 #include "tandem/comms.hpp"
 #include "tandem/consistency.hpp"
 #include "tandem/devices.hpp"
+#include "tandem/mods.hpp"
 #include "tandem/netcode.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
@@ -243,6 +244,11 @@ struct RemotePresence {
 struct RemoteCue {
   proto::Cue cue;
 };
+// Another player's V shows other status effects now (the whole set): its
+// puppet plays their visuals.
+struct RemoteStatusVisuals {
+  proto::StatusVisuals visuals;
+};
 // How one of the host's NPCs reacts to a hit (guests only): played on its proxy.
 struct HostNpcReaction {
   proto::NpcReaction reaction;
@@ -434,6 +440,24 @@ struct JoinRefused {
   std::string name;
   std::string notice;
 };
+// Other mods (docs/architecture/mod-compat.md). Another player's mods
+// against ours (host: a guest's; guest: the host's), once each side said.
+struct RemoteMods {
+  proto::PlayerId player{};
+  std::string name;
+  mods::Comparison comparison;
+};
+// The names of another player's mods we asked for (AskModNames).
+struct ModNamesFrom {
+  proto::PlayerId player{};
+  std::string name;
+  std::vector<proto::ModEntry> mods;
+};
+// Another player's game shows substitutes for some of our records.
+struct SubstitutesFrom {
+  proto::Substitutes substitutes;
+  std::string name; // the seer's
+};
 // Another player started, changed or ended what it is busy with (kind None),
 // or left while busy (docs/architecture/activities.md). Never our own.
 struct RemoteActivity {
@@ -526,6 +550,11 @@ struct Identity {
   std::string name;
   proto::Body body{};
   proto::Install install{};
+  // Our other mods, names included (mods::Scan): said to the others as
+  // hashes and categories, names only when asked. Only a game that read its
+  // folder says them (tellsMods): the mock player and the tests do not.
+  std::vector<proto::ModEntry> mods;
+  bool tellsMods{};
   // The game has Phantom Liberty installed and enabled (the mock player
   // and the tests: yes). A host without it takes nobody; a guest without
   // it is refused (compat::kExpansion*).
@@ -544,7 +573,8 @@ struct JoinTarget {
   std::optional<net::RelayOptions> relay;
 };
 
-using SessionEvent = std::variant<
+// What Update() reports. Code uses SessionEvent (below).
+using SessionEventVariant = std::variant<
     events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
     events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
     events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
@@ -569,7 +599,11 @@ using SessionEvent = std::variant<
     events::RemoteVehicleExit, events::RemoteVehicleCombat, events::RemoteMountedFire,
     events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
+    events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged>;
+// Its copies, moves and conversions compiled in session_event.cpp only, as
+// proto::Message's (tandem/closed_variant.hpp).
+using SessionEvent = ClosedVariant<SessionEventVariant>;
 
 class Endpoint {
 public:
@@ -601,6 +635,13 @@ public:
   void SetLocalPresence(proto::Presence presence);
   void SendLocalCue(proto::Cue cue);
   const std::map<proto::PlayerId, proto::Presence> &Presences() const { return m_presences; }
+  // The status effects that show on our V (presence::StatusSet makes the
+  // set; a repeat of the last is not sent). Kept and handed to late joiners;
+  // the others' latest, ours too, by player.
+  void SetLocalStatusVisuals(std::vector<std::uint64_t> records);
+  const std::map<proto::PlayerId, proto::StatusVisuals> &StatusVisualsOf() const {
+    return m_statusVisuals;
+  }
   // Where we sit (kept and handed to late joiners), and the car we drive.
   void SetLocalSeat(proto::Seat seat);
   void SendLocalVehicle(proto::VehicleState vehicle);
@@ -647,6 +688,11 @@ public:
   void SendNpcAction(const proto::NpcAction &action);
   // Host only: the answer to `player`'s NpcAction, to that player alone.
   void SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply);
+  // Other mods: the names of the mods `player` has and we do not (answered
+  // as events::ModNamesFrom); that our game shows substitutes for some of
+  // `substitutes.owner`'s records (through the host, to that player only).
+  void AskModNames(proto::PlayerId player);
+  void SendSubstitutes(proto::Substitutes substitutes);
   // Host only: who holds an NPC now (kept for late joiners until released,
   // gone, or the holder leaves).
   void SendNpcHold(const proto::NpcHold &hold);
@@ -1205,6 +1251,14 @@ private:
   std::uint64_t m_ownedResentUs{};
   // Host: the connection of a welcomed player (nullopt: none, or us).
   std::optional<net::PeerId> PeerOf(proto::PlayerId player) const;
+  // Other mods: a ModList or Substitutes from `player` (host: a guest;
+  // guest: the host).
+  void OnModList(proto::PlayerId player, const proto::ModList &list,
+                 std::vector<SessionEvent> &out);
+  void OnSubstitutes(proto::PlayerId player, proto::Substitutes substitutes,
+                     std::vector<SessionEvent> &out);
+  void SendModsTo(net::PeerId peer);
+  std::map<proto::PlayerId, std::vector<proto::ModEntry>> m_theirMods;
   // Host: delivers a message meant for `to` (kNoPlayer: everyone but
   // `except`) and tells whether it is for us too.
   template <class M> bool Deliver(const M &message, proto::PlayerId to, net::PeerId except);
@@ -1342,6 +1396,11 @@ private:
   std::uint32_t m_presenceRevision{};
   std::map<proto::PlayerId, proto::Presence> m_presences;
   void SendLocalPresenceNow();
+  // Our status visuals, and everyone's latest (late joiners, resyncs).
+  std::optional<proto::StatusVisuals> m_localStatusVisuals;
+  std::uint32_t m_statusVisualsRevision{};
+  std::map<proto::PlayerId, proto::StatusVisuals> m_statusVisuals;
+  void SendLocalStatusVisualsNow();
   std::uint32_t m_cueSeq{};
   std::uint32_t m_awarenessSeq{};
   // Our ride, and everyone's (host: the session's record, for late joiners;
@@ -1617,3 +1676,5 @@ private:
   bool m_throughRelay{};
 };
 } // namespace tandem
+
+extern template class tandem::ClosedVariant<tandem::SessionEventVariant>;

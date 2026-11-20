@@ -517,3 +517,45 @@ TEST_CASE("referee: a clean session over loopback breaks no rule") {
   CHECK(std::ranges::find(never, "QuestReward") != never.end());
   CHECK(coverage.Report().size() == 5);
 }
+
+TEST_CASE("referee: every message has its speaker, and the other side may not say it") {
+  constexpr auto kinds = std::variant_size_v<proto::Message>;
+  const auto message = [](std::size_t index) {
+    return [&]<std::size_t... I>(std::index_sequence<I...>) {
+      proto::Message out;
+      ((index == I ? (out = proto::Message(std::in_place_index<I>), 0) : 0), ...);
+      return out;
+    }(std::make_index_sequence<kinds>{});
+  };
+  std::size_t hosts = 0, guests = 0;
+  for (std::size_t i = 0; i < kinds; ++i) {
+    CAPTURE(sim::MessageName(i));
+    if (sim::SpeakerOf(i) == sim::Speaker::Host) {
+      ++hosts;
+      auto referee = Host();
+      referee.Received(2, message(i), kSecond);
+      CHECK(Broke(referee, "authority.host-only"));
+    } else if (sim::SpeakerOf(i) == sim::Speaker::Guest) {
+      ++guests;
+      auto referee = Guest();
+      referee.Received(1, message(i), kSecond);
+      CHECK(Broke(referee, "authority.guest-only"));
+    }
+  }
+  CHECK(hosts > 0);
+  CHECK(guests > 0);
+}
+
+TEST_CASE("referee: an NPC seated in a shared world vehicle names the vehicle, not a player") {
+  auto referee = Guest();
+  referee.Received(1, proto::NpcSpawn{.npc = 7, .record = 1}, kSecond);
+  referee.Received(
+      1, proto::NpcSeat{.npc = 7, .owner = proto::TrafficSeatOwner(proto::MakeTrafficId(1, 1))},
+      kSecond);
+  CHECK(Rules(referee).empty());
+  // Its area owner must still be a player of the session.
+  referee.Received(
+      1, proto::NpcSeat{.npc = 7, .owner = proto::TrafficSeatOwner(proto::MakeTrafficId(9, 1))},
+      kSecond);
+  CHECK(Rules(referee) == std::vector<std::string>{"ids.unknown-player"});
+}

@@ -15,12 +15,12 @@ declare -A value=(
   ["--relay-token"]=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
   ["--hack-npcs"]=4 ["--hack-action"]=QuickHack.BlindHack ["--hack-effect"]=BaseStatusEffect.Blind
   ["--hack-player"]=6 ["--npc-hack"]=AIQuickHack.HackRevealPosition ["--hack-car"]=5
-  ["--npc"]=Character.x ["--detect-at"]=15 ["--detect-for"]=10 ["--camo"]=10 ["--shoot"]=3
+  ["--npc"]=Character.x ["--detect-at"]=15 ["--detect-for"]=10 ["--camo"]=10 ["--camo-record"]=BaseStatusEffect.OpticalCamoCoolPerkShort ["--shoot"]=3
   ["--strike"]=nonlethal ["--difficulty"]=veryhard ["--area-hit"]=5
   ["--friendly-fire"]=on ["--enemy-scaling"]=on ["--enemy-scaling-health"]=0.8 ["--near-npc"]=--check ["--throw"]=5 ["--throw-item"]=Items.x ["--smart"]=5 ["--defend"]=5
   ["--hit-you-melee"]=on
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
-  ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5
+  ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5 ["--status"]=BaseStatusEffect.Burning@4-10
   ["--shoot-you"]=3 ["--shot-weapon"]=Items.x
   ["--sandevistan-at"]=10 ["--sandevistan-for"]=5 ["--sandevistan-scale"]=0.25 ["--scan-at"]=10
   ["--metro-at"]=5 ["--metro-for"]=40 ["--seat"]=seat_front_right ["--driver-npc"]=Character.x
@@ -37,6 +37,8 @@ declare -A value=(
   ["--go-down"]=10 ["--go-out"]=10 ["--revive"]=3
   ["--path"]=x.path ["--save-path"]=x.path
   ["--drop"]=0.2 ["--dup"]=0.2 ["--fault-seed"]=7 ["--vanish-at"]=20
+  ["--held-record"]=Items.x:Wea_Handgun:Weapon ["--vehicle-record"]=Vehicle.x:Car:2 ["--look-piece"]=Items.x:Clo_Legs
+  ["--npc-record"]=Character.x:Human:Female ["--unknown"]="Items.x,Vehicle.x"
   ["--car-damage"]=5 ["--exit-at"]=8 ["--exit-kind"]=knocked ["--bump"]=3 ["--shoot-cars"]=4
   ["--gunner"]=5 ["--gunner-seat"]=seat_back_left ["--ram-npcs"]=3 ["--chase"]=5
   ["--device"]="1a2b3c4d5e6f7788:DoorControllerPS:open,unlocked@8" ["--device-answer"]=closed ["--device-after"]=2

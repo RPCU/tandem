@@ -4,6 +4,7 @@
 #include "combat.hpp"
 #include "comms.hpp"
 #include "log.hpp"
+#include "mods.hpp"
 #include "perf.hpp"
 #include "presence.hpp"
 #include "recording.hpp"
@@ -175,6 +176,7 @@ struct NetThread::Impl {
 
   std::optional<proto::Vitals> lastVitals;
   std::optional<proto::Presence> lastPresence;
+  std::optional<std::vector<std::uint64_t>> lastStatusVisuals;
 
   // Every other player in the session with its life (up unless it said
   // otherwise), for the game thread (Revive.reds). Cheap: the runtime keeps
@@ -261,9 +263,14 @@ struct NetThread::Impl {
     std::string error;
     // (Without Phantom Liberty no session starts, unless compat = off: then
     // the other side refuses us, in words.)
-    const Identity identity{config.name, body, runtime.installation.install,
-                            runtime.Expansion() != compat::Expansion::Disabled &&
-                                runtime.Expansion() != compat::Expansion::Missing};
+    const Identity identity{.name = config.name,
+                            .body = body,
+                            .install = runtime.installation.install,
+                            .mods = ModRecords::Get().OursForIdentity(),
+                            .tellsMods = true,
+                            .expansion = runtime.Expansion() != compat::Expansion::Disabled &&
+                                         runtime.Expansion() != compat::Expansion::Missing};
+    ModRecords::Get().Ended();
     runtime.ClearDifferences();
     report::SessionSummary summary{
         .build = runtime.installation.install.build,
@@ -327,6 +334,8 @@ struct NetThread::Impl {
       endpoint->SetLocalVitals(*lastVitals);
     if (lastPresence)
       endpoint->SetLocalPresence(*lastPresence);
+    if (lastStatusVisuals)
+      endpoint->SetLocalStatusVisuals(*lastStatusVisuals);
     // Comms: whom we share tags with, and our waypoint, from the start.
     endpoint->SetLocalLink(Comms::Get().OwnLink());
     if (const auto waypoint = Comms::Get().OwnWaypoint())
@@ -448,6 +457,14 @@ struct NetThread::Impl {
                   summary.notes.push_back(line);
                   Notice(line, line, 600'000'000);
                 }
+              } else if constexpr (std::is_same_v<E, events::RemoteMods>) {
+                ModRecords::Get().OnCompared(e);
+                if (e.comparison.Differ())
+                  summary.notes.push_back(mods::Describe(e.comparison, e.name));
+              } else if constexpr (std::is_same_v<E, events::ModNamesFrom>) {
+                ModRecords::Get().OnNames(e);
+              } else if constexpr (std::is_same_v<E, events::SubstitutesFrom>) {
+                ModRecords::Get().OnSeen(e);
               } else if constexpr (std::is_same_v<E, events::JoinRefused>) {
                 runtime.NoteDifference(e.notice);
                 summary.notes.push_back(e.notice);
@@ -741,6 +758,10 @@ struct NetThread::Impl {
                 PresenceState::Get().PushRemote(e.presence);
               } else if constexpr (std::is_same_v<E, events::RemoteCue>) {
                 PresenceState::Get().PushCue(e.cue, net::NowUs());
+              } else if constexpr (std::is_same_v<E, events::RemoteStatusVisuals>) {
+                log::Info("player {}: {} status effect(s) show on its V (revision {})",
+                          e.visuals.player, e.visuals.records.size(), e.visuals.revision);
+                PresenceState::Get().PushStatusVisuals(e.visuals);
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
                 log::Info("player {}: look of {} keys and {} items (revision {})",
                           e.appearance.player, e.appearance.look.size(), e.appearance.items.size(),
@@ -1280,6 +1301,11 @@ struct NetThread::Impl {
         else if (const auto *waypoint = std::get_if<proto::Waypoint>(&message))
           endpoint->SetLocalWaypoint(*waypoint);
       }
+      // Other mods: what our game shows of others' records, names asked for.
+      for (const auto &told : ModRecords::Get().TakeTold())
+        endpoint->SendSubstitutes(told);
+      for (const auto player : ModRecords::Get().TakeNameAsks())
+        endpoint->AskModNames(player);
       for (auto &message : runtime.TakeRegroupOutbox()) {
         if (auto *offer = std::get_if<proto::Regroup>(&message))
           endpoint->SendRegroup(std::move(*offer));
@@ -1324,6 +1350,10 @@ struct NetThread::Impl {
       }
       for (const auto &cue : PresenceState::Get().TakeLocalCues())
         endpoint->SendLocalCue(cue);
+      if (auto visuals = PresenceState::Get().TakeStatusVisuals()) {
+        lastStatusVisuals = *visuals;
+        endpoint->SetLocalStatusVisuals(std::move(*visuals));
+      }
       if (!ended)
         PublishLives(*endpoint);
       for (auto &message : TradeLink::Get().TakeOutbound())

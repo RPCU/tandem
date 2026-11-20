@@ -1,6 +1,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "comms.hpp"
 #include "installed.hpp"
 #include "log.hpp"
 #include "net_thread.hpp"
@@ -303,6 +304,8 @@ bool Runtime::ChangeSetting(const std::string &key, const std::string &value) {
     Recording::Get().SetEnabled(config.recorder);
   if (key == "direct")
     directOn = config.direct;
+  if (key == "link" || key == "pings")
+    ConfigureComms(config);
   if (key == "code_salt")
     codeSalt = config.codeSalt;
   const auto shown = key == "relay_token" ? std::string("(a token)") : stored;

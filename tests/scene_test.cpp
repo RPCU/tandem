@@ -663,6 +663,7 @@ TEST_CASE("a guest that missed a scene's end is told by the resync that none pla
   REQUIRE((host && a));
   REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) { return a->IsJoined(); }));
   host->SendNpcSpawn({.npc = 7, .record = 1});
+  host->SendNpcSpawn({.npc = 4, .record = 2});
   scene::Stage stage;
   for (const auto &message : stage.Update(Talk(), host->HostNowUs()))
     host->SendStory(message);

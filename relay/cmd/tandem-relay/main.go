@@ -83,7 +83,15 @@ func serve(args []string) error {
 	readers := fs.Int("readers", min(runtime.NumCPU(), 8), "sockets reading the UDP port at once (SO_REUSEPORT)")
 	drain := fs.Duration("drain-timeout", 60*time.Second,
 		"on SIGTERM, how long running sessions may go on (no new ones) before the relay exits")
-	fs.BoolVar(&cfg.AllowAnyHost, "allow-any-host", false, "let any host open a session (local testing only)")
+	fs.BoolVar(&cfg.AllowAnyHost, "allow-any-host", false, "let any host open a session, uncapped and with no proof (local testing only)")
+	requireToken := fs.Bool("require-token", env("TANDEM_RELAY_REQUIRE_TOKEN", "") == "on",
+		"only hosts with a token (no open mode)")
+	fs.IntVar(&cfg.PowBits, "pow-bits", cfg.PowBits, "open mode: the proof of work asked of a host, in bits (each doubles its cost)")
+	fs.IntVar(&cfg.MaxOpenSessions, "max-open-sessions", cfg.MaxOpenSessions, "open mode: sessions opened with no token, at once")
+	fs.IntVar(&cfg.MaxSessionsPerSource, "max-sessions-per-source", cfg.MaxSessionsPerSource,
+		"open mode: sessions one IPv4 address or IPv6 /64 hosts with no token")
+	openKbps := fs.Int("open-kbps", cfg.OpenRate*8/1000, "open mode: kbit/s per guest link and direction")
+	openBurst := fs.Int("open-burst-kb", cfg.OpenBurst/1000, "open mode: kB per guest link and direction at once")
 	fs.IntVar(&cfg.MaxSessions, "max-sessions", cfg.MaxSessions, "sessions open at once")
 	fs.DurationVar(&cfg.IdleTimeout, "idle", cfg.IdleTimeout, "forget a client silent for this long")
 	fs.DurationVar(&cfg.CodeTTL, "code-ttl", cfg.CodeTTL, "how long a join code lives")
@@ -92,6 +100,8 @@ func serve(args []string) error {
 	fs.IntVar(&cfg.MaxCodeFailuresPerMinute, "max-code-failures", cfg.MaxCodeFailuresPerMinute,
 		"failed join code lookups per minute, from everyone together, for the whole fleet (each replica takes its share)")
 	_ = fs.Parse(args)
+	cfg.OpenRate, cfg.OpenBurst = *openKbps*1000/8, *openBurst*1000
+	cfg.Open = !*requireToken
 
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
@@ -121,7 +131,21 @@ func serve(args []string) error {
 		return errors.New("--front sends players to the replicas in --peers: give them")
 	}
 
-	if !cfg.AllowAnyHost {
+	switch {
+	case cfg.AllowAnyHost:
+		log.Warn("any host may open a session, uncapped: do not expose this relay")
+	case cfg.Open:
+		// Tokens are optional (no file, or --host-tokens=): their holders
+		// bypass the open caps.
+		if *tokensFile == "" {
+			break
+		}
+		tokens, err := readTokens(*tokensFile)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		cfg.HostTokens = tokens
+	default:
 		tokens, err := readTokens(*tokensFile)
 		if err != nil {
 			return err
@@ -130,8 +154,6 @@ func serve(args []string) error {
 			return fmt.Errorf("%s has no host token (tandem-relay token makes one)", *tokensFile)
 		}
 		cfg.HostTokens = tokens
-	} else {
-		log.Warn("any host may open a session: do not expose this relay")
 	}
 
 	direct, err := relay.Listen(*udpAddr, *readers)
@@ -223,6 +245,11 @@ func serve(args []string) error {
 	}
 	if cfg.ProxyProtocol {
 		attrs = append(attrs, "proxy_protocol", true, "trusted_proxies", *trusted)
+	}
+	attrs = append(attrs, "open", cfg.Open && !cfg.AllowAnyHost)
+	if cfg.Open {
+		attrs = append(attrs, "pow_bits", cfg.PowBits, "open_kbps", cfg.OpenRate*8/1000, "max_open_sessions", cfg.MaxOpenSessions,
+			"max_sessions_per_source", cfg.MaxSessionsPerSource)
 	}
 	log.Info("relay up", attrs...)
 	err = server.ServeAll(ctx, direct, front)

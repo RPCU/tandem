@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "log.hpp"
 
+#include "tandem/hosts.hpp"
 #include "tandem/names.hpp"
 
 #include <charconv>
@@ -252,6 +253,13 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.pings = false;
     else
       return Bad("pings is on or off");
+  } else if (key == "last_address") {
+    if (value.empty())
+      config.lastAddress.clear();
+    else if (const auto target = hosts::Parse(value, config.port))
+      config.lastAddress = hosts::Format(*target);
+    else
+      return Bad("last_address is host or host:port, not {}", value);
   } else if (key == "log") {
     if (value == "warn" || value == "quiet")
       config.logLevel = 1;
@@ -344,6 +352,14 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return config.timeHostFull ? "full" : "bubble";
   if (key == "direct")
     return config.direct ? "auto" : "off";
+  if (key == "link")
+    return config.link == Config::Link::Ask   ? "ask"
+           : config.link == Config::Link::Off ? "off"
+                                              : "auto";
+  if (key == "pings")
+    return OnOff(config.pings);
+  if (key == "last_address")
+    return config.lastAddress;
   return {};
 }
 

@@ -8,8 +8,10 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "mods.hpp"
 #include "runtime.hpp"
 
+#include "tandem/regions.hpp"
 #include "tandem/traffic.hpp"
 
 #include <RED4ext/Scripting/Natives/Generated/Quaternion.hpp>
@@ -20,9 +22,19 @@
 #include <algorithm>
 
 namespace tandem::plugin {
+namespace {
+// A world vehicle its owner's game has and ours lacks (a modded car in
+// traffic): the vanilla default car, in its own look.
+std::uint64_t VehicleHere(const proto::TrafficSpawn &spawn) {
+  return ModRecords::Get().Resolve(mods::Kind::Vehicle, spawn.record, {},
+                                   regions::Announcer(spawn.id));
+}
+} // namespace
+
 // One thing that happened to a shared vehicle, or a crime of our V seen by
 // the area's owner. Plain fields only (the script VM aligns struct locals
 // to 8).
+
 struct TandemStreetEvent {
   // 1 spawn, 2 gone, 3 status, 4 hit (owner), 5 crime (ours), 6 give (owner),
   // 7 take (ours now), 8 owner changed
@@ -156,27 +168,29 @@ struct TandemStreet : Red::IScriptable {
     Red::DynArray<TandemStreetEvent> out;
     for (const auto &event : Runtime::Get().TakeStreetEvents()) {
       const auto &s = event.spawn;
-      out.EmplaceBack(TandemStreetEvent{.kind = static_cast<std::int32_t>(event.kind),
-                                        .id = s.id,
-                                        .record = Red::TweakDBID(s.record),
-                                        .appearance = Red::CName(s.appearance),
-                                        .entity = Red::EntityID(s.entity),
-                                        .x = s.position.x,
-                                        .y = s.position.y,
-                                        .z = s.position.z,
-                                        .i = s.orientation.i,
-                                        .j = s.orientation.j,
-                                        .k = s.orientation.k,
-                                        .r = s.orientation.r,
-                                        .flags = event.flags,
-                                        .reason = event.reason,
-                                        .player = event.player,
-                                        .amount = event.amount,
-                                        .dx = event.vector.x,
-                                        .dy = event.vector.y,
-                                        .dz = event.vector.z,
-                                        .npc = event.npc,
-                                        .attack = event.attack});
+      const auto record = VehicleHere(s);
+      out.EmplaceBack(
+          TandemStreetEvent{.kind = static_cast<std::int32_t>(event.kind),
+                            .id = s.id,
+                            .record = Red::TweakDBID(record),
+                            .appearance = Red::CName(record == s.record ? s.appearance : 0),
+                            .entity = Red::EntityID(s.entity),
+                            .x = s.position.x,
+                            .y = s.position.y,
+                            .z = s.position.z,
+                            .i = s.orientation.i,
+                            .j = s.orientation.j,
+                            .k = s.orientation.k,
+                            .r = s.orientation.r,
+                            .flags = event.flags,
+                            .reason = event.reason,
+                            .player = event.player,
+                            .amount = event.amount,
+                            .dx = event.vector.x,
+                            .dy = event.vector.y,
+                            .dz = event.vector.z,
+                            .npc = event.npc,
+                            .attack = event.attack});
     }
     return out;
   }
@@ -200,8 +214,8 @@ struct TandemStreet : Red::IScriptable {
     for (const auto &[spawn, status] : Runtime::Get().SharedTraffic())
       out.EmplaceBack(TandemStreetCar{
           .id = spawn.id,
-          .record = Red::TweakDBID(spawn.record),
-          .appearance = Red::CName(spawn.appearance),
+          .record = Red::TweakDBID(VehicleHere(spawn)),
+          .appearance = Red::CName(VehicleHere(spawn) == spawn.record ? spawn.appearance : 0),
           .entity = Red::EntityID(spawn.entity),
           .x = spawn.position.x,
           .y = spawn.position.y,

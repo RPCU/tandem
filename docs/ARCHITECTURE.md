@@ -72,12 +72,12 @@ task touches ([Topic files](#topic-files)).
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
 | `deploy/kubernetes/base` | kustomize base for the relay; `kgateway/`: the base with kgateway in front of its HTTP side; `playit/`: reached through playit.gg tunnels (the agent as a sidecar, PROXY v2) | `task k8s:check` |
 | `deploy/systemd` | `tandem-relay.service`, the relay on a plain server (`docs/relay.md`) | — |
-| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `RegionNatives.reds` `region_natives.cpp`, `StreetNatives.reds` `street_natives.cpp`, `PresenceNatives.reds` `presence_natives.cpp`, `ActivityNatives.reds` `activity_natives.cpp`, `ProgressNatives.reds` `progress_natives.cpp`, `TradeNatives.reds` `trade_natives.cpp`, `CommsNatives.reds` `comms_natives.cpp` | `task scripts:check`, `task natives:check` |
+| `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `RegionNatives.reds` `region_natives.cpp`, `StreetNatives.reds` `street_natives.cpp`, `PresenceNatives.reds` `presence_natives.cpp`, `ActivityNatives.reds` `activity_natives.cpp`, `ProgressNatives.reds` `progress_natives.cpp`, `TradeNatives.reds` `trade_natives.cpp`, `CommsNatives.reds` `comms_natives.cpp`, `ModsNatives.reds` `mods_natives.cpp` | `task scripts:check`, `task natives:check` |
 | `tweaks/` | TweakXL records, installed to `r6/tweaks/tandem` (the puppet records, their attitude groups, the player marker, the ping marker) | — |
 | `dist/` | files installed next to the DLL (`tandem.ini`, shipped as `tandem.default.ini`) and `INSTALL.md`, the players' guide | `task package` |
 | `cmake/` | `clang-cl-msvc.cmake`: the Windows cross toolchain | — |
 | `docs/` | this core; `architecture/`: one file per subsystem; `relay.md` (operating a relay), `playtest.md` (the first two-machine session); `research/`: engine facts with sources, design research, `data/` (RTTI and skeleton dumps) | `task docs:check` |
-| `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `check-strings.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `package.py` (`task package`), `re/` (read-only reverse engineering, see its README), `pilot/` (the test pilot that plays our V: `architecture/autopilot.md`) | — |
+| `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `check-strings.py`, `mods-check.py` (other mods' script hooks against ours: `task mods:check DIR=…`), `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `package.py` (`task package`), `re/` (read-only reverse engineering, see its README), `pilot/` (the test pilot that plays our V: `architecture/autopilot.md`) | — |
 | `vendor/` | git submodules: RED4ext.SDK, RedLib, ENet, zpp_bits, doctest | — |
 | `.github/workflows/` | CI on GitHub: `ci.yaml` (Go vet and race tests of `relay/` and `tools/pilot/`, `k8s:check`, the Linux core tests with GCC 14, docs links, natives, strings), `linting.yaml` (gofumpt, golines), `nix-build.yaml` (the Nix relay and image), `image.yaml` (pushes `zot.rpcu.io/public/tandem-relay`). Not in CI: the plugin (needs the xwin sysroot) and `scripts:check` (needs the game's scripts) | GitHub Actions |
 | `LICENSE`, `NOTICE` | tandem's licence (MIT) and the third-party code and credits | `task package` ships both |
@@ -112,8 +112,9 @@ player's game, not a server: there is no dedicated game server.
 | Bulk    | reliable, ordered       | large one-offs (join snapshot) so they never hold up events |
 
 **Protocol** (`core/include/tandem/protocol.hpp`): every message is one
-alternative of a `std::variant`, serialized with zpp_bits. The variant index
-is the message id, so **messages are only ever appended**, and changing an
+alternative of a `std::variant`, serialized with zpp_bits (its variant
+form, written out in `protocol.cpp`: the index in one byte, then the
+message). The variant index is the message id, so **messages are only ever appended**, and changing an
 existing message bumps `kProtocolVersion`; a mismatched guest is refused with
 a reason. Decoding is strict: trailing or missing bytes reject the packet.
 
@@ -149,6 +150,7 @@ The owner simulates; everyone else displays.
 | the clock: time skips (wheel, bed) | host's clock, asked of every other player | each agrees or not; applied in every game; the host's story only says so (`architecture/activities.md`) |
 | a V busy: workspot, menu, minigame, photo mode | that player's game | puppet held where it sits, same workspot; photo mode stands only its own game still |
 | a V's time abilities (Sandevistan, the scanner…) | that player's game | shown on the puppet; never slow anyone's world |
+| a V's status effects that show (burning, shock, camo, a heal…) | that player's game | their look and sound played on the puppet, never their gameplay (`architecture/presence.md`) |
 | an NPC's speed in a time bubble | the NPC's owner | proxies animated at the same speed |
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | NPC melee at a V: whether it is blocked, parried, dodged | the V's game, at its proxy's swing | host's NPC decides to attack and recoils; `architecture/combat-coverage.md` |
@@ -310,7 +312,7 @@ plugin") and its open problems.
 - `garage.md`: owned vehicles: each player's garage, driving a partner's car, vehicles earned together (credited, or kept with `vehicle_rewards = keep`), purchases, PL deliveries, decisions.
 - `trade.md`: trade between two players: the prompt and the table, what may be traded, the host's two-phase arbitration, the protocol, what is not verified.
 - `quest-carryover.md`: what a guest brings home (stage A1 built: the ledger in the save, rewards through it, quest props given back on leave): the three tiers, the ledger in the guest's save, edge cases (host ahead or behind, quest props, duplicates), stages and decisions.
-- `presence.md` (`scripts/tandem/Presence.reds`, `PartyHud.reds`, `HitReactions.reds`): the partner seen and heard: a puppet's sounds, hit reactions on puppets and proxies, drawn bullets, the party HUD (linked partners) and nameplates (`nameplates = near|always|off`), names (the pseudo prompt, unique names: `core/include/tandem/names.hpp`), small details (flashlight, look-at, stances, holstering); the audit, what needs eyes and ears in game.
+- `presence.md` (`scripts/tandem/Presence.reds`, `PartyHud.reds`, `HitReactions.reds`, `StatusVisuals.reds`): the partner seen and heard: a puppet's sounds, hit reactions on puppets and proxies, drawn bullets, its V's status effects on it (`StatusVisuals`), the party HUD (linked partners) and nameplates (`nameplates = near|always|off`), names (the pseudo prompt, unique names: `core/include/tandem/names.hpp`), small details (flashlight, look-at, stances, holstering); the audit, what needs eyes and ears in game.
 - `elsewhere.md`: cyberspace, braindances, replacers: a V outside the city.
 - `activities.md`: the rule table for activities outside combat and quests (time skips asked of everyone, workspots on puppets, minigames and screens, shops, mirror and wardrobe looks, photo mode, contests, clubs and joytoys), its decisions and what is built.
 - `coop-menu.md`: the co-op menu, its Settings page (saved to `tandem.ini`), invites and join codes in game.
@@ -322,6 +324,7 @@ plugin") and its open problems.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.
 - `two-instances.md`: two real games on the game machine (tried 2026-11-19: they play a session over loopback; a guest froze once, starts under load trip the engine's watchdog): results and measurements, findings, the setup (`tools/instance.sh`: a game folder and a prefix per instance, outside Steam, sandboxed off the player's files), the first-try checklist; the plugin's `TANDEM_CONFIG`, `TANDEM_CMD`, `TANDEM_PORT`, `TANDEM_LOG` (`core/include/tandem/instance.hpp`).
 - `release.md`: packaging (`task package`, the release and symbols zips), the startup check (game version, dependencies, Phantom Liberty, required on every game), what a join compares (protocol and Phantom Liberty refuse; build, files and mod lists warn), bug reports (`tandem-report`), what the game has not run yet. For release, compatibility and report code.
+- `mod-compat.md`: other mods: what each adds (local, items, vehicles, characters, looks, gameplay), the comparison at a join (`ModList`: hashes and categories, names on request), the one resolver for records another game names (a vanilla stand-in by the sender's hint, or nothing, always told), what is not covered, `tools/mods-check.py` and the kinds of mods that conflict, a sample install's mods tested against. For any record that crosses games.
 - `autopilot.md`: the test pilot that plays our real V without a human (recordings, scenarios): script-level actions, a virtual pad, the plugin's state stream, routines with checks, its safety, two-instance runs, the first-run checklist.
 - `sim.md`: the simulated second game: the referee on every peer's wire, the host world, story director, simulated V and personas, `tandem-peer sim`, `sim-fuzz`, coverage.
 

@@ -3,6 +3,7 @@
 // sent twice. Unit tests, then a real host and guests over loopback UDP.
 
 #include "ports.hpp"
+#include "referee_expect.hpp"
 #include "tandem/consistency.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/story.hpp"
@@ -289,6 +290,8 @@ constexpr Timing kQuick{.digest = 100ms, .resyncCooldown = 200ms};
 } // namespace
 
 TEST_CASE("a guest converges on the host's world although a third of what the host sends is lost") {
+  // Lost and doubled on purpose: an NPC's word whose spawn was lost, a state twice.
+  test::ExpectReferee({"ids.unknown-npc", "oneshot.seq-repeated", "digest.resync-loop"});
   const auto port = NextPort();
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error, kQuick);
@@ -361,6 +364,8 @@ TEST_CASE("a guest converges on the host's world although a third of what the ho
 }
 
 TEST_CASE("state sent twice is applied once") {
+  // Everything the host sends goes twice, on purpose.
+  test::ExpectReferee({"oneshot.death-twice"});
   const auto port = NextPort();
   std::string error;
   auto host = Endpoint::Host({"host"}, port, error, kQuick);

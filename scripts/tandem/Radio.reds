@@ -88,6 +88,12 @@ public class TandemRadio {
     let none = n"None";
     let on = car.IsRadioReceiverActive();
     let station = on ? Cast<Int32>(car.GetCurrentRadioIndex()) : -1;
+    // A station a mod added (radioExt numbers its own after the game's):
+    // no other game has it, so it is sent as off.
+    if on && !TandemRadio.IsVanilla(station) {
+      on = false;
+      station = -1;
+    }
     let track = on ? car.GetRadioReceiverTrackName() : none;
     let stationChanged = !this.m_sent || NotEquals(on, this.m_sentOn) || station != this.m_sentStation;
     let trackChanged = NotEquals(track, this.m_sentTrack);
@@ -108,6 +114,11 @@ public class TandemRadio {
     this.m_sentStation = station;
     this.m_sentTrack = track;
     TandemNative.Log(s"radio: our car's radio sent: \(TandemRadio.Describe(on, station))\(gotIn ? ", a passenger got in" : "")\(started ? ", a new song" : "")");
+  }
+
+  // A station every game has: one of the game's own (a mod's come after).
+  public static func IsVanilla(station: Int32) -> Bool {
+    return station >= 0 && station < RadioStationDataProvider.GetStationsCount();
   }
 
   // "station 4 (radio_station_09_downtempo)", or "off".
@@ -135,6 +146,14 @@ public class TandemRadio {
     // Nothing from the driver yet: the car's radio stays off.
     let wantOn = changes > 0 && TandemNative.RemoteRadioOn(driver);
     let wantStation = wantOn ? TandemNative.RemoteRadioStation(driver) : -1;
+    // A station our game lacks (a mod's): the radio off, said once.
+    if wantOn && !TandemRadio.IsVanilla(wantStation) {
+      if changes != this.m_applied {
+        TandemModsNative.ModNote(TandemMods.Radio(), n"", wantStation, driver);
+      }
+      wantOn = false;
+      wantStation = -1;
+    }
     let isOn = car.IsRadioReceiverActive();
     let isStation = isOn ? Cast<Int32>(car.GetCurrentRadioIndex()) : -1;
     let matches = wantOn ? (isOn && isStation == wantStation) : !isOn;

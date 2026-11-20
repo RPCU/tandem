@@ -172,12 +172,12 @@ TEST_CASE("two games are compared in words; what is unknown is not compared") {
   CHECK(lines[0] ==
         "Jackie's tandem scripts differ from yours: install the whole release again on both games");
 
+  // Other mods: compared by what they add (ModList, mods_test.cpp), not
+  // by their fingerprint.
   theirs = ours;
   theirs.mods = 99;
   theirs.modCount = 12;
-  lines = compat::Differences(ours, theirs, "Jackie");
-  REQUIRE(lines.size() == 1);
-  CHECK(lines[0].find("Jackie has other mods than you (12 against your 10)") == 0);
+  CHECK(compat::Differences(ours, theirs, "Jackie").empty());
 
   // Another build: said once, its files are not said to differ as well.
   theirs = ours;
