@@ -417,6 +417,8 @@ public class TandemSystem extends ScriptableSystem {
     if !this.m_inGame {
       return;
     }
+    // The thread probe's findings of this session, in the log.
+    TandemNative.ThreadsReport();
     TandemNative.PoseSource(null);
     // Guest: every device the session changed, back as our own save had it
     // (before the plugin stops: nothing of this goes to anyone).
@@ -1100,6 +1102,12 @@ public class TandemSystem extends ScriptableSystem {
     // The frame cost, queues and traffic now (tools/game.sh cmd perf), solo too.
     if Equals(command, "perf") {
       TandemNative.PerfReport();
+      return;
+    }
+    // The thread probe (tools/game.sh cmd threads): the hooks seen so far,
+    // off the game thread and on it only (testing.md), solo too.
+    if Equals(command, "threads") {
+      TandemNative.ThreadsReport();
       return;
     }
     if StrBeginsWith(command, "time ") {

@@ -1162,6 +1162,7 @@ protected cb func OnDetach() -> Bool {
 // Our V gets into a vehicle: a shared one becomes ours.
 @wrapMethod(VehicleObject)
 protected cb func OnMountingEvent(evt: ref<MountingEvent>) -> Bool {
+  TandemNative.HookRan(n"Traffic.VehicleObject.OnMountingEvent");
   let result = wrappedMethod(evt);
   let child = GameInstance.FindEntityByID(this.GetGame(), evt.request.lowLevelMountingInfo.childId) as GameObject;
   if IsDefined(child) && child.IsPlayer() {
@@ -1186,6 +1187,7 @@ protected func DamagePipelineFinalized(evt: ref<gameHitEvent>) -> Void {
 // A bump between the car our V drives and a shared vehicle.
 @wrapMethod(VehicleObject)
 protected cb func OnVehicleBumpEvent(evt: ref<VehicleBumpEvent>) -> Bool {
+  TandemNative.HookRan(n"Traffic.VehicleObject.OnVehicleBumpEvent");
   let result = wrappedMethod(evt);
   let traffic = TandemTraffic.Of(this.GetGame());
   if IsDefined(traffic) {

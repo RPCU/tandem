@@ -4,6 +4,11 @@
 # fails on any hook that is not listed here; a line whose hook became clean, or
 # says why (`// game thread only:`, `// job thread safe:`), must go: this list
 # only shrinks. One line per file and method: `File.reds Class.Method`.
+#
+# Each starts with the thread probe, TandemNative.HookRan(n"File.Class.Method"):
+# the game's log names those that ran off the game thread (tools/game.sh
+# threads; what to do with each: docs/architecture/testing.md, "The thread
+# probe").
 
 # Per NPC, vehicle, device, component or projectile, in play: the engine may run
 # two of them at once (entity events on job threads), and each writes a

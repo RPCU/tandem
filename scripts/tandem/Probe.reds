@@ -260,6 +260,7 @@ public class TandemProbe {
 
   // On a job thread, before the entity is built from these components.
   private cb func OnExtract(event: ref<EntityBuilderEvent>) {
+    TandemNative.HookRan(n"Probe.TandemProbe.OnExtract");
     if this.m_stopped {
       return;
     }

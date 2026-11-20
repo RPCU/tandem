@@ -310,6 +310,7 @@ public class TandemVendors {
   }
 
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    TandemNative.HookRan(n"Vendors.TandemVendors.OnAction");
     if Equals(ListenerAction.GetName(action), n"Choice1") && ListenerAction.IsButtonJustPressed(action) && this.m_target != 0u && !this.Yields() {
       this.Open(this.m_target, this.m_body);
     }
@@ -544,6 +545,7 @@ public class TandemVendors {
 
 @wrapMethod(VendorHubMenuGameController)
 protected cb func OnInitialize() -> Bool {
+  TandemNative.HookRan(n"Vendors.VendorHubMenuGameController.OnInitialize");
   let result = wrappedMethod();
   let vendors = TandemVendors.Of(GetGameInstance());
   if IsDefined(vendors) {
@@ -554,6 +556,7 @@ protected cb func OnInitialize() -> Bool {
 
 @wrapMethod(VendorHubMenuGameController)
 protected cb func OnUninitialize() -> Bool {
+  TandemNative.HookRan(n"Vendors.VendorHubMenuGameController.OnUninitialize");
   let vendors = TandemVendors.Of(GetGameInstance());
   if IsDefined(vendors) {
     vendors.Unbind(this);

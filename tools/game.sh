@@ -9,7 +9,13 @@
 #                              tandem.ini as it is), each until the save plays
 #                              or the game crashes, then kill it: "N launches,
 #                              0 crashes". The first thing to run after a
-#                              script or plugin change that touches wraps
+#                              script or plugin change that touches wraps.
+#                              Fails too on a hook that ran off the game
+#                              thread (the thread probe, below), and names it
+#   tools/game.sh threads      the thread probe (docs/architecture/testing.md):
+#                              the newest log's "threads:" lines (asked of a
+#                              running game first, cmd threads); fails when a
+#                              script hook ran off the game thread
 #   tools/game.sh shot NAME    screenshot to .cache/shots/NAME.png
 #   tools/game.sh key CODE...  press keys (Linux input codes: 57 Space, 28 Enter, 1 Esc)
 #   tools/game.sh hold SECONDS CODE...  hold keys down together, then release
@@ -83,7 +89,10 @@
 #                              (the co-op menu: in game any time; menu and pick drive
 #                              an open main or pause menu, pages root coop host join save) |
 #                              coop name [reset] (the name; reset: the menu asks again) |
-#                              coop name answer TEXT | coop name cancel (the open name popup)
+#                              coop name answer TEXT | coop name cancel (the open name popup) |
+#                              perf (the frame cost, queues and traffic now) |
+#                              threads (the thread probe: hooks seen off the game
+#                              thread, and on it only; tools/game.sh threads reads it)
 #
 # The game machine runs Steam in a Sway session (headless output for Sunshine)
 # and ydotoold for input; GAME_HOST and GAME_DIR override the defaults.
@@ -207,9 +216,10 @@ start() {
 # red4ext/logs/redgraph-*.log, or CrashReporter.exe), 240 s at most. It found
 # the heap corruption of 2026-11-20 (wraps on job threads while the save
 # loaded: 5 launches in 6 with them, 0 in 7 without). Load Begone passes the
-# menus; Space answers the loading screen's prompt.
+# menus; Space answers the loading screen's prompt. A launch whose log names
+# a hook that ran off the game thread (the thread probe) fails the check too.
 launches() {
-  local n=${1:-5} crashes=0 playing=0 neither=0 i result t0
+  local n=${1:-5} crashes=0 playing=0 neither=0 i result t0 off=''
   for i in $(seq 1 "$n"); do
     keep_pilot=1 stop >/dev/null
     remote 'pkill -KILL -f "[C]rashReporter.exe"; sleep 3; true'
@@ -237,8 +247,11 @@ launches() {
       done
       echo "$res after $(($(date +%s) - t0)) s"
       [ "$res" = crash ] && [ -n "$rg" ] && grep -m3 "\[crash\]" "$rg" | cut -c1-200
+      tl=$(find . -name "tandem-*.log" -newermt "@$t0" | head -1)
+      [ -n "$tl" ] && sed -n "s/.*threads: hook \([^ ]*\) ran off the game thread.*/off the game thread: \1/p" "$tl"
       true')
     echo "launch $i: $result"
+    off+=$(sed -n 's/^off the game thread: / /p' <<<"$result" | tr -d '\n')
     case $result in
     crash*) crashes=$((crashes + 1)) ;;
     playing*) playing=$((playing + 1)) ;;
@@ -248,7 +261,28 @@ launches() {
   keep_pilot=1 stop >/dev/null
   remote 'pkill -KILL -f "[C]rashReporter.exe"; true'
   echo "$n launches, $crashes crashes ($playing playing, $neither neither within 240 s)"
+  if [ -n "$off" ]; then
+    echo "hooks that ran off the game thread (queue them, testing.md):$(tr ' ' '\n' <<<"$off" | sort -u | tr '\n' ' ')"
+    return 1
+  fi
   [ "$crashes" -eq 0 ] && [ "$playing" -gt 0 ]
+}
+
+# The thread probe (plugin/src/threads.hpp): what the newest log says of the
+# script hooks' threads, a running game asked first.
+threads() {
+  if running; then
+    cmd threads >/dev/null || true
+    sleep 1
+  fi
+  local lines
+  lines=$(remote "cd '$dir'; grep -h 'threads: ' \"\$(ls -t red4ext/logs/tandem-*.log | head -1)\"" | sed 's/^.*threads: /threads: /' || true)
+  if [ -z "$lines" ]; then
+    echo "no threads: line in the newest log (no script tick yet, or a plugin without the probe)" >&2
+    return 1
+  fi
+  echo "$lines"
+  ! grep -q 'ran off the game thread' <<<"$lines"
 }
 
 # Without Load Begone: through the title screen and the menu with keys.
@@ -680,6 +714,7 @@ case ${1:-} in
 start) start ;;
 stop) stop ;;
 launches) launches "${2:-5}" ;;
+threads) threads ;;
 shot) shot "${2:-}" ;;
 key)
   shift

@@ -1175,6 +1175,7 @@ private func PopulateMenuItemList() -> Void {
 
 @wrapMethod(PauseMenuGameController)
 protected cb func OnMenuItemActivated(index: Int32, target: ref<ListItemController>) -> Bool {
+  TandemNative.HookRan(n"Coop.PauseMenuGameController.OnMenuItemActivated");
   let item = target.GetData() as TandemMenuItem;
   if !IsDefined(item) {
     // Back to the main menu: a co-op choice made in game was for this game.

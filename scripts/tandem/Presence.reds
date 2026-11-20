@@ -50,12 +50,14 @@ public class TandemPresenceListener {
   public let sync: wref<TandemPresenceSync>;
 
   protected cb func OnMenu(value: Bool) -> Bool {
+    TandemNative.HookRan(n"Presence.TandemPresenceListener.OnMenu");
     if IsDefined(this.sync) {
       this.sync.MenuChanged(value);
     }
   }
 
   protected cb func OnPhotoMode(value: Bool) -> Bool {
+    TandemNative.HookRan(n"Presence.TandemPresenceListener.OnPhotoMode");
     if IsDefined(this.sync) {
       this.sync.PhotoChanged(value);
     }

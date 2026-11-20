@@ -121,6 +121,7 @@ public class TandemTravel {
   // The fast travel's loading screen is over (vanilla's FastTravelSystem
   // waits for the same before its autosave): the game is drawn again.
   protected cb func OnLoadingScreenFinished(value: Bool) -> Bool {
+    TandemNative.HookRan(n"Travel.TandemTravel.OnLoadingScreenFinished");
     if value && this.m_trip {
       this.m_loadingEnded = true;
       this.m_loadingEndedAt = EngineTime.ToFloat(GameInstance.GetSimTime(this.m_game));
@@ -418,6 +419,7 @@ public class TandemTravel {
   // The phone key, while an offer is shown: a press (released before the
   // phone's own hold) joins. A holocall ringing keeps the key for itself.
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    TandemNative.HookRan(n"Travel.TandemTravel.OnAction");
     if !IsDefined(this.m_offer) || !Equals(ListenerAction.GetName(action), n"PhoneInteract") {
       return false;
     }
