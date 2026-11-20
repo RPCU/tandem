@@ -2,6 +2,7 @@
 // (players, poses, cars) fed through it, and a real session over a shaped
 // UDP link: reliable events all arrive, in order, and the session holds.
 
+#include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/pose.hpp"
@@ -268,7 +269,8 @@ TEST_CASE("over a shaped UDP link, reliable events arrive whole and in order") {
     }
     return done();
   };
-  REQUIRE(pump(10s, [&] { return guest->IsJoined() && host->Players().size() == 2; }));
+  REQUIRE(
+      pump(test::Patience(10s), [&] { return guest->IsJoined() && host->Players().size() == 2; }));
 
   // 200 changes each way, as fast as they come, with states streaming.
   for (std::uint32_t i = 1; i <= 200; ++i) {
@@ -277,7 +279,8 @@ TEST_CASE("over a shaped UDP link, reliable events arrive whole and in order") {
     guest->SendLocalState({.position = {static_cast<float>(i), 0.f, 0.f}});
     pump(2ms, [] { return false; });
   }
-  REQUIRE(pump(10s, [&] { return heldAtHost.size() >= 200 && worldsAtGuest.size() >= 200; }));
+  REQUIRE(pump(test::Patience(10s),
+               [&] { return heldAtHost.size() >= 200 && worldsAtGuest.size() >= 200; }));
   pump(500ms, [] { return false; }); // nothing more, nothing twice
   CHECK_FALSE(ended);
   REQUIRE(heldAtHost.size() == 200);

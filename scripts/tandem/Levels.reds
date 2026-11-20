@@ -15,7 +15,11 @@
 //
 // The host then says each NPC's level (NpcLevel) and every guest gives the
 // proxy the same, so a hit is computed against the same health and armour on
-// both games and an NPC's skill XP is worth the same to everyone.
+// both games and an NPC's skill XP is worth the same to everyone. A guest
+// that owns NPCs (regions.md) does the same for them: its own NPCs are
+// scaled from its V's level to the session's, their levels said, and every
+// game linked with it gives its proxies the same (the owner's word, wherever
+// the owner is).
 
 public class TandemLevels {
   private let m_game: GameInstance;
@@ -36,7 +40,7 @@ public class TandemLevels {
   private let m_scaled: Int32;
   private let m_fixed: Int32;
   private let m_unassigned: Int32;
-  // Guest: the host's level for each NPC (kept for a proxy not there yet).
+  // Each shown NPC's level as its owner said (kept for a proxy not there yet).
   private let m_npcs: array<Uint32>;
   private let m_npcLevels: array<Float>;
 
@@ -80,7 +84,7 @@ public class TandemLevels {
     }
   }
 
-  // The session's level (TandemFightEvent kind 6).
+  // The session's level (TandemFightEvent kind 10).
   public func OnSession(level: Int32, players: Int32) -> Void {
     if level == this.m_session && players == this.m_players {
       return;
@@ -98,10 +102,11 @@ public class TandemLevels {
     return this.m_session;
   }
 
-  // ---- host ----
+  // ---- the owner (the host, or a guest for its own NPCs) ----
 
   // One of our NPCs, each round it is shared: scaled to the session's level,
-  // and its level told to the guests when it is first known or changes.
+  // and its level told to the games that show it when it is first known or
+  // changes.
   public func Host(known: ref<TandemNpcKnown>, npc: ref<ScriptedPuppet>) -> Void {
     if known.levelGen == this.m_gen {
       return;
@@ -188,9 +193,9 @@ public class TandemLevels {
     known.levelShift = 0.0;
   }
 
-  // ---- guest ----
+  // ---- our proxies ----
 
-  // The host's level for one of its NPCs (TandemFightEvent kind 7).
+  // Its owner's level for one of its NPCs (TandemFightEvent kind 11).
   public func OnNpc(npc: Uint32, level: Float) -> Void {
     let i = 0;
     while i < ArraySize(this.m_npcs) {
@@ -227,8 +232,8 @@ public class TandemLevels {
     }
   }
 
-  // A proxy, once its body exists and whenever the host's level for it
-  // changes: the same power level as the host's NPC.
+  // A proxy, once its body exists and whenever its owner's level for it
+  // changes: the same power level as the owner's NPC.
   public func Proxy(proxy: ref<TandemNpcProxy>, body: ref<ScriptedPuppet>) -> Void {
     let wanted = this.HostLevelOf(proxy.npc);
     if wanted <= 0.0 || proxy.dead {
@@ -254,7 +259,7 @@ public class TandemLevels {
         proxy.levelShift = shift;
       }
     }
-    TandemNative.Log(s"levels: proxy \(proxy.npc) level \(own) -> \(own + proxy.levelShift) (the host's \(wanted))");
+    TandemNative.Log(s"levels: proxy \(proxy.npc) level \(own) -> \(own + proxy.levelShift) (its owner's \(wanted))");
   }
 
   // ---- both ----
@@ -276,6 +281,6 @@ public class TandemLevels {
   }
 
   public func Report() -> String {
-    return s"levels: ours \(this.m_sent), session \(this.m_session) (\(this.m_players) players), \(this.m_on) NPCs moved; seen \(this.m_scaled) scaled by a curve, \(this.m_fixed) of a constant level, \(this.m_unassigned) with no content assignment; \(ArraySize(this.m_npcs)) host levels known";
+    return s"levels: ours \(this.m_sent), session \(this.m_session) (\(this.m_players) players), \(this.m_on) NPCs moved; seen \(this.m_scaled) scaled by a curve, \(this.m_fixed) of a constant level, \(this.m_unassigned) with no content assignment; \(ArraySize(this.m_npcs)) owners' levels known";
   }
 }

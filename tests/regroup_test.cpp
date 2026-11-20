@@ -2,6 +2,7 @@
 // loopback UDP: each reaches only whom it is for, stamped by the host.
 
 #include "referee_expect.hpp"
+#include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 
 #include <doctest/doctest.h>
@@ -27,7 +28,7 @@ struct Heard {
 void Run(const std::vector<Endpoint *> &endpoints, std::vector<Heard> &heard,
          const std::function<bool()> &done) {
   heard.resize(endpoints.size());
-  const auto cap = std::chrono::steady_clock::now() + 5s;
+  const auto cap = std::chrono::steady_clock::now() + test::Patience(5s);
   std::optional<std::chrono::steady_clock::time_point> settled;
   while (!settled || std::chrono::steady_clock::now() < *settled) {
     if (!settled && (done() || std::chrono::steady_clock::now() >= cap))

@@ -4,6 +4,7 @@
 // loopback UDP, from the host's own hack messages.
 
 #include "referee_expect.hpp"
+#include "slowdown.hpp"
 #include "tandem/comms.hpp"
 #include "tandem/endpoint.hpp"
 
@@ -84,6 +85,74 @@ TEST_CASE("a partner's quickhacks: shown while linked, hidden at a break, gone w
   }
 }
 
+TEST_CASE("a partner's quickhacks on devices: read from the bits, shown while linked") {
+  comms::HackBoard board;
+  const std::uint64_t t = 50 * kSecond, camera = 0xCA3E2A, door = 0xD002;
+  const comms::DevicePrograms programs{.hacked = 0xAA, .glitch = 0x61, .friendly = 0xF2};
+  using comms::HackBoard;
+  CHECK(board.SetLinked(2, true, t).empty());
+
+  // A distraction: shown while the device glitches, on the device's entity
+  // (never an NPC of the same number), with the distraction's icon.
+  auto changes =
+      board.Device(camera, 2, 0, proto::kDeviceHacked | proto::kDeviceGlitching, programs, t);
+  REQUIRE(changes.size() == 1);
+  CHECK(changes[0].kind == K::ShowEffect);
+  CHECK(changes[0].target == proto::TargetRef{proto::TargetKind::Entity, camera});
+  CHECK(changes[0].player == 2);
+  CHECK(changes[0].action == 0x61);
+  CHECK(changes[0].effect == HackBoard::kDeviceGlitchEffect);
+  CHECK(changes[0].seconds == 0.f); // until it stops
+  CHECK(board.ForgetNpc(static_cast<proto::NpcId>(camera)).empty());
+  CHECK(board.Shown() == 1);
+  // The glitch runs out (the host's world says so, nobody's doing): hidden.
+  changes = board.Device(camera, proto::kNoPlayer, proto::kDeviceHacked | proto::kDeviceGlitching,
+                         proto::kDeviceHacked, programs, t + 8 * kSecond);
+  REQUIRE(changes.size() == 1);
+  CHECK(changes[0].kind == K::HideEffect);
+  CHECK(changes[0].effect == HackBoard::kDeviceGlitchEffect);
+
+  // A camera turned: shown while it stays friendly.
+  changes = board.Device(camera, 2, proto::kDeviceHacked,
+                         proto::kDeviceHacked | proto::kDeviceFriendly, programs, t + 9 * kSecond);
+  REQUIRE(changes.size() == 1);
+  CHECK(changes[0].action == 0xF2);
+  CHECK(changes[0].effect == HackBoard::kDeviceFriendlyEffect);
+
+  // Any other quickhack (a door's): its indicator a moment, then it expires.
+  changes = board.Device(door, 2, proto::kDeviceLocked, proto::kDeviceOpen | proto::kDeviceHacked,
+                         programs, t);
+  REQUIRE(changes.size() == 1);
+  CHECK(changes[0].action == 0xAA);
+  CHECK(changes[0].effect == HackBoard::kDeviceHackedEffect);
+  CHECK(changes[0].seconds == doctest::Approx(HackBoard::kDeviceHackSeconds));
+  // A change that turns nothing on (opened by hand, already hacked): no news.
+  CHECK(board
+            .Device(door, 2, proto::kDeviceHacked, proto::kDeviceHacked | proto::kDeviceOpen,
+                    programs, t + kSecond)
+            .empty());
+  changes = board.Expire(t + 6 * kSecond);
+  REQUIRE(changes.size() == 1);
+  CHECK(changes[0].target.id == door);
+
+  SUBCASE("not linked: kept, nothing shown; the link shows what still runs") {
+    CHECK(board.SetLinked(2, false, t + 10 * kSecond).size() == 1); // the turned camera
+    CHECK(board.Device(door, 2, 0, proto::kDeviceGlitching, programs, t + 10 * kSecond).empty());
+    changes = board.SetLinked(2, true, t + 11 * kSecond);
+    CHECK(changes.size() == 2);
+  }
+  SUBCASE("our own (no player) shows nothing; the hacker vanishes: nothing stays") {
+    CHECK(board.Device(door, proto::kNoPlayer, 0, proto::kDeviceGlitching, programs, t).empty());
+    CHECK(board.Forget(2).size() == 1);
+    CHECK(board.Shown() == 0);
+  }
+  SUBCASE("the device leaves our world: its indicators go") {
+    changes = board.ForgetTarget(HackBoard::DeviceTarget(camera));
+    REQUIRE(changes.size() == 1);
+    CHECK(changes[0].kind == K::HideEffect);
+  }
+}
+
 TEST_CASE("a partner's quickhacks in a session: seen by the players linked with the hacker only") {
   // The host says a's upload on an NPC it never spawned, which a never asked for.
   test::ExpectReferee({"ids.unknown-npc", "reply.unasked"});
@@ -115,7 +184,7 @@ TEST_CASE("a partner's quickhacks in a session: seen by the players linked with 
     game.endpoint->SetLocalLink(game.own);
 
   const auto pump = [&](const std::function<bool()> &done) {
-    const auto cap = std::chrono::steady_clock::now() + 4s;
+    const auto cap = std::chrono::steady_clock::now() + test::Patience(4s);
     while (!done() && std::chrono::steady_clock::now() < cap) {
       host->Update(1ms);
       if (a)

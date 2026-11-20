@@ -181,7 +181,8 @@ public class TandemNpcs {
     }
   }
 
-  // Guest: the host's level for one of its NPCs, on its proxy if it is there.
+  // An NPC's level as its owner says (the host, or a guest for an NPC of its
+  // own, regions.md), on our proxy of it if it is there.
   public func SetLevel(npc: Uint32, level: Float) -> Void {
     this.m_levels.OnNpc(npc, level);
     let proxy = this.FindProxy(npc);

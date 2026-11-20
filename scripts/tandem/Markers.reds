@@ -60,7 +60,10 @@ public class TandemMarkers extends ScriptableSystem {
   // Each player's colour, by id (the same in every game): the marker's icon
   // in the world and on the minimap, so four markers tell four players
   // apart at a glance; pings, team target and quickhacks (Comms.reds) share
-  // it. The hues of the game's own HUD.
+  // it. The hues of the game's own HUD. Ids go round 1..8 (a session's
+  // players come and go): one colour each. The 8th, sky blue, was chosen as
+  // the farthest from the other seven under normal vision and simulated
+  // protanopia, deuteranopia and tritanopia (docs/architecture/players.md).
   public static func ColorOf(player: Uint32) -> HDRColor {
     switch player {
       case 1u: return new HDRColor(0.369, 0.965, 1.0, 1.0); // cyan
@@ -70,7 +73,8 @@ public class TandemMarkers extends ScriptableSystem {
       case 5u: return new HDRColor(1.0, 0.56, 0.2, 1.0); // orange
       case 6u: return new HDRColor(0.66, 0.5, 1.0, 1.0); // violet
       case 7u: return new HDRColor(1.0, 0.33, 0.33, 1.0); // red
-      default: return new HDRColor(1.0, 1.0, 1.0, 1.0);
+      case 8u: return new HDRColor(0.55, 0.75, 1.0, 1.0); // sky blue
+      default: return new HDRColor(1.0, 1.0, 1.0, 1.0); // nobody's
     }
   }
 

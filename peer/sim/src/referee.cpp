@@ -51,7 +51,6 @@ TANDEM_SAID_BY(Host, SceneLine)
 TANDEM_SAID_BY(Host, ActorPose)
 TANDEM_SAID_BY(Host, Rules)
 TANDEM_SAID_BY(Host, SessionLevel)
-TANDEM_SAID_BY(Host, NpcLevel)
 TANDEM_SAID_BY(Host, TradeCommit)
 TANDEM_SAID_BY(Host, TimeSkipResult)
 TANDEM_SAID_BY(Host, VehicleUnlock)
@@ -61,7 +60,7 @@ TANDEM_SAID_BY(Host, BreachResult)
 
 // What only a guest sends, and the host never passes on: its hello, its
 // questions, its answers to the host's call, a V's own level (the host's
-// never travels), a defence against the host's NPC.
+// never travels).
 TANDEM_SAID_BY(Guest, Hello)
 TANDEM_SAID_BY(Guest, Ping)
 TANDEM_SAID_BY(Guest, PhoneAction)
@@ -69,7 +68,6 @@ TANDEM_SAID_BY(Guest, PhoneReply)
 TANDEM_SAID_BY(Guest, ResyncRequest)
 TANDEM_SAID_BY(Guest, DeviceUse)
 TANDEM_SAID_BY(Guest, PlayerLevel)
-TANDEM_SAID_BY(Guest, Defended)
 
 // Either side: a player's word in its own name (SenderOf: the host stamps
 // it and relays it), an NPC's or a vehicle's owner's (OwnedBy,
@@ -119,6 +117,8 @@ TANDEM_SAID_BY(Either, NpcShot)
 TANDEM_SAID_BY(Either, NpcStrike)
 TANDEM_SAID_BY(Either, NpcWound)
 TANDEM_SAID_BY(Either, NpcPoise)
+TANDEM_SAID_BY(Either, NpcLevel)
+TANDEM_SAID_BY(Either, Defended)
 TANDEM_SAID_BY(Either, AreaHit)
 TANDEM_SAID_BY(Either, NpcSet)
 TANDEM_SAID_BY(Either, Epoch)
@@ -208,7 +208,8 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
                       std::is_same_v<M, p::NpcStatus> || std::is_same_v<M, p::PlayerHit> ||
                       std::is_same_v<M, p::PlayerHack> || std::is_same_v<M, p::NpcCue> ||
                       std::is_same_v<M, p::NpcShotAt> || std::is_same_v<M, p::NpcActionReply> ||
-                      std::is_same_v<M, p::NpcReaction> || std::is_same_v<M, p::NpcScale>)
+                      std::is_same_v<M, p::NpcReaction> || std::is_same_v<M, p::NpcScale> ||
+                      std::is_same_v<M, p::NpcLevel>)
           return {x.npc};
         else if constexpr (std::is_same_v<M, p::NpcVendor>)
           // A live vendor is its owner's word; a death names no NPC.
@@ -254,7 +255,8 @@ std::optional<p::TrafficId> TrafficAsked(const p::Message &m) {
 
 // A request to an NPC's owner (through the host, which stamps the sender).
 bool AsksOwner(const p::Message &m) {
-  return IsAny<p::NpcHit, p::NpcStrike, p::NpcEffect, p::NpcHack, p::NpcAction, p::ShotHit>(m);
+  return IsAny<p::NpcHit, p::NpcStrike, p::NpcEffect, p::NpcHack, p::NpcAction, p::ShotHit,
+               p::Defended>(m);
 }
 p::NpcId NpcOf(const p::Message &m) {
   return std::visit(

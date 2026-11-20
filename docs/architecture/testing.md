@@ -327,6 +327,37 @@ NAME:TYPE[:SEATS]` (driven, as `--vehicle`), `--look-piece NAME:TYPE`
   `tandem-peer mods PATH` prints what tandem makes of a game folder's mods
   (names and contents) or of a list of file names (`tests/data/mods-sample.tsv`).
 
+## Busy machines
+
+The loopback and session tests run real endpoints against the wall clock,
+and they used to fail now and then on a loaded machine (a build beside
+them, three test runs at once, anya at load ~24: a join that took longer
+than the test's 5 s, `budget_test`; `peer-regions` and loopback cases the
+same), then pass on a rerun. Since 2026-11-19:
+
+- **Waits for a state stretch** (`tests/slowdown.hpp`): `test::Patience
+(limit)` is the limit times `test::Slowdown()`, the machine's load per
+  core (`/proc/loadavg`, at least 1) or
+  `TANDEM_TEST_SLOWDOWN=F` (1 to 20), whichever is larger, read at each
+  wait (a build next door starts and stops). Every test's
+  pump helper ("until the guest is joined, at most 3 s") goes through it,
+  and the waits of the pumps that also pace frames. A wait ends as soon as
+  its state is reached, so the longer bound costs nothing when the test
+  passes; what it checks is unchanged.
+- **Fixed windows do not**: a window that checks something does _not_
+  happen, or paces frames, keeps its length when it calls a pump that does
+  not stretch (`relay_test.cpp`'s `Pump(…, false)`), or stretches only
+  where a longer window checks the same thing (a helper's "nothing more
+  arrived in 200 ms").
+- `tests/relay_loopback.sh` waits up to 15 s for each line it expects.
+- **Ports apart per run** (`tests/ports.hpp`): each test binary starts its
+  ports (41000 to 61000) at a place spread from its process id, and skips
+  a port someone holds. Before, each process had 50 ports from
+  `41000 + (pid % 400) * 50`: runs started together got consecutive ids,
+  and the first one past its 50 ports bound the next one's (three runs of
+  the loopback suites at once failed the same seven region cases each
+  time).
+
 ## Driving the game and the builds
 
 - `tools/scenario.sh` deploys first. Scripts alone would be hot-reloaded
@@ -381,8 +412,11 @@ C++ builds (`AGENTS.md`, Git).
 - **Jobs:** `go` (relay and pilot: vet, race tests), `kubernetes` (the
   kustomize base and overlays, kubeconform), `docs, natives, strings`
   (`tools/docs-check.py links`, `check-natives.py`, `check-strings.py`),
-  `core tests (Linux)` (`task test` with GCC 16, the devenv's: the tests'
-  seeded links are measured with its libstdc++) and `plugin (Windows,
+  `core build (Linux)` (`task build:linux` with GCC 16, the devenv's: the
+  tests' seeded links are measured with its libstdc++), then `core tests`
+  in four jobs side by side on its binaries (`tandem-tests` in three
+  slices, `--order-by=name --first/--last`; the scripts' suites), and
+  `plugin (Windows,
 clang-cl)` (`task build:plugin`: Ubuntu's LLVM 20, the MSVC CRT and
   Windows SDK 10.0.22621 from xwin 0.9.0, cached; `tandem.dll` and
   `tandem.pdb` are uploaded as the run's artifact `tandem-<commit>`).

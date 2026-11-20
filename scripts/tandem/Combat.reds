@@ -46,10 +46,17 @@ public abstract class TandemCombat {
   }
 
   // A hit on a remote player's puppet whose target's side is that player's
-  // game's (every stage of it is skipped here): on the host, an NPC's; on
-  // any game, our V's under friendly fire (Outcomes.reds).
+  // game's (every stage of it is skipped here): an NPC's we run (any game,
+  // regions.md), the host's world's other than a proxy's (its devices,
+  // turrets); on any game, our V's under friendly fire (Outcomes.reds).
   public static func OnPuppet(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
-    return TandemCombat.PuppetPlayer(game, hitEvent.target) != 0u && (TandemNative.IsHost() || TandemOwn.Hit(game, hitEvent) || TandemOutcomes.IsOurHit(game, hitEvent));
+    return TandemCombat.PuppetPlayer(game, hitEvent.target) != 0u && (TandemCombat.OursToSend(game, hitEvent) || TandemOutcomes.IsOurHit(game, hitEvent));
+  }
+
+  // A hit whose attacker's side this game computes: an NPC we run, or (the
+  // host) anything of its world that is not a proxy of another game's NPC.
+  public static func OursToSend(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
+    return TandemOwn.Hit(game, hitEvent) || (TandemNative.IsHost() && !TandemOwn.ProxyHit(game, hitEvent));
   }
 
   // A hit someone else's game computed the attacker's side of, run on our
@@ -254,12 +261,12 @@ public abstract class TandemCombat {
 @wrapMethod(DamageSystem)
 private final func DealDamages(hitEvent: ref<gameHitEvent>) {
   let game = GetGameInstance();
-  // A remote player's puppet never takes damage here: the host sends an
-  // NPC's hit to that player's game, any game its own V's hits under
+  // A remote player's puppet never takes damage here: an NPC's owner sends
+  // its hit to that player's game, any game its own V's hits under
   // friendly fire (Outcomes.reds); that game applies it to its V.
   let victim = TandemCombat.PuppetPlayer(game, hitEvent.target);
   if victim != 0u {
-    if (TandemNative.IsHost() || TandemOwn.Hit(game, hitEvent)) && TandemCombat.ForwardsToPlayer(hitEvent, game) {
+    if TandemCombat.OursToSend(game, hitEvent) && TandemCombat.ForwardsToPlayer(hitEvent, game) {
       TandemCombat.SendPlayerHit(game, victim, hitEvent, this.GetArmorPenetrationValue(hitEvent.attackData.GetWeapon(), hitEvent));
       // Our companions stand by that V (Reactions.reds).
       TandemReactions.RallyCompanions(game, hitEvent.attackData.GetInstigator(), hitEvent.target);
@@ -373,8 +380,9 @@ private final func ProcessInstantKill(hitEvent: ref<gameHitEvent>) {
 // frame after the hit, so they are caught here, not in the damage pipeline.
 @wrapMethod(NPCPuppet)
 protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Bool {
-  // Host: a guest's one-punch slow motion stays theirs, and a V's way out
-  // of combat lets only that V go (Outcomes.reds, Stealth.reds: the Relic).
+  // The NPC's owner: another V's one-punch slow motion stays theirs, and a
+  // V's way out of combat lets only that V go (Outcomes.reds, Stealth.reds:
+  // the Relic).
   if TandemOutcomes.IsGuestsOnePunch(this, evt) {
     let outcomes = TandemOutcomes.Of(this.GetGame());
     if IsDefined(outcomes) {
@@ -396,14 +404,14 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
     // The Relic's arm attacks mark their target with no instigator
     // (Outcomes.reds IsRelicMark): ours all the same, and on a proxy our
     // hit has killed already too (the marks act on the dead).
-    let relic = !TandemNative.IsHost() && TandemOutcomes.IsRelicMark(evt.staticData.GetID());
+    let relic = TandemOutcomes.IsRelicMark(evt.staticData.GetID()) && TandemOwn.IsProxy(this.GetGame(), this.GetEntityID());
     if IsDefined(player) && (evt.instigatorEntityID == player.GetEntityID() || relic) {
       let npc = relic ? TandemOutcomes.ProxyEvenDead(this.GetGame(), this) : TandemCombat.ProxyNpc(this.GetGame(), this);
       if npc != 0u {
         let ids: array<TweakDBID>;
         ArrayPush(ids, evt.staticData.GetID());
         TandemNative.SendNpcEffect(npc, ids);
-        TandemNative.LogDebug(s"combat: status effect \(TDBID.ToStringDEBUG(evt.staticData.GetID())) on proxy \(npc) sent to the host");
+        TandemNative.LogDebug(s"combat: status effect \(TDBID.ToStringDEBUG(evt.staticData.GetID())) on proxy \(npc) sent to its owner");
       }
     }
   }
@@ -461,8 +469,8 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   if IsDefined(outcomes) {
     outcomes.Forget(hitEvent);
   }
-  // Guest: an NPC's attack on our V we blocked or parried: the host's NPC
-  // recoils (Outcomes.reds).
+  // A proxy's attack on our V we blocked or parried: the NPC recoils in its
+  // owner's game (Outcomes.reds).
   TandemOutcomes.ReportDefence(game, hitEvent);
   let system = TandemCombat.System(game);
   if IsDefined(system) && system.IsForwardedHit(hitEvent) {

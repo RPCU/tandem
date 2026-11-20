@@ -2,6 +2,7 @@
 // part", the first answer to a call, and the story path through real
 // endpoints over loopback UDP.
 
+#include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/story.hpp"
 
@@ -25,7 +26,7 @@ std::uint16_t NextPort() {
 bool Pump(std::vector<Endpoint *> endpoints,
           const std::function<bool(std::size_t, const std::vector<SessionEvent> &)> &done,
           std::chrono::milliseconds limit = 2s) {
-  const auto deadline = std::chrono::steady_clock::now() + limit;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(limit);
   bool finished = false;
   while (!finished && std::chrono::steady_clock::now() < deadline)
     for (std::size_t i = 0; i < endpoints.size(); ++i)

@@ -3,6 +3,7 @@
 // UDP through a host: who hears what, stamped by the host, held to a rate,
 // and nothing left behind by a player who vanishes.
 
+#include "slowdown.hpp"
 #include "tandem/comms.hpp"
 #include "tandem/endpoint.hpp"
 
@@ -386,7 +387,7 @@ struct Heard {
 void Run(const std::vector<Endpoint *> &endpoints, std::vector<Heard> &heard,
          const std::function<bool()> &done) {
   heard.resize(endpoints.size());
-  const auto cap = std::chrono::steady_clock::now() + 5s;
+  const auto cap = std::chrono::steady_clock::now() + test::Patience(5s);
   std::optional<std::chrono::steady_clock::time_point> settled;
   while (!settled || std::chrono::steady_clock::now() < *settled) {
     if (!settled && (done() || std::chrono::steady_clock::now() >= cap))

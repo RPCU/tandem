@@ -57,7 +57,7 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 
 Run what your change can break before saying it works. The C++ builds and
 tests run in **CI** (`.github/workflows/ci.yaml`, on every push and pull
-request): `core tests (Linux)` is `task test`, `plugin (Windows, clang-cl)`
+request): `core build (Linux)` and the `core tests` jobs are `task test`, `plugin (Windows, clang-cl)`
 is `task build:plugin` (its `tandem.dll` and `.pdb` are the run's
 artifact). Do not run them on the laptop (it runs out of memory); push the
 branch and read the run (Git, below). Locally, the cheap ones:

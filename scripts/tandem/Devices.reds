@@ -723,6 +723,12 @@ public class TandemDevices extends ScriptableSystem {
   // Guest: the host's word on a device, loaded here or not.
   private func OnHostWord(event: TandemDeviceEvent, now: Float) -> Void {
     let device = this.Track(event.entity, event.cls);
+    // A partner's quickhack on it (the bits it turned on since the host's
+    // last word, or our last look): its indicator while we are linked
+    // (Comms.reds). A record (a join, a resync) is no news.
+    if !event.quiet {
+      TandemCommsNative.PartnerDevice(event.entity, event.player, device.known ? device.wantFlags : device.flags, event.flags);
+    }
     device.known = true;
     device.stale = false;
     device.wantStatus = event.status;
@@ -801,6 +807,8 @@ public class TandemDevices extends ScriptableSystem {
       device.value = TandemDevices.ValueOf(ps);
     }
     device.by = event.player;
+    // A guest's quickhack on it: its indicator while we are linked (Comms.reds).
+    TandemCommsNative.PartnerDevice(event.entity, event.player, device.flags, event.flags);
     // The game handles the actions on its next frames: answered then. An
     // explosion takes its time to go off (its fuse, its chain).
     let blast = TandemDevices.Has(event.flags, TandemDevices.BitExploded()) && !TandemDevices.Has(device.flags, TandemDevices.BitExploded());

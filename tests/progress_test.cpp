@@ -3,6 +3,7 @@
 // saves, and the levels over a real session (loopback UDP).
 
 #include "ports.hpp"
+#include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/progress.hpp"
 #include "tandem/vehicle.hpp"
@@ -262,7 +263,7 @@ using test::NextPort;
 bool Pump(std::vector<Endpoint *> endpoints,
           const std::function<bool(std::size_t, const std::vector<SessionEvent> &)> &done,
           std::chrono::milliseconds limit = 3s) {
-  const auto deadline = std::chrono::steady_clock::now() + limit;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(limit);
   bool finished = false;
   while (!finished && std::chrono::steady_clock::now() < deadline)
     for (std::size_t i = 0; i < endpoints.size(); ++i)

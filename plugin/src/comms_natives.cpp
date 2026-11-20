@@ -87,6 +87,21 @@ struct TandemCommsNative : Red::IScriptable {
                             bool applied, float seconds) {
     Comms::Get().PartnerEffect(npc, player, effect.value, applied, seconds, net::NowUs());
   }
+  // A device another player changed, as Devices.reds learns it (host: a
+  // guest's request; guest: the host's live word): its state bits before
+  // and after. A quickhack on it shows while linked.
+  static void PartnerDevice(Red::EntityID entity, std::uint32_t player, std::int32_t before,
+                            std::int32_t after) {
+    // No program crosses games for a device: the icons of what the bits say
+    // (the distraction is the one the game's own malfunction uses).
+    static const comms::DevicePrograms kPrograms{
+        .glitch = Red::TweakDBID("DeviceAction.MalfunctionClassHack").value};
+    const auto bits = [](std::int32_t flags) {
+      return static_cast<std::uint16_t>(flags & proto::kDeviceStateBits);
+    };
+    Comms::Get().PartnerDevice(entity.hash, player, bits(before), bits(after), kPrograms,
+                               net::NowUs());
+  }
 
   // Our ping (kind: proto::MarkKind 1..6) at a target (a shared NPC, a
   // player, a placed entity; all 0: a place): 0 not sent, 1 marked, 2 made a
@@ -169,6 +184,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemCommsNative, "TandemCommsNative", {
   RTTI_METHOD(ClearTarget);
   RTTI_METHOD(PartnerUpload);
   RTTI_METHOD(PartnerEffect);
+  RTTI_METHOD(PartnerDevice);
   RTTI_METHOD(Tag);
   RTTI_METHOD(SetLink);
   RTTI_METHOD(LinkState);

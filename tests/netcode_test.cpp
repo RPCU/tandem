@@ -3,6 +3,7 @@
 // gates, and the traffic counters.
 
 #include "motion.hpp"
+#include "slowdown.hpp"
 
 #include "tandem/endpoint.hpp"
 #include "tandem/lagcomp.hpp"
@@ -218,7 +219,8 @@ TEST_CASE("a session counts its traffic by message, channel and direction") {
     }
     return done();
   };
-  REQUIRE(pump(5s, [&] { return guest->IsJoined() && host->Players().size() == 2; }));
+  REQUIRE(
+      pump(test::Patience(5s), [&] { return guest->IsJoined() && host->Players().size() == 2; }));
   const auto before = guest->Traffic();
   for (int i = 0; i < 30; ++i) {
     guest->SendLocalState({.position = {static_cast<float>(i), 0.f, 0.f}});

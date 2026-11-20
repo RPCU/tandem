@@ -101,4 +101,10 @@ public abstract class TandemOwn {
     let from = hitEvent.attackData.GetInstigator();
     return IsDefined(from) && TandemOwn.Entity(game, from.GetEntityID());
   }
+
+  // A hit dealt by a proxy (its attacker's side is its owner's).
+  public static func ProxyHit(game: GameInstance, hitEvent: ref<gameHitEvent>) -> Bool {
+    let from = hitEvent.attackData.GetInstigator();
+    return IsDefined(from) && TandemOwn.IsProxy(game, from.GetEntityID());
+  }
 }

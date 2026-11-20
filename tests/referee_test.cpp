@@ -544,7 +544,10 @@ TEST_CASE("referee: every message has its speaker, and the other side may not sa
   const auto message = [](std::size_t index) {
     return [&]<std::size_t... I>(std::index_sequence<I...>) {
       proto::Message out;
-      ((index == I ? (out = proto::Message(std::in_place_index<I>), 0) : 0), ...);
+      ((index == I
+            ? (out = proto::Message(std::variant_alternative_t<I, proto::MessageVariant>{}), 0)
+            : 0),
+       ...);
       return out;
     }(std::make_index_sequence<kinds>{});
   };

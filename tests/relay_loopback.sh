@@ -25,11 +25,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Waits up to 5 s for sed's EXPRESSION to print something from FILE; prints
+# Waits for sed's EXPRESSION to print something from FILE (up to 15 s: a
+# bound for a busy machine, it ends as soon as the line is there); prints
 # its first line.
 wait_for() {
   local file=$1 expression=$2 found=""
-  for _ in $(seq 50); do
+  for _ in $(seq 150); do
     found=$(sed -n "$expression" "$file" | head -n 1)
     [ -n "$found" ] && break
     sleep 0.1
@@ -46,7 +47,10 @@ replica0=127.0.0.1:$base replica1=127.0.0.1:$((base + 1)) front=127.0.0.1:$((bas
 peers=$replica0,$replica1
 # Open, as by default (hosts with no token, each with a proof of work), one
 # token for the kept-code case, and more sessions and code lookups per
-# source than the tests make from 127.0.0.1.
+# source than the tests make from 127.0.0.1. A drain of a second: the
+# cleanup's SIGTERM would otherwise wait out the sessions left behind (the
+# 60 s default, the bulk of this test's time before 2026-11-19: 82 s, now
+# under 10).
 "$work/tandem-relay" token >"$work/host-tokens"
 for shard in 0 1; do
   udp=$replica0 extra=(--front "$front")
@@ -55,7 +59,8 @@ for shard in 0 1; do
   fi
   "$work/tandem-relay" serve --host-tokens "$work/host-tokens" --udp "$udp" --http 127.0.0.1:0 \
     --peers "$peers" --shard "$shard" "${extra[@]}" \
-    --code-lookup-burst 50 --max-sessions-per-source 64 --expect-public-clients=false >"$work/relay$shard.log" 2>&1 &
+    --code-lookup-burst 50 --max-sessions-per-source 64 --drain-timeout 1s \
+    --expect-public-clients=false >"$work/relay$shard.log" 2>&1 &
   up=$(wait_for "$work/relay$shard.log" 's/.*"msg":"relay up".*"udp":"\([^"]*\)".*/\1/p')
   if [ -z "$up" ]; then
     echo "relay $shard did not start:" >&2
@@ -92,7 +97,8 @@ echo "tandem-peer hosted at the entrance with no token (a proof of work) and joi
 (cd "$source" && "$go" build -o "$work/proxyv2-forward" ./internal/proxyfwd/cmd)
 proxied=127.0.0.1:$((base + 3))
 "$work/tandem-relay" serve --allow-any-host --udp "$proxied" --http 127.0.0.1:0 \
-  --proxy-protocol --trusted-proxies 127.0.0.2/32 >"$work/proxied.log" 2>&1 &
+  --proxy-protocol --trusted-proxies 127.0.0.2/32 --drain-timeout 1s \
+  --expect-public-clients=false >"$work/proxied.log" 2>&1 &
 if [ -z "$(wait_for "$work/proxied.log" 's/.*"msg":"relay up".*"proxy_protocol":\(true\).*/\1/p')" ]; then
   echo "the proxied relay did not start:" >&2
   cat "$work/proxied.log" >&2

@@ -103,7 +103,8 @@ public class TandemStealth {
   private let m_sentFlags: Int32;
   private let m_sentVisibility: Float;
   private let m_sentCamo: TweakDBID;
-  // Guest: our V cloaked (fully blocking) while in combat, not out of it yet.
+  // Our V cloaked (fully blocking) while in combat with proxies around, not
+  // out of it yet.
   private let m_cloakedInCombat: Bool;
   private let m_lastSample: Float;
   // Each remote player's stealth on their puppet. By player, not by index:
@@ -114,6 +115,13 @@ public class TandemStealth {
   // Host: noises heard since the last log line.
   private let m_noises: Int32;
   private let m_noiseLog: Float;
+
+  // This game shows other games' NPCs (proxies) at the moment.
+  public static func ShowsProxies(game: GameInstance) -> Bool {
+    let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
+    let npcs = IsDefined(system) ? system.NpcsSync() : null;
+    return IsDefined(npcs) && npcs.ProxyCount() > 0;
+  }
 
   public static func Of(game: GameInstance) -> ref<TandemStealth> {
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
@@ -268,7 +276,7 @@ public class TandemStealth {
     if this.m_cloakedInCombat && !player.IsInCombat() {
       this.m_cloakedInCombat = false;
       GameObject.PlaySoundEvent(player, n"ui_gmpl_stealth_avoid_combat");
-      TandemNative.Log("stealth: emergency cloaking: the host's NPCs lost us, out of combat");
+      TandemNative.Log("stealth: emergency cloaking: the NPCs lost us, out of combat");
     }
     if this.m_cloakedInCombat && !player.IsInvisible() {
       this.m_cloakedInCombat = false;
@@ -296,11 +304,13 @@ public class TandemStealth {
     if this.m_sent && flags == this.m_sentFlags && AbsF(visibility - this.m_sentVisibility) < 0.01 && camo == this.m_sentCamo {
       return;
     }
-    // Guest, the Relic's Emergency Cloaking: vanilla plays its "combat
-    // avoided" sound from the NPCs our V's tracker held (PlayerPuppet
-    // .OnActivateOpticalCamoToExitCombatEvent, final.reds 44034); proxies
-    // are no threats there, so it is played when the host's NPCs let go.
-    if !TandemNative.IsHost() && (flags & 2) != 0 && (this.m_sentFlags & 2) == 0 {
+    // The Relic's Emergency Cloaking, on a game that shows other games' NPCs
+    // (a guest, or a host linked with a guest that owns NPCs, regions.md):
+    // vanilla plays its "combat avoided" sound from the NPCs our V's tracker
+    // held (PlayerPuppet.OnActivateOpticalCamoToExitCombatEvent, final.reds
+    // 44034); proxies are no threats there, so it is played when their
+    // owners' NPCs let go.
+    if (flags & 2) != 0 && (this.m_sentFlags & 2) == 0 && TandemStealth.ShowsProxies(player.GetGame()) {
       this.m_cloakedInCombat = player.IsInCombat();
     }
     TandemNative.SendStealth(flags, visibility, camo);
@@ -431,7 +441,7 @@ public class TandemStealth {
 
   public static func OthersHunted(npc: ref<NPCPuppet>, evt: ref<ApplyStatusEffectEvent>) -> array<wref<GameObject>> {
     let others: array<wref<GameObject>>;
-    if !TandemNative.IsHost() || !IsDefined(evt.staticData) || !TandemStealth.IsWayOut(evt.staticData.GetID()) {
+    if !IsDefined(evt.staticData) || !TandemStealth.IsWayOut(evt.staticData.GetID()) || !TandemOwn.Entity(npc.GetGame(), npc.GetEntityID()) {
       return others;
     }
     let system = TandemCombat.System(npc.GetGame());

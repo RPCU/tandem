@@ -102,7 +102,7 @@ void Comms::Queue(const std::vector<comms::HackChange> &changes) {
                                 : change.kind == K::ShowEffect ? CommsEvent::Kind::ShowEffect
                                                                : CommsEvent::Kind::HideEffect,
                         .player = change.player,
-                        .target = {proto::TargetKind::Npc, change.npc},
+                        .target = change.target,
                         .seconds = change.seconds,
                         .record = change.action,
                         .effect = change.effect});
@@ -125,6 +125,18 @@ void Comms::PartnerEffect(proto::NpcId npc, proto::PlayerId player, std::uint64_
   if ((applied && player == m_you) || m_you == proto::kNoPlayer)
     return;
   Queue(m_hacks.Effect(npc, player, effect, applied, seconds, nowUs));
+}
+
+void Comms::PartnerDevice(std::uint64_t entity, proto::PlayerId player, std::uint16_t before,
+                          std::uint16_t after, const comms::DevicePrograms &programs,
+                          std::uint64_t nowUs) {
+  std::lock_guard _(m_lock);
+  m_nowUs = nowUs;
+  if (m_you == proto::kNoPlayer || entity == 0)
+    return;
+  // Ours are the game's own: only what went off is hidden.
+  Queue(m_hacks.Device(entity, player == m_you ? proto::kNoPlayer : player, before, after, programs,
+                       nowUs));
 }
 
 void Comms::Apply(const proto::Message &message, std::uint64_t nowUs) {

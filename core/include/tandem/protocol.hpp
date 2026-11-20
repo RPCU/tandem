@@ -1778,12 +1778,13 @@ struct Rules {
   friend bool operator==(const Rules &, const Rules &) = default;
 };
 
-// A host NPC's attack on our V, run on our game (a PlayerHit, a shot fired
-// from its proxy), was blocked or parried there by our rules: the host's
-// NPC gets what vanilla's attacker gets then (DamageManager
-// .ProcessDefensiveState: the "attack blocked" or "attack parried" animation
-// event, AI event and signal: its stagger, its next move). Guest to host,
-// never relayed; behind the epoch fence.
+// A shared NPC's attack on our V, run on our game (a PlayerHit, a shot
+// fired from its proxy), was blocked or parried there by our rules: the NPC
+// gets, in its owner's game, what vanilla's attacker gets then
+// (DamageManager .ProcessDefensiveState: the "attack blocked" or "attack
+// parried" animation event, AI event and signal: its stagger, its next
+// move). To the NPC's owner (the host, or a guest for an NPC of its own:
+// regions.md), a guest's through the host; behind the epoch fence.
 enum class DefendKind : std::uint8_t { Blocked = 1, Parried = 2 };
 struct Defended {
   PlayerId player{}; // who defended: set by the host from the connection
@@ -1917,10 +1918,12 @@ struct SessionLevel { // Event channel
   friend bool operator==(const SessionLevel &, const SessionLevel &) = default;
 };
 
-// A host NPC's power level as the host's game has it, scaling included: the
-// guests' proxies take the same, so both games compute a hit against the
-// same health, armour and damage. Host to everyone, when it is first known
-// and when it changes; kept for late joiners until the NPC is gone.
+// A shared NPC's power level as its owner's game has it, scaling included:
+// the proxies take the same, so every game computes a hit against the same
+// health, armour and damage. The owner (the host, or a guest for an NPC of
+// its own: regions.md) to the games that show it, through the host, when it
+// is first known and when it changes; kept for late joiners until the NPC
+// is gone.
 struct NpcLevel { // Event channel
   NpcId npc{};
   float level{};

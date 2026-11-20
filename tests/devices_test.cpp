@@ -4,6 +4,7 @@
 // what its devices are and applies what it hears.
 
 #include "ports.hpp"
+#include "slowdown.hpp"
 #include "tandem/devices.hpp"
 #include "tandem/endpoint.hpp"
 
@@ -37,7 +38,7 @@ proto::DeviceUse UseDoor(std::uint16_t flags) {
 bool Pump(std::vector<Endpoint *> endpoints,
           const std::function<bool(std::size_t, const std::vector<SessionEvent> &)> &done,
           std::chrono::milliseconds limit = 3s) {
-  const auto deadline = std::chrono::steady_clock::now() + limit;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(limit);
   bool finished = false;
   while (!finished && std::chrono::steady_clock::now() < deadline)
     for (std::size_t i = 0; i < endpoints.size(); ++i)

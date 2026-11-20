@@ -123,7 +123,7 @@ public class TandemThrows {
     return IsDefined(owner) && IsDefined(player) && owner.GetEntityID() == player.GetEntityID();
   }
 
-  // The session's number for a target: a host NPC (guest: its proxy).
+  // The session's number for a target: a shared NPC, ours or a proxy.
   public static func NpcOf(game: GameInstance, target: wref<GameObject>) -> Uint32 {
     if !IsDefined(target) {
       return 0u;
@@ -132,7 +132,7 @@ public class TandemThrows {
     if !IsDefined(system) {
       return 0u;
     }
-    return TandemNative.IsHost() ? system.SharedNpcOf(target.GetEntityID()) : system.NpcOfProxy(target.GetEntityID());
+    return system.SharedNpcOf(target.GetEntityID());
   }
 
   // ...or a V: ours (TandemNative.You()), or another's puppet.
@@ -642,9 +642,10 @@ protected cb func OnShoot(eventData: ref<gameprojectileShootEvent>) -> Bool {
       target = eventData.params.trackedTargetComponent.GetEntity() as GameObject;
     }
     throws.OnOurThrow(this, TandemThrows.GrenadeKind(), flags, item, eventData.startPoint, eventData.startVelocity, target);
-  } else if TandemNative.IsHost() {
+  } else {
+    // An NPC we run (the host's, or a guest's own: regions.md).
     let npc = TandemThrows.NpcOf(this.GetGame(), eventData.owner);
-    if npc != 0u {
+    if npc != 0u && TandemOwn.Npc(this.GetGame(), npc) {
       throws.OnNpcThrow(this, npc, item, eventData.startPoint, eventData.startVelocity, flags);
     }
   }

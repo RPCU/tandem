@@ -2,6 +2,7 @@
 
 #include "ports.hpp"
 #include "referee_expect.hpp"
+#include "slowdown.hpp"
 #include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/scaling.hpp"
@@ -34,7 +35,7 @@ template <class E> bool Has(const std::vector<SessionEvent> &events) {
 bool Pump(std::vector<Endpoint *> endpoints,
           const std::function<bool(std::size_t, const std::vector<SessionEvent> &)> &done,
           std::chrono::milliseconds wait = 1ms, std::chrono::milliseconds limit = 2s) {
-  const auto deadline = std::chrono::steady_clock::now() + limit;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(limit);
   bool finished = false;
   while (!finished && std::chrono::steady_clock::now() < deadline) {
     for (std::size_t i = 0; i < endpoints.size(); ++i)
@@ -549,7 +550,7 @@ TEST_CASE("a guest cannot pause or resume in someone else's name") {
 
   proto::PlayerId rawId = proto::kNoPlayer;
   std::vector<proto::Pause> atHost;
-  const auto deadline = std::chrono::steady_clock::now() + 2s;
+  const auto deadline = std::chrono::steady_clock::now() + test::Patience(2s);
   bool sent = false;
   while (atHost.empty() && std::chrono::steady_clock::now() < deadline) {
     for (const auto &event : raw->Poll(1ms)) {

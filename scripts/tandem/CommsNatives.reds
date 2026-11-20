@@ -48,6 +48,10 @@ public native class TandemCommsNative extends IScriptable {
   // left) or removed. Shown while linked.
   public static native func PartnerUpload(npc: Uint32, player: Uint32, action: TweakDBID, step: Int32, seconds: Float)
   public static native func PartnerEffect(npc: Uint32, player: Uint32, effect: TweakDBID, applied: Bool, seconds: Float)
+  // Another player changed a device (Devices.reds: host, a guest's request;
+  // guest, the host's live word): its state bits before and after. A
+  // quickhack on it shows while linked.
+  public static native func PartnerDevice(entity: EntityID, player: Uint32, before: Int32, after: Int32)
   // Our scan tag (reason 0) or reveal (1) of a shared NPC or a static
   // entity, to linked players.
   public static native func Tag(reason: Int32, on: Bool, seconds: Int32, npc: Uint32, entity: EntityID)

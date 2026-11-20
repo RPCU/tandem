@@ -91,11 +91,11 @@ struct Session::Impl {
   // back off exponentially: a dead peer took 5 to 30 s to go. Poll() drops a
   // silent one at `timeoutMs`; ENet's stays as a backstop. A peer reached
   // through the relay outlives a relay that went silent and comes back
-  // (RelayLink::kHoldMs): its backstop is past the hold.
+  // (RelayLink::HoldMs): its backstop is past the hold.
   void Watch(ENetPeer *peer) const {
     enet_peer_ping_interval(peer, std::max<enet_uint32>(timeoutMs / 10, 1));
     if (Relayed(peer)) {
-      const auto backstop = RelayLink::kHoldMs + 2 * timeoutMs;
+      const auto backstop = relay->HoldMs() + 2 * timeoutMs;
       enet_peer_timeout(peer, 0, backstop, backstop);
     } else {
       enet_peer_timeout(peer, 0, timeoutMs, 2 * timeoutMs);

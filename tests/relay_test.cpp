@@ -4,6 +4,7 @@
 
 #include "ports.hpp"
 #include "sha256.hpp"
+#include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 
 #include <doctest/doctest.h>
@@ -29,12 +30,24 @@ namespace {
 using test::NextPort;
 
 constexpr Timing kFast{.timeout = 1000ms, .takeover = 400ms};
+// The relay link's waits, shortened as kFast shortens the session's (the
+// game's: net::RelayTimes{}): what the cases below wait out is the same
+// sequence of events, sooner.
+constexpr net::RelayTimes kFastRelay{.chooseMs = 300,
+                                     .probeMs = 300,
+                                     .idleProbeMs = 1000,
+                                     .lostAfterProbeMs = 500,
+                                     .holdMs = 8000,
+                                     .punchMs = 1000,
+                                     .directSilentMs = 500};
 
-// Runs every endpoint until `done` holds or `limit` passes.
+// Runs every endpoint until `done` holds or `limit` passes (stretched on a
+// busy machine, test::Patience: a wait for a state).
 bool Pump(std::vector<Endpoint *> endpoints,
           const std::function<bool(std::size_t, const std::vector<SessionEvent> &)> &done,
-          std::chrono::milliseconds limit = 3s) {
-  const auto deadline = std::chrono::steady_clock::now() + limit;
+          std::chrono::milliseconds limit = 3s, bool stretch = true) {
+  const auto deadline =
+      std::chrono::steady_clock::now() + (stretch ? test::Patience(limit) : limit);
   bool finished = false;
   while (!finished && std::chrono::steady_clock::now() < deadline) {
     for (std::size_t i = 0; i < endpoints.size(); ++i)
@@ -363,7 +376,7 @@ TEST_SUITE("relay") {
     CHECK(guest->ThroughRelay());
     const auto took = std::chrono::duration<double>(std::chrono::steady_clock::now() - start);
     MESSAGE("in the session through the relay after " << took.count() << " s");
-    CHECK(took < 2s);
+    CHECK(took < test::Patience(2s));
   }
 
   TEST_CASE("direct and relayed guests share a session; the secret joins again") {
@@ -454,20 +467,24 @@ TEST_SUITE("relay") {
     std::this_thread::sleep_for(300ms);
     std::string error;
     // All through the relay (a direct path would carry them over the gap).
+    // The session's timeout 1 s (kFast), the link's hold 8 s (kFastRelay):
+    // the game's are 5 s and 20 s.
     auto options = relay.Options();
     options.direct = false;
-    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, options);
+    options.times = kFastRelay;
+    auto host = Endpoint::Host({"host"}, NextPort(), error, kFast, options);
     REQUIRE_MESSAGE(host, error);
     auto byCode = options;
     byCode.code = CodeOf(*host, 10s);
     REQUIRE_FALSE(byCode.code.empty());
-    auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error);
+    auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error, kFast);
     REQUIRE_MESSAGE(guest, error);
     REQUIRE(AllJoined({host.get(), guest.get()}));
     const auto you = guest->You();
 
-    // Down for longer than the session's timeout (5 s), as a pod being
-    // replaced: nobody leaves.
+    // Down for longer than the session's timeout (2.5 times it), as a pod
+    // being replaced: nobody leaves. A fixed window, never stretched (the
+    // hold must outlast it).
     relay.Kill();
     bool ended = false, left = false;
     const auto watch = [&](std::size_t i, const std::vector<SessionEvent> &events) {
@@ -477,7 +494,7 @@ TEST_SUITE("relay") {
       }
       return ended || left;
     };
-    Pump({host.get(), guest.get()}, watch, 8s);
+    Pump({host.get(), guest.get()}, watch, 2500ms, false);
     REQUIRE_FALSE(ended);
     REQUIRE_FALSE(left);
     CHECK(host->Relay()->state == net::RelayStatus::State::Connecting);
@@ -505,7 +522,7 @@ TEST_SUITE("relay") {
 
     // The code players were given still leads into the session.
     auto late = byCode;
-    auto third = Endpoint::Join({"late"}, JoinTarget{.relay = late}, error);
+    auto third = Endpoint::Join({"late"}, JoinTarget{.relay = late}, error, kFast);
     REQUIRE_MESSAGE(third, error);
     REQUIRE(AllJoined({host.get(), guest.get(), third.get()}));
     CHECK(host->Relay()->code == byCode.code);
@@ -514,9 +531,11 @@ TEST_SUITE("relay") {
   TEST_CASE("through the relay, host and guest find a direct path, and fall back to the relay") {
     NEEDS_RELAY(relay);
     std::string error;
-    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, relay);
+    auto quick = *relay;
+    quick.times = {.punchMs = kFastRelay.punchMs, .directSilentMs = kFastRelay.directSilentMs};
+    auto host = Endpoint::Host({"host"}, NextPort(), error, {}, quick);
     REQUIRE_MESSAGE(host, error);
-    auto byCode = *relay;
+    auto byCode = quick;
     byCode.code = CodeOf(*host);
     auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error);
     REQUIRE_MESSAGE(guest, error);
@@ -573,12 +592,14 @@ TEST_SUITE("relay") {
     auto host = Endpoint::Host({"host"}, NextPort(), error, {}, noDirect);
     REQUIRE_MESSAGE(host, error);
     auto byCode = *relay;
+    byCode.times = {.punchMs = kFastRelay.punchMs, .directSilentMs = kFastRelay.directSilentMs};
     byCode.code = CodeOf(*host);
     auto guest = Endpoint::Join({"guest"}, JoinTarget{.relay = byCode}, error);
     REQUIRE_MESSAGE(guest, error);
     REQUIRE(AllJoined({host.get(), guest.get()}));
 
-    // The guest punches for 3 s, unanswered; the session goes on meanwhile.
+    // The guest punches for its punch time (1 s here, the game's 3 s),
+    // unanswered; the session goes on meanwhile. A fixed window, past it.
     std::optional<proto::PlayerState> seen;
     bool ended = false;
     Pump(
@@ -592,7 +613,7 @@ TEST_SUITE("relay") {
           }
           return false;
         },
-        4s);
+        1500ms, false);
     CHECK_FALSE(ended);
     REQUIRE(seen);
     CHECK(guest->Relay()->direct == 0);
@@ -628,6 +649,7 @@ TEST_SUITE("relay") {
     // The first relay listed answers nothing: the host registers on the next.
     auto options = net::RelayOptions{.address = "127.0.0.1", .port = NextPort()};
     options.more = {AddressOf(fleet->replicas[1])};
+    options.times.chooseMs = kFastRelay.chooseMs;
     auto host = Endpoint::Host({"host"}, NextPort(), error, {}, options);
     REQUIRE_MESSAGE(host, error);
     const auto code = CodeOf(*host, 5s);

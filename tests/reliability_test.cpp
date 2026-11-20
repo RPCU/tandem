@@ -4,6 +4,7 @@
 // outage shorter than the timeout ridden out, a longer one ending the
 // session cleanly and a new join working once the link is back.
 
+#include "slowdown.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/shaping.hpp"
 
@@ -73,7 +74,7 @@ TEST_CASE("a large journal snapshot crosses a bad link whole, in fragments") {
   for (const std::size_t entries : {std::size_t{1000}, proto::kMaxJournalEntries}) {
     CAPTURE(entries);
     Pair pair(kWorst);
-    REQUIRE(pair.Pump(15s, [&] { return pair.Joined(); }));
+    REQUIRE(pair.Pump(test::Patience(15s), [&] { return pair.Joined(); }));
     const auto snapshot = Snapshot(entries);
     const auto bytes = proto::Encode(snapshot).size();
     const auto start = std::chrono::steady_clock::now();
@@ -85,7 +86,7 @@ TEST_CASE("a large journal snapshot crosses a bad link whole, in fragments") {
           return true;
       return false;
     };
-    REQUIRE(pair.Pump(30s, whole));
+    REQUIRE(pair.Pump(test::Patience(30s), whole));
     const auto took = std::chrono::duration<double>(std::chrono::steady_clock::now() - start);
     MESSAGE(entries, " entries (", bytes / 1024, " KiB, ", (bytes + 1023) / 1024,
             " fragments of 1 KiB or so) across 150 ms / 5 %: ", took.count(), " s");
@@ -103,7 +104,7 @@ TEST_CASE("a large journal snapshot crosses a bad link whole, in fragments") {
 TEST_CASE("a quiet session stays up on pings alone, over a lossy link") {
   const Timing timing{.timeout = 2'000ms, .takeover = 800ms};
   Pair pair({.latencyMs = 80, .jitterMs = 20, .loss = 0.05f, .burst = 3}, timing);
-  REQUIRE(pair.Pump(10s, [&] { return pair.Joined(); }));
+  REQUIRE(pair.Pump(test::Patience(10s), [&] { return pair.Joined(); }));
   pair.Pump(6s, [] { return false; }); // three timeouts with nothing to say
   CHECK_FALSE(pair.guestEnded);
   CHECK(pair.Joined());
@@ -113,7 +114,7 @@ TEST_CASE("an outage shorter than the timeout is ridden out; a longer one ends, 
           "again") {
   const Timing timing{.timeout = 2'000ms, .takeover = 800ms};
   Pair pair({.latencyMs = 30, .jitterMs = 10, .loss = 0.01f}, timing);
-  REQUIRE(pair.Pump(10s, [&] { return pair.Joined(); }));
+  REQUIRE(pair.Pump(test::Patience(10s), [&] { return pair.Joined(); }));
   const auto send = [&](int frames) {
     for (int i = 0; i < frames; ++i) {
       pair.guest->SendLocalState({.position = {static_cast<float>(i), 0.f, 0.f}});
@@ -134,10 +135,11 @@ TEST_CASE("an outage shorter than the timeout is ridden out; a longer one ends, 
   CHECK(pair.states > before + 10);
   // 3 s: longer than the timeout. Both sides end it on their own.
   pair.shaper->SetOutage(true);
-  REQUIRE(pair.Pump(6s, [&] { return pair.guestEnded && pair.host->Players().size() == 1; }));
+  REQUIRE(pair.Pump(test::Patience(6s),
+                    [&] { return pair.guestEnded && pair.host->Players().size() == 1; }));
   pair.shaper->SetOutage(false);
   // The game's net thread joins again (net_thread.cpp, every 5 s): a new
   // session, the player back in.
   pair.Join(timing);
-  CHECK(pair.Pump(10s, [&] { return pair.Joined(); }));
+  CHECK(pair.Pump(test::Patience(10s), [&] { return pair.Joined(); }));
 }
