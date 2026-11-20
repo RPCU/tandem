@@ -110,6 +110,7 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Menu-Invite` | Invite | Inviter | Coop.reds |
 | `Menu-Leave` | Leave session | Quitter la session | Coop.reds |
 | `Menu-EnterCode` | Enter a code or an address | Saisir un code ou une adresse | Coop.reds |
+| `Menu-JoinAddress` | Join by address | Rejoindre par adresse | Coop.reds |
 | `Menu-Back` | Back | Retour | Coop.reds |
 | `Menu-Report` | Write a bug report | Écrire un rapport de bug | Coop.reds |
 | `Popup-CoopOff` | Co-op is off | Coop désactivée | Coop.reds |
@@ -197,6 +198,12 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Popup-NeedsRelay` | Joining by code needs a relay: set one in the co-op settings | Rejoindre par code demande un relais : indiquez-le dans les paramètres coop | Coop.reds |
 | `Popup-EnterCode` | The host's join code (K7Q-2M9) or address (192.168.1.20, or 192.168.1.20:27450), as their Co-op menu shows it | Le code d'invitation de l'hôte (K7Q-2M9) ou son adresse (192.168.1.20, ou 192.168.1.20:27450), comme l'affiche son menu Coop | Coop.reds |
 | `Popup-NotATarget` | Not a join code or an address: {1} | Ni un code d'invitation ni une adresse : {1} | Coop.reds |
+| `Popup-JoinAddress` | The host's address on your network or VPN (Tailscale, NetBird...): host or host:port, port {1} if none. A direct connection, without the relay: the host's port must be open to you. Over the internet, a join code is easier. | L'adresse de l'hôte sur votre réseau ou votre VPN (Tailscale, NetBird...) : hôte ou hôte:port, port {1} par défaut. Une connexion directe, sans le relais : le port de l'hôte doit vous être ouvert. Par Internet, un code d'invitation est plus simple. | Coop.reds |
+| `Popup-JoinAddressLast` | Leave it empty to join {1} again. | Laissez vide pour rejoindre {1} de nouveau. | Coop.reds |
+| `Address-Empty` | Type the host's address (192.168.1.20, or 192.168.1.20:27450) | Saisissez l'adresse de l'hôte (192.168.1.20, ou 192.168.1.20:27450) | Coop.reds |
+| `Address-Port` | Not a port in {1}: 1 to 65535 after the colon | Port refusé dans {1} : 1 à 65535 après les deux-points | Coop.reds |
+| `Address-Name` | Not a host name or an IPv4 address: {1} | Ni un nom d'hôte ni une adresse IPv4 : {1} | Coop.reds |
+| `Address-Ipv6` | {1} is an IPv6 address: tandem connects over IPv4 only. Use the host's IPv4 address (Tailscale and NetBird give one, 100.x.y.z) | {1} est une adresse IPv6 : tandem se connecte en IPv4 seulement. Utilisez l'adresse IPv4 de l'hôte (Tailscale et NetBird en donnent une, 100.x.y.z) | Coop.reds |
 
 ### The session
 
@@ -495,6 +502,10 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Settings-Nameplates-Near` | close by | de près | Settings.reds |
 | `Settings-Nameplates-Always` | at any distance | à toute distance | Settings.reds |
 | `Settings-PartyHud` | Party list (linked partners' health) | Liste du groupe (santé des partenaires liés) | Settings.reds |
+| `Settings-Link` | Share scans and pings with | Partager analyses et signaux avec | Settings.reds |
+| `Settings-Link-Auto` | every partner | chaque partenaire | Settings.reds |
+| `Settings-Link-Ask` | partners you link with | les partenaires avec qui vous vous liez | Settings.reds |
+| `Settings-Pings` | Pings | Signaux | Settings.reds |
 | `Settings-Recorder` | Recorder | Enregistreur | Settings.reds |
 | `Settings-Relay` | Relay | Relais | Settings.reds |
 | `Settings-Story` | Story sync | Histoire partagée | Settings.reds |

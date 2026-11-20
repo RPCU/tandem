@@ -171,13 +171,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     runtime.codeSalt = runtime.config.codeSalt;
     runtime.config.commandFile = files.command;
     runtime.config.recentFile = files.recent;
-    tandem::plugin::Comms::Get().Configure(runtime.config.link == tandem::plugin::Config::Link::Auto
-                                               ? tandem::plugin::Comms::LinkDefault::Auto
-                                           : runtime.config.link ==
-                                                   tandem::plugin::Config::Link::Ask
-                                               ? tandem::plugin::Comms::LinkDefault::Ask
-                                               : tandem::plugin::Comms::LinkDefault::Off,
-                                           runtime.config.pings);
+    tandem::plugin::ConfigureComms(runtime.config);
     log::SetLevel(static_cast<log::Level>(runtime.config.logLevel));
     if (const auto text = Environment(tandem::instance::kPortVariable); !text.empty()) {
       // Digits are ASCII; anything else is refused by ParsePort.
