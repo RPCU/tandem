@@ -5,6 +5,11 @@
 #                              screen, Continue (latest save), confirm the mod
 #                              warning, wait until tandem reports a loaded game
 #   tools/game.sh stop         kill the game
+#   tools/game.sh launches [N] start the game N times (default 5; the role's
+#                              tandem.ini as it is), each until the save plays
+#                              or the game crashes, then kill it: "N launches,
+#                              0 crashes". The first thing to run after a
+#                              script or plugin change that touches wraps
 #   tools/game.sh shot NAME    screenshot to .cache/shots/NAME.png
 #   tools/game.sh key CODE...  press keys (Linux input codes: 57 Space, 28 Enter, 1 Esc)
 #   tools/game.sh hold SECONDS CODE...  hold keys down together, then release
@@ -142,13 +147,18 @@ stop() {
   fi
 }
 
+# Through the running Steam, in its session.
+launch() {
+  remote 'pid=$(pgrep -f "steam.sh" | head -1)
+    eval "$(tr "\0" "\n" < /proc/$pid/environ | grep -E "^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|SWAYSOCK)=" | sed "s/^/export /")"
+    nohup steam steam://rungameid/1091500 >/dev/null 2>&1 &'
+}
+
 start() {
   keep_pilot=1 stop
   local since
   since=$(remote "cd '$dir'; ls -t red4ext/logs/tandem-*.log 2>/dev/null | head -1")
-  remote 'pid=$(pgrep -f "steam.sh" | head -1)
-    eval "$(tr "\0" "\n" < /proc/$pid/environ | grep -E "^(DISPLAY|WAYLAND_DISPLAY|XDG_RUNTIME_DIR|DBUS_SESSION_BUS_ADDRESS|SWAYSOCK)=" | sed "s/^/export /")"
-    nohup steam steam://rungameid/1091500 >/dev/null 2>&1 &'
+  launch
   echo "launched, loading the latest save"
   # Scripts compile within a minute of launch; a compile error disables
   # every script, so stop at once instead of waiting for lines that will
@@ -189,6 +199,56 @@ start() {
     fi
   done
   echo "in game"
+}
+
+# The cheap crash check: N launches, each until tandem logs "playing" (the
+# save loaded and the world runs, then 20 s more) or the game crashes while
+# it starts or loads (REDGraph's "[crash] thread" line in
+# red4ext/logs/redgraph-*.log, or CrashReporter.exe), 240 s at most. It found
+# the heap corruption of 2026-11-20 (wraps on job threads while the save
+# loaded: 5 launches in 6 with them, 0 in 7 without). Load Begone passes the
+# menus; Space answers the loading screen's prompt.
+launches() {
+  local n=${1:-5} crashes=0 playing=0 neither=0 i result t0
+  for i in $(seq 1 "$n"); do
+    keep_pilot=1 stop >/dev/null
+    remote 'pkill -KILL -f "[C]rashReporter.exe"; sleep 3; true'
+    t0=$(remote 'date +%s')
+    launch
+    result=$(remote "cd '$dir/red4ext/logs' || exit 1; t0=$t0; "'
+      crashed() {
+        rg=$(find . -name "redgraph-*.log" -newermt "@$t0" | head -1)
+        { [ -n "$rg" ] && grep -q "\[crash\] thread" "$rg"; } || pgrep -f "[C]rashReporter.exe" >/dev/null
+      }
+      res=neither
+      for i in $(seq 1 120); do
+        sleep 2
+        if crashed; then res=crash; break; fi
+        tl=$(find . -name "tandem-*.log" -newermt "@$t0" | head -1)
+        [ -n "$tl" ] || continue
+        if grep -q "\] playing" "$tl"; then
+          sleep 20
+          if crashed; then res=crash; else res=playing; fi
+          break
+        fi
+        if [ $((i % 4)) -eq 0 ] && grep -q "in game" "$tl"; then
+          YDOTOOL_SOCKET=/run/ydotoold/socket ydotool key 57:1 57:0 >/dev/null 2>&1
+        fi
+      done
+      echo "$res after $(($(date +%s) - t0)) s"
+      [ "$res" = crash ] && [ -n "$rg" ] && grep -m3 "\[crash\]" "$rg" | cut -c1-200
+      true')
+    echo "launch $i: $result"
+    case $result in
+    crash*) crashes=$((crashes + 1)) ;;
+    playing*) playing=$((playing + 1)) ;;
+    *) neither=$((neither + 1)) ;;
+    esac
+  done
+  keep_pilot=1 stop >/dev/null
+  remote 'pkill -KILL -f "[C]rashReporter.exe"; true'
+  echo "$n launches, $crashes crashes ($playing playing, $neither neither within 240 s)"
+  [ "$crashes" -eq 0 ] && [ "$playing" -gt 0 ]
 }
 
 # Without Load Begone: through the title screen and the menu with keys.
@@ -619,6 +679,7 @@ healthy() {
 case ${1:-} in
 start) start ;;
 stop) stop ;;
+launches) launches "${2:-5}" ;;
 shot) shot "${2:-}" ;;
 key)
   shift

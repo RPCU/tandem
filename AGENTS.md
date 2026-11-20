@@ -219,6 +219,10 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 - `tools/game.sh role host|join|player` picks the game's `tandem.ini`;
   **leave the machine in `player`** when testing is over (it restores the
   player's own, kept as `tandem.ini.player`).
+- **After a script or plugin change that touches wraps, first
+  `tools/game.sh launches 6`**: it starts the game N times, each until the
+  save plays or the game crashes while loading, and must end on
+  "6 launches, 0 crashes" (`testing.md`, "Launches").
 - A game that freezes (0% CPU) has usually **crashed** (under Proton the
   crash handler waits forever): run `tools/game.sh bt` before restarting it
   (every thread's stack, tandem's frames named from its .pdb). The plugin's

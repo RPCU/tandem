@@ -53,6 +53,17 @@ combat, a grapple, a body carried, police heat, a menu or the phone open,
 time dilated, health), or `test reset: failed (…)`, which fails the
 scenario. A scenario that needs another spot teleports after it.
 
+**Launches** (`tools/game.sh launches [N]`, default 5): the cheap crash
+check, the first thing to run after a script or plugin change that touches
+wraps. Each launch starts the game through Steam with the role's
+`tandem.ini` as it is and ends on tandem's `] playing` (the save loaded;
+20 s more, then fine), on a crash (REDGraph's `[crash] thread` line in
+`red4ext/logs/redgraph-*.log`, or `CrashReporter.exe`), or after 240 s
+(neither: the menus were not passed); the game is killed each time. It
+prints `N launches, C crashes (…)` and fails unless C is 0 and one
+played. Wraps that changed script state on job threads while the save
+loaded crashed 5 launches in 6, and 0 in 7 without them (2026-11-20).
+
 `tandem-peer` modes (in every one the referee checks what the others send,
 `sim.md`; a `referee:` line fails any scenario):
 
