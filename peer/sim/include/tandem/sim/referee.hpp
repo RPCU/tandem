@@ -22,6 +22,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -105,6 +106,11 @@ public:
   // The session is over: nothing more is owed, time finds nothing more.
   void End() { m_ended = true; }
 
+  // Called with every finding as it is made (also those Take() no longer
+  // keeps), on the thread that fed the referee.
+  void OnFinding(std::function<void(const Finding &)> callback) {
+    m_onFinding = std::move(callback);
+  }
   // Findings since the last call, in order.
   std::vector<Finding> Take();
   std::uint32_t Violations() const { return m_violations; }
@@ -176,6 +182,7 @@ private:
   bool m_welcomed{}, m_ended{}, m_left{};
 
   std::vector<Finding> m_new;
+  std::function<void(const Finding &)> m_onFinding;
   std::uint32_t m_violations{}, m_hints{};
   std::map<std::string, std::uint32_t> m_counts;
   std::vector<std::uint64_t> m_received, m_sent;
@@ -237,4 +244,10 @@ private:
 
 // "PlayerState", "NpcStrike"... for a Message index.
 const char *MessageName(std::size_t index);
+
+// Who may send a message (by Message index): only the host, only a guest,
+// or either, checked by its own rules (the sender's name, the NPC's owner).
+// Every message has one: referee.cpp does not compile without it.
+enum class Speaker : std::uint8_t { Host, Guest, Either };
+Speaker SpeakerOf(std::size_t index);
 } // namespace tandem::sim

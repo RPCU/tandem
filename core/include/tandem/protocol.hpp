@@ -4,6 +4,8 @@
 // variant index is the message id, so new messages are only ever appended.
 // Bump kProtocolVersion on any change to an existing message.
 
+#include "tandem/closed_variant.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -2568,7 +2570,25 @@ struct Substitutes {
   friend bool operator==(const Substitutes &, const Substitutes &) = default;
 };
 
-using Message = std::variant<
+// ---- Status visuals (docs/architecture/presence.md, "Status effects") ----
+//
+// The status effects on a V that show on it (burning, shock, a camo's
+// shimmer, a Sandevistan's trail, a heal's glow...): the TweakDB ids of the
+// records its game has on it now that name a VFX, a sound or a visual
+// effector, the whole set on every change (sorted; empty: none). Sent by
+// that player's game (Event channel); the host stamps the player, keeps
+// everyone's latest for late joiners and relays it. The others play the
+// records' visuals on its puppet, never their gameplay.
+inline constexpr std::size_t kMaxStatusVisuals = 16;
+struct StatusVisuals {
+  PlayerId player{};
+  std::uint32_t revision{};
+  std::vector<std::uint64_t> records;
+  friend bool operator==(const StatusVisuals &, const StatusVisuals &) = default;
+};
+
+// The alternatives, in id order. Code uses Message (below).
+using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
     Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
@@ -2585,7 +2605,13 @@ using Message = std::variant<
     TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
-    BreachResult, NpcVendor, ModList, Substitutes>;
+    BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes>;
+
+// A message: MessageVariant, its copies, moves and conversions compiled in
+// message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
+// std::holds_alternative and index() work on it as on the variant.
+using Message = ClosedVariant<MessageVariant>;
+bool operator==(const Message &a, const Message &b);
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions):
@@ -2614,3 +2640,5 @@ const char *NameOf(const Message &message);
 // The same by Message index ("?" past the last).
 const char *NameOfKind(std::size_t kind);
 } // namespace tandem::proto
+
+extern template class tandem::ClosedVariant<tandem::proto::MessageVariant>;

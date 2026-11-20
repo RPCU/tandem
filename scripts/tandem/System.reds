@@ -627,6 +627,17 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_inGame;
   }
 
+  // Join by address's answer (Coop.reds): joined now, directly, and saved
+  // as last_address. Returns why not, in words ("": joined).
+  public func CoopJoinDirect(typed: String) -> String {
+    let target = TandemCoop.TakeAddress(typed);
+    if StrLen(target) == 0 {
+      return TandemCoop.DirectRefusal(TandemCoop.DirectText(typed));
+    }
+    this.CoopJoin(target);
+    return "";
+  }
+
   // Leaving is never refused: a player can always quit the game anyway. A
   // V that is down or out when it leaves dies the game's way (EndSession):
   // leaving is no way out of being down.
@@ -1699,7 +1710,8 @@ public class TandemSystem extends ScriptableSystem {
     return Equals(command, "where") || StrBeginsWith(command, "teleport") || StrBeginsWith(command, "god ");
   }
 
-  // coop status | coop host [PORT] | coop join ADDRESS[:PORT] | coop leave |
+  // coop status | coop host [PORT] | coop join ADDRESS[:PORT] | coop address
+  // [ADDRESS[:PORT]] | coop leave |
   // coop settings | coop set KEY VALUE | coop mods [names]: what the pause menu's co-op page
   // does, without the menu. The menu
   // pages themselves (coop menu, coop pick) are the menus' own (Coop.reds).
@@ -1721,6 +1733,10 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(verb, "join") {
       let joining = this.CoopJoin(arg);
       TandemNative.Log(s"coop: join \(arg), in session \(joining)");
+    } else if Equals(verb, "address") {
+      // Join by address's answer, without the popup (empty: the last one).
+      let refusal = this.CoopJoinDirect(arg);
+      TandemNative.Log(s"coop: address \(arg): \(StrLen(refusal) > 0 ? refusal : "joining")");
     } else if Equals(verb, "leave") {
       this.CoopLeave();
       TandemNative.Log("coop: left the session");

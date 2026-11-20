@@ -46,6 +46,7 @@ public class TandemBreach extends ScriptableSystem {
   private let m_ours: Int32;
   private let m_applied: Int32;
   private let m_refused: Int32;
+  private let m_breacher: Uint32;
 
   public static func Get(game: GameInstance) -> ref<TandemBreach> {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemBreach") as TandemBreach;
@@ -267,6 +268,7 @@ public class TandemBreach extends ScriptableSystem {
     let programs = TandemBreach.Runnable(TandemNative.BreachPrograms(event.index));
     let traps = TandemNative.BreachTraps(event.index);
     let executor = TandemNpcs.PuppetOf(game, event.player);
+    this.m_breacher = event.player;
     if !IsDefined(executor) && !failed {
       // A breacher gone (or not in our world): the network stays breached
       // (the record's), its daemons run from no one here.
@@ -406,6 +408,14 @@ public class TandemBreach extends ScriptableSystem {
   private func OnNpc(npc: ref<ScriptedPuppet>, programs: array<TweakDBID>, traps: array<TweakDBID>, executor: ref<GameObject>, failed: Bool) -> Int32 {
     let game = this.GetGameInstance();
     if this.JustDone(npc.GetEntityID()) {
+      return 0;
+    }
+    // Host: an actor of our V's scene, while it lasts, is left alone by a
+    // guest's breach, won or lost, as by its quickhacks (Restrictions.reds,
+    // the host's backstop).
+    let story = TandemStorySystem.Get(game);
+    if this.m_host && IsDefined(story) && IsDefined(story.Restrictions())
+      && story.Restrictions().RefusesHack(npc, TandemHacks.NpcOf(game, npc.GetEntityID()), this.m_breacher, "breach") {
       return 0;
     }
     if failed {

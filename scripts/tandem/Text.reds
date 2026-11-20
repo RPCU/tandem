@@ -98,7 +98,8 @@ public class TandemText {
       "the relay went silent: reconnecting", "lost the relay",
       "the relay's replicas sent us on twice (their peers lists disagree)",
       "the relay sent us to an address we cannot reach (IPv6)",
-      "the relay is restarting: try again in a moment"
+      "the relay is restarting: try again in a moment",
+      "the relay hosts as many sessions from your address as it may"
     ];
     let keys = [
       "Reason-Full", "Reason-HostGone", "Reason-Unreachable", "Reason-Connecting",
@@ -110,7 +111,8 @@ public class TandemText {
       "Reason-RelayReconnecting", "Reason-RelayLost",
       "Reason-RelayLoop",
       "Reason-RelayIpv6",
-      "Reason-RelayDraining"
+      "Reason-RelayDraining",
+      "Reason-RelaySourceBusy"
     ];
 
     let i = 0;
@@ -249,6 +251,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Menu-Invite", "Invite");
     this.Text("Tandem-Menu-Leave", "Leave session");
     this.Text("Tandem-Menu-EnterCode", "Enter a code or an address");
+    this.Text("Tandem-Menu-JoinAddress", "Join by address");
     this.Text("Tandem-Menu-Back", "Back");
     this.Text("Tandem-Menu-Report", "Write a bug report");
     this.Text("Tandem-Popup-CoopOff", "Co-op is off");
@@ -302,6 +305,12 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Popup-NeedsRelay", "Joining by code needs a relay: set one in the co-op settings");
     this.Text("Tandem-Popup-EnterCode", "The host's join code (K7Q-2M9) or address (192.168.1.20, or 192.168.1.20:27450), as their Co-op menu shows it");
     this.Text("Tandem-Popup-NotATarget", "Not a join code or an address: {1}");
+    this.Text("Tandem-Popup-JoinAddress", "The host's address on your network or VPN (Tailscale, NetBird...): host or host:port, port {1} if none. A direct connection, without the relay: the host's port must be open to you. Over the internet, a join code is easier.");
+    this.Text("Tandem-Popup-JoinAddressLast", "Leave it empty to join {1} again.");
+    this.Text("Tandem-Address-Empty", "Type the host's address (192.168.1.20, or 192.168.1.20:27450)");
+    this.Text("Tandem-Address-Port", "Not a port in {1}: 1 to 65535 after the colon");
+    this.Text("Tandem-Address-Name", "Not a host name or an IPv4 address: {1}");
+    this.Text("Tandem-Address-Ipv6", "{1} is an IPv6 address: tandem connects over IPv4 only. Use the host's IPv4 address (Tailscale and NetBird give one, 100.x.y.z)");
     // The session.
     this.Text("Tandem-Session-Hosting", "Hosting co-op. {1}");
     this.Text("Tandem-Session-JoinedOf", "Joined {1}'s session");
@@ -331,6 +340,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Reason-RelayLoop", "the relay's servers disagree (sent on twice)");
     this.Text("Tandem-Reason-RelayIpv6", "the relay sent us to an address we cannot reach (IPv6)");
     this.Text("Tandem-Reason-RelayDraining", "the relay is restarting: try again in a moment");
+    this.Text("Tandem-Reason-RelaySourceBusy", "the relay hosts as many sessions from your address as it may");
     this.Text("Tandem-Player-Unnamed", "Player {1}");
     // Names (the co-op menu's prompt; the host's (2), (3)).
     this.Text("Tandem-Name-Title", "Your co-op name");
@@ -547,6 +557,12 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Comms-WaypointSet", "{1} set a waypoint");
     this.Text("Tandem-Story-RestrictHolstered", "{1}'s scene: weapons away.");
     this.Text("Tandem-Story-RestrictSlow", "{1}'s scene: take it slow.");
+    // Another V's slow time reaches ours (Time.reds), once a session.
+    this.Text("Tandem-Time-SlowedScanner", "{1}'s scanner slows you.");
+    this.Text("Tandem-Time-SlowedSandevistan", "{1}'s Sandevistan slows you.");
+    this.Text("Tandem-Time-SlowedOther", "{1}'s slow motion reaches you.");
+    // A partner's status effect this game has no record of (StatusVisuals.reds).
+    this.Text("Tandem-Status-Unknown", "{1} shows an effect this game doesn't know (a mod?): not shown.");
     this.Text("Tandem-Travel-Blocked", "You can't fast travel right now");
     // The settings page (Settings.reds).
     this.Text("Tandem-Menu-Settings", "Settings");
@@ -573,12 +589,15 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-PartyHud", "Party list (linked partners' health)");
     this.Text("Tandem-Settings-Recorder", "Recorder");
     this.Text("Tandem-Settings-Relay", "Relay");
-    this.Text("Tandem-Settings-RelayToken", "Relay host token");
     this.Text("Tandem-Settings-Code", "Join code");
     this.Text("Tandem-Settings-Code-New", "new each session");
     this.Text("Tandem-Settings-Code-Keep", "kept (the same every session)");
     this.Text("Tandem-Settings-Direct", "Direct connection through the relay");
     this.Text("Tandem-Settings-Direct-Auto", "when possible");
+    this.Text("Tandem-Settings-Link", "Share scans and pings with");
+    this.Text("Tandem-Settings-Link-Auto", "every partner");
+    this.Text("Tandem-Settings-Link-Ask", "partners you link with");
+    this.Text("Tandem-Settings-Pings", "Pings");
     this.Text("Tandem-Settings-Story", "Story sync");
     this.Text("Tandem-Settings-QuestFreeze", "Pause your own story (guest)");
     this.Text("Tandem-Settings-ScenePrivacy", "Private scenes");
@@ -598,6 +617,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Menu-Invite", "Inviter");
     this.Text("Tandem-Menu-Leave", "Quitter la session");
     this.Text("Tandem-Menu-EnterCode", "Saisir un code ou une adresse");
+    this.Text("Tandem-Menu-JoinAddress", "Rejoindre par adresse");
     this.Text("Tandem-Menu-Back", "Retour");
     this.Text("Tandem-Menu-Report", "Écrire un rapport de bug");
     this.Text("Tandem-Popup-CoopOff", "Coop désactivée");
@@ -649,6 +669,12 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Popup-NeedsRelay", "Rejoindre par code demande un relais : indiquez-le dans les paramètres coop");
     this.Text("Tandem-Popup-EnterCode", "Le code d'invitation de l'hôte (K7Q-2M9) ou son adresse (192.168.1.20, ou 192.168.1.20:27450), comme l'affiche son menu Coop");
     this.Text("Tandem-Popup-NotATarget", "Ni un code d'invitation ni une adresse : {1}");
+    this.Text("Tandem-Popup-JoinAddress", "L'adresse de l'hôte sur votre réseau ou votre VPN (Tailscale, NetBird...) : hôte ou hôte:port, port {1} par défaut. Une connexion directe, sans le relais : le port de l'hôte doit vous être ouvert. Par Internet, un code d'invitation est plus simple.");
+    this.Text("Tandem-Popup-JoinAddressLast", "Laissez vide pour rejoindre {1} de nouveau.");
+    this.Text("Tandem-Address-Empty", "Saisissez l'adresse de l'hôte (192.168.1.20, ou 192.168.1.20:27450)");
+    this.Text("Tandem-Address-Port", "Port refusé dans {1} : 1 à 65535 après les deux-points");
+    this.Text("Tandem-Address-Name", "Ni un nom d'hôte ni une adresse IPv4 : {1}");
+    this.Text("Tandem-Address-Ipv6", "{1} est une adresse IPv6 : tandem se connecte en IPv4 seulement. Utilisez l'adresse IPv4 de l'hôte (Tailscale et NetBird en donnent une, 100.x.y.z)");
     this.Text("Tandem-Session-Hosting", "Partie coop hébergée. {1}");
     this.Text("Tandem-Session-JoinedOf", "Vous avez rejoint la session de {1}");
     this.Text("Tandem-Session-Joined", "Vous avez rejoint la session coop");
@@ -678,6 +704,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Reason-RelayLoop", "les serveurs du relais se contredisent (renvoyé deux fois)");
     this.Text("Tandem-Reason-RelayIpv6", "le relais nous envoie vers une adresse injoignable (IPv6)");
     this.Text("Tandem-Reason-RelayDraining", "le relais redémarre : réessayez dans un instant");
+    this.Text("Tandem-Reason-RelaySourceBusy", "le relais héberge déjà autant de sessions de votre adresse qu'il le peut");
     this.Text("Tandem-Player-Unnamed", "Joueur {1}");
     this.Text("Tandem-Name-Title", "Votre nom en coop");
     this.Text("Tandem-Name-Ask", "Le nom que les autres joueurs voient au-dessus de votre V et dans leur liste d'équipe : 1 à 16 caractères (annuler : V pour l'instant)");
@@ -888,6 +915,10 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Comms-WaypointSet", "{1} a placé un point de passage");
     this.Text("Tandem-Story-RestrictHolstered", "Scène de {1} : armes rangées.");
     this.Text("Tandem-Story-RestrictSlow", "Scène de {1} : doucement.");
+    this.Text("Tandem-Time-SlowedScanner", "Le scanner de {1} vous ralentit.");
+    this.Text("Tandem-Time-SlowedSandevistan", "Le Sandevistan de {1} vous ralentit.");
+    this.Text("Tandem-Time-SlowedOther", "Le ralenti de {1} vous atteint.");
+    this.Text("Tandem-Status-Unknown", "{1} porte un effet que ce jeu ne connaît pas (un mod ?) : non affiché.");
     this.Text("Tandem-Travel-Blocked", "Voyage rapide impossible pour l'instant");
     this.Text("Tandem-Menu-Settings", "Paramètres");
     this.Text("Tandem-Settings-Saved", "Enregistrés dans tandem.ini dès leur modification");
@@ -913,12 +944,15 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-PartyHud", "Liste du groupe (santé des partenaires liés)");
     this.Text("Tandem-Settings-Recorder", "Enregistreur");
     this.Text("Tandem-Settings-Relay", "Relais");
-    this.Text("Tandem-Settings-RelayToken", "Jeton d'hôte du relais");
     this.Text("Tandem-Settings-Code", "Code d'invitation");
     this.Text("Tandem-Settings-Code-New", "nouveau à chaque session");
     this.Text("Tandem-Settings-Code-Keep", "gardé (le même à chaque session)");
     this.Text("Tandem-Settings-Direct", "Connexion directe via le relais");
     this.Text("Tandem-Settings-Direct-Auto", "si possible");
+    this.Text("Tandem-Settings-Link", "Partager analyses et signaux avec");
+    this.Text("Tandem-Settings-Link-Auto", "chaque partenaire");
+    this.Text("Tandem-Settings-Link-Ask", "les partenaires avec qui vous vous liez");
+    this.Text("Tandem-Settings-Pings", "Signaux");
     this.Text("Tandem-Settings-Story", "Histoire partagée");
     this.Text("Tandem-Settings-QuestFreeze", "Mettre votre histoire en pause (invité)");
     this.Text("Tandem-Settings-ScenePrivacy", "Scènes privées");

@@ -244,6 +244,11 @@ struct RemotePresence {
 struct RemoteCue {
   proto::Cue cue;
 };
+// Another player's V shows other status effects now (the whole set): its
+// puppet plays their visuals.
+struct RemoteStatusVisuals {
+  proto::StatusVisuals visuals;
+};
 // How one of the host's NPCs reacts to a hit (guests only): played on its proxy.
 struct HostNpcReaction {
   proto::NpcReaction reaction;
@@ -550,7 +555,8 @@ struct JoinTarget {
   std::optional<net::RelayOptions> relay;
 };
 
-using SessionEvent = std::variant<
+// What Update() reports. Code uses SessionEvent (below).
+using SessionEventVariant = std::variant<
     events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
     events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
     events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
@@ -575,7 +581,10 @@ using SessionEvent = std::variant<
     events::RemoteVehicleExit, events::RemoteVehicleCombat, events::RemoteMountedFire,
     events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
-    events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom>;
+    events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom>;
+// Its copies, moves and conversions compiled in session_event.cpp only, as
+// proto::Message's (tandem/closed_variant.hpp).
+using SessionEvent = ClosedVariant<SessionEventVariant>;
 
 class Endpoint {
 public:
@@ -607,6 +616,13 @@ public:
   void SetLocalPresence(proto::Presence presence);
   void SendLocalCue(proto::Cue cue);
   const std::map<proto::PlayerId, proto::Presence> &Presences() const { return m_presences; }
+  // The status effects that show on our V (presence::StatusSet makes the
+  // set; a repeat of the last is not sent). Kept and handed to late joiners;
+  // the others' latest, ours too, by player.
+  void SetLocalStatusVisuals(std::vector<std::uint64_t> records);
+  const std::map<proto::PlayerId, proto::StatusVisuals> &StatusVisualsOf() const {
+    return m_statusVisuals;
+  }
   // Where we sit (kept and handed to late joiners), and the car we drive.
   void SetLocalSeat(proto::Seat seat);
   void SendLocalVehicle(proto::VehicleState vehicle);
@@ -1337,6 +1353,11 @@ private:
   std::uint32_t m_presenceRevision{};
   std::map<proto::PlayerId, proto::Presence> m_presences;
   void SendLocalPresenceNow();
+  // Our status visuals, and everyone's latest (late joiners, resyncs).
+  std::optional<proto::StatusVisuals> m_localStatusVisuals;
+  std::uint32_t m_statusVisualsRevision{};
+  std::map<proto::PlayerId, proto::StatusVisuals> m_statusVisuals;
+  void SendLocalStatusVisualsNow();
   std::uint32_t m_cueSeq{};
   std::uint32_t m_awarenessSeq{};
   // Our ride, and everyone's (host: the session's record, for late joiners;
@@ -1555,3 +1576,5 @@ private:
   bool m_throughRelay{};
 };
 } // namespace tandem
+
+extern template class tandem::ClosedVariant<tandem::SessionEventVariant>;

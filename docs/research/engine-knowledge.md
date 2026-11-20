@@ -106,6 +106,7 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.50 | Enemy scaling: the stats and how modifiers stack                | `combat.md`         |
 | 13.55 | Does this game have a record, and its vanilla stand-in          | `mods.md`           |
 | 13.60 | Breach Protocol: where a breach's outcome becomes effects       | `combat.md`         |
+| 13.75 | A status effect's look, without its gameplay                    | `combat.md`         |
 | 13.80 | Vendors: what the shop's screen is bound to, from a proxy       | `ui.md`             |
 | 14.1  | What a script can do                                            | `autopilot.md`      |
 | 14.2  | Virtual input                                                   | `autopilot.md`      |

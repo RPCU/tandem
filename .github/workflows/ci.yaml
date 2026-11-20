@@ -9,6 +9,13 @@ name: CI
 on:
   push:
   pull_request:
+  # Also by hand ("Run workflow"; tests: false to only build).
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: Run core's tests (ctest) after the build
+        type: boolean
+        default: true
 
 # A newer push to the same branch or pull request cancels the older run.
 concurrency:
@@ -69,6 +76,8 @@ jobs:
           kustomize build deploy/kubernetes/playit | kubeconform -strict -summary -
 
   core:
+    # task test: the build (some 4 minutes cold), then the tests (some 9:
+    # real-time sessions).
     name: core tests (Linux)
     runs-on: ubuntu-latest
     # GCC 16, as in devenv: libstdc++'s distributions changed in 16
@@ -114,6 +123,7 @@ jobs:
         run: cmake --build --preset linux
 
       - name: Test
+        if: github.event_name == 'workflow_dispatch' && inputs.tests
         run: ctest --preset linux
 
       - uses: ./.github/actions/build-report

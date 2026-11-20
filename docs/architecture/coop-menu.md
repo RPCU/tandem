@@ -11,8 +11,19 @@
   next to the DLL, written when a host welcomes us) or "Enter an address"
   (the game's message popup with Codeware's text field,
   `GenericMessageNotification.ShowInput`), then the V's save; Play solo
-  drops the choice. The first time a player hosts or joins (main menu Host
-  a game / Join a game, pause menu Host this game / Join a game) while
+  drops the choice. **Join by address** (both menus' Co-op page, after
+  Join a game; for a LAN or a VPN such as Tailscale or NetBird, without the
+  relay): the same popup asks for `host[:port]` (port: tandem.ini's,
+  27450), with the last address as the empty answer; `TandemNative.AddressProblem`
+  (`hosts::Check`: a host name of valid labels, a dotted IPv4 address; an
+  IPv6 one, bracketed or not, refused in words since ENet speaks IPv4
+  only) says why an answer is refused (`Address-*` texts, in a message popup); a good one is saved as `last_address` (`SetSetting`) and joined
+  like `role = join` with `address`: the main menu's save page, the pause
+  menu at once (`TandemSystem.CoopJoinDirect`). `coop address [TEXT]` is
+  its answer without the popup, in both menus (scenario
+  `join-address`). The first time a player
+  hosts or joins (main menu Host a game / Join a game / Join by address,
+  pause menu Host this game / Join a game / Join by address) while
   `name` is still `V`, the menu first asks for a pseudo in the same popup
   (title "Your co-op name", its rules; refused: asked again with the
   reason; cancel: `V` for now), saved with `SetSetting`, once a game run
@@ -31,7 +42,8 @@
   ended"). Menus keep their own clock (a looping ink animation: our
   system's delayed tick does not run in the main menu nor while paused),
   which also takes `tools/game.sh cmd coop ...` commands: `coop status`,
-  `coop host [PORT]`, `coop join ADDRESS[:PORT]`, `coop leave` (in game,
+  `coop host [PORT]`, `coop join ADDRESS[:PORT]`, `coop address
+[ADDRESS[:PORT]]`, `coop leave` (in game,
   any time), `coop menu PAGE`, `coop pick TEXT` (drive an open menu),
   `coop name [reset]`, `coop name answer TEXT`, `coop name cancel` (the name
   prompt; scenario `names-prompt`).
@@ -62,7 +74,10 @@
   `TandemNative.Setting(key)` reads one back.
 - **When it applies**: at once for `recorder`, `friendly_fire`, `enemy_scaling`, `notices`,
   `markers`, `nameplates`, `party_hud` (the scripts read them as they need
-  them; the nameplates and the party list every frame);
+  them; the nameplates and the party list every frame), `link` and `pings`
+  (`Comms::Configure`: in a session a new link default replaces our
+  consents and is sent at once; pings off stops new pings, a team target
+  still shows; `comms.md`);
   `name`, `relay`, `relay_token`, `story`, `time_host` are what a running
   session was set up with, so a change during one waits for its end (the
   label says "from the next session"); `quest_freeze` and `scene_privacy`
@@ -87,9 +102,9 @@
   rules ("1 to 16 characters…", `Name-Ask`) and a refusal why
   (`Name-Invalid`); `tandem.ini`'s parser checks it (`names::Clean`) and
   saves it trimmed.
-- **Only the page's keys** (`settings::IsEditable`): never `role`,
-  `address`, `port` or `join`, which the co-op menu chooses, nor the test
-  harness's keys; `TANDEM_PORT` and `TANDEM_CONFIG` keep working (the page
+- **Only the page's keys** (`settings::IsEditable`, and two it saves for
+  the menu: `code_salt`, `last_address`): never `role`, `address`, `port`
+  or `join`, which the co-op menu chooses, nor the test harness's keys; `TANDEM_PORT` and `TANDEM_CONFIG` keep working (the page
   writes the file the game read, `Config::file`). The harness's
   `tools/game.sh role` files swap around it: a setting changed while a test
   `tandem.ini` is in place lands in that one. Tests: `coop settings` logs

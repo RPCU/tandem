@@ -166,6 +166,7 @@ struct NetThread::Impl {
 
   std::optional<proto::Vitals> lastVitals;
   std::optional<proto::Presence> lastPresence;
+  std::optional<std::vector<std::uint64_t>> lastStatusVisuals;
 
   // Every other player in the session with its life (up unless it said
   // otherwise), for the game thread (Revive.reds). Cheap: the runtime keeps
@@ -323,6 +324,8 @@ struct NetThread::Impl {
       endpoint->SetLocalVitals(*lastVitals);
     if (lastPresence)
       endpoint->SetLocalPresence(*lastPresence);
+    if (lastStatusVisuals)
+      endpoint->SetLocalStatusVisuals(*lastStatusVisuals);
     // Comms: whom we share tags with, and our waypoint, from the start.
     endpoint->SetLocalLink(Comms::Get().OwnLink());
     if (const auto waypoint = Comms::Get().OwnWaypoint())
@@ -713,6 +716,10 @@ struct NetThread::Impl {
                 PresenceState::Get().PushRemote(e.presence);
               } else if constexpr (std::is_same_v<E, events::RemoteCue>) {
                 PresenceState::Get().PushCue(e.cue, net::NowUs());
+              } else if constexpr (std::is_same_v<E, events::RemoteStatusVisuals>) {
+                log::Info("player {}: {} status effect(s) show on its V (revision {})",
+                          e.visuals.player, e.visuals.records.size(), e.visuals.revision);
+                PresenceState::Get().PushStatusVisuals(e.visuals);
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
                 log::Info("player {}: look of {} keys and {} items (revision {})",
                           e.appearance.player, e.appearance.look.size(), e.appearance.items.size(),
@@ -1293,6 +1300,10 @@ struct NetThread::Impl {
       }
       for (const auto &cue : PresenceState::Get().TakeLocalCues())
         endpoint->SendLocalCue(cue);
+      if (auto visuals = PresenceState::Get().TakeStatusVisuals()) {
+        lastStatusVisuals = *visuals;
+        endpoint->SetLocalStatusVisuals(std::move(*visuals));
+      }
       if (!ended)
         PublishLives(*endpoint);
       for (auto &message : TradeLink::Get().TakeOutbound())

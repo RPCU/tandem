@@ -19,9 +19,28 @@ struct Target {
   bool operator==(const Target &) const = default;
 };
 
-// "address" (on defaultPort) or "address:port", spaces around trimmed.
-// nullopt: empty, characters a host name cannot have, or a bad port.
+// Why a typed address is not one to join.
+enum class Problem {
+  None,
+  Empty,
+  Port, // not 1 to 65535
+  Name, // not a host name nor an IPv4 address
+  Ipv6, // an IPv6 address ("[fd7a::1]:27450"): ENet speaks IPv4 only
+};
+
+struct Checked {
+  std::optional<Target> target;
+  Problem problem{Problem::None};
+};
+
+// "address" (on defaultPort) or "address:port", spaces around trimmed. The
+// address is a host name (labels of letters, digits, '-' and '_', 1 to 63
+// characters, no '-' at either end) or a dotted IPv4 address.
+Checked Check(std::string_view text, std::uint16_t defaultPort);
+// Check's target alone.
 std::optional<Target> Parse(std::string_view text, std::uint16_t defaultPort);
+// The problem as a word for the scripts: "", "empty", "port", "name", "ipv6".
+std::string_view ProblemWord(Problem problem);
 std::string Format(const Target &target); // "address:port"
 
 struct Recent {

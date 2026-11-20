@@ -423,3 +423,28 @@ TEST_SUITE("presence") {
     CHECK(std::abs(l.pitch) < std::abs(h.pitch));
   }
 }
+
+TEST_CASE("a V's status visuals are one set, and a puppet starts and stops what changed") {
+  using V = std::vector<std::uint64_t>;
+  // Sorted, no repeats, no null id; at most the bound (the lowest kept).
+  CHECK(presence::StatusSet({30, 0, 10, 30, 20}) == V{10, 20, 30});
+  CHECK(presence::StatusSet({}).empty());
+  V many;
+  for (std::uint64_t i = proto::kMaxStatusVisuals + 4; i >= 1; --i)
+    many.push_back(i);
+  const auto capped = presence::StatusSet(many);
+  REQUIRE(capped.size() == proto::kMaxStatusVisuals);
+  CHECK(capped.front() == 1);
+  CHECK(capped.back() == proto::kMaxStatusVisuals);
+
+  // Burning, then camo too, then the burn ends, then nothing.
+  const V none, burning{10}, both{10, 20}, camo{20};
+  CHECK(presence::StatusDiff(none, burning) == presence::StatusChange{.started = {10}});
+  CHECK(presence::StatusDiff(burning, both) == presence::StatusChange{.started = {20}});
+  CHECK(presence::StatusDiff(both, camo) == presence::StatusChange{.ended = {10}});
+  CHECK(presence::StatusDiff(camo, none) == presence::StatusChange{.ended = {20}});
+  // The same set again: nothing to do (a resync's repeat replays nothing).
+  CHECK(presence::StatusDiff(both, both) == presence::StatusChange{});
+  // A vanished V: everything it showed ends.
+  CHECK(presence::StatusDiff(both, none) == presence::StatusChange{.ended = {10, 20}});
+}

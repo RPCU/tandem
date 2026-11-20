@@ -13,10 +13,15 @@ expect 'time: bubble of player [0-9]+: [1-9][0-9]* NPC' 5
 expect 'time: npc [0-9]+ at 0\.2' 5
 # Our V stands in that bubble with no ability of its own: slowed like the NPCs.
 expect 'time: our V slowed to 0\.2.*a scanner.s' 5
+# The cue on our side: the game's own soft slow motion (the Focus perk's
+# screen effect and sound), and once a session the notice naming whose it is.
+expect 'time: slowed by player [0-9]+.s bubble \(abilities 8\): the game.s slow-motion cue on' 5
+expect 'coop notice: .* \[Time-SlowedScanner\]' 5
 expect_peer 'scanning off' 10
 expect 'time: bubble of player [0-9]+ ended' 5
 expect 'time: npc [0-9]+ back to normal speed' 5
 expect 'time: our V back to its own speed after [0-9]' 5
+expect 'time: the slow-motion cue off' 5
 # Our own scanner's dilation (as its state sets it, under "focusMode"): kept
 # on our screen (time_host = full, the default), the NPC we share set to its
 # speed, and the mock player told.
@@ -38,6 +43,8 @@ expect 'time: our scanner.s bubbles: 1 for [0-9.]+ s; our V slowed by the others
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --sandevistan-at 8 --sandevistan-for 14 --sandevistan-scale 0.1
 expect_peer 'sandevistan on' 40
 expect 'time: our V slowed to 0\.1' 5
+# One notice a session, however often a bubble slows us.
+reject 'coop notice: .* \[Time-Slowed(Sandevistan|Other)\]'
 mark
 cmd time scan 0.2 5
 expect 'time: our V slowed to 0\.5' 5
@@ -48,12 +55,15 @@ expect 'time: test dilation over' 10
 expect 'time: our V slowed to 0\.1' 5
 expect_peer 'sandevistan off' 15
 expect 'time: our V back to its own speed' 5
-# Both scan at 0.2: neither slows the other.
+# Both scan at 0.2: neither slows the other, and no cue plays while both do.
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --scan-at 8 --sandevistan-for 14 --sandevistan-scale 0.2
 expect_peer 'scanning on' 40
 expect 'time: our V slowed to 0\.2' 5
 cmd time scan 0.2 5
 expect 'time: our V back to its own speed' 5
+mark
+pause 3
+reject 'slow-motion cue on'
 expect 'time: test dilation over' 10
 expect 'time: our V slowed to 0\.2' 5
 expect_peer 'scanning off' 15

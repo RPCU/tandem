@@ -3,6 +3,7 @@
 // (comms::HackBoard), only while the two are linked; and the same over
 // loopback UDP, from the host's own hack messages.
 
+#include "referee_expect.hpp"
 #include "tandem/comms.hpp"
 #include "tandem/endpoint.hpp"
 
@@ -84,6 +85,8 @@ TEST_CASE("a partner's quickhacks: shown while linked, hidden at a break, gone w
 }
 
 TEST_CASE("a partner's quickhacks in a session: seen by the players linked with the hacker only") {
+  // The host says a's upload on an NPC it never spawned, which a never asked for.
+  test::ExpectReferee({"ids.unknown-npc", "reply.unasked"});
   std::string error;
   const Timing quick{.timeout = 1000ms, .takeover = 400ms};
   auto host = Endpoint::Host({"host"}, 0, error, quick);
