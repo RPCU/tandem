@@ -105,7 +105,10 @@ guest's quickhack during the host's scene` (player, NPC, the
       quickhack is refused whole: its upload (`NpcHack`: the host answers
       it failed, `NpcHackState` step 2, as for an NPC out of reach, and
       never holds the NPC "being hacked"), every effect it lands
-      (`NpcEffect` tagged `Quickhack`) and its damage ticks (strikes). The
+      (`NpcEffect` tagged `Quickhack`) and its damage ticks (strikes). A
+      guest's Breach Protocol, won or lost, leaves the actor alone too (its
+      daemons, its alert; logged as a quickhack, `breach`; `Breach.reds`
+      `OnNpc`): the network stays breached. The
       rule is core's (`story::Backstop`, `IsSceneActor`; native
       `TandemStory.BackstopRefuses`), tested in
       `tests/restrictions_test.cpp`; `Restrictions.reds` reads what the NPC
