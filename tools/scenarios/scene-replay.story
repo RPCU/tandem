@@ -7,10 +7,14 @@
 3 tier 4
 3 scene base/quest/main_quests/prologue/q001/scenes/q001_01_intro.scene 4
 4 cast own
+# A prop: in the actor's right hand, handed to the host (left hand), put away.
+5 prop 1 Items.FirstAidWhiffV0 own
 6 line 1 Jackie Hey, chica. You hear me?
 6 voice 1000001 own 5
 9 line 1 host Loud and clear.
 9 voice 1000002 host 3
+11 prop 1 Items.FirstAidWhiffV0 host left
+12 prop 1 off
 13 voice 1000003 own 20
 15 cut 1000003
 16 skip on

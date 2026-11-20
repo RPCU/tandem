@@ -583,3 +583,31 @@ TEST_CASE("referee: an NPC seated in a shared world vehicle names the vehicle, n
       kSecond);
   CHECK(Rules(referee) == std::vector<std::string>{"ids.unknown-player"});
 }
+
+TEST_CASE("referee: a scene's props, camera and rig poses are the host's, about what it shares") {
+  auto host = Host();
+  host.Received(2, proto::SceneProp{.play = 1, .prop = 1, .record = 5, .holder = 7}, kSecond);
+  host.Received(2, proto::SceneCamera{.play = 1, .fov = 60.f}, kSecond);
+  host.Received(2, proto::RigPose{.npc = 7, .bones = 4}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>(3, "authority.host-only"));
+
+  auto guest = Guest();
+  guest.Received(1, proto::NpcSpawn{.npc = 7, .record = 10}, kSecond);
+  guest.Received(1, proto::SceneProp{.play = 1, .prop = 1, .record = 5, .holder = 7}, kSecond);
+  guest.Received(1, proto::SceneProp{.play = 1, .prop = 1, .record = 5, .holderPlayer = 3},
+                 kSecond);
+  guest.Received(1, proto::SceneProp{.play = 1, .prop = 1, .flags = proto::kPropGone}, kSecond);
+  CHECK(Rules(guest).empty());
+  // Held by an NPC nobody announced, by a player who never was.
+  guest.Received(1, proto::SceneProp{.play = 1, .prop = 2, .record = 5, .holder = 99}, kSecond);
+  guest.Received(1, proto::SceneProp{.play = 1, .prop = 3, .record = 5, .holderPlayer = 9},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ids.unknown-npc", "ids.unknown-player"});
+  // A view that is not a number.
+  guest.Received(1,
+                 proto::SceneCamera{.play = 1,
+                                    .position = {std::numeric_limits<float>::infinity(), 0.f, 0.f},
+                                    .fov = 60.f},
+                 kSecond);
+  CHECK(Broke(guest, "value.not-finite"));
+}
