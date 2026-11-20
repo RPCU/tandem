@@ -389,7 +389,9 @@ protected cb func OnStatusEffectApplied(evt: ref<ApplyStatusEffectEvent>) -> Boo
     StatusEffectHelper.RemoveStatusEffect(this, evt.staticData.GetID());
     return result;
   }
-  if evt.isNewApplication && !evt.isAppliedOnSpawn && IsDefined(evt.staticData) && !TandemCombat.IsOwnMarker(evt.staticData.GetID()) {
+  // A breach's daemons are run by the NPC's owner from the breach itself
+  // (Breach.reds): never forwarded from a proxy as well.
+  if evt.isNewApplication && !evt.isAppliedOnSpawn && IsDefined(evt.staticData) && !TandemCombat.IsOwnMarker(evt.staticData.GetID()) && !TandemBreach.IsDaemonEffect(evt.staticData.GetID()) {
     let player = GetPlayer(this.GetGame());
     // The Relic's arm attacks mark their target with no instigator
     // (Outcomes.reds IsRelicMark): ours all the same, and on a proxy our

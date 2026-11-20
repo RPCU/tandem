@@ -43,6 +43,7 @@ the end, `referee-suite:`; tests break rules on purpose, so it is a report;
 | --- | --- |
 | `authority.host-only`, `authority.guest-only` | a guest sending what only the host says (the session, the world, the story, scenes, the region arbitration: `Regions`, `NpcHandover`, an unpinned `NpcOwner`, digests), the host sending what only a guest asks (pings, noises, resync requests, `DeviceUse`…) |
 | `authority.not-owner` | since per-player regions (`regions.md`) an NPC's owner speaks for it: a guest's spawn outside its range of ids (`regions::Announcer`), a guest's health, hold, hit or reply for an NPC another game runs (`NpcOwner` moves it), the host passing us a request, a hand-over or another's word on an NPC our game does not run, or on one it does; the same for world vehicles (`traffic.md`: `TrafficSpawn`, `TrafficStatus` from the vehicle's owner, `TrafficHit`, `TrafficClaim` to it) |
+| `authority.not-shared` | an owner's word to us (`PlayerHit`, `PlayerHack`, `NpcCue`, `NpcShotAt`, `NpcAnims`) on an NPC that left our view (gone "away": a link broke, its region's edge, a resync's set) more than 1 s ago and has not come back (`regions.md`, "What travels where") |
 | `authority.not-yours`, `authority.own-state-back`, `authority.misdelivered` | a guest speaking in another player's name (heat, presence, cues and vehicle hits too); the host sending us our own state; a hit, hack, revive, crime or answer meant for another player |
 | `authority.acting-while-down`, `authority.revive-self`, `authority.revive-not-down` | firing, grabbing or uploading while down or out (after 1.5 s of grace); reviving oneself, or a V that is not down |
 | `authority.vehicle-not-yours`, `authority.accepted-on-dead`, `authority.state-after-gone` (hint) | moving a car while riding in someone else's; the host accepting a takedown on an NPC it said dead; an NPC still in the host's states 3 s after it went |
@@ -53,6 +54,7 @@ the end, `referee-suite:`; tests break rules on purpose, so it is a report;
 | `rate.over-budget`, `rate.events` (hint), `rate.bytes` (hint), `rate.digest-silent`, `size.over-budget`, `size.state-fragmented` (hint) | states, poses, cars, shots, NPC states, awareness, digests, pings over their budget, more than 6 resync requests in 10 s; a `PlayerState` over 64 bytes; an unreliable message over a datagram; no digest for six digest periods |
 | `digest.diverged`, `digest.resync-loop` | our copy of a domain differing from the host's longer than two digests and a resync take; a guest asking for the same domain four times in a row (our resync does not heal it) |
 | `epoch.backwards`, `epoch.unknown`, `epoch.unacknowledged` | an epoch going back; a guest naming a host epoch we never had; a guest that has not acknowledged our new world within 5 s |
+| `breach.ungranted`, `oneshot.breach-twice` (Breach Protocol, `devices.md`) | the host passing on a breach it did not grant (no `kBreachApply`); one network granted to two players; also `authority.host-only` for a guest's granted breach or a `BreachResult`, `authority.not-owner` for an NPC's breach passed to a game that does not run it, `reply.unasked` for an answer to a breach we never made, `authority.not-yours` for ours granted in another's name |
 | `stuck.hold`, `stuck.after-leave`, `stuck.time-effect`, `stuck.revive`, `stuck.life` (hint), `stuck.call` (hint) | a takedown held 30 s; a hold, time bubble or revive of a player that left 2 s ago; slowed time for 3 min; a revive held 30 s; a V down 10 min; a call ringing 2 min |
 
 What it found on the existing loopback tests: "Findings" below.
@@ -180,10 +182,13 @@ there is the lossy hand-over test's lost and doubled messages.
 NPCs were not shared with (spawned around the partner, far from the host's
 V: `NpcShotAt`, `NpcCue` and the guest's `ShotHit` about NPCs the guest
 never heard of): under regions a host's NPCs live in the host's region.
-The endpoint itself still sends `NpcShotAt`, `NpcCue` and `PlayerHit` to a
-guest the NPC is not shared with (an NPC at its region's edge, a guest just
-past the link distance); the guest drops the shot (shooter unknown). Open:
-`regions.md` owns that rule.
+The endpoint itself sent `NpcShotAt`, `NpcCue` and `PlayerHit` to a guest
+the NPC was not shared with (an NPC at its region's edge, a guest just past
+the link distance); the guest dropped the shot (shooter unknown). Fixed on
+the `regions-fixes` branch (only to a game that shows the NPC); the referee
+calls a word on an NPC that left our view `authority.not-shared`, and no
+longer calls the host's `NpcGone` "away" of one of ours (its record letting
+go) `authority.not-owner`.
 
 Sim against sim (`sim-fuzz`, 8 seeds of 30 s, every persona as host and
 guest): no violation, no failed check; 59 of 72 message types sent, 87 of

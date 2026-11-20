@@ -477,6 +477,9 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
           if (!player(m.by))
             m.by = proto::kNoPlayer;
           return true;
+        } else if constexpr (std::is_same_v<M, proto::NpcVendor>) {
+          // The host's vendors; a death is derived again from its NpcGone.
+          return (m.flags & proto::kVendorDead) == 0;
         } else if constexpr (std::is_same_v<M, proto::World> ||
                              std::is_same_v<M, proto::NpcSpawn> ||
                              std::is_same_v<M, proto::NpcHealth> ||
@@ -484,6 +487,7 @@ std::optional<proto::Message> AdaptSession(proto::Message message, const Session
                              std::is_same_v<M, proto::NpcShot> ||
                              std::is_same_v<M, proto::NpcPoise> ||
                              std::is_same_v<M, proto::NpcLevel> ||
+                             std::is_same_v<M, proto::NpcScale> ||
                              std::is_same_v<M, proto::Difficulty> ||
                              std::is_same_v<M, proto::Rules> || std::is_same_v<M, proto::Journal> ||
                              std::is_same_v<M, proto::Tracked> ||

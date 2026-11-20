@@ -18,11 +18,11 @@ of it is shared. "Busy" is the `Activity` a player's game sends
 | A guest's own story moving its clock | the guest's story is frozen (`story.md`) | nothing | the host's World puts the clock back (as before) | was |
 | What blocks a skip | host's record | the asker hears who and why | a V down or out, a time ability (Sandevistan…) on, a V in another world, a pause menu, another request open; each voter's game also says no when vanilla would not let its V skip (`GameTimeUtils.CanPlayerTimeSkip`: combat, a chase, a scene, a call…) | built |
 | Workspots: benches, bar stools, chairs, apartment interactions, arcade cabinets, beds, the ripperdoc's chair | the player's game | the puppet held where it sat (no sliding when its poses stop), the same workspot played on the puppet's own graph (sounds, props), the pose stream's exact pose on top | none: the device is the player's own (shared devices: open) | built |
-| Breach protocol, arcade minigames | the player's game | busy (a minigame), held where it stands, idling | the breach's daemons on NPCs go to the host as requests (`combat.md`); its timer runs on that game, real time | built (state only) |
+| Breach protocol, arcade minigames | the player's game | busy (a minigame), held where it stands, idling | the breach's daemons on NPCs go to the host as requests (`combat.md`; the outcome, devices.md "Breach Protocol"); its timer runs on that game, real time | built (state; the breach's outcome built, not run) |
 | Shards | the reader's game | busy (a screen); its popup stops that game, so the puppet idles on its own graph | none (shards and the codex stay per player, `story.md`) | built |
 | Terminals and computers | the player's game | busy (a screen) | device state stays the user's until devices are synced (`world.md`) | open: no signal found yet for "at a computer's screen" |
-| Vendors, drop points | the player's game | busy (a shop), held | none: inventory and money are per player | built |
-| Ripperdoc | the player's game | seated in the chair (a workspot), then busy (a shop) | its cyberware is its own; leaving sends its look again, so a new arm or face shows on the puppet | built |
+| Vendors, drop points, vending machines | the player's game: a vendor another game runs opens our own game's vendor of the same placed NPC (`progression.md`, "Vendors") | busy (a shop), held | none: stock, inventory and money are per player; leaving a shop sends the look again (a clothing store's purchase) | built (a partner's vendor: not run in game, scenario `vendor-guest`) |
+| Ripperdoc | the player's game | seated in the chair (a workspot), then busy (a shop) | its cyberware is its own; leaving sends its look again, so a new arm or face shows on the puppet | built; at a partner's ripperdoc the screen opens where our V stands (no chair: its scene is our hidden copy's) |
 | The mirror, the wardrobe, transmog | the player's game | busy (a shop); the new look on the puppet when it closes | the look (face, hair, body, the clothes shown) sent again; an unchanged look reaches nobody, so the puppet is not redressed for nothing | built |
 | Hub menus: inventory, map, perks, crafting, journal | the player's game | busy (a menu); while its game stands still (those menus still pause it, `time.md`) its puppet idles on its own graph | nothing pauses for the others | built |
 | Photo mode | the photographer's game alone | "NAME is in photo mode", the puppet held and idling; "NAME is back" | the others keep playing; out of it, the photographer's game starts a new epoch, so a guest is checked at once (digest, resync) and drops NPC states it froze over; the host's photo mode stands its world still for everyone (it is the world) | built |
@@ -64,7 +64,8 @@ time skips" (host's clock, every other player asked) and "photo mode"
 - **Scripts** (`scripts/tandem/Activities.reds`):
   - _Ours_: photo mode (`PhotoModeSystem.IsPhotoModeActive`), the menu
     scenarios we enter (wraps of `OnEnterScenario` of
-    `MenuScenario_NetworkBreach`, `_ArcadeMinigame`, `_Vendor` and its
+    `MenuScenario_NetworkBreach`, `_ArcadeMinigame`, `_Vendor` (the look
+    sent again on the way out) and its
     `OnSwitchToRipperDoc`, `_Wardrobe`, `_CharacterCustomizationMirror`,
     `_TimeSkip`, `_HubMenu`; out through `MenuScenario_BaseMenu.OnLeaveScenario`,
     or `UI_System.IsInMenu` going false), a shard's popup
@@ -91,9 +92,13 @@ time skips" (host's clock, every other player asked) and "photo mode"
     other game's clock by the same difference (`SetGameTimeByHMS` with the
     wheel's reason for whole hours, else `SetGameTimeBySeconds`), fast
     forwards that game's V and starts a new epoch (`TandemSync.WorldRebuilt(3)`).
-  - _Looks_: leaving the ripperdoc, the mirror, the wardrobe or the hub
-    sends our look again at once (`TandemSystem.RefreshLook`); the
+  - _Looks_: leaving a shop, the ripperdoc, the mirror, the wardrobe or
+    the hub sends our look again at once (`TandemSystem.RefreshLook`); the
     endpoint sends nothing when it is unchanged.
+  - _Shops of a partner's vendors_ (`scripts/tandem/Vendors.reds`): the
+    "Trade" prompt beside a vendor's proxy opens our own game's vendor of
+    that placed NPC, the shop activity above with it (`progression.md`,
+    "Vendors").
 - **Effects of a skip**: on the host the engine renews its crowd and
   streams (native, unknown in detail): the epoch makes guests drop older
   NPC states, their checks respawn or remove proxies against the host's

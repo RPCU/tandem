@@ -44,6 +44,16 @@ tasks:
       - cmake --preset linux
       - cmake --build --preset linux
 
+  ccache:stats:
+    desc: "The compiler cache shared by this machine's worktrees: size, hits, misses (tools/remote.sh ccache:stats for the game machine's)"
+    cmds:
+      - ccache --show-stats --verbose
+
+  ccache:clear:
+    desc: Empty the compiler cache shared by this machine's worktrees, and zero its statistics
+    cmds:
+      - ccache --clear --zero-stats
+
   test:
     desc: Run the tests
     deps: [build:linux]
@@ -205,6 +215,10 @@ tasks:
     desc: Render and validate the Kubernetes manifests
     cmds:
       - kustomize build deploy/kubernetes/base | kubeconform -strict -summary -
+      # Gateway and HTTPRoute (Gateway API CRDs) have no schema kubeconform
+      # ships: rendered (kustomize checks their structure), not validated.
+      - kustomize build deploy/kubernetes/kgateway | kubeconform -strict -summary -skip Gateway,HTTPRoute -
+      - kustomize build deploy/kubernetes/playit | kubeconform -strict -summary -
 
   check:
     desc: Everything CI would run

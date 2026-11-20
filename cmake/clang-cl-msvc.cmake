@@ -51,6 +51,13 @@ set(CMAKE_MODULE_LINKER_FLAGS_INIT "${_ldflags}")
 # the game process buys nothing.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded")
 set(CMAKE_TRY_COMPILE_CONFIGURATION Release)
+# Debug info inside each object (/Z7), not in a PDB shared by the compiles
+# (/Zi, CMake's default), which ccache cannot cache for cl. clang-cl writes
+# the same objects either way (it never writes a compile-time PDB; ccache
+# 4.14 knows and caches its /Zi too): /Z7 says what happens, whatever the
+# ccache. The linker still makes tandem.pdb from them, which tools/game.sh
+# bt names frames from. Policy CMP0141 (NEW from cmake_minimum_required 3.25).
+set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT Embedded)
 
 set(CMAKE_FIND_ROOT_PATH "${XWIN}")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)

@@ -255,6 +255,22 @@ struct TandemDeviceEvent {
 };
 static_assert(alignof(TandemDeviceEvent) <= 8, "the script VM aligns struct locals to 8");
 
+// Breach Protocol (scripts/tandem/Breach.reds): another player's breach for
+// our game to apply (kind 1), or the host's answer to ours (kind 2). Its
+// daemons and traps: BreachPrograms / BreachTraps with its index. Plain
+// fields only, as above.
+struct TandemBreachEvent {
+  std::int32_t kind{};
+  std::int32_t index{};   // 1: into the last TakeBreachEvents' daemons
+  std::uint32_t player{}; // 1: the breacher; 2: who breached it (granted: us)
+  Red::EntityID entity;   // the access point (0: none)
+  Red::CName cls;         // its persistent state's class
+  std::uint32_t npc{};    // the NPC breached through the quickhack (0: none)
+  std::int32_t flags{};   // proto::kBreach*
+  std::int32_t verdict{}; // 2: proto::BreachVerdict (0 granted)
+};
+static_assert(alignof(TandemBreachEvent) <= 8, "the script VM aligns struct locals to 8");
+
 // Down and out (scripts/tandem/Revive.reds): someone reviving our V.
 struct TandemReviveEvent {
   std::uint32_t player{}; // the reviver
@@ -1090,6 +1106,28 @@ struct TandemNative : Red::IScriptable {
 
   static Red::CString RelayStatus() { return Red::CString(Runtime::Get().RelayStatus().c_str()); }
 
+  // The relay link's details (Runtime::SetRelayDetails), and the "new code"
+  // action: a kept code's next salt is saved here (tandem.ini's code_salt),
+  // the net thread asks the relay.
+  static bool RelayCodeKept() { return Runtime::Get().RelayDetails().kept; }
+
+  static bool RelayNewCode() {
+    auto &runtime = Runtime::Get();
+    if (runtime.ChosenRole() != Config::Role::Host || runtime.RelayCode().empty())
+      return false;
+    if (runtime.config.keepCode)
+      runtime.ChangeSetting("code_salt", std::to_string(runtime.config.codeSalt + 1));
+    ++runtime.newCodeRequests;
+    log::Info("relay: a new join code asked for");
+    return true;
+  }
+
+  static Red::CString RelayCheck() {
+    return Red::CString(Runtime::Get().RelayDetails().check.c_str());
+  }
+
+  static std::int32_t RelayDirect() { return Runtime::Get().RelayDetails().direct; }
+
   // Gameplay recording (tandem/play.hpp, tools/game.sh cmd record start
   // NAME): our V's play, written by the net thread next to the DLL as
   // recordings/NAME.tplay. False: no session, or not a file name.
@@ -1514,6 +1552,78 @@ struct TandemNative : Red::IScriptable {
       Runtime::Get().SubmitDevice(*state);
     }
   }
+  // Breach Protocol: our V's breach, as the game's minigame blackboard has
+  // it (npc: the NPC breached through the quickhack, 0: a network; player:
+  // host only, another player whose NPC breach our game resolved to its
+  // network, 0: ours).
+  static void SendBreach(Red::EntityID entity, Red::CName cls, std::uint32_t npc,
+                         Red::DynArray<Red::TweakDBID> programs,
+                         Red::DynArray<Red::TweakDBID> traps, std::int32_t flags,
+                         std::uint32_t player) {
+    proto::Breach breach{
+        .player = player,
+        .entity = entity.hash,
+        .cls = cls.hash,
+        .npc = npc,
+        .flags = static_cast<std::uint8_t>(flags & (proto::kBreachRemote | proto::kBreachFailed))};
+    if (breach.entity != 0 && breach.cls == 0)
+      return;
+    for (std::uint32_t i = 0; i < programs.Size() && i < proto::kMaxBreachPrograms; ++i)
+      breach.programs.push_back(programs[i].value);
+    for (std::uint32_t i = 0; i < traps.Size() && i < proto::kMaxBreachPrograms; ++i)
+      breach.traps.push_back(traps[i].value);
+    if (breach.entity != 0 || breach.npc != 0)
+      Runtime::Get().SubmitBreach(std::move(breach));
+  }
+  // The daemons of the last TakeBreachEvents, by index.
+  static std::vector<proto::Breach> &TakenBreaches() {
+    static std::vector<proto::Breach> taken; // the game thread only
+    return taken;
+  }
+  static Red::DynArray<TandemBreachEvent> TakeBreachEvents() {
+    Red::DynArray<TandemBreachEvent> out;
+    auto &taken = TakenBreaches();
+    taken.clear();
+    for (auto &message : Runtime::Get().TakeBreaches()) {
+      if (auto *breach = std::get_if<proto::Breach>(&message)) {
+        out.EmplaceBack(TandemBreachEvent{.kind = 1,
+                                          .index = static_cast<std::int32_t>(taken.size()),
+                                          .player = breach->player,
+                                          .entity = Red::EntityID(breach->entity),
+                                          .cls = Red::CName(breach->cls),
+                                          .npc = breach->npc,
+                                          .flags = breach->flags});
+        taken.push_back(std::move(*breach));
+      } else if (const auto *result = std::get_if<proto::BreachResult>(&message)) {
+        out.EmplaceBack(TandemBreachEvent{.kind = 2,
+                                          .index = -1,
+                                          .player = result->by,
+                                          .entity = Red::EntityID(result->entity),
+                                          .cls = Red::CName(result->cls),
+                                          .npc = result->npc,
+                                          .verdict = static_cast<std::int32_t>(result->verdict)});
+      }
+    }
+    return out;
+  }
+  static Red::DynArray<Red::TweakDBID> Ids(const std::vector<std::uint64_t> &ids) {
+    Red::DynArray<Red::TweakDBID> out;
+    for (const auto id : ids)
+      out.EmplaceBack(Red::TweakDBID(id));
+    return out;
+  }
+  static Red::DynArray<Red::TweakDBID> BreachPrograms(std::int32_t index) {
+    const auto &taken = TakenBreaches();
+    if (index < 0 || static_cast<std::size_t>(index) >= taken.size())
+      return {};
+    return Ids(taken[index].programs);
+  }
+  static Red::DynArray<Red::TweakDBID> BreachTraps(std::int32_t index) {
+    const auto &taken = TakenBreaches();
+    if (index < 0 || static_cast<std::size_t>(index) >= taken.size())
+      return {};
+    return Ids(taken[index].traps);
+  }
   static Red::DynArray<TandemDeviceEvent> TakeDeviceEvents() {
     Red::DynArray<TandemDeviceEvent> out;
     for (const auto &message : Runtime::Get().TakeDevices()) {
@@ -1915,6 +2025,17 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemDeviceEvent, "TandemDeviceEvent", {
   RTTI_PROPERTY(quiet);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemBreachEvent, "TandemBreachEvent", {
+  RTTI_PROPERTY(kind);
+  RTTI_PROPERTY(index);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(entity);
+  RTTI_PROPERTY(cls);
+  RTTI_PROPERTY(npc);
+  RTTI_PROPERTY(flags);
+  RTTI_PROPERTY(verdict);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemReviveEvent, "TandemReviveEvent", {
   RTTI_PROPERTY(player);
   RTTI_PROPERTY(step);
@@ -2066,6 +2187,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(UseDevice);
   RTTI_METHOD(AskDevice);
   RTTI_METHOD(TakeDeviceEvents);
+  RTTI_METHOD(SendBreach);
+  RTTI_METHOD(TakeBreachEvents);
+  RTTI_METHOD(BreachPrograms);
+  RTTI_METHOD(BreachTraps);
   RTTI_METHOD(You);
   RTTI_METHOD(SendVitals);
   RTTI_METHOD(OtherPlayers);
@@ -2111,6 +2236,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(IsTimeHostFull);
   RTTI_METHOD(RelayCode);
   RTTI_METHOD(RelayStatus);
+  RTTI_METHOD(RelayCodeKept);
+  RTTI_METHOD(RelayNewCode);
+  RTTI_METHOD(RelayCheck);
+  RTTI_METHOD(RelayDirect);
   RTTI_METHOD(JoinByCode);
   RTTI_METHOD(RecordStart);
   RTTI_METHOD(RecordStop);

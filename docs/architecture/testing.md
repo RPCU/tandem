@@ -162,6 +162,11 @@ REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
   later (`Throw`, `ThrowEnd`: the others launch a copy); `--smart N` fires
   a smart round at an NPC it knows; `join --defend N` parries, then
   blocks, one of the host's NPCs' attacks every N s (`Defended`).
+  Enemy scaling (`npcs.md`): `join --near-npc` stands 4 m from one of the
+  host's NPCs (the first heard that is still there), so the host counts it
+  near; a guest logs each `NpcScale` ("npc N is scaled for P players");
+  `host --enemy-scaling on|off [--enemy-scaling-health F]` sets the rule
+  (`Rules`). Scenario `enemy-scaling`.
 - **Down and out** (any mode): `--go-down N` puts its V down N s after
   another player is there (it lies still until someone revives it);
   `--go-out N` puts it out instead, up again 10 s later; `--revive N`
@@ -260,6 +265,24 @@ decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
   logged as the game logs it. `tests/peer_devices.sh`; scenarios
   `devices-door`, `devices-lift`, `devices-camera`, `devices-barrel`,
   `devices-guest` (`architecture/devices.md`, Testing).
+- **Breach Protocol** (any mode): `--breach ENTITY[:CLASS][@SECONDS]`
+  (an access point by id, its class `AccessPointControllerPS` unless
+  named) or `--breach npc=N[@SECONDS]` (the quickhack on NPC N) sends a won
+  breach SECONDS into the session (5) with `--programs LIST`
+  (`MinigameAction` records by name or hex), or a lost one with
+  `--breach-failed`. The host's answer and every other player's breach it
+  would apply are logged (it has no world: taken as run).
+  `tests/peer_breach.sh`; scenarios `breach-guest`, `breach-host`
+  (`architecture/devices.md`, "Breach Protocol").
+- **Vendors** (host; `progression.md`, "Vendors"): `--vendor
+REC@X,Y,Z#ENTITY` shares one NPC of REC standing at X,Y,Z once a guest
+  is there, said to be the placed vendor ENTITY (hex, as the game's
+  `tools/game.sh cmd vendor near` logs its own nearest vendor), so the
+  game as a guest opens its own vendor of it; `--vendor-dies N` kills it N
+  s after a guest is there (every game hears that vendor died). What it
+  hears of vendors is logged. In game: `tools/game.sh cmd vendor`,
+  `vendor near`, `vendor goto`, `vendor open`, `vendor close`; scenario
+  `vendor-guest`.
 
 - **Vehicle combat** (`vehicle-combat.md`; `tests/peer_wheels.sh`):
   `--mode drive --car-damage N` dents our car N s after it sits (a flat
@@ -317,3 +340,60 @@ shoot`, `wheels gun`, `wheels ungun`.
   `task peer -- join --code K7Q-2M9 --relay 127.0.0.1`. `task test` does the
   same (`relay-loopback`, `tests/relay_loopback.sh`: it builds the relay
   with Go and runs the `relay` suite of `tandem-tests` against it).
+
+## The compiler cache
+
+Every compile, Windows and Linux, goes through ccache (from devenv), one
+cache per machine shared by every checkout and worktree: a fresh worktree's
+first build is mostly hits on what another worktree compiled.
+
+- **Off:** `TANDEM_CCACHE=0` (read at each configure, which every
+  `task build*` runs; `tools/remote.sh` passes it on to the game machine).
+- **Where:** `~/.cache/tandem/ccache` (`TANDEM_CCACHE_DIR`). Capped at 6 GB
+  on the laptop and 15 GB on the game machine (`TANDEM_CCACHE_SIZE`; on the
+  game machine `TANDEM_REMOTE_CCACHE_SIZE`). One commit's full build
+  (plugin and Linux) takes 0.4 GB; a change to a widely included header
+  (`protocol.hpp`) misses nearly everything, so each such variant costs
+  that again. 15 GB holds some 35 variants for the game machine's 30-odd
+  worktrees; the laptop builds only when the game machine is busy, and 6 GB
+  (15 variants) of its smaller free disk is enough.
+- **Settings** (environment, `devenv.nix` `enterShell`; no user-wide
+  `ccache.conf`): `base_dir` is the directory holding every checkout (the
+  main checkout on the laptop, its worktrees live inside it;
+  `~/.cache/tandem/src` on the game machine), so paths under it are hashed
+  relative to the build directory; `hash_dir = false`; depend mode (the
+  compiler's own `-MD` or `/showIncludes` list, no second preprocessor run
+  on a miss); `compiler_check = echo %compiler%` (every Nix store file has
+  the same mtime: the compiler's store path stands for its version).
+- **Safety:** no sloppiness is set: a hit needs the same compiler (store
+  path), flags and the content of every included file. A cache it cannot
+  read or write, or a compile it cannot cache, makes ccache run the
+  compiler as is; no ccache in the shell, no launcher. Concurrent builds
+  share the cache safely (ccache locks its files). If a build looks wrong,
+  `TANDEM_CCACHE=0` rebuilds without it.
+- **Measured** on the game machine (2026-11-19, 12 jobs): a fresh
+  worktree's `build:plugin` took 190 s without the cache and 2.2 s warm from
+  another worktree, `build:linux` 305 s and 15 s (mostly linking the tests).
+  Through `tools/build.sh` under load, a fresh `build:plugin build:linux`:
+  72 s, 193 of 195 compiles hits (the misses: the files that include the
+  commit's build name). A one-file change still compiles that file (18 s
+  for a plugin file); changing it back is a hit (0.5 s).
+- **`task ccache:stats`**, **`task ccache:clear`**; `tools/remote.sh
+ccache:stats` for the game machine's.
+- **What the build does for it:** ccache refuses every clang-cl `/clang:`
+  option, so the C++23 flag is `/std:c++23preview`, the depfile is
+  `/showIncludes`, and core's constexpr limit is `-Xclang` (top-level and
+  `core/CMakeLists.txt`). C++ module scanning is off: nothing here is a
+  module, and it compiles with GCC's `-fmodules-ts`, which ccache refuses.
+  The debug info is `/Z7` (in each object;
+  `CMAKE_MSVC_DEBUG_INFORMATION_FORMAT`, `cmake/clang-cl-msvc.cmake`), not
+  cl's uncacheable `/Zi`: clang-cl writes the same objects for both, and
+  lld-link still makes `tandem.pdb` from them (same 21363 publics and 11581
+  procedures as with `/Zi`). The plugin has no precompiled header.
+- **Caveat, debug paths:** a hit is the object another worktree compiled,
+  byte for byte, so its debug info names that worktree's directory
+  (CodeView file names, DWARF `comp_dir`). Recompiling a hit's source in
+  another worktree gives the same code and differs only in those strings.
+  Function names in `tandem.pdb` (`tools/game.sh bt`) are unaffected; a
+  debugger looking for source lines may open the other worktree's file, or
+  none if it is gone.

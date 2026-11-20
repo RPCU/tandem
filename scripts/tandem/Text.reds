@@ -94,7 +94,11 @@ public class TandemText {
       "the session is not on the relay (the host left)", "the relay has too many sessions open",
       "another host holds this session on the relay", "no session has this join code (wrong, or expired)",
       "too many join attempts: try again in a minute", "could not open a socket to the relay",
-      "the session is full (4 players at most)", "Resyncing with the host..."
+      "the session is full (4 players at most)", "Resyncing with the host...",
+      "the relay went silent: reconnecting", "lost the relay",
+      "the relay's replicas sent us on twice (their peers lists disagree)",
+      "the relay sent us to an address we cannot reach (IPv6)",
+      "the relay is restarting: try again in a moment"
     ];
     let keys = [
       "Reason-Full", "Reason-HostGone", "Reason-Unreachable", "Reason-Connecting",
@@ -102,7 +106,11 @@ public class TandemText {
       "Reason-RelayNoSession", "Reason-RelayBusy",
       "Reason-RelayTaken", "Reason-RelayNoCode",
       "Reason-RelayThrottled", "Reason-RelaySocket",
-      "Reason-FullMax", "Session-Resync"
+      "Reason-FullMax", "Session-Resync",
+      "Reason-RelayReconnecting", "Reason-RelayLost",
+      "Reason-RelayLoop",
+      "Reason-RelayIpv6",
+      "Reason-RelayDraining"
     ];
 
     let i = 0;
@@ -251,6 +259,11 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Status-HostFailed", "Could not host: {1}");
     this.Text("Tandem-Status-Hosting", "Hosting on port {1}");
     this.Text("Tandem-Status-Code", "Join code: {1}");
+    this.Text("Tandem-Status-CodeKept", "Join code: {1} (kept: the same next time)");
+    this.Text("Tandem-Status-CheckDirect", "Connection check: direct connections likely");
+    this.Text("Tandem-Status-CheckRelay", "Connection check: relay only (your network changes ports)");
+    this.Text("Tandem-Status-Direct", "Direct connection: {1} (not through the relay)");
+    this.Text("Tandem-Menu-NewCode", "New join code");
     this.Text("Tandem-Status-Relay", "Relay: {1}");
     this.Text("Tandem-Status-JoinAtLoad", "You join {1} when your game loads");
     this.Text("Tandem-Status-InSessionOf", "In {1}'s session");
@@ -312,6 +325,11 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Reason-RelayNoCode", "no session has this join code (wrong, or expired)");
     this.Text("Tandem-Reason-RelayThrottled", "too many join attempts: try again in a minute");
     this.Text("Tandem-Reason-RelaySocket", "could not open a socket to the relay");
+    this.Text("Tandem-Reason-RelayReconnecting", "the relay went silent: reconnecting");
+    this.Text("Tandem-Reason-RelayLost", "lost the relay");
+    this.Text("Tandem-Reason-RelayLoop", "the relay's servers disagree (sent on twice)");
+    this.Text("Tandem-Reason-RelayIpv6", "the relay sent us to an address we cannot reach (IPv6)");
+    this.Text("Tandem-Reason-RelayDraining", "the relay is restarting: try again in a moment");
     this.Text("Tandem-Player-Unnamed", "Player {1}");
     // Names (the co-op menu's prompt; the host's (2), (3)).
     this.Text("Tandem-Name-Title", "Your co-op name");
@@ -409,6 +427,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Activities-Elsewhere", "{1} is somewhere else");
     this.Text("Tandem-Activities-Paused", "{1} paused the game");
     this.Text("Tandem-Activities-CantSkip", "Time can't be skipped now");
+    this.Text("Tandem-Breach-Already", "{1} breached this network first");
+    this.Text("Tandem-Breach-AlreadyWorld", "This network was breached already");
     this.Text("Tandem-Trade-Prompt", "Trade");
     this.Text("Tandem-Trade-Asked", "Asked {1} to trade");
     this.Text("Tandem-Trade-Asks", "{1} wants to trade");
@@ -438,6 +458,11 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Trade-Not-Iconic", "an iconic or important item");
     this.Text("Tandem-Trade-Not-Hidden", "not an item to trade");
     this.Text("Tandem-Trade-Not-Unsellable", "it cannot be sold");
+    this.Text("Tandem-Vendor-Trade", "Trade");
+    this.Text("Tandem-Vendor-Dead", "{1} is dead");
+    this.Text("Tandem-Vendor-NotNow", "You can't trade with {1} right now");
+    this.Text("Tandem-Vendor-NotHere", "{1} doesn't trade with you yet");
+    this.Text("Tandem-Vendor-Locked", "{1}'s shop isn't open to you yet");
     this.Text("Tandem-Trade-Not-Equipped", "unequip it first");
     this.Text("Tandem-Trade-Not-Single", "it cannot be given");
     this.Text("Tandem-Trade-Not-UsedUp", "it would be used up");
@@ -448,6 +473,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Garage-LendAboard", "{1}'s car: only with them aboard");
     this.Text("Tandem-Garage-LendKept", "{1}'s car: they keep it to themselves");
     this.Text("Tandem-Levels-Scaled", "Co-op: enemies are scaled to level {1}");
+    this.Text("Tandem-Scaling-On", "Co-op: enemies near more than one of you are tougher");
     this.Text("Tandem-Saves-Failed", "Co-op: the game could not be saved. Save it yourself to keep what your V earned.");
     this.Text("Tandem-Saves-WhenYouCan", "Co-op: save your game when you can, to keep what your V earned.");
     this.Text("Tandem-Saves-NotRestored", "Co-op: your game could not be put back as it was. Load your last save.");
@@ -500,6 +526,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-TokenSet", "set");
     this.Text("Tandem-Settings-Name", "Name");
     this.Text("Tandem-Settings-FriendlyFire", "Friendly fire");
+    this.Text("Tandem-Settings-EnemyScaling", "Tougher enemies for each extra player");
     this.Text("Tandem-Settings-Notices", "Notices");
     this.Text("Tandem-Settings-Notices-All", "all");
     this.Text("Tandem-Settings-Notices-Important", "important only");
@@ -512,6 +539,11 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-Recorder", "Recorder");
     this.Text("Tandem-Settings-Relay", "Relay");
     this.Text("Tandem-Settings-RelayToken", "Relay host token");
+    this.Text("Tandem-Settings-Code", "Join code");
+    this.Text("Tandem-Settings-Code-New", "new each session");
+    this.Text("Tandem-Settings-Code-Keep", "kept (the same every session)");
+    this.Text("Tandem-Settings-Direct", "Direct connection through the relay");
+    this.Text("Tandem-Settings-Direct-Auto", "when possible");
     this.Text("Tandem-Settings-Story", "Story sync");
     this.Text("Tandem-Settings-QuestFreeze", "Pause your own story (guest)");
     this.Text("Tandem-Settings-ScenePrivacy", "Private scenes");
@@ -541,6 +573,11 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Status-HostFailed", "Hébergement impossible : {1}");
     this.Text("Tandem-Status-Hosting", "Hébergement sur le port {1}");
     this.Text("Tandem-Status-Code", "Code d'invitation : {1}");
+    this.Text("Tandem-Status-CodeKept", "Code d'invitation : {1} (gardé : le même la prochaine fois)");
+    this.Text("Tandem-Status-CheckDirect", "Test de connexion : connexion directe probable");
+    this.Text("Tandem-Status-CheckRelay", "Test de connexion : relais seulement (votre réseau change de port)");
+    this.Text("Tandem-Status-Direct", "Connexion directe : {1} (sans le relais)");
+    this.Text("Tandem-Menu-NewCode", "Nouveau code d'invitation");
     this.Text("Tandem-Status-Relay", "Relais : {1}");
     this.Text("Tandem-Status-JoinAtLoad", "Vous rejoignez {1} dès le chargement de votre partie");
     this.Text("Tandem-Status-InSessionOf", "Dans la session de {1}");
@@ -601,6 +638,11 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Reason-RelayNoCode", "aucune session n'a ce code d'invitation (erroné ou expiré)");
     this.Text("Tandem-Reason-RelayThrottled", "trop de tentatives : réessayez dans une minute");
     this.Text("Tandem-Reason-RelaySocket", "impossible d'ouvrir une connexion vers le relais");
+    this.Text("Tandem-Reason-RelayReconnecting", "le relais ne répond plus : reconnexion");
+    this.Text("Tandem-Reason-RelayLost", "relais perdu");
+    this.Text("Tandem-Reason-RelayLoop", "les serveurs du relais se contredisent (renvoyé deux fois)");
+    this.Text("Tandem-Reason-RelayIpv6", "le relais nous envoie vers une adresse injoignable (IPv6)");
+    this.Text("Tandem-Reason-RelayDraining", "le relais redémarre : réessayez dans un instant");
     this.Text("Tandem-Player-Unnamed", "Joueur {1}");
     this.Text("Tandem-Name-Title", "Votre nom en coop");
     this.Text("Tandem-Name-Ask", "Le nom que les autres joueurs voient au-dessus de votre V et dans leur liste d'équipe : 1 à 16 caractères (annuler : V pour l'instant)");
@@ -692,6 +734,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Activities-Elsewhere", "{1} est ailleurs");
     this.Text("Tandem-Activities-Paused", "{1} a mis le jeu en pause");
     this.Text("Tandem-Activities-CantSkip", "Impossible de passer le temps maintenant");
+    this.Text("Tandem-Breach-Already", "{1} a piraté ce réseau en premier");
+    this.Text("Tandem-Breach-AlreadyWorld", "Ce réseau était déjà piraté");
     this.Text("Tandem-Trade-Prompt", "Échanger");
     this.Text("Tandem-Trade-Asked", "Échange proposé à {1}");
     this.Text("Tandem-Trade-Asks", "{1} veut échanger");
@@ -721,6 +765,11 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Trade-Not-Iconic", "un objet iconique ou important");
     this.Text("Tandem-Trade-Not-Hidden", "pas un objet à échanger");
     this.Text("Tandem-Trade-Not-Unsellable", "il ne peut pas être vendu");
+    this.Text("Tandem-Vendor-Trade", "Commercer");
+    this.Text("Tandem-Vendor-Dead", "{1} est mort");
+    this.Text("Tandem-Vendor-NotNow", "Impossible de commercer avec {1} pour l'instant");
+    this.Text("Tandem-Vendor-NotHere", "{1} ne commerce pas encore avec vous");
+    this.Text("Tandem-Vendor-Locked", "La boutique de {1} ne vous est pas encore ouverte");
     this.Text("Tandem-Trade-Not-Equipped", "déséquipez-le d'abord");
     this.Text("Tandem-Trade-Not-Single", "il ne peut pas être donné");
     this.Text("Tandem-Trade-Not-UsedUp", "il serait consommé");
@@ -731,6 +780,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Garage-LendAboard", "Voiture de {1} : seulement avec lui à bord");
     this.Text("Tandem-Garage-LendKept", "Voiture de {1} : il la garde pour lui");
     this.Text("Tandem-Levels-Scaled", "Coop : les ennemis sont ajustés au niveau {1}");
+    this.Text("Tandem-Scaling-On", "Coop : les ennemis proches de plusieurs d'entre vous sont plus coriaces");
     this.Text("Tandem-Saves-Failed", "Coop : la partie n'a pas pu être sauvegardée. Sauvegardez vous-même pour garder ce que votre V a gagné.");
     this.Text("Tandem-Saves-WhenYouCan", "Coop : sauvegardez dès que possible, pour garder ce que votre V a gagné.");
     this.Text("Tandem-Saves-NotRestored", "Coop : votre partie n'a pas pu être remise comme avant. Chargez votre dernière sauvegarde.");
@@ -780,6 +830,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-TokenSet", "défini");
     this.Text("Tandem-Settings-Name", "Nom");
     this.Text("Tandem-Settings-FriendlyFire", "Tirs alliés");
+    this.Text("Tandem-Settings-EnemyScaling", "Ennemis plus coriaces à chaque joueur en plus");
     this.Text("Tandem-Settings-Notices", "Notifications");
     this.Text("Tandem-Settings-Notices-All", "toutes");
     this.Text("Tandem-Settings-Notices-Important", "importantes seulement");
@@ -792,6 +843,11 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-Recorder", "Enregistreur");
     this.Text("Tandem-Settings-Relay", "Relais");
     this.Text("Tandem-Settings-RelayToken", "Jeton d'hôte du relais");
+    this.Text("Tandem-Settings-Code", "Code d'invitation");
+    this.Text("Tandem-Settings-Code-New", "nouveau à chaque session");
+    this.Text("Tandem-Settings-Code-Keep", "gardé (le même à chaque session)");
+    this.Text("Tandem-Settings-Direct", "Connexion directe via le relais");
+    this.Text("Tandem-Settings-Direct-Auto", "si possible");
     this.Text("Tandem-Settings-Story", "Histoire partagée");
     this.Text("Tandem-Settings-QuestFreeze", "Mettre votre histoire en pause (invité)");
     this.Text("Tandem-Settings-ScenePrivacy", "Scènes privées");

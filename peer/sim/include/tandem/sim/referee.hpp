@@ -76,6 +76,9 @@ public:
     std::uint64_t seatGraceUs{1'500'000};
     // An NPC still in the host's states this long after it went.
     std::uint64_t goneGraceUs{3'000'000};
+    // An owner's word to us (a hit, a cue, a shot, its animations) on an NPC
+    // that left our view this long ago (authority.not-shared).
+    std::uint64_t notSharedGraceUs{1'000'000};
   };
   struct Options {
     // What we send is lost or doubled on purpose (--drop, --dup, the chaos
@@ -158,6 +161,8 @@ private:
   // Both directions: the session's record as said on the wire.
   void Note(const proto::Message &message, bool sent);
   void NeedNpc(proto::NpcId npc, const char *what);
+  // An owner's word on an NPC that left our view (authority.not-shared).
+  void NeedShown(proto::NpcId npc, const char *what);
   void NeedPlayer(proto::PlayerId player, const char *what);
   // Who runs an NPC: its announcer, until the host says otherwise.
   proto::PlayerId OwnerOf(proto::NpcId npc) const;
@@ -209,6 +214,10 @@ private:
   std::set<std::pair<proto::NpcId, proto::NpcActionKind>> m_askedOnDead;
   std::set<std::pair<proto::WorldItemId, std::uint8_t>> m_claimed;
   std::set<std::pair<proto::NpcId, std::uint64_t>> m_uploads;
+  // Breach Protocol: our breaches awaiting the host's answer (network, NPC),
+  // and who breached each network as the host said.
+  std::map<std::tuple<std::uint64_t, std::uint64_t, proto::NpcId>, std::uint32_t> m_breachesAsked;
+  std::map<std::pair<std::uint64_t, std::uint64_t>, proto::PlayerId> m_breached;
   std::deque<std::uint64_t> m_pings;
   std::uint32_t m_offers{}; // the Regroup offers we made
   // Epochs.

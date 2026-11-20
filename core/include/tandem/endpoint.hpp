@@ -335,6 +335,19 @@ struct DeviceRequested {
 // Guest: the host is sending its device record again: what it does not
 // name again is no longer the session's.
 struct DevicesReset {};
+// Breach Protocol (docs/architecture/devices.md, "Breach Protocol"). Another
+// player's breach for our game to apply: the host, a network's devices and
+// our NPCs in it (kBreachApply); any other game, our NPCs in it
+// (kBreachApply), or the NPC breached through the quickhack, ours
+// (`breach.npc`). Its daemons run from the breacher's puppet; its rewards
+// were the breacher's, never ours. Never our own breach back.
+struct BreachBy {
+  proto::Breach breach;
+};
+// The host's answer to our own breach (the host's game: at once).
+struct BreachAnswered {
+  proto::BreachResult result;
+};
 // Regions (docs/architecture/regions.md). The players our region is linked
 // with changed: we see their NPCs, they see ours.
 struct RegionsChanged {
@@ -542,7 +555,8 @@ using SessionEvent = std::variant<
     events::RemoteLink, events::RemoteWaypoint, events::RemoteVehicleDamage, events::VehicleHitBy,
     events::RemoteVehicleExit, events::RemoteVehicleCombat, events::RemoteMountedFire,
     events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
-    events::ChaseChanged, events::NamedAs, events::RemoteStatusVisuals>;
+    events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
+    events::RemoteStatusVisuals>;
 
 class Endpoint {
 public:
@@ -656,9 +670,16 @@ public:
   // host keeps everyone's and tells all the session's level when their mean
   // changes: SessionLevel, never a game's to say); NpcLevel is the host's
   // word on one of its NPCs, kept for late joiners until the NPC goes.
-  // CarLend too: ours, kept and said as soon as we are in; the host stamps
-  // who, keeps everyone's (late joiners, resyncs) and tells all. False when
-  // nothing was sent (not ours to say, nobody to send to, refused by the
+  // NpcScale is an owner's word on an NPC it runs (tandem/scaling.hpp; one
+  // whose spawn has not reached us yet is said right after it), to everyone
+  // who sees that NPC, kept for late joiners until it goes. CarLend too: ours,
+  // kept and said as soon as we are in; the host stamps who, keeps everyone's
+  // (late joiners, resyncs) and tells all. NpcVendor: an owner's word that one
+  // of its NPCs is a placed vendor, to the players linked with it, kept with
+  // the NPC's records until it goes (one whose spawn is still on its way is
+  // said right after it); never a dead one (the host derives those from the
+  // owner's NpcGone, tells everyone and keeps them for the session). False
+  // when nothing was sent (not ours to say, nobody to send to, refused by the
   // rules).
   bool SendCombat(proto::Message message);
   // The session's rules as this game knows them (the host's own; a guest's,
@@ -675,9 +696,15 @@ public:
   // host's level for each NPC it shares.
   const std::optional<proto::SessionLevel> &SessionLevel() const { return m_sessionLevel; }
   const std::map<proto::NpcId, proto::NpcLevel> &NpcLevels() const { return m_npcLevels; }
+  // How many players each NPC we know of is scaled for, as its owner said.
+  const std::map<proto::NpcId, proto::NpcScale> &NpcScales() const { return m_npcScale; }
   // Who may drive each player's cars, as they said (a guest's own is not
   // kept here; the host's is).
   const std::map<proto::PlayerId, proto::CarLend> &CarLends() const { return m_lends; }
+  // The shared NPCs that are placed vendors (their entities), and the
+  // entities whose vendor died in the session (docs/architecture/progression.md).
+  const std::map<proto::NpcId, proto::NpcVendor> &NpcVendors() const { return m_npcVendors; }
+  const std::map<std::uint64_t, proto::NpcVendor> &DeadVendors() const { return m_deadVendors; }
   // The players in their pause menu, as this game knows them (us included).
   const std::set<proto::PlayerId> &Paused() const { return m_paused; }
   // Our V's time ability (Sandevistan...). Kept: sent now if we are in the
@@ -818,6 +845,16 @@ public:
   // Guest: a device came into our world like this. Known to the session and
   // different: our game hears the host's word again; unknown: the host is asked.
   void AskDevice(proto::DeviceState state);
+  // Breach Protocol: our V breached a network or an NPC (its minigame won,
+  // or lost: kBreachFailed); the programs are what the game's minigame
+  // blackboard had. Guest: to the host, which answers (BreachAnswered).
+  // Host: judged here, and passed on when it stands. Host only: `player`
+  // may name another player, whose breach of an NPC our game resolved to
+  // its network (that player's, not ours: our game applies it too).
+  void SendBreach(proto::Breach breach);
+  // Host: breaches granted, and refused because someone was first.
+  const devices::Breaches &BreachRecord() const { return m_breaches; }
+  std::uint64_t BreachesRefused() const { return m_breachesRefused; }
   // The session's device record: host, the authority; guest, its copy.
   const devices::Ledger &Devices() const { return m_devices; }
   const devices::DigestCheck &DeviceChecks() const { return m_deviceCheck; }
@@ -961,6 +998,12 @@ public:
     return m_session->RelaySessionSecret();
   }
   bool ThroughRelay() const { return m_throughRelay; }
+  // Direct paths set up through the relay (tandem.ini's `direct`): see
+  // net::RelayOptions::direct. Changed in a session, at once.
+  void SetDirect(bool on) { m_session->SetDirect(on); }
+  // Host on a relay: another join code now (Relay()->codeSalt has a kept
+  // one's new salt).
+  void NewRelayCode() { m_session->NewRelayCode(); }
 
   void Leave(const std::string &reason = "left");
 
@@ -1024,6 +1067,12 @@ private:
   // Host: `viewer` shows `owner`'s NPCs (linked, and not its own).
   bool Sees(proto::PlayerId viewer, proto::PlayerId owner) const {
     return viewer != owner && m_links.Linked(viewer, owner);
+  }
+  // Host: `viewer`'s game shows `npc` (in the shared record, its owner linked
+  // with it). An owner's word to one player about its NPC (a hit, a cue, a
+  // shot, a hack) goes only where this holds, like its states.
+  bool SharedWith(proto::NpcId npc, proto::PlayerId viewer) const {
+    return m_npcs.contains(npc) && Sees(viewer, NpcOwner(npc));
   }
   // Host: an owner's word on its NPC, to every guest that sees it.
   void ShareNpc(const proto::Message &message, proto::PlayerId owner, net::PeerId except = 0);
@@ -1108,6 +1157,13 @@ private:
     int tries{};
   };
   std::map<proto::NpcId, Handover> m_handovers;
+  // Host: `npc` is being handed from or to `player`. Until it is done, that
+  // player's word on what it runs may not have caught up with our record:
+  // its set neither drops nor corrects it, and its owned digest leaves it out.
+  bool InHandover(proto::NpcId npc, proto::PlayerId player) const {
+    const auto it = m_handovers.find(npc);
+    return it != m_handovers.end() && (it->second.from == player || it->second.to == player);
+  }
   std::uint64_t m_handoversDone{}, m_inherited{};
   // Giver: what we gave, until we hear who owns it. Receiver: what we took.
   std::map<proto::NpcId, proto::NpcHandoverState> m_given;
@@ -1379,6 +1435,10 @@ private:
   std::optional<proto::Rules> m_rules;
   bool FriendlyFire() const { return (Rules().flags & proto::kRuleFriendlyFire) != 0; }
   std::map<proto::NpcId, proto::NpcPoise> m_npcPoise;
+  // How many players each NPC is scaled for (NpcScale: its owner's word),
+  // as this game knows it; and ours said before their spawn reached us.
+  std::map<proto::NpcId, proto::NpcScale> m_npcScale;
+  std::map<proto::NpcId, proto::NpcScale> m_npcScaleEarly;
   void OnGuestCombat(proto::PlayerId player, const proto::Message &message,
                      std::vector<SessionEvent> &out);
   // Levels: ours (kept until we are in the session); host: each player's,
@@ -1390,6 +1450,18 @@ private:
   std::map<proto::NpcId, proto::NpcLevel> m_npcLevels;
   // Host: levels said of NPCs whose spawn has not been sent yet.
   std::map<proto::NpcId, proto::NpcLevel> m_npcLevelsEarly;
+  // Vendors: the shared NPCs that are placed vendors (an owner's word, kept
+  // with the NPC's records), ours said before their spawn went, and the
+  // session's dead vendors by entity (host: derived and told to everyone;
+  // guest: as the host said them).
+  std::map<proto::NpcId, proto::NpcVendor> m_npcVendors;
+  std::map<proto::NpcId, proto::NpcVendor> m_npcVendorsEarly;
+  std::map<std::uint64_t, proto::NpcVendor> m_deadVendors;
+  // Host: vendors knocked out (their records go; a later death still counts).
+  std::map<proto::NpcId, proto::NpcVendor> m_downVendors;
+  // Host: an NPC's owner said it is gone (reason: proto::NpcGone's): a vendor
+  // that died is the session's to remember. Before the NPC's records go.
+  void NoteVendorGone(const proto::NpcGone &gone, std::vector<SessionEvent> *out);
   void SendLocalLevelNow();
   void UpdateSessionLevel(std::vector<SessionEvent> &out);
   // Cars: ours (kept until we are in), everyone's (host: what it relays;
@@ -1446,6 +1518,13 @@ private:
   std::uint64_t m_deviceStale{};
   void OnDeviceUse(net::PeerId peer, proto::PlayerId player, const proto::DeviceUse &use,
                    std::vector<SessionEvent> &out);
+  // Breach Protocol. Host: who breached what; a breach from `player` (us:
+  // no peer), judged, answered and passed on. Guest: our breaches the host
+  // has not answered yet.
+  devices::Breaches m_breaches;
+  std::uint64_t m_breachesRefused{};
+  void OnBreach(std::optional<net::PeerId> peer, proto::PlayerId player, proto::Breach breach,
+                std::vector<SessionEvent> &out);
   void SendDevicesTo(net::PeerId peer, bool resync);
   proto::DeviceDigest DeviceDigestNow() const;
   consistency::FaultyLink m_faults;

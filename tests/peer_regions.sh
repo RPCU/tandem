@@ -75,10 +75,20 @@ kill "$guestpid" 2>/dev/null || true
 kill "${pids[0]}" 2>/dev/null || true
 
 # ---- the same through a link that loses a quarter of everything ----
+# The guest walks off once it knows it is linked (--region-leave-linked, not
+# a time): an owner that believes it is linked with nobody sends no NPC
+# states, and the host decides a hand-over from where its NPCs are. What
+# the loss takes from the players domain (the roster at join, a Regions)
+# comes back with a players resync: 3 s digests, two in a row, a 5 s
+# cooldown, the request and the answer lossy too, so one every 6-12 s that
+# fails one time in three or four. 120 s is ten of them. Then 3 s of
+# states, 2 s to walk past kKeep, and the hand-over's four tries 1 s apart.
 host --drop 0.25
-guest --drop 0.25 --region-far 300 --region-walk-at 2 --region-leave-at 12 --region-speed 40
+guest --drop 0.25 --region-far 300 --region-walk-at 2 --region-leave-linked 3 --region-speed 40
 wait_for "$hostlog" 'region: linked with player 2' 300 || fail "lossy: the host never met the guest"
-wait_for "$hostlog" 'region: took npc 1677721[789] over from player 2' 400 ||
+wait_for "$guestlog" 'region: walking off' 1200 ||
+  fail "lossy: the guest never learned it is linked by the host's V"
+wait_for "$hostlog" 'region: took npc 1677721[789] over from player 2' 600 ||
   fail "lossy: no NPC was handed over"
 kill "$guestpid" 2>/dev/null || true
 kill "${pids[2]}" 2>/dev/null || true

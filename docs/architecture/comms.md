@@ -196,6 +196,14 @@ Built 2026-11-19, not run in game.
   `Hacks.reds` hands each of these to `TandemCommsNative.PartnerUpload` /
   `PartnerEffect`.
 
+- **A partner's breach** (Breach Protocol, `devices.md`): its daemons'
+  effects on the owner's NPCs (`MinigameAction.ICEBrokenMinigame*`,
+  `VulnerabilityMinigame`, the squad buff) travel as `NpcStatus` with the
+  breacher as the player, like a quickhack's (`TandemBreach.IsDaemonEffect`
+  in `Hacks.reds`): a linked partner sees each weakened NPC with the
+  partner effect indicator, tinted, for as long as the effect lasts. No
+  indicator of its own for the network.
+
 - **The rules** are core's (`comms::HackBoard`). One upload indicator per
   player and NPC (a new upload replaces it); an effect's indicator carries
   the program that left it. Indicators are shown only for linked players:

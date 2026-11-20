@@ -12,7 +12,10 @@ section number in `docs/research/engine-knowledge.md`.
 
 Where things are (`core/`, `plugin/`, `peer/`, `tests/`, `relay/`, `nix/`,
 `deploy/`, `scripts/`, `tweaks/`, `dist/`, `cmake/`, `docs/`, `tools/`,
-`vendor/`) and the toolchain: ARCHITECTURE.md, Components.
+`vendor/`, `.github/workflows/`) and the toolchain: ARCHITECTURE.md,
+Components. The repository is published (MIT, `LICENSE`): keep personal data,
+real addresses and credentials out of it (tests use documentation
+addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 
 ## Environment
 
@@ -20,6 +23,10 @@ Where things are (`core/`, `plugin/`, `peer/`, `tests/`, `relay/`, `nix/`,
   direnv: `devenv shell -- task <name>`.
 - Entering the shell **runs treefmt over the tree**: files you wrote get
   reformatted (`.clang-format`: LLVM style, 100 columns).
+- Every compile goes through **ccache**, one cache per machine shared by
+  all worktrees (`~/.cache/tandem/ccache`); `TANDEM_CCACHE=0` turns it off.
+  Settings, sizes and the debug-path caveat:
+  `docs/architecture/testing.md`, "The compiler cache".
 
 ## Commands (Taskfile.yml)
 
@@ -45,6 +52,7 @@ Where things are (`core/`, `plugin/`, `peer/`, `tests/`, `relay/`, `nix/`,
 | `task deploy`        | copy the DLL to the game machine (`GAME_HOST`, default anya) |
 | `task logs`          | follow the plugin's log on the game machine                  |
 | `task package`       | the release zip and its symbols zip (`build/package/`)       |
+| `task ccache:stats`  | this machine's compiler cache: size, hits (`:clear` empties) |
 
 Run what your change can break before saying it works: `task test` for
 `core/`, `task build:plugin` for anything compiled into the DLL,
@@ -231,8 +239,17 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
   a feature needs outbound traffic; say why in the manifest.
 - Never answer an unregistered address's data; never send a reply larger
   than the request that caused it (both tested). Only registration-type
-  requests (register, resolve a join code), padded to 64 bytes, are answered
-  from an unregistered address.
+  requests (register, resolve a join code, probe), padded to 64 bytes, are
+  answered from an unregistered address (a redirect is such an answer). An
+  introduction (two answers to one request) goes only to members of the
+  requester's own session, both together smaller than the request.
+- Behind a PROXY v2 tunnel (`--proxy-protocol`, playit.gg): only
+  `--trusted-proxies` speak for clients, and every rule about a player
+  (lookup limits, `Observed`, `Introduce`) uses the header's address, the
+  size rule the payload without the header (`relay/internal/relay/proxy.go`).
+- Replicas and regions share nothing and never talk to each other: the
+  peers and regions lists are configuration, addresses not names (no DNS).
+  The failed-lookup budget is the whole world's, split between replicas.
 - Join codes stay expensive to guess: keep the per-source and total lookup
   limits (`TestCodeGuessingIsSlow`, `TestCodeFailuresFromEveryoneAreCapped`)
   and the code space (6 characters of base32, `crypto/rand`).
@@ -241,9 +258,11 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 
 ### Git
 
-- The repository is local only. **Commit locally** (small, focused commits,
-  hooks passing: treefmt, shellcheck); **never push or create a remote**
-  unless the user asks.
+- The public repository is `RPCU/tandem` on GitHub; the user pushes to it.
+  **Commit locally** (small, focused commits, hooks passing: treefmt,
+  shellcheck); **never push, open a pull request or add a remote** unless
+  the user asks. CI (`.github/workflows/`) runs on pushes and pull requests
+  to `main`.
 - Parallel work: independent tasks (research, reverse engineering, a
   feature that needs no game) can run in separate agents, each in its own
   git worktree; the game machine is one shared resource, so in-game testing

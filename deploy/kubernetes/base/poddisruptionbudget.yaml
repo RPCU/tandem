@@ -1,0 +1,11 @@
+# A node drain takes one replica at a time: the others keep their sessions
+# and take the new ones meanwhile.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tandem-relay
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tandem-relay

@@ -88,6 +88,14 @@ TEST_CASE("the players digest leaves out what is the viewer's own") {
                    .workspot = 9,
                    .anchor = {4, 5, 6}};
   CHECK(consistency::PlayersDigest(view, 2) != busy);
+
+  // Who is linked with whom (regions): a lost Regions is a difference.
+  std::vector<proto::PlayerId> pairs{1, 2}, none;
+  auto linked = view, apart = view;
+  linked.regionPairs = &pairs;
+  apart.regionPairs = &none;
+  CHECK(consistency::PlayersDigest(linked, 2) != consistency::PlayersDigest(apart, 2));
+  CHECK(consistency::PlayersDigest(linked, 2) == consistency::PlayersDigest(linked, 2));
 }
 
 TEST_CASE("the traffic digest follows the set, the records and how each vehicle stands") {
@@ -195,6 +203,9 @@ TEST_CASE("faults never touch the handshake and never send a one-shot twice") {
   // A shot at a V and its hit: doubling either would be a second shot.
   CHECK(consistency::IsOneShot(proto::NpcShotAt{}));
   CHECK(consistency::IsOneShot(proto::ShotHit{}));
+  // A breach runs its daemons once; its answer is said once.
+  CHECK(consistency::IsOneShot(proto::Breach{}));
+  CHECK(consistency::IsOneShot(proto::BreachResult{}));
   // A time skip's request, answers and result: each one counts.
   CHECK(consistency::IsOneShot(proto::TimeSkip{}));
   CHECK(consistency::IsOneShot(proto::TimeSkipVote{}));

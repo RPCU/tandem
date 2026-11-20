@@ -1,0 +1,19 @@
+# HTTP only. No UDP listener: see kustomization.yaml. Keep this Gateway off
+# the internet (an internal load balancer, or your cluster's private
+# network), or put authentication in front: /metrics shows how many
+# sessions run and how many lookups fail.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: tandem-relay-admin
+spec:
+  gatewayClassName: kgateway
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 8080
+      # Set yours in the overlay.
+      hostname: relay-admin.example.org
+      allowedRoutes:
+        namespaces:
+          from: Same
