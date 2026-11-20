@@ -111,9 +111,22 @@ reliable and ordered.
   message does not change.
 - The staging area is the middle of the host's V and the actors that show,
   the distance of the farthest from it, and the way the host's V faces it.
-- Cost: a scene with four actors is 4 × 431 bytes × 30 Hz ≈ 52 kB/s while
-  it lasts (a player's own pose is 13 kB/s). Bounded by 16 actors read at
-  once; `scene_replay = noposes` leaves the poses out.
+- Cost: bounded. The scene's streams (each actor's body, the camera)
+  share **22 kbit/s** on a guest's link (`scene::kSceneBytesPerSecond`,
+  2750 bytes a second with 12 a message; `scene_kbps` in `tandem.ini`
+  raises it on a good link), split by `scene::Pacer` in the host's
+  `Endpoint`: every stream it can serve gets a frame at least every 0.5 s,
+  the rest of the budget goes by weight (camera 3; a body 1 within 15 m of
+  the nearest other V, 0.5 to 40 m, 0.25 beyond), none faster than 30 a
+  second. A stream that would not get its 0.5 s is not sent at all, the
+  least weighted first: its actor keeps its own animation. On the wire a
+  body is an `ActorFrame` (the `PoseFrame` coding, a key every 2 s, bones
+  within 0.006 rad of the key's kept: about 110 bytes against 431); the
+  guest's game hears whole `ActorPose`s. With three actors near and a
+  camera: about 4 poses a second each and 14 views (computed; the budget
+  test's row measures the link). A guest draws a body one pose interval
+  in the past, between two poses. `scene_replay = noposes` leaves the
+  poses out.
 
 ## 3. The host's side
 
@@ -130,7 +143,8 @@ reliable and ordered.
   no cast, no pose (the net thread drops actor poses while private), no
   line. A scene that turns private while watched ends for the guests.
 - **Its actors** are the NPCs the host shares that the scene system says
-  are in a scene, within 30 m of V. One with a `gamePhantomEntityComponent`
+  are in a scene, within 100 m of V (16 at most; the far ones' poses come
+  less often: §2, cost). One with a `gamePhantomEntityComponent`
   is a ghost (Johnny), hidden unless a workspot holds it.
 - **Their bodies**: each actor is bound as a pose source
   (`engine/posestream.cpp`): read after its entity's animation job, 30
@@ -378,6 +392,9 @@ local space). **No new hook, hash or raw offset.**
 - the watch spot (beside the host, clear, facing the scene, on the host's
   floor, another one when taken) and the step out of an actor;
 - the record: what a joiner gets, the digest, repeats;
+- the actors' bodies: paced and delta coded on the wire, whole for the
+  guest's game (`scene_test`); the link with three actors and a camera
+  within 64 kbit/s (`budget_test`, the scene row);
 - the camera: a view through the wire, cuts told from moves, the track
   (blend, a cut, old views, silence, another play), the pacer (five
   streams within the budget and none under two a second, twenty bodies on a
@@ -474,8 +491,9 @@ camera on`), and in a real tier 5 cutscene: does
   import, and its values are unknown. One try in game decides (a script
   field added to the struct, 0 and 1 with `isPlayer` on a puppet of the
   other body); until then the game picks.
-- **Actors far from the host's V** (over 30 m) and **non-humanoid
-  actors** (drones, robots) are not posed.
+- **Non-humanoid actors** (drones, robots) are not posed: `RigPose`
+  (any rig's bones against its reference pose, `core/src/rigpose.cpp`) is
+  on the wire and coded, nothing reads or writes it in the plugin yet.
 - **Approach (a)**, as a spike only, for scenes with no V in them.
 
 ## 13. Risks
@@ -507,6 +525,9 @@ camera on`), and in a real tier 5 cutscene: does
   its frozen story but near the host's scene hears only the host's. A
   guest whose own open-world scenes still run (they are not frozen) can
   hear both at once; nothing new, but more audible now.
-- **Bandwidth** in large scenes (§2), all unreliable and droppable.
+- **Few poses a second.** Within the 64 kbit/s of a link a scene's bodies
+  come 3 to 6 times a second, drawn between: slow acting reads well, a
+  sharp gesture is softened, and a body is up to 0.3 s behind its voice.
+  `scene_kbps` is the lever where the link allows.
 - **The subtitle path changed** for every mirrored line (stand-in ids):
   the story scenarios must be run again.

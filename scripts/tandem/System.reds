@@ -818,6 +818,8 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(devices) {
       devices.Drain();
     }
+    // What broke, and a device's fire (Objects.reds).
+    TandemObjectSync.Tick(this.GetGameInstance(), this.m_playing ? this.m_you : 0u);
     // The Ping quickhack's network pulses: shared with the linked while in
     // a session (Comms.reds), else only taken off the queue.
     let pings = TandemStreaming.TakeStreamed(TandemStreamKind.NetworkPing());
@@ -1441,6 +1443,10 @@ public class TandemSystem extends ScriptableSystem {
       let breacher = GetPlayer(this.GetGameInstance());
       let near = IsDefined(this.m_npcs) && IsDefined(breacher) ? this.m_npcs.NearestProxy(breacher.GetWorldPosition()) : null;
       TandemBreach.Get(this.GetGameInstance()).Command(command, near);
+    } else if StrBeginsWith(command, "glass") {
+      // (test, Objects.reds) "glass": counts; "glass break|part": the
+      // replay of a break at what V looks at.
+      TandemObjectSync.Get(this.GetGameInstance()).Command(command);
     } else if StrBeginsWith(command, "takedown") {
       TandemTakedowns.Get(this.GetGameInstance()).Command(command);
     } else if Equals(command, "test reset") {
