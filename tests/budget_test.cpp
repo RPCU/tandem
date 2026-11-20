@@ -11,6 +11,7 @@
 #include "tandem/endpoint.hpp"
 #include "tandem/net_traffic.hpp"
 #include "tandem/pose.hpp"
+#include "tandem/presence.hpp"
 
 #include <doctest/doctest.h>
 
@@ -127,6 +128,14 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
         all[i]->SendLocalState(state);
         all[i]->SendLocalPose(
             pose::Pack(test::WalkCycle(s + 0.3f * static_cast<float>(i), energy)));
+        // On foot: each V's footsteps as noise for the other's NPCs, four a
+        // second (presence::NoiseGate), and a grenade of its own in flight
+        // half the time, its path said four times a second (ThrowPath).
+        if (play == Play::OnFoot && frame % 8 == 0)
+          all[i]->SendNoise({.stim = presence::kStimFootStepRegular});
+        if (play == Play::OnFoot && frame % 8 == 4 && (frame / 60) % 2 == 0)
+          all[i]->SendCombat(proto::ThrowPath{
+              .id = 1 + frame / 120, .position = state.position, .velocity = {0.f, 8.f, 2.f}});
       }
     }
     if (play == Play::Fight && now >= nextNpcs) {

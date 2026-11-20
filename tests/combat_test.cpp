@@ -4,6 +4,8 @@
 
 #include <doctest/doctest.h>
 
+#include <limits>
+
 using namespace tandem;
 using combat::StrikeLoss;
 
@@ -75,4 +77,26 @@ TEST_CASE("an NPC's melee hit on a guest waits until its proxy is drawn landing 
 TEST_CASE("friendly fire is the session's rule, off unless the host says so") {
   CHECK_FALSE(combat::FriendlyFire({}));
   CHECK(combat::FriendlyFire({.flags = proto::kRuleFriendlyFire}));
+}
+
+TEST_CASE("a copy of a thrown object is put on the real one's path only when it strayed") {
+  using combat::FollowPath;
+  using combat::PathFix;
+  const proto::ThrowPath flying{.position = {10.f, 20.f, 3.f}, .velocity = {0.f, 8.f, 2.f}};
+  // The same arc, a frame or two apart: left alone.
+  CHECK(FollowPath({10.f, 19.4f, 2.9f}, flying) == PathFix::None);
+  CHECK(FollowPath({10.f, 20.f, 3.f}, flying) == PathFix::None);
+  // It bounced off something the thrower's game does not have: back on
+  // the real one's path, flying on.
+  CHECK(FollowPath({13.f, 18.f, 0.2f}, flying) == PathFix::Relaunch);
+  // The real one lies still: a copy beside it is left, one that rolled
+  // elsewhere is laid where it lies.
+  const proto::ThrowPath still{.position = {10.f, 20.f, 0.1f}};
+  CHECK(FollowPath({10.2f, 20.1f, 0.1f}, still) == PathFix::None);
+  CHECK(FollowPath({11.f, 20.f, 0.1f}, still) == PathFix::Place);
+  // Nothing sane to follow.
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  CHECK(FollowPath({nan, 0.f, 0.f}, flying) == PathFix::None);
+  CHECK(FollowPath({0.f, 0.f, 0.f}, {.position = {0.f, 0.f, 0.f}, .velocity = {nan, 0.f, 0.f}}) ==
+        PathFix::None);
 }

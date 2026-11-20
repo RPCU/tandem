@@ -12,7 +12,8 @@
 // Observe: core/include/tandem/presence.hpp): footsteps, jumps, landings,
 // climbs, dashes from PlayerState; draws and holsters from Held; pain from
 // the health of Presence; going down from Vitals; time abilities from
-// TimeEffect. Two things our game alone knows are sent as a Cue: where a
+// TimeEffect; swimming (in and out of the water, under and back up, each
+// stroke) from PlayerState's swimming state. Two things our game alone knows are sent as a Cue: where a
 // shot of ours ended (the others draw the bullet: tracer, impact, decal,
 // its sound) and that a melee swing landed. The status effects that show
 // on our V travel as a set (StatusVisuals.reds).
@@ -37,6 +38,10 @@ public class TandemHeardPuppet {
   public let sfx: array<CName>;
   public let traces: Int32;
   public let flinches: Int32;
+  // Water: the swimming loop effect started on it (0 none, 1 the surface's,
+  // 2 the dive's), its strokes so far.
+  public let water: Int32;
+  public let strokes: Int32;
 }
 
 // The menu and photo mode are heard through the UI's blackboards: our tick
@@ -76,6 +81,10 @@ public class TandemPresenceSync {
   // Footsteps of ours: 0 only where the body's own are silent, 1 always,
   // 2 never (tools/game.sh cmd presence steps auto|on|off).
   private let m_stepsMode: Int32;
+  // Swimming: 0 the swimming states' own effects and the game's water
+  // sounds, 1 the effects alone, 2 the sounds alone (cmd presence swim
+  // both|fx|sound: whichever the puppet's body turns out to carry).
+  private let m_swimMode: Int32;
   private let m_hud: ref<TandemPartyHud>;
   private let m_reactions: ref<TandemReactionsSync>;
   private let m_status: ref<TandemStatusVisuals>;
@@ -259,13 +268,12 @@ public class TandemPresenceSync {
 
   // Where a shot of ours ended, for the others to draw its bullet: what
   // the crosshair is on (the game's own look-at query), else 120 m ahead.
-  // Smart bullets bend and launchers lob: their flight is not a line.
+  // A smart round that homes on a lock the others know is not drawn this
+  // way but guided to it (Throws.reds, Weapons.reds decides); one with no
+  // such lock flies straight, as here. A launcher's round and a grenade are
+  // thrown objects (Throws.reds).
   public static func ShotFired(player: ref<GameObject>, weapon: ref<WeaponObject>, left: Bool) -> Void {
     if !IsDefined(player) || !IsDefined(weapon) {
-      return;
-    }
-    let record = weapon.GetWeaponRecord();
-    if IsDefined(record) && IsDefined(record.Evolution()) && Equals(record.Evolution().Type(), gamedataWeaponEvolution.Smart) {
       return;
     }
     let game = player.GetGame();
@@ -309,6 +317,10 @@ public class TandemPresenceSync {
         for event in TandemPresence.Observe(player, body.GetWorldPosition(), walked) {
           if !silent && dt > 0.0 {
             this.Play(heard, body, event, now);
+          } else if event.kind >= 15 && event.kind <= 18 {
+            // Unheard, its water still follows it: no loop left on a body
+            // that got out while hidden.
+            this.Water(heard, body, event.kind, event.arg, false);
           }
         }
         heard.right = TandemNative.RemoteHeld(player, false);
@@ -435,8 +447,114 @@ public class TandemPresenceSync {
       case 14:
         this.Sound(heard, body, n"lcm_fs_additional_slide_stop", "slide end");
         break;
+      case 15:
+      case 16:
+      case 17:
+      case 18:
+        this.Water(heard, body, event.kind, event.arg, true);
+        break;
+      case 19:
+        this.Stroke(heard, body, event.arg);
+        break;
       default:
         break;
+    }
+  }
+
+  // ---- water ----
+
+  // The swimming state's loop effect on the body (LocomotionSwimming's
+  // swimming_surface and swimming_diving, final.reds:524022, 528133): the
+  // one of `state`, the other stopped.
+  private func WaterLoop(heard: ref<TandemHeardPuppet>, body: ref<GameObject>, state: Int32) -> Void {
+    if heard.water == state {
+      return;
+    }
+    if heard.water == 1 {
+      GameObjectEffectHelper.StopEffectEvent(body, n"swimming_surface");
+    } else if heard.water == 2 {
+      GameObjectEffectHelper.StopEffectEvent(body, n"swimming_diving");
+    }
+    heard.water = 0;
+    if this.m_swimMode != 2 {
+      if state == 1 {
+        GameObjectEffectHelper.StartEffectEvent(body, n"swimming_surface", false);
+      } else if state == 2 {
+        GameObjectEffectHelper.StartEffectEvent(body, n"swimming_diving", false);
+      }
+      heard.water = state;
+    }
+  }
+
+  // Into the water (15), out of it (16), under (17), back up (18): what
+  // V's own swimming states play (SwimmingSurfaceEvents, SwimmingTransition
+  // Events, SwimmingDivingEvents), and the game's own splashes of a body in
+  // water (NPCPuppet.OnRagdollBodyPartWaterImpactEvent: a torso's, a
+  // limb's), which are world sounds, placed in 3D. `audible` false: the
+  // loops only (a hidden body).
+  private func Water(heard: ref<TandemHeardPuppet>, body: ref<GameObject>, kind: Int32, arg: Int32, audible: Bool) -> Void {
+    let effects = audible && this.m_swimMode != 2;
+    let sounds = audible && this.m_swimMode != 1;
+    switch kind {
+      case 15:
+        this.WaterLoop(heard, body, (arg & 1) != 0 ? 2 : 1);
+        // Seen swimming from the start (arg 2): its water, no splash.
+        if (arg & 2) == 0 {
+          if effects && (arg & 1) != 0 {
+            GameObjectEffectHelper.StartEffectEvent(body, n"swimming_enter_dive", false);
+          }
+          if sounds {
+            this.Sound(heard, body, n"w_melee_water_medium_splash", "into the water");
+          }
+        }
+        break;
+      case 16:
+        this.WaterLoop(heard, body, 0);
+        if sounds {
+          this.Sound(heard, body, n"w_bul_hit_water", "out of the water");
+        }
+        break;
+      case 17:
+        this.WaterLoop(heard, body, 2);
+        if effects {
+          GameObjectEffectHelper.StartEffectEvent(body, n"swimming_enter_dive", false);
+        }
+        if sounds {
+          this.Sound(heard, body, n"w_bul_hit_water", "dive");
+        }
+        break;
+      case 18:
+        this.WaterLoop(heard, body, 1);
+        if audible {
+          // V's breath as it comes up (SwimmingSurfaceEvents.OnEnterFromDiving).
+          let breath = new SoundPlayEvent();
+          breath.soundName = n"surface_from_dive";
+          body.QueueEvent(breath);
+        }
+        if sounds {
+          this.Sound(heard, body, n"w_bul_hit_water", "back to the surface");
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  // One stroke (arg: 1 under the surface, 2 fast): the state's own stroke
+  // effect; on the surface, a limb's splash too.
+  private func Stroke(heard: ref<TandemHeardPuppet>, body: ref<GameObject>, arg: Int32) -> Void {
+    let diving = (arg & 1) != 0;
+    let fast = (arg & 2) != 0;
+    if this.m_swimMode != 2 {
+      let effect = diving ? (fast ? n"swimming_diving_stroke_fast" : n"swimming_diving_stroke") : (fast ? n"swimming_surface_stroke_fast" : n"swimming_surface_stroke");
+      GameObjectEffectHelper.StartEffectEvent(body, effect, false);
+    }
+    if this.m_swimMode != 1 && !diving {
+      GameObject.PlaySoundEvent(body, n"w_bul_hit_water");
+    }
+    heard.strokes += 1;
+    if heard.strokes == 1 || heard.strokes % 20 == 0 {
+      TandemNative.Log(s"audio: player \(heard.player) swimming stroke \(heard.strokes) (\(diving ? "under the surface" : "on the surface")\(fast ? ", fast" : ""); mode \(this.m_swimMode))");
     }
   }
 
@@ -676,6 +794,15 @@ public class TandemPresenceSync {
     } else if Equals(command, "steps off") {
       this.m_stepsMode = 2;
       TandemNative.Log("presence: our footsteps never");
+    } else if Equals(command, "swim both") {
+      this.m_swimMode = 0;
+      TandemNative.Log("presence: swimming: the states' effects and the water sounds");
+    } else if Equals(command, "swim fx") {
+      this.m_swimMode = 1;
+      TandemNative.Log("presence: swimming: the states' effects alone");
+    } else if Equals(command, "swim sound") {
+      this.m_swimMode = 2;
+      TandemNative.Log("presence: swimming: the water sounds alone");
     } else if StrBeginsWith(command, "vo ") || StrBeginsWith(command, "sound ") || StrBeginsWith(command, "fx ") {
       // Try a voice context, a sound event or an effect on every puppet:
       // to find by ear what resolves on a puppet's body.
@@ -725,14 +852,14 @@ public class TandemPresenceSync {
         this.m_status.Command(StrAfterFirst(command, "status "));
       }
     } else {
-      TandemNative.Log(s"presence: unknown command '\(command)' (report, steps auto|on|off, vo NAME, sound NAME, fx NAME, flinch, bullet, hud ..., react ..., status ...)");
+      TandemNative.Log(s"presence: unknown command '\(command)' (report, steps auto|on|off, swim both|fx|sound, vo NAME, sound NAME, fx NAME, flinch, bullet, hud ..., react ..., status ...)");
     }
   }
 
   private func Report(system: ref<TandemSystem>) -> Void {
-    TandemNative.Log(s"presence: our health \(Cast<Int32>(this.m_health * 100.0)) %, menu \(this.m_menu), photo mode \(this.m_photo); steps mode \(this.m_stepsMode); drawn bullets' hits dropped \(this.m_dropped)");
+    TandemNative.Log(s"presence: our health \(Cast<Int32>(this.m_health * 100.0)) %, menu \(this.m_menu), photo mode \(this.m_photo); steps mode \(this.m_stepsMode), swim mode \(this.m_swimMode); drawn bullets' hits dropped \(this.m_dropped)");
     for heard in this.m_heard {
-      TandemNative.Log(s"presence: player \(heard.player): health \(Cast<Int32>(TandemPresence.Health(heard.player) * 100.0)) %, flags \(TandemPresence.Flags(heard.player)); footsteps ours \(heard.steps), its animation's \(heard.graphSteps); other sounds \(heard.sounds); bullets drawn \(heard.traces); flinches \(heard.flinches)");
+      TandemNative.Log(s"presence: player \(heard.player): health \(Cast<Int32>(TandemPresence.Health(heard.player) * 100.0)) %, flags \(TandemPresence.Flags(heard.player)); footsteps ours \(heard.steps), its animation's \(heard.graphSteps); other sounds \(heard.sounds); bullets drawn \(heard.traces); flinches \(heard.flinches); water \(heard.water), strokes \(heard.strokes)");
     }
     if IsDefined(this.m_hud) {
       this.m_hud.Report();

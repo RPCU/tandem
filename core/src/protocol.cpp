@@ -401,7 +401,8 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<PoseFrame>(message) ||
                  std::holds_alternative<NpcMotion>(message) ||
                  std::holds_alternative<PlayerMotion>(message) ||
-                 std::holds_alternative<VehicleMotion>(message)
+                 std::holds_alternative<VehicleMotion>(message) ||
+                 std::holds_alternative<ThrowPath>(message)
              ? Channel::State
              // Everything else is reliable and ordered, the consistency
              // messages too (Digest, ResyncRequest, NpcSet, Epoch): a digest
@@ -424,8 +425,8 @@ bool IsCombat(const Message &message) {
          (message.index() >= kId<Throw> && message.index() <= kId<Defended>) ||
          (message.index() >= kId<PlayerLevel> && message.index() <= kId<NpcLevel>) ||
          std::holds_alternative<CarLend>(message) || std::holds_alternative<NpcScale>(message) ||
-         std::holds_alternative<NpcVendor>(message) || std::holds_alternative<NpcPlaced>(message) ||
-         std::holds_alternative<NpcDeath>(message);
+         std::holds_alternative<NpcVendor>(message) || std::holds_alternative<ThrowPath>(message) ||
+         std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message);
 }
 
 bool IsTrade(const Message &message) {
@@ -596,6 +597,7 @@ const char *NameOfKind(std::size_t kind) {
                                    "SceneProp",
                                    "Fracture",
                                    "DeviceFire",
+                                   "ThrowPath",
                                    "NpcPlaced",
                                    "NpcDeath"};
   static_assert(std::size(names) == std::variant_size_v<Message>);

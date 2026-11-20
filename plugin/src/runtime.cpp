@@ -385,6 +385,7 @@ void Runtime::Stop() {
     m_localStealth.reset();
     m_stealth.clear();
     m_localNoises.clear();
+    m_noiseGate.Reset();
     m_remoteNoises.clear();
     m_sharedNpcs.clear();
     m_roster.clear();
@@ -1426,6 +1427,10 @@ std::optional<proto::Stealth> Runtime::RemoteStealth(proto::PlayerId player,
 
 void Runtime::SubmitLocalNoise(const proto::Noise &noise) {
   std::lock_guard _(m_lock);
+  // Footsteps come every frame of a run: a few a second are enough for an
+  // NPC to hear the V (presence::NoiseGate).
+  if (!m_noiseGate.ShouldSend(noise.stim, net::NowUs()))
+    return;
   if (m_localNoises.size() < 32)
     m_localNoises.push_back(noise);
 }
@@ -1520,6 +1525,7 @@ void Runtime::ResetSession() {
     m_awarenessOfUs.clear();
     m_localAwareness.reset();
     m_localNoises.clear();
+    m_noiseGate.Reset();
     m_remoteNoises.clear();
     m_sharedNpcs.clear();
     m_roster.clear();

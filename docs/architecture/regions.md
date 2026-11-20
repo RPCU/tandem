@@ -597,7 +597,7 @@ See the tags in [`../research/engine/regions.md`](../research/engine/regions.md)
    wanders by its record's default behaviour until it leaves the shared
    world.
 3. **Twins**: by identity where the owner named one, else one to one (§3).
-   Open: which NPCs have a static id on 2.50 (`engine/regions.md` §13.92):
+   Open: which NPCs have a static id on 2.50 (`engine/regions.md` §13.94):
    a gang member with a dynamic id is matched by place, and two that swapped
    posts between the games are paired crosswise (harmless: same record).
 4. **Deaths across regions**: the ledger (§14), for placed NPCs, for the
@@ -667,7 +667,7 @@ map and comes by an hour later. Built and tested without the game.
 within 90 m. An entry is a place of death, not a ragdoll's pose. A
 community the killer's game respawns later stays hidden in the others. Only
 static ids: if 2.50 gives gang members dynamic ids, they are not kept
-(`engine/regions.md` §13.92, to check first). A report lost on its way to
+(`engine/regions.md` §13.94, to check first). A report lost on its way to
 the host is not sent again (ENet delivers it; only the fault layer loses it).
 
 Tests: `tests/ledger_test.cpp` (the ledger's order, bound and digest, whose

@@ -94,7 +94,7 @@ In this order, each one decides a fallback:
 4. `regions-apart` then walk toward the mock host: density off at 45 m,
    back on beyond 60 m; count how long the crowd takes to return.
 
-### 13.92 Placed NPCs: static ids, the ledger's hiding and bodies (2026-11-20, scripts only)
+### 13.94 Placed NPCs: static ids, the ledger's hiding and bodies (2026-11-20, scripts only)
 
 | Fact | Source | Tag |
 | --- | --- | --- |

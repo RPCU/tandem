@@ -23,6 +23,18 @@ proto::Activity Sanitized(proto::Activity state) {
                     state.kind == proto::ActivityKind::Shop;
   if (!spot || !(state.flags & proto::kActivityAnchored))
     state.flags &= static_cast<std::uint8_t>(~proto::kActivityLying);
+  // A contest names no workspot: its `entry` is its sort (an unknown one is
+  // some other contest), and nothing holds its V.
+  if (state.kind == proto::ActivityKind::Contest) {
+    state.workspot = 0;
+    state.anim = 0;
+    if (state.entry > static_cast<std::uint32_t>(proto::ContestSort::Range))
+      state.entry = static_cast<std::uint32_t>(proto::ContestSort::Other);
+    state.flags = 0;
+    state.anchor = {};
+    state.yaw = 0.f;
+    return state;
+  }
   // A workspot is named only by what plays one.
   if (!spot && state.kind != proto::ActivityKind::Screen &&
       state.kind != proto::ActivityKind::Minigame) {

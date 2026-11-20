@@ -75,6 +75,20 @@ public:
   // Host: what the scene's actors hold, as the script lists it for the next sample.
   std::vector<scene::PropSample> &Props() { return m_props; }
 
+  // The watch camera (scene-replay.md, "The watch camera"). Host, game
+  // thread: our game's view now, for the guests (the newest only; the net
+  // thread takes it). Guest: the host's views as the net thread hears them,
+  // and the one to show now (game thread).
+  void SubmitCamera(const proto::SceneCamera &camera);
+  std::optional<proto::SceneCamera> TakeCamera();
+  void PushCamera(const proto::SceneCamera &camera);
+  bool CameraAt(std::uint64_t hostNowUs, std::uint32_t play, scene::CameraView &out);
+  void ClearCamera();
+  std::uint32_t CameraReceived();
+  // Host, game thread: the last view sampled and when (cuts are told from it).
+  scene::CameraView &LastView() { return m_lastView; }
+  std::uint64_t &LastViewUs() { return m_lastViewUs; }
+
   // Story restrictions (docs/architecture/story.md, "Restrictions"), game
   // thread. Guest: the host's set, what our V holds of it, whether it is in
   // the host's moment (last check), the removals the script has to make.
@@ -123,6 +137,13 @@ private:
   std::optional<proto::PlayerState> m_held; // net thread
   std::atomic_bool m_releaseHeld{false};
   std::array<std::atomic<proto::PlayerId>, 8> m_posePaused{};
+
+  std::mutex m_cameraLock; // the three below
+  std::optional<proto::SceneCamera> m_cameraOut;
+  scene::CameraTrack m_cameraTrack;
+  bool m_cameraCutOwed{};
+  scene::CameraView m_lastView; // game thread
+  std::uint64_t m_lastViewUs{};
 
   std::mutex m_lock; // the two queues
   std::vector<StoryInbound> m_inbound;

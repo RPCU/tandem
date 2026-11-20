@@ -304,6 +304,8 @@ struct NetThread::Impl {
     bool wasIn = false; // hosting, or welcomed by a host
     if (recorder.IsOpen())
       Tap(*endpoint);
+    if (runtime.config.sceneKbps != 0)
+      endpoint->SetSceneBudget(runtime.config.sceneKbps * 125);
     // The recorder (recording.hpp): everything this endpoint says. Before
     // the repeats below, so a segment starts with our V's look and seat.
     if (Recording::Get().Enabled())
@@ -793,8 +795,13 @@ struct NetThread::Impl {
                 log::Info("session lost: no V is up (loss {})", e.over.round);
                 runtime.NoteSessionLost();
               } else if constexpr (std::is_same_v<E, events::Story>) {
-                Story::Get().PushInbound(
-                    {.kind = StoryInbound::Kind::Message, .message = e.message});
+                // The host's camera is a stream: straight to its track, not
+                // through the script's queue.
+                if (const auto *camera = std::get_if<proto::SceneCamera>(&e.message))
+                  Story::Get().PushCamera(*camera);
+                else
+                  Story::Get().PushInbound(
+                      {.kind = StoryInbound::Kind::Message, .message = e.message});
               } else if constexpr (std::is_same_v<E, events::RemoteTimeEffect>) {
                 log::Info("player {}: time abilities {:#x} (world speed {:.2f})", e.effect.player,
                           e.effect.abilities, e.effect.scale);
@@ -1056,6 +1063,8 @@ struct NetThread::Impl {
       for (const auto &pose : runtime.TakeActorPoses())
         if (!Story::Get().Private())
           endpoint->SendActorPose(pose);
+      if (const auto camera = Story::Get().TakeCamera(); camera && !Story::Get().Private())
+        endpoint->SendSceneCamera(*camera);
       if (auto appearance = runtime.TakeLocalAppearance()) {
         lastAppearance = *appearance;
         endpoint->SetLocalAppearance(std::move(*appearance));

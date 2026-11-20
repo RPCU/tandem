@@ -220,6 +220,12 @@ struct Options {
   bool nearNpc{};
   int throwSeconds{0};                               // our V throws a grenade this often (0: never)
   std::string throwItem{"Items.GrenadeFragRegular"}; // --throw: what
+  // --throw: each grenade "bounces" a second in, 3 m off its arc (its path
+  // said as it flies, ThrowPath), and explodes 3 m to the side.
+  bool throwBounce{};
+  // Our V's footsteps as noise for the others' NPCs (Noise), as its game
+  // gives them out: a run's, a sprint's, none walking slowly or crouched.
+  bool footsteps{};
   int smartSeconds{0};  // our V fires a smart round at an NPC this often (0: never)
   int defendSeconds{0}; // join: we parry, then block, an NPC's attack this often
   // host: the world the game follows (time of day, weather name); unset: none sent
@@ -332,6 +338,9 @@ struct Options {
   std::string activity;
   int activityAtSeconds{3};
   int activityForSeconds{15};
+  // --activity contest: what it is (proto::ContestSort; a duel names the
+  // first NPC we know as its opponent).
+  tandem::proto::ContestSort contest{tandem::proto::ContestSort::Other};
   tandem::net::LinkShape link; // a bad network, both ways (none: direct)
   bool traffic{};              // the whole traffic table in each report
   bool legacyWire{};           // send as before netcode.md (Endpoint::SetCompact(false))
@@ -611,6 +620,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --throw N          every N seconds our V throws a grenade (--throw-item) 10 m\n"
          "                     ahead; it explodes 2 s later (the others launch a copy)\n"
          "  --throw-item REC   --throw: the grenade's record (Items.GrenadeFragRegular)\n"
+         "  --throw-bounce     --throw: a second in, the grenade is 3 m off its arc (its\n"
+         "                     path is said as it flies) and it explodes 3 m to the side\n"
+         "  --footsteps        our V's footsteps as noise for the others' NPCs: a run's\n"
+         "                     (stim 25), a sprint's (26), 4 a second; none slow or crouched\n"
          "  --smart N          every N seconds our V fires a smart round at an NPC we see\n"
          "  --defend N         join: every N seconds we parry, then block, an NPC's attack\n"
          "  --time HH:MM       host: the time of day the game must follow\n"
@@ -727,6 +740,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     yes; sleep: ask a sleep of our own, two beds at once)\n"
          "  --activity KIND    busy for a while: workspot, sleep, screen, minigame, shop,\n"
          "                     menu, photo, contest\n"
+         "  --contest SORT     --activity contest of a sort: duel (a fist fight with the\n"
+         "                     first NPC we know: the others' hits on it are dropped),\n"
+         "                     race or range\n"
          "  --activity-at N    --activity: N s after another player is there (default 3)\n"
          "  --activity-for S   --activity: for S s (default 15; 0: for good)\n"
          "  --latency MS       a bad network: MS added each way\n"
@@ -1374,6 +1390,10 @@ Options Parse(int argc, char **argv) {
       options.throwSeconds = Number<int>(value);
     else if (flag == "--throw-item")
       options.throwItem = std::string(value);
+    else if (flag == "--throw-bounce")
+      options.throwBounce = true;
+    else if (flag == "--footsteps")
+      options.footsteps = true;
     else if (flag == "--smart")
       options.smartSeconds = Number<int>(value);
     else if (flag == "--defend")
@@ -1624,7 +1644,17 @@ Options Parse(int argc, char **argv) {
       options.activityAtSeconds = Number<int>(value);
     else if (flag == "--activity-for")
       options.activityForSeconds = Number<int>(value);
-    else if (flag == "--latency")
+    else if (flag == "--contest") {
+      if (value == "duel")
+        options.contest = tandem::proto::ContestSort::Duel;
+      else if (value == "race")
+        options.contest = tandem::proto::ContestSort::Race;
+      else if (value == "range")
+        options.contest = tandem::proto::ContestSort::Range;
+      else
+        Usage(std::format("--contest: duel, race or range, not {}", value));
+      options.activity = "contest";
+    } else if (flag == "--latency")
       options.link.latencyMs = Number<std::uint32_t>(value);
     else if (flag == "--jitter")
       options.link.jitterMs = Number<std::uint32_t>(value);
@@ -2097,6 +2127,10 @@ private:
 //                                name; HOLDER: host, an NPC id or own; left:
 //                                in its left hand); again with another
 //                                holder: handed over; prop N off: put away
+//   camera on [FOV]|cut|off      the host is in a cutscene: its camera's view
+//                                (behind and above the mock player) is sent
+//                                every frame (SceneCamera); cut: the next
+//                                view is another shot; off: no more views
 //   skip on|off                  the host fast-forwards the scene
 //   voice ID SPEAKER [SECONDS] [call]  a voiced line begins (ID: its string
 //                                id; SPEAKER: host, an NPC id or own)
@@ -2178,6 +2212,10 @@ struct SceneScript {
   tandem::scene::Stage stage;
   tandem::scene::HostSample sample;
   tandem::proto::NpcId own{}; // "own" in a .story file: the --npc NPC
+  // camera on: the view sent every frame; which side it looks from (a cut
+  // changes it).
+  bool camera{}, cameraCut{}, cameraSide{};
+  float cameraFov{50.f};
 };
 
 // A scene step (scene, cast, skip, voice, cut): what the host sends for it.
@@ -2231,6 +2269,17 @@ SceneMessages(const StoryStep &step, SceneScript &script, const tandem::proto::V
         script.sample.actors.push_back(actor);
       }
       return script.stage.Update(script.sample, hostNowUs);
+    }
+    if (step.verb == "camera" && !a.empty()) {
+      if (a[0] == "cut") {
+        script.cameraCut = true;
+        script.cameraSide = !script.cameraSide;
+      } else {
+        script.camera = a[0] == "on";
+        if (a.size() > 1)
+          script.cameraFov = std::stof(a[1]);
+      }
+      return std::vector<proto::Message>{};
     }
     if (step.verb == "prop" && a.size() >= 2) {
       const auto key = std::stoull(a[0], nullptr, 0);
@@ -3463,6 +3512,10 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
   if (const auto *t = std::get_if<proto::Throw>(&message))
     return std::format("player {} throws {} (kind {}, flags {:#x}, npc {}, at player {})",
                        t->player, t->id, static_cast<int>(t->kind), t->flags, t->npc, t->at);
+  if (const auto *path = std::get_if<proto::ThrowPath>(&message))
+    return std::format("player {}'s throw {} is at ({:.1f} {:.1f} {:.1f}), {:.1f} m/s",
+                       path->player, path->id, path->position.x, path->position.y, path->position.z,
+                       std::hypot(path->velocity.x, path->velocity.y, path->velocity.z));
   if (const auto *e = std::get_if<proto::ThrowEnd>(&message))
     return std::format("player {}'s throw {} ends ({})", e->player, e->id,
                        static_cast<int>(e->how));
@@ -3934,7 +3987,12 @@ int main(int argc, char **argv) {
     std::uint32_t id;
     std::chrono::steady_clock::time_point at;
     tandem::proto::Vec3 where;
+    // --throw-bounce: when its path is said, and where it is then.
+    std::optional<std::chrono::steady_clock::time_point> bounceAt{};
+    tandem::proto::Vec3 bounce{};
   };
+  tandem::presence::NoiseGate footstepGate; // --footsteps
+  std::uint32_t footstepsSaid = 0;
   std::vector<Thrown> inFlight;
   std::set<tandem::proto::NpcId> deadNpcs;
   std::map<tandem::proto::NpcId, Vec3> npcAt; // join: where the host's NPCs are
@@ -4073,7 +4131,7 @@ int main(int argc, char **argv) {
   std::uint64_t storyLine = 0;
   SceneScript sceneScript;
   sceneScript.own = kOwnNpc;
-  std::uint64_t actorPoses = 0;
+  std::uint64_t actorPoses = 0, cameraViews = 0;
   if (!options.storyFile.empty()) {
     story = LoadStory(options.storyFile, error);
     if (!error.empty()) {
@@ -4910,10 +4968,18 @@ int main(int argc, char **argv) {
               if (++actorPoses % 100 == 1)
                 Log("scene: {} actor pose(s) heard (npc {})", actorPoses, e.pose.npc);
             } else if constexpr (std::is_same_v<E, tandem::events::Story>) {
+              namespace proto = tandem::proto;
+              // The host's camera is a stream: counted, not listed.
+              if (const auto *camera = std::get_if<proto::SceneCamera>(&e.message)) {
+                if (++cameraViews % 60 == 1 || (camera->flags & proto::kCameraCut))
+                  Log("scene camera: {} view(s) heard (play {}, fov {:.0f}{})", cameraViews,
+                      camera->play, camera->fov,
+                      camera->flags & proto::kCameraCut ? ", a cut" : "");
+                return;
+              }
               Log("{}", Describe(e.message));
               if (!options.recordFile.empty())
                 recording.Add(e.message);
-              namespace proto = tandem::proto;
               if (const auto *call = std::get_if<proto::PhoneCall>(&e.message);
                   call && options.answerSeconds >= 0 && call->phase == 1 &&
                   call->answeredBy == proto::kNoPlayer)
@@ -5441,9 +5507,35 @@ int main(int argc, char **argv) {
       if (state) {
         endpoint->SendLocalState(*state);
         lastSent = state->position;
+        // --footsteps: what its game's state machine broadcasts as it
+        // moves (StandEvents above 2.5 m/s, SprintEvents; a crouched V
+        // none), through the gate the plugin sends them through.
+        if (options.footsteps && endpoint->IsJoined()) {
+          const float speed = std::hypot(state->velocity.x, state->velocity.y);
+          const bool crouched = state->stance == 1 || state->stance == 11 || state->stance == 12;
+          const std::uint8_t stim = speed > 5.8f   ? tandem::presence::kStimFootStepSprint
+                                    : speed > 2.5f ? tandem::presence::kStimFootStepRegular
+                                                   : std::uint8_t{0};
+          if (stim != 0 && !crouched && footstepGate.ShouldSend(stim, tandem::net::NowUs())) {
+            endpoint->SendNoise({.stim = stim});
+            if (++footstepsSaid == 1 || footstepsSaid % 20 == 0)
+              Log("footsteps: noise {} sent (stim {}, {:.1f} m/s)", footstepsSaid, stim, speed);
+          }
+        }
         if (regionNpcs)
           regionNpcs->Tick(*endpoint, tandem::net::NowUs(), state->position,
                            !puppeteer.RegionLeaving());
+      }
+      // camera on: the host's view of its cutscene, from behind and above
+      // its V, on one side or the other.
+      if (options.host && sceneScript.stage.On() && sceneScript.camera && state) {
+        const float side = sceneScript.cameraSide ? -2.f : 2.f;
+        const tandem::scene::CameraView view{
+            {state->position.x + side, state->position.y - 3.f, state->position.z + 1.8f},
+            state->orientation,
+            sceneScript.cameraFov};
+        endpoint->SendSceneCamera(tandem::scene::PackCamera(
+            sceneScript.stage.Play(), view, std::exchange(sceneScript.cameraCut, false)));
       }
       if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip)) {
         endpoint->SendLocalPose(*pose);
@@ -5994,8 +6086,24 @@ int main(int argc, char **argv) {
       busySince = now;
       const auto kind = *ActivityNamed(options.activity);
       tandem::proto::Activity busy{.kind = kind};
-      if (lastSent && kind != tandem::proto::ActivityKind::Photo &&
-          kind != tandem::proto::ActivityKind::Menu) {
+      if (kind == tandem::proto::ActivityKind::Contest) {
+        // Its sort, and a duel's opponent; nothing holds a contestant.
+        busy.entry = static_cast<std::uint32_t>(options.contest);
+        if (options.contest == tandem::proto::ContestSort::Duel) {
+          // (A guest fights one of the host's NPCs, the host of a replay
+          // one of its own.)
+          if (!liveNpcs.empty())
+            busy.device = *liveNpcs.begin();
+          if (options.host)
+            for (const auto npc : replayedNpcs)
+              if (!deadNpcs.contains(npc)) {
+                busy.device = npc;
+                break;
+              }
+        }
+        Log("contest: sort {}, opponent npc {}", busy.entry, busy.device);
+      } else if (lastSent && kind != tandem::proto::ActivityKind::Photo &&
+                 kind != tandem::proto::ActivityKind::Menu) {
         busy.flags |= tandem::proto::kActivityAnchored;
         busy.anchor = *lastSent;
       }
@@ -6446,10 +6554,25 @@ int main(int argc, char **argv) {
                                         .velocity = {0.f, 7.f, 6.f}};
       if (endpoint->SendCombat(thrown)) {
         Log("we throw grenade {} ({})", thrown.id, options.throwItem);
-        inFlight.push_back(
-            {thrown.id, now + std::chrono::seconds(2), {from.x, from.y + 10.f, from.z - 1.5f}});
+        Thrown flight{
+            thrown.id, now + std::chrono::seconds(2), {from.x, from.y + 10.f, from.z - 1.5f}};
+        if (options.throwBounce) {
+          // A second in it "bounced off something" to the right: 3 m off
+          // the arc a copy flies, and it ends 3 m to the side.
+          flight.bounceAt = now + std::chrono::seconds(1);
+          flight.bounce = {from.x + 3.f, from.y + 6.f, from.z - 0.5f};
+          flight.where.x += 3.f;
+        }
+        inFlight.push_back(flight);
       }
     }
+    for (auto &flight : inFlight)
+      if (flight.bounceAt && now >= *flight.bounceAt) {
+        flight.bounceAt.reset();
+        if (endpoint->SendCombat(tandem::proto::ThrowPath{
+                .id = flight.id, .position = flight.bounce, .velocity = {0.f, 4.f, -1.f}}))
+          Log("our grenade {} bounced: its path is said", flight.id);
+      }
     for (auto it = inFlight.begin(); it != inFlight.end();)
       if (now >= it->at) {
         endpoint->SendCombat(tandem::proto::ThrowEnd{

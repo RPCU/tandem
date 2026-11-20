@@ -46,6 +46,18 @@ public class TandemSceneHeld {
   public let on: EntityID;
 }
 
+// The next frame, while a cutscene's camera is sampled (host) or followed
+// (guest).
+public class TandemSceneFrame extends DelayCallback {
+  public let scenes: wref<TandemScenes>;
+
+  public func Call() -> Void {
+    if IsDefined(this.scenes) {
+      this.scenes.Frame();
+    }
+  }
+}
+
 public class TandemScenes {
   private let m_game: GameInstance;
   private let m_story: wref<TandemStorySystem>;
@@ -71,6 +83,21 @@ public class TandemScenes {
   private let m_actors: array<ref<TandemSceneActor>>;
   private let m_voices: array<ref<TandemSceneVoice>>;
   private let m_held: array<ref<TandemSceneHeld>>;
+
+  // The watch camera (tandem.ini scene_camera). Host: our tier as last
+  // sampled. Guest: the camera body we asked for, whether the picture is
+  // its now, whether the player left it for this scene. Both: whether the
+  // per-frame tick runs.
+  private let m_cameraMode: Bool;
+  private let m_hostTier: Int32;
+  private let m_frameOn: Bool;
+  private let m_camera: EntityID;
+  private let m_cameraAsked: Bool;
+  private let m_cameraLive: Bool;
+  private let m_cameraOff: Bool;
+  private let m_cameraLogged: Bool;
+  // (test, host) cmd story scene camera on: sampled outside a cutscene too.
+  private let m_testCamera: Bool;
   private let m_lastTick: Float;
   private let m_watchShown: Bool;
   private let m_watchOpen: Bool;
@@ -80,6 +107,7 @@ public class TandemScenes {
     this.m_game = game;
     this.m_story = story;
     this.m_mode = TandemStory.SceneReplay();
+    this.m_cameraMode = this.m_mode > 0 && TandemStory.SceneCameraOn();
     if this.m_mode > 0 {
       TandemNative.Log(s"scene: replay on\(this.m_mode == 2 ? ", with the actors' bodies" : "")");
       // Props: item entities appearing while our scene plays (host).
@@ -120,6 +148,7 @@ public class TandemScenes {
       return;
     }
     this.m_lastSample = now;
+    this.m_hostTier = tier;
     let player = GetPlayer(this.m_game);
     if !IsDefined(player) {
       return;
@@ -173,6 +202,7 @@ public class TandemScenes {
       }
       this.m_play = play;
     }
+    this.StartFrames();
     // The actors' bodies: read while they act, let go after.
     if this.m_mode == 2 {
       for old in this.m_sources {
@@ -304,6 +334,8 @@ public class TandemScenes {
     ArrayClear(this.m_sources);
     ArrayClear(this.m_propSeen);
     this.m_play = 0;
+    this.m_hostTier = 0;
+    this.m_testCamera = false;
     this.m_test = false;
     this.m_testProp = TDBID.None();
   }
@@ -320,6 +352,7 @@ public class TandemScenes {
         this.m_tier = event.state;
         this.m_flags = event.flags;
         this.m_watchShown = false;
+        this.m_cameraOff = false;
         TandemNative.Log(s"scene: the host's scene begins (play \(event.hash), tier \(event.state), \(event.duration) s in)");
         break;
       case 51:
@@ -496,6 +529,8 @@ public class TandemScenes {
       this.Unplace(held);
     }
     ArrayClear(this.m_held);
+    this.ReleaseCamera();
+    this.m_cameraOff = false;
     for actor in this.m_actors {
       this.Release(actor);
     }
@@ -573,6 +608,7 @@ public class TandemScenes {
       }
     }
     this.PlaceProps();
+    this.StartFrames();
     this.UpdateWatch();
     this.KeepClear();
   }
@@ -710,13 +746,20 @@ public class TandemScenes {
       TandemText.Hint(this.m_game, n"TandemWatch", n"Choice1", false, "", inkInputHintHoldIndicationType.Press);
       let player = GetPlayer(this.m_game);
 
-      if IsDefined(player) {
+      if IsDefined(player) && !this.m_cameraLive {
         player.UnregisterInputListener(this, n"Choice1");
       }
     }
   }
 
   protected cb func OnAction(action: ListenerAction, consumer: ListenerActionConsumer) -> Bool {
+    // Watching through the host's camera: the key leaves it.
+    if this.m_cameraLive && Equals(ListenerAction.GetName(action), n"Choice1")
+      && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_RELEASED) {
+      this.m_cameraOff = true;
+      TandemNative.Log("scene: the player leaves the host's camera");
+      return true;
+    }
     if this.m_watchOpen && Equals(ListenerAction.GetName(action), n"Choice1")
       && Equals(ListenerAction.GetType(action), gameinputActionType.BUTTON_RELEASED) {
       this.Watch();
@@ -774,12 +817,149 @@ public class TandemScenes {
     }
   }
 
+  // ---- the watch camera ----
+  // A full cutscene (tier 5) is a scene camera's picture, not V's eyes. The
+  // host samples its game's active camera every frame; a guest in the
+  // host's moment shows the same view on a camera of its own, and gets its
+  // own eyes back when the views stop (the scene is over, the host left the
+  // cutscene or is gone), when it leaves the moment, or when the player
+  // asks. A private scene is never announced, so never sampled.
+
+  private func WantsFrames() -> Bool {
+    if !this.m_cameraMode {
+      return false;
+    }
+    return (this.m_play != 0 && (this.m_hostTier == 5 || this.m_testCamera)) || (this.m_on && this.m_tier == 5) || this.m_cameraLive || this.m_cameraAsked;
+  }
+
+  private func StartFrames() -> Void {
+    if !this.m_frameOn && this.WantsFrames() {
+      this.m_frameOn = true;
+      this.ScheduleFrame();
+    }
+  }
+
+  private func ScheduleFrame() -> Void {
+    let frame = new TandemSceneFrame();
+    frame.scenes = this;
+    // 0 s: the next frame. Real time: not slowed by time dilation.
+    GameInstance.GetDelaySystem(this.m_game).DelayCallback(frame, 0.0, false);
+  }
+
+  public func Frame() -> Void {
+    if this.m_play != 0 && (this.m_hostTier == 5 || this.m_testCamera) {
+      this.HostFrame();
+    } else if this.m_on && this.m_tier == 5 {
+      this.GuestFrame();
+    } else {
+      this.ReleaseCamera();
+    }
+    if this.WantsFrames() {
+      this.ScheduleFrame();
+    } else {
+      this.m_frameOn = false;
+    }
+  }
+
+  // Host: what our screen shows now, whatever owns the camera.
+  private func HostFrame() -> Void {
+    let cameras = GameInstance.GetCameraSystem(this.m_game);
+    let transform: Transform; // assigned on every path
+    if IsDefined(cameras) && cameras.GetActiveCameraWorldTransform(transform) {
+      let at = Transform.GetPosition(transform);
+      let q = Transform.GetOrientation(transform);
+      TandemStory.SceneCameraSample(at.X, at.Y, at.Z, q.i, q.j, q.k, q.r, cameras.GetActiveCameraFOV());
+    }
+  }
+
+  // Guest: the host's view on a camera of ours.
+  private func GuestFrame() -> Void {
+    let view = TandemStory.SceneView();
+    if !view.on || this.m_cameraOff || !TandemStory.RestrictInMoment() {
+      this.ReleaseCamera();
+      return;
+    }
+    let position = new Vector4(view.x, view.y, view.z, 1.0);
+    let orientation = new Quaternion(view.i, view.j, view.k, view.r);
+    if !this.m_cameraAsked {
+      let spec = new DynamicEntitySpec();
+      spec.templatePath = r"base\\entities\\cameras\\simple_free_camera.ent";
+      spec.position = position;
+      spec.orientation = orientation;
+      spec.alwaysSpawned = true;
+      spec.persistState = false;
+      spec.persistSpawn = false;
+      spec.spawnInView = true;
+      spec.active = true;
+      ArrayPush(spec.tags, n"Tandem.Camera");
+      this.m_camera = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+      this.m_cameraAsked = true;
+      this.m_cameraLogged = false;
+      TandemNative.Log("scene: a camera for the host's cutscene asked for");
+      return;
+    }
+    let body = GameInstance.FindEntityByID(this.m_game, this.m_camera);
+    if !IsDefined(body) {
+      return;
+    }
+    let lens = body.FindComponentByType(n"gameCameraComponent") as CameraComponent;
+    if !IsDefined(lens) {
+      if !this.m_cameraLogged {
+        this.m_cameraLogged = true;
+        TandemNative.Log("scene: the camera body has no camera component: our own eyes stay");
+      }
+      return;
+    }
+    let object = body as GameObject;
+    if IsDefined(object) {
+      GameInstance.GetTeleportationFacility(this.m_game).Teleport(object, position, Quaternion.ToEulerAngles(orientation));
+    } else {
+      let placed: WorldTransform; // assigned on every path
+      WorldTransform.SetPosition(placed, position);
+      WorldTransform.SetOrientation(placed, orientation);
+      body.SetWorldTransform(placed);
+    }
+    lens.SetFOV(view.fov);
+    if !this.m_cameraLive {
+      this.m_cameraLive = true;
+      lens.Activate(0.4, false);
+      let player = GetPlayer(this.m_game);
+      if IsDefined(player) {
+        TandemText.Hint(this.m_game, n"TandemCamera", n"Choice1", true, TandemText.Get("Scene-LeaveCamera"), inkInputHintHoldIndicationType.Press);
+        player.RegisterInputListener(this, n"Choice1");
+      }
+      TandemNative.Log(s"scene: watching through the host's camera (fov \(view.fov))");
+    }
+  }
+
+  // Our own eyes again; the camera body goes.
+  private func ReleaseCamera() -> Void {
+    if this.m_cameraLive {
+      this.m_cameraLive = false;
+      let body = GameInstance.FindEntityByID(this.m_game, this.m_camera);
+      let lens = IsDefined(body) ? body.FindComponentByType(n"gameCameraComponent") as CameraComponent : null;
+      if IsDefined(lens) {
+        lens.Deactivate(0.4, false);
+      }
+      TandemText.Hint(this.m_game, n"TandemCamera", n"Choice1", false, "", inkInputHintHoldIndicationType.Press);
+      let player = GetPlayer(this.m_game);
+      if IsDefined(player) && !this.m_watchOpen {
+        player.UnregisterInputListener(this, n"Choice1");
+      }
+      TandemNative.Log("scene: our own camera again");
+    }
+    if this.m_cameraAsked {
+      this.m_cameraAsked = false;
+      GameInstance.GetDynamicEntitySystem().DeleteEntity(this.m_camera);
+    }
+  }
+
   // ---- commands (tools/game.sh cmd story scene …) ----
 
   public func Command(command: String) -> Void {
     if Equals(command, "story scene report") {
       TandemNative.Log(TandemStory.SceneReport());
-      TandemNative.Log(s"scene: mode \(this.m_mode), on \(this.m_on), tier \(this.m_tier), flags \(this.m_flags), \(ArraySize(this.m_actors)) actor(s), \(ArraySize(this.m_voices)) voice(s), \(ArraySize(this.m_held)) prop(s), announced play \(this.m_play)");
+      TandemNative.Log(s"scene: mode \(this.m_mode), on \(this.m_on), tier \(this.m_tier), flags \(this.m_flags), \(ArraySize(this.m_actors)) actor(s), \(ArraySize(this.m_voices)) voice(s), \(ArraySize(this.m_held)) prop(s), announced play \(this.m_play), camera \(this.m_cameraLive ? "followed" : "ours"), \(TandemStory.SceneViews()) view(s) heard");
     } else if Equals(command, "story scene watch") {
       this.Watch();
     } else if Equals(command, "story scene test on") || Equals(command, "story scene test off") {
@@ -787,6 +967,11 @@ public class TandemScenes {
       this.m_test = Equals(command, "story scene test on");
       this.m_lastSample = 0.0;
       TandemNative.Log(s"scene: test scene \(this.m_test ? "on" : "off")");
+    } else if Equals(command, "story scene camera on") || Equals(command, "story scene camera off") {
+      // (test, host) our camera's view is sent as if our scene were a cutscene.
+      this.m_testCamera = Equals(command, "story scene camera on");
+      this.StartFrames();
+      TandemNative.Log(s"scene: test camera \(this.m_testCamera ? "on" : "off")");
     } else if StrBeginsWith(command, "story scene prop ") {
       // (test, host) story scene prop RECORD|off: as if the test scene's
       // first actor held that item in its right hand.

@@ -140,10 +140,19 @@ public class TandemActivities {
   // ---- theirs ----
   private let m_changes: Uint32;
   private let m_puppets: array<ref<TandemBusyPuppet>>;
+  // Contests: ours read from the game, the others' from their Activity
+  // (Contests.reds).
+  private let m_contests: ref<TandemContests>;
 
   public func Start(game: GameInstance, system: ref<TandemSystem>) -> Void {
     this.m_game = game;
     this.m_system = system;
+    this.m_contests = new TandemContests();
+    this.m_contests.Start(game);
+  }
+
+  public func Contests() -> ref<TandemContests> {
+    return this.m_contests;
   }
 
   public func Stop() -> Void {
@@ -174,6 +183,9 @@ public class TandemActivities {
       this.m_wheel = null;
     }
     this.m_you = you;
+    if IsDefined(this.m_contests) {
+      this.m_contests.Tick(now, you);
+    }
     this.SampleOurs();
     this.WatchClock();
     this.TrackInteraction();
@@ -248,6 +260,12 @@ public class TandemActivities {
     } else if GameInstance.GetPhotoModeSystem(this.m_game).IsPhotoModeActive() {
       kind = 7;
       flags = 1;
+    } else if IsDefined(this.m_contests) && this.m_contests.Sample(player) != 0 {
+      // A fist fight, a race, a shooting competition (Contests.reds): our V
+      // moves on, nothing is held; the others watch.
+      kind = 8;
+      entry = this.m_contests.Sample(player);
+      device = Cast<Uint64>(this.m_contests.Opponent());
     } else if this.m_menu != 0 {
       kind = this.m_menu;
       flags = 1;
@@ -757,6 +775,9 @@ public class TandemActivities {
     if changes != this.m_changes {
       this.m_changes = changes;
       let states = TandemActivity.Others();
+      if IsDefined(this.m_contests) {
+        this.m_contests.Others(states, this.m_you);
+      }
       // Ended: let go once its workspot exit has played.
       for busy in this.m_puppets {
         let still = false;
@@ -886,9 +907,13 @@ public class TandemActivities {
 
   // ---- commands (tools/game.sh cmd) ----
   // skip ask HOURS | skip accept | skip decline | busy KIND|off | busy report
-  // | apartment report
+  // | apartment report | contest duel|race|range|off|report
   public func Command(command: String) -> Void {
-    if Equals(command, "apartment report") {
+    if StrBeginsWith(command, "contest") {
+      if IsDefined(this.m_contests) {
+        this.m_contests.Command(command);
+      }
+    } else if Equals(command, "apartment report") {
       this.ReportApartment();
     } else if StrBeginsWith(command, "skip ask") {
       let hours = StringToInt(StrAfterFirst(StrAfterFirst(command, " "), " "));

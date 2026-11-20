@@ -1412,6 +1412,8 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
       return;
     if (const auto *end = std::get_if<proto::ThrowEnd>(&message); end && end->player == m_you)
       return;
+    if (const auto *path = std::get_if<proto::ThrowPath>(&message); path && path->player == m_you)
+      return;
     // The difficulty and the rules are state: kept for the digests, said once.
     if (const auto *difficulty = std::get_if<proto::Difficulty>(&message)) {
       if (m_difficulty == *difficulty)
@@ -1691,6 +1693,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               return;
             if (m_npcs.contains(pose.npc))
               out.push_back(events::HostActorPose{pose});
+          },
+          [&](const proto::SceneCamera &camera) {
+            // The host's view of its cutscene: for the story's side of our game.
+            out.push_back(events::Story{camera});
           },
           [&](const proto::NpcGone &gone) {
             if (OwnsNpc(gone.npc)) {
@@ -2239,6 +2245,24 @@ void Endpoint::SendActorPose(proto::ActorPose pose) {
   pose.seq = ++m_npcSeq;
   pose.timeUs = HostNowUs();
   ShareNpc(pose, m_you); // the games that show the actor, as its states
+}
+
+void Endpoint::SendSceneCamera(proto::SceneCamera camera) {
+  if (!IsHost() || m_ended || camera.play == 0)
+    return;
+  const auto now = net::NowUs();
+  if (!m_scenePacer.Due(scene::kCameraStream, scene::kCameraWeight, now)) {
+    // A cut that is not sent is still a cut for the next view that is.
+    m_cameraCut = m_cameraCut || (camera.flags & proto::kCameraCut) != 0;
+    return;
+  }
+  if (std::exchange(m_cameraCut, false))
+    camera.flags |= proto::kCameraCut;
+  camera.seq = ++m_cameraSeq;
+  camera.timeUs = HostNowUs();
+  const proto::Message message = camera;
+  m_scenePacer.Sent(scene::kCameraStream, proto::Encode(message).size(), now);
+  Broadcast(message);
 }
 
 void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
@@ -3727,6 +3751,12 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     out.push_back(events::Combat{mine});
     if (const auto peer = PeerOf(player))
       Broadcast(mine, *peer);
+  } else if (const auto *path = std::get_if<proto::ThrowPath>(&message)) {
+    auto mine = *path;
+    mine.player = player;
+    out.push_back(events::Combat{mine});
+    if (const auto peer = PeerOf(player))
+      Broadcast(mine, *peer);
   } else if (const auto *defended = std::get_if<proto::Defended>(&message)) {
     // For the attacker's owner: our game, or passed on.
     auto mine = *defended;
@@ -4036,6 +4066,14 @@ bool Endpoint::SendCombat(proto::Message message) {
   }
   if (auto *end = std::get_if<proto::ThrowEnd>(&message)) {
     end->player = m_you;
+    if (IsHost())
+      Broadcast(message);
+    else
+      Send(m_hostPeer, message);
+    return true;
+  }
+  if (auto *path = std::get_if<proto::ThrowPath>(&message)) {
+    path->player = m_you;
     if (IsHost())
       Broadcast(message);
     else

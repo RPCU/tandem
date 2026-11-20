@@ -49,7 +49,9 @@ public class TandemRestrictions {
   // what holds the host's own body or camera (NoMovement, NoCameraControl,
   // ForceCrouch, camera animations and breathing), its menus and fast
   // travel, nor what its own activity puts on (a body carried, a call, a
-  // braindance, a time skip, focus mode, driving in combat, a locker).
+  // braindance, a time skip, focus mode, driving in combat, a locker), nor
+  // a contest's (a fist fight, a shooting competition: its starter's alone,
+  // the others watch with what they carry, Contests.reds).
   public static func IsShared(record: wref<StatusEffect_Record>) -> Bool {
     if !TandemRestrictions.IsRestriction(record) {
       return false;
@@ -57,11 +59,15 @@ public class TandemRestrictions {
     if record.GameplayTagsContains(n"CameraAnimation") || record.GameplayTagsContains(n"Breathing") {
       return false;
     }
+    if record.GameplayTagsContains(n"FistFight") || record.GameplayTagsContains(n"ShootingRangeCompetition") {
+      return false;
+    }
     let name = TDBID.ToStringDEBUG(record.GetID());
     let own = [
       "NoMovement", "NoCameraControl", "ForceCrouch", "BlockAllHubMenu", "BlockAllMenu",
       "BlockFastTravel", "BodyCarrying", "PhoneCall", "Braindance", "FastForward",
-      "FocusModeLocomotion", "DriverCombat", "VehicleCombat", "SecurityLocker", "InfiniteAmmo"
+      "FocusModeLocomotion", "DriverCombat", "VehicleCombat", "SecurityLocker", "InfiniteAmmo",
+      "FistFight", "ShootingRange"
     ];
     for part in own {
       if StrContains(name, part) {

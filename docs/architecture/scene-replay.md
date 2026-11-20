@@ -92,13 +92,14 @@ guests. The first three are story messages (`proto::IsStory`): one path
 through `Endpoint::SendStory`, kept by `story::Record` for late joiners,
 reliable and ordered.
 
-| Message      | Channel | When                                | Carries                                                                                                                                              |
-| ------------ | ------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SceneState` | Event   | on every change                     | the scene's resource path hash (0: none), its `play` number, host clock at its time 0, rate (fast-forward), the host's tier, flags, the staging area |
-| `SceneCast`  | Event   | whole, on every change              | `play`, the actors: `NpcId` and flags (ghost, hidden, posed)                                                                                         |
-| `SceneLine`  | Event   | a line begins, or is cut            | `play`, the line's string id, the speaker (`NpcId` or `PlayerId`), host clock when it began, its length, flags (cut, holocall, bark)                 |
-| `ActorPose`  | State   | ≤ 30 Hz per actor, unreliable       | `NpcId`, seq, host-clock time, the body pose (a `PoseState`: 68 rotations of 6 bytes and the hips, 431 bytes)                                        |
-| `SceneProp`  | Event   | a prop is held, changes hands, goes | `play`, the prop's number in the play, the item's TweakDB id, its holder (`NpcId` or `PlayerId`), flags (gone, left hand); a story message, 26 bytes |
+| Message       | Channel | When                                | Carries                                                                                                                                              |
+| ------------- | ------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SceneState`  | Event   | on every change                     | the scene's resource path hash (0: none), its `play` number, host clock at its time 0, rate (fast-forward), the host's tier, flags, the staging area |
+| `SceneCast`   | Event   | whole, on every change              | `play`, the actors: `NpcId` and flags (ghost, hidden, posed)                                                                                         |
+| `SceneLine`   | Event   | a line begins, or is cut            | `play`, the line's string id, the speaker (`NpcId` or `PlayerId`), host clock when it began, its length, flags (cut, holocall, bark)                 |
+| `ActorPose`   | State   | ≤ 30 Hz per actor, unreliable       | `NpcId`, seq, host-clock time, the body pose (a `PoseState`: 68 rotations of 6 bytes and the hips, 431 bytes)                                        |
+| `SceneCamera` | State   | every frame of a cutscene, paced    | `play`, seq, host-clock time, the active camera's position, orientation (5 bytes), field of view, a cut flag; 39 bytes, never kept                   |
+| `SceneProp`   | Event   | a prop is held, changes hands, goes | `play`, the prop's number in the play, the item's TweakDB id, its holder (`NpcId` or `PlayerId`), flags (gone, left hand); a story message, 26 bytes |
 
 - `play` counts the host's scenes in a session. A scene played again is
   another play; a cast or a line names its play, so what belongs to a scene
@@ -247,8 +248,26 @@ and invulnerable near a tier 4+ one, as before (`Story.reds`,
   a step of at most 12 cm out, the short way (`scene::KeepOut`), until
   clear. Below the distance at which the game's own collision already
   keeps a walking V out, so it never fights the player's own steps.
-- **A watch camera** (seeing through the host's eyes in a tier 5 cutscene)
-  is not built: see §12.
+- **The watch camera.** A full cutscene (tier 5) is a scene camera's
+  picture, not V's eyes. While the host's V is in tier 5 in a scene it
+  announces, its script samples the game's active camera every frame
+  (`GetActiveCameraWorldTransform`, `GetActiveCameraFOV`); a view far from
+  the last one (`scene::IsCut`: over 0.4 m + 12 m/s, 0.2 rad + 4.2 rad/s
+  or 6° + 60°/s of zoom) is flagged a cut. `Endpoint::SendSceneCamera`
+  paces it (`scene::Pacer`, at most 30 a second; a cut that is not sent is
+  carried by the next view). A guest in the host's story moment
+  (`RestrictInMoment`), while the host's tier is 5 and views of this play
+  come: spawns a camera body (`base\entities\cameras\simple_free_camera.ent`,
+  Codeware's dynamic entities), places it each frame at the view
+  `scene::CameraTrack` gives (drawn 1.5 view intervals + 20 ms in the past,
+  between the two views around that moment; a cut is not blended), sets
+  its field of view and activates its `gameCameraComponent` with a 0.4 s
+  blend. It is released, with the same blend, when the views stop for 1 s
+  (the cutscene or the scene is over, the host is gone), when our V leaves
+  the moment, or when the player presses the "Leave the camera" hint
+  (`Choice1`; not offered again in that scene). Never for a private scene:
+  it is not announced, so nothing is sampled, and the net thread drops
+  views while private. `scene_camera = off` keeps a guest's own eyes.
 
 ## 7. Johnny
 
@@ -293,6 +312,8 @@ him, no scene running) only the first point applies.
 | an actor's proxy is not there yet      | bound when it is ready; its lines are not voiced until then (logged)                                                                                                                                                                                 | in game                                            |
 | a body the stream does not know        | not read on the host (logged once per skeleton); the proxy keeps its own animation                                                                                                                                                                   | in game                                            |
 | poses lost or late (unreliable)        | the track interpolates between the two around the drawn time and holds past the newest, as for players; older sequence numbers are dropped                                                                                                           | `pose_test` (the track)                            |
+| the camera's views stop, or are lost   | unreliable: a lost view is skipped (the track blends over it); none for 1 s: the guest's own camera, whether or not the scene's end was heard                                                                                                        | `scene_test` (camera track, endpoints)             |
+| the camera body does not spawn         | nothing is activated: the guest keeps its own eyes (logged once if the body has no camera component)                                                                                                                                                 | in game                                            |
 | scene replay off on one side           | a guest with it off ignores the scene messages; a host with it off announces nothing. Both keep today's behaviour                                                                                                                                    | by construction                                    |
 
 Digests: only what lasts and changes rarely is hashed (which scene, which
@@ -304,8 +325,9 @@ they change too often, and a wrong one heals with the next change.
 - **Protocol** (`core/include/tandem/protocol.hpp`): `SceneState`,
   `SceneCast`, `SceneLine`, `ActorPose`, appended; bounds checked in
   `Decode` (32 actors, a rate between 0 and 16). Second part, appended
-  (2026-11-20): `SceneProp` (built: props), and `ActorFrame`, `RigPose`,
-  `SceneCamera` (wire forms and core code in, nothing sends them yet: §12).
+  (2026-11-20): `SceneProp` (built: props),
+  `SceneCamera` (built: the watch camera), and `ActorFrame`, `RigPose`
+  (wire forms and core code in, nothing sends them yet: §12).
 - **Core** (`core/include/tandem/scene.hpp`, `core/src/scene.cpp`):
   `scene::Stage` (host), `scene::Replay` (guest), `scene::WatchSpot`,
   `scene::KeepOut`. `story::Record` keeps the scene, its cast and the
@@ -320,10 +342,18 @@ they change too often, and a wrong one heals with the next change.
   `engine/scenes.cpp` (`ScenePlaying`), `config.cpp` (`scene_replay`).
 - **Scripts**: `Scenes.reds` (new), `Dialogue.reds` (the voice of each
   line, the stand-in subtitle ids and the dedupe), `Story.reds` (wiring).
+- **The watch camera**: `scene::CameraTrack`, `IsCut`, `PackCamera`,
+  `scene::Pacer` (`core/src/scene.cpp`), `Endpoint::SendSceneCamera` (a
+  guest hears it as `events::Story`; the plugin's net thread puts it
+  straight in `Story`'s track, not through the script's queue),
+  `TandemStory.SceneCameraSample` / `SceneView`, `Scenes.reds` (`Frame`,
+  a per-frame tick only while a cutscene lasts).
 - **Mock player** (`peer/src/main.cpp`): story verbs `scene`, `cast`,
-  `prop`, `skip`, `voice`, `cut`; its scene's actors take the pose it sends; as a
+  `prop`, `camera`, `skip`, `voice`, `cut`; its scene's actors take the pose it sends; as a
   guest it logs what it hears.
-- **Config**: `scene_replay = off | on | noposes` (`tandem.ini`).
+- **Config** (`tandem.ini`): `scene_replay = off | on | noposes`;
+  `scene_camera = on | off` (the watch camera); `scene_kbps` (host: what a
+  scene's streams may take on a guest's link, 22 by default, 8 to 2000).
 
 Engine access, by the rules: scripts and RTTI names (Codeware's imports);
 the two functions by address-library hash that the pose stream already
@@ -348,6 +378,11 @@ local space). **No new hook, hash or raw offset.**
 - the watch spot (beside the host, clear, facing the scene, on the host's
   floor, another one when taken) and the step out of an actor;
 - the record: what a joiner gets, the digest, repeats;
+- the camera: a view through the wire, cuts told from moves, the track
+  (blend, a cut, old views, silence, another play), the pacer (five
+  streams within the budget and none under two a second, twenty bodies on a
+  small budget, an ended stream), through endpoints (paced, the host's
+  only, the cut flag never lost);
 - props: taken, handed over (the same number), put away, gone with the
   scene, never in a private one; the guest's cues in order; the record and
   its digest; through endpoints (only the host's word, a late joiner gets
@@ -398,7 +433,18 @@ Items.FirstAidWhiffV0` says `scene prop: 1 … held by npc N`. In a real
    `scene: prop` appear in the host's log at all (is a scene prop a
    `gameItemObject`, does `IsEntityInScene` say yes for it), with the right
    holder and hand; and does the guest's proxy hold it the right way round.
-8. The earlier story scenarios still pass (`story-guest`, `story-host`,
+8. The watch camera. **`task scenario -- scene-camera`** (guest of a
+   scripted cutscene): `scene: watching through the host's camera`, then
+   `our own camera again`. To see: the picture is the view behind the
+   host's puppet, jumps at the cut, blends back. Decides the feature: does
+   `simple_free_camera.ent` spawn through the dynamic entity system, is it
+   a `GameObject` (teleported) or placed with `SetWorldTransform`, does
+   `Activate` take the picture from V's first-person camera and
+   `Deactivate` give it back; is our V headless in the picture (its
+   first-person body). As host (`scene-replay-host`: `cmd story scene
+camera on`), and in a real tier 5 cutscene: does
+   `GetActiveCameraWorldTransform` follow the scene camera, and the cuts.
+9. The earlier story scenarios still pass (`story-guest`, `story-host`,
    `story-johnny`, `story-private`): the subtitle path changed (stand-in
    ids).
 
@@ -417,10 +463,8 @@ Items.FirstAidWhiffV0` says `scene prop: 1 … held by npc N`. In a real
   names a slot of the performer and an offset; nothing reflected reads
   them from a running scene). Props the scene finds in the world are there
   already; whether they move with the scene is to see in game.
-- **A watch camera**: for tier 5 cutscenes (the picture is a scene
-  camera's, not V's eyes), follow the host's active camera
-  (`coop-scenes.md` §2.4: sample it on the host, a free or activated
-  camera on the guest, both untested). Not started: it needs the game.
+- **The watch camera's depth of field and effects** (a cutscene's blur,
+  letterbox, fades): only place, direction and field of view travel.
 - **The scene's section and its true clock**: `SceneState.section` is 0.
   A guest follows the host by what the host shows, so it is not needed
   for (b); it would be for (a).

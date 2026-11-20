@@ -58,6 +58,16 @@ struct TandemStoryEvent {
 };
 static_assert(alignof(TandemStoryEvent) <= 8, "the script VM aligns struct locals to 8");
 
+// The host's view of its cutscene, for a guest to show (TandemStory.SceneView).
+// Plain fields only (no Vector4 or Quaternion in a native struct).
+struct TandemSceneView {
+  bool on{};
+  float x{}, y{}, z{};
+  float i{}, j{}, k{}, r{1.f};
+  float fov{};
+};
+static_assert(alignof(TandemSceneView) <= 8, "the script VM aligns struct locals to 8");
+
 namespace {
 // Kinds, as StoryNatives.reds lists them.
 enum Kind : std::int32_t {
@@ -169,6 +179,7 @@ void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
     for (const auto &cue : Story::Get().Replay().Reset())
       Flatten(cue, out);
     Runtime::Get().ForgetActorPoses();
+    Story::Get().ClearCamera();
     out.EmplaceBack(TandemStoryEvent{.kind = kEnded});
     return;
   case K::Joined:
@@ -831,6 +842,56 @@ struct TandemStory : Red::IScriptable {
     return cut.has_value();
   }
 
+  // ---- the watch camera ----
+
+  // The watch camera may be used (tandem.ini scene_camera, with scene replay).
+  static bool SceneCameraOn() {
+    return Runtime::Get().config.sceneReplay && Runtime::Get().config.sceneCamera;
+  }
+  // Host, every frame of a cutscene we announce: our game's active camera
+  // (position, orientation, field of view in degrees). A view far from the
+  // last one is a cut. Nothing while no scene is announced (a private one
+  // never is).
+  static void SceneCameraSample(float x, float y, float z, float i, float j, float k, float r,
+                                float fov) {
+    auto &story = Story::Get();
+    if (!SceneCameraOn() || !story.Stage().On())
+      return;
+    const auto now = Runtime::Get().HostNowUs();
+    const scene::CameraView view{{x, y, z}, {i, j, k, r}, fov};
+    const bool first =
+        story.LastViewUs() == 0 || now < story.LastViewUs() || now - story.LastViewUs() > 1'000'000;
+    const bool cut = first || scene::IsCut(story.LastView(), view,
+                                           static_cast<float>(now - story.LastViewUs()) / 1e6f);
+    story.LastView() = view;
+    story.LastViewUs() = now;
+    story.SubmitCamera(scene::PackCamera(story.Stage().Play(), view, cut));
+  }
+  // Guest, every frame: the host's view to show now (on false: none, the
+  // stream stopped, or it is another scene's).
+  static TandemSceneView SceneView() {
+    TandemSceneView out;
+    scene::CameraView view;
+    auto &story = Story::Get();
+    if (SceneCameraOn() &&
+        story.CameraAt(Runtime::Get().HostNowUs(), story.Replay().State().play, view)) {
+      out.on = true;
+      out.x = view.position.x;
+      out.y = view.position.y;
+      out.z = view.position.z;
+      out.i = view.orientation.i;
+      out.j = view.orientation.j;
+      out.k = view.orientation.k;
+      out.r = view.orientation.r;
+      out.fov = view.fov;
+    }
+    return out;
+  }
+  // How many views of the host's camera we heard so far.
+  static std::int32_t SceneViews() {
+    return static_cast<std::int32_t>(Story::Get().CameraReceived());
+  }
+
   // Guest: the scene the host plays, as heard (0: none); where it is staged
   // (W: how far from the middle its actors stand; W < 0: not staged) and the
   // way the host's V faces it; how long it has played.
@@ -939,6 +1000,18 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStoryEvent, "TandemStoryEvent", {
   RTTI_PROPERTY(z);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemSceneView, "TandemSceneView", {
+  RTTI_PROPERTY(on);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+  RTTI_PROPERTY(i);
+  RTTI_PROPERTY(j);
+  RTTI_PROPERTY(k);
+  RTTI_PROPERTY(r);
+  RTTI_PROPERTY(fov);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(StoryOn);
   RTTI_METHOD(FreezeAvailable);
@@ -1009,6 +1082,10 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SceneSample);
   RTTI_METHOD(SceneVoice);
   RTTI_METHOD(SceneVoiceHide);
+  RTTI_METHOD(SceneCameraOn);
+  RTTI_METHOD(SceneCameraSample);
+  RTTI_METHOD(SceneView);
+  RTTI_METHOD(SceneViews);
   RTTI_METHOD(ScenePlaying);
   RTTI_METHOD(SceneAnchor);
   RTTI_METHOD(SceneYaw);

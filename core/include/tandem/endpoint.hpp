@@ -19,6 +19,7 @@
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/regions.hpp"
+#include "tandem/scene.hpp"
 #include "tandem/session.hpp"
 #include "tandem/story.hpp"
 #include "tandem/trade.hpp"
@@ -676,6 +677,14 @@ public:
   // states, so the epoch fence that voids the old world's states voids these
   // too). Nothing for an NPC we do not share.
   void SendActorPose(proto::ActorPose pose);
+  // Host: the view of its game's camera in a cutscene (play, position,
+  // orientation, fov, kCameraCut), as often as its game has one: paced
+  // here (scene::Pacer), numbered and stamped, to every guest. A guest hears
+  // it as events::Story (it is not kept: a view is only good now).
+  void SendSceneCamera(proto::SceneCamera camera);
+  // What the scene's streams may take on a link, bytes a second (tandem.ini
+  // scene_kbps; scene::kSceneBytesPerSecond by default).
+  void SetSceneBudget(std::uint32_t bytesPerSecond) { m_scenePacer = scene::Pacer(bytesPerSecond); }
   void SendNpcGone(const proto::NpcGone &gone);
   // Host only: an NPC's health changed (kept for late joiners until gone).
   void SendNpcHealth(const proto::NpcHealth &health);
@@ -1402,6 +1411,10 @@ private:
   std::map<proto::NpcId, proto::NpcHold> m_npcHolds;
   std::map<proto::NpcId, proto::NpcAnim> m_npcAnims;
   std::uint32_t m_npcSeq{};
+  // Scene replay's streams (the camera; the actors' bodies and faces).
+  scene::Pacer m_scenePacer;
+  std::uint32_t m_cameraSeq{};
+  bool m_cameraCut{};
   // Who is in the pause menu (host: the session's record, for late joiners).
   bool m_localPaused{};
   std::set<proto::PlayerId> m_paused;
