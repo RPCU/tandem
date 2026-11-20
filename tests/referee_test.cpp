@@ -187,6 +187,50 @@ TEST_CASE("referee: a shared vehicle's word is its owner's, wherever it was hand
   CHECK(Rules(guest) == std::vector<std::string>{"authority.not-owner"});
 }
 
+TEST_CASE("referee: a device's fire is the host's turret's, what a copy sees a guest's") {
+  using Kind = proto::DeviceFireKind;
+  auto host = Host();
+  // A guest says its copy of a turret has its own V, and what broke in its game.
+  host.Received(2, proto::DeviceFire{.entity = 7, .kind = Kind::Seen, .player = 2}, kSecond);
+  host.Received(2, proto::DeviceFire{.entity = 7, .kind = Kind::Lost}, kSecond);
+  host.Received(2, proto::Fracture{.player = 2, .at = {1.f, 2.f, 3.f}}, kSecond);
+  CHECK(Rules(host).empty());
+  // Never what the turret shoots at, nor in another player's name.
+  host.Received(2, proto::DeviceFire{.entity = 7, .kind = Kind::Shot, .timeUs = 1}, kSecond);
+  host.Received(2, proto::DeviceFire{.entity = 7, .kind = Kind::Aim}, kSecond);
+  host.Received(2, proto::DeviceFire{.entity = 7, .kind = Kind::Seen, .player = 3}, kSecond);
+  host.Received(2, proto::Fracture{.player = 3}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.host-only", "authority.host-only",
+                                                "authority.not-yours", "authority.not-yours"});
+  host.Received(
+      2, proto::Fracture{.player = 2, .at = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
+      kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"value.not-finite"});
+
+  auto guest = Guest();
+  const proto::TargetRef us{proto::TargetKind::Player, 2};
+  guest.Received(1, proto::DeviceFire{.entity = 7, .kind = Kind::Aim, .target = us}, kSecond);
+  guest.Received(
+      1, proto::DeviceFire{.entity = 7, .kind = Kind::Shot, .target = us, .timeUs = kSecond},
+      kSecond);
+  guest.Received(1, proto::DeviceFire{.entity = 7, .kind = Kind::Idle}, kSecond);
+  guest.Received(1, proto::Fracture{.player = 3}, kSecond);
+  CHECK(Rules(guest).empty());
+  // The host never passes on what a copy sees, a turret is named, a shot
+  // stamped, its target a player of the session; our own break never comes back.
+  guest.Received(1, proto::DeviceFire{.entity = 7, .kind = Kind::Seen, .player = 3}, kSecond);
+  guest.Received(1, proto::DeviceFire{.kind = Kind::Aim}, kSecond);
+  guest.Received(1, proto::DeviceFire{.entity = 7, .kind = Kind::Shot}, kSecond);
+  guest.Received(
+      1,
+      proto::DeviceFire{.entity = 7, .kind = Kind::Aim, .target = {proto::TargetKind::Player, 6}},
+      kSecond);
+  guest.Received(1, proto::Fracture{.player = 2}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.guest-only", "value.range",
+                                                 "value.range", "ids.unknown-player",
+                                                 "authority.own-state-back"});
+}
+
 TEST_CASE("referee: the host may not say what only a guest asks") {
   auto referee = Guest();
   referee.Received(1, proto::ResyncRequest{1}, kSecond);

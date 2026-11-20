@@ -185,6 +185,18 @@ succeeded `AccessPointMiniGameStatus` with the programs). Engine facts:
   the material trap). The others see its puppet busy in a minigame
   (`activities.md`). Nothing is sent before it ends: a breacher that
   vanishes mid-breach leaves the network as it was.
+- **The host's grant decides the payout.** The game's own handling of a won
+  outcome (the network breached on the breacher's copy, its daemons there,
+  the rewards) is held until the host answers, a ping later
+  (`TandemBreach.Queue`, `Settle`; core `devices::BreachHolds`, one hold
+  per minigame, each network it reached a target). Granted for one of
+  them: the game handles the win. Refused for all: it handles a minigame
+  that ended with nothing (`HackingMinigameState.Unknown`: the dive ends,
+  no daemons, no rewards, no alarm), the breacher reads "NAME breached this
+  network first", and its copy of the access point is the host's word. No
+  answer in 3 s (`kBreachHoldUs`), or the session over: as won. A lost
+  minigame is never held. The host's own breach is held the same way (its
+  answer comes at once).
 - **Its outcome is caught, not its screen**: every breach ends with an
   `AccessPointMiniGameStatus` to what was breached, the won daemons on the
   `HackingMinigame` blackboard. `Breach.reds` wraps
@@ -202,8 +214,8 @@ succeeded `AccessPointMiniGameStatus` with the programs). Engine facts:
   gets `BreachAccessPointEvent` and the minigame marked won
   (`TandemSetMinigameWon`), so **the game itself offers no second
   jack-in** and the quickhack's `IsBreached` prereqs lock. A refused
-  breacher sees "NAME breached this network first"; its rewards were
-  already rolled (a race within a ping pays both: open).
+  breacher sees "NAME breached this network first" and is paid nothing
+  (above).
 - **The owner of what it affects runs the daemons**, the game's own way,
   with the breacher's puppet as the player: the host on the network's
   devices (each child's own minigame action, as
@@ -256,7 +268,9 @@ world untouched.
   loopback: a guest's breach applied by the host and heard by the other
   guest for its NPCs, a second breach refused, the host's own, a late
   joiner, the quickhack on a host NPC and its network, a lost minigame, a
-  breacher vanishing mid-breach and right after) and
+  breacher vanishing mid-breach and right after; the holds: paid on a
+  grant, never on a refusal, several networks, silence and the session's
+  end; two breaches within a ping: one paid) and
   `tests/peer_breach.sh` (`tandem-peer --breach ENTITY[:CLASS][@S] |
 npc=N[@S] --programs LIST [--breach-failed]`: two guests and a late
   joiner).
@@ -275,9 +289,11 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   `breach ap [PROGRAMS]`, `breach fail ap`, `breach npc [PROGRAMS]` (the
   nearest access point or proxy, its outcome faked as AccessPointSkip
   does); scenarios `breach-guest` (the mock guest's breach: the host's
-  cameras off, its NPCs' ICE broken) and `breach-host` (the game as a
-  guest breaches the host's network; the mock host's second breach is
-  refused).
+  cameras off, its NPCs' ICE broken; the game's own second breach refused
+  and paid nothing) and `breach-host` (the game as a guest breaches the
+  host's network: held, granted, paid; the mock host's second breach is
+  refused). The mock player logs `our breach pays (granted)` or
+  `our breach pays nothing: player N was first`.
 - Scenarios (`tools/scenario.sh NAME`, none run yet): `devices-door`,
   `devices-lift` (an elevator ride together), `devices-camera` (hacked by
   the guest), `devices-barrel` (shot by the guest), `devices-guest` (the
@@ -312,8 +328,8 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
 - **Datamine rewards** go to who breached. Alternative if the players
   prefer it: breach state not shared, each jacks in their own copy.
 - **Breach Protocol, not run in game**: the list is §13.60, "To verify in
-  game". Two breaches of one network within a ping are both paid (each
-  game rolls its rewards at once; the host grants the first). The
+  game" (5: the held outcome). A breach through a device that reaches two
+  networks is paid whole when one of them is granted. The
   quickhack on an NPC another guest runs breaches that NPC only, not its
   network. A guest's NPCs of the network get the daemons once its game
   hears of the breach (a ping later than the breacher's own).

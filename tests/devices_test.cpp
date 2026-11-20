@@ -415,3 +415,200 @@ TEST_CASE("the host vanishes: a guest keeps the record to put its own devices ba
   CHECK(s.a->Update(10ms).empty());
   CHECK(s.a->Devices().Size() == 1);
 }
+
+// ---- Glass and breakable scenery (devices.md) ----
+
+TEST_CASE("fractures: a pane is told once, and what our replay breaks never") {
+  devices::Fractures glass;
+  const std::uint64_t t = 10'000'000;
+  const proto::Fracture pane{.at = {10.f, 20.f, 3.f}};
+  CHECK(glass.Ours(pane, t));
+  // The same pane's other pieces, moments later.
+  CHECK_FALSE(glass.Ours({.at = {10.3f, 20.f, 3.2f}}, t + 100'000));
+  // Another window, further along the wall.
+  CHECK(glass.Ours({.at = {14.f, 20.f, 3.f}}, t + 200'000));
+  // What stood behind the first one goes much later: news again.
+  CHECK(glass.Ours(pane, t + 5'000'000));
+  CHECK(glass.Told() == 3);
+  CHECK(glass.Repeats() == 1);
+
+  // Another game's break is ours to replay, once...
+  const proto::Fracture theirs{.player = 2, .at = {40.f, 5.f, 1.f}};
+  CHECK(glass.Theirs(theirs, t + 6'000'000));
+  CHECK_FALSE(glass.Theirs(theirs, t + 6'010'000));
+  CHECK(glass.Replayed() == 1);
+  // ...and what our replay breaks here is news for nobody.
+  CHECK_FALSE(glass.Ours({.at = {40.9f, 5.f, 1.4f}}, t + 6'050'000));
+  CHECK(glass.Echoes() == 1);
+  // Later the same place breaks again, by our own doing: told.
+  CHECK(glass.Ours({.at = {40.9f, 5.f, 1.4f}}, t + 9'000'000));
+  // Both shot one window: ours is told, theirs needs no replay.
+  CHECK(glass.Ours({.at = {60.f, 0.f, 0.f}}, t + 10'000'000));
+  CHECK_FALSE(glass.Theirs({.player = 2, .at = {60.2f, 0.f, 0.f}}, t + 10'100'000));
+}
+
+TEST_CASE("fractures: a named part breaks once, whoever says it") {
+  devices::Fractures glass;
+  const proto::Fracture part{.entity = 0xABC, .component = 0x11, .at = {1.f, 2.f, 3.f}, .level = 1};
+  auto beside = part; // the pane next to it in the same frame, 20 cm away
+  beside.component = 0x12;
+  beside.at.x += 0.2f;
+  CHECK(glass.Theirs(part, 1'000'000));
+  CHECK_FALSE(glass.Theirs(part, 1'000'001));
+  // Our replay broke it here: our game's own event of it is its echo.
+  CHECK_FALSE(glass.Ours(part, 1'050'000));
+  CHECK(glass.Echoes() == 1);
+  // The pane beside it is ours, although right next to a replay.
+  CHECK(glass.Ours(beside, 1'060'000));
+  // Broken for good: never again, either way.
+  CHECK_FALSE(glass.Ours(beside, 60'000'000));
+  CHECK_FALSE(glass.Theirs(beside, 60'000'001));
+  CHECK(glass.Repeats() == 3);
+  // A new session starts whole.
+  glass.Clear();
+  CHECK(glass.Ours(beside, 61'000'000));
+}
+
+TEST_CASE("fractures: a game is held to its own rate") {
+  devices::Fractures glass;
+  int told = 0;
+  for (int i = 0; i < 100; ++i)
+    told += glass.Ours({.at = {static_cast<float>(i) * 5.f, 0.f, 0.f}}, 1'000'000 + i) ? 1 : 0;
+  CHECK(told == static_cast<int>(devices::kFractureBurst));
+  CHECK(glass.Held() == 100u - static_cast<unsigned>(told));
+  // Two seconds later: a whole burst again, no more.
+  told = 0;
+  for (int i = 0; i < 100; ++i)
+    told += glass.Ours({.at = {static_cast<float>(i) * 5.f, 100.f, 0.f}}, 3'100'000 + i) ? 1 : 0;
+  CHECK(told == static_cast<int>(devices::kFractureBurst));
+}
+
+namespace {
+// The fractures and device fire each endpoint of a session hears (host, a, b).
+struct Heard {
+  std::vector<proto::Fracture> broke[3];
+  std::vector<proto::DeviceFire> fired[3];
+  bool Run(const std::vector<Endpoint *> &endpoints, const std::function<bool()> &done,
+           std::chrono::milliseconds limit = 3s) {
+    return Pump(
+        endpoints,
+        [&](std::size_t i, const auto &events) {
+          for (const auto &event : events) {
+            if (const auto *glass = std::get_if<events::Fractured>(&event))
+              broke[i].push_back(glass->fracture);
+            else if (const auto *fire = std::get_if<events::DeviceFired>(&event))
+              fired[i].push_back(fire->fire);
+          }
+          return done();
+        },
+        limit);
+  }
+};
+} // namespace
+
+TEST_CASE("glass: what breaks in one game breaks in the others, in its player's name, never "
+          "its own") {
+  auto s = Start(true);
+  Heard heard;
+  // A guest's shot breaks a window: a part of a placed entity.
+  s.a->SendFracture({.entity = 0x77, .component = 0x9, .at = {1.f, 2.f, 3.f}, .level = 2});
+  REQUIRE(
+      heard.Run(s.All(), [&] { return heard.broke[0].size() == 1 && heard.broke[2].size() == 1; }));
+  CHECK(heard.broke[0][0] == proto::Fracture{.player = s.a->You(),
+                                             .entity = 0x77,
+                                             .component = 0x9,
+                                             .at = {1.f, 2.f, 3.f},
+                                             .level = 2});
+  CHECK(heard.broke[2][0] == heard.broke[0][0]);
+  // The host's own, a piece of the world with no name: to every guest.
+  s.host->SendFracture({.at = {5.f, 6.f, 7.f}});
+  REQUIRE(
+      heard.Run(s.All(), [&] { return heard.broke[1].size() == 1 && heard.broke[2].size() == 2; }));
+  CHECK(heard.broke[1][0] == proto::Fracture{.player = s.host->You(), .at = {5.f, 6.f, 7.f}});
+  // Nobody hears its own again.
+  heard.Run(s.All(), [] { return false; }, 100ms);
+  CHECK(heard.broke[0].size() == 1);
+  CHECK(heard.broke[1].size() == 1);
+  CHECK(heard.broke[2].size() == 2);
+}
+
+TEST_CASE("glass: the host holds a guest's fractures to a rate") {
+  auto s = Start(true);
+  Heard heard;
+  for (int i = 0; i < 200; ++i)
+    s.a->SendFracture({.at = {static_cast<float>(i), 0.f, 0.f}});
+  REQUIRE(heard.Run(s.All(), [&] {
+    return heard.broke[0].size() + s.host->FracturesDropped() == 200 &&
+           heard.broke[2].size() == heard.broke[0].size();
+  }));
+  CHECK(heard.broke[0].size() >= static_cast<std::size_t>(devices::kHostFractureBurst));
+  CHECK(s.host->FracturesDropped() > 0);
+}
+
+TEST_CASE("a device's fire: the host's turret's aim and shots reach every guest; what a copy "
+          "sees, the host alone") {
+  using Kind = proto::DeviceFireKind;
+  constexpr std::uint64_t kTurret = 0x7E77E7ull;
+  auto s = Start(true);
+  Heard heard;
+  const auto a = s.a->You();
+  // a's copy of the turret locks a's V: the host's game hears it, once.
+  s.a->SendDeviceFire({.entity = kTurret, .kind = Kind::Seen, .at = {1.f, 2.f, 3.f}});
+  s.a->SendDeviceFire({.entity = kTurret, .kind = Kind::Seen, .at = {1.f, 2.f, 3.f}});
+  REQUIRE(heard.Run(s.All(), [&] { return heard.fired[0].size() == 1; }));
+  CHECK(heard.fired[0][0].kind == Kind::Seen);
+  CHECK(heard.fired[0][0].player == a);
+  CHECK(heard.fired[0][0].entity == kTurret);
+  CHECK(s.host->DevicesSeeing().at(a).contains(kTurret));
+  // The host's turret turns to a's puppet and fires: every guest hears at whom.
+  const proto::TargetRef target{proto::TargetKind::Player, a};
+  s.host->SendDeviceFire(
+      {.entity = kTurret, .kind = Kind::Aim, .target = target, .at = {1.f, 2.f, 3.f}});
+  s.host->SendDeviceFire(
+      {.entity = kTurret, .kind = Kind::Shot, .target = target, .at = {1.f, 2.f, 3.f}});
+  REQUIRE(
+      heard.Run(s.All(), [&] { return heard.fired[1].size() == 2 && heard.fired[2].size() == 2; }));
+  CHECK(heard.fired[1][0].kind == Kind::Aim);
+  CHECK(heard.fired[1][0].timeUs == 0);
+  CHECK(heard.fired[1][1].kind == Kind::Shot);
+  CHECK(heard.fired[1][1].target == target);
+  CHECK(heard.fired[1][1].timeUs != 0); // the host clock, for a shot that comes too late
+  CHECK(heard.fired[2][1] == heard.fired[1][1]);
+  // Not theirs to say: a guest's "shot", the host's "seen", a turret that
+  // never had b's V losing it. Nobody hears any of it.
+  s.a->SendDeviceFire({.entity = kTurret, .kind = Kind::Shot, .target = target});
+  s.host->SendDeviceFire({.entity = kTurret, .kind = Kind::Seen});
+  s.b->SendDeviceFire({.entity = kTurret, .kind = Kind::Lost});
+  heard.Run(s.All(), [] { return false; }, 100ms);
+  CHECK(heard.fired[0].size() == 1);
+  CHECK(heard.fired[1].size() == 2);
+  CHECK(heard.fired[2].size() == 2);
+  // a's copy loses a's V, then the host's turret follows nobody.
+  s.a->SendDeviceFire({.entity = kTurret, .kind = Kind::Lost});
+  REQUIRE(heard.Run(s.All(), [&] { return heard.fired[0].size() == 2; }));
+  CHECK(heard.fired[0][1].kind == Kind::Lost);
+  CHECK(heard.fired[0][1].player == a);
+  CHECK(s.host->DevicesSeeing().at(a).empty());
+  s.host->SendDeviceFire({.entity = kTurret, .kind = Kind::Idle});
+  REQUIRE(
+      heard.Run(s.All(), [&] { return heard.fired[1].size() == 3 && heard.fired[2].size() == 3; }));
+  CHECK(heard.fired[2][2].kind == Kind::Idle);
+}
+
+TEST_CASE("a device's fire: a guest that vanishes is let go by the turrets that had its V") {
+  using Kind = proto::DeviceFireKind;
+  auto s = Start(true, {.timeout = 1000ms, .takeover = 400ms, .digest = 100ms});
+  Heard heard;
+  const auto a = s.a->You();
+  s.a->SendDeviceFire({.entity = 7, .kind = Kind::Seen});
+  s.a->SendDeviceFire({.entity = 8, .kind = Kind::Seen});
+  REQUIRE(heard.Run(s.All(), [&] { return heard.fired[0].size() == 2; }));
+  s.a.reset(); // no goodbye
+  REQUIRE(heard.Run({s.host.get(), s.b.get()}, [&] { return heard.fired[0].size() == 4; }));
+  for (std::size_t i = 2; i < 4; ++i) {
+    CHECK(heard.fired[0][i].kind == Kind::Lost);
+    CHECK(heard.fired[0][i].player == a);
+  }
+  CHECK(heard.fired[0][2].entity + heard.fired[0][3].entity == 15);
+  CHECK_FALSE(s.host->DevicesSeeing().contains(a));
+}

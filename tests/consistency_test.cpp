@@ -208,6 +208,10 @@ TEST_CASE("faults never touch the handshake and never send a one-shot twice") {
   // A breach runs its daemons once; its answer is said once.
   CHECK(consistency::IsOneShot(proto::Breach{}));
   CHECK(consistency::IsOneShot(proto::BreachResult{}));
+  // A device's shot is fired once; its aim is state, and a break is for good.
+  CHECK(consistency::IsOneShot(proto::DeviceFire{.kind = proto::DeviceFireKind::Shot}));
+  CHECK_FALSE(consistency::IsOneShot(proto::DeviceFire{.kind = proto::DeviceFireKind::Aim}));
+  CHECK_FALSE(consistency::IsOneShot(proto::Fracture{}));
   // A time skip's request, answers and result: each one counts.
   CHECK(consistency::IsOneShot(proto::TimeSkip{}));
   CHECK(consistency::IsOneShot(proto::TimeSkipVote{}));

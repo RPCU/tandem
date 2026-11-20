@@ -8,12 +8,16 @@
 // Platform-independent: the endpoint uses it on both sides, the plugin and
 // the mock player on top of it.
 
+#include "tandem/comms.hpp"
 #include "tandem/protocol.hpp"
 
 #include <compare>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <optional>
+#include <set>
+#include <utility>
 #include <vector>
 
 namespace tandem::devices {
@@ -102,6 +106,104 @@ private:
 // open, by the breacher (from what the record has, else on).
 proto::DeviceState BreachedState(const Key &network, proto::PlayerId player,
                                  const proto::DeviceState *record);
+
+// The breacher's side of the host's grant (devices.md, "Breach Protocol"):
+// a won breach pays its rewards (the datamine's money, components and
+// shards) only once the host has granted it. One hold per minigame won,
+// with each network (or the NPC) it breached; granted for any of them, it
+// is paid; refused for all, it is not, and `by` says who was first. The
+// host's game holds its own the same way (its answer comes at once).
+// Unanswered for kBreachHoldUs (a host that froze), or the session over:
+// paid, as alone.
+inline constexpr std::uint64_t kBreachHoldUs = 3'000'000;
+class BreachHolds {
+public:
+  struct Target {
+    Key network;
+    proto::NpcId npc{};
+    friend auto operator<=>(const Target &, const Target &) = default;
+  };
+  struct Decision {
+    std::uint32_t hold{};
+    bool paid{};
+    proto::PlayerId by{}; // refused: who breached it first (kNoPlayer: the host's world)
+    bool answered{};      // false: nobody answered (the hold ran out, the session ended)
+    friend bool operator==(const Decision &, const Decision &) = default;
+  };
+  // Our breach `hold` waits for the host's word on `target` too.
+  void Hold(std::uint32_t hold, Target target, std::uint64_t nowUs);
+  // The host's answer on one target of our oldest hold that waits for it:
+  // the hold it settles, if any.
+  std::optional<Decision> Answer(const proto::BreachResult &result);
+  // The holds the host left unanswered for kBreachHoldUs.
+  std::vector<Decision> Expire(std::uint64_t nowUs);
+  // The session is over: every hold is settled (our world is our own again).
+  std::vector<Decision> End();
+  std::size_t Size() const { return m_holds.size(); }
+
+private:
+  struct Held {
+    std::uint32_t hold{};
+    std::vector<Target> waiting;
+    proto::PlayerId by{};
+    std::uint64_t sinceUs{};
+  };
+  std::vector<Held> m_holds;
+};
+
+// ---- Glass and breakable scenery (devices.md) ----
+//
+// A break is told by the game that saw it and replayed by the others.
+// Replaying one breaks the piece here too, which our game sees as a break
+// of its own: Fractures tells the two apart, and one pane shattering in
+// many pieces from the stream of them.
+
+// What a game may say (a magazine through a glass front), and what the host
+// passes on for each guest.
+inline constexpr double kFractureBurst = 24, kFracturesPerSecond = 12;
+inline constexpr double kHostFractureBurst = 48, kHostFracturesPerSecond = 24;
+// Two breaks this close, this soon after each other, are one piece going.
+inline constexpr float kFractureSpot = 0.75f;
+inline constexpr std::uint64_t kFractureWindowUs = 1'500'000;
+// A break this close to one we just replayed is that replay's own.
+inline constexpr float kFractureEcho = 1.5f;
+inline constexpr std::uint64_t kFractureEchoUs = 2'000'000;
+inline constexpr std::size_t kMaxFractureSpots = 256, kMaxFracturedParts = 4096;
+
+class Fractures {
+public:
+  // Our game saw something break. True: to tell the others (not the echo of
+  // a break we replayed, not a piece already told, within our rate).
+  bool Ours(const proto::Fracture &fracture, std::uint64_t nowUs);
+  // Another game's break. True: ours to replay (not one that broke here
+  // already, by our own doing or an earlier word).
+  bool Theirs(const proto::Fracture &fracture, std::uint64_t nowUs);
+  // A new session: nothing is remembered.
+  void Clear();
+  std::uint64_t Told() const { return m_told; }
+  std::uint64_t Replayed() const { return m_replayed; }
+  std::uint64_t Echoes() const { return m_echoes; }
+  std::uint64_t Repeats() const { return m_repeats; }
+  std::uint64_t Held() const { return m_held; }
+
+private:
+  struct Spot {
+    proto::Vec3 at;
+    std::uint64_t atUs{};
+    bool ours{};
+  };
+  enum class Whose { Anyone, Ours, Theirs };
+  using Part = std::pair<std::uint64_t, std::uint64_t>; // entity, component
+  const Spot *Near(const proto::Vec3 &at, float within, std::uint64_t nowUs, std::uint64_t window,
+                   Whose whose) const;
+  void Note(const proto::Fracture &fracture, std::uint64_t nowUs, bool ours);
+  // Pieces with no name of their own, lately: where, and whose word.
+  std::deque<Spot> m_spots;
+  // The named parts broken this session, and whether ours told it first.
+  std::map<Part, bool> m_parts;
+  comms::Limiter m_rate{kFractureBurst, kFracturesPerSecond};
+  std::uint64_t m_told{}, m_replayed{}, m_echoes{}, m_repeats{}, m_held{};
+};
 
 // Guest: when to ask for the record again. As for the other domains
 // (consistency::Checker): it must differ twice in a row, and is asked for at

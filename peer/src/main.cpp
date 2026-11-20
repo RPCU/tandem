@@ -315,6 +315,9 @@ struct Options {
   int pingSeconds{0};
   int tagSeconds{0};
   int revealSeconds{0};
+  // --reveal-device: the device our "Ping quickhack" reaches (0: none), when.
+  std::uint64_t revealDevice{};
+  int revealDeviceAtSeconds{5};
   std::optional<Vec3> waypoint;
   int waypointClearSeconds{-1};
   // A team target (the "Mark target" quickhack) 5 s in: a shared NPC's id,
@@ -705,6 +708,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     the scanner's tag (seen by linked players only)\n"
          "  --reveal N         every N seconds reveal up to 4 shared NPCs for 10 s, as\n"
          "                     the Ping quickhack (linked players only)\n"
+         "  --reveal-device E[@S] our Ping quickhack reaches the device E (its id in hex) S\n"
+         "                     seconds after another player is in (5): the linked pulse its\n"
+         "                     network from their copy and draw its beams\n"
          "  --waypoint X,Y,Z   our waypoint (a map pin) there, once another player is in\n"
          "  --waypoint-clear N take the waypoint away N seconds after setting it\n"
          "  --mark-target ID   5 seconds after another player is in, make the shared NPC\n"
@@ -1553,7 +1559,19 @@ Options Parse(int argc, char **argv) {
       options.pingSeconds = Number<int>(value);
     else if (flag == "--tag")
       options.tagSeconds = Number<int>(value);
-    else if (flag == "--reveal")
+    else if (flag == "--reveal-device") {
+      std::string_view entity = value;
+      if (const auto at = entity.find('@'); at != std::string_view::npos) {
+        options.revealDeviceAtSeconds = Number<int>(entity.substr(at + 1));
+        entity = entity.substr(0, at);
+      }
+      if (entity.starts_with("0x"))
+        entity.remove_prefix(2);
+      if (std::from_chars(entity.data(), entity.data() + entity.size(), options.revealDevice, 16)
+                  .ptr != entity.data() + entity.size() ||
+          options.revealDevice == 0)
+        Usage(std::format("--reveal-device: {} is not an entity id in hex", entity));
+    } else if (flag == "--reveal")
       options.revealSeconds = Number<int>(value);
     else if (flag == "--waypoint")
       options.waypoint = Point(flag, value);
@@ -4191,6 +4209,14 @@ int main(int argc, char **argv) {
   // Devices: when the session began for us (--device counts from it), and
   // the devices to change back (--device-answer: when, from what).
   std::optional<std::chrono::steady_clock::time_point> devicesFrom;
+  // --breach: a won one pays once the host grants it (devices.md).
+  tandem::devices::BreachHolds breachHolds;
+  const auto breachSettled = [](const tandem::devices::BreachHolds::Decision &decision) {
+    if (decision.paid)
+      Log("our breach pays ({})", decision.answered ? "granted" : "nobody answered");
+    else
+      Log("our breach pays nothing: player {} was first", decision.by);
+  };
   std::uint32_t interactSeq = 0; // --interact: our questions' numbers
   std::map<tandem::devices::Key,
            std::pair<std::chrono::steady_clock::time_point, tandem::devices::What>>
@@ -4845,6 +4871,12 @@ int main(int argc, char **argv) {
                   e.tag.on ? "tagged" : "untagged", e.tag.targets.size(),
                   e.tag.reason == tandem::proto::TagReason::Reveal ? "reveal" : "scan",
                   e.tag.seconds);
+              // A reveal of a placed entity: the Ping quickhack reached a device.
+              for (const auto &target : e.tag.targets)
+                if (e.tag.on && e.tag.reason == tandem::proto::TagReason::Reveal &&
+                    target.kind == tandem::proto::TargetKind::Entity)
+                  Log("player {} pulsed the network from device {:x} ({} s)", e.tag.from, target.id,
+                      e.tag.seconds);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteLink>) {
               const auto &l = e.link;
               const bool theyAsk = tandem::comms::Consents(&l, endpoint->You());
@@ -5092,6 +5124,8 @@ int main(int argc, char **argv) {
                                                    "refused (the record is full)"};
               Log("our breach of network {:x} npc {}: {}, by player {}", r.entity, r.npc,
                   kVerdicts[static_cast<int>(r.verdict)], r.by);
+              if (const auto decision = breachHolds.Answer(r))
+                breachSettled(*decision);
             } else if constexpr (std::is_same_v<E, tandem::events::DevicesReset>) {
               Log("devices: the host sends its record again");
             } else if constexpr (std::is_same_v<E, tandem::events::Resync>) {
@@ -5839,6 +5873,14 @@ int main(int argc, char **argv) {
         endpoint->SendTag(std::move(reveal));
       }
     }
+    if (options.revealDevice != 0 && together(options.revealDeviceAtSeconds)) {
+      endpoint->SendTag({.reason = tandem::proto::TagReason::Reveal,
+                         .on = true,
+                         .seconds = 10,
+                         .targets = {{tandem::proto::TargetKind::Entity, options.revealDevice}}});
+      Log("pulsed the network from device {:x} for 10 s (ping quickhack)", options.revealDevice);
+      options.revealDevice = 0;
+    }
     if (!options.markTarget.empty() && !targetMarked && together(5)) {
       targetMarked = true;
       std::optional<tandem::proto::NpcSpawn> npc;
@@ -6059,9 +6101,13 @@ int main(int argc, char **argv) {
         breach.programs.clear();
       }
       endpoint->SendBreach(breach);
+      if (!options.breachFailed)
+        breachHolds.Hold(1, {{order.entity, order.cls}, order.npc}, tandem::net::NowUs());
       Log("breached network {:x} npc {} with {} daemon(s){} (--breach)", order.entity, order.npc,
           breach.programs.size(), options.breachFailed ? ", lost" : "");
     }
+    for (const auto &decision : breachHolds.Expire(tandem::net::NowUs()))
+      breachSettled(decision);
     // --interact: each use at its time into the session (a guest asks).
     for (auto &order : options.interacts) {
       if (order.done || !devicesFrom || now < *devicesFrom + std::chrono::seconds(order.atSeconds))

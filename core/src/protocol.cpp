@@ -349,6 +349,10 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
                   std::ranges::adjacent_find(visuals->records, std::greater_equal<>{}) !=
                       visuals->records.end()))
     return std::nullopt;
+  // A device's fire: the kinds and targets this version knows.
+  if (const auto *fire = std::get_if<DeviceFire>(&message);
+      fire && (fire->kind > DeviceFireKind::Lost || !target(fire->target)))
+    return std::nullopt;
   return read;
 }
 
@@ -373,6 +377,12 @@ Channel ChannelOf(const Message &message) {
   // A smart weapon's guided round, one per shot: like the shot itself.
   if (const auto *thrown = std::get_if<Throw>(&message); thrown && thrown->kind == ThrowKind::Smart)
     return Channel::State;
+  // A device's shot at a V is fired for real by that V's game: it must
+  // arrive. Its shots at anyone else are drawn only, many, and of the moment.
+  if (const auto *fire = std::get_if<DeviceFire>(&message))
+    return fire->kind == DeviceFireKind::Shot && fire->target.kind != TargetKind::Player
+               ? Channel::State
+               : Channel::Event;
   return std::holds_alternative<PlayerState>(message) || std::holds_alternative<Cue>(message) ||
                  std::holds_alternative<PoseState>(message) ||
                  std::holds_alternative<Shot>(message) ||
@@ -584,6 +594,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "RigPose",
                                    "SceneCamera",
                                    "SceneProp",
+                                   "Fracture",
+                                   "DeviceFire",
                                    "NpcPlaced",
                                    "NpcDeath"};
   static_assert(std::size(names) == std::variant_size_v<Message>);

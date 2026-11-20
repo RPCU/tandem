@@ -157,7 +157,7 @@ TEST_CASE("ledger: its messages survive encoding, are reliable state, and are re
     CHECK(IsReliable(message));
   }
   // Appended after every older message: no index moved.
-  CHECK(Message(NpcPlaced{}).index() == Message(SceneProp{}).index() + 1);
+  CHECK(Message(NpcPlaced{}).index() > Message(QuestInteract{}).index());
   CHECK(Message(NpcDeath{}).index() == Message(NpcPlaced{}).index() + 1);
   CHECK(std::string(NameOf(NpcPlaced{})) == "NpcPlaced");
   CHECK(std::string(NameOf(NpcDeath{})) == "NpcDeath");

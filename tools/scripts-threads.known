@@ -9,8 +9,6 @@
 # two of them at once (entity events on job threads), and each writes a
 # system's fields or arrays. The crash class of 2026-11-20 once it happens
 # while the world streams in. To rework first: queue, act on the tick.
-Breach.reds Device.OnAccessPointMiniGameStatus
-Breach.reds ScriptedPuppet.OnAccessPointMiniGameStatus
 Combat.reds NPCPuppet.OnStatusEffectApplied
 Hacks.reds NPCPuppet.OnStatusEffectApplied
 HitReactions.reds HitReactionComponent.SendTwitchDataToAnimationGraph
