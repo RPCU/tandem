@@ -39,7 +39,8 @@ the host's word (a door that shuts again, as it would for a slammed door).
 
 One principle follows for devices that act on players (cameras, turrets,
 mines, lasers, barrels): **a device runs in every game against that game's
-own V; what it _is_ is the host's**. The game's sensing code is written
+own V; what it _is_ is the host's** (and, for a turret, what it turns to
+and fires at: "A device's fire"). The game's sensing code is written
 around the local player (it does not treat a puppet as one), a turret that
 shot a guest through the network would hit late, and each game already has
 the device, its cone and its gun. So your V is seen, shot and blown up by
@@ -54,7 +55,7 @@ their state (on, off, friendly, destroyed, the alarm) is the host's.
 | --- | --- | --- |
 | Doors, gates, shutters (`DoorControllerPS`) | open, locked, sealed; status | host; a guest's own copy changes first |
 | Elevators (`LiftControllerPS`) | the floor it is at or going to (every game's cabin leaves together); status | host. Who rides: each V is carried by its own game's cabin, puppets are placed by their player's stream (the "in a moving elevator" placement) |
-| Cameras, turrets (`SurveillanceCameraControllerPS`, `SecurityTurretControllerPS`) | on, off, unpowered, disabled (destroyed), friendly, hacked | host. Seeing and shooting a V: that V's own game's copy |
+| Cameras, turrets (`SurveillanceCameraControllerPS`, `SecurityTurretControllerPS`) | on, off, unpowered, disabled (destroyed), friendly, hacked | host. Seeing and shooting a V: that V's own game's copy. Seeing a V: that V's own game's copy. A turret's aim and shots: the host's turret ("A device's fire") |
 | The alarm (`SecuritySystemControllerPS`) | safe, alerted, combat | host. Raised by whichever game's device saw its V (on the host: as that V's puppet, where it stands, so the NPCs go there); called off by the host only |
 | Access points (`AccessPointControllerPS`), their networks | breached; each device's "quickhacks open" bit; what the breach's daemons did to each device (their own state) | host. Breached once for everyone; the datamine's money and shards go to who breached (rolled by that game, as corpses and containers are) |
 | Computers, terminals (`ComputerControllerPS`, `TerminalControllerPS`) | status, hacked; what they did to the devices they command (those devices' own state) | host. Reading mails and files: each player in their own game; a quest fact a read sets follows the story rules |
@@ -81,6 +82,8 @@ file: the same in every game) and the class name of its state; its
 | `DeviceSet` | both | guest: send me the record again; host: here it comes, forget yours |
 | `Breach` | any game → host → the others | a breach's outcome: the access point (or the NPC breached through the quickhack), the daemons and traps won, who breached; the host passes a granted one on (`kBreachApply`). One-shot ("Breach Protocol", below) |
 | `BreachResult` | host → the breacher | granted, or refused: breached first by whom |
+| `DeviceFire` | host → the guests linked with it | its turret turned to a target (said again every second), shot at it, or follows nobody. A shot at a V: Event channel (that V's game fires it for real); any other shot: State channel. At most 43 bytes |
+| `DeviceFire` | guest → host | "my copy of that turret has locked my V", "…lost it" (kept by the host: a repeat tells nothing, a vanished guest is let go) |
 | `Fracture` | any game → host → the linked | something broke: where, and the placed entity's destruction component when it is one. About 34 bytes; the host holds each guest to 48 then 24 a second |
 
 Sending the _state the device should be in_, not the action that was
@@ -243,6 +246,56 @@ succeeded `AccessPointMiniGameStatus` with the programs). Engine facts:
   on one runs `RefreshSlaves` (the local blackboard's last daemons and the
   money), so `TandemDevices.Apply` never sends it there.
 
+## A device's fire
+
+"The others see the host's turret firing at what it actually targets, and
+their own copy does not fire at their own V on its own." Built 2026-11-20,
+not run in game; engine facts §13.90. Code: `scripts/tandem/Turrets.reds`
+(`TandemTurrets`), the `AIWeapon.Fire` wrap in `NpcAnims.reds`,
+`Endpoint::SendDeviceFire`, `OnDeviceSeen`.
+
+- **Which devices**: placed security turrets (`SecurityTurret`) on their
+  own. Not one a player controls (its shots are that player's), not the
+  police's (`IsPartOfPrevention`: `police.md`), not a spawned one. A
+  camera fires nothing; the sniper nest fires as its player.
+- **Host**: every shot of its turret (`AIWeapon.Fire`, queued) goes to the
+  guests linked with the host, with its target named the session's way (a
+  player, a shared NPC, a placed entity, else the place); so does each
+  target it turns to (`OnCurrentTargetAppears`), again every second while
+  it follows one, then "follows nobody".
+- **Guest, linked with the host**: its copy never starts firing
+  (`SecurityTurret.ShootStart` held; a stray `AIWeapon.Fire` of it
+  dropped). It turns where the host's turret turns (a look-at on the
+  target's body here, held 1.5 s against its own look-ats) and fires each
+  of the host's shots from its own weapon:
+  - at another V, an NPC or a place: a drawn bullet
+    (`TandemPresenceSync.Bullet`: the weapon's tracer, impact and sounds;
+    its hits are nobody's);
+  - at our own V: our copy's real shot (`AIWeapon.Fire` at our V, the
+    game's own aim and miss rules): **our game decides the hit**, as it
+    did when the copy fired on its own, and as for an NPC's shot
+    (`NpcShotAt`). A shot older than 1.5 s on the host clock is not fired.
+- **Sensing stays per game** (the engine's sensing knows the local player
+  only: the principle above). A guest's copy that locks its V (its
+  `ShootStart`) says `Seen`; the host's turret then takes that guest's
+  puppet as a target the way a quest forces one (`TandemEngage`: hostile to
+  it, `RecognizeTarget(puppet, true)`), unless it is off, turned friendly
+  or in a player's hands; `Lost` lets it go. The host's hits on the puppet
+  are not forwarded (`ForwardsToPlayer`).
+- **A turret the host's game does not run** (not in its world, or the
+  guest is not linked with the host): after 1.5 s without a word of it
+  from the host, the guest's copy fires on its own, as before; the host
+  speaking of it again takes it back.
+- **Consistency**: aim is state, said again every second (a late joiner
+  hears it within one); a shot is a one-shot; `Seen` is kept per guest (16
+  turrets at most) and dropped with the guest (`ForgetDevicesSeeing`); the
+  session's end gives every copy back to its game.
+- Tests: `tests/devices_test.cpp` ("a device's fire: …"),
+  `tests/referee_test.cpp`, `tests/peer_devices.sh`; the mock player's
+  `--turret-seen ENTITY[@S]` (guest) and `--turret-shots N` (host: a burst
+  at whoever a copy has); in game `tools/game.sh cmd turret`, `turret aim`,
+  `turret shot`, `turret engage`; scenarios `turret-host`, `turret-guest`.
+
 ## Glass and breakable scenery
 
 Built 2026-11-20, not run in game; engine facts §13.90 of the research
@@ -350,9 +403,11 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   shatters world glass. Not built: what broke while a player was away or
   before it joined (the engine's destruction persistency system has no
   script side).
-- **A device's shots are not drawn for the others.** The host's turret aims
-  at what it sees there; a guest sees its own copy fire at its own V. Two
-  players watching one turret can see it aim at different people.
+- **A device's fire, not run in game**: the list is §13.90, "To verify in
+  game". Known gaps: a turret a player controls is not drawn for the
+  others; the laser mesh and the scan light of a copy stay its own; a
+  guest apart from the host with another guest near: each of their copies
+  fires at its own V.
 - **Detection by NPCs after a camera's alarm** uses the puppet's position
   at the moment of the alarm; the camera feeding the security system
   continuously for a guest is not done.

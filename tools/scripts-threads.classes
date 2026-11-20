@@ -82,6 +82,8 @@ RetractableAd < BaseAnimatedDevice < InteractiveDevice < Device < DeviceBase < G
 RoadBlock < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 ScriptableDeviceComponentPS < SharedGameplayPS < DeviceComponentPS < GameComponentPS < PersistentState < IScriptable
 ScriptedPuppet < gamePuppet < gamePuppetBase < TimeDilatable < GameObject < GameEntity < Entity < IScriptable
+SecurityTurret < SensorDevice < ExplosiveDevice < BasicDistractionDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
+SensorDevice < ExplosiveDevice < BasicDistractionDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 SetTimeDilationEffector < Effector < IScriptable
 ShardNotificationController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 ShootEvents < WeaponEventsTransition < WeaponTransition < DefaultTransition < StateFunctor < IScriptable

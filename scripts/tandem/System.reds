@@ -1451,6 +1451,9 @@ public class TandemSystem extends ScriptableSystem {
       let breacher = GetPlayer(this.GetGameInstance());
       let near = IsDefined(this.m_npcs) && IsDefined(breacher) ? this.m_npcs.NearestProxy(breacher.GetWorldPosition()) : null;
       TandemBreach.Get(this.GetGameInstance()).Command(command, near);
+    } else if StrBeginsWith(command, "turret") {
+      // (test, Turrets.reds) "turret": counts; "turret aim|shot|engage".
+      TandemTurrets.Get(this.GetGameInstance()).Command(command, EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance())));
     } else if StrBeginsWith(command, "glass") {
       // (test, Objects.reds) "glass": counts; "glass break|part": the
       // replay of a break at what V looks at.

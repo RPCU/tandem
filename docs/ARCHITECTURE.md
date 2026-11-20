@@ -165,6 +165,7 @@ The owner simulates; everyone else displays.
 | a V's pings, tags, link consent, waypoint | that player's game | shown; tags only to players linked with it (`architecture/comms.md`) |
 | quest and important items, rewards | every player's own V | whoever gets one, every V gets it; a guest gives the host's quest props (tag `Quest`, keycards) back when it leaves, and keeps iconics and rewards |
 | devices: doors, lifts, cameras, turrets, barrels, the alarm | host | own copy first, then the host's word; `architecture/devices.md` |
+| a turret's aim and shots | host (its turret); a shot at a V is decided by that V's game | their copy never fires on its own: it draws the host's turret's shots, and fires for real at its own V on the host's word; each game's copy senses its own V and says so |
 | a guest's use of the host's objects while grouped (a quest switch, an objective item, a quest container, a terminal) | host's game: judged from its own data, done by its V on its own copy, first come first served | asks; its own copy does it at once for feel (not what would cast its V); a choice that casts the doer is host-only, greyed "NAME must do this"; apart, or on its own things: its own, as solo (`architecture/story.md`, "Quest interactions") |
 | what a guest did in co-op (the ledger) | the guest's game (save) | never shared: quests taken part in, rewards paid once, vehicles earned |
 
@@ -308,7 +309,7 @@ plugin") and its open problems.
 - `combat-coverage.md`: every way of fighting (weapon classes, melee, block and parry, throwables, grenades, launchers, cyberware, quickhacks, environment, finishers) by attacker and target, with its state and evidence; thrown objects' copies, friendly fire, NPC melee at a guest, companions.
 - `stealth.md`: takedowns, finishers, carried bodies, "the player" reactions, per-player detection.
 - `loot.md`: per-player loot, dropped items, quest items.
-- `devices.md`: doors, lifts, cameras, turrets, the alarm, access points, computers, barrels, media and other devices: the host's word, a guest's own copy first, revisions, digest, a guest's world put back after; glass and breakable scenery (a break told and replayed); open: a device's shots drawn for the others.
+- `devices.md`: doors, lifts, cameras, turrets, the alarm, access points, computers, barrels, media and other devices: the host's word, a guest's own copy first, revisions, digest, a guest's world put back after; glass and breakable scenery (a break told and replayed), a turret's fire (the host's turret's aim and shots drawn on every copy).
 - `revive.md`: down, revive, respawn, shared game over.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, the story's restrictions on a guest in the host's moment, rewards; open: scenes for guests, story decisions, quests together.
 - `scene-replay.md`: a guest watches the host's scenes: the stage, the cast, lines and actor poses (`scene_replay = on`, off by default).

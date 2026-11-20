@@ -64,10 +64,23 @@ wait_for "$dir/guest.log" 'device 1a2b3c4d5e6f7788 \(0x[0-9a-f]+\): on, locked, 
 # A late joiner: the door as it is, set, not played; then it sends a lift
 # to floor 3 and the first guest hears it.
 "$peer" join "127.0.0.1:$port" --mode idle --name late \
-  --device '99aabbccddeeff00:LiftControllerPS:floor=3@1' >"$dir/late.log" 2>&1 &
+  --device '99aabbccddeeff00:LiftControllerPS:floor=3@1' --turret-seen '7e77e7@1' >"$dir/late.log" 2>&1 &
 pids+=($!)
 wait_for "$dir/late.log" 'device 1a2b3c4d5e6f7788 \(0x[0-9a-f]+\): on, locked, value -1 by player 1, set' ||
   fail "the late joiner did not get the door as it is"
 wait_for "$dir/guest.log" 'device 99aabbccddeeff00 \(0x[0-9a-f]+\): on, plain, value 3 by player 3, played' ||
   fail "the first guest did not hear of the lift"
+# The late joiner's copy of a turret has its V: the host's turret turns to
+# that V and fires; both guests hear at whom, then that it follows nobody.
+wait_for "$dir/host.log" "turret 7e77e7: player 3's copy has the V of player 3" ||
+  fail "the host did not hear the turret has the late joiner's V"
+wait_for "$dir/guest.log" "turret 7e77e7: the host's turns to target kind 3 id 3 at " ||
+  fail "the first guest did not hear the turret turn"
+wait_for "$dir/late.log" "turret 7e77e7: the host's fires at target kind 3 id 3 at " ||
+  fail "the late joiner did not hear the turret fire at it"
+wait_for "$dir/guest.log" "turret 7e77e7: the host's follows nobody " ||
+  fail "the first guest did not hear the turret go idle"
+if grep -qE 'referee: ' "$dir"/*.log; then
+  fail "the referee found a breach of the rules"
+fi
 echo "peer_devices: ok"

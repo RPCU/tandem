@@ -43,6 +43,21 @@ public final static func Fire(
       shots.Announce(weaponOwner, weapon, target, tbhCoefficient, requestedTriggerMode, rangedAttack);
     }
   }
+  // A placed turret's shot (Turrets.reds). Host: queued for the guests, who
+  // draw it on their copy. Guest, linked with the host: our copy fires only
+  // the shots the host's turret fired (the passing call), never its own.
+  let turret = weaponOwner as SecurityTurret;
+  if IsDefined(turret) && TandemNative.IsStarted() && TandemTurrets.Follows(turret) {
+    if TandemNative.IsHost() {
+      let at = targetPosition;
+      if IsDefined(target) {
+        at = target.GetWorldPosition();
+      }
+      TandemStreaming.QueuePoint(TandemPointKind.DeviceShot(), turret.GetEntityID(), IsDefined(target) ? target.GetEntityID() : EntityID.FromHash(0ul), n"None", at, 0);
+    } else if !turret.m_tandemOwnFire && TandemTurrets.HostFires(turret) && !TandemStreaming.IsPassing(turret.GetEntityID()) {
+      return;
+    }
+  }
   wrappedMethod(weaponOwner, weapon, timeStamp, tbhCoefficient, requestedTriggerMode, targetPosition, target, rangedAttack, maxSpreadOverride, aimingDelay, offset, shouldTrackTarget, predictionTime, posProviderOverride, muzzleOffset, weaponCustomEvent);
   if TandemNative.IsStarted() && IsDefined(weaponOwner) && IsDefined(weapon) && weapon.IsAttached() && TandemOwn.Entity(weaponOwner.GetGame(), weaponOwner.GetEntityID()) {
     let at = targetPosition;

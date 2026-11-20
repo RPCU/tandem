@@ -424,6 +424,12 @@ struct Options {
     bool done{};
   };
   std::vector<FractureOrder> fractures;
+  // A device's fire: as a guest, "our copy of the turret has our V"
+  // (--turret-seen); as a host every turret a guest says so of fires at
+  // that guest (--turret-shots each time; 0: it says nothing of it).
+  std::uint64_t turretSeen{};
+  int turretSeenAtSeconds{5};
+  int turretShots{10};
   // Breach Protocol: what to breach and when (--breach), with which daemons.
   struct BreachOrder {
     std::uint64_t entity{}, cls{};
@@ -774,6 +780,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     placed entity its id in hex and its destruction component's\n"
          "                     name; SECONDS into the session (5). The breaks it hears are\n"
          "                     logged\n"
+         "  --turret-seen E[@S] join: our copy of the turret E (its id in hex) locks our V S\n"
+         "                     seconds into the session (5), and loses it 6 s later\n"
+         "  --turret-shots N   host: a turret a guest's copy has its V with turns to that V\n"
+         "                     and fires N shots at it (10; 0: silent, as for a turret that\n"
+         "                     is not in our world). What it hears of turrets is logged\n"
          "  --breach SPEC      Breach Protocol won, SPEC = ENTITY[:CLASS][@SECONDS] (an access\n"
          "                     point by its id in hex; CLASS AccessPointControllerPS) or\n"
          "                     npc=N[@SECONDS] (the quickhack on NPC N); SECONDS into the\n"
@@ -1320,6 +1331,20 @@ Options Parse(int argc, char **argv) {
       options.deviceAnswer = std::string(value);
     } else if (flag == "--device-after")
       options.deviceAfterSeconds = Number<int>(value);
+    else if (flag == "--turret-seen") {
+      std::string_view entity = value;
+      if (const auto at = entity.find('@'); at != std::string_view::npos) {
+        options.turretSeenAtSeconds = Number<int>(entity.substr(at + 1));
+        entity = entity.substr(0, at);
+      }
+      if (entity.starts_with("0x"))
+        entity.remove_prefix(2);
+      if (std::from_chars(entity.data(), entity.data() + entity.size(), options.turretSeen, 16)
+                  .ptr != entity.data() + entity.size() ||
+          options.turretSeen == 0)
+        Usage(std::format("--turret-seen: {} is not an entity id in hex", entity));
+    } else if (flag == "--turret-shots")
+      options.turretShots = Number<int>(value);
     else if (flag == "--fracture")
       options.fractures.push_back(FractureOrderOf(value));
     else if (flag == "--breach")
@@ -4321,6 +4346,17 @@ int main(int argc, char **argv) {
   // Devices: when the session began for us (--device counts from it), and
   // the devices to change back (--device-answer: when, from what).
   std::optional<std::chrono::steady_clock::time_point> devicesFrom;
+  // A device's fire: the bursts our "turrets" still owe (host), and where
+  // --turret-seen stands (0 not yet, 1 said, 2 lost again).
+  struct TurretBurst {
+    std::uint64_t entity{};
+    tandem::proto::PlayerId player{};
+    Vec3 at;
+    int shots{};
+    std::chrono::steady_clock::time_point next;
+  };
+  std::vector<TurretBurst> turretBursts;
+  int turretSeenStep = 0;
   // --breach: a won one pays once the host grants it (devices.md).
   tandem::devices::BreachHolds breachHolds;
   const auto breachSettled = [](const tandem::devices::BreachHolds::Decision &decision) {
@@ -5254,6 +5290,32 @@ int main(int argc, char **argv) {
                   kVerdicts[static_cast<int>(r.verdict)], r.by);
               if (const auto decision = breachHolds.Answer(r))
                 breachSettled(*decision);
+            } else if constexpr (std::is_same_v<E, tandem::events::DeviceFired>) {
+              using Kind = tandem::proto::DeviceFireKind;
+              const auto &f = e.fire;
+              constexpr const char *kKinds[] = {"follows nobody", "turns to", "fires at",
+                                                "has the V of", "lost the V of"};
+              if (f.kind == Kind::Seen || f.kind == Kind::Lost) {
+                Log("turret {:x}: player {}'s copy {} player {}", f.entity, f.player,
+                    kKinds[static_cast<int>(f.kind)], f.player);
+                std::erase_if(turretBursts, [&](const TurretBurst &burst) {
+                  return burst.entity == f.entity && burst.player == f.player;
+                });
+                // No world of ours: the turret is where the guest says, and
+                // takes that guest's V at once.
+                if (f.kind == Kind::Seen && options.turretShots > 0) {
+                  const tandem::proto::TargetRef target{tandem::proto::TargetKind::Player,
+                                                        f.player};
+                  endpoint->SendDeviceFire(
+                      {.entity = f.entity, .kind = Kind::Aim, .target = target, .at = f.at});
+                  turretBursts.push_back({f.entity, f.player, f.at, options.turretShots,
+                                          std::chrono::steady_clock::now() + 500ms});
+                }
+              } else {
+                Log("turret {:x}: the host's {} target kind {} id {} at ({:.1f} {:.1f} {:.1f})",
+                    f.entity, kKinds[static_cast<int>(f.kind)], static_cast<int>(f.target.kind),
+                    f.target.id, f.at.x, f.at.y, f.at.z);
+              }
             } else if constexpr (std::is_same_v<E, tandem::events::Fractured>) {
               const auto &f = e.fracture;
               Log("player {} broke {} at ({:.1f} {:.1f} {:.1f})", f.player,
@@ -6278,6 +6340,40 @@ int main(int argc, char **argv) {
         what = tandem::devices::WhatOf(*record);
       DeviceWords(order.words, what);
       operateDevice(key, what, "--device");
+    }
+    // A device's fire. Host: the bursts owed, five shots a second, then
+    // the turret follows nobody. Guest: --turret-seen, then lost 6 s later.
+    for (auto &burst : turretBursts) {
+      if (now < burst.next)
+        continue;
+      burst.next = now + 200ms;
+      const bool last = --burst.shots < 0;
+      if (last) {
+        endpoint->SendDeviceFire(
+            {.entity = burst.entity, .kind = tandem::proto::DeviceFireKind::Idle});
+        Log("turret {:x}: follows nobody (its burst at player {} is over)", burst.entity,
+            burst.player);
+      } else {
+        endpoint->SendDeviceFire({.entity = burst.entity,
+                                  .kind = tandem::proto::DeviceFireKind::Shot,
+                                  .target = {tandem::proto::TargetKind::Player, burst.player},
+                                  .at = burst.at});
+      }
+    }
+    std::erase_if(turretBursts, [](const TurretBurst &burst) { return burst.shots < 0; });
+    if (options.turretSeen != 0 && !options.host && devicesFrom) {
+      const auto seenAt = *devicesFrom + std::chrono::seconds(options.turretSeenAtSeconds);
+      if (turretSeenStep == 0 && now >= seenAt) {
+        turretSeenStep = 1;
+        endpoint->SendDeviceFire(
+            {.entity = options.turretSeen, .kind = tandem::proto::DeviceFireKind::Seen});
+        Log("turret {:x}: our copy has our V (--turret-seen)", options.turretSeen);
+      } else if (turretSeenStep == 1 && now >= seenAt + 6s) {
+        turretSeenStep = 2;
+        endpoint->SendDeviceFire(
+            {.entity = options.turretSeen, .kind = tandem::proto::DeviceFireKind::Lost});
+        Log("turret {:x}: our copy lost our V", options.turretSeen);
+      }
     }
     // --fracture: each one at its time into the session.
     for (auto &order : options.fractures) {

@@ -53,6 +53,12 @@ public class TandemObjectSync extends ScriptableSystem {
     // What broke in our game since the last tick (taken off the queue out
     // of a session too).
     let broken = TandemStreaming.TakePoints(TandemPointKind.Fracture());
+    // A device's fire (Turrets.reds): its hooks' queues, its polls.
+    let now = EngineTime.ToFloat(GameInstance.GetEngineTime(game));
+    let turrets = TandemTurrets.Get(game);
+    if IsDefined(turrets) {
+      turrets.Update(you, now);
+    }
     if you == 0u {
       return;
     }
@@ -62,6 +68,8 @@ public class TandemObjectSync extends ScriptableSystem {
     for event in TandemObjects.TakeEvents() {
       if event.kind == 1 {
         this.Break(event.entity, event.name, new Vector4(event.x, event.y, event.z, 1.0), event.player);
+      } else if event.kind == 2 && IsDefined(turrets) {
+        turrets.OnEvent(event, now);
       }
     }
   }
