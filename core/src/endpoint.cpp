@@ -369,7 +369,14 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
   return {
       .epoch = host ? m_epoch : m_hostEpoch,
       .seq = m_digestSeq,
-      .world = consistency::WorldDigest(m_world, m_difficulty, m_rules),
+      // The world, and the dead of the session (the ledger, regions.md §14).
+      .world =
+          m_deaths.Empty()
+              ? consistency::WorldDigest(m_world, m_difficulty, m_rules)
+              : consistency::Hasher{}
+                    .Add(std::uint64_t{consistency::WorldDigest(m_world, m_difficulty, m_rules)})
+                    .Add(std::uint64_t{m_deaths.Digest()})
+                    .Value(),
       // One domain: the shared vehicles are resynced with the NPCs.
       .npcs = consistency::Hasher{}
                   .Add(std::uint64_t{npcs})
@@ -1211,6 +1218,11 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       Send(peer, *m_rules);
     if (m_sessionLevel)
       Send(peer, *m_sessionLevel);
+    // The placed NPCs that died in the session, wherever they were: the
+    // same dead stay dead for a late joiner, and a resync brings back one
+    // that was lost.
+    for (const auto &death : m_deaths.InOrder())
+      Send(peer, death);
     // What lies in the world (its taken stacks at quantity 0). Loot is not
     // in the digests: the host arbitrates each claim (ClaimWorldItem).
     if (!resync)
@@ -1443,6 +1455,19 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           it != m_npcLevels.end() && it->second == *level)
         return;
       m_npcLevels[level->npc] = *level;
+    }
+    // A placed NPC we show: said once. A death of the ledger: news once.
+    if (const auto *placed = std::get_if<proto::NpcPlaced>(&message)) {
+      if (!m_npcs.contains(placed->npc) || OwnsNpc(placed->npc))
+        return; // gone, or ours (our own word, back)
+      if (const auto it = m_npcPlaced.find(placed->npc);
+          it != m_npcPlaced.end() && it->second == *placed)
+        return;
+      m_npcPlaced[placed->npc] = *placed;
+    }
+    if (const auto *death = std::get_if<proto::NpcDeath>(&message)) {
+      if (!m_deaths.Note(*death))
+        return;
     }
     // A vendor of an NPC we show, or one that died: said once.
     if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
@@ -1687,6 +1712,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             m_given.erase(gone.npc);
             m_npcBook.Forget(gone.npc);
             m_npcVendors.erase(gone.npc);
+            m_npcPlaced.erase(gone.npc);
             if (m_npcs.erase(gone.npc) > 0) {
               m_npcHealth.erase(gone.npc);
               m_npcLevels.erase(gone.npc);
@@ -1719,6 +1745,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               m_npcLevels.erase(it->first);
               m_npcScale.erase(it->first);
               m_npcVendors.erase(it->first);
+              m_npcPlaced.erase(it->first);
               m_npcHolds.erase(it->first);
               m_npcOwner.erase(it->first);
               m_npcBook.Forget(it->first);
@@ -2174,6 +2201,11 @@ void Endpoint::SendNpcSpawn(const proto::NpcSpawn &spawn) {
     m_npcVendors[spawn.npc] = early.mapped();
     SayNpc(early.mapped());
   }
+  // ...and that it is placed in the world.
+  if (const auto early = m_npcPlacedEarly.extract(spawn.npc)) {
+    m_npcPlaced[spawn.npc] = early.mapped();
+    SayNpc(early.mapped());
+  }
 }
 
 void Endpoint::SendNpcStates(proto::NpcStates states) {
@@ -2238,7 +2270,9 @@ void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
   if (!IsJoined() || m_ended || !SpeaksFor(gone.npc))
     return;
   NoteVendorGone(gone, nullptr);
+  NoteDeath(gone);
   ForgetNpc(gone.npc);
+  m_npcPlacedEarly.erase(gone.npc);
   m_npcCoder.Forget(gone.npc);
   m_npcLevels.erase(gone.npc);
   m_npcLevelsEarly.erase(gone.npc);
@@ -3751,6 +3785,25 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     auto mine = *lend;
     mine.player = player;
     NoteLend(mine, out);
+  } else if (const auto *placed = std::get_if<proto::NpcPlaced>(&message)) {
+    // An owner's word on its NPC, for who sees it.
+    if (!m_npcs.contains(placed->npc) || NpcOwner(placed->npc) != player)
+      return;
+    if (const auto it = m_npcPlaced.find(placed->npc);
+        it != m_npcPlaced.end() && it->second == *placed)
+      return;
+    m_npcPlaced[placed->npc] = *placed;
+    if (const auto peer = PeerOf(player))
+      ShareNpc(message, player, *peer);
+    if (Sees(m_you, player))
+      out.push_back(events::Combat{message});
+  } else if (const auto *death = std::get_if<proto::NpcDeath>(&message)) {
+    // A placed NPC of its own died: the ledger's, and everyone's to know.
+    // Only its owner's word (its NpcGone follows), never one stamped.
+    if (death->npc == 0 || death->order != 0 || !m_npcs.contains(death->npc) ||
+        NpcOwner(death->npc) != player)
+      return;
+    RecordDeath(*death, player, out);
   } else if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
     // An owner's word on its NPC, for who sees it; a death is never a
     // guest's to say (the host derives it from the owner's NpcGone).
@@ -4025,6 +4078,32 @@ bool Endpoint::SendCombat(proto::Message message) {
       Broadcast(message);
     else
       Send(m_hostPeer, message);
+    return true;
+  }
+  // A death of the ledger is the endpoint's to say (NoteDeath), never the game's.
+  if (std::holds_alternative<proto::NpcDeath>(message))
+    return false;
+  // One of our NPCs is placed in the world.
+  if (const auto *placed = std::get_if<proto::NpcPlaced>(&message)) {
+    if (placed->npc == 0 || placed->entity == 0)
+      return false;
+    if (!m_npcs.contains(placed->npc)) {
+      // Its spawn is on its way from the game by another queue: kept, and
+      // said right after it.
+      if (regions::Announcer(placed->npc) != m_you)
+        return false;
+      if (m_npcPlacedEarly.size() >= 256)
+        m_npcPlacedEarly.clear();
+      m_npcPlacedEarly[placed->npc] = *placed;
+      return false;
+    }
+    if (!OwnsNpc(placed->npc))
+      return false;
+    if (const auto it = m_npcPlaced.find(placed->npc);
+        it != m_npcPlaced.end() && it->second == *placed)
+      return true; // said already
+    m_npcPlaced[placed->npc] = *placed;
+    SayNpc(message);
     return true;
   }
   // One of our NPCs is a placed vendor (never a death: the host's to derive).

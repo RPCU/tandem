@@ -391,6 +391,11 @@ struct Options {
   // last NPC (--region-driver), chasing the first player we meet
   // (--region-chase); left where they are when we walk off, like the NPCs.
   int regionCars{0};
+  // region: our NPCs are placed in the world (regions.md §14): their static
+  // entity ids, from this one up (0: they are not); our first NPC dies this
+  // long in, by our own V (-1: never): the session's ledger remembers it.
+  std::uint64_t regionPlaced{};
+  int regionKillAtSeconds{-1};
   bool regionDriver{};
   bool regionChase{};
   bool check{}; // parse the options, then exit
@@ -551,6 +556,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --region-speed V   region: how fast it walks, m/s (default 25)\n"
          "  --region-cars N    region: run N world vehicles of our own round our V (the\n"
          "                     --traffic-vehicle record), left behind with the NPCs\n"
+         "  --region-placed HEX region: our NPCs are placed in the world, their static\n"
+         "                     entity ids HEX, HEX+1... (NpcPlaced): twins by identity, and\n"
+         "                     their deaths go into the session's ledger (NpcDeath)\n"
+         "  --region-kill-at S region: our first NPC dies S seconds in, by our own V\n"
          "  --region-driver    region: our last NPC drives our first car (NpcSeat)\n"
          "  --region-chase     region: our first car chases the first player we meet\n"
          "  --name NAME        player name (default tandem-peer)\n"
@@ -1438,6 +1447,16 @@ Options Parse(int argc, char **argv) {
       options.regionSpeed = std::max(0.1f, Number<float>(value));
     else if (flag == "--region-cars")
       options.regionCars = std::clamp(Number<int>(value), 0, 16);
+    else if (flag == "--region-placed") {
+      auto entity = value;
+      if (entity.starts_with("0x"))
+        entity.remove_prefix(2);
+      if (std::from_chars(entity.data(), entity.data() + entity.size(), options.regionPlaced, 16)
+                  .ptr != entity.data() + entity.size() ||
+          options.regionPlaced == 0)
+        Usage(std::format("--region-placed: {} is not an entity id in hex", entity));
+    } else if (flag == "--region-kill-at")
+      options.regionKillAtSeconds = Number<int>(value);
     else if (flag == "--detect-at")
       options.detectAtSeconds = Number<int>(value);
     else if (flag == "--detect-for")
@@ -2686,9 +2705,28 @@ public:
                                .record = TweakDBID(m_options.regionRecord),
                                .position = m_npcs[id].position});
         endpoint.SendNpcHealth({.npc = id, .health = 1.f});
+        if (m_options.regionPlaced != 0)
+          endpoint.SendCombat(proto::NpcPlaced{
+              .npc = id, .entity = m_options.regionPlaced + static_cast<std::uint64_t>(i)});
       }
-      Log("region: running {} NPC(s) of our own ({}), ids from {}", m_options.regionNpcs,
-          m_options.regionRecord, tandem::regions::MakeNpcId(endpoint.You(), 1));
+      m_startUs = nowUs;
+      Log("region: running {} NPC(s) of our own ({}), ids from {}{}", m_options.regionNpcs,
+          m_options.regionRecord, tandem::regions::MakeNpcId(endpoint.You(), 1),
+          m_options.regionPlaced != 0
+              ? std::format(", placed (entities from {:x})", m_options.regionPlaced)
+              : "");
+    }
+    // --region-kill-at: our own V kills our first NPC, alone or not.
+    if (m_options.regionKillAtSeconds >= 0 && !m_killed &&
+        nowUs - m_startUs >=
+            static_cast<std::uint64_t>(m_options.regionKillAtSeconds) * 1'000'000) {
+      m_killed = true;
+      const auto first = tandem::regions::MakeNpcId(endpoint.You(), 1);
+      if (m_npcs.erase(first) > 0) {
+        endpoint.SendNpcGone({.npc = first, .reason = proto::kGoneDead, .killer = endpoint.You()});
+        Log("region: our npc {} died (killer: player {}) (--region-kill-at)", first,
+            endpoint.You());
+      }
     }
     // Our street: cars round us, the first one driven by our first NPC; a
     // game announces vehicles only where it runs the area round its V.
@@ -2922,6 +2960,8 @@ private:
   const Options &m_options;
   std::map<tandem::proto::NpcId, Npc> m_npcs;
   bool m_announced{};
+  bool m_killed{};
+  std::uint64_t m_startUs{};
   std::uint64_t m_lastStatesUs{};
 };
 
@@ -3497,6 +3537,14 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
     return (v->flags & proto::kVendorDead) != 0
                ? std::format("the vendor {:x} died in the session", v->entity)
                : std::format("npc {} is the placed vendor {:x}", v->npc, v->entity);
+  if (const auto *placed = std::get_if<proto::NpcPlaced>(&message))
+    return std::format("npc {} is the placed npc {:x}", placed->npc, placed->entity);
+  if (const auto *death = std::get_if<proto::NpcDeath>(&message))
+    return std::format(
+        "ledger: placed npc {:x} {} in player {}'s game at ({:.1f}, {:.1f}, {:.1f}), "
+        "death {} of the session",
+        death->entity, (death->flags & proto::kDeathKnockedOut) != 0 ? "was knocked out" : "died",
+        death->by, death->position.x, death->position.y, death->position.z, death->order);
   if (const auto *l = std::get_if<proto::CarLend>(&message)) {
     constexpr const char *names[] = {"crew", "owner", "never"};
     return std::format("player {} lends its cars: {}", l->player,
@@ -6429,6 +6477,9 @@ int main(int argc, char **argv) {
                                 .position = options.vendorAt});
         vendorShared = endpoint->SendCombat(
             proto::NpcVendor{.npc = kVendorNpc, .entity = options.vendorEntity});
+        // A vendor is a placed NPC: its twin in the other games is known by
+        // its entity, and its death is the ledger's too (regions.md §14).
+        endpoint->SendCombat(proto::NpcPlaced{.npc = kVendorNpc, .entity = options.vendorEntity});
         Log("vendor npc {}: {} at {:.1f} {:.1f} {:.1f}, the placed vendor {:x}{}", kVendorNpc,
             options.vendorRecord, options.vendorAt.x, options.vendorAt.y, options.vendorAt.z,
             options.vendorEntity, vendorShared ? "" : " (not said: nobody to tell)");

@@ -78,6 +78,45 @@ void Regions::Reset() {
   m_leader = proto::kNoPlayer;
   m_holders.clear();
   m_areas.clear();
+  m_placed.clear();
+  m_deaths.Clear();
+  m_deathNews.clear();
+}
+
+void Regions::NotePlaced(const proto::NpcPlaced &placed) {
+  std::lock_guard _(m_lock);
+  // Never in play: the lowest id goes, the host's oldest.
+  if (m_placed.size() >= 2048 && !m_placed.contains(placed.npc))
+    m_placed.erase(m_placed.begin());
+  m_placed[placed.npc] = placed.entity;
+}
+
+std::uint64_t Regions::PlacedOf(proto::NpcId npc) {
+  std::lock_guard _(m_lock);
+  const auto it = m_placed.find(npc);
+  return it == m_placed.end() ? 0 : it->second;
+}
+
+void Regions::NoteDeath(const proto::NpcDeath &death) {
+  std::lock_guard _(m_lock);
+  if (m_deaths.Note(death) && m_deathNews.size() < proto::kMaxDeaths)
+    m_deathNews.push_back(death);
+}
+
+proto::PlayerId Regions::DiedBy(std::uint64_t entity) {
+  std::lock_guard _(m_lock);
+  const auto *death = m_deaths.Find(entity);
+  return death ? death->by : proto::kNoPlayer;
+}
+
+std::vector<proto::NpcDeath> Regions::Deaths() {
+  std::lock_guard _(m_lock);
+  return m_deaths.InOrder();
+}
+
+std::vector<proto::NpcDeath> Regions::TakeDeaths() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_deathNews, {});
 }
 
 std::vector<RegionEvent> Regions::Take() {

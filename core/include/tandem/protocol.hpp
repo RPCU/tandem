@@ -2838,6 +2838,47 @@ struct ThrowPath {
   friend bool operator==(const ThrowPath &, const ThrowPath &) = default;
 };
 
+// ---- Placed NPCs and the death ledger (docs/architecture/regions.md §14) ----
+//
+// A shared NPC is placed in the world (a guard at its post, a gang member at
+// its hangout, a vendor): its entity's static id, the same in every game.
+// Its owner to the players linked with it, once per NPC, with the NPC's
+// other records (late joiners, a link that forms); kept until the NPC is
+// gone. A game that shows the NPC knows which NPC of its own world is the
+// same person (its twin, tandem/twins.hpp), and the owner's endpoint knows
+// whose death to report.
+struct NpcPlaced { // Event channel
+  NpcId npc{};
+  std::uint64_t entity{}; // EntityID hash (static: placed in the world)
+  friend bool operator==(const NpcPlaced &, const NpcPlaced &) = default;
+};
+
+// A placed NPC died in the session, or was knocked out for good
+// (kDeathKnockedOut): the same dead stay dead in every game, linked or not,
+// until the session ends (tandem/ledger.hpp). Its owner's endpoint says it
+// to the host when its game reports the NPC dead (npc: the NPC, still its
+// own; by, order and timeUs 0); the host stamps it (npc 0, by: whose game
+// ran it, order: its count, from 1, timeUs: its clock), keeps the newest
+// kMaxDeaths for the session and tells everyone, late joiners included
+// (the world digest covers them). Each game then keeps its own copy of
+// that entity out of its world, with a body where it fell while the death
+// is recent. Never the random crowd: only an NPC said placed.
+inline constexpr std::uint8_t kDeathKnockedOut = 1;
+inline constexpr std::size_t kMaxDeaths = 256;
+struct NpcDeath { // Event channel
+  NpcId npc{};
+  std::uint64_t entity{};     // EntityID hash (static)
+  std::uint64_t record{};     // its character record
+  std::uint64_t appearance{}; // CName hash
+  Vec3 position;              // where it fell
+  float yaw{};
+  std::uint8_t flags{}; // kDeath*
+  PlayerId by{};
+  std::uint32_t order{};
+  std::uint64_t timeUs{}; // host clock
+  friend bool operator==(const NpcDeath &, const NpcDeath &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -2858,7 +2899,7 @@ using MessageVariant = std::variant<
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
-    SceneProp, Fracture, DeviceFire, ThrowPath>;
+    SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -2872,7 +2913,8 @@ bool operator==(const Message &a, const Message &b);
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended, ThrowPath),
 // a level (PlayerLevel … NpcLevel), a car's lending (CarLend), an NPC's
-// scale (NpcScale) or a vendor (NpcVendor): one path in endpoint.hpp too.
+// scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced) or a
+// death of the ledger (NpcDeath): one path in endpoint.hpp too.
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);

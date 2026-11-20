@@ -3,7 +3,8 @@
 # each runs NPCs of its own (--mode region). Far apart they share nothing;
 # the guest walks up to the host and both show the other's NPCs; it walks off
 # again, leaving its NPCs, and the host takes them over; then the same with a
-# lossy link, and a guest that vanishes next to the host.
+# lossy link, the death ledger (each kills a placed NPC alone, a late joiner
+# hears both), and a guest that vanishes next to the host.
 # Usage: peer_regions.sh PATH/tandem-peer
 set -euo pipefail
 peer=$1
@@ -105,6 +106,29 @@ wait_for "$hostlog" 'region: took npc 1677721[789] over from player 2' 600 ||
   fail "lossy: no NPC was handed over"
 kill "$guestpid" 2>/dev/null || true
 kill "${pids[2]}" 2>/dev/null || true
+
+# ---- the death ledger: a placed NPC each kills alone is dead for the other ----
+# 400 m apart for the whole run: neither ever sees the other's NPCs. A late
+# joiner hears both deaths.
+host --region-placed a000 --region-kill-at 3
+guest --region-far 400 --region-walk-at -1 --region-placed b000 --region-kill-at 4
+wait_for "$hostlog" 'region: running 2 NPC.*placed' || fail "ledger: the host's NPCs are not placed"
+wait_for "$guestlog" 'ledger: placed npc a000 died in player 1.s game .* death 1 of the session' ||
+  fail "ledger: the guest never heard of the host's kill"
+wait_for "$hostlog" 'ledger: placed npc b000 died in player 2.s game at \(40[0-9]\.' ||
+  fail "ledger: the host never heard of the guest's kill, or not where it fell"
+wait_for "$guestlog" 'ledger: placed npc b000 died in player 2.s game .* death 2 of the session' ||
+  fail "ledger: the guest's own kill did not come back stamped"
+if grep -q 'region: linked with player' "$guestlog"; then fail "ledger: the two were linked"; fi
+latelog="$dir/late-$port.log"
+"$peer" join "127.0.0.1:$port" --name late --mode region --region-npcs 0 --region-far 900 \
+  --region-walk-at -1 >"$latelog" 2>&1 &
+pids+=($!)
+wait_for "$latelog" 'ledger: placed npc a000 died in player 1' || fail "ledger: a late joiner did not hear the first death"
+wait_for "$latelog" 'ledger: placed npc b000 died in player 2' || fail "ledger: a late joiner did not hear the second death"
+if grep -hq 'referee:' "$hostlog" "$guestlog" "$latelog"; then fail "ledger: the referee objects"; fi
+kill "$guestpid" 2>/dev/null || true
+kill "${pids[-1]}" "${pids[-3]}" 2>/dev/null || true
 
 # ---- a guest that vanishes next to the host: its NPCs are inherited ----
 host

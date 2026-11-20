@@ -116,6 +116,7 @@ found through this table, each number once.
 | 13.91 | A V's movement noise, and the gates that ask for the player                             | `stealth.md`        |
 | 13.92 | Contests: what the game's own data says of a fist fight, a race, a shooting competition | `story.md`          |
 | 13.93 | Swimming's effects and sounds, a projectile put on a path                               | `presence.md`       |
+| 13.94 | Placed NPCs: static ids, the ledger's hiding and bodies                                 | `regions.md`        |
 
 ## Top traps (one line each)
 

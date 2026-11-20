@@ -30,6 +30,22 @@ public native struct TandemRegionEffect {
   native let stacks: Int32;
 }
 
+// A placed NPC that died in the session (the ledger, regions.md §14): its
+// static entity, what it was, where it fell, whose game ran it, whether it
+// is knocked out (not dead) and how long ago (seconds).
+public native struct TandemDeath {
+  native let entity: EntityID;
+  native let record: TweakDBID;
+  native let appearance: CName;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let yaw: Float;
+  native let by: Uint32;
+  native let knockedOut: Bool;
+  native let age: Float;
+}
+
 public native class TandemRegions extends IScriptable {
   public static native func TakeEvents() -> array<TandemRegionEvent>
   // The status effects that came with the last event 2 for this NPC.
@@ -58,6 +74,21 @@ public native class TandemRegions extends IScriptable {
   // this point (0: none). 2147483648 + player: one that outranks us has not
   // been placed yet: wait before deciding.
   public static native func CoveredBy(x: Float, y: Float, z: Float, radius: Float) -> Uint32
+  // Placed NPCs, the death ledger, twins (regions.md §3, §14). Placed: one
+  // of our NPCs is placed in the world (its static entity id). PlacedOf: the
+  // entity an NPC's owner named (undefined: none). DiedBy: the session says
+  // that entity's NPC died, in that player's game (0: it lives). TakeDeaths: the deaths said since the last call.
+  // DeathsNear: how many lie within `radius`. Bodies: the deaths whose body
+  // we show with our V there (`shown`: the ones we show now).
+  public static native func Placed(npc: Uint32, entity: EntityID)
+  public static native func PlacedOf(npc: Uint32) -> EntityID
+  public static native func DiedBy(entity: EntityID) -> Uint32
+  public static native func TakeDeaths() -> array<TandemDeath>
+  public static native func DeathsNear(x: Float, y: Float, z: Float, radius: Float) -> Int32
+  public static native func Bodies(x: Float, y: Float, z: Float, shown: array<EntityID>) -> array<TandemDeath>
+  // For each proxy that came, the index of our own NPC that is the same
+  // person (-1: none), one to one (tandem/twins.hpp).
+  public static native func MatchTwins(theirRecords: array<TweakDBID>, theirPlaces: array<Vector4>, theirEntities: array<EntityID>, ourRecords: array<TweakDBID>, ourPlaces: array<Vector4>, ourEntities: array<EntityID>, ourBusy: array<Bool>) -> array<Int32>
   // One of our NPCs never changes owner.
   public static native func Pin(npc: Uint32)
   // Our answers to event 1 and to event 2.

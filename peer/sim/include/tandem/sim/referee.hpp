@@ -214,6 +214,8 @@ private:
   std::set<std::uint32_t> m_gameOvers;
   std::set<std::tuple<proto::PlayerId, std::uint64_t, std::uint32_t>> m_sharedItems;
   std::set<std::pair<proto::PlayerId, std::uint32_t>> m_dropTokens;
+  // Guest: the ledger's deaths as the host said them (entity: its order).
+  std::map<std::uint64_t, std::uint32_t> m_deaths;
   std::set<std::pair<proto::NpcId, std::uint64_t>> m_shotsAt;
   std::map<TypeAndPlayer, std::pair<std::vector<std::byte>, std::uint64_t>> m_lastOneShot;
   // World items: who took each stack.

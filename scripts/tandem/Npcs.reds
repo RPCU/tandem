@@ -106,6 +106,17 @@ public class TandemNpcLeaving {
   public let at: Float;
 }
 
+// A proxy that came a moment ago: which of our own NPCs is the same person
+// is decided once its owner's word on what it is has had time to come
+// (TandemNpcs.MergeTwins).
+public class TandemTwinPending {
+  public let npc: Uint32;
+  public let owner: Uint32;
+  public let record: TweakDBID;
+  public let at: Vector4;
+  public let since: Float;
+}
+
 public class TandemNpcs {
   private let m_game: GameInstance;
   private let m_known: array<ref<TandemNpcKnown>>;
@@ -159,6 +170,14 @@ public class TandemNpcs {
   private let m_levels: ref<TandemLevels>;
   // Enemies tougher for each extra player near them (Scaling.reds).
   private let m_scaling: ref<TandemScaling>;
+  // The session's dead (Ledger.reds), and the proxies whose twin among our
+  // own NPCs is still to be found.
+  private let m_ledger: ref<TandemLedger>;
+  private let m_twins: array<ref<TandemTwinPending>>;
+
+  public func Ledger() -> ref<TandemLedger> {
+    return this.m_ledger;
+  }
 
   public func Levels() -> ref<TandemLevels> {
     return this.m_levels;
@@ -213,6 +232,8 @@ public class TandemNpcs {
     this.m_levels.Start(game);
     this.m_scaling = new TandemScaling();
     this.m_scaling.Start(game);
+    this.m_ledger = new TandemLedger();
+    this.m_ledger.Start(game);
   }
 
   // The recorder, solo (System.reds RecordTick): the NPCs around our V as a
@@ -243,6 +264,7 @@ public class TandemNpcs {
     // The proxies' side: the NPCs the players linked with us run.
     this.Follow(now);
     this.m_scaling.Proxies(this, now);
+    this.m_ledger.Tick(now, you);
     this.TakePlayerHits();
     if now - this.m_lastCheck >= 1.0 {
       this.m_lastCheck = now;
@@ -420,6 +442,8 @@ public class TandemNpcs {
       this.m_levels.Release(known, known.id);
     }
     this.m_scaling.End();
+    this.m_ledger.End();
+    ArrayClear(this.m_twins);
     ArrayClear(this.m_known);
     this.m_anims.Clear();
     ArrayClear(this.m_missingIds);
@@ -516,26 +540,91 @@ public class TandemNpcs {
     this.m_hidden += 1;
   }
 
-  // A proxy of a higher-ranked player's NPC appears where one of ours of the
-  // same record stands still: the same placed NPC (a vendor at its stall) in
-  // both games. Ours gives way, the proxy stands in its place.
-  private func MergeTwin(owner: Uint32, record: TweakDBID, at: Vector4) -> Void {
-    if !TandemRegionRules.Outranks(owner, this.m_you) {
+  // Proxies of a higher-ranked player's NPCs came where NPCs of ours stand:
+  // a placed NPC (a vendor at its stall, a guard at its post) is in both
+  // games. Ours gives way, the proxy stands in its place. Which of ours is
+  // the same person (tandem/twins.hpp): the one of the static id its owner
+  // named, else the nearest of the same record with a dynamic id, one of
+  // ours to one proxy (two identical guards side by side are two pairs).
+  // Decided for all the proxies of a batch together, a moment after they
+  // came (their owner's word on what they are comes by another queue).
+  private func MergeTwins(now: Float) -> Void {
+    if ArraySize(this.m_twins) == 0 {
       return;
     }
+    let due: array<ref<TandemTwinPending>>;
+    let waiting: array<ref<TandemTwinPending>>;
+    for pending in this.m_twins {
+      if now - pending.since >= 0.3 {
+        ArrayPush(due, pending);
+      } else {
+        ArrayPush(waiting, pending);
+      }
+    }
+    if ArraySize(due) == 0 {
+      return;
+    }
+    this.m_twins = waiting;
+    let theirRecords: array<TweakDBID>;
+    let theirPlaces: array<Vector4>;
+    let theirEntities: array<EntityID>;
+    for pending in due {
+      ArrayPush(theirRecords, pending.record);
+      ArrayPush(theirPlaces, pending.at);
+      ArrayPush(theirEntities, TandemRegions.PlacedOf(pending.npc));
+    }
+    let candidates: array<ref<TandemNpcKnown>>;
+    let bodies: array<ref<ScriptedPuppet>>;
+    let ourRecords: array<TweakDBID>;
+    let ourPlaces: array<Vector4>;
+    let ourEntities: array<EntityID>;
+    let ourBusy: array<Bool>;
+    let none = EntityID.FromHash(0ul);
     for known in this.m_known {
       if !known.dead && !known.down && !known.managed {
         let own = GameInstance.FindEntityByID(this.m_game, known.id) as ScriptedPuppet;
-        if IsDefined(own) && own.GetRecordID() == record && Vector4.Distance(own.GetWorldPosition(), at) < 2.5 && !TandemRegionRules.Engaged(this.m_game, own) {
-          TandemNative.SendNpcGone(known.npc, 0, 0u);
-          this.m_anims.Forget(known.npc);
-          this.Suppress(own);
-          this.ForgetKnown(known.npc);
-          TandemNative.Log(s"regions: our npc \(known.npc) is the twin of player \(owner)'s: ours gives way");
-          return;
+        if IsDefined(own) {
+          ArrayPush(candidates, known);
+          ArrayPush(bodies, own);
+          ArrayPush(ourRecords, own.GetRecordID());
+          ArrayPush(ourPlaces, own.GetWorldPosition());
+          ArrayPush(ourEntities, EntityID.IsStatic(known.id) ? known.id : none);
+          ArrayPush(ourBusy, TandemRegionRules.Engaged(this.m_game, own));
         }
       }
     }
+    if ArraySize(candidates) == 0 {
+      return;
+    }
+    let pairs = TandemRegions.MatchTwins(theirRecords, theirPlaces, theirEntities, ourRecords, ourPlaces, ourEntities, ourBusy);
+    let i = 0;
+    while i < ArraySize(pairs) && i < ArraySize(due) {
+      let ours = pairs[i];
+      if ours >= 0 && ours < ArraySize(candidates) {
+        let known = candidates[ours];
+        TandemNative.SendNpcGone(known.npc, 0, 0u);
+        this.m_anims.Forget(known.npc);
+        this.Suppress(bodies[ours]);
+        this.ForgetKnown(known.npc);
+        TandemNative.Log(s"regions: our npc \(known.npc) is the twin of player \(due[i].owner)'s \(due[i].npc) (\(EntityID.IsDefined(theirEntities[i]) ? "the same placed NPC" : "by record and place")): ours gives way");
+      }
+      i += 1;
+    }
+  }
+
+  // A new NPC of ours that another game already runs: the placed NPC of
+  // that entity is shown here as a proxy (alive or dead). One owner per NPC:
+  // ours is not added to the shared world.
+  private func IsTwinOfProxy(id: EntityID) -> Bool {
+    if !EntityID.IsStatic(id) {
+      return false;
+    }
+    for proxy in this.m_proxies {
+      if !proxy.native && TandemRegions.PlacedOf(proxy.npc) == id {
+        return true;
+      }
+    }
+    return false;
   }
 
   // Our own copy of a vendor the session says died elsewhere (Vendors.reds):
@@ -609,14 +698,25 @@ public class TandemNpcs {
     // Inside another world (cyberspace, a braindance) the NPCs are that
     // world's: none is hidden, as before.
     let hides = !riding && !TandemElsewhere.Inside(this.m_game);
+    // The session's dead near us, if any (Ledger.reds).
+    let ledger = hides && this.m_you != 0u && this.m_ledger.On() && TandemRegions.DeathsNear(here.X, here.Y, here.Z, 2000.0) > 0;
     for npc in around {
       let id = npc.GetEntityID();
       let known = this.Find(id);
+      // The same dead stay dead: our own copy of a placed NPC that died in
+      // the session (in another game, or here before it streamed out) is
+      // kept out of our world. Not one lying here, nor one of ours in a fight.
+      if ledger && !npc.IsDead() && !ScriptedPuppet.IsUnconscious(npc) && !ScriptedPuppet.IsDefeated(npc) && (!IsDefined(known) || !NPCPuppet.IsInCombat(npc)) && this.m_ledger.Buries(npc) {
+        if this.Bury(id) {
+          this.m_ledger.NoteBuried(id, TandemRegions.DiedBy(id));
+        }
+        known = this.Find(id);
+      }
       // New to us: ours to add to the shared world when it is in our region
       // (the radius), is not a remote player's puppet, a proxy or one we
       // hold back, and no higher-ranked linked player's region covers it.
       let ours = IsDefined(known);
-      if !ours && ArraySize(ids) < 64 && !riding && !npc.IsDead() && !this.IsPuppet(id) && !this.IsProxyEntity(id) && !ArrayContains(this.m_hiddenIds, id) && Vector4.Distance(npc.GetWorldPosition(), here) <= TandemNpcs.Range() {
+      if !ours && ArraySize(ids) < 64 && !riding && !npc.IsDead() && !this.IsPuppet(id) && !this.IsProxyEntity(id) && !TandemLedger.IsBody(id) && !ArrayContains(this.m_hiddenIds, id) && Vector4.Distance(npc.GetWorldPosition(), here) <= TandemNpcs.Range() {
         let unplaced = false;
         let by = hides ? TandemRegionRules.CoveredBy(npc.GetWorldPosition(), TandemRegionRules.Radius(), unplaced) : 0u;
         if unplaced && !this.m_assumeTogether {
@@ -627,6 +727,10 @@ public class TandemNpcs {
         } else if TandemVendors.IsBuried(npc) {
           // Our copy of a vendor the session says died (Vendors.reds).
           this.Suppress(npc);
+        } else if hides && this.IsTwinOfProxy(id) {
+          // Another game runs this placed NPC already (its proxy is here).
+          this.Suppress(npc);
+          TandemNative.Log(s"regions: our own \(EntityID.ToDebugString(id)) is a placed NPC another game runs: held back");
         } else {
           known = new TandemNpcKnown();
           known.id = id;
@@ -640,6 +744,12 @@ public class TandemNpcs {
           // A vendor placed in the world says its entity: a partner whose
           // game shows it opens its own vendor of it (Vendors.reds).
           TandemVendors.Announce(known.npc, npc);
+          // Placed in the world (never the random crowd): the same entity
+          // in every game. Its twin there is known by it, and its death is
+          // the session's to remember (Ledger.reds).
+          if EntityID.IsStatic(id) && !npc.IsCrowd() {
+            TandemRegions.Placed(known.npc, id);
+          }
           // A quest or story NPC, a police unit: ours for good.
           if TandemRegionRules.Pinned(npc) {
             TandemRegions.Pin(known.npc);
@@ -1035,13 +1145,23 @@ public class TandemNpcs {
           if owner == 0u {
             owner = event.npc / 16777216u + 1u;
           }
-          this.MergeTwin(owner, event.record, at);
+          // Its twin among our own NPCs gives way (MergeTwins, below).
+          if TandemRegionRules.Outranks(owner, this.m_you) && ArraySize(this.m_twins) < 64 {
+            let pending = new TandemTwinPending();
+            pending.npc = event.npc;
+            pending.owner = owner;
+            pending.record = event.record;
+            pending.at = at;
+            pending.since = now;
+            ArrayPush(this.m_twins, pending);
+          }
           this.SpawnProxy(event.npc, event.record, event.appearance, at, new Quaternion(event.i, event.j, event.k, event.r));
         }
       } else if event.kind == 2 {
         this.Remove(event.npc);
       }
     }
+    this.MergeTwins(now);
     this.Reconcile(now);
     // Brain off and our controller on, as soon as each proxy exists.
     for proxy in this.m_proxies {
@@ -1334,6 +1454,7 @@ public class TandemNpcs {
       return;
     }
     proxy.down = true;
+    this.m_ledger.Witness(TandemRegions.PlacedOf(npc));
     TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
     let body = this.ProxyBody(proxy.id) as ScriptedPuppet;
     if IsDefined(body) {
@@ -1432,6 +1553,8 @@ public class TandemNpcs {
       return;
     }
     proxy.dead = true;
+    // Its corpse is here: the ledger shows no other body for it.
+    this.m_ledger.Witness(TandemRegions.PlacedOf(npc));
     this.m_anims.Drop(npc);
     TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
     let body = this.ProxyBody(proxy.id) as ScriptedPuppet;
@@ -1591,6 +1714,7 @@ public class TandemNpcs {
       return;
     }
     proxy.dead = true;
+    this.m_ledger.Witness(TandemRegions.PlacedOf(npc));
     proxy.predictedAt = this.m_now;
     proxy.doubtAt = 0.0;
     TandemNative.UnregisterPuppet(TandemNative.NpcPuppetId(npc));
@@ -2003,6 +2127,10 @@ public class TandemNpcs {
       ArrayPush(this.m_proxies, proxy);
     }
     TandemNative.Log(s"regions: npc \(npc) is no longer ours (now player \(owner)'s)");
+  }
+
+  public func LedgerReport() -> String {
+    return this.m_ledger.Report();
   }
 
   public func AnimsReport() -> String {

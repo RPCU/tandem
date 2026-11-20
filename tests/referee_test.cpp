@@ -704,3 +704,36 @@ TEST_CASE("referee: a scene's props, camera and rig poses are the host's, about 
                  kSecond);
   CHECK(Broke(guest, "value.not-finite"));
 }
+
+TEST_CASE("referee: the death ledger is stamped by the host, reported by an NPC's owner") {
+  // A guest hears deaths the host stamped: once each, the order never changing.
+  auto guest = Guest();
+  const proto::NpcDeath first{.entity = 0xA, .record = 1, .by = 3, .order = 1, .timeUs = 5};
+  guest.Received(1, first, kSecond);
+  guest.Received(1, first, 2 * kSecond); // a resync says the same again
+  CHECK(Rules(guest).empty());
+  auto moved = first;
+  moved.order = 2;
+  guest.Received(1, moved, 3 * kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"ledger.changed"});
+  // Never an unstamped report passed on. One by a player that left before
+  // we joined is fine.
+  guest.Received(1, proto::NpcDeath{.npc = 7, .entity = 0xB}, 3 * kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.guest-only"});
+  guest.Received(1, proto::NpcDeath{.entity = 0xC, .by = 9, .order = 3}, 3 * kSecond);
+  CHECK(Rules(guest).empty());
+
+  // The host hears reports: of an NPC the sender runs, never stamped.
+  auto host = Host();
+  const auto theirs = regions::MakeNpcId(2, 1);
+  host.Received(2, proto::NpcSpawn{.npc = theirs, .record = 1}, kSecond);
+  host.Received(2, proto::NpcPlaced{.npc = theirs, .entity = 0xA}, kSecond);
+  host.Received(2, proto::NpcDeath{.npc = theirs, .entity = 0xA}, kSecond);
+  CHECK(Rules(host).empty());
+  host.Received(3, proto::NpcDeath{.npc = theirs, .entity = 0xA}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-owner"});
+  host.Received(3, proto::NpcPlaced{.npc = theirs, .entity = 0xD}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-owner"});
+  host.Received(2, first, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.host-only"});
+}

@@ -104,8 +104,12 @@ loaded crashed 5 launches in 6, and 0 in 7 without them (2026-11-20).
   behind with the NPCs; `--region-driver` seats its last NPC at the wheel of
   the first, `--region-chase` has that one chase the first player it meets.
   It gives and takes vehicles as a game would (`street: …`).
+  `--region-placed HEX` says its NPCs are placed in the world (static
+  entity ids HEX, HEX+1…: `NpcPlaced`), `--region-kill-at S` has its own V
+  kill its first NPC S seconds in: a placed one goes into the session's
+  death ledger (`ledger: …`, `regions.md` §14).
   Scenarios `regions-apart`, `regions-meet`, `regions-vanish`,
-  `wheels-guest-area`; two of them meet in `tests/peer_regions.sh`.
+  `wheels-guest-area`, `ledger-guest`; two of them meet in `tests/peer_regions.sh`.
 - **course** — runs a scripted course ahead of your V with every way a V
   moves, each with the state machine's own values: jumps, a double jump, a
   1.5 m ledge climb, a drop, a 4 m ladder, swimming and diving, an

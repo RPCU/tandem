@@ -42,6 +42,9 @@ struct Game {
   std::map<proto::NpcId, float> levels; // the owners' NpcLevel
   std::vector<proto::Defended> defended;
   float giveHealth{0.4f};
+  // The ledger (regions.md §14): the placed NPCs said, the deaths heard.
+  std::map<proto::NpcId, std::uint64_t> placed;
+  std::vector<proto::NpcDeath> deaths;
 
   void Announce(std::uint32_t counter, proto::Vec3 at = {}) {
     const auto npc = MakeNpcId(endpoint->You(), counter);
@@ -72,6 +75,10 @@ struct Game {
           levels[level->npc] = level->level;
         if (const auto *defence = std::get_if<proto::Defended>(&combat->message))
           defended.push_back(*defence);
+        if (const auto *place = std::get_if<proto::NpcPlaced>(&combat->message))
+          placed[place->npc] = place->entity;
+        if (const auto *death = std::get_if<proto::NpcDeath>(&combat->message))
+          deaths.push_back(*death);
         npcWords += std::holds_alternative<proto::NpcWound>(combat->message) ||
                             std::holds_alternative<proto::NpcPoise>(combat->message) ||
                             std::holds_alternative<proto::NpcScale>(combat->message)
@@ -966,4 +973,200 @@ TEST_CASE("a handed-over NPC keeps its scale until its new owner says its own") 
   CHECK(s->a->SendCombat(proto::NpcScale{.npc = 1, .players = 1}));
   REQUIRE(s->Until([&] { return s->h.scales[1] == 1; }));
   CHECK(s->host->NpcScales().at(1).players == 1);
+}
+
+// ---- the death ledger (docs/architecture/regions.md §14) ----
+
+namespace {
+constexpr std::uint64_t kGuard = 0x1111'2222'3333'4444ull, kGanger = 0x5555'6666'7777'8888ull,
+                        kClerk = 0x9999'AAAA'BBBB'CCCCull;
+
+// One of `game`'s NPCs, placed in the world under `entity`.
+proto::NpcId Placed(Game &game, std::uint32_t counter, std::uint64_t entity, proto::Vec3 at) {
+  game.Announce(counter, at);
+  const auto npc = MakeNpcId(game.endpoint->You(), counter);
+  CHECK(game.endpoint->SendCombat(proto::NpcPlaced{.npc = npc, .entity = entity}));
+  return npc;
+}
+} // namespace
+
+TEST_CASE("a placed NPC is named to the players that see it, early or late, by its owner only") {
+  auto s = Start(true);
+  Place(*s->host, 0);
+  Place(*s->a, 20);
+  Place(*s->b, 1000);
+  REQUIRE(s->Until([&] { return s->b->Apart() && s->host->LinkedWith(s->a->You()); }));
+  // Said before its spawn (the game's two queues): kept, said right after it.
+  const auto early = MakeNpcId(s->a->You(), 1);
+  CHECK_FALSE(s->a->SendCombat(proto::NpcPlaced{.npc = early, .entity = kGuard}));
+  s->ga.Announce(1, {20.f, 0.f, 0.f});
+  CHECK(s->a->PlacedNpcs().contains(early));
+  const auto ganger = Placed(s->ga, 2, kGanger, {22.f, 0.f, 0.f});
+  CHECK(s->a->SendCombat(proto::NpcPlaced{.npc = ganger, .entity = kGanger})); // said once
+  // Not ours to say: another's NPC, an NPC nobody shares, a death.
+  CHECK_FALSE(s->host->SendCombat(proto::NpcPlaced{.npc = ganger, .entity = kGanger}));
+  CHECK_FALSE(s->a->SendCombat(proto::NpcPlaced{.npc = 99, .entity = 5}));
+  CHECK_FALSE(s->a->SendCombat(proto::NpcDeath{.npc = ganger, .entity = kGanger}));
+  REQUIRE(s->Until([&] { return s->h.placed.size() == 2; }));
+  s->For(100ms);
+  CHECK(s->h.placed.at(early) == kGuard);
+  CHECK(s->h.placed.at(ganger) == kGanger);
+  CHECK(s->host->PlacedNpcs().size() == 2);
+  // The player apart sees neither the NPCs nor their names.
+  CHECK(s->gb.placed.empty());
+  CHECK(s->b->PlacedNpcs().empty());
+  // It comes over: the names come with the NPCs.
+  Place(*s->b, 40);
+  REQUIRE(s->Until([&] { return s->gb.placed.size() == 2 && s->gb.proxies.size() == 2; }));
+  CHECK(s->gb.placed.at(ganger) == kGanger);
+  // One that leaves range takes its name with it.
+  s->a->SendNpcGone({.npc = early, .reason = proto::kGoneAway});
+  REQUIRE(s->Until([&] {
+    return !s->host->PlacedNpcs().contains(early) && !s->b->PlacedNpcs().contains(early);
+  }));
+  CHECK(s->host->Deaths().Empty());
+}
+
+TEST_CASE("a placed NPC a player kills alone is dead for everyone, wherever they are") {
+  auto s = Start(true);
+  Place(*s->host, 0);
+  Place(*s->a, 1000);
+  Place(*s->b, 2000);
+  REQUIRE(s->Until([&] { return s->a->Apart() && s->b->Apart() && s->host->Apart(); }));
+  // The host, alone: a guard at its post, a ganger, and a passer-by of the
+  // crowd (never said placed).
+  const auto guard = Placed(s->h, 1, kGuard, {5.f, 0.f, 0.f});
+  const auto ganger = Placed(s->h, 2, kGanger, {6.f, 0.f, 0.f});
+  s->h.Announce(3, {7.f, 0.f, 0.f});
+  s->h.Move(guard, {9.f, 2.f, 0.f}); // it fought, and fell there
+  s->host->SendNpcGone({.npc = guard, .reason = proto::kGoneDead, .killer = s->host->You()});
+  s->host->SendNpcGone({.npc = 3, .reason = proto::kGoneDead, .killer = s->host->You()});
+  REQUIRE(s->Until([&] {
+    return s->a->Deaths().Has(kGuard) && s->b->Deaths().Has(kGuard) && !s->h.deaths.empty();
+  }));
+  s->For(150ms);
+  // Once each, the host's own game included; the crowd's death is nobody's.
+  for (auto *game : s->Games()) {
+    REQUIRE(game->deaths.size() == 1);
+    const auto &death = game->deaths.front();
+    CHECK(death.entity == kGuard);
+    CHECK(death.npc == 0);
+    CHECK(death.by == s->host->You());
+    CHECK(death.order == 1);
+    CHECK(death.timeUs != 0);
+    CHECK(death.record == 101);
+    CHECK(death.position == proto::Vec3{9.f, 2.f, 0.f});
+    CHECK(death.flags == 0);
+  }
+  // The guests never saw the NPC: nothing else of it reached them.
+  CHECK(s->ga.proxies.empty());
+  CHECK(s->ga.placed.empty());
+
+  // A guest, alone: knocked out counts (it never gets up), and its later
+  // death is not a second one.
+  const auto clerk = Placed(s->ga, 1, kClerk, {1001.f, 0.f, 0.f});
+  s->a->SendNpcGone({.npc = clerk, .reason = proto::kGoneKnockedOut, .killer = s->a->You()});
+  REQUIRE(s->Until([&] { return s->b->Deaths().Has(kClerk) && s->ga.deaths.size() == 2; }));
+  s->a->SendNpcGone({.npc = clerk, .reason = proto::kGoneDead, .killer = s->a->You()});
+  s->For(150ms);
+  for (auto *game : s->Games()) {
+    REQUIRE(game->deaths.size() == 2);
+    CHECK(game->deaths.back().entity == kClerk);
+    CHECK(game->deaths.back().by == s->a->You());
+    CHECK(game->deaths.back().order == 2);
+    CHECK(game->deaths.back().flags == proto::kDeathKnockedOut);
+    CHECK(game->deaths.back().position == proto::Vec3{1001.f, 0.f, 0.f});
+  }
+  // One that only leaves range is not dead.
+  s->host->SendNpcGone({.npc = ganger, .reason = proto::kGoneAway});
+  s->For(150ms);
+  CHECK(s->host->Deaths().Size() == 2);
+  CHECK_FALSE(s->a->Deaths().Has(kGanger));
+  // Everyone's ledger is the host's.
+  CHECK(s->a->Deaths().Digest() == s->host->Deaths().Digest());
+  CHECK(s->b->Deaths().Digest() == s->host->Deaths().Digest());
+}
+
+TEST_CASE("a late joiner hears every death of the session, in order, once") {
+  auto s = Start();
+  Place(*s->host, 0);
+  Place(*s->a, 1000);
+  REQUIRE(s->Until([&] { return s->a->Apart(); }));
+  const auto guard = Placed(s->h, 1, kGuard, {5.f, 0.f, 0.f});
+  const auto clerk = Placed(s->ga, 1, kClerk, {1001.f, 0.f, 0.f});
+  s->For(50ms);
+  s->host->SendNpcGone({.npc = guard, .reason = proto::kGoneDead});
+  REQUIRE(s->Until([&] { return s->a->Deaths().Has(kGuard); }));
+  s->a->SendNpcGone({.npc = clerk, .reason = proto::kGoneDead, .killer = s->a->You()});
+  REQUIRE(s->Until([&] { return s->host->Deaths().Size() == 2; }));
+  std::string error;
+  s->b = Endpoint::Join({"late"}, "127.0.0.1", s->host->LocalPort(), error, kQuick);
+  REQUIRE_MESSAGE(s->b, error);
+  s->gb.endpoint = s->b.get();
+  REQUIRE(s->Until([&] { return s->b->IsJoined() && s->gb.deaths.size() == 2; }));
+  s->For(400ms); // a few digests: nothing is asked again, nothing said twice
+  REQUIRE(s->gb.deaths.size() == 2);
+  CHECK(s->gb.deaths[0].entity == kGuard);
+  CHECK(s->gb.deaths[1].entity == kClerk);
+  CHECK(s->gb.deaths[1].by == s->a->You());
+  CHECK(s->b->Deaths().Digest() == s->host->Deaths().Digest());
+  CHECK(s->ga.deaths.size() == 2);
+}
+
+TEST_CASE("a death the host's word of was lost is healed by the world digest") {
+  auto s = Start();
+  Place(*s->host, 0);
+  Place(*s->a, 1000);
+  REQUIRE(s->Until([&] { return s->a->Apart(); }));
+  const auto guard = Placed(s->h, 1, kGuard, {5.f, 0.f, 0.f});
+  const auto ganger = Placed(s->h, 2, kGanger, {6.f, 0.f, 0.f});
+  s->For(50ms);
+  // Everything the host says is lost while its V kills the guard.
+  s->host->SetFaults({.drop = 1.0});
+  s->host->SendNpcGone({.npc = guard, .reason = proto::kGoneDead});
+  s->For(50ms);
+  s->host->SetFaults({});
+  CHECK(s->host->Deaths().Has(kGuard));
+  CHECK_FALSE(s->a->Deaths().Has(kGuard));
+  // Two digests that differ, then the world again: the death with it.
+  REQUIRE(s->Until([&] { return s->a->Deaths().Has(kGuard); }));
+  CHECK(s->a->Checks().Requests() >= 1);
+  REQUIRE(s->ga.deaths.size() == 1);
+  // The next one arrives as usual, and the resync told nothing twice.
+  s->host->SendNpcGone({.npc = ganger, .reason = proto::kGoneDead});
+  REQUIRE(s->Until([&] { return s->ga.deaths.size() == 2; }));
+  s->For(300ms);
+  CHECK(s->ga.deaths.size() == 2);
+  CHECK(s->a->Deaths().Digest() == s->host->Deaths().Digest());
+}
+
+TEST_CASE("the ledger outlives its reporter; an heir's kill of a placed NPC is the heir's") {
+  auto s = Start(true);
+  Place(*s->host, 0);
+  Place(*s->a, 30);
+  Place(*s->b, 1000);
+  REQUIRE(s->Until([&] { return s->b->Apart() && s->host->LinkedWith(s->a->You()); }));
+  const auto owner = s->a->You();
+  const auto guard = Placed(s->ga, 1, kGuard, {10.f, 0.f, 0.f});
+  const auto clerk = Placed(s->ga, 2, kClerk, {12.f, 0.f, 0.f});
+  REQUIRE(s->Until([&] { return s->h.proxies.size() == 2 && s->h.placed.size() == 2; }));
+  s->a->SendNpcGone({.npc = guard, .reason = proto::kGoneDead, .killer = owner});
+  REQUIRE(s->Until([&] { return s->b->Deaths().Has(kGuard); }));
+  s->For(100ms);
+
+  s->a.reset(); // no goodbye
+  REQUIRE(
+      s->Until([&] { return s->host->Players().size() == 2 && s->b->Players().size() == 2; }, 4s));
+  // Its kill stays in the ledger, under its name.
+  REQUIRE(s->host->Deaths().Find(kGuard) != nullptr);
+  CHECK(s->host->Deaths().Find(kGuard)->by == owner);
+  CHECK(s->b->Deaths().Has(kGuard));
+  // The host inherited the clerk next to it, name and all: its death there
+  // is the host's report.
+  REQUIRE(s->Until([&] { return s->h.running.contains(clerk); }));
+  CHECK(s->host->PlacedNpcs().contains(clerk));
+  s->host->SendNpcGone({.npc = clerk, .reason = proto::kGoneDead, .killer = s->host->You()});
+  REQUIRE(s->Until([&] { return s->b->Deaths().Has(kClerk); }));
+  CHECK(s->b->Deaths().Find(kClerk)->by == s->host->You());
+  CHECK(s->b->Deaths().Find(kClerk)->order == 2);
 }
