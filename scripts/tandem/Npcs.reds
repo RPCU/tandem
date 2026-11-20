@@ -132,6 +132,16 @@ public class TandemNpcs {
   private let m_unplacedSince: Float;
   private let m_assumeTogether: Bool;
   private let m_lastQuiet: Float;
+  // The overlap: this game's setting (read once), the share of our crowd we
+  // keep now, the null areas we keep (by the player whose region each
+  // covers), and the NPCs left to their vehicle's fate.
+  private let m_overlap: String;
+  private let m_overlapRead: Bool;
+  private let m_share: Float;
+  private let m_nullPlayers: array<Uint32>;
+  private let m_nullIds: array<Uint64>;
+  private let m_nullLogged: Bool;
+  private let m_riders: Int32;
   private let m_hidden: Int32;
   private let m_hiddenIds: array<EntityID>;
   // Host: guests' status effects waiting for their puppet (the instigator).
@@ -234,6 +244,7 @@ public class TandemNpcs {
     this.m_scaling.Start(game);
     this.m_ledger = new TandemLedger();
     this.m_ledger.Start(game);
+    this.m_share = 1.0;
   }
 
   // The recorder, solo (System.reds RecordTick): the NPCs around our V as a
@@ -472,10 +483,12 @@ public class TandemNpcs {
     this.m_levels.End();
     this.m_scaling.End();
     ArrayClear(this.m_hiddenIds);
-    if this.m_quiet {
+    if this.m_quiet || this.m_share < 0.95 {
       GameInstance.GetCommunitySystem(this.m_game).ResetDensityModifier();
       this.m_quiet = false;
     }
+    this.m_share = 1.0;
+    this.UpdateNullAreas(false);
   }
 
   public func Hidden() -> Int32 {
@@ -490,17 +503,26 @@ public class TandemNpcs {
 
   // ---- regions: our crowd, and what we hold back ----
 
-  // Our crowd is off while our V is deep inside a higher-ranked linked
-  // player's region (that game populates what we both see), and back on once
-  // we are out of it. Alone in our region our game is the single-player game.
+  // Our own crowd where a higher-ranked linked player's region covers the
+  // world (its game populates what we both see; regions.md §6). Deep inside
+  // it (45 m of its V, back beyond 60 m) our crowd is off. Around it, by
+  // this game's `overlap` setting: "density", the crowd's density follows
+  // the part of our region no cover overlaps; "area", a crowd null area is
+  // kept over each cover (pedestrians and traffic spawn nowhere in it); "off",
+  // nothing more. Alone in our region our game is the single-player game.
   private func UpdateQuiet() -> Void {
     let player = GetPlayer(this.m_game);
     if !IsDefined(player) {
       return;
     }
+    if !this.m_overlapRead {
+      this.m_overlapRead = true;
+      this.m_overlap = TandemNative.Setting("overlap");
+    }
+    let here = player.GetWorldPosition();
     let range = this.m_quiet ? TandemRegionRules.Radius() : TandemRegionRules.QuietIn();
     let unplaced = false;
-    let by = TandemRegionRules.CoveredBy(player.GetWorldPosition(), range, unplaced);
+    let by = TandemRegionRules.CoveredBy(here, range, unplaced);
     // A player that outranks us and has said nothing of where it is: we
     // wait three seconds, then take it to be with us (a host that sends no
     // state, as before regions; a mock host standing idle).
@@ -515,15 +537,93 @@ public class TandemNpcs {
     if unplaced && !this.m_assumeTogether {
       return;
     }
+    let crowd = GameInstance.GetCommunitySystem(this.m_game);
     if by != 0u && !this.m_quiet {
       this.m_quiet = true;
-      GameInstance.GetCommunitySystem(this.m_game).ChangeDensityModifier(0.0);
+      this.m_share = 0.0;
+      crowd.ChangeDensityModifier(0.0);
       TandemNative.Log(s"npcs: guest, own crowd off (inside player \(by)'s region)");
     } else if by == 0u && this.m_quiet {
       this.m_quiet = false;
-      GameInstance.GetCommunitySystem(this.m_game).ResetDensityModifier();
+      this.m_share = 1.0;
+      crowd.ResetDensityModifier();
       TandemNative.Log("npcs: own region, own crowd on");
     }
+    // (Also deep inside: whether density 0 stops traffic too is not known.)
+    if Equals(this.m_overlap, "area") {
+      this.UpdateNullAreas(true);
+    }
+    if this.m_quiet {
+      return;
+    }
+    if Equals(this.m_overlap, "density") {
+      // Thinner as the two regions overlap more (tenths: no change on
+      // every step of a walk).
+      let share = TandemRegions.CrowdShare(here.X, here.Y, here.Z, false);
+      if share > 0.0 && AbsF(share - this.m_share) >= 0.05 {
+        this.m_share = share;
+        if share >= 0.95 {
+          crowd.ResetDensityModifier();
+        } else {
+          crowd.ChangeDensityModifier(share);
+        }
+        TandemNative.Log(s"npcs: own crowd at \(share) (a higher-ranked player's region overlaps ours)");
+      }
+    }
+  }
+
+  // Seated in a vehicle of our world that we do not share (a traffic car
+  // held back inside a cover, Traffic.reds): it follows its vehicle.
+  private func RidesUnshared(npc: ref<ScriptedPuppet>) -> Bool {
+    let ride: wref<VehicleObject>;
+    if !VehicleComponent.GetVehicle(this.m_game, npc, ride) || !IsDefined(ride) {
+      return false;
+    }
+    let traffic = TandemTraffic.Of(this.m_game);
+    return !IsDefined(traffic) || traffic.IdOfBody(ride.GetEntityID()) == 0u;
+  }
+
+  // A crowd null area over each cover, as the plugin's plan says (it
+  // follows each V in steps and renews an area before it runs out: an area
+  // lasts 12 s by itself, should we stop). Not saved.
+  private func UpdateNullAreas(on: Bool) -> Void {
+    let steps = TandemRegions.NullSteps(this.m_now, on);
+    if ArraySize(steps) == 0 {
+      return;
+    }
+    let crowd = GameInstance.GetCommunitySystem(this.m_game);
+    for step in steps {
+      let i = ArrayFindFirst(this.m_nullPlayers, step.player);
+      if i >= 0 {
+        crowd.DisableCrowdNullArea(this.m_nullIds[i]);
+        ArrayErase(this.m_nullPlayers, i);
+        ArrayErase(this.m_nullIds, i);
+      }
+      if step.place {
+        let box: Box;
+        box.Min = new Vector4(-60.0, -60.0, -40.0, 1.0);
+        box.Max = new Vector4(60.0, 60.0, 40.0, 1.0);
+        let at: WorldTransform; // assigned on every path
+        WorldTransform.SetIdentity(at);
+        WorldTransform.SetPosition(at, new Vector4(step.x, step.y, step.z, 1.0));
+        let id = crowd.EnableDynamicCrowdNullArea(box, at, false, 12.0);
+        ArrayPush(this.m_nullPlayers, step.player);
+        ArrayPush(this.m_nullIds, id);
+        if !this.m_nullLogged {
+          this.m_nullLogged = true;
+          TandemNative.Log(s"npcs: crowd null area \(id) over player \(step.player)'s region at (\(step.x), \(step.y), \(step.z))");
+        }
+      } else {
+        this.m_nullLogged = false;
+        TandemNative.Log(s"npcs: crowd null area over player \(step.player)'s region removed");
+      }
+    }
+  }
+
+  // (test) what our game holds back now.
+  public func OverlapReport() -> String {
+    let covers = TandemRegions.Covers();
+    return s"overlap: \(this.m_overlap), \(ArraySize(covers)) cover(s), own crowd \(this.m_quiet ? "off" : s"at \(this.m_share)"), \(ArraySize(this.m_nullIds)) null area(s), \(this.m_hidden) NPC(s) hidden so far, \(this.m_riders) rider(s) left to their vehicle";
   }
 
   // An NPC of ours that we do not add to the shared world: brain off and out
@@ -699,6 +799,7 @@ public class TandemNpcs {
     // world's: none is hidden, as before.
     let hides = !riding && !TandemElsewhere.Inside(this.m_game);
     // The session's dead near us, if any (Ledger.reds).
+    let riders = 0;
     let ledger = hides && this.m_you != 0u && this.m_ledger.On() && TandemRegions.DeathsNear(here.X, here.Y, here.Z, 2000.0) > 0;
     for npc in around {
       let id = npc.GetEntityID();
@@ -722,6 +823,11 @@ public class TandemNpcs {
         if unplaced && !this.m_assumeTogether {
           // We do not know yet whether a higher-ranked player's region
           // covers it: neither announced nor held back this round.
+        } else if by != 0u && this.RidesUnshared(npc) {
+          // A driver or a passenger follows its vehicle (Traffic.reds holds
+          // the car back, and shares it once it is out of the cover): never
+          // hidden at the wheel, not announced while in there.
+          riders += 1;
         } else if by != 0u && !TandemRegionRules.Engaged(this.m_game, npc) {
           this.Suppress(npc);
         } else if TandemVendors.IsBuried(npc) {
@@ -851,6 +957,7 @@ public class TandemNpcs {
       }
     }
     this.m_known = kept;
+    this.m_riders = riders;
     TandemNative.SendNpcStates(ids, positions, orientations, detected);
     this.m_rounds += 1;
     if this.m_rounds % 2 == 0 {

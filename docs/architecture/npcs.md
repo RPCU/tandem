@@ -241,8 +241,10 @@ the first group session.
 
 - **Suppressing guests' own world simulation** (crowds, traffic, encounters,
   quest phases) without breaking systems that expect them. With regions
-  only the overlap of two regions is suppressed (`regions.md` §6); traffic
-  follows `Endpoint::AreaOwner`.
+  only the overlap of two regions is suppressed (`regions.md` §6: the
+  crowd's density or a null area, new spawns hidden, own traffic held
+  back); traffic follows `Endpoint::AreaOwner`. Open: removing a car of
+  ours that is already in the overlap.
 - **A second V is welcome wherever the first is.** In co-op every V
   starts with the attitudes the player has: friendly to friendly NPCs
   (fixers, allies, quest characters, vendors), neutral to the neutral,
