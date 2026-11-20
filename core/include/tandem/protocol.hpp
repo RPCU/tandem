@@ -1816,7 +1816,18 @@ enum class ActivityKind : std::uint8_t {
   Shop = 5,     // a vendor, the ripperdoc, the wardrobe, the mirror
   Menu = 6,     // the hub menus, the map, the time skip wheel
   Photo = 7,    // photo mode
-  Contest = 8,  // a duel or a contest the others must leave alone (`device`: its id)
+  Contest = 8,  // a duel or a contest the others must leave alone (`entry`: its ContestSort)
+};
+// What a Contest is (Activity::entry, which names no workspot then; engine
+// facts: research/engine/stealth.md §13.99). Read from the game's own data
+// on the contestant's V: a fist fight's restriction, a shooting
+// competition's, the racing system's word. `device` is the session's number
+// of an opponent (an NpcId; 0: none, or more than one).
+enum class ContestSort : std::uint8_t {
+  Other = 0,
+  Duel = 1,  // a fist fight: the others' hits on its opponents are dropped
+  Race = 2,  // a street race
+  Range = 3, // a shooting competition
 };
 inline constexpr std::uint8_t kActivityAnchored = 1; // `anchor`, `yaw`: hold the body there
 inline constexpr std::uint8_t kActivityLying = 2;    // lying, not sitting or standing
@@ -1828,7 +1839,7 @@ struct Activity {
   std::uint8_t flags{};     // kActivity*
   std::uint64_t device{};   // the device used: its EntityID hash (0: none)
   std::uint64_t workspot{}; // the workspot resource's path hash (0: unknown)
-  std::uint32_t entry{};    // its tree entry
+  std::uint32_t entry{};    // its tree entry (Contest: its ContestSort)
   std::uint64_t anim{};     // the animation playing (CName hash)
   Vec3 anchor;              // kActivityAnchored: where the body is
   float yaw{};              // its heading (radians, sync::YawOf)
@@ -2678,6 +2689,25 @@ struct StatusVisuals {
   friend bool operator==(const StatusVisuals &, const StatusVisuals &) = default;
 };
 
+// ---- A thrown object's path (docs/architecture/combat-coverage.md, "Throws") ----
+//
+// Where a thrown object of ours (a Throw still in flight: a grenade, a
+// knife, a launcher round) is now and how it moves: after each bounce, and
+// a few times a second while it flies (at most kThrowPathHz an object). A
+// copy that strayed from it (it bounced off something only one game has) is
+// put back on the real one's path; one that flies the same arc is left
+// alone. A velocity of zero: it lies still. State channel (a late one is
+// worth nothing: the next one, or the ThrowEnd, says more); the host stamps
+// the thrower and relays it like Throw.
+inline constexpr float kThrowPathHz = 4.f;
+struct ThrowPath {
+  PlayerId player{};
+  std::uint32_t id{}; // the Throw it is the path of
+  Vec3 position;
+  Vec3 velocity; // m/s
+  friend bool operator==(const ThrowPath &, const ThrowPath &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -2697,7 +2727,7 @@ using MessageVariant = std::variant<
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
-    TrafficHandoverState, TrafficHandoverDone, QuestInteract>;
+    TrafficHandoverState, TrafficHandoverDone, QuestInteract, ThrowPath>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -2709,9 +2739,9 @@ bool operator==(const Message &a, const Message &b);
 // VehicleUnlock, StoryRestrictions, QuestInteract):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
-// A hit outcome message (NpcStrike … AreaHit, Throw … Defended), a level
-// (PlayerLevel … NpcLevel), a car's lending (CarLend), an NPC's scale
-// (NpcScale) or a vendor (NpcVendor): one path in endpoint.hpp too.
+// A hit outcome message (NpcStrike … AreaHit, Throw … Defended, ThrowPath),
+// a level (PlayerLevel … NpcLevel), a car's lending (CarLend), an NPC's
+// scale (NpcScale) or a vendor (NpcVendor): one path in endpoint.hpp too.
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);

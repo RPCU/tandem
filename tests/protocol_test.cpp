@@ -1133,6 +1133,19 @@ TEST_CASE("throws, their ends, the session's rules and a defence survive encodin
   CHECK(Encode(Throw{}).size() < 64);
 }
 
+TEST_CASE("a thrown object's path round-trips, small and unreliable") {
+  RoundTrips(ThrowPath{.player = 2, .id = 9, .position = {1, 2, 3}, .velocity = {4, -5, 6}});
+  RoundTrips(ThrowPath{.player = 3, .id = 1, .position = {7, 8, 9}}); // lying still
+  CHECK(std::string_view(NameOf(ThrowPath{})) == "ThrowPath");
+  CHECK(IsCombat(ThrowPath{}));
+  // A late one is worth nothing: the next, or the throw's end, says more.
+  CHECK(ChannelOf(ThrowPath{}) == Channel::State);
+  CHECK_FALSE(IsReliable(ThrowPath{}));
+  CHECK(Encode(ThrowPath{}).size() <= 40);
+  // The alternatives before it kept their ids.
+  CHECK(Message(ThrowPath{}).index() == Message(QuestInteract{}).index() + 1);
+}
+
 TEST_CASE("throws, rules and defences of kinds the receiver does not know are refused") {
   auto bytes = Encode(Throw{.kind = static_cast<ThrowKind>(4)});
   CHECK_FALSE(Decode(bytes).has_value());

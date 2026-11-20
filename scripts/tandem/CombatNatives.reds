@@ -21,7 +21,8 @@ public native struct TandemFightEvent {
   // how many they are); 11 (guest) a host NPC's power level (npc; damage:
   // the level). Levels.reds takes the last two. 12 an owner's word on one
   // of its NPCs: how many players it is scaled for (npc, player: the
-  // count; Scaling.reds).
+  // count; Scaling.reds). 13 where another V's throw is now (player, id,
+  // x y z, dx dy dz its velocity: zero when it lies still).
   native let kind: Int32;
   native let npc: Uint32;
   native let player: Uint32;
@@ -59,6 +60,11 @@ public native class TandemFight extends IScriptable {
   public static native func SendAreaHit(player: Uint32, physical: Float, thermal: Float, electric: Float, chemical: Float, attackType: Int32, flags: Int32, position: Vector4, direction: Vector4, attack: TweakDBID, weapon: TweakDBID)
   public static native func SendThrow(id: Uint32, kind: Int32, flags: Int32, item: TweakDBID, origin: Vector4, velocity: Vector4, npc: Uint32, at: Uint32)
   public static native func SendThrowEnd(id: Uint32, how: Int32, position: Vector4)
+  // Where a throw of ours is now (after a bounce, a few times a second in
+  // flight); and what a copy at `copy` does about the real one's word: 0
+  // nothing, 1 lie there, 2 fly on from there.
+  public static native func SendThrowPath(id: Uint32, position: Vector4, velocity: Vector4)
+  public static native func PathFix(copy: Vector4, position: Vector4, velocity: Vector4) -> Int32
   // ConfiguredRules' word: proto::kRule* in the low byte, the health percent
   // per extra player (enemy scaling) in the next.
   public static native func SendRules(rules: Int32)

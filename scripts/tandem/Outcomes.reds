@@ -168,6 +168,9 @@ public class TandemOutcomes {
         case 12:
           npcs.SetScale(event.npc, Cast<Int32>(event.player));
           break;
+        case 13:
+          this.Throws().OnPath(event);
+          break;
         default:
           break;
       }
