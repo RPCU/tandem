@@ -9,6 +9,7 @@
 #include "tandem/consistency.hpp"
 #include "tandem/elsewhere.hpp"
 #include "tandem/hosts.hpp"
+#include "tandem/interact.hpp"
 #include "tandem/interpolation.hpp"
 #include "tandem/lagcomp.hpp"
 #include "tandem/pose.hpp"
@@ -651,6 +652,12 @@ public:
   // delay, bounded. Game thread.
   lagcomp::Reach ReachOf(proto::PlayerId player, proto::NpcId npc, const proto::Vec3 &puppetAt,
                          const proto::Vec3 &npcAt, float limit);
+  // Quest interactions (tandem/interact.hpp), host: could guest `player`'s
+  // V reach our object at `object` when it asked (`claimed` where it says it
+  // stood, at `askedUs`; the question came at `arrivalUs`)? Game thread.
+  interact::Reach ReachOfObject(proto::PlayerId player, const proto::Vec3 &claimed,
+                                const proto::Vec3 &object, std::uint64_t askedUs,
+                                std::uint64_t arrivalUs);
 
   // Net thread writes remote states; the animation thread and scripts read views.
   void PushRemote(const proto::PlayerState &state);

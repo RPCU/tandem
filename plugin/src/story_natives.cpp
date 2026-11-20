@@ -7,6 +7,7 @@
 #include <RED4ext/RED4ext.hpp>
 
 #include "config.hpp"
+#include "engine/casts.hpp"
 #include "engine/posestream.hpp"
 #include "engine/quests.hpp"
 #include "engine/scenes.hpp"
@@ -15,6 +16,7 @@
 #include "story.hpp"
 
 #include "tandem/carryover.hpp"
+#include "tandem/interact.hpp"
 
 #include <RedLib.hpp>
 
@@ -45,6 +47,13 @@ struct TandemStoryEvent {
   Red::TweakDBID reward;
   Red::CString name;
   Red::CString text;
+  // Quest interactions (kinds 60, 61): the object, the choice, its detail,
+  // the layer, where the asker's V stood.
+  Red::EntityID entity;
+  Red::CName choice;
+  std::uint64_t detail{};
+  Red::CName layer;
+  float x{}, y{}, z{};
 };
 static_assert(alignof(TandemStoryEvent) <= 8, "the script VM aligns struct locals to 8");
 
@@ -78,6 +87,8 @@ enum Kind : std::int32_t {
   kSceneActorGone = 54,
   kSceneVoice = 55,
   kSceneVoiceStop = 56,
+  kInteractAsked = 60,
+  kInteractAnswer = 61,
 };
 
 // What our V earned in co-op (tandem/carryover.hpp): loaded from the save's
@@ -234,6 +245,28 @@ void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
   } else if (const auto *unlock = std::get_if<proto::VehicleUnlock>(&m)) {
     out.EmplaceBack(TandemStoryEvent{
         .kind = kVehicle, .hash = unlock->quest, .reward = Red::TweakDBID(unlock->vehicle)});
+  } else if (const auto *qi = std::get_if<proto::QuestInteract>(&m)) {
+    auto &story = Story::Get();
+    if (qi->verdict == proto::kInteractAsk) {
+      // Host: a guest's question, kept for its answer (and the reach check).
+      story.InteractAsks()[{qi->player, qi->seq}] = {*qi, Runtime::Get().HostNowUs()};
+    } else {
+      // Guest: the host's verdict, known for the session.
+      story.InteractKnown().Note(interact::KeyOf(*qi), qi->verdict);
+    }
+    out.EmplaceBack(TandemStoryEvent{.kind = qi->verdict == proto::kInteractAsk ? kInteractAsked
+                                                                                : kInteractAnswer,
+                                     .player = qi->player,
+                                     .hash = qi->seq,
+                                     .state = qi->verdict,
+                                     .flags = qi->flags,
+                                     .entity = Red::EntityID(qi->target),
+                                     .choice = Red::CName(qi->choice),
+                                     .detail = qi->detail,
+                                     .layer = Red::CName(qi->layer),
+                                     .x = qi->position.x,
+                                     .y = qi->position.y,
+                                     .z = qi->position.z});
   } else if (const auto *restrictions = std::get_if<proto::StoryRestrictions>(&m)) {
     // The host's set, kept here for RestrictUpdate; the script hears how
     // many (and acts on its next check).
@@ -500,6 +533,84 @@ struct TandemStory : Red::IScriptable {
     return true;
   }
 
+  // ---- quest interactions (docs/architecture/story.md, "Quest interactions") ----
+
+  // tandem.ini quest_interact (story on).
+  static bool InteractOn() { return StoryOn() && Runtime::Get().config.questInteract; }
+  // A CName as the number the session names it by.
+  static std::uint64_t NameKey(Red::CName name) { return name.hash; }
+  // Guest: our V chose `choice` on the host's object `entity` (placed in
+  // the world: its id is the same in every game), standing at x, y, z. The question's number (its
+  // answer names it, TakeEvents kind 61).
+  static std::uint32_t SendInteract(Red::EntityID entity, Red::CName choice, std::uint64_t detail,
+                                    Red::CName layer, std::int32_t flags, float x, float y,
+                                    float z) {
+    auto &story = Story::Get();
+    const auto seq = story.NextInteractSeq();
+    story.Send(
+        proto::QuestInteract{.target = entity.hash,
+                             .choice = choice.hash,
+                             .detail = detail,
+                             .layer = layer.hash,
+                             .seq = seq,
+                             .position = {x, y, z},
+                             .timeUs = Runtime::Get().HostNowUs(),
+                             .verdict = proto::kInteractAsk,
+                             .flags = static_cast<std::uint8_t>(flags & proto::kInteractFlags)});
+    return seq;
+  }
+  // Guest: what the host answered of this choice on this object this
+  // session (proto::kInteract*), -1 never asked.
+  static std::int32_t InteractKnown(Red::EntityID entity, Red::CName choice, std::uint64_t detail) {
+    const auto known = Story::Get().InteractKnown().Get({entity.hash, choice.hash, detail});
+    return known ? static_cast<std::int32_t>(*known) : -1;
+  }
+  // Host: our game's verdict on guest `player`'s question `seq`.
+  static void AnswerInteract(std::uint32_t player, std::uint32_t seq, std::int32_t verdict) {
+    auto &asks = Story::Get().InteractAsks();
+    const auto it = asks.find({player, seq});
+    if (it == asks.end() || verdict <= proto::kInteractAsk || verdict > proto::kInteractVerdictMax)
+      return;
+    auto answer = it->second.ask;
+    asks.erase(it);
+    answer.verdict = static_cast<std::uint8_t>(verdict);
+    log::Info("interact: player {}'s {:#x} on {:#x}: {}", player, answer.choice, answer.target,
+              interact::VerdictName(answer.verdict));
+    Story::Get().Send(answer, player);
+  }
+  // Host: could guest `player`'s V reach our object at x, y, z when it
+  // asked question `seq`? (Lag compensated: tandem/interact.hpp.)
+  static bool InteractInReach(std::uint32_t player, std::uint32_t seq, float x, float y, float z) {
+    const auto &asks = Story::Get().InteractAsks();
+    const auto it = asks.find({player, seq});
+    if (it == asks.end())
+      return false;
+    const auto &ask = it->second.ask;
+    const auto reach = Runtime::Get().ReachOfObject(player, ask.position, {x, y, z}, ask.timeUs,
+                                                    it->second.arrivalUs);
+    log::Info("interact: player {} {:.1f} m from the object ({:.1f} m off its track): {}", player,
+              reach.distance, reach.claimOff, reach.ok ? "in reach" : "too far");
+    return reach.ok;
+  }
+  // The safety valve (tandem.ini): 1 the record is in quest_interact_hostonly,
+  // 2 in quest_interact_allow, 0 neither (the default for everything).
+  static std::int32_t InteractOverride(Red::TweakDBID record) {
+    const auto &config = Runtime::Get().config;
+    const auto in = [&](const std::vector<std::string> &names) {
+      return std::ranges::any_of(
+          names, [&](const std::string &name) { return Red::TweakDBID(name) == record; });
+    };
+    return in(config.questInteractHostOnly) ? 1 : in(config.questInteractAllow) ? 2 : 0;
+  }
+  // Would the action of class `action`, on an entity of class `entity` with
+  // state `state`, cast its doer in a workspot (engine/casts.hpp)? 1 yes,
+  // 0 no, -1 unknown.
+  static std::int32_t ActionCasts(Red::CName entity, Red::CName state, Red::CName action) {
+    std::string why;
+    return static_cast<std::int32_t>(
+        engine::ActionCastsDoer(entity.hash, state.hash, action.hash, why));
+  }
+
   // Host: `npc` acts in the scene we announce (scene replay's cast).
   static bool SceneCasts(std::uint32_t npc) { return Story::Get().Stage().Casts(npc); }
 
@@ -761,6 +872,13 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStoryEvent, "TandemStoryEvent", {
   RTTI_PROPERTY(reward);
   RTTI_PROPERTY(name);
   RTTI_PROPERTY(text);
+  RTTI_PROPERTY(entity);
+  RTTI_PROPERTY(choice);
+  RTTI_PROPERTY(detail);
+  RTTI_PROPERTY(layer);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
@@ -804,6 +922,14 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(CarryReport);
   RTTI_METHOD(SendEffect);
   RTTI_METHOD(SendRestrictions);
+  RTTI_METHOD(InteractOn);
+  RTTI_METHOD(NameKey);
+  RTTI_METHOD(SendInteract);
+  RTTI_METHOD(InteractKnown);
+  RTTI_METHOD(AnswerInteract);
+  RTTI_METHOD(InteractInReach);
+  RTTI_METHOD(InteractOverride);
+  RTTI_METHOD(ActionCasts);
   RTTI_METHOD(SceneCasts);
   RTTI_METHOD(RestrictUpdate);
   RTTI_METHOD(RestrictRemovals);

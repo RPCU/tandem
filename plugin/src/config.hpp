@@ -38,6 +38,12 @@
 //   quest_freeze_gigs =  ; gig phase resources: they wait only while grouped
 //   quest_freeze_allow = ; more open-world phase resources that keep running
 //                        ; on a frozen guest (resource paths, comma-separated)
+//   quest_interact = on  ; off: a guest's use of the host's objects stays in its
+//                        ; own world (docs/architecture/story.md, "Quest
+//                        ; interactions")
+//   quest_interact_hostonly = , quest_interact_allow =  ; TweakDB records of
+//                        ; objects whose choices the host must do, or may always
+//                        ; do for a guest: a safety valve, keep them empty
 //   log = info           ; warn | info | debug (log.hpp): info is quiet (the
 //                        ; session's life, a minute's traffic and frame cost);
 //                        ; debug adds every puppet, proxy, hit and shot
@@ -110,6 +116,11 @@ struct Config {
   bool questFreeze{false};
   std::vector<std::string> questFreezeAllow;
   std::vector<std::string> questFreezeGigs; // gig phase resources (ours while apart)
+  // Quest interactions (Interact.reds): a guest's use of the host's objects
+  // goes to the host's game. The override lists (TweakDB record names) are
+  // empty by default and should stay so: the host's game judges each choice.
+  bool questInteract{true};
+  std::vector<std::string> questInteractHostOnly, questInteractAllow;
   // Scene privacy (engine/scenes.cpp): private scenes are not watched.
   bool scenePrivacy{true};
   bool sceneReplay{false};

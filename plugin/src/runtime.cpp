@@ -989,6 +989,17 @@ lagcomp::Reach Runtime::ReachOf(proto::PlayerId player, proto::NpcId npc,
                         rttMs, limit);
 }
 
+interact::Reach Runtime::ReachOfObject(proto::PlayerId player, const proto::Vec3 &claimed,
+                                       const proto::Vec3 &object, std::uint64_t askedUs,
+                                       std::uint64_t arrivalUs) {
+  std::uint32_t rttMs = 0;
+  for (const auto &info : Status().players)
+    if (info.id == player && info.pingMs > 0)
+      rttMs = static_cast<std::uint32_t>(info.pingMs);
+  std::lock_guard _(m_reachLock);
+  return interact::CheckReach(m_reach.Of(player), claimed, object, askedUs, arrivalUs, rttMs);
+}
+
 std::vector<proto::Message> Runtime::TakeNpcOutbox() {
   std::lock_guard _(m_lock);
   NoteDepth(6, m_npcOutbox.size());

@@ -35,7 +35,13 @@ public native struct TandemStoryEvent {
   // 4 its body is streamed), 54 it no longer does (npc);
   // 55 a voiced line begins (line, npc or player: the speaker, duration:
   // seconds into it, index: its length in ms, flags: 2 holocall 4 a bark,
-  // hash: its play), 56 it stops (line, npc, player)
+  // hash: its play), 56 it stops (line, npc, player);
+  // quest interactions (docs/architecture/story.md, "Quest interactions"):
+  // 60 (host) a guest's question (player, hash: its number, entity: the
+  // object (placed: the same id in every game), choice, detail, layer, flags: 1 its checks passed
+  // 2 it casts there 4 loot, x y z: where its V stood), 61 (guest) the
+  // host's verdict on ours (hash: its number, state: 1 performed 2 host
+  // only 3 local 4 taken 5 too far 6 missing 7 busy, entity, choice, detail)
   native let kind: Int32;
   native let player: Uint32;
   native let hash: Uint32;
@@ -50,6 +56,13 @@ public native struct TandemStoryEvent {
   native let reward: TweakDBID;
   native let name: String;
   native let text: String;
+  native let entity: EntityID;
+  native let choice: CName;
+  native let detail: Uint64;
+  native let layer: CName;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
 }
 
 public native class TandemStory extends IScriptable {
@@ -102,6 +115,20 @@ public native class TandemStory extends IScriptable {
   public static native func CarryReport() -> String;
   public static native func SendEffect(effect: TweakDBID, applied: Bool) -> Void;
   public static native func SendRestrictions(effects: array<TweakDBID>) -> Bool;
+  // Quest interactions: tandem.ini quest_interact; a CName as a number;
+  // (guest) ask the host about our V's choice on its object (the question's
+  // number), what it answered this session (-1 never asked); (host) answer
+  // a guest's question, whether its V could reach our object then (lag
+  // compensated), the tandem.ini override for a record (1 host only,
+  // 2 allow, 0 none), whether an action casts its doer (1, 0, -1 unknown).
+  public static native func InteractOn() -> Bool;
+  public static native func NameKey(name: CName) -> Uint64;
+  public static native func SendInteract(entity: EntityID, choice: CName, detail: Uint64, layer: CName, flags: Int32, x: Float, y: Float, z: Float) -> Uint32;
+  public static native func InteractKnown(entity: EntityID, choice: CName, detail: Uint64) -> Int32;
+  public static native func AnswerInteract(player: Uint32, seq: Uint32, verdict: Int32) -> Void;
+  public static native func InteractInReach(player: Uint32, seq: Uint32, x: Float, y: Float, z: Float) -> Bool;
+  public static native func InteractOverride(record: TweakDBID) -> Int32;
+  public static native func ActionCasts(entity: CName, state: CName, action: CName) -> Int32;
   public static native func SceneCasts(npc: Uint32) -> Bool;
   public static native func RestrictUpdate(grouped: Bool, away: Bool, hostKnown: Bool, hostX: Float, hostY: Float, hostZ: Float, x: Float, y: Float, z: Float, tier: Int32, holds: array<TweakDBID>) -> array<TweakDBID>;
   public static native func RestrictRemovals() -> array<TweakDBID>;
