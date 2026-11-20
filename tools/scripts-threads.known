@@ -1,0 +1,103 @@
+# Hooks that may run on a job thread and change script state, as found when
+# tools/scripts-threads.py was written (2026-11-20): neither proven to run on
+# the game thread nor reworked to queue. The check reports them (--list) and
+# fails on any hook that is not listed here; a line whose hook became clean, or
+# says why (`// game thread only:`, `// job thread safe:`), must go: this list
+# only shrinks. One line per file and method: `File.reds Class.Method`.
+
+# Per NPC, vehicle, device, component or projectile, in play: the engine may run
+# two of them at once (entity events on job threads), and each writes a
+# system's fields or arrays. The crash class of 2026-11-20 once it happens
+# while the world streams in. To rework first: queue, act on the tick.
+Combat.reds NPCPuppet.OnStatusEffectApplied
+Hacks.reds NPCPuppet.OnStatusEffectApplied
+HitReactions.reds HitReactionComponent.SendTwitchDataToAnimationGraph
+HitReactions.reds NPCPuppet.OnRagdollEnabledEvent
+HitReactions.reds NPCPuppet.OnRagdollDisabledEvent
+Interact.reds Device.ExecuteAction
+Interact.reds Inventory.OnInteractionUsed
+Reactions.reds NPCStatesComponent.OnCombat
+Stealth.reds StimBroadcasterComponent.TriggerSingleBroadcast
+Takedowns.reds ScriptedPuppet.TriggerNewPerkFinisherBluntHold
+Takedowns.reds DisposalDevice.OnDisposeBody
+Takedowns.reds DisposalDevice.OnTakedownAndDisposeBody
+Takedowns.reds DisposalDevice.OnNonlethalTakedownAndDisposeBody
+Throws.reds BaseGrenade.OnShoot
+Throws.reds BaseGrenade.Detonate
+Throws.reds BaseGrenade.Release
+Throws.reds MeleeProjectile.OnShoot
+Throws.reds MeleeProjectile.OnShootTarget
+Throws.reds MeleeProjectile.OnCollision
+Throws.reds MeleeProjectile.TryToReleaseProjectile
+Throws.reds ProjectileLauncherRound.OnShoot
+Throws.reds ProjectileLauncherRound.OnShootTarget
+Throws.reds ProjectileLauncherRound.ExecuteGameEffect
+Throws.reds ProjectileLauncherRound.Release
+Time.reds BaseBullet.OnProjectileInitialize
+Time.reds BaseProjectile.OnProjectileInitialize
+Traffic.reds VehicleObject.OnMountingEvent
+Traffic.reds VehicleObject.OnVehicleBumpEvent
+Wheels.reds VehicleObject.DamagePipelineFinalized
+Wheels.reds VehicleObject.OnVehicleBumpEvent
+Wheels.reds GameObject.OnVehicleHit
+Wheels.reds VehicleComponent.OnGridDestruction
+Wheels.reds VehicleComponent.OnVehicleOnPartDetached
+Wheels.reds VehicleComponent.OnWeaponShootEvent
+
+# Our own V's entity: one instance, so never two at once; not proven to be in
+# step with the tick.
+Loot.reds PlayerPuppet.OnItemAddedToInventory
+Outcomes.reds PlayerPuppet.OnSetSlowMoForOnePunchAttackEvent
+Revive.reds PlayerPuppet.OnResurrected
+Story.reds PlayerPuppet.OnSceneTierChange
+
+# UI controllers and menu scenarios, input listeners (OnAction), blackboard and
+# UI-system listeners: one at a time and never per streamed entity; not proven
+# to be in step with the tick (a DelaySystem callback).
+Activities.reds TandemActivities.OnAction
+Activities.reds TimeskipGameController.OnUninitialize
+Activities.reds MenuScenario_BaseMenu.OnLeaveScenario
+Activities.reds MenuScenario_NetworkBreach.OnEnterScenario
+Activities.reds MenuScenario_ArcadeMinigame.OnEnterScenario
+Activities.reds MenuScenario_Vendor.OnEnterScenario
+Activities.reds MenuScenario_Vendor.OnSwitchToRipperDoc
+Activities.reds MenuScenario_Storage.OnEnterScenario
+Activities.reds MenuScenario_Wardrobe.OnEnterScenario
+Activities.reds MenuScenario_CharacterCustomizationMirror.OnEnterScenario
+Activities.reds MenuScenario_TimeSkip.OnEnterScenario
+Activities.reds MenuScenario_HubMenu.OnEnterScenario
+Activities.reds ShardNotificationController.OnInitialize
+Activities.reds ShardNotificationController.OnUninitialize
+Comms.reds TandemComms.OnAction
+Comms.reds QuickHackMappinController.OnIntro
+Coop.reds PauseMenuGameController.OnMenuItemActivated
+Dialogue.reds TandemDialogue.OnHubs
+Dialogue.reds TandemDialogue.OnActiveHub
+Dialogue.reds TandemDialogue.OnOwnLine
+Dialogue.reds TandemDialogue.OnAction
+Garage.reds gameuiVehicleShopGameController.OnVehicleShopPurchaseEventEvent
+Loot.reds BackpackMainGameController.OnCloseMenu
+Loot.reds gameuiInventoryGameController.OnCloseMenu
+Pause.reds PauseMenuBackgroundGameController.OnInitialize
+Pause.reds PauseMenuBackgroundGameController.OnUninitialize
+Presence.reds TandemPresenceListener.OnMenu
+Presence.reds TandemPresenceListener.OnPhotoMode
+Revive.reds TandemRevive.OnAction
+Saves.reds TandemSaves.OnSavingComplete
+Scenes.reds TandemScenes.OnAction
+Story.reds TandemStorySystem.OnJournalState
+Story.reds TandemStorySystem.OnJournalTracked
+Story.reds TandemStorySystem.OnAction
+Trade.reds TandemTradeTable.OnAction
+Trade.reds FullscreenVendorGameController.OnSetUserData
+Trade.reds FullscreenVendorGameController.OnUninitialize
+Trade.reds FullscreenVendorGameController.OnHandleGlobalRelease
+Transit.reds TandemTransit.OnAction
+Travel.reds TandemTravel.OnLoadingScreenFinished
+Travel.reds TandemTravel.OnAction
+Vendors.reds TandemVendors.OnAction
+Vendors.reds VendorHubMenuGameController.OnInitialize
+Vendors.reds VendorHubMenuGameController.OnUninitialize
+
+# The probe (test commands only).
+Probe.reds TandemProbe.OnExtract

@@ -59,7 +59,7 @@ say a host's or a guest's message.
 | `oneshot.*` | the second welcome, a state sequence number repeated, a bag dropped twice, a death, a reward, a game over, a quest item or an NPC shot at us twice; one stack to two takers; the same hit byte for byte within 30 ms (hint); more health drops than our hits with nobody else fighting (hint) |
 | `reply.unasked`, `roster.broken` | an answer (takedown reply, upload, pickup, pong) to nothing we asked; a roster without us or the host, with a player twice, or too long |
 | `value.not-finite`, `value.range`, `value.clock` | NaN or infinite numbers; health, poise, damage, factors, tiers, phone actions out of range; a state stamped more than 3 s from the host clock |
-| `rate.over-budget`, `rate.events` (hint), `rate.bytes` (hint), `rate.digest-silent`, `size.over-budget`, `size.state-fragmented` (hint) | states, poses, cars, shots, NPC states, awareness, digests, pings over their budget, more than 6 resync requests in 10 s; a `PlayerState` over 64 bytes; an unreliable message over a datagram; no digest for six digest periods |
+| `rate.over-budget`, `rate.events` (hint), `rate.bytes` (hint), `rate.digest-silent`, `size.over-budget`, `size.state-fragmented` (hint) | states, poses, cars, shots, NPC states, awareness, digests, pings over their budget, more resync requests than two per digest period (6 in 10 s at the game's 3 s; `Attach` reads the endpoint's timings, which tests shorten); a `PlayerState` over 64 bytes; an unreliable message over a datagram; no digest for six digest periods |
 | `digest.diverged`, `digest.resync-loop` | our copy of a domain differing from the host's longer than two digests and a resync take; a guest asking for the same domain four times in a row (our resync does not heal it) |
 | `epoch.backwards`, `epoch.unknown`, `epoch.unacknowledged` | an epoch going back; a guest naming a host epoch we never had; a guest that has not acknowledged our new world within 5 s |
 | `breach.ungranted`, `oneshot.breach-twice` (Breach Protocol, `devices.md`) | the host passing on a breach it did not grant (no `kBreachApply`); one network granted to two players; also `authority.host-only` for a guest's granted breach or a `BreachResult`, `authority.not-owner` for an NPC's breach passed to a game that does not run it, `reply.unasked` for an answer to a breach we never made, `authority.not-yours` for ours granted in another's name |
@@ -192,7 +192,10 @@ the regions tests (a receiver learns it owns an NPC from the hand-over's
 state, an owner resends the spawns of NPCs it took over with its set,
 `Noise` goes to every linked player, each owner numbers its own NPC
 states, and an NPC can leave a guest's view and come back); what is left
-there is the lossy hand-over test's lost and doubled messages.
+there is the lossy hand-over test's lost and doubled messages. That test
+failed one CI run in two on `rate.over-budget` (7 `ResyncRequest` in 10 s):
+the budget was the game's (digests every 3 s) while the test's come every
+100 ms; it now follows the endpoint's timings, as the digests' own does.
 
 `sim-fuzz` after the merge caught the sim's own world fighting a guest its
 NPCs were not shared with (spawned around the partner, far from the host's

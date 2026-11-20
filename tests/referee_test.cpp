@@ -187,6 +187,50 @@ TEST_CASE("referee: a shared vehicle's word is its owner's, wherever it was hand
   CHECK(Rules(guest) == std::vector<std::string>{"authority.not-owner"});
 }
 
+TEST_CASE("referee: a device's fire is the host's turret's, what a copy sees a guest's") {
+  using Kind = proto::DeviceFireKind;
+  auto host = Host();
+  // A guest says its copy of a turret has its own V, and what broke in its game.
+  host.Received(2, proto::DeviceFire{.entity = 7, .kind = Kind::Seen, .player = 2}, kSecond);
+  host.Received(2, proto::DeviceFire{.entity = 7, .kind = Kind::Lost}, kSecond);
+  host.Received(2, proto::Fracture{.player = 2, .at = {1.f, 2.f, 3.f}}, kSecond);
+  CHECK(Rules(host).empty());
+  // Never what the turret shoots at, nor in another player's name.
+  host.Received(2, proto::DeviceFire{.entity = 7, .kind = Kind::Shot, .timeUs = 1}, kSecond);
+  host.Received(2, proto::DeviceFire{.entity = 7, .kind = Kind::Aim}, kSecond);
+  host.Received(2, proto::DeviceFire{.entity = 7, .kind = Kind::Seen, .player = 3}, kSecond);
+  host.Received(2, proto::Fracture{.player = 3}, kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.host-only", "authority.host-only",
+                                                "authority.not-yours", "authority.not-yours"});
+  host.Received(
+      2, proto::Fracture{.player = 2, .at = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
+      kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"value.not-finite"});
+
+  auto guest = Guest();
+  const proto::TargetRef us{proto::TargetKind::Player, 2};
+  guest.Received(1, proto::DeviceFire{.entity = 7, .kind = Kind::Aim, .target = us}, kSecond);
+  guest.Received(
+      1, proto::DeviceFire{.entity = 7, .kind = Kind::Shot, .target = us, .timeUs = kSecond},
+      kSecond);
+  guest.Received(1, proto::DeviceFire{.entity = 7, .kind = Kind::Idle}, kSecond);
+  guest.Received(1, proto::Fracture{.player = 3}, kSecond);
+  CHECK(Rules(guest).empty());
+  // The host never passes on what a copy sees, a turret is named, a shot
+  // stamped, its target a player of the session; our own break never comes back.
+  guest.Received(1, proto::DeviceFire{.entity = 7, .kind = Kind::Seen, .player = 3}, kSecond);
+  guest.Received(1, proto::DeviceFire{.kind = Kind::Aim}, kSecond);
+  guest.Received(1, proto::DeviceFire{.entity = 7, .kind = Kind::Shot}, kSecond);
+  guest.Received(
+      1,
+      proto::DeviceFire{.entity = 7, .kind = Kind::Aim, .target = {proto::TargetKind::Player, 6}},
+      kSecond);
+  guest.Received(1, proto::Fracture{.player = 2}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.guest-only", "value.range",
+                                                 "value.range", "ids.unknown-player",
+                                                 "authority.own-state-back"});
+}
+
 TEST_CASE("referee: the host may not say what only a guest asks") {
   auto referee = Guest();
   referee.Received(1, proto::ResyncRequest{1}, kSecond);
@@ -392,6 +436,29 @@ TEST_CASE("referee: rates, sizes and values") {
   guest.Received(1, proto::NpcSpawn{.npc = 1}, kSecond);
   guest.Received(1, proto::NpcHealth{.npc = 1, .health = 1.5f}, kSecond);
   CHECK(Broke(guest, "value.range"));
+}
+
+TEST_CASE("referee: resync requests are budgeted at the pace of the endpoint's digests") {
+  // A test's timings, a digest every 100 ms: a guest may ask after each one
+  // (7 in 10 s with a third of everything lost was called over budget, the
+  // game's 6, in regions_endpoint_test).
+  const auto port = test::NextPort();
+  std::string error;
+  auto host =
+      Endpoint::Host({"host"}, port, error, Timing{.digest = 100ms, .resyncCooldown = 200ms});
+  REQUIRE_MESSAGE(host, error);
+  Referee referee(true);
+  referee.Attach(*host);
+  referee.Sent(2, proto::Welcome{.you = 2, .host = 1}, kSecond);
+  referee.Sent(0, proto::Roster{{{1, "us", {}}, {2, "a", {}}}}, kSecond);
+  auto now = kSecond;
+  for (int i = 0; i < 100; ++i, now += kSecond / 10)
+    referee.Received(2, proto::ResyncRequest{proto::kDomainNpcs}, now);
+  CHECK_FALSE(referee.Counts().contains("rate.over-budget"));
+  // Ten times faster than its digests come: over it.
+  for (int i = 0; i < 300; ++i, now += kSecond / 100)
+    referee.Received(2, proto::ResyncRequest{proto::kDomainNpcs}, now);
+  CHECK(referee.Counts().contains("rate.over-budget"));
 }
 
 TEST_CASE("referee: states held and never released") {

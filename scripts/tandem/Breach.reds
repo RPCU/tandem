@@ -13,6 +13,15 @@
 //   the outcome (AccessPointSkip: Device.PerformDive, a succeeded status
 //   with the programs) is covered as it is. The session hears the breach:
 //   the access point (or the NPC) and the daemons.
+// - The host's grant decides what a won breach pays: the game's own
+//   handling of the outcome (the network breached here, our daemons, the
+//   datamine's rewards) is held until the host answers, a ping later.
+//   Granted: the game handles it as won. Refused (someone was first): it
+//   handles a minigame that ended with nothing, we say who was first, and
+//   our copy of the network is the host's word. No answer in 3 s, or the
+//   session over: as won (core devices::BreachHolds).
+// - The outcome's handler may run on any thread: it only queues the entity
+//   (StreamingNatives.reds); all of this runs on the tick.
 // - Host: the first breach of a network stands, any later one is refused
 //   (core devices::Breaches); the access point's record says breached for
 //   everyone, so every game's copy is breached (Devices.reds) and the game
@@ -46,7 +55,14 @@ public class TandemBreach extends ScriptableSystem {
   private let m_ours: Int32;
   private let m_applied: Int32;
   private let m_refused: Int32;
+  private let m_paid: Int32;
   private let m_breacher: Uint32;
+  // Our won breaches held for the host's grant: the hold's number, what
+  // got the outcome (a device, or an NPC).
+  private let m_holdSeq: Int32;
+  private let m_heldIds: array<Int32>;
+  private let m_heldOn: array<EntityID>;
+  private let m_heldNpc: array<Bool>;
 
   public static func Get(game: GameInstance) -> ref<TandemBreach> {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemBreach") as TandemBreach;
@@ -62,25 +78,35 @@ public class TandemBreach extends ScriptableSystem {
 
   public func Update(now: Float, you: Uint32) -> Void {
     this.m_now = now;
-    let events = TandemNative.TakeBreachEvents();
-    if you == 0u {
-      if this.m_you != 0u {
+    if this.m_you != you {
+      if you == 0u {
         ArrayClear(this.m_npcs);
         ArrayClear(this.m_npcsAt);
+      } else {
+        this.m_host = TandemNative.IsHost();
       }
-      this.m_you = 0u;
-      return;
-    }
-    if this.m_you != you {
       this.m_you = you;
-      this.m_host = TandemNative.IsHost();
     }
-    for event in events {
-      if event.kind == 1 {
-        this.Apply(event);
-      } else if event.kind == 2 {
-        this.Answered(event);
+    // The breaches our game just ended (their handlers queued them).
+    for outcome in TandemStreaming.TakeStreamed(TandemStreamKind.BreachDevice()) {
+      this.Outcome(outcome.entity, outcome.attached, false);
+    }
+    for outcome in TandemStreaming.TakeStreamed(TandemStreamKind.BreachNpc()) {
+      this.Outcome(outcome.entity, outcome.attached, true);
+    }
+    let events = TandemNative.TakeBreachEvents();
+    if you != 0u {
+      for event in events {
+        if event.kind == 1 {
+          this.Apply(event);
+        } else if event.kind == 2 {
+          this.Answered(event);
+        }
       }
+    }
+    // The held ones the host settled (out of a session: all of them, as won).
+    for decision in TandemNative.TakeBreachDecisions(you != 0u) {
+      this.Settle(decision);
     }
   }
 
@@ -145,17 +171,58 @@ public class TandemBreach extends ScriptableSystem {
 
   // ---- our own breach ----
 
-  // The minigame ended on a device (an access point jacked into, a device
-  // through the quickhack; Device.OnAccessPointMiniGameStatus, below).
-  public static func DeviceOutcome(device: ref<Device>, state: HackingMinigameState) -> Void {
-    if !IsDefined(device) || (!Equals(state, HackingMinigameState.Succeeded) && !Equals(state, HackingMinigameState.Failed)) {
+  // A breach's outcome reached what was breached (the wraps below), on
+  // whatever thread: queued for the tick. True: won, in a session, and held
+  // (the game handles it when the host has answered: Settle).
+  public static func Queue(entity: EntityID, state: HackingMinigameState, kind: Int32) -> Bool {
+    let won = Equals(state, HackingMinigameState.Succeeded);
+    if !won && !Equals(state, HackingMinigameState.Failed) {
+      return false;
+    }
+    if !TandemNative.IsStarted() || TandemStreaming.IsPassing(entity) {
+      return false;
+    }
+    TandemStreaming.QueueStreamed(kind, entity, n"None", won);
+    return won;
+  }
+
+  // On the tick: the session hears our breach; a won one waits for the
+  // host's answer. One the session has no part in is the game's at once.
+  private func Outcome(entity: EntityID, won: Bool, npc: Bool) -> Void {
+    let game = this.GetGameInstance();
+    let object = GameInstance.FindEntityByID(game, entity) as GameObject;
+    let hold = 0;
+    let sent = 0;
+    if this.m_you != 0u && IsDefined(object) {
+      if won {
+        this.m_holdSeq += 1;
+        hold = this.m_holdSeq;
+      }
+      sent = npc ? this.NpcOutcome(object as ScriptedPuppet, won, hold) : this.DeviceOutcome(object as Device, won, hold);
+    }
+    if !won {
+      return; // a lost one was the game's at once
+    }
+    if sent == 0 {
+      this.Finish(entity, npc, HackingMinigameState.Succeeded);
       return;
     }
-    let game = device.GetGame();
-    let breach = TandemBreach.Get(game);
+    ArrayPush(this.m_heldIds, hold);
+    ArrayPush(this.m_heldOn, entity);
+    ArrayPush(this.m_heldNpc, npc);
+    TandemNative.Log(s"breach: ours of \(TandemNative.EntityHex(entity)) is held for the host's grant (hold \(hold), \(sent) asked)");
+  }
+
+  // The minigame ended on a device (an access point jacked into, a device
+  // through the quickhack). Returns the breaches the host was told of.
+  private func DeviceOutcome(device: ref<Device>, won: Bool, hold: Int32) -> Int32 {
+    if !IsDefined(device) {
+      return 0;
+    }
+    let game = this.GetGameInstance();
     let ps = device.GetDevicePS();
-    if !IsDefined(breach) || !breach.InSession() || !IsDefined(ps) {
-      return;
+    if !IsDefined(ps) {
+      return 0;
     }
     // The networks it breached: its own, or (through the quickhack) those
     // of the device, as ResolveDive exposes them.
@@ -166,14 +233,14 @@ public class TandemBreach extends ScriptableSystem {
     } else {
       points = ps.GetAccessPoints();
     }
-    let flags = Equals(state, HackingMinigameState.Failed) ? 2 : 0;
+    let flags = won ? 0 : 2;
     let network = GameInstance.GetBlackboardSystem(game).Get(GetAllBlackboardDefs().NetworkBlackboard);
     if !IsDefined(own) || (IsDefined(network) && network.GetBool(GetAllBlackboardDefs().NetworkBlackboard.RemoteBreach)) {
       flags += 1;
     }
     let programs: array<TweakDBID>;
     let traps: array<TweakDBID>;
-    if flags < 2 {
+    if won {
       programs = TandemBreach.Programs(game);
       traps = TandemBreach.Traps(game);
     }
@@ -182,34 +249,34 @@ public class TandemBreach extends ScriptableSystem {
       let id = point.GetID();
       if sent < 4 && PersistentID.IsDefined(id) && !PersistentID.IsDynamic(id) {
         TandemNative.SendBreach(PersistentID.ExtractEntityID(id), point.GetClassName(), 0u, programs, traps, flags, 0u);
+        if won {
+          TandemNative.HoldBreach(hold, PersistentID.ExtractEntityID(id), point.GetClassName(), 0u);
+        }
         sent += 1;
-        breach.NoteOurs();
+        this.m_ours += 1;
         let hex = TandemNative.EntityHex(PersistentID.ExtractEntityID(id));
-        let how = flags >= 2 ? "lost" : "won";
+        let how = won ? "won" : "lost";
         TandemNative.Log(s"breach: ours of network \(hex) \(how) (\(TandemBreach.Names(programs)); traps \(TandemBreach.Names(traps))): for the host");
       }
     }
     if sent == 0 {
       TandemNative.Log(s"breach: ours of \(TandemNative.EntityHex(device.GetEntityID())) is on no network the session knows");
     }
+    return sent;
   }
 
-  // The minigame ended on an NPC (the Breach Protocol quickhack;
-  // ScriptedPuppet.OnAccessPointMiniGameStatus, below).
-  public static func NpcOutcome(npc: ref<ScriptedPuppet>, state: HackingMinigameState) -> Void {
-    if !IsDefined(npc) || (!Equals(state, HackingMinigameState.Succeeded) && !Equals(state, HackingMinigameState.Failed)) {
-      return;
+  // The minigame ended on an NPC (the Breach Protocol quickhack). Returns
+  // the breaches the host was told of (0: nothing the session shares).
+  private func NpcOutcome(npc: ref<ScriptedPuppet>, won: Bool, hold: Int32) -> Int32 {
+    if !IsDefined(npc) {
+      return 0;
     }
-    let game = npc.GetGame();
-    let breach = TandemBreach.Get(game);
-    if !IsDefined(breach) || !breach.InSession() {
-      return;
-    }
+    let game = this.GetGameInstance();
     let id = TandemHacks.NpcOf(game, npc.GetEntityID());
     // One of ours: the game ran its network too (NPCBreachEvent), so the
     // network is the session's to hear. A proxy has no device link here:
     // its owner finds its network.
-    let entity = EntityID();
+    let entity = EntityID.FromHash(0ul);
     let cls = n"None";
     if !TandemOwn.IsProxy(game, npc.GetEntityID()) {
       let ps = npc.GetPuppetPS();
@@ -220,39 +287,93 @@ public class TandemBreach extends ScriptableSystem {
       }
     }
     if id == 0u && !EntityID.IsDefined(entity) {
-      return; // nothing the session shares
+      return 0;
     }
-    let flags = 1 + (Equals(state, HackingMinigameState.Failed) ? 2 : 0);
+    let flags = 1 + (won ? 0 : 2);
     let programs: array<TweakDBID>;
     let traps: array<TweakDBID>;
-    if flags < 2 {
+    if won {
       programs = TandemBreach.Programs(game);
       traps = TandemBreach.Traps(game);
     }
     TandemNative.SendBreach(entity, cls, id, programs, traps, flags, 0u);
-    breach.NoteOurs();
+    if won {
+      TandemNative.HoldBreach(hold, entity, cls, id);
+    }
+    this.m_ours += 1;
     let on = EntityID.IsDefined(entity) ? " on network " + TandemNative.EntityHex(entity) : "";
-    let how = flags >= 2 ? "lost" : "won";
+    let how = won ? "won" : "lost";
     TandemNative.Log(s"breach: ours of npc \(id)\(on) \(how) (\(TandemBreach.Names(programs))): for its owner");
+    return 1;
   }
 
-  // The host's answer to ours.
+  // The host's answer to ours (what it settles: Settle).
   private func Answered(event: TandemBreachEvent) -> Void {
     let what = EntityID.IsDefined(event.entity) ? "network " + TandemNative.EntityHex(event.entity) : "npc " + IntToString(Cast<Int32>(event.npc));
     if event.verdict == 0 {
       TandemNative.Log(s"breach: the host grants ours of \(what)");
+    } else {
+      TandemNative.Log(s"breach: the host refuses ours of \(what): breached first by player \(event.player)");
+    }
+  }
+
+  // A held breach of ours is settled. Paid (granted, or nobody answered):
+  // the game handles the won minigame now, its rewards with it. Refused:
+  // it handles a minigame that ended with nothing (the dive ends, no
+  // daemons, no rewards), and we say who was first.
+  private func Settle(decision: TandemBreachDecision) -> Void {
+    let index = ArrayFindFirst(this.m_heldIds, decision.hold);
+    if index < 0 {
+      return;
+    }
+    let entity = this.m_heldOn[index];
+    let npc = this.m_heldNpc[index];
+    ArrayErase(this.m_heldIds, index);
+    ArrayErase(this.m_heldOn, index);
+    ArrayErase(this.m_heldNpc, index);
+    let game = this.GetGameInstance();
+    if decision.paid {
+      this.m_paid += 1;
+      let why = decision.answered ? "granted" : "nobody answered";
+      TandemNative.Log(s"breach: ours of \(TandemNative.EntityHex(entity)) pays (hold \(decision.hold), \(why))");
+      this.Finish(entity, npc, HackingMinigameState.Succeeded);
       return;
     }
     this.m_refused += 1;
-    TandemNative.Log(s"breach: the host refuses ours of \(what): breached first by player \(event.player)");
-    // Our rewards were rolled already (the game pays at once); the world's
-    // breach is the first breacher's, and our daemons ran nowhere else.
-    let game = this.GetGameInstance();
-    if event.player != 0u && event.player != this.m_you {
-      TandemText.Notice(game, "Breach-Already", TandemBreach.NameOf(event.player));
+    TandemNative.Log(s"breach: ours of \(TandemNative.EntityHex(entity)) pays nothing (hold \(decision.hold)): player \(decision.player) was first");
+    this.Finish(entity, npc, HackingMinigameState.Unknown);
+    // The network is breached all the same, by the first: our copy of its
+    // access point says so again (the ended minigame reset it).
+    let device = GameInstance.FindEntityByID(game, entity) as Device;
+    let ps = IsDefined(device) ? device.GetDevicePS() : null;
+    if IsDefined(ps as AccessPointControllerPS) {
+      ps.TandemSetMinigameWon(true);
+    }
+    if decision.player != 0u && decision.player != this.m_you {
+      TandemText.Notice(game, "Breach-Already", TandemBreach.NameOf(decision.player));
     } else {
       TandemText.Notice(game, "Breach-AlreadyWorld");
     }
+  }
+
+  // The game's own handling of the outcome, now: the wrap lets our call through.
+  private func Finish(entity: EntityID, npc: Bool, state: HackingMinigameState) -> Void {
+    let object = GameInstance.FindEntityByID(this.GetGameInstance(), entity) as GameObject;
+    let device = object as Device;
+    let puppet = object as ScriptedPuppet;
+    if !IsDefined(device) && !IsDefined(puppet) {
+      TandemNative.Log(s"breach: \(TandemNative.EntityHex(entity)) is gone from our world: its outcome is dropped");
+      return;
+    }
+    let status = new AccessPointMiniGameStatus();
+    status.minigameState = state;
+    TandemStreaming.SetPassing(entity);
+    if npc && IsDefined(puppet) {
+      puppet.TandemBreachStatus(status);
+    } else if IsDefined(device) {
+      device.TandemBreachStatus(status);
+    }
+    TandemStreaming.SetPassing(EntityID.FromHash(0ul));
   }
 
   private static func NameOf(player: Uint32) -> String {
@@ -509,7 +630,7 @@ public class TandemBreach extends ScriptableSystem {
     let verb = ArraySize(words) > 1 ? words[1] : "";
     if Equals(verb, "") {
       let role = this.m_host ? "host" : "guest";
-      TandemNative.Log(s"breach: \(this.m_ours) of ours sent, \(this.m_applied) of others applied, \(this.m_refused) of ours refused (\(role))");
+      TandemNative.Log(s"breach: \(this.m_ours) of ours sent, \(this.m_paid) paid, \(this.m_refused) refused, \(ArraySize(this.m_heldIds)) held; \(this.m_applied) of others applied (\(role))");
       return;
     }
     let fail = Equals(verb, "fail");
@@ -553,16 +674,32 @@ public func TandemSetMinigameWon(won: Bool) -> Void {
 }
 
 // Every breach of a device or an access point ends here, from the
-// minigame or from a mod that skips it.
+// minigame or from a mod that skips it, on whatever thread: queued, and a
+// won one held for the host's grant (TandemBreach.Queue, Settle).
 @wrapMethod(Device)
 protected cb func OnAccessPointMiniGameStatus(evt: ref<AccessPointMiniGameStatus>) -> Bool {
-  TandemBreach.DeviceOutcome(this, evt.minigameState);
+  if TandemBreach.Queue(this.GetEntityID(), evt.minigameState, TandemStreamKind.BreachDevice()) {
+    return true;
+  }
   return wrappedMethod(evt);
 }
 
 // ...and every breach of an NPC (the quickhack), a proxy's included.
 @wrapMethod(ScriptedPuppet)
 protected cb func OnAccessPointMiniGameStatus(evt: ref<AccessPointMiniGameStatus>) -> Bool {
-  TandemBreach.NpcOutcome(this, evt.minigameState);
+  if TandemBreach.Queue(this.GetEntityID(), evt.minigameState, TandemStreamKind.BreachNpc()) {
+    return true;
+  }
   return wrappedMethod(evt);
+}
+
+// The game's handling of an outcome we held, called on the tick.
+@addMethod(Device)
+public func TandemBreachStatus(evt: ref<AccessPointMiniGameStatus>) -> Void {
+  this.OnAccessPointMiniGameStatus(evt);
+}
+
+@addMethod(ScriptedPuppet)
+public func TandemBreachStatus(evt: ref<AccessPointMiniGameStatus>) -> Void {
+  this.OnAccessPointMiniGameStatus(evt);
 }

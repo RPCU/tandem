@@ -187,7 +187,8 @@
   **Breach Protocol** (`scripts/tandem/Breach.reds`, devices.md "Breach
   Protocol"; built as planned, `Breach{access point, programs}` to the
   host, not yet run in game): the minigame is the breacher's, with its
-  rewards (the loot stays the guest's); its outcome (`AccessPointMiniGameStatus`
+  rewards (the loot stays the guest's, paid once the host grants the
+  breach); its outcome (`AccessPointMiniGameStatus`
   and the `HackingMinigame` blackboard, so a mod that skips the minigame is
   covered) goes to the host, which breaches the network once for everyone
   and refuses a second breach; the host runs the daemons on the network's

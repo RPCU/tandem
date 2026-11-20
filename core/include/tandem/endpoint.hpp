@@ -351,6 +351,20 @@ struct BreachBy {
 struct BreachAnswered {
   proto::BreachResult result;
 };
+// The world's objects (docs/architecture/devices.md). Something broke in
+// another player's game (glass, breakable scenery): ours breaks the same
+// piece. Never our own back.
+struct Fractured {
+  proto::Fracture fracture;
+};
+// A device's fire. Guest: the host's turret turned to a target, shot at it,
+// or follows nobody any more; our copy shows it (a shot at our own V is
+// ours to fire for real). Host: a guest's copy of a turret locked that
+// guest's V (`fire.player`), or lost it (also when that guest vanished):
+// our turret takes its puppet as a target, or lets it go.
+struct DeviceFired {
+  proto::DeviceFire fire;
+};
 // Regions (docs/architecture/regions.md). The players our region is linked
 // with changed: we see their NPCs, they see ours.
 struct RegionsChanged {
@@ -602,7 +616,8 @@ using SessionEventVariant = std::variant<
     events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
-    events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged>;
+    events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
+    events::DeviceFired>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;
@@ -937,6 +952,22 @@ public:
   // may name another player, whose breach of an NPC our game resolved to
   // its network (that player's, not ours: our game applies it too).
   void SendBreach(proto::Breach breach);
+  // Glass and breakable scenery: something broke in our game (`player` is
+  // filled in). To the players linked with us (a guest's: through the host,
+  // which holds it to devices::kHostFracture*).
+  void SendFracture(proto::Fracture fracture);
+  // Host: fractures dropped for coming too fast.
+  std::uint64_t FracturesDropped() const { return m_fracturesDropped; }
+  // A device's fire. Host: our turret turned to a target, shot, or went
+  // idle (kinds Idle, Aim, Shot), to the guests linked with us; a shot is
+  // stamped with the host clock. Guest: our copy of a turret locked our own
+  // V, or lost it (Seen, Lost), to the host. Anything else is not ours to
+  // say and goes nowhere.
+  void SendDeviceFire(proto::DeviceFire fire);
+  // Host: the turrets each guest's copy has locked that guest's V with.
+  const std::map<proto::PlayerId, std::set<std::uint64_t>> &DevicesSeeing() const {
+    return m_deviceSeen;
+  }
   // Host: breaches granted, and refused because someone was first.
   const devices::Breaches &BreachRecord() const { return m_breaches; }
   std::uint64_t BreachesRefused() const { return m_breachesRefused; }
@@ -1699,6 +1730,15 @@ private:
                 std::vector<SessionEvent> &out);
   void SendDevicesTo(net::PeerId peer, bool resync);
   proto::DeviceDigest DeviceDigestNow() const;
+  // Glass: each guest's rate (host). A device's fire: the turrets whose
+  // copy in a guest's game has that guest's V (host; at most
+  // kMaxDevicesSeeing each), let go when the guest is gone.
+  std::map<proto::PlayerId, comms::Limiter> m_fractureRate;
+  std::uint64_t m_fracturesDropped{};
+  static constexpr std::size_t kMaxDevicesSeeing = 16;
+  std::map<proto::PlayerId, std::set<std::uint64_t>> m_deviceSeen;
+  void OnDeviceSeen(proto::PlayerId player, proto::DeviceFire fire, std::vector<SessionEvent> &out);
+  void ForgetDevicesSeeing(proto::PlayerId player, std::vector<SessionEvent> &out);
   consistency::FaultyLink m_faults;
   bool m_ended{};
   // Guest: the relay to try when the host does not answer directly.

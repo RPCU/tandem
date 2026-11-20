@@ -229,6 +229,10 @@ public class TandemSystem extends ScriptableSystem {
     this.m_police.Start(this.GetGameInstance());
     this.m_wheels = new TandemWheelsSync();
     this.m_wheels.Start(this.GetGameInstance());
+    // Made here, not at its first use: hooks that may run on job threads
+    // ask for it (tools/scripts-threads.py).
+    this.m_outcomes = new TandemOutcomes();
+    this.m_outcomes.Start(this.GetGameInstance());
   }
 
   public func Wheels() -> ref<TandemWheelsSync> {
@@ -814,6 +818,14 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(devices) {
       devices.Drain();
     }
+    // The Ping quickhack's network pulses: shared with the linked while in
+    // a session (Comms.reds), else only taken off the queue.
+    let pings = TandemStreaming.TakeStreamed(TandemStreamKind.NetworkPing());
+    if IsDefined(this.m_comms) && this.m_playing && this.m_you != 0u {
+      for ping in pings {
+        this.m_comms.NetworkPinged(ping.entity);
+      }
+    }
   }
 
   public func OnTick(gen: Int32) -> Void {
@@ -830,6 +842,8 @@ public class TandemSystem extends ScriptableSystem {
       // frame while it records.
       this.ProcessLeaving();
       this.HandleCommand();
+      // A breach held for a host that is no longer there is the game's own.
+      TandemBreach.Tick(this.GetGameInstance(), this.Now(), 0u);
       if IsDefined(this.m_saves) {
         this.m_saves.Tick();
       }
@@ -1847,10 +1861,6 @@ public class TandemSystem extends ScriptableSystem {
 
   // Hit outcomes (Outcomes.reds), and the session's NPCs for them.
   public func Outcomes() -> ref<TandemOutcomes> {
-    if !IsDefined(this.m_outcomes) {
-      this.m_outcomes = new TandemOutcomes();
-      this.m_outcomes.Start(this.GetGameInstance());
-    }
     return this.m_outcomes;
   }
 

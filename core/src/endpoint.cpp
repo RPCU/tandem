@@ -817,6 +817,24 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
             },
             [&](const proto::DeviceUse &use) { OnDeviceUse(event.peer, player, use, out); },
             [&](const proto::Breach &breach) { OnBreach(event.peer, player, breach, out); },
+            [&](const proto::Fracture &fracture) {
+              // A guest only speaks for what broke in its own game.
+              auto relayed = fracture;
+              relayed.player = player;
+              auto &rate = m_fractureRate
+                               .try_emplace(player, devices::kHostFractureBurst,
+                                            devices::kHostFracturesPerSecond)
+                               .first->second;
+              if (!rate.Allow(net::NowUs())) {
+                ++m_fracturesDropped;
+                return;
+              }
+              // Where it broke is in the world of the players linked with it.
+              ShareNpc(relayed, player, event.peer);
+              if (Sees(m_you, player))
+                out.push_back(events::Fractured{relayed});
+            },
+            [&](const proto::DeviceFire &fire) { OnDeviceSeen(player, fire, out); },
             [&](const proto::DeviceSet &) {
               // At most one per cooldown and guest, as for ResyncRequest.
               const auto now = net::NowUs();
@@ -917,6 +935,9 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   // player's); only its requests still waiting for our game go.
   m_deviceSetAtUs.erase(player);
   std::erase_if(m_deviceUses, [&](const auto &entry) { return entry.second.player == player; });
+  // The turrets that had its V have nobody there any more.
+  ForgetDevicesSeeing(player, out);
+  m_fractureRate.erase(player);
   // Gone while in the pause menu: no longer pausing anyone.
   if (NotePaused(player, false)) {
     Broadcast(proto::Pause{player, false});
@@ -1037,6 +1058,8 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
       EndTimeSkip(*ended, true, out);
     // ...with no waypoint and no link until its new game says so...
     EndCommsOf(player, peer, out);
+    // ...seen by no turret (its copies of them start over)...
+    ForgetDevicesSeeing(player, out);
     // ...in no gunner seat, its car a new one...
     ForgetVehiclesOf(player, out, true, true);
     // ...and its V is up until it says otherwise.
@@ -1885,6 +1908,16 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               out.push_back(events::BreachBy{breach});
           },
           [&](const proto::BreachResult &result) { out.push_back(events::BreachAnswered{result}); },
+          [&](const proto::Fracture &fracture) {
+            if (fracture.player != m_you)
+              out.push_back(events::Fractured{fracture});
+          },
+          [&](const proto::DeviceFire &fire) {
+            // The host's turret's doing only (what a copy sees is a guest's
+            // word to the host, never passed on).
+            if (fire.entity != 0 && fire.kind <= proto::DeviceFireKind::Shot)
+              out.push_back(events::DeviceFired{fire});
+          },
           [&](const proto::DeviceSet &) {
             m_devices.Clear();
             m_deviceAsked.clear();
@@ -3416,6 +3449,67 @@ void Endpoint::AskDevice(proto::DeviceState state) {
   state.revision = 0;
   state.by = m_you;
   Send(m_hostPeer, state);
+}
+
+void Endpoint::SendFracture(proto::Fracture fracture) {
+  Record(fracture);
+  if (!IsJoined() || m_ended)
+    return;
+  fracture.player = m_you;
+  if (IsHost())
+    ShareNpc(fracture, m_you);
+  else
+    Send(m_hostPeer, fracture);
+}
+
+void Endpoint::SendDeviceFire(proto::DeviceFire fire) {
+  Record(fire);
+  if (!IsJoined() || m_ended || fire.entity == 0)
+    return;
+  if (IsHost()) {
+    // What the device does is ours to say; what a copy sees is a guest's.
+    if (fire.kind > proto::DeviceFireKind::Shot)
+      return;
+    fire.player = proto::kNoPlayer;
+    fire.timeUs = fire.kind == proto::DeviceFireKind::Shot ? HostNowUs() : 0;
+    ShareNpc(fire, m_you);
+    return;
+  }
+  if (fire.kind != proto::DeviceFireKind::Seen && fire.kind != proto::DeviceFireKind::Lost)
+    return;
+  fire.player = m_you;
+  fire.target = {};
+  fire.timeUs = 0;
+  Send(m_hostPeer, fire);
+}
+
+// Host: a guest's copy of a turret locked that guest's V, or lost it. Kept
+// (a repeat tells our game nothing), so a guest that vanishes is let go.
+void Endpoint::OnDeviceSeen(proto::PlayerId player, proto::DeviceFire fire,
+                            std::vector<SessionEvent> &out) {
+  if (fire.entity == 0)
+    return;
+  auto &seen = m_deviceSeen[player];
+  if (fire.kind == proto::DeviceFireKind::Seen) {
+    if (seen.size() >= kMaxDevicesSeeing || !seen.insert(fire.entity).second)
+      return;
+  } else if (fire.kind != proto::DeviceFireKind::Lost || seen.erase(fire.entity) == 0) {
+    return; // not a guest's to say, or a turret that never had it
+  }
+  fire.player = player;
+  fire.target = {};
+  fire.timeUs = 0;
+  out.push_back(events::DeviceFired{fire});
+}
+
+void Endpoint::ForgetDevicesSeeing(proto::PlayerId player, std::vector<SessionEvent> &out) {
+  const auto seen = m_deviceSeen.find(player);
+  if (seen == m_deviceSeen.end())
+    return;
+  for (const auto entity : seen->second)
+    out.push_back(events::DeviceFired{proto::DeviceFire{
+        .entity = entity, .kind = proto::DeviceFireKind::Lost, .player = player}});
+  m_deviceSeen.erase(seen);
 }
 
 void Endpoint::SendBreach(proto::Breach breach) {

@@ -238,6 +238,34 @@ Built 2026-11-19, not run in game.
 - Test command: `tools/game.sh cmd comms hacks`. The mock player, as host:
   `--hack-npc ID|nearest`. Scenario `comms-hacks`.
 
+## The Ping's network
+
+"The network beams it draws to connected devices are shown to linked
+partners too." Built 2026-11-20, not run in game; engine facts:
+[`../research/engine/devices.md`](../research/engine/devices.md) §13.90.
+
+- **Where a ping becomes beams.** The Ping quickhack on a device, or on an
+  NPC of a network (the game passes it to the network's access points),
+  ends in `Device.OnActionPing` on one device, which pulses the network
+  from itself (`PulseNetwork`): the game's network system then draws a beam
+  from that device to each device in range it is linked with. Nothing of
+  it is state: the beams are the caster's game's alone.
+- **Shared as a reveal of that device.** The wrap of `OnActionPing` only
+  queues the device (`TandemStreamKind.NetworkPing`: an entity's handler
+  may run on any thread); on the tick `TandemComms.NetworkPinged` sends a
+  `Tag` (reason Reveal, the pulse's length, the device's static id) to the
+  linked. No new message: a reveal of a placed device **is** a network
+  pulse from it.
+- **A linked player's game** outlines the device as any reveal, and pulses
+  the network from its own copy of it (`Device.TandemPulseNetwork`): the
+  same beams, drawn by its own network system between its own copies. It
+  is not a ping of ours: nothing is said back, no RAM, no upload.
+- **Gating, rates, consistency**: a tag's (linked players only, the host's
+  rate per guest, a one-shot, nothing kept). A device not in the receiver's
+  world is logged and skipped.
+- The mock player: `--reveal-device ENTITY[@S]`; it logs `player N pulsed
+the network from device X`. Scenario `comms-network`.
+
 ## Protocol
 
 Four messages, appended after `ShotHit` (no version bump; the `presence`
@@ -367,9 +395,9 @@ The audit's rows ([`consistency.md`](consistency.md)), in short:
   (the parts chosen in `TandemComms.Icon` are a first pick by name), the
   sounds (by ear), the outlines of a shared tag and of a reveal on a proxy,
   the input hint beside a regroup offer's.
-- The Ping quickhack's network beams (`EffectExecutor_PingNetwork`: the
-  devices a ping links to) are the caster's alone; only NPC outlines are
-  shared. Devices revealed by other means are not shared either.
+- The Ping quickhack's network beams are shared (below, "The Ping's
+  network"), not run in game. Devices revealed by other means (a scan's
+  own pulse, a breach) are not shared.
 - A tag of an entity that exists only in one game (a dynamic one that is
   not a shared NPC: a car copy, a body) is not sent.
 - Localized strings for the notices and labels.
