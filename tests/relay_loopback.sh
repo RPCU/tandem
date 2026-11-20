@@ -96,7 +96,7 @@ echo "tandem-peer hosted at the entrance with no token (a proof of work) and joi
 (cd "$source" && "$go" build -o "$work/proxyv2-forward" ./internal/proxyfwd/cmd)
 proxied=127.0.0.1:$((base + 3))
 "$work/tandem-relay" serve --allow-any-host --udp "$proxied" --http 127.0.0.1:0 \
-  --proxy-protocol --trusted-proxies 127.0.0.2/32 >"$work/proxied.log" 2>&1 &
+  --proxy-protocol --trusted-proxies 127.0.0.2/32 --drain-timeout 1s >"$work/proxied.log" 2>&1 &
 if [ -z "$(wait_for "$work/proxied.log" 's/.*"msg":"relay up".*"proxy_protocol":\(true\).*/\1/p')" ]; then
   echo "the proxied relay did not start:" >&2
   cat "$work/proxied.log" >&2
