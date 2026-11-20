@@ -49,6 +49,10 @@ TANDEM_SAID_BY(Host, SceneState)
 TANDEM_SAID_BY(Host, SceneCast)
 TANDEM_SAID_BY(Host, SceneLine)
 TANDEM_SAID_BY(Host, ActorPose)
+TANDEM_SAID_BY(Host, ActorFrame)
+TANDEM_SAID_BY(Host, RigPose)
+TANDEM_SAID_BY(Host, SceneCamera)
+TANDEM_SAID_BY(Host, SceneProp)
 TANDEM_SAID_BY(Host, Rules)
 TANDEM_SAID_BY(Host, SessionLevel)
 TANDEM_SAID_BY(Host, TradeCommit)
@@ -370,9 +374,16 @@ void Referee::Attach(Endpoint &endpoint) {
       2 * us(timing.digest) + 2 * us(timing.resyncCooldown) + 4'000'000;
   m_options.limits.digestSilenceUs = 6 * us(timing.digest) + 2'000'000;
   // Digests at the endpoint's own pace (tests shorten it), with room.
-  if (timing.digest.count() > 0)
+  if (timing.digest.count() > 0) {
     m_options.limits.digestHz =
         std::max(m_options.limits.digestHz, 2.f * 1e6f / static_cast<float>(us(timing.digest)));
+    // A guest asks at most once per digest it hears (consistency::Checker,
+    // each domain once per cooldown): its requests follow the digests' pace,
+    // with the same room. 6 in 10 s at the game's 3 s.
+    m_options.limits.resyncsPer10s =
+        std::max(m_options.limits.resyncsPer10s,
+                 static_cast<std::uint32_t>(2 * 10'000'000 / us(timing.digest)));
+  }
   // A guest that vanished owes nothing once the host has noticed it is gone.
   m_options.limits.epochAckUs =
       std::max(m_options.limits.epochAckUs, us(timing.timeout) + 2'000'000);
@@ -735,8 +746,14 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::SceneCast>) {
           inRange = m.actors.size() <= p::kMaxSceneActors;
         } else if constexpr (std::is_same_v<M, p::ActorPose> ||
-                             std::is_same_v<M, p::TrafficStates>) {
+                             std::is_same_v<M, p::TrafficStates> || std::is_same_v<M, p::RigPose>) {
           timeUs = m.timeUs;
+        } else if constexpr (std::is_same_v<M, p::SceneCamera>) {
+          timeUs = m.timeUs;
+          finite = Finite(m.position) && std::isfinite(m.fov);
+          inRange = !finite || (m.fov > 0.f && m.fov <= 180.f);
+        } else if constexpr (std::is_same_v<M, p::SceneProp>) {
+          inRange = m.prop != 0 && (m.flags & ~p::kPropFlags) == 0;
         } else if constexpr (std::is_same_v<M, p::TrafficStatus>) {
           finite = std::isfinite(m.health);
           inRange = !finite || (m.health >= 0.f && m.health <= 1.001f);
@@ -1216,6 +1233,11 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           if (m.speaker != 0)
             NeedNpc(m.speaker, name);
           NeedPlayer(m.speakerPlayer, name);
+        } else if constexpr (std::is_same_v<M, p::SceneProp>) {
+          // Held by an actor the host shares, or by a V of the session.
+          if (m.holder != 0)
+            NeedNpc(m.holder, name);
+          NeedPlayer(m.holderPlayer, name);
         } else if constexpr (std::is_same_v<M, p::NpcHandoverState>) {
           forUs(m.to);
           NeedNpc(m.npc, name);

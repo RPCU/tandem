@@ -54,6 +54,7 @@ std::vector<proto::Message> Stage::Update(const HostSample &sample, std::uint64_
       m_state = {};
       m_cast = {};
       m_lines.clear();
+      m_props.clear();
     }
     return out;
   }
@@ -66,6 +67,8 @@ std::vector<proto::Message> Stage::Update(const HostSample &sample, std::uint64_
     next.play = ++m_play;
     next.startUs = hostNowUs;
     m_lines.clear();
+    m_props.clear();
+    m_propCount = 0;
   }
   next.tier = sample.tier;
   next.rate = sample.held ? 0.f : std::clamp(sample.rate, 0.f, proto::kMaxSceneRate);
@@ -123,6 +126,38 @@ std::vector<proto::Message> Stage::Update(const HostSample &sample, std::uint64_
     m_cast = cast;
     out.push_back(std::move(cast));
   }
+
+  // What its actors hold: a new thing gets the play's next number, one that
+  // changed hands keeps its own, one that is no longer seen goes.
+  std::map<std::uint64_t, proto::SceneProp> held;
+  for (const auto &prop : sample.props) {
+    if (prop.key == 0 || prop.record == 0 || held.size() >= proto::kMaxSceneProps ||
+        held.contains(prop.key))
+      continue;
+    proto::SceneProp said{.play = m_play,
+                          .record = prop.record,
+                          .holder = prop.holder,
+                          .holderPlayer = prop.holder != 0 ? proto::kNoPlayer : prop.holderPlayer,
+                          .flags = prop.leftHand ? proto::kPropLeftHand : std::uint8_t{0}};
+    const auto was = m_props.find(prop.key);
+    said.prop = was != m_props.end() && was->second.record == prop.record ? was->second.prop
+                                                                          : ++m_propCount;
+    held.emplace(prop.key, said);
+  }
+  for (const auto &[key, was] : m_props) {
+    const auto now = held.find(key);
+    if (now == held.end() || now->second.prop != was.prop) {
+      auto gone = was;
+      gone.flags |= proto::kPropGone;
+      out.push_back(gone);
+    }
+  }
+  for (const auto &[key, now] : held) {
+    const auto was = m_props.find(key);
+    if (was == m_props.end() || was->second != now)
+      out.push_back(now);
+  }
+  m_props = std::move(held);
   return out;
 }
 
@@ -166,6 +201,14 @@ bool Stage::Casts(proto::NpcId npc) const {
          std::ranges::any_of(m_cast.actors, [&](const auto &actor) { return actor.npc == npc; });
 }
 
+bool Replay::Holds(proto::NpcId npc, proto::PlayerId player) const {
+  return std::ranges::any_of(m_props, [&](const auto &entry) {
+    const auto &prop = entry.second;
+    return npc != 0 ? prop.holder == npc
+                    : prop.holder == 0 && player != proto::kNoPlayer && prop.holderPlayer == player;
+  });
+}
+
 bool Replay::Acts(proto::NpcId npc) const {
   return std::ranges::any_of(m_cast, [&](const auto &actor) { return actor.npc == npc; });
 }
@@ -191,6 +234,10 @@ void Replay::Leave(std::vector<Cue> &out, std::uint8_t flags) {
   if (!On())
     return;
   StopVoices(out, true);
+  // Its props go with it, before the hands that held them.
+  for (const auto &[id, prop] : m_props)
+    out.push_back({.kind = Cue::Kind::PropGone, .prop = prop});
+  m_props.clear();
   for (const auto &actor : m_cast)
     out.push_back({.kind = Cue::Kind::ActorGone, .actor = actor});
   m_cast.clear();
@@ -250,6 +297,24 @@ std::vector<Cue> Replay::Note(const proto::Message &message, std::uint64_t hostN
     m_cast = cast->actors;
     return out;
   }
+  if (const auto *prop = std::get_if<proto::SceneProp>(&message)) {
+    if (!On() || prop->play != m_state.play)
+      return out;
+    const auto it = m_props.find(prop->prop);
+    if (prop->flags & proto::kPropGone) {
+      if (it != m_props.end()) {
+        out.push_back({.kind = Cue::Kind::PropGone, .prop = it->second});
+        m_props.erase(it);
+      }
+      return out;
+    }
+    if ((it != m_props.end() && it->second == *prop) ||
+        (it == m_props.end() && m_props.size() >= proto::kMaxSceneProps))
+      return out; // a repeat (a resync), or more than a scene holds
+    m_props[prop->prop] = *prop;
+    out.push_back({.kind = Cue::Kind::Prop, .prop = *prop});
+    return out;
+  }
   if (const auto *line = std::get_if<proto::SceneLine>(&message)) {
     if (line->flags & proto::kVoiceStop) {
       if (const auto it = m_lines.find(line->line); it != m_lines.end()) {
@@ -299,6 +364,245 @@ std::vector<Cue> Replay::Note(const proto::Message &message, std::uint64_t hostN
     return out;
   }
   return out;
+}
+
+// ---- the scene's streams share one budget ----
+
+void Pacer::Split(std::uint64_t nowUs) {
+  std::erase_if(m_streams,
+                [&](const auto &entry) { return nowUs > entry.second.offeredUs + kStreamIdleUs; });
+  m_splitUs = nowUs;
+  m_splitCount = m_streams.size();
+  std::vector<Stream *> order;
+  for (auto &[name, stream] : m_streams) {
+    stream.share = 0.f;
+    order.push_back(&stream);
+  }
+  std::ranges::stable_sort(order,
+                           [](const Stream *a, const Stream *b) { return a->weight > b->weight; });
+  // Each stream that fits gets what a frame every kSlowestUs takes; what is
+  // left of the budget goes by weight.
+  const float slowest = static_cast<float>(kSlowestUs) / 1e6f;
+  float left = static_cast<float>(m_budget), weights = 0.f;
+  for (auto *stream : order) {
+    const float need = (stream->bytes + static_cast<float>(kStreamOverhead)) / slowest;
+    if (need > left)
+      continue;
+    left -= need;
+    stream->share = need;
+    weights += stream->weight;
+  }
+  if (weights > 0.f)
+    for (auto *stream : order)
+      if (stream->share > 0.f)
+        stream->share += left * stream->weight / weights;
+}
+
+bool Pacer::Due(std::uint64_t stream, float weight, std::uint64_t nowUs) {
+  const bool known = m_streams.contains(stream);
+  auto &entry = m_streams[stream];
+  entry.weight = std::clamp(weight, 0.05f, 16.f);
+  entry.offeredUs = nowUs;
+  // Another set of streams, or a while since: split again.
+  if (!known || m_splitCount != m_streams.size() || nowUs < m_splitUs ||
+      nowUs - m_splitUs >= 250'000)
+    Split(nowUs);
+  return entry.share > 0.f && nowUs >= entry.nextUs;
+}
+
+void Pacer::Sent(std::uint64_t stream, std::size_t bytes, std::uint64_t nowUs) {
+  const auto it = m_streams.find(stream);
+  if (it == m_streams.end())
+    return;
+  auto &entry = it->second;
+  entry.bytes += (static_cast<float>(bytes) - entry.bytes) * 0.2f;
+  if (entry.share <= 0.f)
+    return;
+  const auto interval = std::max<std::uint64_t>(
+      kFastestUs, static_cast<std::uint64_t>(static_cast<double>(bytes + kStreamOverhead) /
+                                             static_cast<double>(entry.share) * 1e6));
+  // On time (within two frames of when it was due): the next one counts
+  // from when it was due, so the rate is the share's, not a frame slower.
+  const bool onTime = entry.nextUs != 0 && nowUs >= entry.nextUs && nowUs - entry.nextUs < 66'000;
+  entry.nextUs = (onTime ? entry.nextUs : nowUs) + interval;
+}
+
+float Pacer::Share(std::uint64_t stream) const {
+  const auto it = m_streams.find(stream);
+  return it == m_streams.end() ? 0.f : it->second.share;
+}
+
+std::size_t Pacer::Served() const {
+  return static_cast<std::size_t>(
+      std::ranges::count_if(m_streams, [](const auto &entry) { return entry.second.share > 0.f; }));
+}
+
+// ---- the camera of a cutscene ----
+
+namespace {
+float Dot(const proto::Quat &a, const proto::Quat &b) {
+  return a.i * b.i + a.j * b.j + a.k * b.k + a.r * b.r;
+}
+
+proto::Quat Unit(const proto::Quat &q) {
+  const float length = std::sqrt(Dot(q, q));
+  if (!(length > 1e-6f))
+    return {};
+  return {q.i / length, q.j / length, q.k / length, q.r / length};
+}
+
+// The angle between two orientations, radians.
+float Turn(const proto::Quat &a, const proto::Quat &b) {
+  return 2.f * std::acos(std::clamp(std::abs(Dot(Unit(a), Unit(b))), 0.f, 1.f));
+}
+
+proto::Quat Blend(const proto::Quat &from, const proto::Quat &to, float t) {
+  // Normalized lerp the short way: the two are a frame apart.
+  const float sign = Dot(from, to) < 0.f ? -1.f : 1.f;
+  return Unit({from.i + (sign * to.i - from.i) * t, from.j + (sign * to.j - from.j) * t,
+               from.k + (sign * to.k - from.k) * t, from.r + (sign * to.r - from.r) * t});
+}
+
+// A quaternion in 5 bytes, as pose::PackQuat5 (kept here: scene.cpp does
+// not depend on the pose code): the index of the largest component in 2
+// bits, the three others in 13, 13 and 12.
+constexpr float kInvSqrt2 = 0.70710678f;
+constexpr int kQuatBits[3] = {13, 13, 12};
+
+void PackOrientation(const proto::Quat &orientation, std::uint8_t *out) {
+  const auto q = Unit(orientation);
+  const float c[4] = {q.i, q.j, q.k, q.r};
+  int largest = 0;
+  for (int i = 1; i < 4; ++i)
+    if (std::abs(c[i]) > std::abs(c[largest]))
+      largest = i;
+  const float sign = c[largest] < 0.f ? -1.f : 1.f;
+  std::uint64_t bits = static_cast<std::uint64_t>(largest);
+  int shift = 2, n = 0;
+  for (int i = 0; i < 4; ++i) {
+    if (i == largest)
+      continue;
+    const auto max = (1u << kQuatBits[n]) - 1;
+    const float unit = std::clamp((c[i] * sign / kInvSqrt2 + 1.f) * 0.5f, 0.f, 1.f);
+    bits |= static_cast<std::uint64_t>(std::lround(unit * static_cast<float>(max))) << shift;
+    shift += kQuatBits[n++];
+  }
+  for (std::size_t byte = 0; byte < proto::kPoseFrameRotationBytes; ++byte)
+    out[byte] = static_cast<std::uint8_t>(bits >> (8 * byte));
+}
+
+proto::Quat UnpackOrientation(const std::uint8_t *in) {
+  std::uint64_t bits = 0;
+  for (std::size_t byte = 0; byte < proto::kPoseFrameRotationBytes; ++byte)
+    bits |= static_cast<std::uint64_t>(in[byte]) << (8 * byte);
+  const int largest = static_cast<int>(bits & 3);
+  float c[4]{};
+  float sum = 0.f;
+  int shift = 2, n = 0;
+  for (int i = 0; i < 4; ++i) {
+    if (i == largest)
+      continue;
+    const auto max = (1u << kQuatBits[n]) - 1;
+    const auto value = static_cast<float>((bits >> shift) & max) / static_cast<float>(max);
+    c[i] = (value * 2.f - 1.f) * kInvSqrt2;
+    sum += c[i] * c[i];
+    shift += kQuatBits[n++];
+  }
+  c[largest] = std::sqrt(std::max(0.f, 1.f - sum));
+  return Unit({c[0], c[1], c[2], c[3]});
+}
+} // namespace
+
+bool IsCut(const CameraView &from, const CameraView &to, float seconds) {
+  // A camera on a crane or a dolly does not do 12 m/s nor 240 degrees a
+  // second; a new shot is somewhere else at once.
+  const float time = std::clamp(seconds, 0.f, 0.5f);
+  const float moved =
+      std::sqrt((to.position.x - from.position.x) * (to.position.x - from.position.x) +
+                (to.position.y - from.position.y) * (to.position.y - from.position.y) +
+                (to.position.z - from.position.z) * (to.position.z - from.position.z));
+  return moved > 0.4f + 12.f * time ||
+         Turn(from.orientation, to.orientation) > 0.2f + 4.2f * time ||
+         std::abs(to.fov - from.fov) > 6.f + 60.f * time;
+}
+
+proto::SceneCamera PackCamera(std::uint32_t play, const CameraView &view, bool cut) {
+  proto::SceneCamera camera{.play = play,
+                            .position = view.position,
+                            .fov = std::clamp(view.fov, 1.f, 180.f),
+                            .flags = cut ? proto::kCameraCut : std::uint8_t{0}};
+  PackOrientation(view.orientation, camera.orientation.data());
+  return camera;
+}
+
+CameraView UnpackCamera(const proto::SceneCamera &camera) {
+  return {camera.position, UnpackOrientation(camera.orientation.data()), camera.fov};
+}
+
+bool CameraTrack::Push(const proto::SceneCamera &camera) {
+  if (camera.play != m_play) {
+    // Another scene's camera: the old one's views are not its.
+    if (m_play != 0 && static_cast<std::int32_t>(camera.play - m_play) < 0)
+      return false;
+    Clear();
+    m_play = camera.play;
+  } else if (!m_samples.empty() && static_cast<std::int32_t>(camera.seq - m_lastSeq) <= 0) {
+    return false;
+  }
+  if (!m_samples.empty() && camera.timeUs <= m_samples.back().timeUs)
+    m_samples.clear(); // the host's clock jumped: start over
+  if (!m_samples.empty() && camera.timeUs - m_samples.back().timeUs < 1'000'000)
+    m_intervalUs +=
+        (static_cast<double>(camera.timeUs - m_samples.back().timeUs) - m_intervalUs) / 8.0;
+  m_lastSeq = camera.seq;
+  ++m_received;
+  m_samples.push_back(
+      {camera.timeUs, UnpackCamera(camera), (camera.flags & proto::kCameraCut) != 0});
+  if (m_samples.size() > kMaxSamples)
+    m_samples.erase(m_samples.begin());
+  return true;
+}
+
+std::uint64_t CameraTrack::DelayUs() const {
+  return std::clamp<std::uint64_t>(static_cast<std::uint64_t>(m_intervalUs * 1.5) + 20'000, 60'000,
+                                   400'000);
+}
+
+void CameraTrack::Clear() {
+  m_samples.clear();
+  m_play = 0;
+  m_lastSeq = 0;
+  m_intervalUs = 66'000;
+}
+
+bool CameraTrack::At(std::uint64_t nowUs, CameraView &out) const {
+  if (m_samples.empty() || nowUs > m_samples.back().timeUs + DelayUs() + kStaleUs)
+    return false;
+  const auto renderUs = nowUs > DelayUs() ? nowUs - DelayUs() : 0;
+  if (renderUs <= m_samples.front().timeUs) {
+    out = m_samples.front().view;
+    return true;
+  }
+  for (std::size_t i = 1; i < m_samples.size(); ++i) {
+    const auto &b = m_samples[i];
+    if (renderUs >= b.timeUs)
+      continue;
+    const auto &a = m_samples[i - 1];
+    if (b.cut) {
+      out = a.view; // the old shot until the new one's time
+      return true;
+    }
+    const float t =
+        static_cast<float>(renderUs - a.timeUs) / static_cast<float>(b.timeUs - a.timeUs);
+    out.position = {a.view.position.x + (b.view.position.x - a.view.position.x) * t,
+                    a.view.position.y + (b.view.position.y - a.view.position.y) * t,
+                    a.view.position.z + (b.view.position.z - a.view.position.z) * t};
+    out.orientation = Blend(a.view.orientation, b.view.orientation, t);
+    out.fov = a.view.fov + (b.view.fov - a.view.fov) * t;
+    return true;
+  }
+  out = m_samples.back().view; // past the newest: held
+  return true;
 }
 
 // ---- where a guest's own V stands ----

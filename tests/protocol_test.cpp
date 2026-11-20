@@ -900,6 +900,82 @@ TEST_CASE("scene replay: survive encoding, story messages but the poses, bounded
   CHECK_FALSE(Decode(Encode(SceneState{.rate = std::nanf("")})).has_value());
 }
 
+TEST_CASE("scene replay, second part: props, the camera, rig poses and actor frames") {
+  RoundTrips(SceneProp{.play = 3, .prop = 2, .record = 0x1122334455ull, .holder = 12});
+  RoundTrips(SceneProp{
+      .play = 3, .prop = 2, .record = 0x1122334455ull, .holderPlayer = 1, .flags = kPropLeftHand});
+  RoundTrips(SceneProp{.play = 3, .prop = 2, .flags = kPropGone});
+  CHECK(IsStory(SceneProp{}));
+  CHECK(ChannelOf(SceneProp{}) == Channel::Event);
+  CHECK(Encode(SceneProp{}).size() < 32);
+  // No play, no number, flags of another version, two holders: refused.
+  CHECK_FALSE(Decode(Encode(SceneProp{.prop = 1})).has_value());
+  CHECK_FALSE(Decode(Encode(SceneProp{.play = 1})).has_value());
+  CHECK_FALSE(Decode(Encode(SceneProp{.play = 1, .prop = 1, .flags = 8})).has_value());
+  CHECK_FALSE(
+      Decode(Encode(SceneProp{.play = 1, .prop = 1, .holder = 4, .holderPlayer = 2})).has_value());
+
+  SceneCamera camera{.play = 3,
+                     .seq = 40,
+                     .timeUs = 1'700'000'000'000'000ull,
+                     .position = {-1500.5f, 1200.25f, 30.f},
+                     .fov = 51.f,
+                     .flags = kCameraCut};
+  camera.orientation = {1, 2, 3, 4, 5};
+  RoundTrips(camera);
+  CHECK(ChannelOf(SceneCamera{}) == Channel::State);
+  CHECK_FALSE(IsStory(SceneCamera{}));
+  CHECK(Encode(camera).size() <= 40);
+  camera.fov = 0.f;
+  CHECK_FALSE(Decode(Encode(camera)).has_value());
+  camera.fov = std::nanf("");
+  CHECK_FALSE(Decode(Encode(camera)).has_value());
+  camera.fov = 60.f;
+  camera.play = 0;
+  CHECK_FALSE(Decode(Encode(camera)).has_value());
+
+  // A rig pose: bone 3 at rest (no bytes), bone 9 turned (3), bone 300 whole (11).
+  RigPose rig{.npc = 12, .part = kRigFace, .seq = 5, .timeUs = 77, .rig = 0xabcdef, .bones = 301};
+  const auto entry = [&](std::uint16_t bone, std::uint8_t form, std::size_t bytes) {
+    const auto head = static_cast<std::uint16_t>(bone | form << 14);
+    rig.data.push_back(static_cast<std::uint8_t>(head & 0xFF));
+    rig.data.push_back(static_cast<std::uint8_t>(head >> 8));
+    rig.data.insert(rig.data.end(), bytes, std::uint8_t{7});
+  };
+  entry(3, kRigRest, 0);
+  entry(9, kRigTurn, 3);
+  entry(300, kRigWhole, 11);
+  RoundTrips(rig);
+  CHECK(ChannelOf(rig) == Channel::State);
+  auto broken = rig;
+  broken.data.pop_back(); // an entry cut short
+  CHECK_FALSE(Decode(Encode(broken)).has_value());
+  broken = rig;
+  broken.bones = 300; // a bone the rig does not have
+  CHECK_FALSE(Decode(Encode(broken)).has_value());
+  broken = rig;
+  entry(8, kRigShift, 6); // out of order
+  CHECK_FALSE(Decode(Encode(rig)).has_value());
+  broken.part = 2;
+  CHECK_FALSE(Decode(Encode(broken)).has_value());
+  broken = RigPose{.npc = 0, .bones = 4};
+  CHECK_FALSE(Decode(Encode(broken)).has_value());
+
+  // An actor's frame is a pose frame with the NPC's name: the same rules.
+  ActorFrame actor{.npc = 12};
+  actor.frame.seq = 9;
+  actor.frame.key = 4; // not a key: every bone kept
+  RoundTrips(actor);
+  CHECK(ChannelOf(actor) == Channel::State);
+  actor.frame.rotations.push_back(1); // bytes no code accounts for
+  CHECK_FALSE(Decode(Encode(actor)).has_value());
+  CHECK_FALSE(Decode(Encode(ActorFrame{.npc = 0, .frame = {.seq = 9, .key = 4}})).has_value());
+  CHECK(std::string(NameOf(ActorFrame{})) == "ActorFrame");
+  CHECK(std::string(NameOf(RigPose{})) == "RigPose");
+  CHECK(std::string(NameOf(SceneCamera{})) == "SceneCamera");
+  CHECK(std::string(NameOf(SceneProp{})) == "SceneProp");
+}
+
 TEST_CASE("devices: survive encoding, small, reliable, and only known states pass") {
   RoundTrips(DeviceState{.entity = 0x1122334455667788ULL,
                          .cls = 0x99AABBCCDDEEFF00ULL,
@@ -993,7 +1069,7 @@ TEST_CASE("the world's objects: fractures and a device's fire survive encoding, 
                         .at = {1.f, 2.f, 3.f},
                         .timeUs = 123456789});
   RoundTrips(DeviceFire{.entity = 7, .kind = DeviceFireKind::Lost, .player = 3});
-  CHECK(Message(Fracture{}).index() == Message(QuestInteract{}).index() + 1); // appended
+  CHECK(Message(Fracture{}).index() == Message(SceneProp{}).index() + 1); // appended
   CHECK(Message(DeviceFire{}).index() == Message(Fracture{}).index() + 1);
   CHECK(std::string(NameOf(Fracture{})) == "Fracture");
   CHECK(std::string(NameOf(DeviceFire{})) == "DeviceFire");

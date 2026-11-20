@@ -31,9 +31,11 @@ public abstract class TandemStreamKind {
   public static func DeviceTouched() -> Int32 { return 1; }
   public static func Vehicle() -> Int32 { return 2; }
   public static func Loot() -> Int32 { return 3; }
+  // Item entities appearing while the host's scene plays (Scenes.reds, props).
+  public static func Prop() -> Int32 { return 4; }
   // A breach's outcome on a device, on an NPC (attached: won).
-  public static func BreachDevice() -> Int32 { return 4; }
-  public static func BreachNpc() -> Int32 { return 5; }
+  public static func BreachDevice() -> Int32 { return 5; }
+  public static func BreachNpc() -> Int32 { return 6; }
   // The Ping quickhack reached a device: its network pulses from it.
-  public static func NetworkPing() -> Int32 { return 6; }
+  public static func NetworkPing() -> Int32 { return 7; }
 }

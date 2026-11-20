@@ -2678,6 +2678,90 @@ struct StatusVisuals {
   friend bool operator==(const StatusVisuals &, const StatusVisuals &) = default;
 };
 
+// ---- Scene replay, second part (docs/architecture/scene-replay.md) ----
+// What a scene shows besides bodies and voices: faces, bodies on other rigs
+// (drones, robots), the props its actors hold, and the camera of a cutscene.
+// All host to guests; the three streams share one budget on the host
+// (scene::Pacer), with the actors' bodies.
+
+// A scene actor's body pose, delta coded as a V's is (PoseFrame, PoseEncoder
+// with a slower key): what ActorPose travels as. Endpoint encodes and decodes
+// it; everything above sees ActorPose. State channel.
+struct ActorFrame {
+  NpcId npc{};
+  PoseFrame frame; // `player` unused; seq and key are numbered with the NPC states
+  friend bool operator==(const ActorFrame &, const ActorFrame &) = default;
+};
+
+// RigPose::part: which animated component of the NPC's entity.
+inline constexpr std::uint8_t kRigBody = 0, // its root rig (a body that is not the humanoid one)
+    kRigFace = 1;                           // its face rig (lipsync, expressions)
+inline constexpr std::size_t kMaxRigBones = 1024;
+inline constexpr std::size_t kMaxRigBytes = 1024;
+// RigPose entries (tandem/rigpose.hpp): two bytes (the bone in the low 14
+// bits, the form in the high 2), then the form's bytes.
+inline constexpr std::uint8_t kRigRest = 0, // back at the rig's reference: the receiver's own
+                                            // animation shows again
+    kRigTurn = 1,  // a small turn from the reference rotation (3 bytes, as PoseFrame's)
+    kRigShift = 2, // a small move from the reference translation (3 signed bytes of
+                   // kRigShiftStep m) and a small turn
+    kRigWhole = 3; // translation (3 x int16 of kRigWholeStep m) and rotation (5 bytes)
+inline constexpr float kRigShiftStep = 0.00025f;
+inline constexpr float kRigWholeStep = 1.f / 4096.f;
+// Some bones of one rig of one of the host's NPCs, in local space, relative
+// to the rig's reference pose (the same resource in every game): the bones
+// that moved since the host last said them, and a few in turn so that a lost
+// frame heals. A bone stays as last said until said again. `rig` and `bones`
+// name the rig: a receiver whose body has another one does not take it.
+// State channel, host only, paced.
+struct RigPose {
+  NpcId npc{};
+  std::uint8_t part{}; // kRig*
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  std::uint32_t rig{};   // hash of the rig's bone names (rig::RigHash)
+  std::uint16_t bones{}; // how many bones the rig has
+  std::vector<std::uint8_t> data;
+  friend bool operator==(const RigPose &, const RigPose &) = default;
+};
+
+// SceneCamera::flags.
+inline constexpr std::uint8_t kCameraCut = 1; // a cut: jump there, no blend from the last
+// The picture of the host's scene: its game's active camera while a cutscene
+// has it (tier 5), sampled every frame or so. A guest watching shows the
+// same view, smoothed (scene::CameraTrack). State channel, host only, paced;
+// never sent in a private scene.
+struct SceneCamera {
+  std::uint32_t play{};
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  Vec3 position;
+  std::array<std::uint8_t, kPoseFrameRotationBytes> orientation{}; // pose::PackQuat5
+  float fov{};                                                     // degrees
+  std::uint8_t flags{};                                            // kCamera*
+  friend bool operator==(const SceneCamera &, const SceneCamera &) = default;
+};
+
+// SceneProp::flags.
+inline constexpr std::uint8_t kPropGone = 1, // it is no longer there (put away, despawned)
+    kPropLeftHand = 2;                       // in the holder's left hand (else its right)
+inline constexpr std::uint8_t kPropFlags = 3;
+inline constexpr std::size_t kMaxSceneProps = 16;
+// Something a scene's actor holds (a glass, a shard, a cigarette): which
+// item, who holds it and in which hand; said again when it changes hands,
+// and with kPropGone when it goes. `prop` counts the play's props from 1.
+// Every prop of a play goes with the play. Event channel, a story message,
+// kept with the scene for late joiners.
+struct SceneProp {
+  std::uint32_t play{};
+  std::uint32_t prop{};
+  std::uint64_t record{};  // the item's TweakDB id
+  NpcId holder{};          // the actor holding it (0: a player, or nobody)
+  PlayerId holderPlayer{}; // a V holding it (with holder 0; both 0: put down)
+  std::uint8_t flags{};    // kProp*
+  friend bool operator==(const SceneProp &, const SceneProp &) = default;
+};
+
 // ---- The world's objects (docs/architecture/devices.md, "Glass and
 // breakable scenery", "A device's fire") ----
 
@@ -2743,7 +2827,8 @@ using MessageVariant = std::variant<
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
-    TrafficHandoverState, TrafficHandoverDone, QuestInteract, Fracture, DeviceFire>;
+    TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
+    SceneProp, Fracture, DeviceFire>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
@@ -2752,7 +2837,7 @@ using Message = ClosedVariant<MessageVariant>;
 bool operator==(const Message &a, const Message &b);
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
-// VehicleUnlock, StoryRestrictions, QuestInteract):
+// VehicleUnlock, StoryRestrictions, QuestInteract, SceneProp):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended), a level

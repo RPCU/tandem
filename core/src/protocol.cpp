@@ -49,6 +49,43 @@ std::optional<Message> ReadMessage(Reader &in, std::size_t id) {
   return readers[id](in);
 }
 
+// A pose frame's codes are 0-2 only, none past the last bone, its rotations
+// exactly what the codes say; a key is whole.
+bool Fits(const PoseFrame &frame) {
+  std::size_t bytes = 0;
+  const bool key = frame.key == frame.seq;
+  for (std::size_t slot = 0; slot < kPoseCodeBytes * 4; ++slot) {
+    const auto code = frame.Code(slot);
+    if (code == 3 || (slot >= kPoseBones && code != 0) ||
+        (key && slot < kPoseBones && code != kBoneWhole))
+      return false;
+    bytes += code == kBoneTurn ? kPoseTurnBytes : code == kBoneWhole ? kPoseFrameRotationBytes : 0;
+  }
+  return frame.rotations.size() == bytes;
+}
+
+// A rig pose's entries: each bone of the rig at most once, in order, each
+// with the bytes of its form and nothing after the last.
+bool Fits(const RigPose &pose) {
+  if (pose.part > kRigFace || pose.bones == 0 || pose.bones > kMaxRigBones ||
+      pose.data.size() > kMaxRigBytes)
+    return false;
+  constexpr std::size_t kFormBytes[4] = {0, 3, 6, 11};
+  std::size_t at = 0;
+  int last = -1;
+  while (at < pose.data.size()) {
+    if (at + 2 > pose.data.size())
+      return false;
+    const auto head = static_cast<std::uint16_t>(pose.data[at] | pose.data[at + 1] << 8);
+    const int bone = head & 0x3FFF;
+    if (bone <= last || bone >= pose.bones)
+      return false;
+    last = bone;
+    at += 2 + kFormBytes[head >> 14];
+  }
+  return at == pose.data.size();
+}
+
 // A trade offer within the wire's limits (what it may hold: trade::Valid).
 bool Fits(const TradeOffer &offer) {
   if (offer.items.size() > kMaxTradeItems)
@@ -136,23 +173,22 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *difficulty = std::get_if<Difficulty>(&message);
       difficulty && difficulty->level > 3)
     return std::nullopt;
-  if (const auto *frame = std::get_if<PoseFrame>(&message)) {
-    // Codes 0-2 only, none past the last bone, the rotations exactly what
-    // the codes say; a key whole.
-    std::size_t bytes = 0;
-    const bool key = frame->key == frame->seq;
-    for (std::size_t slot = 0; slot < kPoseCodeBytes * 4; ++slot) {
-      const auto code = frame->Code(slot);
-      if (code == 3 || (slot >= kPoseBones && code != 0) ||
-          (key && slot < kPoseBones && code != kBoneWhole))
-        return std::nullopt;
-      bytes += code == kBoneTurn    ? kPoseTurnBytes
-               : code == kBoneWhole ? kPoseFrameRotationBytes
-                                    : 0;
-    }
-    if (frame->rotations.size() != bytes)
-      return std::nullopt;
-  }
+  if (const auto *frame = std::get_if<PoseFrame>(&message); frame && !Fits(*frame))
+    return std::nullopt;
+  if (const auto *actor = std::get_if<ActorFrame>(&message);
+      actor && (actor->npc == 0 || !Fits(actor->frame)))
+    return std::nullopt;
+  if (const auto *rig = std::get_if<RigPose>(&message); rig && (rig->npc == 0 || !Fits(*rig)))
+    return std::nullopt;
+  // A view no camera has, or one that is not a number.
+  if (const auto *camera = std::get_if<SceneCamera>(&message);
+      camera && (!(camera->fov > 0.f && camera->fov <= 180.f) || camera->flags > kCameraCut ||
+                 camera->play == 0))
+    return std::nullopt;
+  if (const auto *prop = std::get_if<SceneProp>(&message);
+      prop && (prop->play == 0 || prop->prop == 0 || (prop->flags & ~kPropFlags) != 0 ||
+               (prop->holder != 0 && prop->holderPlayer != kNoPlayer)))
+    return std::nullopt;
   if (const auto *motion = std::get_if<NpcMotion>(&message);
       motion && motion->npcs.size() > kMaxNpcsPerState)
     return std::nullopt;
@@ -350,6 +386,9 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<MountedFire>(message) ||
                  std::holds_alternative<GunnerAim>(message) ||
                  std::holds_alternative<ActorPose>(message) ||
+                 std::holds_alternative<ActorFrame>(message) ||
+                 std::holds_alternative<RigPose>(message) ||
+                 std::holds_alternative<SceneCamera>(message) ||
                  std::holds_alternative<PoseFrame>(message) ||
                  std::holds_alternative<NpcMotion>(message) ||
                  std::holds_alternative<PlayerMotion>(message) ||
@@ -366,6 +405,7 @@ bool IsStory(const Message &message) {
          std::holds_alternative<StoryEffect>(message) ||
          std::holds_alternative<StoryRestrictions>(message) ||
          std::holds_alternative<QuestInteract>(message) ||
+         std::holds_alternative<SceneProp>(message) ||
          (message.index() >= kId<SceneState> && message.index() <= kId<SceneLine>) ||
          std::holds_alternative<VehicleUnlock>(message);
 }
@@ -540,6 +580,10 @@ const char *NameOfKind(std::size_t kind) {
                                    "TrafficHandoverState",
                                    "TrafficHandoverDone",
                                    "QuestInteract",
+                                   "ActorFrame",
+                                   "RigPose",
+                                   "SceneCamera",
+                                   "SceneProp",
                                    "Fracture",
                                    "DeviceFire"};
   static_assert(std::size(names) == std::variant_size_v<Message>);

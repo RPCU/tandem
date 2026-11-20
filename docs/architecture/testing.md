@@ -16,6 +16,8 @@
 | regions | links, owners, hand-over (also with a third lost), a vanishing owner, digests both ways; two mock players meeting | `task test` |
 | natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere, region, street, presence, activity) | `task natives:check` |
 | scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods | `task scripts:check` |
+| threads | every script hook that may run on a job thread (per-entity, component and persistent-state wraps, `cb func`s, lifecycle methods, `Entity/*` callbacks) and all it calls: reads, the wrapped method, natives; no write to a system's state (`tools/scripts-threads.py`; `.known`: 86 hooks older than the check, unproven) | `task threads:check` |
+| references | every `TandemX.Name(…)` call names a declared function, every record of ours the scripts name is in `tweaks/tandem` (`tools/scripts-refs.py`: what scc and the game would say, in CI); every scenario's `--flags` exist in the mock player, its `cmd` words in the scripts, its helpers in `tools/scenario.sh` (`tools/scenarios-check.py`) | `task refs:check`, `task scenarios:check` |
 | other mods | every method another mod's redscript or CET Lua wraps, replaces or observes, against the ones tandem wraps: conflicts, order-sensitive, harmless chains (`tools/mods-check.py`, on any game folder or copy) | `task mods:check DIR=…` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
@@ -51,6 +53,17 @@ foot, at the test field, …)` listing what it could not clear (a scene,
 combat, a grapple, a body carried, police heat, a menu or the phone open,
 time dilated, health), or `test reset: failed (…)`, which fails the
 scenario. A scenario that needs another spot teleports after it.
+
+**Launches** (`tools/game.sh launches [N]`, default 5): the cheap crash
+check, the first thing to run after a script or plugin change that touches
+wraps. Each launch starts the game through Steam with the role's
+`tandem.ini` as it is and ends on tandem's `] playing` (the save loaded;
+20 s more, then fine), on a crash (REDGraph's `[crash] thread` line in
+`red4ext/logs/redgraph-*.log`, or `CrashReporter.exe`), or after 240 s
+(neither: the menus were not passed); the game is killed each time. It
+prints `N launches, C crashes (…)` and fails unless C is 0 and one
+played. Wraps that changed script state on job threads while the save
+loaded crashed 5 launches in 6, and 0 in 7 without them (2026-11-20).
 
 `tandem-peer` modes (in every one the referee checks what the others send,
 `sim.md`; a `referee:` line fails any scenario):
@@ -414,7 +427,8 @@ C++ builds (`AGENTS.md`, Git).
 
 - **Jobs:** `go` (relay and pilot: vet, race tests), `kubernetes` (the
   kustomize base and overlays, kubeconform), `docs, natives, strings`
-  (`tools/docs-check.py links`, `check-natives.py`, `check-strings.py`),
+  (`tools/docs-check.py links`, `check-natives.py`, `check-strings.py`,
+  `scripts-threads.py`, `scripts-refs.py`, `scenarios-check.py`),
   `core build (Linux)` (`task build:linux` with GCC 16, the devenv's: the
   tests' seeded links are measured with its libstdc++), then `core tests`
   in four jobs side by side on its binaries (`tandem-tests` in three

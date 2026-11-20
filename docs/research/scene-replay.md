@@ -243,6 +243,22 @@ animSets } +0x58 }` (`.lipmap`), by scene path and the actor's voicetag;
   the guest too (a placed entity); one it **spawns** exists only on the
   host unless it is announced like an NPC. Items put in an actor's hands
   go through `scneventsEquipItemToPerformer`. [2.5-rtti]
+- **A spawned prop is an item with an owner**: `scnPropDef { propId +0x120,
+specPropRecordId: TweakDBID +0x148, spawnDespawnParams +0x30 }` with
+  `scnSpawnDespawnEntityParams { specRecordId: TweakDBID +0x44, itemOwnerId:
+scnPerformerId +0x40, appearance +0x50 }`; it is put in a hand by
+  `scneventsAttachPropToPerformer { propId +0x58, performerId +0x5C, slot:
+CName +0x60, offsetMode +0x68, customOffsetPos +0x6C, customOffsetRot
++0x80 }`, items by `scneventsEquipItemToPerformer { performerId +0x58,
+slotId: TweakDBID +0x5C, itemId: TweakDBID +0x64 }` (an attachment slot)
+  (`SDK/scn/PropDef.hpp`, `SpawnDespawnEntityParams.hpp`,
+  `SDK/scn/events/AttachPropToPerformer.hpp`, `EquipItemToPerformer.hpp`).
+  [2.5-rtti] What a script can see of it: the item in an attachment slot
+  (`TransactionSystem.GetItemInSlot`, `reds:52211`), and an item entity
+  appearing (Codeware's `Entity/Attach` on `gameItemObject`). Whether a
+  scene's prop is a `gameItemObject` and whether `IsEntityInScene` answers
+  yes for it are [unknown]: tandem's host tries both (`Scenes.reds`,
+  `HostProps`). [2.5-untested]
 - Effects: `scneventsVFXEvent { effectEntry, action: Play/Break/Kill,
 performerId, nodeRef }`: an effect by name on a performer, which a script
   can start on any `GameObject` (`GameObjectEffectHelper.StartEffectEvent`,

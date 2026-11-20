@@ -28,6 +28,11 @@ python3 "$root/tools/scripts-duplicates.py" "$ours"
 python3 "$root/tools/scripts-uninitialized.py" "$ours"
 # And a player-facing text that is not in Text.reds (docs/architecture/strings.md).
 python3 "$root/tools/check-strings.py" "$ours"
+# And a hook that may run on a job thread and changes script state (heap
+# corruption while a save loads).
+python3 "$root/tools/scripts-threads.py" "$ours"
+# And a function or a TweakDB record of ours that exists nowhere (CI has no scc).
+[ "$ours" != "$root/scripts/tandem" ] || python3 "$root/tools/scripts-refs.py"
 
 # True when an ancestor process holds the build lock (flock ... task deploy):
 # taking it again from here would wait forever.

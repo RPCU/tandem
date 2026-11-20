@@ -107,6 +107,21 @@ tasks:
     cmds:
       - python3 tools/check-strings.py
 
+  threads:check:
+    desc: "Script hooks that may run on job threads only read, call the wrapped method and enqueue (also run by scripts:check; -- --list for every hook)"
+    cmds:
+      - python3 tools/scripts-threads.py {{.CLI_ARGS}}
+
+  refs:check:
+    desc: "Every TandemX.Name(...) call and every record of ours the scripts name exists (also run by scripts:check)"
+    cmds:
+      - python3 tools/scripts-refs.py
+
+  scenarios:check:
+    desc: "Scenarios name mock-player flags, game commands and helpers that exist"
+    cmds:
+      - python3 tools/scenarios-check.py
+
   scenario:
     desc: "In-game scenarios against the mock player (task scenario -- NAME... | all | list)"
     deps: [build]
@@ -244,6 +259,8 @@ tasks:
       - task: build:plugin
       - task: natives:check
       - task: strings:check
+      - task: threads:check
+      - task: scenarios:check
       - task: scripts:check
       - task: k8s:check
       - task: docs:check
