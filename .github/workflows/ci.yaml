@@ -71,9 +71,12 @@ jobs:
   core:
     name: core tests (Linux)
     runs-on: ubuntu-latest
+    # GCC 16, as in devenv: libstdc++'s distributions changed in 16
+    # (generate_canonical), and the tests' seeded links (quality_test,
+    # shaping_test) are measured with them; GCC 14's draw other links.
     env:
-      CC: gcc-14
-      CXX: g++-14
+      CC: gcc-16
+      CXX: g++-16
     steps:
       - uses: actions/checkout@v7
         with:
@@ -92,7 +95,7 @@ jobs:
       - name: Install the toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends g++-14 ninja-build
+          sudo apt-get install -y --no-install-recommends g++-16 ninja-build
 
       # A new key each run, the newest earlier one restored: the cache
       # follows the tree. Saved even when the build fails, so a rerun
