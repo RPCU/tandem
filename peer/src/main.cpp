@@ -4119,6 +4119,14 @@ int main(int argc, char **argv) {
   // Devices: when the session began for us (--device counts from it), and
   // the devices to change back (--device-answer: when, from what).
   std::optional<std::chrono::steady_clock::time_point> devicesFrom;
+  // --breach: a won one pays once the host grants it (devices.md).
+  tandem::devices::BreachHolds breachHolds;
+  const auto breachSettled = [](const tandem::devices::BreachHolds::Decision &decision) {
+    if (decision.paid)
+      Log("our breach pays ({})", decision.answered ? "granted" : "nobody answered");
+    else
+      Log("our breach pays nothing: player {} was first", decision.by);
+  };
   std::uint32_t interactSeq = 0; // --interact: our questions' numbers
   std::map<tandem::devices::Key,
            std::pair<std::chrono::steady_clock::time_point, tandem::devices::What>>
@@ -5020,6 +5028,8 @@ int main(int argc, char **argv) {
                                                    "refused (the record is full)"};
               Log("our breach of network {:x} npc {}: {}, by player {}", r.entity, r.npc,
                   kVerdicts[static_cast<int>(r.verdict)], r.by);
+              if (const auto decision = breachHolds.Answer(r))
+                breachSettled(*decision);
             } else if constexpr (std::is_same_v<E, tandem::events::DevicesReset>) {
               Log("devices: the host sends its record again");
             } else if constexpr (std::is_same_v<E, tandem::events::Resync>) {
@@ -5987,9 +5997,13 @@ int main(int argc, char **argv) {
         breach.programs.clear();
       }
       endpoint->SendBreach(breach);
+      if (!options.breachFailed)
+        breachHolds.Hold(1, {{order.entity, order.cls}, order.npc}, tandem::net::NowUs());
       Log("breached network {:x} npc {} with {} daemon(s){} (--breach)", order.entity, order.npc,
           breach.programs.size(), options.breachFailed ? ", lost" : "");
     }
+    for (const auto &decision : breachHolds.Expire(tandem::net::NowUs()))
+      breachSettled(decision);
     // --interact: each use at its time into the session (a guest asks).
     for (auto &order : options.interacts) {
       if (order.done || !devicesFrom || now < *devicesFrom + std::chrono::seconds(order.atSeconds))

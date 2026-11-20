@@ -830,6 +830,8 @@ public class TandemSystem extends ScriptableSystem {
       // frame while it records.
       this.ProcessLeaving();
       this.HandleCommand();
+      // A breach held for a host that is no longer there is the game's own.
+      TandemBreach.Tick(this.GetGameInstance(), this.Now(), 0u);
       if IsDefined(this.m_saves) {
         this.m_saves.Tick();
       }

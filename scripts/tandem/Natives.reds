@@ -278,6 +278,17 @@ public native struct TandemBreachEvent {
   native let verdict: Int32;
 }
 
+// A won breach of ours the host has settled (Breach.reds).
+public native struct TandemBreachDecision {
+  native let hold: Int32;
+  // granted (or nobody answered): the game pays it; else refused
+  native let paid: Bool;
+  // refused: who breached it first (0: the host's world had it so)
+  native let player: Uint32;
+  // false: nobody answered (the hold ran out, the session ended)
+  native let answered: Bool;
+}
+
 public native struct TandemDeviceEvent {
   // 1 (guest) the host's word, 2 (host) a guest asks what it is, 3 (host) a
   // guest made it this, 4 (guest) the host sends its record again
@@ -446,6 +457,11 @@ public native class TandemNative extends IScriptable {
   public static native func TakeBreachEvents() -> array<TandemBreachEvent>
   public static native func BreachPrograms(index: Int32) -> array<TweakDBID>
   public static native func BreachTraps(index: Int32) -> array<TweakDBID>
+  // A won breach of ours (hold: one per minigame) waits for the host's word
+  // on this network or NPC; the holds settled since the last call (by the
+  // host's answers, its silence, or the session's end: inSession false).
+  public static native func HoldBreach(hold: Int32, entity: EntityID, cls: CName, npc: Uint32)
+  public static native func TakeBreachDecisions(inSession: Bool) -> array<TandemBreachDecision>
   public static native func You() -> Uint32
   public static native func SendVitals(life: Int32, flags: Int32)
   public static native func OtherPlayers() -> array<Uint32>
