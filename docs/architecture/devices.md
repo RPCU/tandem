@@ -109,6 +109,20 @@ same action on its copy and its report (in our name, `PerformedFor`) is the
 device's word; anything else: our change is asked of the host as above
 (`Release`).
 
+**Streaming.** The wraps of per-entity callbacks (`Device` and
+`VehicleObject` `OnGameAttached`/`OnDetach`, the device state's `Notify`
+and `ExplosiveDeviceControllerPS.SetExplodedState`, the loot's
+`Entity/Attach`) run as the world streams in, on job threads during a load,
+and touch no script state: they queue the entity id (and the state's class,
+for a touched device) through `TandemStreaming.QueueStreamed`
+(`StreamingNatives.reds`, a mutex-guarded vector per kind, 65536 at most,
+overflow dropped and logged). `TandemSystem.OnTick` (session or not) drains
+them into `TandemDevices.Drain` and `TandemTraffic.Drain`, `TandemLoot.Tick`
+its own, in order; an entity gone by then is skipped (its detach follows).
+Mutating the systems' arrays from the wraps themselves is the suspect of heap
+corruption while a save loaded (access violation in
+`DefaultAllocator::AllocateAligned`, 5 launches in 6, 2026-11-20).
+
 **A partner's quickhack shows** on the device, in their colour, while the
 two are linked: the bits a guest's request (host) or the host's live word
 (guest) turned on go to the partner-quickhack board

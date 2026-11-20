@@ -293,8 +293,27 @@ public class TandemDevices extends ScriptableSystem {
     return EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGameInstance()));
   }
 
+  // Every tick, session or not (TandemSystem.OnTick): the devices that
+  // came, went or were touched since, as their wraps queued them (below).
+  public func Drain() -> Void {
+    let game = this.GetGameInstance();
+    let streamed = TandemStreaming.TakeStreamed(TandemStreamKind.Device());
+    for event in streamed {
+      if event.attached {
+        // Gone again since: its detach is further down the queue.
+        this.Attached(GameInstance.FindEntityByID(game, event.entity) as Device);
+      } else {
+        this.Detached(event.entity);
+      }
+    }
+    let touched = TandemStreaming.TakeStreamed(TandemStreamKind.DeviceTouched());
+    for event in touched {
+      this.Touched(event.entity, event.cls);
+    }
+  }
+
   // A device came into our world (Device.OnGameAttached), session or not.
-  public func Attached(owner: ref<Device>) -> Void {
+  private func Attached(owner: ref<Device>) -> Void {
     if !IsDefined(owner) {
       return;
     }
@@ -307,33 +326,56 @@ public class TandemDevices extends ScriptableSystem {
     device.since = this.Now();
   }
 
-  // ...and went (Device.OnDetach). Forgotten unless the session says
-  // something of it, or it is ours to put back.
-  public func Detached(owner: ref<Device>) -> Void {
-    if !IsDefined(owner) {
+  // ...and went (Device.OnDetach): every state we follow of that entity (its
+  // own may be gone by now). Forgotten unless the session says something of
+  // it, or it is ours to put back.
+  private func Detached(entity: EntityID) -> Void {
+    if !IsDefined(this.m_index) {
       return;
     }
-    let ps = owner.GetDevicePS();
-    if !IsDefined(ps) {
+    let first = this.m_index.Get(TandemDevices.KeyOf(entity)) as TandemDevice;
+    if !IsDefined(first) {
       return;
     }
-    let device = this.Find(owner.GetEntityID(), ps.GetClassName());
-    if !IsDefined(device) {
+    if this.m_collisions == 0 {
+      if first.entity == entity {
+        first.attached = false;
+        if this.Idle(first) {
+          this.Drop(first);
+        }
+      }
       return;
     }
-    device.attached = false;
-    if this.Idle(device) {
-      this.Drop(device);
+    // Two entities with one short hash (or two states of one entity): the
+    // others are only in the list.
+    let gone: array<ref<TandemDevice>>;
+    for device in this.m_devices {
+      if device.entity == entity {
+        ArrayPush(gone, device);
+      }
+    }
+    for device in gone {
+      device.attached = false;
+      if this.Idle(device) {
+        this.Drop(device);
+      }
     }
   }
 
   // A device's state handled an action (ScriptableDeviceComponentPS.Notify),
-  // streamed in or not: looked at on the next tick.
-  public func Touched(ps: ref<ScriptableDeviceComponentPS>) -> Void {
-    if this.m_you == 0u || !TandemDevices.Follows(ps) {
+  // from any thread: queued with its entity and class if we follow it.
+  public static func QueueTouched(ps: ref<ScriptableDeviceComponentPS>) -> Void {
+    if TandemDevices.Follows(ps) {
+      TandemStreaming.QueueStreamed(TandemStreamKind.DeviceTouched(), PersistentID.ExtractEntityID(ps.GetID()), ps.GetClassName(), true);
+    }
+  }
+
+  // ...taken on the next tick: looked at then.
+  private func Touched(entity: EntityID, cls: CName) -> Void {
+    if this.m_you == 0u {
       return;
     }
-    let device = this.Track(PersistentID.ExtractEntityID(ps.GetID()), ps.GetClassName());
+    let device = this.Track(entity, cls);
     device.dirty = true;
     this.m_dirty = true;
   }
@@ -1205,35 +1247,28 @@ public class TandemDevices extends ScriptableSystem {
   }
 }
 
-// Every device that comes into the world, and goes.
+// Every device that comes into the world, and goes. These run as the world
+// streams in, on job threads during a load: queued only (no script state
+// touched here), taken by TandemDevices.Drain on the game thread's tick.
 @wrapMethod(Device)
 protected cb func OnGameAttached() -> Bool {
   let result = wrappedMethod();
-  let devices = TandemDevices.Get(this.GetGame());
-  if IsDefined(devices) {
-    devices.Attached(this);
-  }
+  TandemStreaming.QueueStreamed(TandemStreamKind.Device(), this.GetEntityID(), n"None", true);
   return result;
 }
 
 @wrapMethod(Device)
 protected cb func OnDetach() -> Bool {
-  let devices = TandemDevices.Get(this.GetGame());
-  if IsDefined(devices) {
-    devices.Detached(this);
-  }
+  TandemStreaming.QueueStreamed(TandemStreamKind.Device(), this.GetEntityID(), n"None", false);
   return wrappedMethod();
 }
 
 // Every action a device's state handles ends here (players, quickhacks,
-// quests, other devices), streamed in or not.
+// quests, other devices), streamed in or not: queued as above.
 @wrapMethod(ScriptableDeviceComponentPS)
 protected func Notify(notifier: ref<ActionNotifier>, action: ref<ScriptableDeviceAction>) -> Void {
   wrappedMethod(notifier, action);
-  let devices = TandemDevices.Get(this.GetGameInstance());
-  if IsDefined(devices) {
-    devices.Touched(this);
-  }
+  TandemDevices.QueueTouched(this);
 }
 
 // An explosive that went up says so on its state from its entity, with no
@@ -1241,8 +1276,5 @@ protected func Notify(notifier: ref<ActionNotifier>, action: ref<ScriptableDevic
 @wrapMethod(ExplosiveDeviceControllerPS)
 public final func SetExplodedState(state: Bool) -> Void {
   wrappedMethod(state);
-  let devices = TandemDevices.Get(this.GetGameInstance());
-  if IsDefined(devices) {
-    devices.Touched(this);
-  }
+  TandemDevices.QueueTouched(this);
 }

@@ -147,6 +147,7 @@ public class TandemLoot extends ScriptableSystem {
     this.m_you = 0u;
     ArrayClear(this.m_items);
     ArrayClear(this.m_seen);
+    TandemStreaming.TakeStreamed(TandemStreamKind.Loot());
     // Bags (gameLootBag) and single item drops (gameItemDropObject).
     let callbacks = GameInstance.GetCallbackSystem();
     callbacks.RegisterCallback(n"Entity/Attach", this, n"OnLootAttach").AddTarget(EntityTarget.Type(n"gameLootBag"));
@@ -161,21 +162,38 @@ public class TandemLoot extends ScriptableSystem {
   }
 
   // Bags and item drops appearing (any: only those near a world item matter).
+  // Attaches may run on job threads while the world streams in: queued only,
+  // taken by Seen on the tick.
   private cb func OnLootAttach(event: ref<EntityLifecycleEvent>) {
     let entity = event.GetEntity();
-    if !this.m_inGame || this.m_you == 0u || !IsDefined(entity) || ArraySize(this.m_seen) >= 64 {
+    if !this.m_inGame || this.m_you == 0u || !IsDefined(entity) {
       return;
     }
-    let id = entity.GetEntityID();
-    for known in this.m_seen {
-      if known.id == id {
+    TandemStreaming.QueueStreamed(TandemStreamKind.Loot(), entity.GetEntityID(), n"None", true);
+  }
+
+  private func Seen() -> Void {
+    let streamed = TandemStreaming.TakeStreamed(TandemStreamKind.Loot());
+    if this.m_you == 0u {
+      return;
+    }
+    for event in streamed {
+      if ArraySize(this.m_seen) >= 64 {
         return;
       }
+      let known = false;
+      for other in this.m_seen {
+        if other.id == event.entity {
+          known = true;
+        }
+      }
+      if !known {
+        let seen = new TandemLootSeen();
+        seen.id = event.entity;
+        seen.at = this.Now();
+        ArrayPush(this.m_seen, seen);
+      }
     }
-    let seen = new TandemLootSeen();
-    seen.id = id;
-    seen.at = this.Now();
-    ArrayPush(this.m_seen, seen);
   }
 
   private func Schedule() -> Void {
@@ -201,6 +219,7 @@ public class TandemLoot extends ScriptableSystem {
       }
       this.m_you = you;
     }
+    this.Seen();
     let events = TandemNative.TakeLootEvents();
     if you != 0u {
       for event in events {

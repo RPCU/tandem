@@ -140,14 +140,33 @@ public class TandemTraffic {
 
   // ---- every game: the vehicles of our world ----
 
-  public func Attached(vehicle: ref<VehicleObject>) -> Void {
-    if IsDefined(vehicle) && !ArrayContains(this.m_live, vehicle) {
-      ArrayPush(this.m_live, vehicle);
+  // Every tick, session or not (TandemSystem.OnTick): the vehicles that came
+  // and went since, as their wraps queued them (job threads while the world
+  // streams in: VehicleObject.OnGameAttached, OnDetach).
+  public func Drain() -> Void {
+    let streamed = TandemStreaming.TakeStreamed(TandemStreamKind.Vehicle());
+    for event in streamed {
+      if event.attached {
+        // Gone again since: its detach is further down the queue.
+        let vehicle = GameInstance.FindEntityByID(this.m_game, event.entity) as VehicleObject;
+        if IsDefined(vehicle) && !ArrayContains(this.m_live, vehicle) {
+          ArrayPush(this.m_live, vehicle);
+        }
+      } else {
+        this.Detached(event.entity);
+      }
     }
   }
 
-  public func Detached(vehicle: ref<VehicleObject>) -> Void {
-    ArrayRemove(this.m_live, vehicle);
+  private func Detached(entity: EntityID) -> Void {
+    let i = ArraySize(this.m_live) - 1;
+    while i >= 0 {
+      let vehicle = this.m_live[i];
+      if !IsDefined(vehicle) || vehicle.GetEntityID() == entity {
+        ArrayErase(this.m_live, i);
+      }
+      i -= 1;
+    }
   }
 
   public func Tick(now: Float, you: Uint32, system: ref<TandemSystem>) -> Void {
@@ -1069,22 +1088,18 @@ public class TandemTraffic {
 
 // ---- the game's own vehicles, as they come and go ----
 
+// As the world streams in, on job threads during a load: queued only,
+// taken by TandemTraffic.Drain on the game thread's tick.
 @wrapMethod(VehicleObject)
 protected cb func OnGameAttached() -> Bool {
   let result = wrappedMethod();
-  let traffic = TandemTraffic.Of(this.GetGame());
-  if IsDefined(traffic) {
-    traffic.Attached(this);
-  }
+  TandemStreaming.QueueStreamed(TandemStreamKind.Vehicle(), this.GetEntityID(), n"None", true);
   return result;
 }
 
 @wrapMethod(VehicleObject)
 protected cb func OnDetach() -> Bool {
-  let traffic = TandemTraffic.Of(this.GetGame());
-  if IsDefined(traffic) {
-    traffic.Detached(this);
-  }
+  TandemStreaming.QueueStreamed(TandemStreamKind.Vehicle(), this.GetEntityID(), n"None", false);
   return wrappedMethod();
 }
 
