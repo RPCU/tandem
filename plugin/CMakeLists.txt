@@ -43,6 +43,7 @@ add_library(tandem SHARED
   src/comms_natives.cpp
   src/mods.cpp
   src/mods_natives.cpp
+  src/streaming_natives.cpp
   src/engine/layout.cpp
   src/engine/animation.cpp
   src/engine/controller.cpp

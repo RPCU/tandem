@@ -33,6 +33,7 @@ CPP = [
     ROOT / "plugin/src/comms_natives.cpp",
     ROOT / "plugin/src/wheels_natives.cpp",
     ROOT / "plugin/src/mods_natives.cpp",
+    ROOT / "plugin/src/streaming_natives.cpp",
 ]
 REDS = [
     ROOT / "scripts/tandem/Natives.reds",
@@ -50,6 +51,7 @@ REDS = [
     ROOT / "scripts/tandem/CommsNatives.reds",
     ROOT / "scripts/tandem/WheelsNatives.reds",
     ROOT / "scripts/tandem/ModsNatives.reds",
+    ROOT / "scripts/tandem/StreamingNatives.reds",
 ]
 
 SCALARS = {
