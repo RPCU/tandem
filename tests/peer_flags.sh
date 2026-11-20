@@ -42,7 +42,8 @@ declare -A value=(
   ["--device"]="1a2b3c4d5e6f7788:DoorControllerPS:open,unlocked@8" ["--device-answer"]=closed ["--device-after"]=2
   ["--breach"]="a0b1c2d3e4f50617:AccessPointControllerPS@4" ["--programs"]="NetworkCameraShutdown,0x1234" ["--breach-failed"]=--check
   ["--region-far"]=1000 ["--region-npcs"]=3 ["--region-record"]=Character.x ["--region-walk-at"]=10
-  ["--region-leave-at"]=20 ["--region-leave-linked"]=3 ["--region-speed"]=25
+  ["--region-leave-at"]=20 ["--region-leave-linked"]=3 ["--region-speed"]=25 ["--region-cars"]=2
+  ["--region-driver"]=--check ["--region-chase"]=--check
   ["--region-at"]="1,2,3"
   ["--traffic"]=4 ["--traffic-vehicle"]=Vehicle.x ["--wreck-at"]=10 ["--ram-traffic"]=3 ["--steal-at"]=12
   ["--heat"]=3 ["--heat-at"]=5 ["--heat-for"]=20 ["--crime-at"]=8

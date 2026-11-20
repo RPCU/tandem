@@ -279,7 +279,7 @@ TEST_CASE("hits, claims, tyres, rams and chases of a guest's vehicle reach that 
 TEST_CASE("players part: a vehicle goes to the one beside it with its state and its driver") {
   auto s = Start(true);
   Place(*s->host, 0);
-  Place(*s->a, 50);
+  Place(*s->a, 70);
   Place(*s->b, 400);
   REQUIRE(s->Until([&] { return s->a->Linked().size() == 1 && s->a->OwnsArea(); }));
   s->ga.Announce(1, {30.f, 0.f, 0.f}, proto::kTrafficLights);
@@ -359,7 +359,7 @@ TEST_CASE("a vehicle handed to a third player: the others show it from its new o
 TEST_CASE("an owner may refuse; a receiver that cannot run it lets it go for everyone") {
   auto s = Start();
   Place(*s->host, 0);
-  Place(*s->a, 50);
+  Place(*s->a, 70);
   REQUIRE(s->Until([&] { return s->a->Linked().size() == 1 && s->a->OwnsArea(); }));
   s->ga.Announce(1, {30.f, 0.f, 0.f});
   const auto car = MakeTrafficId(s->a->You(), 1);
@@ -382,7 +382,7 @@ TEST_CASE("an owner may refuse; a receiver that cannot run it lets it go for eve
 TEST_CASE("an owner that vanishes: its vehicles go to the player near them, the rest go") {
   auto s = Start(true);
   Place(*s->host, 0);
-  Place(*s->a, 50);
+  Place(*s->a, 70);
   Place(*s->b, 60);
   REQUIRE(s->Until([&] { return s->a->Linked().size() == 2 && s->a->OwnsArea(); }));
   s->ga.Announce(1, {30.f, 0.f, 0.f});
@@ -405,7 +405,7 @@ TEST_CASE("an owner that vanishes: its vehicles go to the player near them, the 
 TEST_CASE("an owner whose world is rebuilt leaves its vehicles to who stays") {
   auto s = Start();
   Place(*s->host, 0);
-  Place(*s->a, 50);
+  Place(*s->a, 70);
   REQUIRE(s->Until([&] { return s->a->Linked().size() == 1 && s->a->OwnsArea(); }));
   s->ga.Announce(1, {10.f, 0.f, 0.f});
   const auto car = MakeTrafficId(s->a->You(), 1);
@@ -440,10 +440,10 @@ TEST_CASE("the host's record of a guest's vehicles is healed when a spawn was lo
 TEST_CASE("a late joiner sees a guest's vehicles, and who runs them, when it is near") {
   auto s = Start();
   Place(*s->host, 0);
-  Place(*s->a, 50);
+  Place(*s->a, 70);
   REQUIRE(s->Until([&] { return s->a->Linked().size() == 1 && s->a->OwnsArea(); }));
   s->ga.Announce(1, {30.f, 0.f, 0.f});
-  s->h.Announce(1, {0.f, 10.f, 0.f});
+  s->h.Announce(1, {40.f, 10.f, 0.f});
   const auto theirs = MakeTrafficId(s->a->You(), 1), ours = MakeTrafficId(1, 1);
   REQUIRE(s->Until([&] { return s->h.proxies.contains(theirs) && s->ga.proxies.contains(ours); }));
   // The host's own vehicle goes to a when the host leaves it.
