@@ -100,19 +100,25 @@ inventory and save.
   game**.
 - **Guest:** main menu → **Co-op** → **Join a game** → pick a recent host
   or **Enter a code or an address** → choose the save your V comes from.
-  Or in game: pause menu → **Co-op** → **Join a game**.
+  On a LAN or a VPN, **Join by address** asks for the host's address
+  directly. Or in game: pause menu → **Co-op** → **Join a game** or **Join
+  by address**.
 - **Leaving:** pause menu → **Co-op** → **Leave session**, or just quit.
 
 The status panel at the top right of the Co-op pages shows who is in the
 session and their ping. How the guest reaches the host depends on where
 you both are:
 
-### On the same network (LAN, or a VPN such as Tailscale or ZeroTier)
+### On the same network (LAN, or a VPN such as Tailscale, NetBird or ZeroTier)
 
 The host opens pause menu → **Co-op** → **Invite**: it shows the host's
-addresses and port, for example `192.168.1.20:27450`. The guest types that
-address in **Enter a code or an address**. The port can be left out when it
-is the default (27450).
+addresses and port, for example `192.168.1.20:27450`. The guest picks
+**Co-op** → **Join by address** and types that address (or a host name,
+such as a Tailscale machine name). The port can be left out when it is the
+default (27450). The address is remembered: next time, an empty answer
+joins it again. This is a direct connection, no relay involved. tandem
+connects over IPv4 only: with a VPN, use the host's IPv4 address
+(Tailscale and NetBird give each machine one, `100.x.y.z`).
 
 The first time, Windows may ask the host whether the game may accept
 connections: allow it (private networks). If the guest cannot connect, see
@@ -123,7 +129,7 @@ connections: allow it (private networks). If the guest cannot connect, see
 The host forwards **UDP port 27450** on their router to their PC (the
 router's "port forwarding" or "virtual server" page; UDP, not TCP), and
 gives the guest their public address (what a "what is my IP" site shows).
-The guest types `that.address:27450`.
+The guest types `that.address:27450` in **Join by address**.
 
 To host on another port, set `port = …` in the host's `tandem.ini` and
 forward that one; the guest then types `address:port`.
@@ -183,6 +189,9 @@ keys and bad values are reported in tandem's log and ignored.
 | `relay_token`              | none                                  | A host token of that relay (64 hex digits). Hosts only. Keep it to yourself.                                                                                                                                                                          |
 | `join`                     | none                                  | `role = join`: the host's join code.                                                                                                                                                                                                                  |
 | `direct`                   | `auto`                                | Through a relay, also try to reach the other player directly (lower latency, the relay as fallback). `off`: always the relay.                                                                                                                         |
+| `last_address`             | none                                  | The address **Join by address** last joined (`host:port`); an empty answer there joins it again.                                                                                                                                                      |
+| `link`                     | `auto`                                | Who sees your scanner tags and Ping reveals: `auto` every partner (until you break the link), `ask` the partners you link with, `off` nobody.                                                                                                         |
+| `pings`                    | `on`                                  | `off`: you neither send nor see pings (a team target still shows).                                                                                                                                                                                    |
 | `pose`                     | `on`                                  | Exact body poses of the other players. `off`: stock animations only.                                                                                                                                                                                  |
 | `story`                    | `on`                                  | Share the host's story (journal, calls, texts, subtitles, choices, rewards). `off`: each game keeps its own.                                                                                                                                          |
 | `quest_freeze`             | `off`                                 | Guest: your own story waits while you play in the host's. Experimental.                                                                                                                                                                               |

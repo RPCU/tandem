@@ -323,6 +323,7 @@ public native class TandemNative extends IScriptable {
   public static native func StartHost(port: Int32) -> Bool
   public static native func Join(address: String, port: Int32) -> Bool
   public static native func ParseAddress(text: String) -> TandemHost
+  public static native func AddressProblem(text: String) -> String
   public static native func Leave()
   public static native func ResetChoice()
   public static native func SessionStatus() -> TandemStatus

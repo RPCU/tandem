@@ -1,7 +1,7 @@
 // The co-op menu's settings page (docs/architecture/coop-menu.md,
 // "Settings"): tandem.ini's keys the player may change, each saved there as
 // it changes (TandemNative.SetSetting) and applied at once where that is
-// safe; what a running session was set up with (the name, the relay, the
+// safe (the link's default and pings by the plugin's comms, in a session too); what a running session was set up with (the name, the relay, the
 // story) waits for the session's end, the hooks installed at launch (quest
 // freeze, scene privacy) for a restart. Tests: `tools/game.sh cmd coop
 // settings` logs them, `coop set KEY VALUE` changes one.
@@ -11,24 +11,24 @@ public class TandemSettings {
   // once, 1 from the next session, 2 after a restart.
   public static func Keys() -> array<String> {
     return [
-      "name", "friendly_fire", "enemy_scaling", "notices", "markers", "nameplates", "party_hud", "recorder",
+      "name", "friendly_fire", "enemy_scaling", "notices", "markers", "nameplates", "party_hud", "link", "pings", "recorder",
       "relay", "relay_token", "code", "direct", "story", "quest_freeze", "scene_privacy", "time_host"
     ];
   }
 
   private static func Labels() -> array<String> {
     return [
-      "Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud", "Settings-Recorder",
+      "Settings-Name", "Settings-FriendlyFire", "Settings-EnemyScaling", "Settings-Notices", "Settings-Markers", "Settings-Nameplates", "Settings-PartyHud", "Settings-Link", "Settings-Pings", "Settings-Recorder",
       "Settings-Relay", "Settings-RelayToken", "Settings-Code", "Settings-Direct", "Settings-Story", "Settings-QuestFreeze", "Settings-ScenePrivacy", "Settings-TimeHost"
     ];
   }
 
   private static func Kinds() -> array<Int32> {
-    return [2, 0, 0, 1, 0, 1, 0, 0, 2, 2, 1, 1, 0, 0, 0, 1];
+    return [2, 0, 0, 1, 0, 1, 0, 1, 0, 0, 2, 2, 1, 1, 0, 0, 0, 1];
   }
 
   private static func Whens() -> array<Int32> {
-    return [1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 2, 2, 1];
+    return [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 2, 2, 1];
   }
 
   private static func IndexOf(key: String) -> Int32 {
@@ -65,6 +65,9 @@ public class TandemSettings {
     if Equals(key, "code") {
       return ["new", "keep"];
     }
+    if Equals(key, "link") {
+      return ["auto", "ask", "off"];
+    }
     return ["on", "off"];
   }
 
@@ -83,6 +86,9 @@ public class TandemSettings {
     }
     if Equals(key, "code") {
       return ["Settings-Code-New", "Settings-Code-Keep"];
+    }
+    if Equals(key, "link") {
+      return ["Settings-Link-Auto", "Settings-Link-Ask", "Common-Off"];
     }
     return ["Common-On", "Common-Off"];
   }
