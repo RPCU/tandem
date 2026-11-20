@@ -412,8 +412,11 @@ C++ builds (`AGENTS.md`, Git).
 - **Jobs:** `go` (relay and pilot: vet, race tests), `kubernetes` (the
   kustomize base and overlays, kubeconform), `docs, natives, strings`
   (`tools/docs-check.py links`, `check-natives.py`, `check-strings.py`),
-  `core tests (Linux)` (`task test` with GCC 16, the devenv's: the tests'
-  seeded links are measured with its libstdc++) and `plugin (Windows,
+  `core build (Linux)` (`task build:linux` with GCC 16, the devenv's: the
+  tests' seeded links are measured with its libstdc++), then `core tests`
+  in four jobs side by side on its binaries (`tandem-tests` in three
+  slices, `--order-by=name --first/--last`; the scripts' suites), and
+  `plugin (Windows,
 clang-cl)` (`task build:plugin`: Ubuntu's LLVM 20, the MSVC CRT and
   Windows SDK 10.0.22621 from xwin 0.9.0, cached; `tandem.dll` and
   `tandem.pdb` are uploaded as the run's artifact `tandem-<commit>`).
