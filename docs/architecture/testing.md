@@ -337,6 +337,39 @@ shoot`, `wheels gun`, `wheels ungun`.
   same (`relay-loopback`, `tests/relay_loopback.sh`: it builds the relay
   with Go and runs the `relay` suite of `tandem-tests` against it).
 
+## CI
+
+GitHub Actions (`.github/workflows/ci.yaml`) builds and tests every push to
+any branch of `RPCU/tandem` and every pull request; a newer push cancels
+the older run of the same ref. Branches are merged into `main` with
+`gh pr merge --rebase` once every job is green. The laptop does not run the
+C++ builds (`AGENTS.md`, Git).
+
+- **Jobs:** `go` (relay and pilot: vet, race tests), `kubernetes` (the
+  kustomize base and overlays, kubeconform), `docs, natives, strings`
+  (`tools/docs-check.py links`, `check-natives.py`, `check-strings.py`),
+  `core tests (Linux)` (`task test` with GCC 16, the devenv's: the tests'
+  seeded links are measured with its libstdc++) and `plugin (Windows,
+clang-cl)` (`task build:plugin`: Ubuntu's LLVM 20, the MSVC CRT and
+  Windows SDK 10.0.22621 from xwin 0.9.0, cached; `tandem.dll` and
+  `tandem.pdb` are uploaded as the run's artifact `tandem-<commit>`).
+  `task scripts:check` compiles against the game's own scripts and is not
+  run: it needs the game machine.
+- **Memory** (`.github/actions/build-host`): the runner (4 cores, 16 GB)
+  gets 16 GB of swap and one compile job per 5 GB of RAM (3). Swap only
+  slows down a compile heavier than planned instead of losing the runner
+  (run 44616559671 was killed at 2 jobs, no swap, before "Compile memory"
+  below).
+- **ccache:** ccache 4.14 (devenv's version), the same settings as
+  `devenv.nix` (base dir the checkout, no hashed dir, depend mode), 1 GB
+  per job, saved with `actions/cache` under a new key each run and restored
+  from the newest earlier one (`ccache-linux-`, `ccache-plugin-`), even when
+  the build or the tests fail. Caches are per branch, falling back to
+  `main`'s: a branch's first run starts from `main`'s cache.
+- **Build report** (`.github/actions/build-report`, the job summary):
+  ccache's hits and misses, and the 15 heaviest compiles of the run (peak
+  memory, seconds; misses only: a wrapper in `CCACHE_PREFIX` times each).
+
 ## The compiler cache
 
 Every compile, Windows and Linux, goes through ccache (from devenv), one
