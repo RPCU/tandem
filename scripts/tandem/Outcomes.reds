@@ -79,13 +79,11 @@ public class TandemOutcomes {
     this.m_game = game;
     this.m_sentLevel = -1;
     this.m_sentRules = -1;
+    this.m_throws = new TandemThrows();
+    this.m_throws.Start(game);
   }
 
   public func Throws() -> ref<TandemThrows> {
-    if !IsDefined(this.m_throws) {
-      this.m_throws = new TandemThrows();
-      this.m_throws.Start(this.m_game);
-    }
     return this.m_throws;
   }
 

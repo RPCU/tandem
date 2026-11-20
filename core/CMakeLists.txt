@@ -17,6 +17,7 @@ add_library(tandem_core STATIC
   src/story.cpp
   src/carryover.cpp
   src/scene.cpp
+  src/rigpose.cpp
   src/combat.cpp
   src/interpolation.cpp
   src/movement.cpp
