@@ -340,8 +340,9 @@ shoot`, `wheels gun`, `wheels ungun`.
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yaml`) builds and tests every push to
-any branch of `RPCU/tandem` and every pull request; a newer push cancels
-the older run of the same ref. Branches are merged into `main` with
+any branch of `RPCU/tandem` and every pull request, and when run by hand
+("Run workflow"; `tests: false` only builds); a newer push cancels the
+older run of the same ref. Branches are merged into `main` with
 `gh pr merge --rebase` once every job is green. The laptop does not run the
 C++ builds (`AGENTS.md`, Git).
 
@@ -356,7 +357,8 @@ clang-cl)` (`task build:plugin`: Ubuntu's LLVM 20, the MSVC CRT and
   `task scripts:check` compiles against the game's own scripts and is not
   run: it needs the game machine.
 - **Memory** (`.github/actions/build-host`): the runner (4 cores, 16 GB)
-  gets 16 GB of swap and one compile job per 5 GB of RAM (3). Swap only
+  gets 16 GB of swap and one compile job per 3 GB of RAM, at most one per
+  core (4). Swap only
   slows down a compile heavier than planned instead of losing the runner
   (run 44616559671 was killed at 2 jobs, no swap, before "Compile memory"
   below).
@@ -452,11 +454,15 @@ heaviest units took 8–9 GB each (`protocol.cpp`, `endpoint.cpp`, the sim's
   that every alternative has its own id at compile time, in O(N²) constexpr
   steps (it needed `-fconstexpr-steps` and GCC's ops limit, both gone), and
   decoded through `emplace`. The bytes are the same.
-- **Measured** with GCC 16 (`-O2 -g`, one file at a time, peak RSS),
-  before → after: `protocol.cpp` over 5.5 GB (killed) → 1.4 GB,
-  `endpoint.cpp` over 5.5 GB → 1.7 GB, `play.cpp` 3.3 → 1.0 GB, `session.cpp`
-  1.7 → 0.3 GB, `play_test.cpp` → 0.7 GB, the sim's `game.cpp` → 1.0 GB. The
-  new units: `message_make.cpp` 2.5 GB, `message.cpp` 1.8 GB,
-  `message_move.cpp` 1.4 GB, `session_event*.cpp` 1.7 GB each. CI's build
+- **Measured** in CI (peak memory per compile, cold cache, 16 GB runner):
+  before, GCC 14 took 8.8 GB for `protocol.cpp`, 8.3 GB for
+  `endpoint.cpp`, 8.0 GB for the sim's `game.cpp` and `play_test.cpp`, and
+  the Linux build 25 minutes at 3 jobs, deep in swap (with GCC 16 it did not
+  finish in 59); clang-cl 3.2 GB for `protocol.cpp` and the plugin 7.5
+  minutes. After: the heaviest Linux compile is `message_make.cpp` at
+  2.4 GB (`protocol.cpp` 1.4, `endpoint.cpp` 1.7, `play.cpp` 1.0), the
+  Linux build 3.5 minutes; clang-cl at most 1.7 GB, the plugin 3.5 minutes.
+  Locally (GCC 16, one file): `play.cpp` 3.3 → 1.0 GB, `session.cpp`
+  1.7 → 0.3 GB, copying a `Message` alone 1.5 GB → nothing. CI's build
   report (`.github/actions/build-report`) lists the heaviest compiles of
   each run.
