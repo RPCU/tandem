@@ -1049,3 +1049,61 @@ TEST_CASE("the host's camera through the endpoints: paced, the host's only, a cu
   CHECK(track.At(a->HostNowUs(), out));
   CHECK(out.fov == doctest::Approx(55.f));
 }
+
+// ---- the actors' bodies within the scene's budget ----
+
+TEST_CASE("actor poses are paced and delta coded on the wire, whole for the guest's game") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(a);
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) {
+    return a->IsJoined() && host->Players().size() == 2;
+  }));
+  for (proto::NpcId npc = 1; npc <= 4; ++npc)
+    host->SendNpcSpawn({.npc = npc, .record = npc});
+  REQUIRE(Pump({host.get(), a.get()},
+               [&](std::size_t, const auto &) { return a->SharedNpcs().size() == 4; }));
+  // What the guest hears on the wire, and what its game is told.
+  std::map<std::string, int> wire;
+  a->SetWireTap([&](Endpoint::Wire way, proto::PlayerId, const proto::Message &message) {
+    if (way == Endpoint::Wire::In)
+      ++wire[proto::NameOf(message)];
+  });
+  std::map<proto::NpcId, int> heard;
+  std::size_t offered = 0;
+  // A second and a half of the host's game: every actor's body each frame.
+  for (int frame = 0; frame < 90; ++frame) {
+    for (proto::NpcId npc = 1; npc <= 4; ++npc) {
+      proto::ActorPose pose{.npc = npc};
+      pose.hips = {0, 0, static_cast<std::int16_t>(8000 + frame)};
+      host->SendActorPose(pose);
+      ++offered;
+    }
+    Pump(
+        {host.get(), a.get()},
+        [&](std::size_t i, const auto &events) {
+          for (const auto &event : events)
+            if (const auto *pose = std::get_if<events::HostActorPose>(&event)) {
+              CHECK(i == 1);
+              ++heard[pose->pose.npc];
+              CHECK(pose->pose.timeUs != 0);
+              CHECK(pose->pose.hips[2] >= 8000);
+            }
+          return false;
+        },
+        16ms);
+  }
+  // Every actor is served, none at every frame: the budget's share each.
+  std::size_t total = 0;
+  for (proto::NpcId npc = 1; npc <= 4; ++npc) {
+    CHECK(heard[npc] >= 2);
+    total += static_cast<std::size_t>(heard[npc]);
+  }
+  CHECK(total < offered / 2);
+  // On the wire they are frames, never whole poses.
+  CHECK(wire["ActorFrame"] >= 8);
+  CHECK(wire["ActorPose"] == 0);
+}

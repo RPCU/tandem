@@ -1949,9 +1949,15 @@ bool Runtime::ActorPoseOf(proto::NpcId npc, pose::Pose &out) {
   const auto it = m_actorPoses.find(npc);
   if (it == m_actorPoses.end())
     return false;
+  // Its poses come as often as the scene's budget lets its stream go
+  // (scene::Pacer): drawn one of their intervals in the past, so that there
+  // are two to draw between.
+  const auto interval = it->second.IntervalUs();
+  if (interval > 50'000)
+    delayUs = std::max(delayUs, interval + 20'000);
   // The stream stopped (the scene is over, the host is gone): the proxy is
   // not left frozen in its last pose.
-  if (now > it->second.NewestUs() + delayUs + kActorPoseStaleUs)
+  if (now > it->second.NewestUs() + delayUs + std::max(kActorPoseStaleUs, 3 * interval))
     return false;
   return it->second.At(now > delayUs ? now - delayUs : 0, out);
 }

@@ -675,7 +675,10 @@ public:
   void SendNpcStates(proto::NpcStates states);
   // Host: one scene actor's body pose (State channel; numbered with the NPC
   // states, so the epoch fence that voids the old world's states voids these
-  // too). Nothing for an NPC we do not share.
+  // too). Nothing for an NPC we do not share. Offered as often as the game
+  // reads it: the scene's budget decides which go (scene::Pacer, a body near
+  // a watcher first), delta coded (ActorFrame); a guest's game hears whole
+  // poses.
   void SendActorPose(proto::ActorPose pose);
   // Host: the view of its game's camera in a cutscene (play, position,
   // orientation, fov, kCameraCut), as often as its game has one: paced
@@ -1415,6 +1418,10 @@ private:
   scene::Pacer m_scenePacer;
   std::uint32_t m_cameraSeq{};
   bool m_cameraCut{};
+  std::map<proto::NpcId, pose::PoseEncoder> m_actorEncoders; // host
+  std::map<proto::NpcId, pose::PoseDecoder> m_actorDecoders; // guest
+  // How much an actor's body matters: by how far the nearest other V is.
+  float ActorWeight(proto::NpcId npc) const;
   // Who is in the pause menu (host: the session's record, for late joiners).
   bool m_localPaused{};
   std::set<proto::PlayerId> m_paused;

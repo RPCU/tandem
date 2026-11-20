@@ -30,7 +30,7 @@ namespace {
 constexpr double kBudgetKbps = 64.0;
 constexpr double kFightDownKbps = 96.0;
 
-enum class Play { OnFoot, Standing, Fight, Driving, Apart };
+enum class Play { OnFoot, Standing, Fight, Driving, Apart, Scene };
 
 const char *NameOf(Play play) {
   switch (play) {
@@ -42,6 +42,8 @@ const char *NameOf(Play play) {
     return "fight, 24 NPCs";
   case Play::Driving:
     return "driving, a passenger";
+  case Play::Scene:
+    return "a scene, 3 actors, camera";
   default:
     return "apart (500 m)";
   }
@@ -89,7 +91,7 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
   const auto warmUp = start + 1'000'000;
   const auto end = warmUp + static_cast<std::uint64_t>(seconds * 1e6);
   std::uint64_t nextFrame = start, nextNpcs = start, nextEvent = start;
-  std::uint32_t frame = 0;
+  std::uint32_t frame = 0, sceneFrame = 0;
   std::optional<net::Traffic> before;
   std::uint64_t measuredFrom = 0;
   for (std::size_t i = 0; i < all.size(); ++i)
@@ -112,7 +114,7 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
         const float apart = play == Play::Apart && i > 0 ? 500.f : 3.f * static_cast<float>(i);
         state.position.x += apart;
         float energy = 1.f;
-        if (play == Play::Standing || play == Play::Driving) {
+        if (play == Play::Standing || play == Play::Driving || play == Play::Scene) {
           state.position = {apart, 0.f, 0.f};
           state.velocity = {};
           state.orientation = sync::FromYaw(0.f);
@@ -137,6 +139,20 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
           all[i]->SendCombat(proto::ThrowPath{
               .id = 1 + frame / 120, .position = state.position, .velocity = {0.f, 8.f, 2.f}});
       }
+    }
+    if (play == Play::Scene && sceneFrame != frame) {
+      // The host's story scene, watched (scene replay): three actors whose
+      // bodies its game reads every frame, and a cutscene's camera. What
+      // goes is the scene budget's (scene::Pacer).
+      sceneFrame = frame;
+      const float s = static_cast<float>(now - start) / 1e6f;
+      for (proto::NpcId npc = 1; npc <= 3; ++npc) {
+        if (frame < 5)
+          host->SendNpcSpawn({.npc = npc, .record = 0x1234 + npc, .appearance = 0x55});
+        host->SendActorPose(pose::ForActor(
+            npc, pose::Pack(test::WalkCycle(s + 0.7f * static_cast<float>(npc), 0.4f))));
+      }
+      host->SendSceneCamera(scene::PackCamera(1, {{0.5f * s, -3.f, 1.8f}, {}, 50.f}, false));
     }
     if (play == Play::Fight && now >= nextNpcs) {
       nextNpcs += 100'000;
@@ -179,7 +195,8 @@ Result Run(Play play, bool compact, int guests = 1, double seconds = 4.0) {
 } // namespace
 
 TEST_CASE("typical sessions stay within the bandwidth budget, each way") {
-  for (const auto play : {Play::OnFoot, Play::Standing, Play::Fight, Play::Driving, Play::Apart}) {
+  for (const auto play :
+       {Play::OnFoot, Play::Standing, Play::Fight, Play::Driving, Play::Apart, Play::Scene}) {
     CAPTURE(NameOf(play));
     const auto legacy = Run(play, false);
     const auto compact = Run(play, true);
