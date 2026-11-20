@@ -535,7 +535,6 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-PartyHud", "Party list (linked partners' health)");
     this.Text("Tandem-Settings-Recorder", "Recorder");
     this.Text("Tandem-Settings-Relay", "Relay");
-    this.Text("Tandem-Settings-RelayToken", "Relay host token");
     this.Text("Tandem-Settings-Code", "Join code");
     this.Text("Tandem-Settings-Code-New", "new each session");
     this.Text("Tandem-Settings-Code-Keep", "kept (the same every session)");
@@ -836,7 +835,6 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-PartyHud", "Liste du groupe (santé des partenaires liés)");
     this.Text("Tandem-Settings-Recorder", "Enregistreur");
     this.Text("Tandem-Settings-Relay", "Relais");
-    this.Text("Tandem-Settings-RelayToken", "Jeton d'hôte du relais");
     this.Text("Tandem-Settings-Code", "Code d'invitation");
     this.Text("Tandem-Settings-Code-New", "nouveau à chaque session");
     this.Text("Tandem-Settings-Code-Keep", "gardé (le même à chaque session)");

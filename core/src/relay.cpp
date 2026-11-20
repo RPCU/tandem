@@ -736,6 +736,7 @@ void RelayLink::OnRedirect(const std::uint8_t *body, std::size_t length, enet_ui
   to.port = Be16(body + 5);
   m_relay = to;
   ++m_redirects;
+  m_solving = m_solved = false; // another replica, another challenge
   SendRequest(now);
 }
 

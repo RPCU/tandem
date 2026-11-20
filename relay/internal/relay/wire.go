@@ -181,7 +181,7 @@ const (
 	// session to: try again in a moment.
 	ErrDraining ErrorCode = 8
 	// An open relay: this address (an IPv4 address, an IPv6 /64) hosts as
-	// many sessions as it may, or the relay as many open ones.
+	// many sessions as it may.
 	ErrSourceBusy ErrorCode = 9
 )
 
