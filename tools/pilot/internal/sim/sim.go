@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/pad"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/state"
+	"github.com/RPCU/tandem/tools/pilot/internal/pad"
+	"github.com/RPCU/tandem/tools/pilot/internal/state"
 )
 
 // NPC is somebody in the toy world.

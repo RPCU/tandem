@@ -10,7 +10,7 @@ import (
 	"net/netip"
 	"os"
 
-	"github.com/Banh-Canh/tandem/relay/internal/proxyfwd"
+	"github.com/RPCU/tandem/relay/internal/proxyfwd"
 )
 
 func main() {

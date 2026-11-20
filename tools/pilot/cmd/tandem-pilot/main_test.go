@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/guard"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/link"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/pad"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/sim"
+	"github.com/RPCU/tandem/tools/pilot/internal/guard"
+	"github.com/RPCU/tandem/tools/pilot/internal/link"
+	"github.com/RPCU/tandem/tools/pilot/internal/pad"
+	"github.com/RPCU/tandem/tools/pilot/internal/sim"
 )
 
 // fakeGame is a game folder with the simulator behind its files, in real

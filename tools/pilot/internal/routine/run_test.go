@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/pad"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/routine"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/sim"
+	"github.com/RPCU/tandem/tools/pilot/internal/pad"
+	"github.com/RPCU/tandem/tools/pilot/internal/routine"
+	"github.com/RPCU/tandem/tools/pilot/internal/sim"
 )
 
 // play runs a routine's text on a simulator the test may prepare.

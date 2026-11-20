@@ -6,7 +6,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/pad"
+	"github.com/RPCU/tandem/tools/pilot/internal/pad"
 )
 
 // The closed loops: each reads the plugin's pilot state every tick and

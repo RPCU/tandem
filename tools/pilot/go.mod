@@ -1,3 +1,3 @@
-module github.com/Banh-Canh/tandem/tools/pilot
+module github.com/RPCU/tandem/tools/pilot
 
 go 1.25

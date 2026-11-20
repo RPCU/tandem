@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/pad"
+	"github.com/RPCU/tandem/tools/pilot/internal/pad"
 )
 
 // Kind is what a step does.

@@ -17,13 +17,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/guard"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/link"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/pad"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/routine"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/sim"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/spool"
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/xtest"
+	"github.com/RPCU/tandem/tools/pilot/internal/guard"
+	"github.com/RPCU/tandem/tools/pilot/internal/link"
+	"github.com/RPCU/tandem/tools/pilot/internal/pad"
+	"github.com/RPCU/tandem/tools/pilot/internal/routine"
+	"github.com/RPCU/tandem/tools/pilot/internal/sim"
+	"github.com/RPCU/tandem/tools/pilot/internal/spool"
+	"github.com/RPCU/tandem/tools/pilot/internal/xtest"
 )
 
 const usage = `tandem-pilot: play the game's V for a test

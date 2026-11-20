@@ -26,7 +26,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Banh-Canh/tandem/relay/internal/relay"
+	"github.com/RPCU/tandem/relay/internal/relay"
 )
 
 func main() {

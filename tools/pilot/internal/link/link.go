@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/state"
+	"github.com/RPCU/tandem/tools/pilot/internal/state"
 )
 
 // Files is the game in one folder.

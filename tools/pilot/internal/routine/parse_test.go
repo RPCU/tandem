@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Banh-Canh/tandem/tools/pilot/internal/pad"
+	"github.com/RPCU/tandem/tools/pilot/internal/pad"
 )
 
 func TestParse(t *testing.T) {
