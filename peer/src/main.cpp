@@ -220,6 +220,12 @@ struct Options {
   bool nearNpc{};
   int throwSeconds{0};                               // our V throws a grenade this often (0: never)
   std::string throwItem{"Items.GrenadeFragRegular"}; // --throw: what
+  // --throw: each grenade "bounces" a second in, 3 m off its arc (its path
+  // said as it flies, ThrowPath), and explodes 3 m to the side.
+  bool throwBounce{};
+  // Our V's footsteps as noise for the others' NPCs (Noise), as its game
+  // gives them out: a run's, a sprint's, none walking slowly or crouched.
+  bool footsteps{};
   int smartSeconds{0};  // our V fires a smart round at an NPC this often (0: never)
   int defendSeconds{0}; // join: we parry, then block, an NPC's attack this often
   // host: the world the game follows (time of day, weather name); unset: none sent
@@ -599,6 +605,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --throw N          every N seconds our V throws a grenade (--throw-item) 10 m\n"
          "                     ahead; it explodes 2 s later (the others launch a copy)\n"
          "  --throw-item REC   --throw: the grenade's record (Items.GrenadeFragRegular)\n"
+         "  --throw-bounce     --throw: a second in, the grenade is 3 m off its arc (its\n"
+         "                     path is said as it flies) and it explodes 3 m to the side\n"
+         "  --footsteps        our V's footsteps as noise for the others' NPCs: a run's\n"
+         "                     (stim 25), a sprint's (26), 4 a second; none slow or crouched\n"
          "  --smart N          every N seconds our V fires a smart round at an NPC we see\n"
          "  --defend N         join: every N seconds we parry, then block, an NPC's attack\n"
          "  --time HH:MM       host: the time of day the game must follow\n"
@@ -1359,6 +1369,10 @@ Options Parse(int argc, char **argv) {
       options.throwSeconds = Number<int>(value);
     else if (flag == "--throw-item")
       options.throwItem = std::string(value);
+    else if (flag == "--throw-bounce")
+      options.throwBounce = true;
+    else if (flag == "--footsteps")
+      options.footsteps = true;
     else if (flag == "--smart")
       options.smartSeconds = Number<int>(value);
     else if (flag == "--defend")
@@ -3381,6 +3395,10 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
   if (const auto *t = std::get_if<proto::Throw>(&message))
     return std::format("player {} throws {} (kind {}, flags {:#x}, npc {}, at player {})",
                        t->player, t->id, static_cast<int>(t->kind), t->flags, t->npc, t->at);
+  if (const auto *path = std::get_if<proto::ThrowPath>(&message))
+    return std::format("player {}'s throw {} is at ({:.1f} {:.1f} {:.1f}), {:.1f} m/s",
+                       path->player, path->id, path->position.x, path->position.y, path->position.z,
+                       std::hypot(path->velocity.x, path->velocity.y, path->velocity.z));
   if (const auto *e = std::get_if<proto::ThrowEnd>(&message))
     return std::format("player {}'s throw {} ends ({})", e->player, e->id,
                        static_cast<int>(e->how));
@@ -3844,7 +3862,12 @@ int main(int argc, char **argv) {
     std::uint32_t id;
     std::chrono::steady_clock::time_point at;
     tandem::proto::Vec3 where;
+    // --throw-bounce: when its path is said, and where it is then.
+    std::optional<std::chrono::steady_clock::time_point> bounceAt{};
+    tandem::proto::Vec3 bounce{};
   };
+  tandem::presence::NoiseGate footstepGate; // --footsteps
+  std::uint32_t footstepsSaid = 0;
   std::vector<Thrown> inFlight;
   std::set<tandem::proto::NpcId> deadNpcs;
   std::map<tandem::proto::NpcId, Vec3> npcAt; // join: where the host's NPCs are
@@ -5335,6 +5358,21 @@ int main(int argc, char **argv) {
       if (state) {
         endpoint->SendLocalState(*state);
         lastSent = state->position;
+        // --footsteps: what its game's state machine broadcasts as it
+        // moves (StandEvents above 2.5 m/s, SprintEvents; a crouched V
+        // none), through the gate the plugin sends them through.
+        if (options.footsteps && endpoint->IsJoined()) {
+          const float speed = std::hypot(state->velocity.x, state->velocity.y);
+          const bool crouched = state->stance == 1 || state->stance == 11 || state->stance == 12;
+          const std::uint8_t stim = speed > 5.8f   ? tandem::presence::kStimFootStepSprint
+                                    : speed > 2.5f ? tandem::presence::kStimFootStepRegular
+                                                   : std::uint8_t{0};
+          if (stim != 0 && !crouched && footstepGate.ShouldSend(stim, tandem::net::NowUs())) {
+            endpoint->SendNoise({.stim = stim});
+            if (++footstepsSaid == 1 || footstepsSaid % 20 == 0)
+              Log("footsteps: noise {} sent (stim {}, {:.1f} m/s)", footstepsSaid, stim, speed);
+          }
+        }
         if (regionNpcs)
           regionNpcs->Tick(*endpoint, tandem::net::NowUs(), state->position,
                            !puppeteer.RegionLeaving());
@@ -6325,10 +6363,25 @@ int main(int argc, char **argv) {
                                         .velocity = {0.f, 7.f, 6.f}};
       if (endpoint->SendCombat(thrown)) {
         Log("we throw grenade {} ({})", thrown.id, options.throwItem);
-        inFlight.push_back(
-            {thrown.id, now + std::chrono::seconds(2), {from.x, from.y + 10.f, from.z - 1.5f}});
+        Thrown flight{
+            thrown.id, now + std::chrono::seconds(2), {from.x, from.y + 10.f, from.z - 1.5f}};
+        if (options.throwBounce) {
+          // A second in it "bounced off something" to the right: 3 m off
+          // the arc a copy flies, and it ends 3 m to the side.
+          flight.bounceAt = now + std::chrono::seconds(1);
+          flight.bounce = {from.x + 3.f, from.y + 6.f, from.z - 0.5f};
+          flight.where.x += 3.f;
+        }
+        inFlight.push_back(flight);
       }
     }
+    for (auto &flight : inFlight)
+      if (flight.bounceAt && now >= *flight.bounceAt) {
+        flight.bounceAt.reset();
+        if (endpoint->SendCombat(tandem::proto::ThrowPath{
+                .id = flight.id, .position = flight.bounce, .velocity = {0.f, 4.f, -1.f}}))
+          Log("our grenade {} bounced: its path is said", flight.id);
+      }
     for (auto it = inFlight.begin(); it != inFlight.end();)
       if (now >= it->at) {
         endpoint->SendCombat(tandem::proto::ThrowEnd{

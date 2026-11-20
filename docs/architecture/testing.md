@@ -165,7 +165,8 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   (`Rules`). `host --hit-you-melee on` makes `--hit-you`'s hits melee
   (the guest holds them for its proxy's swing). `--throw N [--throw-item
 REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
-  later (`Throw`, `ThrowEnd`: the others launch a copy); `--smart N` fires
+  later (`Throw`, `ThrowEnd`: the others launch a copy; `--throw-bounce`:
+  a second in it is 3 m off its arc and says so, `ThrowPath`); `--smart N` fires
   a smart round at an NPC it knows; `join --defend N` parries, then
   blocks, one of the host's NPCs' attacks every N s (`Defended`).
   Enemy scaling (`npcs.md`): `join --near-npc` stands 4 m from one of the
@@ -184,7 +185,8 @@ REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
   (default 10), then lose them; `--camo N` turns "its optical camo" on for
   5 s (`--camo-record REC` names its status effect, as a V's camo sends
   it); `--shoot N` fires a gunshot every N s (the shot, where its bullet
-  ended, and as guest its noise).
+  ended, and as guest its noise); `--footsteps` sends its V's footsteps
+  as noise while it runs or sprints (stims 25 and 26, 4 a second).
   Stealth, noises and the host's awareness of it are logged.
 - **Takedowns**: `join --grab-npcs N` grabs one of the host's NPCs every N
   s (standing by it) and takes it down two seconds later, lethal and

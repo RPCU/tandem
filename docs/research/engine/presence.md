@@ -230,3 +230,53 @@ IsPhotoModeActive()` (`:53351`) and the blackboard
 - V's health for display: `StatPoolsSystem.GetStatPoolValue(id,
 gamedataStatPoolType.Health, true)` is a percentage 0..100 (`:83547`,
   as the boss bar divides it by 100, `:190946`).
+
+### 13.90 Swimming's effects and sounds, a projectile put on a path (2026-11-20, read in final.reds, not run)
+
+**Swimming.** V's swimming is a state machine of its own
+(`LocomotionSwimming*`, PSM `Swimming`: 0 none, 1 surface, 2 diving, 3
+climbing out; `PlayerState::flags` carries it). What each state plays, all
+on V's entity (`final.reds:N`):
+
+<!-- prettier-ignore -->
+| Moment | What the scripts start | Tag |
+| --- | --- | --- |
+| on the surface (`SwimmingSurfaceEvents.OnEnter` / `OnExit`) | effect `swimming_surface`, started and stopped (`:524022`, `:524033`); status effect `BaseStatusEffect.WaterCollision` | [2.5-untested] |
+| a stroke on the surface | effect `swimming_surface_stroke` every `timeBetweenSurfaceSwimmingStroke` while swimming forward (`:523953`); fast: `swimming_surface_stroke_fast` every `timeBetweenSwimmingStroke` (`:526468`) | [2.5-untested] |
+| going under (`SwimmingTransitionEvents.OnEnter`) | sound `hold_breath` (a `SoundPlayEvent` on V, `:245499`), effect `swimming_enter_dive`, a rumble (`:527582`) | [2.5-untested] |
+| under (`SwimmingDivingEvents`) | effect `swimming_diving`, started and stopped (`:528133`, `:528148`); strokes `swimming_diving_stroke` every `timeBetweenDivingStroke` (`:528114`), fast `swimming_diving_stroke_fast` (`:528639`) | [2.5-untested] |
+| back up (`SwimmingSurfaceEvents.OnEnterFromDiving`) | sound `surface_from_dive` (`:524001`) | [2.5-untested] |
+| leaving the water (`LocomotionSwimmingEvents.ExitCleanup`) | both loop effects stopped (`:522159`) | [2.5-untested] |
+
+- The stroke intervals are TweakDB parameters of the states (script
+  default 1.0 s each): not readable outside the state machine. tandem
+  strokes once a second while the puppet moves, every 0.6 s above 3.2 m/s
+  (`presence::Observer`): by eye against the pose. [to-hear]
+- No script names a splash for V entering water: it is in the effects, or
+  native. A body in water has script-named world sounds: an NPC's ragdoll
+  plays `w_melee_water_medium_splash` for its torso and `w_bul_hit_water`
+  for a limb (`NPCPuppet.OnRagdollBodyPartWaterImpactEvent`, `:128235`),
+  `gmp_ragdoll_floor_splash` (`:127710`); a grenade `w_bul_hit_water_heavy`
+  (`:175829`).
+- **Open** [to-hear] [to-see]: the effects are named on V's own entity
+  (`player_*_fpp.ent`); whether the puppet's body
+  (`player_*_tpp_cutscene.ent`) carries them, and whether they hold the
+  swimming sounds, is not in scripts. tandem plays both layers, the
+  effects and the NPC splashes (`presence swim both|fx|sound` picks one).
+
+**A projectile on a path.** `ProjectileComponent` (`:177321`):
+`ClearTrajectories()`, `AddParabolic(ParabolicTrajectoryParams)`,
+`AddLinear`, `AddFollowCurve`, `SetDesiredTransform(Transform)`,
+`SetOnCollisionAction`, `SetEnergyLossFactor` (a grenade's bounciness, set
+once in `OnProjectileInitialize`, `:175625`).
+`ParabolicTrajectoryParams.GetAccelVelParabolicParams(accel, vel, opt
+zVelocityClamp)` has a speed and no direction: the direction is the
+projectile's orientation (`DropToFloor` falls with 0.0001, `:177051`).
+`SetDesiredTransform` is how a homing miss turns a round before its next
+trajectory (`:538565`). So a grenade copy is put on the real one's path by:
+`ClearTrajectories`, a teleport to the point facing the velocity,
+`SetDesiredTransform` of the same, `AddParabolic` with the grenade's gravity
+(`DeliveryMethod().AccelerationZ()`) and the speed. Whether the trajectory
+starts from the desired transform or from where the entity was that frame
+is not in scripts. [2.5-untested] [to-see] A grenade's bounces arrive as
+`BaseGrenade.OnCollision(gameprojectileHitEvent)` (`:175816`).

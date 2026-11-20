@@ -1673,6 +1673,12 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_presence) {
         this.m_presence.Command(StrAfterFirst(command, "presence "), this);
       }
+    } else if Equals(command, "throws report") {
+      // Throws.reds: ours in flight, path samples said, copies put back.
+      let throws = TandemThrows.Of(this.GetGameInstance());
+      if IsDefined(throws) {
+        throws.Report();
+      }
     } else if StrBeginsWith(command, "revive") {
       // Revive.reds: revive down | hold | report.
       if IsDefined(this.m_revive) {

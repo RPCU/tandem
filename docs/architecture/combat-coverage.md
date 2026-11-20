@@ -49,11 +49,11 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Power weapons (pistols, revolvers, rifles, SMGs, shotguns, LMG/HMG, precision, snipers; ricochets) | W vanilla | W off / U on (`AreaHit`) | W vanilla (ricochets) | W gun hits and deaths (`npcs-hit`, 2026-11-18); U the whole outcome (`outcomes-*`) | W off / U on | W vanilla | W muzzle flash, shells, report, reload (28 shots, 2026-11-18); D no tracer or bullet |
 | Tech weapons (charge, piercing walls and cover) | W vanilla | W off / U on | – | U the charged shot pierces on the guest's own copy of the static geometry and strikes the proxy behind it (`WeaponFullyCharged` set in its pipeline); D a door open on one game and shut on the other (devices) | W off / U on | – | D the shot, not the charge glow |
-| Smart weapons (lock-on, guided rounds) | W vanilla | W off / U on | – | U locks on proxies (the host's record, its targeting components, the host's attitudes copied), the rounds home on the guest's game | W off / U on | – | U the round homes on its lock from the puppet (`Throw` Smart, scenario `combat-throw-guest`) |
+| Smart weapons (lock-on, guided rounds) | W vanilla | W off / U on | – | U locks on proxies (the host's record, its targeting components, the host's attitudes copied), the rounds home on the guest's game | W off / U on | – | U the round homes on its lock from the puppet (`Throw` Smart, scenario `combat-throw-guest`); U with no lock the others know, a plain round to where it was aimed (`Cue` Trace) |
 | Melee weapons: blades, blunt, fists | W vanilla | W off / U on | – | W punch (`npcs-punch`, 2026-11-18); U blade wounds and the limb cut by the host's hit reaction (`outcomes-blade`), U non-lethal knock-out (`outcomes-knockout`), U poise and the finisher it opens (`outcomes-poise`) | W off / U on | – | U swing sound (`AI_PlayMeleeAttackSound`), the swing in the pose stream |
 | Arm cyberware: mantis blades, gorilla arms, monowire | W vanilla | W off / U on | – | U as melee; D gorilla arms' one-punch slow motion goes to the host's V (`NPCPuppet.OnStatusEffectApplied` → `GetPlayer`, coop-perks §5.3); U monowire's upload through the quickhack path | W off / U on | – | U arms look (appearance sync) |
 | Thrown knives and axes | W vanilla | W off / U on | – | U the projectile's hit is a strike | W off / U on | – | U a copy flies from the puppet, sticks where the real one stuck and goes when its owner picks the real one up (`Throw` Knife); the copy refuses every pickup |
-| Grenades: frag, incendiary, EMP, biohazard, sonic (damage, status effects) | W vanilla | W off / U on | W vanilla | U the explosion runs on the guest's game, each proxy's share a strike, its status effects `NpcEffect`; D NPCs beyond the guest's 60 m proxy range are out of its reach | W off / U on | W vanilla | U a copy flies from the puppet, its fuse held, and explodes where and when the real one did (`combat-throw-host`, `combat-throw-guest`); its hits are dropped |
+| Grenades: frag, incendiary, EMP, biohazard, sonic (damage, status effects) | W vanilla | W off / U on | W vanilla | U the explosion runs on the guest's game, each proxy's share a strike, its status effects `NpcEffect`; D NPCs beyond the guest's 60 m proxy range are out of its reach | W off / U on | W vanilla | U a copy flies from the puppet, its fuse held, and explodes where and when the real one did (`combat-throw-host`, `combat-throw-guest`), kept on the real one's path meanwhile (`ThrowPath`, `combat-throw-bounce`); its hits are dropped |
 | Flash and smoke grenades (perception) | W vanilla | – | W vanilla | U flash: the blind status effect goes as `NpcEffect`; U smoke: the copy's vision blocker stands on the host, so its NPCs lose sight as vanilla's do | – | W vanilla | U as above |
 | Recon grenade (reveal) | W vanilla | – | – | U on the guest's own proxies | – | – | D the reveal is the thrower's only (sharing it is "players linking up", players.md) |
 | Cutting (laser) and piercing grenades | W vanilla | W off / U on | W vanilla | U as grenades (lasers on the guest's game) | W off / U on | W vanilla | U the copy cuts its own harmless lasers |
@@ -163,6 +163,18 @@ grenades and every V's thrown object unseen on the other game) and the
   put where the real one ended and detonated, stuck or released there. No
   end in 15 s (its thrower gone): released quietly. A throw that waited more
   than 1 s in the queue (`combat::kThrowStaleUs`, a stall) is not launched.
+- **A grenade's copy follows the real one's path.** The thrower's game
+  says where its grenade is and how it moves (`ThrowPath`, State channel:
+  after each bounce, `BaseGrenade.OnCollision`, and 4 times a second in
+  flight; once more when it lies still; the same for an owner's NPC's
+  grenade). A copy within 1.5 m of it (0.4 m lying still) flies on
+  untouched: the same arc on the same geometry. One that strayed (it
+  bounced off a car one game alone has) is put on the real one's path
+  (`combat::FollowPath`, `BaseGrenade.TandemFollow`: its trajectories
+  cleared, placed there, a parabola of the real one's speed and the
+  grenade's gravity), or laid where the real one lies. A sample that waited
+  0.3 s is dropped (`kThrowPathStaleUs`). Knives and launcher rounds fly
+  straight for well under a second: their end places them.
 - **A copy deals no damage**: its hits come from a remote V's puppet, and a
   puppet never deals damage on our game but through `AreaHit` (on our V) or
   a strike (the host, on its NPCs): `TandemOutcomes.IsRemoteComputed`, on
@@ -180,6 +192,9 @@ grenades and every V's thrown object unseen on the other game) and the
   `UI_ActiveWeaponData.SmartGunParams`, the locked target first): the
   others' puppet fires a guided round at it as an NPC's smart gun does
   (`AIWeapon.Fire`: `smartGunIsProjectileGuided`, `trackedTargetComponent`).
+  With no lock the others know (nothing locked, or an NPC they do not
+  share) the round is drawn as a plain one to where it was aimed
+  (`Cue` Trace, presence.md).
 - **The host's NPCs' grenades** (`kThrowByNpc`, the thrower in `npc`): the
   guests launch a copy from the NPC's proxy; its damage is the host's
   (`PlayerHit`), the copy's hits are a proxy's own (dropped,
@@ -227,18 +242,17 @@ the guest's game, as shots were (time.md), was weighed and not done:
   by the user 2026-11-19: a host rule covering every hit, off by default.
 - **Melee at a guest stays decided by the host, landed by the guest**
   (above).
-- **Copies, not streams.** A thrown object's flight is not streamed: the
-  copy flies the same arc on the same geometry and is corrected once, at its
-  end. A grenade bouncing off something only one game has (a car that moved
-  differently) lands elsewhere for a moment, then explodes at the real
-  place.
+- **Copies, corrected, not streams.** A thrown object's flight is not
+  replayed sample by sample: the copy flies the same arc on the same
+  geometry by itself, and is touched only when it strayed from the real
+  one's path (a grenade, `ThrowPath`) and at its end.
 - **Mines**: there are none for players in 2.50; placed mines and
   explosive devices are the host's devices (the devices work).
 
 ## Open
 
 - Everything U above: the scenarios to run are `combat-throw-host`,
-  `combat-throw-guest`, `combat-friendly-fire`, `combat-friendly-fire-off`,
+  `combat-throw-guest`, `combat-throw-bounce`, `combat-friendly-fire`, `combat-friendly-fire-off`,
   `combat-defend`, `combat-melee-guest`, then `npcs-shoot-guest` again (its
   hits were dropped) and the `outcomes-*` ones.
 - Gorilla arms' one-punch slow motion and System Collapse's buffs on the
@@ -246,3 +260,6 @@ the guest's game, as shots were (time.md), was weighed and not done:
   (`breach-guest`, `breach-host`; built, not run);
   smart-weapon NPCs firing guided rounds at a guest; NPC knives and
   launchers shown on guests; tracers for the Vs' shots.
+- A grenade's copy put back on its path: whether the new parabola starts
+  from the place given (engine/presence.md §13.90), to see in
+  `combat-throw-bounce`.
