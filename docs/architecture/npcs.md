@@ -232,6 +232,11 @@ the first group session.
   every game until it ends. Built and tested without the game; scenario
   `vendor-guest`.
 
+- **Placed NPCs** (`regions.md` §3, §14): an owner names the static
+  entity of each placed NPC it announces (`NpcPlaced`); the other games
+  find their own copy by it (twins), and its death goes into the session's
+  ledger: dead in every game until the session ends.
+
 ## Open problems
 
 - **Suppressing guests' own world simulation** (crowds, traffic, encounters,

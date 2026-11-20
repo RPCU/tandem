@@ -23,6 +23,9 @@ expect_peer "vendor npc [0-9]+: $record at" 20
 # Our own vendor gives way to the host's (a twin, or a spawn inside its
 # region); its proxy stands in its place.
 pause 6
+# (Which way, for the notes: "the same placed NPC" is the twin by identity,
+# "is a placed NPC another game runs: held back" the spawn that came after.)
+note "$(since | grep -E 'regions: our (npc|own) .*(twin of|held back)' | tail -1)"
 cmd vendor
 expect 'vendor: 1 vendors. proxies' 10
 note "$(since | grep -E '  npc [0-9]+: .*entity' | tail -1)"
@@ -41,6 +44,10 @@ expect_peer 'player [0-9]+ is free again' 15
 # The host's vendor dies: every game hears it; ours stays hidden and shut.
 expect_peer 'vendor npc [0-9]+ died' 70
 expect "vendor: $entity died in the session" 15
+# ...and it is in the session's ledger (regions.md §14); we saw it die, so
+# no other body is laid.
+expect "ledger: placed npc .* died in player 1's game" 15
+reject 'ledger: a body for placed npc'
 cmd vendor open
 expect 'vendor: no vendor.s proxy within 6 m|stays shut: dead' 10
 shot vendor-guest-dead

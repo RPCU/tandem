@@ -6299,6 +6299,9 @@ int main(int argc, char **argv) {
                                 .position = options.vendorAt});
         vendorShared = endpoint->SendCombat(
             proto::NpcVendor{.npc = kVendorNpc, .entity = options.vendorEntity});
+        // A vendor is a placed NPC: its twin in the other games is known by
+        // its entity, and its death is the ledger's too (regions.md §14).
+        endpoint->SendCombat(proto::NpcPlaced{.npc = kVendorNpc, .entity = options.vendorEntity});
         Log("vendor npc {}: {} at {:.1f} {:.1f} {:.1f}, the placed vendor {:x}{}", kVendorNpc,
             options.vendorRecord, options.vendorAt.x, options.vendorAt.y, options.vendorAt.z,
             options.vendorEntity, vendorShared ? "" : " (not said: nobody to tell)");

@@ -142,6 +142,7 @@ The owner simulates; everyone else displays.
 | an NCART train (scripted transit) | each rider's own game | never shared: puppet in a train of ours, else hidden |
 | a world vehicle: traffic, parked, police, a wreck, a chase car | the game that runs it: the owner of its area (`Endpoint::AreaOwner`) that announced it, until it is handed over as an NPC is (its riders with it) | proxy, or their own instance of a placed vehicle; the first player to get in has it (`architecture/traffic.md`) |
 | NPCs: AI, position, health, death | the game that runs it (spawned it, or took it over; quest NPCs: host) | **proxy with its AI off** in the linked games, driven by its owner (`architecture/regions.md`) |
+| the session's dead: placed NPCs killed or knocked out (the ledger) | recorded by the NPC's owner, kept by the host for the session | every game keeps its own copy out of its world (hidden, never killed: no save changes), with a body where a recent one fell (`architecture/regions.md` §14) |
 | spawns: crowds, encounters | each game around its own V | held back only where a higher-ranked linked player's region covers it |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
 | the story's gameplay restrictions (no weapons, no sprint… during the host's scene) | host (its V's, reported) | worn on its own V by a guest in the host's story moment, taken off when it leaves it (`architecture/story.md`) |
@@ -301,7 +302,7 @@ plugin") and its open problems.
 - `world.md`: time of day and weather; open: the guest acting on the world, NCPD chases, saves.
 - `time.md`: the pause menu, slowed time (time bubbles, the scanner's bubble); what the partner lives with when a V scans (decided: as built, plus a cue); open: every time dilation, other timeline and menu, NPC shots simulated by the target's game.
 - `npcs.md`: enemy level, enemy scaling (the count of players near, the multipliers, the host's rule), NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
-- `regions.md`: per-player regions: links and their hysteresis, who owns an NPC, hand-over without a pop, what travels where, crowd density in the overlap, late joiners and vanishing owners, grouped or apart and holding a region for gigs, the area owner (traffic). For anything about an NPC's owner.
+- `regions.md`: per-player regions: links and their hysteresis, who owns an NPC, hand-over without a pop, what travels where, crowd density in the overlap, late joiners and vanishing owners, grouped or apart and holding a region for gigs, the area owner (traffic), twins, the death ledger. For anything about an NPC's owner.
 - `combat.md`: hits, outcomes, game rules for every hit, quickhacks.
 - `combat-coverage.md`: every way of fighting (weapon classes, melee, block and parry, throwables, grenades, launchers, cyberware, quickhacks, environment, finishers) by attacker and target, with its state and evidence; thrown objects' copies, friendly fire, NPC melee at a guest, companions.
 - `stealth.md`: takedowns, finishers, carried bodies, "the player" reactions, per-player detection.

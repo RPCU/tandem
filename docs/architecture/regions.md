@@ -33,6 +33,7 @@ scenarios at the end are the in-game checks to run.
 11. [Where the code is](#11-where-the-code-is)
 12. [Testing](#12-testing)
 13. [Open points and risks](#13-open-points-and-risks)
+14. [The death ledger](#14-the-death-ledger)
 
 ## 1. The rules in one page
 
@@ -133,13 +134,30 @@ host ran the first and guests the second.
 1. _Spawning in an overlap_ (§6): a lower-ranked game does not add new NPCs
    inside a higher-ranked linked player's region.
 2. _Twins_: a placed NPC (a vendor at its stall) exists in both games. When
-   a proxy of a higher-ranked owner's NPC appears within 2.5 m of one of
-   ours with the same record, ours gives way: it is hidden and no longer
-   shared, and the proxy stands in its place. Matching by record and place
-   is used for this only, on NPCs that stand still (ARCHITECTURE's warning
-   about matching waves stands: fighting NPCs are never matched). A
-   vendor's twin keeps its shop: beside the proxy, our own hidden copy's
-   vendor opens (`progression.md`, "Vendors").
+   a proxy of a higher-ranked owner's NPC comes, our own copy of the same
+   person gives way: it is hidden and no longer shared, and the proxy
+   stands in its place. Which of ours that is (`twins::Match`,
+   `tandem/twins.hpp`; `TandemNpcs.MergeTwins`):
+   - _by identity_: an owner says which of its NPCs are placed
+     (`NpcPlaced{npc, entity}`: the static `EntityID`, the same in every
+     game; never a crowd NPC). Ours of that id is its twin, wherever each
+     stands; with no such NPC of ours, none is (never a neighbour of its
+     record);
+   - _else by record and place, one to one_: among the proxies with no
+     identity and our NPCs with a dynamic id, of the same record and within
+     2.5 m (`twins::kReach`), the nearest pairs first. A proxy takes one of
+     ours at most and one of ours goes to one proxy at most: two identical
+     guards side by side are two pairs. One of ours with a static id is
+     never matched by place.
+
+   The proxies of one batch are matched together, 0.3 s after they came
+   (the owner's `NpcPlaced` comes by another queue than its spawn). An NPC
+   of ours in a fight, hurt or down is never given up (ARCHITECTURE's
+   warning about matching waves stands). A placed NPC of ours that comes
+   into range while another game's proxy of the same entity is here is
+   never announced (`IsTwinOfProxy`), whatever the ranks: one owner per
+   NPC. A vendor's twin keeps its shop: beside the proxy, our own hidden
+   copy's vendor opens (`progression.md`, "Vendors").
 3. _Heirs_ (§7): when an owner goes, the highest-ranked linked player near
    each of its NPCs takes it.
 
@@ -233,7 +251,7 @@ message changed; the endpoint routes by owner.
 
 | Messages                                                                                                                                                                      | From → to                                                                                                                                   |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NpcSpawn`, `NpcStates`, `NpcGone`, `NpcHealth`, `NpcAnims`, `NpcShot`, `NpcHold`, `NpcSeat`, `NpcPoise`, `NpcWound`, `NpcHackState`, `NpcStatus`, `NpcAwareness`, `NpcLevel` | the owner → every player linked with it (a guest's go through the host, which checks the sender owns the NPC, keeps the record, and relays) |
+| `NpcSpawn`, `NpcStates`, `NpcGone`, `NpcHealth`, `NpcAnims`, `NpcShot`, `NpcHold`, `NpcSeat`, `NpcPoise`, `NpcWound`, `NpcHackState`, `NpcStatus`, `NpcAwareness`, `NpcLevel`, `NpcPlaced` | the owner → every player linked with it (a guest's go through the host, which checks the sender owns the NPC, keeps the record, and relays) |
 | `NpcHit`, `NpcStrike`, `NpcEffect`, `NpcHack`, `NpcAction`, `ShotHit`, `Defended`                                                                                             | any player → the owner (through the host; the host stamps the sender)                                                                       |
 | `PlayerHit`, `PlayerHack`, `NpcCue`, `NpcShotAt`                                                                                                                              | the owner → one player, only if that player's game shows the NPC (in the record, linked with its owner), through the host                   |
 | `NpcActionReply`                                                                                                                                                              | the owner → whoever asked (the host remembers the asker of each forwarded `NpcAction`), even if the link broke since: it asked              |
@@ -249,7 +267,8 @@ message changed; the endpoint routes by owner.
 | `NpcHandoverState`                                                                                                                                                            | giver → host → receiver                                                                                                                     |
 | `NpcHandoverDone`                                                                                                                                                             | giver or receiver → host                                                                                                                    |
 
-`RegionHold` goes from a player's game to everyone (the host stamps and
+`NpcDeath` goes from the NPC's owner to the host, and from the host to
+everyone, whatever the links (§14). `RegionHold` goes from a player's game to everyone (the host stamps and
 relays it, and keeps who holds for late joiners).
 
 **Only to the games that show the NPC.** Everything an owner says about its
@@ -504,6 +523,7 @@ belongs to the world of the player who starts it), and how each point is met.
 | Owner and proxy sides in one game                      | `scripts/tandem/Npcs.reds`; give, take, suppression, twins: `scripts/tandem/Regions.reds`                                |
 | World vehicles of several owners                       | `core/src/endpoint_traffic.cpp`, `tests/traffic_regions_test.cpp`, `scripts/tandem/Traffic.reds` (`traffic.md`)          |
 | Mock player as an NPC owner                            | `tandem-peer --mode region` (`peer/src/main.cpp`), `tests/peer_regions.sh`                                               |
+| The death ledger, twins                                | `tandem/ledger.hpp`, `tandem/twins.hpp`, `NoteDeath` and `RecordDeath` in `core/src/endpoint_regions.cpp`, `scripts/tandem/Ledger.reds`, `tests/ledger_test.cpp` (§14) |
 | Scenarios                                              | `tools/scenarios/regions-apart.sh`, `regions-meet.sh`, `regions-vanish.sh`                                               |
 
 ## 12. Testing
@@ -552,6 +572,16 @@ In the game (one PC and the mock player):
 - `regions-vanish`: the peer owns NPCs next to the game and is killed
   without a goodbye. Expect the game to inherit them within 5 s
   ("inherited npc …"), none duplicated, none frozen.
+- `ledger-guest`: the game stands by a placed vendor of its own world and
+  joins a mock host 300 m away (or at `LEDGER_AWAY`, a spot to stand on)
+  that runs "the same" placed NPC (its record and entity) and kills it.
+  Expect `ledger: placed npc … died in player 1's game`, `our copy is kept
+out of our world`, and with `LEDGER_AWAY`, once our V is teleported
+  there, `a body for placed npc`.
+- Twins: `vendor-guest` (`progression.md`) notes which way our own vendor
+  gave way (`the same placed NPC`: by identity). Two identical guards side
+  by side need two real games (the mock player cannot stand NPCs on ours):
+  expect two `is the twin of` lines naming two different NPCs of ours.
 - `wheels-guest-area` (`traffic.md`): the peer owns its area and runs cars;
   they are shown as proxies when it comes near and handed over, driver
   seated, when it walks off.
@@ -566,12 +596,13 @@ See the tags in [`../research/engine/regions.md`](../research/engine/regions.md)
 2. **An adopted ambient NPC** is no longer in a community: it stands or
    wanders by its record's default behaviour until it leaves the shared
    world.
-3. **Twins by record and place** can merge two different people of one
-   record standing at one spot (two identical guards side by side).
-4. **Deaths are not kept across regions** yet: a gang one player wipes out
-   alone is alive in the other's game when they come later (coop-regions
-   §4, the death ledger). The world is coherent while players can see each
-   other; lasting facts are the next step.
+3. **Twins**: by identity where the owner named one, else one to one (§3).
+   Open: which NPCs have a static id on 2.50 (`engine/regions.md` §13.92):
+   a gang member with a dynamic id is matched by place, and two that swapped
+   posts between the games are paired crosswise (harmless: same record).
+4. **Deaths across regions**: the ledger (§14), for placed NPCs, for the
+   session. Not kept: an NPC with a dynamic id (the crowd, and whatever
+   else 2.50 gives one), the host's save.
 5. **Traffic and parked cars** follow the NPCs' ownership (`traffic.md`,
    built, not run in game). What a game cannot turn off is its own crowd's
    cars where another game runs the street: density 0 thins them, nothing
@@ -582,3 +613,69 @@ See the tags in [`../research/engine/regions.md`](../research/engine/regions.md)
 7. **Bandwidth**: an owner with 64 NPCs sends about 13 kB/s of states to
    the host while linked with anyone; the host relays it to each linked
    guest.
+
+## 14. The death ledger
+
+The same dead stay dead: a placed NPC (a guard at its post, a gang member
+at its hangout, a vendor) that any player kills is dead in every game for
+the rest of the session, also for a player who was at the other end of the
+map and comes by an hour later. Built and tested without the game.
+
+- **Which NPCs.** The ones their owner said are placed (`NpcPlaced`: a
+  static `EntityID`, `EntityID.IsStatic`, and not `IsCrowd()`). The random
+  crowd is never in it. A knock-out counts (`kDeathKnockedOut`: such an NPC
+  never gets up); a later death of the same NPC is not a second entry.
+- **Who records.** The owner's endpoint, when its game reports the NPC dead
+  or knocked out (`SendNpcGone`): `NoteDeath` builds an `NpcDeath` from the
+  NPC's records (entity, record, appearance, where it last stood) and
+  sends it to the host before the `NpcGone`. Scripts say nothing more than
+  `TandemRegions.Placed` when they announce the NPC.
+- **Who keeps.** The host (`ledger::Deaths`, `tandem/ledger.hpp`): it
+  checks the sender runs that NPC, stamps the death (`by`, `order` from 1,
+  `timeUs` on its clock), keeps the newest 256 (`kMaxDeaths`; the oldest
+  goes, the same in every game) and tells **everyone**, linked or not, its
+  own game and the reporter included. A late joiner is sent the whole
+  ledger with the world; the world digest covers it (a lost word comes back
+  with a world resync). One entry per entity: a repeat is applied nowhere.
+- **Applied** by each game's scripts (`Npcs.reds` `Share`, `Ledger.reds`):
+  ten times a second, an NPC of our own world within 90 m whose static id
+  the ledger names is taken out of the shared world if we had announced it
+  and hidden (`Bury`: brain off, `HideIrreversibly`), unless it lies there
+  itself (dead, unconscious, defeated) or is one of ours in a fight. A
+  quest NPC of our own world (`IsQuest()`) is only hidden for a death in
+  the host's game: a gig of ours may still need the one a partner killed
+  in its own world. Never killed: nothing reaches a save.
+- **The body** (`death_bodies = on`): for a death less than 10 minutes old
+  (`ledger::kBodyForUs`) in another game, within 70 m of our V (100 m to
+  drop it, 8 at a time, the nearest), a copy of the NPC is spawned where it
+  fell and laid down with no death played (`Kill(null, skipNPCDeathAnim)`,
+  or unconscious for a knock-out), tagged `Tandem.Body`, never shared,
+  deleted when our V leaves. Not for a death we saw (its proxy is the
+  corpse) nor for our own kill. Its loot is our game's own roll, as for
+  every corpse (`loot.md`).
+- **At leave, and saves.** The ledger is the session's: every endpoint
+  forgets it with the session, the bodies are deleted, and what a game hid
+  stays hidden until it streams out, then is alive again in that game's
+  own world. A guest's save is not changed (a guest never saves in a
+  session, and nothing was killed); **neither is the host's**: after the
+  session, what a guest killed alone is alive in the host's world again.
+  The killer's own world keeps its dead by the game's own rules.
+- **Settings** (each game's own, `tandem.ini` only): `death_ledger = off`
+  (others' kills stay alive in our game), `death_bodies = off`.
+
+**Limits.** An NPC seen from farther than 90 m is alive until our V is
+within 90 m. An entry is a place of death, not a ragdoll's pose. A
+community the killer's game respawns later stays hidden in the others. Only
+static ids: if 2.50 gives gang members dynamic ids, they are not kept
+(`engine/regions.md` §13.92, to check first). A report lost on its way to
+the host is not sent again (ENet delivers it; only the fault layer loses it).
+
+Tests: `tests/ledger_test.cpp` (the ledger's order, bound and digest, whose
+body shows and for how long, the messages, twins), `tests/regions_endpoint_test.cpp`
+("a placed NPC…", "the ledger…": alone on the host and on a guest, a
+knock-out, a late joiner, a lost word healed by the digest, a reporter that
+vanishes, an heir's kill), `tests/referee_test.cpp` (the ledger's rules),
+`tests/peer_regions.sh` (two mock players apart, each kills a placed NPC:
+`tandem-peer --mode region --region-placed HEX --region-kill-at S`).
+In the game: `tools/game.sh cmd ledger`; scenarios `ledger-guest`,
+`vendor-guest` (§12).

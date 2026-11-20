@@ -699,7 +699,7 @@ public class TandemNpcs {
     // world's: none is hidden, as before.
     let hides = !riding && !TandemElsewhere.Inside(this.m_game);
     // The session's dead near us, if any (Ledger.reds).
-    let ledger = hides && this.m_you != 0u && this.m_ledger.On() && TandemRegions.DeathsNear(here.X, here.Y, here.Z, 400.0) > 0;
+    let ledger = hides && this.m_you != 0u && this.m_ledger.On() && TandemRegions.DeathsNear(here.X, here.Y, here.Z, 2000.0) > 0;
     for npc in around {
       let id = npc.GetEntityID();
       let known = this.Find(id);
