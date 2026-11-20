@@ -126,7 +126,7 @@ jobs:
     name: plugin (Windows, clang-cl)
     runs-on: ubuntu-latest
     env:
-      # devenv.nix's, from apt.llvm.org instead of Nix.
+      # devenv.nix's, from Ubuntu instead of Nix.
       TANDEM_CLANG_CL: /usr/lib/llvm-20/bin/clang-cl
       TANDEM_LLD_LINK: /usr/lib/llvm-20/bin/lld-link
       TANDEM_LLVM_BIN: /usr/lib/llvm-20/bin
@@ -139,11 +139,12 @@ jobs:
 
       - uses: ./.github/actions/build-host
 
+      # Ubuntu's own LLVM 20 (20.1.8 on 26.04, as in devenv); apt.llvm.org
+      # has no LLVM 20 for 26.04.
       - name: Install LLVM 20
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
-          sudo bash "$RUNNER_TEMP/llvm.sh" 20
-          sudo apt-get install -y --no-install-recommends llvm-20 ninja-build
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-20 lld-20 llvm-20 ninja-build
           "$TANDEM_CLANG_CL" --version | head -1
 
       # task sysroot. The MSVC CRT and the Windows SDK: Microsoft's licence
