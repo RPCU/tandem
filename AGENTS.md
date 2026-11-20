@@ -45,6 +45,7 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 | `task natives:check`    | each `*Natives.reds` matches its `.cpp` (types, fields)      |
 | `task scripts:check`    | compile `scripts/tandem` as the game does (seconds, no game) |
 | `task strings:check`    | player-facing texts only from `Text.reds`, English + French  |
+| `task threads:check`    | script hooks that may run on job threads only read and queue |
 | `task docs:check`       | doc links and § numbers resolve; no fact lost since HEAD     |
 | `task mods:check DIR=…` | other mods' script hooks against tandem's (conflicts)        |
 | `task scenario -- …`    | in-game scenarios against the mock player (NAME, all, list)  |
@@ -63,7 +64,8 @@ request): `core build (Linux)` and the `core tests` jobs are `task test`,
 of memory); push the branch and read the run (Git, below). Locally, the
 cheap ones: `task relay:test` for `relay/`, `task pilot:test` for
 `tools/pilot/`, `task k8s:check` for `deploy/`,
-`task natives:check`, `task strings:check` and `task docs:check`;
+`task natives:check`, `task strings:check`, `task threads:check` and
+`task docs:check`;
 `task scripts:check` for `scripts/` needs the game machine.
 
 `tools/build.sh TASK…` builds where there is room (Git, below), when a
@@ -157,6 +159,22 @@ build slots) and copies the DLL, `.pdb` and `tandem-peer` back; then
   `tools/scripts-uninitialized.py`). A local assigned on every path before
   any read may keep its bare declaration with the comment
   `// assigned on every path` on that line.
+- **A hook that may run on a job thread only reads, calls the wrapped
+  method and enqueues** (`TandemStreaming.QueueStreamed`, or another native
+  that only enqueues); its system acts on the tick. Such hooks: a wrap of a
+  class that exists per entity, component or persistent state, any
+  `cb func` (wrapped or ours), lifecycle methods (`OnGameAttached`,
+  `OnDetach`…), Codeware `Entity/*` callbacks. Wraps that pushed into a
+  system's array there corrupted the heap while a save loaded (2026-11-20).
+  `tools/scripts-threads.py` (`task threads:check`, run by `scripts:check`
+  and CI) follows every call a hook makes and refuses a write to a script
+  object that is not the hook's own; `-- --list` shows each hook. A hook
+  that must act in place says why in the comment above it:
+  `// game thread only: <how it was proven>` or
+  `// job thread safe: <why>`. `tools/scripts-threads.known` holds the
+  hooks older than the check, neither proven nor reworked: it only
+  shrinks. A wrap of a class new to `tools/scripts-threads.classes` needs
+  its ancestry there (`--classes VANILLA.reds`).
 - **No player-facing literal**: every text the player sees is a key of
   `scripts/tandem/Text.reds` (English and French), shown through
   `TandemText` (notices, hints with the player's own binding, never a key
