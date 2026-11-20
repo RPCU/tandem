@@ -516,6 +516,12 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Comms-WaypointSet", "{1} set a waypoint");
     this.Text("Tandem-Story-RestrictHolstered", "{1}'s scene: weapons away.");
     this.Text("Tandem-Story-RestrictSlow", "{1}'s scene: take it slow.");
+    // Another V's slow time reaches ours (Time.reds), once a session.
+    this.Text("Tandem-Time-SlowedScanner", "{1}'s scanner slows you.");
+    this.Text("Tandem-Time-SlowedSandevistan", "{1}'s Sandevistan slows you.");
+    this.Text("Tandem-Time-SlowedOther", "{1}'s slow motion reaches you.");
+    // A partner's status effect this game has no record of (StatusVisuals.reds).
+    this.Text("Tandem-Status-Unknown", "{1} shows an effect this game doesn't know (a mod?): not shown.");
     this.Text("Tandem-Travel-Blocked", "You can't fast travel right now");
     // The settings page (Settings.reds).
     this.Text("Tandem-Menu-Settings", "Settings");
@@ -828,6 +834,10 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Comms-WaypointSet", "{1} a placé un point de passage");
     this.Text("Tandem-Story-RestrictHolstered", "Scène de {1} : armes rangées.");
     this.Text("Tandem-Story-RestrictSlow", "Scène de {1} : doucement.");
+    this.Text("Tandem-Time-SlowedScanner", "Le scanner de {1} vous ralentit.");
+    this.Text("Tandem-Time-SlowedSandevistan", "Le Sandevistan de {1} vous ralentit.");
+    this.Text("Tandem-Time-SlowedOther", "Le ralenti de {1} vous atteint.");
+    this.Text("Tandem-Status-Unknown", "{1} porte un effet que ce jeu ne connaît pas (un mod ?) : non affiché.");
     this.Text("Tandem-Travel-Blocked", "Voyage rapide impossible pour l'instant");
     this.Text("Tandem-Menu-Settings", "Paramètres");
     this.Text("Tandem-Settings-Saved", "Enregistrés dans tandem.ini dès leur modification");

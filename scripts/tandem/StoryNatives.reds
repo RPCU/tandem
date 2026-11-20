@@ -103,6 +103,9 @@ public native class TandemStory extends IScriptable {
   public static native func SendEffect(effect: TweakDBID, applied: Bool) -> Void;
   public static native func SendRestrictions(effects: array<TweakDBID>) -> Bool;
   public static native func SceneCasts(npc: Uint32) -> Bool;
+  // Host: 0 let through, 1 refused, 2 refused and to say so (act: 0 strike,
+  // 1 takedown, 2 quickhack).
+  public static native func BackstopRefuses(moment: Bool, cast: Bool, questNpc: Bool, kept: Bool, inScene: Bool, act: Int32) -> Int32;
   public static native func RestrictUpdate(grouped: Bool, away: Bool, hostKnown: Bool, hostX: Float, hostY: Float, hostZ: Float, x: Float, y: Float, z: Float, tier: Int32, holds: array<TweakDBID>) -> array<TweakDBID>;
   public static native func RestrictRemovals() -> array<TweakDBID>;
   public static native func RestrictLift() -> Void;

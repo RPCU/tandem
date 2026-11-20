@@ -290,6 +290,11 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
                        std::ranges::adjacent_find(restrictions->effects, std::greater_equal<>{}) !=
                            restrictions->effects.end()))
     return std::nullopt;
+  if (const auto *visuals = std::get_if<StatusVisuals>(&message);
+      visuals && (visuals->records.size() > kMaxStatusVisuals ||
+                  std::ranges::adjacent_find(visuals->records, std::greater_equal<>{}) !=
+                      visuals->records.end()))
+    return std::nullopt;
   return read;
 }
 
@@ -506,7 +511,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "NpcScale",
                                    "Breach",
                                    "BreachResult",
-                                   "NpcVendor"};
+                                   "NpcVendor",
+                                   "StatusVisuals"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

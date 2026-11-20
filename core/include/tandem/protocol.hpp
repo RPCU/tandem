@@ -2517,6 +2517,23 @@ struct BreachResult {
   friend bool operator==(const BreachResult &, const BreachResult &) = default;
 };
 
+// ---- Status visuals (docs/architecture/presence.md, "Status effects") ----
+//
+// The status effects on a V that show on it (burning, shock, a camo's
+// shimmer, a Sandevistan's trail, a heal's glow...): the TweakDB ids of the
+// records its game has on it now that name a VFX, a sound or a visual
+// effector, the whole set on every change (sorted; empty: none). Sent by
+// that player's game (Event channel); the host stamps the player, keeps
+// everyone's latest for late joiners and relays it. The others play the
+// records' visuals on its puppet, never their gameplay.
+inline constexpr std::size_t kMaxStatusVisuals = 16;
+struct StatusVisuals {
+  PlayerId player{};
+  std::uint32_t revision{};
+  std::vector<std::uint64_t> records;
+  friend bool operator==(const StatusVisuals &, const StatusVisuals &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -2535,7 +2552,7 @@ using MessageVariant = std::variant<
     TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
-    BreachResult, NpcVendor>;
+    BreachResult, NpcVendor, StatusVisuals>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

@@ -112,6 +112,26 @@ struct TandemPresence : Red::IScriptable {
     return out;
   }
 
+  // ---- status effects seen on a puppet (StatusVisuals) ----
+
+  // Our V's status effects that show on it (StatusVisuals.reds decides
+  // which), a few times a second: sent when the set changed. True then.
+  static bool SendStatusVisuals(Red::DynArray<Red::TweakDBID> records) {
+    std::vector<std::uint64_t> set;
+    for (const auto &record : records)
+      set.push_back(record.value);
+    return PresenceState::Get().SubmitStatusVisuals(std::move(set));
+  }
+  // Another player's set as last heard (sorted; empty: none).
+  static Red::DynArray<Red::TweakDBID> StatusVisualsOf(std::uint32_t player) {
+    Red::DynArray<Red::TweakDBID> out;
+    for (const auto record : PresenceState::Get().StatusVisualsOf(player))
+      out.EmplaceBack(Red::TweakDBID{record});
+    return out;
+  }
+  // Moves on every change of anyone's set (and when one is forgotten).
+  static std::uint32_t StatusChanges() { return PresenceState::Get().StatusChanges(); }
+
   // What a remote V did since the last frame, heard from what its game
   // already sends (presence::Observer): its puppet's body is at `position`
   // now, `dt` seconds after the last call.
@@ -288,4 +308,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemPresence, "TandemPresence", {
   RTTI_METHOD(RoundedMetres);
   RTTI_METHOD(NameplateOpacity);
   RTTI_METHOD(NameplateScale);
+  RTTI_METHOD(SendStatusVisuals);
+  RTTI_METHOD(StatusVisualsOf);
+  RTTI_METHOD(StatusChanges);
 });

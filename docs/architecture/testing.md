@@ -176,7 +176,8 @@ REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
   front of the guest and `--detect-at N [--detect-for M]` makes the NPCs
   it sends notice the guests (meter rising over 2 s), detect them for M s
   (default 10), then lose them; `--camo N` turns "its optical camo" on for
-  5 s; `--shoot N` fires a gunshot every N s (the shot, where its bullet
+  5 s (`--camo-record REC` names its status effect, as a V's camo sends
+  it); `--shoot N` fires a gunshot every N s (the shot, where its bullet
   ended, and as guest its noise).
   Stealth, noises and the host's awareness of it are logged.
 - **Takedowns**: `join --grab-npcs N` grabs one of the host's NPCs every N
@@ -241,7 +242,10 @@ decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
   again under 30%), `--menu-at N` is "in a menu" N s in, for 5 s (both as
   `Presence`); `host --react-npcs N` has one of the NPCs it sends play a
   hit reaction every N s (twitch, impact, stagger, knockdown, ragdoll, its
-  end). Presence, cues and non-twitch reactions it hears are logged.
+  end); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
+  from FROM to TO s after another player is there (no TO: kept), sent as
+  `StatusVisuals` for the others' puppet of it to show. Presence, cues,
+  status visuals and non-twitch reactions it hears are logged.
 - **Traffic** (any mode): each report has a `traffic:` line (kbit/s each
   way with headers, datagrams/s, the largest message types), `--traffic-report`
   the whole table, the exit the whole run's; `--legacy-wire` sends as

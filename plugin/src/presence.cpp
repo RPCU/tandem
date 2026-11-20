@@ -33,6 +33,38 @@ std::vector<proto::Cue> PresenceState::TakeLocalCues() {
   return std::exchange(m_localCues, {});
 }
 
+bool PresenceState::SubmitStatusVisuals(std::vector<std::uint64_t> records) {
+  auto set = presence::StatusSet(std::move(records));
+  if (set == m_statusSent)
+    return false;
+  m_statusSent = set;
+  std::lock_guard _(m_lock);
+  m_statusLocal = std::move(set);
+  return true;
+}
+
+std::optional<std::vector<std::uint64_t>> PresenceState::TakeStatusVisuals() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_statusLocal, std::nullopt);
+}
+
+void PresenceState::PushStatusVisuals(const proto::StatusVisuals &visuals) {
+  std::lock_guard _(m_lock);
+  m_statusRemote.insert_or_assign(visuals.player, visuals.records);
+  ++m_statusChanges;
+}
+
+std::vector<std::uint64_t> PresenceState::StatusVisualsOf(proto::PlayerId player) {
+  std::lock_guard _(m_lock);
+  const auto it = m_statusRemote.find(player);
+  return it == m_statusRemote.end() ? std::vector<std::uint64_t>{} : it->second;
+}
+
+std::uint32_t PresenceState::StatusChanges() {
+  std::lock_guard _(m_lock);
+  return m_statusChanges;
+}
+
 void PresenceState::PushRemote(const proto::Presence &presence) {
   std::lock_guard _(m_lock);
   m_remote.insert_or_assign(presence.player, presence);
@@ -87,6 +119,8 @@ void PresenceState::Forget(proto::PlayerId player) {
   {
     std::lock_guard _(m_lock);
     m_remote.erase(player);
+    if (m_statusRemote.erase(player))
+      ++m_statusChanges;
   }
   // The observer goes on the game thread's next ask for it (a fresh one is
   // made for a namesake): erasing here would race its use.
@@ -102,6 +136,8 @@ void PresenceState::Reset() {
     m_remote.clear();
     m_cues.clear();
     m_reactions.clear();
+    m_statusRemote.clear();
+    ++m_statusChanges;
   }
   std::lock_guard _(m_flinchLock);
   m_flinches.clear();
