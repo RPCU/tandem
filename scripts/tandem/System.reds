@@ -627,6 +627,17 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_inGame;
   }
 
+  // Join by address's answer (Coop.reds): joined now, directly, and saved
+  // as last_address. Returns why not, in words ("": joined).
+  public func CoopJoinDirect(typed: String) -> String {
+    let target = TandemCoop.TakeAddress(typed);
+    if StrLen(target) == 0 {
+      return TandemCoop.DirectRefusal(TandemCoop.DirectText(typed));
+    }
+    this.CoopJoin(target);
+    return "";
+  }
+
   // Leaving is never refused: a player can always quit the game anyway. A
   // V that is down or out when it leaves dies the game's way (EndSession):
   // leaving is no way out of being down.
@@ -949,6 +960,10 @@ public class TandemSystem extends ScriptableSystem {
     // right after "playing", 2026-11-18.)
     if IsDefined(this.m_time) && this.m_playing && this.m_you != 0u {
       this.m_time.Update();
+    }
+    // Other mods (Mods.reds): what our game shows otherwise, said.
+    if this.m_playing {
+      TandemMods.Tick(this.GetGameInstance());
     }
 
     if IsDefined(this.m_saves) {
@@ -1695,8 +1710,9 @@ public class TandemSystem extends ScriptableSystem {
     return Equals(command, "where") || StrBeginsWith(command, "teleport") || StrBeginsWith(command, "god ");
   }
 
-  // coop status | coop host [PORT] | coop join ADDRESS[:PORT] | coop leave |
-  // coop settings | coop set KEY VALUE: what the pause menu's co-op page
+  // coop status | coop host [PORT] | coop join ADDRESS[:PORT] | coop address
+  // [ADDRESS[:PORT]] | coop leave |
+  // coop settings | coop set KEY VALUE | coop mods [names]: what the pause menu's co-op page
   // does, without the menu. The menu
   // pages themselves (coop menu, coop pick) are the menus' own (Coop.reds).
   private func CoopCommand(command: String) -> Void {
@@ -1717,12 +1733,16 @@ public class TandemSystem extends ScriptableSystem {
     } else if Equals(verb, "join") {
       let joining = this.CoopJoin(arg);
       TandemNative.Log(s"coop: join \(arg), in session \(joining)");
+    } else if Equals(verb, "address") {
+      // Join by address's answer, without the popup (empty: the last one).
+      let refusal = this.CoopJoinDirect(arg);
+      TandemNative.Log(s"coop: address \(arg): \(StrLen(refusal) > 0 ? refusal : "joining")");
     } else if Equals(verb, "leave") {
       this.CoopLeave();
       TandemNative.Log("coop: left the session");
     } else if Equals(verb, "report") {
       TandemNative.Log(s"coop: report: \(TandemNative.WriteReport())");
-    } else if TandemSettings.Command(command) {
+    } else if TandemSettings.Command(command) || TandemMods.Command(command) {
       return;
     } else {
       TandemNative.Log(s"coop: \(verb) needs the co-op menu open (the pause menu's or the main menu's)");
@@ -1769,7 +1789,7 @@ public class TandemSystem extends ScriptableSystem {
     if this.m_sentSeat && record == this.m_sentVehicle && Equals(slot, this.m_sentSlot) && owner == this.m_sentOwner {
       return;
     }
-    TandemNative.SendSeat(record, slot, owner);
+    TandemNative.SendSeat(record, slot, owner, TandemMods.VehicleHint(record));
     TandemNative.Log(s"our seat: \(TDBID.ToStringDEBUG(record)) \(NameToString(slot)) (car of player \(owner))");
     this.m_sentVehicle = record;
     this.m_sentSlot = slot;
@@ -2192,7 +2212,7 @@ public class TandemSystem extends ScriptableSystem {
     if this.m_sentHeld && right == this.m_sentRight && left == this.m_sentLeft {
       return;
     }
-    TandemNative.SendHeld(right, left);
+    TandemNative.SendHeld(right, left, TandemMods.ItemHint(right), TandemMods.ItemHint(left));
     this.m_sentRight = right;
     this.m_sentLeft = left;
     this.m_sentHeld = true;
@@ -2215,7 +2235,7 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     let male = Equals(player.GetResolvedGenderName(), n"Male");
-    let keys = TandemNative.SubmitAppearance(GameInstance.GetCharacterCustomizationSystem(game).GetState(), male, shown);
+    let keys = TandemNative.SubmitAppearance(GameInstance.GetCharacterCustomizationSystem(game).GetState(), male, shown, TandemMods.ItemHints(shown));
     this.m_sentItems = shown;
     this.m_sentAppearance = true;
     TandemNative.Log(s"our look sent: \(keys) keys, \(ArraySize(shown)) clothes");

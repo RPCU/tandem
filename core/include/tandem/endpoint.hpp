@@ -13,6 +13,7 @@
 #include "tandem/consistency.hpp"
 #include "tandem/devices.hpp"
 #include "tandem/interact.hpp"
+#include "tandem/mods.hpp"
 #include "tandem/netcode.hpp"
 #include "tandem/pose.hpp"
 #include "tandem/protocol.hpp"
@@ -244,6 +245,11 @@ struct RemotePresence {
 struct RemoteCue {
   proto::Cue cue;
 };
+// Another player's V shows other status effects now (the whole set): its
+// puppet plays their visuals.
+struct RemoteStatusVisuals {
+  proto::StatusVisuals visuals;
+};
 // How one of the host's NPCs reacts to a hit (guests only): played on its proxy.
 struct HostNpcReaction {
   proto::NpcReaction reaction;
@@ -391,6 +397,24 @@ struct TrafficChanged {
 struct TrafficHitBy {
   proto::TrafficHit hit;
 };
+// Hand-over of a shared vehicle (traffic.md, "Who owns an area"). Give: the
+// host asks us to give one of ours to `to` (answer: Endpoint::GiveTraffic,
+// or AnswerTraffic(id, false)). Take: we run it from now on: wake its proxy
+// up with this state (answer: AnswerTraffic). OwnerChanged: whoever runs it
+// changed (`was` us: our body is a proxy from now on; `owner` kNoPlayer: no
+// longer shared, our body is a world car again).
+struct TrafficGive {
+  proto::TrafficId id{};
+  proto::PlayerId to{};
+};
+struct TrafficTake {
+  proto::TrafficHandoverState state;
+};
+struct TrafficOwnerChanged {
+  proto::TrafficId id{};
+  proto::PlayerId owner{};
+  proto::PlayerId was{};
+};
 // Police (docs/architecture/police.md). Another player's wanted level
 // changed (stage 0: no longer wanted, or it left). Never our own.
 struct RemoteHeat {
@@ -416,6 +440,24 @@ struct RemoteInstall {
 struct JoinRefused {
   std::string name;
   std::string notice;
+};
+// Other mods (docs/architecture/mod-compat.md). Another player's mods
+// against ours (host: a guest's; guest: the host's), once each side said.
+struct RemoteMods {
+  proto::PlayerId player{};
+  std::string name;
+  mods::Comparison comparison;
+};
+// The names of another player's mods we asked for (AskModNames).
+struct ModNamesFrom {
+  proto::PlayerId player{};
+  std::string name;
+  std::vector<proto::ModEntry> mods;
+};
+// Another player's game shows substitutes for some of our records.
+struct SubstitutesFrom {
+  proto::Substitutes substitutes;
+  std::string name; // the seer's
 };
 // Another player started, changed or ended what it is busy with (kind None),
 // or left while busy (docs/architecture/activities.md). Never our own.
@@ -509,6 +551,11 @@ struct Identity {
   std::string name;
   proto::Body body{};
   proto::Install install{};
+  // Our other mods, names included (mods::Scan): said to the others as
+  // hashes and categories, names only when asked. Only a game that read its
+  // folder says them (tellsMods): the mock player and the tests do not.
+  std::vector<proto::ModEntry> mods;
+  bool tellsMods{};
   // The game has Phantom Liberty installed and enabled (the mock player
   // and the tests: yes). A host without it takes nobody; a guest without
   // it is refused (compat::kExpansion*).
@@ -527,7 +574,8 @@ struct JoinTarget {
   std::optional<net::RelayOptions> relay;
 };
 
-using SessionEvent = std::variant<
+// What Update() reports. Code uses SessionEvent (below).
+using SessionEventVariant = std::variant<
     events::Joined, events::PlayerJoined, events::PlayerLeft, events::RemoteState,
     events::RemotePose, events::RemoteAppearance, events::RemoteHeld, events::RemoteShot,
     events::RemoteSeat, events::RemoteVehicle, events::HostWorld, events::HostNpcSpawn,
@@ -551,7 +599,12 @@ using SessionEvent = std::variant<
     events::RemoteLink, events::RemoteWaypoint, events::RemoteVehicleDamage, events::VehicleHitBy,
     events::RemoteVehicleExit, events::RemoteVehicleCombat, events::RemoteMountedFire,
     events::GunnerChanged, events::RemoteGunnerAim, events::VehicleBumpBy, events::NpcRamBy,
-    events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered>;
+    events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
+    events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
+    events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged>;
+// Its copies, moves and conversions compiled in session_event.cpp only, as
+// proto::Message's (tandem/closed_variant.hpp).
+using SessionEvent = ClosedVariant<SessionEventVariant>;
 
 class Endpoint {
 public:
@@ -583,6 +636,13 @@ public:
   void SetLocalPresence(proto::Presence presence);
   void SendLocalCue(proto::Cue cue);
   const std::map<proto::PlayerId, proto::Presence> &Presences() const { return m_presences; }
+  // The status effects that show on our V (presence::StatusSet makes the
+  // set; a repeat of the last is not sent). Kept and handed to late joiners;
+  // the others' latest, ours too, by player.
+  void SetLocalStatusVisuals(std::vector<std::uint64_t> records);
+  const std::map<proto::PlayerId, proto::StatusVisuals> &StatusVisualsOf() const {
+    return m_statusVisuals;
+  }
   // Where we sit (kept and handed to late joiners), and the car we drive.
   void SetLocalSeat(proto::Seat seat);
   void SendLocalVehicle(proto::VehicleState vehicle);
@@ -629,6 +689,11 @@ public:
   void SendNpcAction(const proto::NpcAction &action);
   // Host only: the answer to `player`'s NpcAction, to that player alone.
   void SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply);
+  // Other mods: the names of the mods `player` has and we do not (answered
+  // as events::ModNamesFrom); that our game shows substitutes for some of
+  // `substitutes.owner`'s records (through the host, to that player only).
+  void AskModNames(proto::PlayerId player);
+  void SendSubstitutes(proto::Substitutes substitutes);
   // Host only: who holds an NPC now (kept for late joiners until released,
   // gone, or the holder leaves).
   void SendNpcHold(const proto::NpcHold &hold);
@@ -744,23 +809,47 @@ public:
   void SendNpcSeat(const proto::NpcSeat &seat);
   // Who runs the world around a player (its traffic and police too):
   // AreaOwner and OwnsArea, under Regions below.
-  // Area owner only: the world vehicles it shares. Spawns and statuses are
-  // kept for late joiners until the vehicle is gone; a spawn's position
-  // follows the states. Ids come from proto::MakeTrafficId(You(), n).
+  // World vehicles (docs/architecture/traffic.md, endpoint_traffic.cpp). A
+  // vehicle is run by one game, as an NPC is: the area owner that announced
+  // it (ids from proto::MakeTrafficId(You(), n)), until the host hands it
+  // over. A new one is announced only while we own our area (OwnsArea); the
+  // rest only for the vehicles we run. Spawns and statuses are kept for late
+  // joiners until the vehicle is gone; a spawn's position follows the
+  // states. A guest's go through the host to the players linked with it.
   void SendTrafficSpawn(const proto::TrafficSpawn &spawn);
   void SendTrafficStates(proto::TrafficStates states);
   void SendTrafficGone(const proto::TrafficGone &gone);
   void SendTrafficStatus(const proto::TrafficStatus &status);
-  // We hit a vehicle another game owns (its proxy here): to its owner.
+  // We hit a vehicle another game runs (its proxy here): to its owner.
   void SendTrafficHit(const proto::TrafficHit &hit);
-  // Our V gets into a shared vehicle: the first claim wins and comes back
-  // to every game as TrafficLeft{taken, player}.
+  // Our V gets into a shared vehicle: the first claim wins (its owner
+  // decides) and comes back to every game as TrafficLeft{taken, player}.
   void ClaimTraffic(proto::TrafficId id, std::uint64_t seat);
-  // The world vehicles shared now: owner, its record; others, their copy.
+  // Our answer to events::TrafficGive: the vehicle as we leave it (our body
+  // stays here as its proxy). And to events::TrafficGive (false: we will
+  // not give it) or events::TrafficTake (whether we run it now; false: it
+  // goes).
+  void GiveTraffic(proto::TrafficHandoverState state);
+  void AnswerTraffic(proto::TrafficId id, bool accepted);
+  // The world vehicles shared now (host: the session's record; guest: what
+  // it was shown, and its own) and how each stands.
   const std::map<proto::TrafficId, proto::TrafficSpawn> &SharedTraffic() const { return m_traffic; }
   const std::map<proto::TrafficId, proto::TrafficStatus> &TrafficStatuses() const {
     return m_trafficStatus;
   }
+  // Who runs a shared vehicle (kNoPlayer: not one the session knows), and
+  // whether that is us.
+  proto::PlayerId TrafficOwnerOf(proto::TrafficId id) const;
+  bool OwnsTraffic(proto::TrafficId id) const;
+  // The vehicles this game must show as proxies: those of the owners we are
+  // linked with, never ours.
+  std::map<proto::TrafficId, proto::TrafficSpawn> ProxiedTraffic() const;
+  // The game that runs a vehicle (vehicle-combat.md): a player's car its
+  // player's, a shared one its owner's as the session has it.
+  proto::PlayerId VehicleOwner(proto::VehicleRef vehicle) const;
+  // Host: vehicles handed over and inherited so far (tests, logs).
+  std::uint64_t TrafficHandovers() const { return m_trafficHandoversDone; }
+  std::uint64_t TrafficInherited() const { return m_trafficInherited; }
   // Our V's wanted level (stage 0: none). Kept: sent now if we are in the
   // session, else as soon as we are; the host hands everyone's to late
   // joiners. The same level and state again is not sent.
@@ -1175,6 +1264,14 @@ private:
   std::uint64_t m_ownedResentUs{};
   // Host: the connection of a welcomed player (nullopt: none, or us).
   std::optional<net::PeerId> PeerOf(proto::PlayerId player) const;
+  // Other mods: a ModList or Substitutes from `player` (host: a guest;
+  // guest: the host).
+  void OnModList(proto::PlayerId player, const proto::ModList &list,
+                 std::vector<SessionEvent> &out);
+  void OnSubstitutes(proto::PlayerId player, proto::Substitutes substitutes,
+                     std::vector<SessionEvent> &out);
+  void SendModsTo(net::PeerId peer);
+  std::map<proto::PlayerId, std::vector<proto::ModEntry>> m_theirMods;
   // Host: delivers a message meant for `to` (kNoPlayer: everyone but
   // `except`) and tells whether it is for us too.
   template <class M> bool Deliver(const M &message, proto::PlayerId to, net::PeerId except);
@@ -1312,6 +1409,11 @@ private:
   std::uint32_t m_presenceRevision{};
   std::map<proto::PlayerId, proto::Presence> m_presences;
   void SendLocalPresenceNow();
+  // Our status visuals, and everyone's latest (late joiners, resyncs).
+  std::optional<proto::StatusVisuals> m_localStatusVisuals;
+  std::uint32_t m_statusVisualsRevision{};
+  std::map<proto::PlayerId, proto::StatusVisuals> m_statusVisuals;
+  void SendLocalStatusVisualsNow();
   std::uint32_t m_cueSeq{};
   std::uint32_t m_awarenessSeq{};
   // Our ride, and everyone's (host: the session's record, for late joiners;
@@ -1329,8 +1431,65 @@ private:
   std::map<proto::TrafficId, proto::TrafficStatus> m_trafficStatus;
   // A shared vehicle is no longer shared: what was kept of it goes.
   void ForgetTraffic(proto::TrafficId id);
-  // Host: `player` gets into a vehicle we share; the first claim wins.
+  // Owner: `player` gets into a vehicle we run; the first claim wins.
   void TakeTraffic(proto::PlayerId player, proto::TrafficId id, std::vector<SessionEvent> &out);
+  // Who runs each vehicle of m_traffic (absent: the game that announced it).
+  std::map<proto::TrafficId, proto::PlayerId> m_trafficOwner;
+  // Host: hand-overs in flight (as for NPCs: without `state`, asked of
+  // `from`; with it, `to` runs it and has not said so yet), and until when a
+  // refused one is left alone.
+  struct TrafficHandoff {
+    proto::PlayerId from{}, to{};
+    std::optional<proto::TrafficHandoverState> state;
+    std::uint64_t sentUs{};
+    int tries{};
+  };
+  std::map<proto::TrafficId, TrafficHandoff> m_trafficHandoffs;
+  // Host: as InHandover, for a vehicle.
+  bool TrafficInHandover(proto::TrafficId id, proto::PlayerId player) const {
+    const auto it = m_trafficHandoffs.find(id);
+    return it != m_trafficHandoffs.end() && (it->second.from == player || it->second.to == player);
+  }
+  std::map<proto::TrafficId, std::uint64_t> m_trafficRefusedUntilUs;
+  std::uint64_t m_trafficHandoversDone{}, m_trafficInherited{};
+  // Giver: what we gave, until we hear who runs it. Receiver: what we took.
+  std::map<proto::TrafficId, proto::TrafficHandoverState> m_trafficGiven;
+  std::set<proto::TrafficId> m_trafficTook;
+  // An owner's word on its vehicles: to the host, or (host) to whoever sees
+  // that owner. ShareTraffic: host, to the guests that see `owner`.
+  void SayTraffic(const proto::Message &message);
+  void ShareTraffic(const proto::Message &message, proto::PlayerId owner, net::PeerId except = 0);
+  // Host: what a guest says of its vehicles and asks of others' (false: not
+  // a traffic message).
+  bool OnGuestTraffic(net::PeerId peer, proto::PlayerId player, const proto::Message &message,
+                      std::vector<SessionEvent> &out);
+  // Guest: the host's word on a vehicle's owner, its hand-overs, the
+  // requests for the vehicles we run (false: not one of those).
+  bool OnHostTraffic(const proto::Message &message, std::vector<SessionEvent> &out);
+  // Host: everything a guest needs to show a vehicle, owner first.
+  std::vector<proto::Message> TrafficRecords(proto::TrafficId id) const;
+  void ShowTrafficTo(net::PeerId peer, proto::TrafficId id);
+  void ShowTrafficHere(proto::TrafficId id, std::vector<SessionEvent> &out);
+  // Host: the vehicles of these domains a guest sees, to it (late joiners,
+  // resyncs), and our own game's view when our links changed.
+  void SendTrafficTo(net::PeerId peer, proto::PlayerId them, bool resync);
+  void OnTrafficLinksChanged(proto::PlayerId other, bool sees, std::vector<SessionEvent> &out);
+  // Host: hand-overs (Arbitrate), their steps, a vehicle moved to `now`
+  // (its riders with it), a vehicle no longer shared, and the vehicles of an
+  // owner that is gone or whose world was rebuilt.
+  void ArbitrateTraffic(std::uint64_t now, std::vector<SessionEvent> &out);
+  void OnTrafficGiven(proto::PlayerId from, proto::TrafficHandoverState state,
+                      std::vector<SessionEvent> &out);
+  void OnTrafficDone(proto::PlayerId from, const proto::TrafficHandoverDone &done,
+                     std::vector<SessionEvent> &out);
+  void MoveTraffic(proto::TrafficId id, proto::PlayerId now, proto::TrafficHandoverState state,
+                   std::vector<SessionEvent> &out);
+  void DropTraffic(proto::TrafficId id, std::vector<SessionEvent> &out);
+  void InheritTrafficOf(proto::PlayerId owner, bool gone, std::vector<SessionEvent> &out);
+  // Guest: our whole set of vehicles again (the host's record differed).
+  void ResendOwnedTraffic();
+  std::uint32_t OwnedTrafficHash(proto::PlayerId owner, std::uint16_t &count) const;
+  std::uint32_t TrafficDigestFor(proto::PlayerId self) const;
   // Our wanted level, and everyone's above 0 (host: the session's record).
   std::optional<proto::Heat> m_localHeat;
   std::uint32_t m_heatRevision{};
@@ -1375,7 +1534,7 @@ private:
   void SendVehiclesTo(net::PeerId peer, proto::PlayerId them, std::uint8_t domains, bool resync);
   // The domains' hashes of it (consistency.hpp), as `self` sees them.
   std::uint32_t VehiclePlayersDigest(proto::PlayerId self) const;
-  std::uint32_t VehicleStreetDigest() const;
+  std::uint32_t VehicleStreetDigest(proto::PlayerId self) const;
   // Host: the story for late joiners, and who answered the call first.
   story::Record m_story;
   story::CallArbiter m_calls;
@@ -1536,3 +1695,5 @@ private:
   bool m_throughRelay{};
 };
 } // namespace tandem
+
+extern template class tandem::ClosedVariant<tandem::SessionEventVariant>;

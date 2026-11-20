@@ -212,3 +212,47 @@ TEST_CASE("a shot that arrives late catches up with the host's timeline") {
   CHECK(TimeBubbles::ShotCatchUp(2'000'000, 1'000'000) == TimeBubbles::CatchUp{});
   CHECK(TimeBubbles::ShotCatchUp(1'000'000, 2'500'000) == TimeBubbles::CatchUp{});
 }
+
+TEST_CASE("a slow motion no known reason explains (another mod's) is shared as a bubble") {
+  // A mod slowed the world to 0.3, nothing of ours is on: a bubble at 0.3,
+  // shared like a slow-motion perk's (kTimeSlowMo).
+  const auto mod = TimeBubbles::UnexplainedSlow(0.3f, 1.f, false);
+  CHECK(mod == doctest::Approx(0.3f));
+  CHECK(TimeBubbles::BubbleScale(tandem::proto::kTimeSlowMo, mod) == doctest::Approx(0.3f));
+  // On top of the scanner's 0.5: the mod's is the slower, so it is the bubble.
+  CHECK(TimeBubbles::UnexplainedSlow(0.2f, 0.5f, false) == doctest::Approx(0.2f));
+  // A known reason explains it: the Sandevistan's own bubble already says it.
+  CHECK(TimeBubbles::UnexplainedSlow(0.1f, 0.1f, false) == 1.f);
+  CHECK(TimeBubbles::UnexplainedSlow(0.105f, 0.1f, false) == 1.f);
+  // The documented exceptions stay local: melee hit stop, deflect, menus,
+  // a ride's skip, our V slowed by another V's bubble.
+  CHECK(TimeBubbles::UnexplainedSlow(0.05f, 1.f, true) == 1.f);
+  // A ride's skip speeds the world up: never a bubble; nor normal speed.
+  CHECK(TimeBubbles::UnexplainedSlow(10.f, 1.f, false) == 1.f);
+  CHECK(TimeBubbles::UnexplainedSlow(1.f, 1.f, false) == 1.f);
+  CHECK(TimeBubbles::UnexplainedSlow(0.f, 1.f, false) == 1.f);
+  // A world nearly stopped is a bubble at the slowest a bubble goes.
+  CHECK(TimeBubbles::UnexplainedSlow(0.01f, 1.f, false) == doctest::Approx(0.05f));
+}
+
+TEST_CASE("the partner's cue names whose bubble slows its V, and nobody when none does") {
+  using tandem::proto::kNoPlayer;
+  const std::vector<Owner> owners{{.player = 1, .scale = 0.25f, .position = {0, 0, 0}},
+                                  {.player = 2, .scale = 0.5f, .position = {60, 0, 0}},
+                                  {.player = 3, .scale = 0.25f, .position = {100, 0, 0}}};
+  // The strongest around it; of two as strong, the nearer.
+  CHECK(TimeBubbles::SlowedBy(4, 1.f, {30, 0, 0}, owners) == 1);
+  CHECK(TimeBubbles::SlowedBy(4, 1.f, {90, 0, 0}, owners) == 3);
+  CHECK(TimeBubbles::SlowedBy(4, 1.f, {200, 0, 0}, owners) == 3); // 1 is out of reach
+  CHECK(TimeBubbles::SlowedBy(4, 1.f, {600, 0, 0}, owners) == kNoPlayer);
+  // Its own ability matches the bubble: not slowed, so no cue and no name.
+  CHECK(TimeBubbles::SlowedBy(4, 0.25f, {30, 0, 0}, owners) == kNoPlayer);
+  CHECK(TimeBubbles::SlowedBy(1, 0.25f, {0, 0, 0}, owners) == kNoPlayer);
+  // A weaker one is still slowed, by the ratio: the cue plays, naming the
+  // nearer of the two strongest (3 is 40 m away, 1 is 60 m).
+  CHECK(TimeBubbles::SlowedBy(2, 0.5f, {60, 0, 0}, owners) == 3);
+  // The margin on the way out, as PlayerFactor's.
+  const std::vector<Owner> one{{.player = 1, .scale = 0.2f, .position = {0, 0, 0}}};
+  CHECK(TimeBubbles::SlowedBy(2, 1.f, {160, 0, 0}, one) == kNoPlayer);
+  CHECK(TimeBubbles::SlowedBy(2, 1.f, {160, 0, 0}, one, true) == 1);
+}

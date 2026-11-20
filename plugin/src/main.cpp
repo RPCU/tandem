@@ -10,11 +10,13 @@
 #include "engine/trace.hpp"
 #include "installed.hpp"
 #include "log.hpp"
+#include "mods.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
 
 #include "tandem/compat.hpp"
 #include "tandem/instance.hpp"
+#include "tandem/mods.hpp"
 #include "tandem/protocol.hpp"
 
 #include <RED4ext/RED4ext.hpp>
@@ -22,6 +24,7 @@
 
 #include <windows.h>
 
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <format>
@@ -119,6 +122,20 @@ void CheckInstallation(tandem::plugin::Runtime &runtime, const std::filesystem::
   log::Info("tandem scripts {:016x}, tweaks {:016x}; {} other mod(s), list {:016x}",
             found.install.scripts, found.install.tweaks, found.install.modCount,
             found.install.mods);
+  // What the other mods add (docs/architecture/mod-compat.md): compared with
+  // the other players' at a join.
+  auto ours = mods::Scan(found.game);
+  std::array<std::size_t, mods::kCategoryOrder.size()> by{};
+  for (const auto &mod : ours)
+    for (std::size_t i = 0; i < by.size(); ++i)
+      by[i] += mods::Primary(mod.categories) == mods::kCategoryOrder[i];
+  std::string sorted;
+  for (std::size_t i = 0; i < by.size(); ++i)
+    if (by[i])
+      sorted += std::format("{}{} {}", sorted.empty() ? "" : ", ", by[i],
+                            mods::CategoryName(mods::kCategoryOrder[i]));
+  log::Info("other mods by what they add: {} ({})", ours.size(), sorted.empty() ? "none" : sorted);
+  ModRecords::Get().SetOurs(std::move(ours));
   for (const auto &warning : found.startup.warnings)
     log::Warn("startup check: {}", warning);
   for (const auto &problem : found.startup.problems)
@@ -171,13 +188,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     runtime.codeSalt = runtime.config.codeSalt;
     runtime.config.commandFile = files.command;
     runtime.config.recentFile = files.recent;
-    tandem::plugin::Comms::Get().Configure(runtime.config.link == tandem::plugin::Config::Link::Auto
-                                               ? tandem::plugin::Comms::LinkDefault::Auto
-                                           : runtime.config.link ==
-                                                   tandem::plugin::Config::Link::Ask
-                                               ? tandem::plugin::Comms::LinkDefault::Ask
-                                               : tandem::plugin::Comms::LinkDefault::Off,
-                                           runtime.config.pings);
+    tandem::plugin::ConfigureComms(runtime.config);
     log::SetLevel(static_cast<log::Level>(runtime.config.logLevel));
     if (const auto text = Environment(tandem::instance::kPortVariable); !text.empty()) {
       // Digits are ASCII; anything else is refused by ParsePort.

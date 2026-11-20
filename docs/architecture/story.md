@@ -96,16 +96,30 @@
       plain strings in `TandemRestrictText` until the localization table
       (`Text.reds`, branch `polish`) is here.
     - _The host's backstop_: while its V is in a scene or restricted, the
-      host refuses a guest's strike or takedown on one of the scene's
-      actors (scene replay's cast, or an NPC in a scene that is a quest NPC
-      or kept alive by god mode), logging `story: refused a guest's hit
-during the host's scene`.
+      host refuses a guest's strike, takedown or quickhack on one of the
+      scene's actors (scene replay's cast, or an NPC in a scene that is a
+      quest NPC or kept alive by god mode), logging `story: refused a guest's hit
+during the host's scene` (strikes, takedowns) or `story: refused a
+guest's quickhack during the host's scene` (player, NPC, the
+      quickhack's record), each at most once a second per kind of act. A
+      quickhack is refused whole: its upload (`NpcHack`: the host answers
+      it failed, `NpcHackState` step 2, as for an NPC out of reach, and
+      never holds the NPC "being hacked"), every effect it lands
+      (`NpcEffect` tagged `Quickhack`) and its damage ticks (strikes). A
+      guest's Breach Protocol, won or lost, leaves the actor alone too (its
+      daemons, its alert; logged as a quickhack, `breach`; `Breach.reds`
+      `OnNpc`): the network stays breached. The
+      rule is core's (`story::Backstop`, `IsSceneActor`; native
+      `TandemStory.BackstopRefuses`), tested in
+      `tests/restrictions_test.cpp`; `Restrictions.reds` reads what the NPC
+      is.
     - Static safe zones are not shared: they are a quest fact of the
       guest's own world (`CityAreaType`), which its own open-world phases
       set (to verify with the freeze on).
     - Tests: `tests/restrictions_test.cpp` (the moment, the ledger, the
       record, the endpoints: late joiner, lift, a lost lift, a vanished
-      host); mock player `--restrict REC[,REC] --restrict-at S
+      host; the backstop: who is an actor, each act refused in the moment
+      only, the log's rate per act); mock player `--restrict REC[,REC] --restrict-at S
 --restrict-for S` and the story verb `restrict`; scenarios
       `story-restrict-guest`, `story-restrict-host`; `tools/game.sh cmd
 story restrict` (report), `story restrict on|off REC` (a test

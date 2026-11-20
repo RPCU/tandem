@@ -223,10 +223,8 @@ std::vector<std::string> Differences(const proto::Install &ours, const proto::In
         scripts && tweaks ? "scripts and tweaks"
         : scripts         ? "scripts"
                           : "tweaks"));
-  if (ours.mods && theirs.mods && ours.mods != theirs.mods)
-    out.push_back(std::format("{} has other mods than you ({} against your {}): gameplay mods "
-                              "that differ can put your games out of step",
-                              who, theirs.modCount, ours.modCount));
+  // The other mods are compared by what they add (proto::ModList,
+  // tandem/mods.hpp), which says more than their fingerprint could.
   return out;
 }
 

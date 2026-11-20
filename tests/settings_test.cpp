@@ -49,6 +49,10 @@ TEST_CASE("the page changes its own keys, never the session's") {
   CHECK(settings::IsEditable("nameplates"));
   CHECK(settings::IsEditable("party_hud"));
   CHECK(settings::IsEditable("direct"));
+  CHECK(settings::IsEditable("link"));
+  CHECK(settings::IsEditable("pings"));
+  // Saved by Join by address, not shown on the page.
+  CHECK(settings::IsEditable("last_address"));
   CHECK_FALSE(settings::IsEditable("role"));
   CHECK_FALSE(settings::IsEditable("address"));
   CHECK_FALSE(settings::IsEditable("port"));

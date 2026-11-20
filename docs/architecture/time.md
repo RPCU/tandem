@@ -37,6 +37,24 @@
   plays, never from the plugin's per-frame call: there it crashed the game
   loading a save and froze it right after "playing" (2026-11-18; suspects
   in engine-knowledge §13.15). Scenario `time`.
+- **A mod's slow motion is a bubble too** (`Time.reds` `Unexplained`,
+  core `TimeBubbles::UnexplainedSlow`, 2026-11-19, not yet run in game):
+  any global slow motion on our V's game that none of the reasons above
+  explains (the whole factor clearly below the smallest of theirs) is sent
+  as a slow-motion ability (`kTimeSlowMo`) with that factor, so the others
+  see a bubble, and our player reads once "A mod slowed time: shared as a
+  time bubble around you". The reason cannot be named: the time system's
+  natives cannot be wrapped and no script lists the active reasons, so the
+  rule needs no list of mods (OverclockOverheat's optional
+  `OverclockDilation` asked for it, [`mod-compat.md`](mod-compat.md)). The
+  exceptions stay as they were: melee hit stop (`meleeHit`,
+  `meleeHitStrong`) and deflect local, menus (`WorldMap`, the TweakDB
+  profiles' reasons of `radialMenu`, `hubMenu`, `vehicleRadioMenu`,
+  `nanoWireBreach`, `settings`), a ride's skip (`customFFTimeDilation`, a
+  speed-up) and our V slowed by another V's bubble (`tandemBubble`) are
+  never taken for one. A host cannot take it back (no reason to hold): its
+  world stays slowed and the NPCs it shares are exempted, as with
+  `time_host = full`. Tests: `tests/timebubble_test.cpp`.
 - **The scanner's slow time is a bubble too** (`scripts/tandem/Time.reds`,
   2026-11-19, not yet run in game; the user: "the scanner has a bubble
   slow time too so it's standard"). It was switched off while another V
@@ -113,6 +131,31 @@
     this session's scanner bubbles and how long our V was slowed by the
     others' bubbles (by a scanner's alone, too), and the same tally is
     logged when the session ends.
+  - _A cue while slowed_ (the user's decision, 2026-11-19: mitigation 6
+    below). While another V's bubble slows ours (a scanner's or a
+    Sandevistan's, any ability that makes one), our game plays the game's
+    own soft slow motion on our V: the Focus perk's full-screen effect
+    (`cool_perk_focused_state_fullscreen`) and its enter sound
+    (`time_dilation_focused_enter`), and its exit sound
+    (`time_dilation_focused_exit`) when we are free again, as the perk
+    plays them when it slows time a little (final.reds 542843-542849,
+    44513-44514; engine facts `engine/combat.md` §13.75). It starts and
+    ends with the factor `TimePlayerFactor` gives going under 1 and back
+    (`SlowSelf`, `FreeSelf`), so nothing plays when our own ability
+    matches or beats the bubble (both scanning), nor in a vehicle, dead or
+    downed. Our own Focus or Deadeye reload holding the same effect keeps
+    it (never started nor broken by us then). Once a session, a notice
+    names whose it is (`TimeBubbles::SlowedBy`, native `TimeSlowedBy`: the
+    strongest other bubble around us, the nearest of equals): "NAME's
+    scanner slows you." (`Time-SlowedScanner`), "NAME's Sandevistan slows
+    you." (`Time-SlowedSandevistan`), "NAME's slow motion reaches you."
+    (`Time-SlowedOther`), English and French in `Text.reds`. Logged:
+    `time: slowed by player P's bubble (abilities A): the game's
+slow-motion cue on (…)`, `time: the slow-motion cue off`. Tested in
+    `tests/timebubble_test.cpp` (whose bubble; nobody when our own matches)
+    and scenario `time-scan` (the cue and notice on a partner's scan, none
+    while both scan, one notice a session). To hear and see: that the
+    effect is subtle at the scanner's rate of opening.
   - _Tests_: `tools/game.sh cmd time scan SCALE SECONDS` (a dilation as
     the scanner's state sets it, without opening it); the mock player's
     `--scan-at N` (its scanner on for `--sandevistan-for` seconds at
@@ -136,7 +179,7 @@
   (not read yet: the first scan logs it). At a factor of 0.1 and 30 %
   that is about 27 % of the partner's real time lost to slow motion; a
   partner out of the 150 m, in a vehicle, or scanning too loses none.
-  Possible mitigations, **for the user to decide** (none is built):
+  Possible mitigations, **for the user to decide** (only 6 is built):
   1. a smaller reach for the scanner's bubble only (say 40 m): a partner
      fighting the same group still shares it, one elsewhere is untouched;
      NPCs beyond it keep their speed on the host;
@@ -153,6 +196,8 @@
   6. a cue on the partner's screen while a scanner slows them (a sound, a
      screen effect), so being slowed reads as "my partner is scanning";
      polish whatever else is chosen (no native one exists, below).
+     **Built** (2026-11-19): the Focus perk's own screen effect and sounds,
+     and one notice a session (_A cue while slowed_, above).
      Recommended: play it as built first (it is the standard rule and fair
      against the enemies), add 6, and if the partner finds it intrusive take
      1 before any mitigation that hands out free slow motion (2, 3, 4).

@@ -475,7 +475,10 @@ public class TandemStorySystem extends ScriptableSystem {
           }
           break;
         case 41:
-          this.OnReward(event.reward, event.hash);
+          // A reward our game lacks (a mod's; said on screen): not given.
+          if TDBID.IsValid(event.reward) {
+            this.OnReward(event.reward, event.hash);
+          }
           break;
         case 60:
         case 61:
@@ -484,8 +487,9 @@ public class TandemStorySystem extends ScriptableSystem {
           }
           break;
         case 43:
-          // A vehicle the host's quest gave while we took part.
-          if !this.m_isHost && IsDefined(this.m_garage) && this.m_garage.Earned(event.reward, event.hash, this.NameOf(this.m_host)) {
+          // A vehicle the host's quest gave while we took part (one our game
+          // lacks is none: nothing to credit).
+          if !this.m_isHost && TDBID.IsValid(event.reward) && IsDefined(this.m_garage) && this.m_garage.Earned(event.reward, event.hash, this.NameOf(this.m_host)) {
             this.m_ledger = TandemStory.CarryWords();
           }
           break;

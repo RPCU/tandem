@@ -6,6 +6,8 @@
 
 #include "tandem/protocol.hpp"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <optional>
@@ -169,6 +171,42 @@ public:
 private:
   std::vector<std::uint64_t> m_host;
   std::map<std::uint64_t, bool> m_held; // effect: true ours, false theirs
+};
+
+// The host's backstop to the guests' own restrictions: while the host's V is
+// in a restricted moment (a scene, tier 2 and up, or story restrictions on),
+// a guest's act on one of the scene's actors is refused: a strike, a
+// takedown, a quickhack (its upload and the effects it lands). An actor is
+// one of scene replay's cast, or an NPC in a scene that the quest marks
+// (IsQuest) or keeps alive (god mode). Each refusal is said in the log at
+// most once a second per kind of act, so a burst of quickhack damage ticks
+// does not hide the upload's line, nor fill the log.
+enum class GuestAct : std::uint8_t { Strike = 0, Takedown = 1, Quickhack = 2 };
+inline constexpr std::uint64_t kBackstopLogGapUs = 1'000'000;
+
+struct SceneActor {
+  bool cast{};    // scene replay casts it in the scene the host announces
+  bool quest{};   // the quest marks it (GameObject.IsQuest)
+  bool kept{};    // god mode keeps it alive (Immortal or Invulnerable)
+  bool inScene{}; // it is in a scene now (IsEntityInScene)
+};
+bool IsSceneActor(const SceneActor &npc);
+
+class Backstop {
+public:
+  struct Verdict {
+    bool refuse{};
+    bool log{}; // say so now (the first in a second for this act)
+    friend bool operator==(const Verdict &, const Verdict &) = default;
+  };
+  // `moment`: our V (the host's) is in a restricted moment now.
+  Verdict Judge(bool moment, const SceneActor &npc, GuestAct act, std::uint64_t nowUs);
+  std::uint32_t Refused(GuestAct act) const { return m_refused[Index(act)]; }
+
+private:
+  static std::size_t Index(GuestAct act) { return static_cast<std::size_t>(act) % 3; }
+  std::array<std::optional<std::uint64_t>, 3> m_loggedUs{};
+  std::array<std::uint32_t, 3> m_refused{};
 };
 
 // Text replies need no arbiter here: the host applies them in the order

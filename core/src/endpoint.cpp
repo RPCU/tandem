@@ -5,6 +5,7 @@
 #include "tandem/elsewhere.hpp"
 #include "tandem/names.hpp"
 #include "tandem/play.hpp"
+#include "tandem/presence.hpp"
 #include "tandem/progress.hpp"
 #include "tandem/traffic.hpp"
 
@@ -372,8 +373,8 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
       // One domain: the shared vehicles are resynced with the NPCs.
       .npcs = consistency::Hasher{}
                   .Add(std::uint64_t{npcs})
-                  .Add(std::uint64_t{consistency::TrafficDigest(m_traffic, m_trafficStatus)})
-                  .Add(std::uint64_t{VehicleStreetDigest()})
+                  .Add(std::uint64_t{TrafficDigestFor(self)})
+                  .Add(std::uint64_t{VehicleStreetDigest(self)})
                   .Value(),
       .story = m_story.Digest(),
       .players = consistency::Hasher{}
@@ -454,6 +455,8 @@ void Endpoint::BumpEpoch(std::uint8_t reason) {
     // Our NPCs are not in our world any more: the players we leave behind
     // inherit the ones near them (regions), the rest go.
     if (reason != proto::kEpochJoin)
+      InheritTrafficOf(m_you, false, m_pending);
+    if (reason != proto::kEpochJoin)
       InheritNpcsOf(m_you, false, m_pending);
     // Our V is no longer beside whoever it traded with.
     if (reason != proto::kEpochJoin)
@@ -524,6 +527,9 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
       return;
     }
 
+    // Its vehicles and its requests to other owners (traffic.md).
+    if (OnGuestTraffic(event.peer, player, message, out))
+      return;
     // Its NPCs, and its requests to other owners (regions).
     if (OnOwnerMessage(event.peer, player, message, out))
       return;
@@ -652,6 +658,15 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               Broadcast(relayed, event.peer);
               out.push_back(events::RemoteCue{relayed});
             },
+            [&](const proto::StatusVisuals &visuals) {
+              // A guest only speaks for its own V.
+              auto relayed = visuals;
+              relayed.player = player;
+              if (!Keep(m_statusVisuals, relayed))
+                return;
+              Broadcast(relayed, event.peer);
+              out.push_back(events::RemoteStatusVisuals{relayed});
+            },
             [&](const proto::Activity &busy) {
               // A guest is only busy in its own name.
               auto relayed = activity::Sanitized(busy);
@@ -678,6 +693,8 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               out.push_back(events::RemoteInstall{
                   player, name, install, compat::Differences(m_identity.install, install, name)});
             },
+            [&](const proto::ModList &list) { OnModList(player, list, out); },
+            [&](const proto::Substitutes &substitutes) { OnSubstitutes(player, substitutes, out); },
             [&](const proto::Pause &pause) {
               // A guest only pauses in its own name.
               const proto::Pause relayed{player, pause.paused};
@@ -756,15 +773,6 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               Broadcast(relayed, event.peer);
               out.push_back(events::RemoteTransit{relayed});
             },
-            [&](const proto::TrafficHit &hit) {
-              // The vehicle's owner applies it: us (only the host
-              // owns an area today, AreaOwner).
-              auto mine = hit;
-              mine.player = player;
-              if (m_traffic.contains(mine.id))
-                out.push_back(events::TrafficHitBy{mine});
-            },
-            [&](const proto::TrafficClaim &claim) { TakeTraffic(player, claim.id, out); },
             [&](const proto::Heat &heat) {
               // A guest is only wanted in its own name.
               auto relayed = heat;
@@ -833,6 +841,7 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               if (relayed.reason != proto::kEpochJoin) {
                 // Its world was rebuilt: its NPCs are not in it any
                 // more (regions: heirs, or gone).
+                InheritTrafficOf(player, false, out);
                 InheritNpcsOf(player, false, out);
                 out.push_back(events::EpochChanged{relayed});
                 // Its world was rebuilt: check it soon.
@@ -860,6 +869,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   const auto player = it->second;
   m_playerOfPeer.erase(it);
   // The NPCs it ran: to the players near them, or gone (regions).
+  InheritTrafficOf(player, true, out);
   InheritNpcsOf(player, true, out);
   // It holds no region any more.
   if (m_holders.erase(player) > 0)
@@ -884,6 +894,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   m_radios.erase(player);
   m_stealth.erase(player);
   m_presences.erase(player);
+  m_statusVisuals.erase(player);
   m_transits.erase(player);
   // Our NPCs seated in its vehicle: out (its copy stays parked elsewhere).
   for (auto it = m_npcSeats.begin(); it != m_npcSeats.end();) {
@@ -1002,6 +1013,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     m_players[player].body = hello.body;
     // A fresh game, born into our world as it is now: the NPCs its old one
     // ran are not in it, and where it is we do not know yet.
+    InheritTrafficOf(player, true, out);
     InheritNpcsOf(player, true, out);
     m_places[player] = {};
     ForgetStreams(player);
@@ -1037,6 +1049,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
     }
     BroadcastRoster();
     Send(peer, m_identity.install);
+    SendModsTo(peer);
     SendSessionTo(peer);
     return;
   }
@@ -1061,6 +1074,7 @@ void Endpoint::OnHello(net::PeerId peer, const proto::Hello &hello,
   BroadcastRoster();
   // After the roster: the guest names us when it says what differs.
   Send(peer, m_identity.install);
+  SendModsTo(peer);
   SendSessionTo(peer);
   CheckLost(out); // a V up again
 }
@@ -1113,10 +1127,11 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     others(m_radios);
     others(m_stealth);
     others(m_presences);
-    others(m_transits);   // who rides what (only rides that are on)
-    others(m_heat);       // who is wanted (only levels above 0)
-    others(m_lends);      // who may drive whose cars
-    others(m_commsLinks); // whom each shares tags with
+    others(m_statusVisuals); // what shows on each V (an empty set too)
+    others(m_transits);      // who rides what (only rides that are on)
+    others(m_heat);          // who is wanted (only levels above 0)
+    others(m_lends);         // who may drive whose cars
+    others(m_commsLinks);    // whom each shares tags with
     others(m_waypoints);
     // Who is in their pause menu (the newcomer itself is not), and in a
     // resync who is not (its copy may say otherwise).
@@ -1184,18 +1199,6 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
   if ((domains & proto::kDomainWorld) && !resync)
     SendDevicesTo(peer, false);
   if (domains & proto::kDomainNpcs) {
-    // The world vehicles, before who sits in them (the NPCs' seats below).
-    if (resync) {
-      proto::TrafficSet set;
-      for (const auto &[id, spawn] : m_traffic)
-        if (set.ids.size() < proto::kMaxTrafficSet)
-          set.ids.push_back(id);
-      Send(peer, set);
-    }
-    for (const auto &[id, spawn] : m_traffic)
-      Send(peer, spawn);
-    for (const auto &[id, status] : m_trafficStatus)
-      Send(peer, status);
     // The NPCs this guest shows: those of the owners it is linked with.
     std::vector<proto::NpcId> shown;
     for (const auto &[npc, spawn] : m_npcs)
@@ -1214,18 +1217,8 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
           set.npcs.push_back(npc);
       Send(peer, set);
     }
-    // The world vehicles, before who sits in them.
-    if (resync) {
-      proto::TrafficSet set;
-      for (const auto &[id, spawn] : m_traffic)
-        if (set.ids.size() < proto::kMaxTrafficSet)
-          set.ids.push_back(id);
-      Send(peer, set);
-    }
-    for (const auto &[id, spawn] : m_traffic)
-      Send(peer, spawn);
-    for (const auto &[id, status] : m_trafficStatus)
-      Send(peer, status);
+    // The world vehicles of the owners it sees, before who sits in them.
+    SendTrafficTo(peer, them, resync);
     // Each with its owner (when handed over), health, poise, hold,
     // animation state and seat.
     for (const auto npc : shown)
@@ -1442,6 +1435,9 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
   // Links, owners, hand-overs, and requests for the NPCs we run (regions).
   if (OnRegionMessage(message, out))
     return;
+  // Shared vehicles: their owners, hand-overs, requests for ours.
+  if (OnHostTraffic(message, out))
+    return;
   if (proto::IsVehicleCombat(message)) {
     OnHostVehicles(message, out);
     return;
@@ -1461,6 +1457,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 static_cast<std::uint32_t>(welcome.hostTimeUs / 1000);
             out.push_back(events::Joined{m_you, m_host});
             Send(m_hostPeer, m_identity.install);
+            SendModsTo(m_hostPeer);
             SendLocalAppearanceNow();
             SendLocalHeldNow();
             SendLocalSeatNow();
@@ -1468,6 +1465,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             SendLocalPausedNow();
             SendLocalStealthNow();
             SendLocalPresenceNow();
+            SendLocalStatusVisualsNow();
             SendLocalTimeNow();
             SendLocalElsewhereNow();
             SendLocalActivityNow();
@@ -1497,6 +1495,8 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             out.push_back(events::RemoteInstall{
                 m_host, name, install, compat::Differences(m_identity.install, install, name)});
           },
+          [&](const proto::ModList &list) { OnModList(m_host, list, out); },
+          [&](const proto::Substitutes &substitutes) { OnSubstitutes(m_host, substitutes, out); },
           [&](const proto::Pong &pong) {
             const auto now = net::NowUs();
             const auto rtt = now - pong.pingSentUs;
@@ -1542,6 +1542,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
                 m_radios.erase(id);
                 m_stealth.erase(id);
                 m_presences.erase(id);
+                m_statusVisuals.erase(id);
                 m_transits.erase(id);
                 EndHeatOf(id, out, false);
                 m_lends.erase(id);
@@ -1725,6 +1726,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (cue.player != m_you)
               out.push_back(events::RemoteCue{cue});
           },
+          [&](const proto::StatusVisuals &visuals) {
+            if (visuals.player != m_you && Keep(m_statusVisuals, visuals))
+              out.push_back(events::RemoteStatusVisuals{visuals});
+          },
           [&](const proto::NpcActionReply &reply) {
             out.push_back(events::NpcActionAnswered{reply});
           },
@@ -1771,57 +1776,6 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             out.push_back(events::RemoteTransit{transit});
           },
           [&](const proto::NpcSeat &seat) { out.push_back(events::HostNpcSeat{seat}); },
-          [&](const proto::TrafficSpawn &spawn) {
-            // Our copy of what is shared: one we have already (a resync)
-            // changes nothing in the game.
-            const bool known = m_traffic.contains(spawn.id);
-            m_traffic[spawn.id] = spawn;
-            if (!known)
-              out.push_back(events::TrafficSpawned{spawn});
-          },
-          [&](const proto::TrafficStates &states) {
-            // The old world's states are void (they share the NPC states'
-            // numbering: Epoch::firstNpcSeq fences both).
-            if (m_firstNpcSeq != 0 && static_cast<std::int32_t>(states.seq - m_firstNpcSeq) < 0)
-              return;
-            // Only vehicles we know: a state that overtook its TrafficGone
-            // on the other channel must not bring a track back.
-            auto live = states;
-            std::erase_if(live.cars, [&](const proto::TrafficEntry &entry) {
-              return !m_traffic.contains(entry.id);
-            });
-            for (const auto &entry : live.cars)
-              m_traffic[entry.id].position = entry.position;
-            if (!live.cars.empty())
-              out.push_back(events::TrafficMoved{std::move(live)});
-          },
-          [&](const proto::TrafficGone &gone) {
-            if (!m_traffic.contains(gone.id))
-              return; // never shared with us, or said already
-            ForgetTraffic(gone.id);
-            out.push_back(events::TrafficLeft{gone});
-          },
-          [&](const proto::TrafficStatus &status) {
-            if (!m_traffic.contains(status.id))
-              return;
-            if (const auto it = m_trafficStatus.find(status.id);
-                it != m_trafficStatus.end() && it->second == status)
-              return;
-            m_trafficStatus[status.id] = status;
-            out.push_back(events::TrafficChanged{status});
-          },
-          [&](const proto::TrafficSet &set) {
-            // A resync: every vehicle shared now. Ours beyond it are gone.
-            const std::set<proto::TrafficId> shared(set.ids.begin(), set.ids.end());
-            std::vector<proto::TrafficId> stale;
-            for (const auto &[id, spawn] : m_traffic)
-              if (!shared.contains(id))
-                stale.push_back(id);
-            for (const auto id : stale) {
-              ForgetTraffic(id);
-              out.push_back(events::TrafficLeft{{.id = id, .reason = proto::kTrafficAway}});
-            }
-          },
           [&](const proto::Heat &heat) {
             if (heat.player != m_you && NoteHeat(heat))
               out.push_back(events::RemoteHeat{heat});
@@ -2252,6 +2206,95 @@ void Endpoint::SendNpcAction(const proto::NpcAction &action) {
   AskOwner(mine.npc, mine);
 }
 
+// ---- Other mods (docs/architecture/mod-compat.md) ----
+
+void Endpoint::SendModsTo(net::PeerId peer) {
+  if (!m_identity.tellsMods)
+    return;
+  // Hashes and categories: the names stay here until asked for.
+  proto::ModList list{.kind = proto::kModListed};
+  for (const auto &mod : m_identity.mods)
+    if (list.mods.size() < proto::kMaxModEntries)
+      list.mods.push_back({.hash = mod.hash, .categories = mod.categories});
+  Send(peer, list);
+}
+
+void Endpoint::OnModList(proto::PlayerId player, const proto::ModList &list,
+                         std::vector<SessionEvent> &out) {
+  const auto found = m_players.find(player);
+  const std::string name = found != m_players.end() && !found->second.name.empty()
+                               ? found->second.name
+                               : std::string(player == m_host ? "The host" : "A player");
+  switch (list.kind) {
+  case proto::kModListed: {
+    // Theirs against ours; a game that does not say its own compares nothing.
+    m_theirMods[player] = list.mods;
+    if (m_identity.tellsMods)
+      out.push_back(events::RemoteMods{player, name, mods::Compare(m_identity.mods, list.mods)});
+    break;
+  }
+  case proto::kModNamesAsked: {
+    // Only the names of our own mods, only those asked for.
+    proto::ModList names{.kind = proto::kModNames};
+    for (const auto &asked : list.mods)
+      for (const auto &mod : m_identity.mods)
+        if (mod.hash == asked.hash && names.mods.size() < proto::kMaxModEntries)
+          names.mods.push_back(mod);
+    if (const auto peer = IsHost() ? PeerOf(player) : std::optional(m_hostPeer))
+      Send(*peer, names);
+    break;
+  }
+  case proto::kModNames:
+    out.push_back(events::ModNamesFrom{player, name, list.mods});
+    break;
+  default:
+    break;
+  }
+}
+
+void Endpoint::AskModNames(proto::PlayerId player) {
+  if (!IsJoined() || m_ended)
+    return;
+  const auto theirs = m_theirMods.find(player);
+  if (theirs == m_theirMods.end())
+    return;
+  proto::ModList ask{.kind = proto::kModNamesAsked};
+  for (const auto hash : mods::Compare(m_identity.mods, theirs->second).theirsOnlyHashes)
+    ask.mods.push_back({.hash = hash});
+  if (ask.mods.empty())
+    return;
+  // Guests compare with the host only (like Install): a guest asks the host.
+  if (!IsHost())
+    Send(m_hostPeer, ask);
+  else if (const auto peer = PeerOf(player))
+    Send(*peer, ask);
+}
+
+void Endpoint::SendSubstitutes(proto::Substitutes substitutes) {
+  if (!IsJoined() || m_ended || substitutes.owner == m_you)
+    return;
+  substitutes.seer = m_you;
+  if (!IsHost())
+    Send(m_hostPeer, substitutes);
+  else if (const auto peer = PeerOf(substitutes.owner))
+    Send(*peer, substitutes);
+}
+
+void Endpoint::OnSubstitutes(proto::PlayerId player, proto::Substitutes substitutes,
+                             std::vector<SessionEvent> &out) {
+  // The host stamps who sees them and passes them to their owner only.
+  if (IsHost())
+    substitutes.seer = player;
+  if (substitutes.owner == m_you) {
+    const auto seer = m_players.find(substitutes.seer);
+    out.push_back(events::SubstitutesFrom{substitutes, seer != m_players.end() ? seer->second.name
+                                                                               : std::string()});
+  } else if (IsHost()) {
+    if (const auto peer = PeerOf(substitutes.owner))
+      Send(*peer, substitutes);
+  }
+}
+
 void Endpoint::SendNpcActionReply(proto::PlayerId player, const proto::NpcActionReply &reply) {
   Record(reply);
   if (!IsJoined() || m_ended)
@@ -2547,6 +2590,28 @@ void Endpoint::SendLocalPresenceNow() {
     Broadcast(*m_localPresence);
   else
     Send(m_hostPeer, *m_localPresence);
+}
+
+void Endpoint::SetLocalStatusVisuals(std::vector<std::uint64_t> records) {
+  proto::StatusVisuals visuals{.records = presence::StatusSet(std::move(records))};
+  if (m_localStatusVisuals && m_localStatusVisuals->records == visuals.records)
+    return; // nothing new to show
+  if (m_tap)
+    m_tap(visuals);
+  visuals.revision = ++m_statusVisualsRevision;
+  m_localStatusVisuals = visuals;
+  SendLocalStatusVisualsNow();
+}
+
+void Endpoint::SendLocalStatusVisualsNow() {
+  if (!m_localStatusVisuals || !IsJoined() || m_ended)
+    return;
+  m_localStatusVisuals->player = m_you;
+  m_statusVisuals[m_you] = *m_localStatusVisuals;
+  if (IsHost())
+    Broadcast(*m_localStatusVisuals);
+  else
+    Send(m_hostPeer, *m_localStatusVisuals);
 }
 
 void Endpoint::SendLocalCue(proto::Cue cue) {
@@ -3099,112 +3164,6 @@ void Endpoint::NoteTransit(const proto::Transit &transit) {
     m_transits.erase(transit.player);
   else
     m_transits[transit.player] = transit;
-}
-
-void Endpoint::SendTrafficSpawn(const proto::TrafficSpawn &spawn) {
-  Record(spawn);
-  if (!OwnsArea() || !IsHost() || m_ended)
-    return;
-  if (const auto it = m_traffic.find(spawn.id); it != m_traffic.end() && it->second == spawn)
-    return;
-  m_traffic[spawn.id] = spawn;
-  Broadcast(spawn);
-}
-
-void Endpoint::SendTrafficStates(proto::TrafficStates states) {
-  Record(states);
-  if (!OwnsArea() || !IsHost() || m_ended)
-    return;
-  // Only what we announced, and no more than a packet holds.
-  std::erase_if(states.cars,
-                [&](const proto::TrafficEntry &entry) { return !m_traffic.contains(entry.id); });
-  if (states.cars.size() > proto::kMaxTrafficPerState)
-    states.cars.resize(proto::kMaxTrafficPerState);
-  if (states.cars.empty())
-    return;
-  // One numbering with the NPC states: an epoch's firstNpcSeq fences both.
-  states.seq = ++m_npcSeq;
-  states.timeUs = HostNowUs();
-  // The latest transform also goes to the kept spawn, for late joiners.
-  for (const auto &entry : states.cars) {
-    auto &spawn = m_traffic[entry.id];
-    spawn.position = entry.position;
-    spawn.orientation = traffic::UnpackOrientation(entry.orientation);
-  }
-  Broadcast(states);
-}
-
-void Endpoint::SendTrafficGone(const proto::TrafficGone &gone) {
-  Record(gone);
-  if (!OwnsArea() || !IsHost() || m_ended || !m_traffic.contains(gone.id))
-    return;
-  ForgetTraffic(gone.id);
-  Broadcast(gone);
-}
-
-void Endpoint::SendTrafficStatus(const proto::TrafficStatus &status) {
-  Record(status);
-  if (!OwnsArea() || !IsHost() || m_ended || !m_traffic.contains(status.id))
-    return;
-  auto kept = status;
-  kept.flags &= proto::kTrafficStatusMask;
-  if (const auto it = m_trafficStatus.find(kept.id);
-      it != m_trafficStatus.end() && it->second == kept)
-    return;
-  m_trafficStatus[kept.id] = kept;
-  Broadcast(kept);
-}
-
-void Endpoint::ForgetTraffic(proto::TrafficId id) {
-  m_traffic.erase(id);
-  m_trafficStatus.erase(id);
-  ForgetStreetVehicle(id);
-  // Whoever sat in it is out (host: said to everyone; the game takes the
-  // real NPCs out itself).
-  const auto owner = proto::TrafficSeatOwner(id);
-  for (auto it = m_npcSeats.begin(); it != m_npcSeats.end();) {
-    if (it->second.owner != owner) {
-      ++it;
-      continue;
-    }
-    if (IsHost())
-      Broadcast(proto::NpcSeat{.npc = it->first});
-    it = m_npcSeats.erase(it);
-  }
-}
-
-void Endpoint::TakeTraffic(proto::PlayerId player, proto::TrafficId id,
-                           std::vector<SessionEvent> &out) {
-  // Gone or taken already: the claimer has heard, or is about to (the
-  // reliable stream said so before this claim could be answered).
-  if (!m_traffic.contains(id))
-    return;
-  ForgetTraffic(id);
-  const proto::TrafficGone taken{.id = id, .reason = proto::kTrafficTaken, .player = player};
-  Broadcast(taken);
-  out.push_back(events::TrafficLeft{taken});
-}
-
-void Endpoint::SendTrafficHit(const proto::TrafficHit &hit) {
-  Record(hit);
-  if (!IsJoined() || m_ended || !m_traffic.contains(hit.id))
-    return;
-  // Our own vehicles' hits are our game's.
-  if (IsHost())
-    return;
-  auto mine = hit;
-  mine.player = m_you;
-  Send(m_hostPeer, mine);
-}
-
-void Endpoint::ClaimTraffic(proto::TrafficId id, std::uint64_t seat) {
-  Record(proto::TrafficClaim{.player = m_you, .id = id, .seat = seat});
-  if (!IsJoined() || m_ended || !m_traffic.contains(id))
-    return;
-  if (IsHost())
-    TakeTraffic(m_you, id, m_pending);
-  else
-    Send(m_hostPeer, proto::TrafficClaim{.player = m_you, .id = id, .seat = seat});
 }
 
 void Endpoint::SetLocalHeat(proto::Heat heat) {
@@ -4033,6 +3992,8 @@ std::vector<proto::Message> Endpoint::LocalSnapshot() const {
     out.emplace_back(*m_localStealth);
   if (m_localPresence)
     out.emplace_back(*m_localPresence);
+  if (m_localStatusVisuals)
+    out.emplace_back(*m_localStatusVisuals);
   if (m_localTime.abilities)
     out.emplace_back(m_localTime);
   if (m_localTransit && m_localTransit->kind != proto::TransitKind::None)

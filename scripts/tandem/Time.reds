@@ -33,6 +33,9 @@
 //     slow).
 //   * The others: that V's puppet keeps normal speed among slowed enemies,
 //     with the implant's effect on it (PuppetFx, effect name to confirm).
+//     A V that another V's bubble slows gets the game's own soft slow-motion
+//     cue while it lasts (CueOn: the Focus perk's screen effect and sounds)
+//     and, once a session, a notice naming whose it is.
 // - Focus ("focusedStatePerkDilation", final.reds:542858), Deadeye's reload
 //   ("coolReloadPerkDilation", final.reds:547583) and every effector that
 //   slows time for our V (SetTimeDilationEffector, final.reds:307231: Reflex
@@ -52,8 +55,12 @@
 //   it lasts while the game keeps it (an enemy or a sensor in view). Melee hit stop ("meleeHit", final.reds:45789) and
 //   deflect/one-punch ("deflect", final.reds:39679): local only, no bubble. A guest keeps them on its
 //   screen; the host drops their world part (time_host = bubble). Others see the V as it is: standing, scanning.
-// - Any other global dilation left on the host is logged ("an unknown
-//   dilation").
+// - Any other global slow motion (a mod's: its reason cannot be read, the
+//   time system's natives cannot be wrapped) is a bubble too, at the
+//   world's factor, when none of the reasons above explains it and no local
+//   one is on (Unexplained; core's TimeBubbles::UnexplainedSlow): told
+//   once. The host cannot take it back (no reason to hold): its world stays
+//   slowed, the NPCs it shares are exempted as with time_host = full.
 // - A ride's own skip (the NCART, a cab: "customFFTimeDilation" at 10 while
 //   the skip is held, PlayerPuppet.OnAction SceneFastForward under a
 //   CustomFastForward effect, final.reds:40298): kept, on the host too. It
@@ -89,6 +96,8 @@ public class TandemTime {
   // Reasons taken back during their current activation (logged once each).
   private let m_taken: array<CName>;
   private let m_unknownLogged: Float;
+  // A mod's slow motion was shared as a bubble (said once a session).
+  private let m_unexplainedSaid: Bool;
   // What the game asked for under each reason we follow, and the reasons
   // of the effector dilations on our V now.
   private let m_askedReasons: array<CName>;
@@ -111,6 +120,12 @@ public class TandemTime {
   private let m_slowedSeconds: Float;
   private let m_slowedScanSeconds: Float;
   private let m_lastSlowed: Float;
+  // The cue while another V's bubble slows ours: on, whether our own Focus
+  // held the screen effect when it began, and whether this session's
+  // notice was shown.
+  private let m_cueOn: Bool;
+  private let m_cueKept: Bool;
+  private let m_cueNoticed: Bool;
   // Host: NPCs answering a V's Sandevistan with their own right now (the
   // AI's sandevistanVersusSandevistan sub-action): out of every bubble.
   private let m_counters: array<EntityID>;
@@ -256,6 +271,15 @@ public class TandemTime {
       scale = MinF(scale, scan);
     }
     this.CountScan((abilities & 8) != 0);
+    // A slow motion none of those explains: another mod's (the time system
+    // does not say whose reason it is), shared as a bubble like a perk's.
+    let other = this.Unexplained(times);
+    if other < 1.0 {
+      if (abilities & 4) == 0 {
+        abilities += 4;
+      }
+      scale = MinF(scale, other);
+    }
     if abilities == this.m_sentAbilities && AbsF(scale - this.m_sentScale) < 0.01 {
       return;
     }
@@ -263,6 +287,44 @@ public class TandemTime {
     this.m_sentScale = scale;
     TandemNative.SendTimeEffect(abilities, scale);
     TandemNative.Log(s"time: our abilities \(abilities) (world speed \(scale))");
+  }
+
+  // The world speed of a slow motion no reason we know of explains (a
+  // mod's: OverclockOverheat's optional one, any other), else 1. The ones
+  // we follow explain theirs; the local ones (melee hit stop, deflect, a
+  // menu's, a ride's skip, our V slowed by another V's bubble) leave it
+  // alone (core's TimeBubbles::UnexplainedSlow decides).
+  private func Unexplained(times: ref<TimeSystem>) -> Float {
+    if !TandemTime.Dilated(times) {
+      return 1.0;
+    }
+    let explained = 1.0;
+    let followed = [n"sandevistan", n"kereznikov", n"focusedStatePerkDilation", n"coolReloadPerkDilation", n"focusMode"];
+    for reason in this.m_effectors {
+      ArrayPush(followed, reason);
+    }
+    for reason in followed {
+      if times.IsTimeDilationActive(reason) {
+        explained = MinF(explained, times.GetActiveTimeDilation(reason, true));
+      }
+    }
+    let local = this.m_selfSet;
+    let kept = [n"meleeHit", n"meleeHitStrong", n"deflect", n"customFFTimeDilation", n"WorldMap", n"tandemBubble", n"timeDilation",
+      TweakDBInterface.GetCName(t"timeSystem.radialMenu.reason", n""), TweakDBInterface.GetCName(t"timeSystem.hubMenu.reason", n""),
+      TweakDBInterface.GetCName(t"timeSystem.vehicleRadioMenu.reason", n""), TweakDBInterface.GetCName(t"timeSystem.nanoWireBreach.reason", n""),
+      TweakDBInterface.GetCName(t"timeSystem.settings.reason", n"")];
+    for reason in kept {
+      if IsNameValid(reason) && times.IsTimeDilationActive(reason) {
+        local = true;
+      }
+    }
+    let factor = TandemNative.TimeUnexplainedSlow(times.GetActiveTimeDilation(), explained, local);
+    if factor < 1.0 && !this.m_unexplainedSaid {
+      this.m_unexplainedSaid = true;
+      TandemNative.Log(s"time: a slow motion of no reason we know slows our world to \(factor): shared as a time bubble");
+      TandemText.Notice(this.m_game, "Time-ModSlow");
+    }
+    return factor;
   }
 
   // Our world runs slowed now: a dilation is active and its factor is one.
@@ -447,7 +509,8 @@ public class TandemTime {
     if ArraySize(changes) > 0 {
       this.ReportBubbles(owners);
     }
-    this.SlowSelf(player, TandemNative.TimePlayerFactor(system.You(), own, player.GetWorldPosition(), owners, scales, at, this.m_selfSet), scansOnly);
+    let by = TandemNative.TimeSlowedBy(system.You(), own, player.GetWorldPosition(), owners, scales, at, this.m_selfSet);
+    this.SlowSelf(player, TandemNative.TimePlayerFactor(system.You(), own, player.GetWorldPosition(), owners, scales, at, this.m_selfSet), scansOnly, by);
   }
 
   // Our V inside another V's bubble is slowed like the NPCs in it, unless
@@ -471,7 +534,7 @@ public class TandemTime {
   // (applyTimeDilationToPlayer) would put a second player factor next to
   // ours: how the two combine is to read in game ("time report" logs what
   // our V's speed reads).
-  private func SlowSelf(player: ref<GameObject>, factor: Float, scansOnly: Bool) -> Void {
+  private func SlowSelf(player: ref<GameObject>, factor: Float, scansOnly: Bool, by: Uint32) -> Void {
     if player.IsDead() || VehicleComponent.IsMountedToVehicle(this.m_game, player) {
       factor = 1.0;
     }
@@ -487,6 +550,7 @@ public class TandemTime {
     if !this.m_selfSet {
       this.m_slowedSince = this.RealNow();
       this.m_slowedByScan = scansOnly;
+      this.CueOn(by);
     } else if !scansOnly {
       this.m_slowedByScan = false;
     }
@@ -527,6 +591,7 @@ public class TandemTime {
     }
     this.m_selfSet = false;
     this.m_selfFactor = 1.0;
+    this.CueOff();
     if this.m_selfEntity {
       let body = GetPlayer(this.m_game);
       if IsDefined(body) && body.HasIndividualTimeDilation(n"tandemBubble") {
@@ -535,6 +600,66 @@ public class TandemTime {
     } else {
       GameInstance.GetTimeSystem(this.m_game).UnsetTimeDilationOnLocalPlayerZero(n"tandemBubble", n"KerenzikovEaseOut");
     }
+  }
+
+  // ---- the cue on our side while another V's bubble slows us ----
+
+  // The game's own soft slow motion, as the Focus perk plays it on V when it
+  // slows time a little (AimingStateEvents, final.reds:542843-542849; its
+  // end, :44513-44514): its full-screen effect on our V and its enter
+  // sound; the exit sound when we are free again. Subtle on purpose: being
+  // slowed reads as "my partner's slow time", not as a fault. Only while the
+  // factor is under 1 (TimePlayerFactor): our own ability matching the
+  // bubble plays nothing. Our own Focus or Deadeye reload holding the same
+  // effect keeps it: never started nor broken here then.
+  public static func CueEffect() -> CName {
+    return n"cool_perk_focused_state_fullscreen";
+  }
+
+  private func OwnFocus() -> Bool {
+    let times = GameInstance.GetTimeSystem(this.m_game);
+    return times.IsTimeDilationActive(n"focusedStatePerkDilation") || times.IsTimeDilationActive(n"coolReloadPerkDilation");
+  }
+
+  private func CueOn(by: Uint32) -> Void {
+    let player = GetPlayer(this.m_game);
+    if this.m_cueOn || !IsDefined(player) {
+      return;
+    }
+    this.m_cueOn = true;
+    this.m_cueKept = this.OwnFocus();
+    if !this.m_cueKept {
+      GameObjectEffectHelper.StartEffectEvent(player, TandemTime.CueEffect(), false);
+    }
+    GameObject.PlaySoundEvent(player, n"time_dilation_focused_enter");
+    let abilities = by != 0u ? TandemNative.TimeAbilities(by) : 0;
+    TandemNative.Log(s"time: slowed by player \(by)'s bubble (abilities \(abilities)): the game's slow-motion cue on (\(NameToString(TandemTime.CueEffect()))\(this.m_cueKept ? ", kept by our own Focus" : ""), time_dilation_focused_enter)");
+    if !this.m_cueNoticed && by != 0u {
+      this.m_cueNoticed = true;
+      let key = "Time-SlowedOther";
+      if (abilities & 7) == 0 && (abilities & 8) != 0 {
+        key = "Time-SlowedScanner";
+      } else if (abilities & 1) != 0 {
+        key = "Time-SlowedSandevistan";
+      }
+      TandemText.Notice(this.m_game, key, TandemPartyHud.NameOf(by));
+    }
+  }
+
+  private func CueOff() -> Void {
+    if !this.m_cueOn {
+      return;
+    }
+    this.m_cueOn = false;
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      return;
+    }
+    if !this.m_cueKept && !this.OwnFocus() {
+      GameObjectEffectHelper.BreakEffectLoopEvent(player, TandemTime.CueEffect());
+    }
+    GameObject.PlaySoundEvent(player, n"time_dilation_focused_exit");
+    TandemNative.Log("time: the slow-motion cue off (time_dilation_focused_exit)");
   }
 
   // Our scanner's bubble starts or ends: how long each ran, in real time.
@@ -792,6 +917,7 @@ public class TandemTime {
     if this.m_scans > 0 || this.m_slowedSeconds > 0.0 {
       TandemNative.Log(s"time: this session, our scanner's bubbles: \(this.m_scans) for \(this.m_scanSeconds) s; our V slowed by the others' bubbles for \(this.m_slowedSeconds) s, \(this.m_slowedScanSeconds) s of it by a scanner's alone");
     }
+    this.m_cueNoticed = false;
     this.m_scans = 0;
     this.m_scanSeconds = 0.0;
     this.m_slowedSeconds = 0.0;

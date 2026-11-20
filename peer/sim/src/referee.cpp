@@ -16,30 +16,184 @@ template <class... Ts> constexpr bool IsAny(const p::Message &message) {
   return (std::holds_alternative<Ts>(message) || ...);
 }
 
+// Who may say each message: every alternative of proto::Message has its
+// line here, and a message without one does not compile (SpeakerOf).
+template <class M> struct SaidBy;
+#define TANDEM_SAID_BY(speaker, ...)                                                               \
+  template <> struct SaidBy<p::__VA_ARGS__> {                                                      \
+    static constexpr Speaker value = Speaker::speaker;                                             \
+  };
+
 // What only the host may say: the session, the story, the world, the
 // arbitration (docs/architecture/regions.md, "What stays host-only").
-bool HostOnly(const p::Message &m) {
-  return IsAny<p::Welcome, p::Refused, p::Pong, p::Roster, p::World, p::Journal, p::Tracked,
-               p::PhoneCall, p::Subtitle, p::ChoiceHub, p::QuestReward, p::StoryEffect, p::GameOver,
-               p::Difficulty, p::Digest, p::Regions, p::NpcHandover, p::OwnedDigest,
-               p::DeviceDigest, p::SceneState, p::SceneCast, p::SceneLine, p::ActorPose,
-               // Merged after the referee: the session's rules, levels and
-               // trades' commits, a time skip's end, a quest's vehicle, the
-               // story's restrictions, the host's compact NPC states.
-               p::Rules, p::SessionLevel, p::NpcLevel, p::TradeCommit, p::TimeSkipResult,
-               p::VehicleUnlock, p::StoryRestrictions, p::NpcMotion,
-               // Breach Protocol: the host's answer to a breach.
-               p::BreachResult>(m);
-}
+TANDEM_SAID_BY(Host, Welcome)
+TANDEM_SAID_BY(Host, Refused)
+TANDEM_SAID_BY(Host, Pong)
+TANDEM_SAID_BY(Host, Roster)
+TANDEM_SAID_BY(Host, World)
+TANDEM_SAID_BY(Host, Journal)
+TANDEM_SAID_BY(Host, Tracked)
+TANDEM_SAID_BY(Host, PhoneCall)
+TANDEM_SAID_BY(Host, Subtitle)
+TANDEM_SAID_BY(Host, ChoiceHub)
+TANDEM_SAID_BY(Host, QuestReward)
+TANDEM_SAID_BY(Host, StoryEffect)
+TANDEM_SAID_BY(Host, GameOver)
+TANDEM_SAID_BY(Host, Difficulty)
+TANDEM_SAID_BY(Host, Digest)
+TANDEM_SAID_BY(Host, Regions)
+TANDEM_SAID_BY(Host, NpcHandover)
+TANDEM_SAID_BY(Host, OwnedDigest)
+TANDEM_SAID_BY(Host, DeviceDigest)
+TANDEM_SAID_BY(Host, SceneState)
+TANDEM_SAID_BY(Host, SceneCast)
+TANDEM_SAID_BY(Host, SceneLine)
+TANDEM_SAID_BY(Host, ActorPose)
+TANDEM_SAID_BY(Host, Rules)
+TANDEM_SAID_BY(Host, SessionLevel)
+TANDEM_SAID_BY(Host, NpcLevel)
+TANDEM_SAID_BY(Host, TradeCommit)
+TANDEM_SAID_BY(Host, TimeSkipResult)
+TANDEM_SAID_BY(Host, VehicleUnlock)
+TANDEM_SAID_BY(Host, StoryRestrictions)
+TANDEM_SAID_BY(Host, NpcMotion)
+TANDEM_SAID_BY(Host, BreachResult)
 
-// What only a guest sends, and the host never passes on.
-bool GuestOnly(const p::Message &m) {
-  // (Noise goes to every linked player since regions: each owner's NPCs hear it.)
-  return IsAny<p::Hello, p::Ping, p::PhoneAction, p::PhoneReply, p::ResyncRequest, p::DeviceUse,
-               // A V's own level (the host's never travels), a defence for the
-               // host's NPC.
-               p::PlayerLevel, p::Defended>(m);
-}
+// What only a guest sends, and the host never passes on: its hello, its
+// questions, its answers to the host's call, a V's own level (the host's
+// never travels), a defence against the host's NPC.
+TANDEM_SAID_BY(Guest, Hello)
+TANDEM_SAID_BY(Guest, Ping)
+TANDEM_SAID_BY(Guest, PhoneAction)
+TANDEM_SAID_BY(Guest, PhoneReply)
+TANDEM_SAID_BY(Guest, ResyncRequest)
+TANDEM_SAID_BY(Guest, DeviceUse)
+TANDEM_SAID_BY(Guest, PlayerLevel)
+TANDEM_SAID_BY(Guest, Defended)
+
+// Either side: a player's word in its own name (SenderOf: the host stamps
+// it and relays it), an NPC's or a vehicle's owner's (OwnedBy,
+// TrafficOwnedBy), a request to an owner (AsksOwner), or a message with its
+// own rule in FromGuest, FromHost or Received (DeviceState, NpcOwner...).
+TANDEM_SAID_BY(Either, PlayerState)
+TANDEM_SAID_BY(Either, Bye)
+TANDEM_SAID_BY(Either, PoseState)
+TANDEM_SAID_BY(Either, Appearance)
+TANDEM_SAID_BY(Either, Held)
+TANDEM_SAID_BY(Either, Shot)
+TANDEM_SAID_BY(Either, Seat)
+TANDEM_SAID_BY(Either, VehicleState)
+TANDEM_SAID_BY(Either, NpcSpawn)
+TANDEM_SAID_BY(Either, NpcStates)
+TANDEM_SAID_BY(Either, NpcGone)
+TANDEM_SAID_BY(Either, NpcHit)
+TANDEM_SAID_BY(Either, NpcHealth)
+TANDEM_SAID_BY(Either, NpcEffect)
+TANDEM_SAID_BY(Either, Pause)
+TANDEM_SAID_BY(Either, VehicleRadio)
+TANDEM_SAID_BY(Either, PlayerHit)
+TANDEM_SAID_BY(Either, NpcAwareness)
+TANDEM_SAID_BY(Either, Stealth)
+TANDEM_SAID_BY(Either, Noise)
+TANDEM_SAID_BY(Either, NpcHack)
+TANDEM_SAID_BY(Either, NpcHackState)
+TANDEM_SAID_BY(Either, NpcStatus)
+TANDEM_SAID_BY(Either, PlayerHack)
+TANDEM_SAID_BY(Either, VehicleHack)
+TANDEM_SAID_BY(Either, ChoiceCursor)
+TANDEM_SAID_BY(Either, StoryState)
+TANDEM_SAID_BY(Either, TimeEffect)
+TANDEM_SAID_BY(Either, NpcAction)
+TANDEM_SAID_BY(Either, NpcActionReply)
+TANDEM_SAID_BY(Either, NpcHold)
+TANDEM_SAID_BY(Either, NpcCue)
+TANDEM_SAID_BY(Either, Regroup)
+TANDEM_SAID_BY(Either, RegroupAnswer)
+TANDEM_SAID_BY(Either, WorldItem)
+TANDEM_SAID_BY(Either, WorldItemTaken)
+TANDEM_SAID_BY(Either, SharedItem)
+TANDEM_SAID_BY(Either, Vitals)
+TANDEM_SAID_BY(Either, Revive)
+TANDEM_SAID_BY(Either, NpcAnims)
+TANDEM_SAID_BY(Either, NpcShot)
+TANDEM_SAID_BY(Either, NpcStrike)
+TANDEM_SAID_BY(Either, NpcWound)
+TANDEM_SAID_BY(Either, NpcPoise)
+TANDEM_SAID_BY(Either, AreaHit)
+TANDEM_SAID_BY(Either, NpcSet)
+TANDEM_SAID_BY(Either, Epoch)
+TANDEM_SAID_BY(Either, Elsewhere)
+TANDEM_SAID_BY(Either, Transit)
+TANDEM_SAID_BY(Either, NpcSeat)
+TANDEM_SAID_BY(Either, NpcShotAt)
+TANDEM_SAID_BY(Either, ShotHit)
+TANDEM_SAID_BY(Either, DeviceState)
+TANDEM_SAID_BY(Either, DeviceSet)
+TANDEM_SAID_BY(Either, NpcOwner)
+TANDEM_SAID_BY(Either, NpcHandoverState)
+TANDEM_SAID_BY(Either, NpcHandoverDone)
+TANDEM_SAID_BY(Either, RegionHold)
+TANDEM_SAID_BY(Either, TrafficSpawn)
+TANDEM_SAID_BY(Either, TrafficStates)
+TANDEM_SAID_BY(Either, TrafficGone)
+TANDEM_SAID_BY(Either, TrafficStatus)
+TANDEM_SAID_BY(Either, TrafficHit)
+TANDEM_SAID_BY(Either, TrafficClaim)
+TANDEM_SAID_BY(Either, TrafficSet)
+TANDEM_SAID_BY(Either, Heat)
+TANDEM_SAID_BY(Either, Crime)
+TANDEM_SAID_BY(Either, Presence)
+TANDEM_SAID_BY(Either, Cue)
+TANDEM_SAID_BY(Either, NpcReaction)
+TANDEM_SAID_BY(Either, Install)
+TANDEM_SAID_BY(Either, Throw)
+TANDEM_SAID_BY(Either, ThrowEnd)
+TANDEM_SAID_BY(Either, Activity)
+TANDEM_SAID_BY(Either, TimeSkip)
+TANDEM_SAID_BY(Either, TimeSkipVote)
+TANDEM_SAID_BY(Either, Trade)
+TANDEM_SAID_BY(Either, TradeOffer)
+TANDEM_SAID_BY(Either, CarLend)
+TANDEM_SAID_BY(Either, Mark)
+TANDEM_SAID_BY(Either, Tag)
+TANDEM_SAID_BY(Either, Link)
+TANDEM_SAID_BY(Either, Waypoint)
+TANDEM_SAID_BY(Either, VehicleDamage)
+TANDEM_SAID_BY(Either, VehicleHit)
+TANDEM_SAID_BY(Either, VehicleExit)
+TANDEM_SAID_BY(Either, VehicleCombat)
+TANDEM_SAID_BY(Either, MountedFire)
+TANDEM_SAID_BY(Either, GunnerRequest)
+TANDEM_SAID_BY(Either, Gunner)
+TANDEM_SAID_BY(Either, GunnerAim)
+TANDEM_SAID_BY(Either, VehicleBump)
+TANDEM_SAID_BY(Either, NpcRam)
+TANDEM_SAID_BY(Either, Chase)
+TANDEM_SAID_BY(Either, PoseFrame)
+TANDEM_SAID_BY(Either, PlayerMotion)
+TANDEM_SAID_BY(Either, VehicleMotion)
+TANDEM_SAID_BY(Either, NpcScale)
+TANDEM_SAID_BY(Either, Breach)
+TANDEM_SAID_BY(Either, NpcVendor)
+TANDEM_SAID_BY(Either, StatusVisuals)
+TANDEM_SAID_BY(Either, ModList)
+TANDEM_SAID_BY(Either, Substitutes)
+TANDEM_SAID_BY(Host, TrafficOwnership)
+TANDEM_SAID_BY(Host, TrafficHandover)
+TANDEM_SAID_BY(Either, TrafficHandoverState)
+TANDEM_SAID_BY(Either, TrafficHandoverDone)
+TANDEM_SAID_BY(Either, QuestInteract)
+#undef TANDEM_SAID_BY
+
+// A new message without its SaidBy line above fails here ("incomplete type").
+constexpr auto kSaidBy = []<std::size_t... I>(std::index_sequence<I...>) {
+  return std::array<Speaker, sizeof...(I)>{
+      SaidBy<std::variant_alternative_t<I, p::Message>>::value...};
+}(std::make_index_sequence<std::variant_size_v<p::Message>>{});
+
+bool HostOnly(const p::Message &m) { return kSaidBy[m.index()] == Speaker::Host; }
+// (Noise goes to every linked player since regions: each owner's NPCs hear it.)
+bool GuestOnly(const p::Message &m) { return kSaidBy[m.index()] == Speaker::Guest; }
 
 // What an NPC's owner says about it (the host, or since regions the guest
 // whose game runs it): the NPCs it names.
@@ -73,12 +227,21 @@ std::vector<p::NpcId> OwnedBy(const p::Message &m) {
       m);
 }
 
-// A world vehicle its owner speaks for (traffic.md: the owner's id is in it).
+// A world vehicle its owner speaks for (traffic.md: the announcer's id is in
+// it, a hand-over moves it): what it is, how it stands, that it is gone, its
+// damage, whom it chases.
 std::optional<p::TrafficId> TrafficOwnedBy(const p::Message &m) {
   if (const auto *spawn = std::get_if<p::TrafficSpawn>(&m))
     return spawn->id;
   if (const auto *status = std::get_if<p::TrafficStatus>(&m))
     return status->id;
+  if (const auto *gone = std::get_if<p::TrafficGone>(&m))
+    return gone->id;
+  if (const auto *chase = std::get_if<p::Chase>(&m))
+    return chase->vehicle;
+  if (const auto *damage = std::get_if<p::VehicleDamage>(&m);
+      damage && p::IsStreetCar(damage->vehicle))
+    return p::TrafficOfSeat(damage->vehicle);
   return std::nullopt;
 }
 std::optional<p::TrafficId> TrafficAsked(const p::Message &m) {
@@ -111,7 +274,8 @@ p::PlayerId *SenderOf(p::Message &message) {
         using M = std::decay_t<decltype(m)>;
         if constexpr (std::is_same_v<M, p::AreaHit> || std::is_same_v<M, p::Regroup> ||
                       std::is_same_v<M, p::RegroupAnswer> ||
-                      std::is_same_v<M, p::NpcHandoverState> || std::is_same_v<M, p::Mark> ||
+                      std::is_same_v<M, p::NpcHandoverState> ||
+                      std::is_same_v<M, p::TrafficHandoverState> || std::is_same_v<M, p::Mark> ||
                       std::is_same_v<M, p::Tag> || std::is_same_v<M, p::TimeSkip> ||
                       std::is_same_v<M, p::TimeSkipVote> || std::is_same_v<M, p::Trade>)
           return &m.from;
@@ -144,6 +308,7 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::CarLend> || std::is_same_v<M, p::Link> ||
                            std::is_same_v<M, p::Waypoint> || std::is_same_v<M, p::Defended> ||
                            std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::Breach> ||
+                           std::is_same_v<M, p::StatusVisuals> ||
                            std::is_same_v<M, p::QuestInteract>)
           return &m.player;
         else
@@ -172,16 +337,9 @@ constexpr std::uint64_t kAgainUs = 10'000'000; // a rate finding repeats this se
 constexpr p::PlayerId kTakenByUnknown = 0xFFFFFFFF;
 } // namespace
 
-const char *MessageName(std::size_t index) {
-  static const auto names = [] {
-    std::vector<const char *> out;
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-      (out.push_back(p::NameOf(p::Message(std::in_place_index<I>))), ...);
-    }(std::make_index_sequence<std::variant_size_v<p::Message>>{});
-    return out;
-  }();
-  return index < names.size() ? names[index] : "?";
-}
+Speaker SpeakerOf(std::size_t index) { return kSaidBy.at(index); }
+
+const char *MessageName(std::size_t index) { return p::NameOfKind(index); }
 
 std::string Finding::Line() const {
   return std::format("{}: [{}] {}", hint ? "referee-hint" : "referee", rule, text);
@@ -231,6 +389,8 @@ void Referee::Tick() { Tick(net::NowUs()); }
 
 void Referee::Add(std::string rule, std::string text, bool hint) {
   ++(hint ? m_hints : m_violations);
+  if (m_onFinding)
+    m_onFinding({rule, text, hint, m_nowUs});
   // The first few of each rule are told; the rest are only counted.
   if (++m_counts[rule] <= 12)
     m_new.push_back({std::move(rule), std::move(text), hint, m_nowUs});
@@ -283,6 +443,11 @@ void Referee::NeedPlayer(p::PlayerId player, const char *what) {
 p::PlayerId Referee::OwnerOf(p::NpcId npc) const {
   const auto it = m_owners.find(npc);
   return it == m_owners.end() ? regions::Announcer(npc) : it->second;
+}
+
+p::PlayerId Referee::CarOwnerOf(p::TrafficId car) const {
+  const auto it = m_carOwners.find(car);
+  return it == m_carOwners.end() ? p::TrafficOwner(car) : it->second;
 }
 
 void Referee::Sent(p::PlayerId to, const p::Message &message, std::uint64_t nowUs) {
@@ -378,10 +543,26 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
           break;
         }
       }
-    if (const auto car = TrafficOwnedBy(message); car && p::TrafficOwner(*car) != from)
-      Add("authority.not-owner", std::format("player {} sent {} about vehicle {:#x}, which player "
-                                             "{} runs",
-                                             from, name, *car, p::TrafficOwner(*car)));
+    // ...and for the shared vehicles its game runs: a new one of its own
+    // range, else one it runs now (a hand-over moves it). A gone that is
+    // a claim it granted is its word too.
+    if (const auto car = TrafficOwnedBy(message); car) {
+      const bool spawn = std::holds_alternative<p::TrafficSpawn>(message);
+      const auto owner = spawn ? p::TrafficOwner(*car) : CarOwnerOf(*car);
+      if (owner != from)
+        Add("authority.not-owner", std::format("player {} sent {} about vehicle {:#x}, which "
+                                               "player {} runs",
+                                               from, name, *car, owner));
+    }
+    // A hand-over's state only from the vehicle's owner.
+    // (Dropped by the endpoint: it moves nothing, here either.)
+    if (const auto *given = std::get_if<p::TrafficHandoverState>(&message);
+        given && CarOwnerOf(given->id) != from) {
+      Add("authority.not-owner",
+          std::format("player {} gave vehicle {:#x} away, which player {} runs", from, given->id,
+                      CarOwnerOf(given->id)));
+      return;
+    }
     // A guest speaks in its own name only.
     auto stamped = message;
     if (auto *sender = SenderOf(stamped)) {
@@ -432,13 +613,25 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
             std::format("the host sent {} about npc {}, which our game runs", name, npc));
         break;
       }
-  if (const auto car = TrafficAsked(message); car && p::TrafficOwner(*car) != m_self)
+  if (const auto car = TrafficAsked(message); car && CarOwnerOf(*car) != m_self)
     Add("authority.not-owner", std::format("the host passed us {} for vehicle {:#x}, which player "
                                            "{} runs",
-                                           name, *car, p::TrafficOwner(*car)));
-  if (const auto car = TrafficOwnedBy(message); car && p::TrafficOwner(*car) == m_self)
+                                           name, *car, CarOwnerOf(*car)));
+  // (A spawn of ours sent back is a repeat the endpoint ignores.)
+  if (const auto car = TrafficOwnedBy(message);
+      car && CarOwnerOf(*car) == m_self && !std::holds_alternative<p::TrafficSpawn>(message))
     Add("authority.not-owner",
         std::format("the host sent {} about vehicle {:#x}, which our game runs", name, *car));
+  if (const auto *handover = std::get_if<p::TrafficHandover>(&message);
+      handover && CarOwnerOf(handover->id) != m_self)
+    Add("authority.not-owner", std::format("the host asks us to hand over vehicle {:#x}, which "
+                                           "player {} runs",
+                                           handover->id, CarOwnerOf(handover->id)));
+  if (const auto *given = std::get_if<p::TrafficHandoverState>(&message);
+      given && given->to != m_self)
+    Add("authority.misdelivered", std::format("the host gave us the state of vehicle {:#x}, which "
+                                              "goes to player {}",
+                                              given->id, given->to));
   if (const auto *crime = std::get_if<p::Crime>(&message); crime && crime->player != m_self)
     Add("authority.misdelivered",
         std::format("a crime of player {} came to us (player {})", crime->player, m_self));
@@ -519,6 +712,10 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
           finite = std::isfinite(m.rate) && Finite(m.anchor) && std::isfinite(m.yaw) &&
                    std::isfinite(m.radius);
           inRange = !finite || (m.rate >= 0.f && m.rate <= p::kMaxSceneRate && m.tier <= 5);
+        } else if constexpr (std::is_same_v<M, p::TrafficHandoverState>) {
+          finite = Finite(m.position) && Finite(m.orientation) && Finite(m.velocity) &&
+                   std::isfinite(m.health);
+          inRange = !finite || (m.health >= 0.f && m.health <= 1.001f);
         } else if constexpr (std::is_same_v<M, p::NpcHandoverState>) {
           finite = Finite(m.position) && std::isfinite(m.yaw) && std::isfinite(m.health) &&
                    std::isfinite(m.poise);
@@ -1006,7 +1203,11 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
         } else if constexpr (std::is_same_v<M, p::NpcSeat>) {
           if (m.owner != p::kNoPlayer)
             NeedNpc(m.npc, name);
-          NeedPlayer(m.owner, name);
+          // A shared world vehicle's seat names the vehicle (kSeatInTraffic):
+          // its id carries its area owner.
+          NeedPlayer(p::IsTrafficSeat(m.owner) ? p::TrafficOwner(p::TrafficOfSeat(m.owner))
+                                               : m.owner,
+                     name);
         } else if constexpr (std::is_same_v<M, p::NpcHold>) {
           NeedPlayer(m.player, name);
           if (m.player != p::kNoPlayer && !m_npcs.contains(m.npc))
@@ -1189,6 +1390,23 @@ void Referee::Note(const p::Message &message, bool sent) {
             m_owners[m.npc] = m.to;
           if (!sent && m.to == m_self)
             m_given.insert(m.npc);
+        } else if constexpr (std::is_same_v<M, p::TrafficOwnership>) {
+          m_carOwners[m.id] = m.owner;
+        } else if constexpr (std::is_same_v<M, p::TrafficHandoverState>) {
+          // As for an NPC: the giver's state makes the receiver its owner.
+          if (m.to != p::kNoPlayer)
+            m_carOwners[m.id] = m.to;
+          if (!sent && m.to == m_self)
+            m_carsGiven.insert(m.id);
+        } else if constexpr (std::is_same_v<M, p::TrafficHandoverDone>) {
+          // A receiver that cannot run it gives it up: the host's to end.
+          if (sent && !m.accepted && m_carsGiven.erase(m.id) > 0)
+            m_carOwners[m.id] = m_hostPlayer;
+          else if (sent)
+            m_carsGiven.erase(m.id);
+        } else if constexpr (std::is_same_v<M, p::TrafficGone>) {
+          m_carOwners.erase(m.id);
+          m_carsGiven.erase(m.id);
         } else if constexpr (std::is_same_v<M, p::NpcHandoverDone>) {
           // A receiver that cannot run what it was given gives it up: the
           // host speaks for it from then on (its end for everyone). A giver

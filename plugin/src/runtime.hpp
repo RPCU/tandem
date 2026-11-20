@@ -100,17 +100,28 @@ struct RegroupEvent {
 
 // World vehicles and police for the scripts (scripts/tandem/Traffic.reds,
 // Police.reds), net -> game thread: a shared vehicle appeared, went or
-// changed; a guest hit one of ours (area owner); the area's owner saw our
-// puppet commit a crime.
+// changed; a guest hit one of ours (its owner); the area's owner saw our
+// puppet commit a crime; a hand-over: give one of ours to `player` (Give),
+// we run this one now (Take: the giver's state), whoever runs one changed
+// (Owner: `player` now, `reason` was).
 struct StreetEvent {
-  enum class Kind : std::int32_t { Spawn = 1, Gone = 2, Status = 3, Hit = 4, Crime = 5 };
+  enum class Kind : std::int32_t {
+    Spawn = 1,
+    Gone = 2,
+    Status = 3,
+    Hit = 4,
+    Crime = 5,
+    Give = 6,
+    Take = 7,
+    Owner = 8
+  };
   Kind kind{};
   proto::TrafficSpawn spawn; // id set for every vehicle kind; Hit, Crime: position
   std::int32_t flags{};      // Spawn, Status: kTraffic*; Hit: kTrafficHit*; Crime: kCrime*
   std::int32_t reason{};     // Gone: kTraffic{Away,Taken,Removed}; Crime: proto::CrimeKind
-  proto::PlayerId player{};  // Gone taken: whose car; Hit: who
-  float amount{};            // Status: health 0..1; Hit: damage; Crime: share of health
-  proto::Vec3 vector;        // Hit: the push, or the way it went
+  proto::PlayerId player{};  // Gone taken: whose car; Hit: who; Give: to whom; Take: from whom
+  float amount{};            // Status, Take: health 0..1; Hit: damage; Crime: share of health
+  proto::Vec3 vector;        // Hit: the push, or the way it went; Take: its velocity
   proto::NpcId npc{};        // Crime: the victim or the witness
   std::int32_t attack{};     // Crime: gamedataAttackType
   std::uint64_t atUs{};      // when it arrived (steady clock): hits and crimes go stale
@@ -485,10 +496,17 @@ public:
   // Where to draw a shared vehicle now (game thread).
   sync::VehicleView TrafficOf(proto::TrafficId id);
   // The session's record of the shared vehicles, for the scripts' checks.
+  // The session's record of the shared vehicles (net thread, when it
+  // changed): every one we know, the ones we show as proxies, who runs each.
   void SetSharedTraffic(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
-                        const std::map<proto::TrafficId, proto::TrafficStatus> &status);
+                        const std::map<proto::TrafficId, proto::TrafficStatus> &status,
+                        const std::map<proto::TrafficId, proto::TrafficSpawn> &shown,
+                        std::map<proto::TrafficId, proto::PlayerId> owners);
+  // The proxies our game must show, no more, no less.
   std::vector<std::pair<proto::TrafficSpawn, proto::TrafficStatus>> SharedTraffic();
   bool IsTrafficShared(proto::TrafficId id);
+  // Who runs a shared vehicle (0: not one the session knows).
+  proto::PlayerId TrafficOwnerOf(proto::TrafficId id);
   // Our V's wanted level, game -> net (newest only); everyone else's.
   void SubmitLocalHeat(const proto::Heat &heat);
   std::optional<proto::Heat> TakeLocalHeat();
@@ -764,6 +782,8 @@ private:
   std::vector<StreetEvent> m_streetEvents;                                           // m_lock
   std::map<proto::TrafficId, proto::TrafficSpawn> m_sharedTraffic;                   // m_lock
   std::map<proto::TrafficId, proto::TrafficStatus> m_trafficStatus;                  // m_lock
+  std::set<proto::TrafficId> m_trafficShown;                                         // m_lock
+  std::map<proto::TrafficId, proto::PlayerId> m_trafficOwners;                       // m_lock
   std::optional<proto::Heat> m_localHeat;                                            // m_lock
   std::map<proto::PlayerId, proto::Heat> m_heat;                                     // m_lock
   traffic::Budget m_trafficBudget;                                                   // game thread

@@ -79,6 +79,8 @@
 //                        ; (until you break it); ask, the partners you link with
 //                        ; (a request they accept); off, nobody
 //   pings = on           ; off: you neither send nor see pings
+//   last_address =       ; the co-op menu's Join by address: the last one joined
+//                        ; ("host:port", an empty answer joins it again)
 //   relay = a, b, c      ; several relays: a host registers on the nearest (its
 //                        ; probes' round trip), a guest asks each for the code
 //   code = new           ; keep: the host's join code is the relay's kept one for
@@ -182,6 +184,8 @@ struct Config {
   enum class Link { Auto, Ask, Off };
   Link link{Link::Auto};
   bool pings{true};
+  // The co-op menu's Join by address: the last address joined ("host:port").
+  std::string lastAddress;
   // The log's level: 1 warn, 2 info, 3 debug (log::Level).
   int logLevel{2};
   // Not from the file: tandem.cmd next to it, a command for the running game;

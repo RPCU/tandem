@@ -132,6 +132,7 @@
 #include "tandem/comms.hpp"
 #include "tandem/endpoint.hpp"
 #include "tandem/interpolation.hpp"
+#include "tandem/mods.hpp"
 #include "tandem/movement.hpp"
 #include "tandem/netcode.hpp"
 #include "tandem/play.hpp"
@@ -161,6 +162,7 @@
 #include <numbers>
 #include <optional>
 #include <random>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <string>
@@ -223,16 +225,28 @@ struct Options {
   // host: the world the game follows (time of day, weather name); unset: none sent
   std::optional<int> timeOfDayMinutes;
   std::string weather;
-  std::string recordFile;   // join: save the host's NPC messages here
-  std::string replayFile;   // host: send a recording's NPC messages again
-  std::string animsFile;    // host: NPC animation states and shots to send (with --replay)
-  int pauseAtSeconds{-1};   // open the pause menu this long into the session (-1: never)
-  int pauseForSeconds{3};   // ...for this long
-  std::string npcRecord;    // host: one NPC of this record in front of the guest
+  std::string recordFile; // join: save the host's NPC messages here
+  std::string replayFile; // host: send a recording's NPC messages again
+  std::string animsFile;  // host: NPC animation states and shots to send (with --replay)
+  int pauseAtSeconds{-1}; // open the pause menu this long into the session (-1: never)
+  int pauseForSeconds{3}; // ...for this long
+  std::string npcRecord;  // host: one NPC of this record in front of the guest
+  // Other mods (docs/architecture/mod-compat.md): the hints sent with our
+  // held item, car, extra look pieces and NPC (--held-record, --vehicle-record,
+  // --look-piece, --npc-record NAME:TYPE...: records a mod would add), and
+  // the records this mock player's "game" lacks (--unknown), resolved as a
+  // game would and logged ("mods: unknown ...").
+  tandem::proto::RecordHint holdHint, vehicleHint, npcHint;
+  std::vector<std::pair<std::string, tandem::proto::RecordHint>> lookPieces;
+  std::set<std::uint64_t> unknown;
   int detectAtSeconds{-1};  // host: its NPCs detect the guests this long in (-1: never)
   int detectForSeconds{10}; // ...for this long
   int camoAtSeconds{-1};    // optical camo on this long into the session, for 5 s
-  int shootSeconds{0};      // join: a gunshot (shot + noise) this often (0: never)
+  std::string camoRecord;   // ...its status effect record (Stealth::camo; none: 0)
+  // Status effects that show on our V (StatusVisuals): REC@FROM-TO[,...], in
+  // seconds after another player is in (TO 0 or missing: kept).
+  std::string statusVisuals;
+  int shootSeconds{0}; // join: a gunshot (shot + noise) this often (0: never)
   // Quickhacks: join: upload --hack-action on a host NPC every N s, then land
   // --hack-effect; host: one of our NPCs hacks the guest (--npc-hack) every
   // N s; either: hack the car another player drives every N s.
@@ -358,6 +372,13 @@ struct Options {
   // ...or this long after our own endpoint says we are linked (-1: never).
   int regionLeaveLinkedSeconds{-1};
   float regionSpeed{25.f};
+  // region: world vehicles of our own (docs/architecture/traffic.md, "Who
+  // owns an area"): this many cars round our V, the first one driven by our
+  // last NPC (--region-driver), chasing the first player we meet
+  // (--region-chase); left where they are when we walk off, like the NPCs.
+  int regionCars{0};
+  bool regionDriver{};
+  bool regionChase{};
   bool check{}; // parse the options, then exit
   // Down and out: our V goes down (revivable) or out N s after another player
   // is there (-1: never); a downed other V is revived after N s (-1: never).
@@ -514,6 +535,10 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     are linked (the host's Regions reached us: our NPCs' states\n"
          "                     flow), whatever the clock says\n"
          "  --region-speed V   region: how fast it walks, m/s (default 25)\n"
+         "  --region-cars N    region: run N world vehicles of our own round our V (the\n"
+         "                     --traffic-vehicle record), left behind with the NPCs\n"
+         "  --region-driver    region: our last NPC drives our first car (NpcSeat)\n"
+         "  --region-chase     region: our first car chases the first player we meet\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
          "  --look L           random | echo: random clothes of its own (default), on a\n"
@@ -592,6 +617,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --detect-for N     --detect-at: and lose it again after N seconds (default 10)\n"
          "  --camo N           turn optical camo on N seconds after another player is in the\n"
          "                     session, for 5 seconds\n"
+         "  --camo-record REC  --camo: its status effect record, as a V's camo sends it\n"
+         "                     (BaseStatusEffect.OpticalCamoCoolPerkShort)\n"
+         "  --status REC@FROM-TO[,REC@FROM-TO]  status effects that show on our V, each\n"
+         "                     from FROM to TO seconds after another player is in (no TO:\n"
+         "                     kept): the others' puppet of it plays their visuals\n"
          "  --shoot N          fire a gunshot every N seconds: the shot, where its bullet\n"
          "                     ended (a cue: 6 m past the other V), and as a guest its noise\n"
          "  --hurt N           our V is hit every N seconds: its health falls a quarter (the\n"
@@ -603,6 +633,13 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     and --melee to be seen and heard: Items.Preset_Lexington_Default)\n"
          "  --holster-at N     --hold: put it away N seconds after another player is in the\n"
          "                     session, and draw it again 5 seconds later\n"
+         "  --held-record NAME:TYPE[:CATEGORY], --vehicle-record NAME:TYPE[:SEATS],\n"
+         "  --look-piece NAME:TYPE (again for more), --npc-record NAME:TYPE[:GENDER]\n"
+         "                     a record a mod would add, with its hint (the game's enum names:\n"
+         "                     Wea_Handgun Weapon, Car 2, Clo_Legs, Human Female): held, driven\n"
+         "                     (--vehicle), worn, or the host's NPC (--npc)\n"
+         "  --unknown NAME,... records our game lacks: the others' are resolved as a game\n"
+         "                     does (\"mods: unknown ... shown as ...\") and told\n"
          "  --react-npcs N     host: every N seconds one of the NPCs it sends plays a hit\n"
          "                     reaction (twitch, impact, stagger, knockdown, ragdoll, its end)\n"
          "  --hack-npcs N      join: upload a quickhack on one of the host's NPCs every N\n"
@@ -1133,6 +1170,14 @@ Options Parse(int argc, char **argv) {
       options.rideAlong = true;
       continue;
     }
+    if (flag == "--region-driver") {
+      options.regionDriver = true;
+      continue;
+    }
+    if (flag == "--region-chase") {
+      options.regionChase = true;
+      continue;
+    }
     if (flag == "--play-loop") {
       options.playLoop = true;
       continue;
@@ -1317,7 +1362,36 @@ Options Parse(int argc, char **argv) {
       options.defendSeconds = Number<int>(value);
     else if (flag == "--npc")
       options.npcRecord = std::string(value);
-    else if (flag == "--region-far")
+    else if (flag == "--held-record" || flag == "--vehicle-record" || flag == "--look-piece" ||
+             flag == "--npc-record") {
+      // NAME[:TYPE[:TAG or SEATS]]: a record and its hint (the game's enum
+      // names: Wea_Handgun, Car, Clo_Legs, Human; Weapon, 4, Female).
+      std::vector<std::string> parts;
+      for (const auto part : std::views::split(value, ':'))
+        parts.emplace_back(std::string_view(part.begin(), part.end()));
+      tandem::proto::RecordHint hint;
+      if (parts.size() > 1)
+        hint.type = CName(parts[1]);
+      if (parts.size() > 2 && flag == "--vehicle-record")
+        hint.size = static_cast<std::uint8_t>(Number<int>(parts[2]));
+      else if (parts.size() > 2)
+        hint.tag = CName(parts[2]);
+      if (flag == "--held-record") {
+        options.holdRecord = parts[0];
+        options.holdHint = hint;
+      } else if (flag == "--vehicle-record") {
+        options.vehicle = parts[0];
+        options.vehicleHint = hint;
+      } else if (flag == "--look-piece") {
+        options.lookPieces.emplace_back(parts[0], hint);
+      } else {
+        options.npcRecord = parts[0];
+        options.npcHint = hint;
+      }
+    } else if (flag == "--unknown") {
+      for (const auto part : std::views::split(value, ','))
+        options.unknown.insert(TweakDBID(std::string_view(part.begin(), part.end())));
+    } else if (flag == "--region-far")
       options.regionFar = Number<float>(value);
     else if (flag == "--region-at")
       options.regionAt = Point(flag, value);
@@ -1333,12 +1407,18 @@ Options Parse(int argc, char **argv) {
       options.regionLeaveLinkedSeconds = Number<int>(value);
     else if (flag == "--region-speed")
       options.regionSpeed = std::max(0.1f, Number<float>(value));
+    else if (flag == "--region-cars")
+      options.regionCars = std::clamp(Number<int>(value), 0, 16);
     else if (flag == "--detect-at")
       options.detectAtSeconds = Number<int>(value);
     else if (flag == "--detect-for")
       options.detectForSeconds = Number<int>(value);
     else if (flag == "--camo")
       options.camoAtSeconds = Number<int>(value);
+    else if (flag == "--camo-record")
+      options.camoRecord = value;
+    else if (flag == "--status")
+      options.statusVisuals = value;
     else if (flag == "--shoot")
       options.shootSeconds = std::max(1, Number<int>(value));
     else if (flag == "--hurt")
@@ -2514,6 +2594,41 @@ public:
       Log("region: running {} NPC(s) of our own ({}), ids from {}", m_options.regionNpcs,
           m_options.regionRecord, tandem::regions::MakeNpcId(endpoint.You(), 1));
     }
+    // Our street: cars round us, the first one driven by our first NPC; a
+    // game announces vehicles only where it runs the area round its V.
+    if (!m_carsAnnounced && m_options.regionCars > 0 && endpoint.OwnsArea()) {
+      m_carsAnnounced = true;
+      for (int i = 0; i < m_options.regionCars; ++i) {
+        const auto id = proto::MakeTrafficId(endpoint.You(), static_cast<std::uint32_t>(i + 1));
+        const bool driven = i == 0 && m_options.regionDriver && m_options.regionNpcs > 0;
+        m_cars[id] = {.position = CarAround(at, i),
+                      .slot = i,
+                      .flags = driven ? proto::kTrafficLights : proto::kTrafficParked};
+        endpoint.SendTrafficSpawn({.id = id,
+                                   .record = TweakDBID(m_options.trafficVehicle),
+                                   .position = m_cars[id].position,
+                                   .flags = m_cars[id].flags});
+        if (driven)
+          endpoint.SendNpcSeat(
+              {.npc = tandem::regions::MakeNpcId(endpoint.You(),
+                                                 static_cast<std::uint32_t>(m_options.regionNpcs)),
+               .owner = proto::TrafficSeatOwner(id),
+               .seat = CName("seat_front_left")});
+      }
+      Log("street: running {} vehicle(s) of our own, ids from {:#x}{}", m_options.regionCars,
+          proto::MakeTrafficId(endpoint.You(), 1),
+          m_options.regionDriver ? ", our last npc at the wheel of the first" : "");
+    }
+    // --region-chase: our first car goes after the first player we meet.
+    if (m_options.regionChase && !m_chased && !m_cars.empty()) {
+      const auto first = m_cars.begin()->first;
+      if (const auto linked = endpoint.Linked(); !linked.empty() && endpoint.OwnsTraffic(first)) {
+        m_chased = true;
+        endpoint.SendChase(
+            {.vehicle = first, .target = linked.front(), .flags = proto::kChaseRamming});
+        Log("street: our vehicle {:#x} chases player {}", first, linked.front());
+      }
+    }
     if (nowUs - m_lastStatesUs < 100'000)
       return;
     m_lastStatesUs = nowUs;
@@ -2526,6 +2641,19 @@ public:
       states.npcs.push_back({.npc = id, .position = npc.position});
     }
     endpoint.SendNpcStates(std::move(states));
+    // Our cars move with us (and say so) until we leave them.
+    proto::TrafficStates cars;
+    for (auto &[id, car] : m_cars) {
+      if (!follow || car.slot < 0)
+        continue;
+      const auto was = car.position;
+      car.position = CarAround(at, car.slot);
+      const Vec3 velocity{(car.position.x - was.x) * 10.f, (car.position.y - was.y) * 10.f, 0.f};
+      cars.cars.push_back(tandem::traffic::Pack(
+          {.id = id, .position = car.position, .orientation = {}, .velocity = velocity}));
+    }
+    if (!cars.cars.empty())
+      endpoint.SendTrafficStates(std::move(cars));
   }
 
   // True: the event was about the NPCs we run, and is dealt with.
@@ -2575,6 +2703,60 @@ public:
           state.flags & proto::kHandoverInherited ? ", inherited" : "");
       return true;
     }
+    // Our cars: given away, taken over, hit (traffic.md, "Who owns an area").
+    if (const auto *give = std::get_if<events::TrafficGive>(&event)) {
+      const auto it = m_cars.find(give->id);
+      if (it == m_cars.end()) {
+        endpoint.AnswerTraffic(give->id, false);
+        return true;
+      }
+      endpoint.GiveTraffic({.id = give->id,
+                            .to = give->to,
+                            .position = it->second.position,
+                            .health = it->second.health,
+                            .flags = it->second.flags});
+      Log("street: handed vehicle {:#x} over to player {} (health {:.2f})", give->id, give->to,
+          it->second.health);
+      m_cars.erase(it);
+      return true;
+    }
+    if (const auto *take = std::get_if<events::TrafficTake>(&event)) {
+      const auto &state = take->state;
+      m_cars[state.id] = {
+          .position = state.position, .health = state.health, .slot = -1, .flags = state.flags};
+      endpoint.AnswerTraffic(state.id, true);
+      Log("street: took vehicle {:#x} over from player {} (health {:.2f}, flags {:#x}{})", state.id,
+          state.from, state.health, state.flags,
+          state.handover & proto::kHandoverInherited ? ", inherited" : "");
+      return true;
+    }
+    if (const auto *owner = std::get_if<events::TrafficOwnerChanged>(&event)) {
+      if (owner->was == endpoint.You() && m_cars.erase(owner->id) > 0)
+        Log("street: vehicle {:#x} is no longer ours (now player {}'s)", owner->id, owner->owner);
+      else
+        Log("street: vehicle {:#x} is now run by player {} (was {})", owner->id, owner->owner,
+            owner->was);
+      return true;
+    }
+    if (const auto *hit = std::get_if<events::TrafficHitBy>(&event)) {
+      const auto it = m_cars.find(hit->hit.id);
+      if (it == m_cars.end())
+        return false;
+      it->second.health = std::max(0.f, it->second.health - hit->hit.damage / 1000.f);
+      if (it->second.health <= 0.f)
+        it->second.flags |= proto::kTrafficDestroyed;
+      endpoint.SendTrafficStatus(
+          {.id = hit->hit.id, .health = it->second.health, .flags = it->second.flags});
+      Log("street: player {} hit our vehicle {:#x} for {:.0f}: health {:.2f}", hit->hit.player,
+          hit->hit.id, hit->hit.damage, it->second.health);
+      return true;
+    }
+    if (const auto *left = std::get_if<events::TrafficLeft>(&event);
+        left && m_cars.erase(left->gone.id) > 0) {
+      Log("street: our vehicle {:#x} gone (reason {}, player {})", left->gone.id, left->gone.reason,
+          left->gone.player);
+      return true;
+    }
     if (const auto *owner = std::get_if<events::NpcOwnerChanged>(&event)) {
       if (owner->was == endpoint.You() && m_npcs.erase(owner->npc) > 0)
         Log("region: npc {} is no longer ours (now player {}'s)", owner->npc, owner->owner);
@@ -2622,6 +2804,19 @@ private:
     float health{1.f};
     int slot{-1}; // where it stands around us (-1: taken over, it stays put)
   };
+  struct Car {
+    Vec3 position;
+    float health{1.f};
+    int slot{-1}; // where it stands around us (-1: taken over, it stays put)
+    std::uint16_t flags{};
+  };
+  // A ring 6 m around our V, off the NPCs' ring.
+  static Vec3 CarAround(const Vec3 &at, int slot) {
+    const float angle = 0.5f + 1.1f * static_cast<float>(slot);
+    return {at.x + 6.f * std::cos(angle), at.y + 6.f * std::sin(angle), at.z};
+  }
+  std::map<tandem::proto::TrafficId, Car> m_cars;
+  bool m_chased{}, m_carsAnnounced{};
   // A ring 3 m around our V.
   static Vec3 Around(const Vec3 &at, int slot) {
     const float angle = 0.9f * static_cast<float>(slot);
@@ -3086,8 +3281,9 @@ void SaveLookKeys(const std::filesystem::path &file,
 // none: the game puts a stand-in body on the puppet) and one random piece
 // per slot from clothing records the game's own scripts name (their
 // crafting specs end in _Crafting; the item is the same name without it).
-tandem::proto::Appearance RandomLook(tandem::proto::Body body, unsigned seed,
-                                     std::vector<tandem::proto::AppearanceKey> keys) {
+tandem::proto::Appearance
+RandomLook(tandem::proto::Body body, unsigned seed, std::vector<tandem::proto::AppearanceKey> keys,
+           const std::vector<std::pair<std::string, tandem::proto::RecordHint>> &extra = {}) {
   static const std::vector<std::vector<std::string_view>> slots = {
       {"Items.FormalShirt_01_rich_06", "Items.FormalShirt_02_basic_03",
        "Items.LooseShirt_01_rich_02", "Items.Fixer_01_Set_TShirt"},
@@ -3114,7 +3310,14 @@ tandem::proto::Appearance RandomLook(tandem::proto::Body body, unsigned seed,
     if (name.empty())
       continue;
     look.items.push_back(TweakDBID(name));
+    look.hints.push_back({});
     picked += std::format(" {}", name.substr(6));
+  }
+  // --look-piece: pieces a mod would add, with their hint (the slot's type).
+  for (const auto &[name, hint] : extra) {
+    look.items.push_back(TweakDBID(name));
+    look.hints.push_back(hint);
+    picked += std::format(" {} (a mod's)", name);
   }
   Log("our look: random (seed {}), {} body keys:{}", seed, look.look.size(), picked);
   return look;
@@ -3249,6 +3452,46 @@ int PlayInfo(const std::string &path) {
   return 0;
 }
 
+// tandem-peer mods PATH: what tandem makes of a game's other mods
+// (docs/architecture/mod-compat.md): a game folder (names and contents, as
+// the plugin reads them at startup) or a list of file names (a .tsv,
+// tests/data/mods-sample.tsv: names alone). A table, one mod a row.
+int Mods(std::string_view path) {
+  namespace mods = tandem::mods;
+  std::vector<mods::Entry> entries;
+  if (std::filesystem::is_directory(path)) {
+    entries = mods::ScanEntries(path);
+  } else {
+    std::ifstream in{std::string(path)};
+    if (!in) {
+      std::cerr << std::format("mods: cannot read {}\n", path);
+      return 1;
+    }
+    std::stringstream text;
+    text << in.rdbuf();
+    entries = mods::EntriesOfList(text.str());
+  }
+  const auto all = mods::Group(entries);
+  std::array<int, mods::kCategoryOrder.size()> by{};
+  std::cout << "| Mod | Counted as | Also |\n| --- | --- | --- |\n";
+  for (const auto &mod : all) {
+    const auto primary = mods::Primary(mod.categories);
+    std::string also;
+    for (const auto category : mods::kCategoryOrder)
+      if ((mod.categories & category) && category != primary)
+        also += std::format("{}{}", also.empty() ? "" : ", ", mods::CategoryName(category));
+    std::cout << std::format("| {} | {} | {} |\n", mod.name, mods::CategoryName(primary), also);
+    for (std::size_t i = 0; i < by.size(); ++i)
+      by[i] += mods::kCategoryOrder[i] == primary;
+  }
+  std::cout << std::format("\n{} mods from {} entries:", all.size(), entries.size());
+  for (std::size_t i = 0; i < by.size(); ++i)
+    if (by[i])
+      std::cout << std::format(" {} {}", by[i], mods::CategoryName(mods::kCategoryOrder[i]));
+  std::cout << "\n";
+  return 0;
+}
+
 // tandem-peer traffic FILE...: what a recording would take on the wire, as
 // its messages were (legacy) and as the netcode sends them now (compact:
 // delta-coded poses, NPC changes, compact states, a still V 5 times a
@@ -3355,6 +3598,8 @@ int main(int argc, char **argv) {
     return tandem::sim::SimMain(argv[1], std::vector<std::string_view>(argv + 2, argv + argc));
   if (argc >= 3 && std::string_view(argv[1]) == "traffic")
     return Traffic(std::vector<std::string>(argv + 2, argv + argc));
+  if (argc >= 3 && std::string_view(argv[1]) == "mods")
+    return Mods(argv[2]);
   auto options = Parse(argc, argv);
   if (options.check) {
     std::cout << "options ok\n";
@@ -3473,7 +3718,7 @@ int main(int argc, char **argv) {
   const auto lookSeed = options.lookSeed.value_or(std::random_device{}());
   auto ownKeys = LoadLookKeys(LookKeysFile(lookKeysDir, options.body));
   if (!options.echoLook && !playback && !sessionPlay)
-    endpoint->SetLocalAppearance(RandomLook(options.body, lookSeed, ownKeys));
+    endpoint->SetLocalAppearance(RandomLook(options.body, lookSeed, ownKeys, options.lookPieces));
   // --record-session: what the host sends us, from its welcome on (kept
   // until we know who we are, then written with a header that says it).
   tandem::play::Writer sessionOut;
@@ -3490,7 +3735,7 @@ int main(int argc, char **argv) {
   // --strike blade: our puppet holds a katana, so the host's NPC reacts to
   // (and is cut by) a blade: its hit reaction reads the attacker's weapon.
   if (!options.holdRecord.empty()) {
-    endpoint->SetLocalHeld({.right = TweakDBID(options.holdRecord)});
+    endpoint->SetLocalHeld({.right = TweakDBID(options.holdRecord), .rightHint = options.holdHint});
     Log("holding {}", options.holdRecord);
   }
   if (options.strike == "blade") {
@@ -3622,6 +3867,35 @@ int main(int argc, char **argv) {
   auto nextNpcState = std::chrono::steady_clock::now();
   auto nextAwareness = std::chrono::steady_clock::now();
   int camoStep = 0; // 0 waiting, 1 on, 2 done
+  // --status: each record's window, and the set last sent.
+  struct StatusWindow {
+    std::string record;
+    double from{}, to{};
+  };
+  std::vector<StatusWindow> statusWindows;
+  for (std::size_t start = 0; start < options.statusVisuals.size();) {
+    const auto comma =
+        std::min(options.statusVisuals.find(',', start), options.statusVisuals.size());
+    const auto item = options.statusVisuals.substr(start, comma - start);
+    start = comma + 1;
+    const auto at = item.find('@');
+    if (item.empty() || at == std::string::npos) {
+      std::cerr << "tandem-peer: --status wants REC@FROM-TO, not '" << item << "'\n";
+      return 1;
+    }
+    const auto times = item.substr(at + 1);
+    const auto dash = times.find('-');
+    StatusWindow window{.record = item.substr(0, at)};
+    try {
+      window.from = std::stod(times.substr(0, dash));
+      window.to = dash == std::string::npos ? 0.0 : std::stod(times.substr(dash + 1));
+    } catch (const std::exception &) {
+      std::cerr << "tandem-peer: --status: bad times in '" << item << "'\n";
+      return 1;
+    }
+    statusWindows.push_back(window);
+  }
+  std::vector<std::uint64_t> statusShown;
   auto nextShot = std::chrono::steady_clock::now();
   // Presence: --melee, --hurt, --menu-at, --react-npcs.
   auto nextMelee = nextShot, nextHurt = nextShot, nextReaction = nextShot;
@@ -4027,8 +4301,28 @@ int main(int argc, char **argv) {
   std::map<tandem::proto::VehicleRef, tandem::proto::VehicleDamage> heardDamage;
   std::map<tandem::proto::PlayerId, std::chrono::steady_clock::time_point> aimLoggedAt;
   int chaseStep = 0;
+  // --unknown: the records our "game" lacks. The others' records resolved as
+  // a game does (tandem/mods.hpp, plugin/src/mods.cpp): logged, told.
+  tandem::mods::Resolver missing(
+      [&](tandem::mods::Kind, std::uint64_t record) { return !options.unknown.contains(record); });
+  const auto nameOf = [&](tandem::proto::PlayerId id) {
+    const auto found = endpoint->Players().find(id);
+    return found != endpoint->Players().end() ? found->second.name : std::format("player {}", id);
+  };
+  const auto resolve = [&](tandem::mods::Kind kind, std::uint64_t record,
+                           const tandem::proto::RecordHint &hint, tandem::proto::PlayerId from) {
+    if (!options.unknown.empty())
+      missing.Resolve(kind, record, hint, from, nameOf(from), tandem::net::NowUs());
+  };
 
   while (!g_stop) {
+    for (const auto &line : missing.TakeLog())
+      Log("{}", line);
+    for (const auto &notice : missing.TakeNotices(tandem::net::NowUs()))
+      Log("mods notice: {}'s {} x{} shown otherwise (outcome {})", notice.who,
+          tandem::mods::KindName(notice.kind), notice.count, static_cast<int>(notice.outcome));
+    for (const auto &told : missing.TakeTold())
+      endpoint->SendSubstitutes(told);
     for (const auto &event : endpoint->Update(5ms)) {
       // region: what concerns the NPCs we run.
       if (const auto *linked = std::get_if<tandem::events::RegionsChanged>(&event))
@@ -4079,6 +4373,9 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemotePresence>) {
               Log("player {} presence: health {:.0f} %, flags {:#x}", e.presence.player,
                   tandem::presence::HealthFraction(e.presence.health) * 100.f, e.presence.flags);
+            } else if constexpr (std::is_same_v<E, tandem::events::RemoteStatusVisuals>) {
+              Log("player {} status visuals: {} record(s)", e.visuals.player,
+                  e.visuals.records.size());
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteCue>) {
               Log("player {} cue: {} to ({:.1f}, {:.1f}, {:.1f}), flags {:#x}", e.cue.player,
                   e.cue.kind == tandem::proto::CueKind::Trace ? "bullet" : "melee hit", e.cue.at.x,
@@ -4111,13 +4408,19 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteAppearance>) {
               Log("look from player {}: {} keys, {} items", e.appearance.player,
                   e.appearance.look.size(), e.appearance.items.size());
+              for (std::size_t i = 0; i < e.appearance.items.size(); ++i)
+                resolve(tandem::mods::Kind::Clothing, e.appearance.items[i],
+                        i < e.appearance.hints.size() ? e.appearance.hints[i]
+                                                      : tandem::proto::RecordHint{},
+                        e.appearance.player);
               // A real V's body keys: kept for random looks of that body.
               if (!e.appearance.look.empty() && e.appearance.body != tandem::proto::Body::Unknown) {
                 SaveLookKeys(LookKeysFile(lookKeysDir, e.appearance.body), e.appearance.look);
                 if (!options.echoLook && !playback && !sessionPlay && ownKeys.empty() &&
                     e.appearance.body == options.body) {
                   ownKeys = e.appearance.look;
-                  endpoint->SetLocalAppearance(RandomLook(options.body, lookSeed, ownKeys));
+                  endpoint->SetLocalAppearance(
+                      RandomLook(options.body, lookSeed, ownKeys, options.lookPieces));
                 }
               }
               if (options.echoLook &&
@@ -4128,10 +4431,14 @@ int main(int argc, char **argv) {
               }
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteHeld>) {
               Log("player {} holds {:#x} / {:#x}", e.held.player, e.held.right, e.held.left);
+              resolve(tandem::mods::Kind::Weapon, e.held.right, e.held.rightHint, e.held.player);
+              resolve(tandem::mods::Kind::Weapon, e.held.left, e.held.leftHint, e.held.player);
               if (options.mode == Mode::Mirror || options.mode == Mode::Front)
                 endpoint->SetLocalHeld(e.held);
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcSpawn>) {
               liveNpcs.insert(e.spawn.npc);
+              resolve(tandem::mods::Kind::Npc, e.spawn.record, e.spawn.hint,
+                      tandem::regions::Announcer(e.spawn.npc));
               if (!options.recordFile.empty()) {
                 recording.Add(e.spawn);
                 Log("recorded the spawn of npc {}", e.spawn.npc);
@@ -4315,6 +4622,7 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteSeat>) {
               Log("player {} sits in {:#x} (seat {:#x}, car of player {})", e.seat.player,
                   e.seat.vehicle, e.seat.seat, e.seat.owner);
+              resolve(tandem::mods::Kind::Vehicle, e.seat.vehicle, e.seat.hint, e.seat.player);
               driving[e.seat.player] = e.seat.vehicle != 0 &&
                                        e.seat.seat == CName("seat_front_left") &&
                                        e.seat.owner == e.seat.player;
@@ -4766,6 +5074,9 @@ int main(int argc, char **argv) {
               Log("{} (player {}) runs tandem {}", e.name, e.player, e.install.build);
               for (const auto &line : e.differences)
                 Log("notice: {}", line);
+            } else if constexpr (std::is_same_v<E, tandem::events::SubstitutesFrom>) {
+              Log("mods: {} sees substitutes for {} of ours (kinds {:#x})", e.name,
+                  e.substitutes.count, e.substitutes.kinds);
             } else if constexpr (std::is_same_v<E, tandem::events::JoinRefused>) {
               Log("notice: {}", e.notice);
             } else if constexpr (std::is_same_v<E, tandem::events::RemoteVehicleDamage>) {
@@ -5060,8 +5371,9 @@ int main(int argc, char **argv) {
         const bool driving = options.seat == "seat_front_left";
         const auto car = puppeteer.Drive(nowUs).second;
         if (!seated && endpoint->IsJoined() && car) {
-          endpoint->SetLocalSeat(
-              {.vehicle = TweakDBID(options.vehicle), .seat = CName(options.seat)});
+          endpoint->SetLocalSeat({.vehicle = TweakDBID(options.vehicle),
+                                  .seat = CName(options.seat),
+                                  .hint = options.vehicleHint});
           Log("{} {} ({:#x}) in {}", driving ? "driving" : "riding", options.vehicle,
               TweakDBID(options.vehicle), options.seat);
           seated = true;
@@ -5289,9 +5601,12 @@ int main(int argc, char **argv) {
           }
           if (now >= nextMountedShot) {
             nextMountedShot = now + 2s;
+            // 30 m ahead of the vehicle's driver (its game fires its real
+            // guns there: vehicle-combat.md, "A guest on someone else's gun").
+            const Vec3 at = otherV ? otherV->position : Vec3{};
             endpoint->SendMountedFire({.vehicle = gunnerCar,
                                        .weapon = TweakDBID("Items.Panzer_Cannon"),
-                                       .target = {0.f, 30.f, 0.f}});
+                                       .target = {at.x, at.y + 30.f, at.z + 1.f}});
             Log("gunner: fire");
           }
           if (t > 20.0) {
@@ -6443,7 +6758,8 @@ int main(int argc, char **argv) {
         endpoint->SendNpcSpawn({.npc = kOwnNpc,
                                 .record = TweakDBID(options.npcRecord),
                                 .position = at,
-                                .yaw = ownNpc->yaw});
+                                .yaw = ownNpc->yaw,
+                                .hint = options.npcHint});
         Log("npc {}: {} in front of player {}", kOwnNpc, options.npcRecord, firstRemote->player);
       }
       ownNpc->detected = detectedBits();
@@ -6455,13 +6771,32 @@ int main(int argc, char **argv) {
     // --camo: our optical camo on for 5 s.
     if (options.camoAtSeconds >= 0 && shared >= 0.0 && camoStep < 2) {
       if (camoStep == 0 && shared >= options.camoAtSeconds) {
-        endpoint->SetLocalStealth({.flags = tandem::proto::kStealthCamo, .visibility = 0.2f});
+        endpoint->SetLocalStealth(
+            {.flags = tandem::proto::kStealthCamo,
+             .visibility = 0.2f,
+             .camo = options.camoRecord.empty() ? 0 : TweakDBID(options.camoRecord)});
         camoStep = 1;
-        Log("optical camo on");
+        Log("optical camo on{}", options.camoRecord.empty() ? "" : " (" + options.camoRecord + ")");
       } else if (camoStep == 1 && shared >= options.camoAtSeconds + 5) {
         endpoint->SetLocalStealth({.flags = 0, .visibility = 1.f});
         camoStep = 2;
         Log("optical camo off");
+      }
+    }
+    // --status: the status effects that show on our V now, as one set.
+    if (!statusWindows.empty() && shared >= 0.0) {
+      std::vector<std::uint64_t> on;
+      std::string names;
+      for (const auto &window : statusWindows)
+        if (shared >= window.from && (window.to <= window.from || shared < window.to)) {
+          on.push_back(TweakDBID(window.record));
+          names += (names.empty() ? "" : ", ") + window.record;
+        }
+      auto set = tandem::presence::StatusSet(on);
+      if (set != statusShown) {
+        statusShown = set;
+        endpoint->SetLocalStatusVisuals(set);
+        Log("status visuals on our V: {}", names.empty() ? "none" : names);
       }
     }
     // Where a shot or a swing of ours lands: 6 m past the other V at chest
@@ -6524,7 +6859,8 @@ int main(int argc, char **argv) {
         holsterStep = 1;
         Log("weapon holstered");
       } else if (holsterStep == 1 && shared >= options.holsterAtSeconds + 5) {
-        endpoint->SetLocalHeld({.right = TweakDBID(options.holdRecord)});
+        endpoint->SetLocalHeld(
+            {.right = TweakDBID(options.holdRecord), .rightHint = options.holdHint});
         holsterStep = 2;
         Log("weapon drawn");
       }

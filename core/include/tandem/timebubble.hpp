@@ -91,12 +91,25 @@ public:
   static CatchUp ShotCatchUp(std::uint64_t firedUs, std::uint64_t nowUs);
   static float PlayerFactor(proto::PlayerId player, float own, const proto::Vec3 &position,
                             std::span<const Owner> owners, bool inside = false);
+  // Whose bubble that is (the strongest other one within reach; the nearest
+  // of equals), when it slows the V at all (PlayerFactor under 1); else 0.
+  // The partner's cue names that player (time.md, "a cue while slowed").
+  static proto::PlayerId SlowedBy(proto::PlayerId player, float own, const proto::Vec3 &position,
+                                  std::span<const Owner> owners, bool inside = false);
   // The world speed a V's abilities ask for as a bubble (and as the `own`
   // of PlayerFactor): `scale` when any of them makes one
   // (proto::kTimeBubbleAbilities: the scanner too), else 1. Every game
   // computes its own V's and the others' through it, so a V's scanner
   // counts as its own ability on the host and on a guest alike.
   static float BubbleScale(std::uint8_t abilities, float scale);
+  // A slow motion no reason we know of explains (another mod's: the time
+  // system cannot say whose): the world speed to share as a bubble, else
+  // 1. `global` is our game's whole factor now, `explained` the smallest
+  // factor of the reasons tandem follows that are active (1: none), and
+  // `local` whether a dilation that stays local is on (melee hit stop,
+  // deflect, a menu's, a ride's skip, our V slowed by another V's bubble):
+  // then nothing is added. A speed-up is never a bubble.
+  static float UnexplainedSlow(float global, float explained, bool local);
   std::size_t MembersOf(proto::PlayerId owner) const;
   std::size_t Bubbles() const { return m_bubbles.size(); }
 

@@ -82,16 +82,30 @@ std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
 }
 
 std::uint32_t TrafficDigest(const std::map<proto::TrafficId, proto::TrafficSpawn> &traffic,
-                            const std::map<proto::TrafficId, proto::TrafficStatus> &status) {
+                            const std::map<proto::TrafficId, proto::TrafficStatus> &status,
+                            const std::map<proto::TrafficId, proto::PlayerId> &owners,
+                            const TrafficFilter &only, std::uint16_t *count) {
   Hasher hash;
+  std::size_t counted = 0;
   for (const auto &[id, spawn] : traffic) {
+    const auto announcer = proto::TrafficOwner(id);
+    const auto owned = owners.find(id);
+    const auto owner = owned == owners.end() ? announcer : owned->second;
+    if (only && !only(id, owner))
+      continue;
+    ++counted;
     hash.Add(std::uint64_t{id}).Add(spawn.record).Add(spawn.appearance).Add(spawn.entity);
+    // Handed over: whoever runs it now.
+    if (owner != announcer)
+      hash.Add(std::uint64_t{0xE2}).Add(std::uint64_t{owner});
     // Without a status it stands as it was announced.
     if (const auto it = status.find(id); it != status.end())
       hash.Add(it->second.health).Add(std::uint64_t{it->second.flags});
     else
       hash.Add(std::uint64_t{0xE1}).Add(std::uint64_t{spawn.flags});
   }
+  if (count)
+    *count = static_cast<std::uint16_t>(std::min<std::size_t>(counted, 0xFFFF));
   return hash.Value();
 }
 
@@ -290,6 +304,10 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<NpcHandover>(message) ||
          std::holds_alternative<NpcHandoverState>(message) ||
          std::holds_alternative<NpcHandoverDone>(message) ||
+         // ...and a shared vehicle's (traffic.md, "Who owns an area").
+         std::holds_alternative<TrafficHandover>(message) ||
+         std::holds_alternative<TrafficHandoverState>(message) ||
+         std::holds_alternative<TrafficHandoverDone>(message) ||
          // A hit on a shared vehicle, a claim on one, a crime: each counts.
          std::holds_alternative<TrafficHit>(message) ||
          std::holds_alternative<TrafficClaim>(message) || std::holds_alternative<Crime>(message) ||

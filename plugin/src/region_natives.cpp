@@ -7,6 +7,7 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "mods.hpp"
 #include "regions.hpp"
 #include "runtime.hpp"
 
@@ -91,9 +92,11 @@ struct TandemRegions : Red::IScriptable {
     Red::DynArray<TandemRegionEffect> out;
     if (const auto it = s_effects.find(npc); it != s_effects.end())
       for (const auto &effect : it->second)
-        out.EmplaceBack(TandemRegionEffect{.record = Red::TweakDBID(effect.record),
-                                           .remaining = effect.remaining,
-                                           .stacks = effect.stacks});
+        out.EmplaceBack(TandemRegionEffect{
+            .record = Red::TweakDBID(ModRecords::Get().Resolve(
+                mods::Kind::Effect, effect.record, {}, tandem::regions::Announcer(npc))),
+            .remaining = effect.remaining,
+            .stacks = effect.stacks});
     return out;
   }
 

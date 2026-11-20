@@ -90,6 +90,13 @@ tasks:
     cmds:
       - python3 tools/docs-check.py {{.CLI_ARGS}}
 
+  mods:check:
+    desc: "Other mods' script hooks against tandem's: wraps, replaces, CET overrides (task mods:check DIR=<game folder or copy>; -- --json)"
+    requires:
+      vars: [DIR]
+    cmds:
+      - python3 -I tools/mods-check.py {{.CLI_ARGS}} "{{.DIR}}"
+
   scripts:check:
     desc: "Compile scripts/tandem as the game does (its redscript, bundle and other mods' scripts); task scripts:check -- DIR for another copy"
     cmds:

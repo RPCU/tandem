@@ -81,6 +81,8 @@ public:
   bool &InMoment() { return m_inMoment; }
   std::vector<std::uint64_t> &Removals() { return m_removals; }
   std::vector<std::uint64_t> &Sent() { return m_sent; }
+  // Host: the backstop on a guest's acts on the scene's actors.
+  story::Backstop &Backstop() { return m_backstop; }
 
   // Quest interactions (docs/architecture/story.md, "Quest interactions"),
   // game thread. Guest: what the host answered of each object's choices
@@ -112,6 +114,7 @@ private:
   bool m_inMoment{};
   std::vector<std::uint64_t> m_removals;
   std::vector<std::uint64_t> m_sent;
+  story::Backstop m_backstop;
 
   std::atomic_bool m_private{false};
   std::optional<proto::PlayerState> m_held; // net thread
