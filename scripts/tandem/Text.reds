@@ -166,7 +166,8 @@ public class TandemText {
       "Travel-Taken", "Travel-Asks", "Travel-Blocked", "Revive-Down", "Revive-DownAlone",
       "Revive-Out", "Revive-AllDown", "Revive-WaitHost", "Activities-AsksSleep", "Activities-AsksWait",
       "Activities-CannotSkip", "Trade-Asks", "Comms-LinkAsked", "Saves-Failed", "Saves-WhenYouCan",
-      "Saves-NotRestored"
+      "Saves-NotRestored", "Interact-HostOnly", "Interact-Taken", "Interact-TooFar",
+      "Interact-Missing", "Interact-Busy"
     ];
     if ArrayContains(asks, key) {
       return 2;
@@ -339,6 +340,12 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Story-Join", "Join {1}");
     this.Text("Tandem-Scene-InScene", "{1} is in a scene");
     this.Text("Tandem-Scene-Watch", "Watch the scene");
+    // Quest interactions: a guest's use of the host's objects.
+    this.Text("Tandem-Interact-HostOnly", "{1} must do this");
+    this.Text("Tandem-Interact-Taken", "{1}'s world: someone else got there first");
+    this.Text("Tandem-Interact-TooFar", "Too far from it in {1}'s world");
+    this.Text("Tandem-Interact-Missing", "Not there in {1}'s world right now");
+    this.Text("Tandem-Interact-Busy", "{1} is busy: try again in a moment");
     // Loot, markers.
     this.Text("Tandem-Loot-Taken", "Someone already took it");
     this.Text("Tandem-Loot-TakenBy", "{1} picked it up first");
@@ -619,6 +626,11 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Story-Join", "Rejoindre {1}");
     this.Text("Tandem-Scene-InScene", "{1} est dans une scène");
     this.Text("Tandem-Scene-Watch", "Regarder la scène");
+    this.Text("Tandem-Interact-HostOnly", "{1} doit le faire");
+    this.Text("Tandem-Interact-Taken", "Monde de {1} : quelqu'un d'autre a été plus rapide");
+    this.Text("Tandem-Interact-TooFar", "Trop loin dans le monde de {1}");
+    this.Text("Tandem-Interact-Missing", "Pas là dans le monde de {1} pour l'instant");
+    this.Text("Tandem-Interact-Busy", "{1} est occupé(e) : réessayez dans un instant");
     this.Text("Tandem-Loot-Taken", "Quelqu'un l'a déjà pris");
     this.Text("Tandem-Loot-TakenBy", "{1} l'a ramassé avant vous");
     this.Text("Tandem-Marker-Description", "Un autre V, dans votre ville");
