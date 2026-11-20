@@ -34,6 +34,18 @@ public class TandemSceneVoice {
   public let speaker: EntityID;
 }
 
+// Guest: something the host's scene put in an actor's (or a V's) hand.
+public class TandemSceneHeld {
+  public let prop: Uint32;
+  public let record: TweakDBID;
+  public let npc: Uint32;
+  public let player: Uint32;
+  public let left: Bool;
+  // In the hand of this body now.
+  public let placed: Bool;
+  public let on: EntityID;
+}
+
 public class TandemScenes {
   private let m_game: GameInstance;
   private let m_story: wref<TandemStorySystem>;
@@ -46,6 +58,11 @@ public class TandemScenes {
   private let m_play: Int32;
   private let m_sources: array<Uint32>;
   private let m_test: Bool;
+  // Host: item entities that appeared while our scene played (props), the
+  // test prop (cmd story scene prop), whether we listen for them.
+  private let m_propSeen: array<EntityID>;
+  private let m_testProp: TweakDBID;
+  private let m_propsListening: Bool;
 
   // Guest: the host's scene as heard.
   private let m_on: Bool;
@@ -53,6 +70,7 @@ public class TandemScenes {
   private let m_flags: Int32;
   private let m_actors: array<ref<TandemSceneActor>>;
   private let m_voices: array<ref<TandemSceneVoice>>;
+  private let m_held: array<ref<TandemSceneHeld>>;
   private let m_lastTick: Float;
   private let m_watchShown: Bool;
   private let m_watchOpen: Bool;
@@ -64,7 +82,22 @@ public class TandemScenes {
     this.m_mode = TandemStory.SceneReplay();
     if this.m_mode > 0 {
       TandemNative.Log(s"scene: replay on\(this.m_mode == 2 ? ", with the actors' bodies" : "")");
+      // Props: item entities appearing while our scene plays (host).
+      if !this.m_propsListening {
+        this.m_propsListening = true;
+        GameInstance.GetCallbackSystem().RegisterCallback(n"Entity/Attach", this, n"OnPropAttach").AddTarget(EntityTarget.Type(n"gameItemObject"));
+      }
     }
+  }
+
+  // An item entity appeared. May run on a job thread while the world
+  // streams in: queued only, looked at on HostTick.
+  private cb func OnPropAttach(event: ref<EntityLifecycleEvent>) {
+    let entity = event.GetEntity();
+    if this.m_play == 0 || !IsDefined(entity) {
+      return;
+    }
+    TandemStreaming.QueueStreamed(TandemStreamKind.Prop(), entity.GetEntityID(), n"None", true);
   }
 
   private func Npcs() -> ref<TandemNpcs> {
@@ -124,6 +157,12 @@ public class TandemScenes {
         }
       }
     }
+    if playing && !ownOnly {
+      this.HostProps(actors, bodies, scenes, player);
+    } else {
+      TandemStreaming.TakeStreamed(TandemStreamKind.Prop());
+      ArrayClear(this.m_propSeen);
+    }
     let rate = IsDefined(scenes) && scenes.IsFastForwardingActive(scnFastForwardMode.Default) ? 4.0 : 1.0;
     let play = TandemStory.SceneSample(playing, ownOnly, tier, rate, held, at.X, at.Y, at.Z, Deg2Rad(player.GetWorldYaw()));
     if play != this.m_play {
@@ -151,6 +190,78 @@ public class TandemScenes {
         }
       }
     }
+  }
+
+  // What the scene's actors hold, for the next sample. An item in an
+  // actor's left hand slot (the right one travels with its animation state,
+  // NpcAnims); an item entity the scene brought in, in the hands of whoever
+  // of the cast or our V stands at it.
+  private func HostProps(actors: array<Uint32>, bodies: array<ref<GameObject>>, scenes: ref<SceneSystemInterface>, player: ref<PlayerPuppet>) -> Void {
+    let transactions = GameInstance.GetTransactionSystem(this.m_game);
+    let i = 0;
+    while i < ArraySize(actors) {
+      let item = transactions.GetItemInSlot(bodies[i], t"AttachmentSlots.WeaponLeft");
+      if IsDefined(item) {
+        TandemStory.SceneProp(Cast<Uint64>(actors[i]) * 2ul + 1ul, ItemID.GetTDBID(item.GetItemID()), actors[i], 0u, true);
+      }
+      i += 1;
+    }
+    if this.m_test && TDBID.IsValid(this.m_testProp) && ArraySize(actors) > 0 {
+      TandemStory.SceneProp(7ul, this.m_testProp, actors[0], 0u, false);
+    }
+    for event in TandemStreaming.TakeStreamed(TandemStreamKind.Prop()) {
+      if event.attached && !ArrayContains(this.m_propSeen, event.entity) && ArraySize(this.m_propSeen) < 64 {
+        ArrayPush(this.m_propSeen, event.entity);
+      }
+    }
+    let kept: array<EntityID>;
+    for id in this.m_propSeen {
+      let item = GameInstance.FindEntityByID(this.m_game, id) as ItemObject;
+      if IsDefined(item) {
+        ArrayPush(kept, id);
+        if IsDefined(scenes) && scenes.IsEntityInScene(id) {
+          this.HostProp(item, actors, bodies, player);
+        }
+      }
+    }
+    this.m_propSeen = kept;
+  }
+
+  // One item entity of the scene: held by the nearest of its actors and our
+  // V, within arm's reach; not what already sits in that body's hand slots.
+  private func HostProp(item: ref<ItemObject>, actors: array<Uint32>, bodies: array<ref<GameObject>>, player: ref<PlayerPuppet>) -> Void {
+    let transactions = GameInstance.GetTransactionSystem(this.m_game);
+    let at = item.GetWorldPosition();
+    let holder: ref<GameObject> = null;
+    let npc = 0u;
+    let best = 1.5;
+    let i = 0;
+    while i < ArraySize(actors) {
+      let distance = Vector4.Distance(bodies[i].GetWorldPosition(), at);
+      if distance < best {
+        best = distance;
+        holder = bodies[i];
+        npc = actors[i];
+      }
+      i += 1;
+    }
+    if Vector4.Distance(player.GetWorldPosition(), at) < best {
+      holder = player;
+      npc = 0u;
+    }
+    if !IsDefined(holder) {
+      return;
+    }
+    let right = transactions.GetItemInSlot(holder, t"AttachmentSlots.WeaponRight");
+    let left = transactions.GetItemInSlot(holder, t"AttachmentSlots.WeaponLeft");
+    if right == item || left == item {
+      return;
+    }
+    let record = ItemID.GetTDBID(item.GetItemID());
+    if !TDBID.IsValid(record) {
+      return;
+    }
+    TandemStory.SceneProp(EntityID.ToHash(item.GetEntityID()), record, npc, npc == 0u ? TandemStory.You() : 0u, IsDefined(right) && !IsDefined(left));
   }
 
   // A line shows on our game (Dialogue.reds, UIGameData.ShowDialogLine): its
@@ -191,8 +302,10 @@ public class TandemScenes {
       TandemStory.ActorSource(old, null);
     }
     ArrayClear(this.m_sources);
+    ArrayClear(this.m_propSeen);
     this.m_play = 0;
     this.m_test = false;
+    this.m_testProp = TDBID.None();
   }
 
   // ---- guest ----
@@ -231,6 +344,12 @@ public class TandemScenes {
         break;
       case 56:
         this.OnVoiceStop(event.line);
+        break;
+      case 57:
+        this.OnProp(event);
+        break;
+      case 58:
+        this.OnPropGone(event.hash);
         break;
       default:
         break;
@@ -288,9 +407,95 @@ public class TandemScenes {
     this.m_actors = kept;
   }
 
+  // ---- props ----
+
+  private func HandSlot(left: Bool) -> TweakDBID {
+    return left ? t"AttachmentSlots.WeaponLeft" : t"AttachmentSlots.WeaponRight";
+  }
+
+  // The host's scene put `record` in someone's hand, or it changed hands:
+  // out of the old hand now, into the new one on the next tick.
+  private func OnProp(event: TandemStoryEvent) -> Void {
+    let held: ref<TandemSceneHeld> = null;
+    for known in this.m_held {
+      if known.prop == event.hash {
+        held = known;
+      }
+    }
+    if IsDefined(held) {
+      this.Unplace(held);
+    } else {
+      held = new TandemSceneHeld();
+      held.prop = event.hash;
+      ArrayPush(this.m_held, held);
+    }
+    held.record = event.reward;
+    held.npc = event.npc;
+    held.player = event.player;
+    held.left = (event.flags & 2) != 0;
+    TandemNative.Log(s"scene: prop \(held.prop) (\(TDBID.ToStringDEBUG(held.record))) held by npc \(held.npc), player \(held.player)\(held.left ? ", left hand" : "")");
+    this.m_lastTick = 0.0;
+  }
+
+  private func OnPropGone(prop: Uint32) -> Void {
+    let kept: array<ref<TandemSceneHeld>>;
+    for held in this.m_held {
+      if held.prop == prop {
+        this.Unplace(held);
+        TandemNative.Log(s"scene: prop \(prop) gone");
+      } else {
+        ArrayPush(kept, held);
+      }
+    }
+    this.m_held = kept;
+  }
+
+  // Out of the hand it is in, if it is still what that hand holds.
+  private func Unplace(held: ref<TandemSceneHeld>) -> Void {
+    if !held.placed {
+      return;
+    }
+    held.placed = false;
+    let body = GameInstance.FindEntityByID(this.m_game, held.on) as GameObject;
+    let slot = this.HandSlot(held.left);
+    if IsDefined(body) && Equals(TandemWeapons.Held(body, slot), held.record) {
+      TandemWeapons.Hold(body, slot, TDBID.None());
+      GameInstance.GetTransactionSystem(this.m_game).RemoveItem(body, ItemID.FromTDBID(held.record), 1);
+    }
+  }
+
+  // Each prop into the hand of its holder's body here (an actor's proxy, a
+  // player's puppet), once the body is there; again when it was rebuilt.
+  private func PlaceProps() -> Void {
+    let npcs = this.Npcs();
+    for held in this.m_held {
+      if held.placed && !IsDefined(GameInstance.FindEntityByID(this.m_game, held.on)) {
+        held.placed = false;
+      }
+      if !held.placed && TDBID.IsValid(held.record) {
+        let body: ref<GameObject> = null;
+        if held.npc != 0u {
+          body = IsDefined(npcs) ? npcs.ReadyProxy(held.npc) : null;
+        } else if held.player != 0u && held.player != TandemStory.You() {
+          body = this.m_story.PuppetOf(held.player);
+        }
+        if IsDefined(body) {
+          let ok = TandemWeapons.Hold(body, this.HandSlot(held.left), held.record);
+          held.placed = true;
+          held.on = body.GetEntityID();
+          TandemNative.Log(s"scene: prop \(held.prop) in the hand of npc \(held.npc), player \(held.player)\(ok ? "" : " (the slot refused it)")");
+        }
+      }
+    }
+  }
+
   // The scene is over, or the session is: every proxy is its own again, no
   // voice goes on, no offer stays up.
   public func End() -> Void {
+    for held in this.m_held {
+      this.Unplace(held);
+    }
+    ArrayClear(this.m_held);
     for actor in this.m_actors {
       this.Release(actor);
     }
@@ -367,6 +572,7 @@ public class TandemScenes {
         actor.seen = true;
       }
     }
+    this.PlaceProps();
     this.UpdateWatch();
     this.KeepClear();
   }
@@ -573,7 +779,7 @@ public class TandemScenes {
   public func Command(command: String) -> Void {
     if Equals(command, "story scene report") {
       TandemNative.Log(TandemStory.SceneReport());
-      TandemNative.Log(s"scene: mode \(this.m_mode), on \(this.m_on), tier \(this.m_tier), flags \(this.m_flags), \(ArraySize(this.m_actors)) actor(s), \(ArraySize(this.m_voices)) voice(s), announced play \(this.m_play)");
+      TandemNative.Log(s"scene: mode \(this.m_mode), on \(this.m_on), tier \(this.m_tier), flags \(this.m_flags), \(ArraySize(this.m_actors)) actor(s), \(ArraySize(this.m_voices)) voice(s), \(ArraySize(this.m_held)) prop(s), announced play \(this.m_play)");
     } else if Equals(command, "story scene watch") {
       this.Watch();
     } else if Equals(command, "story scene test on") || Equals(command, "story scene test off") {
@@ -581,6 +787,13 @@ public class TandemScenes {
       this.m_test = Equals(command, "story scene test on");
       this.m_lastSample = 0.0;
       TandemNative.Log(s"scene: test scene \(this.m_test ? "on" : "off")");
+    } else if StrBeginsWith(command, "story scene prop ") {
+      // (test, host) story scene prop RECORD|off: as if the test scene's
+      // first actor held that item in its right hand.
+      let name = StrAfterFirst(command, "prop ");
+      this.m_testProp = Equals(name, "off") ? TDBID.None() : TDBID.Create(name);
+      this.m_lastSample = 0.0;
+      TandemNative.Log(s"scene: test prop \(name)");
     } else if StrBeginsWith(command, "story scene voice ") {
       // (test) story scene voice STRINGID: that line's voice-over on the
       // nearest shared NPC or proxy (or our V), as a guest would play it.
