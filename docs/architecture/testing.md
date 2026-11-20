@@ -256,6 +256,14 @@ decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
   logged as the game logs it. `tests/peer_devices.sh`; scenarios
   `devices-door`, `devices-lift`, `devices-camera`, `devices-barrel`,
   `devices-guest` (`architecture/devices.md`, Testing).
+- **Quest interactions** (any mode): `--interact
+ENTITY:CHOICE[:DETAIL][@SECONDS]` has a guest's V use the host's object
+  (asked of the host; a known host-only or local one is answered at once);
+  `--interact-answer performed|host-only|local|missing|busy|too-far|none`
+  is what a host answers every guest (local by default: it has no world).
+  `tests/peer_interact.sh`; scenarios `interact-guest-pickup`,
+  `interact-guest-hostonly`, `interact-apart-own-gig`
+  (`architecture/story.md`, "Quest interactions").
 
 - **Vehicle combat** (`vehicle-combat.md`; `tests/peer_wheels.sh`):
   `--mode drive --car-damage N` dents our car N s after it sits (a flat

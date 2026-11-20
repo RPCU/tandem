@@ -153,6 +153,7 @@ The owner simulates; everyone else displays.
 | a V's pings, tags, link consent, waypoint | that player's game | shown; tags only to players linked with it (`architecture/comms.md`) |
 | quest and important items, rewards | every player's own V | whoever gets one, every V gets it; a guest gives the host's quest props (tag `Quest`, keycards) back when it leaves, and keeps iconics and rewards |
 | devices: doors, lifts, cameras, turrets, barrels, the alarm | host | own copy first, then the host's word; `architecture/devices.md` |
+| a guest's use of the host's objects while grouped (a quest switch, an objective item, a quest container, a terminal) | host's game: judged from its own data, done by its V on its own copy, first come first served | asks; its own copy does it at once for feel (not what would cast its V); a choice that casts the doer is host-only, greyed "NAME must do this"; apart, or on its own things: its own, as solo (`architecture/story.md`, "Quest interactions") |
 | what a guest did in co-op (the ledger) | the guest's game (save) | never shared: quests taken part in, rewards paid once, vehicles earned |
 
 Enemy level (the mean of the players' levels): `architecture/npcs.md`.
