@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -56,6 +57,26 @@ struct TandemRegionEffect {
 };
 static_assert(alignof(TandemRegionEffect) <= 8, "the script VM aligns struct locals to 8");
 
+// The region of a linked player that outranks us (regions.md §6): its game
+// populates the world there, ours holds its own back.
+struct TandemRegionCover {
+  std::uint32_t player{};
+  float x{}, y{}, z{}; // where its V is
+};
+static_assert(alignof(TandemRegionCover) <= 8, "the script VM aligns struct locals to 8");
+
+// One change to the crowd's null areas: put `player`'s at (x, y, z), its old
+// one going (place), or take it away.
+struct TandemNullStep {
+  std::uint32_t player{};
+  bool place{};
+  float x{}, y{}, z{};
+};
+static_assert(alignof(TandemNullStep) <= 8, "the script VM aligns struct locals to 8");
+
+// The null areas our game keeps over the covers (game thread only).
+static regions::NullAreas s_nullAreas;
+
 // A placed NPC that died in the session (the ledger, regions.md §14).
 struct TandemDeath {
   Red::EntityID entity; // its static id, the same in every game
@@ -74,6 +95,24 @@ static_assert(alignof(TandemDeath) <= 8, "the script VM aligns struct locals to 
 static std::map<proto::NpcId, std::vector<proto::NpcEffectState>> s_effects;
 
 namespace {
+// The covers over our world now: the linked players that outrank us, where
+// the session places their Vs.
+std::vector<regions::Cover> CoversNow() {
+  auto &runtime = Runtime::Get();
+  const auto you = runtime.You();
+  if (you == proto::kNoPlayer)
+    return {};
+  regions::Places places;
+  std::set<proto::PlayerId> players;
+  for (const auto player : Regions::Get().Linked()) {
+    players.insert(player);
+    const auto view = runtime.ViewOf(player);
+    places[player] = {.position = view.position, .known = view.valid};
+  }
+  // (Links: the players named are the ones linked with us.)
+  return regions::Covers(you, players, places, regions::Links{}, 1, Regions::Get().Holders());
+}
+
 TandemDeath DeathOf(const proto::NpcDeath &death, std::uint64_t hostUs) {
   return {.entity = Red::EntityID(death.entity),
           .record = Red::TweakDBID(
@@ -185,6 +224,37 @@ struct TandemRegions : Red::IScriptable {
         best = player;
     }
     return best != 0 ? best : unplaced;
+  }
+
+  // ---- the overlap: what our game holds back (regions.md §6) ----
+
+  // The regions of the linked players that outrank us, highest rank first.
+  static Red::DynArray<TandemRegionCover> Covers() {
+    Red::DynArray<TandemRegionCover> out;
+    for (const auto &cover : CoversNow())
+      out.EmplaceBack(TandemRegionCover{
+          .player = cover.by, .x = cover.center.x, .y = cover.center.y, .z = cover.center.z});
+    return out;
+  }
+  // The share of our crowd our game keeps with our V at this point (1: all,
+  // 0: none; `quiet`: it is at none now): regions::CrowdShare.
+  static float CrowdShare(float x, float y, float z, bool quiet) {
+    return regions::CrowdShare({x, y, z}, CoversNow(), quiet);
+  }
+  // What to change about the crowd's null areas now (`now`: seconds), one
+  // area over each cover, following its V in steps and renewed before it
+  // runs out (regions::NullAreas). `on` false: every area goes.
+  static Red::DynArray<TandemNullStep> NullSteps(float now, bool on) {
+    Red::DynArray<TandemNullStep> out;
+    const auto steps =
+        on ? s_nullAreas.Update(CoversNow(), static_cast<double>(now)) : s_nullAreas.Clear();
+    for (const auto &step : steps)
+      out.EmplaceBack(TandemNullStep{.player = step.by,
+                                     .place = step.place,
+                                     .x = step.center.x,
+                                     .y = step.center.y,
+                                     .z = step.center.z});
+    return out;
   }
 
   // ---- placed NPCs, the death ledger, twins (regions.md §3, §14) ----
@@ -329,6 +399,21 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemRegionEffect, "TandemRegionEffect", {
   RTTI_PROPERTY(stacks);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemRegionCover, "TandemRegionCover", {
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+});
+
+RTTI_DEFINE_CLASS(tandem::plugin::TandemNullStep, "TandemNullStep", {
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(place);
+  RTTI_PROPERTY(x);
+  RTTI_PROPERTY(y);
+  RTTI_PROPERTY(z);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemDeath, "TandemDeath", {
   RTTI_PROPERTY(entity);
   RTTI_PROPERTY(record);
@@ -355,6 +440,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemRegions, "TandemRegions", {
   RTTI_METHOD(AreaOwner);
   RTTI_METHOD(OwnsArea);
   RTTI_METHOD(CoveredBy);
+  RTTI_METHOD(Covers);
+  RTTI_METHOD(CrowdShare);
+  RTTI_METHOD(NullSteps);
   RTTI_METHOD(Placed);
   RTTI_METHOD(PlacedOf);
   RTTI_METHOD(DiedBy);
