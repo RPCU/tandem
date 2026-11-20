@@ -364,7 +364,7 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
       [&](proto::NpcId, proto::PlayerId owner) {
         return owner != self && (!host || m_links.Linked(owner, self));
       },
-      &count);
+      &count, &m_npcScale);
   return {
       .epoch = host ? m_epoch : m_hostEpoch,
       .seq = m_digestSeq,
@@ -380,7 +380,7 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
                      .Add(std::uint64_t{consistency::PlayersDigest(
                          {m_players, m_appearances, m_held, m_seats, m_radios, m_stealth, m_paused,
                           m_timeEffects, m_lives, m_elsewheres, m_heat, m_activities, &m_commsLinks,
-                          &m_waypoints},
+                          &m_waypoints, &m_regionsSent},
                          self)})
                      .Add(std::uint64_t{VehiclePlayersDigest(self)})
                      .Value(),
@@ -808,6 +808,7 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               out.push_back(events::DeviceAsked{mine});
             },
             [&](const proto::DeviceUse &use) { OnDeviceUse(event.peer, player, use, out); },
+            [&](const proto::Breach &breach) { OnBreach(event.peer, player, breach, out); },
             [&](const proto::DeviceSet &) {
               // At most one per cooldown and guest, as for ResyncRequest.
               const auto now = net::NowUs();
@@ -1205,6 +1206,12 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
       for (const auto npc : shown)
         if (set.npcs.size() < proto::kMaxNpcSet)
           set.npcs.push_back(npc);
+      // ...and the ones being handed to or from it: its body there is the
+      // NPC's, whatever its copy says of the owner until the hand-over ends.
+      for (const auto &[npc, handover] : m_handovers)
+        if (InHandover(npc, them) && m_npcs.contains(npc) && !Sees(them, NpcOwner(npc)) &&
+            set.npcs.size() < proto::kMaxNpcSet)
+          set.npcs.push_back(npc);
       Send(peer, set);
     }
     // The world vehicles, before who sits in them.
@@ -1233,6 +1240,9 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
         Send(peer, poise);
     for (const auto &[npc, level] : m_npcLevels)
       Send(peer, level);
+    // The vendors that died in the session, wherever they were.
+    for (const auto &[entity, dead] : m_deadVendors)
+      Send(peer, dead);
     for (const auto &[npc, hold] : m_npcHolds)
       if (unlisted(npc))
         Send(peer, hold);
@@ -1395,6 +1405,15 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
         return;
       m_sessionLevel = *session;
     }
+    if (const auto *scale = std::get_if<proto::NpcScale>(&message)) {
+      // Of an NPC we know and do not run (our own word is ours), once.
+      if (!m_npcs.contains(scale->npc) || OwnsNpc(scale->npc))
+        return;
+      if (const auto it = m_npcScale.find(scale->npc);
+          it != m_npcScale.end() && it->second == *scale)
+        return;
+      m_npcScale[scale->npc] = *scale;
+    }
     if (const auto *level = std::get_if<proto::NpcLevel>(&message)) {
       if (!m_npcs.contains(level->npc))
         return; // of an NPC that is gone
@@ -1402,6 +1421,20 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           it != m_npcLevels.end() && it->second == *level)
         return;
       m_npcLevels[level->npc] = *level;
+    }
+    // A vendor of an NPC we show, or one that died: said once.
+    if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
+      if ((vendor->flags & proto::kVendorDead) != 0) {
+        if (!m_deadVendors.emplace(vendor->entity, *vendor).second)
+          return;
+      } else {
+        if (!m_npcs.contains(vendor->npc) || OwnsNpc(vendor->npc))
+          return; // gone, or ours (our own word, back)
+        if (const auto it = m_npcVendors.find(vendor->npc);
+            it != m_npcVendors.end() && it->second == *vendor)
+          return;
+        m_npcVendors[vendor->npc] = *vendor;
+      }
     }
     out.push_back(events::Combat{message});
     return;
@@ -1619,9 +1652,11 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             m_npcOwner.erase(gone.npc);
             m_given.erase(gone.npc);
             m_npcBook.Forget(gone.npc);
+            m_npcVendors.erase(gone.npc);
             if (m_npcs.erase(gone.npc) > 0) {
               m_npcHealth.erase(gone.npc);
               m_npcLevels.erase(gone.npc);
+              m_npcScale.erase(gone.npc);
               if (gone.reason == 1)
                 m_corpses.insert(gone.npc); // stays until the host's corpse goes
               out.push_back(events::HostNpcGone{gone});
@@ -1648,6 +1683,8 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               }
               m_npcHealth.erase(it->first);
               m_npcLevels.erase(it->first);
+              m_npcScale.erase(it->first);
+              m_npcVendors.erase(it->first);
               m_npcHolds.erase(it->first);
               m_npcOwner.erase(it->first);
               m_npcBook.Forget(it->first);
@@ -1879,6 +1916,13 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (news || answer)
               out.push_back(events::HostDevice{state});
           },
+          [&](const proto::Breach &breach) {
+            // Another player's breach, granted: our NPCs of its network,
+            // or the NPC it breached (ours). Never our own back.
+            if (breach.player != m_you)
+              out.push_back(events::BreachBy{breach});
+          },
+          [&](const proto::BreachResult &result) { out.push_back(events::BreachAnswered{result}); },
           [&](const proto::DeviceSet &) {
             m_devices.Clear();
             m_deviceAsked.clear();
@@ -2124,6 +2168,16 @@ void Endpoint::SendNpcSpawn(const proto::NpcSpawn &spawn) {
     if (IsHost())
       Broadcast(early.mapped());
   }
+  // Its scale, the same way (ours to say: we run it).
+  if (const auto early = m_npcScaleEarly.extract(spawn.npc)) {
+    m_npcScale[spawn.npc] = early.mapped();
+    SayNpc(early.mapped());
+  }
+  // That it is a vendor, likewise (any owner's to say).
+  if (const auto early = m_npcVendorsEarly.extract(spawn.npc)) {
+    m_npcVendors[spawn.npc] = early.mapped();
+    SayNpc(early.mapped());
+  }
 }
 
 void Endpoint::SendNpcStates(proto::NpcStates states) {
@@ -2158,21 +2212,24 @@ void Endpoint::SendNpcStates(proto::NpcStates states) {
 }
 
 void Endpoint::SendActorPose(proto::ActorPose pose) {
-  if (!IsHost() || m_ended || !m_npcs.contains(pose.npc))
+  if (!IsHost() || m_ended || !OwnsNpc(pose.npc))
     return;
   pose.seq = ++m_npcSeq;
   pose.timeUs = HostNowUs();
-  Broadcast(pose);
+  ShareNpc(pose, m_you); // the games that show the actor, as its states
 }
 
 void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
   Record(gone);
   if (!IsJoined() || m_ended || !SpeaksFor(gone.npc))
     return;
+  NoteVendorGone(gone, nullptr);
   ForgetNpc(gone.npc);
   m_npcCoder.Forget(gone.npc);
   m_npcLevels.erase(gone.npc);
   m_npcLevelsEarly.erase(gone.npc);
+  m_npcScaleEarly.erase(gone.npc);
+  m_npcVendorsEarly.erase(gone.npc);
   if (gone.reason == proto::kGoneAway)
     m_corpseOwner.erase(gone.npc);
   else
@@ -2224,8 +2281,8 @@ void Endpoint::SendNpcCue(const proto::NpcCue &cue) {
   if (!IsJoined() || m_ended || cue.player == m_you || !SpeaksFor(cue.npc))
     return;
   if (!IsHost())
-    Send(m_hostPeer, cue);
-  else if (const auto peer = PeerOf(cue.player))
+    Send(m_hostPeer, cue); // the host passes it on if that player shows the NPC
+  else if (const auto peer = PeerOf(cue.player); peer && SharedWith(cue.npc, cue.player))
     Send(*peer, cue);
 }
 
@@ -2304,7 +2361,8 @@ bool Endpoint::SendPlayerHit(const proto::PlayerHit &hit) {
     return true;
   }
   const auto target = PeerOf(hit.player);
-  if (!target)
+  // An NPC's hit only for a game that shows it (regions.md: linked with us).
+  if (!target || (hit.npc != 0 && !SharedWith(hit.npc, hit.player)))
     return false;
   Send(*target, hit); // that player's game only
   return true;
@@ -2352,7 +2410,7 @@ void Endpoint::SendPlayerHack(const proto::PlayerHack &hack) {
     return;
   if (!IsHost())
     Send(m_hostPeer, hack);
-  else if (const auto peer = PeerOf(hack.player))
+  else if (const auto peer = PeerOf(hack.player); peer && SharedWith(hack.npc, hack.player))
     Send(*peer, hack);
 }
 
@@ -2382,7 +2440,8 @@ bool Endpoint::SendNpcShotAt(proto::NpcShotAt shot) {
     return true;
   }
   const auto peer = PeerOf(shot.player);
-  if (!peer)
+  // Only at a V whose game shows the shooter (it fires the shot from its proxy).
+  if (!peer || !SharedWith(shot.npc, shot.player))
     return false;
   // Behind the epoch fence: a guest that has not seen our world since it
   // was rebuilt is not in it to be shot at.
@@ -3375,6 +3434,107 @@ void Endpoint::AskDevice(proto::DeviceState state) {
   Send(m_hostPeer, state);
 }
 
+void Endpoint::SendBreach(proto::Breach breach) {
+  Record(breach);
+  if (!IsJoined() || m_ended || (breach.entity == 0 && breach.npc == 0))
+    return;
+  if (breach.programs.size() > proto::kMaxBreachPrograms)
+    breach.programs.resize(proto::kMaxBreachPrograms);
+  if (breach.traps.size() > proto::kMaxBreachPrograms)
+    breach.traps.resize(proto::kMaxBreachPrograms);
+  breach.flags &= proto::kBreachRemote | proto::kBreachFailed;
+  if (!IsHost()) {
+    breach.player = m_you;
+    Send(m_hostPeer, breach);
+    return;
+  }
+  // Our game's word: ours, or (an NPC's network) the player who breached.
+  const auto player = breach.player == proto::kNoPlayer ? m_you : breach.player;
+  std::vector<SessionEvent> out;
+  OnBreach(std::nullopt, player, std::move(breach), out);
+  m_pending.insert(m_pending.end(), std::make_move_iterator(out.begin()),
+                   std::make_move_iterator(out.end()));
+}
+
+// Host: a breach. The first of a network (or of an NPC) stands, the record
+// of its access point says breached for everyone, every other game hears
+// it for the NPCs of that network it runs; any later one is refused.
+// `peer`: the breacher's connection (none: our own game said it).
+void Endpoint::OnBreach(std::optional<net::PeerId> peer, proto::PlayerId player,
+                        proto::Breach breach, std::vector<SessionEvent> &out) {
+  breach.player = player;
+  breach.flags &= proto::kBreachRemote | proto::kBreachFailed;
+  if (breach.entity == 0 && breach.npc == 0)
+    return;
+  const devices::Key network{breach.entity, breach.cls};
+  // Our own game ran this breach already (the minigame was ours): it is
+  // not ours to apply again. Our game's word for another player is.
+  const bool ranHere = !peer && player == m_you;
+  const auto answer = [&](proto::BreachVerdict verdict, proto::PlayerId by) {
+    const proto::BreachResult result{.entity = breach.entity,
+                                     .cls = breach.cls,
+                                     .npc = breach.npc,
+                                     .verdict = verdict,
+                                     .by = by};
+    if (peer)
+      Send(*peer, result);
+    else if (player == m_you)
+      out.push_back(events::BreachAnswered{result});
+  };
+  // The owner of the NPC breached through the quickhack, when not the
+  // breacher's own game (which ran it).
+  const auto npcOwner = breach.npc != 0 ? NpcOwnerOrAnnouncer(breach.npc) : proto::kNoPlayer;
+  const bool npcElsewhere = breach.npc != 0 && npcOwner != player;
+  auto applied = breach;
+  applied.flags |= proto::kBreachApply;
+  // Every game but the breacher's applies a network's breach to its own
+  // NPCs of it; an NPC alone goes to its owner.
+  const auto passOn = [&] {
+    if (breach.entity != 0) {
+      for (const auto &[to, other] : m_playerOfPeer)
+        if (other != player)
+          Send(to, applied);
+      if (!ranHere)
+        out.push_back(events::BreachBy{applied});
+    } else if (npcElsewhere && RouteToOwner(breach.npc, applied, player) && !ranHere) {
+      out.push_back(events::BreachBy{applied});
+    }
+  };
+  if (breach.flags & proto::kBreachFailed) {
+    // A lost minigame: nothing is breached; whose NPCs they are alert them.
+    passOn();
+    return;
+  }
+  auto verdict = proto::BreachVerdict::Granted;
+  auto by = player;
+  if (breach.entity != 0) {
+    verdict = m_breaches.Judge(network, player, m_devices);
+    by = m_breaches.By(network, m_devices);
+  }
+  if (verdict == proto::BreachVerdict::Granted && npcElsewhere) {
+    verdict = m_breaches.JudgeNpc(breach.npc);
+    by = m_breaches.ByNpc(breach.npc);
+  }
+  if (verdict != proto::BreachVerdict::Granted) {
+    ++m_breachesRefused;
+    answer(verdict, by);
+    return;
+  }
+  if (breach.entity != 0) {
+    m_breaches.Note(network, player);
+    // Breached once, for everyone: the access point's record says so (its
+    // late joiners and the device digest included), whatever our game
+    // reports of it later.
+    if (const auto changed =
+            m_devices.Report(devices::BreachedState(network, player, m_devices.Find(network))))
+      Broadcast(*changed);
+  }
+  if (npcElsewhere)
+    m_breaches.NoteNpc(breach.npc, player);
+  passOn();
+  answer(proto::BreachVerdict::Granted, player);
+}
+
 // Host: a guest operated a device. First come, first served, by the
 // revision it had seen (devices::Ledger::Judge).
 void Endpoint::OnDeviceUse(net::PeerId peer, proto::PlayerId player, const proto::DeviceUse &use,
@@ -3442,6 +3602,17 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
       ShareNpc(message, player, *peer);
     if (Sees(m_you, player))
       out.push_back(events::Combat{message});
+  } else if (const auto *scale = std::get_if<proto::NpcScale>(&message)) {
+    // The scale of an NPC it runs: for who sees it, once.
+    if (!m_npcs.contains(scale->npc) || NpcOwner(scale->npc) != player)
+      return;
+    if (const auto it = m_npcScale.find(scale->npc); it != m_npcScale.end() && it->second == *scale)
+      return;
+    m_npcScale[scale->npc] = *scale;
+    if (const auto peer = PeerOf(player))
+      ShareNpc(message, player, *peer);
+    if (Sees(m_you, player))
+      out.push_back(events::Combat{message});
   } else if (const auto *area = std::get_if<proto::AreaHit>(&message)) {
     // To the victim's game: ours, or pass it on (never back to the
     // attacker), while the session's rules allow friendly fire.
@@ -3480,6 +3651,19 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     auto mine = *lend;
     mine.player = player;
     NoteLend(mine, out);
+  } else if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
+    // An owner's word on its NPC, for who sees it; a death is never a
+    // guest's to say (the host derives it from the owner's NpcGone).
+    if (vendor->flags != 0 || !m_npcs.contains(vendor->npc) || NpcOwner(vendor->npc) != player)
+      return;
+    if (const auto it = m_npcVendors.find(vendor->npc);
+        it != m_npcVendors.end() && it->second == *vendor)
+      return;
+    m_npcVendors[vendor->npc] = *vendor;
+    if (const auto peer = PeerOf(player))
+      ShareNpc(message, player, *peer);
+    if (Sees(m_you, player))
+      out.push_back(events::Combat{message});
   }
   // Wounds, poise, the difficulty, the rules and the NPCs' levels are the
   // host's to say.
@@ -3661,6 +3845,26 @@ bool Endpoint::SendCombat(proto::Message message) {
     SayNpc(message);
     return true;
   }
+  // An owner's word on its NPC's scale: once per change. One of our range
+  // whose spawn is still on its way from the game (another queue): kept, and
+  // said right after the spawn.
+  if (const auto *scale = std::get_if<proto::NpcScale>(&message)) {
+    if (!m_npcs.contains(scale->npc)) {
+      if (regions::Announcer(scale->npc) != m_you)
+        return false;
+      if (m_npcScaleEarly.size() >= 256)
+        m_npcScaleEarly.clear();
+      m_npcScaleEarly[scale->npc] = *scale;
+      return false;
+    }
+    if (!OwnsNpc(scale->npc))
+      return false;
+    if (const auto it = m_npcScale.find(scale->npc); it != m_npcScale.end() && it->second == *scale)
+      return true; // said already
+    m_npcScale[scale->npc] = *scale;
+    SayNpc(message);
+    return true;
+  }
   if (auto *defended = std::get_if<proto::Defended>(&message)) {
     if (IsHost())
       return false; // the host's own NPCs' attacks on its V are its game's
@@ -3683,6 +3887,29 @@ bool Endpoint::SendCombat(proto::Message message) {
       Broadcast(message);
     else
       Send(m_hostPeer, message);
+    return true;
+  }
+  // One of our NPCs is a placed vendor (never a death: the host's to derive).
+  if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
+    if (vendor->npc == 0 || vendor->entity == 0 || vendor->flags != 0)
+      return false;
+    if (!m_npcs.contains(vendor->npc)) {
+      // Its spawn is on its way from the game by another queue: kept, and
+      // said right after it.
+      if (regions::Announcer(vendor->npc) != m_you)
+        return false;
+      if (m_npcVendorsEarly.size() >= 256)
+        m_npcVendorsEarly.clear();
+      m_npcVendorsEarly[vendor->npc] = *vendor;
+      return false;
+    }
+    if (!OwnsNpc(vendor->npc))
+      return false;
+    if (const auto it = m_npcVendors.find(vendor->npc);
+        it != m_npcVendors.end() && it->second == *vendor)
+      return true; // said already
+    m_npcVendors[vendor->npc] = *vendor;
+    SayNpc(message);
     return true;
   }
   if (!IsHost())

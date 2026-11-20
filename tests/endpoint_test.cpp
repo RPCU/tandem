@@ -3,6 +3,7 @@
 #include "ports.hpp"
 #include "tandem/combat.hpp"
 #include "tandem/endpoint.hpp"
+#include "tandem/scaling.hpp"
 #include "tandem/timebubble.hpp"
 
 #include <doctest/doctest.h>
@@ -320,6 +321,9 @@ TEST_CASE("quickhacks: uploads to the host, states to all, NPC hacks and car hac
   REQUIRE(Pump({host.get(), a.get(), b.get()},
                [&](std::size_t, const auto &) { return a->IsJoined() && b->IsJoined(); }));
 
+  // NPC 7 is the host's, shared with both (regions: its word to one V goes
+  // only to a game that shows it).
+  host->SendNpcSpawn({.npc = 7, .record = 1});
   // a uploads on NPC 7: the host hears it in a's name, nobody else does.
   a->SendNpcHack({.player = 99, .npc = 7, .action = 0x55, .uploadMs = 1200});
   std::optional<proto::NpcHack> upload;
@@ -394,6 +398,7 @@ TEST_CASE("an NPC's hit on a guest reaches that guest only, whole") {
     return a->Players().size() == 3 && b->Players().size() == 3;
   }));
 
+  host->SendNpcSpawn({.npc = 7, .record = 1}); // the attacker, shared with both
   const proto::PlayerHit sent{.player = a->You(),
                               .npc = 7,
                               .physical = 10.f,
@@ -1396,6 +1401,7 @@ TEST_CASE("an NPC cue reaches only the player it is for") {
   REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
     return a->Players().size() == 3 && b->Players().size() == 3;
   }));
+  host->SendNpcSpawn({.npc = 7, .record = 1}); // shared with both
   host->SendNpcCue({.npc = 7, .player = b->You(), .cue = proto::NpcCueKind::CombatStart});
   bool aHeard = false;
   std::optional<proto::NpcCue> bHeard;
@@ -2171,6 +2177,7 @@ TEST_CASE(
   REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t, const auto &) {
     return a->Players().size() == 3 && b->Players().size() == 3;
   }));
+  host->SendNpcSpawn({.npc = 7, .record = 1});               // the shooter, shared with both
   CHECK_FALSE(host->SendNpcShotAt({.player = 1, .npc = 7})); // the host's own V: its game's
   CHECK_FALSE(host->SendNpcShotAt({.player = 9, .npc = 7})); // nobody
   const auto before = host->HostNowUs();
@@ -2337,4 +2344,62 @@ TEST_CASE("an NPC's hit reactions reach the guests' proxies; only the host sends
   CHECK(heard[1].type == proto::kReactionDeath);
   CHECK(heard[1].way == proto::Vec3{0.f, 1.f, 0.f});
   CHECK_FALSE(hostHeard);
+}
+
+TEST_CASE("enemy scaling: the host's rule reaches every game, late joiners too, said once") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(a, error);
+  std::map<std::size_t, std::vector<proto::Rules>> heard;
+  const auto collect = [&](std::size_t i, const std::vector<SessionEvent> &events) {
+    for (const auto &event : events)
+      if (const auto *combat = std::get_if<events::Combat>(&event))
+        if (const auto *rules = std::get_if<proto::Rules>(&combat->message))
+          heard[i].push_back(*rules);
+  };
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return a->Players().size() == 2;
+  }));
+  // Nothing said yet: no scaling on the guest (its own NPCs stay vanilla).
+  CHECK_FALSE(scaling::RuleOf(a->Rules()).on);
+  // The host's tandem.ini: on, 85 % per extra player; said twice, heard once.
+  const auto rules = scaling::WithRule(proto::Rules{}, true, 0.85f);
+  CHECK(host->SendCombat(rules));
+  CHECK(host->SendCombat(rules));
+  PumpFor({host.get(), a.get()}, 200ms, collect);
+  REQUIRE(heard[1].size() == 1);
+  CHECK(heard[1][0].enemyHealth == 85);
+  CHECK(scaling::RuleOf(a->Rules()).on);
+  CHECK(scaling::RuleOf(a->Rules()).health == doctest::Approx(0.85f));
+  CHECK(scaling::For(3, scaling::RuleOf(a->Rules())).health == doctest::Approx(2.7f));
+  // A guest cannot set the session's rules.
+  CHECK_FALSE(a->SendCombat(scaling::WithRule(proto::Rules{}, false, 0.6f)));
+  // Friendly fire changes alone: the scaling stays.
+  CHECK(host->SendCombat(
+      proto::Rules{.flags = static_cast<std::uint8_t>(rules.flags | proto::kRuleFriendlyFire),
+                   .enemyHealth = 85}));
+  PumpFor({host.get(), a.get()}, 200ms, collect);
+  REQUIRE(heard[1].size() == 2);
+  CHECK(combat::FriendlyFire(a->Rules()));
+  CHECK(scaling::RuleOf(a->Rules()).on);
+
+  // A late joiner hears them as they stand.
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error);
+  REQUIRE_MESSAGE(b, error);
+  REQUIRE(Pump({host.get(), a.get(), b.get()}, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return b->Players().size() == 3 && !heard[2].empty();
+  }));
+  CHECK(heard[2].back().enemyHealth == 85);
+  CHECK(scaling::RuleOf(b->Rules()).on);
+  // Off: every game stops scaling.
+  CHECK(host->SendCombat(scaling::WithRule(host->Rules(), false, 0.85f)));
+  PumpFor({host.get(), a.get(), b.get()}, 200ms, collect);
+  CHECK_FALSE(scaling::RuleOf(a->Rules()).on);
+  CHECK_FALSE(scaling::RuleOf(b->Rules()).on);
+  CHECK(scaling::For(4, scaling::RuleOf(b->Rules())).None());
 }

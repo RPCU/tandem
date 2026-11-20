@@ -173,7 +173,11 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *end = std::get_if<ThrowEnd>(&message); end && end->how > ThrowEndKind::Gone)
     return std::nullopt;
-  if (const auto *rules = std::get_if<Rules>(&message); rules && (rules->flags & ~kRuleFlags) != 0)
+  if (const auto *rules = std::get_if<Rules>(&message);
+      rules && ((rules->flags & ~kRuleFlags) != 0 || rules->enemyHealth > kMaxEnemyHealth))
+    return std::nullopt;
+  if (const auto *scale = std::get_if<NpcScale>(&message);
+      scale && (scale->players == 0 || scale->players > kMaxPlayerId))
     return std::nullopt;
   if (const auto *defended = std::get_if<Defended>(&message);
       defended && (defended->how < DefendKind::Blocked || defended->how > DefendKind::Parried))
@@ -205,6 +209,11 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *lend = std::get_if<CarLend>(&message); lend && lend->lend > Lend::Never)
     return std::nullopt;
+  // A live vendor names its NPC; a dead one only its entity.
+  if (const auto *vendor = std::get_if<NpcVendor>(&message);
+      vendor && (vendor->entity == 0 || (vendor->flags & ~kVendorDead) != 0 ||
+                 ((vendor->flags & kVendorDead) != 0) != (vendor->npc == 0)))
+    return std::nullopt;
   if (const auto *commit = std::get_if<TradeCommit>(&message);
       commit && (!Fits(commit->first) || !Fits(commit->second)))
     return std::nullopt;
@@ -231,6 +240,14 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *combat = std::get_if<VehicleCombat>(&message);
       combat && combat->mode > SeatCombat::Gunner)
+    return std::nullopt;
+  // A breach: its daemons within the bound, flags and verdicts this version knows.
+  if (const auto *breach = std::get_if<Breach>(&message);
+      breach && (breach->programs.size() > kMaxBreachPrograms ||
+                 breach->traps.size() > kMaxBreachPrograms || (breach->flags & ~kBreachFlags) != 0))
+    return std::nullopt;
+  if (const auto *result = std::get_if<BreachResult>(&message);
+      result && result->verdict > BreachVerdict::Full)
     return std::nullopt;
   // At most the bound, sorted and without repeats: one set, said one way.
   if (const auto *restrictions = std::get_if<StoryRestrictions>(&message);
@@ -303,7 +320,8 @@ bool IsCombat(const Message &message) {
           message.index() <= Message(Defended{}).index()) ||
          (message.index() >= Message(PlayerLevel{}).index() &&
           message.index() <= Message(NpcLevel{}).index()) ||
-         std::holds_alternative<CarLend>(message);
+         std::holds_alternative<CarLend>(message) || std::holds_alternative<NpcScale>(message) ||
+         std::holds_alternative<NpcVendor>(message);
 }
 
 bool IsTrade(const Message &message) {
@@ -457,6 +475,10 @@ const char *NameOfKind(std::size_t kind) {
                                    "NpcMotion",
                                    "PlayerMotion",
                                    "VehicleMotion",
+                                   "NpcScale",
+                                   "Breach",
+                                   "BreachResult",
+                                   "NpcVendor",
                                    "QuestInteract"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";

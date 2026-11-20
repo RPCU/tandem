@@ -17,7 +17,7 @@ declare -A value=(
   ["--hack-player"]=6 ["--npc-hack"]=AIQuickHack.HackRevealPosition ["--hack-car"]=5
   ["--npc"]=Character.x ["--detect-at"]=15 ["--detect-for"]=10 ["--camo"]=10 ["--shoot"]=3
   ["--strike"]=nonlethal ["--difficulty"]=veryhard ["--area-hit"]=5
-  ["--friendly-fire"]=on ["--throw"]=5 ["--throw-item"]=Items.x ["--smart"]=5 ["--defend"]=5
+  ["--friendly-fire"]=on ["--enemy-scaling"]=on ["--enemy-scaling-health"]=0.8 ["--near-npc"]=--check ["--throw"]=5 ["--throw-item"]=Items.x ["--smart"]=5 ["--defend"]=5
   ["--hit-you-melee"]=on
   ["--story"]=x.story ["--answer"]=1 ["--reply"]=12345 ["--suggest"]=0
   ["--restrict"]=GameplayRestriction.NoCombat ["--restrict-at"]=2 ["--restrict-for"]=5
@@ -36,19 +36,20 @@ declare -A value=(
   ["--drop-item"]=Items.FirstAidWhiffV0 ["--loot-quest"]=Keycards.x ["--take-items"]=2 ["--remove-corpses"]=5
   ["--go-down"]=10 ["--go-out"]=10 ["--revive"]=3
   ["--path"]=x.path ["--save-path"]=x.path
-  ["--drop"]=0.2 ["--dup"]=0.2 ["--vanish-at"]=20
+  ["--drop"]=0.2 ["--dup"]=0.2 ["--fault-seed"]=7 ["--vanish-at"]=20
   ["--car-damage"]=5 ["--exit-at"]=8 ["--exit-kind"]=knocked ["--bump"]=3 ["--shoot-cars"]=4
   ["--gunner"]=5 ["--gunner-seat"]=seat_back_left ["--ram-npcs"]=3 ["--chase"]=5
   ["--device"]="1a2b3c4d5e6f7788:DoorControllerPS:open,unlocked@8" ["--device-answer"]=closed ["--device-after"]=2
+  ["--breach"]="a0b1c2d3e4f50617:AccessPointControllerPS@4" ["--programs"]="NetworkCameraShutdown,0x1234" ["--breach-failed"]=--check
   ["--interact"]="5eed00000000aa01:QuestCustomAction:0x1234@3" ["--interact-answer"]=host-only
   ["--region-far"]=1000 ["--region-npcs"]=3 ["--region-record"]=Character.x ["--region-walk-at"]=10
-  ["--region-leave-at"]=20 ["--region-speed"]=25
+  ["--region-leave-at"]=20 ["--region-leave-linked"]=3 ["--region-speed"]=25
   ["--region-at"]="1,2,3"
   ["--traffic"]=4 ["--traffic-vehicle"]=Vehicle.x ["--wreck-at"]=10 ["--ram-traffic"]=3 ["--steal-at"]=12
   ["--heat"]=3 ["--heat-at"]=5 ["--heat-for"]=20 ["--crime-at"]=8
   ["--hurt"]=4 ["--melee"]=5 ["--menu-at"]=10 ["--react-npcs"]=3
   ["--hold"]=Items.x ["--holster-at"]=10
-  ["--level"]=30 ["--npc-level"]=25 ["--lend"]=owner ["--unlock-vehicle"]=Vehicle.x ["--trade-offer"]=--check ["--trade-accept"]=--check
+  ["--level"]=30 ["--npc-level"]=25 ["--lend"]=owner ["--unlock-vehicle"]=Vehicle.x ["--vendor"]="Character.x@1,2,3#1a2b3c4d5e6f7788" ["--vendor-dies"]=10 ["--trade-offer"]=--check ["--trade-accept"]=--check
   ["--trade-give"]=Items.CommonMaterial1:2 ["--trade-money"]=100 ["--trade-asks"]=50
   ["--link"]=ask ["--link-at"]=5 ["--unlink-at"]=9 ["--ping"]=4 ["--tag"]=6 ["--reveal"]=8 ["--waypoint"]="-915,1879.5,36.3" ["--waypoint-clear"]=20 ["--mark-target"]=nearest ["--hack-npc"]=nearest
 )

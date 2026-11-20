@@ -1,5 +1,6 @@
-// What scripts/tandem/Levels.reds and Saves.reds call: `TandemProgress`
-// static functions (docs/architecture/progression.md). Declared on the
+// What scripts/tandem/Levels.reds, Scaling.reds, Saves.reds and Vendors.reds
+// call: `TandemProgress` static functions (docs/architecture/progression.md,
+// and npcs.md for enemy scaling). Declared on the
 // script side in scripts/tandem/ProgressNatives.reds: keep the two in sync
 // (tools/check-natives.py reads every pair). All of these run on the game
 // thread; the level messages only queue (the hit outcomes' queue).
@@ -12,12 +13,17 @@
 #include "runtime.hpp"
 
 #include "tandem/progress.hpp"
+#include "tandem/scaling.hpp"
 #include "tandem/vehicle.hpp"
+#include "tandem/vendors.hpp"
 
+#include <RED4ext/Scripting/Natives/Generated/ent/EntityID.hpp>
 #include <RedLib.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
+#include <vector>
 
 namespace tandem::plugin {
 namespace {
@@ -27,6 +33,24 @@ namespace {
 progress::Leave &TheLeave() {
   static progress::Leave leave;
   return leave;
+}
+
+// Enemy scaling: who counts for each NPC our game runs (tandem/scaling.hpp).
+struct Counting {
+  std::mutex lock;
+  scaling::Counter counter;
+};
+Counting &TheCounting() {
+  static Counting counting;
+  return counting;
+}
+
+std::uint8_t ClampedCount(std::int32_t players) {
+  return static_cast<std::uint8_t>(std::clamp<std::int32_t>(players, 1, proto::kMaxPlayerId));
+}
+
+scaling::Multipliers MultipliersFor(std::int32_t players) {
+  return scaling::For(ClampedCount(players), scaling::RuleOf(Combat::Get().Rules()));
 }
 } // namespace
 
@@ -62,6 +86,64 @@ struct TandemProgress : Red::IScriptable {
     return progress::ProxyShift(level, applied, hostNpcLevel);
   }
 
+  // ---- enemy scaling (docs/architecture/npcs.md, "Enemy scaling") ----
+
+  // The session's rule as this game knows it (the host's Rules): on, and
+  // the health added per extra player.
+  static bool EnemyScaling() { return scaling::RuleOf(Combat::Get().Rules()).on; }
+  static float EnemyScalingHealth() { return scaling::RuleOf(Combat::Get().Rules()).health; }
+  // How many players count for one of the NPCs our game runs this round
+  // (1..4). distances: player p's distance to it at p - 1 (< 0: not placed
+  // here); engaged: bit p - 1, that player fights it (in combat with it, its
+  // target, or hit it a moment ago). Only players of the session count, our
+  // V always. Alone, or out of a session: 1.
+  static std::int32_t ScaleCount(std::uint32_t npc, Red::DynArray<float> distances,
+                                 std::int32_t engaged, float now) {
+    auto &runtime = Runtime::Get();
+    const auto you = runtime.You();
+    if (you == proto::kNoPlayer)
+      return 1;
+    std::vector<scaling::Seen> seen;
+    for (std::uint32_t i = 0; i < distances.Size() && i < proto::kMaxPlayerId; ++i) {
+      const auto player = static_cast<proto::PlayerId>(i + 1);
+      if (player != you && !runtime.InRoster(player))
+        continue; // gone, or never there: it stops counting at once
+      const float distance = std::isfinite(distances[i]) ? distances[i] : -1.f;
+      seen.push_back(
+          {.player = player, .distance = distance, .engaged = (engaged & (1 << i)) != 0});
+    }
+    auto &counting = TheCounting();
+    std::scoped_lock hold(counting.lock);
+    return counting.counter.Count(npc, seen, now);
+  }
+  // One of ours died, went or was handed over: nothing of its count is kept.
+  static void ForgetScale(std::uint32_t npc) {
+    auto &counting = TheCounting();
+    std::scoped_lock hold(counting.lock);
+    counting.counter.Forget(npc);
+  }
+  // The session is over.
+  static void ClearScales() {
+    auto &counting = TheCounting();
+    std::scoped_lock hold(counting.lock);
+    counting.counter.Clear();
+  }
+  // The multipliers an NPC scaled for `players` carries, by the session's
+  // rule (1: none).
+  static float ScaleHealth(std::int32_t players) { return MultipliersFor(players).health; }
+  static float ScalePoise(std::int32_t players) { return MultipliersFor(players).poise; }
+  static float ScaleArmor(std::int32_t players) { return MultipliersFor(players).armor; }
+  // The multiplier of its hit reaction thresholds (tandem/scaling.hpp
+  // ThresholdFactor): its health without our modifier, and the total health
+  // its HitReactionComponent read.
+  static float ScaleThreshold(std::int32_t players, float baseHealth, float componentHealth) {
+    return scaling::ThresholdFactor(MultipliersFor(players).poise, baseHealth, componentHealth);
+  }
+  // Our word on one of our NPCs: how many players it is scaled for.
+  static void SendNpcScale(std::uint32_t npc, std::int32_t players) {
+    Combat::Get().Send(proto::NpcScale{.npc = npc, .players = ClampedCount(players)});
+  }
+
   // ---- cars (docs/architecture/garage.md) ----
 
   // tandem.ini `lend`: 0 crew, 1 only with us aboard, 2 never (proto::Lend).
@@ -83,6 +165,57 @@ struct TandemProgress : Red::IScriptable {
     return sync::MayDrive(
         {.lend = word, .ownerAboard = ownerAboard, .ownerInSession = ownerInSession});
   }
+
+  // ---- vendors (docs/architecture/progression.md, "Vendors") ----
+
+  // Owner: one of our NPCs is a vendor placed in the world (its entity's
+  // static id), for the players whose games show it as a proxy.
+  static void SendVendor(std::uint32_t npc, Red::EntityID entity) {
+    if (npc != 0 && entity.hash != 0)
+      Combat::Get().Send(proto::NpcVendor{.npc = npc, .entity = entity.hash});
+  }
+  // The placed entity of a shared NPC its owner named a vendor (0: none).
+  static Red::EntityID VendorOf(std::uint32_t npc) {
+    return Red::EntityID(Combat::Get().VendorOf(npc));
+  }
+  // The session says that entity's vendor died.
+  static bool VendorDead(Red::EntityID entity) { return Combat::Get().VendorDead(entity.hash); }
+  // The vendors (entity hashes) the session said died since the last call.
+  static Red::DynArray<std::uint64_t> TakeDeadVendors() {
+    Red::DynArray<std::uint64_t> out;
+    for (const auto entity : Combat::Get().TakeDeadVendors())
+      out.EmplaceBack(entity);
+    return out;
+  }
+  // A new session: the last one's vendors are forgotten.
+  static void VendorsReset() { Combat::Get().ClearVendors(); }
+  // May our V trade with that vendor now (vendors::Shop: 0 open, 1 not a
+  // vendor, 2 no placed vendor, 3 out of reach, 4 dead, 5 not now, 6 not in
+  // our world, 7 locked for us)?
+  static std::int32_t VendorShop(bool vendorRecord, Red::EntityID entity, float distance,
+                                 bool proxyDead, bool sessionDead, bool free, bool ownFound,
+                                 bool ownVendor, bool ownAlive, bool accessible) {
+    return static_cast<std::int32_t>(vendors::Decide({.vendorRecord = vendorRecord,
+                                                      .entity = entity.hash,
+                                                      .distance = distance,
+                                                      .proxyDead = proxyDead,
+                                                      .sessionDead = sessionDead,
+                                                      .free = free,
+                                                      .ownFound = ownFound,
+                                                      .ownVendor = ownVendor,
+                                                      .ownAlive = ownAlive,
+                                                      .accessible = accessible}));
+  }
+  static bool VendorPrompts(std::int32_t shop) {
+    return shop >= 0 && shop <= static_cast<std::int32_t>(vendors::Shop::Locked) &&
+           vendors::Prompts(static_cast<vendors::Shop>(shop));
+  }
+  static Red::CString VendorShopName(std::int32_t shop) {
+    if (shop < 0 || shop > static_cast<std::int32_t>(vendors::Shop::Locked))
+      return Red::CString("?");
+    return Red::CString(vendors::NameOf(static_cast<vendors::Shop>(shop)));
+  }
+  static float VendorReach() { return vendors::kReach; }
 
   // ---- saves ----
 
@@ -129,10 +262,29 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemProgress, "TandemProgress", {
   RTTI_METHOD(SendNpcLevel);
   RTTI_METHOD(NpcLevelShift);
   RTTI_METHOD(ProxyLevelShift);
+  RTTI_METHOD(EnemyScaling);
+  RTTI_METHOD(EnemyScalingHealth);
+  RTTI_METHOD(ScaleCount);
+  RTTI_METHOD(ForgetScale);
+  RTTI_METHOD(ClearScales);
+  RTTI_METHOD(ScaleHealth);
+  RTTI_METHOD(ScalePoise);
+  RTTI_METHOD(ScaleArmor);
+  RTTI_METHOD(ScaleThreshold);
+  RTTI_METHOD(SendNpcScale);
   RTTI_METHOD(OwnLend);
   RTTI_METHOD(SendCarLend);
   RTTI_METHOD(CarLendOf);
   RTTI_METHOD(MayDrive);
+  RTTI_METHOD(SendVendor);
+  RTTI_METHOD(VendorOf);
+  RTTI_METHOD(VendorDead);
+  RTTI_METHOD(TakeDeadVendors);
+  RTTI_METHOD(VendorsReset);
+  RTTI_METHOD(VendorShop);
+  RTTI_METHOD(VendorPrompts);
+  RTTI_METHOD(VendorShopName);
+  RTTI_METHOD(VendorReach);
   RTTI_METHOD(LeaveMode);
   RTTI_METHOD(LeaveTick);
   RTTI_METHOD(LeaveLocked);

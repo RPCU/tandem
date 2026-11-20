@@ -53,6 +53,9 @@ struct NetThread::Impl {
   // Guest through a relay: the session's secret, to join again after the
   // code expired.
   std::optional<net::RelaySecret> relaySecret;
+  // ...and the relay replica holding the session ("ip:port"): the secret
+  // does not say which one of a fleet it is.
+  std::string relayAt;
   // Consistency: what the player is told (never twice in a short while),
   // and whether our last session was lost (to say we are back).
   consistency::NoticeGate notices;
@@ -137,11 +140,20 @@ struct NetThread::Impl {
   std::optional<net::RelayOptions> RelayOf() const {
     if (config.relay.empty())
       return std::nullopt;
-    return net::RelayOptions{.address = config.relay,
-                             .port = config.relayPort,
-                             .token = config.relayToken,
-                             .secret = relaySecret,
-                             .code = relaySecret ? std::string() : config.joinCode};
+    net::RelayOptions options{.address = config.relay,
+                              .port = config.relayPort,
+                              .more = config.relayMore,
+                              .token = config.relayToken,
+                              .secret = relaySecret,
+                              .code = relaySecret ? std::string() : config.joinCode,
+                              .direct = Runtime::Get().directOn,
+                              .keepCode = config.keepCode,
+                              .codeSalt = Runtime::Get().codeSalt};
+    if (relaySecret && !relayAt.empty()) {
+      net::ParseRelayAddress(relayAt, options.address, options.port);
+      options.more.clear(); // where the session is: no other to ask
+    }
+    return options;
   }
 
   // The relay link's state for scripts (Runtime::RelayStatus).
@@ -320,6 +332,9 @@ struct NetThread::Impl {
                 target.relay ? " (through the relay if it does not answer)" : "");
     // The relay as last logged and handed to scripts.
     std::optional<net::RelayStatus> relayShown;
+    // What this session's relay link was told last (it starts from RelayOf).
+    bool directApplied = runtime.directOn;
+    std::uint32_t newCodesAsked = runtime.newCodeRequests.load();
 
     auto nextReport = std::chrono::steady_clock::now() + 10s;
     std::optional<proto::PlayerState> pendingLocal;
@@ -363,8 +378,11 @@ struct NetThread::Impl {
               if constexpr (std::is_same_v<E, events::Joined>) {
                 log::Info("in the session as player {} (host {}{})", e.you, e.host,
                           endpoint->ThroughRelay() ? ", through the relay" : "");
-                if (const auto secret = endpoint->RelaySessionSecret())
+                if (const auto secret = endpoint->RelaySessionSecret()) {
                   relaySecret = secret;
+                  if (const auto relay = endpoint->Relay())
+                    relayAt = relay->at;
+                }
                 wasIn = true;
                 runtime.NotePlayerName(e.you, config.name);
                 runtime.SetYou(e.you);
@@ -767,6 +785,18 @@ struct NetThread::Impl {
                           e.use.player, e.use.entity, e.use.cls, static_cast<int>(e.use.status),
                           e.use.flags, e.use.value);
                 runtime.PushDevice(e.use);
+              } else if constexpr (std::is_same_v<E, events::BreachBy>) {
+                log::Info("breach: player {}'s of network {:x} ({:#x}), npc {}: {} daemon(s), "
+                          "{} trap(s), flags {:#x}: ours to apply",
+                          e.breach.player, e.breach.entity, e.breach.cls, e.breach.npc,
+                          e.breach.programs.size(), e.breach.traps.size(), e.breach.flags);
+                runtime.PushBreach(e.breach);
+              } else if constexpr (std::is_same_v<E, events::BreachAnswered>) {
+                log::Info("breach: the host's answer on network {:x}, npc {}: verdict {}, by "
+                          "player {}",
+                          e.result.entity, e.result.npc, static_cast<int>(e.result.verdict),
+                          e.result.by);
+                runtime.PushBreach(e.result);
               } else if constexpr (std::is_same_v<E, events::DevicesReset>) {
                 log::Info("devices: the host sends its record again");
                 runtime.PushDevice(proto::DeviceSet{});
@@ -894,17 +924,36 @@ struct NetThread::Impl {
         status->codeSecondsLeft = 0; // not a change worth a line
         if (status != relayShown) {
           if (!status->code.empty() && (!relayShown || relayShown->code != status->code))
-            log::Info("join code {} (relay {}:{})", net::DisplayJoinCode(status->code),
-                      config.relay, config.relayPort);
+            log::Info("join code {} (relay {}:{}, replica {})", net::DisplayJoinCode(status->code),
+                      config.relay, config.relayPort, status->at);
           if (!status->error.empty() && (!relayShown || relayShown->error != status->error))
             log::Warn("relay: {}", status->error);
           else if (status->state == net::RelayStatus::State::Ready &&
                    (!relayShown || relayShown->state != status->state))
             log::Info("relay: registered");
+          if (status->direct != (relayShown ? relayShown->direct : 0))
+            log::Info("relay: {} direct path(s) up", status->direct);
+          if (status->nat != (relayShown ? relayShown->nat : net::NatMapping::Unknown))
+            log::Info("relay: connection check: public {}{}, {}", status->publicAddress,
+                      status->portKept ? " (our own port)" : "",
+                      status->nat == net::NatMapping::Stable ? "direct connections likely"
+                                                             : "relay only (symmetric NAT)");
           runtime.SetRelay(status->code.empty() ? "" : net::DisplayJoinCode(status->code),
                            StatusText(*status));
+          runtime.SetRelayDetails({.kept = status->codeKept,
+                                   .check = std::string(net::DirectOutlook(*status)),
+                                   .direct = static_cast<std::int32_t>(status->direct)});
           relayShown = status;
         }
+      }
+      // The settings page's `direct`, and the co-op menu's New join code.
+      if (const bool direct = runtime.directOn; direct != directApplied) {
+        endpoint->SetDirect(direct);
+        directApplied = direct;
+      }
+      if (const auto asked = runtime.newCodeRequests.load(); asked != newCodesAsked) {
+        newCodesAsked = asked;
+        endpoint->NewRelayCode();
       }
 
       runtime.SetClockOffset(static_cast<std::int64_t>(endpoint->HostNowUs()) -
@@ -1039,10 +1088,13 @@ struct NetThread::Impl {
           endpoint->SendNpcReaction(*reaction);
         else if (const auto *hit = std::get_if<proto::PlayerHit>(&message);
                  hit && !endpoint->SendPlayerHit(*hit))
-          log::Info("hit on player {} dropped: not in the session, or not our NPC's", hit->player);
+          log::Info("hit on player {} dropped: not in the session, not our NPC's, or its game "
+                    "does not show it",
+                    hit->player);
         else if (const auto *shot = std::get_if<proto::NpcShotAt>(&message);
                  shot && !endpoint->SendNpcShotAt(*shot))
-          log::Info("shot at player {} dropped: not in the session, or not our NPC's",
+          log::Info("shot at player {} dropped: not in the session, not our NPC's, or its game "
+                    "does not show it",
                     shot->player);
         else if (const auto *report = std::get_if<proto::ShotHit>(&message))
           endpoint->SendShotHit(*report);
@@ -1193,6 +1245,13 @@ struct NetThread::Impl {
         } else if (const auto *use = std::get_if<proto::DeviceUse>(&message)) {
           endpoint->UseDevice(*use);
         }
+      }
+      for (auto &breach : runtime.TakeBreachOutbox()) {
+        log::Info("breach: ours of network {:x} ({:#x}), npc {}: {} daemon(s), {} trap(s), "
+                  "flags {:#x}",
+                  breach.entity, breach.cls, breach.npc, breach.programs.size(),
+                  breach.traps.size(), breach.flags);
+        endpoint->SendBreach(std::move(breach));
       }
       for (auto &message : runtime.TakeLootOutbox()) {
         if (auto *item = std::get_if<proto::WorldItem>(&message))

@@ -921,7 +921,9 @@ protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable
 @wrapMethod(MenuScenario_Vendor)
 protected cb func OnEnterScenario(prevScenario: CName, userData: ref<IScriptable>) -> Bool {
   let result = wrappedMethod(prevScenario, userData);
-  TandemMenus.Entered(5, n"vendor", false);
+  // A clothing store's or a ripperdoc's purchase may change what the
+  // others see: our look again on the way out (unchanged: sent to nobody).
+  TandemMenus.Entered(5, n"vendor", true);
   return result;
 }
 

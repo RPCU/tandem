@@ -6,6 +6,7 @@ add_test(NAME peer-flags COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_flags.sh" $<T
 add_test(NAME peer-replay COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_replay.sh" $<TARGET_FILE:tandem-peer>)
 add_test(NAME peer-play COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_play.sh" $<TARGET_FILE:tandem-peer>)
 add_test(NAME peer-devices COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_devices.sh" $<TARGET_FILE:tandem-peer>)
+add_test(NAME peer-breach COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_breach.sh" $<TARGET_FILE:tandem-peer>)
 add_test(NAME peer-interact COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_interact.sh" $<TARGET_FILE:tandem-peer>)
 add_test(NAME peer-regions COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_regions.sh" $<TARGET_FILE:tandem-peer>)
 add_test(NAME peer-street COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/peer_street.sh" $<TARGET_FILE:tandem-peer>)

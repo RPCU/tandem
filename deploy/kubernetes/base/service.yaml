@@ -1,26 +1,33 @@
-# Players reach the relay over UDP from the internet.
+# The fleet's entrance: the address players write in tandem.ini. A load
+# balancer over every ready replica's `front` port, which only answers
+# registrations and code lookups, each with a redirect to the replica that
+# takes it: no session's traffic goes through it, so a load balancer that
+# moves flows between replicas breaks nothing.
 apiVersion: v1
 kind: Service
 metadata:
   name: tandem-relay
 spec:
   type: LoadBalancer
-  # Keep the players' own addresses: the relay knows a client by its address
-  # and port, and rate-limits per client.
+  # Keep the players' own addresses: the relay limits code lookups per
+  # source.
   externalTrafficPolicy: Local
   ports:
     - name: game
       port: 27460
-      targetPort: game
+      targetPort: front
       protocol: UDP
 ---
-# Health and metrics stay inside the cluster.
+# Health and metrics stay inside the cluster. Headless: Prometheus scrapes
+# each replica (their counters are their own), and it names the
+# StatefulSet's pods.
 apiVersion: v1
 kind: Service
 metadata:
-  name: tandem-relay-metrics
+  name: tandem-relay-pods
 spec:
-  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
   ports:
     - name: http
       port: 8080

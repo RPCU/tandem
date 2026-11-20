@@ -55,6 +55,10 @@
 //                        ; check found (tandem/compat.hpp)
 //   friendly_fire = off  ; host: on, the Vs' hits (shots, blades, explosions) hurt
 //                        ; each other (proto::Rules, every game follows the host's)
+//   enemy_scaling = on   ; host: hostile NPCs are tougher for each extra player near
+//                        ; them (health, poise, armour; tandem/scaling.hpp, Rules)
+//   enemy_scaling_health = 0.6 ; host, advanced (ini only): the health added per
+//                        ; extra player, 0..2.5 (0.6: x1.6 for two, x2.2 for three)
 //   notices = all        ; important: no news (rides, calls, pauses...); minimal: only
 //                        ; what asks for an answer or went wrong
 //   markers = on         ; off: no marker for the other players (HUD, minimap, map)
@@ -75,10 +79,19 @@
 //                        ; (until you break it); ask, the partners you link with
 //                        ; (a request they accept); off, nobody
 //   pings = on           ; off: you neither send nor see pings
+//   relay = a, b, c      ; several relays: a host registers on the nearest (its
+//                        ; probes' round trip), a guest asks each for the code
+//   code = new           ; keep: the host's join code is the relay's kept one for
+//                        ; its token, the same every session (code_salt picks
+//                        ; which; the co-op menu's New code moves it on)
+//   direct = auto        ; through a relay: try a direct path to the other side
+//                        ; (hole punching, docs/architecture/relay.md), the relay
+//                        ; kept as the fallback; off: always through the relay
 
 #include "tandem/presence.hpp"
 #include "tandem/progress.hpp"
 #include "tandem/relay.hpp"
+#include "tandem/scaling.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -100,6 +113,14 @@ struct Config {
   std::uint16_t relayPort{net::kDefaultRelayPort};
   net::RelayToken relayToken{};
   std::string joinCode;
+  // More relays (`relay = a, b, c`): "name[:port]" each, after the first.
+  std::vector<std::string> relayMore;
+  // Through the relay: a direct path set up by its introductions (`direct`).
+  bool direct{true};
+  // Host: the relay's kept code for our token (`code = keep`), and its salt
+  // (the "new code" action moves it on and saves it).
+  bool keepCode{false};
+  std::uint32_t codeSalt{0};
   std::string name{"V"};
   std::string puppetFemale{"Character.TandemPuppetWa"};
   std::string puppetMale{"Character.TandemPuppetMa"};
@@ -137,6 +158,10 @@ struct Config {
   // The session's rule when we host (proto::Rules; the settings page edits it):
   // the Vs hurt each other.
   bool friendlyFire{false};
+  // Enemy scaling (scripts/tandem/Scaling.reds; the settings page edits the
+  // first): on, and the health added per extra player near an NPC.
+  bool enemyScaling{true};
+  float enemyScalingHealth{scaling::kHealthPerPlayer};
   std::string notices{"all"};
   bool markers{true};
   presence::Nameplates nameplates{presence::Nameplates::Near};

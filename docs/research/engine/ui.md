@@ -304,3 +304,76 @@ ignoreTransparent)` and `GetLookAtPosition` (`:108382`); the camera's
 - **Player colours on ink** (for the identity colour):
   `inkWidgetRef.SetTintColor(widget, HDRColor)`, as `polish` does for the
   marker's icon.
+
+### 13.80 Vendors: what the shop's screen is bound to, from a proxy (2026-11-19, read in final.reds, not run)
+
+Line numbers are `~/.cache/tandem/ref/gamescripts/vanilla/final.reds`
+(2.50). All [2.5-untested]: written into `scripts/tandem/Vendors.reds`
+(docs/architecture/progression.md, "Vendors"), not yet seen in game.
+§13.38.5 has the economy around it.
+
+- **The screen is bound to an entity, found by id.**
+  `UISystem.RequestVendorMenu(data: VendorPanelData, opt scenarioName)`
+  (`:50115`) takes `VendorPanelData.data: VendorData {vendorId: String,
+entityID, isActive}` (`:203110`). The only script caller is the drop
+  point (`DropPoint.OnOpenVendorUI`, `:202557`: its own record path and
+  entity id). It enters `MenuScenario_Vendor` (`:378671`):
+  `vendor_hub_menu`, then `fullscreen_vendor` (`OnSwitchToVendor`) or
+  `ripperdoc` (`OnSwitchToRipperDoc`); `OnVendorClose` (`:378716`) goes
+  back to idle.
+- `VendorHubMenuGameController` (`:387764`) takes the panel data in
+  `OnSetUserData` (`:387832`), wraps it in a `VendorUserData` and calls
+  `VendorDataManager.Initialize(player, entityID)`; it shows the
+  ripperdoc's tabs when `vendorObject.IsRipperdoc()` (`:387882`). The
+  trade screen (`FullscreenVendorGameController.OnSetUserData`,
+  `:403966`) and the ripperdoc's (`:226226`) do the same.
+  `VendorDataManager.Initialize(owner, entityID)` (`:230039`) is
+  `GameInstance.FindEntityByID` → `m_VendorObject`, then
+  `MarketSystem.GetVendorID(object)` (the character record's `VendorID()`,
+  `:130447`) and `MarketSystem.OnVendorMenuOpen(object)`. Nothing reads
+  `vendorId` but the drop point's: **the entity decides**, and it must be
+  in the world (a null object breaks the screen).
+- **The vendor is per entity, per save.** `MarketSystem.m_vendors` is
+  persistent (`:130219`), found by `GetVendorHashMap(EntityID)` (native,
+  `:130212`); `GetOrAddVendor` (`:130292`) adds one for any object whose
+  record has a vendor id (`AddVendor`, `:130308`: `SetPersistentID` of the
+  object). `OnRestored` (`:130234`) maps each back by the entity of its
+  persistent id. So a placed vendor (a static entity id, the same in every
+  game) is one vendor in each game's own save, and opening the screen on
+  **our own** entity of that id is our own stock, prices and sold items.
+  `Vendor.OnVendorMenuOpen` (`:130818`) counts a first ripperdoc visit (the
+  fact `number_of_ripperdocs_visited`, in our own quest system), fills the
+  vendor object's inventory from the stock (`FillVendorInventory`) and
+  rescales its items to our V's stats.
+- **The buyer is always our V.** `Vendor.PlayerCanBuy` (`:130878`) checks
+  each ware's generation and availability prereqs against `GetPlayer`
+  (the street cred gates); `GetItemsForSale(checkPlayerCanBuy)`
+  (`:130719`). `MarketSystem.IsAccessible(player, vendorID)` (`:130327`:
+  the vendor record's `AccessPrereqs`) has no caller in the scripts: the
+  scenes gate an NPC's shop natively. We ask it before we open one.
+- **A proxy would make a vendor in the save.** `NPCPuppet.OnGameAttached`
+  (`:125518`) calls `PrepareVendor` (`:125370`) for every NPC that is not
+  crowd: a queued `AttachVendorRequest` (its record's vendor id) that
+  `MarketSystem.OnAttachVendorRequest` (`:130471`) answers with
+  `GetOrAddVendor(owner)`. For a tandem proxy (a dynamic entity) that is a
+  new persistent entry under a dynamic id at every spawn.
+  `OnDeattachVendorRequest` (`:130476`, from `RemoveVendor` on detach) also
+  goes through `GetOrAddVendor`, so a detach of an entity that never had a
+  vendor makes one. Both are private methods of a scriptable system: a
+  `@wrapMethod` skips them for our proxies (the dynamic entity system's tag
+  `Tandem.Proxy`, Codeware `DynamicEntitySystem.IsTagged`) and for a
+  dynamic entity with no vendor on detach.
+- **What a vendor NPC is.** `ScriptedPuppet.IsVendor()` (`:20861`) and
+  `GetVendorType()` (`:20869`) read the character record's `VendorID()`;
+  the vendor record's `LocalizedName()` is the shop's name.
+- **Vending machines are the buyer's world.** `VendingMachine.OnDispenceItemFromVendor`
+  (`:201573`) checks `GetPlayer`'s money; `MarketSystem.OnDispenseRequest`
+  (`:130531`) takes the price from `GetPlayer` and the vendor drops the
+  item in front of the machine with `LootManager.SpawnItemDrop`
+  (`:131602`): an item drop of that game's world, for that game's V. Their
+  vendors are not saved (`m_vendingMachinesVendors`, `:130220`).
+- To see in game: the screen opening on a hidden, brain-off copy of the
+  vendor (its inventory filled while hidden); a ripperdoc's tabs; that no
+  vendor entry appears for a proxy (the list's size before and after a
+  session, `cmd vendor`); `IsAccessible` for a vendor the save has not
+  reached.

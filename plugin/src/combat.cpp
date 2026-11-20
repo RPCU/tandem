@@ -58,6 +58,31 @@ proto::Lend Combat::LendOf(proto::PlayerId player) {
   return it == m_lends.end() ? proto::Lend::Crew : it->second;
 }
 
+void Combat::NoteVendor(const proto::NpcVendor &vendor) {
+  std::lock_guard _(m_lock);
+  m_vendors.Note(vendor);
+}
+
+std::uint64_t Combat::VendorOf(proto::NpcId npc) {
+  std::lock_guard _(m_lock);
+  return m_vendors.EntityOf(npc);
+}
+
+bool Combat::VendorDead(std::uint64_t entity) {
+  std::lock_guard _(m_lock);
+  return m_vendors.Dead(entity);
+}
+
+std::vector<std::uint64_t> Combat::TakeDeadVendors() {
+  std::lock_guard _(m_lock);
+  return m_vendors.TakeDead();
+}
+
+void Combat::ClearVendors() {
+  std::lock_guard _(m_lock);
+  m_vendors.Clear();
+}
+
 void Combat::Send(proto::Message message) {
   std::lock_guard _(m_lock);
   if (m_outbound.size() < kMaxQueued)

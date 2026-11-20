@@ -247,6 +247,25 @@ public native struct TandemRegroup {
   native let accepted: Bool;
 }
 
+public native struct TandemBreachEvent {
+  // 1 another player's breach for our game to apply, 2 the host's answer to ours
+  native let kind: Int32;
+  // 1: into the last TakeBreachEvents' daemons (BreachPrograms, BreachTraps)
+  native let index: Int32;
+  // 1: the breacher; 2: who breached it (granted: us)
+  native let player: Uint32;
+  // the access point (none: an NPC's own squad)
+  native let entity: EntityID;
+  // its persistent state's class
+  native let cls: CName;
+  // the NPC breached through the quickhack (0: none)
+  native let npc: Uint32;
+  // 1 remote (the quickhack), 2 lost, 4 granted: apply it
+  native let flags: Int32;
+  // 2: 0 granted, 1 breached already, 2 the record is full
+  native let verdict: Int32;
+}
+
 public native struct TandemDeviceEvent {
   // 1 (guest) the host's word, 2 (host) a guest asks what it is, 3 (host) a
   // guest made it this, 4 (guest) the host sends its record again
@@ -407,6 +426,13 @@ public native class TandemNative extends IScriptable {
   public static native func UseDevice(entity: EntityID, cls: CName, status: Int32, flags: Int32, value: Int32)
   public static native func AskDevice(entity: EntityID, cls: CName, status: Int32, flags: Int32, value: Int32)
   public static native func TakeDeviceEvents() -> array<TandemDeviceEvent>
+  // Breach Protocol (Breach.reds): our V's breach (npc: through the
+  // quickhack, 0: a network; player: host only, the breacher of an NPC our
+  // game resolved to its network, 0: ours), and what the session says.
+  public static native func SendBreach(entity: EntityID, cls: CName, npc: Uint32, programs: array<TweakDBID>, traps: array<TweakDBID>, flags: Int32, player: Uint32)
+  public static native func TakeBreachEvents() -> array<TandemBreachEvent>
+  public static native func BreachPrograms(index: Int32) -> array<TweakDBID>
+  public static native func BreachTraps(index: Int32) -> array<TweakDBID>
   public static native func You() -> Uint32
   public static native func SendVitals(life: Int32, flags: Int32)
   public static native func OtherPlayers() -> array<Uint32>
@@ -509,6 +535,14 @@ public native class TandemNative extends IScriptable {
   // code, or no relay in tandem.ini; starts now, or with the next game).
   public static native func RelayCode() -> String
   public static native func RelayStatus() -> String
+  // The host's code is its kept one (the same next session); another code
+  // now (false: not hosting through a relay); the connection check
+  // ("direct": direct connections likely, "relay": relay only, "" not
+  // known); the direct paths up (host: its guests'; guest: 0 or 1).
+  public static native func RelayCodeKept() -> Bool
+  public static native func RelayNewCode() -> Bool
+  public static native func RelayCheck() -> String
+  public static native func RelayDirect() -> Int32
   public static native func JoinByCode(code: String) -> Bool
   public static native func RecordStart(name: String) -> Bool
   public static native func RecordStop()

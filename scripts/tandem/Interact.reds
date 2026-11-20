@@ -497,7 +497,7 @@ public class TandemInteract {
     }
     let object: ref<GameObject>;
     if Equals(kind, "device") {
-      object = TandemDevices.Get(this.m_game).NearestObject("any", 6.0);
+      object = TandemDevices.Get(this.m_game).NearestOf("any", 6.0);
     } else {
       object = GameInstance.GetTargetingSystem(this.m_game).GetLookAtObject(player, false, false);
     }

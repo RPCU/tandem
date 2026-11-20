@@ -57,7 +57,8 @@ task touches ([Topic files](#topic-files)).
   redscript, `r6/scripts/tandem` (UI, events).
 - **Linux**: `tandem-peer` (`peer/`), the mock player, on the same `core/`.
 - **Kubernetes**: `tandem-relay` (`relay/`, Go), which forwards opaque
-  datagrams.
+  datagrams: a share-nothing fleet of replicas, each owning its sessions
+  and its shard of join codes.
 - Games and mock players talk UDP, direct or through the relay.
 
 <!-- prettier-ignore -->
@@ -67,9 +68,9 @@ task touches ([Topic files](#topic-files)).
 | `plugin/` | the RED4ext plugin (`tandem.dll`, Windows x64): entry points, config, net thread; `report/`: `tandem-report.exe`, the bug report without the game | `windows` preset (clang-cl) |
 | `peer/` | `tandem-peer`, the mock player (Linux); `peer/sim/`: the simulated second game (`tandem_sim`: referee, world, story, V, personas, coverage) | `linux` preset |
 | `tests/` | doctest unit and loopback tests of `core/` (Linux) | `linux` preset |
-| `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay` | Go / `nix/relay.nix` |
+| `relay/` | `tandem-relay`, NAT fallback (Go, stdlib only): `cmd/tandem-relay`, `internal/relay`; `Dockerfile`: the image without Nix | Go / `nix/relay.nix` / `docker build relay/` |
 | `nix/`, `default.nix` | relay package and OCI image; redscript (the game's scc, built for Linux) | `nix-build -A relayImage` |
-| `deploy/kubernetes/base` | kustomize base for the relay | `task k8s:check` |
+| `deploy/kubernetes/base` | kustomize base for the relay; `kgateway/`: the base with kgateway in front of its HTTP side; `playit/`: reached through playit.gg tunnels (the agent as a sidecar, PROXY v2) | `task k8s:check` |
 | `deploy/systemd` | `tandem-relay.service`, the relay on a plain server (`docs/relay.md`) | — |
 | `scripts/` | redscript, installed to `r6/scripts/tandem`. Each natives file mirrors one of `plugin/src/`: `Natives.reds` `natives.cpp`, `StoryNatives.reds` `story_natives.cpp`, `CombatNatives.reds` `combat_natives.cpp`, `SyncNatives.reds` `sync_natives.cpp`, `ElsewhereNatives.reds` `elsewhere_natives.cpp`, `RegionNatives.reds` `region_natives.cpp`, `StreetNatives.reds` `street_natives.cpp`, `PresenceNatives.reds` `presence_natives.cpp`, `ActivityNatives.reds` `activity_natives.cpp`, `ProgressNatives.reds` `progress_natives.cpp`, `TradeNatives.reds` `trade_natives.cpp`, `CommsNatives.reds` `comms_natives.cpp` | `task scripts:check`, `task natives:check` |
 | `tweaks/` | TweakXL records, installed to `r6/tweaks/tandem` (the puppet records, their attitude groups, the player marker, the ping marker) | — |
@@ -78,6 +79,8 @@ task touches ([Topic files](#topic-files)).
 | `docs/` | this core; `architecture/`: one file per subsystem; `relay.md` (operating a relay), `playtest.md` (the first two-machine session); `research/`: engine facts with sources, design research, `data/` (RTTI and skeleton dumps) | `task docs:check` |
 | `tools/` | `game.sh` (drive the game), `scenario.sh` + `scenarios/` (in-game tests), `build.sh` and `remote.sh` (build here or on the game machine), `check-natives.py`, `check-strings.py`, `scripts-check.sh`, `docs-check.py`, `docs-tables.py`, `package.py` (`task package`), `re/` (read-only reverse engineering, see its README), `pilot/` (the test pilot that plays our V: `architecture/autopilot.md`) | — |
 | `vendor/` | git submodules: RED4ext.SDK, RedLib, ENet, zpp_bits, doctest | — |
+| `.github/workflows/` | CI on GitHub: `ci.yaml` (Go vet and race tests of `relay/` and `tools/pilot/`, `k8s:check`, the Linux core tests with GCC 14, docs links, natives, strings), `linting.yaml` (gofumpt, golines), `nix-build.yaml` (the Nix relay and image), `image.yaml` (pushes `zot.rpcu.io/public/tandem-relay`). Not in CI: the plugin (needs the xwin sysroot) and `scripts:check` (needs the game's scripts) | GitHub Actions |
+| `LICENSE`, `NOTICE` | tandem's licence (MIT) and the third-party code and credits | `task package` ships both |
 
 The build is Linux-only: the plugin is cross-compiled with clang-cl and
 lld-link against the MSVC CRT and Windows SDK that `xwin` downloads. No
@@ -88,7 +91,9 @@ shared hooks (treefmt with clang-format, nixfmt, prettier, gofumpt, shfmt;
 shellcheck) come from `npins` → `nixbook/devenvModules/devenv.nix`. The
 Windows sysroot (MSVC CRT + Windows SDK 10.0.22621) lives in `$TANDEM_XWIN`
 (default `~/.cache/tandem/xwin`); `task sysroot` fetches it. SDK 10.0.26100
-does not work with xwin.
+does not work with xwin. ccache sits in front of every compile, one cache
+per machine for all worktrees (`architecture/testing.md`, "The compiler
+cache").
 
 ## Session and transport
 
@@ -129,6 +134,7 @@ The owner simulates; everyone else displays.
 | a V: appearance, equipment, cyberware | that player's game | applied on the puppet when it changes |
 | a V: health, death, downed | that player's game | shown; revives are requests to the owner |
 | a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level |
+| a shop: a vendor's stock, prices, sold items (vendors, ripperdocs, vending machines) | each player's game (save) | the vendor NPC is the world's; beside a partner's vendor, our own game's vendor of the same placed NPC opens; one killed in the session is hidden everywhere (`architecture/progression.md`) |
 | a vehicle someone drives | the driver's game | puppet vehicle, passengers mounted |
 | a player's garage (owned cars, unlocks) | that player's game (save) | a partner may drive one by its owner's word (`lend`); the garage stays the owner's (`architecture/garage.md`) |
 | a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game | copy, riders and NPCs seated; host's scene: a seat or a ride along |
@@ -147,7 +153,8 @@ The owner simulates; everyone else displays.
 | NPC shots at a V | the V's game | host's NPC decides to fire; `architecture/time.md` |
 | NPC melee at a V: whether it is blocked, parried, dodged | the V's game, at its proxy's swing | host's NPC decides to attack and recoils; `architecture/combat-coverage.md` |
 | a thrown object (grenade, knife, launcher round, smart round) | the thrower's game | a copy from the puppet that hurts nobody, ended where the real one ended |
-| the session's rules (friendly fire) | host (`tandem.ini`) | followed |
+| the session's rules (friendly fire, enemy scaling) | host (`tandem.ini`) | followed |
+| an NPC's scaling for the players near it (health, poise, armour) | the NPC's owner, by the host's rule | proxies carry the same modifiers (`NpcScale`; `architecture/npcs.md`) |
 | loot: corpses and containers | each player's game | rolled per player: each loots their own copy |
 | items a V drops on purpose | host | lie in every game; the first pickup keeps it |
 | a V's pings, tags, link consent, waypoint | that player's game | shown; tags only to players linked with it (`architecture/comms.md`) |
@@ -156,7 +163,8 @@ The owner simulates; everyone else displays.
 | a guest's use of the host's objects while grouped (a quest switch, an objective item, a quest container, a terminal) | host's game: judged from its own data, done by its V on its own copy, first come first served | asks; its own copy does it at once for feel (not what would cast its V); a choice that casts the doer is host-only, greyed "NAME must do this"; apart, or on its own things: its own, as solo (`architecture/story.md`, "Quest interactions") |
 | what a guest did in co-op (the ledger) | the guest's game (save) | never shared: quests taken part in, rewards paid once, vehicles earned |
 
-Enemy level (the mean of the players' levels): `architecture/npcs.md`.
+Enemy level (the mean of the players' levels) and enemy scaling (tougher
+for each extra player near, its damage never): `architecture/npcs.md`.
 
 Vehicle combat follows the same rule, the game that simulates a vehicle owns it, its damage included (a car its driver left is still that driver's; a gunner seat is given by the vehicle's owner): [`architecture/vehicle-combat.md`](architecture/vehicle-combat.md).
 
@@ -289,7 +297,7 @@ plugin") and its open problems.
 - `vehicle-combat.md`: vehicle damage and destruction, shooting from vehicles and mounted weapons, a guest on another player's gun, collisions (players' cars, rams on NPCs), NPC vehicle chases, bikes, bailing out and being thrown out.
 - `world.md`: time of day and weather; open: the guest acting on the world, NCPD chases, saves.
 - `time.md`: the pause menu, slowed time (time bubbles, the scanner's bubble); open: what the partner lives with when a V scans (mitigations to decide), every time dilation, other timeline and menu, NPC shots simulated by the target's game.
-- `npcs.md`: enemy level, NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
+- `npcs.md`: enemy level, enemy scaling (the count of players near, the multipliers, the host's rule), NPC proxies, NPC animation, attitudes towards a remote V; open: suppressing a guest's own simulation.
 - `regions.md`: per-player regions: links and their hysteresis, who owns an NPC, hand-over without a pop, what travels where, crowd density in the overlap, late joiners and vanishing owners, grouped or apart and holding a region for gigs, the area owner (traffic). For anything about an NPC's owner.
 - `combat.md`: hits, outcomes, game rules for every hit, quickhacks.
 - `combat-coverage.md`: every way of fighting (weapon classes, melee, block and parry, throwables, grenades, launchers, cyberware, quickhacks, environment, finishers) by attacker and target, with its state and evidence; thrown objects' copies, friendly fire, NPC melee at a guest, companions.
@@ -310,7 +318,7 @@ plugin") and its open problems.
 - `strings.md`: every player-facing text (the inventory), the keyed table in English and French (`Text.reds`, Codeware's localization; ArchiveXL weighed), notices, input hints through the game's own bindings, the lint (`task strings:check`).
 - `travel.md`: fast travel together, regroup; region authority: `regions.md`.
 - `comms.md`: pings (the tag key outside the scanner), the link and what it shares (scanner tags, Ping reveals; `link = auto|ask|off`), waypoints, the danger callout; why no emotes, and no text chat (not wanted, the user's decision); the consistency of each.
-- `relay.md`: the relay's sessions, join codes, abuse limits, wire format, deployment, the game side.
+- `relay.md`: the relay's sessions, join codes, abuse limits, replicas (sharding, redirects, the entrance, drain, restarts), the packet path, wire format, deployment, the game side (a relay that goes silent is held through).
 - `testing.md`: test levels, scenarios, every `tandem-peer` mode and flag.
 - `recordings.md`: NPC record and replay, gameplay recordings (`.tplay`), recorded host sessions (`.tsession`), the recorder (`recorder = on`: play recorded as it happens, solo or in a session), the planned simulated second game.
 - `two-instances.md`: two real games on the game machine (tried 2026-11-19: they play a session over loopback; a guest froze once, starts under load trip the engine's watchdog): results and measurements, findings, the setup (`tools/instance.sh`: a game folder and a prefix per instance, outside Steam, sandboxed off the player's files), the first-try checklist; the plugin's `TANDEM_CONFIG`, `TANDEM_CMD`, `TANDEM_PORT`, `TANDEM_LOG` (`core/include/tandem/instance.hpp`).

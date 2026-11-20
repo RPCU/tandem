@@ -31,7 +31,8 @@
 //           stands --region-far metres from your V with --region-npcs NPCs it
 //           runs itself (announced, moved, hurt and killed by this process),
 //           walks up to your V --region-walk-at seconds in (its NPCs with
-//           it), and off again at --region-leave-at, leaving them with you:
+//           it), and off again at --region-leave-at (or --region-leave-linked
+//           seconds after it is up by you and knows it is linked), leaving them with you:
 //           the host then hands them over. It gives and takes NPCs as a game
 //           would, and logs every step ("region: ...")
 //   course  runs a scripted course ahead of your V, every way a V moves:
@@ -81,6 +82,10 @@
 // is), --device-answer WORDS changes back, --device-after seconds later,
 // every device another player just changed. A host has no world of its
 // own: a guest's request is taken as said. What it hears is logged.
+// Breach Protocol (devices.md, "Breach Protocol"): --breach SPEC breaches
+// an access point (ENTITY[:CLASS]) or an NPC (npc=N) with --programs, as a
+// won minigame would; --breach-failed loses it instead. What it hears (the
+// host's answer, other players' breaches it would apply) is logged.
 // Quest interactions (docs/architecture/story.md, "Quest interactions"):
 // --interact ENTITY:CHOICE[:DETAIL][@S] has a guest's V use the host's
 // object (asks the host; the verdict is logged, and a second ask of a
@@ -141,6 +146,7 @@
 
 #include "tandem/net_traffic.hpp"
 #include "tandem/regions.hpp"
+#include "tandem/scaling.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -205,7 +211,12 @@ struct Options {
   std::optional<int> difficulty;    // host: the session's gameDifficulty
   int areaHitSeconds{0};            // our "grenade" hits every other V this often (0: never)
   std::optional<bool> friendlyFire; // host: the session's rule (unset: none sent)
-  int throwSeconds{0};              // our V throws a grenade this often (0: never)
+  // host: enemy scaling, the session's rule (unset: none sent), and its health
+  // per extra player; join: stand beside one of the host's NPCs.
+  std::optional<bool> enemyScaling;
+  float enemyScalingHealth{tandem::scaling::kHealthPerPlayer};
+  bool nearNpc{};
+  int throwSeconds{0};                               // our V throws a grenade this often (0: never)
   std::string throwItem{"Items.GrenadeFragRegular"}; // --throw: what
   int smartSeconds{0};  // our V fires a smart round at an NPC this often (0: never)
   int defendSeconds{0}; // join: we parry, then block, an NPC's attack this often
@@ -317,6 +328,13 @@ struct Options {
   // said), and (host) a vehicle our quest "gives" while the guests take part.
   int lend{-1};
   std::string unlockVehicle;
+  // Vendors (docs/architecture/progression.md): (host) one vendor NPC of
+  // this record standing there, announced with that placed entity (0: none),
+  // and when it dies after a guest is there (-1: never).
+  std::string vendorRecord;
+  Vec3 vendorAt{};
+  std::uint64_t vendorEntity{};
+  int vendorDiesSeconds{-1};
   // Trade (docs/architecture/trade.md): ask the first other player (again
   // every 20 s until one trade is done); accept whoever asks; what we put
   // on the table (RECORD[:N],...), the eddies we give and ask for. We agree
@@ -337,6 +355,8 @@ struct Options {
   std::string regionRecord{"Character.kab_tyger_claws_biker1_ranged1_saratoga_ma"};
   int regionWalkAtSeconds{10};
   int regionLeaveAtSeconds{-1};
+  // ...or this long after our own endpoint says we are linked (-1: never).
+  int regionLeaveLinkedSeconds{-1};
   float regionSpeed{25.f};
   bool check{}; // parse the options, then exit
   // Down and out: our V goes down (revivable) or out N s after another player
@@ -355,6 +375,16 @@ struct Options {
   std::vector<DeviceOrder> devices;
   std::string deviceAnswer;
   int deviceAfterSeconds{3};
+  // Breach Protocol: what to breach and when (--breach), with which daemons.
+  struct BreachOrder {
+    std::uint64_t entity{}, cls{};
+    std::uint32_t npc{};
+    int atSeconds{5};
+    bool done{};
+  };
+  std::optional<BreachOrder> breach;
+  std::vector<std::uint64_t> breachPrograms;
+  bool breachFailed{};
   // Quest interactions: the uses to ask about (--interact), and what our
   // game answers as a host (--interact-answer; -1: no answer at all).
   struct InteractOrder {
@@ -366,7 +396,8 @@ struct Options {
   int interactAnswer{tandem::proto::kInteractLocal};
   // Faults on what we send (docs/architecture/consistency.md, Consistency).
   float drop{}, dup{};
-  int vanishAtSeconds{-1}; // end without a goodbye this long into the session (-1: never)
+  std::uint32_t faultSeed{}; // 0: a new one each run (logged)
+  int vanishAtSeconds{-1};   // end without a goodbye this long into the session (-1: never)
   // The street (docs/architecture/traffic.md). Host: this many cars driving
   // round the guest, one more parked, of this record; the first one burns
   // and blows up this long in (-1: never). Guest: ram a shared vehicle this
@@ -479,6 +510,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --region-walk-at S region: walk up to the other V this long in (default 10;\n"
          "                     -1: stay away)\n"
          "  --region-leave-at S region: walk off again, leaving the NPCs (default -1: never)\n"
+         "  --region-leave-linked S region: walk off S seconds after our endpoint says we\n"
+         "                     are linked (the host's Regions reached us: our NPCs' states\n"
+         "                     flow), whatever the clock says\n"
          "  --region-speed V   region: how fast it walks, m/s (default 25)\n"
          "  --name NAME        player name (default tandem-peer)\n"
          "  --body B           female | male: the puppet rig others see (default female)\n"
@@ -530,6 +564,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --area-hit N       every N seconds our \"grenade\" hits every other player's V for\n"
          "                     20 physical (an explosion, applied by their game)\n"
          "  --friendly-fire X  host: the session's rule, on | off (the Vs hurt each other)\n"
+         "  --enemy-scaling X  host: the session's rule, on | off (hostile NPCs tougher for\n"
+         "                     each extra player near them)\n"
+         "  --enemy-scaling-health F  host: --enemy-scaling's health per extra player (0.6)\n"
+         "  --near-npc         join: stand 4 m from one of the host's NPCs (the one heard\n"
+         "                     first that is still there): it counts us near it\n"
          "  --throw N          every N seconds our V throws a grenade (--throw-item) 10 m\n"
          "                     ahead; it explodes 2 s later (the others launch a copy)\n"
          "  --throw-item REC   --throw: the grenade's record (Items.GrenadeFragRegular)\n"
@@ -650,6 +689,13 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --device-answer W  every device another player changes is made WORDS (as above)\n"
          "                     --device-after seconds later\n"
          "  --device-after N   see --device-answer (3)\n"
+         "  --breach SPEC      Breach Protocol won, SPEC = ENTITY[:CLASS][@SECONDS] (an access\n"
+         "                     point by its id in hex; CLASS AccessPointControllerPS) or\n"
+         "                     npc=N[@SECONDS] (the quickhack on NPC N); SECONDS into the\n"
+         "                     session (5)\n"
+         "  --programs LIST    --breach: the daemons uploaded, MinigameAction records by name\n"
+         "                     or hex, comma separated (NetworkCameraShutdown,...)\n"
+         "  --breach-failed    --breach: the minigame is lost (the network is alerted)\n"
          "  --interact SPEC    a guest's V uses the host's object, SPEC =\n"
          "                     ENTITY:CHOICE[:DETAIL][@SECONDS]: ENTITY in hex, CHOICE the\n"
          "                     action's class (or loot action) by name or 0x hash, DETAIL\n"
@@ -672,6 +718,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     owner (only with us aboard), never\n"
          "  --unlock-vehicle REC host: 5 s after a guest is there, our garage \"gets\" REC:\n"
          "                     each guest is told it earned it with us (VehicleUnlock)\n"
+         "  --vendor REC@X,Y,Z#ENTITY host: a vendor NPC of REC standing at X,Y,Z, said to be\n"
+         "                     the placed vendor ENTITY (hex, as `vendor near` logs it):\n"
+         "                     a guest opens its own game's vendor of it (NpcVendor)\n"
+         "  --vendor-dies N    host, --vendor: it dies N s after a guest is there (every\n"
+         "                     game hears that vendor died)\n"
          "  --trade-offer      ask the first other player to trade, every 20 s until one\n"
          "                     trade is done; we agree once they do\n"
          "  --trade-accept     accept whoever asks us to trade; we agree once they do\n"
@@ -698,6 +749,7 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     too, as a bug would lose them: digests and resyncs must heal it\n"
          "  --dup P            send a state message twice with probability P (0..1): it must\n"
          "                     be applied once\n"
+         "  --fault-seed N     the seed of --drop and --dup (default: a new one, logged)\n"
          "  --metro-at N       metro: board the NCART N seconds after another player is in\n"
          "                     (default 5): it stands beside your V until then\n"
          "  --metro-for N      metro: ride for N seconds (default 40), skipping (ten times\n"
@@ -842,6 +894,61 @@ Options::DeviceOrder DeviceOrderOf(std::string_view spec) {
   if (order.words.empty() || !DeviceWords(order.words, probe))
     Usage(std::format("--device: unknown state in {}", words));
   return order;
+}
+
+// --breach ENTITY[:CLASS][@SECONDS] | npc=N[@SECONDS]
+Options::BreachOrder BreachOrderOf(std::string_view spec) {
+  Options::BreachOrder order;
+  if (const auto at = spec.find('@'); at != std::string_view::npos) {
+    order.atSeconds = Number<int>(spec.substr(at + 1));
+    spec = spec.substr(0, at);
+  }
+  if (spec.starts_with("npc=")) {
+    order.npc = Number<std::uint32_t>(spec.substr(4));
+    if (order.npc == 0)
+      Usage("--breach: npc=N names an NPC by its session id");
+    return order;
+  }
+  const auto colon = spec.find(':');
+  auto entity = spec.substr(0, colon);
+  if (entity.starts_with("0x"))
+    entity.remove_prefix(2);
+  if (std::from_chars(entity.data(), entity.data() + entity.size(), order.entity, 16).ptr !=
+          entity.data() + entity.size() ||
+      order.entity == 0)
+    Usage(std::format("--breach: {} is not an entity id in hex", entity));
+  order.cls = CName(colon == std::string_view::npos ? std::string_view("AccessPointControllerPS")
+                                                    : spec.substr(colon + 1));
+  return order;
+}
+
+// --programs A,B: records by name (MinigameAction. optional) or in hex.
+std::vector<std::uint64_t> ProgramsOf(std::string_view list) {
+  std::vector<std::uint64_t> programs;
+  std::size_t start = 0;
+  while (start <= list.size()) {
+    const auto comma = list.find(',', start);
+    auto name = list.substr(start, comma == std::string_view::npos ? comma : comma - start);
+    if (!name.empty()) {
+      std::uint64_t id{};
+      if (name.starts_with("0x")) {
+        if (std::from_chars(name.data() + 2, name.data() + name.size(), id, 16).ptr !=
+            name.data() + name.size())
+          Usage(std::format("--programs: {} is not a record id", name));
+      } else {
+        id = TweakDBID(name.find('.') == std::string_view::npos
+                           ? std::format("MinigameAction.{}", name)
+                           : std::string(name));
+      }
+      programs.push_back(id);
+    }
+    if (comma == std::string_view::npos)
+      break;
+    start = comma + 1;
+  }
+  if (programs.size() > tandem::proto::kMaxBreachPrograms)
+    Usage(std::format("--programs: at most {} daemons", tandem::proto::kMaxBreachPrograms));
+  return programs;
 }
 
 // A CName by name, or by its hash as the logs print it (0x...).
@@ -998,12 +1105,20 @@ Options Parse(int argc, char **argv) {
       options.scene = true;
       continue;
     }
+    if (flag == "--near-npc") {
+      options.nearNpc = true;
+      continue;
+    }
     if (flag == "--trade-offer") {
       options.tradeOffer = true;
       continue;
     }
     if (flag == "--trade-accept") {
       options.tradeAccept = true;
+      continue;
+    }
+    if (flag == "--breach-failed") {
+      options.breachFailed = true;
       continue;
     }
     if (flag == "--traffic-report") {
@@ -1057,7 +1172,9 @@ Options Parse(int argc, char **argv) {
       if (!(p >= 0.f && p <= 1.f))
         Usage(std::format("{} is a probability (0..1), not {}", flag, value));
       (flag == "--drop" ? options.drop : options.dup) = p;
-    } else if (flag == "--hack-npcs")
+    } else if (flag == "--fault-seed")
+      options.faultSeed = Number<std::uint32_t>(value);
+    else if (flag == "--hack-npcs")
       options.hackNpcsSeconds = Number<int>(value);
     else if (flag == "--hack-action")
       options.hackAction = std::string(value);
@@ -1084,6 +1201,10 @@ Options Parse(int argc, char **argv) {
       options.deviceAnswer = std::string(value);
     } else if (flag == "--device-after")
       options.deviceAfterSeconds = Number<int>(value);
+    else if (flag == "--breach")
+      options.breach = BreachOrderOf(value);
+    else if (flag == "--programs")
+      options.breachPrograms = ProgramsOf(value);
     else if (flag == "--interact")
       options.interacts.push_back(InteractOrderOf(value));
     else if (flag == "--interact-answer")
@@ -1105,6 +1226,23 @@ Options Parse(int argc, char **argv) {
       options.lend = static_cast<int>(named - std::begin(names));
     } else if (flag == "--unlock-vehicle")
       options.unlockVehicle = std::string(value);
+    else if (flag == "--vendor") {
+      // REC@X,Y,Z#ENTITY
+      const auto at = value.find('@');
+      const auto hash = value.find('#');
+      if (at == std::string_view::npos || hash == std::string_view::npos || hash < at || at == 0)
+        Usage("--vendor is REC@X,Y,Z#ENTITY");
+      options.vendorRecord = std::string(value.substr(0, at));
+      options.vendorAt = Point(flag, value.substr(at + 1, hash - at - 1));
+      auto entity = value.substr(hash + 1);
+      if (entity.starts_with("0x"))
+        entity.remove_prefix(2);
+      if (std::from_chars(entity.data(), entity.data() + entity.size(), options.vendorEntity, 16)
+                  .ptr != entity.data() + entity.size() ||
+          options.vendorEntity == 0)
+        Usage(std::format("--vendor: {} is not an entity id in hex", entity));
+    } else if (flag == "--vendor-dies")
+      options.vendorDiesSeconds = Number<int>(value);
     else if (flag == "--trade-give")
       options.tradeGive = std::string(value);
     else if (flag == "--trade-money")
@@ -1157,6 +1295,18 @@ Options Parse(int argc, char **argv) {
         options.friendlyFire = false;
       else
         Usage(std::format("--friendly-fire: on or off, not {}", value));
+    } else if (flag == "--enemy-scaling") {
+      if (value == "on")
+        options.enemyScaling = true;
+      else if (value == "off")
+        options.enemyScaling = false;
+      else
+        Usage(std::format("--enemy-scaling: on or off, not {}", value));
+    } else if (flag == "--enemy-scaling-health") {
+      options.enemyScalingHealth = Number<float>(value);
+      if (!(options.enemyScalingHealth >= 0.f) ||
+          options.enemyScalingHealth > tandem::scaling::kMaxHealthPerPlayer)
+        Usage("--enemy-scaling-health is 0 to 2.5");
     } else if (flag == "--throw")
       options.throwSeconds = Number<int>(value);
     else if (flag == "--throw-item")
@@ -1179,6 +1329,8 @@ Options Parse(int argc, char **argv) {
       options.regionWalkAtSeconds = Number<int>(value);
     else if (flag == "--region-leave-at")
       options.regionLeaveAtSeconds = Number<int>(value);
+    else if (flag == "--region-leave-linked")
+      options.regionLeaveLinkedSeconds = Number<int>(value);
     else if (flag == "--region-speed")
       options.regionSpeed = std::max(0.1f, Number<float>(value));
     else if (flag == "--detect-at")
@@ -2531,6 +2683,7 @@ public:
   std::uint64_t m_regionStartUs{}, m_regionLastUs{};
   float m_regionX{};
   bool m_regionLeaving{};
+  std::uint64_t m_regionLinkedUs{}, m_regionArrivedUs{};
   // --path: the saved states to replay.
   void SetPath(std::vector<PlayerState> path) { m_path = std::move(path); }
 
@@ -2585,8 +2738,17 @@ public:
       m_regionX = m_options.regionFar;
     }
     const auto seconds = static_cast<double>(nowUs - m_regionStartUs) / 1e6;
+    // Once leaving, for good (walking off unlinks us).
+    const bool wasLeaving = m_regionLeaving;
     m_regionLeaving =
-        m_options.regionLeaveAtSeconds >= 0 && seconds >= m_options.regionLeaveAtSeconds;
+        m_regionLeaving ||
+        (m_options.regionLeaveAtSeconds >= 0 && seconds >= m_options.regionLeaveAtSeconds) ||
+        (m_options.regionLeaveLinkedSeconds >= 0 && m_regionLinkedUs != 0 &&
+         m_regionArrivedUs != 0 &&
+         nowUs - std::max(m_regionLinkedUs, m_regionArrivedUs) >=
+             static_cast<std::uint64_t>(m_options.regionLeaveLinkedSeconds) * 1'000'000);
+    if (m_regionLeaving && !wasLeaving)
+      Log("region: walking off, leaving our NPCs where they are");
     const bool near = !m_regionLeaving && m_options.regionWalkAtSeconds >= 0 &&
                       seconds >= m_options.regionWalkAtSeconds;
     const float goal = near ? std::min(8.f, m_options.regionFar) : m_options.regionFar;
@@ -2597,6 +2759,9 @@ public:
       m_regionX = std::max(goal, m_regionX - step);
     else
       m_regionX = std::min(goal, m_regionX + step);
+    // Up by the other V (--region-leave-linked counts from then).
+    if (near && m_regionX == goal && m_regionArrivedUs == 0)
+      m_regionArrivedUs = nowUs;
     PlayerState out;
     out.position = {m_regionAnchor->x + m_regionX, m_regionAnchor->y, m_regionAnchor->z};
     if (m_regionX != before)
@@ -2608,6 +2773,13 @@ public:
   }
   // region: we are walking off (our NPCs stay where they are).
   bool RegionLeaving() const { return m_regionLeaving; }
+  // region: our endpoint says we are linked with someone (or no longer).
+  void SetRegionLinked(bool linked, std::uint64_t nowUs) {
+    if (!linked)
+      m_regionLinkedUs = 0;
+    else if (m_regionLinkedUs == 0)
+      m_regionLinkedUs = nowUs;
+  }
 
   // watch: where the other V is, 30 m under it (or --offset): out of
   // sight, out of every NPC's reach, never in anyone's way, while the host
@@ -3005,8 +3177,12 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
     return std::format("player {}'s throw {} ends ({})", e->player, e->id,
                        static_cast<int>(e->how));
   if (const auto *r = std::get_if<proto::Rules>(&message))
-    return std::format("the session's rules: friendly fire {}",
-                       (r->flags & proto::kRuleFriendlyFire) ? "on" : "off");
+    return std::format("the session's rules: friendly fire {}, enemy scaling {} (health +{} % "
+                       "per extra player)",
+                       (r->flags & proto::kRuleFriendlyFire) ? "on" : "off",
+                       (r->flags & proto::kRuleEnemyScaling) ? "on" : "off", r->enemyHealth);
+  if (const auto *s = std::get_if<proto::NpcScale>(&message))
+    return std::format("npc {} is scaled for {} players", s->npc, s->players);
   if (const auto *d = std::get_if<proto::Defended>(&message))
     return std::format("player {} {} npc {}'s attack", d->player,
                        d->how == proto::DefendKind::Parried ? "parried" : "blocked", d->npc);
@@ -3014,6 +3190,10 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
     return std::format("the session's level is {} ({} players)", s->level, s->players);
   if (const auto *n = std::get_if<proto::NpcLevel>(&message))
     return std::format("npc {} is level {:.1f}", n->npc, n->level);
+  if (const auto *v = std::get_if<proto::NpcVendor>(&message))
+    return (v->flags & proto::kVendorDead) != 0
+               ? std::format("the vendor {:x} died in the session", v->entity)
+               : std::format("npc {} is the placed vendor {:x}", v->npc, v->entity);
   if (const auto *l = std::get_if<proto::CarLend>(&message)) {
     constexpr const char *names[] = {"crew", "owner", "never"};
     return std::format("player {} lends its cars: {}", l->player,
@@ -3277,9 +3457,10 @@ int main(int argc, char **argv) {
     Log("legacy wire: every state every frame, whole poses and NPC lists");
   }
   if (options.drop > 0.f || options.dup > 0.f) {
-    endpoint->SetFaults({.drop = options.drop, .dup = options.dup, .seed = std::random_device{}()});
-    Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice",
-        options.drop * 100, options.dup * 100);
+    const auto seed = options.faultSeed != 0 ? options.faultSeed : std::random_device{}();
+    endpoint->SetFaults({.drop = options.drop, .dup = options.dup, .seed = seed});
+    Log("faults: {:.0f}% of what we send is lost, {:.0f}% of our state sent twice (seed {})",
+        options.drop * 100, options.dup * 100, seed);
   }
   // The referee (docs/architecture/sim.md), in every mode: what the other
   // games send us, checked against the protocol and the authority table;
@@ -3363,6 +3544,12 @@ int main(int argc, char **argv) {
   bool lendSent = false;
   std::optional<std::chrono::steady_clock::time_point> unlockAt;
   std::set<tandem::proto::PlayerId> unlockedFor;
+  // --vendor: when a guest was first there, whether it is shared and dead,
+  // and its next standing still (the guest's proxy follows it).
+  constexpr tandem::proto::NpcId kVendorNpc = 50'003;
+  std::optional<std::chrono::steady_clock::time_point> vendorSince;
+  bool vendorShared = false, vendorDead = false;
+  auto nextVendorState = std::chrono::steady_clock::now();
   // Trade: our seat at the table, when we ask next, the trades done.
   tandem::trade::Seat tradeSeat;
   auto nextTradeAsk = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -3414,6 +3601,7 @@ int main(int argc, char **argv) {
   // join: when each was last in the host's states (dead and far NPCs are
   // not), and the NPCs whose grab the host refused (not asked again).
   std::map<tandem::proto::NpcId, std::chrono::steady_clock::time_point> npcSeen;
+  std::optional<tandem::proto::NpcId> nearNpc; // join, --near-npc: the NPC we stand by
   std::set<tandem::proto::NpcId> grabRefused;
   std::set<tandem::proto::NpcId> bodies; // join: the host's NPCs that died, still lying there
   std::optional<tandem::proto::NpcId> hitTarget;
@@ -3843,6 +4031,8 @@ int main(int argc, char **argv) {
   while (!g_stop) {
     for (const auto &event : endpoint->Update(5ms)) {
       // region: what concerns the NPCs we run.
+      if (const auto *linked = std::get_if<tandem::events::RegionsChanged>(&event))
+        puppeteer.SetRegionLinked(!linked->linked.empty(), tandem::net::NowUs());
       if (regionNpcs && regionNpcs->On(event, *endpoint))
         continue;
       std::visit(
@@ -4495,6 +4685,21 @@ int main(int argc, char **argv) {
               Log("{} operated by player {}: taken as said", describeDevice(key, what),
                   e.use.player);
               answerDevice(key, what);
+            } else if constexpr (std::is_same_v<E, tandem::events::BreachBy>) {
+              // No world of ours: the daemons are taken as run.
+              const auto &b = e.breach;
+              Log("breach by player {}: network {:x} npc {}, {} daemon(s), {} trap(s){}{}: {}",
+                  b.player, b.entity, b.npc, b.programs.size(), b.traps.size(),
+                  (b.flags & tandem::proto::kBreachRemote) ? ", remote" : "",
+                  (b.flags & tandem::proto::kBreachFailed) ? ", lost" : "",
+                  endpoint->IsHost() ? "applied to its network and our NPCs"
+                                     : "applied to our NPCs");
+            } else if constexpr (std::is_same_v<E, tandem::events::BreachAnswered>) {
+              const auto &r = e.result;
+              constexpr const char *kVerdicts[] = {"granted", "refused (breached already)",
+                                                   "refused (the record is full)"};
+              Log("our breach of network {:x} npc {}: {}, by player {}", r.entity, r.npc,
+                  kVerdicts[static_cast<int>(r.verdict)], r.by);
             } else if constexpr (std::is_same_v<E, tandem::events::DevicesReset>) {
               Log("devices: the host sends its record again");
             } else if constexpr (std::is_same_v<E, tandem::events::Resync>) {
@@ -5439,6 +5644,25 @@ int main(int argc, char **argv) {
       DeviceWords(order.words, what);
       operateDevice(key, what, "--device");
     }
+    // --breach: its outcome, once, at its time into the session.
+    if (options.breach && !options.breach->done && devicesFrom &&
+        now >= *devicesFrom + std::chrono::seconds(options.breach->atSeconds)) {
+      options.breach->done = true;
+      const auto &order = *options.breach;
+      tandem::proto::Breach breach{.entity = order.entity,
+                                   .cls = order.cls,
+                                   .npc = order.npc,
+                                   .programs = options.breachPrograms};
+      if (order.npc != 0)
+        breach.flags |= tandem::proto::kBreachRemote;
+      if (options.breachFailed) {
+        breach.flags |= tandem::proto::kBreachFailed;
+        breach.programs.clear();
+      }
+      endpoint->SendBreach(breach);
+      Log("breached network {:x} npc {} with {} daemon(s){} (--breach)", order.entity, order.npc,
+          breach.programs.size(), options.breachFailed ? ", lost" : "");
+    }
     // --interact: each use at its time into the session (a guest asks).
     for (auto &order : options.interacts) {
       if (order.done || !devicesFrom || now < *devicesFrom + std::chrono::seconds(order.atSeconds))
@@ -5600,6 +5824,27 @@ int main(int argc, char **argv) {
       puppeteer.Beside(npcAt[carry.npc]);
     else if (options.grabNpcsSeconds || options.carryNpcsSeconds)
       puppeteer.Beside(std::nullopt);
+    // --near-npc: 4 m from one of the host's NPCs (the first heard that is
+    // still there, alive and placed in the last second), wherever it walks.
+    if (options.nearNpc && !options.host && endpoint->IsJoined() && !grab.step && !carry.step) {
+      if (!nearNpc || !liveNpcs.contains(*nearNpc) || !npcSeen.contains(*nearNpc) ||
+          now - npcSeen[*nearNpc] > 1s) {
+        const auto before = nearNpc;
+        nearNpc.reset();
+        for (const auto npc : liveNpcs)
+          if (!nearNpc && npcSeen.contains(npc) && now - npcSeen[npc] < 1s)
+            nearNpc = npc;
+        if (nearNpc && nearNpc != before)
+          Log("we stand by npc {}", *nearNpc);
+      }
+      if (nearNpc && npcAt.contains(*nearNpc)) {
+        auto at = npcAt[*nearNpc];
+        at.x += 3.2f; // Beside adds 0.8 m
+        puppeteer.Beside(at);
+      } else {
+        puppeteer.Beside(std::nullopt);
+      }
+    }
     // --hold-npcs (host): our V grabs a replayed NPC, then takes it down.
     if (options.holdNpcsSeconds && options.host && endpoint->Players().size() > 1) {
       if (hold.step == 0 && now >= nextHold) {
@@ -5667,6 +5912,35 @@ int main(int argc, char **argv) {
                 options.unlockVehicle, id);
           }
     }
+    // --vendor: shared once a guest is there, standing still; --vendor-dies.
+    if (!options.vendorRecord.empty() && options.host && endpoint->IsJoined() &&
+        endpoint->Players().size() > 1 && !vendorDead) {
+      namespace proto = tandem::proto;
+      if (!vendorSince)
+        vendorSince = now;
+      if (!vendorShared) {
+        endpoint->SendNpcSpawn({.npc = kVendorNpc,
+                                .record = TweakDBID(options.vendorRecord),
+                                .position = options.vendorAt});
+        vendorShared = endpoint->SendCombat(
+            proto::NpcVendor{.npc = kVendorNpc, .entity = options.vendorEntity});
+        Log("vendor npc {}: {} at {:.1f} {:.1f} {:.1f}, the placed vendor {:x}{}", kVendorNpc,
+            options.vendorRecord, options.vendorAt.x, options.vendorAt.y, options.vendorAt.z,
+            options.vendorEntity, vendorShared ? "" : " (not said: nobody to tell)");
+        vendorShared = true;
+      }
+      if (now >= nextVendorState) {
+        nextVendorState = now + 500ms;
+        endpoint->SendNpcStates({.npcs = {{.npc = kVendorNpc, .position = options.vendorAt}}});
+      }
+      if (options.vendorDiesSeconds >= 0 &&
+          now - *vendorSince >= std::chrono::seconds(options.vendorDiesSeconds)) {
+        endpoint->SendNpcGone(
+            {.npc = kVendorNpc, .reason = proto::kGoneDead, .killer = endpoint->You()});
+        vendorDead = true;
+        Log("vendor npc {} died (--vendor-dies)", kVendorNpc);
+      }
+    }
     // --npc-level: every NPC we share, once.
     if (options.npcLevel > 0.f && options.host && endpoint->IsJoined())
       for (const auto &[npc, spawn] : endpoint->SharedNpcs())
@@ -5698,11 +5972,19 @@ int main(int argc, char **argv) {
           tandem::proto::Difficulty{.level = static_cast<std::uint8_t>(*options.difficulty)});
       Log("the session plays at difficulty {}", *options.difficulty);
     }
-    // --friendly-fire: the session's rule, kept by the endpoint for whoever joins.
-    if (options.friendlyFire && options.host && !rulesSent && endpoint->IsJoined()) {
-      rulesSent = endpoint->SendCombat(tandem::proto::Rules{
-          .flags = *options.friendlyFire ? tandem::proto::kRuleFriendlyFire : std::uint8_t{0}});
-      Log("the session's rules: friendly fire {}", *options.friendlyFire ? "on" : "off");
+    // --friendly-fire, --enemy-scaling: the session's rules, kept by the
+    // endpoint for whoever joins.
+    if ((options.friendlyFire || options.enemyScaling) && options.host && !rulesSent &&
+        endpoint->IsJoined()) {
+      const bool friendly = options.friendlyFire.value_or(false);
+      const auto rules = tandem::scaling::WithRule(
+          {.flags = friendly ? tandem::proto::kRuleFriendlyFire : std::uint8_t{0}},
+          options.enemyScaling.value_or(false), options.enemyScalingHealth);
+      rulesSent = endpoint->SendCombat(rules);
+      Log("the session's rules: friendly fire {}, enemy scaling {} (health +{} % per extra "
+          "player)",
+          friendly ? "on" : "off", options.enemyScaling.value_or(false) ? "on" : "off",
+          rules.enemyHealth);
     }
     // --throw: a grenade 10 m ahead of our V (+Y), exploding 2 s later.
     if (options.throwSeconds && endpoint->IsJoined() && now >= nextThrow) {

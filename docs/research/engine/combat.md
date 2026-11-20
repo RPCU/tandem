@@ -488,3 +488,166 @@ muzzleOffset)` (54056), then the weapon effects. Its aiming needs the
   (`IsAgentVisible`) and no cooldown runs: `MemoryWipeOnDodge` on the NPC,
   the sound, the dilation removed, `DodgeOutOfSightCooldown` and
   `SecondChancePerkCooldown` on V (`:39682-39696`). [2.5-untested]
+
+### 13.50 Enemy scaling: the stats and how modifiers stack (2026-11-19, read in final.reds, not run)
+
+What `scripts/tandem/Scaling.reds` relies on (`architecture/npcs.md`,
+"Enemy scaling").
+
+- **Modifier types** (`gameStatModifierType`, `:510`): `Additive` 0,
+  `AdditiveMultiplier` 1, `Multiplier` 2. The game's scripts use a
+  `Multiplier` of 0 to switch a stat off whatever else it has
+  (`StunApplicationRate`, `:556144`; `RollForPlusOnMaxQuality` on an item,
+  `:131085-131092`) and one of `1 / x` to undo a perk's factor
+  (`Deceleration`, `:553270-553285`): a `Multiplier` multiplies the stat's
+  final value. [R] The whole formula, (Σ additive) × (1 + Σ additive
+  multipliers) × Π multipliers, is native. [I]
+- **Where the difficulty, the level and the rarity come in**: an NPC's
+  stats come from its record's modifiers, mostly curves of its
+  `PowerLevel` (`puppet_powerLevelToHealth`; the rarity presets
+  `puppet_preset_*_mods` read with its `PowerLevel`,
+  `RPGManager.GetRarityMultiplier`, `:35335-35360`); a curve takes an
+  optional `gameDifficulty` (`StatsDataSystem.GetValueFromCurve`,
+  `:73095-73101`). Our `PowerLevel` modifier (§13.38.1) moves that base;
+  a `Multiplier` of ours multiplies the result once. [R] Which NPC stat
+  reads the difficulty is TweakDB. [I]
+- **The stats** (`gamedataStatType`): `Health` 787 (`:2159`: an NPC's
+  maximum health, read as such by `SendDamageRequestToPreventionSystem`,
+  `:85856`), `Armor` 33 (`:1405`), `Poise` 1139 (`:2511`),
+  `StaggerDamageThreshold` 1480 and `…InCover` 1482 (`:2852`, `:2854`),
+  `KnockdownDamageThreshold` 938 and `…InCover` 940 (`:2310`, `:2312`),
+  `HitShapeArmor` 820 (`:2192`). Stat pools (`gamedataStatPoolType`,
+  `:3602`): `Health` 17, `Poise` 27. [R] That the `Poise` stat is the poise
+  pool's maximum is TweakDB (`BaseStatPools.Poise`): `tools/game.sh cmd npc
+scale` logs the stat and the pool's maximum side by side. [I]
+- **Armour** (`DamageSystem.ProcessArmor`, `:86621`): the target's `Armor`
+  (or its `HitShapeArmor`, when a player's hit lands on an armoured hit
+  shape and that is more), less the weapon's armour penetration, times
+  `StatsDataSystem.GetArmorEffectivenessValue`, divides each damage value
+  (never below 1); it runs on the game that computes the target's side of
+  the hit: for a guest's hit on a proxy, the guest's, against the proxy's
+  stats. [R]
+- **Poise** is drained by a player's hit in `DamageSystem` (`:85845`,
+  `RequestChangingStatPoolValue` on `Poise`, an amount the attack decides,
+  never a share of the maximum): a larger pool takes more hits to break.
+  [R]
+- **Hit reaction thresholds** (`HitReactionComponent`, `:183465`): the
+  component reads the NPC's `Health` **once**, as `m_totalHealth`
+  (`GetDBParameters`, `:183600-183603`, a task queued when it is attached,
+  `:184409`); the impact, stagger and knockdown thresholds are
+  `m_totalHealth × stat / 100` (`SetHitReactionThresholds`,
+  `:185085-185110`), the stats followed through a stats listener
+  (`:187866-187876`). A health change later reaches only its current health
+  (`NPCHealthListener`, `:187800-187805`). So a `Health` modifier added
+  after the attach leaves the thresholds in points as they were; ours on the
+  threshold stats is ×poise × unscaled health ÷ `m_totalHealth`, read
+  through an added method (`TandemTotalHealth`). [R] The wound,
+  dismemberment and defeat thresholds are shares of the same total (`:183629-183750`):
+  unscaled, as vanilla's. [R]
+- **Pools** (`StatPoolsSystem`, `:83541-83577`): `GetStatPoolValue(…,
+perc)` and `RequestSettingStatPoolValue(…, perc)` read and set a share;
+  `GetStatPoolMaxPointValue` the maximum; `IsStatPoolAdded`. A pool's own
+  answer to its maximum changing is native: we set the share back. [R] / [I]
+- **Bosses and named enemies**: `ScriptedPuppet.GetNPCRarity()` (native,
+  `:19424`), `gamedataNPCRarity` (`:4950`: Boss 0, Elite 1, MaxTac 2,
+  Normal 3, Officer 4, Rare 5, Trash 6, Weak 7), `IsBoss` (`:20825`). No
+  separate "named" flag in the scripts: a named enemy is a record of its
+  own, usually Elite, Officer or Boss. [R]
+
+### 13.60 Breach Protocol: where a breach's outcome becomes effects (2026-11-19, read in final.reds, not run)
+
+What tandem's Breach Protocol between players (`architecture/devices.md`,
+"Breach Protocol") rests on. Line numbers are `final.reds` of 2.50.
+
+- **Every breach ends in one event.** The minigame's end queues
+  `AccessPointMiniGameStatus{minigameState}` (a native event, `:215004`)
+  for the entity named by `NetworkBlackboard.DeviceID`
+  (`NetworkInkGameController.CloseGame`, `:481325-481336`; the shipped
+  screen is native, `gameuiHackingMinigame*`, inferred to do the same).
+  The won programs are on the `HackingMinigame` blackboard,
+  `ActivePrograms` and `ActiveTraps` (`array<TweakDBID>` variants,
+  `:47186`), written before the event. A mod that skips the minigame
+  (AccessPointSkip: `Device.PerformDive` wrapped) sets that blackboard and
+  queues the same event: hooking the event covers it. [2.5-static]
+- **Its handlers.** `Device.OnAccessPointMiniGameStatus` (`:100932`; the
+  access point's override calls super, `:316738`) →
+  `ScriptableDeviceComponentPS.HackingMinigameEnded` (`:32864`) →
+  `SetMinigameState` (persistent `m_hackingMinigameState`, `:29208`) and
+  `FinalizeNetrunnerDive` (`:32888`) → `ResolveDive` (`:32822`):
+  `SetExposeQuickHacks` (with `isRemote` from
+  `NetworkBlackboard.RemoteBreach`) to the device's backdoor access point,
+  or, a remote breach of a device with no backdoor, to every one of its
+  access points (`GetAccessPoints`, `:29104`). A failure raises the
+  security system's alarm with the local player as culprit (`:100941`).
+  The NPC's handler, `ScriptedPuppet.OnAccessPointMiniGameStatus`
+  (`:23041`), asks its `PuppetDeviceLinkPS` (`AcquirePuppetDeviceLink`
+  by entity id) for `PerformNPCBreach` (`:113261`): an `NPCBreachEvent` to
+  its parent link, passed on to the access points
+  (`CommunityProxyPS.OnNPCBreachEvent`, `:208784`), whose
+  `OnNPCBreachEvent` (`:119726`) breaches and refreshes the network, or
+  counts a failed attempt and alerts its NPCs. An NPC with no link (a
+  spawned one, a proxy) does nothing there. [2.5-static]
+- **Programs become effects in `AccessPointControllerPS.RefreshSlaves`**
+  (`:119138`), reached from `OnSetExposeQuickHacks` (`:119753`) and
+  `OnNPCBreachEvent` through `RefreshSlaves_Event` (`:113014`, the lazy
+  children). It reads the blackboard **of the game it runs on**: loot
+  (`NetworkDataMineLootAll*`, `NetworkLootQ003`, `minigame_v2.FindAnna`'s
+  fact), then `ProcessMinigameNetworkActions` (`:119626`) for the access
+  point and each child, and `SetExposeQuickHacks` to each child;
+  `RewardMoney` (`:119451`, once per network: `m_moneyAwarded`, from the
+  local player's cyberdeck quality) and `RPGActionRewards.Hacking`. The
+  money and the XP go to `GetPlayerMainObject`. [2.5-static]
+- `ProcessMinigameNetworkActions`: traps first (`MinigameTraps.MaterialBonus`:
+  a material to the local player; `IncreaseAwareness`: a
+  `SetDetectionMultiplier` of 10 to the device's `SensorDevice`), then each
+  program whose `<record>.targetClass` CName is the device's class or
+  `None`: the device's own minigame action of that name
+  (`GetMinigameActionByName`, `:30113`), else a bare `PuppetAction` set up
+  on it, `RegisterAsRequester(device)`, `SetExecutor(GetPlayer)`,
+  `SetObjectActionID(program)`, `ProcessRPGAction`.
+  `FilterRedundantPrograms` keeps `NetworkTurretFriendly` over
+  `NetworkTurretShutdown`. [2.5-static]
+- **NPCs' daemons**: `ScriptedPuppetPS.OnSetExposeQuickHacks` (`:25602`)
+  reads the same blackboard and runs each program its character record
+  lists (`ObjectActions`) as a `PuppetAction` from `GetPlayerMainObject`;
+  `MinigameTraps.SquadBuff` puts `MinigameAction.BuffDamageReductionMinigame`
+  on it; `NetworkLootShard`, `NetworkLootMaterials`, `NetworkLootMoney`
+  pay the local player; perks of the local player read the program count
+  (`ThreeOrMoreProgramsMemoryRegPerk`, `MinigameNextInstanceBufferExtensionPerk`).
+  Daemon effects seen in scripts: `MinigameAction.ICEBrokenMinigameMinor`,
+  `…Medium`, `…Major`, `…Placide` (`:12254`), `VulnerabilityMinigame`
+  (`:85452`). Whether any of them carries the `Quickhack` gameplay tag is
+  TweakDB. [2.5-static]
+- **Running a daemon from someone else**: `BaseScriptableAction
+.ProcessRPGAction` (`:26605`) pays the executor's cost unless
+  `SetCanSkipPayCost(true)` (`:27838`, `CanSkipPayCost` `:26943` reads the
+  executor as a `PlayerPuppet`); `CompleteAction` gives the record's
+  `Rewards` (to the requester's stats) and quickhack XP to the executor as
+  a `PlayerPuppet` (none for a puppet). [2.5-static]
+- **A second breach is the game's to refuse**: the jack-in is offered while
+  `!WasHackingMinigameSucceeded()` (`:29580`, `:98834`, `:32689`), which
+  reads `m_hackingMinigameState`, not the network's `m_isBreached`;
+  `IsBreached` prereqs (`:310042`) and the device's `IsBreached`
+  (`:29052`: any of its access points `IsNetworkBreached`) lock the
+  quickhack. `BreachAccessPointEvent` (`:119812`) sets `m_isBreached` and
+  exposes the access point's quickhacks, nothing else;
+  `ResetNetworkBreachState` undoes it. An `@addMethod` on
+  `ScriptableDeviceComponentPS` can set `m_hackingMinigameState`
+  (protected). [2.5-static]
+- **Trap: `SetExposeQuickHacks` on an access point runs `RefreshSlaves`**
+  (`OnSetExposeQuickHacks` → `RefreshSlaves_Event`): the daemons of
+  whatever the local blackboard last held, and `RewardMoney` to the local
+  V if the network never paid. Never send it to an access point to say
+  "exposed"; `BreachAccessPointEvent` does that. [2.5-static]
+
+To verify in game (none has run):
+
+1. The shipped breach screen queues `AccessPointMiniGameStatus` with the
+   blackboard written first (the hook reads it in the event's handler).
+2. A daemon run on the host from a guest's puppet (`SetExecutor(puppet)`,
+   `SetCanSkipPayCost`): a camera shuts down, a turret turns friendly to
+   the players, an NPC gets its ICE broken; nothing is paid by the host's V.
+3. Whether the Breach Protocol quickhack is offered on a proxy (it has no
+   device link: `SQUAD_NETWORK`), and which effects it leaves there.
+4. The daemon effects' tags, so the list in `Breach.reds`
+   (`IsDaemonEffect`) can be the record's instead.

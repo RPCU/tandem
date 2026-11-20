@@ -1,0 +1,36 @@
+# One Service per replica: a session's traffic goes to the replica that owns
+# it, at an address of its own that survives the pod being replaced. Its
+# external address must be the one at its ordinal in the peers list
+# (kustomization.yaml): reserve a static IP per Service in the overlay
+# (your load balancer's annotation, or spec.loadBalancerIP). Other ways to
+# give each replica an address of its own: docs/relay.md.
+apiVersion: v1
+kind: Service
+metadata:
+  name: tandem-relay-0
+spec:
+  type: LoadBalancer
+  # The relay knows a client by its address and port: keep them.
+  externalTrafficPolicy: Local
+  selector:
+    apps.kubernetes.io/pod-index: "0"
+  ports:
+    - name: game
+      port: 27460
+      targetPort: game
+      protocol: UDP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tandem-relay-1
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    apps.kubernetes.io/pod-index: "1"
+  ports:
+    - name: game
+      port: 27460
+      targetPort: game
+      protocol: UDP

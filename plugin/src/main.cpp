@@ -167,6 +167,8 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
         log::Info("{} created from tandem.default.ini", files.config.filename().string());
     }
     runtime.config = LoadConfig(files.config);
+    runtime.directOn = runtime.config.direct;
+    runtime.codeSalt = runtime.config.codeSalt;
     runtime.config.commandFile = files.command;
     runtime.config.recentFile = files.recent;
     tandem::plugin::Comms::Get().Configure(runtime.config.link == tandem::plugin::Config::Link::Auto

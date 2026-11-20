@@ -9,7 +9,9 @@ for whoever runs one.
 
 You need a machine players can reach on **one UDP port**: a small VPS, a
 Kubernetes cluster, or a home server with that port forwarded. One relay
-serves a group of friends easily (256 sessions at most by default).
+serves a group of friends easily (256 sessions at most by default);
+several replicas share the load and outlive each other's restarts
+([Replicas](#replicas)).
 
 What to know before offering one to others:
 
@@ -45,9 +47,10 @@ line's number. It refuses to start with no token at all.
 - Give **each person who hosts their own token**. To revoke one, delete its
   line and restart the relay.
 - The file is read **once**: restart the relay after any change. Sessions
-  live in memory, so a restart ends them; the games notice within seconds,
-  register again (hosts every 20 s) and get a new join code, and guests
-  already in a session find it again by themselves.
+  live in memory, but a restart that is over within 20 s ends none of
+  them: the games notice within seconds, hold their players, register
+  again and get their join code back (see
+  [Restarts and drain](#restarts-and-drain)).
 - A host puts their token in their game's `tandem.ini`
   (`relay_token = …`). It is never sent to guests. Treat it as a password:
   it goes over the network in clear (see above), so do not reuse it.
@@ -131,15 +134,31 @@ skopeo copy docker-archive:result-relay-image \
   docker://registry.example.org/tandem/tandem-relay:0.1.0
 ```
 
-Without Nix, any builder that copies the static binary above into an empty
-image does the same job; keep it non-root, with no shell.
+Without Nix, [`relay/Dockerfile`](../relay/Dockerfile) builds the same
+image (a static binary on `gcr.io/distroless/static-debian12:nonroot`: CA
+certificates, no shell, user `65532:65532`, the same entrypoint and
+command):
+
+```sh
+docker build -t tandem-relay relay/
+```
+
+CI (`.github/workflows/image.yaml`) builds that Dockerfile and pushes
+`zot.rpcu.io/public/tandem-relay:<8-char commit>` on every push to
+`main`, plus `:<x.y.z>` for a version tag; `nix-build.yaml` checks the Nix
+image builds whenever its inputs change. Any other builder that copies the
+static binary into an empty image does the same job; keep it non-root,
+with no shell.
 
 ### The manifests
 
 [`deploy/kubernetes/base`](../deploy/kubernetes/base) is a kustomize base:
-a ServiceAccount (no token mounted), a Deployment, two Services and a
-NetworkPolicy. It is not deployable alone: an overlay provides the
-namespace, the image's registry and the token Secret.
+a ServiceAccount (no token mounted), a StatefulSet of 2 replicas, a UDP
+Service per replica, one for the fleet's entrance, a headless one for
+metrics, a PodDisruptionBudget, the peers ConfigMap and a NetworkPolicy
+(how replicas work: [Replicas](#replicas)). It is not deployable alone: an
+overlay provides the namespace, the image's registry, the token Secret,
+each replica's public address and the peers list naming them.
 
 ```yaml
 # overlays/prod/kustomization.yaml
@@ -154,7 +173,31 @@ images:
   - name: tandem-relay
     newName: registry.example.org/tandem/tandem-relay
     newTag: 0.1.0
+# Every replica's public address, in ordinal order (no names: the relay
+# makes no DNS query).
+configMapGenerator:
+  - name: tandem-relay-peers
+    behavior: replace
+    literals:
+      - peers=203.0.113.10:27460,203.0.113.11:27460
+# A static address for each replica's Service, matching the list above (the
+# annotation depends on your load balancer: MetalLB, a cloud's...).
+patches:
+  - target: { kind: Service, name: tandem-relay-0 }
+    patch: |
+      - op: add
+        path: /metadata/annotations
+        value: { metallb.universe.tf/loadBalancerIPs: 203.0.113.10 }
+  - target: { kind: Service, name: tandem-relay-1 }
+    patch: |
+      - op: add
+        path: /metadata/annotations
+        value: { metallb.universe.tf/loadBalancerIPs: 203.0.113.11 }
 ```
+
+Players write the entrance's address (the `tandem-relay` Service, give it a
+DNS name) in `tandem.ini`; the replicas' addresses only travel in the
+relay's redirects.
 
 The Secret is named `tandem-relay-host-tokens`, with one key,
 `host-tokens`, holding the token file. Keep it out of git in clear: SOPS,
@@ -163,38 +206,296 @@ sealed-secrets or an external secret operator. For a first try:
 ```sh
 kubectl -n tandem create secret generic tandem-relay-host-tokens \
   --from-file=host-tokens=./host-tokens
-kubectl -n tandem rollout restart deployment/tandem-relay   # after any change
+kubectl -n tandem rollout restart statefulset/tandem-relay   # after any change
 ```
 
 What the base decides, and why:
 
-- **One replica, `Recreate`.** Sessions live in the relay's memory and a
-  client is known by its address: two replicas would split a session. A
-  rollout ends the running sessions (the games reconnect).
-- **A `LoadBalancer` Service on UDP 27460 with
-  `externalTrafficPolicy: Local`**, so the relay sees each player's own
-  address: it knows clients by address and port and limits each one. Your
-  load balancer must support UDP; add its annotations in the overlay. A
-  `NodePort` or `hostPort` works too, as long as source addresses are
-  preserved.
+- **A StatefulSet, not a Deployment**: a replica's ordinal is its shard
+  (`TANDEM_RELAY_SHARD`, from the `apps.kubernetes.io/pod-index` label,
+  Kubernetes 1.28 or newer) and selects its own Service, so a replica
+  replaced comes back as the same shard at the same address, and its
+  sessions find it again. A Deployment's pods have random names: there is
+  nothing stable to hang an address on (a Deployment per replica would
+  do the same job with more YAML). `Parallel` pod management (replicas do
+  not wait for each other), rolling updates one replica at a time.
+- **One `LoadBalancer` Service per replica, and one for the entrance**,
+  all UDP with `externalTrafficPolicy: Local`, so the relay sees each
+  player's own address: it knows clients by address and port and limits
+  each one. Your load balancer must support UDP. Other ways to give each
+  replica its own address: [Addressing the replicas](#addressing-the-replicas).
+- **PodDisruptionBudget** of one unavailable, and **anti-affinity**
+  (preferred) to put replicas on different nodes: a node drain or loss
+  takes one shard at a time. Make it required in the overlay when the
+  cluster always has as many nodes as replicas.
+- **Readiness** is `/readyz`, false while draining, so the entrance stops
+  sending players to a replica shutting down; liveness `/healthz`.
+  `terminationGracePeriodSeconds: 75` covers the 60 s drain.
 - **Locked down**: non-root (65532), read-only root filesystem, every
   capability dropped, no privilege escalation, seccomp `RuntimeDefault`.
-- **NetworkPolicy**: UDP 27460 in from anywhere; TCP 8080 in only from the
-  namespace labelled `kubernetes.io/metadata.name: monitoring` (change it
-  in the overlay if your Prometheus lives elsewhere); **no egress at all**:
-  the relay only ever answers on a flow a player opened, and needs no DNS.
-- **Resources**: 50m CPU and 32Mi requested, 1 CPU and 128Mi at most.
+- **NetworkPolicy**: UDP 27460 (sessions) and 27461 (entrance) in from
+  anywhere; TCP 8080 in only from the namespace labelled
+  `kubernetes.io/metadata.name: monitoring` (change it in the overlay if
+  your Prometheus lives elsewhere); **no egress at all**: the relay only
+  ever answers on a flow a player opened, needs no DNS, and replicas never
+  talk to each other.
+- **Resources**: 50m CPU and 32Mi requested, 1 CPU and 128Mi at most, 2
+  reader sockets (`--readers`) per replica.
+
+## Replicas
+
+A fleet of relays shares nothing: each replica keeps its own sessions in
+memory, and they never talk to each other. What ties them together is one
+list every replica gets, `--peers` (or `TANDEM_RELAY_PEERS`): each
+replica's **public** `ip:port`, in order; and `--shard` (or
+`TANDEM_RELAY_SHARD`), this replica's place in it (a number, or a name
+ending in it, as `tandem-relay-1`).
+
+- A host registers on any replica, which owns its session from then on and
+  gives it a code of its own **shard** (the code says which replica holds
+  it).
+- A guest may ask any replica for a code: one that does not hold it
+  answers with a **redirect** to the one that does, and the game follows
+  it (once at most).
+- `--front ADDR` opens the fleet's **entrance** on another port: it only
+  ever redirects (a new host to this replica, a code to its owner), so it
+  can sit behind one load balancer over all replicas, and is the one
+  address players need. A replica down only leaves it (its readiness).
+- Each replica allows 256 sessions (`--max-sessions`): the fleet, that
+  many times the replicas. `--max-code-failures` is for the whole fleet:
+  each replica allows its share, so more replicas make guessing no faster.
+
+Without a Kubernetes cluster, the same works with the binary: run one
+`tandem-relay serve --peers A,B --shard 0 --front :27461` on machine A and
+`--shard 1` on B (the same `--peers`), and give players either machine's
+entrance (or a DNS name with both).
+
+### Addressing the replicas
+
+Every replica needs a public address of its own, the one in `--peers`,
+that reaches it and no other, whichever node it runs on, and that keeps
+the players' source addresses. In Kubernetes:
+
+| Option                                                        | Address in `--peers`               | Fits                                                                                                                                     |
+| ------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **`LoadBalancer` per replica** (the base), static IP each     | the Service's reserved IP          | clouds, MetalLB; the simplest                                                                                                            |
+| `NodePort` per replica, `externalTrafficPolicy: Local`        | a node's IP and the replica's port | only if the replica is pinned to that node (a node selector per ordinal is not possible in one StatefulSet: one StatefulSet per replica) |
+| `hostPort` (or `hostNetwork`) on nodes reserved for the relay | the node's IP                      | bare metal with fixed relay nodes, one replica per node                                                                                  |
+
+`externalTrafficPolicy: Cluster` (the default) hides players' addresses
+behind the node's: do not use it, the relay would see every player as a
+few addresses and limit them together. The entrance can be any UDP load
+balancer over every replica's `front` port (27461) that keeps source
+addresses; the replicas' own addresses must not move between replicas.
+
+### Scaling
+
+Change the StatefulSet's `replicas`, add a Service per new replica
+(`service-replicas.yaml`, its `apps.kubernetes.io/pod-index`), and the
+peers list, in one change. The list's ConfigMap hash rolls every replica,
+and a code's owner is computed from the number of replicas, so live codes
+may move: hosts get their code back where it still belongs and a new one
+where it does not (the Co-op panel shows it); players already in a session
+are not affected. Scale when few people play.
+
+### Restarts and drain
+
+- **SIGTERM** (a rolling update, a node drain, `systemctl stop`): the
+  replica turns unready (`/readyz` 503), sends new sessions to the next
+  replica (or refuses them, "the relay is restarting", if it is alone),
+  and keeps relaying the running ones until they end or `--drain-timeout`
+  (60 s) passes, then exits. A second signal exits at once.
+- **The games hold their players** through a relay that goes silent for up
+  to 20 s: positions freeze, nobody leaves. When the replica is back (the
+  same ordinal, the same address), the host registers again and gets its
+  code back, the guests get their place back, and play goes on. Longer
+  than that, guests are dropped and join again by themselves when the host
+  is back; hosts start over at the entrance with a new code.
+- So a rolling update costs each session on the replica being replaced a
+  pause of a few seconds (the time its pod takes to come back), not the
+  session. Keep the image on the nodes (`imagePullPolicy: IfNotPresent`,
+  the default for a tagged image) so the pod starts at once.
 
 Check a change to the manifests with `task k8s:check` (renders the base and
 validates it with kubeconform).
 
+### Several regions
+
+Players far apart are better served by a relay near the host. Run one
+fleet per region (each its own replicas, peers list and entrance, as
+above), and tell every replica of every region the regions' entrances, in
+the same order everywhere:
+
+```sh
+# Europe, replica 0 (and 1, with --shard 1), region 0 of 2
+tandem-relay serve --peers 203.0.113.10:27460,203.0.113.11:27460 --shard 0 --front :27461 \
+  --regions 203.0.113.5:27460,198.51.100.5:27460 --region 0
+# America: its own --peers, --region 1, the same --regions
+```
+
+In Kubernetes, one overlay per region, each adding to the peers ConfigMap
+(the StatefulSet reads them as `TANDEM_RELAY_REGIONS` and
+`TANDEM_RELAY_REGION`):
+
+```yaml
+configMapGenerator:
+  - name: tandem-relay-peers
+    behavior: replace
+    literals:
+      - peers=203.0.113.10:27460,203.0.113.11:27460
+      - regions=203.0.113.5:27460,198.51.100.5:27460
+      - region=0
+```
+
+- Regions share nothing: a region down costs only its own sessions, and
+  no traffic crosses between them. A code says its region: a guest asking
+  any relay of any region is sent to the right one (two redirects at most).
+- Players list the regions' entrances, nearest first or not:
+  `relay = eu.relay.example.org, us.relay.example.org`. A host registers on
+  the one that answers its probe the soonest; a guest asks the first, and
+  the others in turn if it does not know the code (relays of networks that
+  do not know each other work too).
+- `--max-code-failures` is then the world's budget: each replica of each
+  region takes its share. Give every region the same value.
+- Adding or removing a region changes which region a code names: update
+  `--regions` everywhere in one change; hosts get new codes.
+
+### Kept codes and the connection check
+
+- A host with `code = keep` in `tandem.ini` gets the same code every
+  session (derived from its host token, while it is registered; the
+  co-op menu's New code moves on to another). All the kept codes of one
+  token live on one replica of a region: if it is down, the host gets a
+  new code elsewhere for that session. Revoking the token ends them.
+- The game's connection check probes two of the relay's ports (the
+  replica's and the entrance's): keep the entrance's port open next to the
+  replica's (with `--front`) so it can tell whether direct connections
+  should work. A relay on its own can run `--peers <its public ip:port>
+--front :27461` for that alone.
+
+### Behind kgateway
+
+kgateway can front the relay's **HTTP side only**; players keep reaching
+the UDP ports through the base's LoadBalancers. Why: the relay knows
+every player by the address its datagrams come from (who registered,
+the per-source lookup limits, the connection check, hole punching). A UDP
+proxy in front hides that address unless it says it in a PROXY protocol
+header, and Envoy's UDP proxy (what a kgateway UDP listener would be)
+cannot add one; kgateway has no UDP routes at all yet (2.5.2, November
+2026). Details and sources: [architecture/relay.md](architecture/relay.md#behind-a-gateway-kgateway).
+
+[`deploy/kubernetes/kgateway`](../deploy/kubernetes/kgateway) is the base
+plus:
+
+- a Gateway (`gatewayClassName: kgateway`, one HTTP listener on 8080,
+  hostname `relay-admin.example.org`: set yours) and an HTTPRoute:
+  `/healthz`, `/readyz`, `/metrics` answered by any ready replica,
+  `/replica-N/healthz|readyz|metrics` by replica N itself (also while it
+  drains, so its readiness shows it);
+- ClusterIP Services for those (`tandem-relay-http`, `tandem-relay-N-http`:
+  add one per replica you add);
+- the NetworkPolicy letting the gateway's pods
+  (`gateway.networking.k8s.io/gateway-name: tandem-relay-admin`, in the
+  relay's namespace) reach port 8080. Check that label on your kgateway's
+  proxy pods.
+
+Use it as your overlay's base in place of `../../base`. Keep the Gateway
+internal or put authentication in front: the metrics say how busy the
+relay is and how many lookups fail. Prometheus should still scrape the
+pods (`tandem-relay-pods`): through the gateway, `/metrics` is one
+replica's.
+
+**Latency**: none added. Sessions go straight to their replica's
+LoadBalancer, as without kgateway; sessions whose hole punching succeeds
+do not touch the relay at all. A UDP gateway would have added one hop
+inside the cluster, and lost what the relay must see.
+
+When kgateway gets UDP routes, putting the UDP ports behind it still
+needs the PROXY protocol on UDP, on every datagram or on each session's
+first, from Envoy. Until then, see the alternatives in the architecture
+notes (a UDP load balancer that keeps source addresses is what the base
+already asks for).
+
+### Through playit.gg
+
+[playit.gg](https://playit.gg) tunnels give a relay a public UDP address
+without a LoadBalancer, a port forward or a public IP: its agent connects
+out to playit and receives the players' datagrams. It says who each player
+is in a PROXY protocol v2 header, which the relay reads with
+`--proxy-protocol`.
+
+**At playit.gg**, for each replica:
+
+1. Create an agent (Account → Agents → new Docker agent) and keep its
+   secret key: one agent per replica, so that each forwards only its own
+   replica's tunnel.
+2. On that agent, create a tunnel: type **UDP** (generic UDP is free),
+   local address `127.0.0.1`, local port `27460`, and **PROXY protocol
+   version 2** (playit ignores version 1 on UDP).
+3. Note the tunnel's address and port, and resolve its name to an IP once:
+   the peers list takes addresses (the relay makes no DNS query).
+
+**The relay** runs `--proxy-protocol` (`TANDEM_RELAY_PROXY_PROTOCOL=on`),
+trusting only `--trusted-proxies` (default `127.0.0.1/32,::1/128`: the
+agent as a sidecar). With the binary on a home server, run the agent next
+to it and add the flag.
+
+**Kubernetes**: [`deploy/kubernetes/playit`](../deploy/kubernetes/playit)
+is the base with the agent as a sidecar in each relay pod
+(`ghcr.io/playit-cloud/playit-agent:2.0.2`, playit's own image, built from
+[playit-cloud/playit-agent](https://github.com/playit-cloud/playit-agent);
+pin it by digest), run as the relay's non-root user on emptyDirs, no port
+opened; the relay's flags; the peers ConfigMap holding the tunnels'
+addresses; no LoadBalancer Services; and a NetworkPolicy that takes nothing
+in but metrics and lets the pod out to DNS and the internet (not private
+networks), which the agent needs. Provide:
+
+```sh
+kubectl -n tandem create secret generic tandem-relay-playit \
+  --from-file=agent-0=./agent-0.key --from-file=agent-1=./agent-1.key
+```
+
+and replace `peers` in your overlay with the tunnels' `ip:port`, in
+replica order. Players write a tunnel's address in `tandem.ini` (or both:
+`relay = t0, t1`). There is no fleet entrance through playit (it would be
+one more tunnel per replica); a guest asking the wrong replica is
+redirected as usual.
+
+**Latency**: relayed traffic takes a detour through playit's network
+(player → playit's edge → the agent → the relay, and back), usually a few
+to a few tens of milliseconds more than a LoadBalancer in the same region;
+free tunnels use playit's anycast network, which playit says is not always
+the best route (regional tunnels are a paid option). Sessions whose hole
+punching succeeds do not go through the relay at all, so not through
+playit either: the relay still sees each player's real address and
+introduces them to each other.
+
+**Free tier** (as playit lists it in November 2026, and it changes): 2
+agents, a few ports, generic UDP included, a shared address with a port
+playit picks. Two replicas fit; more need Premium. Port numbers and the
+shared address are playit's: when they change, update the peers list.
+
+**Privacy**: playit carries the game traffic, which is not encrypted, and
+sees every player's address, as the relay does. Choose it only if your
+players are fine with that, as with the relay's own operator.
+
+**Check it**: `tandem_relay_dropped_total{reason="untrusted_proxy"}` and
+`{reason="proxy_header"}` stay at 0 (otherwise something other than the
+agent sends to the relay, or the tunnel does not send PROXY v2), and
+`tandem_relay_proxy_flows` follows the players connected. The relay logs
+`"proxy_protocol":true` on start. A relay restarted under a running agent
+keeps serving the agent's existing flows by their socket, but cannot tell
+who they are until they reconnect: no connection check or hole punching for
+those players, and one lookup budget between them.
+
 ## What to open on a firewall
 
-| Direction | Port          | From                 | Why                                                |
-| --------- | ------------- | -------------------- | -------------------------------------------------- |
-| in        | **UDP 27460** | anywhere             | players (hosts and guests)                         |
-| in        | TCP 8080      | your monitoring only | `/healthz`, `/metrics`; never from the internet    |
-| out       | nothing       |                      | replies to players go out on the flows they opened |
+| Direction | Port          | From                 | Why                                                                       |
+| --------- | ------------- | -------------------- | ------------------------------------------------------------------------- |
+| in        | **UDP 27460** | anywhere             | players (hosts and guests)                                                |
+| in        | UDP 27461     | anywhere             | the fleet's entrance, with `--front` only                                 |
+| in        | TCP 8080      | your monitoring only | `/healthz`, `/readyz`, `/metrics`, `/debug/vars`; never from the internet |
+| out       | nothing       |                      | replies to players go out on the flows they opened                        |
 
 - A stateful firewall needs only the inbound UDP rule: replies are part of
   the same flow. The relay never starts a conversation.
@@ -217,17 +518,24 @@ validates it with kubeconform).
 
 Flags of `tandem-relay serve`, with their defaults:
 
-| Flag                  | Default                         | What                                                                                      |
-| --------------------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
-| `--udp`               | `:27460`                        | UDP address players reach                                                                 |
-| `--http`              | `:8080`                         | HTTP address for `/healthz` and `/metrics`                                                |
-| `--host-tokens`       | `/etc/tandem-relay/host-tokens` | the token file                                                                            |
-| `--max-sessions`      | `256`                           | sessions open at once; the next host is refused                                           |
-| `--idle`              | `2m`                            | a client silent this long is forgotten (a session ends with its host)                     |
-| `--code-ttl`          | `10m`                           | how long a join code lives (the host's game renews it)                                    |
-| `--code-lookup-burst` | `5`                             | join-code lookups one source may make at once; then one per 6 s                           |
-| `--max-code-failures` | `120`                           | failed lookups per minute from everyone together; past it every lookup waits for the next |
-| `--allow-any-host`    | off                             | no token check: local testing only                                                        |
+| Flag                  | Default                                | What                                                                                                           |
+| --------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `--udp`               | `:27460`                               | UDP address players reach                                                                                      |
+| `--front`             | none (`TANDEM_RELAY_FRONT`)            | UDP address of the fleet's entrance (redirects only; needs `--peers`)                                          |
+| `--peers`             | none (`TANDEM_RELAY_PEERS`)            | every replica's public `ip:port`, in shard order                                                               |
+| `--shard`             | `0` (`TANDEM_RELAY_SHARD`)             | this replica's index in `--peers`, or a name ending in it                                                      |
+| `--readers`           | CPUs, at most 8                        | sockets reading the UDP port at once (`SO_REUSEPORT`, Linux)                                                   |
+| `--drain-timeout`     | `60s`                                  | on SIGTERM, how long running sessions may go on before the relay exits                                         |
+| `--proxy-protocol`    | off (`TANDEM_RELAY_PROXY_PROTOCOL=on`) | behind a tunnel sending PROXY v2 headers (playit.gg): each client's address from them                          |
+| `--trusted-proxies`   | `127.0.0.1/32,::1/128`                 | with `--proxy-protocol`, the only senders taken (CIDRs)                                                        |
+| `--http`              | `:8080`                                | HTTP address for `/healthz`, `/readyz`, `/metrics` and `/debug/vars`                                           |
+| `--host-tokens`       | `/etc/tandem-relay/host-tokens`        | the token file                                                                                                 |
+| `--max-sessions`      | `256`                                  | sessions open at once; the next host is refused                                                                |
+| `--idle`              | `2m`                                   | a client silent this long is forgotten (a session ends with its host)                                          |
+| `--code-ttl`          | `10m`                                  | how long a join code lives (the host's game renews it)                                                         |
+| `--code-lookup-burst` | `5`                                    | join-code lookups one source may make at once; then one per 6 s                                                |
+| `--max-code-failures` | `120`                                  | failed lookups per minute from everyone together, for the whole fleet; past it every lookup waits for the next |
+| `--allow-any-host`    | off                                    | no token check: local testing only                                                                             |
 
 Fixed in the code (`relay/internal/relay/relay.go`, `DefaultConfig`):
 
@@ -241,7 +549,8 @@ What these protect against:
 
 - **Reflection and amplification**: an address that is not registered
   never gets an answer to data, only to a registration or a code lookup,
-  which must be padded to 64 bytes while the answer is 21 bytes at most.
+  which must be padded to 64 bytes while the answer is 24 bytes at most
+  (a redirect to an IPv6 replica).
 - **Guessing join codes**: a code is 6 characters of base32 (2^30), valid
   ten minutes, at most one per session. With every limit above saturated,
   one hit takes weeks on average. The price: a flood of wrong codes can
@@ -255,18 +564,26 @@ metered server.
 
 ## Health, metrics and logs
 
-- `GET /healthz` answers `ok` (the Kubernetes probes use it).
-- `GET /metrics` is the Prometheus text format:
+- `GET /healthz` answers `ok` (liveness); `GET /readyz` answers `ok`, or
+  503 while draining (readiness: the entrance's load balancer leaves it).
+- `GET /debug/vars` has every counter below as JSON (`expvar`).
+- `GET /metrics` is the Prometheus text format (each replica its own:
+  scrape the pods, `tandem-relay-pods`, not a load-balanced address):
 
-  | Metric                                    | Type    | What                                                                            |
-  | ----------------------------------------- | ------- | ------------------------------------------------------------------------------- |
-  | `tandem_relay_sessions`                   | gauge   | open sessions                                                                   |
-  | `tandem_relay_clients`                    | gauge   | registered hosts and guests                                                     |
-  | `tandem_relay_forwarded_packets_total`    | counter | datagrams forwarded                                                             |
-  | `tandem_relay_forwarded_bytes_total`      | counter | payload bytes forwarded                                                         |
-  | `tandem_relay_dropped_total{reason}`      | counter | drops: `malformed`, `bad_token`, `unknown_client`, `rate_limited`, `no_channel` |
-  | `tandem_relay_codes_issued_total`         | counter | join codes issued                                                               |
-  | `tandem_relay_code_lookups_total{result}` | counter | code lookups: `found`, `unknown`, `limited`                                     |
+  | Metric                                    | Type    | What                                                                                                                              |
+  | ----------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+  | `tandem_relay_sessions`                   | gauge   | open sessions                                                                                                                     |
+  | `tandem_relay_clients`                    | gauge   | registered hosts and guests                                                                                                       |
+  | `tandem_relay_draining`                   | gauge   | 1 while shutting down (no new session)                                                                                            |
+  | `tandem_relay_proxy_flows`                | gauge   | behind a proxy: its sockets whose client a PROXY header named                                                                     |
+  | `tandem_relay_forwarded_packets_total`    | counter | datagrams forwarded                                                                                                               |
+  | `tandem_relay_forwarded_bytes_total`      | counter | payload bytes forwarded                                                                                                           |
+  | `tandem_relay_dropped_total{reason}`      | counter | drops: `malformed`, `bad_token`, `unknown_client`, `rate_limited`, `no_channel`; behind a proxy `untrusted_proxy`, `proxy_header` |
+  | `tandem_relay_codes_issued_total`         | counter | join codes issued                                                                                                                 |
+  | `tandem_relay_codes_reclaimed_total`      | counter | codes given back to their host after a restart                                                                                    |
+  | `tandem_relay_code_lookups_total{result}` | counter | code lookups: `found`, `unknown`, `limited`, `redirected` (to the owner)                                                          |
+  | `tandem_relay_refused_total{reason}`      | counter | registrations refused: `no_session`, `session_full`, `too_many_sessions`, `session_taken`, `draining`                             |
+  | `tandem_relay_redirects_total{kind}`      | counter | registrations redirected: `host` (a new session), `guest` (a secret)                                                              |
 
   Worth an alert: `bad_token` rising (someone trying to host without a
   token, or a typo in a friend's `tandem.ini`); `unknown` or `limited`
@@ -288,6 +605,9 @@ What the host's Co-op panel shows, and what it means here:
 | no session has this join code (wrong, or expired) | the guest's code is old: the host's panel shows the current one                            |
 | too many join attempts: try again in a minute     | the lookup limits; `limited` in the metrics                                                |
 | the relay has too many sessions open              | `--max-sessions`                                                                           |
+| the relay went silent: reconnecting               | a replica restarting (it comes back within seconds) or the path to it; `kubectl get pods`  |
+| the relay's replicas sent us on twice             | the replicas' `--peers` lists differ: give them all the same                               |
+| the relay is restarting: try again in a moment    | a relay on its own is draining                                                             |
 
 From outside, `nc -u -v relay.example.org 27460` cannot tell much (the
 relay does not answer strangers, on purpose). The quickest end-to-end test

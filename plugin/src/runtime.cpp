@@ -222,6 +222,16 @@ std::string Runtime::RelayStatus() const {
   return m_relayStatus;
 }
 
+void Runtime::SetRelayDetails(RelayView view) {
+  std::lock_guard _(m_lock);
+  m_relayView = std::move(view);
+}
+
+Runtime::RelayView Runtime::RelayDetails() const {
+  std::lock_guard _(m_lock);
+  return m_relayView;
+}
+
 bool Runtime::JoinByCode(std::string_view text) {
   const auto code = net::NormalizeJoinCode(text);
   if (!code) {
@@ -257,7 +267,7 @@ namespace {
 // What a running session was set up with: changed for the next one.
 bool ForTheNextSession(std::string_view key) {
   return key == "name" || key == "relay" || key == "relay_token" || key == "story" ||
-         key == "time_host";
+         key == "time_host" || key == "code";
 }
 } // namespace
 
@@ -291,6 +301,10 @@ bool Runtime::ChangeSetting(const std::string &key, const std::string &value) {
     ApplySetting(config, key, stored, 0);
   if (key == "recorder")
     Recording::Get().SetEnabled(config.recorder);
+  if (key == "direct")
+    directOn = config.direct;
+  if (key == "code_salt")
+    codeSalt = config.codeSalt;
   const auto shown = key == "relay_token" ? std::string("(a token)") : stored;
   if (config.file.empty()) {
     log::Info("setting: {} = {} (no tandem.ini to save it in)", key, shown);
@@ -379,6 +393,8 @@ void Runtime::Stop() {
     m_lootInbox.clear();
     m_deviceOutbox.clear();
     m_deviceInbox.clear();
+    m_breachOutbox.clear();
+    m_breachInbox.clear();
     m_npcAnimsIn.clear();
     m_npcShotsIn.clear();
     m_localPaused.reset();
@@ -1232,6 +1248,30 @@ std::vector<proto::Message> Runtime::TakeDevices() {
   return std::exchange(m_deviceInbox, {});
 }
 
+void Runtime::SubmitBreach(proto::Breach breach) {
+  std::lock_guard _(m_lock);
+  if (m_breachOutbox.size() < 64)
+    m_breachOutbox.push_back(std::move(breach));
+}
+
+std::vector<proto::Breach> Runtime::TakeBreachOutbox() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_breachOutbox, {});
+}
+
+void Runtime::PushBreach(proto::Message message) {
+  std::lock_guard _(m_lock);
+  if (m_breachInbox.size() < 256)
+    m_breachInbox.push_back(std::move(message));
+  else
+    ++m_overflows;
+}
+
+std::vector<proto::Message> Runtime::TakeBreaches() {
+  std::lock_guard _(m_lock);
+  return std::exchange(m_breachInbox, {});
+}
+
 void Runtime::PushNpcStates(const proto::NpcStates &states, proto::PlayerId you) {
   {
     // Each owner's states list every NPC it shares, ten times a second: an
@@ -1486,6 +1526,8 @@ void Runtime::ResetSession() {
     m_lootInbox.clear();
     m_deviceOutbox.clear();
     m_deviceInbox.clear();
+    m_breachOutbox.clear();
+    m_breachInbox.clear();
     m_localRevives.clear();
     m_revives.clear();
     m_regroupOutbox.clear();

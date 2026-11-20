@@ -343,7 +343,9 @@ public class TandemHacks extends ScriptableSystem {
       return; // uploads travel as NpcHackState
     }
     let tags = evt.staticData.GameplayTags();
-    if !ArrayContains(tags, n"Quickhack") {
+    // A breach's daemons too (Breach.reds): an owner's NPC weakened by
+    // another player's breach looks so on every proxy.
+    if !ArrayContains(tags, n"Quickhack") && !TandemBreach.IsDaemonEffect(effect) {
       return;
     }
     let game = npc.GetGame();
@@ -365,7 +367,7 @@ public class TandemHacks extends ScriptableSystem {
     if !TandemOwn.Entity(npc.GetGame(), npc.GetEntityID()) || !evt.isFinalRemoval || !IsDefined(evt.staticData) {
       return;
     }
-    if !ArrayContains(evt.staticData.GameplayTags(), n"Quickhack") {
+    if !ArrayContains(evt.staticData.GameplayTags(), n"Quickhack") && !TandemBreach.IsDaemonEffect(evt.staticData.GetID()) {
       return;
     }
     let id = TandemHacks.NpcOf(npc.GetGame(), npc.GetEntityID());

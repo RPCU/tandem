@@ -113,6 +113,11 @@ public:
   // Guest through a relay: the session's secret, to join again without the
   // code once it expired.
   std::optional<RelaySecret> RelaySessionSecret() const;
+  // Direct paths through the relay's introductions (hole punching) on or
+  // off; off sends everything back through the relay at once.
+  void SetDirect(bool on);
+  // Host on a relay: another join code (a kept one: its next salt).
+  void NewRelayCode();
 
 private:
   struct Impl;

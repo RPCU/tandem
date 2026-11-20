@@ -40,7 +40,8 @@ in-game session must look at.
 
 ```
 red4ext/plugins/tandem/   tandem.dll, tandem-report.exe, tandem.default.ini,
-                          INSTALL.md, NOTICE.txt, THIRD-PARTY-LICENSES.txt
+                          INSTALL.md, NOTICE.txt, THIRD-PARTY-LICENSES.txt,
+                          LICENSE.txt
 r6/scripts/tandem/        *.reds
 r6/tweaks/tandem/         *.tweak
 ```

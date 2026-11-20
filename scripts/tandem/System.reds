@@ -216,6 +216,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_saves: ref<TandemSaves>;
   // Trade with the player beside us (Trade.reds).
   private let m_trade: ref<TandemTradeTable>;
+  // Shops: our own vendor behind a partner's (Vendors.reds).
+  private let m_vendors: ref<TandemVendors>;
 
   private func OnAttach() -> Void {
     if TandemNative.IsConfigured() {
@@ -364,6 +366,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_presence.Start(this.GetGameInstance());
     this.m_trade = new TandemTradeTable();
     this.m_trade.Start(this.GetGameInstance(), this);
+    this.m_vendors = new TandemVendors();
+    this.m_vendors.Start(this.GetGameInstance(), this);
     if TandemNative.IsProbe() {
       this.m_probe = new TandemProbe();
       this.m_probe.Start(this.GetGameInstance());
@@ -459,6 +463,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_trade.End();
     }
     this.m_trade = null;
+    if IsDefined(this.m_vendors) {
+      this.m_vendors.End();
+    }
+    this.m_vendors = null;
     ArrayClear(this.m_joins);
     if IsDefined(this.m_pause) {
       this.m_pause.Stop();
@@ -565,7 +573,9 @@ public class TandemSystem extends ScriptableSystem {
     if ArraySize(this.m_puppets) > 0 || ArraySize(this.m_leaving) > 0 || (IsDefined(this.m_npcs) && this.m_npcs.Count() > 0) {
       left += 4;
     }
-    if IsDefined(this.m_npcs) && this.m_npcs.Levels().On() > 0 {
+    // Level and enemy scaling modifiers on NPCs of ours (never saved, but
+    // a save waits for them to be off all the same).
+    if IsDefined(this.m_npcs) && (this.m_npcs.Levels().On() > 0 || this.m_npcs.Scaling().On() > 0) {
       left += 8;
     }
     if (IsDefined(this.m_world) && this.m_world.Borrowed()) || (IsDefined(this.m_npcs) && this.m_npcs.Quiet()) {
@@ -772,6 +782,10 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_trade;
   }
 
+  public func Vendors() -> ref<TandemVendors> {
+    return this.m_vendors;
+  }
+
   // Pings, the link, shared tags, waypoints (Comms.reds).
   public func Comms() -> ref<TandemComms> {
     return this.m_comms;
@@ -854,6 +868,7 @@ public class TandemSystem extends ScriptableSystem {
     }
     TandemNative.PerfMark(4);
     TandemHacks.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
+    TandemBreach.Tick(this.GetGameInstance(), this.Now(), this.m_playing ? this.m_you : 0u);
     TandemNative.PerfMark(5);
     // Grapples, takedowns, carried bodies (Takedowns.reds); 0: not in a session.
     TandemTakedowns.Get(this.GetGameInstance()).Tick(this.Now(), this.m_playing && IsDefined(this.m_npcs) ? this.m_you : 0u);
@@ -943,6 +958,10 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(this.m_trade) && this.m_playing {
       this.m_trade.Tick(this.Now(), this.m_you);
     }
+    // Shops (after the trade's prompt, which comes first).
+    if IsDefined(this.m_vendors) && this.m_playing {
+      this.m_vendors.Tick(this.Now(), this.m_you);
+    }
     TandemNative.PerfMark(17);
     this.TickAttitudes();
     TandemNative.PerfMark(18);
@@ -1006,6 +1025,14 @@ public class TandemSystem extends ScriptableSystem {
       let story = TandemStorySystem.Get(this.GetGameInstance());
       if IsDefined(story) {
         story.GarageCommand(command);
+      }
+      return;
+    }
+    if StrBeginsWith(command, "vendor") {
+      if IsDefined(this.m_vendors) {
+        this.m_vendors.Command(command);
+      } else {
+        TandemNative.Log("vendor: not in a session");
       }
       return;
     }
@@ -1154,6 +1181,14 @@ public class TandemSystem extends ScriptableSystem {
       // the quests' own way), "police calm".
       if IsDefined(this.m_police) {
         this.m_police.Command(command, this);
+      }
+    } else if Equals(command, "npc scale") {
+      // (test) enemy scaling (Scaling.reds): the rule, and each NPC we
+      // scale or show, with its health, poise, armour and thresholds.
+      if IsDefined(this.m_npcs) {
+        this.m_npcs.Scaling().Report();
+      } else {
+        TandemNative.Log("scaling: no NPCs (not in a world)");
       }
     } else if Equals(command, "npc anims") {
       TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
@@ -1348,6 +1383,13 @@ public class TandemSystem extends ScriptableSystem {
         }
       }
       TandemHacksTest.Run(this.GetGameInstance(), command, proxy, copy);
+    } else if StrBeginsWith(command, "breach") {
+      // (test, Breach.reds) "breach": counts; "breach ap|npc [PROGRAMS]",
+      // "breach fail ap|npc": a breach of the nearest access point or
+      // proxy, its outcome faked as a minigame-skipping mod does.
+      let breacher = GetPlayer(this.GetGameInstance());
+      let near = IsDefined(this.m_npcs) && IsDefined(breacher) ? this.m_npcs.NearestProxy(breacher.GetWorldPosition()) : null;
+      TandemBreach.Get(this.GetGameInstance()).Command(command, near);
     } else if StrBeginsWith(command, "takedown") {
       TandemTakedowns.Get(this.GetGameInstance()).Command(command);
     } else if Equals(command, "test reset") {

@@ -889,14 +889,21 @@ public class TandemDevices extends ScriptableSystem {
     let point = ps as AccessPointControllerPS;
     if IsDefined(point) && TandemDevices.Differ(flags, has, TandemDevices.BitBreached()) {
       if TandemDevices.Has(flags, TandemDevices.BitBreached()) {
-        // Breached once, for everyone: the network's devices open up; what
-        // the breach paid went to who did it.
+        // Breached once, for everyone (Breach.reds): the network opens up,
+        // and the game offers no jack-in into it again; what the breach
+        // paid went to who did it, and its daemons run where their
+        // targets are owned.
         this.Send(ps, new BreachAccessPointEvent());
+        ps.TandemSetMinigameWon(true);
       } else if quiet {
         this.Quest(ps, n"ResetNetworkBreachState"); // our own save: not breached
+        ps.TandemSetMinigameWon(false);
       }
     }
-    if TandemDevices.Differ(flags, has, TandemDevices.BitExposed()) {
+    // An access point is open when breached (SetIsBreached): never through
+    // SetExposeQuickHacks, whose handler there runs RefreshSlaves, the
+    // daemons of whatever our minigame blackboard last had and its rewards.
+    if !IsDefined(point) && TandemDevices.Differ(flags, has, TandemDevices.BitExposed()) {
       if TandemDevices.Has(flags, TandemDevices.BitExposed()) {
         let expose = new SetExposeQuickHacks();
         expose.clearanceLevel = 2;
@@ -1057,10 +1064,9 @@ public class TandemDevices extends ScriptableSystem {
     return false;
   }
 
-  // The same for others (Interact.reds' test commands): its entity in our
-  // world, or null.
-  public func NearestObject(kind: String, maxDistance: Float) -> ref<GameObject> {
-    let distance = maxDistance;
+  // The entity of the nearest device of a kind, within `distance` (Breach.reds,
+  // Interact.reds).
+  public func NearestOf(kind: String, distance: Float) -> ref<GameObject> {
     let device = this.Nearest(kind, distance);
     return IsDefined(device) ? GameInstance.FindEntityByID(this.GetGameInstance(), device.entity) as GameObject : null;
   }

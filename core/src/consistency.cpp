@@ -38,7 +38,9 @@ std::uint32_t WorldDigest(const std::optional<proto::World> &world,
   if (difficulty)
     hash.Add(std::uint64_t{0xD0}).Add(std::uint64_t{difficulty->level});
   if (rules)
-    hash.Add(std::uint64_t{0xD1}).Add(std::uint64_t{rules->flags});
+    hash.Add(std::uint64_t{0xD1})
+        .Add(std::uint64_t{rules->flags})
+        .Add(std::uint64_t{rules->enemyHealth});
   return hash.Value();
 }
 
@@ -46,7 +48,8 @@ std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
                         const std::map<proto::NpcId, proto::NpcHealth> &health,
                         const std::map<proto::NpcId, proto::NpcHold> &holds,
                         const std::map<proto::NpcId, proto::PlayerId> &owners,
-                        const NpcFilter &only, std::uint16_t *count) {
+                        const NpcFilter &only, std::uint16_t *count,
+                        const std::map<proto::NpcId, proto::NpcScale> *scales) {
   Hasher hash;
   std::size_t counted = 0;
   for (const auto &[id, spawn] : npcs) {
@@ -68,6 +71,10 @@ std::uint32_t NpcDigest(const std::map<proto::NpcId, proto::NpcSpawn> &npcs,
     // Handed over: whoever runs it now.
     if (owner != announcer)
       hash.Add(std::uint64_t{0xE1}).Add(std::uint64_t{owner});
+    // Scaled for more than one player (alone, said or not, is the same).
+    if (scales)
+      if (const auto it = scales->find(id); it != scales->end() && it->second.players > 1)
+        hash.Add(std::uint64_t{0xE2}).Add(std::uint64_t{it->second.players});
   }
   if (count)
     *count = static_cast<std::uint16_t>(std::min<std::size_t>(counted, 0xFFFF));
@@ -191,6 +198,11 @@ std::uint32_t PlayersDigest(const PlayersView &players, proto::PlayerId self) {
             .Add(w.position.y)
             .Add(w.position.z);
   }
+  if (players.regionPairs) {
+    hash.Add(std::uint64_t{0xAD});
+    for (const auto id : *players.regionPairs)
+      hash.Add(std::uint64_t{id});
+  }
   return hash.Value();
 }
 
@@ -269,6 +281,8 @@ bool IsOneShot(const proto::Message &message) {
          std::holds_alternative<GameOver>(message) || std::holds_alternative<NpcShot>(message) ||
          // A request to operate a device: asked once (its answer is state).
          std::holds_alternative<DeviceUse>(message) || std::holds_alternative<NpcStrike>(message) ||
+         // A breach and its answer: the daemons run once (devices.md, "Breach Protocol").
+         std::holds_alternative<Breach>(message) || std::holds_alternative<BreachResult>(message) ||
          // A quest interaction: asked once, answered once (story.md).
          std::holds_alternative<QuestInteract>(message) ||
          std::holds_alternative<NpcWound>(message) || std::holds_alternative<AreaHit>(message) ||

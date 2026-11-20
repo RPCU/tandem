@@ -8,10 +8,12 @@ its tag. **Status (2026-11-19): built and tested offline (core, mock
 player, scripts compile); nothing has run in game yet** — the scenarios at
 the end are the first thing to run.
 
-Code: `core/include/tandem/devices.hpp` (the record),
-`core/src/endpoint.cpp` (who hears what), `plugin/src/natives.cpp`
-(`ReportDevice`, `UseDevice`, `AskDevice`, `TakeDeviceEvents`),
-`scripts/tandem/Devices.reds` (the game side), `tests/devices_test.cpp`.
+Code: `core/include/tandem/devices.hpp` (the record, and who breached
+what: `devices::Breaches`), `core/src/endpoint.cpp` (who hears what),
+`plugin/src/natives.cpp` (`ReportDevice`, `UseDevice`, `AskDevice`,
+`TakeDeviceEvents`; `SendBreach`, `TakeBreachEvents`),
+`scripts/tandem/Devices.reds` (the game side), `scripts/tandem/Breach.reds`
+(Breach Protocol), `tests/devices_test.cpp`, `tests/breach_test.cpp`.
 
 ## The decision: the host owns every device, a guest's own copy changes first
 
@@ -68,13 +70,15 @@ file: the same in every game) and the class name of its state; its
 
 ## Messages (appended; no protocol version change)
 
-| Message        | Direction                   | What                                                                                                                                                                                                                       |
-| -------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DeviceState`  | host → guests               | the session's word on a device: status, state bits, one value, the host's revision of it, who changed it last, and `how` (live: it just happened, play it; quiet: a record, set it). Kept for late joiners. About 30 bytes |
-| `DeviceState`  | guest → host (`kDeviceAsk`) | "this came into my world like this": the host answers with its own when they differ                                                                                                                                        |
-| `DeviceUse`    | guest → host                | "my V made it this" with the revision the guest had seen. One-shot                                                                                                                                                         |
-| `DeviceDigest` | host → guests               | count and hash of the record, with every `Digest`                                                                                                                                                                          |
-| `DeviceSet`    | both                        | guest: send me the record again; host: here it comes, forget yours                                                                                                                                                         |
+| Message        | Direction                    | What                                                                                                                                                                                                                       |
+| -------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DeviceState`  | host → guests                | the session's word on a device: status, state bits, one value, the host's revision of it, who changed it last, and `how` (live: it just happened, play it; quiet: a record, set it). Kept for late joiners. About 30 bytes |
+| `DeviceState`  | guest → host (`kDeviceAsk`)  | "this came into my world like this": the host answers with its own when they differ                                                                                                                                        |
+| `DeviceUse`    | guest → host                 | "my V made it this" with the revision the guest had seen. One-shot                                                                                                                                                         |
+| `DeviceDigest` | host → guests                | count and hash of the record, with every `Digest`                                                                                                                                                                          |
+| `DeviceSet`    | both                         | guest: send me the record again; host: here it comes, forget yours                                                                                                                                                         |
+| `Breach`       | any game → host → the others | a breach's outcome: the access point (or the NPC breached through the quickhack), the daemons and traps won, who breached; the host passes a granted one on (`kBreachApply`). One-shot ("Breach Protocol", below)          |
+| `BreachResult` | host → the breacher          | granted, or refused: breached first by whom                                                                                                                                                                                |
 
 Sending the _state the device should be in_, not the action that was
 pressed, makes every message idempotent, makes a late joiner and a live
@@ -148,6 +152,63 @@ device's word; anything else: our change is asked of the host as above
 - **Bounds.** 4096 records; a request for an unknown device when full is
   dropped; queues are bounded on both sides of the plugin.
 
+## Breach Protocol
+
+Three ways in, one outcome: jacking into an access point with the personal
+link, the Breach Protocol quickhack on a device or an NPC, and a mod that
+skips the minigame (AccessPointSkip wraps `Device.PerformDive` and fakes a
+succeeded `AccessPointMiniGameStatus` with the programs). Engine facts:
+[`../research/engine/combat.md`](../research/engine/combat.md) §13.60.
+
+- **The minigame is the breacher's**, as in single player: its screen and
+  timer (the world does not slow: `time.md`), and its rewards, rolled on
+  its game for its V (the datamine's eddies, crafting components, shards,
+  the material trap). The others see its puppet busy in a minigame
+  (`activities.md`). Nothing is sent before it ends: a breacher that
+  vanishes mid-breach leaves the network as it was.
+- **Its outcome is caught, not its screen**: every breach ends with an
+  `AccessPointMiniGameStatus` to what was breached, the won daemons on the
+  `HackingMinigame` blackboard. `Breach.reds` wraps
+  `Device.OnAccessPointMiniGameStatus` (access points, devices through the
+  quickhack) and `ScriptedPuppet.OnAccessPointMiniGameStatus` (NPCs) and
+  sends `Breach` before the game handles it: a mod that fakes the
+  outcome needs nothing of its own.
+- **The host decides** (`Endpoint::OnBreach`, `devices::Breaches`): the
+  first breach of a network stands, any later one (anyone's, the host's V
+  included, the same breacher again) is refused with who was first, as is
+  one of a network the host's world had breached already; the same for an
+  NPC through the quickhack. A granted network's access point becomes
+  breached and open in the record, by the breacher (`DeviceState`: every
+  game's copy, late joiners and the device digest included); each copy
+  gets `BreachAccessPointEvent` and the minigame marked won
+  (`TandemSetMinigameWon`), so **the game itself offers no second
+  jack-in** and the quickhack's `IsBreached` prereqs lock. A refused
+  breacher sees "NAME breached this network first"; its rewards were
+  already rolled (a race within a ping pays both: open).
+- **The owner of what it affects runs the daemons**, the game's own way,
+  with the breacher's puppet as the player: the host on the network's
+  devices (each child's own minigame action, as
+  `ProcessMinigameNetworkActions` picks it: cameras and turrets shut down,
+  friendly, malfunctioning; `SetExposeQuickHacks` on each; the awareness
+  trap) and on its NPCs of it (the daemons each one's character record
+  lists, as `ScriptedPuppetPS.OnSetExposeQuickHacks` runs them; the squad
+  trap); every other game on the NPCs of that network it runs; the owner of
+  an NPC breached through the quickhack on that NPC, and the host on its
+  network when it is on one (the breacher's proxy has no device link to
+  find it). A lost minigame (`kBreachFailed`) breaches nothing: the
+  owners alert the NPCs. Loot programs never run anywhere but on the
+  breacher's game.
+- **Results come back the usual ways**: devices through their state (a
+  camera off, a turret friendly, every device's exposed bit), NPCs'
+  daemon effects (`MinigameAction.ICEBrokenMinigame*`,
+  `VulnerabilityMinigame`, the squad buff) through `NpcStatus`
+  (`Hacks.reds`), so every proxy looks weakened and a linked partner sees
+  them as partner effects (`comms.md`); a proxy never forwards a daemon
+  effect of its own (`Combat.reds`).
+- **An access point is opened by its breach only**: `SetExposeQuickHacks`
+  on one runs `RefreshSlaves` (the local blackboard's last daemons and the
+  money), so `TandemDevices.Apply` never sends it there.
+
 ## Persistence: whose world it is afterwards
 
 Device state lives in each game's own save. In a session the **host's world
@@ -172,6 +233,14 @@ world untouched.
   messages lost, a guest vanishing with a request in flight, the host
   vanishing) and `tests/protocol_test.cpp` (round trips, sizes, unknown
   bits refused).
+- `task test` also: `tests/breach_test.cpp` (the breach record; over
+  loopback: a guest's breach applied by the host and heard by the other
+  guest for its NPCs, a second breach refused, the host's own, a late
+  joiner, the quickhack on a host NPC and its network, a lost minigame, a
+  breacher vanishing mid-breach and right after) and
+  `tests/peer_breach.sh` (`tandem-peer --breach ENTITY[:CLASS][@S] |
+npc=N[@S] --programs LIST [--breach-failed]`: two guests and a late
+  joiner).
 - Mock player: `tandem-peer … --device ENTITY:CLASS:WORDS[@SECONDS]`
   operates a device by id (a guest asks; a host says its own is that);
   `--device-answer WORDS --device-after N` changes back every device another
@@ -183,6 +252,13 @@ world untouched.
 [KIND]`, `device open|close|lock|unlock|on|off|explode|distract|friendly|
 hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   device of a kind (door lift camera turret barrel ap radio any) around V.
+- Breach Protocol in game: `tools/game.sh cmd breach` (counts),
+  `breach ap [PROGRAMS]`, `breach fail ap`, `breach npc [PROGRAMS]` (the
+  nearest access point or proxy, its outcome faked as AccessPointSkip
+  does); scenarios `breach-guest` (the mock guest's breach: the host's
+  cameras off, its NPCs' ICE broken) and `breach-host` (the game as a
+  guest breaches the host's network; the mock host's second breach is
+  refused).
 - Scenarios (`tools/scenario.sh NAME`, none run yet): `devices-door`,
   `devices-lift` (an elevator ride together), `devices-camera` (hacked by
   the guest), `devices-barrel` (shot by the guest), `devices-guest` (the
@@ -216,3 +292,9 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   host's order still decides.
 - **Datamine rewards** go to who breached. Alternative if the players
   prefer it: breach state not shared, each jacks in their own copy.
+- **Breach Protocol, not run in game**: the list is §13.60, "To verify in
+  game". Two breaches of one network within a ping are both paid (each
+  game rolls its rewards at once; the host grants the first). The
+  quickhack on an NPC another guest runs breaches that NPC only, not its
+  network. A guest's NPCs of the network get the daemons once its game
+  hears of the breach (a ping later than the breacher's own).

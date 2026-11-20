@@ -1744,10 +1744,16 @@ struct ThrowEnd {
 // kRuleFriendlyFire: a V's hits (shots, blades, explosions) hurt the other
 // Vs (AreaHit carries every one); off, they never do (the default: as
 // vanilla's companions, a partner is never hurt by V).
-inline constexpr std::uint8_t kRuleFriendlyFire = 1;
-inline constexpr std::uint8_t kRuleFlags = kRuleFriendlyFire;
+// kRuleEnemyScaling: hostile NPCs are tougher for each extra player near
+// them (tandem/scaling.hpp, NpcScale; docs/architecture/npcs.md, "Enemy
+// scaling"), their health by `enemyHealth` percent per extra player.
+// (enemyHealth was added before Rules was released: no version bump.)
+inline constexpr std::uint8_t kRuleFriendlyFire = 1, kRuleEnemyScaling = 2;
+inline constexpr std::uint8_t kRuleFlags = kRuleFriendlyFire | kRuleEnemyScaling;
+inline constexpr std::uint8_t kMaxEnemyHealth = 250; // percent per extra player
 struct Rules {
-  std::uint8_t flags{}; // kRule*
+  std::uint8_t flags{};         // kRule*
+  std::uint8_t enemyHealth{60}; // kRuleEnemyScaling: health percent per extra player
   friend bool operator==(const Rules &, const Rules &) = default;
 };
 
@@ -1898,6 +1904,28 @@ struct NpcLevel { // Event channel
   NpcId npc{};
   float level{};
   friend bool operator==(const NpcLevel &, const NpcLevel &) = default;
+};
+
+// ---- Vendors (docs/architecture/progression.md, "Vendors") ----
+// A shared NPC is a vendor placed in the world (a shop, a ripperdoc, a
+// clothing store): its entity's static id, the same in every game. A player
+// whose game shows it as a proxy opens its own game's vendor of that entity,
+// as in single player: its own stock, prices, street cred gates and money
+// (tandem/vendors.hpp). Its owner to the players linked with it, once per
+// NPC, with the NPC's other records (late joiners, a link that forms); kept
+// until the NPC is gone.
+//
+// kVendorDead (npc 0): the host's word that the vendor of that entity died
+// in the session, to everyone. Each game keeps its own copy hidden until the
+// session ends (the same dead stay dead); kept for the session, for late
+// joiners. Never a guest's to say: the host derives it from the owner's
+// NpcGone.
+inline constexpr std::uint8_t kVendorDead = 1;
+struct NpcVendor { // Event channel
+  NpcId npc{};
+  std::uint64_t entity{}; // EntityID hash (static: placed in the world)
+  std::uint8_t flags{};   // kVendorDead
+  friend bool operator==(const NpcVendor &, const NpcVendor &) = default;
 };
 
 // ---- Trade between two players (docs/architecture/trade.md) ----
@@ -2431,87 +2459,144 @@ struct VehicleMotion {
   friend bool operator==(const VehicleMotion &, const VehicleMotion &) = default;
 };
 
-// ---- Quest interactions (docs/architecture/story.md, "Quest interactions") ----
-//
-// The quest runs on the host, so a guest's V using one of the host's
-// objects (grouped, a placed entity: the same in both games) moves nothing
-// of the host's quest by itself. The guest says what it chose (kInteractAsk,
-// guest to host); the host's game decides from its own data and answers
-// that guest alone with a verdict. Never relayed, a story message
-// (tandem/interact.hpp keeps the first-come rule and the verdicts known).
-//
-// QuestInteract::verdict. Ask: the guest's question. The rest are answers.
-inline constexpr std::uint8_t kInteractAsk = 0,
-                              kInteractPerformed = 1, // the host's V did it on the host's object
-    kInteractHostOnly = 2, // it would cast the doer in a scene or workspot: the host must
-    kInteractLocal = 3,    // nothing of the host's quest there: the guest's own copy is all
-    kInteractTaken = 4,    // another player's use of it came first
-    kInteractTooFar = 5,   // the guest's V was not where it could reach it
-    kInteractMissing = 6,  // the host's game has no such object or choice now
-    kInteractBusy = 7;     // the host's V cannot do it now (a scene, a workspot, a menu)
-inline constexpr std::uint8_t kInteractVerdictMax = kInteractBusy;
-// QuestInteract::flags.
-inline constexpr std::uint8_t kInteractChecked = 1, // the guest's own game passed the choice's
-                                                    // checks (a skill, an item its V holds)
-    kInteractCasts = 2, // the guest's own game says the choice casts the doer (not run there)
-    kInteractLoot = 4;  // a loot choice: `detail` is the item's TweakDB id
-inline constexpr std::uint8_t kInteractFlags = 7;
-struct QuestInteract {
-  std::uint64_t target{}; // the entity's static id (EntityID hash)
-  std::uint64_t choice{}; // what was chosen: the device action's class, or the loot action (CName)
-  std::uint64_t detail{}; // the action's name (CName), or the looted item's record (kInteractLoot)
-  std::uint64_t layer{};  // the interaction layer it was on (CName; 0: none)
-  std::uint32_t seq{};    // the asker's count of its questions: the answer names it
-  Vec3 position;          // ask: where the guest's V was when it chose
-  std::uint64_t timeUs{}; // ask: when, on the host clock
-  PlayerId player{};      // the asker (set by the host from the connection)
-  std::uint8_t verdict{}; // kInteract*
-  std::uint8_t flags{};   // kInteract* flags
-  friend bool operator==(const QuestInteract &, const QuestInteract &) = default;
+// ---- Enemy scaling (docs/architecture/npcs.md, "Enemy scaling") ----
+// How many players an NPC's owner counts near it (tandem/scaling.hpp:
+// within 100 m, fighting it or its target, with hysteresis): its owner's
+// game scales its health, poise and armour by that count under the host's
+// Rules, keeping its health and poise fractions; every proxy of it takes
+// the same modifiers, so each game computes a hit against the same armour
+// and the same health. Owner to everyone who sees it (a guest's through the
+// host), when it changes; kept for late joiners until the NPC is gone; in
+// the NPC digest.
+struct NpcScale { // Event channel
+  NpcId npc{};
+  std::uint8_t players{}; // 1..kMaxPlayerId
+  friend bool operator==(const NpcScale &, const NpcScale &) = default;
 };
 
-using Message = std::variant<
-    Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
-    Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
-    Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
-    PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply, Subtitle,
-    ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect, NpcAction,
-    NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken, SharedItem,
-    Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise, Difficulty, AreaHit,
-    Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat, NpcShotAt, ShotHit,
-    SceneState, SceneCast, SceneLine, ActorPose, DeviceState, DeviceUse, DeviceSet, DeviceDigest,
-    Regions, NpcOwner, NpcHandover, NpcHandoverState, NpcHandoverDone, OwnedDigest, RegionHold,
-    TrafficSpawn, TrafficStates, TrafficGone, TrafficStatus, TrafficHit, TrafficClaim, TrafficSet,
-    Heat, Crime, Presence, Cue, NpcReaction, Install, Throw, ThrowEnd, Rules, Defended, Activity,
-    TimeSkip, TimeSkipVote, TimeSkipResult, PlayerLevel, SessionLevel, NpcLevel, Trade, TradeOffer,
-    TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
-    VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
-    Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, QuestInteract>;
+// ---- Breach Protocol (docs/architecture/devices.md, "Breach Protocol") ----
+//
+// The minigame is the breacher's own, as in single player (its UI, its
+// timer, its rewards); what it did to the world is a request to the owner
+// of what it affects. A game's own breach (a jack-in, the quickhack on a
+// device or an NPC, or a mod that fakes the outcome) goes to the host:
+// the access point's network is the host's (breached once for everyone:
+// the record of the access point says so, kDeviceBreached), the daemons'
+// targets are their owners'. The host grants the first breach of a network
+// and refuses any later one; a granted breach is passed on to every other
+// game for the NPCs of that network it runs, and the NPC breached through
+// the quickhack is its owner's to apply.
+inline constexpr std::size_t kMaxBreachPrograms = 16; // daemons and traps, each
+inline constexpr std::uint8_t kBreachRemote = 1; // the Breach Protocol quickhack, not a jack-in
+inline constexpr std::uint8_t kBreachFailed = 2; // the minigame was lost: the network is alerted
+inline constexpr std::uint8_t kBreachApply = 4;  // host to the other games: granted, apply it
+inline constexpr std::uint8_t kBreachFlags = 7;
+struct Breach {                        // Event channel
+  PlayerId player{};                   // who breached: set by the host from the connection
+  std::uint64_t entity{};              // the access point's static id (0: none, an NPC's own squad)
+  std::uint64_t cls{};                 // its persistent state's class
+  NpcId npc{};                         // the NPC breached through the quickhack (0: none)
+  std::vector<std::uint64_t> programs; // the daemons uploaded (MinigameAction records)
+  std::vector<std::uint64_t> traps;    // the traps the grid set off (MinigameTraps records)
+  std::uint8_t flags{};                // kBreach*
+  friend bool operator==(const Breach &, const Breach &) = default;
+};
 
-// A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
-// VehicleUnlock, StoryRestrictions, QuestInteract):
-// endpoint.hpp relays these through one path.
-bool IsStory(const Message &message);
-// A hit outcome message (NpcStrike … AreaHit, Throw … Defended), a level
-// (PlayerLevel … NpcLevel) or a car's lending (CarLend): one path in
-// endpoint.hpp too.
-bool IsCombat(const Message &message);
-// A trade message (Trade, TradeOffer, TradeCommit): one path as well.
-bool IsTrade(const Message &message);
-// A vehicle combat message (VehicleDamage … Chase): one path in endpoint.hpp too.
-bool IsVehicleCombat(const Message &message);
+// The host's answer to a guest's breach (Event channel; to the breacher
+// only). Refused: the network (or the NPC) was breached already, `by` says
+// by whom (kNoPlayer: the host's world had it so).
+enum class BreachVerdict : std::uint8_t { Granted = 0, Breached = 1, Full = 2 };
+struct BreachResult {
+  std::uint64_t entity{};
+  std::uint64_t cls{};
+  NpcId npc{};
+  BreachVerdict verdict{};
+  PlayerId by{};
+  friend bool operator==(const BreachResult &, const BreachResult &) = default;
+  // ---- Quest interactions (docs/architecture/story.md, "Quest interactions") ----
+  //
+  // The quest runs on the host, so a guest's V using one of the host's
+  // objects (grouped, a placed entity: the same in both games) moves nothing
+  // of the host's quest by itself. The guest says what it chose (kInteractAsk,
+  // guest to host); the host's game decides from its own data and answers
+  // that guest alone with a verdict. Never relayed, a story message
+  // (tandem/interact.hpp keeps the first-come rule and the verdicts known).
+  //
+  // QuestInteract::verdict. Ask: the guest's question. The rest are answers.
+  inline constexpr std::uint8_t kInteractAsk = 0,
+                                kInteractPerformed = 1, // the host's V did it on the host's object
+      kInteractHostOnly = 2, // it would cast the doer in a scene or workspot: the host must
+      kInteractLocal = 3,    // nothing of the host's quest there: the guest's own copy is all
+      kInteractTaken = 4,    // another player's use of it came first
+      kInteractTooFar = 5,   // the guest's V was not where it could reach it
+      kInteractMissing = 6,  // the host's game has no such object or choice now
+      kInteractBusy = 7;     // the host's V cannot do it now (a scene, a workspot, a menu)
+  inline constexpr std::uint8_t kInteractVerdictMax = kInteractBusy;
+  // QuestInteract::flags.
+  inline constexpr std::uint8_t kInteractChecked = 1, // the guest's own game passed the choice's
+                                                      // checks (a skill, an item its V holds)
+      kInteractCasts = 2, // the guest's own game says the choice casts the doer (not run there)
+      kInteractLoot = 4;  // a loot choice: `detail` is the item's TweakDB id
+  inline constexpr std::uint8_t kInteractFlags = 7;
+  struct QuestInteract {
+    std::uint64_t target{}; // the entity's static id (EntityID hash)
+    std::uint64_t
+        choice{}; // what was chosen: the device action's class, or the loot action (CName)
+    std::uint64_t
+        detail{};          // the action's name (CName), or the looted item's record (kInteractLoot)
+    std::uint64_t layer{}; // the interaction layer it was on (CName; 0: none)
+    std::uint32_t seq{};   // the asker's count of its questions: the answer names it
+    Vec3 position;         // ask: where the guest's V was when it chose
+    std::uint64_t timeUs{}; // ask: when, on the host clock
+    PlayerId player{};      // the asker (set by the host from the connection)
+    std::uint8_t verdict{}; // kInteract*
+    std::uint8_t flags{};   // kInteract* flags
+    friend bool operator==(const QuestInteract &, const QuestInteract &) = default;
+  };
 
-std::vector<std::byte> Encode(const Message &message);
-std::optional<Message> Decode(std::span<const std::byte> bytes);
-// The protocol version of a packet that is a tandem Hello, also one Decode
-// refuses (another version's layout); none: not a Hello.
-std::optional<std::uint16_t> PeekHelloVersion(std::span<const std::byte> bytes);
+  using Message = std::variant<
+      Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
+      Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
+      Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState,
+      NpcStatus, PlayerHack, VehicleHack, Journal, Tracked, PhoneCall, PhoneAction, PhoneReply,
+      Subtitle, ChoiceHub, ChoiceCursor, StoryState, QuestReward, TimeEffect, StoryEffect,
+      NpcAction, NpcActionReply, NpcHold, NpcCue, Regroup, RegroupAnswer, WorldItem, WorldItemTaken,
+      SharedItem, Vitals, Revive, GameOver, NpcAnims, NpcShot, NpcStrike, NpcWound, NpcPoise,
+      Difficulty, AreaHit, Digest, ResyncRequest, NpcSet, Epoch, Elsewhere, Transit, NpcSeat,
+      NpcShotAt, ShotHit, SceneState, SceneCast, SceneLine, ActorPose, DeviceState, DeviceUse,
+      DeviceSet, DeviceDigest, Regions, NpcOwner, NpcHandover, NpcHandoverState, NpcHandoverDone,
+      OwnedDigest, RegionHold, TrafficSpawn, TrafficStates, TrafficGone, TrafficStatus, TrafficHit,
+      TrafficClaim, TrafficSet, Heat, Crime, Presence, Cue, NpcReaction, Install, Throw, ThrowEnd,
+      Rules, Defended, Activity, TimeSkip, TimeSkipVote, TimeSkipResult, PlayerLevel, SessionLevel,
+      NpcLevel, Trade, TradeOffer, TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint,
+      VehicleDamage, VehicleHit, VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner,
+      GunnerAim, VehicleBump, NpcRam, Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion,
+      VehicleMotion, NpcScale, Breach, BreachResult, NpcVendor, QuestInteract>;
 
-// The channel a message travels on, and whether ENet must deliver it.
-Channel ChannelOf(const Message &message);
-bool IsReliable(const Message &message);
+  // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
+  // VehicleUnlock, StoryRestrictions, QuestInteract):
+  // endpoint.hpp relays these through one path.
+  bool IsStory(const Message &message);
+  // A hit outcome message (NpcStrike … AreaHit, Throw … Defended), a level
+  // (PlayerLevel … NpcLevel), a car's lending (CarLend), an NPC's scale
+  // (NpcScale) or a vendor (NpcVendor): one path in endpoint.hpp too.
+  bool IsCombat(const Message &message);
+  // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
+  bool IsTrade(const Message &message);
+  // A vehicle combat message (VehicleDamage … Chase): one path in endpoint.hpp too.
+  bool IsVehicleCombat(const Message &message);
 
-const char *NameOf(const Message &message);
-// The same by Message index ("?" past the last).
-const char *NameOfKind(std::size_t kind);
+  std::vector<std::byte> Encode(const Message &message);
+  std::optional<Message> Decode(std::span<const std::byte> bytes);
+  // The protocol version of a packet that is a tandem Hello, also one Decode
+  // refuses (another version's layout); none: not a Hello.
+  std::optional<std::uint16_t> PeekHelloVersion(std::span<const std::byte> bytes);
+
+  // The channel a message travels on, and whether ENet must deliver it.
+  Channel ChannelOf(const Message &message);
+  bool IsReliable(const Message &message);
+
+  const char *NameOf(const Message &message);
+  // The same by Message index ("?" past the last).
+  const char *NameOfKind(std::size_t kind);
 } // namespace tandem::proto

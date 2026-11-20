@@ -73,6 +73,54 @@ std::uint32_t Ledger::Digest() const {
   return hash.Value();
 }
 
+Breaches::Verdict Breaches::Judge(const Key &network, proto::PlayerId player,
+                                  const Ledger &record) const {
+  if (m_networks.contains(network))
+    return Verdict::Breached; // once, whoever asks again (its breacher too)
+  // The record has it breached by someone else, or by the host's world:
+  // the game would not have let anyone breach it again. The breacher's
+  // own copy may have told the host first (its DeviceUse): still its own.
+  if (const auto *state = record.Find(network);
+      state && (state->flags & proto::kDeviceBreached) && state->by != player)
+    return Verdict::Breached;
+  if (m_networks.size() >= kMaxDevices)
+    return Verdict::Full;
+  return Verdict::Granted;
+}
+
+Breaches::Verdict Breaches::JudgeNpc(proto::NpcId npc) const {
+  if (m_npcs.contains(npc))
+    return Verdict::Breached;
+  return m_npcs.size() >= kMaxDevices ? Verdict::Full : Verdict::Granted;
+}
+
+proto::PlayerId Breaches::By(const Key &network, const Ledger &record) const {
+  if (const auto it = m_networks.find(network); it != m_networks.end())
+    return it->second;
+  if (const auto *state = record.Find(network); state && (state->flags & proto::kDeviceBreached))
+    return state->by;
+  return proto::kNoPlayer;
+}
+
+proto::PlayerId Breaches::ByNpc(proto::NpcId npc) const {
+  const auto it = m_npcs.find(npc);
+  return it == m_npcs.end() ? proto::kNoPlayer : it->second;
+}
+
+proto::DeviceState BreachedState(const Key &network, proto::PlayerId player,
+                                 const proto::DeviceState *record) {
+  proto::DeviceState state{.entity = network.entity,
+                           .cls = network.cls,
+                           .status = proto::kDeviceOn,
+                           .value = proto::kDeviceNoValue};
+  if (record)
+    state = *record;
+  state.flags |= proto::kDeviceBreached | proto::kDeviceExposed;
+  state.by = player;
+  state.how = proto::kDeviceLive;
+  return state;
+}
+
 bool DigestCheck::Compare(const proto::DeviceDigest &host, const proto::DeviceDigest &ours,
                           std::uint64_t nowUs) {
   const bool differ = !(host == ours);

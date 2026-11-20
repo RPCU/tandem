@@ -1,0 +1,48 @@
+# Through playit the pod takes no traffic in from players (it comes over the
+# agent's own outbound connection), and needs egress, for the agent only:
+# DNS for playit's names, and the internet (not the cluster's or private
+# networks) for its control connection and its tunnels. The rule is the
+# pod's, so the relay could send there too; it only ever answers on
+# 127.0.0.1, to the agent.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tandem-relay
+spec:
+  ingress:
+    # Metrics only from the monitoring namespace (probes come from the
+    # kubelet, not filtered).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: 8080
+          protocol: TCP
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              [
+                10.0.0.0/8,
+                172.16.0.0/12,
+                192.168.0.0/16,
+                100.64.0.0/10,
+                169.254.0.0/16,
+              ]
+        - ipBlock:
+            cidr: ::/0
+            except: ["fc00::/7", "fe80::/10"]

@@ -60,7 +60,7 @@
   comment is appended, not uncommented; a value with a line break, `;` or
   `#` is refused) through a file written aside, and applies it.
   `TandemNative.Setting(key)` reads one back.
-- **When it applies**: at once for `recorder`, `friendly_fire`, `notices`,
+- **When it applies**: at once for `recorder`, `friendly_fire`, `enemy_scaling`, `notices`,
   `markers`, `nameplates`, `party_hud` (the scripts read them as they need
   them; the nameplates and the party list every frame);
   `name`, `relay`, `relay_token`, `story`, `time_host` are what a running
@@ -72,7 +72,11 @@
   changes the rule at once (the host sends `Rules` again, every game
   follows); on a guest's page in a session it shows the host's value,
   "(the host's rule)", and cannot be changed there (its own tandem.ini's
-  value counts when it hosts). `notices = important` hides news (rides, calls, pauses,
+  value counts when it hosts). `enemy_scaling` (on by default; `npcs.md`,
+  "Enemy scaling") is the host's rule the same way: hostile NPCs tougher for
+  each extra player near them; its health per player,
+  `enemy_scaling_health`, is not on the page (tandem.ini only).
+  `notices = important` hides news (rides, calls, pauses,
   players elsewhere, loot), `minimal` keeps only what asks for an answer or
   went wrong (`TandemText.Importance`); every notice is logged either way.
   `markers = off` takes the other players' markers off (HUD, minimap, map);
@@ -114,6 +118,13 @@ minute"`…), to show as is.
   starts when the next game is loaded (`TandemNative.Start`). The outcome
   arrives as the usual `TandemEvent`s (4 in the session, 3 ended with a
   reason).
+- `RelayCodeKept() -> Bool` (the code is the host's kept one: "Join code:
+  K7Q-2M9 (kept: the same next time)"), `RelayNewCode() -> Bool` (the pause
+  menu's "New join code", for a host with a code: a new one now; a kept
+  code's next salt, saved as `code_salt`), `RelayCheck() -> String` (the
+  connection check: `"direct"` likely, `"relay"` only, `""` unknown) and
+  `RelayDirect() -> Int32` (direct paths up), shown as status lines
+  (`TandemCoop.ConnectionLines`). See [The relay](relay.md).
 
 The flow: **host** — the menu's "Host co-op" loads one of the player's saves
 with `role = host` and shows `RelayCode()` (with a copy button and the
@@ -122,9 +133,10 @@ is what the player sends a friend. **Join** — "Join co-op" asks for the code
 (6 characters, a dash optional), calls `JoinByCode`, loads the guest's own
 save and waits for event 4, showing `RelayStatus()` and the end reason on
 failure. `scripts/tandem/Coop.reds` does this (the co-op menu above, which
-also hosts and joins by address). Still missing: a "new code" request (the
-wire has `renew`; `RelayLink` does not expose it yet), and a relay address
-shipped by default (today `relay =` is set by hand).
+also hosts and joins by address). Still missing: a relay address shipped
+by default (today `relay =` is set by hand). (The "new code" request, once
+missing because `RelayLink` did not expose the wire's `renew`, is the
+pause menu's New join code since 2026-11-19.)
 
 ## Open problems
 
