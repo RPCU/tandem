@@ -73,6 +73,7 @@ bool Record::Note(const proto::Message &message) {
     // Another play, or none: the old one's cast and lines went with it.
     if (!next || !m_scene || m_scene->play != next->play) {
       m_cast.reset();
+      m_props.clear();
       std::erase_if(m_lines, [](const proto::SceneLine &line) { return line.play != 0; });
     }
     // An end always says so (the guest lets its proxies go).
@@ -86,6 +87,19 @@ bool Record::Note(const proto::Message &message) {
     const bool changed = m_cast != *cast;
     m_cast = *cast;
     return changed;
+  }
+  if (const auto *prop = std::get_if<proto::SceneProp>(&message)) {
+    if (!m_scene || m_scene->play != prop->play)
+      return false; // of a play that is over
+    if (prop->flags & proto::kPropGone)
+      return m_props.erase(prop->prop) > 0;
+    const auto it = m_props.find(prop->prop);
+    if (it != m_props.end() && it->second == *prop)
+      return false;
+    if (it == m_props.end() && m_props.size() >= proto::kMaxSceneProps)
+      return false;
+    m_props[prop->prop] = *prop;
+    return true;
   }
   if (const auto *line = std::get_if<proto::SceneLine>(&message)) {
     const auto same = [&](const proto::SceneLine &kept) { return kept.line == line->line; };
@@ -116,6 +130,13 @@ std::uint32_t Record::Digest() const {
   if (m_cast)
     for (const auto &actor : m_cast->actors)
       hash.Add(std::uint64_t{actor.npc}).Add(std::uint64_t{actor.flags});
+  // Its props: one lost would stay in a proxy's hand, or never get there.
+  for (const auto &[id, prop] : m_props)
+    hash.Add(std::uint64_t{id})
+        .Add(prop.record)
+        .Add(std::uint64_t{prop.holder})
+        .Add(std::uint64_t{prop.holderPlayer})
+        .Add(std::uint64_t{prop.flags});
   // The host's restrictions: a lift lost would hold a guest for good.
   hash.Add(std::uint64_t{m_restrictions.effects.size()});
   for (const auto effect : m_restrictions.effects)
@@ -152,6 +173,8 @@ std::vector<proto::Message> Record::ForJoiner() const {
     out.push_back(*m_scene);
     if (m_cast)
       out.push_back(*m_cast);
+    for (const auto &[id, prop] : m_props)
+      out.push_back(prop);
   }
   for (const auto &line : m_lines)
     out.push_back(line);
