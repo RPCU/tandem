@@ -27,17 +27,9 @@
   game with scenarios `takedowns-host` and `takedowns-guest`). Still open
   there: the disposal container's own state (door, light, "used") stays the
   actor's until devices are synced, and loot from a disposed body.
-- **NCPD chases.** The authority table gives police heat to the host, but a
-  chase is about one player: who committed the crime, whom the units hunt,
-  who escapes. The game's prevention system only knows its own V
-  (`research/coop-quests-world.md` §9). Whatever the rule, police units are
-  NPCs, so the host runs them all; a guest's crimes reach it as crime
-  events; guests' own prevention is locked off (that lock is saved: remove
-  it on leave) and their wanted bar shows what the host says
-  (`UI_WantedBar`). **Undecided**: one wanted level shared by the group or
-  one per player; chases when players are far apart; vehicle pursuits; what
-  losing the police means for a group. Sirens, radio chatter and the wanted
-  bar follow the "seen and heard" rule.
+- **NCPD chases**: heat is per player, police units are the area owner's
+  NPCs (`police.md`; research: `research/coop-quests-world.md` §9). Sirens,
+  radio chatter and the wanted bar follow the "seen and heard" rule.
 - **Saves** (decided 2026-11-18): **quest progress, NPC lives and the state
   of the city belong to the host's save; guests join it.** Whatever happens
   in a session (quests advanced, NPCs killed, doors opened, cars parked,

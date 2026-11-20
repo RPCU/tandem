@@ -316,7 +316,7 @@ story restrict` (report), `story restrict on|off REC` (a test
 - **Story decisions** (2026-11-18; design in `research/coop-quests-design.md`):
   the host's game runs the story; a guest's own story is frozen for the
   session (not overwritten), its saves locked, and restored as it was when
-  it leaves (one save and reload). Decided by the user: in dialogues with
+  it leaves (the leave steps, `progression.md`). Decided by the user: in dialogues with
   choices **the host picks and guests suggest** (the same native choice hub
   on every screen, each with its own cursor, the host sees suggestions);
   **holocalls and texts reach everyone in sync and anyone can answer or
@@ -332,10 +332,11 @@ story restrict` (report), `story restrict on|off REC` (a test
   **a helper's own copy of a gig stays playable at home and pays nothing
   again**; **a guest gives the host's quest props back when it leaves**
   (items tagged `Quest`, keycards; iconics and rewards stay);
-  **Phantom Liberty is required for every player**. Provisional (the
-  design's proposals, to confirm): romance and intimate scenes are never
-  replayed for guests; leaving reloads the guest's game; subtitles in the
-  host's language for now; shards and the codex stay per player; Johnny's
+  **Phantom Liberty is required for every player**. Decided 2026-11-19
+  (the design's proposals accepted): romance and intimate scenes are never
+  replayed for guests; a guest that leaves stays where it is
+  (`leave = stay`, `progression.md`); subtitles and choices reach guests
+  in the host's language (`strings.md`); shards and the codex stay per player; Johnny's
   appearances beside the host are shown to guests later; after the first
   version: scene voice, then quest-only interiors, then solo gigs.
 - **Quests together, gigs apart.** A quest or gig finished together rewards

@@ -38,7 +38,7 @@ by default**, so every "other V" cell is "no damage" (W: vanilla drops a
 hit on a friend, `DamageSystem.CheckForQuickExit`, and tandem drops the
 rest before `DealDamages`). On, every V hit on the other V's puppet runs
 the attacker's side and goes as `AreaHit` to that V's game (U). Whether off
-is the right default is the user's call: see [Decisions](#decisions).
+and every hit: [Decisions](#decisions).
 
 ## The Vs attacking
 
@@ -223,9 +223,8 @@ the guest's game, as shots were (time.md), was weighed and not done:
 
 - **Friendly fire: off by default, `friendly_fire = on` in the host's
   `tandem.ini`.** Off, no V's hit reaches another V, explosions included
-  (before this change explosions did, shots and blades did not). Asked of
-  the user: off as default, and whether "on" should cover every hit or only
-  explosions.
+  (before this change explosions did, shots and blades did not). Decided
+  by the user 2026-11-19: a host rule covering every hit, off by default.
 - **Melee at a guest stays decided by the host, landed by the guest**
   (above).
 - **Copies, not streams.** A thrown object's flight is not streamed: the

@@ -15,8 +15,8 @@ facts and their tags: [`../research/engine/ui.md`](../research/engine/ui.md)
 
 ## Decisions
 
-Each with what is built and the recommendation; the ones marked _user_
-are the user's to confirm.
+Each with what is built. Decided by the user 2026-11-19: every
+recommendation below as built, and no text chat (6).
 
 1. **The ping input: the scanner's tag key outside the scanner.** One key,
    `TagButton` (the middle mouse button by default), already means "mark
@@ -33,7 +33,7 @@ are the user's to confirm.
    native replicated system. To check in game: that `TagButton` reaches a
    listener outside focus mode on keyboard and pad, and what else the pad's
    binding does there (§13.39).
-2. **The link: automatic in a co-op pair, with a setting** (_user_).
+2. **The link: automatic in a co-op pair, with a setting** (decided).
    `tandem.ini` `link = auto` (default): every partner is linked from the
    start, until either side breaks it; `ask`: a link starts on a request
    the other accepts; `off`: never. `link` and `pings` are on the co-op
@@ -45,8 +45,8 @@ are the user's to confirm.
    the phone key, "Link with NAME", as a regroup offer
    ([`travel.md`](travel.md)), for 15 s. Linked players share their
    scanner tags (outlined, in the tag list, as one's own) and the Ping
-   quickhack's reveals (outlined for the hack's length). Recommendation:
-   keep `auto`. Two to four friends who join each other want shared
+   quickhack's reveals (outlined for the hack's length). Default `auto`:
+   two to four friends who join each other want shared
    scans without a ceremony; `ask` is for sessions with strangers (join
    codes passed around) and costs nothing to keep.
 3. **Pings reach everyone in the session**, linked or not: a ping is said
@@ -76,7 +76,7 @@ are the user's to confirm.
    adding entries means rebuilding its widget, `MAP:2407`-style staleness).
    Callouts by voice (V's own barks, the cut ping records'
    `VoTriggerName`) are a later polish, ears required.
-6. **Text chat: not wanted** (user decision 2026-11-19). Not built, and
+6. **Text chat: not wanted** (decided 2026-11-19). Not built, and
    not to build unless the user asks again. What was weighed: the only text field is
    Codeware's input in the game's message popup
    (`GenericMessageNotification.ShowInput`, [`coop-menu.md`](coop-menu.md)),

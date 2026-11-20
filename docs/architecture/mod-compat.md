@@ -184,9 +184,7 @@ shown as Items.Preset_Lexington_Default`); the player gets **one notice
   a guest's lethal strike kills the host's NPC outright (`ApplyStrike`
   calls `Kill`), so a host's limb-survival mod never saves an NPC from a
   guest's kill.
-- **Mod Settings: not used, by decision 2026-11-19.** tandem's settings
-  live in its own Co-op page only (`coop-menu.md`), `tandem.ini` the one
-  source of truth; no second settings menu.
+- **Mod Settings: not used** (decided 2026-11-19, `coop-menu.md`).
 
 **Reporting a conflict**: Co-op → Write a bug report (or
 `tandem-report.exe`, release.md). Its `versions.txt` has the other mods'

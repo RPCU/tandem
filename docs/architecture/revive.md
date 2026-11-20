@@ -88,8 +88,8 @@ revive down|hold|fresh|report` (`fresh` forgets the 5-minute cooldown of
   checkpoint; guests follow the host's reload). Done (2026-11-18, not yet
   verified in game; see Inside the plugin, authority included): all five,
   with loopback tests (`tests/endpoint_test.cpp`) and scenarios. Choices
-  made for the user's open points: 40 % on a revive or respawn; Second
-  Heart at 20 % in a session (research/coop-perks.md §5.5); out also when
+  made for the user's open points (accepted 2026-11-19): 40 % on a revive
+  or respawn; Second Heart at 20 % in a session (research/coop-perks.md §5.5); out also when
   killed outright (`BaseStatusEffect.ForceKill`); respawn 3 s after the
   partner leaves combat, or after 30 s out; the last V up leaving the
   session loses it for whoever is left down (host) or leaves the guest's

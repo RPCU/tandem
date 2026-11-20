@@ -57,11 +57,12 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 
 Run what your change can break before saying it works. The C++ builds and
 tests run in **CI** (`.github/workflows/ci.yaml`, on every push and pull
-request): `core build (Linux)` and the `core tests` jobs are `task test`, `plugin (Windows, clang-cl)`
-is `task build:plugin` (its `tandem.dll` and `.pdb` are the run's
-artifact). Do not run them on the laptop (it runs out of memory); push the
-branch and read the run (Git, below). Locally, the cheap ones:
-`task relay:test` for `relay/`, `task k8s:check` for `deploy/`,
+request): `core build (Linux)` and the `core tests` jobs are `task test`,
+`plugin (Windows, clang-cl)` is `task build:plugin` (its `tandem.dll` and
+`.pdb` are the run's artifact). Do not run them on the laptop (it runs out
+of memory); push the branch and read the run (Git, below). Locally, the
+cheap ones: `task relay:test` for `relay/`, `task pilot:test` for
+`tools/pilot/`, `task k8s:check` for `deploy/`,
 `task natives:check`, `task strings:check` and `task docs:check`;
 `task scripts:check` for `scripts/` needs the game machine.
 
@@ -281,19 +282,20 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 
 ### Git
 
-- The public repository is `RPCU/tandem` on GitHub (remote `rpcu`). Work
+- The public repository is `RPCU/tandem` on GitHub (remote `rpcu`): no
+  secrets, personal data or real addresses in it (top of this file). Work
   on a branch in its own worktree, **commit** (small, focused commits,
   hooks passing: treefmt, shellcheck), **push the branch** to `rpcu` and
-  open a pull request into `main` (`gh pr create`). CI
-  (`.github/workflows/`) runs on every push and pull request: Go, the
-  manifests, the docs checks, core's build and tests (Linux) and
-  `tandem.dll`; a newer push cancels the older run of the same ref. Watch
-  it (`gh run watch`, `gh run view --log-failed`; the job summary lists the
-  compiler cache's hits and the heaviest compiles), fix and push again
-  until every job is green (and, for a change to in-game behaviour, its
-  scenarios passed on the game machine), then merge it yourself with
-  `gh pr merge N --rebase --delete-branch`. Never push to `main` directly,
-  never merge a red pull request.
+  open a pull request into `main` (`gh pr create --fill`). CI
+  (`.github/workflows/`) runs on every push and pull request: core's build
+  (Linux), its tests in four shards, `tandem.dll` (Windows), Go, the
+  manifests and the docs checks; a newer push cancels the older run of the
+  same ref (`gh run watch`, `gh run view --log-failed`; the job summary
+  lists the compiler cache's hits and the heaviest compiles). Merge with
+  `gh pr merge N --rebase --admin --delete-branch`: the user allows admin
+  merges without waiting for CI, and fast-forward pushes to `main` by the
+  agent coordinating the merges (`git push rpcu HEAD:main`). Testing is
+  the user's, by hand or in game on anya; run scenarios when asked.
 - Parallel work: independent tasks (research, reverse engineering, a
   feature that needs no game) can run in separate agents, each in its own
   git worktree; the game machine is one shared resource, so in-game testing

@@ -148,7 +148,10 @@ ask in another player's name.
 6. The screen not stopping time for us (the skip of `VendorStash`'s time
    dilation), and what a fight does to an open screen.
 
-## Open, and decisions for the user
+## Open, and decisions
+
+The defaults below as built were accepted by the user on 2026-11-19; 5 has
+no default yet.
 
 1. **Off by default** until the six points above are seen in game; then
    on. (A game with trade off refuses requests: "NAME does not trade".)

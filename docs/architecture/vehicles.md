@@ -26,7 +26,7 @@
   the owner's state for it. An owner riding in its own car with nobody at
   the wheel sends its car's state, so a car a partner parked stays where
   it stopped.
-- **Radio** (`scripts/tandem/Radio.reds`, engine-knowledge §13.12): the
+- **Radio** (`scripts/tandem/Radio.reds`, engine-knowledge §13.43): the
   driver owns the car's radio. While our V drives its own car, our game
   reads the car's receiver four times a second (on, station as an
   `ERadioStationList` index, song name) and sends `VehicleRadio`

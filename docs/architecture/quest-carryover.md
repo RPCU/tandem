@@ -50,7 +50,7 @@ guest's V (`RPGManager.GiveReward`), kills and loot are per player
 (`loot.md`). Achievements come with reward records (`GiveReward` sends
 them, `E§13.29`). What is missing is only durability: the save after the
 session. That is the `progression` branch's work (`Saves.reds`,
-`core/progress.hpp`: stay, save or reload on leave), not repeated here.
+`core/include/tandem/progress.hpp`: stay, save or reload on leave), not repeated here.
 
 **One correction to today's behaviour.** `loot.md` shares every item
 tagged `Quest`, every keycard and every iconic into every V's inventory
@@ -403,7 +403,7 @@ now (`quest` is a redscript keyword).
   items tagged `Quest` and keycards. Iconics stay. Decided by the user
   2026-11-19.
 - **`progression` branch** (merged with this on 2026-11-19): it owns
-  _when_ the guest saves (`Saves.reds`, `core/progress.hpp`); this owns
+  _when_ the guest saves (`Saves.reds`, `core/include/tandem/progress.hpp`); this owns
   _what must be true before_ (session items out, ledger words stored).
   `TandemStorySystem.LeftOver` bit 1 counts `this.SessionItemsLeft() > 0`, so no
   save is made while the removal has not run (no V at that moment); the
@@ -420,7 +420,7 @@ now (`quest` is a redscript keyword).
 <!-- prettier-ignore -->
 | Stage | What | Needs |
 | --- | --- | --- |
-| A0 | the ledger and its rules (`core/carryover`) with tests | done |
+| A0 | the ledger and its rules (`core/include/tandem/carryover.hpp`) with tests | done |
 | A1 | natives and script: the ledger in the save, pay rules through it (`Story.reds`, the natives above); session items removed on leave (script, persistent list) | **built** (in game: scenarios `story-session-items`, `garage-guest`); the co-op menu's "done with NAME" list is not |
 | A2 | join notes: the host's story mark in the handshake or a story message, the spoiler and ending notices (Phantom Liberty itself is required at join: the release work, protocol 7) | a story message for the mark |
 | C2 | spike on a solo game: gig phases by their journal nodes. Tooling done: `tools/game.sh cmd quest trace on` logs each phase's chain and journal nodes. The freeze by ownership (gig phases run apart, wait grouped), the journal and phone rules for owned gigs: built behind "always grouped", so nothing changes until `regions` calls `TandemStorySystem.SetApart`; scenarios `quest-trace` (the spike's log), `story-gigs-apart` (the switch by hand) | the game machine for the spike; `regions` for grouped or apart |
@@ -444,19 +444,18 @@ Decided by the user:
 - **Phantom Liberty is required for every player** (2026-11-19), enforced
   at join.
 
-Working defaults, unconfirmed (the recommendations; they stand until the
-user says otherwise):
+Decided by the user 2026-11-19, the recommendations accepted:
 
-- **1. Tier 2: credit only now, completion after the spikes** (default,
-  unconfirmed). The alternative (write journal and facts now) risks the
-  guest's save for a convenience.
+- **1. Tier 2: credit only now, completion after the spikes.** The
+  alternative (write journal and facts now) risks the guest's save for a
+  convenience.
 - **3. A host behind: no quest reward for a quest the guest already
-  finished alone** (default, unconfirmed); loot and kill XP remain.
-  Alternative: a reduced reward (money and XP only).
-- **4. A host ahead: warn and let the guest join, never refuse** (default,
-  unconfirmed). This includes a host whose story is in Phantom Liberty
-  when the guest's is not yet.
+  finished alone**; loot and kill XP remain. (Rejected: a reduced reward,
+  money and XP only.)
+- **4. A host ahead: warn and let the guest join, never refuse.** This
+  includes a host whose story is in Phantom Liberty when the guest's is
+  not yet.
 - **5. Duplicate unique items from the guest's own story later: accept a
-  second copy for now** (default, unconfirmed); revisit in stage B.
-- **8. Skip offers (stage C): not for main quests** (default,
-  unconfirmed); decide after stage B for the rest.
+  second copy for now**; revisit in stage B.
+- **8. Skip offers (stage C): not for main quests**; the rest is decided
+  after stage B.

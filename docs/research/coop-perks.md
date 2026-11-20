@@ -342,7 +342,7 @@ the puppet (`VisibleObjectDetectionMultEvent` on the puppet, `SetInvisible`
 and threat drops for camo). [I]
 Status (2026-11-18, untested in game): the guest's combat state follows
 the host's `detected` bit through the combat controller, and `UI_Stealth`
-follows `NpcAwareness` (engine-knowledge §13.12); `OnBeingNoticed` is not
+follows `NpcAwareness` (engine-knowledge §13.44); `OnBeingNoticed` is not
 queued yet.
 
 ### 2.7 Effects that run inside NPCs run twice
@@ -795,7 +795,7 @@ being slowed: open, see ../architecture/time.md.
   `Stealth` carries camo, fully blocking, crouch and `Visibility`; the
   host turns the puppet's visible object off, applies the camo effect to
   it and drops it from its NPCs' trackers when blocking
-  (engine-knowledge §13.12).
+  (engine-knowledge §13.44).
 
 ### 5.5 Death prevention and defensive cyberware
 

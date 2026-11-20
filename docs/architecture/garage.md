@@ -66,26 +66,26 @@ Unlocking a vehicle in a guest's garage is world state of a story quest:
   (a garage holds a vehicle once), but its "new vehicle" moment is gone.
 
 None of these breaks a save; the first changes a story. So the safe default
-records the vehicle as earned, and the user decides whether co-op may put
-it in the garage. With `keep` the vehicle is unlocked the game's own way
-and the ledger says so (`kept`), so a later tool can take it back out.
+records the vehicle as earned (`credit`, decided: Decisions). With `keep`
+the vehicle is unlocked the game's own way and the ledger says so (`kept`), so a later tool can take it back out.
 
-## Decisions for the user
+## Decisions
 
-1. **Vehicle rewards: credit or keep?** Recommended: **keep** once one
-   unlock has been seen in game (a quest car arriving in a guest's garage,
-   summoned, saved, loaded); credit until then (built default).
-2. **The host's choice gives the guest a car its own choices would not?**
-   Recommended: yes, they earned it together.
-3. **Driving a partner's car**: built as proposed, `lend = crew` by
-   default. Recommended: keep `crew` as the default once `garage-lend` has
-   run; `owner` for players who want their car only with them aboard.
-4. **A partner's car taken when they are away**: allowed under `crew`
-   (built). Recommended: yes; the owner's garage is untouched and its next
-   summon brings the car back.
-5. **Set the autofixer's ownership fact when a car is kept**, so it is no
-   longer for sale? Recommended: no until the offers' facts are mapped to
-   vehicle records in game (they are TweakDB data).
+Decided by the user 2026-11-19 (the recommended defaults):
+
+1. **Vehicle rewards: credit.** A host-quest car is credited to a guest,
+   not unlocked (`vehicle_rewards = credit`, the default); switch the
+   default to `keep` once one unlock has been seen in game (a quest car
+   arriving in a guest's garage, summoned, saved, loaded).
+2. **The host's choice gives the guest a car its own choices would not:**
+   yes, they earned it together.
+3. **Driving a partner's car: `lend = crew`** (anyone in the session) by
+   default; `owner` for players who want their car only with them aboard.
+4. **A partner's car taken when they are away:** allowed under `crew`; the
+   owner's garage is untouched and its next summon brings the car back.
+5. **The autofixer's ownership fact when a car is kept:** not set until the
+   offers' facts are mapped to vehicle records in game (they are TweakDB
+   data).
 
 ## Built, tested, to check in game
 

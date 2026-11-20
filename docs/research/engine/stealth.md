@@ -2,7 +2,7 @@
 
 Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
-### 13.12 Combat state, detection and stealth for a guest (2026-11-18, scripts only)
+### 13.44 Combat state, detection and stealth for a guest (2026-11-18, scripts only)
 
 Read in the 2.50 scripts (`final.reds` line numbers); none of it tried in
 game yet. Used by `scripts/tandem/Stealth.reds`.
@@ -80,7 +80,7 @@ type, radius, investigateData, propagationChange)` (149948) is how V's
   broadcast from the projectile (`Explosion`, 127920), not from V.
   [2.5-untested]
 
-### 13.17 Takedowns, finishers, carried bodies and "the player" reactions (2026-11-18, scripts only)
+### 13.46 Takedowns, finishers, carried bodies and "the player" reactions (2026-11-18, scripts only)
 
 Read in `final.reds` for `scripts/tandem/Takedowns.reds` and
 `Reactions.reds`; none of it run in a session yet.

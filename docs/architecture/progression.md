@@ -21,7 +21,7 @@ tandem does, with the scenario that checks it in game.
 | Mechanic                                                           | Rule in co-op                                                                                            | Owner                                              | Verified from the scripts                                                                                                                                                                            | Built                                                                                                                                                                                                                                          |
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Character level, attributes, perks, respec                         | each player's own, as in solo                                                                            | that player's game and save                        | `PlayerDevelopmentSystem` keeps one entry per attached **player**; a puppet is an NPC entity and gets none, earns nothing, answers no perk test (§13.38.3)                                           | nothing needed; nothing leaks (below, "Leaks")                                                                                                                                                                                                 |
-| Enemy level                                                        | scaled to the **mean of the players' levels** (decided 2026-11-18), by the game's own curve for each NPC | host                                               | a content assignment's curve maps a player level to the content's; the game's own debug scaling adds one additive `PowerLevel` modifier to NPCs that have one; `AddModifier` is not saved (§13.38.1) | `PlayerLevel` → `SessionLevel` → a modifier on each NPC the host shares (`Levels.reds`, `core/progress.hpp`); scenario `levels-host`                                                                                                           |
+| Enemy level                                                        | scaled to the **mean of the players' levels** (decided 2026-11-18), by the game's own curve for each NPC | host                                               | a content assignment's curve maps a player level to the content's; the game's own debug scaling adds one additive `PowerLevel` modifier to NPCs that have one; `AddModifier` is not saved (§13.38.1) | `PlayerLevel` → `SessionLevel` → a modifier on each NPC the host shares (`Levels.reds`, `core/include/tandem/progress.hpp`); scenario `levels-host`                                                                                            |
 | A proxy's level                                                    | its owner's NPC's, exactly (the host's, or a guest's own: regions.md)                                    | the NPC's owner says, the games that show it apply | a hit is computed against the target's stats, which follow `PowerLevel`; skill XP is worth the target's level (§13.38.1, §13.38.2)                                                                   | `NpcLevel` per NPC, the same modifier on the proxy; scenario `levels-guest`                                                                                                                                                                    |
 | Damage between a V and an NPC                                      | each side by its own game's rules, on equal NPC stats                                                    | attacker's game, target's game                     | `ProcessLevelDifference` has no caller in 2.50: the levels act only through the stats (§13.38.1)                                                                                                     | was (Combat.reds, Outcomes.reds); parity now holds for mixed levels                                                                                                                                                                            |
 | Skill XP for damage                                                | each player for the share of health their own hits took                                                  | that player's game                                 | queued per hit by the target's level, paid when the body is neutralized (§13.38.2)                                                                                                                   | was for guests; **done: the host's assist is paid too** (it stayed queued in the host's save)                                                                                                                                                  |
@@ -248,7 +248,7 @@ built here.
 ### Leaving: from the session back to a guest's own saves
 
 `scripts/tandem/Saves.reds`, driven by `progress::Leave`
-(`core/progress.hpp`, tested in `tests/progress_test.cpp`):
+(`core/include/tandem/progress.hpp`, tested in `tests/progress_test.cpp`):
 
 1. **Session**: a guest in a session. Saving is locked (three locks, one
    would do: `TandemSystem.IsSavingLocked`, the story's, the
@@ -296,16 +296,16 @@ Parked car copies stay (deleting one froze the game) and are never saved.
 A guest's own NPCs that were hidden near the host stay hidden until they
 stream out: `stay` and `save` live with that; `reload` does not.
 
-### Recommendation
+### Weighed
 
 `reload` is the clean answer (one loading screen on leaving a session, as
 any co-op game has, and the guest's world is exactly its save plus its V);
 `save` is the safe middle (the V's gains are on disk within seconds of
 leaving). Both **write the player's saves**, so they are off until someone
 has looked at them in game with a save they can lose: the default is
-`stay`, which writes nothing and is what the scenarios run. Suggested
-order: check `saves-leave` (stay), then `leave = save` by hand, then
-`reload`, then make `reload` the default.
+`stay`, which writes nothing and is what the scenarios run; the user kept
+it (Decisions). Before offering the others: check `saves-leave` (stay),
+then `leave = save` by hand, then `reload`.
 
 ### Should a guest be offered the host's quest progress?
 
@@ -376,23 +376,23 @@ only saves after the steps above) and on the host (which saves any time):
 | A vendor entry for a proxy in a guest's `MarketSystem`                                           | no              | **fixed here**: a proxy's attach request is skipped, a detach never makes one (Vendors.reds); a shop opens on our own copy only |
 | A trade's table                                                                                  | no              | nothing moves before the commit ([`trade.md`](trade.md))                                                                        |
 
-## Decisions for the user
+## Decisions
 
-1. **`leave`**: `stay` now; `save` or `reload` once checked in game with a
-   spare save. Recommended end state: `reload`.
-2. **The clock on leaving**: back to the guest's own timeline (built), or
-   keep the host's time? Recommended: its own.
-3. **Vendors**: option 1 above (a guest keeps its own vendors): decided
-   and built ("Vendors"). Open: a dead vendor stays hidden only for the
-   session (the host's save has it dead; a guest's own save keeps it
-   alive).
+Decided by the user 2026-11-19 (the recommendations, and `stay`):
+
+1. **`leave = stay`**: a guest that leaves stays where it is; `save` and
+   `reload` stay options, off until checked in game with a spare save.
+2. **The clock on leaving**: back to the guest's own timeline (built).
+3. **Vendors**: option 1 above, a guest keeps its own vendors (built,
+   "Vendors"). Open: a dead vendor stays hidden only for the session (the
+   host's save has it dead; a guest's own save keeps it alive).
 4. **The host's quests in a guest's story**: no; later an offer for quests
    the guest had not started.
-5. **Assists**: skill XP only (built). Level XP and street cred for
-   assists would be a new rule the game does not have: recommended no.
+5. **Assists**: skill XP only (built); no level XP or street cred for
+   assists (a new rule the game does not have).
 6. **Guest checkpoints mid-session**: after the leave save is proven.
-7. **The pause menu's Exit as a guest**: run the leave steps first (a
-   short "saving your V" step), or a warning. Recommended: the leave steps.
+7. **The pause menu's Exit as a guest**: runs the leave steps first (a
+   short "saving your V" step), not a warning.
 8. **NPCs with no content assignment** keep their level. If the game shows
    that most enemies have none, they should follow the mean by the plain
    difference instead (`progress::NpcShift` already does that when no curve

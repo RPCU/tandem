@@ -144,7 +144,7 @@ interpolated `VehicleState`, the puppet unmounted when the driver gets out
 later (mounting detaches it), the driver leaving the session while seated.
 [2.5-verified]
 
-### 13.12 The car radio and the pocket radio (2026-11-18, 2.50 scripts read)
+### 13.43 The car radio and the pocket radio (2026-11-18, 2.50 scripts read)
 
 Read from the 2.50 scripts (`final.reds` line numbers), used by
 `scripts/tandem/Radio.reds`; none of it has run in a session yet.

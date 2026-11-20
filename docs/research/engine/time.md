@@ -2,7 +2,7 @@
 
 Index, sources and tags: [`../engine-knowledge.md`](../engine-knowledge.md). Paths (`data/…`, `nco-commits.md`) are relative to `docs/research/`.
 
-### 13.15 Time dilation in a shared world (2026-11-18, scripts and RTTI only)
+### 13.42 Time dilation in a shared world (2026-11-18, scripts and RTTI only)
 
 Read from the 2.50 RTTI natives (`docs/research/data/rtti-natives-2.50.tsv`)
 and the script dump; used by `scripts/tandem/Time.reds`, **not yet run in
@@ -107,7 +107,7 @@ in game**. The earlier reading is `coop-time.md` §2.3.
   profile, so **no perk, implant or Kiroshi optics changes how much the
   scanner slows time**: every build gets the same factor. Anything that
   slows time on a trigger does it through `SetTimeDilationEffector` under
-  its own reason (§13.15), already a bubble. [2.5-untested]
+  its own reason (§13.42), already a bubble. [2.5-untested]
 - **The same in and out of combat.** `TimeDilationFocusModeDecisions`
   (final.reds 528796-528844) defines `IsPlayerInCombatState` and
   `IsPlayerLookingAtQuickHackTarget` and calls neither. It enters in vision

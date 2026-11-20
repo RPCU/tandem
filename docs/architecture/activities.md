@@ -235,9 +235,10 @@ player's alone.
   `apartment-tour` (each interaction by hand, with the quest trace on):
   not yet run in game.
 
-## Decisions for the user
+## Decisions
 
-Recommendations in bold; each one is how it is built now.
+**Decided by the user 2026-11-19**: every option in bold below, each as it
+is built now.
 
 - Who must agree to a skip: **everyone else** (one no is enough), or
   only the host, or a majority (with four players).

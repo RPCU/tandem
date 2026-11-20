@@ -90,7 +90,8 @@ still installs `dist/tandem.ini` as `tandem.ini` with `--ignore-existing`.
 5. Keep the symbols zip with the release: `tools/game.sh bt` and a crash
    report need the `.pdb` of the exact build.
 
-Nothing here publishes: where releases are hosted is not decided.
+Nothing here publishes: releases are built locally with `task package` and
+not hosted anywhere yet (the user's decision, 2026-11-19).
 
 ## Compatibility
 

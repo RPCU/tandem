@@ -36,7 +36,7 @@
   NPCs it shares instead. It runs from `TandemSystem.Tick` once the world
   plays, never from the plugin's per-frame call: there it crashed the game
   loading a save and froze it right after "playing" (2026-11-18; suspects
-  in engine-knowledge §13.15). Scenario `time`.
+  in engine-knowledge §13.42). Scenario `time`.
 - **A mod's slow motion is a bubble too** (`Time.reds` `Unexplained`,
   core `TimeBubbles::UnexplainedSlow`, 2026-11-19, not yet run in game):
   any global slow motion on our V's game that none of the reasons above
@@ -179,7 +179,10 @@ slow-motion cue on (…)`, `time: the slow-motion cue off`. Tested in
   (not read yet: the first scan logs it). At a factor of 0.1 and 30 %
   that is about 27 % of the partner's real time lost to slow motion; a
   partner out of the 150 m, in a vehicle, or scanning too loses none.
-  Possible mitigations, **for the user to decide** (only 6 is built):
+  **Decided by the user 2026-11-19: the bubble as built, plus the cue
+  (6, built)**; if a partner finds it intrusive, 1 comes before any
+  mitigation that hands out free slow motion (2, 3, 4). The mitigations
+  weighed:
   1. a smaller reach for the scanner's bubble only (say 40 m): a partner
      fighting the same group still shares it, one elsewhere is untouched;
      NPCs beyond it keep their speed on the host;
@@ -198,9 +201,6 @@ slow-motion cue on (…)`, `time: the slow-motion cue off`. Tested in
      polish whatever else is chosen (no native one exists, below).
      **Built** (2026-11-19): the Focus perk's own screen effect and sounds,
      and one notice a session (_A cue while slowed_, above).
-     Recommended: play it as built first (it is the standard rule and fair
-     against the enemies), add 6, and if the partner finds it intrusive take
-     1 before any mitigation that hands out free slow motion (2, 3, 4).
 
 - **The pause menu pauses everyone; nothing else does.** The pause menu
   (settings, save/load, quit) stops the world, the NPCs and every V
@@ -244,7 +244,7 @@ slow-motion cue on (…)`, `time: the slow-motion cue off`. Tested in
     to aim. Its hits go to the host at real time, as always. The host
     cannot slow only its view of its own NPCs (the time system has global,
     local-player and per-entity scopes, no render-only one:
-    `research/engine-knowledge.md` §13.15), so as the user it keeps its
+    `research/engine-knowledge.md` §13.42), so as the user it keeps its
     world at normal speed and its bubble does the slowing (default), or
     with `time_host = full` keeps the whole slow motion and exempts what
     it shares (experimental: its projectiles, physics and clock still

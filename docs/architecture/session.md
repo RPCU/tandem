@@ -89,17 +89,24 @@ idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
   `god`, `coop …`, `recorder …`). Starting a session (the co-op menu, `coop-menu.md`, or
   `role = host|join`) turns co-op on; leaving gives everything back.
   Scenario `solo`.
-- Configuration: `tandem.ini` next to the DLL (role, address, port, name,
-  pose, story, quest_freeze, quest_freeze_allow, scene_privacy,
-  private_actors, private_scenes, public_scenes, time_host, friendly_fire
-  (the host's session rule, `combat-coverage.md`); `enemy_scaling`,
-  `enemy_scaling_health` (the host's too, `npcs.md`); `link`,
-  `pings` (`comms.md`); `last_address` (Join by address); `relay`,
-  `relay_token`, `join` for the relay and join codes; `recorder`,
-  `recorder_max_mb`, `recorder_segment_minutes`, `recorder_pose`, see
-  `recordings.md`; `friendly_fire`, `notices`, `markers`, `nameplates`, `party_hud`,
-  which the co-op menu's Settings page changes with some of the others,
-  `coop-menu.md`; `log = warn|info|debug`, see `netcode.md`): the defaults, and the test harness's session. The
-  default is solo. Every key with its default is in `dist/tandem.ini`
-  (shipped as `tandem.default.ini`) and `dist/INSTALL.md`; releases,
-  startup and join-time compatibility checks, bug reports: `release.md`.
+- Configuration: `tandem.ini` next to the DLL, read at startup; the
+  default is solo (`role = off`). Every key with its default is in
+  `dist/tandem.ini` (shipped as `tandem.default.ini`) and
+  `dist/INSTALL.md`; each is explained in the topic file it belongs to:
+  role, address, port, name, `last_address` here; `relay`, `relay_token`,
+  `join`, `code`, `direct` (`relay.md`); pose (`players.md`); story,
+  quest_freeze, quest_freeze_allow, `quest_freeze_gigs`, `quest_interact`
+  (`story.md`); scene_privacy, private_actors, private_scenes,
+  public_scenes, `scene_replay` (`scene-replay.md`); time_host
+  (`time.md`); `friendly_fire` (the host's session rule,
+  `combat-coverage.md`); `enemy_scaling`, `enemy_scaling_health` (the
+  host's too, `npcs.md`); `link`, `pings` (`comms.md`); `notices`
+  (`coop-menu.md`), `markers` (`players.md`), `nameplates`, `party_hud`
+  (`presence.md`);
+  `leave` (`progression.md`); `vehicle_rewards`, `lend` (`garage.md`);
+  `trade` (`trade.md`); `recorder`, `recorder_max_mb`,
+  `recorder_segment_minutes`, `recorder_pose` (`recordings.md`);
+  `log = warn|info|debug` (`netcode.md`); `compat` (`release.md`). The
+  co-op menu's Settings page changes many of them (`coop-menu.md`).
+  Releases, startup and join-time compatibility checks, bug reports:
+  `release.md`.

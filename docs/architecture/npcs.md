@@ -19,7 +19,7 @@ game (whether health, damage and loot follow the stat). Built 2026-11-19:
 
 **Enemies are tougher for each extra player near them** (asked
 2026-11-19: "add multiplier to enemies stats based on how many players
-joined"). Built and tested without the game (`core/scaling.hpp`,
+joined"). Built and tested without the game (`core/include/tandem/scaling.hpp`,
 `scripts/tandem/Scaling.reds`); **not yet run in game**. The engine facts:
 `research/engine/combat.md` §13.50.
 
@@ -31,13 +31,14 @@ joined"). Built and tested without the game (`core/scaling.hpp`,
 | 4                    | ×2.8   | ×1.75                                   | ×1.2   | ×1              |
 
 Health ×(1 + h·(n−1)) with h = 0.6 (`enemy_scaling_health`), poise and the
-hit reaction thresholds ×(1 + 0.25·(n−1)), armour +10 % per extra player up
-to +20 % (`scaling::For`; the constants are in `core/scaling.hpp`). Less
-than ×n health on purpose: players share targets and revive each other, and
-a fight with three should last about as long as one alone, not three times
-longer. Armour is capped low because it divides every hit on top of the
-health. **The damage an NPC deals is never scaled**: each V takes the hits
-it would alone (each game applies them by its own rules, `combat.md`).
+hit reaction thresholds ×(1 + 0.25·(n−1)), armour +10 % per extra player
+up to +20 % (`scaling::For`; the constants are in
+`core/include/tandem/scaling.hpp`). Less than ×n health on purpose:
+players share targets and revive each other, and a fight with three should
+last about as long as one alone, not three times longer. Armour is capped
+low because it divides every hit on top of the health. **The damage an NPC
+deals is never scaled**: each V takes the hits it would alone (each game
+applies them by its own rules, `combat.md`).
 
 **Where it applies.** On the game that runs the NPC (the host, or the
 NPC's owner under regions, `regions.md`), to hostile NPCs only: an NPC in
@@ -124,11 +125,11 @@ scale` shows both); the boss bar and the NPC health bar after a count
 change; that the hit reaction component's total health is the unscaled one
 (`npc scale` shows it); how a 3-player fight feels with the defaults.
 
-Decisions (recommended first): one rule for bosses (yes, as built; a
-lighter boss curve is the alternative if bosses become sponges); the count
-radius 100/130 m (keep; move it to `enemy_scaling` keys if a quest's arena
-is larger); XP not scaled (keep for now, revisit after the first group
-session).
+Decided by the user 2026-11-19: the numbers as built (above; damage, XP
+and loot unscaled); one rule for bosses (a lighter boss curve is the alternative if
+bosses become sponges); the count radius 100/130 m (moved to
+`enemy_scaling` keys only if a quest's arena is larger); XP revisited after
+the first group session.
 
 ## Inside the plugin
 

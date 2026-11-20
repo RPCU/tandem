@@ -36,9 +36,8 @@ slots did not.
 
 ## Where each section is
 
-The facts live in `engine/<File>`; section numbers are unchanged, so a
-citation such as "§13.19" is found through this table. Numbers given twice
-(13.12, 13.15, 13.17) are told apart by their titles.
+The facts live in `engine/<File>`; a citation such as "§13.19" is
+found through this table, each number once.
 
 | §     | Title                                                                         | File                |
 | ----- | ----------------------------------------------------------------------------- | ------------------- |
@@ -68,16 +67,12 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.9  | A guest's own NPCs off                                                        | `npcs.md`           |
 | 13.10 | Damage to an NPC another game owns                                            | `combat.md`         |
 | 13.11 | Host NPCs against a guest's puppet                                            | `combat.md`         |
-| 13.13 | Calling a script static function from the plugin                              | `re.md`             |
-| 13.12 | The car radio and the pocket radio                                            | `vehicles.md`       |
-| 13.17 | Attitude groups and a puppet's record traits                                  | `npcs.md`           |
 | 13.12 | Splitting a hit between the attacker's game and the target's                  | `combat.md`         |
-| 13.12 | Combat state, detection and stealth for a guest                               | `stealth.md`        |
+| 13.13 | Calling a script static function from the plugin                              | `re.md`             |
 | 13.14 | Quickhacks between games                                                      | `combat.md`         |
 | 13.15 | Quest phases: making a node wait                                              | `story.md`          |
 | 13.16 | Story levers in the scripts                                                   | `story.md`          |
-| 13.15 | Time dilation in a shared world                                               | `time.md`           |
-| 13.17 | Takedowns, finishers, carried bodies and "the player" reactions               | `stealth.md`        |
+| 13.17 | Attitude groups and a puppet's record traits                                  | `npcs.md`           |
 | 13.18 | Fast travel and regroup                                                       | `travel.md`         |
 | 13.19 | Loot: corpses, dropped items, quest items                                     | `loot.md`           |
 | 13.20 | Down, revive, respawn: the levers                                             | `revive.md`         |
@@ -98,11 +93,15 @@ citation such as "§13.19" is found through this table. Numbers given twice
 | 13.35 | Presence: a remote V seen and heard                                           | `presence.md`       |
 | 13.36 | The Relic tree's levers                                                       | `combat.md`         |
 | 13.37 | Phantom Liberty: the game's own check                                         | `ui.md`             |
-| 13.40 | The scanner's slow time                                                       | `time.md`           |
 | 13.38 | Progression, economy, saves, items (levels, XP, vendors, trade)               | `progression.md`    |
 | 13.39 | Pings, tags, reveals and waypoints, for comms                                 | `ui.md`             |
+| 13.40 | The scanner's slow time                                                       | `time.md`           |
 | 13.41 | Vehicle combat: the hooks and setters                                         | `vehicles.md`       |
+| 13.42 | Time dilation in a shared world                                               | `time.md`           |
+| 13.43 | The car radio and the pocket radio                                            | `vehicles.md`       |
+| 13.44 | Combat state, detection and stealth for a guest                               | `stealth.md`        |
 | 13.45 | Gameplay restrictions, and a guest wearing the host's                         | `story.md`          |
+| 13.46 | Takedowns, finishers, carried bodies and "the player" reactions               | `stealth.md`        |
 | 13.50 | Enemy scaling: the stats and how modifiers stack                              | `combat.md`         |
 | 13.55 | Does this game have a record, and its vanilla stand-in                        | `mods.md`           |
 | 13.60 | Breach Protocol: where a breach's outcome becomes effects                     | `combat.md`         |

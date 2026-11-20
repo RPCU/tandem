@@ -74,16 +74,18 @@ Weighed 2026-11-19 (the user asked for a recommendation):
   variants. What it lacks today: texts for TweakDB records (ours have
   none: a puppet's name fields are empty on purpose).
 
-Recommended: the redscript table. Revisit if a TweakDB record needs a
+Decided (the recommendation, accepted 2026-11-19): the redscript table. Revisit if a TweakDB record needs a
 text, or if translators want files: the table can be written out as
 ArchiveXL's JSON by a script.
 
+**Texts from the host's game** (subtitles, dialogue choices, quest titles,
+a station or a shop's name a guest gets as text) come in the host's
+language: decided by the user 2026-11-19 (no per-message keys). Showing
+them in a guest's own would need their keys on the wire instead (a line's
+or a choice's `LocKey`), message by message.
+
 ## Open problems
 
-- **Texts from the host's game** (subtitles, dialogue choices, quest
-  titles, a station or a shop's name a guest gets as text) come in the
-  host's language. Showing them in a guest's own needs their keys on the
-  wire instead (a line's or a choice's `LocKey`), message by message.
 - **French for other players**: "(e)" where the agreement follows the
   other V; the puppet's body is known (`Body`), so the gendered variant
   could follow it (Codeware's `Text(key, female, male)` follows our own V).

@@ -54,6 +54,10 @@ token. It is the default (`--require-token` restores tokens-only); a host
 token still bypasses everything below. tandem ships set to the public RPCU
 relay (`relay = relay.rpcu.io:27460` in `dist/tandem.ini`; an empty
 `relay =` turns it off), and the co-op menu no longer asks for a token.
+That relay is one replica in open mode on RPCU's server sunraku (a NixOS
+service running the image `zot.rpcu.io/public/tandem-relay`, pinned by
+tag and digest in RPCU's own configuration, not in this repository). The
+playit.gg and Kubernetes paths below stay supported, unused by it.
 
 **The abuse model.** With no accounts, what an abuser can take is
 sessions (memory, a code each) and bandwidth. Each is paid for or capped,

@@ -63,4 +63,4 @@ Tags as in [`engine-knowledge.md`](../engine-knowledge.md).
   dilation cannot be listed from scripts; `GetActiveTimeDilation()` gives
   the whole factor, `GetActiveTimeDilation(reason, true)` a known reason's.
   The menus' reasons are TweakDB flats `timeSystem.<profile>.reason`
-  (§13.15). [unverified]
+  (§13.42). [unverified]
