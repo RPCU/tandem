@@ -3,8 +3,9 @@
 # Protocol"): a mock guest breaches an access point with daemons
 # (--breach, --programs), the mock host grants it and applies it, a second
 # guest hears it for its own NPCs; that guest's own breach of the same
-# network is refused, naming the first breacher; a late joiner finds the
-# access point breached.
+# network is refused, naming the first breacher, and pays nothing (the
+# host's grant decides the payout); a late joiner finds the access point
+# breached.
 # Usage: peer_breach.sh PATH/tandem-peer
 set -euo pipefail
 peer=$1
@@ -54,6 +55,8 @@ wait_for "$dir/breacher.log" "breached network $ap npc 0 with 3 daemon\(s\) \(--
   fail "the guest did not breach"
 wait_for "$dir/breacher.log" "our breach of network $ap npc 0: granted, by player 3" ||
   fail "the breacher did not hear its breach stands"
+wait_for "$dir/breacher.log" 'our breach pays \(granted\)' ||
+  fail "the granted breach was not paid"
 wait_for "$dir/host.log" "breach by player 3: network $ap npc 0, 3 daemon\(s\), 0 trap\(s\): applied to its network and our NPCs" ||
   fail "the host did not apply the breach"
 wait_for "$dir/second.log" "breach by player 3: network $ap npc 0, 3 daemon\(s\), 0 trap\(s\): applied to our NPCs" ||
@@ -65,6 +68,8 @@ wait_for "$dir/second.log" "device $ap \(0x[0-9a-f]+\): on, exposed\+breached, v
 # The second guest's own jack-in, later: refused, the first breacher named.
 wait_for "$dir/second.log" "our breach of network $ap npc 0: refused \(breached already\), by player 3" ||
   fail "the second breach was not refused"
+wait_for "$dir/second.log" 'our breach pays nothing: player 3 was first' ||
+  fail "the refused breach was paid"
 if grep -qE 'breach by player 2' "$dir/host.log"; then
   fail "the refused breach was applied"
 fi

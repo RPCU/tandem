@@ -110,11 +110,12 @@ found through this table, each number once.
 | 13.75 | A status effect's look, without its gameplay                                            | `combat.md`         |
 | 13.80 | Vendors: what the shop's screen is bound to, from a proxy                               | `ui.md`             |
 | 13.85 | Apartment interactions: what runs them, what they change                                | `apartments.md`     |
-| 13.90 | Swimming's effects and sounds, a projectile put on a path                               | `presence.md`       |
-| 13.91 | A V's movement noise, and the gates that ask for the player                             | `stealth.md`        |
-| 13.92 | Contests: what the game's own data says of a fist fight, a race, a shooting competition | `story.md`          |
+| 13.90 | The world's objects: a ping's beams, a turret's fire, physics destruction               | `devices.md`        |
 | 14.1  | What a script can do                                                                    | `autopilot.md`      |
 | 14.2  | Virtual input                                                                           | `autopilot.md`      |
+| 13.91 | A V's movement noise, and the gates that ask for the player                             | `stealth.md`        |
+| 13.92 | Contests: what the game's own data says of a fist fight, a race, a shooting competition | `story.md`          |
+| 13.93 | Swimming's effects and sounds, a projectile put on a path                               | `presence.md`       |
 
 ## Top traps (one line each)
 

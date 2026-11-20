@@ -4,8 +4,8 @@
 // the two in sync (tools/check-natives.py reads every pair).
 //
 // QueueStreamed runs wherever the engine calls the wrap (Device and
-// VehicleObject attach/detach, a device state's Notify: job threads while a
-// save loads): it only appends plain values under a lock, with our own CRT's
+// VehicleObject attach/detach, a device state's Notify, a breach's outcome:
+// job threads while a save loads): it only appends plain values under a lock, with our own CRT's
 // allocator. TakeStreamed runs on the game thread's tick.
 
 // The SDK's headers need its main header first (own group: keep it first).
@@ -17,6 +17,7 @@
 #include <RedLib.hpp>
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -34,7 +35,7 @@ static_assert(alignof(TandemStreamed) <= 8, "the script VM aligns struct locals 
 
 namespace {
 // Kinds (scripts/tandem/StreamingNatives.reds TandemStreaming.Kind*).
-constexpr std::size_t kKinds = 5;
+constexpr std::size_t kKinds = 8;
 // A kind nobody drains (no tick yet: the main menu's world) stops growing
 // here; what is past it is dropped, and counted.
 constexpr std::size_t kMaxQueued = 65536;
@@ -46,6 +47,9 @@ struct Queue {
 
 std::mutex g_lock;
 std::array<Queue, kKinds> g_queues;
+// The entity whose wrapped callback the game thread is calling itself right
+// now (0: none): its wrap lets that call through instead of queueing it.
+std::atomic<std::uint64_t> g_passing{0};
 } // namespace
 
 struct TandemStreaming : Red::IScriptable {
@@ -84,6 +88,13 @@ struct TandemStreaming : Red::IScriptable {
     return out;
   }
 
+  // Game thread: we call `entity`'s wrapped callback ourselves until
+  // SetPassing(none). From any thread: is that call the one running?
+  static void SetPassing(Red::EntityID entity) { g_passing.store(entity.hash); }
+  static bool IsPassing(Red::EntityID entity) {
+    return entity.hash != 0 && g_passing.load() == entity.hash;
+  }
+
   RTTI_IMPL_TYPEINFO(TandemStreaming);
   RTTI_IMPL_ALLOCATOR();
 };
@@ -98,4 +109,6 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStreamed, "TandemStreamed", {
 RTTI_DEFINE_CLASS(tandem::plugin::TandemStreaming, "TandemStreaming", {
   RTTI_METHOD(QueueStreamed);
   RTTI_METHOD(TakeStreamed);
+  RTTI_METHOD(SetPassing);
+  RTTI_METHOD(IsPassing);
 });

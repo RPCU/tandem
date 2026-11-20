@@ -187,6 +187,8 @@ TANDEM_SAID_BY(Host, TrafficHandover)
 TANDEM_SAID_BY(Either, TrafficHandoverState)
 TANDEM_SAID_BY(Either, TrafficHandoverDone)
 TANDEM_SAID_BY(Either, QuestInteract)
+TANDEM_SAID_BY(Either, Fracture)
+TANDEM_SAID_BY(Either, DeviceFire)
 TANDEM_SAID_BY(Either, ThrowPath)
 #undef TANDEM_SAID_BY
 
@@ -316,7 +318,8 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::Waypoint> || std::is_same_v<M, p::Defended> ||
                            std::is_same_v<M, p::TradeOffer> || std::is_same_v<M, p::Breach> ||
                            std::is_same_v<M, p::StatusVisuals> ||
-                           std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::ThrowPath>)
+                           std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
+                           std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath>)
           return &m.player;
         else
           return nullptr;
@@ -536,6 +539,10 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
         // A quest interaction's verdict is the host's game's (a guest asks).
         (std::holds_alternative<p::QuestInteract>(message) &&
          std::get<p::QuestInteract>(message).verdict != p::kInteractAsk) ||
+        // What a device turns to and shoots at is the host's turret's doing
+        // (a guest says only that its copy sees its own V).
+        (std::holds_alternative<p::DeviceFire>(message) &&
+         std::get<p::DeviceFire>(message).kind <= p::DeviceFireKind::Shot) ||
         (std::holds_alternative<p::NpcOwner>(message) &&
          !(std::get<p::NpcOwner>(message).flags & p::kNpcPinned))) {
       Add("authority.host-only",
@@ -608,7 +615,9 @@ void Referee::Received(p::PlayerId from, const p::Message &message, std::uint64_
       (std::holds_alternative<p::DeviceState>(message) &&
        std::get<p::DeviceState>(message).how == p::kDeviceAsk) ||
       (std::holds_alternative<p::QuestInteract>(message) &&
-       std::get<p::QuestInteract>(message).verdict == p::kInteractAsk)) {
+       std::get<p::QuestInteract>(message).verdict == p::kInteractAsk) ||
+      (std::holds_alternative<p::DeviceFire>(message) &&
+       std::get<p::DeviceFire>(message).kind > p::DeviceFireKind::Shot)) {
     Add("authority.guest-only", std::format("the host sent {}: only a guest sends that", name));
     return;
   }
@@ -762,6 +771,13 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::NpcReaction>) {
           finite = std::isfinite(m.angle) && Finite(m.way);
           inRange = m.type <= p::kReactionMax;
+        } else if constexpr (std::is_same_v<M, p::Fracture>) {
+          finite = Finite(m.at);
+        } else if constexpr (std::is_same_v<M, p::DeviceFire>) {
+          finite = Finite(m.at);
+          timeUs = m.timeUs;
+          // A device is named; a shot is stamped (the host clock).
+          inRange = m.entity != 0 && (m.kind != p::DeviceFireKind::Shot || m.timeUs != 0);
         } else if constexpr (std::is_same_v<M, p::ThrowPath>) {
           // Nothing thrown flies faster than a launcher's round.
           finite = Finite(m.position) && Finite(m.velocity);
@@ -1081,6 +1097,14 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
                   std::format("network {:x} breached by player {} and by us", m.entity,
                               first->second));
           }
+        } else if constexpr (std::is_same_v<M, p::Fracture>) {
+          // What broke in another player's game; never our own back.
+          notOurs(m.player);
+        } else if constexpr (std::is_same_v<M, p::DeviceFire>) {
+          // The host's turret's target: a player of the session (an NPC's
+          // shot may overtake its spawn on the State channel: not checked).
+          if (m.target.kind == p::TargetKind::Player)
+            NeedPlayer(static_cast<p::PlayerId>(m.target.id), name);
         } else if constexpr (std::is_same_v<M, p::Roster>) {
           std::set<p::PlayerId> ids;
           for (const auto &player : m.players)

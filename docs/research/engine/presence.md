@@ -231,7 +231,7 @@ IsPhotoModeActive()` (`:53351`) and the blackboard
 gamedataStatPoolType.Health, true)` is a percentage 0..100 (`:83547`,
   as the boss bar divides it by 100, `:190946`).
 
-### 13.90 Swimming's effects and sounds, a projectile put on a path (2026-11-20, read in final.reds, not run)
+### 13.93 Swimming's effects and sounds, a projectile put on a path (2026-11-20, read in final.reds, not run)
 
 **Swimming.** V's swimming is a state machine of its own
 (`LocomotionSwimming*`, PSM `Swimming`: 0 none, 1 surface, 2 diving, 3

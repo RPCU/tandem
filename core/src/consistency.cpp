@@ -271,6 +271,10 @@ bool IsOneShot(const proto::Message &message) {
   using namespace proto;
   if (const auto *journal = std::get_if<Journal>(&message))
     return !journal->snapshot; // a change notifies (toast, sound); a snapshot is state
+  // A device's shot is fired once; what it aims at, and who it sees, is
+  // state, said again (devices.md, "A device's fire").
+  if (const auto *fire = std::get_if<DeviceFire>(&message))
+    return fire->kind == DeviceFireKind::Shot;
   return std::holds_alternative<Shot>(message) || std::holds_alternative<NpcHit>(message) ||
          std::holds_alternative<NpcEffect>(message) || std::holds_alternative<PlayerHit>(message) ||
          std::holds_alternative<Noise>(message) || std::holds_alternative<NpcHack>(message) ||
