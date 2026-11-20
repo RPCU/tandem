@@ -258,11 +258,15 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 
 ### Git
 
-- The public repository is `RPCU/tandem` on GitHub; the user pushes to it.
-  **Commit locally** (small, focused commits, hooks passing: treefmt,
-  shellcheck); **never push, open a pull request or add a remote** unless
-  the user asks. CI (`.github/workflows/`) runs on pushes and pull requests
-  to `main`.
+- The public repository is `RPCU/tandem` on GitHub (remote `rpcu`). Work
+  on a branch (small, focused commits, hooks passing: treefmt, shellcheck),
+  push it, open a pull request into `main`; once CI is green and
+  `tools/build.sh build:plugin test` passed on the game machine, merge it
+  with `gh pr merge N --rebase --admin --delete-branch`.
+- CI (`.github/workflows/`) runs on every push and pull request: Go, the
+  manifests, the docs checks, and builds of core (Linux) and `tandem.dll`.
+  Core's tests need more than GitHub's shared runner: they run on the game
+  machine before a merge, in CI only when the workflow is run by hand.
 - Parallel work: independent tasks (research, reverse engineering, a
   feature that needs no game) can run in separate agents, each in its own
   git worktree; the game machine is one shared resource, so in-game testing
