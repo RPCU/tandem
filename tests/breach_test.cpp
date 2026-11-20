@@ -302,3 +302,92 @@ TEST_CASE("a breacher that vanishes after its breach: the network stays breached
   REQUIRE(s.Run([&] { return !s.bGame.answers.empty(); }));
   CHECK(s.bGame.answers[0].verdict == proto::BreachVerdict::Breached);
 }
+
+// ---- The host's grant decides what a breach pays (devices::BreachHolds) ----
+
+TEST_CASE("a breach is paid once the host grants it, and never when it was refused") {
+  using Verdict = proto::BreachVerdict;
+  using Decision = devices::BreachHolds::Decision;
+  devices::BreachHolds holds;
+  const std::uint64_t t = 5'000'000;
+  holds.Hold(1, {kApKey, 0}, t);
+  CHECK(holds.Size() == 1);
+  // Nothing is decided while the host is silent (a ping, usually).
+  CHECK(holds.Expire(t + devices::kBreachHoldUs - 1).empty());
+  // An answer about something else settles nothing.
+  CHECK_FALSE(holds.Answer({.entity = 9, .cls = kApClass, .verdict = Verdict::Granted, .by = 2}));
+  CHECK(holds.Answer({.entity = kAp, .cls = kApClass, .verdict = Verdict::Granted, .by = 2}) ==
+        Decision{.hold = 1, .paid = true, .answered = true});
+  CHECK(holds.Size() == 0);
+  // Refused: nothing is paid, and who was first is said.
+  holds.Hold(2, {kApKey, 0}, t);
+  CHECK(holds.Answer({.entity = kAp, .cls = kApClass, .verdict = Verdict::Breached, .by = 3}) ==
+        Decision{.hold = 2, .paid = false, .by = 3, .answered = true});
+  // The same answer again finds nothing to settle.
+  CHECK_FALSE(
+      holds.Answer({.entity = kAp, .cls = kApClass, .verdict = Verdict::Breached, .by = 3}));
+}
+
+TEST_CASE("a breach through a device reaches several networks: paid when one of them is ours") {
+  using Verdict = proto::BreachVerdict;
+  using Decision = devices::BreachHolds::Decision;
+  devices::BreachHolds holds;
+  const devices::Key other{kAp + 1, kApClass};
+  holds.Hold(7, {kApKey, 0}, 0);
+  holds.Hold(7, {other, 0}, 0);
+  CHECK(holds.Size() == 1);
+  // The first was someone else's: the second may still be ours.
+  CHECK_FALSE(
+      holds.Answer({.entity = kAp, .cls = kApClass, .verdict = Verdict::Breached, .by = 3}));
+  CHECK(holds.Answer({.entity = other.entity, .cls = other.cls, .verdict = Verdict::Granted}) ==
+        Decision{.hold = 7, .paid = true, .answered = true});
+  // Both someone else's: nothing, and the last word names who.
+  holds.Hold(8, {kApKey, 0}, 0);
+  holds.Hold(8, {other, 0}, 0);
+  CHECK_FALSE(
+      holds.Answer({.entity = kAp, .cls = kApClass, .verdict = Verdict::Breached, .by = 3}));
+  CHECK(
+      holds.Answer({.entity = other.entity, .cls = other.cls, .verdict = Verdict::Full, .by = 4}) ==
+      Decision{.hold = 8, .paid = false, .by = 4, .answered = true});
+  // An NPC through the quickhack is a target like a network.
+  holds.Hold(9, {{}, 42}, 0);
+  CHECK(holds.Answer({.npc = 42, .verdict = Verdict::Granted}) ==
+        Decision{.hold = 9, .paid = true, .answered = true});
+}
+
+TEST_CASE("a hold the host never answers, or a session that ends, pays as alone") {
+  using Decision = devices::BreachHolds::Decision;
+  devices::BreachHolds holds;
+  holds.Hold(1, {kApKey, 0}, 1'000'000);
+  holds.Hold(2, {{kAp + 1, kApClass}, 0}, 2'000'000);
+  const auto late = holds.Expire(1'000'000 + devices::kBreachHoldUs);
+  CHECK(late == std::vector<Decision>{{.hold = 1, .paid = true}});
+  CHECK(holds.Size() == 1);
+  CHECK(holds.End() == std::vector<Decision>{{.hold = 2, .paid = true}});
+  CHECK(holds.Size() == 0);
+  CHECK(holds.End().empty());
+}
+
+TEST_CASE("two breaches of one network within a ping: the host's grant pays one of them") {
+  auto s = Start(true);
+  devices::BreachHolds aHolds, bHolds;
+  // Both won their minigame before either heard of the other's.
+  s.a->SendBreach(Jack());
+  aHolds.Hold(1, {kApKey, 0}, 0);
+  s.b->SendBreach(Jack({kLowerIce, kDataMine}));
+  bHolds.Hold(1, {kApKey, 0}, 0);
+  REQUIRE(s.Run([&] { return !s.aGame.answers.empty() && !s.bGame.answers.empty(); }));
+  const auto a = aHolds.Answer(s.aGame.answers[0]);
+  const auto b = bHolds.Answer(s.bGame.answers[0]);
+  REQUIRE((a && b));
+  // Whichever reached the host first is paid; the other is not, and knows who was.
+  CHECK(a->paid != b->paid);
+  const auto winner = a->paid ? s.a->You() : s.b->You();
+  CHECK((a->paid ? b : a)->by == winner);
+  CHECK(s.host->Devices().Find(kApKey)->by == winner);
+  // The loser's daemons ran nowhere.
+  s.RunFor(100ms);
+  CHECK(s.hostGame.applied.size() == 1);
+  CHECK(s.hostGame.applied[0].player == winner);
+  CHECK(s.host->BreachesRefused() == 1);
+}

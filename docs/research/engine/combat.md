@@ -651,6 +651,24 @@ To verify in game (none has run):
    device link: `SQUAD_NETWORK`), and which effects it leaves there.
 4. The daemon effects' tags, so the list in `Breach.reds`
    (`IsDaemonEffect`) can be the record's instead.
+5. The held outcome (`Breach.reds`, the host's grant decides the payout):
+   - `Device.OnAccessPointMiniGameStatus` (`:100932`) is all of the game's
+     handling: `HackingMinigameEnded` (`:32864`: `SetMinigameState`, then
+     `FinalizeNetrunnerDive`, `:32888`, which runs `ResolveDive` on a win
+     and always `ActionToggleNetrunnerDive(true)`, the dive's end). The
+     rewards are paid from `ResolveDive` → `SetExposeQuickHacks` →
+     `AccessPointControllerPS.RefreshSlaves` (`:119138`). An NPC's
+     (`ScriptedPuppet`, `:23041`): `PerformNPCBreach` (`:113261`) to its
+     access points, then the `NetworkBreach` time dilation is unset.
+     [2.5-untested]
+   - Handled with `HackingMinigameState.Unknown`, neither branch runs: the
+     dive ends, nothing is breached, alerted or paid _(inferred from the
+     code above; to verify: V leaves the personal link's workspot)_.
+   - To verify: holding the handler one ping (the wrap returns without
+     calling it, the tick calls the entity's handler directly) leaves no
+     visible stall after the minigame's own end screen; the direct call of a
+     `cb` from an added method reaches `AccessPoint`'s override
+     (`:316738`, the lights).
 
 ### 13.75 A status effect's look, without its gameplay (2026-11-19, read in final.reds, not run)
 

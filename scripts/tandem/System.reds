@@ -818,6 +818,14 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(devices) {
       devices.Drain();
     }
+    // The Ping quickhack's network pulses: shared with the linked while in
+    // a session (Comms.reds), else only taken off the queue.
+    let pings = TandemStreaming.TakeStreamed(TandemStreamKind.NetworkPing());
+    if IsDefined(this.m_comms) && this.m_playing && this.m_you != 0u {
+      for ping in pings {
+        this.m_comms.NetworkPinged(ping.entity);
+      }
+    }
   }
 
   public func OnTick(gen: Int32) -> Void {
@@ -834,6 +842,8 @@ public class TandemSystem extends ScriptableSystem {
       // frame while it records.
       this.ProcessLeaving();
       this.HandleCommand();
+      // A breach held for a host that is no longer there is the game's own.
+      TandemBreach.Tick(this.GetGameInstance(), this.Now(), 0u);
       if IsDefined(this.m_saves) {
         this.m_saves.Tick();
       }

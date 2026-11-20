@@ -19,10 +19,12 @@
 #include "recording.hpp"
 #include "runtime.hpp"
 
+#include "tandem/devices.hpp"
 #include "tandem/mods.hpp"
 #include "tandem/movement.hpp"
 #include "tandem/names.hpp"
 #include "tandem/regions.hpp"
+#include "tandem/session.hpp"
 
 #include <RedLib.hpp>
 
@@ -290,6 +292,16 @@ struct TandemBreachEvent {
   std::int32_t verdict{}; // 2: proto::BreachVerdict (0 granted)
 };
 static_assert(alignof(TandemBreachEvent) <= 8, "the script VM aligns struct locals to 8");
+
+// A won breach of ours the host has settled (devices::BreachHolds): paid,
+// or refused and by whom.
+struct TandemBreachDecision {
+  std::int32_t hold{};
+  bool paid{};
+  std::uint32_t player{}; // refused: who breached it first (0: the host's world)
+  bool answered{};        // false: nobody answered (the hold ran out, the session ended)
+};
+static_assert(alignof(TandemBreachDecision) <= 8, "the script VM aligns struct locals to 8");
 
 // Down and out (scripts/tandem/Revive.reds): someone reviving our V.
 struct TandemReviveEvent {
@@ -1651,6 +1663,39 @@ struct TandemNative : Red::IScriptable {
     if (breach.entity != 0 || breach.npc != 0)
       Runtime::Get().SubmitBreach(std::move(breach));
   }
+  // Our won breaches waiting for the host's grant, and those it settled
+  // (the game thread only).
+  static devices::BreachHolds &BreachHolds() {
+    static devices::BreachHolds holds;
+    return holds;
+  }
+  static std::vector<devices::BreachHolds::Decision> &BreachDecided() {
+    static std::vector<devices::BreachHolds::Decision> decided;
+    return decided;
+  }
+  // Our breach `hold` (one per minigame won) waits for the host's word on
+  // this network, or this NPC.
+  static void HoldBreach(std::int32_t hold, Red::EntityID entity, Red::CName cls,
+                         std::uint32_t npc) {
+    BreachHolds().Hold(static_cast<std::uint32_t>(hold), {{entity.hash, cls.hash}, npc},
+                       net::NowUs());
+  }
+  // The holds settled since the last call: by the host's answers
+  // (TakeBreachEvents), by its silence, or (inSession false) by the
+  // session's end.
+  static Red::DynArray<TandemBreachDecision> TakeBreachDecisions(bool inSession) {
+    auto &decided = BreachDecided();
+    for (const auto &late : inSession ? BreachHolds().Expire(net::NowUs()) : BreachHolds().End())
+      decided.push_back(late);
+    Red::DynArray<TandemBreachDecision> out;
+    for (const auto &decision : decided)
+      out.EmplaceBack(TandemBreachDecision{.hold = static_cast<std::int32_t>(decision.hold),
+                                           .paid = decision.paid,
+                                           .player = decision.by,
+                                           .answered = decision.answered});
+    decided.clear();
+    return out;
+  }
   // The daemons of the last TakeBreachEvents, by index.
   static std::vector<proto::Breach> &TakenBreaches() {
     static std::vector<proto::Breach> taken; // the game thread only
@@ -1671,6 +1716,8 @@ struct TandemNative : Red::IScriptable {
                                           .flags = breach->flags});
         taken.push_back(std::move(*breach));
       } else if (const auto *result = std::get_if<proto::BreachResult>(&message)) {
+        if (const auto decision = BreachHolds().Answer(*result))
+          BreachDecided().push_back(*decision);
         out.EmplaceBack(TandemBreachEvent{.kind = 2,
                                           .index = -1,
                                           .player = result->by,
@@ -2112,6 +2159,13 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemBreachEvent, "TandemBreachEvent", {
   RTTI_PROPERTY(verdict);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemBreachDecision, "TandemBreachDecision", {
+  RTTI_PROPERTY(hold);
+  RTTI_PROPERTY(paid);
+  RTTI_PROPERTY(player);
+  RTTI_PROPERTY(answered);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemReviveEvent, "TandemReviveEvent", {
   RTTI_PROPERTY(player);
   RTTI_PROPERTY(step);
@@ -2274,6 +2328,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(TakeBreachEvents);
   RTTI_METHOD(BreachPrograms);
   RTTI_METHOD(BreachTraps);
+  RTTI_METHOD(HoldBreach);
+  RTTI_METHOD(TakeBreachDecisions);
   RTTI_METHOD(You);
   RTTI_METHOD(SendVitals);
   RTTI_METHOD(OtherPlayers);

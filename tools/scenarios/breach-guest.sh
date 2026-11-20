@@ -26,5 +26,6 @@ shot breach-guest-after
 # Our own V cannot breach it again: the host refuses, and says who was first.
 cmd breach ap NetworkLowerICEMajor
 expect "breach: the host refuses ours of network $ap: breached first by player [0-9]+" 10
+expect "breach: ours of $ap pays nothing \(hold [0-9]+\): player [0-9]+ was first" 5
 reject 'breach: .*has no state in our world'
 reject 'watchdog: game thread silent'
