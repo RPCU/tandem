@@ -211,7 +211,9 @@ yes|no|ignore|sleep` (sleep: it goes to bed too, a sleep of its own to
   (`workspot`, `sleep`, `screen`, `minigame`, `shop`, `menu`, `photo`,
   `contest`) makes it busy `--activity-at N` s (default 3) after another
   player is there, anchored where it stands, for `--activity-for S` s
-  (default 15; 0: for good). A host story's `activity KIND [anchored]
+  (default 15; 0: for good); `--contest duel|race|range` makes that a
+  contest of a sort (a duel names the first NPC it knows as its opponent).
+  A host story's `activity KIND [anchored]
 [lying] [frozen]` and `skip HOURS [wait|sleep|quest]` do the same.
   The game side: `tools/game.sh cmd skip ask HOURS`, `skip accept`, `skip
 decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios

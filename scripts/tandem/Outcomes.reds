@@ -350,6 +350,13 @@ public class TandemOutcomes {
       && story.Restrictions().RefusesHit(body, event.npc, event.player, "a strike") {
       return;
     }
+    // A fist fight's opponent takes hits from who is in the fight only
+    // (Contests.reds).
+    let contests = TandemContests.Of(this.m_game);
+    if IsDefined(contests) && contests.Refuses(body, event.npc, event.player, TandemNative.You()) {
+      contests.Dropped(event.npc, event.player, TandemNative.You());
+      return;
+    }
     npcs.NoteHitBy(event.npc, event.player);
     let strike = new TandemStrike();
     strike.npc = event.npc;

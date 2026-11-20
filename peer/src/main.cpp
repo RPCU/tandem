@@ -335,6 +335,9 @@ struct Options {
   std::string activity;
   int activityAtSeconds{3};
   int activityForSeconds{15};
+  // --activity contest: what it is (proto::ContestSort; a duel names the
+  // first NPC we know as its opponent).
+  tandem::proto::ContestSort contest{tandem::proto::ContestSort::Other};
   tandem::net::LinkShape link; // a bad network, both ways (none: direct)
   bool traffic{};              // the whole traffic table in each report
   bool legacyWire{};           // send as before netcode.md (Endpoint::SetCompact(false))
@@ -722,6 +725,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     yes; sleep: ask a sleep of our own, two beds at once)\n"
          "  --activity KIND    busy for a while: workspot, sleep, screen, minigame, shop,\n"
          "                     menu, photo, contest\n"
+         "  --contest SORT     --activity contest of a sort: duel (a fist fight with the\n"
+         "                     first NPC we know: the others' hits on it are dropped),\n"
+         "                     race or range\n"
          "  --activity-at N    --activity: N s after another player is there (default 3)\n"
          "  --activity-for S   --activity: for S s (default 15; 0: for good)\n"
          "  --latency MS       a bad network: MS added each way\n"
@@ -1601,7 +1607,17 @@ Options Parse(int argc, char **argv) {
       options.activityAtSeconds = Number<int>(value);
     else if (flag == "--activity-for")
       options.activityForSeconds = Number<int>(value);
-    else if (flag == "--latency")
+    else if (flag == "--contest") {
+      if (value == "duel")
+        options.contest = tandem::proto::ContestSort::Duel;
+      else if (value == "race")
+        options.contest = tandem::proto::ContestSort::Race;
+      else if (value == "range")
+        options.contest = tandem::proto::ContestSort::Range;
+      else
+        Usage(std::format("--contest: duel, race or range, not {}", value));
+      options.activity = "contest";
+    } else if (flag == "--latency")
       options.link.latencyMs = Number<std::uint32_t>(value);
     else if (flag == "--jitter")
       options.link.jitterMs = Number<std::uint32_t>(value);
@@ -5918,8 +5934,24 @@ int main(int argc, char **argv) {
       busySince = now;
       const auto kind = *ActivityNamed(options.activity);
       tandem::proto::Activity busy{.kind = kind};
-      if (lastSent && kind != tandem::proto::ActivityKind::Photo &&
-          kind != tandem::proto::ActivityKind::Menu) {
+      if (kind == tandem::proto::ActivityKind::Contest) {
+        // Its sort, and a duel's opponent; nothing holds a contestant.
+        busy.entry = static_cast<std::uint32_t>(options.contest);
+        if (options.contest == tandem::proto::ContestSort::Duel) {
+          // (A guest fights one of the host's NPCs, the host of a replay
+          // one of its own.)
+          if (!liveNpcs.empty())
+            busy.device = *liveNpcs.begin();
+          if (options.host)
+            for (const auto npc : replayedNpcs)
+              if (!deadNpcs.contains(npc)) {
+                busy.device = npc;
+                break;
+              }
+        }
+        Log("contest: sort {}, opponent npc {}", busy.entry, busy.device);
+      } else if (lastSent && kind != tandem::proto::ActivityKind::Photo &&
+                 kind != tandem::proto::ActivityKind::Menu) {
         busy.flags |= tandem::proto::kActivityAnchored;
         busy.anchor = *lastSent;
       }

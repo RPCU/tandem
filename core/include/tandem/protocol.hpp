@@ -1819,7 +1819,7 @@ enum class ActivityKind : std::uint8_t {
   Contest = 8,  // a duel or a contest the others must leave alone (`entry`: its ContestSort)
 };
 // What a Contest is (Activity::entry, which names no workspot then; engine
-// facts: research/engine/stealth.md §13.99). Read from the game's own data
+// facts: research/engine/story.md §13.92). Read from the game's own data
 // on the contestant's V: a fist fight's restriction, a shooting
 // competition's, the racing system's word. `device` is the session's number
 // of an opponent (an NpcId; 0: none, or more than one).
