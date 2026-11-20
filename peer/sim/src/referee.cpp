@@ -1045,8 +1045,8 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
         } else if constexpr (std::is_same_v<M, p::NpcDeath>) {
           // The ledger: one death per placed NPC, the host's order for it
           // never changing (a resync says the same again), never more than
-          // the cap in play, by a player of the session.
-          NeedPlayer(m.by, name);
+          // the cap in play. (By whom: maybe a player that left before we
+          // joined.)
           const auto [known, fresh] = m_deaths.emplace(m.entity, m.order);
           if (!fresh && known->second != m.order)
             Add("ledger.changed",

@@ -9,6 +9,7 @@
 
 #include "combat.hpp"
 #include "log.hpp"
+#include "regions.hpp"
 #include "runtime.hpp"
 
 #include "tandem/combat.hpp"
@@ -263,6 +264,16 @@ struct TandemFight : Red::IScriptable {
       // The session's vendors: kept here for Vendors.reds (TandemProgress).
       if (const auto *vendor = std::get_if<proto::NpcVendor>(&message)) {
         Combat::Get().NoteVendor(*vendor);
+        continue;
+      }
+      // Placed NPCs and the session's dead: kept for Npcs.reds and
+      // Ledger.reds (TandemRegions).
+      if (const auto *placed = std::get_if<proto::NpcPlaced>(&message)) {
+        Regions::Get().NotePlaced(*placed);
+        continue;
+      }
+      if (const auto *death = std::get_if<proto::NpcDeath>(&message)) {
+        Regions::Get().NoteDeath(*death);
         continue;
       }
       if (auto event = EventOf(message); event.kind != 0)

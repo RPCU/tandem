@@ -66,6 +66,10 @@
 //                        ; 20 m), always (any distance in view, smaller and fainter
 //                        ; far away), off (on: near)
 //   party_hud = on       ; off: no party list (linked partners' health) on the HUD
+//   death_ledger = on    ; off: placed NPCs another player killed in the session
+//                        ; stay alive in our game (ini only)
+//   death_bodies = on    ; off: no body where a placed NPC another player
+//                        ; killed in the last ten minutes fell (ini only)
 // The settings page (scripts/tandem/Coop.reds) changes some of them while the
 // game runs and saves them here (TandemNative.SetSetting, tandem/settings.hpp).
 //   leave = stay         ; a guest out of a session, once its own world is back
@@ -168,6 +172,11 @@ struct Config {
   bool markers{true};
   presence::Nameplates nameplates{presence::Nameplates::Near};
   bool partyHud{true};
+  // The death ledger (regions.md §14): our own copies of the placed NPCs the
+  // session says died are kept out of our world, and a body lies where a
+  // recent one fell.
+  bool deathLedger{true};
+  bool deathBodies{true};
   // Where it was read from (the settings page writes there).
   std::filesystem::path file;
   // What a guest's game does once it is out of a session (Saves.reds).

@@ -217,3 +217,80 @@ TEST_CASE(
   CHECK(AreaOwner(3, players, unknown, fresh) == 2u);
   CHECK(AreaOwner(1, players, unknown, fresh) == 1u);
 }
+
+TEST_CASE("the covers over a player: the linked players that outrank it, where they are") {
+  Links links;
+  const std::set<proto::PlayerId> players{1, 2, 3};
+  Places places{{1, At(0)}, {2, At(100)}, {3, At(130)}};
+  links.Update(places);
+  // The host is covered by nobody; player 2 by the host; player 3 by both,
+  // the host first.
+  CHECK(Covers(1, players, places, links).empty());
+  CHECK(Covers(2, players, places, links) == std::vector<Cover>{{1, {0.f, 0.f, 0.f}}});
+  CHECK(Covers(3, players, places, links) ==
+        std::vector<Cover>{{1, {0.f, 0.f, 0.f}}, {2, {100.f, 0.f, 0.f}}});
+  // A holder ranks first; a player whose place is unknown covers nothing yet.
+  CHECK(Covers(1, players, places, links, 1, {3}) == std::vector<Cover>{{3, {130.f, 0.f, 0.f}}});
+  places[1] = {};
+  CHECK(Covers(2, players, places, links).empty());
+  // Unlinked: no cover.
+  places = {{1, At(0)}, {2, At(500)}};
+  links.Update(places);
+  CHECK(Covers(2, {1, 2}, places, links).empty());
+
+  const std::vector<Cover> covers{{1, {0.f, 0.f, 0.f}}, {2, {100.f, 0.f, 0.f}}};
+  CHECK(CoveredBy({30.f, 0.f, 0.f}, covers) == 1u);
+  CHECK(CoveredBy({55.f, 0.f, 0.f}, covers) == 1u); // both: the higher rank
+  CHECK(CoveredBy({70.f, 0.f, 0.f}, covers) == 2u);
+  CHECK(CoveredBy({50.f, 80.f, 0.f}, covers) == proto::kNoPlayer);
+  CHECK(CoveredBy({70.f, 0.f, 0.f}, covers, 20.f) == proto::kNoPlayer);
+}
+
+TEST_CASE("the crowd a game keeps as its V nears a cover: all, the part outside it, none") {
+  const std::vector<Cover> covers{{1, {0.f, 0.f, 0.f}}};
+  CHECK(CrowdShare({500.f, 0.f, 0.f}, covers, false) == doctest::Approx(1.f));
+  CHECK(CrowdShare({120.f, 0.f, 0.f}, covers, false) == doctest::Approx(1.f));
+  // Less and less as the two regions overlap more, in tenths.
+  const float at100 = CrowdShare({100.f, 0.f, 0.f}, covers, false);
+  const float at60 = CrowdShare({60.f, 0.f, 0.f}, covers, false);
+  const float at46 = CrowdShare({46.f, 0.f, 0.f}, covers, false);
+  CHECK(at100 == doctest::Approx(0.9f));
+  CHECK(at60 == doctest::Approx(0.6f));
+  CHECK(at46 == doctest::Approx(0.5f));
+  // Deep inside: none, and none until back beyond the radius.
+  CHECK(CrowdShare({44.f, 0.f, 0.f}, covers, false) == 0.f);
+  CHECK(CrowdShare({55.f, 0.f, 0.f}, covers, true) == 0.f);
+  CHECK(CrowdShare({61.f, 0.f, 0.f}, covers, true) == doctest::Approx(0.6f));
+  // Several covers: the least; none: all of it.
+  CHECK(CrowdShare({60.f, 0.f, 0.f}, {{1, {0.f, 0.f, 0.f}}, {2, {160.f, 0.f, 0.f}}}, false) ==
+        doctest::Approx(0.6f));
+  CHECK(CrowdShare({0.f, 0.f, 0.f}, {}, true) == doctest::Approx(1.f));
+}
+
+TEST_CASE("null areas follow the covers in steps, are renewed, and go with them") {
+  NullAreas areas;
+  std::vector<Cover> covers{{1, {0.f, 0.f, 0.f}}};
+  CHECK(areas.Update(covers, 0.0) == std::vector<NullStep>{{1, true, {0.f, 0.f, 0.f}}});
+  // Nothing to do while its V stays near and the area is young.
+  CHECK(areas.Update(covers, 1.0).empty());
+  covers[0].center = {kNullStep - 1.f, 0.f, 0.f};
+  CHECK(areas.Update(covers, 2.0).empty());
+  // A step away: placed again there.
+  covers[0].center = {kNullStep + 1.f, 0.f, 0.f};
+  CHECK(areas.Update(covers, 3.0) == std::vector<NullStep>{{1, true, {kNullStep + 1.f, 0.f, 0.f}}});
+  // Before it runs out: placed again where it is.
+  CHECK(areas.Update(covers, 3.0 + kNullRenew - 0.5).empty());
+  CHECK(areas.Update(covers, 3.0 + kNullRenew).size() == 1);
+  CHECK(kNullRenew < kNullLife);
+  // A second cover comes, the first goes.
+  covers = {{2, {50.f, 0.f, 0.f}}};
+  const auto steps = areas.Update(covers, 20.0);
+  REQUIRE(steps.size() == 2);
+  CHECK(steps[0] == NullStep{1, false, {kNullStep + 1.f, 0.f, 0.f}});
+  CHECK(steps[1] == NullStep{2, true, {50.f, 0.f, 0.f}});
+  CHECK(areas.Size() == 1);
+  // The session ends: every area goes.
+  CHECK(areas.Clear() == std::vector<NullStep>{{2, false, {50.f, 0.f, 0.f}}});
+  CHECK(areas.Size() == 0);
+  CHECK(areas.Clear().empty());
+}

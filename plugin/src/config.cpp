@@ -140,7 +140,8 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       return Bad("bad {} {}", key, value);
   } else if (key == "story" || key == "quest_freeze" || key == "quest_interact" ||
              key == "recorder" || key == "recorder_pose" || key == "friendly_fire" ||
-             key == "markers" || key == "party_hud" || key == "enemy_scaling") {
+             key == "markers" || key == "party_hud" || key == "enemy_scaling" ||
+             key == "death_ledger" || key == "death_bodies") {
     auto &flag = key == "story"            ? config.story
                  : key == "quest_freeze"   ? config.questFreeze
                  : key == "quest_interact" ? config.questInteract
@@ -149,6 +150,8 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
                  : key == "enemy_scaling"  ? config.enemyScaling
                  : key == "markers"        ? config.markers
                  : key == "party_hud"      ? config.partyHud
+                 : key == "death_ledger"   ? config.deathLedger
+                 : key == "death_bodies"   ? config.deathBodies
                                            : config.recorderPose;
     if (value == "on" || value == "true")
       flag = true;
@@ -329,6 +332,10 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return OnOff(config.markers);
   if (key == "party_hud")
     return OnOff(config.partyHud);
+  if (key == "death_ledger")
+    return OnOff(config.deathLedger);
+  if (key == "death_bodies")
+    return OnOff(config.deathBodies);
   if (key == "nameplates")
     return config.nameplates == presence::Nameplates::Always ? "always"
            : config.nameplates == presence::Nameplates::Off  ? "off"
