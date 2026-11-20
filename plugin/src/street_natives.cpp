@@ -8,8 +8,10 @@
 // The SDK's headers need its main header first (own group: keep it first).
 #include <RED4ext/RED4ext.hpp>
 
+#include "mods.hpp"
 #include "runtime.hpp"
 
+#include "tandem/regions.hpp"
 #include "tandem/traffic.hpp"
 
 #include <RED4ext/Scripting/Natives/Generated/Quaternion.hpp>
@@ -20,22 +22,38 @@
 #include <algorithm>
 
 namespace tandem::plugin {
+namespace {
+// A world vehicle its owner's game has and ours lacks (a modded car in
+// traffic): the vanilla default car, in its own look.
+std::uint64_t VehicleHere(const proto::TrafficSpawn &spawn) {
+  return ModRecords::Get().Resolve(mods::Kind::Vehicle, spawn.record, {},
+                                   regions::Announcer(spawn.id));
+}
+} // namespace
+
 // One thing that happened to a shared vehicle, or a crime of our V seen by
 // the area's owner. Plain fields only (the script VM aligns struct locals
 // to 8).
+
 struct TandemStreetEvent {
-  std::int32_t kind{}; // 1 spawn, 2 gone, 3 status, 4 hit (owner), 5 crime (ours)
+  // 1 spawn, 2 gone, 3 status, 4 hit (owner), 5 crime (ours), 6 give (owner),
+  // 7 take (ours now), 8 owner changed
+  std::int32_t kind{};
   std::uint32_t id{};
   Red::TweakDBID record;
   Red::CName appearance;
   Red::EntityID entity;
   float x{}, y{}, z{};
   float i{}, j{}, k{}, r{1.f};
-  std::int32_t flags{};   // spawn, status: kTraffic*; hit: kTrafficHit*; crime: kCrime*
-  std::int32_t reason{};  // gone: 0 away, 1 taken, 2 removed; crime: its kind
-  std::uint32_t player{}; // gone taken: whose car it is now; hit: who
-  float amount{};         // status: health 0..1; hit: damage; crime: share of health
-  float dx{}, dy{}, dz{}; // hit: the push (collision) or the way it went
+  std::int32_t flags{}; // spawn, status: kTraffic*; hit: kTrafficHit*; crime: kCrime*
+  // gone: 0 away, 1 taken, 2 removed; crime: its kind; take: kHandover*
+  // (16: inherited); owner: who ran it
+  std::int32_t reason{};
+  // gone taken: whose car it is now; hit: who; give: to whom; take: from
+  // whom; owner: who runs it now
+  std::uint32_t player{};
+  float amount{};         // status, take: health 0..1; hit: damage; crime: share of health
+  float dx{}, dy{}, dz{}; // hit: the push (collision) or the way it went; take: velocity
   std::uint32_t npc{};    // crime: the victim or witness as shared
   std::int32_t attack{};  // crime: gamedataAttackType
 };
@@ -55,11 +73,14 @@ struct TandemStreetCar {
 static_assert(alignof(TandemStreetCar) <= 8, "the script VM aligns struct locals to 8");
 
 struct TandemStreet : Red::IScriptable {
-  // A shared vehicle's id: the owner's player id and its own counter.
+  // A shared vehicle's id: the announcer's player id and its own counter.
   static std::uint32_t MakeId(std::uint32_t owner, std::uint32_t counter) {
     return proto::MakeTrafficId(owner, counter);
   }
+  // The game that announced it (its id says so), and the one that runs it
+  // now (a hand-over moves it; 0: not one the session knows).
   static std::uint32_t OwnerOf(std::uint32_t id) { return proto::TrafficOwner(id); }
+  static std::uint32_t RunBy(std::uint32_t id) { return Runtime::Get().TrafficOwnerOf(id); }
   // NpcSeat's owner for a seat in a shared vehicle, and back.
   static std::uint32_t SeatOwner(std::uint32_t id) { return proto::TrafficSeatOwner(id); }
   static bool IsStreetSeat(std::uint32_t owner) { return proto::IsTrafficSeat(owner); }
@@ -124,32 +145,52 @@ struct TandemStreet : Red::IScriptable {
   static void Claim(std::uint32_t id, Red::CName seat) {
     Runtime::Get().SubmitStreet(proto::TrafficClaim{.id = id, .seat = seat.hash});
   }
+  // Hand-over (traffic.md, "Who owns an area"). The host asked us to give
+  // one of ours to `to`: how we leave it (our body stays as its proxy).
+  static void Give(std::uint32_t id, std::uint32_t to, Red::Vector4 position,
+                   Red::Quaternion orientation, Red::Vector4 velocity, float health,
+                   std::int32_t flags) {
+    Runtime::Get().SubmitStreet(proto::TrafficHandoverState{
+        .id = id,
+        .to = to,
+        .position = {position.X, position.Y, position.Z},
+        .orientation = {orientation.i, orientation.j, orientation.k, orientation.r},
+        .velocity = {velocity.X, velocity.Y, velocity.Z},
+        .health = std::clamp(health, 0.f, 1.f),
+        .flags = static_cast<std::uint16_t>(flags)});
+  }
+  // Our answer to a give (false: we keep it) or a take (whether we run it).
+  static void Answer(std::uint32_t id, bool accepted) {
+    Runtime::Get().SubmitStreet(proto::TrafficHandoverDone{.id = id, .accepted = accepted});
+  }
   // What happened to the shared vehicles, and our V's crimes seen elsewhere.
   static Red::DynArray<TandemStreetEvent> TakeEvents() {
     Red::DynArray<TandemStreetEvent> out;
     for (const auto &event : Runtime::Get().TakeStreetEvents()) {
       const auto &s = event.spawn;
-      out.EmplaceBack(TandemStreetEvent{.kind = static_cast<std::int32_t>(event.kind),
-                                        .id = s.id,
-                                        .record = Red::TweakDBID(s.record),
-                                        .appearance = Red::CName(s.appearance),
-                                        .entity = Red::EntityID(s.entity),
-                                        .x = s.position.x,
-                                        .y = s.position.y,
-                                        .z = s.position.z,
-                                        .i = s.orientation.i,
-                                        .j = s.orientation.j,
-                                        .k = s.orientation.k,
-                                        .r = s.orientation.r,
-                                        .flags = event.flags,
-                                        .reason = event.reason,
-                                        .player = event.player,
-                                        .amount = event.amount,
-                                        .dx = event.vector.x,
-                                        .dy = event.vector.y,
-                                        .dz = event.vector.z,
-                                        .npc = event.npc,
-                                        .attack = event.attack});
+      const auto record = VehicleHere(s);
+      out.EmplaceBack(
+          TandemStreetEvent{.kind = static_cast<std::int32_t>(event.kind),
+                            .id = s.id,
+                            .record = Red::TweakDBID(record),
+                            .appearance = Red::CName(record == s.record ? s.appearance : 0),
+                            .entity = Red::EntityID(s.entity),
+                            .x = s.position.x,
+                            .y = s.position.y,
+                            .z = s.position.z,
+                            .i = s.orientation.i,
+                            .j = s.orientation.j,
+                            .k = s.orientation.k,
+                            .r = s.orientation.r,
+                            .flags = event.flags,
+                            .reason = event.reason,
+                            .player = event.player,
+                            .amount = event.amount,
+                            .dx = event.vector.x,
+                            .dy = event.vector.y,
+                            .dz = event.vector.z,
+                            .npc = event.npc,
+                            .attack = event.attack});
     }
     return out;
   }
@@ -166,15 +207,15 @@ struct TandemStreet : Red::IScriptable {
     const auto view = Runtime::Get().TrafficOf(id);
     return {view.velocity.x, view.velocity.y, view.velocity.z, 0.f};
   }
-  // The vehicles shared now, as the session's record has them: the proxies
-  // our game must show, no more, no less.
+  // The vehicles shared now that another game runs, as the session's record
+  // has them: the proxies our game must show, no more, no less.
   static Red::DynArray<TandemStreetCar> Shared() {
     Red::DynArray<TandemStreetCar> out;
     for (const auto &[spawn, status] : Runtime::Get().SharedTraffic())
       out.EmplaceBack(TandemStreetCar{
           .id = spawn.id,
-          .record = Red::TweakDBID(spawn.record),
-          .appearance = Red::CName(spawn.appearance),
+          .record = Red::TweakDBID(VehicleHere(spawn)),
+          .appearance = Red::CName(VehicleHere(spawn) == spawn.record ? spawn.appearance : 0),
           .entity = Red::EntityID(spawn.entity),
           .x = spawn.position.x,
           .y = spawn.position.y,
@@ -269,6 +310,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStreetCar, "TandemStreetCar", {
 RTTI_DEFINE_CLASS(tandem::plugin::TandemStreet, "TandemStreet", {
   RTTI_METHOD(MakeId);
   RTTI_METHOD(OwnerOf);
+  RTTI_METHOD(RunBy);
   RTTI_METHOD(SeatOwner);
   RTTI_METHOD(IsStreetSeat);
   RTTI_METHOD(CarOfSeat);
@@ -278,6 +320,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStreet, "TandemStreet", {
   RTTI_METHOD(SendStatus);
   RTTI_METHOD(SendHit);
   RTTI_METHOD(Claim);
+  RTTI_METHOD(Give);
+  RTTI_METHOD(Answer);
   RTTI_METHOD(TakeEvents);
   RTTI_METHOD(Position);
   RTTI_METHOD(Orientation);

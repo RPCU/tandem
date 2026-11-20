@@ -336,7 +336,9 @@ bool KeepsSession(const proto::Message &message) {
                  std::is_same_v<M, proto::DeviceUse> || std::is_same_v<M, proto::DeviceSet> ||
                  std::is_same_v<M, proto::DeviceDigest> || std::is_same_v<M, proto::PhoneAction> ||
                  std::is_same_v<M, proto::PhoneReply> || std::is_same_v<M, proto::TrafficSet> ||
-                 std::is_same_v<M, proto::TrafficHit> || std::is_same_v<M, proto::TrafficClaim>);
+                 std::is_same_v<M, proto::TrafficHit> || std::is_same_v<M, proto::TrafficClaim> ||
+                 // A quest interaction's question and answer: that session's.
+                 std::is_same_v<M, proto::QuestInteract>);
       },
       message);
 }

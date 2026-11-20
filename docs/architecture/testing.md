@@ -11,11 +11,12 @@
 | via relay | a real relay process: join by code, fallback from direct, mock players | `task test` (`relay-loopback`) |
 | mock player | `tandem-peer` as host or guest against the real game | `task peer -- host --mode mirror` |
 | consistency | digests, resyncs, epochs, dedupe; convergence with a third lost; vanishing | `task test` |
-| referee | every message each test's endpoints hear, checked against the protocol and authority rules (`referee-suite:`) | `task test` |
+| referee | every message each test's endpoints hear, checked against the protocol and authority rules; a violation fails the test unless it calls `test::ExpectReferee` (`referee-suite:`) | `task test` |
 | sim | simulated games against each other, refereed (`sim.md`) | `task test`, `task sim:fuzz` |
 | regions | links, owners, hand-over (also with a third lost), a vanishing owner, digests both ways; two mock players meeting | `task test` |
 | natives | each `*Natives.reds` matches its `*natives.cpp` (plain, story, combat, sync, elsewhere, region, street, presence, activity) | `task natives:check` |
 | scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods | `task scripts:check` |
+| other mods | every method another mod's redscript or CET Lua wraps, replaces or observes, against the ones tandem wraps: conflicts, order-sensitive, harmless chains (`tools/mods-check.py`, on any game folder or copy) | `task mods:check DIR=…` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
 
@@ -85,8 +86,13 @@ scenario. A scenario that needs another spot teleports after it.
   stays away) and off again at `--region-leave-at S` (default -1: never),
   leaving its NPCs with you, at `--region-speed` m/s (default 25). It gives
   and takes NPCs as a game would and logs every step (`region: …`).
-  Scenarios `regions-apart`, `regions-meet`, `regions-vanish`; two of them
-  meet in `tests/peer_regions.sh`.
+  `--region-cars N` runs N world vehicles of its own round its V (of
+  `--traffic-vehicle`, announced once it owns its area, `traffic.md`), left
+  behind with the NPCs; `--region-driver` seats its last NPC at the wheel of
+  the first, `--region-chase` has that one chase the first player it meets.
+  It gives and takes vehicles as a game would (`street: …`).
+  Scenarios `regions-apart`, `regions-meet`, `regions-vanish`,
+  `wheels-guest-area`; two of them meet in `tests/peer_regions.sh`.
 - **course** — runs a scripted course ahead of your V with every way a V
   moves, each with the state machine's own values: jumps, a double jump, a
   1.5 m ledge climb, a drop, a 4 m ladder, swimming and diving, an
@@ -176,7 +182,8 @@ REC]` (either) throws a grenade 10 m ahead every N s and explodes it 2 s
   front of the guest and `--detect-at N [--detect-for M]` makes the NPCs
   it sends notice the guests (meter rising over 2 s), detect them for M s
   (default 10), then lose them; `--camo N` turns "its optical camo" on for
-  5 s; `--shoot N` fires a gunshot every N s (the shot, where its bullet
+  5 s (`--camo-record REC` names its status effect, as a V's camo sends
+  it); `--shoot N` fires a gunshot every N s (the shot, where its bullet
   ended, and as guest its noise).
   Stealth, noises and the host's awareness of it are logged.
 - **Takedowns**: `join --grab-npcs N` grabs one of the host's NPCs every N
@@ -241,7 +248,10 @@ decline`, `busy KIND|off`, `busy report`. Scenarios `skip-wheel`,
   again under 30%), `--menu-at N` is "in a menu" N s in, for 5 s (both as
   `Presence`); `host --react-npcs N` has one of the NPCs it sends play a
   hit reaction every N s (twitch, impact, stagger, knockdown, ragdoll, its
-  end). Presence, cues and non-twitch reactions it hears are logged.
+  end); `--status REC@FROM-TO[,REC@FROM-TO]` puts status effects on its V
+  from FROM to TO s after another player is there (no TO: kept), sent as
+  `StatusVisuals` for the others' puppet of it to show. Presence, cues,
+  status visuals and non-twitch reactions it hears are logged.
 - **Traffic** (any mode): each report has a `traffic:` line (kbit/s each
   way with headers, datagrams/s, the largest message types), `--traffic-report`
   the whole table, the exit the whole run's; `--legacy-wire` sends as
@@ -279,6 +289,14 @@ REC@X,Y,Z#ENTITY` shares one NPC of REC standing at X,Y,Z once a guest
   hears of vendors is logged. In game: `tools/game.sh cmd vendor`,
   `vendor near`, `vendor goto`, `vendor open`, `vendor close`; scenario
   `vendor-guest`.
+- **Quest interactions** (any mode): `--interact
+ENTITY:CHOICE[:DETAIL][@SECONDS]` has a guest's V use the host's object
+  (asked of the host; a known host-only or local one is answered at once);
+  `--interact-answer performed|host-only|local|missing|busy|too-far|none`
+  is what a host answers every guest (local by default: it has no world).
+  `tests/peer_interact.sh`; scenarios `interact-guest-pickup`,
+  `interact-guest-hostonly`, `interact-apart-own-gig`
+  (`architecture/story.md`, "Quest interactions").
 
 - **Vehicle combat** (`vehicle-combat.md`; `tests/peer_wheels.sh`):
   `--mode drive --car-damage N` dents our car N s after it sits (a flat
@@ -294,6 +312,20 @@ REC@X,Y,Z#ENTITY` shares one NPC of REC standing at X,Y,Z once a guest
   points a car) and says how the car stands; everything heard is logged.
   The game side's test commands: `tools/game.sh cmd wheels`, `wheels
 shoot`, `wheels gun`, `wheels ungun`.
+- **Other mods** (any mode; `mod-compat.md`): records a mod would add,
+  with their hints (the game's enum names): `--held-record
+NAME:TYPE[:CATEGORY]` (held, as `--hold`), `--vehicle-record
+NAME:TYPE[:SEATS]` (driven, as `--vehicle`), `--look-piece NAME:TYPE`
+  (worn, again for more), `--npc-record NAME:TYPE[:GENDER]` (the host's
+  NPC, as `--npc`). `--unknown NAME,...` gives the mock player a "game"
+  that lacks those records: what it hears is resolved as a game does,
+  logged (`mods: unknown ... shown as ...`, `mods notice: ...`) and told to
+  its owner (`Substitutes`); a `Substitutes` about ours is logged. Scenarios
+  `mods-unknown-held`, `mods-unknown-vehicle`, `mods-unknown-look`; the
+  game's commands `coop mods` (every comparison and replacement, in the
+  log) and `coop mods names` (ask for the others' mod names).
+  `tandem-peer mods PATH` prints what tandem makes of a game folder's mods
+  (names and contents) or of a list of file names (`tests/data/mods-sample.tsv`).
 
 ## Driving the game and the builds
 
@@ -336,3 +368,133 @@ shoot`, `wheels gun`, `wheels ungun`.
   `task peer -- join --code K7Q-2M9 --relay 127.0.0.1`. `task test` does the
   same (`relay-loopback`, `tests/relay_loopback.sh`: it builds the relay
   with Go and runs the `relay` suite of `tandem-tests` against it).
+
+## CI
+
+GitHub Actions (`.github/workflows/ci.yaml`) builds and tests every push to
+any branch of `RPCU/tandem` and every pull request, and when run by hand
+("Run workflow"; `tests: false` only builds); a newer push cancels the
+older run of the same ref. Branches are merged into `main` with
+`gh pr merge --rebase` once every job is green. The laptop does not run the
+C++ builds (`AGENTS.md`, Git).
+
+- **Jobs:** `go` (relay and pilot: vet, race tests), `kubernetes` (the
+  kustomize base and overlays, kubeconform), `docs, natives, strings`
+  (`tools/docs-check.py links`, `check-natives.py`, `check-strings.py`),
+  `core tests (Linux)` (`task test` with GCC 16, the devenv's: the tests'
+  seeded links are measured with its libstdc++) and `plugin (Windows,
+clang-cl)` (`task build:plugin`: Ubuntu's LLVM 20, the MSVC CRT and
+  Windows SDK 10.0.22621 from xwin 0.9.0, cached; `tandem.dll` and
+  `tandem.pdb` are uploaded as the run's artifact `tandem-<commit>`).
+  `task scripts:check` compiles against the game's own scripts and is not
+  run: it needs the game machine.
+- **Memory** (`.github/actions/build-host`): the runner (4 cores, 16 GB)
+  gets 16 GB of swap and one compile job per 3 GB of RAM, at most one per
+  core (4). Swap only
+  slows down a compile heavier than planned instead of losing the runner
+  (run 44616559671 was killed at 2 jobs, no swap, before "Compile memory"
+  below).
+- **ccache:** ccache 4.14 (devenv's version), the same settings as
+  `devenv.nix` (base dir the checkout, no hashed dir, depend mode), 1 GB
+  per job, saved with `actions/cache` under a new key each run and restored
+  from the newest earlier one (`ccache-linux-`, `ccache-plugin-`), even when
+  the build or the tests fail. Caches are per branch, falling back to
+  `main`'s: a branch's first run starts from `main`'s cache.
+- **Build report** (`.github/actions/build-report`, the job summary):
+  ccache's hits and misses, and the 15 heaviest compiles of the run (peak
+  memory, seconds; misses only: a wrapper in `CCACHE_PREFIX` times each).
+
+## The compiler cache
+
+Every compile, Windows and Linux, goes through ccache (from devenv), one
+cache per machine shared by every checkout and worktree: a fresh worktree's
+first build is mostly hits on what another worktree compiled.
+
+- **Off:** `TANDEM_CCACHE=0` (read at each configure, which every
+  `task build*` runs; `tools/remote.sh` passes it on to the game machine).
+- **Where:** `~/.cache/tandem/ccache` (`TANDEM_CCACHE_DIR`). Capped at 6 GB
+  on the laptop and 15 GB on the game machine (`TANDEM_CCACHE_SIZE`; on the
+  game machine `TANDEM_REMOTE_CCACHE_SIZE`). One commit's full build
+  (plugin and Linux) takes 0.4 GB; a change to a widely included header
+  (`protocol.hpp`) misses nearly everything, so each such variant costs
+  that again. 15 GB holds some 35 variants for the game machine's 30-odd
+  worktrees; the laptop builds only when the game machine is busy, and 6 GB
+  (15 variants) of its smaller free disk is enough.
+- **Settings** (environment, `devenv.nix` `enterShell`; no user-wide
+  `ccache.conf`): `base_dir` is the directory holding every checkout (the
+  main checkout on the laptop, its worktrees live inside it;
+  `~/.cache/tandem/src` on the game machine), so paths under it are hashed
+  relative to the build directory; `hash_dir = false`; depend mode (the
+  compiler's own `-MD` or `/showIncludes` list, no second preprocessor run
+  on a miss); `compiler_check = echo %compiler%` (every Nix store file has
+  the same mtime: the compiler's store path stands for its version).
+- **Safety:** no sloppiness is set: a hit needs the same compiler (store
+  path), flags and the content of every included file. A cache it cannot
+  read or write, or a compile it cannot cache, makes ccache run the
+  compiler as is; no ccache in the shell, no launcher. Concurrent builds
+  share the cache safely (ccache locks its files). If a build looks wrong,
+  `TANDEM_CCACHE=0` rebuilds without it.
+- **Measured** on the game machine (2026-11-19, 12 jobs): a fresh
+  worktree's `build:plugin` took 190 s without the cache and 2.2 s warm from
+  another worktree, `build:linux` 305 s and 15 s (mostly linking the tests).
+  Through `tools/build.sh` under load, a fresh `build:plugin build:linux`:
+  72 s, 193 of 195 compiles hits (the misses: the files that include the
+  commit's build name). A one-file change still compiles that file (18 s
+  for a plugin file); changing it back is a hit (0.5 s).
+- **`task ccache:stats`**, **`task ccache:clear`**; `tools/remote.sh
+ccache:stats` for the game machine's.
+- **What the build does for it:** ccache refuses every clang-cl `/clang:`
+  option, so the C++23 flag is `/std:c++23preview`, the depfile is
+  `/showIncludes` (top-level `CMakeLists.txt`). C++ module scanning is off: nothing here is a
+  module, and it compiles with GCC's `-fmodules-ts`, which ccache refuses.
+  The debug info is `/Z7` (in each object;
+  `CMAKE_MSVC_DEBUG_INFORMATION_FORMAT`, `cmake/clang-cl-msvc.cmake`), not
+  cl's uncacheable `/Zi`: clang-cl writes the same objects for both, and
+  lld-link still makes `tandem.pdb` from them (same 21363 publics and 11581
+  procedures as with `/Zi`). The plugin has no precompiled header.
+- **Caveat, debug paths:** a hit is the object another worktree compiled,
+  byte for byte, so its debug info names that worktree's directory
+  (CodeView file names, DWARF `comp_dir`). Recompiling a hit's source in
+  another worktree gives the same code and differs only in those strings.
+  Function names in `tandem.pdb` (`tools/game.sh bt`) are unaffected; a
+  debugger looking for source lines may open the other worktree's file, or
+  none if it is gone.
+
+## Compile memory
+
+`proto::Message` has ~140 alternatives and `SessionEvent` ~110. libstdc++'s
+`std::variant` compiles construction from an alternative, copy, move,
+assignment and `emplace` with one template recursion level per alternative:
+O(N²) instantiations for each, and GBs of compiler memory in every
+translation unit that copies a message. In CI (GCC 14, 16 GB runner) the
+heaviest units took 8–9 GB each (`protocol.cpp`, `endpoint.cpp`, the sim's
+`game.cpp`, `play_test.cpp`) and three in parallel had the runner killed.
+
+- **`ClosedVariant<V>`** (`core/include/tandem/closed_variant.hpp`) derives
+  from the variant and only declares those operations; they are defined in
+  `core/src/closed_variant_impl.hpp` and explicitly instantiated, one or two
+  per translation unit: `message.cpp` (copy, destruction, assignment as
+  destroy-and-construct, `==`), `message_move.cpp`, `message_make.cpp`
+  (from an alternative, through a table of `in_place_index` constructions),
+  and `session_event.cpp`, `session_event_make.cpp`. Everything else sees a
+  class with out-of-line members; `std::visit`, `std::get_if`,
+  `std::holds_alternative` and `index()` work on it as on its base
+  (`std::variant_size` and `std::variant_alternative` are specialized).
+- **Encoding** (`protocol.cpp`) writes zpp_bits' variant form itself (the
+  index in one byte, then the alternative) and decodes through a table of
+  readers, one per alternative. zpp_bits' own variant support checked
+  that every alternative has its own id at compile time, in O(N²) constexpr
+  steps (it needed `-fconstexpr-steps` and GCC's ops limit, both gone), and
+  decoded through `emplace`. The bytes are the same.
+- **Measured** in CI (peak memory per compile, cold cache, 16 GB runner):
+  before, GCC 14 took 8.8 GB for `protocol.cpp`, 8.3 GB for
+  `endpoint.cpp`, 8.0 GB for the sim's `game.cpp` and `play_test.cpp`, and
+  the Linux build 25 minutes at 3 jobs, deep in swap (with GCC 16 it did not
+  finish in 59); clang-cl 3.2 GB for `protocol.cpp` and the plugin 7.5
+  minutes. After: the heaviest Linux compile is `message_make.cpp` at
+  2.4 GB (`protocol.cpp` 1.4, `endpoint.cpp` 1.7, `play.cpp` 1.0), the
+  Linux build 3.5 minutes; clang-cl at most 1.7 GB, the plugin 3.5 minutes.
+  Locally (GCC 16, one file): `play.cpp` 3.3 → 1.0 GB, `session.cpp`
+  1.7 → 0.3 GB, copying a `Message` alone 1.5 GB → nothing. CI's build
+  report (`.github/actions/build-report`) lists the heaviest compiles of
+  each run.

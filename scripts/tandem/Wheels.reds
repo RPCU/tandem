@@ -18,8 +18,17 @@
 //   the push goes to the other; vehiclecombat::BumpLedger), and what a copy
 //   of someone else's car does here: nothing to our world (its driver's game
 //   decides).
-// - Chases: the area owner's vehicles chasing a player (the game's own
+// - Chases: the vehicles our game runs chasing a player (the game's own
 //   InVehicleCombatDecorator drives after its NPCs' combat target).
+// - The owner's turret for a remote gunner: a gunner seat of a vehicle we
+//   run, held by another player, fires our real vehicle's guns at the
+//   gunner's aim (VehicleObject.NPCShoot) so everyone sees and hears it;
+//   what those shots hit here is the gunner's game's to decide, never ours
+//   (CausedElsewhere). Turning it to the gunner's aim between shots is a
+//   probe (`wheels turret PART`, research/engine/vehicles.md §13.70).
+// - Passenger combat in a partner's car copy: vanilla's checks are the
+//   record's (§13.70); a puppet the game reads as not friendly must not cost
+//   us our weapons in that seat (PassengerEvents.OnEnter).
 
 public class TandemWheelsCopy {
   // A vehicle another game owns, as we put its body.
@@ -76,6 +85,16 @@ public class TandemWheelsSync {
   private let m_chaseTargets: array<Uint32>;
   // Others: the chases after us (for the report).
   private let m_chasedBy: array<Uint32>;
+  // Our vehicles' guns fired for a remote gunner, and when (their hits are
+  // the gunner's game's: CausedElsewhere); the probe's look-at part and its
+  // last request; shots played for gunners.
+  private let m_gunnerFiredBody: array<EntityID>;
+  private let m_gunnerFiredAt: array<Float>;
+  private let m_turretPart: CName;
+  private let m_turretLook: ref<LookAtAddEvent>;
+  private let m_turretLookOn: wref<VehicleObject>;
+  private let m_lastTurret: Float;
+  private let m_turretShots: Int32;
   // Counts for tools/game.sh cmd wheels.
   private let m_hitsSent: Int32;
   private let m_hitsTaken: Int32;
@@ -129,6 +148,7 @@ public class TandemWheelsSync {
     this.Roll();
     this.FollowRollers(system);
     this.Aim();
+    this.Turret(system);
     if now - this.m_lastCheck >= 1.0 {
       this.m_lastCheck = now;
       this.Check(system);
@@ -144,6 +164,9 @@ public class TandemWheelsSync {
     ArrayClear(this.m_chaseIds);
     ArrayClear(this.m_chaseTargets);
     ArrayClear(this.m_chasedBy);
+    ArrayClear(this.m_gunnerFiredBody);
+    ArrayClear(this.m_gunnerFiredAt);
+    this.StopTurretLook();
     this.m_rolling = null;
     this.m_gunnerOf = 0u;
     this.m_sent = false;
@@ -154,13 +177,46 @@ public class TandemWheelsSync {
   // (test, tools/game.sh cmd wheels) what we know.
   public func Report() -> String {
     let own = IsDefined(this.m_own) ? TDBID.ToStringDEBUG(this.m_own.GetRecordID()) : "none";
-    return s"wheels: our car \(own) (health \(this.m_sentHealth), flags \(this.m_sentFlags), tyres \(this.m_sentTyres)), \(ArraySize(this.m_copies)) damaged copies, \(this.m_hitsSent) hits sent, \(this.m_hitsTaken) taken, \(this.m_rams) rams, \(this.m_pushes) pushes, \(this.m_dropped) remote collisions dropped, gunner of \(this.m_gunnerOf), \(ArraySize(this.m_chasedBy)) chasing us, \(ArraySize(this.m_chaseIds)) chases said, weapons mode \(this.m_sentMode)";
+    return s"wheels: our car \(own) (health \(this.m_sentHealth), flags \(this.m_sentFlags), tyres \(this.m_sentTyres)), \(ArraySize(this.m_copies)) damaged copies, \(this.m_hitsSent) hits sent, \(this.m_hitsTaken) taken, \(this.m_rams) rams, \(this.m_pushes) pushes, \(this.m_dropped) remote collisions dropped, gunner of \(this.m_gunnerOf), \(ArraySize(this.m_chasedBy)) chasing us, \(ArraySize(this.m_chaseIds)) chases said, weapons mode \(this.m_sentMode), \(this.m_turretShots) turret shots for a gunner, turret look \(NameToString(this.m_turretPart))";
   }
 
   // (test, tools/game.sh cmd wheels ...)
   public func Command(command: String, system: ref<TandemSystem>) -> Void {
     if Equals(command, "wheels") {
       TandemNative.Log(this.Report());
+      return;
+    }
+    // (test, §13.70) "wheels draw": our V seated somewhere draws a gun the
+    // way the game does from a seat (EmptyHandsEvents: the driver combat
+    // weapon request), and says which restrictions it wears.
+    if Equals(command, "wheels draw") {
+      let me = GetPlayer(this.m_game);
+      let ride: wref<VehicleObject>;
+      if !IsDefined(me) || !VehicleComponent.GetVehicle(this.m_game, me, ride) || !IsDefined(ride) {
+        TandemNative.Log("wheels: draw: our V is in no vehicle");
+        return;
+      }
+      let slot = n"None";
+      VehicleComponent.GetMountedSlotName(this.m_game, me, slot);
+      let noWeapons = StatusEffectSystem.ObjectHasStatusEffect(me, t"GameplayRestriction.NoWeapons");
+      let noCombat = StatusEffectSystem.ObjectHasStatusEffect(me, t"GameplayRestriction.NoCombat");
+      let firearms = StatusEffectSystem.ObjectHasStatusEffect(me, t"GameplayRestriction.DriverCombatFirearms");
+      let request = new EquipmentSystemWeaponManipulationRequest();
+      request.owner = me;
+      request.requestType = EquipmentManipulationAction.RequestLastUsedOrFirstAvailableDriverCombatRangedWeapon;
+      GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"EquipmentSystem").QueueRequest(request);
+      TandemNative.Log(s"wheels: draw in \(NameToString(slot)) of vehicle \(this.RefOf(ride, system)) (copy of player \(system.CarOwnerOf(ride.GetEntityID()))): no weapons \(noWeapons), no combat \(noCombat), seat firearms \(firearms)");
+      return;
+    }
+    // (probe, §13.70) "wheels turret PART": turn the turret of our vehicle
+    // a remote gunner holds to that gunner's aim with a look-at on PART of
+    // its rig; "wheels turret off".
+    if StrBeginsWith(command, "wheels turret") {
+      let part = StrReplace(command, "wheels turret", "");
+      part = StrReplace(part, " ", "");
+      this.StopTurretLook();
+      this.m_turretPart = Equals(part, "off") || Equals(part, "") ? n"None" : StringToName(part);
+      TandemNative.Log(s"wheels: turret look-at part \(NameToString(this.m_turretPart))");
       return;
     }
     // The first remote player's car copy here.
@@ -534,6 +590,13 @@ public class TandemWheelsSync {
     if IsDefined(source) && IsDefined(source as VehicleObject) && system.LastCarOwnerOf(source.GetEntityID()) != 0u {
       return true;
     }
+    // Our vehicle's guns, fired for a remote gunner: its game decides.
+    let wheels = TandemWheelsSync.Of(game);
+    let weapon = hit.attackData.GetWeapon();
+    // (A shot carries its weapon; a collision of that vehicle does not.)
+    if IsDefined(wheels) && IsDefined(weapon) && (wheels.GunnerFired(source) || wheels.GunnerFired(hit.attackData.GetInstigator()) || wheels.GunnerFired(weapon.GetOwner())) {
+      return true;
+    }
     let by = hit.attackData.GetInstigator();
     return IsDefined(by) && system.PlayerOfPuppet(by.GetEntityID()) != 0u && TandemCombat.PuppetPlayer(game, hit.target) == 0u && VehicleComponent.IsMountedToVehicle(game, by);
   }
@@ -791,15 +854,113 @@ public class TandemWheelsSync {
 
   private func OnFire(event: TandemWheelsEvent, system: ref<TandemSystem>) -> Void {
     let body = this.BodyOf(event.vehicle, system);
-    if !IsDefined(body) || TandemWheels.OwnerOf(event.vehicle) == this.m_you {
-      // Our own vehicle, fired by its gunner: no by-name way to turn and
-      // fire its turret for show without a real shot (open, vehicle-combat.md).
+    if !IsDefined(body) || (event.x == 0.0 && event.y == 0.0 && event.z == 0.0) {
       return;
     }
-    if event.x != 0.0 || event.y != 0.0 || event.z != 0.0 {
-      // A copy's shot: cosmetic here (CausedElsewhere drops what it hits).
-      body.NPCShoot(new Vector4(event.x, event.y, event.z, 1.0), 1u);
+    let target = new Vector4(event.x, event.y, event.z, 1.0);
+    if TandemWheels.OwnerOf(event.vehicle) == this.m_you {
+      // Our own vehicle, fired by the remote gunner who holds its seat: our
+      // real guns fire where that gunner aimed, so we and everyone else see
+      // and hear the vehicle fire. What they hit is the gunner's game's to
+      // decide: dropped here (GunnerFired, CausedElsewhere).
+      if TandemWheels.GunnerOf(event.vehicle) != event.player || event.player == this.m_you {
+        return;
+      }
+      this.NoteGunnerFired(body);
+      TandemWheelsSync.FireAt(body, target);
+      this.m_turretShots += 1;
+      if this.m_turretShots == 1 || this.m_turretShots % 10 == 0 {
+        TandemNative.Log(s"wheels: our vehicle \(event.vehicle) fires for its gunner, player \(event.player) (\(this.m_turretShots) shot(s), armed \(body.IsArmedVehicle()))");
+      }
+      return;
     }
+    // A copy's shot: cosmetic here (CausedElsewhere drops what it hits).
+    TandemWheelsSync.FireAt(body, target);
+  }
+
+  // A vehicle's own guns at a point, the way vanilla's armed cars fire at
+  // their target (AISubActionShootFromCar: NPC combat on, then NPCShoot,
+  // final.reds:451963). Without the first, NPCShoot may do nothing.
+  public static func FireAt(body: ref<VehicleObject>, target: Vector4) -> Void {
+    if !body.IsNPCShooting() {
+      body.EnableNPCCombat(true);
+    }
+    body.NPCShoot(target, 1u);
+  }
+
+  private func NoteGunnerFired(body: ref<VehicleObject>) -> Void {
+    let id = body.GetEntityID();
+    let i = ArrayFindFirst(this.m_gunnerFiredBody, id);
+    if i < 0 {
+      ArrayPush(this.m_gunnerFiredBody, id);
+      ArrayPush(this.m_gunnerFiredAt, this.m_now);
+    } else {
+      this.m_gunnerFiredAt[i] = this.m_now;
+    }
+  }
+
+  // Our vehicle's guns fired for a remote gunner within the last 3 s: what
+  // they hit is that gunner's game's (it fired the real shot on its copy).
+  public func GunnerFired(source: ref<GameObject>) -> Bool {
+    if !IsDefined(source) {
+      return false;
+    }
+    let i = ArrayFindFirst(this.m_gunnerFiredBody, source.GetEntityID());
+    return i >= 0 && this.m_now - this.m_gunnerFiredAt[i] < 3.0;
+  }
+
+  // Ten times a second: a vehicle we run whose gunner seat a remote player
+  // holds. With the probe's part set, its turret is turned to the gunner's
+  // aim by a look-at on that part of its rig (the way a security turret
+  // turns, final.reds:152184); no part known yet that does it.
+  private func Turret(system: ref<TandemSystem>) -> Void {
+    if !IsNameValid(this.m_turretPart) || this.m_now - this.m_lastTurret < 0.1 {
+      return;
+    }
+    this.m_lastTurret = this.m_now;
+    let own = this.m_own;
+    if !IsDefined(own) {
+      return;
+    }
+    let named = TandemWheels.CarOf(this.m_you);
+    let gunner = TandemWheels.GunnerOf(named);
+    let aim = TandemWheels.AimOf(named);
+    if gunner == 0u || gunner == this.m_you || aim.W == 0.0 {
+      this.StopTurretLook();
+      return;
+    }
+    let point = TandemWheelsSync.AimPoint(own, aim.X, aim.Y);
+    this.StopTurretLook();
+    let look = new LookAtAddEvent();
+    look.bodyPart = this.m_turretPart;
+    look.SetStaticTarget(point);
+    look.SetStyle(animLookAtStyle.Normal);
+    look.SetLimits(animLookAtLimitDegreesType.None, animLookAtLimitDegreesType.None, animLookAtLimitDistanceType.None, animLookAtLimitDegreesType.None);
+    look.request.transitionSpeed = 30.0;
+    own.QueueEvent(look);
+    this.m_turretLook = look;
+    this.m_turretLookOn = own;
+  }
+
+  private func StopTurretLook() -> Void {
+    if IsDefined(this.m_turretLook) && IsDefined(this.m_turretLookOn) {
+      LookAtRemoveEvent.QueueRemoveLookatEvent(this.m_turretLookOn, this.m_turretLook);
+    }
+    this.m_turretLook = null;
+    this.m_turretLookOn = null;
+  }
+
+  // A gunner's aim (yaw and pitch from the vehicle's forward, radians, left
+  // and up positive: GunnerAim) as a point 50 m out in the world.
+  public static func AimPoint(body: ref<VehicleObject>, yaw: Float, pitch: Float) -> Vector4 {
+    let forward = body.GetWorldForward();
+    let right = body.GetWorldRight();
+    let up = body.GetWorldUp();
+    let flat = forward * CosF(yaw) - right * SinF(yaw);
+    let way = flat * CosF(pitch) + up * SinF(pitch);
+    let point = body.GetWorldPosition() + way * 50.0;
+    point.W = 1.0;
+    return point;
   }
 
   // ---- the gunner seat ----
@@ -866,11 +1027,11 @@ public class TandemWheelsSync {
 
   // ---- chases ----
 
-  // The area owner: one of our NPCs drives its vehicle after `target`
+  // The vehicle's owner: one of our NPCs drives a vehicle we run after `target`
   // (InVehicleCombatDecorator.ChaseNewTarget), or stopped (null).
   public func Chases(driver: ref<GameObject>, target: ref<GameObject>) -> Void {
     let system = TandemSystem.Of(this.m_game);
-    if this.m_you == 0u || !TandemArea.Owns() || !IsDefined(driver) || !IsDefined(system) {
+    if this.m_you == 0u || !IsDefined(driver) || !IsDefined(system) {
       return;
     }
     let vehicle: wref<VehicleObject>;
@@ -879,8 +1040,8 @@ public class TandemWheelsSync {
     }
     let traffic = system.Traffic();
     let id = IsDefined(traffic) ? traffic.IdOfBody(vehicle.GetEntityID()) : 0u;
-    if id == 0u {
-      return; // not shared: nobody else sees it
+    if id == 0u || !traffic.Mine(id) {
+      return; // not shared (nobody else sees it), or another game's to say
     }
     let player = 0u;
     if IsDefined(target) {
@@ -1053,6 +1214,39 @@ protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<Sta
   wrappedMethod(stateContext, scriptInterface);
 }
 
+// Our V a passenger in a partner's car copy (§13.70). Vanilla takes the
+// weapons of a V that sits beside the driver of a car "occupied by
+// someone not friendly" (stateMachineInitData.occupiedByNonFriendly,
+// read from each occupant's attitude when the door was used): in a copy
+// those occupants are the partner's puppet and the NPCs it carries, which
+// tandem makes friends of our V (Attitudes.reds) but which the game may
+// still read otherwise for a moment. A copy of a partner's car whose
+// occupants are only players' puppets gives our V its weapons back; every
+// other check of passenger combat is the record's, the same as alone.
+@wrapMethod(PassengerEvents)
+protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
+  wrappedMethod(stateContext, scriptInterface);
+  if !this.noWeaponsRestrictionApplied {
+    return;
+  }
+  let game = scriptInterface.GetGame();
+  let system = TandemSystem.Of(game);
+  let car = scriptInterface.owner as VehicleObject;
+  if !IsDefined(system) || system.You() == 0u || !IsDefined(car) || system.CarOwnerOf(car.GetEntityID()) == 0u {
+    return;
+  }
+  let passengers: array<wref<GameObject>>;
+  VehicleComponent.GetAllPassengers(game, car.GetEntityID(), false, passengers);
+  for passenger in passengers {
+    if IsDefined(passenger) && !passenger.IsPlayer() && system.PlayerOfPuppet(passenger.GetEntityID()) == 0u {
+      return; // someone else rides there: vanilla's call stands
+    }
+  }
+  this.noWeaponsRestrictionApplied = false;
+  StatusEffectHelper.RemoveStatusEffect(scriptInterface.executionOwner, t"GameplayRestriction.NoWeapons");
+  TandemNative.Log(s"wheels: our V beside player \(system.CarOwnerOf(car.GetEntityID()))'s puppet: weapons kept (a friend's car)");
+}
+
 // Our V on a vehicle's gun.
 @wrapMethod(GunnerEvents)
 protected func OnEnter(stateContext: ref<StateContext>, scriptInterface: ref<StateGameScriptInterface>) -> Void {
@@ -1072,7 +1266,7 @@ public final func OnExit(stateContext: ref<StateContext>, scriptInterface: ref<S
   wrappedMethod(stateContext, scriptInterface);
 }
 
-// The area owner: a vehicle's NPCs drive after their combat target.
+// The vehicle's owner: a vehicle's NPCs drive after their combat target.
 @wrapMethod(InVehicleCombatDecorator)
 protected final func ChaseNewTarget(context: ScriptExecutionContext, newTarget: wref<GameObject>) -> Void {
   wrappedMethod(context, newTarget);

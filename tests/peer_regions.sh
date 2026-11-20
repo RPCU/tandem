@@ -53,8 +53,11 @@ guest() {
 
 # ---- apart, then together, then apart again: a hand-over ----
 host
-guest --region-far 400 --region-walk-at 2 --region-leave-at 11 --region-speed 60
+guest --region-far 400 --region-walk-at 2 --region-leave-at 11 --region-speed 60 \
+  --region-cars 2 --region-driver --region-chase
 wait_for "$guestlog" 'region: running 3 NPC' || fail "the guest runs no NPC of its own"
+# Its own street, announced where it owns the area (docs/architecture/traffic.md).
+wait_for "$guestlog" 'street: running 2 vehicle\(s\) of our own' || fail "the guest runs no car of its own"
 wait_for "$hostlog" 'region: running 2 NPC' || fail "the host runs no NPC of its own"
 # Apart: each on its own.
 wait_for "$guestlog" 'region: linked with nobody' || fail "a guest 400 m away is linked"
@@ -62,12 +65,22 @@ wait_for "$hostlog" 'region: linked with nobody' || fail "the host is linked wit
 # Together.
 wait_for "$guestlog" 'region: linked with player 1' || fail "the guest never met the host"
 wait_for "$hostlog" 'region: linked with player 2' || fail "the host never met the guest"
+# Its cars are shown to the host, and the first chases it.
+wait_for "$hostlog" 'street: vehicle 0x2000001 .* shared' || fail "the host is not shown the guest's cars"
+wait_for "$hostlog" 'street: vehicle 0x2000001 chases player 1 \(us\)' || fail "the guest's chase never reached the host"
 # The guest walks off, leaving its three NPCs 8 m from the host: handed over.
 wait_for "$guestlog" 'region: handed npc 16777217 over to player 1' 300 ||
   fail "the guest was not asked to hand its NPCs over"
 wait_for "$hostlog" 'region: took npc 16777217 over from player 2 \(health 1\.00, 0 effect\(s\), target player 1\)' ||
   fail "the host did not take the guest's NPC over with its state"
 wait_for "$hostlog" 'region: took npc 16777219 over from player 2' || fail "not every NPC was handed over"
+# ...and its cars, the first with its driver (npc 16777219, seated in it).
+wait_for "$guestlog" 'street: handed vehicle 0x2000001 over to player 1' 300 ||
+  fail "the guest was not asked to hand its cars over"
+wait_for "$hostlog" 'street: took vehicle 0x2000001 over from player 2 \(health 1\.00' ||
+  fail "the host did not take the guest's car over with its state"
+wait_for "$hostlog" 'street: took vehicle 0x2000002 over from player 2' || fail "not every car was handed over"
+if grep -q 'street: handed vehicle' "$hostlog"; then fail "the host gave a car away while standing by it"; fi
 wait_for "$guestlog" 'region: linked with nobody' || fail "the guest did not leave the host's region"
 # The host's own two never moved: its V stayed with them.
 if grep -q 'region: handed npc' "$hostlog"; then fail "the host gave an NPC away while standing by it"; fi

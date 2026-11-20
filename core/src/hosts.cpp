@@ -16,29 +16,119 @@ std::string_view Trim(std::string_view text) {
 }
 
 bool HostNameChar(char c) {
-  return std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '_';
+  return std::isalnum(static_cast<unsigned char>(c)) || c == '-' || c == '_';
+}
+
+bool Digits(std::string_view text) {
+  return !text.empty() && std::ranges::all_of(text, [](char c) {
+    return std::isdigit(static_cast<unsigned char>(c));
+  });
+}
+
+bool Ipv6Char(char c) {
+  return std::isxdigit(static_cast<unsigned char>(c)) || c == ':' || c == '.';
+}
+
+// A port's digits, 1 to 65535.
+std::optional<std::uint16_t> PortOf(std::string_view text) {
+  std::uint16_t value{};
+  const auto [end, ec] = std::from_chars(text.data(), text.data() + text.size(), value);
+  if (!Digits(text) || ec != std::errc{} || end != text.data() + text.size() || value == 0)
+    return std::nullopt;
+  return value;
+}
+
+// A host name, or a dotted IPv4 address when every label is digits.
+bool ValidName(std::string_view name) {
+  if (name.empty() || name.size() > 253)
+    return false;
+  std::vector<std::string_view> labels;
+  for (std::size_t start = 0;;) {
+    const auto dot = name.find('.', start);
+    const auto label = name.substr(start, dot == std::string_view::npos ? dot : dot - start);
+    if (label.empty() || label.size() > 63 || label.front() == '-' || label.back() == '-' ||
+        !std::ranges::all_of(label, HostNameChar))
+      return false;
+    labels.push_back(label);
+    if (dot == std::string_view::npos)
+      break;
+    start = dot + 1;
+  }
+  if (!std::ranges::all_of(labels, Digits))
+    return true;
+  return labels.size() == 4 && std::ranges::all_of(labels, [](std::string_view label) {
+           int value{};
+           std::from_chars(label.data(), label.data() + label.size(), value);
+           return label.size() <= 3 && value <= 255;
+         });
 }
 } // namespace
 
-std::optional<Target> Parse(std::string_view text, std::uint16_t defaultPort) {
+std::string_view ProblemWord(Problem problem) {
+  switch (problem) {
+  case Problem::None:
+    return "";
+  case Problem::Empty:
+    return "empty";
+  case Problem::Port:
+    return "port";
+  case Problem::Name:
+    return "name";
+  case Problem::Ipv6:
+    return "ipv6";
+  }
+  return "name";
+}
+
+namespace {
+Checked Refused(Problem problem) {
+  Checked checked;
+  checked.problem = problem;
+  return checked;
+}
+} // namespace
+
+Checked Check(std::string_view text, std::uint16_t defaultPort) {
   text = Trim(text);
+  if (text.empty())
+    return Refused(Problem::Empty);
   Target target{.port = defaultPort};
-  if (const auto colon = text.rfind(':'); colon != std::string_view::npos) {
-    const auto port = text.substr(colon + 1);
-    std::uint16_t value{};
-    const auto [end, ec] = std::from_chars(port.data(), port.data() + port.size(), value);
-    if (port.empty() || ec != std::errc{} || end != port.data() + port.size() || value == 0)
-      return std::nullopt;
-    target.port = value;
+  if (text.front() == '[') {
+    // "[IPv6]" or "[IPv6]:port": its shape checked, then refused.
+    const auto close = text.find(']');
+    if (close == std::string_view::npos)
+      return Refused(Problem::Name);
+    const auto inside = text.substr(1, close - 1);
+    const auto rest = text.substr(close + 1);
+    if (!rest.empty() && (rest.front() != ':' || !PortOf(rest.substr(1))))
+      return Refused(Problem::Port);
+    if (inside.find(':') == std::string_view::npos || !std::ranges::all_of(inside, Ipv6Char))
+      return Refused(Problem::Name);
+    return Refused(Problem::Ipv6);
+  }
+  if (std::ranges::count(text, ':') > 1)
+    return Refused(std::ranges::all_of(text, Ipv6Char) ? Problem::Ipv6 : Problem::Name);
+  if (const auto colon = text.find(':'); colon != std::string_view::npos) {
+    const auto port = PortOf(text.substr(colon + 1));
+    if (!port)
+      return Refused(Problem::Port);
+    target.port = *port;
     text = text.substr(0, colon);
   }
-  if (text.empty() || target.port == 0 || text.size() > 253 ||
-      !std::ranges::all_of(text, HostNameChar))
-    return std::nullopt;
+  if (!ValidName(text))
+    return Refused(Problem::Name);
+  if (target.port == 0)
+    return Refused(Problem::Port);
   target.address.reserve(text.size());
   for (const char c : text)
     target.address.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-  return target;
+  Checked checked;
+  checked.target = std::move(target);
+  return checked;
+}
+
+std::optional<Target> Parse(std::string_view text, std::uint16_t defaultPort) {
+  return Check(text, defaultPort).target;
 }
 
 std::string Format(const Target &target) {

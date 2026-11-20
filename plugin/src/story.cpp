@@ -61,6 +61,9 @@ void Story::Note(const StoryInbound &inbound) {
     for (auto &slot : m_posePaused)
       slot.store(0);
     SetPrivate(false);
+    // What the host's game answered was that session's world.
+    m_interactKnown.Clear();
+    m_interactAsks.clear();
     break;
   case StoryInbound::Kind::Joined:
     m_others.insert(inbound.player);
@@ -68,6 +71,9 @@ void Story::Note(const StoryInbound &inbound) {
   case StoryInbound::Kind::Left:
     m_others.erase(inbound.player);
     m_participation.Forget(inbound.player);
+    // Its questions are void (the endpoint sends no answer to them).
+    std::erase_if(m_interactAsks,
+                  [&](const auto &entry) { return entry.first.first == inbound.player; });
     // Gone in its private scene (it may have vanished without a word).
     PausePose(inbound.player, false);
     break;

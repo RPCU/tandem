@@ -23,11 +23,11 @@ func TestShardAndPeers(t *testing.T) {
 }
 
 func TestInternalPrefixes(t *testing.T) {
-	got, err := parsePrefixes(" 10.42.0.1/16, fd00::/8 ,")
+	got, err := parsePrefixes("internal-cidrs", " 10.42.0.1/16, fd00::/8 ,")
 	if err != nil || len(got) != 2 || got[0].String() != "10.42.0.0/16" {
 		t.Fatalf("%v %v", got, err)
 	}
-	if _, err := parsePrefixes("10.42.0.0"); err == nil {
+	if _, err := parsePrefixes("internal-cidrs", "10.42.0.0"); err == nil {
 		t.Fatal("an address without a length was accepted")
 	}
 }

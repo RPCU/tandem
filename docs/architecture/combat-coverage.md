@@ -60,19 +60,19 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 | Sticky and homing delivery | W vanilla | W off / U on | W vanilla | U | W off / U on | W vanilla | U the copy sticks or homes by itself, then is put where the real one ended |
 | Mines | – (no player mine in 2.50: `MineDispenser` is an empty stub) | – | – | – | – | – | – |
 | Arm projectile launch system (rounds, charged, tracking) | W vanilla | W off / U on | W vanilla | U the explosion on the guest's game, strikes | W off / U on | W vanilla | U a copy from the puppet's left-hand launcher (`Throw` Launcher); D none when the puppet does not hold the launcher (`Held`) |
-| Sandevistan, Kerenzikov, slowed time | W vanilla on its own game | – | – | U bubbles (time.md, scenario `time`) | – | – | U the bubble on the others (time.md) |
-| Berserk, ground slam, superhero landing | W vanilla | W off / U on | – | U the area attacks on the guest's game, strikes; U the slam's noise relayed (`Noise`) | W off / U on | – | D no slam effect on the puppet |
-| Optical camo | W vanilla | – | – | U the host's NPCs lose the puppet (`Stealth`, `stealth-guest`) | – | – | U |
+| Sandevistan, Kerenzikov, slowed time | W vanilla on its own game | – | – | U bubbles (time.md, scenario `time`) | – | – | U the bubble on the others (time.md), and the game's soft slow-motion cue on a V it slows (`time-scan`); U the ability's status effect seen on the puppet (presence.md, "Status effects") |
+| Berserk, ground slam, superhero landing | W vanilla | W off / U on | – | U the area attacks on the guest's game, strikes; U the slam's noise relayed (`Noise`) | W off / U on | – | D no slam effect on the puppet; U Berserk's own status effect look on it (`StatusVisuals`) |
+| Optical camo | W vanilla | – | – | U the host's NPCs lose the puppet (`Stealth`, `stealth-guest`) | – | – | U the puppet wears the camo record itself, as transparent as the V (`Stealth`, `presence-status`) |
 | Chain lightning, cyberware explosion | W vanilla | W off (puppet hits dropped) / U on | – | U strikes on proxies; the chain picks proxies with no attitude check: it can pick the puppet (dropped, off) | W off / U on | – | D no effect on the puppet |
-| Combat quickhacks: Short Circuit, Overheat, Synapse Burnout, Contagion, Detonate Grenade | W vanilla | – (no hack on a friend) | – | U the upload and effect run on the guest's game, effects to the host (`hacks-upload`, `hacks-guest`); U spread on the caster's game only; D Detonate Grenade's grenade (`GrenadeLvl4HackEffector`) is the host NPC's, its damage the host's | – | – | U upload bar and status on the proxy (`NpcHackState`, `NpcStatus`) |
+| Combat quickhacks: Short Circuit, Overheat, Synapse Burnout, Contagion, Detonate Grenade | W vanilla | – (no hack on a friend) | – | U the upload and effect run on the guest's game, effects to the host (`hacks-upload`, `hacks-guest`); U spread on the caster's game only; U refused whole (upload, effects, ticks) on an actor of the host's scene while it lasts (story.md, the host's backstop); D Detonate Grenade's grenade (`GrenadeLvl4HackEffector`) is the host NPC's, its damage the host's | – | – | U upload bar and status on the proxy (`NpcHackState`, `NpcStatus`) |
 | Covert quickhacks: Ping, Sonic Shock, Reboot Optics, Memory Wipe, Request Backup, Whistle | W vanilla | – | – | U as above; U Whistle walks the NPC to the guest (Reactions.reds); D Ping's highlights are the caster's only | – | – | U |
-| Control quickhacks: Cripple Movement, Weapon Glitch, Cyberware Malfunction | W vanilla | – | – | U | – | – | U |
+| Control quickhacks: Cripple Movement, Weapon Glitch, Cyberware Malfunction | W vanilla | – | – | U; refused on a host scene's actors as every quickhack | – | – | U |
 | Ultimate quickhacks: Suicide, Cyberpsychosis, System Collapse, Blackwall Gateway | W vanilla | – | – | U the kill or madness on the host's NPC; D System Collapse's trace and cost buffs (`SystemCollapseModifyRevealBarEffector`) go to the host's V (coop-perks §6.2) | – | – | U |
 | Breach Protocol | W vanilla | – | – | U the minigame and its rewards on the guest's game; its outcome a `Breach` to the host: the network breached once for everyone (the access point's record), its daemons run by the host on the network's devices and its NPCs from the guest's puppet, by every other game on the NPCs it runs (`breach-guest`, devices.md); U the quickhack on a host NPC: that NPC by its owner, its network by the host; U a mod that skips the minigame (AccessPointSkip) through the same outcome | – | – | U the puppet busy in its minigame (activities.md); the daemons' effects on proxies (`NpcStatus`), the devices through their state (`breach-host`) |
 | Operating systems: cyberdeck (RAM, queue, Overclock), Sandevistan, Berserk | W vanilla | – | – | W the caster's own game (RAM, cooldowns, queue on the proxy: coop-perks §6.1) | – | – | – |
 | Vehicle combat (mounted guns, missiles, rams) | W vanilla | W off / U on | – | U hits from the driver's game on proxies; D missiles not shown (vehicles.md) | W off / U on | – | D |
 | Environment: explosive barrels and devices, turrets, electrified floors | W vanilla | W off / U on | W vanilla | D a barrel the guest shoots explodes on its game only (devices are the host's: devices branch); its strikes count | W off / U on | W vanilla | D |
-| Environment: falls, drowning, fire, own crashes | – | – | W vanilla | – | – | W vanilla | – |
+| Environment: falls, drowning, fire, own crashes | – | – | W vanilla | – | – | W vanilla | U a burn, shock, poison or bleed on the V shows on its puppet, its look and sound only (`StatusVisuals`, `presence-status`) |
 | Finishers and takedowns | W vanilla | – | – | U a request to the host, played on the real NPC (`takedowns-host`); U the finisher a broken guard offers goes to whoever broke it (`PoiseBroken`) | – | – | U the workspot on the puppet |
 
 ## The host's NPCs attacking
@@ -115,6 +115,7 @@ proxies of them.
 | The inhaler, injector, food or drink in the puppet's hand | U: the item is in the V's left hand for the animation (`ConsumableUseEvents`), so `Held` puts it in the puppet's; D it appears when the puppet's copy has spawned, a moment late |
 | The animation | U: the pose stream moves the puppet's arms |
 | The heal's screen effect | – (first person only) |
+| The heal's own status effect (its glow, its sound) | U: seen on the puppet, never applied to it (`StatusVisuals`, `presence-status`) |
 
 ## Counts
 
@@ -125,11 +126,11 @@ then W; "W off / U on" counts as the default, W; "was B" is history),
 <!-- prettier-ignore -->
 | Table | Cells | W | D | B | U | – |
 | --- | --- | --- | --- | --- | --- | --- |
-| The Vs attacking (27 rows × 7) | 189 | 70 | 16 | 1 | 30 | 72 |
+| The Vs attacking (27 rows × 7) | 189 | 70 | 16 | 1 | 31 | 71 |
 | The host's NPCs attacking (10 × 3) | 30 | 10 | 2 | 0 | 18 | 0 |
 | Companions and allies | 5 | 1 | 1 | 0 | 2 | 1 |
-| Healing and consumables | 4 | 1 | 1 | 0 | 1 | 1 |
-| All | 228 | 82 | 20 | 1 | 51 | 74 |
+| Healing and consumables | 5 | 1 | 1 | 0 | 2 | 1 |
+| All | 229 | 82 | 20 | 1 | 53 | 73 |
 
 Before this change three of today's U were B (NPC gunfire on a guest, NPC
 grenades and every V's thrown object unseen on the other game) and the

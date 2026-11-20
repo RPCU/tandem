@@ -80,6 +80,10 @@ public class TandemDevice {
   public let dirty: Bool;
   // Guest: named by the host before a resync and not again since.
   public let stale: Bool;
+  // Guest: our V's change of it waits for the host's verdict on a quest
+  // interaction (Interact.reds) until then: not said meanwhile.
+  public let heldUntil: Float;
+  public let heldChanged: Bool;
 }
 
 public class TandemDevices extends ScriptableSystem {
@@ -332,6 +336,64 @@ public class TandemDevices extends ScriptableSystem {
     let device = this.Track(PersistentID.ExtractEntityID(ps.GetID()), ps.GetClassName());
     device.dirty = true;
     this.m_dirty = true;
+  }
+
+  // ---- quest interactions (Interact.reds) ----
+
+  // Guest: our V is about to operate this device and the host's game is
+  // asked whether the use is its own: what our copy becomes meanwhile is not
+  // said (the host's own doing of it will answer for everyone).
+  public func Hold(entity: EntityID, cls: CName, seconds: Float) -> Void {
+    if this.m_you == 0u || this.m_host {
+      return;
+    }
+    let device = this.Track(entity, cls);
+    device.heldUntil = this.Now() + seconds;
+    device.heldChanged = false;
+  }
+
+  // Guest: the verdict came. report: the use was ours after all (nothing of
+  // the host's quest, someone else's came first, the host's game has no
+  // such thing): what our copy became is asked of the host the usual way.
+  // Else (the host's V did it, or it was not ours to do): the host is asked
+  // what the device is, and our copy follows its word when they differ.
+  public func Release(entity: EntityID, cls: CName, report: Bool) -> Void {
+    let device = this.Find(entity, cls);
+    if !IsDefined(device) {
+      return;
+    }
+    device.heldUntil = 0.0;
+    let changed = device.heldChanged;
+    device.heldChanged = false;
+    let ps = this.StateOf(device);
+    if !changed || this.m_you == 0u || !IsDefined(ps) {
+      return;
+    }
+    if report {
+      TandemNative.UseDevice(device.entity, device.cls, TandemDevices.StatusOf(ps), TandemDevices.FlagsOf(ps), TandemDevices.ValueOf(ps));
+      this.LogSome(s"devices: \(TandemDevices.Name(device)) changed here (a quest interaction that was ours): asked of the host");
+    } else {
+      TandemNative.AskDevice(device.entity, device.cls, TandemDevices.StatusOf(ps), TandemDevices.FlagsOf(ps), TandemDevices.ValueOf(ps));
+    }
+  }
+
+  // Host: our V is doing guest `player`'s use of this device: what it
+  // becomes is said in that guest's name, a moment later.
+  public func PerformedFor(entity: EntityID, cls: CName, player: Uint32) -> Void {
+    if this.m_you == 0u || !this.m_host {
+      return;
+    }
+    let device = this.Track(entity, cls);
+    let ps = this.StateOf(device);
+    if IsDefined(ps) && !device.seen {
+      device.seen = true;
+      device.status = TandemDevices.StatusOf(ps);
+      device.flags = TandemDevices.FlagsOf(ps);
+      device.value = TandemDevices.ValueOf(ps);
+    }
+    device.by = player;
+    device.answerAt = this.Now() + 0.25;
+    device.settleUntil = device.answerAt;
   }
 
   // Not in our world and nothing of the session's: no need to remember it.
@@ -605,6 +667,12 @@ public class TandemDevices extends ScriptableSystem {
       return;
     }
     device.kept = true;
+    // A quest interaction's: the host's game does it on its own copy, or
+    // says it is ours (Release, below).
+    if now < device.heldUntil {
+      device.heldChanged = true;
+      return;
+    }
     // Our V's doing (or our game's own: a door closing itself): the host
     // hears what it is here now, and answers for everyone.
     TandemNative.UseDevice(device.entity, device.cls, status, flags, value);
@@ -996,7 +1064,8 @@ public class TandemDevices extends ScriptableSystem {
     return false;
   }
 
-  // The entity of the nearest device of a kind, within `distance` (Breach.reds).
+  // The entity of the nearest device of a kind, within `distance` (Breach.reds,
+  // Interact.reds).
   public func NearestOf(kind: String, distance: Float) -> ref<GameObject> {
     let device = this.Nearest(kind, distance);
     return IsDefined(device) ? GameInstance.FindEntityByID(this.GetGameInstance(), device.entity) as GameObject : null;

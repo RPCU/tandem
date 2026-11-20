@@ -284,3 +284,138 @@ Uint32)` (`:87931`) fires them at a point; `GetActiveWeapons`,
   mounted vehicle; `Deactivate` interrupts it). Prevention and the dynamic
   spawn system chase `GetLocalPlayerMainGameObject()` directly
   (`:142449`, `:189618`). [2.5-untested]
+
+### 13.70 World vehicles changing hands, the owner's turret, passenger combat in a copy (2026-11-19, 2.50 scripts read)
+
+Read from the 2.50 game's own scripts (`final.reds` of the game's bundle,
+`~/.cache/tandem/ref/gamescripts/vanilla`, line numbers of that dump) and
+the live RTTI dump (`data/rtti-natives-2.50.tsv`); none of it has run in
+game: every line is [2.5-untested]. Used by `scripts/tandem/Traffic.reds`,
+`Wheels.reds`, `Transit.reds` (`architecture/traffic.md`, "Several owners,
+and hand-overs"; `architecture/vehicle-combat.md`).
+
+**A traffic car changing hands** (the giver keeps its body as a proxy, the
+receiver's proxy becomes the real car):
+
+- A crowd car is driven along its lane by the native traffic system through
+  its crowd member component (§13.32). `VehicleObject` keeps it as
+  `m_crowdMemberComponent` (`:87702`, `GetCrowdMemberComponent()` `:88205`)
+  and changes how it drives with `ChangeMoveType(CName)` (`:143068`) on its
+  own `m_drivingTrafficPattern`: `n"stop"` when stuck or when its driver is
+  knocked out (`OnStuckEvent` `:88430`, `:88640`, `:88659`), `n"panic"`
+  (`:88615`), `n"normal"` back in its lane (`:88928`), or a crowd setting's
+  `movementType` (`OnCrowdSettingsEvent` `:88421`). tandem's `TandemHold`
+  sets `stop` on the giver's car while it is a proxy, `normal` when it is
+  that game's again. Whether `stop` keeps the traffic system from moving
+  it against the teleports is the probe. [2.5-untested]
+- A spawned car (a dynamic entity, like a proxy) goes into traffic the way
+  Delamain's cab does when it goes free: an `AIVehicleJoinTrafficCommand
+{ needDriver: false; useKinematic: true }` (`:217147`, class `:217291`,
+  its handler `AIDriveJoinTrafficCommandHandler` `:472292` maps both
+  fields) sent with `vehicle.GetAIComponent().SendCommand(command)`
+  (`GetAIComponent() -> AIVehicleAgent` `:87883`, `AIComponent.SendCommand`
+  `:143634`). tandem's `TandemDriveOn` sends it to a woken proxy after an
+  impulse of its mass times the giver's velocity (`PhysicalImpulseEvent`,
+  `GetTotalMass` `:87921`, as for a pushed car §13.41). Whether a car with
+  a woken NPC driver drives on, and how it joins a lane, is the probe.
+  [2.5-untested]
+
+**The owner's turret for a remote gunner**:
+
+- **No script call sets a vehicle turret's aim.** `VehicleObject`'s weapon
+  calls are `GetActiveWeapons(out [wref<WeaponObject>])` (`:87925`),
+  `IsArmedVehicle()` (`:87927`), `EnableNPCCombat(Bool)` (`:87929`),
+  `NPCShoot(target: Vector4, projectiles: Uint32)` (`:87931`) and
+  `IsNPCShooting()` (`:87933`); RTTI lists the same as `vehicleBaseObject.*`.
+  The aim limits are TweakDB data (`VehicleWeapon_Record`: `MinYaw`,
+  `MaxYaw`, `MinPitch`, `MaxPitch`, `CycleTime`, `WeaponShootAnimEvent`…,
+  `:544418`; a vehicle's list `Vehicle_Record.Weapons`, `:95128`). The 2.0
+  armed cars' class `vehicleArmedCarBaseObject` and
+  `vehicleToggleQuestWeaponEnabledEvent` have no script functions; the
+  quest nodes (`questUseWeapon_NodeType`…) are not callable. [2.5-untested]
+- **Vanilla's armed cars fire at a point** with
+  `AISubActionShootFromCar_Record_Implementation` (`:451963`): if
+  `IsArmedVehicle()` and not `IsNPCShooting()`, `EnableNPCCombat(true)`,
+  then `NPCShoot(targetPosition, RandRange(vehicles.npc_armed_car
+.minBurstProjectiles, maxBurstProjectiles))`. It needs no player. tandem
+  fires the owner's real vehicle so at the remote gunner's `MountedFire`
+  point (`TandemWheelsSync.FireAt`), and copies' cosmetic shots the same
+  way (they lacked `EnableNPCCombat`). Whether `NPCShoot` also turns the
+  turret, works with a player at the wheel, and on the Basilisk (a
+  `TankObject`, for which `IsArmedVehicle` may be false: the
+  `gunner-turret` scenario notes it) is for the game to show. [2.5-untested]
+- **The gunner seat is not a turret** in the player state machine:
+  `GunnerDecisions` (`:548550`) checks the slots `gunner_back_left` and
+  `gunner_back_right`, `GunnerEvents` (`:548570`) equips the V's own gun;
+  the vehicle state `Turret` (5, `:6796`) is set by no script;
+  `TurretTransition` (`:517239`) is the rip-off of a security turret.
+  [2.5-untested]
+- **No animation feature turns a vehicle's turret** from scripts: the
+  nearest, `AnimFeature_ProceduralDriverCombatData { isEnabled,
+yawDirectionFlipped, yaw, pitch, roll }` (`:298801`, applied as
+  `n"ProceduralDriverCombatData"` in `DriverCombatFirearmsEvents`,
+  `:550206`), turns the V's body; the vehicle gets only `n"VehicleState"`
+  (`AnimFeature_VehicleState { tppEnabled }`, `:92220`), `n"SteeringLimit"`
+  and `n"spoiler"`. The probe tandem keeps (`wheels turret PART`): a
+  `LookAtAddEvent` (`:172727`; `bodyPart`, `SetStaticTarget`, `SetStyle`,
+  `SetLimits`, removed with `LookAtRemoveEvent.QueueRemoveLookatEvent`,
+  `:174614`) queued on the vehicle, as a security turret turns
+  (`SensorDevice.CreateLookAt`, `:152184`); the part names are in the
+  vehicle's rig (WolvenKit), not in the scripts. Other routes, unproven:
+  the animgraph's inputs (`AnimationControllerComponent.SetInputFloat`…,
+  `:57766`), a turret mesh component's `SetLocalOrientation` (`:19484`).
+  [2.5-untested]
+- **A muzzle without a hit**: `WeaponObject.TriggerWeaponEffects(weapon,
+gamedataFxAction.Shoot)` (`:54864`) and `AnimationControllerComponent
+.PushEventToReplicate(weapon, n"Shoot")`, as `AIWeapon.Fire` does after
+  its shot (`:173340`); no tracer (the projectile draws it). Not used:
+  the owner fires real shots and drops their hits instead. [2.5-untested]
+- **The shot event** `VehicleMountedWeaponShootEvent { weaponID; slotID }`
+  (`:298664`) is the engine's; `VehicleComponent.OnWeaponShootEvent`
+  (`:90549`) only broadcasts the gunshot stim. A hit of a weapon shot
+  carries the weapon (`AttackData.GetWeapon()`, `:52485`), which tandem uses
+  to tell the owner's vehicle's shots from its collisions. [2.5-untested]
+
+**Passenger combat in a copy of a partner's car** (spawned by
+`DynamicEntitySystem`, moved by teleports, the partner's puppet mounted at
+the wheel, no AI driver):
+
+- The chain: `MountFromParent` adds the vehicle state machine unless the
+  mount is silent (`:291571`, `silentUnmount` `:291579`); `EnteringEvents`
+  (`:548360`); `PassengerDecisions.EnterCondition` →
+  `IsPassengerInVehicle` (a native, `:548455`); `PassengerEvents.OnEnter`
+  (`:548479`) puts the seat's restriction on, `SetVehicleStatusEffects`
+  (`:282655`): `GameplayRestriction.DriverCombatFirearms` when the record's
+  `VehDataPackage().DriverCombat().Type()` allows it
+  (`GetVehicleAllowsCombat` `:90458`, `DoesVehicleSupportFireArms`
+  `:283453`), else `NoWeapons`; drawing (`EmptyHandsEvents.OnUpdate`
+  `:540780`: scene tier ≤ 2, no `NoWeapons`, the driver combat weapon
+  request `:540835`); `EnteringCombatDecisions` (`:549539`: no `NoCombat`
+  nor `VehicleScene` tag, no `Turret` tag on the record, a weapon in hand);
+  `CombatEvents.OnEnter` sets the vehicle state 2 and opens the window
+  (`:549741`). [2.5-untested]
+- **Every check reads the record or the V**, never the driver, an AI, the
+  car's speed, its persistent state or how it moves: a copy of the same
+  record passes them as the real car does. [2.5-untested]
+- **The one that reads the occupants**: entering by the game's own door,
+  `stateMachineInitData.occupiedByNonFriendly` is set from each occupant's
+  attitude to V (`MountEntityToSlot` `:291016`, `GetAttitudeOfPassenger`
+  `:291043`, `:90268`), and in `seat_front_right` it costs V its weapons
+  (`PassengerEvents.OnEnter`, `noWeaponsRestrictionApplied`, `:548503`);
+  it also asks the non-friendly occupants out (`:548428`). tandem's own
+  mount (`TandemVehicles.Seat`) passes `false`. A partner's puppet is made
+  a friend of V (`Attitudes.reds`), but per agent, so the game may read it
+  otherwise for a moment: tandem gives the weapons back in a copy whose
+  occupants are only players' puppets (`PassengerEvents.OnEnter`,
+  `Wheels.reds`). [2.5-untested]
+- **A driver the game reads as inactive** is pulled out by a passenger
+  getting in (`QueueHijackExitEventToInactiveDriver`, `:89962`;
+  `ScriptedPuppet.IsActive` `:21056`: alive, not defeated, unconscious or
+  turned off). A puppet is active; a dead puppet at the wheel would be put
+  out. [2.5-untested]
+- **Carried along** (a two-seat car, no seat): tandem's carry is a silent
+  mount, so no vehicle state machine runs and the state never reaches
+  Combat; tandem's restrictions keep the V unarmed. `NoWeapons` alone does
+  not holster a weapon already drawn (`OnGameplayRestrictionAdded` has no
+  branch for it, `:179041`); `NoCombat` does (`ForceEmptyHands`,
+  `:540418`): `TandemTransit.Restrict` now puts both on. [2.5-untested]

@@ -47,7 +47,18 @@
   vanilla's short unlock delay. No remote player's radio plays anywhere
   else: a puppet is an NPC (no pocket radio) and a car copy nobody of
   ours rides in is switched off. Volumes stay each player's own
-  settings. Not yet verified in game (scenario `radio`).
+  settings. Not yet verified in game (scenario `radio`). A station a mod
+  added (radioExt numbers its own after the game's,
+  `RadioStationDataProvider.GetStationsCount`) is sent as off by the driver
+  and taken as off by a passenger, with a notice (`TandemRadio.IsVanilla`,
+  [`mod-compat.md`](mod-compat.md)).
+- **A car our game lacks** ([`mod-compat.md`](mod-compat.md), not run in
+  game yet): `Seat::hint` carries the vehicle's type and seats
+  (`TandemMods.VehicleHint`); a record our TweakDB does not have is
+  resolved once in `RemoteSeatVehicle` to a vanilla one of the same type
+  and size (a bike, an AV, a two-seater, a car, a van), so the copy spawns
+  and the ride works; a shared world vehicle (`TrafficSpawn`, no hint) is
+  the default car. The player is told once per partner.
 
 ## Open problems
 

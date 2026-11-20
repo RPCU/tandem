@@ -4,6 +4,8 @@
 // variant index is the message id, so new messages are only ever appended.
 // Bump kProtocolVersion on any change to an existing message.
 
+#include "tandem/closed_variant.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -17,7 +19,9 @@ namespace tandem::proto {
 inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // 7: Hello.flags (Phantom Liberty), NpcCueKind::OutOfSight, kTimeScanning
 // in kTimeBubbleAbilities (a TimeEffect means more), and the compact wire
-// forms of the netcode (PoseFrame, NpcMotion, PlayerMotion, VehicleMotion).
+// forms of the netcode (PoseFrame, NpcMotion, PlayerMotion, VehicleMotion);
+// the record hints of Held, Appearance, Seat and NpcSpawn (mod-compat.md),
+// added before protocol 7 left the developers' machines.
 inline constexpr std::uint16_t kProtocolVersion = 7;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
@@ -151,6 +155,18 @@ struct PoseState {
   friend bool operator==(const PoseState &, const PoseState &) = default;
 };
 
+// What kind of thing a record is, said next to its TweakDB id, so a game
+// that does not have the record (a mod it lacks) shows a similar vanilla one
+// (tandem/mods.hpp, docs/architecture/mod-compat.md). The game's own enum
+// names, as CName hashes: the same in every copy of the game, modded or not.
+struct RecordHint {
+  std::uint64_t type{}; // gamedataItemType ("Wea_Handgun"), gamedataVehicleType ("Car"),
+                        // gamedataNPCType ("Human")
+  std::uint64_t tag{};  // an item's gamedataItemCategory ("Weapon"); an NPC's gender ("Female")
+  std::uint8_t size{};  // a vehicle's seats
+  friend bool operator==(const RecordHint &, const RecordHint &) = default;
+};
+
 // One part of a V's look: what the game's appearance changer takes
 // (world::EntityAppearanceChangeParameter::Key): a resource path hash and a
 // name hash, the same in every copy of the game.
@@ -173,6 +189,7 @@ struct Appearance {
   Body body{};
   std::vector<AppearanceKey> look;
   std::vector<std::uint64_t> items;
+  std::vector<RecordHint> hints; // items[i]'s (fewer: the rest have none)
   friend bool operator==(const Appearance &, const Appearance &) = default;
 };
 
@@ -185,6 +202,8 @@ struct Held {
   std::uint32_t revision{};
   std::uint64_t right{};
   std::uint64_t left{};
+  RecordHint rightHint;
+  RecordHint leftHint;
   friend bool operator==(const Held &, const Held &) = default;
 };
 
@@ -214,6 +233,7 @@ struct Seat {
   std::uint64_t vehicle{};
   std::uint64_t seat{};
   PlayerId owner{};
+  RecordHint hint; // the vehicle's type and seats
   friend bool operator==(const Seat &, const Seat &) = default;
 };
 
@@ -253,6 +273,7 @@ struct NpcSpawn { // Event channel; kept by the host for late joiners
   std::uint64_t appearance{}; // CName hash of its appearance
   Vec3 position;
   float yaw{};
+  RecordHint hint; // its NPC type and gender
   friend bool operator==(const NpcSpawn &, const NpcSpawn &) = default;
 };
 
@@ -2515,7 +2536,147 @@ struct BreachResult {
   friend bool operator==(const BreachResult &, const BreachResult &) = default;
 };
 
-using Message = std::variant<
+// ---- Quest interactions (docs/architecture/story.md, "Quest interactions") ----
+//
+// The quest runs on the host, so a guest's V using one of the host's
+// objects (grouped, a placed entity: the same in both games) moves nothing
+// of the host's quest by itself. The guest says what it chose (kInteractAsk,
+// guest to host); the host's game decides from its own data and answers
+// that guest alone with a verdict. Never relayed, a story message
+// (tandem/interact.hpp keeps the first-come rule and the verdicts known).
+//
+// QuestInteract::verdict. Ask: the guest's question. The rest are answers.
+inline constexpr std::uint8_t kInteractAsk = 0,
+                              kInteractPerformed = 1, // the host's V did it on the host's object
+    kInteractHostOnly = 2, // it would cast the doer in a scene or workspot: the host must
+    kInteractLocal = 3,    // nothing of the host's quest there: the guest's own copy is all
+    kInteractTaken = 4,    // another player's use of it came first
+    kInteractTooFar = 5,   // the guest's V was not where it could reach it
+    kInteractMissing = 6,  // the host's game has no such object or choice now
+    kInteractBusy = 7;     // the host's V cannot do it now (a scene, a workspot, a menu)
+inline constexpr std::uint8_t kInteractVerdictMax = kInteractBusy;
+// QuestInteract::flags.
+inline constexpr std::uint8_t kInteractChecked = 1, // the guest's own game passed the choice's
+                                                    // checks (a skill, an item its V holds)
+    kInteractCasts = 2, // the guest's own game says the choice casts the doer (not run there)
+    kInteractLoot = 4;  // a loot choice: `detail` is the item's TweakDB id
+inline constexpr std::uint8_t kInteractFlags = 7;
+struct QuestInteract {
+  std::uint64_t target{}; // the entity's static id (EntityID hash)
+  std::uint64_t choice{}; // what was chosen: the device action's class, or the loot action (CName)
+  std::uint64_t detail{}; // the action's name (CName), or the looted item's record (kInteractLoot)
+  std::uint64_t layer{};  // the interaction layer it was on (CName; 0: none)
+  std::uint32_t seq{};    // the asker's count of its questions: the answer names it
+  Vec3 position;          // ask: where the guest's V was when it chose
+  std::uint64_t timeUs{}; // ask: when, on the host clock
+  PlayerId player{};      // the asker (set by the host from the connection)
+  std::uint8_t verdict{}; // kInteract*
+  std::uint8_t flags{};   // kInteract* flags
+  friend bool operator==(const QuestInteract &, const QuestInteract &) = default;
+};
+
+// ---- World vehicles of several owners (docs/architecture/traffic.md, "Who
+// owns an area"; regions.md, "Hand-over") ----
+//
+// A shared world vehicle is run by the game that announced it (its id's
+// owner) until the host hands it over, as an NPC is: its owner's V is
+// leaving it with another linked player near (regions::Taker), or its owner
+// is gone or its world rebuilt (regions::Heir). Both games already have a
+// body for it, the real one and the proxy: the giver keeps its body as a
+// proxy, the receiver's proxy becomes the real vehicle, with the state that
+// came with it. Nothing is spawned or deleted: no pop, no duplicate.
+
+// Who runs a shared vehicle now (host -> every player who sees it, and the
+// giver; kept with the NPC domain for late joiners and resyncs).
+struct TrafficOwnership {
+  TrafficId id{};
+  PlayerId owner{};
+  friend bool operator==(const TrafficOwnership &, const TrafficOwnership &) = default;
+};
+
+// Host -> the vehicle's owner: give it to `to`.
+struct TrafficHandover {
+  TrafficId id{};
+  PlayerId to{};
+  friend bool operator==(const TrafficHandover &, const TrafficHandover &) = default;
+};
+
+// How the giver leaves it (giver -> host -> receiver), or what the host's
+// record says of it when its owner is gone (kHandoverInherited).
+struct TrafficHandoverState {
+  TrafficId id{};
+  PlayerId from{}; // set by the host from the connection
+  PlayerId to{};
+  Vec3 position;
+  Quat orientation;
+  Vec3 velocity;           // m/s: a car that drove on drives on
+  float health{1.f};       // fraction, 0..1
+  std::uint16_t flags{};   // kTraffic* (kTrafficParked: no driver, it stays put)
+  std::uint8_t handover{}; // kHandoverInherited: built from the record, nobody read the car
+  friend bool operator==(const TrafficHandoverState &, const TrafficHandoverState &) = default;
+};
+
+// Receiver: it runs the vehicle now (or cannot: it goes). Giver: it will not
+// give it (accepted false: a player is getting in, it is claimed).
+struct TrafficHandoverDone {
+  TrafficId id{};
+  bool accepted{};
+  friend bool operator==(const TrafficHandoverDone &, const TrafficHandoverDone &) = default;
+};
+
+// ---- Other mods (docs/architecture/mod-compat.md) ----
+
+// A game's other mods, each by the hash of its name and what it adds
+// (tandem/mods.hpp), said once by each side after Install (never relayed,
+// like Install). Names travel only when asked for: kModNamesAsked carries
+// the hashes whose names one side wants, kModNames the answer (names of
+// those of the answerer's own mods only). Event channel.
+inline constexpr std::uint8_t kModListed = 0, kModNamesAsked = 1, kModNames = 2;
+inline constexpr std::size_t kMaxModEntries = 512;
+inline constexpr std::size_t kMaxModName = 64;
+struct ModEntry {
+  std::uint64_t hash{};
+  std::uint8_t categories{}; // mods::k*
+  std::string name;          // kModNames only
+  friend bool operator==(const ModEntry &, const ModEntry &) = default;
+};
+struct ModList {
+  std::uint8_t kind{}; // kMod*
+  std::vector<ModEntry> mods;
+  friend bool operator==(const ModList &, const ModList &) = default;
+};
+
+// A game shows substitutes for some of `owner`'s records (a mod that game
+// lacks): one per kind it first replaced, said so `owner`'s player knows
+// what their partner sees. The seer's game sends it to the host, which
+// stamps `seer` and passes it to `owner` only. Event channel.
+struct Substitutes {
+  PlayerId owner{};
+  PlayerId seer{};
+  std::uint16_t kinds{}; // bit (mods::Kind)
+  std::uint16_t count{}; // records replaced so far
+  friend bool operator==(const Substitutes &, const Substitutes &) = default;
+};
+
+// ---- Status visuals (docs/architecture/presence.md, "Status effects") ----
+//
+// The status effects on a V that show on it (burning, shock, a camo's
+// shimmer, a Sandevistan's trail, a heal's glow...): the TweakDB ids of the
+// records its game has on it now that name a VFX, a sound or a visual
+// effector, the whole set on every change (sorted; empty: none). Sent by
+// that player's game (Event channel); the host stamps the player, keeps
+// everyone's latest for late joiners and relays it. The others play the
+// records' visuals on its puppet, never their gameplay.
+inline constexpr std::size_t kMaxStatusVisuals = 16;
+struct StatusVisuals {
+  PlayerId player{};
+  std::uint32_t revision{};
+  std::vector<std::uint64_t> records;
+  friend bool operator==(const StatusVisuals &, const StatusVisuals &) = default;
+};
+
+// The alternatives, in id order. Code uses Message (below).
+using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
     Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
@@ -2532,10 +2693,17 @@ using Message = std::variant<
     TradeCommit, VehicleUnlock, CarLend, Mark, Tag, Link, Waypoint, VehicleDamage, VehicleHit,
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
-    BreachResult, NpcVendor>;
+    BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
+    TrafficHandoverState, TrafficHandoverDone, QuestInteract>;
+
+// A message: MessageVariant, its copies, moves and conversions compiled in
+// message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
+// std::holds_alternative and index() work on it as on the variant.
+using Message = ClosedVariant<MessageVariant>;
+bool operator==(const Message &a, const Message &b);
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
-// VehicleUnlock, StoryRestrictions):
+// VehicleUnlock, StoryRestrictions, QuestInteract):
 // endpoint.hpp relays these through one path.
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended), a level
@@ -2561,3 +2729,5 @@ const char *NameOf(const Message &message);
 // The same by Message index ("?" past the last).
 const char *NameOfKind(std::size_t kind);
 } // namespace tandem::proto
+
+extern template class tandem::ClosedVariant<tandem::proto::MessageVariant>;

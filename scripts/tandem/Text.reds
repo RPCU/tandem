@@ -98,7 +98,8 @@ public class TandemText {
       "the relay went silent: reconnecting", "lost the relay",
       "the relay's replicas sent us on twice (their peers lists disagree)",
       "the relay sent us to an address we cannot reach (IPv6)",
-      "the relay is restarting: try again in a moment"
+      "the relay is restarting: try again in a moment",
+      "the relay hosts as many sessions from your address as it may"
     ];
     let keys = [
       "Reason-Full", "Reason-HostGone", "Reason-Unreachable", "Reason-Connecting",
@@ -110,7 +111,8 @@ public class TandemText {
       "Reason-RelayReconnecting", "Reason-RelayLost",
       "Reason-RelayLoop",
       "Reason-RelayIpv6",
-      "Reason-RelayDraining"
+      "Reason-RelayDraining",
+      "Reason-RelaySourceBusy"
     ];
 
     let i = 0;
@@ -174,12 +176,15 @@ public class TandemText {
       "Travel-Taken", "Travel-Asks", "Travel-Blocked", "Revive-Down", "Revive-DownAlone",
       "Revive-Out", "Revive-AllDown", "Revive-WaitHost", "Activities-AsksSleep", "Activities-AsksWait",
       "Activities-CannotSkip", "Trade-Asks", "Comms-LinkAsked", "Saves-Failed", "Saves-WhenYouCan",
-      "Saves-NotRestored"
+      "Saves-NotRestored", "Mods-Replaced-Item", "Trade-Unknown",
+      "Interact-HostOnly", "Interact-Taken", "Interact-TooFar",
+      "Interact-Missing", "Interact-Busy"
     ];
     if ArrayContains(asks, key) {
       return 2;
     }
-    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Revive-") ? 1 : 0;
+    // A record shown otherwise (Mods.reds): never only in the log.
+    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Revive-") || StrBeginsWith(key, "Mods-") || StrBeginsWith(key, "World-") || StrBeginsWith(key, "Time-Mod") ? 1 : 0;
   }
 
   // An input hint in the HUD's hint bar: the game draws the key or button
@@ -248,6 +253,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Menu-Invite", "Invite");
     this.Text("Tandem-Menu-Leave", "Leave session");
     this.Text("Tandem-Menu-EnterCode", "Enter a code or an address");
+    this.Text("Tandem-Menu-JoinAddress", "Join by address");
     this.Text("Tandem-Menu-Back", "Back");
     this.Text("Tandem-Menu-Report", "Write a bug report");
     this.Text("Tandem-Popup-CoopOff", "Co-op is off");
@@ -301,6 +307,12 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Popup-NeedsRelay", "Joining by code needs a relay: set one in the co-op settings");
     this.Text("Tandem-Popup-EnterCode", "The host's join code (K7Q-2M9) or address (192.168.1.20, or 192.168.1.20:27450), as their Co-op menu shows it");
     this.Text("Tandem-Popup-NotATarget", "Not a join code or an address: {1}");
+    this.Text("Tandem-Popup-JoinAddress", "The host's address on your network or VPN (Tailscale, NetBird...): host or host:port, port {1} if none. A direct connection, without the relay: the host's port must be open to you. Over the internet, a join code is easier.");
+    this.Text("Tandem-Popup-JoinAddressLast", "Leave it empty to join {1} again.");
+    this.Text("Tandem-Address-Empty", "Type the host's address (192.168.1.20, or 192.168.1.20:27450)");
+    this.Text("Tandem-Address-Port", "Not a port in {1}: 1 to 65535 after the colon");
+    this.Text("Tandem-Address-Name", "Not a host name or an IPv4 address: {1}");
+    this.Text("Tandem-Address-Ipv6", "{1} is an IPv6 address: tandem connects over IPv4 only. Use the host's IPv4 address (Tailscale and NetBird give one, 100.x.y.z)");
     // The session.
     this.Text("Tandem-Session-Hosting", "Hosting co-op. {1}");
     this.Text("Tandem-Session-JoinedOf", "Joined {1}'s session");
@@ -330,6 +342,7 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Reason-RelayLoop", "the relay's servers disagree (sent on twice)");
     this.Text("Tandem-Reason-RelayIpv6", "the relay sent us to an address we cannot reach (IPv6)");
     this.Text("Tandem-Reason-RelayDraining", "the relay is restarting: try again in a moment");
+    this.Text("Tandem-Reason-RelaySourceBusy", "the relay hosts as many sessions from your address as it may");
     this.Text("Tandem-Player-Unnamed", "Player {1}");
     // Names (the co-op menu's prompt; the host's (2), (3)).
     this.Text("Tandem-Name-Title", "Your co-op name");
@@ -357,9 +370,55 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Story-Join", "Join {1}");
     this.Text("Tandem-Scene-InScene", "{1} is in a scene");
     this.Text("Tandem-Scene-Watch", "Watch the scene");
+    // Quest interactions: a guest's use of the host's objects.
+    this.Text("Tandem-Interact-HostOnly", "{1} must do this");
+    this.Text("Tandem-Interact-Taken", "{1}'s world: someone else got there first");
+    this.Text("Tandem-Interact-TooFar", "Too far from it in {1}'s world");
+    this.Text("Tandem-Interact-Missing", "Not there in {1}'s world right now");
+    this.Text("Tandem-Interact-Busy", "{1} is busy: try again in a moment");
     // Loot, markers.
     this.Text("Tandem-Loot-Taken", "Someone already took it");
     this.Text("Tandem-Loot-TakenBy", "{1} picked it up first");
+    // Other mods (Mods.reds, docs/architecture/mod-compat.md).
+    this.Text("Tandem-Menu-Mods", "Mods");
+    this.Text("Tandem-Mods-TheyHave", "{1} has mods you don't ({2})");
+    this.Text("Tandem-Mods-YouHave", "You have mods {1} doesn't ({2})");
+    this.Text("Tandem-Mods-Same", "{1} has the same mods as you");
+    this.Text("Tandem-Mods-Differ", "Mods: {1}");
+    this.Text("Tandem-Mods-Category-Items", "{1} with new items (shown as similar vanilla ones)");
+    this.Text("Tandem-Mods-Category-Vehicles", "{1} with new vehicles (shown as similar vanilla ones)");
+    this.Text("Tandem-Mods-Category-Characters", "{1} with new characters (shown as vanilla ones)");
+    this.Text("Tandem-Mods-Category-Looks", "{1} with new looks (shown with vanilla pieces)");
+    this.Text("Tandem-Mods-Category-Gameplay", "{1} changing gameplay (the host's rules apply to shared enemies)");
+    this.Text("Tandem-Mods-Category-Unknown", "{1} tandem can't sort");
+    this.Text("Tandem-Mods-Category-Local", "{1} only changing how the game looks or sounds (fine either way)");
+    this.Text("Tandem-Mods-Seen", "{1} sees {2} of your things as vanilla ones: mods they don't have");
+    this.Text("Tandem-Mods-NamesCame", "{1}'s mod names are in Co-op, Mods");
+    this.Text("Tandem-Mods-Names", "{1}'s mods you don't have: {2}");
+    this.Text("Tandem-Mods-ReplacedCount", "Shown otherwise this session ({1}):");
+    this.Text("Tandem-Mods-Nothing", "nothing");
+    this.Text("Tandem-Mods-NoneCompared", "No other player's mods compared yet");
+    this.Text("Tandem-Mods-Replaced-Weapon", "{1}'s weapon comes from a mod you don't have: shown as a similar one ({2})");
+    this.Text("Tandem-Mods-Replaced-Clothing", "{1}'s clothes come from a mod you don't have: shown plain or left off ({2} pieces)");
+    this.Text("Tandem-Mods-Replaced-Look", "{1}'s look has pieces from a mod you don't have: left off ({2})");
+    this.Text("Tandem-Mods-Replaced-Vehicle", "{1}'s vehicle comes from a mod you don't have: shown as a similar one ({2})");
+    this.Text("Tandem-Mods-Replaced-Character", "Characters from {1}'s game come from a mod you don't have: shown as vanilla ones ({2})");
+    this.Text("Tandem-Mods-Replaced-CharacterLook", "Characters from {1}'s game wear looks from a mod you don't have: shown in their usual look ({2})");
+    this.Text("Tandem-Mods-Replaced-Item", "An item from {1} comes from a mod you don't have: it can't come into your game and stays theirs ({2})");
+    this.Text("Tandem-Mods-Replaced-Effect", "Effects from {1}'s game come from a mod you don't have: not shown ({2})");
+    this.Text("Tandem-Mods-Replaced-Radio", "{1}'s radio station isn't installed here: the radio stays off");
+    this.Text("Tandem-Mods-Line-Weapon", "{1}'s weapon {2}");
+    this.Text("Tandem-Mods-Line-Clothing", "{1}'s clothing {2}");
+    this.Text("Tandem-Mods-Line-Look", "{1}'s look piece {2}");
+    this.Text("Tandem-Mods-Line-Vehicle", "{1}'s vehicle {2}");
+    this.Text("Tandem-Mods-Line-Character", "a character of {1}'s game {2}");
+    this.Text("Tandem-Mods-Line-CharacterLook", "a character look of {1}'s game {2}");
+    this.Text("Tandem-Mods-Line-Item", "an item from {1} {2}");
+    this.Text("Tandem-Mods-Line-Effect", "an effect from {1}'s game {2}");
+    this.Text("Tandem-Mods-Line-Radio", "{1}'s radio station {2}");
+    this.Text("Tandem-Trade-Unknown", "{1} offers an item from a mod you don't have: it can't be traded");
+    this.Text("Tandem-World-WeatherIsHost", "Another mod changes your weather: in co-op the host's weather stays");
+    this.Text("Tandem-Time-ModSlow", "A mod slowed time: shared as a time bubble around you");
     this.Text("Tandem-Marker-Description", "Another V, in your city");
     this.Text("Tandem-Marker-Distance", "{1}  {2} M");
     // Down, revive, respawn.
@@ -506,6 +565,12 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Comms-WaypointSet", "{1} set a waypoint");
     this.Text("Tandem-Story-RestrictHolstered", "{1}'s scene: weapons away.");
     this.Text("Tandem-Story-RestrictSlow", "{1}'s scene: take it slow.");
+    // Another V's slow time reaches ours (Time.reds), once a session.
+    this.Text("Tandem-Time-SlowedScanner", "{1}'s scanner slows you.");
+    this.Text("Tandem-Time-SlowedSandevistan", "{1}'s Sandevistan slows you.");
+    this.Text("Tandem-Time-SlowedOther", "{1}'s slow motion reaches you.");
+    // A partner's status effect this game has no record of (StatusVisuals.reds).
+    this.Text("Tandem-Status-Unknown", "{1} shows an effect this game doesn't know (a mod?): not shown.");
     this.Text("Tandem-Travel-Blocked", "You can't fast travel right now");
     // The settings page (Settings.reds).
     this.Text("Tandem-Menu-Settings", "Settings");
@@ -532,12 +597,15 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Settings-PartyHud", "Party list (linked partners' health)");
     this.Text("Tandem-Settings-Recorder", "Recorder");
     this.Text("Tandem-Settings-Relay", "Relay");
-    this.Text("Tandem-Settings-RelayToken", "Relay host token");
     this.Text("Tandem-Settings-Code", "Join code");
     this.Text("Tandem-Settings-Code-New", "new each session");
     this.Text("Tandem-Settings-Code-Keep", "kept (the same every session)");
     this.Text("Tandem-Settings-Direct", "Direct connection through the relay");
     this.Text("Tandem-Settings-Direct-Auto", "when possible");
+    this.Text("Tandem-Settings-Link", "Share scans and pings with");
+    this.Text("Tandem-Settings-Link-Auto", "every partner");
+    this.Text("Tandem-Settings-Link-Ask", "partners you link with");
+    this.Text("Tandem-Settings-Pings", "Pings");
     this.Text("Tandem-Settings-Story", "Story sync");
     this.Text("Tandem-Settings-QuestFreeze", "Pause your own story (guest)");
     this.Text("Tandem-Settings-ScenePrivacy", "Private scenes");
@@ -557,6 +625,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Menu-Invite", "Inviter");
     this.Text("Tandem-Menu-Leave", "Quitter la session");
     this.Text("Tandem-Menu-EnterCode", "Saisir un code ou une adresse");
+    this.Text("Tandem-Menu-JoinAddress", "Rejoindre par adresse");
     this.Text("Tandem-Menu-Back", "Retour");
     this.Text("Tandem-Menu-Report", "Écrire un rapport de bug");
     this.Text("Tandem-Popup-CoopOff", "Coop désactivée");
@@ -608,6 +677,12 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Popup-NeedsRelay", "Rejoindre par code demande un relais : indiquez-le dans les paramètres coop");
     this.Text("Tandem-Popup-EnterCode", "Le code d'invitation de l'hôte (K7Q-2M9) ou son adresse (192.168.1.20, ou 192.168.1.20:27450), comme l'affiche son menu Coop");
     this.Text("Tandem-Popup-NotATarget", "Ni un code d'invitation ni une adresse : {1}");
+    this.Text("Tandem-Popup-JoinAddress", "L'adresse de l'hôte sur votre réseau ou votre VPN (Tailscale, NetBird...) : hôte ou hôte:port, port {1} par défaut. Une connexion directe, sans le relais : le port de l'hôte doit vous être ouvert. Par Internet, un code d'invitation est plus simple.");
+    this.Text("Tandem-Popup-JoinAddressLast", "Laissez vide pour rejoindre {1} de nouveau.");
+    this.Text("Tandem-Address-Empty", "Saisissez l'adresse de l'hôte (192.168.1.20, ou 192.168.1.20:27450)");
+    this.Text("Tandem-Address-Port", "Port refusé dans {1} : 1 à 65535 après les deux-points");
+    this.Text("Tandem-Address-Name", "Ni un nom d'hôte ni une adresse IPv4 : {1}");
+    this.Text("Tandem-Address-Ipv6", "{1} est une adresse IPv6 : tandem se connecte en IPv4 seulement. Utilisez l'adresse IPv4 de l'hôte (Tailscale et NetBird en donnent une, 100.x.y.z)");
     this.Text("Tandem-Session-Hosting", "Partie coop hébergée. {1}");
     this.Text("Tandem-Session-JoinedOf", "Vous avez rejoint la session de {1}");
     this.Text("Tandem-Session-Joined", "Vous avez rejoint la session coop");
@@ -637,6 +712,7 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Reason-RelayLoop", "les serveurs du relais se contredisent (renvoyé deux fois)");
     this.Text("Tandem-Reason-RelayIpv6", "le relais nous envoie vers une adresse injoignable (IPv6)");
     this.Text("Tandem-Reason-RelayDraining", "le relais redémarre : réessayez dans un instant");
+    this.Text("Tandem-Reason-RelaySourceBusy", "le relais héberge déjà autant de sessions de votre adresse qu'il le peut");
     this.Text("Tandem-Player-Unnamed", "Joueur {1}");
     this.Text("Tandem-Name-Title", "Votre nom en coop");
     this.Text("Tandem-Name-Ask", "Le nom que les autres joueurs voient au-dessus de votre V et dans leur liste d'équipe : 1 à 16 caractères (annuler : V pour l'instant)");
@@ -661,8 +737,53 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Story-Join", "Rejoindre {1}");
     this.Text("Tandem-Scene-InScene", "{1} est dans une scène");
     this.Text("Tandem-Scene-Watch", "Regarder la scène");
+    this.Text("Tandem-Interact-HostOnly", "{1} doit le faire");
+    this.Text("Tandem-Interact-Taken", "Monde de {1} : quelqu'un d'autre a été plus rapide");
+    this.Text("Tandem-Interact-TooFar", "Trop loin dans le monde de {1}");
+    this.Text("Tandem-Interact-Missing", "Pas là dans le monde de {1} pour l'instant");
+    this.Text("Tandem-Interact-Busy", "{1} est occupé(e) : réessayez dans un instant");
     this.Text("Tandem-Loot-Taken", "Quelqu'un l'a déjà pris");
     this.Text("Tandem-Loot-TakenBy", "{1} l'a ramassé avant vous");
+    // Other mods (Mods.reds, docs/architecture/mod-compat.md).
+    this.Text("Tandem-Menu-Mods", "Mods");
+    this.Text("Tandem-Mods-TheyHave", "{1} a des mods que vous n'avez pas ({2})");
+    this.Text("Tandem-Mods-YouHave", "Vous avez des mods que {1} n'a pas ({2})");
+    this.Text("Tandem-Mods-Same", "{1} a les mêmes mods que vous");
+    this.Text("Tandem-Mods-Differ", "Mods : {1}");
+    this.Text("Tandem-Mods-Category-Items", "{1} avec de nouveaux objets (montrés comme des objets d'origine proches)");
+    this.Text("Tandem-Mods-Category-Vehicles", "{1} avec de nouveaux véhicules (montrés comme des véhicules d'origine proches)");
+    this.Text("Tandem-Mods-Category-Characters", "{1} avec de nouveaux personnages (montrés comme ceux d'origine)");
+    this.Text("Tandem-Mods-Category-Looks", "{1} avec de nouvelles apparences (montrées avec des pièces d'origine)");
+    this.Text("Tandem-Mods-Category-Gameplay", "{1} qui changent le jeu (les règles de l'hôte s'appliquent aux ennemis partagés)");
+    this.Text("Tandem-Mods-Category-Unknown", "{1} que tandem ne sait pas classer");
+    this.Text("Tandem-Mods-Category-Local", "{1} qui ne changent que l'image ou le son (sans souci)");
+    this.Text("Tandem-Mods-Seen", "{1} voit {2} de vos éléments comme ceux d'origine : des mods qu'il n'a pas");
+    this.Text("Tandem-Mods-NamesCame", "Les noms des mods de {1} sont dans Coop, Mods");
+    this.Text("Tandem-Mods-Names", "Les mods de {1} que vous n'avez pas : {2}");
+    this.Text("Tandem-Mods-ReplacedCount", "Montrés autrement pendant cette session ({1}) :");
+    this.Text("Tandem-Mods-Nothing", "rien");
+    this.Text("Tandem-Mods-NoneCompared", "Aucun mod d'un autre joueur comparé pour l'instant");
+    this.Text("Tandem-Mods-Replaced-Weapon", "L'arme de {1} vient d'un mod que vous n'avez pas : montrée comme une arme proche ({2})");
+    this.Text("Tandem-Mods-Replaced-Clothing", "Les vêtements de {1} viennent d'un mod que vous n'avez pas : montrés simples ou retirés ({2} pièces)");
+    this.Text("Tandem-Mods-Replaced-Look", "L'apparence de {1} a des pièces d'un mod que vous n'avez pas : retirées ({2})");
+    this.Text("Tandem-Mods-Replaced-Vehicle", "Le véhicule de {1} vient d'un mod que vous n'avez pas : montré comme un véhicule proche ({2})");
+    this.Text("Tandem-Mods-Replaced-Character", "Des personnages du jeu de {1} viennent d'un mod que vous n'avez pas : montrés comme ceux d'origine ({2})");
+    this.Text("Tandem-Mods-Replaced-CharacterLook", "Des personnages du jeu de {1} portent des apparences d'un mod que vous n'avez pas : montrés avec leur apparence habituelle ({2})");
+    this.Text("Tandem-Mods-Replaced-Item", "Un objet de {1} vient d'un mod que vous n'avez pas : il ne peut pas entrer dans votre jeu et reste le sien ({2})");
+    this.Text("Tandem-Mods-Replaced-Effect", "Des effets du jeu de {1} viennent d'un mod que vous n'avez pas : pas affichés ({2})");
+    this.Text("Tandem-Mods-Replaced-Radio", "La station de radio de {1} n'est pas installée ici : la radio reste éteinte");
+    this.Text("Tandem-Mods-Line-Weapon", "arme de {1} {2}");
+    this.Text("Tandem-Mods-Line-Clothing", "vêtement de {1} {2}");
+    this.Text("Tandem-Mods-Line-Look", "pièce d'apparence de {1} {2}");
+    this.Text("Tandem-Mods-Line-Vehicle", "véhicule de {1} {2}");
+    this.Text("Tandem-Mods-Line-Character", "un personnage du jeu de {1} {2}");
+    this.Text("Tandem-Mods-Line-CharacterLook", "une apparence de personnage du jeu de {1} {2}");
+    this.Text("Tandem-Mods-Line-Item", "un objet de {1} {2}");
+    this.Text("Tandem-Mods-Line-Effect", "un effet du jeu de {1} {2}");
+    this.Text("Tandem-Mods-Line-Radio", "station de radio de {1} {2}");
+    this.Text("Tandem-Trade-Unknown", "{1} propose un objet d'un mod que vous n'avez pas : il ne peut pas être échangé");
+    this.Text("Tandem-World-WeatherIsHost", "Un autre mod change votre météo : en coop, la météo de l'hôte reste");
+    this.Text("Tandem-Time-ModSlow", "Un mod a ralenti le temps : partagé comme une bulle de temps autour de vous");
     this.Text("Tandem-Marker-Description", "Un autre V, dans votre ville");
     this.Text("Tandem-Marker-Distance", "{1}  {2} M");
 
@@ -807,6 +928,10 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Comms-WaypointSet", "{1} a placé un point de passage");
     this.Text("Tandem-Story-RestrictHolstered", "Scène de {1} : armes rangées.");
     this.Text("Tandem-Story-RestrictSlow", "Scène de {1} : doucement.");
+    this.Text("Tandem-Time-SlowedScanner", "Le scanner de {1} vous ralentit.");
+    this.Text("Tandem-Time-SlowedSandevistan", "Le Sandevistan de {1} vous ralentit.");
+    this.Text("Tandem-Time-SlowedOther", "Le ralenti de {1} vous atteint.");
+    this.Text("Tandem-Status-Unknown", "{1} porte un effet que ce jeu ne connaît pas (un mod ?) : non affiché.");
     this.Text("Tandem-Travel-Blocked", "Voyage rapide impossible pour l'instant");
     this.Text("Tandem-Menu-Settings", "Paramètres");
     this.Text("Tandem-Settings-Saved", "Enregistrés dans tandem.ini dès leur modification");
@@ -832,12 +957,15 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Settings-PartyHud", "Liste du groupe (santé des partenaires liés)");
     this.Text("Tandem-Settings-Recorder", "Enregistreur");
     this.Text("Tandem-Settings-Relay", "Relais");
-    this.Text("Tandem-Settings-RelayToken", "Jeton d'hôte du relais");
     this.Text("Tandem-Settings-Code", "Code d'invitation");
     this.Text("Tandem-Settings-Code-New", "nouveau à chaque session");
     this.Text("Tandem-Settings-Code-Keep", "gardé (le même à chaque session)");
     this.Text("Tandem-Settings-Direct", "Connexion directe via le relais");
     this.Text("Tandem-Settings-Direct-Auto", "si possible");
+    this.Text("Tandem-Settings-Link", "Partager analyses et signaux avec");
+    this.Text("Tandem-Settings-Link-Auto", "chaque partenaire");
+    this.Text("Tandem-Settings-Link-Ask", "les partenaires avec qui vous vous liez");
+    this.Text("Tandem-Settings-Pings", "Signaux");
     this.Text("Tandem-Settings-Story", "Histoire partagée");
     this.Text("Tandem-Settings-QuestFreeze", "Mettre votre histoire en pause (invité)");
     this.Text("Tandem-Settings-ScenePrivacy", "Scènes privées");

@@ -1,0 +1,37 @@
+name: Nix Build
+
+# Only when the Nix build's inputs change: the relay's sources, the Nix
+# files and the pinned nixpkgs. Every other change is vetted, tested and
+# built by ci.yaml.
+on:
+  push:
+    branches: [main]
+    paths:
+      - relay/**
+      - nix/relay.nix
+      - nix/relay-image.nix
+      - default.nix
+      - npins/**
+      - .github/workflows/nix-build.yaml
+  pull_request:
+    branches: [main]
+    paths:
+      - relay/**
+      - nix/relay.nix
+      - nix/relay-image.nix
+      - default.nix
+      - npins/**
+      - .github/workflows/nix-build.yaml
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # nixpkgs comes from npins/ (default.nix), not from a channel.
+      - uses: cachix/install-nix-action@v31
+
+      # task relay:image
+      - name: Build the relay and its OCI image
+        run: nix-build -A relay -A relayImage

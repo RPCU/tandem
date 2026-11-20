@@ -1,6 +1,7 @@
 #include "config.hpp"
 #include "log.hpp"
 
+#include "tandem/hosts.hpp"
 #include "tandem/names.hpp"
 
 #include <charconv>
@@ -137,17 +138,18 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
         config.recorderSegmentMinutes = number32;
     } else
       return Bad("bad {} {}", key, value);
-  } else if (key == "story" || key == "quest_freeze" || key == "recorder" ||
-             key == "recorder_pose" || key == "friendly_fire" || key == "markers" ||
-             key == "party_hud" || key == "enemy_scaling") {
-    auto &flag = key == "story"           ? config.story
-                 : key == "quest_freeze"  ? config.questFreeze
-                 : key == "recorder"      ? config.recorder
-                 : key == "friendly_fire" ? config.friendlyFire
-                 : key == "enemy_scaling" ? config.enemyScaling
-                 : key == "markers"       ? config.markers
-                 : key == "party_hud"     ? config.partyHud
-                                          : config.recorderPose;
+  } else if (key == "story" || key == "quest_freeze" || key == "quest_interact" ||
+             key == "recorder" || key == "recorder_pose" || key == "friendly_fire" ||
+             key == "markers" || key == "party_hud" || key == "enemy_scaling") {
+    auto &flag = key == "story"            ? config.story
+                 : key == "quest_freeze"   ? config.questFreeze
+                 : key == "quest_interact" ? config.questInteract
+                 : key == "recorder"       ? config.recorder
+                 : key == "friendly_fire"  ? config.friendlyFire
+                 : key == "enemy_scaling"  ? config.enemyScaling
+                 : key == "markers"        ? config.markers
+                 : key == "party_hud"      ? config.partyHud
+                                           : config.recorderPose;
     if (value == "on" || value == "true")
       flag = true;
     else if (value == "off" || value == "false")
@@ -155,12 +157,15 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
     else
       return Bad("{} is on or off", key);
   } else if (key == "quest_freeze_allow" || key == "quest_freeze_gigs" || key == "private_actors" ||
-             key == "private_scenes" || key == "public_scenes") {
-    auto &list = key == "quest_freeze_allow"  ? config.questFreezeAllow
-                 : key == "quest_freeze_gigs" ? config.questFreezeGigs
-                 : key == "private_actors"    ? config.privateActors
-                 : key == "private_scenes"    ? config.privateScenes
-                                              : config.publicScenes;
+             key == "private_scenes" || key == "public_scenes" ||
+             key == "quest_interact_hostonly" || key == "quest_interact_allow") {
+    auto &list = key == "quest_freeze_allow"        ? config.questFreezeAllow
+                 : key == "quest_freeze_gigs"       ? config.questFreezeGigs
+                 : key == "quest_interact_hostonly" ? config.questInteractHostOnly
+                 : key == "quest_interact_allow"    ? config.questInteractAllow
+                 : key == "private_actors"          ? config.privateActors
+                 : key == "private_scenes"          ? config.privateScenes
+                                                    : config.publicScenes;
     if (key == "private_actors")
       list.clear(); // the file's list replaces the defaults
     for (std::size_t start = 0; start <= value.size();) {
@@ -252,6 +257,13 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.pings = false;
     else
       return Bad("pings is on or off");
+  } else if (key == "last_address") {
+    if (value.empty())
+      config.lastAddress.clear();
+    else if (const auto target = hosts::Parse(value, config.port))
+      config.lastAddress = hosts::Format(*target);
+    else
+      return Bad("last_address is host or host:port, not {}", value);
   } else if (key == "log") {
     if (value == "warn" || value == "quiet")
       config.logLevel = 1;
@@ -344,6 +356,14 @@ std::string SettingOf(const Config &config, std::string_view key) {
     return config.timeHostFull ? "full" : "bubble";
   if (key == "direct")
     return config.direct ? "auto" : "off";
+  if (key == "link")
+    return config.link == Config::Link::Ask   ? "ask"
+           : config.link == Config::Link::Off ? "off"
+                                              : "auto";
+  if (key == "pings")
+    return OnOff(config.pings);
+  if (key == "last_address")
+    return config.lastAddress;
   return {};
 }
 

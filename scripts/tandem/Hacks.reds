@@ -208,6 +208,12 @@ public class TandemHacks extends ScriptableSystem {
       TandemNative.Log(s"hacks: player \(event.player)'s upload of \(TDBID.ToStringDEBUG(event.action)) on npc \(event.npc) failed (no NPC or no puppet)");
       return;
     }
+    // An actor of our V's scene, while it lasts: the upload fails, as one
+    // the NPC is out of reach for (Restrictions.reds, the host's backstop).
+    if TandemHacks.SceneRefuses(game, npc, event.npc, event.player, event.action) {
+      TandemNative.SendNpcHackState(event.npc, event.player, event.action, 2, 0.0);
+      return;
+    }
     let ahead = 0;
     for running in this.m_uploads {
       if running.npc == event.npc {
@@ -228,6 +234,14 @@ public class TandemHacks extends ScriptableSystem {
     TandemNative.SendNpcHackState(event.npc, event.player, event.action, 0, event.seconds);
     TandemCommsNative.PartnerUpload(event.npc, event.player, event.action, 0, event.seconds);
     TandemNative.Log(s"hacks: player \(event.player) uploads \(TDBID.ToStringDEBUG(event.action)) on npc \(event.npc) (\(event.seconds) s, \(ahead) other upload(s) on it)");
+  }
+
+  // Host: a guest's quickhack on an actor of our V's scene, during it (its
+  // upload here; the effects it lands in Npcs.reds).
+  public static func SceneRefuses(game: GameInstance, npc: ref<ScriptedPuppet>, id: Uint32, player: Uint32, action: TweakDBID) -> Bool {
+    let story = TandemStorySystem.Get(game);
+    return IsDefined(story) && IsDefined(story.Restrictions())
+      && story.Restrictions().RefusesHack(npc, id, player, TDBID.ToStringDEBUG(action));
   }
 
   // A status effect from someone (or no one: an undefined id).

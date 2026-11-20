@@ -44,6 +44,16 @@ tasks:
       - cmake --preset linux
       - cmake --build --preset linux
 
+  ccache:stats:
+    desc: "The compiler cache shared by this machine's worktrees: size, hits, misses (tools/remote.sh ccache:stats for the game machine's)"
+    cmds:
+      - ccache --show-stats --verbose
+
+  ccache:clear:
+    desc: Empty the compiler cache shared by this machine's worktrees, and zero its statistics
+    cmds:
+      - ccache --clear --zero-stats
+
   test:
     desc: Run the tests
     deps: [build:linux]
@@ -79,6 +89,13 @@ tasks:
     desc: "Docs: links and section numbers resolve, no fact lost since HEAD (task docs:check -- facts --base REV)"
     cmds:
       - python3 tools/docs-check.py {{.CLI_ARGS}}
+
+  mods:check:
+    desc: "Other mods' script hooks against tandem's: wraps, replaces, CET overrides (task mods:check DIR=<game folder or copy>; -- --json)"
+    requires:
+      vars: [DIR]
+    cmds:
+      - python3 -I tools/mods-check.py {{.CLI_ARGS}} "{{.DIR}}"
 
   scripts:check:
     desc: "Compile scripts/tandem as the game does (its redscript, bundle and other mods' scripts); task scripts:check -- DIR for another copy"
@@ -213,6 +230,7 @@ tasks:
       # Gateway and HTTPRoute (Gateway API CRDs) have no schema kubeconform
       # ships: rendered (kustomize checks their structure), not validated.
       - kustomize build deploy/kubernetes/kgateway | kubeconform -strict -summary -skip Gateway,HTTPRoute -
+      - kustomize build deploy/kubernetes/playit | kubeconform -strict -summary -
       # The edge component (relay pods on the nodes holding the public
       # addresses, hostPort) over the kgateway overlay.
       - kustomize build deploy/kubernetes/kgateway-edge | kubeconform -strict -summary -skip Gateway,HTTPRoute -

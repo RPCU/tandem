@@ -6,8 +6,12 @@ between a session's host and guests; it never parses game traffic.
 - **Sessions**: a 16-byte secret the host's game draws at random for each
   session. Guests register with the secret; the relay gives each a channel
   number and stamps it on what it forwards to the host.
-- **Who may host**: only hosts presenting a token from the relay's token
-  file (a Kubernetes Secret), so the relay is not an open bandwidth donor.
+- **Who may host**: anyone (the open mode, the default since 2026-11-19:
+  see Open mode below), each new session paying a proof of work and
+  capped; hosts presenting a token from the relay's token file (a
+  Kubernetes Secret, optional) skip both. Until then, and still with
+  `--require-token`, only token holders: the relay is not an open
+  bandwidth donor either way.
 - **Join codes**: a registered host asks for a code naming its session
   (`RequestCode`, accepted only from the host's own address with its
   secret): 6 characters of Crockford's base32 (no I, L, O, U; read in any
@@ -42,6 +46,56 @@ between a session's host and guests; it never parses game traffic.
   (`MaxGuests`): the host's 3 players and its 2 spare connections (a player
   coming back while its old channel idles out, one to tell the session is
   full); the host enforces the 4 players.
+
+## Open mode
+
+Asked 2026-11-19: "I want the relay to be usable by anyone", with no
+token. It is the default (`--require-token` restores tokens-only); a host
+token still bypasses everything below. tandem ships set to the public RPCU
+relay (`relay = relay.rpcu.io:27460` in `dist/tandem.ini`; an empty
+`relay =` turns it off), and the co-op menu no longer asks for a token.
+
+**The abuse model.** With no accounts, what an abuser can take is
+sessions (memory, a code each) and bandwidth. Each is paid for or capped,
+per source and in all, and nothing new is answered to strangers:
+
+- **A proof of work per session opened** (`relay/internal/relay/open.go`):
+  a `RegisterHost` with no valid token is answered with a `Challenge` (20:
+  a stamp in seconds, the difficulty, an HMAC-SHA-256 of both and the
+  host's address under a key drawn at start, cut to 16 bytes; 26 bytes for
+  the 64 of the request, so the size rule and the padded-registration rule
+  hold, and the relay keeps no state). The host finds a nonce such that
+  SHA-256(MAC | its secret | nonce) starts with `bits` zero bits and sends
+  `RegisterHostOpen` (21). The relay checks the MAC (its own challenge, to
+  this address, at this difficulty), the stamp's age (2 minutes), the hash,
+  and that the challenge was not used before (kept until stale): one
+  challenge, one session. A refused proof is answered with a fresh
+  challenge. Refreshes and probes of a session already open need nothing
+  (the secret, from the host's address, as before). 17 bits by default: ~17
+  ms of Go on the laptop (SHA-NI), more for the game's portable SHA-256
+  (`core/src/sha256.cpp`), solved 2048 hashes a `Pump` on the net thread so
+  it never stalls.
+- **Caps**: at most `--max-sessions-per-source` (2) open sessions per source
+  (an IPv4 address or an IPv6 /64, behind a PROXY v2 tunnel the player's
+  own) and `--max-open-sessions` (192) in all, under `--max-sessions` (256).
+  Refusals: 9 source busy, 4 too many sessions.
+- **Bandwidth**: a token bucket per guest link and direction (`--open-kbps`
+  128, twice tandem's 64 kbit/s budget; `--open-burst-kb` 32), bytes
+  refilled at the rate since the last datagram, O(1) and allocation-free;
+  the guest's upload bucket is taken under the lock its rate window already
+  takes, the download one under the guest's. Excess is dropped and counted
+  (`bandwidth`). A session's total grows with its guests (3 guests, 3
+  links): the cap is on what one player's link may move, not on the game.
+- **Idle sessions end** after 2 minutes, as any.
+- Unchanged: the join-code space and guessing limits, the
+  unregistered-address and size rules, regions, redirects, hole punching
+  (punched sessions use no relay bandwidth at all), PROXY v2.
+
+**Cost**: the packet path of an open session is ~95–100 ns against ~75–80
+for a token session (both buckets, the second guest lock on the way down,
+two divisions), no allocation (`BenchmarkForwardOpen`, laptop under load).
+A kept code (`code = keep`) is a token's: an open host gets a new code
+each session.
 
 ## Replicas
 
@@ -261,18 +315,12 @@ performance or adding latency. Researched the same day; the answer is
   `use_original_src_ip` keeps the client's IP but not its port, needs
   `CAP_NET_ADMIN` and routing the replies back through Envoy, and
   kgateway does not expose it: not an option.
-- **So a `--proxy-protocol` mode was not built**: nothing in this stack
-  would send the header, and a mode no sender exercises is untested
-  surface on the packet path. If one appears (nginx's stream module has
+- **So a `--proxy-protocol` mode was not built for kgateway**: nothing in
+  that stack would send the header. (It was built the same day for
+  playit.gg, which does: next section.) Other senders (nginx's stream module has
   `proxy_protocol v2` since 1.31.4, but whether it applies to UDP
   datagrams, and to each or only a session's first, is disputed:
-  nginx/nginx#1061), the design would be: datagrams parsed for the
-  header only from `--trusted-proxies`, everything else dropped; the
-  header's source becomes the client's address for every rule (a
-  first-datagram-only sender's session keyed by the proxy's per-session
-  port); replies to the proxy's address; the size rule counting the
-  payload without the header; the header parsed in place (no
-  allocation).
+  nginx/nginx#1061) would work with it if they send v2 the same way.
 - **What works today**: the base's per-replica UDP LoadBalancers with
   `externalTrafficPolicy: Local` (no hop added, addresses kept), and
   kgateway for `/healthz`, `/readyz`, `/metrics`.
@@ -335,6 +383,66 @@ envoyproxy/envoy#19004, #36881, #38560; Gateway API's UDPRoute reference
 and the v1.6 release post (kubernetes.io); nginx's
 `ngx_stream_proxy_module` documentation and nginx/nginx#1061.
 
+## Behind a PROXY v2 tunnel (playit.gg)
+
+Asked 2026-11-19: expose the relay through playit.gg tunnels, which send
+the PROXY protocol v2 on UDP ("proxy protocol v1 is ignored on UDP
+tunnels", playit.gg/support/what-is-proxy-protocol).
+
+- **What playit's agent does** (playit-cloud/playit-agent,
+  `packages/agent_core/src/network/udp/udp_clients.rs`, read on master,
+  agent 2.0): one socket toward the local service per client flow (flows
+  keyed by the client's address, the tunnel's address and the tunnel),
+  and on creating it, **the header alone, as a datagram of its own**,
+  then the client's datagrams unchanged. Answers come back on that socket,
+  with no header, and go to the flow's client. A flow ends after 60 s
+  with both sides silent, or 90 s with one (our clients send every 10 s at
+  most: flows live). Agents up to 0.15 are reported to put the header in
+  front of every datagram instead (FH1-ReImagined/forza-live#11): both are
+  read.
+- **`--proxy-protocol`, `--trusted-proxies`** (`relay/internal/relay/proxy.go`;
+  default `127.0.0.1/32,::1/128`, the agent as a sidecar). A datagram that
+  starts like a header is taken only from a trusted proxy and only whole:
+  signature, version 2, command PROXY (LOCAL: dropped), family INET or
+  INET6 with its addresses and ports, TLVs skipped to the header's length.
+  A header alone records its flow (the proxy's socket → the client) and is
+  not answered; one with a payload gives the payload. Anything without a
+  header from an untrusted address is dropped (`untrusted_proxy`), a
+  broken header too (`proxy_header`).
+- **Who a client is**: it is registered by the proxy's socket for it
+  (unique per client: the agent's flow), so the data path is the same
+  lookup as without a proxy and answers go to that socket, no header. Its
+  real address (`client.public`, the header's) is what every rule that
+  is about the player uses: the lookup limits' source, `Observed` (the
+  connection check), `Introduce` (hole punching to the player itself, not
+  through playit), the logs. Behind a proxy, the "unregistered address"
+  rule is about the flow: data from a flow nobody registered is dropped.
+- **The size rule counts the payload**: a reply is never larger than the
+  request without its header (the header is the proxy's, not the
+  client's), and a header alone gets no answer.
+- **A relay that restarts under a running agent** never gets the flows'
+  headers again: their datagrams come from a trusted socket it has no
+  client for. They are served by the socket (registration, data: the
+  session goes on), but get no `Observed`, no introduction, and the
+  proxy's address as their lookup source, until the flow is new (a player
+  reconnecting). Not dropping them is what keeps the hold-and-resume of a
+  restart working.
+- **Cost**: allocation-free. The header-once agent adds one byte compare
+  to the data path; for header-on-every-datagram agents, data datagrams
+  skip the trust check and the address parse (only a registered socket
+  forwards, and only a trusted header registered it). Measured with the
+  laptop loaded (load 6), three runs each: `Forward` 84–90 ns,
+  `ForwardProxied/header-once` 82–85 ns, `header-every-datagram` 80–88 ns,
+  0 allocations, so within noise (under 10 %) of the direct path.
+- **Tests**: parsing (v4, v6, LOCAL, TLVs, truncated, wrong signature,
+  version, command, family, port 0, v1 text), trusted and untrusted
+  senders, every rule with proxied clients (registration, codes, data
+  both ways, `Observed`, introductions, lookups per real source, no
+  reflection), both agent behaviours, flows older than the relay, the
+  size rule; `relay/internal/proxyfwd`, a test-only stdlib forwarder doing
+  what the agent does, over real sockets (Go) and in front of a relay in
+  `tests/relay_loopback.sh` (tandem-peer hosting and joining through it).
+
 ## The packet path
 
 Measured on the laptop (Ryzen 7 6800U, 16 threads, Go 1.27, `go test
@@ -362,31 +470,34 @@ Measured on the laptop (Ryzen 7 6800U, 16 threads, Go 1.27, `go test
 
 Wire format (`relay/internal/relay/wire.go`, big-endian, `TNR1` + type):
 
-| Type                  | Body                                               | Direction                    |
-| --------------------- | -------------------------------------------------- | ---------------------------- |
-| 1 `RegisterHost`      | secret 16, host token 32, pad to 64                | host → relay                 |
-| 2 `RegisterGuest`     | secret 16, pad to 64                               | guest → relay                |
-| 3 `Registered`        | channel 2                                          | relay → client               |
-| 4 `Data`              | channel 2, ENet datagram                           | both ways                    |
-| 5 `Keepalive`         | —                                                  | client → relay               |
-| 6 `Error`             | code 1 (bad token, no session, full…)              | relay → client               |
-| 7 `RequestCode`       | secret 16, renew 1, pad to 64                      | host → relay                 |
-| 8 `Code`              | code 6, seconds left 2                             | relay → host                 |
-| 9 `ResolveCode`       | code 6, pad to 64                                  | guest → relay (unregistered) |
-| 10 `Secret`           | secret 16                                          | relay → guest                |
-| 11 `Redirect`         | family 1 (4 or 6), address 4 or 16, port 2         | relay → client               |
-| 12 `RejoinGuest`      | secret 16, channel 2, pad to 64                    | guest → relay                |
-| 13 `ReclaimCode`      | secret 16, code 6, seconds left 2, pad 64          | host → relay                 |
-| 14 `Addresses`        | flags 1, count 1, count × (IPv4 4, port 2), pad 64 | client → relay               |
-| 15 `Introduce`        | channel 2, nonce 4, flags 1, public 4+2, LAN 4+2   | relay → host and guest       |
-| 16 `Punch`            | nonce 4, channel 2, ack 1                          | client ↔ client              |
-| 17 `Probe`            | nonce 4, pad to 64                                 | client → relay (anyone)      |
-| 18 `Observed`         | nonce 4, family 1, address 4 or 16, port 2         | relay → client               |
-| 19 `RegisterHostKeep` | secret 16, host token 32, salt 4, pad 64           | host → relay                 |
+| Type                  | Body                                                | Direction                    |
+| --------------------- | --------------------------------------------------- | ---------------------------- |
+| 1 `RegisterHost`      | secret 16, host token 32, pad to 64                 | host → relay                 |
+| 2 `RegisterGuest`     | secret 16, pad to 64                                | guest → relay                |
+| 3 `Registered`        | channel 2                                           | relay → client               |
+| 4 `Data`              | channel 2, ENet datagram                            | both ways                    |
+| 5 `Keepalive`         | —                                                   | client → relay               |
+| 6 `Error`             | code 1 (bad token, no session, full…)               | relay → client               |
+| 7 `RequestCode`       | secret 16, renew 1, pad to 64                       | host → relay                 |
+| 8 `Code`              | code 6, seconds left 2                              | relay → host                 |
+| 9 `ResolveCode`       | code 6, pad to 64                                   | guest → relay (unregistered) |
+| 10 `Secret`           | secret 16                                           | relay → guest                |
+| 11 `Redirect`         | family 1 (4 or 6), address 4 or 16, port 2          | relay → client               |
+| 12 `RejoinGuest`      | secret 16, channel 2, pad to 64                     | guest → relay                |
+| 13 `ReclaimCode`      | secret 16, code 6, seconds left 2, pad 64           | host → relay                 |
+| 14 `Addresses`        | flags 1, count 1, count × (IPv4 4, port 2), pad 64  | client → relay               |
+| 15 `Introduce`        | channel 2, nonce 4, flags 1, public 4+2, LAN 4+2    | relay → host and guest       |
+| 16 `Punch`            | nonce 4, channel 2, ack 1                           | client ↔ client              |
+| 17 `Probe`            | nonce 4, pad to 64                                  | client → relay (anyone)      |
+| 18 `Observed`         | nonce 4, family 1, address 4 or 16, port 2          | relay → client               |
+| 19 `RegisterHostKeep` | secret 16, host token 32, salt 4, pad 64            | host → relay                 |
+| 20 `Challenge`        | stamp 4, bits 1, MAC 16                             | relay → host (no token)      |
+| 21 `RegisterHostOpen` | secret 16, stamp 4, bits 1, MAC 16, nonce 8, pad 64 | host → relay                 |
 
 Error codes: 1 bad token, 2 no session, 3 full, 4 too many sessions, 5
 taken, 6 no such code, 7 slow down, 8 draining (no replica to send a new
-session to).
+session to), 9 source busy (open mode: this address hosts as many sessions
+as it may).
 
 - **Observability**: JSON logs; on `--http`, `/healthz` (alive),
   `/readyz` (503 while draining), Prometheus `/metrics` (sessions, clients,

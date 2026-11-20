@@ -40,7 +40,8 @@ in-game session must look at.
 
 ```
 red4ext/plugins/tandem/   tandem.dll, tandem-report.exe, tandem.default.ini,
-                          INSTALL.md, NOTICE.txt, THIRD-PARTY-LICENSES.txt
+                          INSTALL.md, NOTICE.txt, THIRD-PARTY-LICENSES.txt,
+                          LICENSE.txt
 r6/scripts/tandem/        *.reds
 r6/tweaks/tandem/         *.tweak
 ```
@@ -173,6 +174,7 @@ explain it (INSTALL.md, with the real message).
 | game version                      | `Install.game`                                    | warning                                       |
 | tandem's scripts, tandem's tweaks | `Install.scripts`, `Install.tweaks`               | warning (not repeated when the builds differ) |
 | the other mods                    | `Install.mods`, `Install.modCount`                | warning; never blocks                         |
+| what the other mods add           | `ModList` (hashes and categories; names asked)    | a notice and a status line; never blocks      |
 
 - **`proto::Install`** (appended, Event channel) is sent once by each side
   after the `Welcome`: guest → host, host → guest (after the roster, so the
@@ -225,6 +227,17 @@ version 5, the host runs 6`, nothing on the guest's screen (a session
   tandem's own. The names stay on the player's machine: the wire and the
   report carry the number and the count. It cannot tell a gameplay mod
   from a cosmetic one, nor two versions of one mod; hence a warning.
+
+**What the mods add** (`docs/architecture/mod-compat.md`): each game also
+sorts its mods by what they add (`mods::Scan`: local, items, vehicles,
+characters, looks, gameplay, unknown) and sends them as `ModList`, hashes
+and categories only; the other game words the difference ("Judy has mods
+you don't (3): 2 with new items..."), and names travel only when the co-op
+menu's Mods popup asks. `Differences` no longer words the mods' fingerprint
+(the comparison says more); `Install.mods` and `Install.modCount` stay for
+the report. Every record from another game goes through one resolver: what
+our game lacks is shown as a vanilla record like it, or not at all, and
+told.
 
 What differing gameplay mods do to a session is not solved here, only
 said: the host's game decides the world (NPCs, damage dealt to them, the

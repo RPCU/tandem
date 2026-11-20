@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: tandem-relay
+spec:
+  template:
+    spec:
+      containers:
+        - name: relay
+          env:
+            - name: TANDEM_RELAY_PROXY_PROTOCOL
+              value: "on"
+            - name: TANDEM_RELAY_TRUSTED_PROXIES
+              valueFrom:
+                configMapKeyRef:
+                  name: tandem-relay-playit
+                  key: trusted-proxies
+        # The playit agent, playit.gg's own image (ghcr.io/playit-cloud/
+        # playit-agent, built from github.com/playit-cloud/playit-agent):
+        # pin it by digest in your overlay. It opens no port: it connects
+        # out to playit and sends each tunnel's datagrams to the address
+        # the tunnel names (set it to 127.0.0.1:27460 at playit.gg).
+        - name: playit
+          image: ghcr.io/playit-cloud/playit-agent:2.0.2
+          env:
+            # This replica's agent key (its ordinal: agent-0, agent-1...).
+            - name: TANDEM_RELAY_SHARD
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
+            - name: SECRET_KEY_FILE
+              value: /run/secrets/playit/agent-$(TANDEM_RELAY_SHARD)
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: "1"
+              memory: 128Mi
+          # The image has no USER (it would run as root): it runs as the
+          # relay's user, with what it writes on emptyDirs.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: playit-key
+              mountPath: /run/secrets/playit
+              readOnly: true
+            - name: playit-state
+              mountPath: /var/lib/playit
+            - name: playit-tmp
+              mountPath: /tmp
+      volumes:
+        - name: playit-key
+          secret:
+            secretName: tandem-relay-playit
+            defaultMode: 0400
+        - name: playit-state
+          emptyDir: {}
+        - name: playit-tmp
+          emptyDir: {}

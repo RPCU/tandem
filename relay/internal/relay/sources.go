@@ -99,7 +99,8 @@ func (s *Server) checkSources(now time.Time) SourceVerdict {
 		return SourceVerdict{}
 	}
 	var registered []netip.AddrPort
-	for i := range s.clients.shards {
+	// (Behind a proxy, clients are registered by the proxy's sockets.)
+	for i := 0; i < len(s.clients.shards) && !s.cfg.ProxyProtocol; i++ {
 		sh := &s.clients.shards[i]
 		sh.mu.RLock()
 		for a := range sh.m {

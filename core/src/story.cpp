@@ -285,4 +285,21 @@ bool CallArbiter::TryAnswer(proto::PlayerId player, std::uint8_t action, std::ui
     m_call->flags |= proto::kCallRejected;
   return true;
 }
+
+bool IsSceneActor(const SceneActor &npc) {
+  return npc.cast || ((npc.quest || npc.kept) && npc.inScene);
+}
+
+Backstop::Verdict Backstop::Judge(bool moment, const SceneActor &npc, GuestAct act,
+                                  std::uint64_t nowUs) {
+  if (!moment || !IsSceneActor(npc))
+    return {};
+  const auto i = Index(act);
+  ++m_refused[i];
+  auto &logged = m_loggedUs[i];
+  const bool log = !logged || nowUs - *logged >= kBackstopLogGapUs;
+  if (log)
+    logged = nowUs;
+  return {.refuse = true, .log = log};
+}
 } // namespace tandem::story

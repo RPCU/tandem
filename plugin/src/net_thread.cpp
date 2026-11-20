@@ -4,6 +4,7 @@
 #include "combat.hpp"
 #include "comms.hpp"
 #include "log.hpp"
+#include "mods.hpp"
 #include "perf.hpp"
 #include "presence.hpp"
 #include "recording.hpp"
@@ -32,6 +33,16 @@ using namespace std::chrono_literals;
 
 // Our V's state and pose wait this long at most for each other (one datagram).
 constexpr std::uint64_t kCoalesceUs = 8'000;
+
+// The session's record of the street, for the scripts: every shared
+// vehicle, the ones we show as proxies, who runs each (traffic.md).
+void ShareStreet(Runtime &runtime, const Endpoint &endpoint) {
+  std::map<proto::TrafficId, proto::PlayerId> owners;
+  for (const auto &[id, spawn] : endpoint.SharedTraffic())
+    owners[id] = endpoint.TrafficOwnerOf(id);
+  runtime.SetSharedTraffic(endpoint.SharedTraffic(), endpoint.TrafficStatuses(),
+                           endpoint.ProxiedTraffic(), std::move(owners));
+}
 
 struct NetThread::Impl {
   Config config;
@@ -165,6 +176,7 @@ struct NetThread::Impl {
 
   std::optional<proto::Vitals> lastVitals;
   std::optional<proto::Presence> lastPresence;
+  std::optional<std::vector<std::uint64_t>> lastStatusVisuals;
 
   // Every other player in the session with its life (up unless it said
   // otherwise), for the game thread (Revive.reds). Cheap: the runtime keeps
@@ -251,9 +263,14 @@ struct NetThread::Impl {
     std::string error;
     // (Without Phantom Liberty no session starts, unless compat = off: then
     // the other side refuses us, in words.)
-    const Identity identity{config.name, body, runtime.installation.install,
-                            runtime.Expansion() != compat::Expansion::Disabled &&
-                                runtime.Expansion() != compat::Expansion::Missing};
+    const Identity identity{.name = config.name,
+                            .body = body,
+                            .install = runtime.installation.install,
+                            .mods = ModRecords::Get().OursForIdentity(),
+                            .tellsMods = true,
+                            .expansion = runtime.Expansion() != compat::Expansion::Disabled &&
+                                         runtime.Expansion() != compat::Expansion::Missing};
+    ModRecords::Get().Ended();
     runtime.ClearDifferences();
     report::SessionSummary summary{
         .build = runtime.installation.install.build,
@@ -317,6 +334,8 @@ struct NetThread::Impl {
       endpoint->SetLocalVitals(*lastVitals);
     if (lastPresence)
       endpoint->SetLocalPresence(*lastPresence);
+    if (lastStatusVisuals)
+      endpoint->SetLocalStatusVisuals(*lastStatusVisuals);
     // Comms: whom we share tags with, and our waypoint, from the start.
     endpoint->SetLocalLink(Comms::Get().OwnLink());
     if (const auto waypoint = Comms::Get().OwnWaypoint())
@@ -438,6 +457,14 @@ struct NetThread::Impl {
                   summary.notes.push_back(line);
                   Notice(line, line, 600'000'000);
                 }
+              } else if constexpr (std::is_same_v<E, events::RemoteMods>) {
+                ModRecords::Get().OnCompared(e);
+                if (e.comparison.Differ())
+                  summary.notes.push_back(mods::Describe(e.comparison, e.name));
+              } else if constexpr (std::is_same_v<E, events::ModNamesFrom>) {
+                ModRecords::Get().OnNames(e);
+              } else if constexpr (std::is_same_v<E, events::SubstitutesFrom>) {
+                ModRecords::Get().OnSeen(e);
               } else if constexpr (std::is_same_v<E, events::JoinRefused>) {
                 runtime.NoteDifference(e.notice);
                 summary.notes.push_back(e.notice);
@@ -591,6 +618,38 @@ struct NetThread::Impl {
                                          .spawn = {.id = e.status.id},
                                          .flags = e.status.flags,
                                          .amount = e.status.health});
+              } else if constexpr (std::is_same_v<E, events::TrafficGive>) {
+                street = true;
+                log::Info("street: the host asks us to give vehicle {:#x} to player {}", e.id,
+                          e.to);
+                runtime.PushStreetEvent(
+                    {.kind = StreetEvent::Kind::Give, .spawn = {.id = e.id}, .player = e.to});
+              } else if constexpr (std::is_same_v<E, events::TrafficTake>) {
+                street = true;
+                const auto &s = e.state;
+                log::Info("street: vehicle {:#x} is ours now (from player {}{})", s.id, s.from,
+                          (s.handover & proto::kHandoverInherited) ? ", inherited" : "");
+                // Ours to move now: the giver's track is of no use (a new one
+                // starts if it is ever another game's again).
+                runtime.ForgetTraffic(s.id);
+                runtime.PushStreetEvent({.kind = StreetEvent::Kind::Take,
+                                         .spawn = {.id = s.id,
+                                                   .position = s.position,
+                                                   .orientation = s.orientation,
+                                                   .flags = s.flags},
+                                         .flags = s.flags,
+                                         .reason = s.handover,
+                                         .player = s.from,
+                                         .amount = s.health,
+                                         .vector = s.velocity});
+              } else if constexpr (std::is_same_v<E, events::TrafficOwnerChanged>) {
+                street = true;
+                log::Info("street: vehicle {:#x} is run by player {} now (was {})", e.id, e.owner,
+                          e.was);
+                runtime.PushStreetEvent({.kind = StreetEvent::Kind::Owner,
+                                         .spawn = {.id = e.id},
+                                         .reason = static_cast<std::int32_t>(e.was),
+                                         .player = e.owner});
               } else if constexpr (std::is_same_v<E, events::TrafficHitBy>) {
                 runtime.PushStreetEvent({.kind = StreetEvent::Kind::Hit,
                                          .spawn = {.id = e.hit.id, .position = e.hit.position},
@@ -606,7 +665,7 @@ struct NetThread::Impl {
                 const auto &d = e.damage;
                 log::Info("wheels: vehicle {:#x} of player {}: health {:.2f}, flags {:#x}, tyres "
                           "{:#x}, {} part(s) off",
-                          d.vehicle, proto::OwnerOfVehicle(d.vehicle), d.health, d.flags, d.tyres,
+                          d.vehicle, endpoint->VehicleOwner(d.vehicle), d.health, d.flags, d.tyres,
                           d.parts.size());
                 runtime.PushVehicleDamage(d);
               } else if constexpr (std::is_same_v<E, events::VehicleHitBy>) {
@@ -699,6 +758,10 @@ struct NetThread::Impl {
                 PresenceState::Get().PushRemote(e.presence);
               } else if constexpr (std::is_same_v<E, events::RemoteCue>) {
                 PresenceState::Get().PushCue(e.cue, net::NowUs());
+              } else if constexpr (std::is_same_v<E, events::RemoteStatusVisuals>) {
+                log::Info("player {}: {} status effect(s) show on its V (revision {})",
+                          e.visuals.player, e.visuals.records.size(), e.visuals.revision);
+                PresenceState::Get().PushStatusVisuals(e.visuals);
               } else if constexpr (std::is_same_v<E, events::RemoteAppearance>) {
                 log::Info("player {}: look of {} keys and {} items (revision {})",
                           e.appearance.player, e.appearance.look.size(), e.appearance.items.size(),
@@ -907,7 +970,7 @@ struct NetThread::Impl {
       }
       const Perf::Scope pass(Work::NetPass);
       if (street && !ended)
-        runtime.SetSharedTraffic(endpoint->SharedTraffic(), endpoint->TrafficStatuses());
+        ShareStreet(runtime, *endpoint);
       summary.peakPlayers = std::max(summary.peakPlayers, endpoint->Players().size());
       if (const auto lost = runtime.TakeOverflows())
         log::Warn("consistency: {} event(s) dropped, a queue was full (the game was not taking "
@@ -1165,13 +1228,21 @@ struct NetThread::Impl {
           endpoint->SendTrafficHit(*hit);
         } else if (const auto *claim = std::get_if<proto::TrafficClaim>(&message)) {
           endpoint->ClaimTraffic(claim->id, claim->seat);
+          streetSaid = true;
+        } else if (const auto *given = std::get_if<proto::TrafficHandoverState>(&message)) {
+          log::Info("street: vehicle {:#x} given to player {}", given->id, given->to);
+          endpoint->GiveTraffic(*given);
+          streetSaid = true;
+        } else if (const auto *done = std::get_if<proto::TrafficHandoverDone>(&message)) {
+          endpoint->AnswerTraffic(done->id, done->accepted);
+          streetSaid = true;
         } else if (const auto *crime = std::get_if<proto::Crime>(&message);
                    crime && !endpoint->SendCrime(*crime)) {
           log::Info("crime of player {} dropped: not a guest in the session", crime->player);
         }
       }
       if (streetSaid)
-        runtime.SetSharedTraffic(endpoint->SharedTraffic(), endpoint->TrafficStatuses());
+        ShareStreet(runtime, *endpoint);
       if (auto cars = runtime.TakeTrafficStates())
         endpoint->SendTrafficStates(std::move(*cars));
       // Vehicle combat: what our game says of its vehicles and our V in them.
@@ -1230,6 +1301,11 @@ struct NetThread::Impl {
         else if (const auto *waypoint = std::get_if<proto::Waypoint>(&message))
           endpoint->SetLocalWaypoint(*waypoint);
       }
+      // Other mods: what our game shows of others' records, names asked for.
+      for (const auto &told : ModRecords::Get().TakeTold())
+        endpoint->SendSubstitutes(told);
+      for (const auto player : ModRecords::Get().TakeNameAsks())
+        endpoint->AskModNames(player);
       for (auto &message : runtime.TakeRegroupOutbox()) {
         if (auto *offer = std::get_if<proto::Regroup>(&message))
           endpoint->SendRegroup(std::move(*offer));
@@ -1274,6 +1350,10 @@ struct NetThread::Impl {
       }
       for (const auto &cue : PresenceState::Get().TakeLocalCues())
         endpoint->SendLocalCue(cue);
+      if (auto visuals = PresenceState::Get().TakeStatusVisuals()) {
+        lastStatusVisuals = *visuals;
+        endpoint->SetLocalStatusVisuals(std::move(*visuals));
+      }
       if (!ended)
         PublishLives(*endpoint);
       for (auto &message : TradeLink::Get().TakeOutbound())

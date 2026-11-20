@@ -3,10 +3,16 @@
 # sides always speak the same protocol.
 add_library(tandem_core STATIC
   src/protocol.cpp
+  src/message.cpp
+  src/message_move.cpp
+  src/message_make.cpp
   src/session.cpp
   src/relay.cpp
+  src/sha256.cpp
   src/consistency.cpp
   src/endpoint.cpp
+  src/session_event.cpp
+  src/session_event_make.cpp
   src/endpoint_regions.cpp
   src/story.cpp
   src/carryover.cpp
@@ -24,13 +30,16 @@ add_library(tandem_core STATIC
   src/traffic.cpp
   src/netcode.cpp
   src/net_traffic.cpp
+  src/interact.cpp
   src/lagcomp.cpp
   src/elsewhere.cpp
   src/compat.cpp
+  src/mods.cpp
   src/report.cpp
   src/instance.cpp
   src/traffic.cpp
   src/vehicle_combat.cpp
+  src/endpoint_traffic.cpp
   src/endpoint_vehicles.cpp
   src/devices.cpp
   src/regions.cpp
@@ -46,20 +55,6 @@ add_library(tandem_core STATIC
 target_include_directories(tandem_core PUBLIC include)
 target_link_libraries(tandem_core PUBLIC enet zpp_bits)
 target_compile_features(tandem_core PUBLIC cxx_std_23)
-# zpp_bits checks at compile time that every message of the variant has its
-# own id, in steps that grow with the square of their number: past some 75
-# messages clang runs out of its default constexpr steps (1048576), and GCC
-# of its ops limit further on. PUBLIC: what instantiates the encoding needs it.
-if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    target_compile_options(tandem_core PUBLIC /clang:-fconstexpr-steps=33554432)
-  else()
-    target_compile_options(tandem_core PUBLIC -fconstexpr-steps=33554432)
-  endif()
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  target_compile_options(tandem_core PUBLIC -fconstexpr-ops-limit=1073741824)
-endif()
-
 # The build's name, "0.2.0+2fa03ca": the release and the commit it was built
 # from (the release alone outside git; TANDEM_BUILD_ID replaces it). Players
 # whose builds differ are told at a join (tandem/compat.hpp).

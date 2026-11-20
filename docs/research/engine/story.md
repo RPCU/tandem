@@ -514,3 +514,114 @@ Invulnerable)` (:87673, types :530; quests set it through
   holsters it and blocks the wheel; that taking our stack off leaves a
   restriction the guest's own game holds; maxStacks of NoCombat and
   NoWeapons. [2.5-untested]
+
+### 13.65 Interactions: where a choice goes, what marks a quest's object, and what casts the doer (2026-11-19, scripts, SDK and RTTI read)
+
+For `docs/architecture/story.md`, "Quest interactions"
+(`scripts/tandem/Interact.reds`, `plugin/src/engine/casts.cpp`). Nothing
+here was run; F is `final.reds` (2.50).
+
+- **A choice is an event on its object.** The interaction component sends
+  `InteractionChoiceEvent { choice: InteractionChoice, actionType }`
+  (F:209855; its base `InteractionBaseEvent { hotspot, activator,
+layerData.tag }`, SDK `game/interactions/InteractionBaseEvent.hpp`) to
+  the hotspot and its components. `InteractionChoice { caption,
+captionParts, data: array<Variant>, choiceMetaData { tweakDBName, type } }`
+  (F:107418): a device's choice carries its action in `data`. About forty
+  script classes handle it, by kind of object, not by quest (F:22359
+  `ScriptedPuppet`, :69278 `Inventory`, :104828 `InteractiveDevice`,
+  :175135 `gameLootContainerBase`, :298060 `gameLootBag`…).
+  [2.5-verified offline]
+- **Devices: one funnel.** `InteractiveDevice.OnInteractionUsed` →
+  `Device.ExecuteAction(choice, executor, layerTag)` (F:98567: returns on a
+  `CheckFailed` choice, the skill or item check, then runs each
+  `DeviceAction` of `choice.data` and stamps the layer) →
+  `Device.ExecuteAction(action, executor) -> Bool` (F:98590:
+  `RegisterAsRequester`, `SetExecutor`, `ProcessRPGAction`). A device's
+  screen goes there too (`DeviceInkGameControllerBase.ExecuteAction` queues
+  a `UIActionEvent`, F:211574; `Device.OnUIAction` calls the same
+  `ExecuteAction`, F:99471). Both are `const final` script functions:
+  `@wrapMethod` takes them (scripts:check, redscript 0.5.32). The device's
+  own actions for a V: `ScriptableDeviceComponentPS.GetActions(out
+actions, GenerateContext(requestType, Device.GetInteractionClearance(),
+executor))` (F:30174, :32102, :98744). **`GetActionByName` is broken in
+  2.50** (F:30076, :30091: an `if` where a `while` was meant, only the
+  first action is compared): walk `GetActions` instead.
+  `FinalizeGetActions(out actions)` (F:30290, `final`) is the one place a
+  Direct action list passes before it becomes choices, and
+  `SetInactiveWithReason(false, reason)` (F:28336) greys an action with its
+  reason. [2.5-untested]
+- **Loot is taken by the engine.** `Inventory.OnInteractionUsed` (F:69278)
+  unwraps `LootChoiceActionWrapper { itemId, action }` (F:175357); when
+  `IsHandledByCode` the engine itself moves the item and the script only
+  plays its sound, so a script cannot stop a pick-up, only see it (before
+  it calls the wrapped function the item is still in its source). A host's
+  V takes an item the game's way with `TransactionSystem.TakeItem(newOwner,
+itemObject)` (a world item: `gameItemDropObject.GetItemObject()`,
+  F:294978) or `TransferItem(source, target, itemID, amount)` (F:52081,
+  :52093). [2.5-untested]
+- **The game's own mark of a quest's object.** `GameObject.IsQuest()`
+  returns `m_markAsQuest` (F:13517), set by a quest through
+  `SetAsQuestImportantEvent` (F:13521) and overridden by kind: a device's
+  persistent state's `IsMarkedAsQuest()` (F:101483, :28690, saved with the
+  device); an item's `Quest` tag (F:52918); a container marked or holding a
+  quest item (F:175152); a puppet (F:22687), a vehicle (F:88972), a dropped
+  item (F:295086), a loot bag (F:298190). This is the yellow highlight the
+  scanner shows. A frozen guest's copies carry **its own** story's marks,
+  not the host's: only the host's copy can say whether an object is its
+  quest's. [2.5-verified offline for the code; that every objective object
+  is marked: to see]
+- **How quests see an object being used** (SDK): `questInteraction_ConditionType
+{ objectRef, eventType: Entered | Exited | Executed }` (an interaction
+  executed on that placed object) and `questDevice_ConditionType {
+objectRef, deviceControllerClass, deviceConditionFunction,
+functionParameters }` (a function of the device's persistent state, run
+  by the quest); `questInventory_ConditionType` for items (§13.29). All are
+  evaluated in the game whose quest waits, against that game's object and
+  that game's V: only an interaction done in the host's game, on the host's
+  copy, by the host's V meets them. [native: no script lever; SDK structs]
+- **What casts the doer.** A device puts a V in a workspot from the
+  entity's callback for the action's event, after its persistent state
+  handled the action: `Device.EnterWorkspot(activator, freeCamera,
+componentName, deviceData)` (F:99542, only for `activator.IsPlayer()`) →
+  `WorkspotGameSystem.PlayInDeviceSimple` (native, F:53212); the personal
+  link through `EnterWorkspotWithIK` and `InitiatePersonalLinkWorkspot` →
+  `PlayInDevice(this, puppet, n"unlockedCamera",
+n"personalLinkPlayerWorkspot")` (F:99110-:99160; the action is
+  `TogglePersonalLink`, F:113751); a computer's engineering spot
+  (`Terminal.OnActionEngineering`, F:254455), a turret taken apart
+  (F:171757), a door forced by hand (F:133818), the data-driven device
+  operations (`DeviceOperations.EnterWorkspot`, F:214837, from their
+  `SWorkspotData`). Whether a V is in one: `WorkspotGameSystem.IsActorInWorkspot`
+  (F:53275); in a lore animation: the `PlayerStateMachine` blackboard's
+  `IsInLoreAnimationScene` (F:53783, no script reader); an entity in a
+  scene: `SceneSystemInterface.IsEntityInScene` (F:193151). [2.5-verified
+  offline]
+- **Reading that from the RTTI.** A class's event callbacks are its
+  `CClass::listeners` (+0x1B0, `{callbackName +0x18, eventTypeId +0x20}`),
+  matched to the event class's `eventTypeId` (+0x2C0); a scripted
+  function's compiled code is `CBaseFunction::bytecode` (a `CCompiledCode`
+  at +0x78, its `DataBuffer` data and size at +0x08), `flags.isNative`
+  (+0xA8) for natives (SDK `RTTITypes.hpp`, `Scripting/Functions.hpp`;
+  generated for 2.x). In loaded bytecode a final or static call names its
+  `CBaseFunction*`, a virtual call its short name (a 64-bit CName): an
+  8-byte window equal to a target's address or name hash is a call to it.
+  `engine/casts.cpp` follows those from the callbacks for an action (5
+  levels, 400 functions) and looks for `PlayInDevice`, `PlayInDeviceSimple`,
+  `EnterWorkspot`, `EnterWorkspotWithIK`. Its first use checks the shape
+  (`WorkspotGameSystem.PlayInDevice` native, `Device.EnterWorkspot`
+  scripted with bytecode) and answers "unknown" otherwise. [unverified: the
+  in-memory operand layout of call opcodes and that script callbacks are in
+  `listeners`; read `casts:` in the log]
+- **Ids.** `EntityID.GetHash` is 32 bits in script (F:14696): the 64-bit
+  static id of a placed entity travels through natives that take an
+  `EntityID`. `EntityID.IsStatic` (F:14690) tells a placed entity (the same
+  in every game) from a spawned one. `TDBID.ToNumber` (F:14797) gives an
+  item record's 64 bits. [2.5-verified offline]
+- To check in game (scenarios `interact-guest-pickup`,
+  `interact-guest-hostonly`, `interact-apart-own-gig`): the log's `casts:`
+  lines for an access point's `TogglePersonalLink` (casts), a door's
+  `ToggleOpen` and a computer's screen actions (do not); that a quest
+  objective's object is `IsQuest()` on the host; that the host's V doing a
+  guest's action on a quest switch moves the quest; that a greyed prompt
+  shows the reason. [2.5-untested]

@@ -14,12 +14,15 @@
 #include "engine/posestream.hpp"
 #include "engine/trace.hpp"
 #include "log.hpp"
+#include "mods.hpp"
 #include "perf.hpp"
 #include "recording.hpp"
 #include "runtime.hpp"
 
+#include "tandem/mods.hpp"
 #include "tandem/movement.hpp"
 #include "tandem/names.hpp"
+#include "tandem/regions.hpp"
 
 #include <RedLib.hpp>
 
@@ -73,6 +76,23 @@ struct TandemShot {
   bool left{};
   std::int32_t effect{};
 };
+
+// What kind of thing a record we send is (proto::RecordHint): the game's
+// own enum names (Mods.reds), so a game without the record shows a
+// similar vanilla one (docs/architecture/mod-compat.md).
+struct TandemRecordHint {
+  Red::CName type;     // gamedataItemType, gamedataVehicleType, gamedataNPCType
+  Red::CName tag;      // gamedataItemCategory; an NPC's gender
+  std::int32_t size{}; // a vehicle's seats
+};
+
+namespace {
+proto::RecordHint HintOf(const TandemRecordHint &hint) {
+  return {.type = hint.type.hash,
+          .tag = hint.tag.hash,
+          .size = static_cast<std::uint8_t>(std::clamp(hint.size, 0, 255))};
+}
+} // namespace
 
 // Plain fields only: Vector4 and Quaternion are 16-byte aligned, the script
 // VM aligns struct locals to 8, and the zeroing movaps then faults (a crash
@@ -351,6 +371,13 @@ struct TandemNative : Red::IScriptable {
     if (!target)
       return {};
     return {Red::CString(target->address.c_str()), target->port, {}};
+  }
+
+  // Why ParseAddress refuses it: "" (it does not), "empty", "port", "name",
+  // "ipv6" (hosts::Problem).
+  static Red::CString AddressProblem(Red::CString text) {
+    const auto checked = hosts::Check(text.c_str(), Runtime::Get().config.port);
+    return Red::CString(std::string(hosts::ProblemWord(checked.problem)).c_str());
   }
 
   // No session (until the next choice, or tandem.ini's at the main menu).
@@ -711,15 +738,20 @@ struct TandemNative : Red::IScriptable {
   // changes. Answers the number of look keys (0: the state was not usable).
   static std::int32_t
   SubmitAppearance(Red::Handle<Red::game::ui::ICharacterCustomizationState> state, bool male,
-                   Red::DynArray<Red::TweakDBID> items) {
+                   Red::DynArray<Red::TweakDBID> items, Red::DynArray<TandemRecordHint> hints) {
     proto::Appearance appearance;
     appearance.body = male ? proto::Body::Male : proto::Body::Female;
     appearance.look = engine::CollectLook(state, male);
-    for (const auto &item : items)
-      if (appearance.items.size() < proto::kMaxAppearanceItems)
-        appearance.items.push_back(item.value);
+    for (std::uint32_t i = 0; i < items.size(); ++i)
+      if (appearance.items.size() < proto::kMaxAppearanceItems) {
+        appearance.items.push_back(items[i].value);
+        if (i < hints.size())
+          appearance.hints.push_back(HintOf(hints[i]));
+      }
     if (appearance.look.size() > proto::kMaxAppearanceKeys)
       appearance.look.resize(proto::kMaxAppearanceKeys);
+    // Our own look's pieces are on our disk: the check of a partner's.
+    ModRecords::Get().CheckDepot(appearance.look);
     const auto keys = static_cast<std::int32_t>(appearance.look.size());
     Runtime::Get().SubmitLocalAppearance(std::move(appearance));
     return keys;
@@ -733,23 +765,34 @@ struct TandemNative : Red::IScriptable {
     return static_cast<std::int32_t>(changes);
   }
 
-  // The clothes the player shows (TweakDB ids), to wear as preview items.
+  // The clothes the player shows (TweakDB ids), to wear as preview items:
+  // a piece our game lacks as the plain one of its slot, or left off.
   static Red::DynArray<Red::TweakDBID> RemoteItems(std::uint32_t player) {
     Red::DynArray<Red::TweakDBID> out;
     std::uint32_t changes = 0;
     if (const auto appearance = Runtime::Get().RemoteAppearance(player, changes))
-      for (const auto item : appearance->items)
-        out.EmplaceBack(Red::TweakDBID(item));
+      for (std::size_t i = 0; i < appearance->items.size(); ++i)
+        if (const auto item = ModRecords::Get().Resolve(
+                mods::Kind::Clothing, appearance->items[i],
+                i < appearance->hints.size() ? appearance->hints[i] : proto::RecordHint{}, player))
+          out.EmplaceBack(Red::TweakDBID(item));
     return out;
   }
 
-  // The player's face and body on their puppet (skipped when unchanged).
+  // The player's face and body on their puppet (skipped when unchanged): a
+  // piece our game lacks (a modded hair, skin) is left off, the rest is theirs.
   static std::int32_t ApplyRemoteLook(Red::Handle<Red::ent::Entity> entity, std::uint32_t player) {
     std::uint32_t changes = 0;
     const auto appearance = Runtime::Get().RemoteAppearance(player, changes);
     if (!appearance || appearance->look.empty())
       return -1;
-    return engine::ScheduleLook(entity, appearance->look);
+    std::vector<proto::AppearanceKey> keys;
+    for (const auto &key : appearance->look)
+      if (ModRecords::Get().Resolve(mods::Kind::LookPiece, key.resource, {}, player))
+        keys.push_back(key);
+    if (keys.empty())
+      return -1;
+    return engine::ScheduleLook(entity, keys);
   }
 
   // How many body keys the player's latest look has (0: none, or no look).
@@ -770,8 +813,12 @@ struct TandemNative : Red::IScriptable {
   }
 
   // What our V holds, when it changes (0 / empty id: nothing).
-  static void SendHeld(Red::TweakDBID right, Red::TweakDBID left) {
-    Runtime::Get().SubmitLocalHeld({.right = right.value, .left = left.value});
+  static void SendHeld(Red::TweakDBID right, Red::TweakDBID left, TandemRecordHint rightHint,
+                       TandemRecordHint leftHint) {
+    Runtime::Get().SubmitLocalHeld({.right = right.value,
+                                    .left = left.value,
+                                    .rightHint = HintOf(rightHint),
+                                    .leftHint = HintOf(leftHint)});
   }
 
   // One shot of our V's weapon: the effect (gamedataFxAction) it played.
@@ -789,7 +836,12 @@ struct TandemNative : Red::IScriptable {
   static Red::TweakDBID RemoteHeld(std::uint32_t player, bool left) {
     std::uint32_t changes = 0;
     const auto held = Runtime::Get().RemoteHeld(player, changes);
-    return held ? Red::TweakDBID(left ? held->left : held->right) : Red::TweakDBID();
+    if (!held)
+      return {};
+    // A weapon our game lacks: a vanilla one of its type.
+    return Red::TweakDBID(
+        ModRecords::Get().Resolve(mods::Kind::Weapon, left ? held->left : held->right,
+                                  left ? held->leftHint : held->rightHint, player));
   }
 
   static Red::DynArray<TandemShot> TakeShots() {
@@ -801,8 +853,10 @@ struct TandemNative : Red::IScriptable {
 
   // Where our V sits: the vehicle's record (none: on foot), the seat, and
   // whose car (0: our own, or a world car).
-  static void SendSeat(Red::TweakDBID vehicle, Red::CName seat, std::uint32_t owner) {
-    Runtime::Get().SubmitLocalSeat({.vehicle = vehicle.value, .seat = seat.hash, .owner = owner});
+  static void SendSeat(Red::TweakDBID vehicle, Red::CName seat, std::uint32_t owner,
+                       TandemRecordHint hint) {
+    Runtime::Get().SubmitLocalSeat(
+        {.vehicle = vehicle.value, .seat = seat.hash, .owner = owner, .hint = HintOf(hint)});
   }
 
   // The car our V drives, 30 times a second while driving.
@@ -823,7 +877,10 @@ struct TandemNative : Red::IScriptable {
   static Red::TweakDBID RemoteSeatVehicle(std::uint32_t player) {
     std::uint32_t changes = 0;
     const auto seat = Runtime::Get().RemoteSeat(player, changes);
-    return seat ? Red::TweakDBID(seat->vehicle) : Red::TweakDBID();
+    // A vehicle our game lacks: a vanilla one of its type and size.
+    return seat ? Red::TweakDBID(ModRecords::Get().Resolve(mods::Kind::Vehicle, seat->vehicle,
+                                                           seat->hint, player))
+                : Red::TweakDBID();
   }
 
   static Red::CName RemoteSeatSlot(std::uint32_t player) {
@@ -1072,10 +1129,27 @@ struct TandemNative : Red::IScriptable {
     return sync::TimeBubbles::PlayerFactor(player, own, {position.X, position.Y, position.Z}, who,
                                            inside);
   }
+  // Whose bubble slows our V (the same arguments; 0: nobody's).
+  static std::uint32_t TimeSlowedBy(std::uint32_t player, float own, Red::Vector4 position,
+                                    Red::DynArray<std::uint32_t> owners,
+                                    Red::DynArray<float> scales,
+                                    Red::DynArray<Red::Vector4> ownerPositions, bool inside) {
+    std::vector<sync::TimeBubbles::Owner> who;
+    for (std::uint32_t i = 0; i < owners.Size() && i < scales.Size() && i < ownerPositions.Size();
+         ++i)
+      who.push_back({.player = owners[i],
+                     .scale = scales[i],
+                     .position = {ownerPositions[i].X, ownerPositions[i].Y, ownerPositions[i].Z}});
+    return sync::TimeBubbles::SlowedBy(player, own, {position.X, position.Y, position.Z}, who,
+                                       inside);
+  }
   // The world speed a V's abilities ask for as a bubble (1: none): ours
   // as our `own`, and the others' (the scanner counts, tandem/timebubble.hpp).
   static float TimeBubbleScale(std::int32_t abilities, float scale) {
     return sync::TimeBubbles::BubbleScale(static_cast<std::uint8_t>(abilities), scale);
+  }
+  static float TimeUnexplainedSlow(float global, float explained, bool isLocal) {
+    return sync::TimeBubbles::UnexplainedSlow(global, explained, isLocal);
   }
   static std::int32_t TimeBubbleMembers(std::uint32_t player) {
     return static_cast<std::int32_t>(Runtime::Get().Bubbles().MembersOf(player));
@@ -1144,12 +1218,14 @@ struct TandemNative : Red::IScriptable {
 
   // Host: its NPCs.
   static void SendNpcSpawn(std::uint32_t npc, Red::TweakDBID record, Red::CName appearance,
-                           Red::Vector4 position, Red::Quaternion orientation) {
+                           Red::Vector4 position, Red::Quaternion orientation,
+                           TandemRecordHint hint) {
     Runtime::Get().SubmitNpcSpawn({.npc = npc,
                                    .record = record.value,
                                    .appearance = appearance.hash,
                                    .position = {position.X, position.Y, position.Z},
-                                   .yaw = YawOfQuaternion(orientation)});
+                                   .yaw = YawOfQuaternion(orientation),
+                                   .hint = HintOf(hint)});
   }
   static void SendNpcStates(Red::DynArray<std::uint32_t> npcs,
                             Red::DynArray<Red::Vector4> positions,
@@ -1331,11 +1407,21 @@ struct TandemNative : Red::IScriptable {
     for (const auto &event : Runtime::Get().TakeNpcEvents()) {
       const auto &s = event.spawn;
       const auto turn = sync::FromYaw(s.yaw);
-      out.EmplaceBack(
-          TandemNpcEvent{static_cast<std::int32_t>(event.kind), s.npc, Red::TweakDBID(s.record),
-                         Red::CName(s.appearance), s.position.x, s.position.y, s.position.z, turn.i,
-                         turn.j, turn.k, turn.r, event.reason, event.player, event.amount,
-                         event.flags, event.direction.x, event.direction.y, event.direction.z});
+      // A character or a status effect our game lacks: a vanilla NPC of its
+      // type in its usual look, or no effect.
+      const bool spawn = event.kind == NpcEvent::Kind::Spawn;
+      const auto record =
+          spawn ? ModRecords::Get().Resolve(mods::Kind::Npc, s.record, s.hint,
+                                            regions::Announcer(s.npc))
+          : event.kind == NpcEvent::Kind::Effect
+              ? ModRecords::Get().Resolve(mods::Kind::Effect, s.record, {}, event.player)
+              : s.record;
+      const auto appearance = spawn && record != s.record ? 0 : s.appearance;
+      out.EmplaceBack(TandemNpcEvent{static_cast<std::int32_t>(event.kind), s.npc,
+                                     Red::TweakDBID(record), Red::CName(appearance), s.position.x,
+                                     s.position.y, s.position.z, turn.i, turn.j, turn.k, turn.r,
+                                     event.reason, event.player, event.amount, event.flags,
+                                     event.direction.x, event.direction.y, event.direction.z});
     }
     return out;
   }
@@ -1483,7 +1569,10 @@ struct TandemNative : Red::IScriptable {
               .token = item->token,
               .stack = static_cast<std::int32_t>(i),
               .stacks = static_cast<std::int32_t>(item->stacks.size()),
-              .record = Red::TweakDBID(stack.record),
+              // An item our game lacks cannot lie here: none (Loot.reds
+              // leaves that stack to the others, the dropper included).
+              .record = Red::TweakDBID(
+                  ModRecords::Get().Resolve(mods::Kind::Item, stack.record, {}, item->dropper)),
               .seed = stack.seed,
               .quantity = static_cast<std::int32_t>(stack.quantity),
               .x = item->position.x,
@@ -1496,7 +1585,8 @@ struct TandemNative : Red::IScriptable {
             .kind = shared->kind == proto::kSharedOnCorpse ? 4 : 3,
             .id = shared->npc,
             .player = shared->player,
-            .record = Red::TweakDBID(shared->item.record),
+            .record = Red::TweakDBID(ModRecords::Get().Resolve(
+                mods::Kind::Item, shared->item.record, {}, shared->player)),
             .seed = shared->item.seed,
             .quantity = static_cast<std::int32_t>(shared->item.quantity),
         });
@@ -2033,6 +2123,12 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemShot, "TandemShot", {
   RTTI_PROPERTY(effect);
 });
 
+RTTI_DEFINE_CLASS(tandem::plugin::TandemRecordHint, "TandemRecordHint", {
+  RTTI_PROPERTY(type);
+  RTTI_PROPERTY(tag);
+  RTTI_PROPERTY(size);
+});
+
 RTTI_DEFINE_CLASS(tandem::plugin::TandemStatus, "TandemStatus", {
   RTTI_PROPERTY(role);
   RTTI_PROPERTY(state);
@@ -2074,6 +2170,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(StartHost);
   RTTI_METHOD(Join);
   RTTI_METHOD(ParseAddress);
+  RTTI_METHOD(AddressProblem);
   RTTI_METHOD(Leave);
   RTTI_METHOD(ResetChoice);
   RTTI_METHOD(SessionStatus);
@@ -2217,7 +2314,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(TimeFactorOf);
   RTTI_METHOD(TimeBubbleMembers);
   RTTI_METHOD(TimeBubbleScale);
+  RTTI_METHOD(TimeUnexplainedSlow);
   RTTI_METHOD(TimePlayerFactor);
+  RTTI_METHOD(TimeSlowedBy);
   RTTI_METHOD(IsTimeHostFull);
   RTTI_METHOD(RelayCode);
   RTTI_METHOD(RelayStatus);

@@ -41,6 +41,15 @@
   are kept per body (`~/.cache/tandem/looks/{female,male}.keys`,
   `--look-keys DIR`). Hiding fades the body and its item entities
   together, then hides every mesh of both.
+- **What a partner's game lacks** ([`mod-compat.md`](mod-compat.md)): a
+  held item or a piece of clothing from a mod our game does not have
+  comes with a hint (`Held::rightHint`/`leftHint`, `Appearance::hints`: its
+  item type and category) and is shown as a vanilla one of the same type
+  (a handgun for a modded pistol, plain trousers), or left off (a hat, a
+  jacket, a whole outfit); a body or face resource we lack (a modded hair)
+  is left off, the rest of the look is theirs. Resolved in the natives
+  (`RemoteHeld`, `RemoteItems`, `ApplyRemoteLook`), told on screen once per
+  partner and kind.
 - **Player markers** (`scripts/tandem/Markers.reds`,
   `tweaks/tandem/markers.tweak`): every remote player has a marker in the
   world, on the minimap and on the world map, the way the game marks your

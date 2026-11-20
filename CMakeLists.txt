@@ -3,8 +3,38 @@ cmake_minimum_required(VERSION 3.28)
 # (core/CMakeLists.txt) and the package's file name (tools/package.py).
 project(tandem VERSION 0.2.0 LANGUAGES C CXX)
 
+# No C++ modules here: no dependency scan (CMake's default from C++20 on).
+# Scanning preprocesses every file once more, and it compiles with GCC's
+# -fmodules-ts, which ccache refuses: no Linux compile would be cached.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+# ccache refuses every clang-cl /clang: option (it cannot tell what they
+# do), and CMake passes two of its own: the standard, for which clang-cl 20
+# has /std:c++23preview (the same -std=c++23), and a gcc-style depfile, for
+# which cl's /showIncludes does the same for Ninja.
+if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+  set(CMAKE_CXX23_STANDARD_COMPILE_OPTION "/std:c++23preview")
+  set(CMAKE_CXX23_EXTENSION_COMPILE_OPTION "/std:c++23preview")
+  foreach(lang C CXX)
+    set(CMAKE_DEPFILE_FLAGS_${lang} "/showIncludes")
+    set(CMAKE_${lang}_DEPFILE_FORMAT msvc)
+  endforeach()
+endif()
+
 option(TANDEM_BUILD_PLUGIN "Build the game plugin (Windows only)" OFF)
 option(TANDEM_BUILD_PEER "Build the mock player and the tests (Linux)" ON)
+
+# ccache in front of every compiler, Windows and Linux alike, unless
+# TANDEM_CCACHE=0 (read at each configure; `task build*` configures every
+# time) or the caller names a launcher. Its settings come from devenv.nix.
+if(NOT "$ENV{TANDEM_CCACHE}" STREQUAL "0")
+  find_program(TANDEM_CCACHE_PROGRAM ccache)
+  foreach(lang C CXX)
+    if(TANDEM_CCACHE_PROGRAM AND NOT DEFINED CACHE{CMAKE_${lang}_COMPILER_LAUNCHER})
+      set(CMAKE_${lang}_COMPILER_LAUNCHER "${TANDEM_CCACHE_PROGRAM}")
+    endif()
+  endforeach()
+endif()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -41,6 +41,8 @@ add_library(tandem SHARED
   src/trade_natives.cpp
   src/comms.cpp
   src/comms_natives.cpp
+  src/mods.cpp
+  src/mods_natives.cpp
   src/engine/layout.cpp
   src/engine/animation.cpp
   src/engine/controller.cpp
@@ -51,7 +53,8 @@ add_library(tandem SHARED
   src/engine/posescan.cpp
   src/engine/posestream.cpp
   src/engine/quests.cpp
-  src/engine/scenes.cpp)
+  src/engine/scenes.cpp
+  src/engine/casts.cpp)
 target_link_libraries(tandem PRIVATE tandem_core RED4ext::SDK iphlpapi version)
 target_include_directories(tandem SYSTEM PRIVATE
   "${CMAKE_BINARY_DIR}/sdk-casefix"

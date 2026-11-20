@@ -14,7 +14,8 @@
 // the health of Presence; going down from Vitals; time abilities from
 // TimeEffect. Two things our game alone knows are sent as a Cue: where a
 // shot of ours ended (the others draw the bullet: tracer, impact, decal,
-// its sound) and that a melee swing landed.
+// its sound) and that a melee swing landed. The status effects that show
+// on our V travel as a set (StatusVisuals.reds).
 
 public class TandemHeardPuppet {
   public let player: Uint32;
@@ -77,6 +78,7 @@ public class TandemPresenceSync {
   private let m_stepsMode: Int32;
   private let m_hud: ref<TandemPartyHud>;
   private let m_reactions: ref<TandemReactionsSync>;
+  private let m_status: ref<TandemStatusVisuals>;
 
   public static func Of(game: GameInstance) -> ref<TandemPresenceSync> {
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
@@ -90,6 +92,8 @@ public class TandemPresenceSync {
     this.m_hud.Start(game);
     this.m_reactions = new TandemReactionsSync();
     this.m_reactions.Start(game);
+    this.m_status = new TandemStatusVisuals();
+    this.m_status.Start(game);
     this.m_listener = new TandemPresenceListener();
     this.m_listener.sync = this;
     let boards = GameInstance.GetBlackboardSystem(game);
@@ -124,6 +128,7 @@ public class TandemPresenceSync {
     }
     this.m_hud = null;
     this.m_reactions = null;
+    this.m_status = null;
   }
 
   // The session ended: nothing of it is heard or shown any more.
@@ -137,6 +142,9 @@ public class TandemPresenceSync {
     if IsDefined(this.m_hud) {
       this.m_hud.Clear();
     }
+    if IsDefined(this.m_status) {
+      this.m_status.End();
+    }
   }
 
   public func Hud() -> ref<TandemPartyHud> {
@@ -145,6 +153,16 @@ public class TandemPresenceSync {
 
   public func Reactions() -> ref<TandemReactionsSync> {
     return this.m_reactions;
+  }
+
+  public func Status() -> ref<TandemStatusVisuals> {
+    return this.m_status;
+  }
+
+  // A time ability's sound plays on that player's puppet now (Ability).
+  public func PlaysAbilitySound(player: Uint32, name: CName) -> Bool {
+    let heard = this.Find(player);
+    return IsDefined(heard) && ArrayContains(heard.sfx, name);
   }
 
   private func Once(key: CName, text: String) -> Void {
@@ -188,6 +206,9 @@ public class TandemPresenceSync {
     TandemPresence.Forget(player);
     if IsDefined(this.m_hud) {
       this.m_hud.Forget(player);
+    }
+    if IsDefined(this.m_status) {
+      this.m_status.ForgetPlayer(player);
     }
   }
 
@@ -310,6 +331,10 @@ public class TandemPresenceSync {
     }
     if IsDefined(this.m_reactions) {
       this.m_reactions.Tick(now, system);
+    }
+    if IsDefined(this.m_status) && you != 0u {
+      this.m_status.SendOurs(now);
+      this.m_status.Tick(system);
     }
     if IsDefined(this.m_hud) {
       this.m_hud.Tick(now, system, you);
@@ -515,11 +540,14 @@ public class TandemPresenceSync {
       if IsDefined(record) {
         record.SFX(sfx);
       }
+      // The same record shown as a status visual plays its sounds already
+      // (StatusVisuals.reds): one of them, never both.
+      let status = this.m_status;
       for fx in sfx {
-        if on {
+        if on && !ArrayContains(heard.sfx, fx.Name()) && !(IsDefined(status) && status.PlaysSound(heard.player, fx.Name())) {
           GameObject.PlaySoundEvent(body, fx.Name());
           ArrayPush(heard.sfx, fx.Name());
-        } else {
+        } else if !on && ArrayContains(heard.sfx, fx.Name()) {
           GameObject.StopSoundEvent(body, fx.Name());
           ArrayRemove(heard.sfx, fx.Name());
         }
@@ -692,8 +720,12 @@ public class TandemPresenceSync {
       if IsDefined(this.m_reactions) {
         this.m_reactions.Command(StrAfterFirst(command, "react "), system);
       }
+    } else if StrBeginsWith(command, "status") {
+      if IsDefined(this.m_status) {
+        this.m_status.Command(StrAfterFirst(command, "status "));
+      }
     } else {
-      TandemNative.Log(s"presence: unknown command '\(command)' (report, steps auto|on|off, vo NAME, sound NAME, fx NAME, flinch, bullet, hud ..., react ...)");
+      TandemNative.Log(s"presence: unknown command '\(command)' (report, steps auto|on|off, vo NAME, sound NAME, fx NAME, flinch, bullet, hud ..., react ..., status ...)");
     }
   }
 
@@ -707,6 +739,9 @@ public class TandemPresenceSync {
     }
     if IsDefined(this.m_reactions) {
       this.m_reactions.Report();
+    }
+    if IsDefined(this.m_status) {
+      this.m_status.Report();
     }
   }
 }

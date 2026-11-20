@@ -1,0 +1,237 @@
+name: CI
+
+# What can run without the game: the Go modules, the Kubernetes manifests,
+# core's tests and the mock player (Linux, GCC), the plugin (tandem.dll,
+# cross-compiled with clang-cl against the MSVC CRT and Windows SDK that xwin
+# fetches, as `task build:plugin` does) and the checks below. `task
+# scripts:check` compiles scripts/ against the game's own scripts and other
+# mods' (on the game machine): it cannot run here.
+on:
+  push:
+  pull_request:
+  # Also by hand ("Run workflow"; tests: false to only build).
+  workflow_dispatch:
+    inputs:
+      tests:
+        description: Run core's tests (ctest) after the build
+        type: boolean
+        default: true
+
+# A newer push to the same branch or pull request cancels the older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: go (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [relay, tools/pilot]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache: false # standard library only: no go.sum
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Build
+        if: matrix.module == 'relay'
+        run: CGO_ENABLED=0 go build -trimpath -o tandem-relay ./cmd/tandem-relay
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Install kustomize and kubeconform
+        run: |
+          go install sigs.k8s.io/kustomize/kustomize/v5@v5.8.3
+          go install github.com/yannh/kubeconform/cmd/kubeconform@v0.8.0
+
+      # task k8s:check. Gateway and HTTPRoute (Gateway API CRDs) have no
+      # schema kubeconform ships: rendered, not validated.
+      - name: Render and validate the base and the overlays
+        run: |
+          set -o pipefail
+          kustomize build deploy/kubernetes/base | kubeconform -strict -summary -
+          kustomize build deploy/kubernetes/kgateway | kubeconform -strict -summary -skip Gateway,HTTPRoute -
+          kustomize build deploy/kubernetes/playit | kubeconform -strict -summary -
+
+  core:
+    # task test: the build (some 4 minutes cold), then the tests (some 9:
+    # real-time sessions).
+    name: core tests (Linux)
+    runs-on: ubuntu-latest
+    # GCC 16, as in devenv: libstdc++'s distributions changed in 16
+    # (generate_canonical), and the tests' seeded links (quality_test,
+    # shaping_test) are measured with them; GCC 14's draw other links.
+    env:
+      CC: gcc-16
+      CXX: g++-16
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0 # the build is named after the commit (core/CMakeLists.txt)
+
+      # Swap, ccache, CMAKE_BUILD_PARALLEL_LEVEL from the runner's memory.
+      - uses: ./.github/actions/build-host
+
+      # relay-loopback builds the relay with Go and runs sessions through it.
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: relay/go.mod
+          cache: false
+
+      - name: Install the toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-16 ninja-build
+
+      # A new key each run, the newest earlier one restored: the cache
+      # follows the tree. Saved even when the build fails, so a rerun
+      # starts from what did compile.
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-linux-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ccache-linux-
+
+      # task test
+      - name: Configure
+        run: cmake --preset linux
+
+      - name: Build
+        run: cmake --build --preset linux
+
+      - name: Test
+        if: github.event_name == 'workflow_dispatch' && inputs.tests
+        run: ctest --preset linux
+
+      - uses: ./.github/actions/build-report
+        if: ${{ !cancelled() }}
+
+      - uses: actions/cache/save@v6
+        if: ${{ !cancelled() }}
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-linux-${{ github.run_id }}-${{ github.run_attempt }}
+
+  plugin:
+    name: plugin (Windows, clang-cl)
+    runs-on: ubuntu-latest
+    env:
+      # devenv.nix's, from Ubuntu instead of Nix.
+      TANDEM_CLANG_CL: /usr/lib/llvm-20/bin/clang-cl
+      TANDEM_LLD_LINK: /usr/lib/llvm-20/bin/lld-link
+      TANDEM_LLVM_BIN: /usr/lib/llvm-20/bin
+      XWIN_VERSION: 0.9.0
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0 # the build is named after the commit (core/CMakeLists.txt)
+
+      - uses: ./.github/actions/build-host
+
+      # Ubuntu's own LLVM 20 (20.1.8 on 26.04, as in devenv); apt.llvm.org
+      # has no LLVM 20 for 26.04.
+      - name: Install LLVM 20
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-20 lld-20 llvm-20 ninja-build
+          "$TANDEM_CLANG_CL" --version | head -1
+
+      # task sysroot. The MSVC CRT and the Windows SDK: Microsoft's licence
+      # is accepted for this repository's CI. SDK 10.0.26100 has no x86_64
+      # headers in xwin's manifest: 10.0.22621, as on the laptop.
+      - name: Sysroot location
+        run: echo "TANDEM_XWIN=$RUNNER_TEMP/xwin" >>"$GITHUB_ENV"
+
+      - id: sysroot
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/xwin
+          key: xwin-${{ env.XWIN_VERSION }}-x86_64-sdk-10.0.22621
+
+      - name: Fetch the sysroot
+        if: steps.sysroot.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/xwin.tar.gz" \
+            "https://github.com/Jake-Shadle/xwin/releases/download/$XWIN_VERSION/xwin-$XWIN_VERSION-x86_64-unknown-linux-musl.tar.gz"
+          echo "31e1033f30608ba6b821d17f1461042bd54c23424813c9b4e9ae15b6d32fa4cd  $RUNNER_TEMP/xwin.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/xwin.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/xwin-$XWIN_VERSION-x86_64-unknown-linux-musl/xwin" --accept-license \
+            --arch x86_64 --sdk-version 10.0.22621 --cache-dir "$RUNNER_TEMP/xwin-cache" \
+            splat --output "$TANDEM_XWIN"
+          du -sh "$TANDEM_XWIN"
+
+      - uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-plugin-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ccache-plugin-
+
+      # task build:plugin
+      - name: Configure
+        run: cmake --preset windows
+
+      - name: Build
+        run: cmake --build --preset windows
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tandem-${{ github.sha }}
+          path: |
+            build/windows/plugin/tandem.dll
+            build/windows/plugin/tandem.pdb
+          if-no-files-found: error
+
+      - uses: ./.github/actions/build-report
+        if: ${{ !cancelled() }}
+
+      - uses: actions/cache/save@v6
+        if: ${{ !cancelled() }}
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-plugin-${{ github.run_id }}-${{ github.run_attempt }}
+
+  checks:
+    name: docs, natives, strings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+
+      # task docs:check (links only: the facts check compares with HEAD)
+      - name: Docs links
+        run: python3 tools/docs-check.py links
+
+      # task natives:check
+      - name: Natives.reds matches natives.cpp
+        run: python3 tools/check-natives.py
+
+      # task strings:check
+      - name: Player-facing strings
+        run: python3 tools/check-strings.py

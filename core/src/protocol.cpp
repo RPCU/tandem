@@ -3,18 +3,52 @@
 #include <zpp_bits.h>
 
 #include <algorithm>
+#include <array>
 #include <functional>
+#include <type_traits>
+#include <utility>
 
 namespace tandem::proto {
+// The wire form is zpp_bits' for the variant: the index in one byte, then
+// the alternative. Written out here, without zpp_bits' variant support: its
+// compile-time checks that the ids are unique grow with the square of the
+// alternatives (they needed raised constexpr limits), and reading into the
+// variant compiles std::variant's emplace for every alternative.
+static_assert(std::variant_size_v<MessageVariant> <= 256, "a message's id is one byte");
+
 std::vector<std::byte> Encode(const Message &message) {
   std::vector<std::byte> bytes;
   auto out = zpp::bits::out(bytes);
-  if (zpp::bits::failure(out(message)))
+  const auto id = static_cast<std::byte>(message.index());
+  if (zpp::bits::failure(
+          std::visit([&](const auto &alternative) { return out(id, alternative); }, message)))
     return {};
   return bytes;
 }
 
 namespace {
+// A message's id (its index in Message), at compile time.
+template <class T> constexpr std::size_t kId = tandem::detail::IndexIn<T, MessageVariant>::value;
+
+using Reader = decltype(zpp::bits::in(std::declval<std::span<const std::byte> &>()));
+
+// Reads alternative I of Message.
+template <std::size_t I> std::optional<Message> Read(Reader &in) {
+  std::variant_alternative_t<I, MessageVariant> alternative{};
+  if (zpp::bits::failure(in(alternative)))
+    return std::nullopt;
+  return Message(std::move(alternative));
+}
+
+std::optional<Message> ReadMessage(Reader &in, std::size_t id) {
+  static constexpr auto readers = []<std::size_t... I>(std::index_sequence<I...>) {
+    return std::array<std::optional<Message> (*)(Reader &), sizeof...(I)>{&Read<I>...};
+  }(std::make_index_sequence<std::variant_size_v<MessageVariant>>{});
+  if (id >= readers.size())
+    return std::nullopt;
+  return readers[id](in);
+}
+
 // A trade offer within the wire's limits (what it may hold: trade::Valid).
 bool Fits(const TradeOffer &offer) {
   if (offer.items.size() > kMaxTradeItems)
@@ -27,10 +61,15 @@ bool Fits(const TradeOffer &offer) {
 } // namespace
 
 std::optional<Message> Decode(std::span<const std::byte> bytes) {
-  Message message;
   auto in = zpp::bits::in(bytes);
-  if (zpp::bits::failure(in(message)))
+  static_assert(std::is_same_v<decltype(in), Reader>);
+  std::byte id{};
+  if (zpp::bits::failure(in(id)))
     return std::nullopt;
+  auto read = ReadMessage(in, std::to_integer<std::size_t>(id));
+  if (!read)
+    return std::nullopt;
+  auto &message = *read;
   // A message must be read whole: trailing bytes mean the two sides disagree.
   if (in.position() != bytes.size())
     return std::nullopt;
@@ -136,6 +175,10 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *use = std::get_if<DeviceUse>(&message); use && !device(use->status, use->flags))
     return std::nullopt;
+  if (const auto *interact = std::get_if<QuestInteract>(&message);
+      interact && (interact->verdict > kInteractVerdictMax ||
+                   (interact->flags & ~kInteractFlags) != 0 || interact->target == 0))
+    return std::nullopt;
   if (const auto *regions = std::get_if<Regions>(&message);
       regions && (regions->pairs.size() > 2 * kMaxRegionPairs || regions->pairs.size() % 2 != 0))
     return std::nullopt;
@@ -164,6 +207,11 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *install = std::get_if<Install>(&message);
       install &&
       (install->build.size() > kMaxInstallText || install->game.size() > kMaxInstallText))
+    return std::nullopt;
+  if (const auto *mods = std::get_if<ModList>(&message);
+      mods && (mods->kind > kModNames || mods->mods.size() > kMaxModEntries ||
+               std::ranges::any_of(
+                   mods->mods, [](const ModEntry &mod) { return mod.name.size() > kMaxModName; })))
     return std::nullopt;
   if (const auto *thrown = std::get_if<Throw>(&message); thrown && thrown->kind > ThrowKind::Smart)
     return std::nullopt;
@@ -251,14 +299,19 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
                        std::ranges::adjacent_find(restrictions->effects, std::greater_equal<>{}) !=
                            restrictions->effects.end()))
     return std::nullopt;
-  return message;
+  if (const auto *visuals = std::get_if<StatusVisuals>(&message);
+      visuals && (visuals->records.size() > kMaxStatusVisuals ||
+                  std::ranges::adjacent_find(visuals->records, std::greater_equal<>{}) !=
+                      visuals->records.end()))
+    return std::nullopt;
+  return read;
 }
 
 std::optional<std::uint16_t> PeekHelloVersion(std::span<const std::byte> bytes) {
   // The variant's index (Hello is the first alternative), then Hello's
   // magic and version, little-endian.
   const auto at = [&](std::size_t i) { return std::to_integer<std::uint32_t>(bytes[i]); };
-  if (bytes.size() < 7 || at(0) != Message(Hello{}).index())
+  if (bytes.size() < 7 || at(0) != kId<Hello>)
     return std::nullopt;
   if ((at(1) | at(2) << 8 | at(3) << 16 | at(4) << 24) != kMagic)
     return std::nullopt;
@@ -299,22 +352,18 @@ Channel ChannelOf(const Message &message) {
 }
 
 bool IsStory(const Message &message) {
-  return (message.index() >= Message(Journal{}).index() &&
-          message.index() <= Message(QuestReward{}).index()) ||
+  return (message.index() >= kId<Journal> && message.index() <= kId<QuestReward>) ||
          std::holds_alternative<StoryEffect>(message) ||
          std::holds_alternative<StoryRestrictions>(message) ||
-         (message.index() >= Message(SceneState{}).index() &&
-          message.index() <= Message(SceneLine{}).index()) ||
+         std::holds_alternative<QuestInteract>(message) ||
+         (message.index() >= kId<SceneState> && message.index() <= kId<SceneLine>) ||
          std::holds_alternative<VehicleUnlock>(message);
 }
 
 bool IsCombat(const Message &message) {
-  return (message.index() >= Message(NpcStrike{}).index() &&
-          message.index() <= Message(AreaHit{}).index()) ||
-         (message.index() >= Message(Throw{}).index() &&
-          message.index() <= Message(Defended{}).index()) ||
-         (message.index() >= Message(PlayerLevel{}).index() &&
-          message.index() <= Message(NpcLevel{}).index()) ||
+  return (message.index() >= kId<NpcStrike> && message.index() <= kId<AreaHit>) ||
+         (message.index() >= kId<Throw> && message.index() <= kId<Defended>) ||
+         (message.index() >= kId<PlayerLevel> && message.index() <= kId<NpcLevel>) ||
          std::holds_alternative<CarLend>(message) || std::holds_alternative<NpcScale>(message) ||
          std::holds_alternative<NpcVendor>(message);
 }
@@ -325,8 +374,7 @@ bool IsTrade(const Message &message) {
 }
 
 bool IsVehicleCombat(const Message &message) {
-  return message.index() >= Message(VehicleDamage{}).index() &&
-         message.index() <= Message(Chase{}).index();
+  return message.index() >= kId<VehicleDamage> && message.index() <= kId<Chase>;
 }
 
 bool IsReliable(const Message &message) { return ChannelOf(message) != Channel::State; }
@@ -473,7 +521,15 @@ const char *NameOfKind(std::size_t kind) {
                                    "NpcScale",
                                    "Breach",
                                    "BreachResult",
-                                   "NpcVendor"};
+                                   "NpcVendor",
+                                   "StatusVisuals",
+                                   "ModList",
+                                   "Substitutes",
+                                   "TrafficOwnership",
+                                   "TrafficHandover",
+                                   "TrafficHandoverState",
+                                   "TrafficHandoverDone",
+                                   "QuestInteract"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

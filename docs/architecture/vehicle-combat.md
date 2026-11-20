@@ -4,7 +4,7 @@ Damage and destruction, guns in and on vehicles, a guest on someone else's
 gun, collisions between players' cars and with NPCs, NPC vehicles chasing
 a player, bikes, and every hard way out of a vehicle. Engine facts and
 their tags: [`research/engine/vehicles.md`](../research/engine/vehicles.md)
-§13.41. **Nothing here has run in the game yet** (written while the game
+§13.41 and §13.70 (the owner's turret, passenger combat in a copy). **Nothing here has run in the game yet** (written while the game
 machine was in use): the core, the mock player and the tests are done and
 pass, the scripts compile, the plugin builds; the scenarios at the end are
 what to run first.
@@ -14,20 +14,24 @@ what to run first.
 One rule for every vehicle, the authority table's: **the game that
 simulates a vehicle owns it, its damage included.**
 
-| Vehicle                                                  | Owner (simulates, decides its damage) | Others                                           |
-| -------------------------------------------------------- | ------------------------------------- | ------------------------------------------------ |
-| a car a player drives                                    | that player's game                    | a copy, moved by `VehicleState`, damaged as told |
-| a car a player left (parked, or rolling on after a bail) | still that player's game              | its copy, parked where the owner says            |
-| a traffic, parked or police car, a chase car             | the owner of its area (`AreaOwner`)   | a proxy (`traffic.md`)                           |
-| the gunner seat of a vehicle                             | the vehicle's owner gives it          | the gunner aims and fires from its copy          |
-| a shot, a ram, a push, a blast                           | the game of the V who made it         | its outcome as state from the vehicle's owner    |
-| what hits a V (a car, a bullet from a car)               | that V's game                         | shown on its puppet                              |
+| Vehicle                                                  | Owner (simulates, decides its damage)                                                            | Others                                           |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------ |
+| a car a player drives                                    | that player's game                                                                               | a copy, moved by `VehicleState`, damaged as told |
+| a car a player left (parked, or rolling on after a bail) | still that player's game                                                                         | its copy, parked where the owner says            |
+| a traffic, parked or police car, a chase car             | the game that runs it: its announcer (an area owner), or the one it was handed to (`traffic.md`) | a proxy                                          |
+| the gunner seat of a vehicle                             | the vehicle's owner gives it                                                                     | the gunner aims and fires from its copy          |
+| a shot, a ram, a push, a blast                           | the game of the V who made it                                                                    | its outcome as state from the vehicle's owner    |
+| what hits a V (a car, a bullet from a car)               | that V's game                                                                                    | shown on its puppet                              |
 
 A vehicle is named the same way in every game (`proto::VehicleRef`): a
 player's car by that player's id, a shared world vehicle by
-`kSeatInTraffic | TrafficId` (the encoding `NpcSeat` already uses), so
-`OwnerOfVehicle` answers "whose is it" from the name alone, and every
-request is routed to that game by the host.
+`kSeatInTraffic | TrafficId` (the encoding `NpcSeat` already uses). Whose it
+is: a player's car is that player's; a shared vehicle is the game that runs
+it as the session has it now (`Endpoint::VehicleOwner`: the announcer in its
+id, which `OwnerOfVehicle` reads from the name alone, until a hand-over moves
+it, `traffic.md`). Every request (`VehicleHit`,
+`GunnerRequest`, `TrafficHit`, `TrafficClaim`; `NpcRam` goes to the NPC's
+owner) is routed to that game by the host, a guest's vehicles' included.
 
 ## What travels
 
@@ -46,7 +50,7 @@ message changed, no version bump.
 | `GunnerAim`     | State, 20 Hz    | the gunner's game → all              | yaw and pitch relative to the vehicle, trigger held                                                                                 |
 | `VehicleBump`   | Event, one-shot | a driver's game → the other driver's | the push our car gave theirs, when (host clock)                                                                                     |
 | `NpcRam`        | Event, one-shot | the driver's game → the NPC's owner  | our car ran into one of its NPCs: the car's velocity, knocked down or lethal                                                        |
-| `Chase`         | Event (kept)    | area owner → all                     | one of its vehicles chases a player (kNoPlayer: over)                                                                               |
+| `Chase`         | Event (kept)    | the vehicle's owner → linked players | one of its vehicles chases a player (kNoPlayer: over)                                                                               |
 
 ## Damage and destruction
 
@@ -119,9 +123,28 @@ message changed, no version bump.
    owner's vanishes (the host frees it on the timeout), or when the owner's
    game cannot seat the gunner's puppet (`FreeGunner`).
 
-Not done: the owner's real turret does not turn or fire for show (no
-by-name call found that turns a turret or plays its muzzle without a real
-shot; a real one on the owner's game would be a second, unwanted hit).
+5. **The owner's guns fire where the gunner fires.** The owner's game gets
+   every `MountedFire` of the gunner that holds its seat and fires its own
+   vehicle's guns at the same point, the way vanilla's armed cars fire at a
+   target (`VehicleObject.EnableNPCCombat(true)` then `NPCShoot(point, 1)`,
+   `AISubActionShootFromCar`, research §13.70): the owner, and every other
+   game through its copy's cosmetic shot, sees and hears the vehicle fire.
+   **Its hits are not the owner's**: for 3 s after such a shot a hit that
+   carries a weapon and comes from that vehicle (its source, instigator or
+   the weapon's owner) does nothing to the owner's world
+   (`TandemWheelsSync.GunnerFired`, in `CausedElsewhere`); the gunner's game
+   decided them on its copy. Copies' shots now turn NPC combat on first too
+   (vanilla always does; without it `NPCShoot` may do nothing).
+6. **Its aim between shots** has no by-name setter (no function, event,
+   command or anim feature turns a vehicle turret, §13.70). Whether
+   `NPCShoot` turns the turret toward its point is for the game to show.
+   The probe: `tools/game.sh cmd wheels turret PART` turns it with a
+   look-at on that part of the rig at the gunner's aim (`GunnerAim` → a
+   point 50 m out, `LookAtAddEvent.SetStaticTarget`, the way a security
+   turret turns), ten times a second while a remote gunner holds the seat;
+   `wheels turret off` stops it. The part names are in the vehicle's rig
+   (WolvenKit), not in the scripts: until one is found, the turret turns
+   only when it fires, if at all.
 
 ## Collisions
 
@@ -160,17 +183,47 @@ shot; a real one on the owner's game would be a second, unwanted hit).
 
 ## NPC vehicle chases
 
-Built on the traffic branch's area owner, not beside it. A chase car is a
+Built on the traffic branch's ownership, not beside it. A chase car is a
 shared world vehicle (`TrafficSpawn`, `TrafficStates`) with its NPCs
-seated (`NpcSeat`); its owner is the area's owner. The game's own AI does
+seated (`NpcSeat`); its owner is the game that runs it: the area owner that
+announced it (a guest that owns its area too), or the one it was handed to
+(its riders go with it, the chased V as their target, `traffic.md`). The game's own AI does
 the chasing: `InVehicleCombatDecorator` drives the vehicle after its NPCs'
 combat target, which on the owner's game can be another player's puppet.
 The owner wraps `ChaseNewTarget` and `Deactivate` and says who is chased
-(`Chase{vehicle, target}`); the session keeps it while it lasts and ends it
-when the vehicle or the target goes. On the target's game the chase car is
+(`Chase{vehicle, target}`, only for a vehicle its game runs); the host takes
+it from that owner alone, keeps it while it lasts, passes it to the players
+linked with the owner and ends it when the vehicle or the target goes. On the target's game the chase car is
 a proxy driving after its V; its collisions with our car are our car's to
 run, its passengers' shots at our V `NpcShotAt` (the target's game fires
 and decides them).
+
+## Passenger combat in a partner's car copy
+
+A V seated as a passenger in a copy of a partner's car (spawned and moved by
+us, the partner's puppet at the wheel, no AI driver) leans out and fires as
+in any car of that record. Every check of the player state machine on the
+way (research §13.70: the passenger state, the seat's status effects, drawing
+a weapon, entering combat) reads the vehicle's record or the V's own state,
+never the driver, an AI, the car's speed or how it is moved, so the copy
+passes them as the real car does. The one that reads the occupants: vanilla
+takes the weapons of a V that took the seat beside the driver through the
+door of a car "occupied by someone not friendly" (`occupiedByNonFriendly`,
+from each occupant's attitude to V). In a copy those occupants are the
+partner's puppet (and the NPCs it carries), which tandem makes friends of V
+(`Attitudes.reds`); should the game still read one otherwise, a copy whose
+occupants are only players' puppets gives V its weapons back
+(`PassengerEvents.OnEnter`, `Wheels.reds`). No record is changed.
+
+**Carried along** (a two-seat car with no seat for a guest,
+`transit.md`): the guest's V has no seat, hence no vehicle state machine and
+no passenger state; tandem's own restrictions keep it unarmed
+(`TandemTransit.Restrict`: `NoWeapons`, and now `NoCombat`, which also puts
+away a weapon already drawn when it boarded).
+
+`tools/game.sh cmd wheels draw` draws a gun from a seat the game's way and
+logs the restrictions the V wears; the passenger state is reported as
+`VehicleCombat` mode 2 (`Passenger`).
 
 ## Bikes, thrown out, bailing out
 
@@ -213,20 +266,22 @@ and decides them).
 
 ## Consistency
 
-| How it diverges                                    | What the player would see                        | Guard                                                                                                                                                                       |
-| -------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| a late joiner, a copy spawned later                | an undamaged copy of a wreck                     | damage kept by the host and sent with the players (cars) or the NPCs (shared vehicles); the script re-applies it to a new body as a wreck                                   |
-| a damage state lost (a bug, a full queue)          | a car whole on one screen, burning on the other  | in the players and NPC digests; a resync sends it again                                                                                                                     |
-| sent twice, or an old one late                     | a car repaired then damaged again                | equal states dropped; a state older than the kept one (its revision) never applied; revisions count from the host clock's millisecond, so a game back from a crash is newer |
-| an explosion heard after a loading screen          | a car blowing up the moment the world comes back | only within 3 s of its time; else a wreck put there                                                                                                                         |
-| a hit applied twice, or behind a loading screen    | double damage; a car wrecked on arrival          | one-shot; behind the epoch fence (`VehicleHit`, `NpcRam`); dropped after 1.5 s                                                                                              |
-| two games simulating one collision                 | a double bounce, double damage                   | each game its own car's side; a push applied only when not felt (`BumpLedger`); a copy's hits do nothing here (`CausedElsewhere`)                                           |
-| two players asking for one gun                     | two gunners                                      | the owner's `Turrets` gives the first; the loser hears who has it and its game unseats it                                                                                   |
-| the gunner or the owner vanishes                   | a seat held for ever                             | the host frees the gunner's seats and the vehicle's on the timeout (`ForgetVehiclesOf`), the owner's arbitration follows                                                    |
-| a gunner's aim from a V without the seat           | a turret turned by two players                   | the host relays only the holder's aim; the endpoint sends ours only while the seat is ours                                                                                  |
-| a chase whose target leaves, or whose vehicle goes | a car chasing nobody, on the guests' screens     | ended by the session (target gone; `ForgetTraffic`); a resync says which shared vehicles chase nobody                                                                       |
-| a driver vanishes while its car rolls              | a copy rolling for ever                          | the copy follows its driver's states for 12 s at most; a vanished player's car is parked as it stood                                                                        |
-| a player leaves                                    | its weapons-in-a-vehicle state kept              | forgotten with it on every game; a resync says who has none                                                                                                                 |
+| How it diverges                                                                             | What the player would see                                  | Guard                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a late joiner, a copy spawned later                                                         | an undamaged copy of a wreck                               | damage kept by the host and sent with the players (cars) or the NPCs (shared vehicles); the script re-applies it to a new body as a wreck                                   |
+| a damage state lost (a bug, a full queue)                                                   | a car whole on one screen, burning on the other            | in the players and NPC digests; a resync sends it again                                                                                                                     |
+| sent twice, or an old one late                                                              | a car repaired then damaged again                          | equal states dropped; a state older than the kept one (its revision) never applied; revisions count from the host clock's millisecond, so a game back from a crash is newer |
+| an explosion heard after a loading screen                                                   | a car blowing up the moment the world comes back           | only within 3 s of its time; else a wreck put there                                                                                                                         |
+| a hit applied twice, or behind a loading screen                                             | double damage; a car wrecked on arrival                    | one-shot; behind the epoch fence (`VehicleHit`, `NpcRam`); dropped after 1.5 s                                                                                              |
+| two games simulating one collision                                                          | a double bounce, double damage                             | each game its own car's side; a push applied only when not felt (`BumpLedger`); a copy's hits do nothing here (`CausedElsewhere`)                                           |
+| two players asking for one gun                                                              | two gunners                                                | the owner's `Turrets` gives the first; the loser hears who has it and its game unseats it                                                                                   |
+| the gunner or the owner vanishes                                                            | a seat held for ever                                       | the host frees the gunner's seats and the vehicle's on the timeout (`ForgetVehiclesOf`), the owner's arbitration follows                                                    |
+| a gunner's aim from a V without the seat                                                    | a turret turned by two players                             | the host relays only the holder's aim; the endpoint sends ours only while the seat is ours                                                                                  |
+| a chase whose target leaves, or whose vehicle goes                                          | a car chasing nobody, on the guests' screens               | ended by the session (target gone; `ForgetTraffic`); a resync says which shared vehicles chase nobody                                                                       |
+| a driver vanishes while its car rolls                                                       | a copy rolling for ever                                    | the copy follows its driver's states for 12 s at most; a vanished player's car is parked as it stood                                                                        |
+| a player leaves                                                                             | its weapons-in-a-vehicle state kept                        | forgotten with it on every game; a resync says who has none                                                                                                                 |
+| the owner's guns fire for a remote gunner                                                   | every hit counted twice (gunner's copy, owner's real guns) | the owner's game drops what its vehicle's guns hit for 3 s after a gunner's shot (`GunnerFired`, `CausedElsewhere`)                                                         |
+| a chase or a damage state from a game that does not run the vehicle (a hand-over in flight) | a car chasing two players, damaged twice                   | the host takes a shared vehicle's `Chase` and `VehicleDamage` from its owner as the session has it only; the guest's own are its game's                                     |
 
 ## Stages
 
@@ -250,23 +305,24 @@ Built in this change:
 
 Not built, in the order I would do them:
 
-- The owner's real turret following the gunner's aim, and its shots for
-  show (no by-name call known; the research file says what to probe).
+- The owner's real turret turning to the gunner's aim between shots (the
+  look-at probe needs the rig's part name, §13.70); a turret of a vehicle
+  the owner does not drive (a parked Basilisk) fires only while its owner's
+  game has it as its car or runs it.
 - Windows broken by a hit (the message carries them; nothing reads a
   window's state yet).
 - A guest's summoned car (`SpawnPlayerVehicle`) shared as its own: today
   any car a V drives is shared as that V's.
-- Chases and the shared vehicles of a guest that owns its own region
-  (`regions.md`): the session still takes world vehicles and chases from
-  the host only (`traffic.md`, "Who owns an area", the hand-over).
 - Quickhacks on vehicles stay `VehicleHack` (`combat.md`); a remote
   driver's car-to-NPC rams by an AI car (a guest's Delamain) are the ride's
   game's like any car.
 
 ## Scenarios to run in game
 
-`tools/scenario.sh wheels-guest wheels-bike wheels-host` (the last from
-the driver's seat of a car on a street with people around).
+`tools/scenario.sh wheels-guest wheels-bike wheels-host gunner-turret
+passenger-combat wheels-guest-area` (`wheels-host` from the driver's seat of
+a car on a street with people around, `gunner-turret` from the driver's seat
+of an armed vehicle).
 
 - **wheels-guest**: the game joins a mock host that drives round V. Our
   shot (`wheels shoot`) and our V on its gun (`wheels gun`) go to it; its
@@ -280,3 +336,14 @@ the driver's seat of a car on a street with people around).
 - **wheels-host**: the game hosts at the wheel; a mock guest shoots our
   car, pops a tyre, takes our gun and rams our NPC. Look for: our car's
   damage and tyre, the NPC knocked down along the guest car's way.
+- **gunner-turret**: the game hosts at the wheel of an armed vehicle; a mock
+  guest takes its gun and fires every 2 s. Checks the seat given and our
+  real guns firing for it (`armed true|false` noted: `IsArmedVehicle` of
+  that vehicle), then the look-at probe. Look for: the muzzle, tracer and
+  sound on our vehicle for each guest shot, nothing hurt by them here, the
+  turret pointing where it fires, and whether the probe turns it.
+- **passenger-combat**: the game joins a mock host that drives; our V gets
+  into a free seat of the copy and draws a gun. Checks no weapon
+  restriction on our V and the vehicle state Combat (mode 2). Look for: V
+  leaning out of the window, aiming and firing, the window open. With
+  `scene-ride-full`: carried along, no weapon can be drawn.
