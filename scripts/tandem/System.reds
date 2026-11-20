@@ -806,11 +806,24 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_revive;
   }
 
+  private func DrainStreamed() -> Void {
+    if IsDefined(this.m_traffic) {
+      this.m_traffic.Drain();
+    }
+    let devices = TandemDevices.Get(this.GetGameInstance());
+    if IsDefined(devices) {
+      devices.Drain();
+    }
+  }
+
   public func OnTick(gen: Int32) -> Void {
     // An older chain (a session started or ended since), or no game.
     if gen != this.m_tickGen || !this.m_attached {
       return;
     }
+    // What the world streamed in and out since, session or not (queued by
+    // wraps that may run on job threads: StreamingNatives.reds).
+    this.DrainStreamed();
     if !this.m_inGame {
       // No session: bodies of the last one on their way out, commands
       // (tools/game.sh cmd coop ...), and the recorder's senders, every
