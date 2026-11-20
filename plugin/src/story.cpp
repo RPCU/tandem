@@ -23,6 +23,43 @@ void Story::PushInbound(StoryInbound inbound) {
     m_inbound.push_back(std::move(inbound));
 }
 
+void Story::SubmitCamera(const proto::SceneCamera &camera) {
+  std::lock_guard _(m_cameraLock);
+  // A cut the net thread never took is still owed with the newest view.
+  m_cameraCutOwed = m_cameraCutOwed || (camera.flags & proto::kCameraCut) != 0;
+  m_cameraOut = camera;
+}
+
+std::optional<proto::SceneCamera> Story::TakeCamera() {
+  std::lock_guard _(m_cameraLock);
+  auto camera = std::exchange(m_cameraOut, std::nullopt);
+  if (camera && std::exchange(m_cameraCutOwed, false))
+    camera->flags |= proto::kCameraCut;
+  return camera;
+}
+
+void Story::PushCamera(const proto::SceneCamera &camera) {
+  std::lock_guard _(m_cameraLock);
+  m_cameraTrack.Push(camera);
+}
+
+bool Story::CameraAt(std::uint64_t hostNowUs, std::uint32_t play, scene::CameraView &out) {
+  std::lock_guard _(m_cameraLock);
+  return play != 0 && m_cameraTrack.Play() == play && m_cameraTrack.At(hostNowUs, out);
+}
+
+void Story::ClearCamera() {
+  std::lock_guard _(m_cameraLock);
+  m_cameraTrack.Clear();
+  m_cameraOut.reset();
+  m_cameraCutOwed = false;
+}
+
+std::uint32_t Story::CameraReceived() {
+  std::lock_guard _(m_cameraLock);
+  return m_cameraTrack.Received();
+}
+
 std::vector<std::pair<proto::Message, proto::PlayerId>> Story::TakeOutbound() {
   std::lock_guard _(m_lock);
   return std::exchange(m_outbound, {});

@@ -871,3 +871,181 @@ TEST_CASE("a prop through the endpoints: only the host's word, and a joiner gets
   CHECK(Count(atB.cues, Kind::Actor) == 2);
   CHECK(atB.replay.Holds(7, proto::kNoPlayer));
 }
+
+// ---- the watch camera (docs/architecture/scene-replay.md, "The watch camera") ----
+
+TEST_CASE("the watch camera: a view survives the wire, a cut is told from a move") {
+  const scene::CameraView a{{10.f, 20.f, 3.f}, {0.f, 0.f, 0.38268343f, 0.92387953f}, 48.f};
+  const auto packed = scene::PackCamera(3, a, false);
+  const auto back = scene::UnpackCamera(packed);
+  CHECK(back.position == a.position);
+  CHECK(back.fov == 48.f);
+  CHECK(std::abs(back.orientation.k - a.orientation.k) < 0.002f);
+  CHECK(std::abs(back.orientation.r - a.orientation.r) < 0.002f);
+  CHECK(packed.play == 3);
+  CHECK(packed.flags == 0);
+  CHECK(scene::PackCamera(3, a, true).flags == proto::kCameraCut);
+  // A dolly moves 30 cm in a frame; another shot is somewhere else at once.
+  auto b = a;
+  b.position.x += 0.3f;
+  CHECK_FALSE(scene::IsCut(a, b, 0.033f));
+  b.position.x += 5.f;
+  CHECK(scene::IsCut(a, b, 0.033f));
+  b = a;
+  b.orientation = {0.f, 0.f, 0.70710678f, 0.70710678f}; // 45 degrees further
+  CHECK(scene::IsCut(a, b, 0.033f));
+  b = a;
+  b.fov = 50.f; // a slow zoom
+  CHECK_FALSE(scene::IsCut(a, b, 0.033f));
+}
+
+TEST_CASE("a guest's camera track: drawn in the past, blended, a cut jumps, a silence ends it") {
+  scene::CameraTrack track;
+  scene::CameraView out;
+  CHECK_FALSE(track.At(kT0, out));
+  constexpr std::uint64_t kStep = 66'000; // 15 views a second
+  const auto push = [&](std::uint32_t seq, std::uint64_t at, float x, bool cut = false,
+                        std::uint32_t play = 1) {
+    auto camera = scene::PackCamera(play, {{x, 0.f, 2.f}, {}, 50.f}, cut);
+    camera.seq = seq;
+    camera.timeUs = at;
+    return track.Push(camera);
+  };
+  // A camera moving a metre a second along x.
+  for (std::uint32_t i = 0; i < 16; ++i)
+    CHECK(push(i + 1, kT0 + i * kStep, static_cast<float>(i) * 0.066f));
+  const auto delay = track.DelayUs();
+  CHECK(delay >= 60'000);
+  CHECK(delay <= 200'000);
+  // Between two views: between their places.
+  REQUIRE(track.At(kT0 + 10 * kStep + kStep / 2 + delay, out));
+  CHECK(out.position.x == doctest::Approx(10.5f * 0.066f).epsilon(0.01));
+  CHECK(out.fov == doctest::Approx(50.f));
+  // An old view is dropped.
+  CHECK_FALSE(push(3, kT0, 0.f));
+  // A cut: the old shot until the new one's time, then the new one, unblended.
+  CHECK(push(17, kT0 + 16 * kStep, 100.f, true));
+  REQUIRE(track.At(kT0 + 15 * kStep + kStep / 2 + track.DelayUs(), out));
+  CHECK(out.position.x < 2.f);
+  REQUIRE(track.At(kT0 + 16 * kStep + 1'000 + track.DelayUs(), out));
+  CHECK(out.position.x == doctest::Approx(100.f));
+  // The views stop: the last one holds a moment, then the guest's own eyes.
+  CHECK(track.At(kT0 + 17 * kStep + 500'000, out));
+  CHECK_FALSE(
+      track.At(kT0 + 16 * kStep + track.DelayUs() + scene::CameraTrack::kStaleUs + 1'000, out));
+  // Another scene's views start over; an earlier one's are refused.
+  CHECK(push(1, kT0 + 10 * kSecond, 5.f, true, 2));
+  CHECK(track.Play() == 2);
+  CHECK_FALSE(push(99, kT0 + 11 * kSecond, 5.f, false, 1));
+}
+
+TEST_CASE("the scene's streams share one budget, whatever their number") {
+  struct Offered {
+    std::uint64_t name;
+    float weight;
+    std::size_t bytes;
+    std::size_t wire{}, count{};
+  };
+  const auto run = [](scene::Pacer &pacer, std::vector<Offered> &streams, double seconds) {
+    // Each stream has a frame 30 times a second.
+    for (std::uint64_t t = kT0; t < kT0 + static_cast<std::uint64_t>(seconds * 1e6); t += 33'333)
+      for (auto &stream : streams)
+        if (pacer.Due(stream.name, stream.weight, t)) {
+          pacer.Sent(stream.name, stream.bytes, t);
+          stream.wire += stream.bytes + scene::kStreamOverhead;
+          ++stream.count;
+        }
+    std::size_t total = 0;
+    for (const auto &stream : streams)
+      total += stream.wire;
+    return total;
+  };
+
+  // Two bodies near, one far, a face, the camera.
+  scene::Pacer pacer(2000);
+  std::vector<Offered> streams{{scene::StreamOf(7, proto::kRigBody), 1.f, 110},
+                               {scene::StreamOf(4, proto::kRigBody), 1.f, 110},
+                               {scene::StreamOf(9, proto::kRigBody), 0.5f, 110},
+                               {scene::StreamOf(7, proto::kRigFace), 2.f, 60},
+                               {scene::kCameraStream, scene::kCameraWeight, 39}};
+  const auto total = run(pacer, streams, 10.0);
+  CHECK(total <= 2000 * 10 * 105 / 100);
+  CHECK(total >= 2000 * 10 * 70 / 100);
+  CHECK(pacer.Served() == 5);
+  for (const auto &stream : streams)
+    CHECK(stream.count >= 18);                // none slower than two a second
+  CHECK(streams[4].count > streams[0].count); // the picture first
+  CHECK(streams[3].count > streams[0].count); // a speaker's face before a body
+  CHECK(streams[2].count < streams[0].count); // a far body after a near one
+
+  // More bodies than the budget serves at two a second each: the ones that
+  // matter most are served, the others are not sent at all (their actors
+  // keep their own animation), and the total still holds.
+  scene::Pacer crowded(1000);
+  std::vector<Offered> crowd;
+  for (std::uint32_t i = 0; i < 20; ++i)
+    crowd.push_back(
+        {scene::StreamOf(100 + i, proto::kRigBody), 2.f - 0.05f * static_cast<float>(i), 110});
+  const auto crowdTotal = run(crowded, crowd, 20.0);
+  CHECK(crowdTotal <= 1000 * 20 * 105 / 100);
+  CHECK(crowded.Served() >= 2);
+  CHECK(crowded.Served() <= 4);
+  CHECK(crowd.front().count >= 36);
+  CHECK(crowd.back().count == 0);
+  for (std::size_t i = 1; i < crowd.size(); ++i)
+    CHECK((crowd[i].count == 0 || crowd[i - 1].count > 0)); // by weight, no gap
+
+  // A stream nobody offers any more has ended: the others get its share.
+  scene::Pacer two(1000);
+  CHECK(two.Due(1, 1.f, kT0));
+  CHECK(two.Due(2, 1.f, kT0));
+  const float shared = two.Share(1);
+  CHECK(two.Due(1, 1.f, kT0 + scene::kStreamIdleUs + 300'000));
+  CHECK(two.Streams() == 1);
+  CHECK(two.Share(1) > shared * 1.5f);
+}
+
+TEST_CASE("the host's camera through the endpoints: paced, the host's only, a cut never lost") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE(a);
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) {
+    return a->IsJoined() && host->Players().size() == 2;
+  }));
+  scene::CameraTrack track;
+  int heard = 0, cuts = 0, hostHeard = 0;
+  // 80 frames of the host's game; the 40th view is a cut.
+  for (int frame = 0; frame < 80; ++frame) {
+    const scene::CameraView view{{static_cast<float>(frame) * 0.05f, 0.f, 2.f}, {}, 55.f};
+    host->SendSceneCamera(scene::PackCamera(1, view, frame == 40));
+    a->SendSceneCamera(scene::PackCamera(1, view, false)); // a guest's word: nothing
+    Pump(
+        {host.get(), a.get()},
+        [&](std::size_t i, const auto &events) {
+          for (const auto &event : events)
+            if (const auto *story = std::get_if<events::Story>(&event))
+              if (const auto *camera = std::get_if<proto::SceneCamera>(&story->message)) {
+                if (i == 0) {
+                  ++hostHeard;
+                } else {
+                  ++heard;
+                  cuts += (camera->flags & proto::kCameraCut) ? 1 : 0;
+                  track.Push(*camera);
+                }
+              }
+          return false;
+        },
+        8ms);
+  }
+  CHECK(hostHeard == 0);
+  CHECK(heard >= 8);
+  CHECK(heard <= 80);
+  CHECK(cuts == 1);
+  CHECK(track.Play() == 1);
+  scene::CameraView out;
+  CHECK(track.At(a->HostNowUs(), out));
+  CHECK(out.fov == doctest::Approx(55.f));
+}

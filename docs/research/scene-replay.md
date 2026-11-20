@@ -267,8 +267,13 @@ performerId, nodeRef }`: an effect by name on a performer, which a script
   scene cameras (`scneventsCamera*`). A third party has no camera in the
   scene; what a script can do for one is in `coop-scenes.md` §2.4
   (`GetActiveCameraWorldTransform` on the host, a free camera or an
-  activated `CameraComponent` on the guest, both unverified). Nothing new
-  was found.
+  activated `CameraComponent` on the guest, both unverified). Built on the
+  second (`Scenes.reds`, `GuestFrame`): a body from
+  `base\entities\cameras\simple_free_camera.ent` (the template camera mods
+  spawn; its path is not in the scripts, [unverified]) through Codeware's
+  `DynamicEntitySpec.templatePath`, its `gameCameraComponent` found with
+  `Entity.FindComponentByType`, `CameraComponent.Activate(blendTime)` /
+  `SetFOV` / `Deactivate` (`reds:106188-106194`). [2.5-untested]
 
 ## 7. Johnny
 

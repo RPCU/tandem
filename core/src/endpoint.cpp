@@ -1667,6 +1667,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (m_npcs.contains(pose.npc))
               out.push_back(events::HostActorPose{pose});
           },
+          [&](const proto::SceneCamera &camera) {
+            // The host's view of its cutscene: for the story's side of our game.
+            out.push_back(events::Story{camera});
+          },
           [&](const proto::NpcGone &gone) {
             if (OwnsNpc(gone.npc)) {
               // The host's record let go of one of ours (our world was
@@ -2207,6 +2211,24 @@ void Endpoint::SendActorPose(proto::ActorPose pose) {
   pose.seq = ++m_npcSeq;
   pose.timeUs = HostNowUs();
   ShareNpc(pose, m_you); // the games that show the actor, as its states
+}
+
+void Endpoint::SendSceneCamera(proto::SceneCamera camera) {
+  if (!IsHost() || m_ended || camera.play == 0)
+    return;
+  const auto now = net::NowUs();
+  if (!m_scenePacer.Due(scene::kCameraStream, scene::kCameraWeight, now)) {
+    // A cut that is not sent is still a cut for the next view that is.
+    m_cameraCut = m_cameraCut || (camera.flags & proto::kCameraCut) != 0;
+    return;
+  }
+  if (std::exchange(m_cameraCut, false))
+    camera.flags |= proto::kCameraCut;
+  camera.seq = ++m_cameraSeq;
+  camera.timeUs = HostNowUs();
+  const proto::Message message = camera;
+  m_scenePacer.Sent(scene::kCameraStream, proto::Encode(message).size(), now);
+  Broadcast(message);
 }
 
 void Endpoint::SendNpcGone(const proto::NpcGone &gone) {
