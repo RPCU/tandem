@@ -43,6 +43,7 @@ wire alongside:
 | driving, the host a passenger | 147.1 | 131.7 | 59.4 | 47.9 | up: PoseFrame 24.6, PlayerMotion 9.6, VehicleMotion 9.6 |
 | apart (500 m) | 131.5 | 131.7 | 8.9 | 9.1 | PoseFrame 3.1, PlayerMotion 1.6 |
 | 4 players on foot, a guest's link | 131.0 | 382.0 | 59.1 | 160.6 | down: three Vs' PoseFrame 103, PlayerMotion 29 |
+| a scene watched: 3 actors' bodies, a cutscene's camera | — | — | (not measured yet) | ≤ 64 by test | down: standing's 38 and the scene's streams, at most 22 (`scene::Pacer`) |
 
 kbit/s on the wire, each way, 38 datagrams/s for a V's 60 messages/s (the
 test sends state and pose together). Before, the pose alone was 104 kbit/s
@@ -95,6 +96,10 @@ events, taps and recordings above it see `PlayerState`, `PoseState`,
 - **`PlayerMotion`**, **`VehicleMotion`**: a V's orientation is its yaw
   (16 bits), velocities in cm/s, a car's orientation in 5 bytes: 40 bytes
   for a V instead of 60, 39 for a car instead of 57.
+- **A scene's streams** (scene replay: each actor's body as `ActorFrame`,
+  the camera as `SceneCamera`): one budget for all of them on the host,
+  22 kbit/s by default, split by `scene::Pacer`
+  (`architecture/scene-replay.md` §2).
 - **Relevance** (`netcode::PoseIntervalUs`, `StateIntervalUs`, by the
   distance from our V to the nearest other): poses every frame within
   30 m, 15 Hz to 80 m, 5 Hz to 200 m, then 1 Hz; states and cars every

@@ -215,6 +215,8 @@ void Endpoint::AdoptNpc(proto::NpcId npc, bool accepted) {
 
 void Endpoint::ForgetNpc(proto::NpcId npc) {
   m_npcs.erase(npc);
+  m_actorEncoders.erase(npc);
+  m_actorDecoders.erase(npc);
   m_npcHealth.erase(npc);
   m_npcHolds.erase(npc);
   m_npcSeats.erase(npc);

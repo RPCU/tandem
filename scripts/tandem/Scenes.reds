@@ -168,7 +168,8 @@ public class TandemScenes {
         let acts = !known.dead && IsDefined(scenes) && scenes.IsEntityInScene(known.id);
         if (acts || this.m_test) && ArraySize(actors) < 16 {
           let body = GameInstance.FindEntityByID(this.m_game, known.id) as GameObject;
-          let range = this.m_test ? 12.0 : 30.0;
+          // Far ones too: their poses come less often (the scene's budget).
+          let range = this.m_test ? 12.0 : 100.0;
           if IsDefined(body) && Vector4.Distance(body.GetWorldPosition(), at) < range {
             let flags = this.m_mode == 2 ? 4 : 0;
             if TandemScenes.IsGhost(body) {

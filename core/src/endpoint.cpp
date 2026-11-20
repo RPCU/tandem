@@ -1333,6 +1333,7 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
   // A session recording keeps what the host said in full: compact forms are
   // tapped once decoded (PoseState, NpcStates).
   if (m_receivedTap && !std::holds_alternative<proto::PoseFrame>(message) &&
+      !std::holds_alternative<proto::ActorFrame>(message) &&
       !std::holds_alternative<proto::NpcMotion>(message) &&
       !std::holds_alternative<proto::NpcStates>(message) &&
       !std::holds_alternative<proto::PlayerMotion>(message) &&
@@ -1666,6 +1667,21 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
               return;
             if (m_npcs.contains(pose.npc))
               out.push_back(events::HostActorPose{pose});
+          },
+          [&](const proto::ActorFrame &actor) {
+            // An actor's pose, delta coded: fenced and filtered as a whole
+            // one, then whole again for our game.
+            if (m_firstNpcSeq != 0 &&
+                static_cast<std::int32_t>(actor.frame.seq - m_firstNpcSeq) < 0)
+              return;
+            if (!m_npcs.contains(actor.npc))
+              return;
+            if (const auto decoded = m_actorDecoders[actor.npc].Decode(actor.frame)) {
+              const auto whole = pose::ForActor(actor.npc, *decoded);
+              if (m_receivedTap)
+                m_receivedTap(whole);
+              out.push_back(events::HostActorPose{whole});
+            }
           },
           [&](const proto::SceneCamera &camera) {
             // The host's view of its cutscene: for the story's side of our game.
@@ -2205,12 +2221,46 @@ void Endpoint::SendNpcStates(proto::NpcStates states) {
   }
 }
 
+float Endpoint::ActorWeight(proto::NpcId npc) const {
+  const auto it = m_npcs.find(npc);
+  if (it == m_npcs.end())
+    return 1.f;
+  float nearest = -1.f;
+  for (const auto &[player, at] : m_positions) {
+    if (player == m_you)
+      continue;
+    const auto &actor = it->second.position;
+    const float d = std::hypot(at.x - actor.x, at.y - actor.y, at.z - actor.z);
+    if (nearest < 0.f || d < nearest)
+      nearest = d;
+  }
+  // Nobody's place known: as if near.
+  return nearest <= 15.f ? 1.f : nearest <= 40.f ? 0.5f : 0.25f;
+}
+
 void Endpoint::SendActorPose(proto::ActorPose pose) {
   if (!IsHost() || m_ended || !OwnsNpc(pose.npc))
     return;
+  if (!m_compact) {
+    pose.seq = ++m_npcSeq;
+    pose.timeUs = HostNowUs();
+    ShareNpc(pose, m_you); // the games that show the actor, as its states
+    return;
+  }
+  // The scene's streams share one budget: this body's turn, or not yet.
+  const auto now = net::NowUs();
+  const auto stream = scene::StreamOf(pose.npc, proto::kRigBody);
+  if (!m_scenePacer.Due(stream, ActorWeight(pose.npc), now))
+    return;
   pose.seq = ++m_npcSeq;
   pose.timeUs = HostNowUs();
-  ShareNpc(pose, m_you); // the games that show the actor, as its states
+  const auto [encoder, fresh] = m_actorEncoders.try_emplace(pose.npc);
+  if (fresh) // slower than a V's stream: a key every 2 s, bones within 0.006 rad kept
+    encoder->second.Pace(64, 2'000'000, 0.006f);
+  const proto::Message frame =
+      proto::ActorFrame{.npc = pose.npc, .frame = encoder->second.Encode(pose::FromActor(pose))};
+  m_scenePacer.Sent(stream, proto::Encode(frame).size(), now);
+  ShareNpc(frame, m_you);
 }
 
 void Endpoint::SendSceneCamera(proto::SceneCamera camera) {
