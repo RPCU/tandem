@@ -72,6 +72,8 @@ public:
   // V, the other watchers), for WatchSpot and KeepOut.
   std::vector<proto::Vec3> &Bodies() { return m_bodies; }
   std::vector<scene::ActorSample> &Actors() { return m_actors; }
+  // Host: what the scene's actors hold, as the script lists it for the next sample.
+  std::vector<scene::PropSample> &Props() { return m_props; }
 
   // Story restrictions (docs/architecture/story.md, "Restrictions"), game
   // thread. Guest: the host's set, what our V holds of it, whether it is in
@@ -110,6 +112,7 @@ private:
   scene::Replay m_replay;
   std::vector<proto::Vec3> m_bodies;
   std::vector<scene::ActorSample> m_actors;
+  std::vector<scene::PropSample> m_props;
   story::Restrictions m_restrictions;
   bool m_inMoment{};
   std::vector<std::uint64_t> m_removals;

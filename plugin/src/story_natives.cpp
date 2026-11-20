@@ -88,6 +88,8 @@ enum Kind : std::int32_t {
   kSceneActorGone = 54,
   kSceneVoice = 55,
   kSceneVoiceStop = 56,
+  kSceneProp = 57,
+  kScenePropGone = 58,
   kInteractAsked = 60,
   kInteractAnswer = 61,
 };
@@ -132,13 +134,27 @@ void Flatten(const scene::Cue &cue, Red::DynArray<TandemStoryEvent> &out) {
                                      .duration = cue.seconds,
                                      .npc = cue.line.speaker});
     return;
+  case K::Prop:
+  case K::PropGone: {
+    // An item our game lacks (a mod's): nothing in the hand, never another.
+    constexpr proto::PlayerId host = 1;
+    out.EmplaceBack(TandemStoryEvent{.kind = cue.kind == K::Prop ? kSceneProp : kScenePropGone,
+                                     .player = cue.prop.holderPlayer,
+                                     .hash = cue.prop.prop,
+                                     .flags = cue.prop.flags,
+                                     .npc = cue.prop.holder,
+                                     .reward = Red::TweakDBID(ModRecords::Get().Resolve(
+                                         mods::Kind::Item, cue.prop.record, {}, host))});
+    return;
+  }
   }
 }
 
 bool IsScene(const proto::Message &message) {
   return std::holds_alternative<proto::SceneState>(message) ||
          std::holds_alternative<proto::SceneCast>(message) ||
-         std::holds_alternative<proto::SceneLine>(message);
+         std::holds_alternative<proto::SceneLine>(message) ||
+         std::holds_alternative<proto::SceneProp>(message);
 }
 
 void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
@@ -737,6 +753,21 @@ struct TandemStory : Red::IScriptable {
       actors.push_back({npc, {x, y, z}, Byte(flags)});
   }
 
+  // Host: something an actor of our scene holds, for the next SceneSample.
+  // `key`: our own name for it (the same while it changes hands); holder:
+  // the actor's NpcId, or a player with npc 0.
+  static void SceneProp(std::uint64_t key, Red::TweakDBID record, std::uint32_t holderNpc,
+                        std::uint32_t holderPlayer, bool leftHand) {
+    auto &props = Story::Get().Props();
+    if (props.size() < proto::kMaxSceneProps)
+      props.push_back({key, record.value, holderNpc, holderPlayer, leftHand});
+  }
+  // Guest: the host's scene has a prop in this actor's (or, npc 0, this
+  // player's) hands.
+  static bool SceneHolds(std::uint32_t npc, std::uint32_t player) {
+    return Story::Get().Replay().Holds(npc, player);
+  }
+
   // Host, a few times a second: what our game plays now. `playing`: our V
   // is in a scene (its tier, an actor in a scene); the scene is the one
   // whose quest node ran last (engine/scenes.cpp). Says what changed to the
@@ -750,8 +781,10 @@ struct TandemStory : Red::IScriptable {
                              .held = held,
                              .host = {x, y, z},
                              .hostYaw = yaw,
-                             .actors = std::move(story.Actors())};
+                             .actors = std::move(story.Actors()),
+                             .props = std::move(story.Props())};
     story.Actors().clear();
+    story.Props().clear();
     if (playing && Runtime::Get().config.sceneReplay) {
       // No node seen (the hook is out, or the scene is not a quest's): a
       // scene all the same, with no name.
@@ -770,6 +803,10 @@ struct TandemStory : Red::IScriptable {
                     state->tier);
       } else if (const auto *cast = std::get_if<proto::SceneCast>(&message))
         log::Info("scene: play {} has {} actor(s)", cast->play, cast->actors.size());
+      else if (const auto *prop = std::get_if<proto::SceneProp>(&message))
+        log::Info("scene: prop {} ({:#x}) {} (npc {}, player {}{})", prop->prop, prop->record,
+                  prop->flags & proto::kPropGone ? "gone" : "held", prop->holder,
+                  prop->holderPlayer, prop->flags & proto::kPropLeftHand ? ", left hand" : "");
       story.Send(std::move(message));
     }
     return story.Stage().On() ? static_cast<std::int32_t>(story.Stage().Play()) : 0;
@@ -852,10 +889,10 @@ struct TandemStory : Red::IScriptable {
     const auto &stage = Story::Get().Stage();
     return Red::CString(
         std::format("scene: host play {} ({}), heard {:#x} play {} with {} actor(s), {} line(s) "
-                    "spoken, {} too late; {}",
+                    "spoken, {} too late, {} prop(s); {}",
                     stage.Play(), stage.On() ? "on" : "off", replay.State().scene,
                     replay.State().play, replay.Cast().size(), replay.Speaking(), replay.Stale(),
-                    engine::PoseActorsReport())
+                    replay.Props(), engine::PoseActorsReport())
             .c_str());
   }
 
@@ -967,6 +1004,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(PausePose);
   RTTI_METHOD(SceneReplay);
   RTTI_METHOD(SceneActor);
+  RTTI_METHOD(SceneProp);
+  RTTI_METHOD(SceneHolds);
   RTTI_METHOD(SceneSample);
   RTTI_METHOD(SceneVoice);
   RTTI_METHOD(SceneVoiceHide);

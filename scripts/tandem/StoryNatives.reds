@@ -36,6 +36,9 @@ public native struct TandemStoryEvent {
   // 55 a voiced line begins (line, npc or player: the speaker, duration:
   // seconds into it, index: its length in ms, flags: 2 holocall 4 a bark,
   // hash: its play), 56 it stops (line, npc, player);
+  // 57 an actor holds a prop (hash: the prop's number, reward: the item,
+  // npc or player: who holds it, flags: 2 in its left hand), 58 the prop is
+  // gone (hash);
   // quest interactions (docs/architecture/story.md, "Quest interactions"):
   // 60 (host) a guest's question (player, hash: its number, entity: the
   // object (placed: the same id in every game), choice, detail, layer, flags: 1 its checks passed
@@ -147,6 +150,8 @@ public native class TandemStory extends IScriptable {
   public static native func PausePose(player: Uint32, paused: Bool) -> Void;
   public static native func SceneReplay() -> Int32;
   public static native func SceneActor(npc: Uint32, x: Float, y: Float, z: Float, flags: Int32) -> Void;
+  public static native func SceneProp(key: Uint64, record: TweakDBID, holderNpc: Uint32, holderPlayer: Uint32, leftHand: Bool) -> Void;
+  public static native func SceneHolds(npc: Uint32, player: Uint32) -> Bool;
   public static native func SceneSample(playing: Bool, isPrivate: Bool, tier: Int32, rate: Float, held: Bool, x: Float, y: Float, z: Float, yaw: Float) -> Int32;
   public static native func SceneVoice(line: Uint64, speakerNpc: Uint32, speakerPlayer: Uint32, duration: Float, flags: Int32) -> Bool;
   public static native func SceneVoiceHide(line: Uint64) -> Bool;

@@ -20,6 +20,11 @@ expect_peer 'scene cast: play 1, [1-9][0-9]* actor' 10
 expect 'pose stream: reading actor [0-9]+' 10
 expect "pose stream: actor [0-9]+'s skeleton 0x[0-9a-f]+ \([0-9]+\), mapped" 10
 expect_peer 'scene: [0-9]+ actor pose\(s\) heard' 15
+# A prop in the first actor's hand, and put away.
+cmd story scene prop Items.FirstAidWhiffV0
+expect_peer 'scene prop: 1 \(0x[0-9a-f]+\) held by npc [0-9]+ \(play 1\)' 10
+cmd story scene prop off
+expect_peer 'scene prop: 1 \(0x[0-9a-f]+\) gone' 10
 # A line of our V's: its voice for the guest, with the scene's play.
 cmd story line Hello from the scene
 expect 'scene: line voiced for the guests \(npc 0, player 1' 10
