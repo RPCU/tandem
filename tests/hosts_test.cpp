@@ -37,6 +37,45 @@ TEST_CASE("nonsense is refused") {
   CHECK_FALSE(hosts::Parse("host", 0));
 }
 
+TEST_CASE("join by address: each refusal says why") {
+  using P = hosts::Problem;
+  const auto problem = [](std::string_view text) { return hosts::Check(text, 27450).problem; };
+  CHECK(problem("  ") == P::Empty);
+  CHECK(problem("host:") == P::Port);
+  CHECK(problem("host:65536") == P::Port);
+  CHECK(problem("host:+1") == P::Port);
+  CHECK(problem("10.0.0.300") == P::Name);
+  CHECK(problem("10.0.0") == P::Name);
+  CHECK(problem("12345") == P::Name);
+  CHECK(problem("-host.lan") == P::Name);
+  CHECK(problem("host..lan") == P::Name);
+  CHECK(problem(".lan") == P::Name);
+  CHECK(problem(std::string(64, 'a')) == P::Name);
+  // IPv6, bracketed with a port or not: well formed, and refused for it.
+  CHECK(problem("[fd7a:115c:a1e0::1]:27450") == P::Ipv6);
+  CHECK(problem("[::1]") == P::Ipv6);
+  CHECK(problem("fd7a:115c:a1e0::1") == P::Ipv6);
+  CHECK(problem("[::1]:0") == P::Port);
+  CHECK(problem("[::1]27450") == P::Port);
+  CHECK(problem("[host]:27450") == P::Name);
+  CHECK(problem("[::1") == P::Name);
+  CHECK(hosts::ProblemWord(P::Ipv6) == "ipv6");
+  CHECK(hosts::ProblemWord(P::None).empty());
+}
+
+TEST_CASE("join by address: LAN and VPN addresses") {
+  // Tailscale and NetBird hand out addresses in 100.64.0.0/10, and names.
+  const auto vpn = hosts::Check("100.101.102.103", 27450);
+  REQUIRE(vpn.target);
+  CHECK(vpn.problem == hosts::Problem::None);
+  CHECK(hosts::Format(*vpn.target) == "100.101.102.103:27450");
+  const auto named = hosts::Check("my-pc.tail1234.ts.net:27451", 27450);
+  REQUIRE(named.target);
+  CHECK(hosts::Format(*named.target) == "my-pc.tail1234.ts.net:27451");
+  CHECK(hosts::Parse("my_pc", 27450));
+  CHECK(hosts::Parse("0.0.0.0", 27450));
+}
+
 TEST_CASE("recent hosts: newest first, no repeats, capped, names kept") {
   std::vector<hosts::Recent> list;
   hosts::Remember(list, {"10.0.0.1", 27450}, "Judy");

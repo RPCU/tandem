@@ -2,8 +2,8 @@
 //
 // Main menu (SingleplayerMenuGameController): a "Co-op" entry. Its pages
 // live in the menu's own list, the way the menu shows its items:
-//   Co-op   -> Host a game | Join a game | Play solo (once one is chosen) |
-//              Settings | Write a bug report | Back
+//   Co-op   -> Host a game | Join a game | Join by address | Play solo (once
+//              one is chosen) | Settings | Write a bug report | Back
 //   Settings -> one item per setting (Settings.reds): picking it switches or
 //              cycles it, or asks for a text; saved to tandem.ini at once
 //   Host    -> Continue | Load game | Back      (the game's own load list)
@@ -12,8 +12,13 @@
 // Picking Continue or Load game chooses the session in the plugin
 // (TandemNative.StartHost / Join); TandemSystem starts it as the save loads.
 //
+// Join by address (LAN, VPN: Tailscale, NetBird): a text popup asks for
+// host[:port], checked (TandemNative.AddressProblem), saved as tandem.ini's
+// last_address (an empty answer joins it again), then joined directly, as
+// role = join with that address would, without the relay.
+//
 // Pause menu (PauseMenuGameController): "Co-op" -> Host this game | Join a
-// game, or, in a session, Invite | Leave session; Settings. These start and stop the
+// game | Join by address, or, in a session, Invite | Leave session; Settings. These start and stop the
 // session at once (TandemSystem.CoopHost / CoopJoin / CoopLeave).
 //
 // Compatibility (tandem/compat.hpp): when the plugin's startup check found
@@ -63,6 +68,7 @@ enum TandemCoopAction {
   Setting = 14,
   Report = 15,
   NewCode = 16,
+  JoinAddress = 17,
 }
 
 // One of our entries in a menu's list: the vanilla item data (its label is
@@ -286,6 +292,59 @@ public class TandemCoop {
     return TandemNative.Join(target, 0);
   }
 
+  // ---- Join by address ----
+
+  // What Join by address joins: what was typed, or the last address for an
+  // empty answer.
+  public static func DirectText(typed: String) -> String {
+    if Equals(TandemNative.AddressProblem(typed), "empty") {
+      return TandemNative.Setting("last_address");
+    }
+    return typed;
+  }
+
+  // Its popup's words: what to type, and the last address when there is one.
+  public static func DirectPrompt() -> String {
+    let text = TandemText.F("Popup-JoinAddress", s"\(TandemNative.DefaultPort())");
+    let last = TandemNative.Setting("last_address");
+    if StrLen(last) > 0 {
+      text += " " + TandemText.F("Popup-JoinAddressLast", last);
+    }
+    return text;
+  }
+
+  // Why an answer is not an address to join, in words ("": it is one).
+  public static func DirectRefusal(text: String) -> String {
+    let problem = TandemNative.AddressProblem(text);
+    if StrLen(problem) == 0 {
+      return "";
+    }
+    if Equals(problem, "empty") {
+      return TandemText.Get("Address-Empty");
+    }
+    if Equals(problem, "port") {
+      return TandemText.F("Address-Port", text);
+    }
+    if Equals(problem, "ipv6") {
+      return TandemText.F("Address-Ipv6", text);
+    }
+    return TandemText.F("Address-Name", text);
+  }
+
+  // The answer: "address:port" to join, saved as last_address; "" when it
+  // is none (DirectRefusal of DirectText says why).
+  public static func TakeAddress(typed: String) -> String {
+    let text = TandemCoop.DirectText(typed);
+    let target = TandemCoop.Target(text);
+    if StrLen(target) == 0 {
+      TandemNative.Log(s"coop: join by address: \"\(typed)\" refused (\(TandemNative.AddressProblem(text)))");
+      return "";
+    }
+    TandemNative.Log(s"coop: join by address: \"\(typed)\" -> \(target)");
+    TandemSettings.Set("last_address", target);
+    return target;
+  }
+
   // What the player typed, as "address:port"; "" when it is none.
   public static func Target(text: String) -> String {
     let host = TandemNative.ParseAddress(text);
@@ -465,11 +524,13 @@ public class TandemCoopMenu {
       } else {
         this.Add("Menu-HostNow", TandemCoopAction.HostNow);
         this.Add("Menu-Join", TandemCoopAction.JoinPage);
+        this.Add("Menu-JoinAddress", TandemCoopAction.JoinAddress);
       }
       this.Add("Menu-Report", TandemCoopAction.Report);
     } else if Equals(this.page, TandemCoopPage.Coop) {
       this.Add("Menu-Host", TandemCoopAction.HostPage);
       this.Add("Menu-Join", TandemCoopAction.JoinPage);
+      this.Add("Menu-JoinAddress", TandemCoopAction.JoinAddress);
       if TandemNative.SessionStatus().fromMenu {
         this.Add("Menu-Solo", TandemCoopAction.Solo);
       }
@@ -814,6 +875,10 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Bool {
     if !this.TandemAskName(action) {
       this.TandemGo(TandemCoopPage.Join);
     }
+  } else if Equals(action, TandemCoopAction.JoinAddress) {
+    if !this.TandemAskName(action) {
+      this.TandemAskDirect();
+    }
   } else if Equals(action, TandemCoopAction.EnterAddress) {
     this.TandemAskAddress();
   } else if Equals(action, TandemCoopAction.JoinRecent) {
@@ -923,6 +988,8 @@ protected cb func OnTandemName(data: ref<inkGameNotificationData>) -> Bool {
   if Equals(this.m_tandem.nameFor, TandemCoopAction.HostPage) {
     this.m_tandem.port = 0;
     this.TandemGo(TandemCoopPage.Host);
+  } else if Equals(this.m_tandem.nameFor, TandemCoopAction.JoinAddress) {
+    this.TandemAskDirect();
   } else {
     this.TandemGo(TandemCoopPage.Join);
   }
@@ -958,8 +1025,41 @@ protected cb func OnTandemAddress(data: ref<inkGameNotificationData>) -> Bool {
   return true;
 }
 
+// Join by address: the popup, then the save to join with.
+@addMethod(SingleplayerMenuGameController)
+private func TandemAskDirect() -> Void {
+  this.m_tandem.inputToken = GenericMessageNotification.ShowInput(this, TandemText.Get("Menu-JoinAddress"), TandemCoop.DirectPrompt(), GenericMessageNotificationType.ConfirmCancel);
+  this.m_tandem.inputToken.RegisterListener(this, n"OnTandemDirect");
+}
+
+@addMethod(SingleplayerMenuGameController)
+protected cb func OnTandemDirect(data: ref<inkGameNotificationData>) -> Bool {
+  this.m_tandem.inputToken = null;
+  let close = data as GenericMessageNotificationCloseData;
+  if !IsDefined(close) {
+    return false;
+  }
+  if NotEquals(close.result, GenericMessageNotificationResult.Confirm) {
+    this.m_tandem.swallowBack = 2;
+    return true;
+  }
+  this.TandemJoinDirect(close.input);
+  return true;
+}
+
+@addMethod(SingleplayerMenuGameController)
+private func TandemJoinDirect(typed: String) -> Void {
+  let target = TandemCoop.TakeAddress(typed);
+  if StrLen(target) == 0 {
+    GenericMessageNotification.Show(this, TandemText.Get("Menu-JoinAddress"), TandemCoop.DirectRefusal(TandemCoop.DirectText(typed)), GenericMessageNotificationType.OK);
+    return;
+  }
+  this.m_tandem.target = target;
+  this.TandemGo(TandemCoopPage.Save);
+}
+
 // tools/game.sh cmd coop ...: coop menu PAGE | coop pick TEXT | coop host
-// [PORT] | coop join ADDRESS | coop solo | coop status.
+// [PORT] | coop join ADDRESS | coop address [TEXT] | coop solo | coop status.
 @addMethod(SingleplayerMenuGameController)
 private func TandemCommand(command: String) -> Void {
   let words = StrSplit(command, " ");
@@ -991,6 +1091,9 @@ private func TandemCommand(command: String) -> Void {
       this.m_tandem.target = target;
       this.TandemGo(TandemCoopPage.Save);
     }
+  } else if Equals(verb, "address") {
+    // Join by address's answer, without the popup (empty: the last one).
+    this.TandemJoinDirect(arg);
   } else if Equals(verb, "solo") || Equals(verb, "leave") {
     TandemNative.Leave();
     this.TandemGo(TandemCoopPage.Root);
@@ -1162,6 +1265,10 @@ private func TandemActivate(item: ref<TandemMenuItem>) -> Void {
     if !this.TandemAskName(action) {
       this.TandemGo(TandemCoopPage.Join);
     }
+  } else if Equals(action, TandemCoopAction.JoinAddress) {
+    if !this.TandemAskName(action) {
+      this.TandemAskDirect();
+    }
   } else if Equals(action, TandemCoopAction.EnterAddress) {
     this.TandemAskAddress();
   } else if Equals(action, TandemCoopAction.JoinRecent) {
@@ -1258,6 +1365,8 @@ protected cb func OnTandemName(data: ref<inkGameNotificationData>) -> Bool {
   if Equals(this.m_tandem.nameFor, TandemCoopAction.HostNow) {
     system.CoopHost(0);
     this.TandemGo(TandemCoopPage.Coop);
+  } else if Equals(this.m_tandem.nameFor, TandemCoopAction.JoinAddress) {
+    this.TandemAskDirect();
   } else {
     this.TandemGo(TandemCoopPage.Join);
   }
@@ -1290,6 +1399,34 @@ protected cb func OnTandemAddress(data: ref<inkGameNotificationData>) -> Bool {
   }
   if !system.CoopJoin(target) && TandemCoop.IsCode(target) {
     GenericMessageNotification.Show(this, TandemText.Get("Menu-Join"), TandemText.Get("Popup-NeedsRelay"), GenericMessageNotificationType.OK);
+  }
+  this.TandemGo(TandemCoopPage.Coop);
+  return true;
+}
+
+// Join by address: the popup, then joined at once.
+@addMethod(PauseMenuGameController)
+private func TandemAskDirect() -> Void {
+  this.m_tandem.inputToken = GenericMessageNotification.ShowInput(this, TandemText.Get("Menu-JoinAddress"), TandemCoop.DirectPrompt(), GenericMessageNotificationType.ConfirmCancel);
+  this.m_tandem.inputToken.RegisterListener(this, n"OnTandemDirect");
+}
+
+@addMethod(PauseMenuGameController)
+protected cb func OnTandemDirect(data: ref<inkGameNotificationData>) -> Bool {
+  this.m_tandem.inputToken = null;
+  let close = data as GenericMessageNotificationCloseData;
+  let system = this.CoopSystem();
+  if !IsDefined(close) || !IsDefined(system) {
+    return false;
+  }
+  if NotEquals(close.result, GenericMessageNotificationResult.Confirm) {
+    this.m_tandem.swallowBack = 2;
+    return true;
+  }
+  let refusal = system.CoopJoinDirect(close.input);
+  if StrLen(refusal) > 0 {
+    GenericMessageNotification.Show(this, TandemText.Get("Menu-JoinAddress"), refusal, GenericMessageNotificationType.OK);
+    return true;
   }
   this.TandemGo(TandemCoopPage.Coop);
   return true;

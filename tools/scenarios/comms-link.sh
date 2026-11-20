@@ -1,4 +1,4 @@
-# Linking (the mock player with link = ask): our consent (auto) is a request, it accepts; tags then pass both ways; broken from our side, ours stop
+# Linking (the mock player with link = ask): our consent (auto) is a request, it accepts; tags then pass both ways; broken from our side, ours stop; the settings page's link = off breaks it at once, auto links again
 # shellcheck shell=bash disable=SC2317
 ensure host
 cmd teleport home
@@ -19,5 +19,12 @@ expect 'comms: link with tandem-peer: 3 -> 2' 10
 expect_peer "player 1's link: mode 2, 1 listed: we ask them" 10
 # Asked again (aiming at its V with the tag key does the same): linked again.
 cmd comms link tandem-peer
+expect 'comms: link with tandem-peer: 2 -> 3' 10
+# The settings page's link = off, in the session: no consent at once, the
+# mock player hears it; auto again links back.
+cmd coop set link off
+expect 'comms: link with tandem-peer: 3 -> 2' 10
+expect_peer "player 1's link: mode 0" 10
+cmd coop set link auto
 expect 'comms: link with tandem-peer: 2 -> 3' 10
 reject 'watchdog: game thread silent'

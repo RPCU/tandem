@@ -77,6 +77,19 @@ type Config struct {
 	ProxyProtocol  bool
 	TrustedProxies []netip.Prefix
 	MaxFlows       int
+
+	// Open: anyone may host, with no token (open.go): a proof of work of
+	// PowBits per session (its challenge valid ChallengeTTL), at most
+	// MaxSessionsPerSource open sessions per source and MaxOpenSessions in
+	// all, OpenRate bytes a second (OpenBurst at once) per guest link and
+	// direction. A host token bypasses it all. Not open: a token is needed.
+	Open                 bool
+	PowBits              int
+	ChallengeTTL         time.Duration
+	MaxOpenSessions      int
+	MaxSessionsPerSource int
+	OpenRate             int
+	OpenBurst            int
 }
 
 // DefaultConfig suits a small group's relay.
@@ -99,11 +112,23 @@ func DefaultConfig() Config {
 
 		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32"), netip.MustParsePrefix("::1/128")},
 		MaxFlows:       65536,
+
+		Open:                 true,
+		PowBits:              17,
+		ChallengeTTL:         2 * time.Minute,
+		MaxOpenSessions:      192,
+		MaxSessionsPerSource: 2,
+		// Twice tandem's 64 kbit/s per link, and 2 s of it at once.
+		OpenRate:  16_000,
+		OpenBurst: 32_000,
 	}
 }
 
 // Validate checks the fleet's description.
 func (c Config) Validate() error {
+	if c.Open && (c.PowBits < 0 || c.PowBits > 32 || c.OpenRate <= 0 || c.OpenBurst <= 0) {
+		return errors.New("open mode: the proof of work is 0 to 32 bits, the bandwidth positive")
+	}
 	if c.ProxyProtocol && len(c.TrustedProxies) == 0 {
 		return errors.New("the PROXY protocol needs the proxies to trust")
 	}
@@ -167,6 +192,9 @@ type client struct {
 	lan        netip.AddrPort
 	flags      byte
 	introduced time.Time
+
+	// A guest of an open session: its link's bandwidth, each way (under mu).
+	up, down bucket
 }
 
 type session struct {
@@ -191,6 +219,10 @@ type session struct {
 	token [TokenSize]byte
 	salt  uint32
 	kept  bool
+	// Opened with no token (open.go): its source's count, and its guests'
+	// bandwidth, are kept. Immutable.
+	open   bool
+	source netip.Prefix
 }
 
 func (sess *session) guest(channel uint16) *client {
@@ -307,6 +339,12 @@ type Server struct {
 	failures   int
 	// Behind a proxy: each of its sockets' client (proxy.go).
 	flows map[netip.AddrPort]flow
+	// Open mode (open.go): the challenges' key, those used (until stale),
+	// and the open sessions, per source and in all.
+	powKey         [32]byte
+	usedChallenges map[[ChallengeMACSize]byte]time.Time
+	openBySource   map[netip.Prefix]int
+	openSessions   int
 }
 
 func NewServer(cfg Config, log *slog.Logger) *Server {
@@ -324,6 +362,10 @@ func NewServer(cfg Config, log *slog.Logger) *Server {
 		codes:    map[string]*session{},
 		lookups:  map[netip.Prefix]*lookupBucket{},
 		flows:    map[netip.AddrPort]flow{},
+
+		powKey:         newPowKey(),
+		usedChallenges: map[[ChallengeMACSize]byte]time.Time{},
+		openBySource:   map[netip.Prefix]int{},
 	}
 	s.clients.init()
 	return s
@@ -477,7 +519,7 @@ func (s *Server) control(out []byte, from, who netip.AddrPort, d datagram, size 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	switch d.kind {
-	case typeRegisterHost, typeRegisterHostKeep:
+	case typeRegisterHost, typeRegisterHostKeep, typeRegisterHostOpen:
 		return s.registerHost(out, from, who, d, now), true
 	case typeRegisterGuest, typeRejoinGuest:
 		return s.registerGuest(out, from, who, d, now), true
@@ -503,7 +545,7 @@ func (s *Server) front(out []byte, from, who netip.AddrPort, d datagram, now tim
 			return appendRedirect(out, s.cfg.Peers[owner]), true
 		}
 		fallthrough
-	case typeRegisterHost:
+	case typeRegisterHost, typeRegisterHostOpen:
 		if to, ok := s.takerOfNewSessions(); ok {
 			s.Metrics.redirect(redirectHost)
 			return appendRedirect(out, to), true
@@ -575,18 +617,31 @@ func (s *Server) owns(code string) bool {
 
 // overRate counts a datagram against its client's one-second window.
 func (s *Server) overRate(c *client, size int, now int64) bool {
+	over, _ := s.overRateAndUp(c, size, now, false)
+	return over
+}
+
+// overRateAndUp also takes a guest of an open session's datagram from its
+// upload bucket, under the same lock (overBandwidth's other half).
+func (s *Server) overRateAndUp(c *client, size int, now int64, up bool) (over, overUp bool) {
 	c.mu.Lock()
 	if now-c.window >= int64(time.Second) {
 		c.window, c.windowPkts, c.windowBytes = now, 0, 0
 	}
 	c.windowPkts++
 	c.windowBytes += size
-	over := c.windowPkts > s.cfg.MaxPacketsPerSecond || c.windowBytes > s.cfg.MaxBytesPerSecond
+	over = c.windowPkts > s.cfg.MaxPacketsPerSecond || c.windowBytes > s.cfg.MaxBytesPerSecond
+	if up && !over {
+		overUp = !c.up.take(size, now, int64(s.cfg.OpenRate), int64(s.cfg.OpenBurst))
+	}
 	c.mu.Unlock()
 	if over {
 		s.Metrics.dropped(dropRate)
 	}
-	return over
+	if overUp {
+		s.Metrics.dropped(dropBandwidth)
+	}
+	return over, overUp
 }
 
 // requestCode answers a session's host only (its address and its secret):
@@ -749,11 +804,9 @@ func (s *Server) resolveCode(out []byte, from, who netip.AddrPort, d datagram, f
 }
 
 func (s *Server) registerHost(out []byte, from, who netip.AddrPort, d datagram, now time.Time) []byte {
-	if !s.hostAllowed(d.token) {
-		s.Metrics.dropped(dropBadToken)
-		return appendError(out, ErrBadToken)
-	}
 	keep := d.kind == typeRegisterHostKeep
+	// A retry (the host's refreshes and probes) needs only the session's
+	// secret, from the host's address: no token, no proof again.
 	if sess := s.sessions[d.secret]; sess != nil {
 		if sess.host.addr != from {
 			s.Metrics.refused(refusedTaken)
@@ -766,6 +819,23 @@ func (s *Server) registerHost(out []byte, from, who netip.AddrPort, d datagram, 
 			s.bindKept(sess, now)
 		}
 		return appendRegistered(out, 0)
+	}
+	// A new session: a host token, or (open) a proof of work, the open
+	// caps, and no kept code (it is a token's).
+	open := d.kind == typeRegisterHostOpen || !s.hostAllowed(d.token)
+	source := sourceOf(from)
+	if who.IsValid() {
+		source = sourceOf(who)
+	}
+	if open {
+		if !s.cfg.Open {
+			s.Metrics.dropped(dropBadToken)
+			return appendError(out, ErrBadToken)
+		}
+		if d.kind != typeRegisterHostOpen || !s.proofHolds(from, d, now) {
+			return s.appendChallenge(out, from, now)
+		}
+		keep = false
 	}
 	// A kept code lives on one replica: the host goes there (unless that is
 	// us, draining: then it gets a code of its own elsewhere).
@@ -782,13 +852,23 @@ func (s *Server) registerHost(out []byte, from, who netip.AddrPort, d datagram, 
 		s.Metrics.refused(refusedDraining)
 		return appendError(out, ErrDraining)
 	}
-	if len(s.sessions) >= s.cfg.MaxSessions {
+	if len(s.sessions) >= s.cfg.MaxSessions || (open && s.openSessions >= s.cfg.MaxOpenSessions) {
 		s.Metrics.refused(refusedTooMany)
 		return appendError(out, ErrTooManySession)
+	}
+	if open && s.openBySource[source] >= s.cfg.MaxSessionsPerSource {
+		s.Metrics.refused(refusedSourceBusy)
+		return appendError(out, ErrSourceBusy)
 	}
 	s.forget(from)
 
 	sess := &session{secret: d.secret, guests: map[uint16]*client{}, nextChannel: 1}
+	if open {
+		s.useChallenge(d.mac, now)
+		sess.open, sess.source = true, source
+		s.openBySource[source]++
+		s.openSessions++
+	}
 	host := &client{addr: from, public: who, session: sess}
 	host.lastSeen.Store(s.mono(now))
 	sess.host = host
@@ -909,17 +989,20 @@ func (s *Server) forward(w *worker, from netip.AddrPort, b []byte, now time.Time
 		return netip.AddrPort{}, nil, false
 	}
 	mono := s.mono(now)
-	if s.overRate(c, len(b), mono) {
+	sess := c.session
+	if over, overUp := s.overRateAndUp(c, len(b), mono, sess.open && c.channel != 0); over || overUp {
 		return netip.AddrPort{}, nil, false
 	}
 	c.lastSeen.Store(mono)
 
-	sess := c.session
 	var to netip.AddrPort
 	if c.channel == 0 {
 		guest := sess.guest(binary.BigEndian.Uint16(b[headerSize:]))
 		if guest == nil {
 			s.Metrics.dropped(dropNoChannel)
+			return netip.AddrPort{}, nil, false
+		}
+		if sess.open && s.overBandwidth(guest, false, len(b), mono) {
 			return netip.AddrPort{}, nil, false
 		}
 		to = guest.addr
@@ -950,6 +1033,12 @@ func (s *Server) forget(addr netip.AddrPort) {
 			delete(s.codes, sess.code)
 		}
 		delete(s.sessions, sess.secret)
+		if sess.open {
+			s.openSessions--
+			if s.openBySource[sess.source]--; s.openBySource[sess.source] <= 0 {
+				delete(s.openBySource, sess.source)
+			}
+		}
 		s.log.Info("session closed", "host", addr, "sessions", len(s.sessions))
 		return
 	}
@@ -976,6 +1065,12 @@ func (s *Server) sweep(now time.Time) {
 		if !now.Before(sess.codeExpires) {
 			delete(s.codes, code)
 			sess.code = ""
+		}
+	}
+	// Used challenges are forgotten once stale (they could not be used again).
+	for mac, at := range s.usedChallenges {
+		if now.Sub(at) > s.cfg.ChallengeTTL+time.Minute {
+			delete(s.usedChallenges, mac)
 		}
 	}
 	// A flow not heard of for that long: its client, if any, keeps its own

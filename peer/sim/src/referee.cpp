@@ -172,16 +172,7 @@ constexpr std::uint64_t kAgainUs = 10'000'000; // a rate finding repeats this se
 constexpr p::PlayerId kTakenByUnknown = 0xFFFFFFFF;
 } // namespace
 
-const char *MessageName(std::size_t index) {
-  static const auto names = [] {
-    std::vector<const char *> out;
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-      (out.push_back(p::NameOf(p::Message(std::in_place_index<I>))), ...);
-    }(std::make_index_sequence<std::variant_size_v<p::Message>>{});
-    return out;
-  }();
-  return index < names.size() ? names[index] : "?";
-}
+const char *MessageName(std::size_t index) { return p::NameOfKind(index); }
 
 std::string Finding::Line() const {
   return std::format("{}: [{}] {}", hint ? "referee-hint" : "referee", rule, text);

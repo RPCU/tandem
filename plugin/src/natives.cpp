@@ -353,6 +353,13 @@ struct TandemNative : Red::IScriptable {
     return {Red::CString(target->address.c_str()), target->port, {}};
   }
 
+  // Why ParseAddress refuses it: "" (it does not), "empty", "port", "name",
+  // "ipv6" (hosts::Problem).
+  static Red::CString AddressProblem(Red::CString text) {
+    const auto checked = hosts::Check(text.c_str(), Runtime::Get().config.port);
+    return Red::CString(std::string(hosts::ProblemWord(checked.problem)).c_str());
+  }
+
   // No session (until the next choice, or tandem.ini's at the main menu).
   static void Leave() { Runtime::Get().Choose({.role = Config::Role::Off, .fromMenu = true}); }
 
@@ -2088,6 +2095,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(StartHost);
   RTTI_METHOD(Join);
   RTTI_METHOD(ParseAddress);
+  RTTI_METHOD(AddressProblem);
   RTTI_METHOD(Leave);
   RTTI_METHOD(ResetChoice);
   RTTI_METHOD(SessionStatus);

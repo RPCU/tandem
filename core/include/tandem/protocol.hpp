@@ -4,6 +4,8 @@
 // variant index is the message id, so new messages are only ever appended.
 // Bump kProtocolVersion on any change to an existing message.
 
+#include "tandem/closed_variant.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -2532,7 +2534,8 @@ struct StatusVisuals {
   friend bool operator==(const StatusVisuals &, const StatusVisuals &) = default;
 };
 
-using Message = std::variant<
+// The alternatives, in id order. Code uses Message (below).
+using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
     Shot, Seat, VehicleState, World, NpcSpawn, NpcStates, NpcGone, NpcHit, NpcHealth, NpcEffect,
     Pause, VehicleRadio, PlayerHit, NpcAwareness, Stealth, Noise, NpcHack, NpcHackState, NpcStatus,
@@ -2550,6 +2553,12 @@ using Message = std::variant<
     VehicleExit, VehicleCombat, MountedFire, GunnerRequest, Gunner, GunnerAim, VehicleBump, NpcRam,
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
     BreachResult, NpcVendor, StatusVisuals>;
+
+// A message: MessageVariant, its copies, moves and conversions compiled in
+// message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,
+// std::holds_alternative and index() work on it as on the variant.
+using Message = ClosedVariant<MessageVariant>;
+bool operator==(const Message &a, const Message &b);
 
 // A story message (Journal … QuestReward, StoryEffect, SceneState … SceneLine,
 // VehicleUnlock, StoryRestrictions):
@@ -2578,3 +2587,5 @@ const char *NameOf(const Message &message);
 // The same by Message index ("?" past the last).
 const char *NameOfKind(std::size_t kind);
 } // namespace tandem::proto
+
+extern template class tandem::ClosedVariant<tandem::proto::MessageVariant>;

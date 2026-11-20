@@ -44,15 +44,18 @@ wait_for() {
 base=$((62000 + ($$ % 800) * 4))
 replica0=127.0.0.1:$base replica1=127.0.0.1:$((base + 1)) front=127.0.0.1:$((base + 2))
 peers=$replica0,$replica1
-# Open to any host, and more code lookups than the tests make from 127.0.0.1.
+# Open, as by default (hosts with no token, each with a proof of work), one
+# token for the kept-code case, and more sessions and code lookups per
+# source than the tests make from 127.0.0.1.
+"$work/tandem-relay" token >"$work/host-tokens"
 for shard in 0 1; do
   udp=$replica0 extra=(--front "$front")
   if [ "$shard" = 1 ]; then
     udp=$replica1 extra=()
   fi
-  "$work/tandem-relay" serve --allow-any-host --udp "$udp" --http 127.0.0.1:0 \
+  "$work/tandem-relay" serve --host-tokens "$work/host-tokens" --udp "$udp" --http 127.0.0.1:0 \
     --peers "$peers" --shard "$shard" "${extra[@]}" \
-    --code-lookup-burst 50 >"$work/relay$shard.log" 2>&1 &
+    --code-lookup-burst 50 --max-sessions-per-source 64 >"$work/relay$shard.log" 2>&1 &
   up=$(wait_for "$work/relay$shard.log" 's/.*"msg":"relay up".*"udp":"\([^"]*\)".*/\1/p')
   if [ -z "$up" ]; then
     echo "relay $shard did not start:" >&2
@@ -63,7 +66,8 @@ done
 echo "relays on $peers, entrance $front"
 
 TANDEM_RELAY=$replica0 TANDEM_RELAY_FLEET=$peers TANDEM_RELAY_FRONT=$front \
-  TANDEM_RELAY_BIN=$work/tandem-relay "$tests" --test-suite=relay
+  TANDEM_RELAY_BIN=$work/tandem-relay TANDEM_RELAY_TOKEN=$(cat "$work/host-tokens") \
+  "$tests" --test-suite=relay
 
 port=$((42000 + $$ % 2000))
 "$peer" host --mode idle --port "$port" --relay "$front" >"$work/host.log" 2>&1 &
@@ -80,7 +84,7 @@ if [ -z "$joined" ]; then
   cat "$work/host.log" "$work/guest.log" "$work/relay0.log" "$work/relay1.log" >&2
   exit 1
 fi
-echo "tandem-peer hosted at the entrance and joined by code $code at another replica"
+echo "tandem-peer hosted at the entrance with no token (a proof of work) and joined by code $code at another replica"
 
 # Behind a tunnel that says who its clients are in PROXY v2 headers
 # (playit.gg): the relay trusts only the forwarder's address (127.0.0.2),
