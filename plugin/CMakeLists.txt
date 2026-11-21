@@ -61,7 +61,8 @@ add_library(tandem SHARED
   src/engine/prefabs.cpp
   src/engine/scenes.cpp
   src/engine/physics.cpp
-  src/engine/casts.cpp)
+  src/engine/casts.cpp
+  src/engine/workspots.cpp)
 target_link_libraries(tandem PRIVATE tandem_core RED4ext::SDK iphlpapi version)
 target_include_directories(tandem SYSTEM PRIVATE
   "${CMAKE_BINARY_DIR}/sdk-casefix"
