@@ -21,8 +21,9 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // in kTimeBubbleAbilities (a TimeEffect means more), and the compact wire
 // forms of the netcode (PoseFrame, NpcMotion, PlayerMotion, VehicleMotion);
 // the record hints of Held, Appearance, Seat and NpcSpawn (mod-compat.md),
-// added before protocol 7 left the developers' machines.
-inline constexpr std::uint16_t kProtocolVersion = 8;
+// added before protocol 7 left the developers' machines. 9: a Waypoint may
+// be a tracked quest objective (WaypointKind::Objective).
+inline constexpr std::uint16_t kProtocolVersion = 9;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -2176,14 +2177,15 @@ struct Link {
 };
 
 // Where a player's own waypoint is (the map pin it placed, or the map point
-// it tracks), shown to the others as "NAME's waypoint". Sent by its game
-// when it changes (Event channel; kind None: no waypoint any more); the host
-// stamps `player`, keeps everyone's for late joiners (players domain) and
-// relays it.
+// it tracks; with neither, its tracked quest objective), shown to the others
+// as "NAME's waypoint" ("NAME's objective"). Sent by its game when it
+// changes (Event channel; kind None: no waypoint any more); the host stamps
+// `player`, keeps everyone's for late joiners (players domain) and relays it.
 enum class WaypointKind : std::uint8_t {
   None = 0,
-  Pin = 1,   // a map pin (the world map's custom position)
-  Point = 2, // a point of the map it tracks (a vendor, a fast travel point...)
+  Pin = 1,       // a map pin (the world map's custom position)
+  Point = 2,     // a point of the map it tracks (a vendor, a fast travel point...)
+  Objective = 3, // its tracked objective's quest mappin, the nearest (v9)
 };
 struct Waypoint {
   PlayerId player{};
