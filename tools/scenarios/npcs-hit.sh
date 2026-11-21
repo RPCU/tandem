@@ -17,7 +17,7 @@ expect_peer 'hit npc [0-9]+ \(plain\): 35 health' 30
 expect 'outcomes: [0-9]+ struck by player [0-9]+: [0-9.]+ of [0-9.]+ health' 15
 expect 'npcs: [0-9]+ gets BaseStatusEffect.Burning from player [0-9]+' 10
 # Its burn damage is the guest's to compute: the host's own ticks deal none.
-expect "combat: a guest's own hit on [0-9]+ left to their game" 10
+expect "combat: another V's own hit on [0-9]+ left to their game" 10
 expect_peer 'npc [0-9]+ health [0-9]+%' 15
 expect 'npcs: [0-9]+ died \(killer: player ([2-9]|[1-9][0-9]+)\)' 60
 expect_peer 'npc [0-9]+ died' 10
