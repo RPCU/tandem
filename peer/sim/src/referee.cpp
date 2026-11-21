@@ -1010,6 +1010,12 @@ void Referee::FromGuest(p::PlayerId from, const p::Message &message) {
     // The story's moments are the host's V's (story.md, "Spectating").
     Add("authority.host-only",
         std::format("player {} says its V is in a scripted moment: only the host's is", from));
+  } else if (const auto *state = std::get_if<p::StoryState>(&message);
+             state && (state->flags & p::kStoryNoFastTravel)) {
+    // The quest's locks are the host's (a guest's own story is frozen).
+    Add("authority.host-only",
+        std::format("player {} says its quest blocks fast travel: only the host's quest counts",
+                    from));
   } else if (const auto *breach = std::get_if<p::Breach>(&message)) {
     // Granting a breach and passing it on is the host's word.
     if (breach->flags & p::kBreachApply)
@@ -1244,6 +1250,11 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
           if ((m.flags & p::kStoryWatch) && !(m.flags & p::kStoryMoment))
             Add("value.range",
                 std::format("player {} is said to be in a moment to watch, not in a moment",
+                            m.player));
+          // Fast travel blocked by the quest: the host's game's word.
+          if ((m.flags & p::kStoryNoFastTravel) && m.player != m_hostPlayer)
+            Add("authority.host-only",
+                std::format("player {}'s quest is said to block fast travel: only the host's does",
                             m.player));
         } else if constexpr (std::is_same_v<M, p::Seat>) {
           notOurs(m.player);

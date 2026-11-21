@@ -273,6 +273,7 @@ struct Options {
   double restrictFor{0.0};       // ...lifted after this long (0: never)
   std::string prefabs;           // host: its quests' world prefabs (REF[,REF], hex), as a step
   int gates{-1};                 // our story gates (proto::kGate* bits), said once in session
+  bool noFastTravel{};           // host: its quest blocks fast travel (kStoryNoFastTravel)
   int answerSeconds{-1};         // join: answer the host's ringing call after this long (-1: never)
   std::uint32_t replyEntry{};    // join: reply to the text with this choice entry hash
   int suggestIndex{-1};          // join: suggest this option of every hub (-1: never)
@@ -727,6 +728,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --prefabs REF[,REF]  host: its quests have these world prefabs loaded (node\n"
          "                     refs, hex), 2 s after a guest is in; join: logs the host's\n"
          "                     set as heard\n"
+         "  --no-fast-travel   host: its quest blocks fast travel (StoryState's flag), 2 s\n"
+         "                     after a guest is in: a guest's V never respawns far away\n"
          "  --gates N          our story gates (1 Watson lockdown lifted, 2 Dogtown open,\n"
          "                     4 our V in Watson, 8 in Dogtown), said once in the session\n"
          "  --answer N         join: answer the host's ringing call after N seconds\n"
@@ -1276,6 +1279,10 @@ Options Parse(int argc, char **argv) {
     }
     if (flag == "--breach-failed") {
       options.breachFailed = true;
+      continue;
+    }
+    if (flag == "--no-fast-travel") {
+      options.noFastTravel = true;
       continue;
     }
     if (flag == "--traffic-report") {
@@ -2265,6 +2272,8 @@ private:
 //   effect RECORD on|off         a story status effect on the host's V
 //                                (a relic glitch: BaseStatusEffect.JohnnySicknessLow)
 //   replacer on|off              the host plays as Johnny (StoryState flag)
+//   fasttravel on|off            off: the host's quest blocks fast travel
+//                                (StoryState's kStoryNoFastTravel); on: lifted
 //   private on|off               the host is in a private scene (romance,
 //                                a minor one-to-one chat: StoryState flag)
 //   scene NAME [TIER]            a story scene plays on the host (scene
@@ -2588,6 +2597,9 @@ std::optional<tandem::proto::Message> StoryMessage(const StoryStep &step, std::u
     if (step.verb == "replacer" && !a.empty())
       return proto::StoryState{.tier = 1,
                                .flags = a[0] == "on" ? proto::kStoryReplacer : std::uint8_t{0}};
+    if (step.verb == "fasttravel" && !a.empty())
+      return proto::StoryState{
+          .tier = 1, .flags = a[0] == "off" ? proto::kStoryNoFastTravel : std::uint8_t{0}};
     if (step.verb == "restrict" && !a.empty()) {
       proto::StoryRestrictions set;
       if (a[0] != "off")
@@ -4399,6 +4411,11 @@ int main(int argc, char **argv) {
                        .verb = "restrict",
                        .args = {"off"},
                        .rest = "off"});
+    std::ranges::stable_sort(story, {}, &StoryStep::at);
+  }
+  // --no-fast-travel: one more step of the host's story.
+  if (options.noFastTravel) {
+    story.push_back({.at = 2.0, .verb = "fasttravel", .args = {"off"}, .rest = "off"});
     std::ranges::stable_sort(story, {}, &StoryStep::at);
   }
   // --prefabs: one more step of the host's story.

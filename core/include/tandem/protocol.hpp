@@ -25,7 +25,9 @@ inline constexpr std::uint32_t kMagic = 0x4D444E54; // "TNDM"
 // be a tracked quest objective (WaypointKind::Objective). 10: WorldPrefabs
 // and StoryGates appended (a game of 9 cannot read them).
 // 11: NpcHealth.flags (kNpcProtected); WeakSpotHit and HackTraced appended.
-inline constexpr std::uint16_t kProtocolVersion = 11;
+// 12: StoryState's kStoryNoFastTravel (a game of 11 would let a guest's V
+// respawn out of the host's locked quest area).
+inline constexpr std::uint16_t kProtocolVersion = 12;
 inline constexpr std::uint16_t kDefaultPort = 27450;
 
 // ENet channels. State is unreliable and sequenced (newest wins), events are
@@ -632,8 +634,8 @@ struct ChoiceCursor {
 
 // A player's story state from its own game (either way; the host stamps,
 // keeps and relays it).
-// Bits of StoryState::flags (free from 16 up: add new ones there, e.g. other
-// worlds such as cyberspace).
+// Bits of StoryState::flags (all eight taken: another one widens the field,
+// a protocol bump).
 inline constexpr std::uint8_t kStoryBraindance = 1, kStoryReplacer = 2, kStoryInCall = 4,
                               kStoryPrivate = 8, // in a private scene: not to be watched
     // The host's V is in a scripted moment; its camera's views go out
@@ -645,7 +647,12 @@ inline constexpr std::uint8_t kStoryBraindance = 1, kStoryReplacer = 2, kStoryIn
                               // The host's moment is one only its view shows (story::kMomentWatch:
                               // a cutscene, another world, the quest's camera). With kStoryMoment;
                               // the host's word only.
-    kStoryWatch = 64;
+    kStoryWatch = 64,
+                              // The host's game would not let its V fast travel now: a quest's lock
+                              // (Konpeki, Phantom Liberty's missions), not combat, a car or the
+                              // police. A guest's V never respawns far away then (revive.md, "Where
+                              // a respawn puts you"). The host's word only.
+    kStoryNoFastTravel = 128;
 struct StoryState {
   PlayerId player{};
   std::uint8_t tier{};  // GameplayTier 1..5
