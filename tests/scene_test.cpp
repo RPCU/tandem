@@ -620,9 +620,11 @@ TEST_CASE("a line names only a speaker the guests were told of") {
   REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t, const auto &) {
     return a->IsJoined() && host->Players().size() == 2;
   }));
+  // The scene's cast (Talk: npcs 7 and 4) is shared; 55 never is.
   host->SendNpcSpawn({.npc = 7, .record = 1});
+  host->SendNpcSpawn({.npc = 4, .record = 1});
   REQUIRE(Pump({host.get(), a.get()},
-               [&](std::size_t, const auto &) { return a->SharedNpcs().size() == 1; }));
+               [&](std::size_t, const auto &) { return a->SharedNpcs().size() == 2; }));
 
   host->SendStory(proto::SceneLine{.line = 1, .speaker = 55}); // a bark of an NPC not shared
   host->SendStory(proto::SceneLine{.line = 2, .speaker = 7});
