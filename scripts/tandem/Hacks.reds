@@ -25,6 +25,10 @@
 //   counterhack lands on the proxy and goes to the host as an effect).
 // - Cars: a quickhack on the copy of a car another V drives is a request to
 //   the driver's game (VehicleHack), which applies it to the car it drives.
+//   One on a shared vehicle no V drives (traffic, parked, placed: Traffic.reds)
+//   goes to every other game (TrafficHack): the vehicle's owner applies it
+//   (ours: here, as in solo), and every game but ours marks it "Hacked by
+//   NAME" in our colour while it lasts.
 //
 // Spreading (Contagion, Short Circuit, Synapse Burnout...): the vanilla
 // spread is keyed to the local player (SpreadInitEffector and SpreadEffector
@@ -48,6 +52,14 @@ public class TandemMirroredEffect {
   public let effect: TweakDBID;
 }
 
+// Another player's quickhack on a shared vehicle, marked while it lasts.
+public class TandemCarMark {
+  public let id: Uint32;
+  public let player: Uint32;
+  public let mappin: NewMappinID;
+  public let until: Float;
+}
+
 public class TandemHacks extends ScriptableSystem {
   // Host: guests' uploads on our NPCs, in arrival order. Guest: the other
   // players' uploads on host NPCs, shown on our proxies.
@@ -59,6 +71,7 @@ public class TandemHacks extends ScriptableSystem {
   private let m_alertedAt: array<Float>;
   private let m_now: Float;
   private let m_you: Uint32;
+  private let m_carMarks: array<ref<TandemCarMark>>;
 
   public static func Get(game: GameInstance) -> ref<TandemHacks> {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemHacks") as TandemHacks;
@@ -99,9 +112,12 @@ public class TandemHacks extends ScriptableSystem {
         this.HackedByNpc(game, event);
       } else if event.kind == 5 {
         this.CarHacked(game, event);
+      } else if event.kind == 6 {
+        this.TrafficHacked(game, event);
       }
     }
     this.EndUploads(game);
+    this.EndCarMarks(game, false);
   }
 
   public func You() -> Uint32 {
@@ -123,6 +139,7 @@ public class TandemHacks extends ScriptableSystem {
   }
 
   private func Reset() -> Void {
+    this.EndCarMarks(GetGameInstance(), true);
     ArrayClear(this.m_uploads);
     ArrayClear(this.m_mirrored);
     ArrayClear(this.m_alertedNpcs);
@@ -625,6 +642,103 @@ public class TandemHacks extends ScriptableSystem {
     return true;
   }
 
+  // A quickhack on a shared vehicle no V drives (a traffic car, a parked or
+  // placed one, Traffic.reds): every other game hears it (TrafficHack), its
+  // owner applies it and they mark it. True: its owner is another game, not
+  // to apply here (our copy follows the owner's). Read and queue only: the
+  // wraps below may run on any thread.
+  public static func HackSharedCar(game: GameInstance, car: ref<VehicleObject>, hack: Int32, seconds: Float) -> Bool {
+    let traffic = TandemTraffic.Of(game);
+    if !IsDefined(car) || !IsDefined(traffic) || !TandemNative.IsStarted() {
+      return false;
+    }
+    let id = traffic.IdOfBody(car.GetEntityID());
+    if id == 0u {
+      return false;
+    }
+    TandemNative.SendTrafficHack(id, hack, seconds);
+    let mine = traffic.Mine(id);
+    TandemNative.Log(s"hacks: our car hack \(hack) on shared vehicle \(id) said to the others (\(seconds) s, \(mine ? "ours: applied here" : "its owner applies it"))");
+    return !mine;
+  }
+
+  // Another player quickhacked a shared vehicle: ours to apply when our game
+  // runs it (the game's own effects of the hack on a vehicle, as
+  // VehicleComponentPS.OnVehicleOverride* starts them); marked in every game
+  // that has it, in the hacker's colour, while it lasts.
+  private func TrafficHacked(game: GameInstance, event: TandemHackEvent) -> Void {
+    let traffic = TandemTraffic.Of(game);
+    let body = IsDefined(traffic) ? TandemTraffic.Body(game, traffic.BodyOf(event.npc)) : null;
+    if !IsDefined(body) {
+      TandemNative.Log(s"hacks: player \(event.player)'s car hack \(event.state) on vehicle \(event.npc): not in our world");
+      return;
+    }
+    let applied = event.flags == 1;
+    if applied {
+      if event.state == 0 {
+        body.ActivateNetrunnerQuickhack(VehicleNetrunnerQuickhackType.ForceBrakes);
+      } else if event.state == 1 {
+        body.ActivateNetrunnerQuickhack(VehicleNetrunnerQuickhackType.Explode);
+      } else if event.state == 2 {
+        body.EnableHighPriorityPanicDriving();
+        body.ActivateNetrunnerQuickhack(VehicleNetrunnerQuickhackType.Accelerate);
+      } else {
+        applied = false;
+      }
+    }
+    TandemNative.Log(s"hacks: player \(event.player) hacked vehicle \(event.npc): \(TandemHacks.CarHackName(event.state)) (\(event.seconds) s)\(applied ? ", applied (we run it)" : "")");
+    this.MarkCar(game, body, event.npc, event.player, event.seconds > 0.0 ? event.seconds : 6.0);
+  }
+
+  // "Hacked by NAME" on the vehicle (world, minimap, map; the hacker's
+  // colour), for `seconds`; the markers setting off shows none.
+  private func MarkCar(game: GameInstance, body: ref<VehicleObject>, id: Uint32, player: Uint32, seconds: Float) -> Void {
+    let comms = TandemComms.Of(game);
+    if !TandemSettings.Markers() || !IsDefined(comms) {
+      return;
+    }
+    for mark in this.m_carMarks {
+      if mark.id == id && mark.player == player {
+        mark.until = MaxF(mark.until, this.m_now + seconds);
+        return;
+      }
+    }
+    let mark = new TandemCarMark();
+    mark.id = id;
+    mark.player = player;
+    mark.until = this.m_now + seconds;
+    let name = TandemCoop.NameOf(player);
+    mark.mappin = comms.MarkerOn(body, n"car", TandemText.F("Devices-HackedBy", name), TandemText.F("Devices-HackedByDescription", name), player);
+    ArrayPush(this.m_carMarks, mark);
+    TandemNative.Log(s"hacks: vehicle \(id) marked: hacked by player \(player) for \(seconds) s, registered \(mark.mappin.value != 0ul)");
+  }
+
+  // Each tick: the marks whose hack is over (all: the session's end).
+  private func EndCarMarks(game: GameInstance, all: Bool) -> Void {
+    let kept: array<ref<TandemCarMark>>;
+    let shown = TandemSettings.Markers();
+    for mark in this.m_carMarks {
+      if all || !shown || this.m_now >= mark.until || this.m_now < mark.until - 600.0 {
+        if mark.mappin.value != 0ul {
+          GameInstance.GetMappinSystem(game).UnregisterMappin(mark.mappin);
+        }
+        TandemNative.Log(s"hacks: vehicle \(mark.id) unmarked (player \(mark.player)'s hack)");
+      } else {
+        ArrayPush(kept, mark);
+      }
+    }
+    this.m_carMarks = kept;
+  }
+
+  // (test) TestQuery.reds, "car marks": the vehicles marked now (ids), or none.
+  public func CarMarks() -> String {
+    let out = "";
+    for mark in this.m_carMarks {
+      out += Equals(out, "") ? s"\(mark.id)" : s" \(mark.id)";
+    }
+    return Equals(out, "") ? "none" : out;
+  }
+
   // The driver: someone hacked the car our V drives.
   private func CarHacked(game: GameInstance, event: TandemHackEvent) -> Void {
     let v = GetPlayer(game);
@@ -724,10 +838,15 @@ protected cb func OnStatusEffectRemoved(evt: ref<RemoveStatusEffect>) -> Bool {
 }
 
 // Vehicle quickhacks on the copy of a car another V drives: requests to the
-// driver's game (the copy only follows the driver's car).
+// driver's game (the copy only follows the driver's car). On a shared
+// vehicle no V drives: told to every other game, applied by its owner (here
+// when it is ours).
 @wrapMethod(VehicleComponentPS)
 protected func OnVehicleOverrideForceBrakes(evt: ref<VehicleOverrideForceBrakes>) -> EntityNotificationType {
   if TandemHacks.HackRemoteCar(this.GetGameInstance(), this.GetOwnerEntity(), 0, TweakDBInterface.GetFloat(t"player.vehicleQuickHacks.forceBrakesDuration", 0.0)) {
+    return EntityNotificationType.DoNotNotifyEntity;
+  }
+  if TandemHacks.HackSharedCar(this.GetGameInstance(), this.GetOwnerEntity(), 0, TweakDBInterface.GetFloat(t"player.vehicleQuickHacks.forceBrakesDuration", 0.0)) {
     return EntityNotificationType.DoNotNotifyEntity;
   }
   return wrappedMethod(evt);
@@ -738,12 +857,18 @@ protected func OnVehicleOverrideExplode(evt: ref<VehicleOverrideExplode>) -> Ent
   if TandemHacks.HackRemoteCar(this.GetGameInstance(), this.GetOwnerEntity(), 1, 0.0) {
     return EntityNotificationType.DoNotNotifyEntity;
   }
+  if TandemHacks.HackSharedCar(this.GetGameInstance(), this.GetOwnerEntity(), 1, 0.0) {
+    return EntityNotificationType.DoNotNotifyEntity;
+  }
   return wrappedMethod(evt);
 }
 
 @wrapMethod(VehicleComponentPS)
 protected func OnVehicleOverrideAccelerate(evt: ref<VehicleOverrideAccelerate>) -> EntityNotificationType {
   if TandemHacks.HackRemoteCar(this.GetGameInstance(), this.GetOwnerEntity(), 2, TweakDBInterface.GetFloat(t"player.vehicleQuickHacks.accelerateDuration", 0.0)) {
+    return EntityNotificationType.DoNotNotifyEntity;
+  }
+  if TandemHacks.HackSharedCar(this.GetGameInstance(), this.GetOwnerEntity(), 2, TweakDBInterface.GetFloat(t"player.vehicleQuickHacks.accelerateDuration", 0.0)) {
     return EntityNotificationType.DoNotNotifyEntity;
   }
   return wrappedMethod(evt);

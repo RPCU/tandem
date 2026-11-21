@@ -614,6 +614,16 @@ struct NetThread::Impl {
                                        .player = e.hack.player,
                                        .state = static_cast<std::int32_t>(e.hack.hack),
                                        .seconds = e.hack.seconds});
+              } else if constexpr (std::is_same_v<E, events::TrafficHacked>) {
+                log::Info("player {} hacked vehicle {:#x} ({}, {:.1f} s{})", e.hack.player,
+                          e.hack.id, static_cast<int>(e.hack.hack), e.hack.seconds,
+                          e.ours ? ", ours to apply" : "");
+                runtime.PushHackEvent({.kind = HackEvent::Kind::Traffic,
+                                       .npc = e.hack.id,
+                                       .player = e.hack.player,
+                                       .state = static_cast<std::int32_t>(e.hack.hack),
+                                       .flags = e.ours ? 1 : 0,
+                                       .seconds = e.hack.seconds});
               } else if constexpr (std::is_same_v<E, events::HitByNpc>) {
                 runtime.PushPlayerHit(e.hit);
               } else if constexpr (std::is_same_v<E, events::ShotAtUs>) {
@@ -1241,6 +1251,8 @@ struct NetThread::Impl {
           endpoint->SendPlayerHack(*player);
         else if (const auto *car = std::get_if<proto::VehicleHack>(&message))
           endpoint->SendVehicleHack(*car);
+        else if (const auto *street = std::get_if<proto::TrafficHack>(&message))
+          endpoint->SendTrafficHack(*street);
       }
       for (const auto &[player, reply] : runtime.TakeNpcReplies())
         endpoint->SendNpcActionReply(player, reply);

@@ -414,6 +414,61 @@ TEST_CASE("a guest's hit on a shared vehicle reaches its owner, unless its world
   }));
 }
 
+TEST_CASE("a quickhack on a shared vehicle reaches every other game, its owner's to apply") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kQuick);
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kQuick);
+  auto b = Endpoint::Join({"b"}, "127.0.0.1", port, error, kQuick);
+  REQUIRE((host && a && b));
+  std::vector<Endpoint *> all{host.get(), a.get(), b.get()};
+  REQUIRE(Pump(all, [&](std::size_t, const auto &) { return a->IsJoined() && b->IsJoined(); }));
+  host->SendTrafficSpawn({.id = kCar, .record = 0x11});
+  REQUIRE(Pump(all, [&](std::size_t, const auto &) {
+    return a->SharedTraffic().contains(kCar) && b->SharedTraffic().contains(kCar);
+  }));
+
+  std::array<std::vector<events::TrafficHacked>, 3> heard;
+  const auto collect = [&](std::size_t i, const auto &events) {
+    for (const auto &event : events)
+      if (const auto *hacked = std::get_if<events::TrafficHacked>(&event))
+        heard[i].push_back(*hacked);
+  };
+  // Guest a brakes the host's car, in another's name: stamped as a's.
+  a->SendTrafficHack(
+      {.player = 9, .id = kCar, .hack = proto::CarHack::ForceBrakes, .seconds = 8.f});
+  // A vehicle it does not know goes nowhere.
+  a->SendTrafficHack({.id = kParked, .hack = proto::CarHack::Explode});
+  REQUIRE(Pump(all, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return !heard[0].empty() && !heard[2].empty();
+  }));
+  Pump(
+      all,
+      [&](std::size_t i, const auto &events) {
+        collect(i, events);
+        return false;
+      },
+      150ms);
+  REQUIRE(heard[0].size() == 1);
+  CHECK(heard[0][0].hack.player == a->You());
+  CHECK(heard[0][0].ours); // the host runs it: its game applies the hack
+  REQUIRE(heard[2].size() == 1);
+  CHECK(heard[2][0].hack == heard[0][0].hack);
+  CHECK_FALSE(heard[2][0].ours); // b only marks it
+  CHECK(heard[1].empty());       // never back to the hacker
+
+  // The host's own hack: every guest hears it, none applies it.
+  host->SendTrafficHack({.id = kCar, .hack = proto::CarHack::Accelerate, .seconds = 4.f});
+  REQUIRE(Pump(all, [&](std::size_t i, const auto &events) {
+    collect(i, events);
+    return heard[1].size() == 1 && heard[2].size() == 2;
+  }));
+  CHECK(heard[1][0].hack.player == host->You());
+  CHECK_FALSE(heard[1][0].ours);
+  CHECK(heard[0].size() == 1);
+}
+
 TEST_CASE("a guest that missed spawns and removals is healed by the digests") {
   const auto port = NextPort();
   std::string error;

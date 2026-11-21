@@ -141,6 +141,8 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
     return std::nullopt;
   if (const auto *car = std::get_if<VehicleHack>(&message); car && car->hack > CarHack::Accelerate)
     return std::nullopt;
+  if (const auto *car = std::get_if<TrafficHack>(&message); car && car->hack > CarHack::Accelerate)
+    return std::nullopt;
   if (const auto *away = std::get_if<Elsewhere>(&message); away && away->place > Place::Other)
     return std::nullopt;
   if (const auto *awareness = std::get_if<NpcAwareness>(&message);
@@ -669,7 +671,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "StoryGates",
                                    "WeakSpotHit",
                                    "HackTraced",
-                                   "TurretBusy"};
+                                   "TurretBusy",
+                                   "TrafficHack"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

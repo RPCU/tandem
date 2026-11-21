@@ -102,18 +102,19 @@ public native struct TandemHost {
 public native struct TandemHackEvent {
   // 1 upload (host: a guest started one on our NPC), 2 upload state (guest),
   // 3 quickhack effect on a host NPC (guest), 4 an NPC hacks our V (guest),
-  // 5 someone hacked the car we drive
+  // 5 someone hacked the car we drive, 6 someone hacked a shared vehicle
+  // (npc: its traffic id)
   native let kind: Int32;
   native let npc: Uint32;
   // the uploader, the effect's V, the hacker
   native let player: Uint32;
   // ObjectAction record; 3: the status effect record
   native let action: TweakDBID;
-  // 2: 0 started, 1 done, 2 failed; 3: 1 applied, 0 removed; 5: 0 brakes, 1 explode, 2 accelerate
+  // 2: 0 started, 1 done, 2 failed; 3: 1 applied, 0 removed; 5, 6: 0 brakes, 1 explode, 2 accelerate
   native let state: Int32;
-  // 1: 1 traceable; 4: 1 reveal, 2 directional, 4 skip being hacked
+  // 1: 1 traceable; 4: 1 reveal, 2 directional, 4 skip being hacked; 6: 1 ours to apply
   native let flags: Int32;
-  // upload time; 5: how long it lasts
+  // upload time; 5, 6: how long it lasts
   native let seconds: Float;
 }
 
@@ -444,6 +445,7 @@ public native class TandemNative extends IScriptable {
   public static native func SendNpcStatus(npc: Uint32, player: Uint32, effect: TweakDBID, applied: Bool)
   public static native func SendPlayerHack(player: Uint32, npc: Uint32, action: TweakDBID, flags: Int32)
   public static native func SendVehicleHack(driver: Uint32, hack: Int32, seconds: Float)
+  public static native func SendTrafficHack(id: Uint32, hack: Int32, seconds: Float)
   public static native func TakeHackEvents() -> array<TandemHackEvent>
   public static native func NpcPuppetId(npc: Uint32) -> Uint32
   public static native func SendWorldItem(token: Uint32, position: Vector4, records: array<TweakDBID>, seeds: array<Uint32>, quantities: array<Int32>)

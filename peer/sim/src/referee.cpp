@@ -148,6 +148,7 @@ TANDEM_SAID_BY(Either, TrafficStates)
 TANDEM_SAID_BY(Either, TrafficGone)
 TANDEM_SAID_BY(Either, TrafficStatus)
 TANDEM_SAID_BY(Either, TrafficHit)
+TANDEM_SAID_BY(Either, TrafficHack)
 TANDEM_SAID_BY(Either, TrafficClaim)
 TANDEM_SAID_BY(Either, TrafficSet)
 TANDEM_SAID_BY(Either, Heat)
@@ -332,6 +333,7 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::RegionHold> || std::is_same_v<M, p::DeviceUse> ||
                            std::is_same_v<M, p::Heat> || std::is_same_v<M, p::Presence> ||
                            std::is_same_v<M, p::Cue> || std::is_same_v<M, p::TrafficHit> ||
+                           std::is_same_v<M, p::TrafficHack> ||
                            std::is_same_v<M, p::TrafficClaim> || std::is_same_v<M, p::PoseFrame> ||
                            std::is_same_v<M, p::PlayerMotion> ||
                            std::is_same_v<M, p::VehicleMotion> || std::is_same_v<M, p::Throw> ||
@@ -837,6 +839,10 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::TrafficHit>) {
           finite = std::isfinite(m.damage) && Finite(m.position) && Finite(m.impulse);
           inRange = !finite || m.damage >= 0.f;
+        } else if constexpr (std::is_same_v<M, p::TrafficHack>) {
+          // A named vehicle, a hack this version knows, a length.
+          finite = std::isfinite(m.seconds);
+          inRange = m.id != 0 && m.hack <= p::CarHack::Accelerate && (!finite || m.seconds >= 0.f);
         } else if constexpr (std::is_same_v<M, p::TrafficSpawn>) {
           finite = Finite(m.position) && Finite(m.orientation);
         } else if constexpr (std::is_same_v<M, p::Crime>) {
@@ -1342,6 +1348,9 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
         } else if constexpr (std::is_same_v<M, p::VehicleHack>) {
           forUs(m.driver);
           NeedPlayer(m.player, name);
+        } else if constexpr (std::is_same_v<M, p::TrafficHack>) {
+          // Another player's quickhack on a shared vehicle; never ours back.
+          notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::Revive>) {
           forUs(m.target);
           NeedPlayer(m.player, name);

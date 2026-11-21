@@ -182,6 +182,17 @@ void Endpoint::SendTrafficHit(const proto::TrafficHit &hit) {
   }
 }
 
+void Endpoint::SendTrafficHack(proto::TrafficHack hack) {
+  Record(hack);
+  if (!IsJoined() || m_ended || !m_traffic.contains(hack.id) || !std::isfinite(hack.seconds))
+    return;
+  hack.player = m_you;
+  if (!IsHost())
+    Send(m_hostPeer, hack);
+  else
+    Broadcast(hack);
+}
+
 void Endpoint::ClaimTraffic(proto::TrafficId id, std::uint64_t seat) {
   const proto::TrafficClaim claim{.player = m_you, .id = id, .seat = seat};
   Record(claim);
@@ -709,6 +720,17 @@ bool Endpoint::OnGuestTraffic(net::PeerId peer, proto::PlayerId player,
               Send(*to, mine);
             return true;
           },
+          // A guest's quickhack on a shared vehicle: to every other player
+          // (its owner applies it; everyone marks it), and to our game.
+          [&](const proto::TrafficHack &hack) {
+            auto mine = hack;
+            mine.player = player;
+            if (!m_traffic.contains(mine.id) || !std::isfinite(mine.seconds) || mine.seconds < 0.f)
+              return true;
+            Broadcast(mine, peer);
+            out.push_back(events::TrafficHacked{mine, OwnsTraffic(mine.id)});
+            return true;
+          },
           [&](const proto::TrafficClaim &claim) {
             auto mine = claim;
             mine.player = player;
@@ -855,6 +877,13 @@ bool Endpoint::OnHostTraffic(const proto::Message &message, std::vector<SessionE
           [&](const proto::TrafficHit &hit) {
             if (OwnsTraffic(hit.id) && hit.player != m_you)
               out.push_back(events::TrafficHitBy{hit});
+            return true;
+          },
+          // Another player's quickhack on a vehicle we know of.
+          [&](const proto::TrafficHack &hack) {
+            if (hack.player != m_you && hack.player != proto::kNoPlayer &&
+                m_traffic.contains(hack.id))
+              out.push_back(events::TrafficHacked{hack, OwnsTraffic(hack.id)});
             return true;
           },
           [&](const proto::TrafficClaim &claim) {

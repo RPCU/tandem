@@ -29,6 +29,8 @@
 //                         it follows: none, V, puppet, other), alarm (its
 //                         security system: SAFE, ALERTED, COMBAT; none), mark
 //                         (the player whose hack is marked on it; 0: none)
+//   car marks             the shared vehicles another player's quickhack is
+//                         marked on now (their traffic ids), or none
 public class TandemTestQuery {
   public static func Run(game: GameInstance, system: ref<TandemSystem>, command: String) -> Void {
     let words = StrSplit(command, " ");
@@ -101,6 +103,11 @@ public class TandemTestQuery {
       }
     } else if Equals(what, "threat") && Equals(arg, "puppet") {
       value = TandemThreats.PuppetThreat(game, system);
+    } else if Equals(what, "car") && Equals(arg, "marks") {
+      let hacks = TandemHacks.Get(game);
+      if IsDefined(hacks) {
+        value = hacks.CarMarks();
+      }
     } else if Equals(what, "device") && count > 4 {
       let devices = TandemDevices.Get(game);
       if IsDefined(devices) {
@@ -110,7 +117,7 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet, device KIND attitude|puppet|target|alarm|mark, car marks)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");

@@ -487,6 +487,8 @@ struct Options {
   std::string trafficVehicle{"Vehicle.v_standard2_archer_hella"};
   int wreckAtSeconds{-1};
   int ramTrafficSeconds{0};
+  // Guest: quickhack the nearest shared vehicle this long in, once (-1: never).
+  int hackTrafficAtSeconds{-1};
   int stealAtSeconds{-1};
   // Police (docs/architecture/police.md): "our V" is wanted at this level
   // (0: never) from heatAt for heatFor seconds; host: tell the guest's game
@@ -919,6 +921,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --traffic-vehicle REC  the cars' record (Vehicle.v_standard2_archer_hella)\n"
          "  --wreck-at N       host --traffic: the first car burns N seconds in, then blows up\n"
          "  --ram-traffic N    join: ram a shared vehicle every N seconds (TrafficHit)\n"
+         "  --hack-traffic S   join: quickhack the nearest shared vehicle S seconds into the\n"
+         "                     session, once (brakes for 8 s: TrafficHack)\n"
          "  --steal-at N       join: N seconds in, get into the nearest shared vehicle and sit\n"
          "                     at its wheel for --drive-seconds (default 15): it is ours\n"
          "  --heat N           our V is wanted at N stars (police heat is per player)\n"
@@ -1909,6 +1913,8 @@ Options Parse(int argc, char **argv) {
       options.wreckAtSeconds = Number<int>(value);
     } else if (flag == "--ram-traffic") {
       options.ramTrafficSeconds = Number<int>(value);
+    } else if (flag == "--hack-traffic") {
+      options.hackTrafficAtSeconds = Number<int>(value);
     } else if (flag == "--steal-at") {
       options.stealAtSeconds = Number<int>(value);
     } else if (flag == "--heat") {
@@ -4777,6 +4783,7 @@ int main(int argc, char **argv) {
   int wreckStep = 0;
   std::map<tandem::proto::TrafficId, tandem::proto::TrafficSpawn> sharedCars;
   auto nextRam = std::chrono::steady_clock::now() + 5s;
+  bool hackedTraffic = false;
   std::optional<tandem::proto::TrafficSpawn> stolen;
   int stealStep = 0;
   double stolenAt = 0.0;
@@ -5204,6 +5211,9 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::VehicleHackOn>) {
               Log("player {} hacked our car: {} ({:.1f} s)", e.hack.player,
                   static_cast<int>(e.hack.hack), e.hack.seconds);
+            } else if constexpr (std::is_same_v<E, tandem::events::TrafficHacked>) {
+              Log("street: player {} hacked vehicle {:#x}: {} ({:.1f} s){}", e.hack.player,
+                  e.hack.id, static_cast<int>(e.hack.hack), e.hack.seconds, e.ours ? ", ours" : "");
             } else if constexpr (std::is_same_v<E, tandem::events::PauseChanged>) {
               Log("player {} {} (pause menu)", e.pause.player,
                   e.pause.paused ? "paused" : "resumed");
@@ -7475,6 +7485,21 @@ int main(int argc, char **argv) {
                                 .position = spawn.position,
                                 .impulse = {0.f, 6.f, 0.f}});
       Log("street: rammed vehicle {:#x} for 300", id);
+    }
+    // --hack-traffic: our V quickhacks the nearest shared vehicle that still
+    // drives, once: its owner applies it, every game marks it.
+    if (options.hackTrafficAtSeconds >= 0 && !hackedTraffic && !options.host &&
+        endpoint->IsJoined() && shared >= options.hackTrafficAtSeconds && !sharedCars.empty()) {
+      hackedTraffic = true;
+      const Vec3 from = lastState ? lastState->position : Vec3{};
+      const auto nearest = std::ranges::min_element(sharedCars, {}, [&](const auto &entry) {
+        const auto &p = entry.second.position;
+        const float wreck = entry.second.flags & tandem::proto::kTrafficDestroyed ? 1e12f : 0.f;
+        return wreck + (p.x - from.x) * (p.x - from.x) + (p.y - from.y) * (p.y - from.y);
+      });
+      endpoint->SendTrafficHack(
+          {.id = nearest->first, .hack = tandem::proto::CarHack::ForceBrakes, .seconds = 8.f});
+      Log("street: hacked vehicle {:#x} (brakes, 8 s)", nearest->first);
     }
     // --steal-at: into the nearest shared vehicle, at its wheel.
     if (options.stealAtSeconds >= 0 && !options.host && shared >= options.stealAtSeconds) {
