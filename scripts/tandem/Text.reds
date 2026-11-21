@@ -608,6 +608,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Comms-PinPlaced", "The map pin {1} placed");
     this.Text("Tandem-Comms-PlaceTracked", "The place {1} tracks");
     this.Text("Tandem-Comms-WaypointSet", "{1} set a waypoint");
+    this.Text("Tandem-Comms-ObjectiveOf", "{1}'s objective");
+    this.Text("Tandem-Comms-ObjectiveTracked", "The objective {1} tracks");
     this.Text("Tandem-Comms-Decline", "Decline");
     // The other players in the game's phone (PhoneContacts.reds).
     this.Text("Tandem-Phone-NotLinked", "Not linked");
@@ -1059,6 +1061,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Comms-PinPlaced", "Le repère placé par {1}");
     this.Text("Tandem-Comms-PlaceTracked", "Le lieu que suit {1}");
     this.Text("Tandem-Comms-WaypointSet", "{1} a placé un point de passage");
+    this.Text("Tandem-Comms-ObjectiveOf", "Objectif de {1}");
+    this.Text("Tandem-Comms-ObjectiveTracked", "L'objectif que suit {1}");
     this.Text("Tandem-Comms-Decline", "Refuser");
     this.Text("Tandem-Phone-NotLinked", "Pas de lien");
     this.Text("Tandem-Phone-Calling", "Appel en cours...");

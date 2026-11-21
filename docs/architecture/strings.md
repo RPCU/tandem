@@ -479,6 +479,8 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Comms-PinPlaced` | The map pin {1} placed | Le repère placé par {1} | Comms.reds |
 | `Comms-PlaceTracked` | The place {1} tracks | Le lieu que suit {1} | Comms.reds |
 | `Comms-WaypointSet` | {1} set a waypoint | {1} a placé un point de passage | Comms.reds |
+| `Comms-ObjectiveOf` | {1}'s objective | Objectif de {1} | Comms.reds |
+| `Comms-ObjectiveTracked` | The objective {1} tracks | L'objectif que suit {1} | Comms.reds |
 | `Comms-Decline` | Decline | Refuser | Comms.reds |
 | `Phone-NotLinked` | Not linked | Pas de lien | PhoneContacts.reds |
 | `Phone-Calling` | Calling... | Appel en cours... | PhoneContacts.reds |

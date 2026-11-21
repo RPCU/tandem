@@ -16,7 +16,8 @@
 //   the game reveals for the automatic tagging perk). tandem.ini's `link`:
 //   auto (every partner, the default), ask, off.
 // - Waypoints. The map pin we place (or the map point we track) shows to
-//   the others as "NAME's waypoint" in the world, on the minimap and map.
+//   the others as "NAME's waypoint" in the world, on the minimap and map;
+//   with neither, our tracked quest objective, as "NAME's objective".
 //
 // The decisions (rates, toggles, lifetimes, who is linked, what a vanished
 // player leaves) are core's (tandem/comms.hpp) through
@@ -963,6 +964,7 @@ public class TandemComms {
 
   // Ours: the map pin we placed, or the map point we track; not one of
   // tandem's own markers (a partner's waypoint we track is still theirs).
+  // With nothing tracked by hand: our tracked quest objective (kind 3).
   private func PollWaypoint() -> Void {
     let mappins = GameInstance.GetMappinSystem(this.m_game);
     let id = mappins.GetManuallyTrackedMappinID();
@@ -974,17 +976,83 @@ public class TandemComms {
         kind = Equals(mappin.GetVariant(), gamedataMappinVariant.CustomPositionVariant) ? 1 : 2;
         at = mappin.GetWorldPosition();
       }
+    } else {
+      let objective = this.TrackedObjective();
+      if objective.W > 0.5 {
+        kind = 3;
+        at = new Vector4(objective.X, objective.Y, objective.Z, 1.0);
+      }
     }
     TandemCommsNative.SetWaypoint(kind, at);
+    this.HideMirroredObjectives();
+  }
+
+  // Our tracked quest objective's quest mappin, the one nearest our V (the
+  // world map's own: MenuHubGameController.UpdateTrackedQuest); W 0: none.
+  // Not on a frozen guest: its tracked entry is the host's, already shown
+  // by every frozen game's journal and by the host's own Waypoint.
+  private func TrackedObjective() -> Vector4 {
+    let none = new Vector4(0.0, 0.0, 0.0, 0.0);
+    let story = TandemStorySystem.Get(this.m_game);
+    if IsDefined(story) && story.Mirroring() {
+      return none;
+    }
+    let journal = GameInstance.GetJournalManager(this.m_game);
+    let objective = journal.GetTrackedEntry() as JournalQuestObjectiveBase;
+    if !IsDefined(objective) {
+      return none;
+    }
+    let positions: array<Vector3>;
+    let hash = Cast<Uint32>(journal.GetEntryHash(objective));
+    if !GameInstance.GetMappinSystem(this.m_game).GetQuestMappinPositionsByObjective(hash, positions) {
+      return none;
+    }
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      return none;
+    }
+    let from = player.GetWorldPosition();
+    let best = none;
+    let bestDistance = -1.0;
+    for position in positions {
+      let at = new Vector4(position.X, position.Y, position.Z, 1.0);
+      let distance = Vector4.Distance(from, at);
+      if bestDistance < 0.0 || distance < bestDistance {
+        best = at;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  }
+
+  // A frozen guest's journal is the host's: the host's objective is
+  // already its own quest marker, so the host's Objective kind shows none.
+  private func MirrorsObjectiveOf(player: Uint32) -> Bool {
+    let story = TandemStorySystem.Get(this.m_game);
+    return IsDefined(story) && story.Mirroring() && player == story.HostPlayer();
+  }
+
+  // One heard before the freeze began (the join's first second) goes.
+  private func HideMirroredObjectives() -> Void {
+    let kept: array<ref<TandemCommsWaypoint>>;
+    for waypoint in this.m_waypoints {
+      if waypoint.kind == 3 && this.MirrorsObjectiveOf(waypoint.player) {
+        this.Unregister(waypoint.mappin);
+        TandemNative.Log(s"comms: objective of \(this.NameOf(waypoint.player)) hidden: our journal is the host's");
+      } else {
+        ArrayPush(kept, waypoint);
+      }
+    }
+    this.m_waypoints = kept;
   }
 
   private func WaypointOf(e: TandemCommsEvent) -> Void {
     let kept: array<ref<TandemCommsWaypoint>>;
-    let had = false;
+    let hadKind = 0;
     for waypoint in this.m_waypoints {
       if waypoint.player == e.player {
         this.Unregister(waypoint.mappin);
-        had = true;
+        hadKind = waypoint.kind;
       } else {
         ArrayPush(kept, waypoint);
       }
@@ -995,6 +1063,10 @@ public class TandemComms {
       TandemNative.Log(s"comms: waypoint of \(name) gone");
       return;
     }
+    if e.type == 3 && this.MirrorsObjectiveOf(e.player) {
+      TandemNative.Log(s"comms: objective of \(name) not shown: our journal is the host's");
+      return;
+    }
     let waypoint = new TandemCommsWaypoint();
     waypoint.player = e.player;
     waypoint.kind = e.type;
@@ -1002,11 +1074,18 @@ public class TandemComms {
     let data = new TandemCommsMappinData();
     data.player = e.player;
     data.icon = e.type == 1 ? n"dynamic_event" : n"quest";
-    data.label = TandemText.F("Comms-WaypointOf", name);
-    data.description = TandemText.F(e.type == 1 ? "Comms-PinPlaced" : "Comms-PlaceTracked", name);
+    if e.type == 3 {
+      data.label = TandemText.F("Comms-ObjectiveOf", name);
+      data.description = TandemText.F("Comms-ObjectiveTracked", name);
+    } else {
+      data.label = TandemText.F("Comms-WaypointOf", name);
+      data.description = TandemText.F(e.type == 1 ? "Comms-PinPlaced" : "Comms-PlaceTracked", name);
+    }
     waypoint.mappin = this.RegisterAt(waypoint.position, data);
     ArrayPush(this.m_waypoints, waypoint);
-    if !had {
+    // Said for a waypoint placed by hand; an objective is there on its own
+    // (each join, each step of a quest): shown without a word.
+    if e.type != 3 && (hadKind == 0 || hadKind == 3) {
       this.Notice("Comms-WaypointSet", name);
       this.Sound(n"ui_menu_map_pin_on");
     }
@@ -1160,7 +1239,7 @@ public class TandemComms {
 
   // tools/game.sh cmd: comms report | comms ping | comms link [NAME] |
   // comms unlink [NAME] | comms accept | comms decline | comms tag |
-  // comms target
+  // comms target | comms objective
   public func Command(command: String) -> Void {
     if Equals(command, "comms hacks") {
       TandemNative.Log(s"comms: \(ArraySize(this.m_hacks)) partner quickhack indicator(s)");
@@ -1188,6 +1267,19 @@ public class TandemComms {
       }
       for player in this.m_system.PuppetPlayers() {
         TandemNative.Log(s"comms: link with \(this.NameOf(player)): \(TandemCommsNative.LinkState(player))");
+      }
+      for waypoint in this.m_waypoints {
+        TandemNative.Log(s"comms: waypoint of \(this.NameOf(waypoint.player)) (kind \(waypoint.kind)) at (\(waypoint.position.X), \(waypoint.position.Y), \(waypoint.position.Z))");
+      }
+    } else if Equals(command, "comms objective") {
+      // What PollWaypoint shares when nothing is tracked by hand.
+      let objective = this.TrackedObjective();
+      let tracked = GameInstance.GetMappinSystem(this.m_game).GetManuallyTrackedMappinID();
+      let manual = tracked.value != 0ul;
+      if objective.W < 0.5 {
+        TandemNative.Log("comms: no tracked objective to share (none tracked, no quest mappin, or a frozen guest)");
+      } else {
+        TandemNative.Log(s"comms: our objective at (\(objective.X), \(objective.Y), \(objective.Z))\(manual ? ", not shared: a waypoint is tracked by hand" : ", shared")");
       }
     } else if Equals(command, "comms ping") {
       this.PingLookAt();
