@@ -83,7 +83,7 @@ descend from ours reads as a fork: the players choose, nothing is lost.
 
 ## In the session
 
-`proto::Campaign` (appended after `ScenePlace`; Event channel): a player's
+`proto::Campaign` (appended after `HackTraced`, protocol 12; Event channel): a player's
 copy, with `kCampaignPlaying` for the copy its game plays now and `chosen`
 for the copy it chose to go on from. The host says its own at every
 Welcome and when it changes; a guest says its copy of the host's campaign

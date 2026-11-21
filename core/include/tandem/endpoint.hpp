@@ -639,8 +639,7 @@ using SessionEventVariant = std::variant<
     events::ChaseChanged, events::NamedAs, events::BreachBy, events::BreachAnswered,
     events::RemoteStatusVisuals, events::RemoteMods, events::ModNamesFrom, events::SubstitutesFrom,
     events::TrafficGive, events::TrafficTake, events::TrafficOwnerChanged, events::Fractured,
-    events::DeviceFired, events::TurretHeld, events::LinkDeclined,
-    events::RemoteCampaign>;
+    events::DeviceFired, events::TurretHeld, events::LinkDeclined, events::RemoteCampaign>;
 // Its copies, moves and conversions compiled in session_event.cpp only, as
 // proto::Message's (tandem/closed_variant.hpp).
 using SessionEvent = ClosedVariant<SessionEventVariant>;

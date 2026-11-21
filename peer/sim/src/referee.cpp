@@ -344,9 +344,8 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
                            std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath> ||
                            std::is_same_v<M, p::TurretHands> || std::is_same_v<M, p::Race> ||
-                           std::is_same_v<M, p::StoryGates> ||
-                           std::is_same_v<M, p::WeakSpotHit> || std::is_same_v<M, p::HackTraced> ||
-                           std::is_same_v<M, p::Campaign>)
+                           std::is_same_v<M, p::StoryGates> || std::is_same_v<M, p::WeakSpotHit> ||
+                           std::is_same_v<M, p::HackTraced> || std::is_same_v<M, p::Campaign>)
           return &m.player;
         else
           return nullptr;
