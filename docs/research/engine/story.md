@@ -415,10 +415,17 @@ instigatorEntityID, proxyEntityID }` (:203824) and
 - **Codeware's view of the sources**: `StatusEffect.sourcesData:
 array<gameSourceData{name: CName, savable}>`, `applicationSource`,
   `instigatorRecordID`, `maxStacks` (CW
-  `scripts/Base/Addons/StatusEffect.reds`). The array must be indexed
-  (`for x in` over it is refused: the element type is a class without
-  `ref`). Quests name a source when they add restrictions (below), so this
-  is the one place that tells a quest's from another's. [2.5-untested]
+  `scripts/Base/Addons/StatusEffect.reds`). Quests name a source when they
+  add restrictions (below), so this is the one place that tells a quest's
+  from another's. **Not readable from script**: `gameSourceData` is a class
+  (`ISerializable`, 0x40 bytes, `name` at +0x30) held by value, without
+  `ref`; `for x in` over the array is refused, and
+  `NameToString(effect.sourcesData[i].name)` compiles but overwrites the
+  VM's native frame: the host crashed 2 s into every car ride (2026-11-21,
+  access violation at `NameToString`'s native, +0xd38a7c, a saved register
+  holding data; script frames read off the frozen thread's stack:
+  `TandemRestrictions.HostTick`). Read it in C++ through RTTI if it is
+  ever needed. [broken-on-2.5]
 - **What a gameplay restriction is**: a status effect with the gameplay
   tag `GameplayRestriction`. `PlayerPuppet.OnStatusEffectApplied` (F:43899)
   hands those to `PlayerGameplayRestrictions.OnGameplayRestrictionAdded`
@@ -509,8 +516,8 @@ Invulnerable)` (:87673, types :530; quests set it through
   `GameInstance.GetSceneSystem(game).GetScriptInterface().IsEntityInScene(id)`
   (:193151). [2.5-verified offline]
 - To check in game (scenarios `story-restrict-guest`, `story-restrict-host`):
-  which records a real quest scene puts on the host's V and with which
-  `sourcesData` (the host logs both); that NoCombat applied to a guest
+  which records a real quest scene puts on the host's V (the host logs
+  them); that NoCombat applied to a guest
   holsters it and blocks the wheel; that taking our stack off leaves a
   restriction the guest's own game holds; maxStacks of NoCombat and
   NoWeapons. [2.5-untested]

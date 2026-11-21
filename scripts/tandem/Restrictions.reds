@@ -112,15 +112,11 @@ public class TandemRestrictions {
       let record = effect.GetRecord();
       if TandemRestrictions.IsShared(record) && !ArrayContains(ids, record.GetID()) {
         ArrayPush(ids, record.GetID());
-        // Who put it on (Codeware's StatusEffect.sourcesData: a quest's
-        // node names its source): logged, for the facts to check in game.
-        let from = "";
-        let i = 0;
-        while i < ArraySize(effect.sourcesData) {
-          from += s" \(NameToString(effect.sourcesData[i].name))";
-          i += 1;
-        }
-        sources += s" \(TDBID.ToStringDEBUG(record.GetID())) [\(from) ]";
+        // Not Codeware's StatusEffect.sourcesData: its elements are class
+        // values without a ref, and indexing one in script overwrites the
+        // VM's native frame (the game crashed in the first car ride,
+        // engine/story.md).
+        sources += s" \(TDBID.ToStringDEBUG(record.GetID()))";
       }
     }
     // Hands kept empty by our scene or our quest (the upper body state
@@ -133,7 +129,7 @@ public class TandemRestrictions {
       && (tier >= 2 || GameInstance.GetQuestsSystem(this.m_game).GetFact(n"ForceEmptyHands") > 0);
     if emptyHands && !ArrayContains(ids, t"GameplayRestriction.NoCombat") {
       ArrayPush(ids, t"GameplayRestriction.NoCombat");
-      sources += " GameplayRestriction.NoCombat [ hands forced empty ]";
+      sources += " GameplayRestriction.NoCombat (hands forced empty)";
     }
     this.m_restricted = ArraySize(ids) > 0;
     if TandemStory.SendRestrictions(ids) {

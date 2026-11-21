@@ -68,8 +68,9 @@
       its scene or quest (the upper body state machine's ForceEmptyHands,
       not a safe zone's). As `StoryRestrictions` (the whole set, sorted, on
       every change; a story message: kept for late joiners, in the story
-      digest, an explicit "none" in a story resync). Each record's sources
-      (Codeware's `sourcesData`) are logged.
+      digest, an explicit "none" in a story resync). The records are
+      logged, not their sources: Codeware's `sourcesData` crashes the
+      script VM when read (`engine/story.md`).
     - _Who shares the moment_ (`story::InMoment`): the host's V is in a
       scene (tier 2 and up, **private scenes included**: a guest inside
       one's area could break it too) or has story restrictions on; the
