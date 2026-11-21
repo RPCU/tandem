@@ -4,6 +4,10 @@ ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female --name Panam --hurt 5
 expect 'joined \(player [0-9]+' 20
 expect 'comms: link with Panam: [0-9] -> 3' 20
+# The save may load with a call of its own up (Panam's, waiting on a
+# choice): the baseline is no holocall and no choice hub, forced.
+cmd presence hud holocall off
+cmd presence hud choices off
 expect 'hud: layout under the health bar \(full\) at [0-9.]+ [0-9.]+' 30
 expect 'hud: the game.s HUD modules followed: [0-9]+' 10
 shot hud-layout-default
@@ -11,7 +15,7 @@ shot hud-layout-default
 cmd presence hud holocall on
 expect 'hud: layout below the holocall \(compact\) at [0-9.]+ [0-9.]+, HUD [0-9]+ x [0-9]+, holocall up' 5
 shot hud-layout-holocall
-cmd presence hud holocall auto
+cmd presence hud holocall off
 expect 'hud: layout under the health bar \(full\)' 5
 # The boss bar: top centre, nothing to yield.
 cmd presence hud boss on
@@ -22,7 +26,7 @@ cmd presence hud boss auto
 cmd presence hud choices on
 expect 'hud: layout under the health bar \(compact\) .*choice hub up' 5
 shot hud-layout-choices
-cmd presence hud choices auto
+cmd presence hud choices off
 # The game hides its HUD: ours goes with it, nameplates too.
 cmd presence hud hudhidden on
 expect 'hud: party hidden \(the game.s HUD is hidden\)' 5
@@ -39,3 +43,5 @@ expect 'hud: party list shown' 5
 cmd presence report
 expect 'hud: layout under the health bar' 5
 reject 'watchdog: game thread silent'
+cmd presence hud holocall auto
+cmd presence hud choices auto
