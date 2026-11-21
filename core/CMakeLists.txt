@@ -16,6 +16,7 @@ add_library(tandem_core STATIC
   src/endpoint_regions.cpp
   src/story.cpp
   src/prefabs.cpp
+  src/moments.cpp
   src/carryover.cpp
   src/scene.cpp
   src/rigpose.cpp
