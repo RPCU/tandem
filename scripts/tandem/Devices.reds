@@ -1155,6 +1155,70 @@ public class TandemDevices extends ScriptableSystem {
     return best;
   }
 
+  // (test, Fixtures.reds: fixture check) The devices of our world within
+  // `radius` m of our V by class, then the nearest of each kind the device
+  // commands take, within 200 m, with where it stands: a scenario's spot
+  // confirmed, or the way to a better one.
+  public func Survey(radius: Float) -> Void {
+    let game = this.GetGameInstance();
+    let player = GetPlayer(game);
+    if !IsDefined(player) {
+      return;
+    }
+    let here = player.GetWorldPosition();
+    let classes: array<CName>;
+    let counts: array<Int32>;
+    let total = 0;
+    for device in this.m_devices {
+      let object: ref<GameObject>;
+      if device.attached {
+        object = GameInstance.FindEntityByID(game, device.entity) as GameObject;
+      }
+      if IsDefined(object) && Vector4.Distance(here, object.GetWorldPosition()) <= radius {
+        total += 1;
+        let found = -1;
+        let i = 0;
+        while i < ArraySize(classes) {
+          if Equals(classes[i], device.cls) {
+            found = i;
+          }
+          i += 1;
+        }
+        if found < 0 {
+          ArrayPush(classes, device.cls);
+          ArrayPush(counts, 1);
+        } else {
+          counts[found] += 1;
+        }
+      }
+    }
+    let listed = "";
+    let j = 0;
+    while j < ArraySize(classes) {
+      let separator = j > 0 ? ", " : "";
+      listed += s"\(separator)\(NameToString(classes[j])) \(counts[j])";
+      j += 1;
+    }
+    TandemNative.Log(s"fixture: devices within \(radius) m: \(total) (\(listed))");
+    let kinds: array<String> = ["door", "lift", "camera", "turret", "barrel", "ap", "radio"];
+    for kind in kinds {
+      let distance = 200.0;
+      let device = this.Nearest(kind, distance);
+      let object: ref<GameObject>;
+      let ps: ref<ScriptableDeviceComponentPS>;
+      if IsDefined(device) {
+        object = GameInstance.FindEntityByID(game, device.entity) as GameObject;
+        ps = this.StateOf(device);
+      }
+      if IsDefined(object) && IsDefined(ps) {
+        let at = object.GetWorldPosition();
+        TandemNative.Log(s"fixture: nearest \(kind) \(TandemDevices.Name(device)) at \(distance) m (\(at.X) \(at.Y) \(at.Z)): \(TandemDevices.Describe(TandemDevices.StatusOf(ps), TandemDevices.FlagsOf(ps), TandemDevices.ValueOf(ps)))");
+      } else {
+        TandemNative.Log(s"fixture: no \(kind) within 200 m");
+      }
+    }
+  }
+
   public func Command(command: String) -> Void {
     let words = StrSplit(command, " ");
     let verb = ArraySize(words) > 1 ? words[1] : "";
