@@ -46,6 +46,15 @@ public:
   // scripts take the session's word.
   void NoteLend(const proto::CarLend &lend);
   proto::Lend LendOf(proto::PlayerId player);
+  // The custom paint of each player's car (proto::CarPaint; stock for a
+  // player that said nothing), noted the same way, and how many times that
+  // player's has changed here (the scripts apply a paint once).
+  struct Paint {
+    proto::CarPaint paint;
+    std::uint32_t changes{};
+  };
+  void NotePaint(const proto::CarPaint &paint);
+  Paint PaintOf(proto::PlayerId player);
   // The session's vendors (proto::NpcVendor, tandem/vendors.hpp), noted the
   // same way: each shared NPC's placed entity, the vendors that died.
   void NoteVendor(const proto::NpcVendor &vendor);
@@ -53,13 +62,14 @@ public:
   bool VendorDead(std::uint64_t entity);
   std::vector<std::uint64_t> TakeDeadVendors();
   void ClearVendors();
-  // Net thread, at a session's end: its vendors, lends and rules are not
+  // Net thread, at a session's end: its vendors, lends, paints and rules are not
   // the next one's (an NPC id or a player number it reuses is someone
   // else, and its host says its own rules).
   void EndSession();
 
 private:
   std::map<proto::PlayerId, proto::Lend> m_lends;
+  std::map<proto::PlayerId, Paint> m_paints;
   vendors::Book m_vendors;
   struct Inbound {
     proto::Message message;

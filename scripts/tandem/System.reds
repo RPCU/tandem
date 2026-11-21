@@ -129,6 +129,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_world: ref<TandemWorld>;
   private let m_pause: ref<TandemPause>;
   private let m_radio: ref<TandemRadio>;
+  // Cars' custom paint (Paint.reds).
+  private let m_paint: ref<TandemPaint>;
   private let m_time: ref<TandemTime>;
   // The NCART, rides and quest vehicles (Transit.reds).
   private let m_transit: ref<TandemTransit>;
@@ -373,6 +375,8 @@ public class TandemSystem extends ScriptableSystem {
     this.m_pause.Start(this.GetGameInstance());
     this.m_radio = new TandemRadio();
     this.m_radio.Start(this.GetGameInstance());
+    this.m_paint = new TandemPaint();
+    this.m_paint.Start(this.GetGameInstance());
     this.m_time = new TandemTime();
     this.m_time.Start(this.GetGameInstance());
     this.m_transit = new TandemTransit();
@@ -520,6 +524,7 @@ public class TandemSystem extends ScriptableSystem {
       this.m_radio.Stop();
       this.m_radio = null;
     }
+    this.m_paint = null;
     if IsDefined(this.m_time) {
       this.m_time.Stop();
       this.m_time = null;
@@ -915,6 +920,10 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_transit;
   }
 
+  public func Paint() -> ref<TandemPaint> {
+    return this.m_paint;
+  }
+
   // Slowed time (Time.reds), driven by Tick.
   public func TimeSync() -> ref<TandemTime> {
     return this.m_time;
@@ -1193,6 +1202,10 @@ public class TandemSystem extends ScriptableSystem {
       this.m_radio.Tick(this.Now(), this);
     }
     TandemNative.PerfMark(15);
+    // Cars' custom paint (Paint.reds): ours said, the others' on their copies.
+    if IsDefined(this.m_paint) && this.m_playing {
+      this.m_paint.Tick(this.Now(), this);
+    }
     if IsDefined(this.m_travel) && this.m_playing {
       this.m_travel.Tick(this.Now(), this.m_you);
     }
@@ -1299,6 +1312,12 @@ public class TandemSystem extends ScriptableSystem {
       let story = TandemStorySystem.Get(this.GetGameInstance());
       if IsDefined(story) {
         story.GarageCommand(command);
+      }
+      return;
+    }
+    if StrBeginsWith(command, "paint") {
+      if IsDefined(this.m_paint) {
+        this.m_paint.Command(command, this);
       }
       return;
     }
