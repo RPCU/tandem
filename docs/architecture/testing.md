@@ -339,7 +339,10 @@ hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
   another player is in the session, for `--sandevistan-for` s (default 5)
   at `--sandevistan-scale` (default 0.25): a time bubble around its V
   (scenario `time`); `--scan-at N` does the same with its scanner's slow
-  motion (scenario `time-scan`).
+  motion (scenario `time-scan`). A guest logs the host's clock at each of
+  its `World` updates with the pace since the last one
+  (`host clock T s: D game s in R s (rate X)`, 8 at normal speed;
+  scenario `time-menus`).
 - **Fights**: `join --hit-npcs N` hits one of the host's NPCs every N s
   as a strike, `--strike KIND` its outcome (`plain`, `nonlethal`, `cap`,
   `poise`, `head`, `blade`); as the host of a replay it applies strikes by

@@ -4407,6 +4407,9 @@ int main(int argc, char **argv) {
   bool askedSkip = false;
   std::int64_t skippedSeconds = 0;
   std::optional<std::int32_t> hostClock;
+  // When it was heard (real time): how fast the host's world ran between
+  // two (time-menus: a host's menu slows nothing).
+  std::optional<std::chrono::steady_clock::time_point> hostClockAt;
   bool busySet = false, busyDone = false;
   std::optional<std::chrono::steady_clock::time_point> busySince;
   std::optional<Vec3> lastSent;
@@ -5282,7 +5285,16 @@ int main(int argc, char **argv) {
                 nextWorld = std::chrono::steady_clock::now();
               }
             } else if constexpr (std::is_same_v<E, tandem::events::HostWorld>) {
+              const auto heardAt = std::chrono::steady_clock::now();
+              if (hostClock && hostClockAt) {
+                const double real = std::chrono::duration<double>(heardAt - *hostClockAt).count();
+                if (real > 1.0)
+                  Log("host clock {} s: {} game s in {:.1f} s (rate {:.2f})",
+                      e.world.gameTimeSeconds, e.world.gameTimeSeconds - *hostClock, real,
+                      (e.world.gameTimeSeconds - *hostClock) / real);
+              }
               hostClock = e.world.gameTimeSeconds;
+              hostClockAt = heardAt;
             } else if constexpr (std::is_same_v<E, tandem::events::WorldItemAppeared>) {
               const auto &item = e.item;
               Log("world item {} from player {}: {} stack(s), first {:#x} x{} (token {})", item.id,

@@ -68,7 +68,17 @@
 //   train: Transit.reds), and the clock moves on by what the ride takes
 //   either way (World.reds brings the guests along). What the network
 //   drives here is exempted from it, as from a slow motion.
-// - Menus, pause, time skips: not here (Pause.reds; docs/architecture/time.md).
+// - Menus, popups and screens (docs/architecture/time.md, "Menus"): a
+//   guest's slow or stop its own world, as in single player. The host's
+//   world is the shared one: while another player is in the session
+//   (HostKeepsWorld) none of ours slows it. Those that go through a
+//   TimeDilationHelper profile (the weapon and vehicle wheels, the phone,
+//   the hub menu, the radio, list popups) never start theirs, as vanilla's
+//   own multiplayer branch has it (the wrap at the end); those set by name
+//   (the map, a shop's, the stash's or the ripperdoc's screen, a tutorial
+//   popup, the breach's screen: MenuReasons) are unset as soon as they are
+//   set (DropMenus); a shard's popup pauses nothing (its wrap at the end).
+// - Pause, time skips: not here (Pause.reds, Activities.reds).
 //
 // Runs from TandemSystem.Tick, every frame once the world plays: the script
 // tick is one frame behind a dilation at most. (It ran from the plugin's
@@ -149,6 +159,15 @@ public class TandemTime {
   private let m_testReason: CName;
   private let m_measureFrom: Float;
   private let m_measureSim: Float;
+  // Host: the menus' reasons unset this session (logged once each), and a
+  // shop's screen that still slowed our world after that (logged once a
+  // screen).
+  private let m_menusDropped: array<CName>;
+  private let m_shopLogged: Bool;
+  // (test) "time menu NAME SECONDS": a menu's slow motion as the game sets
+  // it, without opening the menu.
+  private let m_menuUntil: Float;
+  private let m_menuName: String;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -199,6 +218,12 @@ public class TandemTime {
     let times = GameInstance.GetTimeSystem(this.m_game);
     let now = this.RealNow();
     this.EndTest(times, now);
+    this.EndMenu(now);
+    // The host's menus slow nothing while another player is in the session:
+    // before anything reads the world's factor.
+    if TandemTime.HostKeepsWorld() {
+      this.DropMenus(times);
+    }
     this.SendOurs(times, player);
     // Alone in the session, single player rules: nothing is shared.
     let others = system.PuppetPlayers();
@@ -310,10 +335,13 @@ public class TandemTime {
       }
     }
     let local = this.m_selfSet;
-    let kept = [n"meleeHit", n"meleeHitStrong", n"deflect", n"customFFTimeDilation", n"WorldMap", n"tandemBubble", n"timeDilation",
+    let kept = [n"meleeHit", n"meleeHitStrong", n"deflect", n"customFFTimeDilation", n"tandemBubble", n"timeDilation", n"TimeSkip", n"NetworkBreach",
       TweakDBInterface.GetCName(t"timeSystem.radialMenu.reason", n""), TweakDBInterface.GetCName(t"timeSystem.hubMenu.reason", n""),
       TweakDBInterface.GetCName(t"timeSystem.vehicleRadioMenu.reason", n""), TweakDBInterface.GetCName(t"timeSystem.nanoWireBreach.reason", n""),
       TweakDBInterface.GetCName(t"timeSystem.settings.reason", n"")];
+    for reason in TandemTime.MenuReasons() {
+      ArrayPush(kept, reason);
+    }
     for reason in kept {
       if IsNameValid(reason) && times.IsTimeDilationActive(reason) {
         local = true;
@@ -332,6 +360,63 @@ public class TandemTime {
       TandemText.Notice(this.m_game, "Time-ModSlow");
     }
     return factor;
+  }
+
+  // ---- the host's menus ----
+
+  // We host and another player is in the session: our world is the shared
+  // one, and no menu, popup or screen of ours may slow or stop it (every NPC
+  // and turret we run would crawl on the others' screens). Alone, or a
+  // guest: single player's menus. Reads natives only (the wraps at the end
+  // call it from wherever the game opens a menu).
+  public static func HostKeepsWorld() -> Bool {
+    if !TandemNative.IsStarted() || !TandemNative.IsHost() {
+      return false;
+    }
+    let others = TandemNative.OtherPlayers();
+    return ArraySize(others) > 0;
+  }
+
+  // The slow motion or stop the menus and screens set by name, without a
+  // TimeDilationHelper profile (docs/research/coop-time.md §3.4): the map
+  // (WorldMapMenuGameController, 0), a shop's, the stash's, the ripperdoc's
+  // and the wardrobe's screens (VendorStash, 0, the player's factor too), a
+  // tutorial popup (UI_TutorialPopup, 0) and the breach's screen (minigame,
+  // 1e-5). Not here: the time-skip wheel (TimeSkip: Activities.reds asks
+  // everyone) and the breach's dive (NetworkBreach: a listener waits for it
+  // to end, coop-time.md §8 question 6).
+  public static func MenuReasons() -> array<CName> {
+    return [n"WorldMap", n"VendorStash", n"UI_TutorialPopup", n"minigame"];
+  }
+
+  // Host, another player in the session: each menu's reason unset as soon
+  // as it is set (the script tick runs on real time: a frame of it at most).
+  // The menu's own close unsets it again, which changes nothing.
+  private func DropMenus(times: ref<TimeSystem>) -> Void {
+    for reason in TandemTime.MenuReasons() {
+      if times.IsTimeDilationActive(reason) {
+        times.UnsetTimeDilation(reason, n"None");
+        if Equals(reason, n"VendorStash") {
+          times.UnsetTimeDilationOnLocalPlayerZero(reason, n"None");
+        }
+        if !ArrayContains(this.m_menusDropped, reason) {
+          ArrayPush(this.m_menusDropped, reason);
+          TandemNative.Log(s"time: a menu (\(NameToString(reason))) would slow the shared world: unset, the host's menus slow nothing");
+        }
+      }
+    }
+    // A shop's or the stash's screen slowed our world to 0.05 under a reason
+    // scripts could not name (seen 2026-11-21): what is left of it, once a
+    // screen, with the names it might be under.
+    let vendors = TandemVendors.Of(this.m_game);
+    let up = IsDefined(vendors) && vendors.ScreenUp();
+    if up && !this.m_shopLogged && TandemTime.Dilated(times) {
+      this.m_shopLogged = true;
+      let hub = TweakDBInterface.GetCName(t"timeSystem.hubMenu.reason", n"");
+      TandemNative.Log(s"time: a shop's screen still slows the shared world to \(times.GetActiveTimeDilation()) (VendorStash \(times.IsTimeDilationActive(n"VendorStash")), hub menu \(NameToString(hub)) \(IsNameValid(hub) && times.IsTimeDilationActive(hub))): the NPCs we share are exempted");
+    } else if !up {
+      this.m_shopLogged = false;
+    }
   }
 
   // Our world runs slowed now: a dilation is active and its factor is one.
@@ -920,6 +1005,11 @@ public class TandemTime {
     ArrayClear(this.m_bubbleOwners);
     ArrayClear(this.m_bubbleSizes);
     ArrayClear(this.m_taken);
+    ArrayClear(this.m_menusDropped);
+    this.m_shopLogged = false;
+    if this.m_menuUntil > 0.0 {
+      this.CloseMenu();
+    }
     this.CountScan(false);
     if this.m_scans > 0 || this.m_slowedSeconds > 0.0 {
       TandemNative.Log(s"time: this session, our scanner's bubbles: \(this.m_scans) for \(this.m_scanSeconds) s; our V slowed by the others' bubbles for \(this.m_slowedSeconds) s, \(this.m_slowedScanSeconds) s of it by a scanner's alone");
@@ -939,6 +1029,10 @@ public class TandemTime {
       this.m_testUntil = 0.0;
       GameInstance.GetTimeSystem(this.m_game).UnsetTimeDilation(this.m_testReason, n"None");
       TandemNative.Log("time: test dilation off (test reset)");
+    }
+    if this.m_menuUntil > 0.0 {
+      this.CloseMenu();
+      TandemNative.Log("time: test menu off (test reset)");
     }
     // The slowed-down notice may be shown again (a scenario reads it; the
     // session keeps the flag).
@@ -979,6 +1073,9 @@ public class TandemTime {
       this.m_measureSim = this.SimNow();
       times.SetTimeDilation(this.m_testReason, scale, 999.0, n"None", n"None");
       TandemNative.Log(s"time: test dilation \(scale) for \(seconds) s (as \(NameToString(this.m_testReason)))");
+    } else if StrBeginsWith(command, "time menu ") {
+      let rest = StrAfterFirst(command, "menu ");
+      this.OpenMenu(StrBeforeFirst(rest + " ", " "), StringToFloat(StrAfterFirst(rest, " "), 3.0));
     } else if StrBeginsWith(command, "time fx ") {
       let system = this.TandemSys();
       for other in this.m_fxPlayers {
@@ -1022,6 +1119,75 @@ public class TandemTime {
       times.UnsetTimeDilation(this.m_testReason, n"None");
       TandemNative.Log("time: test dilation over");
     }
+  }
+
+  // "time menu NAME SECONDS": a menu's slow motion set as the game sets it
+  // when that menu opens, without opening it: wheel (the radialMenu
+  // profile, as QuickSlotsManager), hub (hubMenu, as MenuHubGameController),
+  // map (WorldMap 0, as WorldMapMenuGameController), stash (VendorStash 0 on
+  // the world and our V, as a shop's screen), tutorial (UI_TutorialPopup 0)
+  // or breach (minigame 1e-5). The world speed is logged a second in.
+  private func OpenMenu(name: String, seconds: Float) -> Void {
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      return;
+    }
+    if this.m_menuUntil > 0.0 {
+      this.CloseMenu();
+    }
+    let times = GameInstance.GetTimeSystem(this.m_game);
+    let started = true;
+    if Equals(name, "wheel") {
+      started = TimeDilationHelper.SetTimeDilationWithProfile(player, "radialMenu", true, true);
+    } else if Equals(name, "hub") {
+      started = TimeDilationHelper.SetTimeDilationWithProfile(player, "hubMenu", true, true);
+    } else if Equals(name, "map") {
+      times.SetTimeDilation(n"WorldMap", 0.0);
+    } else if Equals(name, "stash") {
+      times.SetTimeDilation(n"VendorStash", 0.0);
+      times.SetTimeDilationOnLocalPlayerZero(n"VendorStash", 0.0);
+    } else if Equals(name, "tutorial") {
+      times.SetTimeDilation(n"UI_TutorialPopup", 0.0);
+    } else if Equals(name, "breach") {
+      times.SetTimeDilation(n"minigame", 0.00001);
+    } else {
+      TandemNative.Log(s"time: no test menu \(name) (wheel, hub, map, stash, tutorial, breach)");
+      return;
+    }
+    this.m_menuName = name;
+    this.m_menuUntil = this.RealNow() + seconds;
+    this.m_measureFrom = this.RealNow();
+    this.m_measureSim = this.SimNow();
+    TandemNative.Log(s"time: test menu \(name) for \(seconds) s (its slow motion \(started ? "set" : "refused"))");
+  }
+
+  private func EndMenu(now: Float) -> Void {
+    if this.m_menuUntil > 0.0 && now >= this.m_menuUntil {
+      this.CloseMenu();
+      TandemNative.Log("time: test menu over");
+    }
+  }
+
+  // As the menu's own close does.
+  private func CloseMenu() -> Void {
+    this.m_menuUntil = 0.0;
+    let player = GetPlayer(this.m_game);
+    let times = GameInstance.GetTimeSystem(this.m_game);
+    if Equals(this.m_menuName, "wheel") && IsDefined(player) {
+      TimeDilationHelper.SetTimeDilationWithProfile(player, "radialMenu", false, false);
+    } else if Equals(this.m_menuName, "hub") && IsDefined(player) {
+      TimeDilationHelper.SetTimeDilationWithProfile(player, "hubMenu", false, false);
+    } else if Equals(this.m_menuName, "map") {
+      times.UnsetTimeDilation(n"WorldMap");
+    } else if Equals(this.m_menuName, "stash") {
+      times.UnsetTimeDilation(n"VendorStash");
+      times.UnsetTimeDilationOnLocalPlayerZero(n"VendorStash");
+    } else if Equals(this.m_menuName, "tutorial") {
+      times.UnsetTimeDilation(n"UI_TutorialPopup");
+    } else if Equals(this.m_menuName, "breach") {
+      times.UnsetTimeDilation(n"minigame");
+    }
+    this.m_menuName = "";
   }
 
   // A second into a test: how fast the world ran (sim time over real time).
@@ -1129,4 +1295,38 @@ protected cb func OnProjectileInitialize(eventData: ref<gameprojectileSetUpEvent
     time.SlowBullet(this, eventData.owner);
   }
   return result;
+}
+
+// The menus' and popups' slow motion through a profile (every vanilla
+// caller is one: the weapon and vehicle wheels, the phone and its message
+// popup, the hub menu, the radio, list popups, docs/research/coop-time.md
+// §2.8-2.9): refused on the host while another player is in the session,
+// exactly as vanilla's own multiplayer branch refuses it (IsMultiplayer(),
+// false in tandem's sessions). Their close finds nothing active and returns
+// as it does in multiplayer. A guest's, and the host's alone: unchanged.
+// job thread safe: it reads natives (HostKeepsWorld) and logs; it changes no
+// script state.
+@wrapMethod(TimeDilationHelper)
+public final static func SetTimeDilationWithProfile(requester: wref<GameObject>, const profileName: script_ref<String>, enable: Bool, allowMultipleTimeDilationSimultaneously: Bool) -> Bool {
+  if enable && TandemTime.HostKeepsWorld() {
+    TandemNative.Log(s"time: the \(Deref(profileName)) menu would slow the shared world: refused, the host's menus slow nothing");
+    return false;
+  }
+  return wrappedMethod(requester, profileName, enable, allowMultipleTimeDilationSimultaneously);
+}
+
+// A shard's popup pauses the game (the system requests handler's
+// PauseGame). On the host while another player is in the session it pauses
+// nothing: the popup stays up over a running world (only the pause menu
+// stops everyone: Pause.reds, which holds its pause again at once).
+// job thread safe: it changes no script state; the handler's unpause is the
+// one this controller's own close calls.
+@wrapMethod(ShardNotificationController)
+private final func PauseGameState(enable: Bool) {
+  wrappedMethod(enable);
+  let paused = TandemNative.PausedPlayers();
+  if enable && TandemTime.HostKeepsWorld() && ArraySize(paused) == 0 {
+    this.GetSystemRequestsHandler().UnpauseGame();
+    TandemNative.Log("time: a shard's popup would pause the shared world: unpaused, the host's menus pause nothing");
+  }
 }
