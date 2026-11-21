@@ -188,6 +188,10 @@ struct SessionChoice {
   std::string joinCode;
   bool addressSet{};
   bool fromMenu{};
+  // join, chosen in the co-op menu: at the first welcome our V goes beside
+  // the host (Travel.reds), once (TakeArrival). Never carried by a copy of
+  // the choice made after it was taken (a checkpoint's rejoin).
+  bool arrive{};
 };
 
 // How the session is doing, for the co-op menu (net thread writes, game
@@ -267,6 +271,11 @@ public:
   void ResetChoice();
   SessionChoice Choice() const;
   Config::Role ChosenRole() const;
+  // Game thread (co-op menu): the chosen join arrives beside the host
+  // (SessionChoice::arrive); whether it still does; taken once, at the welcome.
+  void ChooseArrival();
+  bool Arriving() const;
+  bool TakeArrival();
 
   // Net thread -> game thread: how the session is doing.
   void SetStatus(SessionStatus status);
