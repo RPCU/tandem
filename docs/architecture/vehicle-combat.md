@@ -223,8 +223,9 @@ no passenger state; tandem's own restrictions keep it unarmed
 (`TandemTransit.Restrict`: `NoWeapons`, and now `NoCombat`, which also puts
 away a weapon already drawn when it boarded).
 
-`tools/game.sh cmd wheels draw` draws a gun from a seat the game's way and
-logs the restrictions the V wears; the passenger state is reported as
+`tools/game.sh cmd wheels draw` draws a gun from a seat the game's way (the
+stand-in pistol, `Items.Preset_V_Unity_Cutscene`, when V has none a seat
+takes, as `EnteringCombatEvents` does) and logs the restrictions the V wears; the passenger state is reported as
 `VehicleCombat` mode 2 (`Passenger`).
 
 ## Bikes, thrown out, bailing out
