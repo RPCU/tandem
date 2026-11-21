@@ -190,8 +190,10 @@ pause menu, the map or Steam's overlay.
 
 - **Never on a game someone else started.** `tools/game.sh start` writes
   the game's pid and kernel start time to
-  `~/.cache/tandem/pilot/INSTANCE/game.owner` on the game machine; `stop`
-  removes it. `tandem-pilot run` finds the running game process and
+  `~/.cache/tandem/pilot/INSTANCE/game.owner` on the game machine as soon
+  as the game's process exists (`launches` too); `stop` removes it once the
+  game is gone. `tools/instance.sh` reads `main`'s too (`two-instances.md`,
+  "Sweeps on two games"). `tandem-pilot run` finds the running game process and
   refuses unless it is exactly that one; it checks again every second. A
   game the player launched has no such file.
 - **One pilot per instance**: a lock file (`flock`) in the same folder; it
