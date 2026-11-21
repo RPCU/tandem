@@ -2,6 +2,7 @@
 
 #include "comms.hpp"
 #include "config.hpp"
+#include "engine/guards.hpp"
 #include "engine/hooks.hpp"
 #include "engine/pose.hpp"
 #include "engine/posestream.hpp"
@@ -229,6 +230,9 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     // hooking a running game races its other threads. Without a session the
     // hooks only pass through (no puppet registered, no pose source).
     engine::InstallHooks(sdk, handle);
+    // Proton only: an engine crash of its own, made likelier by our proxies'
+    // deletions (engine/guards.cpp). Whatever the role: solo plays too.
+    const auto guard = engine::InstallCrashGuards(sdk, handle);
     sdk->gameStates->Add(handle, RED4ext::EGameStateType::Running, &g_running);
     if (runtime.config.pose)
       engine::InstallPoseStream(sdk, handle);
@@ -259,11 +263,12 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
         hooks += ", quest node observer (freeze off)";
       if (runtime.config.trace || runtime.config.mirror)
         hooks += ", anim trace";
-      log::Info("tandem: {} (hooks idle: {}; script wraps gated on a session); recorder {}",
+      log::Info("tandem: {} (hooks idle: {}; script wraps gated on a session); recorder {}; "
+                "transform guard {}",
                 runtime.config.role == Config::Role::Off
                     ? std::string("solo, passive")
                     : std::format("co-op at load as {}", NameOf(runtime.config.role)),
-                hooks, runtime.config.recorder ? "on" : "off");
+                hooks, runtime.config.recorder ? "on" : "off", guard);
     }
     // The session starts when scripts report a loaded game (TandemNative.Start).
     break;
@@ -272,6 +277,7 @@ RED4EXT_C_EXPORT bool RED4EXT_CALL Main(RED4ext::v1::PluginHandle handle,
     Runtime::Get().Stop();
     Recording::Get().Shutdown();
     engine::RemoveHooks(g_sdk, handle);
+    engine::RemoveCrashGuards(g_sdk, handle);
     engine::RemovePoseStream(g_sdk, handle);
     engine::RemoveTrace(g_sdk, handle);
     engine::RemoveQuestFreeze(g_sdk, handle);

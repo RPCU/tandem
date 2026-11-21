@@ -39,6 +39,7 @@
 #                              game's container) to .cache/re/bt.txt, tandem's
 #                              frames named from its .pdb. A game that "freezes"
 #                              has often crashed: Proton's crash handler waits.
+#                              Known crash sites in the game are named too.
 #   tools/game.sh peer [ARGS]  (re)start the mock player here, in the background
 #                              (default: join GAME_HOST, front mode, male body;
 #                              log in .cache/peer.log)
@@ -589,6 +590,31 @@ printf 'attach 0x%s\nbt all\ndetach\nquit\n' "$pid" | run 2>&1 |
 REMOTE
   echo ".cache/re/bt.txt: $(grep -c '^Backtracing' .cache/re/bt.txt) threads"
   grep -n ' in tandem ' .cache/re/bt.txt | grep -v 'enet_\|Session::Poll\|Endpoint::Update\|NetThread\|stop_token\|_Invoke\|thread.cpp\|vector:' | head -20 || true
+  bt_known .cache/re/bt.txt
+}
+
+# Known crash sites (game 2.50) among a backtrace's game frames: the
+# function's range in the exe (first, last byte, as offsets) and what it is
+# (docs/research/engine/re.md §13.8, §13.98).
+bt_known() {
+  awk '
+    BEGIN {
+      n = 0
+      site(0x2f3a4c0, 0x2f3a59b, "the game'\''s crash handler, waiting: this is a crash, not a deadlock (§13.8)")
+      site(0x6107b0, 0x610a32, "transform update of an expired entity (null + 0x2E0): the transform guard was off or missed it (§13.98)")
+      site(0xd408a4, 0xd40997, "the transform job that passes an expired entity on (§13.98)")
+      site(0x821360, 0x82139a, "AI workspot: the spot user'\''s end, its actor gone (§13.98)")
+      site(0x82139c, 0x821408, "AI workspot: its result to the actor'\''s motion planner, its actor gone (§13.98)")
+    }
+    function site(first, last, what) { lo[n] = first; hi[n] = last; name[n++] = what }
+    /^Backtracing for thread/ { thread = $4 }
+    / in cyberpunk2077 \(\+0x/ {
+      match($0, /\(\+0x[0-9a-f]+\)/)
+      at = strtonum("0x" substr($0, RSTART + 4, RLENGTH - 5))
+      for (i = 0; i < n; i++)
+        if (at >= lo[i] && at <= hi[i])
+          printf "known crash site: thread %s, frame %s (+0x%x): %s\n", thread, $1 == "=>0" ? 0 : $1, at, name[i]
+    }' "$1"
 }
 
 # This machine's address on the route to the game machine (for role join).
