@@ -717,6 +717,8 @@ private final func ProcessPipeline(hitEvent: ref<gameHitEvent>, cache: ref<Cache
   if IsDefined(presence) && presence.Cosmetic(hitEvent) {
     return;
   }
+  // Our V's bullet hit this after a ricochet: the others draw its bounce.
+  TandemPresenceSync.OurRicochet(game, hitEvent);
   // A duel is its starter's: a hit on a fist fight's opponent from a V
   // that is not in it is dropped (Contests.reds).
   if TandemContests.Watched(game, hitEvent) {
