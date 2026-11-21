@@ -162,19 +162,32 @@ story restrict` (report), `story restrict on|off REC` (a test
       (`tandem.ini`) keeps a guest's own V in every moment.
     - _What watching does_: the host's view on a camera of the guest's own
       (the watch camera's: `simple_free_camera.ent`, drawn from the same
-      `scene::CameraTrack`, any play); the host's puppet hidden while the
-      view sits in it (first person: within 1 m, 1.5 m to show it again).
-      Its own V: unseen by the NPCs (`PlayerPuppet.SetInvisible`, only if it
-      was not already), out of the picture (the animation system's fade),
+      `scene::CameraTrack`, any play), activated with the audio listener
+      (engine facts §13.96: else the listener stays the V's). First person
+      (the view within 1 m of the host's puppet, 1.5 m to leave): only the
+      puppet's head meshes and head, eyes and face items are hidden, as V's
+      own first person has no head; its arms, hands and weapon stay in the
+      picture. Its own V: unseen by the NPCs (`PlayerPuppet.SetInvisible`,
+      only if it was not already), out of the picture (the animation system's fade),
       held by the spectating holds through the restrictions' ledger
       (NoMovement, NoCameraControl, NoCombat, Invulnerable), its scene
       watch offer, join offer and ride offer not shown. It says
       `kStorySpectating` in its own `StoryState`: every other game hides
       its puppet (`TandemVisibility` reason `spectate`) and turns its
       puppet's visible object component off (their NPCs do not see it); the
-      party HUD shows it "in a scene". Back: everything undone; when the
-      moment ended with the host more than 60 m away, the guest joins it
-      (`TandemTravel.RegroupTo`, behind a loading screen).
+      party HUD shows it "in a scene". Its V is **carried along** with the
+      host's, four times a second (`Follow`), so its game streams the world,
+      links with the host's NPCs (`regions.md`) and hears around the
+      picture: in the host's vehicle, mounted to the copy's trunk body slot
+      (the ride along's carry, `Transit.reds`; placed in the cabin each
+      check if the copy has none); on foot, put on navigation ground 3 m
+      short of the host's V on its side when more than 15 m away (once a
+      second at most). Already seated or riding along in the host's ride:
+      not moved. Back: everything undone, the V where it was carried (off
+      the copy: beside it, on its right); only when the moment ended with
+      the host still more than 60 m away (the carry fell short: no ground,
+      a loading screen) does the guest join it (`TandemTravel.RegroupTo`,
+      behind a loading screen).
     - Tests: `tests/restrictions_test.cpp` (the reasons, the hold, who
       watches: near at the start, followed anywhere, private, apart, left,
       lifted), `tests/referee_test.cpp` (a moment is the host's word,
@@ -182,7 +195,8 @@ story restrict` (report), `story restrict on|off REC` (a test
       verb `moment on|off` (with `camera on`); scenarios `spectate-guest`,
       `spectate-leave`, `spectate-host`; `tools/game.sh cmd story spectate
 report` (state), `story spectate on|off` (host: a test moment; guest:
-      watching allowed, or off for the session).
+      watching allowed, or off for the session), `story spectate parts`
+      (the host's puppet's meshes, the head ones marked).
   - _Johnny, Songbird, takeovers_ (`research/coop-quests-design.md` §2.11):
     Johnny and Songbird are NPCs of the host's world, so a guest near the
     host sees them as proxies where the host does. Johnny's relic glitches

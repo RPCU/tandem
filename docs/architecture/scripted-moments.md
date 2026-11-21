@@ -82,25 +82,29 @@ read yet).
 
 Big ones, for the user:
 
-1. **A moment that takes the host far away.** The spectator's own V stays
-   parked where it was: its game streams the world, and links with the
-   host's NPCs (150 m, `regions.md`), around that V, not around the
-   camera. A ride or a quest teleport hundreds of metres away shows an
-   empty or unstreamed world through the host's camera. Proposed: the
-   parked body follows the host's V, hidden (a carry like `Transit.reds`'
-   ride along, or a teleport behind each host jump), so streaming, the
-   links and the regroup at the end come with it.
-2. **First person has no body.** The host's puppet is hidden while the
-   view sits in it: the spectator sees no arms, hands or weapon. Proposed:
-   the host's first-person arms (its `PoseState` on an FPP rig attached to
-   the camera), or the puppet with its head hidden.
+1. **A moment that takes the host far away**: built (2026-11-21, not run).
+   The spectator's hidden V is carried along with the host's (`story.md`,
+   "What watching does": the copy's trunk body slot in a vehicle, ground
+   behind it on foot), so streaming, the NPC links (150 m, `regions.md`)
+   and the listener follow; at the end it plays on there, the regroup
+   behind a loading screen only a fallback. Open: whether the copy of an
+   AV or a quest vehicle has the trunk body slot (else the 4 Hz cabin
+   placement), and whether our capsule 3 m behind the host's puppet gets
+   in an actor's way on foot.
+2. **First person has no body**: built (not run). Only the host's
+   puppet's head goes (meshes by name, head, eyes and face items): its
+   arms, hands and weapon show. Open: which mesh names the puppet's head
+   has (`story spectate parts`), and that the TPP arms, posed for third
+   person, are mostly below the first-person view: an FPP rig on the
+   camera driven by the host's `PoseState` would be the full answer.
 3. **Signals still to read in game**: passenger combat in an NPC's quest
    car and the Basilisk's turret (tier and PSM), Cynosure's chase,
    the Blackwall's sequences, and whether a player's own workspot puts
    NoMovement on V (the one possible wrong catch).
-4. **Sound**: the spectator's listener is its game's active camera (the
-   one we activate) if the engine follows it; its V's own world sounds
-   stay its world's. Unknown until heard.
+4. **Sound**: answered from the scripts (engine facts §13.96): the
+   listener is the player's, not the active camera's, unless a camera is
+   activated with `shouldOverrideAudioListeners`; ours now is. With the
+   carry (1) the V is near the picture either way.
 
 Small ones fixed with the feature: scene voices and the host's subtitles
 and hubs reach a spectator wherever the moment went (`Scenes.reds`,
@@ -117,11 +121,20 @@ shows.
 - [ ] A tier 2 walk and talk (The Ride, Jackie): watching starts within a
       second, the hint shows, the guest's V cannot move, its body is out of
       the picture, nobody shoots it.
-- [ ] A quest ride (the Delamain to Konpeki): watched all the way; the
-      guest joins the host where it ends (more than 60 m).
+- [ ] A quest ride (the Delamain to Konpeki): watched all the way, the
+      world streamed and the host's NPCs there through the camera; the log
+      says `our V carried along in the host's vehicle` (and whether the
+      trunk mount held); at the end the guest's V is beside the car, no
+      loading screen.
+- [ ] A walk far on foot (an escort, a quest teleport): the log says
+      `our V carried along with the host's`; the guest's V never seen nor
+      in the way.
+- [ ] Sound: the moment heard from the host's camera, not from where the
+      guest's V was.
 - [ ] First person (the Konpeki penthouse, a tier 2 section): the picture
-      is the host's eyes, the host's puppet hidden, back when the view
-      leaves it.
+      is the host's eyes; no face or hair in it, its hands and weapon in
+      view (`story spectate parts` names the head meshes); the whole
+      puppet back when the view leaves it.
 - [ ] A braindance and a netrun (The Information, Transmission): watched;
       the guest's own V untouched after.
 - [ ] Johnny's flashback (Arasaka raid): watched to its end.
