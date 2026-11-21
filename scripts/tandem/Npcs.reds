@@ -687,6 +687,12 @@ public class TandemNpcs {
     if ArrayContains(this.m_hiddenIds, id) {
       return;
     }
+    // A vendor's shop stays its own V's (Vendors.reds): what it goes by is
+    // read now, while it stands there.
+    let vendors = TandemVendors.Of(this.m_game);
+    if IsDefined(vendors) {
+      vendors.Keep(npc);
+    }
     TandemProxies.Pacify(npc);
     npc.HideIrreversibly();
     ArrayPush(this.m_hiddenIds, id);

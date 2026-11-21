@@ -32,6 +32,15 @@
 // tools/game.sh cmd vendor | vendor near | vendor goto | vendor open |
 // vendor close
 
+// A vendor of ours that Npcs.reds hid in the session: what it went by, read
+// while it stood there (TandemVendors.Keep).
+public class TandemVendorKept {
+  public let entity: EntityID;
+  public let ids: array<EntityID>;
+  public let at: Vector4;
+  public let since: Float;
+}
+
 public class TandemVendors {
   private let m_game: GameInstance;
   private let m_system: wref<TandemSystem>;
@@ -51,6 +60,8 @@ public class TandemVendors {
   private let m_ownOf: EntityID;
   private let m_own: wref<ScriptedPuppet>;
   private let m_lastWatch: Float;
+  // Our own vendors hidden in the session, the last 64.
+  private let m_kept: array<ref<TandemVendorKept>>;
   // The shop we opened last: on which entity, when, how many so far.
   private let m_opened: EntityID;
   private let m_openedAt: Float;
@@ -70,6 +81,7 @@ public class TandemVendors {
   public func Start(game: GameInstance, system: ref<TandemSystem>) -> Void {
     this.m_game = game;
     this.m_system = system;
+    ArrayClear(this.m_kept);
     // The last session's vendors are not this one's.
     TandemProgress.VendorsReset();
   }
@@ -87,6 +99,8 @@ public class TandemVendors {
     // hidden in a session: Npcs.reds); a save never holds it.
     ArrayClear(this.m_buried);
     ArrayClear(this.m_buriedBodies);
+    ArrayClear(this.m_kept);
+    this.m_own = null;
     TandemProgress.VendorsReset();
   }
 
@@ -175,6 +189,35 @@ public class TandemVendors {
     if EntityID.IsDefined(id) {
       TandemProgress.SendVendor(npc, id);
     }
+  }
+
+  // An NPC of ours about to be hidden (Npcs.reds, Suppress: a twin, a spawn
+  // inside another player's region, a buried one): a vendor's ids and place
+  // are kept as they are now. Hidden, it is on no list of the NPCs around,
+  // and what its body says of itself then is not relied on (a stall's
+  // seller, hidden behind its owner's proxy 1.7 m from our V, was "not in
+  // our world": vendor-guest, 2026-11-21).
+  public func Keep(body: ref<ScriptedPuppet>) -> Void {
+    let entity = body.GetEntityID();
+    for known in this.m_kept {
+      if known.entity == entity {
+        return;
+      }
+    }
+    let ids = TandemVendors.IdsOf(body);
+    if ArraySize(ids) == 0 {
+      return;
+    }
+    if ArraySize(this.m_kept) >= 64 {
+      ArrayErase(this.m_kept, 0);
+    }
+    let kept = new TandemVendorKept();
+    kept.entity = entity;
+    kept.ids = ids;
+    kept.at = body.GetWorldPosition();
+    kept.since = this.m_now;
+    ArrayPush(this.m_kept, kept);
+    TandemNative.Log(s"vendor: our own \(TandemVendors.NameOf(body)) (entity \(TandemNative.EntityHex(entity)), vendor \(TandemNative.EntityHex(ids[0]))) is hidden: kept for its shop");
   }
 
   // A new NPC of ours that is the copy of a vendor the session says died.
@@ -346,16 +389,15 @@ public class TandemVendors {
         }
       }
     }
-    // Ours gave way to its owner's (hidden: the area query may skip it).
-    if IsDefined(npcs) {
-      for id in npcs.HiddenIds() {
-        let hidden = GameInstance.FindEntityByID(this.m_game, id) as ScriptedPuppet;
-        if IsDefined(hidden) && TandemVendors.Is(hidden, entity) {
-          let far = Vector4.Distance(here, hidden.GetWorldPosition());
-          if far < bestAt {
-            best = hidden;
-            bestAt = far;
-          }
+    // Ours gave way to its owner's: hidden, on no list of the NPCs around.
+    // By what it went by before it was hidden, where it stood then.
+    for kept in this.m_kept {
+      if ArrayContains(kept.ids, entity) {
+        let hidden = GameInstance.FindEntityByID(this.m_game, kept.entity) as ScriptedPuppet;
+        let far = Vector4.Distance(here, kept.at);
+        if IsDefined(hidden) && far < bestAt {
+          best = hidden;
+          bestAt = far;
         }
       }
     }
@@ -364,6 +406,60 @@ public class TandemVendors {
       this.m_own = best;
     }
     return best;
+  }
+
+  // (logs) Why no NPC of ours is the vendor of that id: the one that went
+  // by it was hidden and has left our world since, or none around goes by
+  // it (those with a vendor id within 100 m, the nearest's id and how far).
+  private func WhyAbsent(entity: EntityID) -> String {
+    for kept in this.m_kept {
+      if ArrayContains(kept.ids, entity) && !IsDefined(GameInstance.FindEntityByID(this.m_game, kept.entity)) {
+        return s"ours (entity \(TandemNative.EntityHex(kept.entity))) was hidden \(this.m_now - kept.since) s ago and has left our world since";
+      }
+    }
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      return "no V";
+    }
+    let npcs = this.m_system.Npcs();
+    let here = player.GetWorldPosition();
+    let vendors = 0;
+    let nearest = EntityID.FromHash(0ul);
+    let nearestAt = 1000.0;
+    for body in player.GetNPCsAroundObject(100.0) {
+      if IsDefined(body) && body.IsVendor() && !(IsDefined(npcs) && npcs.IsProxyEntity(body.GetEntityID())) {
+        vendors += 1;
+        let far = Vector4.Distance(here, body.GetWorldPosition());
+        if far < nearestAt {
+          nearestAt = far;
+          nearest = TandemVendors.IdOf(body);
+        }
+      }
+    }
+    let seen = vendors == 0 ? "none" : s"\(vendors), the nearest \(TandemNative.EntityHex(nearest)) at \(nearestAt) m";
+    return s"no NPC of ours goes by \(TandemNative.EntityHex(entity)): with a vendor id within 100 m \(seen); \(ArraySize(this.m_kept)) vendor(s) of ours hidden in the session";
+  }
+
+  // (logs) What the answer went by: our own vendor of that NPC (its entity,
+  // hidden or in sight, how far from the proxy, alive, open to our V), or
+  // why there is none.
+  private func Detail(player: ref<PlayerPuppet>, npc: Uint32, body: ref<ScriptedPuppet>) -> String {
+    let entity = TandemProgress.VendorOf(npc);
+    if !EntityID.IsDefined(entity) {
+      return "its owner named no vendor";
+    }
+    let own = this.OwnOf(npc);
+    if !IsDefined(own) {
+      return this.WhyAbsent(entity);
+    }
+    let hidden = false;
+    for kept in this.m_kept {
+      if kept.entity == own.GetEntityID() {
+        hidden = true;
+      }
+    }
+    let state = own.IsDead() ? "dead" : (ScriptedPuppet.IsDefeated(own) ? "defeated" : "alive");
+    return s"ours is entity \(TandemNative.EntityHex(own.GetEntityID())), \(hidden ? "hidden" : "in sight"), \(Vector4.Distance(own.GetWorldPosition(), body.GetWorldPosition())) m from the proxy, \(state), vendor \(TDBID.ToStringDEBUG(MarketSystem.GetVendorID(own))), accessible \(MarketSystem.IsAccessible(player, MarketSystem.GetVendorID(own)))";
   }
 
   // May our V trade with that vendor now (vendors::Shop, core/vendors.hpp).
@@ -479,7 +575,7 @@ public class TandemVendors {
     let name = TandemVendors.NameOf(body);
     let shop = this.Decide(player, npc, body);
     if shop != 0 {
-      TandemNative.Log(s"vendor: \(name) (npc \(npc)) stays shut: \(TandemProgress.VendorShopName(shop))");
+      TandemNative.Log(s"vendor: \(name) (npc \(npc)) stays shut: \(TandemProgress.VendorShopName(shop)) (\(this.Detail(player, npc, body)))");
       let key = TandemVendors.WhyShut(shop);
       if StrLen(key) > 0 {
         TandemText.NoticeAs(this.m_game, SimpleMessageType.Neutral, 4.0, key, name);
@@ -637,7 +733,7 @@ public class TandemVendors {
           shown += 1;
           let body = npcs.ProxyBody(proxy.id) as ScriptedPuppet;
           if IsDefined(body) {
-            TandemNative.Log(s"  npc \(proxy.npc): \(TandemVendors.NameOf(body)), entity \(TandemNative.EntityHex(TandemProgress.VendorOf(proxy.npc))), our own copy \(IsDefined(this.OwnOf(proxy.npc)) ? "here" : "absent"), \(TandemProgress.VendorShopName(this.Decide(player, proxy.npc, body))), \(Vector4.Distance(player.GetWorldPosition(), body.GetWorldPosition())) m");
+            TandemNative.Log(s"  npc \(proxy.npc): \(TandemVendors.NameOf(body)), entity \(TandemNative.EntityHex(TandemProgress.VendorOf(proxy.npc))), our own copy \(IsDefined(this.OwnOf(proxy.npc)) ? "here" : "absent"), \(TandemProgress.VendorShopName(this.Decide(player, proxy.npc, body))), \(Vector4.Distance(player.GetWorldPosition(), body.GetWorldPosition())) m (\(this.Detail(player, proxy.npc, body)))");
           }
         }
       }

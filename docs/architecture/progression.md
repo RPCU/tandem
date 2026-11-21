@@ -175,6 +175,14 @@ decided: a guest keeps its own vendors; `scripts/tandem/Vendors.reds`,
    vendor gives way to the host's proxy as every twin does (`regions.md`
    §3): brain off, hidden, never announced. It is still in the guest's
    world, under the same id, with the guest's `MarketSystem` vendor.
+   What it goes by is read as it is hidden (`TandemVendors.Keep`, from
+   `TandemNpcs.Suppress`) and the shop looks it up there: hidden, it is on
+   no list of the NPCs around, and the stall's seller hidden at the join
+   was "not in our world" 1.7 m from our V (`vendor-guest`, 2026-11-21;
+   whether its body had left the world is what the "stays shut" line now
+   says: our entity, hidden or in sight, alive, accessible, or "was hidden
+   N s ago and has left our world since", or the vendor ids around).
+   **Not yet run in game.**
 3. **The prompt.** Beside a vendor's proxy (2.5 m, in front of our V), the
    game's interaction prompt says "Trade" under the vendor's name; a
    partner's revive and a trade prompt come first. A press opens **our
