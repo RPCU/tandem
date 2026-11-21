@@ -144,12 +144,27 @@
   NPC's proxy is drawn landing it (`TandemFight.MeleeHold`,
   `combat::MeleeHoldUs`), so a block or parry is timed to the swing on the
   guest's screen; one blocked or parried there makes the host's NPC recoil
-  (`Defended`). Not yet verified in game
-  (scenarios `npcs-hurt-guest`, `combat-melee-guest`, `combat-defend`). A hostile NPC a guest hits turns on that
+  (`Defended`). **Never more than the host computed**: a forwarded hit
+  (`PlayerHit`, `AreaHit`) takes at most the damage its sender sent, per
+  type (1 % margin, the 1 point vanilla leaves of each type), at
+  `DealDamages` (`TandemCombat.CapForwarded`): our rules may lower it and
+  raise it only where vanilla means to for a V as target (a known record's
+  `PlayerIncomingDamageMultiplier`, the police's, an explosion's or
+  grenade's fixed share of V's health); with no weapon on either side the
+  one-shot cap our game skips is applied there. A record our game lacks (a
+  mod's; none from the mock player) is stood in by `Attacks.ForwardPush`
+  (melee) or `Attacks.REMOVE_BulletWithDamage` (`TandemCombat.AttackRecord`,
+  logged once a session per record), whose own multiplier for a V is not
+  applied: a 10-physical melee hit through the shove took 392.96. Not yet
+  run in game
+  (scenarios `npcs-hurt-guest`, `combat-melee-guest`: one hit, in health
+  points, at most the 10 sent; `combat-defend`). A hostile NPC a guest hits turns on that
   guest's puppet (`TargetTrackingExtension.InjectThreat`,
   `scripts/tandem/Reactions.reds`). Open: aggro of NPCs not yet hostile to
   them, loot, the proxy's own weapon (armour needs an attacking weapon
-  object: the proxy's if it holds one, else the guest's own stands in),
+  object: the proxy's if it holds one, else the guest's own stands in; with
+  neither, no armour), a stand-in melee record cannot be blocked (only an
+  `Attack_Melee` record can, `ProcessDefensiveState`),
   status effects on the host's puppet (they stay there, unsynced).
 - **Quickhacks** (`scripts/tandem/Hacks.reds`, milestone 5): a guest's
   quickhack on a proxy runs in its own game as in solo (panel, RAM, its

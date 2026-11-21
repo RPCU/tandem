@@ -224,6 +224,22 @@ guests' skill XP. None of it run in game yet.
   the melee block all need `attackData.GetWeapon()`; armour penetration
   comes from `GetArmorPenetrationValue(weapon, hitEvent)` 87006 (protected,
   wrappable). A forwarded hit carries the host's value. [2.5-untested]
+- Where the target's side reads the **attack record** for a V as target:
+  `ProcessPlayerIncomingDamageMultiplier` 84831 (the record's
+  `PlayerIncomingDamageMultiplier` times
+  `PreventionSystem.GetDamageToPlayerMultiplier`, any attack type),
+  `ProcessPlayerFixedPercentageOverride` 85107 (explosion or pressure
+  wave with the `OverridePlayerDamageWithFixedPercentage` hit flag) and
+  `ProcessGrenadeExplosionDamageToPlayer` 85250
+  (`PlayerGrenadeDamageOverride`), both setting damage from V's health;
+  `ProcessDefensiveState` 218586 blocks only an `Attack_Melee_Record`
+  (`CanSkipBlock`). No stage reads the record's stat modifiers (they feed
+  the effect's own attack, `attackStatModList` 87452), and there is no
+  push or knockdown damage type (`gamedataDamageType`: physical, thermal,
+  electric, chemical). So a 10-physical melee hit rebuilt from
+  `Attacks.ForwardPush` (the player's shove, `Attack_GameEffect`, 537376)
+  that took 392.96 (2026-11-21) is most likely its player multiplier; the
+  value is TweakDB, not read here. [R]
 - `CheckForQuickExit` 86416 drops a hit with no source, and turns a hit
   from an attacker friendly to the target into no damage unless the hit has
   `hitFlag.FriendlyFire` (86453; the flag is read nowhere else, and only

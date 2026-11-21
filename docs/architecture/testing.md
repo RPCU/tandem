@@ -174,7 +174,7 @@ read):
 <!-- prettier-ignore -->
 | Query | Value |
 | --- | --- |
-| `health` | our V's health, percent (`StatPoolsSystem`, 2 decimals) |
+| `health [points]` | our V's health, percent (`StatPoolsSystem`, 2 decimals); `points`: in health points |
 | `item RECORD` | its count in our inventory, every stack (`TransactionSystem`) |
 | `money` | our eddies |
 | `fact NAME` | the quest fact's value (`QuestsSystem`, 0: never set) |

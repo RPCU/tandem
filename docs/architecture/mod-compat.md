@@ -122,9 +122,12 @@ shown as Items.Preset_Lexington_Default`); the player gets **one notice
   they run on the game that has them, on what that game simulates (its own
   V, the NPCs it owns). Nothing to substitute: a warning at the join says
   they differ.
-- **Attack records** in hits (`NpcStrike`, `ShotHit`): a hit's damage and
-  outcome travel with it; the record only names it, so it is not
-  resolved, and a hit is never dropped for it.
+- **Attack records** in hits (`NpcStrike`, `ShotHit`, `PlayerHit`,
+  `AreaHit`): a hit's damage and outcome travel with it; the record only
+  names it, so it is not resolved, and a hit is never dropped for it. One
+  our game lacks is stood in by a shove or a plain bullet, logged once a
+  session per record; the damage stays at most the sender's (combat.md,
+  "Never more than the host computed").
 - **Item stats and mods' stat changes**: a traded item carries its stats
   (`trade.md`); a gameplay mod's stat changes apply where that mod is.
 - **Look pieces have no stand-in**: the game cannot say which slot an
