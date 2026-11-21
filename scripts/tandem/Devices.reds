@@ -918,8 +918,17 @@ public class TandemDevices extends ScriptableSystem {
         }
       } else if loaded && !quiet {
         // Played here, as a quest would: the blast, its sound, its damage
-        // (to our own V; to NPCs when ours is the host's game).
-        this.Quest(ps, n"ForceDetonate");
+        // (to our own V; to NPCs when ours is the host's game). A guest's
+        // doing goes off from its puppet: its kills and its crime are that
+        // V's (Npcs.reds KillerOf, Police.reds), as when a V sets one off.
+        let puppet = by != 0u ? TandemNpcs.PuppetOf(game, by) : null;
+        let barrel = GameInstance.FindEntityByID(game, device.entity) as ExplosiveDevice;
+        if IsDefined(puppet) && IsDefined(barrel) {
+          barrel.TandemDetonate(puppet);
+          TandemNative.Log(s"devices: \(TandemDevices.Name(device)) set off by player \(by)'s puppet");
+        } else {
+          this.Quest(ps, n"ForceDetonate");
+        }
       } else {
         explosive.SetExplodedState(true);
       }
@@ -1269,6 +1278,16 @@ protected cb func OnDetach() -> Bool {
 protected func Notify(notifier: ref<ActionNotifier>, action: ref<ScriptableDeviceAction>) -> Void {
   wrappedMethod(notifier, action);
   TandemDevices.QueueTouched(this);
+}
+
+// A guest's barrel, set off on the host's copy from its puppet: what
+// ExplosiveDevice.OnForceDetonate does (final.reds:120801), with the V's
+// puppet as the instigator of its death and its blast instead of the
+// barrel itself.
+@addMethod(ExplosiveDevice)
+public final func TandemDetonate(instigator: ref<GameObject>) -> Void {
+  GameInstance.GetStatPoolsSystem(this.GetGame()).RequestSettingStatPoolValue(Cast<StatsObjectID>(this.GetEntityID()), gamedataStatPoolType.Health, 0.0, instigator, false);
+  this.StartExplosionPipeline(instigator);
 }
 
 // An explosive that went up says so on its state from its entity, with no

@@ -986,6 +986,11 @@ public class TandemOutcomes {
     if system.IsForwardedHit(hitEvent) {
       return false;
     }
+    // A blast of our own copy of a device, set off by that V (its puppet the
+    // instigator: Devices.reds TandemDetonate): ours, as our device's.
+    if TandemDevices.IsDeviceHit(hitEvent) {
+      return false;
+    }
     // The game that runs the target replays the V's strikes on it: those
     // stand. An NPC's owner runs it (regions.md); the host runs the rest of
     // its world, but not a proxy of a guest's NPC.
