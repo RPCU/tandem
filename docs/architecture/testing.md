@@ -18,7 +18,7 @@
 | scripts | `scripts/tandem` compiles with the game's redscript, bundle and mods; no method defined twice, no bare value local, no array intrinsic or struct field on a call's result (`tools/scripts-temporaries.py`, also in CI) | `task scripts:check` |
 | co-op menu | the settings page's arrays aligned, each row's label and description in English and French, keys the plugin takes, no duplicate or vanilla-looking entry (`tools/menu-check.py`) | `task menu:check` |
 | threads | every script hook that may run on a job thread (per-entity, component and persistent-state wraps, `cb func`s, lifecycle methods, `Entity/*` callbacks) and all it calls: reads, the wrapped method, natives; no write to a system's state (`tools/scripts-threads.py`; `.known`: 82 hooks older than the check, unproven, each with the thread probe's call) | `task threads:check` |
-| references | every `TandemX.Name(…)` call names a declared function, every record of ours the scripts name is in `tweaks/tandem` (`tools/scripts-refs.py`: what scc and the game would say, in CI); every scenario's `--flags` exist in the mock player, its `cmd` words in the scripts, its helpers in `tools/scenario.sh` (`tools/scenarios-check.py`); every log pattern a scenario waits for, can match a line the game or the mock player writes (`tools/scenarios-patterns.py`, below) | `task refs:check`, `task scenarios:check` |
+| references | every `TandemX.Name(…)` call names a declared function, every record of ours the scripts name is in `tweaks/tandem` (`tools/scripts-refs.py`: what scc and the game would say, in CI); every scenario's `--flags` exist in the mock player, its `cmd` words in the scripts, its helpers in `tools/scenario.sh`, its queries in `TestQuery.reds` (`tools/scenarios-check.py`); every log pattern a scenario waits for, can match a line the game or the mock player writes (`tools/scenarios-patterns.py`, below) | `task refs:check`, `task scenarios:check` |
 | other mods | every method another mod's redscript or CET Lua wraps, replaces or observes, against the ones tandem wraps: conflicts, order-sensitive, harmless chains (`tools/mods-check.py`, on any game folder or copy) | `task mods:check DIR=…` |
 | scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all`, `task sweep` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
@@ -147,7 +147,7 @@ output, `NAME.log`. Build first (`tools/build.sh`, or `tools/remote.sh` and
 **Log patterns** (`tools/scenarios-patterns.py`, in `task scenarios:check`
 and CI, about 20 s): a reworded log line leaves its scenarios waiting for a
 line that never comes. Each `expect`, `reject`, `at_most` and `since | grep`
-pattern must be able to match a line of the game's log, each `expect_peer`,
+pattern (and each `query`'s answer) must be able to match a line of the game's log, each `expect_peer`,
 `expect_peer2` and `reject_peer` one of the mock player's. The lines are
 formats collected from the sources: the scripts' string expressions (behind
 `[script] `) and `Log*`/`Once` arguments, every `std::format`-style call
@@ -163,6 +163,40 @@ A finding names the formats nearest to the pattern; `-v` shows which format
 answers each pattern. It catches the rewordings and the Float formatting
 that failed scenarios in game, not a changed order of events (`0 -> 3`
 logged as `0 -> 1 -> 3`).
+
+**Queries** (`scripts/tandem/TestQuery.reds`, solo or in a session): a
+line our code logs says it did something, not that the game's state
+changed (every NPC shot at a guest missed for days, 2026-11-21, while
+`npcs-shoot-guest` passed). `cmd test query WHAT [ARGS]` reads the game's
+own systems and logs `test query: WHAT ARGS = VALUE` (`none`: nothing to
+read):
+
+<!-- prettier-ignore -->
+| Query | Value |
+| --- | --- |
+| `health` | our V's health, percent (`StatPoolsSystem`, 2 decimals) |
+| `item RECORD` | its count in our inventory, every stack (`TransactionSystem`) |
+| `money` | our eddies |
+| `fact NAME` | the quest fact's value (`QuestsSystem`, 0: never set) |
+| `journal PATH [CLASS]` | the entry's state (`JournalManager`: `Inactive`, `Active`, `Succeeded`…) |
+| `position` | our V's X Y Z |
+| `mounted [player N \| puppet]` | `RECORD SLOT ENTITYHASH` of the vehicle our V (player N's puppet, the first remote player's) is mounted in (`MountingFacility`) |
+| `npc ID health` | a shared NPC's health, percent: our own NPC or our proxy |
+
+In a scenario: `query VAR WHAT [ARGS]` asks, waits 10 s for this answer
+and sets VAR; `expect_value V OP W` (OP `=`, `!=`, `~` an ERE, `<`, `<=`,
+`>`, `>=` as numbers); `expect_changed BEFORE AFTER HOW` (HOW `down`, `up`,
+`same`, `changed`, or `N`/`+N`/`-N`, the exact difference). E.g.
+`query before health` … `query after health`, `expect_changed "$before"
+"$after" down`. `task scenarios:check` refuses a query the scripts do not
+answer, an unknown operator or change, a compared variable the scenario
+never sets, and a VAR that is one of the harness's own (`$out`). The
+scenarios that assert effects so: `npcs-shoot-guest`, `npcs-hurt-guest`,
+`combat-melee-guest`, `combat-friendly-fire(-off)` (health), `revive-game`,
+`revive-peer` (health after the revive), `trade-peer`, `phone-trade` (item
+counts, money unchanged; the mock player keeps no inventory: its `applied`
+line is its side), `story-guest` (the reward's money), `drive`, `ride`
+(mounted, seat, the same car).
 
 **Launches** (`tools/game.sh launches [N]`, default 5): the cheap crash
 check, the first thing to run after a script or plugin change that touches
