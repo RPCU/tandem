@@ -134,6 +134,17 @@ public class TandemTraffic {
     return 48;
   }
 
+  // The NPC racers of a street race of ours that partners race in
+  // (Races.reds): shared as far as a race spreads.
+  public static func RacerRange() -> Float {
+    return 1500.0;
+  }
+
+  // The vehicles of our world now.
+  public func Live() -> array<wref<VehicleObject>> {
+    return this.m_live;
+  }
+
   public static func Of(game: GameInstance) -> ref<TandemTraffic> {
     let system = GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemSystem") as TandemSystem;
     return IsDefined(system) ? system.Traffic() : null;
@@ -875,7 +886,8 @@ public class TandemTraffic {
       if car.mine {
         car.seen = false;
         let body = TandemTraffic.Body(this.m_game, car.body);
-        if !away && IsDefined(body) && !ArrayContains(this.m_taken, car.body) && TandemTraffic.Nearest(body.GetWorldPosition(), viewers) <= TandemTraffic.DropRange() {
+        let range = TandemRaces.Racer(this.m_game, body) ? TandemTraffic.RacerRange() : TandemTraffic.DropRange();
+        if !away && IsDefined(body) && !ArrayContains(this.m_taken, car.body) && TandemTraffic.Nearest(body.GetWorldPosition(), viewers) <= range {
           car.seen = true;
           this.Say(car, body, pools);
           ArrayPush(ids, car.id);
@@ -902,8 +914,10 @@ public class TandemTraffic {
           heldBack += 1;
           this.AskDespawn(vehicle, body);
         }
-        if owns && !held && !away && !IsDefined(this.FindBody(body)) && this.Eligible(vehicle, body, entities) && ArraySize(this.m_cars) < TandemTraffic.MaxShared() {
-          if TandemTraffic.Nearest(at, viewers) <= TandemTraffic.ShareRange() {
+        // A racer of our street race is ours to share wherever it drives.
+        let racer = !held && !away && TandemRaces.Racer(this.m_game, vehicle);
+        if (owns || racer) && !held && !away && !IsDefined(this.FindBody(body)) && this.Eligible(vehicle, body, entities) && ArraySize(this.m_cars) < TandemTraffic.MaxShared() {
+          if TandemTraffic.Nearest(at, viewers) <= (racer ? TandemTraffic.RacerRange() : TandemTraffic.ShareRange()) {
             let known = new TandemCar();
             known.id = TandemStreet.MakeId(this.m_you, this.m_next);
             this.m_next += 1u;

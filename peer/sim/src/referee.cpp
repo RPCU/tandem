@@ -197,6 +197,9 @@ TANDEM_SAID_BY(Either, ThrowPath)
 TANDEM_SAID_BY(Either, NpcPlaced)
 TANDEM_SAID_BY(Either, NpcDeath)
 TANDEM_SAID_BY(Either, TurretHands)
+// A street race: a player's word in its own name; what describes the race,
+// seats, orders and pays is its starter's alone (CheckValues).
+TANDEM_SAID_BY(Either, Race)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -330,7 +333,7 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::StatusVisuals> ||
                            std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
                            std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath> ||
-                           std::is_same_v<M, p::TurretHands>)
+                           std::is_same_v<M, p::TurretHands> || std::is_same_v<M, p::Race>)
           return &m.player;
         else
           return nullptr;
@@ -809,6 +812,15 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::Noise>) {
           finite = std::isfinite(m.radius);
           inRange = !finite || (m.radius >= 0.f && m.stim < 65);
+        } else if constexpr (std::is_same_v<M, p::Race>) {
+          finite = Finite(m.at) && std::isfinite(m.heading) && std::isfinite(m.metres) &&
+                   std::ranges::all_of(m.points, [](const p::Vec3 &v) { return Finite(v); });
+          // The race's description, its seats, order and rewards: its starter's word.
+          const bool starters = m.kind == p::RaceKind::Info || m.kind == p::RaceKind::Seat ||
+                                m.kind == p::RaceKind::Standings || m.kind == p::RaceKind::Reward;
+          inRange = !finite || (m.metres >= 0.f && m.starter != p::kNoPlayer &&
+                                (!starters || m.player == m.starter) &&
+                                (m.kind != p::RaceKind::Join || m.player != m.starter));
         }
       },
       message);

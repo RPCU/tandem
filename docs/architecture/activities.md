@@ -29,7 +29,8 @@ of it is shared. "Busy" is the `Activity` a player's game sends
 | V's homes: shower, bed, coffee, sink, the cat, the guitar… | each player's own apartment quest (`mq000`) | the table below | buffs stay on their own V | "V's homes" |
 | Hub menus: inventory, map, perks, crafting, journal | the player's game | busy (a menu); while its game stands still (those menus still pause it, `time.md`) its puppet idles on its own graph | nothing pauses for the others | built |
 | Photo mode | the photographer's game alone | "NAME is in photo mode", the puppet held and idling; "NAME is back" | the others keep playing; out of it, the photographer's game starts a new epoch, so a guest is checked at once (digest, resync) and drops NPC states it froze over; the host's photo mode stands its world still for everyone (it is the world) | built |
-| Contests: fist fights (boxing duels), street races, shooting competitions | the player who starts it (its world, as a gig: `quest-carryover.md`) | "NAME is in a fist fight: you can only watch" (a race, a shooting contest), "NAME's contest is over"; its puppet moves on as ever (nothing held) | the others watch with what they carry (a contest's restriction is never lent to a guest); a hit on a fist fight's opponent counts only from a V that is in a fist fight itself, anyone else's is dropped ("This is NAME's fight: your hits don't count"); a race or a range is that player's alone; a cyberpsycho is a fight like any other | built, not run ("Contests", `contest-duel`) |
+| Contests: fist fights (boxing duels), street races, shooting competitions | the player who starts it (its world, as a gig: `quest-carryover.md`) | "NAME is in a fist fight: you can only watch" (a shooting contest), "NAME's contest is over"; its puppet moves on as ever (nothing held) | the others watch with what they carry (a contest's restriction is never lent to a guest); a hit on a fist fight's opponent counts only from a V that is in a fist fight itself, anyone else's is dropped ("This is NAME's fight: your hits don't count"); a range is that player's alone; a cyberpsycho is a fight like any other | built, not run ("Contests", `contest-duel`) |
+| Street races | the starter's game (its race quest) | "NAME is lining up for a street race", a hint on the phone key to join while it is on its grid; then the race's NPC racers as traffic proxies and everyone's standings | joiners race the starter's checkpoints in their own game, in a copy of its car; the starter's game orders everyone and passes its quest's rewards on, once each | built, not run ("Races") |
 | Clubs (dance floors, bars) | the host (its NPCs) | the club's crowd and dancers as proxies | nothing special: the bar stool is a workspot | was |
 | Braindance clubs | the player in the chair | its body seated in the rig (a workspot), it is in a braindance (`elsewhere.md`) | its body stays visible, settled | was |
 | Joytoys | the player who pays | its private scene: the others see it busy where the scene began, their puppets near it fade (`story.md`, private scenes) | none | to verify: that a joytoy's scene classifies as private (its category tag) |
@@ -271,11 +272,132 @@ player's alone.
   weapons and is never taken for a contestant.
 - **Open**: a watcher's quickhacks and takedowns on an opponent (vanilla
   refuses the takedown to a wearer only); the opponent turning on a watcher
-  who stands in its way; a race's other cars as traffic of the starter's
-  area (`traffic.md`); nothing ends a contest for a starter who leaves.
+  who stands in its way; nothing ends a fist fight for a starter who leaves.
+  Street races are joinable: "Races".
 - **Testing**: `tests/activity_test.cpp` (the sort kept, nothing held);
   `tandem-peer --contest duel|race|range`; `tools/game.sh cmd contest
 duel|race|range|off|report`; scenario `contest-duel`.
+
+## Races
+
+`scripts/tandem/Races.reds` (owned by `TandemContests`); engine facts
+[`../research/engine/story.md`](../research/engine/story.md) §13.92. A
+street race is its starter's: the starter's game runs the race quest as in
+single player. Decided 2026-11-21 (the user): the others may join it as new
+racers.
+
+- **Detected from the game's data.** The starter's game hears its race HUD's
+  modes (a wrap of `hudCarRaceController.OnForwardVehicleRaceUIEvent`, only
+  queued: `TandemActivity.QueueRaceUi`): PreRaceSetup opens the race on its
+  grid with `maxCheckpoints`, RaceStart starts it, RaceEnd is our finish,
+  Disable without a finish abandons it. A race seen only by
+  `RacingSystem.IsRaceInProgress` (begun before the session) runs with no
+  grid (nobody joins). Our checkpoints: each rise of the HUD's fact
+  `sq024_current_race_checkpoint_fact_add` is one, where our V is then.
+  The race quest's key is the tracked objective's quest (journal hash),
+  else one made from the start line.
+- **Wire**: `proto::Race` (appended, no version bump; Event channel; the
+  host stamps `player` and relays it to every other game; a one-shot for
+  the fault layer). Kinds: `Info` (the starter's, every 2 s and on change:
+  phase grid/running/over/abandoned, start line, heading, car record,
+  checkpoint count, the checkpoints known, countdown begun, start time),
+  `Join` (in or out), `Seat` (the slot, 0 refused), `Progress` (a racer's
+  checkpoints passed, at what host time, metres to the next, finished;
+  every 2 s while racing), `Standings` (the starter's order: up to 16
+  entries, a player or `kRacerNpc | n`), `Reward`. The referee holds `Info`,
+  `Seat`, `Standings` and `Reward` to the starter (`player == starter`), a
+  `Join` to anyone else. Plugin: `activity_natives.cpp` (`SendRace`,
+  `TakeRaces`, `QueueRaceUi`, `QueueRaceReward`), the notes queued in
+  `activity.hpp` (`RaceNote`), heard from `events::Combat` (`IsCombat`'s
+  path, `net_thread.cpp`). Times reach scripts as `ago` (seconds before
+  now on the host clock), never as absolute floats.
+- **Joining.** A partner within 400 m of the start line, not in a race of
+  its own, hears "NAME is lining up for a street race" and gets "Join
+  NAME's race" on the phone key (a press; a hold is the phone's), held back
+  while a regroup offer has the key. Joins are taken on the grid only (up
+  to 7); once the race starts a join is refused ("NAME's race has started:
+  you watch"). Seated, the joiner's V gets out of any car, is put beside
+  its slot (two abreast, 10 m behind the start line and 7 m per row), a
+  copy of the starter's car is spawned there (`Tandem.RaceCar`), our V gets
+  in (the entry animation) and its engine is held
+  (`VehicleQuestToggleEngineEvent` Lock) until the starter's start
+  (Unlock, "Go!"). 20 s without getting in: we watch ("No car…").
+- **Racing.** Each game follows a track of its racer (four samples a
+  second): a checkpoint is passed when the track goes within 25 m of it, at
+  the time it did (interpolated on the segment), in order. Checkpoints the
+  starter's game names later (a joiner ahead of the starter) are credited
+  back from the track. The next known checkpoint is a marker (Comms'
+  ping marker, the racing icon, the starter's colour). The starter's game
+  follows its NPC racers the same way (the cars `IsAIVehicleRegistered`).
+- **Standings.** The starter's game orders everyone: finished first by
+  finish time, then by checkpoints passed, then by who reached its last one
+  first (each report's own host-clock time: a laggy report counts when it
+  says, not when it arrives); out last. Sent at most twice a second when
+  the order changes, every 3 s anyway, and once more at the end. Every
+  game in it shows them in a small list on the HUD (top right, under the
+  minimap: place, name or "Racer N", checkpoints or the finish time), for
+  20 s after the last word. The vanilla race HUD stays the starter's (one
+  place among its NPCs, one count: it takes no extra racers, and driving
+  it on another game would write that game's `sq024` facts).
+- **NPC racers on the others' games**: the starter's racers are traffic it
+  shares (`traffic.md`), announced by the starter's game whatever area it
+  owns and kept within 1500 m of any player while partners race in it
+  (`TandemTraffic.RacerRange`); their drivers are NPC proxies within the
+  NPC range (60 m).
+- **Rewards.** What the starter's V is paid (`PlayerPuppet.OnRewardEvent`,
+  queued) while its race runs and until 90 s after its finish goes to each
+  joiner that finished ahead of every NPC racer, once per (joiner,
+  reward). The joiner's game pays it through the co-op ledger
+  (`TandemStorySystem.PayRace`: `CarryPay(race quest, reward)`): once per
+  character, not when that race was done alone, and the joiner's own copy
+  of the quest is not touched (no fact, no journal). A host paid so does not
+  pass it on as its own quest's reward (`PaidForRace`). Bounded: no reward
+  when the starter's quest pays none (the starter lost to its NPCs), only
+  `RewardEvent` records (money a quest gives otherwise is not seen).
+- **Leaving.** A joiner out of its race car for 10 s while racing, or by
+  `contest leave`, leaves ("You left NAME's race"); a joiner the starter
+  has not heard for 15 s while racing is out ("NAME left the race"). The
+  starter leaving or vanishing ends it for everyone: Info abandoned, or 10 s
+  without a word ("NAME left the race: it is over"). Over: every joiner
+  finished or out, or 60 s after the starter's finish. A joiner's race car
+  goes 5 s after its V got out of it once the race is over for it.
+- **Not built, and why**: the next checkpoint ahead of the starter (the
+  quest's objective mappins, `GetQuestMappinPositionsByObjective`, were not
+  tried: a joiner ahead sees no marker and is credited when the starter
+  passes it, and cannot finish before the starter's game has named the
+  finish); a joiner's own summoned car (a copy of the race's car keeps the
+  class fair); extra entries in the vanilla HUD (above); NPC drivers beyond
+  60 m (an empty seat behind a windscreen); a mock player that races
+  (`tandem-peer` has no race flag: the checks below need two games).
+- **Testing**: `tests/protocol_test.cpp` (round trips, caps),
+  `endpoint_test.cpp` (relayed, stamped), `referee_test.cpp` (the
+  starter's word), `consistency_test.cpp`; in game `tools/game.sh cmd
+  contest races|join|leave` (the report: phase, checkpoints known,
+  partners, NPC racers, rewards, standings); scenario `race-watch` (a
+  host's race heard as an Activity: watched, nothing to join).
+- **To check in game** (two games: instances, `two-instances.md`):
+  1. Starter at a street race's start: `races: our race N begins (on its
+     grid…)` with the right checkpoint count; the partner within 400 m gets
+     the notice and the hint.
+  2. The partner presses the phone key: seated, its V beside the slot, the
+     car spawned and entered, its engine held until the countdown ends,
+     "Go!" with the start.
+  3. Every checkpoint of the starter adds a point (`races: we passed
+     checkpoint k/N`); the joiner's marker moves on and its log says each
+     one; `contest races` on both shows the same standings.
+  4. The race's NPC racers show on the joiner's game as cars driving the
+     route (drivers near).
+  5. The standings list on both HUDs, in a plausible order; the finish
+     times.
+  6. The starter wins: its reward is logged (`races: our race paid …`),
+     the joiner that beat every NPC gets it once (`races: reward given …`);
+     a second race of the same quest pays nothing again.
+  7. A late join after the start: refused, "you watch". The joiner leaving
+     its car for 10 s: out on both. The starter quitting the race or the
+     session: "NAME left the race: it is over" on the joiner, its car gone
+     after it gets out.
+  8. `tools/game.sh launches 6` (a new wrap of `hudCarRaceController`, a
+     new call in `PlayerPuppet.OnRewardEvent`).
 
 ## Decisions
 
@@ -298,6 +420,9 @@ is built now.
   (`time.md` keeps the open problem), with the puppet idling meanwhile.
 - Contests: **the starter's world, the others watch, hits on a duel's
   opponent dropped** (built: "Contests"), or everyone may join a fight.
+- Street races (2026-11-21): **the others may join on the grid as new
+  racers in their own game, the starter's game orders and pays** (built:
+  "Races").
 - A bed whose sleep the others refuse: **the buff stays, only the clock is
   refused**, or the buff taken off too.
 - Two beds at once: **the second sleep is that player's yes to the first,
@@ -329,7 +454,7 @@ is built now.
   a Beat on the Brat fight (`cmd contest report` during one), the proxy
   wearing it on the other game, a watcher's punch dropped with its notice,
   the racing system's word during a street race, a shooting competition's
-  tag.
+  tag. Races: the checklist in "Races".
 - A fitting idle for a screen or a minigame when the pose stream is off
   (a tablet or phone workspot from the game files).
 - The wheel's own time dilation stands the asker's world still while it

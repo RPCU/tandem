@@ -2927,6 +2927,59 @@ struct TurretHands {
   friend bool operator==(const TurretHands &, const TurretHands &) = default;
 };
 
+// ---- Street races in co-op (docs/architecture/activities.md, "Races") ----
+//
+// A race is its starter's: its game runs the race quest. The others may join
+// it before its start as new racers; each joiner races the starter's
+// checkpoints in its own game and says how far it got. The starter's game
+// orders everyone (players and its NPC racers) by those reports and their
+// host clock times. One message (Event channel), sent by a player's game in
+// its own name: the host stamps `player` and relays it to every other game.
+enum class RaceKind : std::uint8_t {
+  // Starter: the race as it stands (resent while it lasts): `arg` its phase
+  // (kRace*), `at` and `heading` its start line, `record` its car,
+  // `checkpoints` how many in all, `points` those known so far (in order),
+  // `quest` the race quest's journal hash (0: unknown), `timeUs` its start.
+  Info = 1,
+  Join = 2,      // a player to `starter`: in (`arg` 1) or out (0)
+  Seat = 3,      // starter to `to`: its slot on the grid (`arg`; 0: refused)
+  Progress = 4,  // a racer: `checkpoint` passed at `timeUs`, `metres` to the next; `arg` 1 finished
+  Standings = 5, // starter: everyone's place, `entries`
+  Reward = 6,    // starter to `to`: `record`, a reward its race paid, for the place `arg`
+};
+inline constexpr std::uint8_t kRaceGrid = 1, kRaceRunning = 2, kRaceOver = 3,
+                              kRaceAbandoned = 4;                // Info's phases (`arg`)
+inline constexpr std::uint8_t kRacerFinished = 1, kRacerOut = 2; // RaceEntry::flags
+inline constexpr std::uint32_t kRacerNpc = 0x80000000u; // RaceEntry::who: the starter's NPC racer
+inline constexpr std::size_t kMaxRacePoints = 64, kMaxRacers = 16;
+struct RaceEntry {
+  std::uint32_t who{};        // a player, or kRacerNpc | the racer's number
+  std::uint16_t checkpoint{}; // checkpoints passed
+  std::uint8_t place{};       // 1 first
+  std::uint8_t flags{};       // kRacer*
+  std::uint64_t timeUs{};     // host clock: its finish, else its last checkpoint
+  friend bool operator==(const RaceEntry &, const RaceEntry &) = default;
+};
+struct Race {
+  PlayerId player{};    // the sender (the host stamps it)
+  PlayerId starter{};   // whose race
+  PlayerId to{};        // Seat, Reward: the one player it is for
+  std::uint32_t race{}; // the starter's number for that race
+  RaceKind kind{};
+  std::uint8_t arg{};
+  std::uint16_t checkpoint{};
+  std::uint16_t checkpoints{};
+  float metres{};
+  float heading{};        // degrees
+  std::uint64_t timeUs{}; // host clock
+  std::uint64_t record{}; // TweakDB id: a car, a reward
+  std::uint32_t quest{};
+  Vec3 at;
+  std::vector<Vec3> points;       // at most kMaxRacePoints
+  std::vector<RaceEntry> entries; // at most kMaxRacers
+  friend bool operator==(const Race &, const Race &) = default;
+};
+
 // A prop of the host's scene that nobody holds (set on a table, dropped,
 // thrown): an item entity the scene brought in, where it is now. Said when
 // it appears, again when it moved (scene::kPlaceMoveMetres, kPlaceTurnRadians;
@@ -2966,7 +3019,7 @@ using MessageVariant = std::variant<
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
-    SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands,
+    SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks, TurretHands, Race,
     ScenePlace>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
@@ -2981,8 +3034,9 @@ bool operator==(const Message &a, const Message &b);
 bool IsStory(const Message &message);
 // A hit outcome message (NpcStrike … AreaHit, Throw … Defended, ThrowPath),
 // a level (PlayerLevel … NpcLevel), a car's lending (CarLend), an NPC's
-// scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced) or a
-// death of the ledger (NpcDeath): one path in endpoint.hpp too.
+// scale (NpcScale), a vendor (NpcVendor), a placed NPC (NpcPlaced), a
+// death of the ledger (NpcDeath) or a street race (Race): one path in
+// endpoint.hpp too.
 bool IsCombat(const Message &message);
 // A trade message (Trade, TradeOffer, TradeCommit): one path as well.
 bool IsTrade(const Message &message);

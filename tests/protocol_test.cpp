@@ -1478,3 +1478,55 @@ TEST_CASE("enemy scaling: NpcScale survives encoding, is small and reliable, cou
   CHECK_FALSE(Decode(Encode(NpcScale{.npc = 1, .players = kMaxPlayerId + 1})).has_value());
   CHECK(Decode(Encode(NpcScale{.npc = 1, .players = kMaxPlayerId})).has_value());
 }
+
+TEST_CASE("street races: Race survives encoding, is reliable, kinds and lists checked") {
+  RoundTrips(Race{.player = 2,
+                  .starter = 2,
+                  .race = 3,
+                  .kind = RaceKind::Info,
+                  .arg = kRaceGrid,
+                  .checkpoints = 8,
+                  .heading = 92.5f,
+                  .timeUs = 123456789ull,
+                  .record = 0x1122334455ull,
+                  .quest = 0xDEADBEEF,
+                  .at = {-1200.f, 340.5f, 12.f},
+                  .points = {{1.f, 2.f, 3.f}, {4.f, 5.f, 6.f}}});
+  RoundTrips(Race{.player = 3, .starter = 2, .race = 3, .kind = RaceKind::Join, .arg = 1});
+  RoundTrips(Race{.player = 2, .starter = 2, .to = 3, .race = 3, .kind = RaceKind::Seat, .arg = 1});
+  RoundTrips(Race{.player = 3,
+                  .starter = 2,
+                  .race = 3,
+                  .kind = RaceKind::Progress,
+                  .checkpoint = 4,
+                  .checkpoints = 8,
+                  .metres = 120.5f,
+                  .timeUs = 99});
+  RoundTrips(Race{
+      .player = 2,
+      .starter = 2,
+      .race = 3,
+      .kind = RaceKind::Standings,
+      .entries = {{.who = 3, .checkpoint = 8, .place = 1, .flags = kRacerFinished, .timeUs = 10},
+                  {.who = kRacerNpc | 1, .checkpoint = 7, .place = 2}}});
+  RoundTrips(Race{
+      .player = 2, .starter = 2, .to = 3, .kind = RaceKind::Reward, .arg = 1, .record = 0x42ull});
+  CHECK(std::string(NameOf(Race{})) == "Race");
+  CHECK(Message(Race{}).index() == Message(TurretHands{}).index() + 1);
+  CHECK(IsCombat(Race{}));
+  CHECK_FALSE(IsStory(Race{}));
+  CHECK(ChannelOf(Race{}) == Channel::Event);
+  CHECK(Encode(Race{.kind = RaceKind::Progress}).size() < 96);
+  // Kinds and phases this version does not know, lists past their caps: refused.
+  CHECK_FALSE(Decode(Encode(Race{})).has_value());
+  CHECK_FALSE(Decode(Encode(Race{.kind = static_cast<RaceKind>(7)})).has_value());
+  CHECK_FALSE(Decode(Encode(Race{.kind = RaceKind::Info})).has_value());
+  CHECK_FALSE(Decode(Encode(Race{.kind = RaceKind::Info, .arg = kRaceAbandoned + 1})).has_value());
+  CHECK_FALSE(Decode(Encode(Race{.kind = RaceKind::Info,
+                                 .arg = kRaceGrid,
+                                 .points = std::vector<Vec3>(kMaxRacePoints + 1)}))
+                  .has_value());
+  CHECK_FALSE(Decode(Encode(Race{.kind = RaceKind::Standings,
+                                 .entries = std::vector<RaceEntry>(kMaxRacers + 1)}))
+                  .has_value());
+}
