@@ -385,8 +385,17 @@ public class TandemTime {
   // 1e-5). Not here: the time-skip wheel (TimeSkip: Activities.reds asks
   // everyone) and the breach's dive (NetworkBreach: a listener waits for it
   // to end, coop-time.md §8 question 6).
+  // With them, the profiles' reasons (the wrap at the end refuses those
+  // menus; one opened before the session began is unset here).
   public static func MenuReasons() -> array<CName> {
-    return [n"WorldMap", n"VendorStash", n"UI_TutorialPopup", n"minigame"];
+    let reasons = [n"WorldMap", n"VendorStash", n"UI_TutorialPopup", n"minigame"];
+    for profile in [t"timeSystem.radialMenu.reason", t"timeSystem.hubMenu.reason", t"timeSystem.vehicleRadioMenu.reason"] {
+      let reason = TweakDBInterface.GetCName(profile, n"");
+      if IsNameValid(reason) && !ArrayContains(reasons, reason) {
+        ArrayPush(reasons, reason);
+      }
+    }
+    return reasons;
   }
 
   // Host, another player in the session: each menu's reason unset as soon
@@ -396,7 +405,8 @@ public class TandemTime {
     for reason in TandemTime.MenuReasons() {
       if times.IsTimeDilationActive(reason) {
         times.UnsetTimeDilation(reason, n"None");
-        if Equals(reason, n"VendorStash") {
+        // Those set our V's own factor too (VendorStash, the profiles).
+        if !Equals(reason, n"WorldMap") && !Equals(reason, n"UI_TutorialPopup") && !Equals(reason, n"minigame") {
           times.UnsetTimeDilationOnLocalPlayerZero(reason, n"None");
         }
         if !ArrayContains(this.m_menusDropped, reason) {
@@ -1302,14 +1312,19 @@ protected cb func OnProjectileInitialize(eventData: ref<gameprojectileSetUpEvent
 // popup, the hub menu, the radio, list popups, docs/research/coop-time.md
 // §2.8-2.9): refused on the host while another player is in the session,
 // exactly as vanilla's own multiplayer branch refuses it (IsMultiplayer(),
-// false in tandem's sessions). Their close finds nothing active and returns
-// as it does in multiplayer. A guest's, and the host's alone: unchanged.
+// false in tandem's sessions), the close too: in multiplayer the close does
+// nothing either, and ours would restore our V's exemption from the global
+// factor (RestorePreviousIgnoreTimeDilationOnLocalPlayerZero) to what an
+// enable we refused never saved: our V slowed by its own Sandevistan after
+// the weapon wheel. A guest's, and the host's alone: unchanged.
 // job thread safe: it reads natives (HostKeepsWorld) and logs; it changes no
 // script state.
 @wrapMethod(TimeDilationHelper)
 public final static func SetTimeDilationWithProfile(requester: wref<GameObject>, const profileName: script_ref<String>, enable: Bool, allowMultipleTimeDilationSimultaneously: Bool) -> Bool {
-  if enable && TandemTime.HostKeepsWorld() {
-    TandemNative.Log(s"time: the \(Deref(profileName)) menu would slow the shared world: refused, the host's menus slow nothing");
+  if TandemTime.HostKeepsWorld() {
+    if enable {
+      TandemNative.Log(s"time: the \(Deref(profileName)) menu would slow the shared world: refused, the host's menus slow nothing");
+    }
     return false;
   }
   return wrappedMethod(requester, profileName, enable, allowMultipleTimeDilationSimultaneously);
