@@ -137,15 +137,20 @@ for name in "${names[@]}"; do
 done
 mapfile -t ordered < <(order "${names[@]}")
 
-# The games: instance 0 the Steam game, then SWEEP_INSTANCES' first N-1.
+# The games: SWEEP_INSTANCES' first N (instances: the Steam game is the
+# player's; TANDEM_STEAM_GAME=1 puts it first, as it was).
 [[ $instances =~ ^[1-9][0-9]?$ ]] || {
   echo "sweep: --instances N, 1 to 99" >&2
   exit 2
 }
 read -r -a spare <<<"${SWEEP_INSTANCES:-a b c}"
-games=(main "${spare[@]:0:instances-1}")
+if [ "${TANDEM_STEAM_GAME:-}" = 1 ]; then
+  games=(main "${spare[@]:0:instances-1}")
+else
+  games=("${spare[@]:0:instances}")
+fi
 [ ${#games[@]} = "$instances" ] || {
-  echo "sweep: --instances $instances needs $((instances - 1)) names in SWEEP_INSTANCES (${SWEEP_INSTANCES:-a b c})" >&2
+  echo "sweep: --instances $instances needs that many names in SWEEP_INSTANCES (${SWEEP_INSTANCES:-a b c})" >&2
   exit 2
 }
 [ -z "$weights" ] || [ -f "$weights" ] || {
@@ -418,11 +423,12 @@ else
     (
       export TANDEM_PARALLEL=1
       unset TANDEM_INSTANCE PILOT_INSTANCE TANDEM_GAME_PORT
-      if [ "$k" -gt 0 ]; then
+      export TANDEM_INSTANCE=${games[k]}
+      if [ "${games[k]}" != main ]; then
         unset GAME_DIR
-        export TANDEM_INSTANCE=${games[k]} TANDEM_GAME_PORT=$((27450 + 100 * k))
         export INSTANCE_DISPLAY=${INSTANCE_DISPLAY:-headless}
       fi
+      export TANDEM_GAME_PORT=$((27450 + 100 * k))
       sweep_slice "$out/results-${games[k]}.txt" "${games[k]} " "${mine[@]}"
     ) &
     slice_pids+=($!)

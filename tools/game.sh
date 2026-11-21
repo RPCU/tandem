@@ -119,8 +119,17 @@ set -euo pipefail
 
 host=${GAME_HOST:-anya}
 dir=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
-instance=${TANDEM_INSTANCE:-${PILOT_INSTANCE:-main}}
+# Tests run on an instance (tools/instance.sh: its own install, prefix and
+# saves), `a` unless named: the Steam game is the player's, and a hosting
+# game autosaves (a day of tests overwrote the player's 20 autosave slots and
+# a quick save, 2026-11-21). The Steam game only when asked in so many
+# words: TANDEM_INSTANCE=main TANDEM_STEAM_GAME=1.
+instance=${TANDEM_INSTANCE:-${PILOT_INSTANCE:-a}}
 [ "$instance" != 0 ] || instance=main
+if [ "$instance" = main ] && [ "${TANDEM_STEAM_GAME:-}" != 1 ]; then
+  echo "tools/game.sh: the Steam game is the player's (its saves are theirs): tests run on an instance (TANDEM_INSTANCE=a); TANDEM_STEAM_GAME=1 with TANDEM_INSTANCE=main to use it anyway" >&2
+  exit 2
+fi
 if [ "$instance" != main ] && [ -z "${GAME_DIR:-}" ]; then
   dir=$(tools/instance.sh dir "$instance") || exit 1
 fi

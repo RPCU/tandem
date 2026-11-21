@@ -295,6 +295,15 @@ commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 - Only ever write inside `red4ext/plugins/tandem/` (and later
   `r6/scripts/tandem/`). Never overwrite the player's `tandem.ini`
   (`task deploy` uses `--ignore-existing`).
+- **Tests never run on the Steam game: on instances** (`tools/instance.sh`,
+  each with its own install, prefix and saves; `tools/game.sh`,
+  `tools/scenario.sh` and `tools/sweep.sh` take instance `a` unless
+  `TANDEM_INSTANCE` names another, and refuse the Steam game without
+  `TANDEM_STEAM_GAME=1`). A game that hosts autosaves: a day of tests on the
+  Steam game overwrote the player's 20 autosave slots and a quick save, and
+  each start loaded the newest, so the tests' state drifted (2026-11-21).
+  The player's saves are theirs: never write, delete or load-and-save them
+  without being asked.
 - **Launch, kill or restart the game only with the user's go-ahead** (a
   request for in-game work counts): they may be playing or streaming from
   it. Check `pgrep -af Cyberpunk2077.exe` first.
