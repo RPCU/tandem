@@ -428,6 +428,8 @@ public abstract class TandemWeakSpots {
       i += 1;
     }
     if drain <= 0.0 || index < 0 || !IsDefined(record) {
+      // (npcs-weakspot) why a hit on a proxy's weak spot went nowhere.
+      TandemNative.LogDebug(s"combat: our hit on weak spot \(index) of proxy \(npc) took nothing measured (\(drain)%, record \(IsDefined(record)))");
       return;
     }
     TandemFight.SendWeakSpot(npc, record.GetID(), index, drain);
@@ -466,17 +468,23 @@ public abstract class TandemWeakSpots {
   }
 
   // (test) tools/game.sh cmd "npc weakspot [N]": our V's hit of N (default
-  // 40) on the first whole weak spot of the nearest proxy.
+  // 40) on the first whole weak spot of the nearest proxy that takes hits
+  // (a boss's plate shut in its phase does not: IsInvulnerable).
   public static func Test(game: GameInstance, proxy: ref<ScriptedPuppet>, amount: Float) -> Void {
     let player = GetPlayer(game);
     let target: wref<WeakspotObject>;
+    let shut = 0;
     for candidate in TandemWeakSpots.Of(proxy) {
-      if !IsDefined(target) && IsDefined(candidate) && !candidate.IsDead() {
-        target = candidate;
+      if IsDefined(candidate) && !candidate.IsDead() {
+        if candidate.IsInvulnerable() {
+          shut += 1;
+        } else if !IsDefined(target) {
+          target = candidate;
+        }
       }
     }
     if !IsDefined(player) || !IsDefined(target) {
-      TandemNative.Log("npc weakspot: none on the nearest proxy");
+      TandemNative.Log(s"npc weakspot: none open on the nearest proxy (\(shut) shut)");
       return;
     }
     let context: AttackInitContext;
@@ -491,6 +499,11 @@ public abstract class TandemWeakSpots {
     hit.attackData.SetSource(player);
     hit.attackData.SetInstigator(player);
     hit.attackData.SetAttackDefinition(IAttack.Create(context));
+    // A shot's hit on the spot gets this flag from the spot itself
+    // (WeakspotObject.ProcessDamagePipeline, final.reds:293612), which a
+    // queued hit skips; set here as a shot would have it (the hit took no
+    // measured share without it, unproven why: npcs-weakspot).
+    hit.attackData.AddFlag(hitFlag.WeakspotHit, n"tandem_test");
     GameInstance.GetDamageSystem(game).QueueHitEvent(hit, target);
     TandemNative.Log(s"npc weakspot: \(EntityID.ToDebugStringDecimal(target.GetEntityID())) of \(EntityID.ToDebugStringDecimal(proxy.GetEntityID())), \(TandemWeakSpots.Health(game, target))% whole");
   }
