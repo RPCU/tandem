@@ -626,7 +626,13 @@ struct ChoiceCursor {
 // Bits of StoryState::flags (free from 16 up: add new ones there, e.g. other
 // worlds such as cyberspace).
 inline constexpr std::uint8_t kStoryBraindance = 1, kStoryReplacer = 2, kStoryInCall = 4,
-                              kStoryPrivate = 8; // in a private scene: not to be watched
+                              kStoryPrivate = 8, // in a private scene: not to be watched
+    // The host's V is in a scripted moment a guest beside it watches through
+    // the host's camera (story::MomentReasons; the host's word only).
+    kStoryMoment = 16,
+                              // A guest watches the host's moment: its own V is parked (hidden from
+                              // the others, not to be seen by their NPCs). A guest's word only.
+    kStorySpectating = 32;
 struct StoryState {
   PlayerId player{};
   std::uint8_t tier{};  // GameplayTier 1..5

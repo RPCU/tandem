@@ -671,3 +671,28 @@ Competition_scope`, `:71882`). [2.5-untested]
   our V, or the racing system's word. Arcade machines are minigames, a
   cyberpsycho is a fight like any other, rides are workspots or vehicle
   scenes: none is a contest here.
+
+### 13.96 Spectating: what makes a scripted moment, a V the NPCs do not see (2026-11-21, read in final.reds, not run)
+
+- **A V the NPCs do not see**: `PlayerPuppet.SetInvisible(isInvisible)`
+  toggles its `senseVisibleObject` component off (`VisibleObjectComponent`,
+  `:43505`; `IsInvisible()` reads it back, `:43509`). Vanilla's own use:
+  the grace period after a spawn turns it off together with
+  `GodModeSystem.AddGodMode(..., Invulnerable, n"GracePeriodAfterSpawn")`
+  (`GracePeriodAfterSpawn`, `:39489-39500`), and optical camo
+  (`:44037`). Every `ScriptedPuppet` has the same component
+  (`GetVisibleObjectComponent()`, `:20573`), so a puppet's can be toggled
+  too. [2.5-untested]
+- **Holding V still**: `GameplayRestriction.NoMovement` (`:43866`, applied
+  by the locomotion states, `:283592`, `:520797`) and
+  `GameplayRestriction.NoCameraControl` (`:12857`, `:154482`), the records
+  the game's own scripted modes use. [2.5-untested]
+- **What a scripted moment is made of, as a game can read it of its own
+  V**: its scene tier (`PlayerPuppet.GetSceneTier`, §13.16), status effects
+  tagged `GameplayRestriction` (§13.45: movement rules a quest puts on,
+  apart from weapons-only zones, and body or camera holds: NoMovement,
+  NoCameraControl, ForceCrouch, the `CameraAnimation` tag), a vehicle its
+  scene drives (the player state machine's vehicle state Scene = 7, tier 3+
+  or the `VehicleScene` tag: §13.27), and another world (§13.26). None
+  names a quest: the list is the same for the base game and Phantom
+  Liberty. [2.5-untested]

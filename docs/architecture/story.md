@@ -54,7 +54,10 @@
     weapons, no sprint, no jump, forced walk, no vehicle, no quickhacks)
     would hold the host alone, and a guest could draw and fire beside the
     host's scene, kill a quest NPC or break the scene. Now a guest that
-    shares the host's story moment wears the same ones on its own V.
+    shares the host's story moment and does not watch it (spectating, below:
+    turned off, left with "Stop watching", or near a moment it did not share
+    when it began) wears the same ones on its own V; a spectator wears none
+    of them, only the spectating holds.
     - _The host reports_ four times a second the gameplay restrictions on
       its V that a guest beside it shares: its status effects tagged
       `GameplayRestriction`, but not what holds the host's own body or
@@ -124,6 +127,62 @@ guest's quickhack during the host's scene` (player, NPC, the
       `story-restrict-guest`, `story-restrict-host`; `tools/game.sh cmd
 story restrict` (report), `story restrict on|off REC` (a test
       restriction on our V).
+  - _Spectating_ (`scripts/tandem/Spectate.reds`, `core/src/story.cpp`
+    `MomentReasons`, `HostMoment`, `Spectator`, engine facts §13.96; built
+    2026-11-21, nothing run in game; the audit of the base game's and
+    Phantom Liberty's moments: [`scripted-moments.md`](scripted-moments.md)).
+    The quest runs on the host's game alone, so during its scripted gameplay
+    (a ride, an escort, a set piece, a netrun) a guest's own V is a body the
+    quest knows nothing of. A guest beside the host watches the moment
+    through the host's eyes instead, its own V parked.
+    - _The host's moment_, read four times a second from its own V, no
+      list of quests: a scene of tier 2 and up, quest restrictions on how
+      it moves (`Restrictions.reds` `IsShared`, but not a weapons-only zone:
+      a club's rule), a ride its scene drives (`Transit.reds` kind Scene),
+      a scripted body or camera mode (GameplayRestriction effects
+      NoMovement, NoCameraControl, ForceCrouch, the CameraAnimation tag; not
+      its own activities), or another world (`Elsewhere.reds`: cyberspace, a
+      braindance, Johnny). A fight, the player's own driving, a cab it
+      called: none. A private scene: never (off at once). On, it holds
+      1.5 s after its reasons go (`story::kMomentHoldUs`: between a scene's
+      sections, a loading screen). Said as `kStoryMoment` in the host's
+      `StoryState` flags (a free bit: no new message, protocol 7); while it
+      lasts the host's active camera (first person included: its position,
+      orientation and field of view) goes out every frame as `SceneCamera`,
+      numbered as the scene it announces, else as its last one (1 before
+      any), paced by the scene budget (`Endpoint::SendSceneCamera`).
+    - _Who watches_ (`story::Spectator`): a guest starts when the host's
+      moment is on and it shares it (grouped, its own V in this world,
+      within 40 m: `InMoment`'s distance); from then on it follows the
+      host's V wherever the moment takes it (a quest teleport, a ride,
+      cyberspace), however far, until the moment ends, the host's scene
+      turns private, the player presses "Stop watching" (`Choice1`; not
+      offered again in that moment), the guest goes apart, the host
+      vanishes or the session ends (`GuestLeave`). `spectate = off`
+      (`tandem.ini`) keeps a guest's own V in every moment.
+    - _What watching does_: the host's view on a camera of the guest's own
+      (the watch camera's: `simple_free_camera.ent`, drawn from the same
+      `scene::CameraTrack`, any play); the host's puppet hidden while the
+      view sits in it (first person: within 1 m, 1.5 m to show it again).
+      Its own V: unseen by the NPCs (`PlayerPuppet.SetInvisible`, only if it
+      was not already), out of the picture (the animation system's fade),
+      held by the spectating holds through the restrictions' ledger
+      (NoMovement, NoCameraControl, NoCombat, Invulnerable), its scene
+      watch offer, join offer and ride offer not shown. It says
+      `kStorySpectating` in its own `StoryState`: every other game hides
+      its puppet (`TandemVisibility` reason `spectate`) and turns its
+      puppet's visible object component off (their NPCs do not see it); the
+      party HUD shows it "in a scene". Back: everything undone; when the
+      moment ended with the host more than 60 m away, the guest joins it
+      (`TandemTravel.RegroupTo`, behind a loading screen).
+    - Tests: `tests/restrictions_test.cpp` (the reasons, the hold, who
+      watches: near at the start, followed anywhere, private, apart, left,
+      lifted), `tests/referee_test.cpp` (a moment is the host's word,
+      spectating a guest's), `tests/presence_test.cpp`; mock player story
+      verb `moment on|off` (with `camera on`); scenarios `spectate-guest`,
+      `spectate-leave`, `spectate-host`; `tools/game.sh cmd story spectate
+report` (state), `story spectate on|off` (host: a test moment; guest:
+      watching allowed, or off for the session).
   - _Johnny, Songbird, takeovers_ (`research/coop-quests-design.md` §2.11):
     Johnny and Songbird are NPCs of the host's world, so a guest near the
     host sees them as proxies where the host does. Johnny's relic glitches
@@ -299,6 +358,7 @@ story restrict` (report), `story restrict on|off REC` (a test
   - Not yet verified in game: scenarios `story-guest`, `story-host`, `story-johnny`,
     `story-private`, `story-private-host`, `story-session-items`,
     `story-gigs-apart`, `story-restrict-guest`, `story-restrict-host`,
+    `spectate-guest`, `spectate-leave`, `spectate-host`,
     `interact-guest-pickup`, `interact-guest-hostonly`, `interact-apart-own-gig`.
 
 ## Open problems

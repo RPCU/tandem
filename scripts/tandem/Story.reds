@@ -30,6 +30,7 @@ public class TandemStorySystem extends ScriptableSystem {
   // Story restrictions (Restrictions.reds): the host's reported, a guest's
   // worn while in the host's moment.
   private let m_restrictions: ref<TandemRestrictions>;
+  private let m_spectate: ref<TandemSpectate>;
 
   // Host: the journal snapshot is owed (sent once the world plays), and the
   // changes since the last tick, sent together.
@@ -169,6 +170,8 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_scenes.Start(this.GetGameInstance(), this);
     this.m_restrictions = new TandemRestrictions();
     this.m_restrictions.Start(this.GetGameInstance(), this);
+    this.m_spectate = new TandemSpectate();
+    this.m_spectate.Start(this.GetGameInstance(), this);
     this.m_interact = new TandemInteract();
     this.m_interact.Start(this.GetGameInstance(), this);
     // Journal changes: the host sends them; every game keeps the last quest
@@ -326,6 +329,10 @@ public class TandemStorySystem extends ScriptableSystem {
     return this.m_restrictions;
   }
 
+  public func Spectate() -> ref<TandemSpectate> {
+    return this.m_spectate;
+  }
+
   public func Interact() -> ref<TandemInteract> {
     return this.m_interact;
   }
@@ -396,6 +403,7 @@ public class TandemStorySystem extends ScriptableSystem {
           }
           if this.m_isHost {
             this.m_scenes.HostEnd();
+            this.m_spectate.HostEnd();
           }
           this.EndPrivate();
           this.m_you = 0u;
@@ -411,6 +419,7 @@ public class TandemStorySystem extends ScriptableSystem {
           ArrayRemove(this.m_others, event.player);
           ArrayRemove(this.m_hiddenPuppets, event.player);
           this.SetBusy(event.player, false);
+          this.m_spectate.OnPlayerGone(event.player);
           break;
         case 3:
           if !ArrayContains(this.m_others, event.player) {
@@ -455,6 +464,8 @@ public class TandemStorySystem extends ScriptableSystem {
           }
           if event.player != this.m_you {
             this.SetBusy(event.player, (event.flags & 8) != 0);
+            // A guest watching the host's moment is parked (Spectate.reds).
+            this.m_spectate.OnPlayerFlags(event.player, event.flags);
           }
           break;
         case 42:
@@ -559,6 +570,8 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_scenes.HostTick(this.Now(), this.m_ourTier, this.m_inPrivate, this.m_dialogue.HubOpen());
     // The restrictions on our V a guest beside it shares.
     this.m_restrictions.HostTick(this.Now(), this.m_ourTier);
+    // Our scripted moment, for the guests beside us to watch (Spectate.reds).
+    this.m_spectate.HostTick(this.Now(), this.m_ourTier, this.m_inPrivate);
   }
 
   // JournalManager callbacks (signature of JournalNotificationQueue's,
@@ -713,6 +726,8 @@ public class TandemStorySystem extends ScriptableSystem {
       this.m_lastAutosaveDrop = this.Now();
       GameInstance.GetAutoSaveSystem(this.GetGameInstance()).InvalidateAutoSaveRequests();
     }
+    // Whether we watch the host's moment first: the holds follow it.
+    this.m_spectate.GuestTick(this.Now());
     this.UpdateHolds();
     this.m_dialogue.GuestTick();
     this.m_scenes.GuestTick(this.Now());
@@ -821,6 +836,7 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_phone.Close();
     this.m_dialogue.Close();
     this.m_scenes.Leave();
+    this.m_spectate.Leave();
     this.ReleaseHolds();
     this.TakeOffEffects();
     // Back to the default before the journal is put back (our own gig
@@ -939,9 +955,20 @@ public class TandemStorySystem extends ScriptableSystem {
     if wantGod {
       ArrayPush(holds, t"BaseStatusEffect.Invulnerable");
     }
+    // Watching the host's moment (Spectate.reds): our V parked, still and
+    // safe, through the same ledger (the host's own set is not worn then).
+    let watching = this.m_spectate.Watching();
+    if watching {
+      for hold in [t"GameplayRestriction.NoMovement", t"GameplayRestriction.NoCameraControl", t"GameplayRestriction.NoCombat", t"BaseStatusEffect.Invulnerable"] {
+        if !ArrayContains(holds, hold) {
+          ArrayPush(holds, hold);
+        }
+      }
+    }
     this.m_restrictions.GuestTick(this.Now(), holds);
-    // Far from a cinematic: offered to join (once per scene).
-    if tier >= 4 && (distance < 0.0 || distance > 100.0) {
+    // Far from a cinematic: offered to join (once per scene). Not while
+    // watching it: we follow the host's camera wherever it goes.
+    if tier >= 4 && !watching && (distance < 0.0 || distance > 100.0) {
       if !this.m_offerShown {
         this.m_offerShown = true;
         this.m_offerOpen = true;
@@ -951,7 +978,7 @@ public class TandemStorySystem extends ScriptableSystem {
         GetPlayer(this.GetGameInstance()).RegisterInputListener(this, n"Choice1");
         TandemNative.Log("story: join offer shown");
       }
-    } else if tier < 4 {
+    } else if tier < 4 || watching {
       this.CloseOffer();
       this.m_offerShown = false;
     }
@@ -1038,10 +1065,19 @@ public class TandemStorySystem extends ScriptableSystem {
     if this.m_inPrivate {
       flags += 8;
     }
+    // Spectating (Spectate.reds): the host's scripted moment, a guest
+    // watching it.
+    if this.m_isHost && this.m_spectate.HostMoment() {
+      flags += 16;
+    }
+    if !this.m_isHost && this.m_spectate.Watching() {
+      flags += 32;
+    }
+    this.m_spectate.KeepSpectatorsHidden();
     if flags != this.m_ourFlags {
       this.m_ourFlags = flags;
       TandemStory.SendState(this.m_ourTier, flags);
-      TandemNative.Log(s"story: our story flags \(flags) (1 braindance, 2 Johnny)");
+      TandemNative.Log(s"story: our story flags \(flags) (1 braindance, 2 Johnny, 8 private, 16 moment, 32 spectating)");
     }
   }
 
@@ -1612,6 +1648,8 @@ public class TandemStorySystem extends ScriptableSystem {
       TandemNative.Log(s"story: test private scene \(this.m_forcedPrivate ? "on" : "off")");
     } else if StrBeginsWith(command, "story scene") {
       this.m_scenes.Command(command);
+    } else if StrBeginsWith(command, "story spectate") {
+      this.m_spectate.Command(command);
     } else if StrBeginsWith(command, "story interact") {
       this.m_interact.Command(command);
     } else if Equals(command, "story restrict") {

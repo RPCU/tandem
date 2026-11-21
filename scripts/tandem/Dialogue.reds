@@ -280,7 +280,8 @@ public class TandemDialogue {
     }
     // On the host's call, the host's V's own lines are part of it too.
     let distance = this.m_story.DistanceToHost();
-    let onCall = this.m_story.InHostCall();
+    // Watching the host's moment, we are where its camera is (Spectate.reds).
+    let onCall = this.m_story.InHostCall() || TandemStory.SpectateWatching();
     if event.index != 2 && !onCall && (distance < 0.0 || distance > 25.0) {
       return;
     }
@@ -367,7 +368,7 @@ public class TandemDialogue {
   private func PresentHub() -> Void {
     // A call's hub (the game's phone lock, or a hub while we present the
     // host's call) is everyone's on the call; the rest, within earshot.
-    let phoneLock = (this.m_pendingFlags & 1) != 0 || this.m_story.InHostCall();
+    let phoneLock = (this.m_pendingFlags & 1) != 0 || this.m_story.InHostCall() || TandemStory.SpectateWatching();
     let distance = this.m_story.DistanceToHost();
     if !phoneLock && (distance < 0.0 || distance > 25.0 || this.m_story.HostBusy()) {
       TandemNative.Log(s"choice: hub not shown (\(this.m_story.HostBusy() ? "the host's private scene" : "too far from the host"))");

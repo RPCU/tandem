@@ -188,7 +188,10 @@ PLACE [moved] [settled]`, its body held where the mock player was;
   `host --restrict REC[,REC]` (`--restrict-at S`, default 2; `--restrict-for
 S`, lifted after S, default never; or the story verb `restrict
 REC[,REC]|off`): the host's story restrictions on its V, which a guest in
-  its moment wears (`story.md`, "Restrictions").
+  its moment wears (`story.md`, "Restrictions"). The story verb `moment
+on|off`: the host's V in a scripted moment (`kStoryMoment`); with `camera
+on` its camera's views go out, scene or not, for a guest to spectate
+  (`story.md`, "Spectating"; `tools/scenarios/spectate-guest.story`).
 - **quickhacks**: `join --hack-npcs N` uploads `--hack-action` on one of
   the host's NPCs every N s (1.5 s) and then lands `--hack-effect`;
   `host --replay FILE --hack-player N` has a replayed NPC hack the guest's

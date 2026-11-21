@@ -48,6 +48,11 @@ bool Story::CameraAt(std::uint64_t hostNowUs, std::uint32_t play, scene::CameraV
   return play != 0 && m_cameraTrack.Play() == play && m_cameraTrack.At(hostNowUs, out);
 }
 
+bool Story::CameraNow(std::uint64_t hostNowUs, scene::CameraView &out) {
+  std::lock_guard _(m_cameraLock);
+  return m_cameraTrack.Play() != 0 && m_cameraTrack.At(hostNowUs, out);
+}
+
 void Story::ClearCamera() {
   std::lock_guard _(m_cameraLock);
   m_cameraTrack.Clear();
@@ -95,6 +100,11 @@ void Story::Note(const StoryInbound &inbound) {
     // The next session's host starts from no restriction. A guest's own
     // (what its V holds) stay for its script's leave (RestrictLift).
     m_sent.clear();
+    // Nobody's moment outlives the session (a guest's watching stops in its
+    // script's leave, SpectateLift).
+    m_moment.Clear();
+    m_testMoment = false;
+    m_spectateOff = false;
     // Nobody's pose stays held for a private scene (the next session's
     // player 2 is someone else), and ours is no longer held back.
     for (auto &slot : m_posePaused)

@@ -259,6 +259,79 @@ bool InMoment(const MomentInput &in, bool was) {
   return Distance(in.guest, in.anchor) <= area;
 }
 
+std::uint8_t MomentReasons(const MomentSignals &signals) {
+  if (signals.isPrivate)
+    return 0;
+  std::uint8_t reasons = 0;
+  if (signals.tier >= 2)
+    reasons |= kMomentScene;
+  if (signals.restricted)
+    reasons |= kMomentRestricted;
+  if (signals.questMount)
+    reasons |= kMomentMounted;
+  if (signals.mode)
+    reasons |= kMomentMode;
+  if (signals.elsewhere)
+    reasons |= kMomentElsewhere;
+  if (signals.test)
+    reasons |= kMomentTest;
+  return reasons;
+}
+
+bool HostMoment::Update(std::uint8_t reasons, std::uint64_t nowUs) {
+  if (reasons != 0) {
+    m_on = true;
+    m_lastUs = nowUs;
+  } else if (m_on && (nowUs < m_lastUs || nowUs - m_lastUs >= kMomentHoldUs)) {
+    m_on = false;
+  }
+  return m_on;
+}
+
+void HostMoment::Clear() {
+  m_on = false;
+  m_lastUs = 0;
+}
+
+Spectator::Change Spectator::Update(const SpectateInput &in) {
+  const bool moment = in.hostMoment && !in.hostPrivate;
+  if (!moment)
+    m_declined = false; // the next moment is offered again
+  bool want = false;
+  if (in.on && moment && in.grouped && !in.ourAway) {
+    if (m_watching)
+      want = true; // wherever the moment takes the host's V
+    else if (!m_declined)
+      want = InMoment({.grouped = true,
+                       .away = false,
+                       .hostKnown = in.hostKnown,
+                       .host = in.host,
+                       .guest = in.guest,
+                       .restricted = true},
+                      false);
+  }
+  if (want == m_watching)
+    return Change::None;
+  m_watching = want;
+  return want ? Change::Start : Change::Stop;
+}
+
+Spectator::Change Spectator::Leave() {
+  if (!m_watching)
+    return Change::None;
+  m_watching = false;
+  m_declined = true;
+  return Change::Stop;
+}
+
+Spectator::Change Spectator::Lift() {
+  m_declined = false;
+  if (!m_watching)
+    return Change::None;
+  m_watching = false;
+  return Change::Stop;
+}
+
 Restrictions::Change Restrictions::Update(bool inMoment, const std::vector<std::uint64_t> &holds) {
   std::set<std::uint64_t> wanted(holds.begin(), holds.end());
   if (inMoment)

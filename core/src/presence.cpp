@@ -270,7 +270,8 @@ Status StatusOf(proto::Life life, proto::Place place, std::uint8_t tier, std::ui
   if (place != proto::Place::City ||
       (storyFlags & (proto::kStoryBraindance | proto::kStoryReplacer)))
     return Status::Elsewhere;
-  if (tier >= 3)
+  // Watching the host's moment through its camera (story.md, "Spectating").
+  if (tier >= 3 || (storyFlags & proto::kStorySpectating))
     return Status::Scene;
   if (paused || (presenceFlags & proto::kPresenceMenu))
     return Status::Menu;

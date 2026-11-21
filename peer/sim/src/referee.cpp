@@ -976,6 +976,11 @@ void Referee::FromGuest(p::PlayerId from, const p::Message &message) {
 
   if (const auto *hit = std::get_if<p::NpcHit>(&message)) {
     NeedNpc(hit->npc, name);
+  } else if (const auto *state = std::get_if<p::StoryState>(&message);
+             state && (state->flags & p::kStoryMoment)) {
+    // The story's moments are the host's V's (story.md, "Spectating").
+    Add("authority.host-only",
+        std::format("player {} says its V is in a scripted moment: only the host's is", from));
   } else if (const auto *breach = std::get_if<p::Breach>(&message)) {
     // Granting a breach and passing it on is the host's word.
     if (breach->flags & p::kBreachApply)
@@ -1185,9 +1190,17 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
             notOurs(m.player);
         } else if constexpr (std::is_same_v<M, p::Appearance> || std::is_same_v<M, p::Held> ||
                              std::is_same_v<M, p::VehicleRadio> || std::is_same_v<M, p::Stealth> ||
-                             std::is_same_v<M, p::Transit> || std::is_same_v<M, p::StoryState> ||
-                             std::is_same_v<M, p::ChoiceCursor>) {
+                             std::is_same_v<M, p::Transit> || std::is_same_v<M, p::ChoiceCursor>) {
           notOurs(m.player);
+        } else if constexpr (std::is_same_v<M, p::StoryState>) {
+          notOurs(m.player);
+          // A moment is the host's V's; a spectator is a guest watching it.
+          if ((m.flags & p::kStoryMoment) && m.player != m_hostPlayer)
+            Add("authority.host-only",
+                std::format("player {} is said to be in a scripted moment: only the host's V is",
+                            m.player));
+          if ((m.flags & p::kStorySpectating) && m.player == m_hostPlayer)
+            Add("value.range", "the host is said to spectate its own moment");
         } else if constexpr (std::is_same_v<M, p::Seat>) {
           notOurs(m.player);
           NeedPlayer(m.owner, name);

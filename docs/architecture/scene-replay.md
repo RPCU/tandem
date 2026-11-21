@@ -358,6 +358,9 @@ and invulnerable near a tier 4+ one, as before (`Story.reds`,
   (`Choice1`; not offered again in that scene). Never for a private scene:
   it is not announced, so nothing is sampled, and the net thread drops
   views while private. `scene_camera = off` keeps a guest's own eyes.
+  A guest spectating the host's scripted moment (`story.md`, "Spectating")
+  follows the same track with a camera of its own; this one then stands
+  aside (`RestrictInMoment` is false while it watches).
 
 ## 7. Johnny
 

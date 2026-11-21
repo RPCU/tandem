@@ -459,7 +459,9 @@ public class TandemTransit {
       }
       return;
     }
-    if VehicleComponent.IsMountedToVehicle(game, player) || player.IsInCombat() || down {
+    // Watching the host's moment (Spectate.reds): our V is parked, its ride
+    // is watched through the host's camera.
+    if VehicleComponent.IsMountedToVehicle(game, player) || player.IsInCombat() || down || TandemStory.SpectateWatching() {
       return;
     }
     for puppet in puppets {
