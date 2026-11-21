@@ -1398,6 +1398,9 @@ public class TandemSystem extends ScriptableSystem {
     } else if StrBeginsWith(command, "test query") {
       // (test) the game's own state for a scenario's checks, solo too (TestQuery.reds).
       TandemTestQuery.Run(this.GetGameInstance(), this, command);
+    } else if StrBeginsWith(command, "fixture") {
+      // (test) what stands around our V at a scenario's spot, solo too (Fixtures.reds).
+      TandemFixtures.Command(this.GetGameInstance(), command);
     } else if Equals(command, "test reset") && !this.m_inGame {
       // Solo there is nothing of ours to put back (tools/scenario.sh asks).
       TandemNative.Log("test reset: ready (solo: nothing to reset)");
