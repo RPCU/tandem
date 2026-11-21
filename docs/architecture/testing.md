@@ -242,6 +242,7 @@ read):
 | `mounted [player N \| puppet]` | `RECORD SLOT ENTITYHASH` of the vehicle our V (player N's puppet, the first remote player's) is mounted in (`MountingFacility`) |
 | `npc ID health` | a shared NPC's health, percent: our own NPC or our proxy |
 | `threat puppet` | the largest threat value an NPC we run near our V holds on the first remote player's puppet (`TargetTrackerComponent`) |
+| `car marks` | the shared vehicles another player's quickhack is marked on now (their traffic ids; `Hacks.reds`), or `none` |
 | `device KIND WHAT` | the nearest device of KIND within 40 m: `attitude` (to our V: `friendly`, `neutral`, `hostile`), `puppet` (to the first puppet), `target` (what it follows: `none`, `V`, `puppet`, `other`), `alarm` (its security system: `SAFE`, `ALERTED`, `COMBAT`), `mark` (the player whose hack is marked on it; 0: none) |
 
 In a scenario: `query VAR WHAT [ARGS]` asks, waits 10 s for this answer

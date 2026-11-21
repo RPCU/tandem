@@ -319,9 +319,17 @@ Built 2026-11-21, **not yet run in game**. Code: `Devices.reds`
   request). The vanilla friendly look (green cone and lights) is the
   device's own (above). Logs `devices: E C marked: hacked by player N`,
   `… unmarked (player N's hack)`; query `device KIND mark`.
-- **Vehicles**: not marked. The only car hack that crosses games is
-  `VehicleHack`, on a car another V drives (an ally's, not an enemy's); a
-  hack on an NPC's car stays in the hacker's game (no message carries it).
+- **Vehicles** (2026-11-21, not yet run in game): a quickhack on a shared
+  vehicle no V drives (a traffic, parked or placed car, `traffic.md`:
+  brakes, accelerate, explode) is `TrafficHack`, to the host and from it to
+  every other player; the vehicle's owner applies it to the real one
+  (`ActivateNetrunnerQuickhack`, `EnableHighPriorityPanicDriving` for
+  acceleration: the game's own effects of the hack; the hacker's game when
+  it owns the vehicle, as in solo), and every game but the hacker's marks
+  it "Hacked by NAME" (the `car` icon) for the hack's length, 6 s for an
+  explosion (`Hacks.reds`: `HackSharedCar`, `TrafficHacked`, `MarkCar`;
+  query `car marks`; scenario `traffic-hack`, the mock's `--hack-traffic
+S`). A car another V drives stays `VehicleHack`'s, unmarked (an ally's).
 
 ## A device's fire
 
