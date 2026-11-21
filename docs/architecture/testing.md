@@ -412,8 +412,9 @@ Reading a played session (`tools/game.sh threads` at its end):
   pick, scene tiers, a reward, the host's V in another world with `world
 PLACE [moved] [settled]`, its body held where the mock player was;
   `tools/scenarios/story-host.story`, `story-worlds.story`); as a
-  guest, `--answer N`, `--reply HASH`, `--suggest N` act on the host's
-  calls, texts and hubs, and every story message heard is logged.
+  guest, `--answer N`, `--reply HASH`, `--suggest N`, `--hover N` act on
+  the host's calls, texts and hubs, and every story message heard is
+  logged.
   `host --restrict REC[,REC]` (`--restrict-at S`, default 2; `--restrict-for
 S`, lifted after S, default never; or the story verb `restrict
 REC[,REC]|off`): the host's story restrictions on its V, which a guest in
