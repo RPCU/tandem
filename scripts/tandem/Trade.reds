@@ -2,7 +2,8 @@
 // sell items and eddies to the player standing beside us.
 //
 // Beside another player's puppet, out of combat, the game's interaction
-// prompt offers "Trade"; the other player gets a request to accept (the
+// prompt offers "Trade" (and the player's entry in the phone, at any
+// distance: PhoneContacts.reds); the other player gets a request to accept (the
 // phone key, as a regroup offer) within 15 s. The table is the game's own
 // stash screen (FullscreenVendorGameController in storage mode), opened on
 // the other player's puppet: our inventory on one side, the table on the
@@ -45,6 +46,9 @@ public class TandemTradeTable {
   private let m_held: Bool;
   // The table: with whom, our side, their side as the screen shows it.
   private let m_with: Uint32;
+  // Opened beside them: walking apart ends it. Opened apart (asked from the
+  // phone: PhoneContacts.reds), distance does not count.
+  private let m_near: Bool;
   private let m_stacks: array<ref<TandemTradeStack>>;
   private let m_money: Int32;
   private let m_asks: Int32;
@@ -278,6 +282,31 @@ public class TandemTradeTable {
     return true;
   }
 
+  // From the phone (PhoneContacts.reds): the same request at any distance.
+  // The host arbitrates and each inventory stays its player's own, so
+  // nothing of the trade depends on where the two stand; the table needs
+  // their puppet in our world (it is the storage screen's object), and our
+  // V free to trade, as for the prompt.
+  public func AskFromPhone(player: Uint32) -> Bool {
+    let local = GetPlayer(this.m_game);
+    if !TandemTrade.TradeEnabled() {
+      TandemNative.Log("trade: off (tandem.ini trade = on)");
+      return false;
+    }
+    if !IsDefined(local) || !this.Free(local) || TandemTrade.TradeState() != 0 {
+      this.Notice("Trade-NotNow", 4.0);
+      TandemNative.Log(s"trade: cannot ask \(this.NameOf(player)) from the phone now");
+      return false;
+    }
+    if !IsDefined(this.m_system.PuppetOf(player)) || TandemElsewhere.IsElsewhere(this.m_game, player) {
+      this.Notice("Phone-Unreachable", 4.0, this.NameOf(player));
+      TandemNative.Log(s"trade: \(this.NameOf(player)) is not in our world: not asked");
+      return false;
+    }
+    TandemNative.Log(s"trade: asking \(this.NameOf(player)) from the phone");
+    return this.Ask(player);
+  }
+
   public func Accept() -> Bool {
     let by = this.m_askedBy;
     if by == 0u || !TandemTrade.TradeAnswer(true) {
@@ -414,11 +443,13 @@ public class TandemTradeTable {
     storage.storageObject = puppet;
     this.m_opening = true;
     this.m_openAt = this.m_now;
+    let local = GetPlayer(this.m_game);
+    this.m_near = IsDefined(local) && Vector4.Distance(local.GetWorldPosition(), puppet.GetWorldPosition()) <= TandemTradeTable.EndRange();
     GameInstance
       .GetBlackboardSystem(this.m_game)
       .Get(GetAllBlackboardDefs().StorageBlackboard)
       .SetVariant(GetAllBlackboardDefs().StorageBlackboard.StorageData, ToVariant(storage), true);
-    TandemNative.Log(s"trade: table open with \(this.NameOf(with)) (player \(with))");
+    TandemNative.Log(s"trade: table open with \(this.NameOf(with)) (player \(with)), \(this.m_near ? "beside us" : "apart: walking does not end it")");
   }
 
   // The table is gone: the screen with it. Nothing was moved, so there is
@@ -451,14 +482,15 @@ public class TandemTradeTable {
     this.CloseTable();
   }
 
-  // At the table: over when the two are apart, one fights, or ours is down
-  // (the host closes it for a player that is down or gone).
+  // At the table: over when the two walk apart (a table opened beside
+  // them), one fights, or ours is down (the host closes it for a player
+  // that is down or gone).
   private func Watch(player: ref<PlayerPuppet>) -> Void {
     let puppet = this.m_system.PuppetOf(this.m_with);
     if this.m_with == 0u {
       // Opened without us knowing with whom (a script reload): closed.
       this.Close(2);
-    } else if !IsDefined(puppet) || Vector4.Distance(player.GetWorldPosition(), puppet.GetWorldPosition()) > TandemTradeTable.EndRange() {
+    } else if !IsDefined(puppet) || (this.m_near && Vector4.Distance(player.GetWorldPosition(), puppet.GetWorldPosition()) > TandemTradeTable.EndRange()) {
       this.Close(4);
     } else if player.IsInCombat() {
       this.Close(5);

@@ -14,7 +14,13 @@ and §13.38.8.
 1. **Start.** Within 2 m of another player's puppet, out of combat, the
    game's interaction prompt shows the player's name and "Trade" (the
    prompt revive uses; a downed player's revive prompt comes first). The
-   interaction key asks.
+   interaction key asks. **Or from the game's phone, at any distance**: the
+   player's row in the contact list, then "Trade" ([`comms.md`](comms.md),
+   "The phone"; `TandemTradeTable.AskFromPhone`, built 2026-11-21, not run
+   in game). The same request, refused with "You can't trade right now"
+   when the prompt would not show (combat, a scene, down, a trade open),
+   and with "NAME can't be reached right now" when their puppet is not in
+   our world (none, or elsewhere: cyberspace, a braindance).
 2. **The request.** The other player gets "NAME wants to trade" with the
    phone key's hint, as a regroup offer: a press accepts; 15 s without an
    answer and it lapses. A player already trading is "busy".
@@ -33,9 +39,10 @@ and §13.38.8.
 4. **Both agree** to the same table: the host commits and each game's V
    gives what its side said and gets what the other's said. Any change to
    the table takes both agreements back.
-5. **Ending without a trade**: closing the screen, walking 5 m apart, a
-   fight, going down, leaving the session, a fast travel. Nothing has
-   moved, so nothing is given back.
+5. **Ending without a trade**: closing the screen, walking 5 m apart (a
+   table opened within 5 m of the other puppet; one opened apart, asked
+   from the phone, ignores distance), a fight, going down, leaving the
+   session, a fast travel. Nothing has moved, so nothing is given back.
 
 ## What can be traded
 
@@ -108,6 +115,13 @@ asker                    host (Table)                    asked
 - **The epoch fence**: a request sent before the asker's game knew the
   host's world was rebuilt is dropped (it lapses); a party whose own world
   is rebuilt (a fast travel) closes its trades for both.
+- **Distance is no part of it.** Nothing above, nor the host's `Table`,
+  reads where the two stand (core has no range check). What depends on
+  distance is each game's own: the prompt's 2 m, the 5 m that ends a table
+  opened beside the other, and the screen itself, opened on the other
+  player's puppet, which must exist in our world (puppets are spawned
+  `alwaysSpawned`, so at any distance in the same world; not in another
+  one). Hence a trade from the phone at any distance, no protocol change.
 
 ## Protocol
 
@@ -130,7 +144,7 @@ ask in another player's name.
 | Tests                                                                          | `tests/trade_test.cpp`: every step with a message lost, repeated, or a player gone; over loopback with real endpoints, a vanish at each step, down, a fast travel, and 25 % loss both ways |
 | Mock player                                                                    | `--trade-offer`, `--trade-accept`, `--trade-give RECORD[:N],…`, `--trade-money N`, `--trade-asks N`                                                                                        |
 | In game without the screen                                                     | `tools/game.sh cmd trade [ask [PLAYER] \| accept \| decline \| give RECORD [N] \| back RECORD [N] \| money N \| asks N \| agree \| cancel]`                                                |
-| Scenario                                                                       | `trade-peer` (as a guest, so nothing reaches a save)                                                                                                                                       |
+| Scenario                                                                       | `trade-peer` (as a guest, so nothing reaches a save); `phone-trade` (from the phone, 40 m apart, as a guest)                                                                               |
 
 ## Not verified, in the order to check
 
@@ -147,6 +161,8 @@ ask in another player's name.
    or a body's own prompt.
 6. The screen not stopping time for us (the skip of `VendorStash`'s time
    dilation), and what a fight does to an open screen.
+7. The storage screen opened on a puppet far away (a trade from the
+   phone): that nothing of the game's closes it for the distance.
 
 ## Open, and decisions
 
@@ -166,8 +182,9 @@ no default yet.
    everyone" rule first.
 5. **Ammunition** is tradable by rule but the stash screen hides it. A
    line for it like the eddies line, or leave it out?
-6. **Distance and combat** are each game's own check (2 m to start, 5 m
-   ends). The host checks who is in the session, who is down and whose
+6. **Distance and combat** are each game's own check (2 m to start from
+   the prompt, any distance from the phone; 5 m ends a table opened within
+   5 m). The host checks who is in the session, who is down and whose
    world was rebuilt.
 7. A **price cap** or a confirmation for large amounts: none; both sides
    see the whole table and both must agree.
