@@ -30,8 +30,11 @@ mark
 pkill -x tandem-peer
 expect 'session ended' 60
 expect 'phone: mirrored call closed|story: leaving the host' 10
-expect 'journal: restored, digest matches baseline' 10
+expect 'journal: leave: [0-9]+ entries put back \([0-9]+ set, [0-9]+ passes\), 0 not as before' 10
+expect 'journal: own entries: [0-9]+ at the join, [0-9]+ now \([0-9]+ untouched checked, 0 differ' 5
+expect 'journal: restored, digest matches baseline' 5
 expect 'quest: own quests resumed' 10
 expect 'save: unlocked' 10
 reject 'journal: restore mismatch'
+reject 'journal: [a-z]+: not as'
 reject 'watchdog: game thread silent'

@@ -62,6 +62,20 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_snapshotStates: array<Int32>;
   private let m_lastAutosaveDrop: Float;
   private let m_unknownEntries: Int32;
+  // Our own journal at the session's first snapshot (every entry not
+  // Inactive, the walk's order): the baseline the leave is checked against.
+  private let m_baseHashes: array<Uint32>;
+  private let m_baseStates: array<Int32>;
+  // The gig entries the last switch to apart gave back (the grouped switch
+  // accounts for each), and whether we were apart at all this session (our
+  // gig entries are then our game's, not the baseline's).
+  private let m_given: array<Uint32>;
+  private let m_givenStates: array<Int32>;
+  private let m_wasApart: Bool;
+  // Our journal could not be put back as it was (an apart switch or a
+  // leave): saving stays locked until a save is loaded, whatever a later
+  // session's restore says (its baseline is the damaged journal).
+  private let m_journalDamaged: Bool;
 
   // Guest: the host's scene tier and what we hold for it.
   private let m_hostTier: Int32;
@@ -753,6 +767,151 @@ public class TandemStorySystem extends ScriptableSystem {
     return true;
   }
 
+  // An entry's state in our journal (-1: not in our game).
+  private func StateOf(hash: Uint32) -> Int32 {
+    let entry = this.m_journal.GetEntry(hash);
+    if !IsDefined(entry) {
+      return -1;
+    }
+    let state: Int32 = EnumInt(this.m_journal.GetEntryState(entry));
+    return state;
+  }
+
+  // Undefined (never set), Inactive and not in our game are the same to the
+  // game: not part of anyone's story.
+  private func SameState(now: Int32, before: Int32) -> Bool {
+    return now <= 1 ? before <= 1 : now == before;
+  }
+
+  // One entry back to `before` if it is not (true: it was changed).
+  private func PutBack(hash: Uint32, before: Int32) -> Bool {
+    let now = this.StateOf(hash);
+    if now < 0 || this.SameState(now, before) {
+      return false;
+    }
+    let want = before <= 1 ? 1 : before;
+    // The engine refuses Failed on an Inactive entry: through Active.
+    if want == 4 && now <= 1 {
+      this.m_journal.ChangeEntryStateByHash(hash, gameJournalEntryState.Active, JournalNotifyOption.DoNotNotify);
+    }
+    this.m_journal.ChangeEntryStateByHash(hash, IntEnum<gameJournalEntryState>(want), JournalNotifyOption.DoNotNotify);
+    return true;
+  }
+
+  // Entries back to their states before the mirror (the walk's order:
+  // parents first), checked; returns how many are not as they were.
+  // One ChangeEntryStateByHash changes more than its entry (engine
+  // story.md §13.99): Active activates every ancestor below the root
+  // folder whatever its state, Succeeded and Failed end every Active
+  // descendant alike, a phone reply chosen fails its siblings, and Failed
+  // is refused on an Inactive entry. So the Failed ones go first (through
+  // Active, deepest first, while their parents are still hidden), then
+  // every entry in order, again until a pass changes nothing; what is left
+  // is logged entry by entry (the first few).
+  private func RestoreEntries(hashes: array<Uint32>, befores: array<Int32>, what: String) -> Int32 {
+    let count = Min(ArraySize(hashes), ArraySize(befores));
+    let i = count - 1;
+    while i >= 0 {
+      if befores[i] == 4 {
+        this.PutBack(hashes[i], 4);
+      }
+      i -= 1;
+    }
+    let passes = 0;
+    let changed = 1;
+    let firstPass = 0;
+    while changed > 0 && passes < 4 {
+      changed = 0;
+      i = 0;
+      while i < count {
+        if this.PutBack(hashes[i], befores[i]) {
+          changed += 1;
+        }
+        i += 1;
+      }
+      if passes == 0 {
+        firstPass = changed;
+      }
+      passes += 1;
+    }
+    let mismatches = 0;
+    i = 0;
+    while i < count {
+      let now = this.StateOf(hashes[i]);
+      if !this.SameState(now, befores[i]) {
+        mismatches += 1;
+        if mismatches <= 5 {
+          this.LogEntry(s"\(what): not as before", hashes[i], befores[i], now);
+        }
+      }
+      i += 1;
+    }
+    TandemNative.Log(s"journal: \(what): \(count) entries put back (\(firstPass) set, \(passes) passes), \(mismatches) not as before");
+    return mismatches;
+  }
+
+  // One entry that is not as expected, with its class and parent: which of
+  // the engine's rules moved it.
+  private func LogEntry(what: String, hash: Uint32, expected: Int32, now: Int32) -> Void {
+    let entry = this.m_journal.GetEntry(hash);
+    if !IsDefined(entry) {
+      TandemNative.Log(s"journal: \(what): \(hash) (not in our game) expected \(expected)");
+      return;
+    }
+    let parent = this.m_journal.GetParentEntry(entry);
+    let parentHash = 0u;
+    let parentState = -1;
+    if IsDefined(parent) {
+      parentHash = Cast<Uint32>(this.m_journal.GetEntryHash(parent));
+      parentState = EnumInt(this.m_journal.GetEntryState(parent));
+    }
+    TandemNative.Log(s"journal: \(what): \(hash) \(NameToString(entry.GetClassName())) \(entry.GetId()) expected \(expected) now \(now), parent \(parentHash) \(parentState), gig \(this.GigEntry(hash))");
+  }
+
+  // Leave: our whole journal against the baseline (the session's first
+  // snapshot). An entry of the baseline the mirror never touched must be as
+  // it was (an engine rule may have moved it), except our gigs after a time
+  // apart (our game's then); an entry new since the join is our own game's
+  // (an open-world phase ran), kept and counted. Returns the differences.
+  private func CheckBaseline() -> Int32 {
+    if ArraySize(this.m_baseHashes) == 0 {
+      return 0;
+    }
+    let now: array<Uint32>;
+    let nowStates: array<Int32>;
+    this.Walk(now, nowStates);
+    let differ = 0;
+    let checked = 0;
+    let i = 0;
+    while i < ArraySize(this.m_baseHashes) {
+      let hash = this.m_baseHashes[i];
+      if !ArrayContains(this.m_touched, hash) && !(this.m_wasApart && this.GigEntry(hash)) {
+        checked += 1;
+        let state = this.StateOf(hash);
+        if !this.SameState(state, this.m_baseStates[i]) {
+          differ += 1;
+          if differ <= 5 {
+            this.LogEntry("leave: not as at the join", hash, this.m_baseStates[i], state);
+          }
+        }
+      }
+      i += 1;
+    }
+    let added = 0;
+    i = 0;
+    while i < ArraySize(now) {
+      if !ArrayContains(this.m_baseHashes, now[i]) && !ArrayContains(this.m_touched, now[i]) {
+        added += 1;
+        if added <= 5 {
+          this.LogEntry("leave: new since the join (kept)", now[i], 1, nowStates[i]);
+        }
+      }
+      i += 1;
+    }
+    TandemNative.Log(s"journal: own entries: \(ArraySize(this.m_baseHashes)) at the join, \(ArraySize(now)) now (\(checked) untouched checked, \(differ) differ; \(added) new, kept)");
+    return differ;
+  }
+
   private func OnHostJournal(event: TandemStoryEvent) -> Void {
     if !this.Mirroring() {
       return;
@@ -785,6 +944,12 @@ public class TandemStorySystem extends ScriptableSystem {
     let own: array<Uint32>;
     let ownStates: array<Int32>;
     this.Walk(own, ownStates);
+    // The baseline: our journal before the mirror's first change of the
+    // session (a later snapshot finds it partly hidden already).
+    if ArraySize(this.m_baseHashes) == 0 && ArraySize(this.m_touched) == 0 {
+      this.m_baseHashes = own;
+      this.m_baseStates = ownStates;
+    }
     let hidden = 0;
     for hash in own {
       if !ArrayContains(this.m_snapshotHashes, hash) && !this.OwnGigEntry(hash) && this.SetEntry(hash, 1, false) {
@@ -845,27 +1010,13 @@ public class TandemStorySystem extends ScriptableSystem {
     TandemStory.Grouped(true);
     this.m_hostFlags = 0;
     this.m_hostTier = 0;
+    // Every entry the mirror changed, as it was; then the whole journal
+    // against the baseline (what the engine's rules changed beside them).
     let mismatches = 0;
     if ArraySize(this.m_touched) > 0 {
-      let i = 0;
-      while i < ArraySize(this.m_touched) {
-        // Undefined (never set) goes back as Inactive: the same to the game.
-        let before = this.m_touchedBefore[i] <= 1 ? 1 : this.m_touchedBefore[i];
-        this.m_journal.ChangeEntryStateByHash(this.m_touched[i], IntEnum<gameJournalEntryState>(before), JournalNotifyOption.DoNotNotify);
-        i += 1;
-      }
-      // The check: every entry as it was.
-      i = 0;
-      while i < ArraySize(this.m_touched) {
-        let entry = this.m_journal.GetEntry(this.m_touched[i]);
-        let now: Int32 = IsDefined(entry) ? EnumInt(this.m_journal.GetEntryState(entry)) : -1;
-        let same = now <= 1 ? this.m_touchedBefore[i] <= 1 : now == this.m_touchedBefore[i];
-        if !same {
-          mismatches += 1;
-        }
-        i += 1;
-      }
+      mismatches = this.RestoreEntries(this.m_touched, this.m_touchedBefore, "leave");
     }
+    mismatches += this.CheckBaseline();
     if this.m_ownTrackedKept {
       let own = this.m_journal.GetEntry(this.m_ownTracked);
       if IsDefined(own) {
@@ -880,6 +1031,11 @@ public class TandemStorySystem extends ScriptableSystem {
     this.Persist();
     ArrayClear(this.m_touched);
     ArrayClear(this.m_touchedBefore);
+    ArrayClear(this.m_baseHashes);
+    ArrayClear(this.m_baseStates);
+    ArrayClear(this.m_given);
+    ArrayClear(this.m_givenStates);
+    this.m_wasApart = false;
     if mismatches == 0 {
       TandemNative.Log(s"journal: restored, digest matches baseline (\(restored) entries)");
     } else {
@@ -892,9 +1048,11 @@ public class TandemStorySystem extends ScriptableSystem {
       this.m_frozen = false;
       TandemNative.Log(s"quest: own quests resumed (\(TandemStory.FreezeReport()))");
     }
-    if mismatches > 0 || lost {
+    if mismatches > 0 || lost || this.m_journalDamaged {
       // Never a save that differs from our own story: saving stays locked;
-      // the way out is our last save.
+      // the way out is our last save. Once damaged, a later session's clean
+      // restore does not unlock it either (it restores the damaged journal).
+      this.m_journalDamaged = true;
       TandemNative.Log("save: stays locked (our story could not be put back exactly): load your last save");
       this.Notice("Story-NotRestored");
       return;
@@ -1348,38 +1506,91 @@ public class TandemStorySystem extends ScriptableSystem {
     // The gig entries change hands: apart, ours are given back as they were
     // before the mirror touched them (the host's go back to hidden, which is
     // what they were here); grouped, the host's are shown as last heard and
-    // ours not in the host's journal are hidden again.
+    // ours not in the host's journal are hidden again. The invariant, logged
+    // both ways: every gig entry given back is hidden again at the grouped
+    // switch, unless our game cleared it meanwhile; besides them, only gig
+    // entries new while apart are hidden.
     let changed = 0;
     if apart {
-      let i = ArraySize(this.m_touched) - 1;
-      while i >= 0 {
-        if this.GigEntry(this.m_touched[i]) {
-          let before = this.m_touchedBefore[i] <= 1 ? 1 : this.m_touchedBefore[i];
-          this.m_journal.ChangeEntryStateByHash(this.m_touched[i], IntEnum<gameJournalEntryState>(before), JournalNotifyOption.DoNotNotify);
-          ArrayErase(this.m_touched, i);
-          ArrayErase(this.m_touchedBefore, i);
-          changed += 1;
-        }
-        i -= 1;
-      }
-    } else {
-      let own: array<Uint32>;
-      let ownStates: array<Int32>;
-      this.Walk(own, ownStates);
-      for hash in own {
-        if this.GigEntry(hash) && !ArrayContains(this.m_snapshotHashes, hash) && this.SetEntry(hash, 1, false) {
-          changed += 1;
-        }
-      }
+      this.m_wasApart = true;
+      // Ours out of the touched list in its order (parents first: the
+      // engine's rules, RestoreEntries), the rest kept as they are.
+      let gigs: array<Uint32>;
+      let gigsBefore: array<Int32>;
+      let rest: array<Uint32>;
+      let restBefore: array<Int32>;
       let i = 0;
-      while i < ArraySize(this.m_snapshotHashes) {
-        if this.GigEntry(this.m_snapshotHashes[i]) && this.SetEntry(this.m_snapshotHashes[i], this.m_snapshotStates[i], false) {
-          changed += 1;
+      while i < ArraySize(this.m_touched) {
+        if this.GigEntry(this.m_touched[i]) {
+          ArrayPush(gigs, this.m_touched[i]);
+          ArrayPush(gigsBefore, this.m_touchedBefore[i]);
+        } else {
+          ArrayPush(rest, this.m_touched[i]);
+          ArrayPush(restBefore, this.m_touchedBefore[i]);
         }
         i += 1;
       }
+      this.m_touched = rest;
+      this.m_touchedBefore = restBefore;
+      changed = ArraySize(gigs);
+      let wrong = this.RestoreEntries(gigs, gigsBefore, "apart");
+      // Ours given back (the host's put back to hidden are not ours to hide
+      // again).
+      ArrayClear(this.m_given);
+      ArrayClear(this.m_givenStates);
+      i = 0;
+      while i < ArraySize(gigs) {
+        if gigsBefore[i] > 1 {
+          ArrayPush(this.m_given, gigs[i]);
+          ArrayPush(this.m_givenStates, gigsBefore[i]);
+        }
+        i += 1;
+      }
+      if wrong > 0 {
+        // Our gig entries are no longer our save's: no save until a load.
+        this.m_journalDamaged = true;
+      }
+      TandemNative.Log(s"story: apart from the host: our gigs are ours, \(changed) gig journal entries changed hands (\(ArraySize(this.m_given)) of ours given back, \(wrong) not as before)");
+      return;
     }
-    TandemNative.Log(s"story: \(apart ? "apart from the host: our gigs are ours" : "grouped with the host"), \(changed) gig journal entries changed hands");
+    let own: array<Uint32>;
+    let ownStates: array<Int32>;
+    this.Walk(own, ownStates);
+    let hidden = 0;
+    let again = 0;
+    for hash in own {
+      if this.GigEntry(hash) && !ArrayContains(this.m_snapshotHashes, hash) && this.SetEntry(hash, 1, false) {
+        hidden += 1;
+        if ArrayContains(this.m_given, hash) {
+          again += 1;
+        }
+      }
+    }
+    let shown = 0;
+    let i = 0;
+    while i < ArraySize(this.m_snapshotHashes) {
+      if this.GigEntry(this.m_snapshotHashes[i]) && this.SetEntry(this.m_snapshotHashes[i], this.m_snapshotStates[i], false) {
+        shown += 1;
+      }
+      i += 1;
+    }
+    // Given back and no longer in our journal: our game cleared it while
+    // apart (its own story; not ours to hide).
+    let cleared = 0;
+    i = 0;
+    while i < ArraySize(this.m_given) {
+      if !ArrayContains(own, this.m_given[i]) {
+        cleared += 1;
+        if cleared <= 5 {
+          this.LogEntry("grouped: given back, since cleared", this.m_given[i], this.m_givenStates[i], this.StateOf(this.m_given[i]));
+        }
+      }
+      i += 1;
+    }
+    changed = hidden + shown;
+    TandemNative.Log(s"story: grouped with the host, \(changed) gig journal entries changed hands (\(hidden) of ours hidden: \(again) of the \(ArraySize(this.m_given)) given back, \(hidden - again) new while apart; \(cleared) given back and since cleared; \(shown) of the host's shown)");
+    ArrayClear(this.m_given);
+    ArrayClear(this.m_givenStates);
   }
 
   public func Apart() -> Bool {
