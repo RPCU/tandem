@@ -1300,10 +1300,22 @@ protected cb func OnGlobalRelease(e: ref<inkPointerEvent>) -> Bool {
 @addMethod(PauseMenuGameController)
 private func TandemHoldExit(action: PauseMenuAction, index: Int32, target: ref<ListItemController>) -> Bool {
   let system = this.CoopSystem();
-  if !IsDefined(system) || !system.ExitOwes() {
+  if !IsDefined(system) {
     return false;
   }
   let exit = Equals(action, PauseMenuAction.ExitGame) ? 2 : 1;
+  if !system.ExitOwes() {
+    // Nothing to save, but a session to end first: the main menu detaches
+    // no player in 2.50, so the game's own Exit left a host hosting from the
+    // main menu (exit-host). The tick ends it, says goodbye, then exits.
+    if !system.InSession() {
+      return false;
+    }
+    TandemNative.Log(s"exit: \(TandemSaves.ExitName(exit)): the session ends first");
+    TandemProgress.AskExit(exit);
+    this.m_menuEventDispatcher.SpawnEvent(n"OnClosePauseMenu");
+    return true;
+  }
   let why = system.SaveBlocker();
   this.PlaySound(n"Button", n"OnPress");
   if StrLen(why) > 0 {

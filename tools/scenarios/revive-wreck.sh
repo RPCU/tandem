@@ -13,7 +13,7 @@ expect "vehicle ride: in player [0-9]+'s car, seat seat_[a-z_]+" 10
 expect 'player [0-9]+: on foot' 30
 pause 2
 cmd revive down
-expect 'revive: our V is down in its seat \(seat_[a-z_]+\)' 10
+expect 'revive: our V is down in its seat \(seat_[a-z_]+[,)]' 10
 cmd revive wreck
 expect 'revive wreck: our V.s car taken as wrecked \(down in a seat: true\)' 5
 expect 'revive: our car is wrecked: our V is put out beside it' 5

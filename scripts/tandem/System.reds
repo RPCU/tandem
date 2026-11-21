@@ -682,6 +682,19 @@ public class TandemSystem extends ScriptableSystem {
     TandemCoop.Notice(this.GetGameInstance(), notice);
   }
 
+  // The game's own exit is next (Saves.reds): end the session now, our
+  // goodbye with it. Going to the main menu detaches no player in 2.50 (the
+  // menu stands on a live world), so OnPlayerDetach never ended it: a host
+  // kept hosting from the main menu, its guests on a world gone (exit-host).
+  public func EndForExit() -> Void {
+    if !this.m_inGame {
+      return;
+    }
+    TandemNative.Log("left the game (the game's exit)");
+    this.EndSession(false);
+    TandemNative.Leave();
+  }
+
   // A checkpoint's save is made (Saves.reds): the session it left, joined
   // again. False: none was kept.
   public func CoopRejoin() -> Bool {

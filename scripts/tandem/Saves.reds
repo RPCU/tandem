@@ -309,6 +309,7 @@ public class TandemSaves {
       return;
     }
     TandemNative.Log(s"exit: to \(TandemSaves.ExitName(exit))");
+    this.m_system.EndForExit();
     let handler = GameInstance.GetSystemRequestsHandler();
     if exit == 2 {
       handler.ExitGame();

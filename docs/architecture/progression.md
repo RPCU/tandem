@@ -314,7 +314,11 @@ Two more ways out want that save whatever `leave` says, and never load it
   the reason assumed for ours and other scripts', unverified), a popup
   says why in words (`Exit-CannotSave`, `Exit-Why-*`) and asks: Yes exits
   without the save (the game's own Exit, re-run through the wrap), No
-  stays. A host owes nothing: its Exit is the game's own.
+  stays. A host owes nothing, but its Exit is held too while it is in a
+  session: the main menu detaches no player in 2.50, so the game's own
+  Exit left it hosting from the main menu, its guests on a world gone
+  (`exit-host`, 2026-11-21). The tick ends the session (`EndForExit`: the
+  goodbye), then exits.
 - **The checkpoint** (tandem.ini `checkpoint`, minutes, 0 to 240; `0`, off,
   by default, as `save` and `reload`: it writes the player's saves): every
   N minutes in a session, at a safe moment (`CheckpointBlocker`: playing,

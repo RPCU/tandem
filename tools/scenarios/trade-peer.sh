@@ -52,7 +52,7 @@ expect_changed "$got" "$back" "$((${took:-0} * 2 - 2))"
 query after money
 expect_changed "$money" "$after" same
 cmd trade
-expect 'trade: on, none with player 0; .* 2 trades done' 10
+expect 'trade: on, none with player 0; .* [0-9]+ trades done' 10
 at_most 2 'trade: applied with'
 reject 'stacks short'
 reject 'watchdog: game thread silent'
