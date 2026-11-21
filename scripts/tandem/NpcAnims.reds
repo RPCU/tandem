@@ -356,6 +356,11 @@ public class TandemNpcAnims {
           anim.flags += 2;
         }
       }
+      if anim.workspot == 0ul {
+        // npcs-anims-host: 48 NPCs in workspots near, every shared one sent
+        // with workspot 0: which half is missing, the instance or its path?
+        TandemNative.LogDebug(s"npc anims: \(TandemNative.EntityHex(npc.GetEntityID())) is in a workspot, \(IsDefined(instance) ? (IsDefined(instance.resource) ? "its resource has no path" : "its instance has no resource") : "no instance")");
+      }
     }
     return anim;
   }
