@@ -52,6 +52,7 @@ addresses, 192.0.2.x / 198.51.100.x / 203.0.113.x, and fake names).
 | `task docs:check`       | doc links and § numbers resolve; no fact lost since HEAD     |
 | `task mods:check DIR=…` | other mods' script hooks against tandem's (conflicts)        |
 | `task scenario -- …`    | in-game scenarios against the mock player (NAME, all, list)  |
+| `task sweep -- …`       | scenarios grouped by role, results file, failures by class   |
 | `task sim -- …`         | the simulated second game against the real one (`sim.md`)    |
 | `task sim:fuzz K=N`     | N seeds of simulated games against each other, refereed      |
 | `task deploy`           | copy the DLL to the game machine (`GAME_HOST`, default anya) |
@@ -207,9 +208,9 @@ How (scenarios, every `tandem-peer` mode and flag, `tools/game.sh`
 commands, recordings): `docs/architecture/testing.md` and `recordings.md`.
 
 - **The loop:** change, `task test`, then `task scenario -- NAME` (or `all`)
-  for what the change touches. `tools/scenario.sh` deploys, sets the game's
-  role, restarts only when the DLL, scripts, tweaks or role changed, drives
-  the mock player and checks the game's log; a failure keeps its evidence
+  for what the change touches (all, with a results file: `task sweep`).
+  `tools/scenario.sh` deploys, sets the game's role, restarts only when
+  the DLL, scripts, tweaks or role changed, drives the mock player and checks the game's log; a failure keeps its evidence
   under `.cache/scenarios/`. Add a scenario (`tools/scenarios/*.sh`, a few
   lines) for each feature you verify in game, so it stays verified.
 - **The referee** (`docs/architecture/sim.md`) checks every message the

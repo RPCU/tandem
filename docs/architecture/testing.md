@@ -20,7 +20,7 @@
 | threads | every script hook that may run on a job thread (per-entity, component and persistent-state wraps, `cb func`s, lifecycle methods, `Entity/*` callbacks) and all it calls: reads, the wrapped method, natives; no write to a system's state (`tools/scripts-threads.py`; `.known`: 82 hooks older than the check, unproven, each with the thread probe's call) | `task threads:check` |
 | references | every `TandemX.Name(…)` call names a declared function, every record of ours the scripts name is in `tweaks/tandem` (`tools/scripts-refs.py`: what scc and the game would say, in CI); every scenario's `--flags` exist in the mock player, its `cmd` words in the scripts, its helpers in `tools/scenario.sh` (`tools/scenarios-check.py`) | `task refs:check`, `task scenarios:check` |
 | other mods | every method another mod's redscript or CET Lua wraps, replaces or observes, against the ones tandem wraps: conflicts, order-sensitive, harmless chains (`tools/mods-check.py`, on any game folder or copy) | `task mods:check DIR=…` |
-| scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all` |
+| scenarios | the real game against the mock player, checked on the game's log | `task scenario -- all`, `task sweep` |
 | in game | deploy the DLL, read its log | `task deploy`, `task logs` |
 
 The autopilot (our real V played without a human, for recordings and scenarios): [autopilot.md](autopilot.md).
@@ -58,6 +58,69 @@ of tier 2 and up, a background scene the scene system counts V in at
 tier 1, combat, a grapple, a body carried, police heat, a menu or the phone open,
 time dilated, health), or `test reset: failed (…)`, which fails the
 scenario. A scenario that needs another spot teleports after it.
+
+Before that reset, `tools/scenario.sh`'s `run`:
+
+- **waits for the last session's end** (`teardown`), when a mock player
+  ran: its stop ends the session in the game ("player N left", "marker:
+  player N removed" as host; "session ended", "save: leave cleaning ->
+  solo" as guest), lines that matched a later scenario's expects
+  (`saves-leave`, `spectate-host`, `three-players`). Done on a host's
+  "left" or a guest's "cleaning -> solo" and 1 s without such a line, or
+  2 s without one, or none in the first 3 s; 8 s at most, never a failure.
+  Then the mark, so the reset's own lines (above) are still the scenario's.
+- **repairs** what the reset cannot undo (`repair`, each a `harness:`
+  line): our V dead on the death screen
+  (`revive: our V dies: death screen` since the last `playing`) or saving
+  locked after a story not put back (`save: stays locked`, no
+  `save: unlocked` since): the game is stopped and the scenario's `ensure`
+  starts it again; co-op left off (`session: chosen off` last, after a
+  `coop leave`) in the role and keys the game runs with, which `ensure`
+  would not restart: `coop join ADDRESS:27450` (tandem.ini's address) as
+  guest, `coop host` as host.
+
+**Sweeps** (`tools/sweep.sh`, `task sweep -- …`): every scenario, or the
+NAMEs given, through `tools/scenario.sh` one at a time, into
+`.cache/sweeps/YYYYMMDD-HHMMSS/` (`--out DIR`): `results.txt` and each one's
+output, `NAME.log`. Build first (`tools/build.sh`, or `tools/remote.sh` and
+`TANDEM_PREBUILT=1`, which the sweep passes on).
+
+- **Left out:** the by-hand ones (`# by hand` on line 2, or an expect of
+  120 s and more in a file that says "by hand" or "waits for": a person
+  does what its notes say; `--by-hand` keeps them) and, without `PILOT=1`,
+  the pilot's.
+- **Order** (`--list` prints it): grouped by `ensure` line, role and
+  tandem.ini keys, one game start per group (10 groups for 155 scenarios,
+  2026-11-21; alphabetical order restarted the game ~75 times, ~90 s
+  each); in a group, those that stop the game at their end (`$game stop`:
+  the death screen of `vanish-down`) last; `# runs last` ones after every group.
+  `tools/scenario.sh all` runs the same order, by-hand ones included.
+- **A limit** per scenario (`--timeout`, default 900 s: `soak-host` takes
+  ~600), signalled to its whole process group (subshells, mock players).
+- **After a failure**, a game that crashed (`[crash] thread` in the newest
+  `red4ext/logs/redgraph-*.log`, or `CrashReporter.exe`) or hangs (the
+  newest tandem log does not grow within 20 s of a `coop status` command
+  while the game process lives; a game that runs answers it at once): every
+  thread's backtrace first (`tools/game.sh bt` into the evidence folder,
+  `bt.txt`; REDGraph's lines in `crash.txt`, the output in
+  `scenario.log`), then `tools/game.sh stop`; the next `ensure` starts it.
+- **`results.txt`**, a line per scenario, tab-separated: name, `PASS` or
+  `FAIL`, seconds, class, the first `FAIL:` line, the evidence folder. The
+  end prints the passes, game starts, `harness:` repairs, and the failures
+  grouped by class. `--rerun-failed FILE` runs a results file's failures
+  again (in a new folder).
+- **Classes**, the first that fits: `abort` (the scripts do not compile:
+  the sweep stops), `crash`, `hang` (also a `game thread silent` failure),
+  `timeout` (the sweep's limit), `by-hand`, `dns` (a mock player or
+  `coop join` given `:27450`, no address: `getent` answered nothing),
+  `peer-args` (the mock player's log: `needs a value`, `usage:`),
+  `referee`, `threads` (a hook beside the script tick), `reset` (not in
+  the test state), `launch` (`ensure` failed), `pilot`, `location` (the
+  game's log says the spot lacks what the scenario needs:
+  `no turret within 60 m`, `interact look: nothing there`), `wording` (an expect timed out, and a line beginning as
+  its pattern does, its text up to the first regex sign, 8 characters at
+  least, is there: reworded, or other values), `missing` (no such line at
+  all), `unexpected` (a `reject`), `command` (a `cmd` not taken), `other`.
 
 **Launches** (`tools/game.sh launches [N]`, default 5): the cheap crash
 check, the first thing to run after a script or plugin change that touches

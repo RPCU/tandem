@@ -4,12 +4,15 @@
 #
 #   tools/scenario.sh list          the scenarios (tools/scenarios/*.sh)
 #   tools/scenario.sh NAME...       run these, in order
-#   tools/scenario.sh all           run every one, host scenarios first
+#   tools/scenario.sh all           run every one, in tools/sweep.sh's order
+#                                   (a sweep: tools/sweep.sh, with results)
 #
 # Every scenario starts from one known state: the mock player of the one
-# before is stopped, then tools/game.sh test-reset (V on foot, up, healed,
-# at the test field, the tests' leftovers gone); a game that is not
-# "ready" fails the scenario. A game started by `ensure` is reset too.
+# before is stopped and its session's end waited for (teardown), what test
+# reset cannot undo is repaired ("harness:" lines: repair), then
+# tools/game.sh test-reset (V on foot, up, healed, at the test field, the
+# tests' leftovers gone); a game that is not "ready" fails the scenario. A
+# game started by `ensure` is reset too.
 #
 # A scenario is a bash file of steps:
 #   ensure host|join [KEY=VALUE...]  the game runs this build in this role,
@@ -271,6 +274,84 @@ pause() {
   done
 }
 
+# The last scenario's session ends in the game after its mock player stops:
+# "player N left", "marker: player N removed" (host), "session ended",
+# "save: leave cleaning -> solo" (guest). Those lines belong to the last
+# scenario, not to the next one's mark: wait until a host's "left" or a
+# guest's "cleaning -> solo" and 1 s without such a line, or 2 s without
+# one, or nothing of it in the first 3 s; 8 s at most. Never fails.
+teardown() {
+  remote "bash -s -- '$dir'" <<'REMOTE' || true
+cd "$1" || exit 0
+f=$(ls -t red4ext/logs/tandem-*.log 2>/dev/null | head -1)
+[ -n "$f" ] || exit 0
+from=$(wc -l <"$f")
+lines='session ended|player [0-9]+ left|left the session|save: leave |saves: |save: back from co-op|marker: player [0-9]+ removed|revive: (the session ended|we left)'
+seen=0 last=0 still=0 done=0
+for i in $(seq 1 16); do
+  sleep 0.5
+  new=$(tail -n +$((from + 1)) "$f")
+  seen=$(grep -cE "$lines" <<<"$new" || true)
+  grep -qE 'player [0-9]+ left|save: leave cleaning -> solo' <<<"$new" && done=1
+  if [ "$seen" = "$last" ]; then still=$((still + 1)); else still=0; last=$seen; fi
+  [ "$seen" = 0 ] && [ "$i" -ge 6 ] && break
+  [ "$seen" -gt 0 ] && [ "$still" -ge 4 ] && break
+  [ "$done" = 1 ] && [ "$still" -ge 2 ] && break
+done
+[ "$seen" = 0 ] || echo "the last session's end: $seen lines in $((i / 2)) s"
+REMOTE
+}
+
+# What an earlier scenario can leave that test reset cannot undo, repaired
+# before this one (each repair a "harness:" line): V dead on the death
+# screen, or saving locked after a story that could not be put back (both
+# until a save loads: the game is stopped, the scenario's ensure starts it
+# again); co-op left off (coop leave) in the role this scenario runs in,
+# which ensure would not restart: hosted or joined again from the co-op
+# menu, at tandem.ini's address.
+repair() {
+  local want dead locked chosen started address
+  want=$(sed -n 's/^ensure //p' "$1" | head -1)
+  want=${want// /,}
+  # (Since the last load, "playing": dead, locked; the last session chosen;
+  # the role the game was started in; the join address.)
+  read -r dead locked chosen started address < <(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); \
+    awk '/\\[script\\] playing/ { dead = 0; locked = 0 } /revive: our V dies: death screen/ { dead = 1 } \
+      /save: stays locked/ { locked = 1 } /save: unlocked|saving unlocked/ { locked = 0 } \
+      /session: chosen / { sub(/.*session: chosen /, \"\"); chosen = \$1 } \
+      END { printf \"%d %d %s \", dead, locked, chosen == \"\" ? \"-\" : chosen }' \"\$f\"; \
+    s=\$(sed 's/^[^ ]* //' red4ext/plugins/tandem/.started 2>/dev/null); a=\$(sed -n 's/^address *= *//p' red4ext/plugins/tandem/tandem.ini); \
+    echo \"\${s:--} \${a:--}\"") || return 0
+  if [ "$dead" = 1 ] || [ "$locked" = 1 ]; then
+    echo "  harness: $([ "$dead" = 1 ] && echo "our V is dead on the death screen" || echo "saving stays locked (a story not put back)") since the last load: the game is stopped, ensure starts it again"
+    $game stop >/dev/null 2>&1 || true
+    return 0
+  fi
+  [ "$chosen" = off ] && [ "$started" = "$want" ] || return 0
+  local words lines
+  case ${want%%,*} in
+  join)
+    if [ "$address" = - ]; then
+      echo "  harness: co-op is off as a guest and tandem.ini has no address: left as it is"
+      return 0
+    fi
+    words="coop join $address:27450"
+    echo "  harness: co-op was left off as a guest (an earlier scenario's coop leave): $words"
+    ;;
+  host)
+    words="coop host"
+    echo "  harness: co-op was left off as the host (an earlier scenario's coop leave): $words"
+    ;;
+  *) return 0 ;;
+  esac
+  lines=$(remote "cd '$dir'; wc -l <\"\$(ls -t red4ext/logs/tandem-*.log | head -1)\"") || return 0
+  $game cmd "$words" >/dev/null 2>&1 || echo "  harness: $words not taken"
+  # The new choice's session starts.
+  remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); \
+    for i in \$(seq 1 20); do tail -n +$((lines + 1)) \"\$f\" | grep -q 'session: starting as' && exit 0; sleep 0.5; done; exit 1" ||
+    echo "  harness: no session started within 10 s"
+}
+
 run() {
   local name=$1 file=tools/scenarios/$1.sh
   [ -f "$file" ] || {
@@ -287,8 +368,15 @@ run() {
   set +e
   (
     set -e
-    # The last scenario's player leaves, and the game comes to its test state.
+    # The last scenario's player leaves, its session ends in the game, what
+    # it left is repaired, and the game comes to its test state.
+    local had_peer=''
+    pgrep -x tandem-peer >/dev/null 2>&1 && had_peer=1
     pkill -x tandem-peer 2>/dev/null || true
+    if $game healthy >/dev/null 2>&1; then
+      if [ -n "$had_peer" ]; then teardown | sed 's/^/  /'; fi
+      repair "$file"
+    fi
     if $game healthy >/dev/null 2>&1; then
       mark
       reset
@@ -318,23 +406,10 @@ list)
 *)
   names=("$@")
   if [ "$1" = all ]; then
-    # Host scenarios first, then guest ones: one role switch, fewer restarts.
-    # A scenario marked "# runs last" (it leaves the game on a death screen)
-    # comes after all the others.
-    # Scenarios that need the pilot (a virtual pad on the game machine) only
-    # with PILOT=1.
-    mapfile -t names < <(
-      grep -l '^ensure host' tools/scenarios/*.sh | xargs grep -L '^# runs last' | xargs -n1 basename | sed 's/\.sh$//'
-      grep -L '^ensure host' tools/scenarios/*.sh | xargs grep -L '^# runs last' | xargs -n1 basename | sed 's/\.sh$//'
-      grep -l '^# runs last' tools/scenarios/*.sh | xargs -n1 basename | sed 's/\.sh$//'
-    )
-    if [ -z "${PILOT:-}" ]; then
-      kept=()
-      for name in "${names[@]}"; do
-        grep -q '^# needs the pilot' "tools/scenarios/$name.sh" || kept+=("$name")
-      done
-      names=("${kept[@]}")
-    fi
+    # In tools/sweep.sh's order: grouped by ensure line (one restart per
+    # role and tandem.ini keys), "# runs last" ones at the end; the pilot's
+    # only with PILOT=1. By-hand ones too (tools/sweep.sh leaves them out).
+    mapfile -t names < <(tools/sweep.sh --list --by-hand | awk '{ print $1 }')
   fi
   passed=0 total=0 failures=()
   for name in "${names[@]}"; do

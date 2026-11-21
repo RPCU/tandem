@@ -1,4 +1,5 @@
 # V's shower as the host: traced from start to end, the clothes shown drop (underwear, as our game shows) and our look goes out at once, the mock player hears the bare look and the dressed one after, and a Housing buff is ours (in game: take the shower by hand)
+# by hand: a person in game does what its notes say (tools/sweep.sh leaves it out)
 # shellcheck shell=bash disable=SC2317
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male

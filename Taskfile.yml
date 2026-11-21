@@ -133,6 +133,11 @@ tasks:
     cmds:
       - tools/scenario.sh {{.CLI_ARGS}}
 
+  sweep:
+    desc: "In-game scenarios as a sweep: grouped by role, failures classed (task sweep -- [--rerun-failed FILE] [NAME...])"
+    cmds:
+      - tools/sweep.sh {{.CLI_ARGS}}
+
   deploy:
     desc: Install the plugin, scripts and tweaks in the game on GAME_HOST (default anya)
     deps: [build:plugin]

@@ -1,4 +1,5 @@
 # V's bed as the host, with the mock player going to bed too: our sleep is asked of it, its own sleep is its yes (two beds at once), the hours pass once in every game and the bed's buff stays on our V (in game: sleep in a bed of V's apartment by hand)
+# by hand: a person in game does what its notes say (tools/sweep.sh leaves it out)
 # shellcheck shell=bash disable=SC2317
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male --skip-answer sleep

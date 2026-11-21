@@ -1,4 +1,5 @@
 # A walk through V's apartment as the host: the mirror, the wardrobe, the stash, the computer, a seat, the coffee, each seen busy by the mock player the way activities.md's table says, and the apartment's quest phases traced (in game: use each one by hand, in order)
+# by hand: a person in game does what its notes say (tools/sweep.sh leaves it out)
 # shellcheck shell=bash disable=SC2317
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male
