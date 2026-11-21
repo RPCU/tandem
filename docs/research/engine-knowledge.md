@@ -122,6 +122,8 @@ found through this table, each number once.
 | 13.97 | An item taken from a slot still spawning it is destroyed                                | `presence.md`       |
 | 13.98 | Two engine crashes on an entity gone: the transform update, the AI workspot's end       | `re.md`             |
 | 13.99 | One journal change moves others: the engine's rules                                     | `story.md`          |
+| 13.100 | The physics queue while the world is paused                                             | `time.md`           |
+| 13.101 | Removing a car copy: the stub path, and what crashed                                    | `vehicles.md`       |
 
 ## Top traps (one line each)
 

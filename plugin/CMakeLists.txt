@@ -58,6 +58,7 @@ add_library(tandem SHARED
   src/engine/posestream.cpp
   src/engine/quests.cpp
   src/engine/scenes.cpp
+  src/engine/physics.cpp
   src/engine/casts.cpp)
 target_link_libraries(tandem PRIVATE tandem_core RED4ext::SDK iphlpapi version)
 target_include_directories(tandem SYSTEM PRIVATE

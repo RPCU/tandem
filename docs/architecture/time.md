@@ -15,7 +15,12 @@
   and resumes when nobody is paused. Scripts' delayed tick stands still
   while paused, so the plugin calls `TandemPause.Frame` every frame from
   RED4ext's running game state (`plugin/src/main.cpp`). Not yet verified in
-  game (scenario `pause`).
+  game (scenario `pause`). A co-op pause has no time limit; while it lasts
+  the physics system's command queue is watched (it is not drained while
+  the world is paused and overflows past 0xFFFF entries): its growth is
+  logged, and near the limit the pause is lifted for a few frames so the
+  physics drains it (`plugin/src/engine/physics.cpp`, behind a byte check
+  of the 2.50 code; engine facts `research/engine/time.md` §13.100).
 - **Slowed time** (`scripts/tandem/Time.reds`, `core/src/timebubble.cpp`):
   each game sends its V's time abilities when they change (`TimeEffect`:
   Sandevistan, Kerenzikov, slow-motion perks, scanning, and the world speed

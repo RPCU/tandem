@@ -10,6 +10,7 @@
 #include "engine/animation.hpp"
 #include "engine/hooks.hpp"
 #include "engine/look.hpp"
+#include "engine/physics.hpp"
 #include "engine/pose.hpp"
 #include "engine/posescan.hpp"
 #include "engine/posestream.hpp"
@@ -1069,6 +1070,10 @@ struct TandemNative : Red::IScriptable {
     Runtime::Get().RemotePaused(changes);
     return static_cast<std::int32_t>(changes);
   }
+  // While the world is paused: the physics system's fullest buffered-command
+  // queue, in entries (engine/physics.hpp; -1: the watch is off).
+  static std::int32_t PhysicsBacklog() { return engine::PhysicsBacklog(); }
+  static std::int32_t PhysicsBacklogLimit() { return engine::kPhysicsQueueCapacity; }
   // A player's name in the session (empty: unknown).
   static Red::CString PlayerName(std::uint32_t player) {
     return Red::CString(Runtime::Get().PlayerName(player).c_str());
@@ -2376,6 +2381,8 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemNative, "TandemNative", {
   RTTI_METHOD(SendPaused);
   RTTI_METHOD(PausedPlayers);
   RTTI_METHOD(PausedChanges);
+  RTTI_METHOD(PhysicsBacklog);
+  RTTI_METHOD(PhysicsBacklogLimit);
   RTTI_METHOD(PlayerName);
   RTTI_METHOD(SendTimeEffect);
   RTTI_METHOD(TimeChanges);

@@ -145,3 +145,57 @@ in game**. The earlier reading is `coop-time.md` §2.3.
   eased one. Time.reds sends that as the bubble's speed. The profile's
   values were not read: the first scan of a session logs them
   (`time: our abilities 8 (world speed X)`). [unverified]
+
+### 13.100 The physics queue while the world is paused (2026-11-21, game 2.50, exe and live process read)
+
+Lead: a study of another co-op mod (NightCoop), facts only: while its
+all-players pause is on it polls a physics object holding 256 pointers at
++0x140, each with a u32 count at +0x40 and a value at +0x80, logs the
+growth, and lifts the pause briefly so physics flushes, because past some
+limit the game crashes (its offsets from 2.31). Re-derived on 2.50 with
+`tools/re`:
+
+- **The physics system** is a global, not an RTTI class: address hash
+  3885377886 (`0x143BFCDD8`). It has 256 scene slots: a free-slot bitmap
+  at +0x08 (bit set: free), the slots ever used at +0x28, a generation
+  byte per slot at +0x38, a **buffered-command queue** pointer per slot at
+  +0x140, the scene pointers at +0x948. A slot id is `index | gen << 16`;
+  hash 3811643879 (`0x14027D58C`) checks it (index < 0x100, generation),
+  3069123790 (`0x14027D560`) returns the slot's queue, 926881634
+  (`0x1403DC46C`) its scene. [2.5-static]
+- **The queue** (one per scene, 0x400060 bytes, created by hash
+  2330137828, `0x140A0DDAC`): entries of 0x30 bytes from +0x88, counted at
+  +0x40, room for **0xFFFF** (the creation clears 0x2FFFD0 bytes); a 1 MiB
+  arena for the commands' data from +0x300060, bytes used at +0x80;
+  a drain count at +0x84. Every game-side write to a physics body opens
+  an entry (hash 1210388152, `0x140612ED4`, 105 callers: transforms,
+  velocities, simulation flags; up to 4 commands an entry, more chained in
+  further entries). The append (hash 3646232200, `0x1406130B4`) is
+  `lock xadd [queue+0x40], 1` with **no bound check**: past 0xFFFF entries
+  it writes over the arena and then past the allocation. The arena is
+  bounded (an allocation past 1 MiB returns -1 and that command is
+  dropped). The drain (hash 757733474, `0x1402E2070`) applies every entry
+  and zeroes both counts; the physics update calls it before each
+  simulation step. [2.5-static]
+- **Live, in play** (one world: slot 1; read with
+  `tools/re` while scenarios ran): 0 to 230 entries at any read, the
+  arena under 3 KB, about 330 drains a second (several a frame).
+  [2.5-verified]
+- **During a pause**: not measured on 2.50. The study saw the queue grow
+  while its pause was on and drain when it lifted it, so the drain stops
+  with the world; what fills it then is whatever still writes to bodies.
+  tandem writes nothing while paused (its script tick stands still; the
+  plugin's per-frame call only runs `TandemPause.Frame`), unless an engine
+  update it drives (the puppet controller) still runs. A co-op pause has
+  no time limit: it lasts while anyone keeps the pause menu open.
+  [2.5-untested]
+- **tandem's watch** (`plugin/src/engine/physics.cpp`,
+  `scripts/tandem/Pause.reds`): behind a startup check that compares the
+  append, the slot getter, the slot check and the queue's creation byte
+  for byte with 2.50 (any difference: off, logged once), each frame of a
+  co-op pause reads the fullest queue's count; it logs every 4096 entries
+  of growth and, at 3/4 of 0xFFFF, unpauses until the count is under 1024
+  (at most 10 frames) and pauses again; the end of a pause logs its peak.
+  To read in game: the `physics watch:` line at the first pause, then
+  `pause: over after N frames, physics backlog peaked at P` after a long
+  one. [2.5-untested]
