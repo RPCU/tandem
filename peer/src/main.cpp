@@ -2132,6 +2132,13 @@ public:
       return p;
     }
     x += 5.f;
+    // Back up before climbing out, as a V must (the surfacing has its sound).
+    if (segment(1.f, "surface")) {
+      p.movement.swim = S::Surface;
+      p.ahead = x + 0.5f * t;
+      return p;
+    }
+    x += 0.5f;
     if (segment(1.f, "out of the water")) {
       p.movement.swim = S::Climbing;
       p.ahead = x + 0.5f * t;
