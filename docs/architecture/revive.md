@@ -90,15 +90,25 @@ VehicleNoInteraction`); it lets go past 3 m. **While the car moves**
   `TandemVehicles.PutOut`) and placed where the game would set it down
   (`CanUnmount`; else the navmesh beside the car), lying there.
   Not on the NCART, nor carried along (`transit.md`).
-- **Down in deep water** (2026-11-21). A V whose head is under water, or
-  whose water has its floor more than 1.8 m under the surface (a static
-  raycast), is lifted where a partner can reach it, by its own game: the
-  nearest dry point of the navmesh within 40 m (where V last stood on the
-  navmesh, else growing spheres; the game has no shore query), else the
-  surface (feet 1.2 m under it, lifted again whenever the head sinks). A
-  V at its floor while swimming enters the death state as on land
-  (`SwimmingDecisions.ToDeath` wrapped: vanilla leaves swimming for death
-  only at the health minimum).
+- **Down in deep water** (2026-11-21; the user's call the same day: no
+  lift to a shore or the surface). A V whose head is under water, or whose
+  water has its floor more than 1.8 m under the surface (a static
+  raycast), or that is down in a sunken car, is **out at once** (no revive
+  there) and gets up **at Viktor's clinic** (below), while another V is up;
+  with none up the session's loss decides. A V at its floor while swimming
+  enters the death state as on land (`SwimmingDecisions.ToDeath` wrapped:
+  vanilla leaves swimming for death only at the health minimum).
+- **At Viktor's** (2026-11-21; engine facts §13.110): V gets up on the
+  clinic's floor in Little China, facing the ripper's chair, "Vik patched
+  you up". The jump is a fast travel's (Travel.reds `TravelToMarker`'s
+  steps: the fast travel's loading screen asked for, the teleport,
+  `NotifyFastTravelStart`, the epoch moved on), out of a seat first; V is
+  stood up once that loading screen has ended and the world has run 1.5 s
+  (30 s at most). Before Vik is met (`q001_ripperdoc_done`) or, during
+  Watson's lockdown (`q101_done` not set), with our V outside Watson: our
+  fast travel point nearest to where V lay (its marker, as the fast travel
+  does), "Patched up, back on your feet at POINT"; none found: it waits.
+  The partners' party HUD and markers follow the V's new position.
 - **Where a respawn puts you** (2026-11-21; was 1.5 m behind the partner's
   position of the moment, its yaw, wherever that was: in a car, in a wall,
   mid-air). The out V's game decides, from what it sees of the partner:
@@ -113,14 +123,19 @@ VehicleNoInteraction`); it lets go past 3 m. **While the car moves**
   lacks has none here) and dry; there, 1.5 m behind its facing when that
   is on the navmesh, dry and with no static wall between, else its right,
   left or front, else the spot itself; (3) a partner in a car with no free
-  seat and no spot on foot: beside the car once it is below 2 m/s, never
-  beside a moving one; else it waits (said once). A V seated elsewhere is
-  put out of its seat first. `tools/game.sh cmd revive out` (out at once),
-  `revive water N|off` (as if N m under water), `revive wreck` (its car
-  taken as wrecked), `revive unseat`; scenarios `revive-car`,
-  `revive-wreck`, `revive-water`, `respawn-car`, `respawn-foot`. **None of
-  this has run in game**; `revive-water` uses a pretend depth (no real
-  water spot is known to the scenarios).
+  seat and no spot on foot: beside the car once it is below 2 m/s, when
+  that is dry navmesh and the car is not under water; a moving car gets
+  10 s to stop; (4) else (no navmesh at its spot, elsewhere, a sunken car,
+  no ground beside it, still moving) **at Viktor's**, not waiting. A V
+  seated elsewhere is put out of its seat first. `tools/game.sh cmd revive
+out` (out at once), `revive water N|off` (as if N m under water),
+  `revive wreck` (its car taken as wrecked), `revive unseat`, `revive
+nospot [off]` (no spot beside a partner fits), `revive novik [off]`
+  (Viktor's out of the story's reach); scenarios `revive-car`,
+  `revive-wreck`, `revive-water` (up at Viktor's), `respawn-car`,
+  `respawn-foot`, `respawn-viktor` (no fit spot), `respawn-point` (Vik out
+  of reach). **None of this has run in game**; `revive-water` uses a
+  pretend depth (no real water spot is known to the scenarios).
 
 ## Open problems
 
@@ -152,8 +167,9 @@ VehicleNoInteraction`); it lets go past 3 m. **While the car moves**
   of a downed V shows what the owner's third-person body does in its death
   state (pose stream: to check; a downed animation on the puppet is the
   fallback); in a car (built 2026-11-21, above): whether the stand-up and
-  the forced exit play right from the death state in a seat, and whether a
-  downed body floats at the surface; the reviver's own kneeling animation;
+  the forced exit play right from the death state in a seat; whether the
+  fast travel's jump and loading screen play right from the death state
+  (Viktor's); the reviver's own kneeling animation;
   localized prompt texts; whether `BaseStatusEffect.SecondHeart` (applied
   by the stand-up we reuse) starts the Second Heart cooldown of a V that
   has the cyberware.

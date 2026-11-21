@@ -85,8 +85,8 @@ Read 2026-11-21 for a V down in a car, in water, and the respawn spot
   only `childId` and `isInstant`; `ExitingDecisions.EnterCondition`
   (550593) leaves the seat when such an unmount is pending (`IsExitForced`).
   Where V stands on getting out: `VehicleObject.CanUnmount(isPlayer,
-  object, opt direction)` (87761) → `vehicleUnmountPosition{direction,
-  position}` (288051, `vehicleExitDirection` 7842: 0 none … 5 top).
+object, opt direction)` (87761) → `vehicleUnmountPosition{direction,
+position}` (288051, `vehicleExitDirection` 7842: 0 none … 5 top).
   Wrecked: `VehicleObject.IsDestroyed` (87959); upside down:
   `IsVehicleUpsideDown` (88944, from `VehicleFlippedOverEvent`) or
   `ComputeIsVehicleUpsideDown` (world up below the horizon). A stop:
@@ -106,3 +106,37 @@ Read 2026-11-21 for a V down in a car, in water, and the respawn spot
   unknown). Static raycasts: `SpatialQueriesSystem.
 SyncRaycastByCollisionGroup(from, to, n"Static", out TraceResult, true,
 false)` (177828). [2.5-untested]
+
+### 13.110 Viktor's clinic: where, and when the story has it (2026-11-21, game data and final.reds read, not run)
+
+Used by `Revive.reds` (`VikSpot`, `VikOutOfReach`, `FollowFar`).
+
+- **Where.** The game's journal quest mappins (exported from the 2.x
+  journal by the RED modding wiki, "Reference: Quest Ids", updated
+  2025-08-20: `journal-quest-data.json`, read from the wiki's repository):
+  `#ws_victor_vector_default`, Viktor's own spot (mq033's "Talk to
+  Viktor", mq045 "Paid in Full"), at (-1542.592, 1230.243, 11.519);
+  `#q307_mp_viktor_chair`, the ripper's chair (q307 "Sit in the ripper's
+  chair"), at (-1546.669, 1234.674, 12.301). A community teleport list
+  (ali213.net's console guide, "RIPPERDOC - VIKTOR'S CLINIC [WATSON -
+  LITTLE CHINA]") gives (-1546.726, 1227.393, 11.520): the floor of
+  Viktor's spot (z 11.52), 4.4 m from it and 7.3 m from the chair, which
+  lies along +Y (yaw -0.45°, forward (-sin, cos)); tandem gets V up there.
+  The district enum has the clinic as `LittleChina_VictorsClinic` (95,
+  `gamedataDistrict`, 4716). [2.5-untested]
+- **When.** Before V has met Vik, `q001_ripperdoc_done` < 1 (vanilla's
+  ripperdoc tutorial reads it: 42352, 226288, 387895). Watson's lockdown
+  is Act 1: `q101_done` (the end of "Playing for Time", the last Act 1
+  quest) is unset until then (the hub's Act 1 tarot is gated on it,
+  332681); whether the fact is set exactly when the lockdown lifts is
+  unchecked. In Watson: the district manager's current district
+  (`PreventionSystem.GetCurrentDistrict`, 138920) or one of its parents
+  (`District_Record.ParentDistrict`, 51044) has `Type()` `Watson` (128).
+  [2.5-untested]
+- **A fast travel's jump to a position.** `FastTravelSystem.PerformFastTravel`
+  (50415) teleports to a node (`TeleportToNode`); to a position tandem
+  makes the same steps with `TeleportationFacility.Teleport` (192802).
+  `FastTRavelSystem.FastTravelLoadingScreenFinished` (50908) is written by
+  the native side and only read (listeners) by scripts; whether it goes
+  false when a fast travel starts is unknown, so tandem writes false
+  before its jump and waits for true. [2.5-untested]
