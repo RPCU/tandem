@@ -4,8 +4,11 @@ ensure host
 cmd god on
 # The mock player's V: burning from 4 to 10 s, its camo from 12 to 17, a heal
 # from 19 on (still on when it vanishes), a record no game has from 23 to 26.
+# The heal is a MaxDoc's (FirstAidWhiffV0: one VFX record in 2.50's
+# tweakdb_ep1.bin; QuickhackConsumableHealing, named in final.reds, is no
+# record there).
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female \
-  --status BaseStatusEffect.PlayerBurning@4-10,BaseStatusEffect.Burning@4-10,BaseStatusEffect.QuickhackConsumableHealing@19,Tandem.NoSuchStatusEffect@23-26 \
+  --status BaseStatusEffect.PlayerBurning@4-10,BaseStatusEffect.Burning@4-10,BaseStatusEffect.FirstAidWhiffV0@19,Tandem.NoSuchStatusEffect@23-26 \
   --camo 12 --camo-record BaseStatusEffect.OpticalCamoCoolPerkShort --vanish-at 32
 expect 'joined \(player [0-9]+' 20
 expect 'controller handed to the engine' 20
@@ -26,8 +29,8 @@ shot presence-status-camo
 expect_peer 'optical camo off' 10
 expect 'stealth: player [0-9]+ camo off' 5
 # The heal.
-expect_peer 'status visuals on our V: BaseStatusEffect.QuickhackConsumableHealing' 10
-expect 'status: player [0-9]+ shows BaseStatusEffect.QuickhackConsumableHealing on its puppet' 5
+expect_peer 'status visuals on our V: BaseStatusEffect.FirstAidWhiffV0' 10
+expect 'status: player [0-9]+ shows BaseStatusEffect.FirstAidWhiffV0 on its puppet' 5
 shot presence-status-heal
 # A record this game does not have (a mod's on one side): skipped, said once.
 expect_peer 'status visuals on our V: .*Tandem.NoSuchStatusEffect' 10
