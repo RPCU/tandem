@@ -19,6 +19,11 @@ public class TandemPause {
   private let m_holding: Bool;
   // The plugin's per-frame call has reached us (logged once).
   private let m_framesSeen: Bool;
+  // The system's tick count last seen here, and the frames since it moved:
+  // a world paused by a menu (the trade table, a vendor) takes the test
+  // commands here, as the pause menu does (Coop.reds).
+  private let m_tickSeen: Int32;
+  private let m_stillFrames: Int32;
   // The other players in their pause menu, as of PausedChanges() m_seen.
   private let m_paused: array<Uint32>;
   private let m_seen: Int32;
@@ -76,6 +81,30 @@ public class TandemPause {
         TandemNative.Log("pause: following the other players' pause menus every frame");
       }
       pause.Update();
+      pause.TakeCommandWhilePaused();
+    }
+  }
+
+  // (test, tools/game.sh cmd) commands while the tick stands still.
+  private func TakeCommandWhilePaused() -> Void {
+    let system = GameInstance.GetScriptableSystemsContainer(GetGameInstance()).Get(n"TandemSystem") as TandemSystem;
+    if !IsDefined(system) {
+      return;
+    }
+    let ticks = system.Ticks();
+    if ticks != this.m_tickSeen {
+      this.m_tickSeen = ticks;
+      this.m_stillFrames = 0;
+      return;
+    }
+    this.m_stillFrames += 1;
+    if this.m_stillFrames < 30 {
+      return;
+    }
+    let command = TandemNative.TakeCommand();
+    if StrLen(command) > 0 {
+      TandemNative.Log(s"command (world paused): \(command)");
+      system.RunCommand(command);
     }
   }
 

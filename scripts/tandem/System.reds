@@ -193,6 +193,8 @@ public class TandemSystem extends ScriptableSystem {
   private let m_attached: Bool;
   // The current tick chain (TandemTick.gen).
   private let m_tickGen: Int32;
+  // Ticks so far (TandemPause.Frame: a world paused takes commands there).
+  private let m_ticks: Int32;
   // The recorder, solo (RecordTick): its own world and NPC senders, set up
   // on the first tick of a game; when the pose source was last set; our
   // V's life as last recorded.
@@ -846,6 +848,7 @@ public class TandemSystem extends ScriptableSystem {
     // tools/scripts-threads.known that runs on another thread between these
     // two ran beside the tick.
     TandemNative.ScriptTickBegin();
+    this.m_ticks += 1;
     this.TickOnce();
     TandemNative.ScriptTickEnd();
   }
@@ -1075,6 +1078,10 @@ public class TandemSystem extends ScriptableSystem {
       return;
     }
     this.RunCommand(command);
+  }
+
+  public func Ticks() -> Int32 {
+    return this.m_ticks;
   }
 
   // Also from the pause menu (Coop.reds), which takes the commands while the
