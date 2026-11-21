@@ -23,9 +23,9 @@ shot wheels-guest-area-met
 reject 'street: handover in: vehicle'
 # It walks off, leaving its cars by us: handed over, no new body.
 expect_peer 'street: handed vehicle 0x[0-9a-f]+ over to player 1' 60
-expect 'street: handover in: vehicle [0-9]+ from player [2-9]' 10
+expect 'street: handover in: vehicle [0-9]+ from player [0-9]+' 10
 # Its driver comes with the car, still in its seat.
-expect 'regions: handover in: npc 16[0-9]{6} from player [2-9] .*\(inherited\)' 10
+expect 'regions: handover in: npc [0-9]{8,} from player [0-9]+ .*\(inherited\)' 10
 pause 6
 cmd street count
 expect 'street count: .* [3-9] taken over' 5

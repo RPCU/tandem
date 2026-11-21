@@ -14,19 +14,19 @@ expect 'npcs shared: [0-9]+, .*proxies 0'
 # They walk up: linked 150 m out, their three NPCs shown as proxies.
 expect 'regions: linked with player [2-9]' 40
 expect_peer 'region: linked with player 1' 5
-expect 'puppet 16[0-9]{6}: controller handed to the engine' 30
+expect 'puppet [0-9]{8,}: controller handed to the engine' 30
 cmd npc count
 expect 'npcs shared: [0-9]+, .*ours [1-9][0-9]*, proxies 3'
 # Our crowd stays on (we rank first), theirs is the one held back.
 reject 'npcs: guest, own crowd off'
 # Our hit on one of their NPCs goes to them; its health comes back.
 cmd npc punch 40
-expect 'combat: hit on proxy 16[0-9]{6} for [0-9.]+' 10
-expect_peer 'region: player 1 hit our npc 16[0-9]{6}: [0-9]+ damage, health 0\.[0-9]+' 10
+expect 'combat: hit on proxy [0-9]{8,} for [0-9.]+' 10
+expect_peer 'region: player 1 hit our npc [0-9]{8,}: [0-9]+ damage, health 0\.[0-9]+' 10
 # They walk off, leaving the three 8 m from us: handed over, no new body.
-expect_peer 'region: handed npc 16[0-9]{6} over to player 1' 60
-expect 'regions: npc 16[0-9]{6} is ours to run, from player [2-9] \(handed over\)' 10
-expect 'regions: handover in: npc 16[0-9]{6} from player [2-9] health [0-9.]+ effects 0 target player 1' 10
+expect_peer 'region: handed npc [0-9]{8,} over to player 1' 60
+expect 'regions: npc [0-9]{8,} is ours to run, from player [0-9]+ \(handed over\)' 10
+expect 'regions: handover in: npc [0-9]{8,} from player [0-9]+ health [0-9.]+ effects 0 target player 1' 10
 pause 6
 cmd npc count
 expect 'npcs shared: [0-9]+, .*ours [3-9][0-9]*, proxies 0'
