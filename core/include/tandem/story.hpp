@@ -34,8 +34,10 @@ public:
   std::uint32_t Digest() const;
   // A player left: its StoryState goes.
   void Forget(proto::PlayerId player);
-  // What to send a newcomer, in order: the journal snapshot first.
-  std::vector<proto::Message> ForJoiner() const;
+  // What to send a newcomer, in order: the journal snapshot first. With the
+  // host's clock, not the lines that are over (a bark of minutes ago names
+  // an NPC the newcomer may never be told of).
+  std::vector<proto::Message> ForJoiner(std::uint64_t hostNowUs = 0) const;
   std::size_t JournalSize() const { return m_journal.size(); }
   // A scene plays (scene replay).
   bool SceneOn() const { return m_scene.has_value(); }
@@ -57,8 +59,8 @@ private:
   std::vector<proto::SceneLine> m_lines;               // begun and not cut, newest last
   proto::StoryRestrictions m_restrictions;             // on the host's V now (empty: none)
 };
-// How many begun lines the record keeps (a joiner drops the ones that are
-// over: scene::Replay).
+// How many begun lines the record keeps (ForJoiner leaves out the ones that
+// are over, and a joiner drops those it gets too late: scene::Replay).
 inline constexpr std::size_t kKeptLines = 8;
 
 // "Taking part" (design §4.3): a guest takes part in a quest when it is
