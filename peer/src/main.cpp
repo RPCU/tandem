@@ -442,10 +442,12 @@ struct Options {
   std::uint64_t turretSeen{};
   int turretSeenAtSeconds{5};
   // A turret in our V's hands (--turret-hands): which, where it points,
-  // when we take it (it fires from 2 s to 4 s in, let go at 6 s).
+  // when we take it (it fires from 2 s to 4 s in, let go at 6 s, or after
+  // --turret-hands-for seconds).
   std::uint64_t turretHands{};
   Vec3 turretHandsAt;
   int turretHandsAtSeconds{5};
+  int turretHandsForSeconds{6};
   int turretShots{10};
   // Breach Protocol: what to breach and when (--breach), with which daemons.
   struct BreachOrder {
@@ -817,7 +819,11 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     seconds into the session (5), and loses it 6 s later\n"
          "  --turret-hands E[:X,Y,Z][@S] our V holds the turret E (its id in hex) S seconds\n"
          "                     into the session (5), points it at X,Y,Z, fires it from 2 s\n"
-         "                     to 4 s and lets go at 6 s. Turrets in others' hands are logged\n"
+         "                     to 4 s and lets go at 6 s. Turrets in others' hands, and\n"
+         "                     our claims the host refused (another player holds it), are\n"
+         "                     logged\n"
+         "  --turret-hands-for D our V holds the --turret-hands turret D seconds (6): the\n"
+         "                     others' claims on it are refused meanwhile\n"
          "  --turret-shots N   host: a turret a guest's copy has its V with turns to that V\n"
          "                     and fires N shots at it (10; 0: silent, as for a turret that\n"
          "                     is not in our world). What it hears of turrets is logged\n"
@@ -1412,6 +1418,10 @@ Options Parse(int argc, char **argv) {
                   .ptr != entity.data() + entity.size() ||
           options.turretHands == 0)
         Usage(std::format("--turret-hands: {} is not an entity id in hex", entity));
+    } else if (flag == "--turret-hands-for") {
+      options.turretHandsForSeconds = Number<int>(value);
+      if (options.turretHandsForSeconds < 1)
+        Usage("--turret-hands-for: at least 1 second");
     } else if (flag == "--turret-shots")
       options.turretShots = Number<int>(value);
     else if (flag == "--fracture")
@@ -5551,6 +5561,9 @@ int main(int argc, char **argv) {
               }
               if ((h.flags & tandem::proto::kHandsLetGo) != 0)
                 turretsHeld.erase(h.entity);
+            } else if constexpr (std::is_same_v<E, tandem::events::TurretRefused>) {
+              Log("turret {:x}: our claim refused, player {} holds it", e.busy.entity,
+                  e.busy.holder);
             } else if constexpr (std::is_same_v<E, tandem::events::Fractured>) {
               const auto &f = e.fracture;
               Log("player {} broke {} at ({:.1f} {:.1f} {:.1f})", f.player,
@@ -6615,7 +6628,7 @@ int main(int argc, char **argv) {
     // --turret-hands: five words a second while held, then let go.
     if (options.turretHands != 0 && !turretHandsDone && devicesFrom) {
       const auto from = *devicesFrom + std::chrono::seconds(options.turretHandsAtSeconds);
-      if (now >= from + 6s) {
+      if (now >= from + std::chrono::seconds(options.turretHandsForSeconds)) {
         turretHandsDone = true;
         endpoint->SendTurretHands(
             {.entity = options.turretHands, .flags = tandem::proto::kHandsLetGo});

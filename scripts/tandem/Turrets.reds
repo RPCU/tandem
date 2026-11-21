@@ -22,6 +22,10 @@
 //   (TurretHands, 5 a second); every other copy turns there, holds its own
 //   fire and draws the controller's, which hurts nobody (the controller's
 //   game decides its hits). Silent for a second, or let go: its game's again.
+//   One player's hands at a time, first come (the host decides): a claim on
+//   a turret another player holds is refused, and our V lets go of it at
+//   once (the game's own TakeOverControlSystem.ReleaseControl) with a
+//   notice saying who has it.
 // - Guest: a copy's laser and scan light show the host's turret (red and
 //   the laser while it follows a target, yellow when it follows nobody),
 //   held against the copy's own changes while the host's word lasts.
@@ -32,6 +36,8 @@
 // turns to what V looks at for 3 s, as on the host's word) | turret shot
 // (...and draws a shot there) | turret engage (host: the nearest turret
 // takes the first puppet as a target, as when its guest's copy locked it)
+// | turret take (our V takes control of the nearest turret, as its control
+// panel gives it)
 
 // A turret we speak of (host), or whose copy has our V (guest).
 public class TandemTurret {
@@ -63,6 +69,12 @@ public class TandemTurrets extends ScriptableSystem {
   private let m_hands: array<ref<TandemTurret>>;
   private let m_held: EntityID;
   private let m_heldSaidAt: Float;
+  // A turret another player holds, our claim on it refused: when, when our
+  // V was last let go of it, how many refusals.
+  private let m_refused: EntityID;
+  private let m_refusedAt: Float;
+  private let m_releasedAt: Float;
+  private let m_refusals: Int32;
   private let m_handsDrawn: Int32;
   private let m_lastPoll: Float;
   private let m_shotsSaid: Int32;
@@ -178,6 +190,7 @@ public class TandemTurrets extends ScriptableSystem {
     }
     ArrayClear(this.m_hands);
     this.m_held = EntityID.FromHash(0ul);
+    this.m_refused = EntityID.FromHash(0ul);
   }
 
   // Our copy's own fire starts (its ShootStart, let through).
@@ -452,6 +465,10 @@ public class TandemTurrets extends ScriptableSystem {
       this.OnHands(event, now);
       return;
     }
+    if event.kind == 4 {
+      this.Refused(event, now);
+      return;
+    }
     if this.m_host {
       if event.value == 3 || event.value == 4 {
         this.OnSeen(event.entity, event.player, event.value == 3);
@@ -482,6 +499,19 @@ public class TandemTurrets extends ScriptableSystem {
   private func PollOurHands(now: Float) -> Void {
     let turret = this.OurHands();
     let held = IsDefined(turret) ? turret.GetEntityID() : EntityID.FromHash(0ul);
+    // Another player's (refused): our V is let go of it, taken again or
+    // not out yet, and nothing is said of it.
+    if EntityID.IsDefined(this.m_refused) && (now - this.m_refusedAt > TandemTurrets.RefusedHold() || now < this.m_refusedAt) {
+      this.m_refused = EntityID.FromHash(0ul);
+    }
+    if EntityID.IsDefined(this.m_refused) && held == this.m_refused {
+      if now - this.m_releasedAt >= 0.5 || now < this.m_releasedAt {
+        this.m_releasedAt = now;
+        TakeOverControlSystem.ReleaseControl(this.GetGameInstance());
+      }
+      turret = null;
+      held = EntityID.FromHash(0ul);
+    }
     if EntityID.IsDefined(this.m_held) && this.m_held != held {
       TandemObjects.Hands(this.m_held, new Vector4(0.0, 0.0, 0.0, 1.0), 2);
       TandemNative.Log(s"turrets: our V let go of \(TandemNative.EntityHex(this.m_held)): said");
@@ -506,6 +536,9 @@ public class TandemTurrets extends ScriptableSystem {
   }
 
   public static func HandsEvery() -> Float { return 0.2; }
+  // A refused turret taken again this soon is let go again unsaid (its
+  // holder's for now; later a claim asks the host again).
+  public static func RefusedHold() -> Float { return 3.0; }
   // Unheard of this long: a turret in a player's hands is its game's again.
   public static func HandsHold() -> Float { return 1.0; }
   // A drawn shot of a held turret's fire, at most this often.
@@ -601,6 +634,29 @@ public class TandemTurrets extends ScriptableSystem {
     turret.TandemShotLook();
   }
 
+  // Our claim on a turret was refused: another player held it first (the
+  // host's word; devices.md, "A turret in a player's hands"). Our V lets go
+  // at once, the game's own way out of a device's control (as a quest ends
+  // one: TakeOverControlSystem.ReleaseControl), and the player is told who
+  // has it. Nothing more is said of it: its copy follows its holder.
+  private func Refused(event: TandemObjectEvent, now: Float) -> Void {
+    this.m_refusals += 1;
+    this.m_refused = event.entity;
+    this.m_refusedAt = now;
+    this.m_releasedAt = -1.0;
+    if this.m_held == event.entity {
+      this.m_held = EntityID.FromHash(0ul);
+    }
+    let turret = this.OurHands();
+    let ours = IsDefined(turret) && turret.GetEntityID() == event.entity;
+    if ours {
+      this.m_releasedAt = now;
+      TakeOverControlSystem.ReleaseControl(this.GetGameInstance());
+    }
+    TandemNative.Log(s"turrets: our claim on \(TandemNative.EntityHex(event.entity)) refused: player \(event.player) holds it; \(ours ? "our V lets go" : "out of our V's hands already")");
+    TandemText.Notice(this.GetGameInstance(), "Turrets-Busy", TandemCoop.NameOf(event.player));
+  }
+
   // A held turret is its game's again.
   private func LetGo(known: ref<TandemTurret>) -> Void {
     let turret = this.Body(known.entity);
@@ -628,7 +684,7 @@ public class TandemTurrets extends ScriptableSystem {
     let verb = ArraySize(words) > 1 ? words[1] : "";
     if Equals(verb, "") {
       let role = this.m_host ? "host" : "guest";
-      TandemNative.Log(s"turrets: \(ArraySize(this.m_turrets)) spoken of; shots told \(this.m_shotsSaid), drawn \(this.m_shotsDrawn), real at our V \(this.m_shotsReal); puppets taken as targets \(this.m_engaged); left to our game \(this.m_left) (\(role)); in others' hands \(ArraySize(this.m_hands)), their shots drawn \(this.m_handsDrawn); in ours \(TandemNative.EntityHex(this.m_held))");
+      TandemNative.Log(s"turrets: \(ArraySize(this.m_turrets)) spoken of; shots told \(this.m_shotsSaid), drawn \(this.m_shotsDrawn), real at our V \(this.m_shotsReal); puppets taken as targets \(this.m_engaged); left to our game \(this.m_left) (\(role)); in others' hands \(ArraySize(this.m_hands)), their shots drawn \(this.m_handsDrawn); in ours \(TandemNative.EntityHex(this.m_held)); claims refused \(this.m_refusals)");
       return;
     }
     let turret = this.Nearest();
@@ -651,6 +707,13 @@ public class TandemTurrets extends ScriptableSystem {
         this.Shoot(this.Track(turret.GetEntityID()), turret, null, at, now);
         TandemNative.Log(s"turrets: \(hex) draws a shot there (drawn \(this.m_shotsDrawn))");
       }
+    } else if Equals(verb, "take") {
+      // As the turret's control panel gives it (a device's own takeover:
+      // TakeOverControlSystem.RequestTakeControl, not the quickhack).
+      let take = new ToggleTakeOverControl();
+      take.SetProperties(false, false);
+      TakeOverControlSystem.RequestTakeControl(turret, take);
+      TandemNative.Log(s"turrets: our V takes control of \(hex)");
     } else if Equals(verb, "engage") {
       let system = TandemSystem.Of(game);
       let players = IsDefined(system) ? system.PuppetPlayers() : [];

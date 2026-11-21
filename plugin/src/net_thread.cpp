@@ -899,6 +899,10 @@ struct NetThread::Impl {
                 runtime.PushObject(e.fire);
               } else if constexpr (std::is_same_v<E, events::TurretHeld>) {
                 runtime.PushObject(e.hands);
+              } else if constexpr (std::is_same_v<E, events::TurretRefused>) {
+                log::Info("turrets: our claim on {:x} refused: player {} holds it", e.busy.entity,
+                          e.busy.holder);
+                runtime.PushObject(e.busy);
               } else if constexpr (std::is_same_v<E, events::DevicesReset>) {
                 log::Info("devices: the host sends its record again");
                 runtime.PushDevice(proto::DeviceSet{});

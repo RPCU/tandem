@@ -4,11 +4,13 @@
 // Something of the world for our game to show (Objects.reds).
 public native struct TandemObjectEvent {
   // 1 something broke in another game, 2 a device's fire, 3 a turret in
-  // another player's hands
+  // another player's hands, 4 our claim on a turret refused (another player
+  // holds it)
   native let kind: Int32;
-  // 1: whose game saw it break; 2 (seen, lost): whose V; 3: whose hands
+  // 1: whose game saw it break; 2 (seen, lost): whose V; 3: whose hands;
+  // 4: who holds it
   native let player: Uint32;
-  // 1: the placed entity it is a part of (none: the world's); 2 and 3: the device
+  // 1: the placed entity it is a part of (none: the world's); 2 to 4: the device
   native let entity: EntityID;
   // 1: its destruction component
   native let name: CName;
