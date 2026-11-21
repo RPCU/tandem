@@ -9,7 +9,7 @@
 The zip has the game's layout and only what a player needs:
 
   red4ext/plugins/tandem/   tandem.dll, tandem-report.exe, tandem.default.ini,
-                            INSTALL.md, LICENSE.txt, NOTICE.txt,
+                            moments.txt, INSTALL.md, LICENSE.txt, NOTICE.txt,
                             THIRD-PARTY-LICENSES.txt
   r6/scripts/tandem/        *.reds
   r6/tweaks/tandem/         *.tweak, *.yaml
@@ -204,6 +204,8 @@ def main():
         f"{PLUGIN}/tandem.dll": dll.read_bytes(),
         f"{PLUGIN}/tandem-report.exe": tool.read_bytes(),
         f"{PLUGIN}/tandem.default.ini": (ROOT / "dist" / "tandem.ini").read_bytes(),
+        # The moment list (scripted-moments.md): ours, replaced by each update.
+        f"{PLUGIN}/moments.txt": (ROOT / "dist" / "moments.txt").read_bytes(),
         f"{PLUGIN}/INSTALL.md": install.encode(),
         f"{PLUGIN}/LICENSE.txt": (ROOT / "LICENSE").read_bytes(),
         f"{PLUGIN}/NOTICE.txt": (ROOT / "NOTICE").read_bytes(),

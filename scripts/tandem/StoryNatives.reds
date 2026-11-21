@@ -204,13 +204,17 @@ public native class TandemStory extends IScriptable {
   public static native func SpectateTestOn() -> Bool;
   public static native func SpectateMoment(tier: Int32, isPrivate: Bool, restricted: Bool, questMount: Bool, mode: Bool, camera: Bool, elsewhere: Bool) -> Bool;
   public static native func SpectateReasons(tier: Int32, isPrivate: Bool, restricted: Bool, questMount: Bool, mode: Bool, camera: Bool, elsewhere: Bool) -> Int32;
-  public static native func SpectateUpdate(hostMoment: Bool, hostWatch: Bool, hostPrivate: Bool, grouped: Bool, ourAway: Bool, hostElsewhere: Bool, hostTier: Int32, hostRiding: Bool, inVehicle: Bool, hostKnown: Bool, hostX: Float, hostY: Float, hostZ: Float, x: Float, y: Float, z: Float) -> Int32;
+  public static native func MomentListed(tracked: String) -> Int32;
+  public static native func MomentsTest(verdict: Int32) -> Void;
+  public static native func MomentsReport(tracked: String) -> String;
+  public static native func SpectateUpdate(hostMoment: Bool, hostWatch: Bool, hostPrivate: Bool, grouped: Bool, ourAway: Bool, hostElsewhere: Bool, hostTier: Int32, hostRiding: Bool, inVehicle: Bool, cannotLoad: Bool, hostKnown: Bool, hostX: Float, hostY: Float, hostZ: Float, x: Float, y: Float, z: Float) -> Int32;
   public static native func SpectateHostWatch() -> Bool;
   public static native func SpectateWhy() -> Int32;
   public static native func SpectateShared() -> Bool;
   public static native func SpectateLeave() -> Bool;
   public static native func SpectateLift() -> Bool;
   public static native func SpectateWatching() -> Bool;
+  public static native func SpectateViewWanted(wanted: Bool) -> Void;
   public static native func MomentCameraSample(x: Float, y: Float, z: Float, i: Float, j: Float, k: Float, r: Float, fov: Float) -> Void;
   public static native func SpectateView() -> TandemSceneView;
   public static native func SceneCameraOn() -> Bool;

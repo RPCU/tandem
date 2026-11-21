@@ -6,9 +6,15 @@
 // actors, the restrictions hold it, the ride along seats it. It watches
 // through the host's camera only while it cannot take part from its own
 // body: (a) a cutscene (tier 5), (b) the host's V in another world, (c) the
-// host's V taken beyond its reach, (d) the quest's camera animation.
+// host's V taken beyond its reach (a ride of the moment that left without
+// it, a quest teleport), (d) only the host's view shows it (the quest's
+// camera animation, a moment the moment list marks watch), (e) the host's V
+// among quest interiors our game cannot load. Every switch, in and out,
+// happens behind a short black (Curtain.reds), the carry of our V too; at
+// most one notice says why, only where the picture would confuse.
 //   - the host reads its own V four times a second, from the game's data
-//     (no list of quests), says the moment as kStoryMoment in its
+//     (no list of quests; the moment list, moments.txt and tandem.ini,
+//     marks a moment found broken), says the moment as kStoryMoment in its
 //     StoryState (Story.reds SendFlags), kStoryWatch with it for (a), (b),
 //     (d), and sends its camera's view every frame while the moment lasts
 //     (SceneCamera, paced by the endpoint);
@@ -71,6 +77,14 @@ public class TandemSpectate {
   private let m_followed: Bool;
   private let m_listening: Bool;
   private let m_leaveAsked: Bool;
+  // Guest: our own eyes come back once the curtain is black (FinishNow);
+  // whether the moment ended (not left); the notice said for this moment;
+  // cmd story spectate missing on (as if we could not load the host's
+  // prefabs).
+  private let m_finishing: Bool;
+  private let m_finishEnded: Bool;
+  private let m_told: Bool;
+  private let m_testMissing: Bool;
   // Everyone: the other guests that watch now (their puppets hidden here).
   private let m_spectators: array<Uint32>;
 
@@ -157,12 +171,15 @@ public class TandemSpectate {
     let mounted = IsDefined(transit) && transit.OurKind() == 3;
     // Cyberspace, a braindance, playing as Johnny (Elsewhere.reds).
     let away = TandemElsewhere.Inside(this.m_game);
+    // The moment list (core moments.hpp): what our scene, the quest phases
+    // that run and our tracked entry are marked; SpectateReasons reads it.
+    TandemStory.MomentListed(this.TrackedPath());
     let reasons = TandemStory.SpectateReasons(tier, isPrivate, restricted, mounted, mode, camera, away);
     let on = TandemStory.SpectateMoment(tier, isPrivate, restricted, mounted, mode, camera, away);
     if NotEquals(on, this.m_moment) || (on && reasons != 0 && reasons != this.m_reasons) {
       if on {
         let watch = TandemStory.SpectateHostWatch();
-        TandemNative.Log(s"spectate: our V is in a scripted moment (reasons \(reasons): 1 scene, 2 restrictions, 4 quest ride, 8 scripted mode, 16 another world, 32 test, 64 cutscene, 128 quest camera): \(watch ? "only our view shows it, the guests in it watch" : "the guests in it play it from their own V")");
+        TandemNative.Log(s"spectate: our V is in a scripted moment (reasons \(reasons): 1 scene, 2 restrictions, 4 quest ride, 8 scripted mode, 16 another world, 32 test, 64 cutscene, 128 quest camera, 256 marked watch): \(watch ? "only our view shows it, the guests in it watch" : "the guests in it play it from their own V")");
       } else {
         TandemNative.Log("spectate: our moment is over");
       }
@@ -176,6 +193,25 @@ public class TandemSpectate {
 
   public func HostMoment() -> Bool {
     return this.m_moment;
+  }
+
+  // Our tracked journal entry's path, its ids from the top down
+  // ("main_quest/q101_resurrection/..."), for the moment list's quest keys.
+  private func TrackedPath() -> String {
+    let journal = this.m_story.JournalOf();
+    if !IsDefined(journal) {
+      return "";
+    }
+    let entry = journal.GetTrackedEntry();
+    let path = "";
+    let depth = 0;
+    while IsDefined(entry) && depth < 8 {
+      let id = entry.GetId();
+      path = StrLen(path) > 0 ? id + "/" + path : id;
+      entry = journal.GetParentEntry(entry);
+      depth += 1;
+    }
+    return path;
   }
 
   // The session is over (host): no moment, nobody watched.
@@ -211,7 +247,10 @@ public class TandemSpectate {
     // Riding along in the host's copy (seated or carried) or in a car of our
     // own: we play. Our spectating's own carry is not a ride.
     let inVehicle = !this.m_carried && (VehicleComponent.IsMountedToVehicle(this.m_game, player) || (IsDefined(transit) && transit.CarriedBy() != 0u));
-    let change = TandemStory.SpectateUpdate((flags & 16) != 0, (flags & 64) != 0, (flags & 8) != 0, story.Grouped(), TandemElsewhere.Inside(this.m_game), TandemElsewhere.IsElsewhere(this.m_game, host), story.TierOf(host), hostRiding, inVehicle, at.W >= 0.5, at.X, at.Y, at.Z, here.X, here.Y, here.Z);
+    // The host among quest interiors our game cannot load (StoryWorld.reds).
+    let world = story.World();
+    let cannotLoad = this.m_testMissing || (IsDefined(world) && world.CannotLoad());
+    let change = TandemStory.SpectateUpdate((flags & 16) != 0, (flags & 64) != 0, (flags & 8) != 0, story.Grouped(), TandemElsewhere.Inside(this.m_game), TandemElsewhere.IsElsewhere(this.m_game, host), story.TierOf(host), hostRiding, inVehicle, cannotLoad, at.W >= 0.5, at.X, at.Y, at.Z, here.X, here.Y, here.Z);
     let why = TandemStory.SpectateWhy();
     if change == 2 {
       this.m_why = why;
@@ -224,10 +263,16 @@ public class TandemSpectate {
     }
     if this.m_watching {
       this.Park(player);
-      this.Follow(player, now);
+      // Carried only once the picture is the host's: our own eyes never see
+      // our V moved.
+      if this.m_cameraLive {
+        this.Follow(player, now);
+      }
       if this.m_headHidden {
         this.HideHead(true);
       }
+    } else if !this.m_finishing && (flags & 16) == 0 && !cannotLoad {
+      this.m_told = false; // the next moment may say it again
     }
   }
 
@@ -243,7 +288,10 @@ public class TandemSpectate {
       return "(c) the host's V taken beyond our reach, no ride along";
     }
     if why == 4 {
-      return "(d) the quest's camera holds the host's view (or a test moment)";
+      return "(d) only the host's view shows it: the quest's camera, a moment marked watch, or a test";
+    }
+    if why == 5 {
+      return "(e) the host's V among quest interiors our game cannot load";
     }
     return "none";
   }
@@ -256,10 +304,30 @@ public class TandemSpectate {
   private func Begin(player: ref<PlayerPuppet>) -> Void {
     this.m_watching = true;
     this.m_leaveAsked = false;
-    this.m_followed = false;
-    this.m_followedAt = 0.0;
     let name = this.m_story.NameOf(this.m_story.HostPlayer());
-    this.m_story.Notice("Spectate-Watching", name);
+    let curtain = this.m_story.Curtain();
+    if this.m_finishing {
+      // Back before our own eyes came back: the host's view stays, the
+      // curtain lifts again (no flicker between two reasons).
+      this.m_finishing = false;
+      if IsDefined(curtain) {
+        curtain.Open(0.3, 0.0);
+      }
+    } else {
+      this.m_followed = false;
+      this.m_followedAt = 0.0;
+      // Black first: the host's view comes behind it (GuestFrame).
+      if IsDefined(curtain) {
+        curtain.Close(0.25);
+      }
+    }
+    // One short notice per moment, and only where the picture would
+    // confuse: a cutscene explains itself, another world has its own
+    // (Elsewhere.reds).
+    if !this.m_told && this.m_why >= 3 {
+      this.m_told = true;
+      this.m_story.Notice(this.m_why == 3 ? "Spectate-Taken" : this.m_why == 5 ? "Spectate-Missing" : "Spectate-Watching", name);
+    }
     TandemText.Hint(this.m_game, n"TandemSpectate", n"Choice1", true, TandemText.Get("Spectate-Leave"), inkInputHintHoldIndicationType.Press);
     if !this.m_listening {
       this.m_listening = true;
@@ -308,6 +376,13 @@ public class TandemSpectate {
     }
     let transit = system.Transit();
     if !this.m_carried && (VehicleComponent.IsMountedToVehicle(this.m_game, player) || (IsDefined(transit) && transit.CarriedBy() != 0u)) {
+      return;
+    }
+    // Never across a gate our own story keeps closed (StoryWorld.reds): our
+    // V stays this side, the picture goes on. A carry already mounted in
+    // the host's car rides across as a seat would.
+    let world = this.m_story.World();
+    if !this.m_carried && IsDefined(world) && world.GateBetween() {
       return;
     }
     let carId = system.CarOf(host);
@@ -411,12 +486,36 @@ public class TandemSpectate {
   }
 
   // Our own eyes and V again. `ended`: the moment is over (not left by the
-  // player): far from the host, we join it the game's way.
+  // player): far from the host, we join it the game's way. While the
+  // picture is the host's, black first: FinishNow comes behind the curtain
+  // (Frame).
   private func Finish(ended: Bool) -> Void {
     if !this.m_watching {
       return;
     }
     this.m_watching = false;
+    let player = GetPlayer(this.m_game);
+    if IsDefined(player) && this.m_listening {
+      player.UnregisterInputListener(this, n"Choice1");
+    }
+    this.m_listening = false;
+    TandemText.Hint(this.m_game, n"TandemSpectate", n"Choice1", false, "", inkInputHintHoldIndicationType.Press);
+    let curtain = this.m_story.Curtain();
+    if this.m_cameraLive && IsDefined(curtain) {
+      this.m_finishing = true;
+      this.m_finishEnded = ended;
+      curtain.Close(0.25);
+      this.StartFrames();
+      return;
+    }
+    this.FinishNow(ended);
+    if IsDefined(curtain) {
+      curtain.Open(0.3, 0.0);
+    }
+  }
+
+  private func FinishNow(ended: Bool) -> Void {
+    this.m_finishing = false;
     this.ReleaseCamera();
     this.ShowHead();
     let player = GetPlayer(this.m_game);
@@ -428,38 +527,45 @@ public class TandemSpectate {
       if this.m_bodyHidden {
         TandemVisibility.Fade(this.m_game, player, true, 0.3);
       }
-      if this.m_listening {
-        player.UnregisterInputListener(this, n"Choice1");
-      }
     }
     this.m_madeInvisible = false;
     this.m_bodyHidden = false;
-    this.m_listening = false;
-    TandemText.Hint(this.m_game, n"TandemSpectate", n"Choice1", false, "", inkInputHintHoldIndicationType.Press);
     let host = this.m_story.HostPlayer();
     let distance = this.m_story.DistanceToHost();
     TandemNative.Log(s"spectate: our own V again (\(ended ? "the reason is over" : "we left it"): \(TandemSpectate.Why(this.m_why)), \(distance) m from the host\(this.m_followed ? ", carried along" : ""))");
     // Our V was carried along (Follow): it plays on where it is, beside the
     // host. Only when that fell short (no ground near the host, its copy
     // gone, a loading screen) and the reason ended far away: we go to it,
-    // behind a loading screen (Travel.reds).
-    if ended && this.m_story.InSession() && distance > 60.0 && TandemTravel.RegroupTo(this.m_game, host) {
+    // behind a loading screen (Travel.reds), with no question asked; never
+    // across a gate our own story keeps closed.
+    let world = this.m_story.World();
+    let gated = IsDefined(world) && world.GateBetween();
+    if ended && this.m_story.InSession() && distance > 60.0 && !gated && TandemTravel.RegroupTo(this.m_game, host) {
       TandemNative.Log("spectate: joining the host where the moment left it");
     }
     this.m_why = 0;
   }
 
-  // The session is over or the host is gone: everything back.
+  // The session is over or the host is gone: everything back, at once.
   public func Leave() -> Void {
     TandemStory.SpectateLift();
+    let finishing = this.m_finishing;
     this.Finish(false);
+    if this.m_finishing || finishing {
+      this.FinishNow(false);
+    }
+    let curtain = this.m_story.Curtain();
+    if IsDefined(curtain) {
+      curtain.Clear();
+    }
+    this.m_told = false;
     this.ShowSpectators();
   }
 
   // ---- every frame ----
 
   private func WantsFrames() -> Bool {
-    return this.m_moment || this.m_watching || this.m_cameraAsked;
+    return this.m_moment || this.m_watching || this.m_cameraAsked || this.m_finishing || ArraySize(this.m_spectators) > 0;
   }
 
   private func StartFrames() -> Void {
@@ -477,7 +583,9 @@ public class TandemSpectate {
   }
 
   public func Frame() -> Void {
-    if this.m_moment {
+    // Our view: while our moment lasts, and while a guest watches through
+    // it outside one (reason e).
+    if this.m_moment || ArraySize(this.m_spectators) > 0 {
       this.HostFrame();
     }
     if this.m_watching && this.m_leaveAsked {
@@ -487,9 +595,21 @@ public class TandemSpectate {
         this.Finish(false);
       }
     }
+    // Black now: our own eyes and V back behind it, then it lifts (a
+    // regroup's loading screen takes over: held a moment longer).
+    if this.m_finishing {
+      let curtain = this.m_story.Curtain();
+      if !IsDefined(curtain) || curtain.IsClosed() {
+        let far = this.m_finishEnded && this.m_story.DistanceToHost() > 60.0;
+        this.FinishNow(this.m_finishEnded);
+        if IsDefined(curtain) {
+          curtain.Open(0.35, far ? 1.0 : 0.1);
+        }
+      }
+    }
     if this.m_watching {
       this.GuestFrame();
-    } else {
+    } else if !this.m_finishing {
       this.ReleaseCamera();
     }
     if this.WantsFrames() {
@@ -562,11 +682,20 @@ public class TandemSpectate {
     }
     lens.SetFOV(view.fov);
     if !this.m_cameraLive {
+      // Behind the curtain only, a cut (no blend across the map); it lifts
+      // a moment later on the host's view.
+      let curtain = this.m_story.Curtain();
+      if IsDefined(curtain) && !curtain.IsClosed() {
+        return;
+      }
       this.m_cameraLive = true;
       // The audio listener too (shouldOverrideAudioListeners, final.reds:
       // 106188, as vanilla's camera takeover does, :102051): without it the
       // listener stays our V's.
-      lens.Activate(0.4, true);
+      lens.Activate(0.0, true);
+      if IsDefined(curtain) {
+        curtain.Open(0.35, 0.15);
+      }
       TandemNative.Log(s"spectate: watching through the host's camera (fov \(view.fov))");
     }
     this.FirstPerson(position);
@@ -663,7 +792,7 @@ public class TandemSpectate {
       let body = GameInstance.FindEntityByID(this.m_game, this.m_camera);
       let lens = IsDefined(body) ? body.FindComponentByType(n"gameCameraComponent") as CameraComponent : null;
       if IsDefined(lens) {
-        lens.Deactivate(0.4, true);
+        lens.Deactivate(0.0, true);
       }
       TandemNative.Log("spectate: our own camera again");
     }
@@ -693,6 +822,7 @@ public class TandemSpectate {
     if NotEquals(watching, ArrayContains(this.m_spectators, player)) {
       if watching {
         ArrayPush(this.m_spectators, player);
+        this.StartFrames();
         TandemVisibility.Hide(this.m_game, player, n"spectate", 0.5);
         TandemNative.Log(s"spectate: player \(player) watches the host's moment: its puppet parked out of sight");
       } else {
@@ -701,6 +831,9 @@ public class TandemSpectate {
         TandemNative.Log(s"spectate: player \(player) plays again");
       }
       this.SeenByNpcs(player, !watching);
+      if TandemNative.IsHost() {
+        TandemStory.SpectateViewWanted(ArraySize(this.m_spectators) > 0);
+      }
     }
   }
 
@@ -724,6 +857,7 @@ public class TandemSpectate {
     if ArrayContains(this.m_spectators, player) {
       ArrayRemove(this.m_spectators, player);
       TandemVisibility.Show(this.m_game, player, n"spectate", 0.0);
+      TandemStory.SpectateViewWanted(ArraySize(this.m_spectators) > 0);
     }
   }
 
@@ -733,6 +867,7 @@ public class TandemSpectate {
       this.SeenByNpcs(player, true);
     }
     ArrayClear(this.m_spectators);
+    TandemStory.SpectateViewWanted(false);
   }
 
   // ---- commands (tools/game.sh cmd story spectate …) ----
@@ -756,6 +891,18 @@ public class TandemSpectate {
       }
     } else if Equals(command, "story spectate parts") {
       this.Parts();
+    } else if StrBeginsWith(command, "story spectate missing") {
+      // (test, guest) as if our game could not load the host's prefabs.
+      this.m_testMissing = Equals(command, "story spectate missing on");
+      TandemNative.Log(s"spectate: test: the host's interiors \(this.m_testMissing ? "missing" : "as they are") here");
+    } else if StrBeginsWith(command, "story moments test") {
+      // (test, host) as if the moment list marked our moment.
+      let verdict = StrEndsWith(command, " watch") ? 1 : StrEndsWith(command, " play") ? 2 : 0;
+      TandemStory.MomentsTest(verdict);
+      this.m_lastScan = 0.0;
+      TandemNative.Log(s"moments: test verdict \(verdict == 1 ? "watch" : verdict == 2 ? "play" : "off: the list's own")");
+    } else if StrBeginsWith(command, "story moments") {
+      TandemNative.Log(s"moments: \(TandemStory.MomentsReport(this.TrackedPath()))");
     } else {
       this.Report();
     }

@@ -103,6 +103,10 @@ public class TandemTravel {
   private let m_joinYaw: Float;
   // The offer on screen, and the phone key while it is.
   private let m_offer: ref<TandemTravelOffer>;
+  // A guest: when our V was last beside the host (TakenAlong), and the
+  // host's offer we follow without a question once the curtain is black.
+  private let m_besideHostAt: Float;
+  private let m_along: ref<TandemTravelOffer>;
   private let m_listening: Bool;
   private let m_held: Bool;
   private let m_arrivals: array<ref<TandemTravelArrival>>;
@@ -261,6 +265,8 @@ public class TandemTravel {
       this.Decline();
     }
     this.TryArrival();
+    this.NoteBeside();
+    this.FollowAlong();
     this.FollowTrip();
     this.WatchJump();
   }
@@ -357,6 +363,85 @@ public class TandemTravel {
       TandemNative.Log(s"travel: arrived next to \(this.NameOf(host)) (the arrival)");
     }
     TandemText.Notice(this.m_game, "Session-JoinedOf", this.NameOf(host));
+  }
+
+  // ---- taken along (a guest beside the host when a quest moves it) ----
+
+  // Our V beside the host's (grouped, within the moment's 40 m): if a
+  // quest's teleport takes the host now, we go along (TakenAlong).
+  private func NoteBeside() -> Void {
+    if this.m_you == 0u || TandemNative.IsHost() {
+      return;
+    }
+    let story = TandemStorySystem.Get(this.m_game);
+    if !IsDefined(story) || !story.Grouped() {
+      return;
+    }
+    let distance = story.DistanceToHost();
+    if distance >= 0.0 && distance < 40.0 {
+      this.m_besideHostAt = this.m_now;
+    }
+  }
+
+  // The host was taken somewhere else (reason 3) while we stood beside it:
+  // shared play resumes there, so we go along at once, with no question
+  // (the user's rule, 2026-11-21): black first (Curtain.reds), then the
+  // game's own way there (Join: a fast travel's loading screen, else a hop
+  // behind the black). Not when the game's fast travel locks hold us (the
+  // offer then, as before), nor across a gate our own story keeps closed.
+  private func TakenAlong(e: TandemRegroup, offer: ref<TandemTravelOffer>) -> Bool {
+    if e.reason != 3 || this.m_now - this.m_besideHostAt > 8.0 {
+      return false;
+    }
+    let story = TandemStorySystem.Get(this.m_game);
+    if !IsDefined(story) || !story.Grouped() || e.player != story.HostPlayer() {
+      return false;
+    }
+    let world = story.World();
+    if IsDefined(world) && world.GateBetween() {
+      TandemNative.Log("travel: the host was taken across a gate our story keeps closed: offered, not followed");
+      return false;
+    }
+    let travel = this.FastTravel();
+    if !IsDefined(travel) || !travel.IsFastTravelEnabled() {
+      return false;
+    }
+    this.m_along = offer;
+    let curtain = story.Curtain();
+    if IsDefined(curtain) {
+      curtain.Close(0.3);
+    }
+    TandemNative.Log(s"travel: the host was taken from beside us: going along (offer \(e.offer))");
+    return true;
+  }
+
+  private func FollowAlong() -> Void {
+    if !IsDefined(this.m_along) {
+      return;
+    }
+    let story = TandemStorySystem.Get(this.m_game);
+    let curtain = IsDefined(story) ? story.Curtain() : null;
+    if IsDefined(curtain) && !curtain.IsClosed() {
+      return;
+    }
+    let offer = this.m_along;
+    this.m_along = null;
+    // Where the host is now, if it moved on since.
+    let at = TandemNative.RemotePosition(offer.player);
+    let yaw = TandemNative.RemoteYaw(offer.player);
+    if at.W == 0.0 || Vector4.Distance(at, offer.position) > 100.0 {
+      at = offer.position;
+      yaw = offer.yaw;
+    }
+    at.W = 1.0;
+    let joined = this.Join(offer.player, offer.offer, at, yaw, offer.point, offer.marker);
+    if IsDefined(curtain) {
+      // A fast travel's loading screen takes over: lifted behind it.
+      curtain.Open(0.4, joined ? 1.0 : 0.0);
+    }
+    if !joined {
+      this.Show(offer);
+    }
   }
 
   // A move of our V that is ours (a regroup's hop, a test's teleport, a
@@ -550,6 +635,9 @@ public class TandemTravel {
     offer.yaw = e.yaw;
     offer.label = e.label;
     offer.shownAt = this.m_now;
+    if this.TakenAlong(e, offer) {
+      return;
+    }
     this.Show(offer);
   }
 

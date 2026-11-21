@@ -33,6 +33,7 @@ public class TandemStorySystem extends ScriptableSystem {
   private let m_spectate: ref<TandemSpectate>;
   // The host's quest prefabs in our world, the story's gates (StoryWorld.reds).
   private let m_world: ref<TandemStoryWorld>;
+  private let m_curtain: ref<TandemCurtain>;
 
   // Host: the journal snapshot is owed (sent once the world plays), and the
   // changes since the last tick, sent together.
@@ -195,6 +196,8 @@ public class TandemStorySystem extends ScriptableSystem {
     this.m_interact.Start(this.GetGameInstance(), this);
     this.m_world = new TandemStoryWorld();
     this.m_world.Start(this.GetGameInstance(), this);
+    this.m_curtain = new TandemCurtain();
+    this.m_curtain.Start(this.GetGameInstance());
     // Journal changes: the host sends them; every game keeps the last quest
     // that moved (rewards, below).
     this.Listen();
@@ -396,6 +399,15 @@ public class TandemStorySystem extends ScriptableSystem {
 
   public func Spectate() -> ref<TandemSpectate> {
     return this.m_spectate;
+  }
+
+  public func World() -> ref<TandemStoryWorld> {
+    return this.m_world;
+  }
+
+  // The black screen over a switch (Curtain.reds): spectating, a regroup.
+  public func Curtain() -> ref<TandemCurtain> {
+    return this.m_curtain;
   }
 
   public func Interact() -> ref<TandemInteract> {
@@ -1943,7 +1955,7 @@ public class TandemStorySystem extends ScriptableSystem {
       TandemNative.Log(s"story: test private scene \(this.m_forcedPrivate ? "on" : "off")");
     } else if StrBeginsWith(command, "story scene") {
       this.m_scenes.Command(command);
-    } else if StrBeginsWith(command, "story spectate") {
+    } else if StrBeginsWith(command, "story spectate") || StrBeginsWith(command, "story moments") {
       this.m_spectate.Command(command);
     } else if StrBeginsWith(command, "story interact") {
       this.m_interact.Command(command);
