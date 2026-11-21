@@ -200,7 +200,8 @@ struct Options {
   bool echoLook{};
   std::string lookKeys; // --look-keys DIR ("": the default)
   std::optional<unsigned> lookSeed;
-  int driveSeconds{0}; // drive: get out after this long (0: never)
+  int driveSeconds{0};     // drive: get out after this long (0: never)
+  float driveRadius{12.f}; // drive: the circle's radius round your V
   // drive: the car's radio (ERadioStationList index, -1 off); unset: none sent
   std::optional<int> radioStation;
   int hitNpcsSeconds{0};   // join: hit one of the host's NPCs this often (0: never)
@@ -625,6 +626,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --vehicle RECORD   drive: the car's record (default "
          "Vehicle.v_standard2_archer_hella_player)\n"
          "  --drive-seconds N  drive: get out after N seconds and stand by the car\n"
+         "  --drive-radius M   drive: the circle round your V, in metres (default 12; 60:\n"
+         "                     a ride that leaves a guest on foot behind)\n"
          "  --radio STATION    drive: the car's radio plays STATION (0-13 or its name,\n"
          "                     radio_station_09_downtempo...; off): sent when seated and\n"
          "                     again when a passenger gets in\n"
@@ -1609,6 +1612,8 @@ Options Parse(int argc, char **argv) {
       options.holsterAtSeconds = Number<int>(value);
     else if (flag == "--drive-seconds")
       options.driveSeconds = Number<int>(value);
+    else if (flag == "--drive-radius")
+      options.driveRadius = std::clamp(Number<float>(value), 3.f, 400.f);
     else if (flag == "--radio") {
       if (value == "off")
         options.radioStation = -1;
@@ -3413,15 +3418,17 @@ private:
   }
 
 public:
-  // A car going round a 12 m circle at 8 m/s around where your V was first
-  // heard (fixed, so you can watch it pass): the driver's state, and the car's.
+  // A car going round a 12 m circle (--drive-radius) at 8 m/s around where
+  // your V was first heard (fixed, so you can watch it pass): the driver's
+  // state, and the car's.
   std::pair<std::optional<PlayerState>, std::optional<tandem::proto::VehicleState>>
   Drive(std::uint64_t nowUs) {
     if (m_heard.empty())
       return {};
     if (!m_center)
       m_center = m_heard.back().second.position;
-    constexpr float kRadius = 12.f, kSpeed = 8.f;
+    const float kRadius = m_options.driveRadius;
+    constexpr float kSpeed = 8.f;
     const float angle = static_cast<float>(nowUs / 1e6) * kSpeed / kRadius;
     const Vec3 at{m_center->x + kRadius * std::cos(angle), m_center->y + kRadius * std::sin(angle),
                   m_center->z};
