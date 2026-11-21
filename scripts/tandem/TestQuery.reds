@@ -6,8 +6,8 @@
 // "none" when there is nothing to read (no V, not mounted, no such NPC or
 // entry). Solo or in a session.
 //
-//   health                our V's health, percent (2 decimals); starts
-//                         the watch "health low" reads
+//   health [points]       our V's health, percent (2 decimals); points: in
+//                         health points; percent starts the watch "health low" reads
 //   health low            the lowest our V's health went since the last
 //                         "health", read every tick: a hit's dip that
 //                         regeneration fills again within a second
@@ -42,7 +42,10 @@ public class TandemTestQuery {
         value = FloatToStringPrec(low, 2);
       }
     } else if Equals(what, "health") {
-      if IsDefined(player) {
+      if IsDefined(player) && Equals(arg, "points") {
+        let points = GameInstance.GetStatPoolsSystem(game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, false);
+        value = FloatToStringPrec(points, 2);
+      } else if IsDefined(player) {
         let percent = GameInstance.GetStatPoolsSystem(game).GetStatPoolValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatPoolType.Health, true);
         value = FloatToStringPrec(percent, 2);
         system.StartHealthWatch(percent);
@@ -96,7 +99,7 @@ public class TandemTestQuery {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health, health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health [points], health low, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");
