@@ -50,6 +50,7 @@ add_library(tandem SHARED
   src/engine/animation.cpp
   src/engine/controller.cpp
   src/engine/hooks.cpp
+  src/engine/guards.cpp
   src/engine/look.cpp
   src/engine/trace.cpp
   src/engine/pose.cpp

@@ -153,3 +153,75 @@ the global `GetGameInstance()` instead. A RED4ext game-state update
 (`RED4ext::v1::GameState`, running state) calls it every frame, also
 while the world is paused (scripts' delayed callbacks stand still then).
 [2.5-verified]
+
+### 13.98 Two engine crashes on an entity gone: the transform update, the AI workspot's end (2026-11-21)
+
+Source: a study of another co-op mod (NightCoop), facts only (addresses,
+hashes, which argument, what its guards test); each re-read here in the
+2.50 exe with `tools/re/` (`asm.py`, `xref.py`, `addr.py`). No code of it
+was read or copied.
+
+**The transform update of an expired entity.** The job `0x140D408A4`
+(hash 469381152, `0xF4` bytes) walks an array of weak entity handles
+(`[[rcx] + 0x12500][i]`). For each it zeroes a 16-byte handle at
+`[rsp+0x20]` (+0x76: `f3 0f 7f 44 24 20`), locks the weak handle into it
+(the strong count at `[refcount]`, a `lock cmpxchg` loop; a null refcount
+or a count of 0 skips the copy), then, **whether the lock worked or not**,
+calls the per-entity update with the handle's pointer + 0x2E0 (+0xA9:
+`48 8b 4c 24 20 48 81 c1 e0 02 00 00 e8` + rel32 → `0x1406107B0`) and
+releases the handle. So an entity that expired between the list's
+building and the job passes exactly `0x2E0`. The update `0x1406107B0`
+(hash 2451640480, `0x1406107B0..0x140610A32`, its only caller the job)
+starts `48 8b c4 48 89 58 10 48 89 70 18 55 57 41 56 48 8d 68 98 48 81 ec
+50 01 00 00`, and its first use of the argument is the write
+`mov byte [rcx+0x39], 1` (`c6 41 39 01`, `0x1406107CA`): a fault at
+address `0x319`. Nothing before it has a side effect (the prologue only),
+and the caller ignores its return value (`rax` is the last callee's), so
+skipping the call for `0x2E0` is the update of an entity that is gone,
+not done. The argument's `+8` points at an object holding fixed-point
+world coordinates at `+0xE0..+0xE8` and a vector at `+0xF0` (read, scaled
+and stored at `+0x10` of the argument). [2.5-static] The other mod saw
+the fault under Proton only; the code path is the same on every platform
+(timing, or what Windows maps there, may hide it). Tandem's deletions of NPC
+proxies (region hand-overs) may make expired handles in that list
+likelier.
+
+The guard (`plugin/src/engine/guards.cpp`): only when `ntdll` exports
+`wine_get_version`; the 30 bytes of the update's start (prologue and the
+faulting write), the job's zeroing and call bytes and its rel32 landing
+on the update are checked first, and any difference leaves it off
+(`transform guard: … differs from 2.50 (exe+0x…: bytes)`). On, a call
+whose first argument is `0x2E0` returns 0 without calling the original;
+the first 5 hits and every 1000th are a `transform guard: skipped the
+update of an expired entity (N so far)` warning, the total at unload. The
+startup line ends `transform guard on` or `off (why)`. [unverified]
+
+**The AI workspot's end with its actor gone.** Two functions of a
+0x18-byte listener object (no RTTI class; vtable `0x1430B35B8`, built by
+`0x140AB9858`: vtable, then a weak handle to the actor at +8 whose weak
+count it raises), slots +0x10 and +0x20, reached only through the
+vtable (no direct caller):
+
+- `0x140821360` (hash 3320125101, the spot user's own end): locks
+  `[this+8]` (`0x14027C10C`: copy only when the refcount pointer is
+  non-null and the strong count non-zero); when the result is non-null,
+  `0x1401CB4CC(actor, true)`; releases. `0x1401CB4CC` writes
+  `[actor+0x499]` and dereferences `[actor+0x230]`, then
+  `[+0xB8] → [+8] → [+0xF8]`, with no null test.
+- `0x14082139C` (hash 1948590813, its result to the actor's motion
+  planner): the same lock; when non-null, finds a component in
+  `[actor+0x230]`'s 16-byte handle array at `+0xA0` (count `+0xAC`;
+  `0x14082140C` tests `[actor+0x230]` for null), and when found writes
+  `{result, 1}` into what its vtable +0x250 returns.
+
+Both already do nothing for an actor whose strong count is 0. The
+crashes the other mod guards (with fault-safe reads of the handle at +8,
+its strong count, the pointer and an entity validity test) can then
+only be a freed listener (its +8 read after free) or a live actor torn
+down far enough that `[actor+0x230]` or the chain behind it is gone.
+Neither is a test that can be stated exactly: a fault-safe read only
+catches an unmapped page, not freed memory still mapped, and "torn down"
+has no flag we know. **No guard for these in tandem**: the two ranges are
+named by `tools/game.sh bt` (`known crash site:`) so a freeze there is
+recognized; a crash seen there in game is the evidence to design one
+from. [2.5-static]

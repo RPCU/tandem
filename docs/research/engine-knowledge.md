@@ -120,6 +120,7 @@ found through this table, each number once.
 | 13.95 | The overlap: the crowd's density in parts, null areas, a despawn probe                  | `regions.md`        |
 | 13.96 | Spectating: what makes a scripted moment, a V the NPCs do not see                       | `story.md`          |
 | 13.97 | An item taken from a slot still spawning it is destroyed                                | `presence.md`       |
+| 13.98 | Two engine crashes on an entity gone: the transform update, the AI workspot's end       | `re.md`             |
 
 ## Top traps (one line each)
 

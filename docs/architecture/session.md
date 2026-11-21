@@ -78,13 +78,15 @@ refused in words (`hosts::Check`, `tests/hosts_test.cpp`).
   puppets, nothing on the HUD but the co-op menu's entry. What is
   installed stays idle: the engine hooks pass through (the idle
   controller's finds no puppet, the pose stream reads only with a source,
-  the quest node hook only notes which scene runs, its freeze off), the
+  the quest node hook only notes which scene runs, its freeze off; under
+  Proton the transform guard skips only an engine call that would crash,
+  `engine/re.md` §13.98), the
   running-state frame call needs a session, and every script wrap checks
   a session before it departs from vanilla (audited 2026-11-19, every wrap
   and system handler; fixed then: the fast travel's epoch and map hint,
   the reward ledger and the story's listeners after a Leave, and a V's
   own limbs). The startup line says so: `tandem: solo, passive (hooks
-idle: …); recorder on|off`. `TandemSystem`'s idle tick (every 0.25 s)
+idle: …); recorder on|off; transform guard on|off (why)`. `TandemSystem`'s idle tick (every 0.25 s)
   only reads `tandem.cmd` (developer commands: `where`, `teleport`,
   `god`, `coop …`, `recorder …`). Starting a session (the co-op menu, `coop-menu.md`, or
   `role = host|join`) turns co-op on; leaving gives everything back.

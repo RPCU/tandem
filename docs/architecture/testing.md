@@ -471,6 +471,12 @@ same), then pass on a rerun. Since 2026-11-19:
 - `tools/game.sh cmd` commands (`teleport home`, `where`, `vehicle ride`,
   `pose loop`, `travel`, `regroup accept`…) need no restart. Restart only
   for script or plugin changes.
+- `tools/game.sh bt` (a frozen game: Proton's crash handler waits) writes
+  every thread's stack to `.cache/re/bt.txt`, prints tandem's frames, then
+  a `known crash site:` line for each game frame inside a function listed
+  in `bt_known` (`tools/game.sh`: the crash handler, the transform update
+  and AI workspot sites of `engine/re.md` §13.98). A new crash site found
+  goes there, with its section.
 - Real play instead of synthetic motion: the game records its own V
   (`tools/game.sh cmd record start NAME`, `record stop`; `fetch-play NAME`
   copies it to `recordings/play/NAME.tplay`), `tandem-peer --play FILE`
