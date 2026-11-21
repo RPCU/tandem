@@ -15,7 +15,8 @@
 // which on the host are what its NPCs see and hear of a guest's grenade.
 // A copy's fuse is held: it explodes when the real one did, where it did.
 // A grenade's path is said as it flies (proto::ThrowPath, four times a
-// second): a copy that strayed from it (it bounced off something one game
+// second, and at each bounce: its collision only queues the place, the
+// tick says it): a copy that strayed from it (it bounced off something one game
 // alone has) is put back on the real one's path.
 //
 // The host also sends its NPCs' grenades (kThrowByNpc), launched on the
@@ -59,6 +60,11 @@ public class TandemThrowTrack {
   // It lay still when last said.
   public let resting: Bool;
   public let said: Int32;
+  // A bounce not said yet: where and when (engine time).
+  public let bounced: Bool;
+  public let bounceAt: Vector4;
+  public let bounceTime: Float;
+  public let bounceSaidAt: Float;
 }
 
 public class TandemThrows {
@@ -70,6 +76,7 @@ public class TandemThrows {
   private let m_ourStuck: array<Bool>;
   private let m_ourTracks: array<ref<TandemThrowTrack>>;
   private let m_pathsSaid: Int32;
+  private let m_bouncesSaid: Int32;
   private let m_pathsFixed: Int32;
   // Ours whose launch velocity the game did not give: measured over the
   // first frames (where it was, when).
@@ -246,15 +253,69 @@ public class TandemThrows {
     return 0.25;
   }
 
+  // A bounce is said once its new course is measured: this long after it.
+  public static func BounceGap() -> Float {
+    return 0.04;
+  }
+
+  // A rolling grenade touches the ground every frame: a bounce is said at
+  // most this often an object (proto::ThrowPath's budget: the referee's 24
+  // a second with the 4 of PathGap).
+  public static func BounceEvery() -> Float {
+    return 0.15;
+  }
+
+  // Our grenades' bounces since the last frame (BaseGrenade.OnCollision
+  // queued them: it may run on a job thread): kept on their track.
+  private func TakeBounces(now: Float) -> Void {
+    for bounce in TandemStreaming.TakePoints(TandemPointKind.ThrowBounce()) {
+      let i = 0;
+      while i < ArraySize(this.m_ours) {
+        let object = this.m_ours[i];
+        if IsDefined(object) && object.GetEntityID() == bounce.entity {
+          let track = this.m_ourTracks[i];
+          if track.says && !this.m_ourStuck[i] && !track.bounced && !track.resting && (now - track.bounceSaidAt >= TandemThrows.BounceEvery() || now < track.bounceSaidAt) {
+            let time = Cast<Float>(bounce.value) / 1000.0;
+            track.bounced = true;
+            track.bounceAt = new Vector4(bounce.x, bounce.y, bounce.z, 1.0);
+            // A time from another clock (engine time past 24 days): now.
+            track.bounceTime = time <= now && now - time < 1.0 ? time : now;
+          }
+          i = ArraySize(this.m_ours);
+        } else {
+          i += 1;
+        }
+      }
+    }
+  }
+
   // Every frame: where each of our grenades is and how it moves, said
-  // every PathGap while it flies, once more when it lies still. (Not at
-  // each bounce: a projectile's OnCollision may run on a job thread, and a
-  // bounce shows in the next sample anyway.)
+  // every PathGap while it flies, once more when it lies still, and at
+  // each bounce: from the bounce's place, at the speed it left it with
+  // (measured BounceGap later).
   private func SayPaths(now: Float) -> Void {
+    this.TakeBounces(now);
     let i = 0;
     while i < ArraySize(this.m_ours) {
       let object = this.m_ours[i];
       let track = this.m_ourTracks[i];
+      if IsDefined(object) && track.bounced && now - track.bounceTime >= TandemThrows.BounceGap() {
+        track.bounced = false;
+        let at = object.GetWorldPosition();
+        let velocity = (at - track.bounceAt) / (now - track.bounceTime);
+        if Vector4.Length(velocity) < 300.0 && !this.m_ourStuck[i] {
+          if Vector4.Length(velocity) < 0.5 {
+            velocity = new Vector4(0.0, 0.0, 0.0, 0.0);
+          }
+          TandemFight.SendThrowPath(this.m_ourIds[i], track.bounceAt, velocity);
+          track.saidAt = now;
+          track.bounceSaidAt = now;
+          track.resting = false;
+          track.said += 1;
+          this.m_pathsSaid += 1;
+          this.m_bouncesSaid += 1;
+        }
+      }
       if IsDefined(object) && track.says && !this.m_ourStuck[i] && now - track.lastAt >= 0.04 {
         let at = object.GetWorldPosition();
         let velocity = (at - track.lastPosition) / (now - track.lastAt);
@@ -445,7 +506,7 @@ public class TandemThrows {
 
   // tools/game.sh cmd throws report
   public func Report() -> Void {
-    TandemNative.Log(s"throws: ours in flight \(ArraySize(this.m_ours)), path samples said \(this.m_pathsSaid); copies here \(ArraySize(this.m_copies)), put back on their real path \(this.m_pathsFixed); stale throws dropped \(TandemFight.StaleThrows())");
+    TandemNative.Log(s"throws: ours in flight \(ArraySize(this.m_ours)), path samples said \(this.m_pathsSaid) (\(this.m_bouncesSaid) at a bounce); copies here \(ArraySize(this.m_copies)), put back on their real path \(this.m_pathsFixed); stale throws dropped \(TandemFight.StaleThrows())");
   }
 
   // The thrower's body here: a puppet, or (kThrowByNpc) the NPC's proxy.
@@ -755,6 +816,23 @@ protected cb func OnShoot(eventData: ref<gameprojectileShootEvent>) -> Bool {
     let npc = TandemThrows.NpcOf(this.GetGame(), eventData.owner);
     if npc != 0u && TandemOwn.Npc(this.GetGame(), npc) {
       throws.OnNpcThrow(this, npc, item, eventData.startPoint, eventData.startVelocity, flags);
+    }
+  }
+  return result;
+}
+
+// A grenade bounced, on whatever thread: its place and moment queued, our
+// own said on the tick (TandemThrows.TakeBounces) as an extra path sample.
+@wrapMethod(BaseGrenade)
+protected cb func OnCollision(eventData: ref<gameprojectileHitEvent>) -> Bool {
+  let result = wrappedMethod(eventData);
+  if TandemNative.IsStarted() && TandemNative.You() != 0u && IsDefined(eventData) && ArraySize(eventData.hitInstances) > 0 && this.m_isAlive {
+    let user = this.GetUser();
+    if IsDefined(user) && user.IsPlayer() {
+      let hit = eventData.hitInstances[0];
+      let at = Vector4.IsZero(hit.projectilePosition) ? hit.position : hit.projectilePosition;
+      let time = Cast<Int32>(EngineTime.ToFloat(GameInstance.GetEngineTime(this.GetGame())) * 1000.0);
+      TandemStreaming.QueuePoint(TandemPointKind.ThrowBounce(), this.GetEntityID(), EntityID.FromHash(0ul), n"None", at, time);
     }
   }
   return result;
