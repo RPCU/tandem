@@ -29,6 +29,10 @@ public class TandemObjectSync extends ScriptableSystem {
   private let m_parts: Int32;
   private let m_pulses: Int32;
   private let m_far: Int32;
+  // Others' breaks not in our world yet (our V far, the entity not streamed
+  // in: a break from before we came, or one far away): replayed when it is.
+  private let m_waiting: array<TandemObjectEvent>;
+  private let m_waitedAt: Float;
 
   public static func Get(game: GameInstance) -> ref<TandemObjectSync> {
     return GameInstance.GetScriptableSystemsContainer(game).Get(n"TandemObjectSync") as TandemObjectSync;
@@ -47,6 +51,7 @@ public class TandemObjectSync extends ScriptableSystem {
     if this.m_you != you {
       // A new session, or its end: nothing broken is remembered.
       TandemObjects.Reset();
+      ArrayClear(this.m_waiting);
       this.m_you = you;
       this.m_logged = 0;
     }
@@ -67,11 +72,39 @@ public class TandemObjectSync extends ScriptableSystem {
     }
     for event in TandemObjects.TakeEvents() {
       if event.kind == 1 {
-        this.Break(event.entity, event.name, new Vector4(event.x, event.y, event.z, 1.0), event.player);
+        if !this.Break(event, false) {
+          this.Wait(event);
+        }
       } else if event.kind == 2 && IsDefined(turrets) {
         turrets.OnEvent(event, now);
       }
     }
+    // Once a second: what waited and is in our world now.
+    if ArraySize(this.m_waiting) > 0 && (now - this.m_waitedAt >= 1.0 || now < this.m_waitedAt) {
+      this.m_waitedAt = now;
+      let still: array<TandemObjectEvent>;
+      for waiting in this.m_waiting {
+        if !this.Break(waiting, true) {
+          ArrayPush(still, waiting);
+        }
+      }
+      this.m_waiting = still;
+    }
+  }
+
+  // How many breaks wait at most (the oldest goes first).
+  public static func MaxWaiting() -> Int32 { return 512; }
+  // A break this close to our V is in our world: its place streamed in.
+  public static func Reach() -> Float { return 120.0; }
+  // A named part's entity not found this close: not a part of it here.
+  public static func PartReach() -> Float { return 60.0; }
+
+  private func Wait(event: TandemObjectEvent) -> Void {
+    if ArraySize(this.m_waiting) >= TandemObjectSync.MaxWaiting() {
+      ArrayErase(this.m_waiting, 0);
+    }
+    ArrayPush(this.m_waiting, event);
+    this.m_far += 1;
   }
 
   // A line per break is too many in a firefight: the first forty.
@@ -101,34 +134,49 @@ public class TandemObjectSync extends ScriptableSystem {
   // ---- theirs ----
 
   // Another game's break, here: the same part by its own trigger, else an
-  // impulse at the place. Nothing of it is an attack.
-  private func Break(entity: EntityID, name: CName, at: Vector4, player: Uint32) -> Void {
+  // impulse at the place. Nothing of it is an attack. False: not in our
+  // world yet (it waits). `waited`: it did, its echo is noted now.
+  private func Break(event: TandemObjectEvent, waited: Bool) -> Bool {
     let game = this.GetGameInstance();
     let ours = GetPlayer(game);
     if !IsDefined(ours) {
-      return;
+      return false;
     }
-    // Not in our world (streamed out): nothing to break, nothing to see.
-    if Vector4.Distance(ours.GetWorldPosition(), at) > 200.0 {
-      this.m_far += 1;
-      return;
+    let entity = event.entity;
+    let name = event.name;
+    let player = event.player;
+    let at = new Vector4(event.x, event.y, event.z, 1.0);
+    let distance = Vector4.Distance(ours.GetWorldPosition(), at);
+    if distance > TandemObjectSync.Reach() {
+      return false;
     }
+    let when = waited ? ", which waited for us" : "";
     if EntityID.IsDefined(entity) && IsNameValid(name) {
       let object = GameInstance.FindEntityByID(game, entity);
       let part = IsDefined(object) ? object.TandemDestructionPart(name) : null;
       if IsDefined(part) {
         if !part.IsFractured() {
+          if waited {
+            TandemObjects.Replaying(entity, name, at);
+          }
           part.TriggerDestruction(TandemObjectSync.BreakVelocity());
           this.m_parts += 1;
-          this.LogSome(s"glass: player \(player) broke part \(NameToString(name)) of \(TandemNative.EntityHex(entity)): triggered here");
+          this.LogSome(s"glass: player \(player) broke part \(NameToString(name)) of \(TandemNative.EntityHex(entity))\(when): triggered here");
         }
-        return;
+        return true;
+      }
+      if !IsDefined(object) && distance > TandemObjectSync.PartReach() {
+        return false;
       }
       this.LogSome(s"glass: player \(player) broke part \(NameToString(name)) of \(TandemNative.EntityHex(entity)), not here by that name: an impulse at its place");
     }
+    if waited {
+      TandemObjects.Replaying(entity, name, at);
+    }
     this.Pulse(ours, at);
     this.m_pulses += 1;
-    this.LogSome(s"glass: player \(player) broke something at (\(at.X) \(at.Y) \(at.Z)): an impulse there");
+    this.LogSome(s"glass: player \(player) broke something at (\(at.X) \(at.Y) \(at.Z))\(when): an impulse there");
+    return true;
   }
 
   // How hard a replayed part is struck (TriggerDestruction's velocity).
@@ -158,7 +206,7 @@ public class TandemObjectSync extends ScriptableSystem {
     let verb = ArraySize(words) > 1 ? words[1] : "";
     if Equals(verb, "") {
       TandemNative.Log(TandemObjects.Report());
-      TandemNative.Log(s"glass: replayed here: \(this.m_parts) part(s) triggered, \(this.m_pulses) impulse(s), \(this.m_far) too far to matter");
+      TandemNative.Log(s"glass: replayed here: \(this.m_parts) part(s) triggered, \(this.m_pulses) impulse(s), \(this.m_far) waited for our V, \(ArraySize(this.m_waiting)) waiting");
       return;
     }
     if !IsDefined(ours) {

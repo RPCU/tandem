@@ -253,6 +253,33 @@ void Fractures::Clear() {
   m_rate = comms::Limiter{kFractureBurst, kFracturesPerSecond};
 }
 
+FractureRecord::Piece FractureRecord::KeyOf(const proto::Fracture &fracture) {
+  if (Named(fracture))
+    return {fracture.entity, fracture.component};
+  // A nameless piece: its cell, three signed 21-bit coordinates.
+  const auto cell = [](float v) {
+    const auto c = std::isfinite(v) ? std::floor(v / kFractureCell) : 0.f;
+    return static_cast<std::uint64_t>(static_cast<std::int64_t>(std::clamp(c, -1e6f, 1e6f))) &
+           0x1FFFFFu;
+  };
+  return {0, cell(fracture.at.x) | cell(fracture.at.y) << 21 | cell(fracture.at.z) << 42};
+}
+
+bool FractureRecord::Note(const proto::Fracture &fracture) {
+  if (Full())
+    return false;
+  const auto key = KeyOf(fracture);
+  if (!m_keys.insert(key).second)
+    return false;
+  m_order.push_back(fracture);
+  m_sum += consistency::Hasher{}.Add(key.first).Add(key.second).Value();
+  return true;
+}
+
+std::uint32_t FractureRecord::Digest() const {
+  return consistency::Hasher{}.Add(std::uint64_t{m_keys.size()}).Add(std::uint64_t{m_sum}).Value();
+}
+
 bool DigestCheck::Compare(const proto::DeviceDigest &host, const proto::DeviceDigest &ours,
                           std::uint64_t nowUs) {
   const bool differ = !(host == ours);
