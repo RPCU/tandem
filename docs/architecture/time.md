@@ -74,14 +74,16 @@
   - through a `TimeDilationHelper` profile (the weapon and vehicle wheels,
     the phone and its message popup, the hub menu: inventory, perks,
     crafting, journal; the radio, list popups): the wrap of
-    `SetTimeDilationWithProfile` refuses to start it, as vanilla's own
-    `IsMultiplayer()` branch does (its close then finds nothing to unset
-    and returns, as in multiplayer); other mods' wraps of it are skipped
-    with it;
+    `SetTimeDilationWithProfile` refuses to start it, and its close, as
+    vanilla's own `IsMultiplayer()` branch does (the close would restore
+    our V's exemption from the global factor to what the refused start
+    never saved: the host's V slowed by its own Sandevistan after the
+    weapon wheel); other mods' wraps of it are skipped with it;
   - set by name (`TandemTime.MenuReasons`: the map's `WorldMap`, a shop's,
     the stash's, the ripperdoc's and the wardrobe's `VendorStash`, the
     world's and V's, a tutorial popup's `UI_TutorialPopup`, the breach
-    screen's `minigame`, research `coop-time.md` §3.4): unset on the next
+    screen's `minigame`, research `coop-time.md` §3.4; and the profiles'
+    reasons, for a menu opened before a player joined): unset on the next
     script tick, which runs on real time (`DropMenus`; a frame of it at
     most, logged once a session each). A shop's or the stash's screen
     showed a 0.05 under no reason scripts could name (2026-11-21): if it is
