@@ -970,9 +970,10 @@ struct TandemStory : Red::IScriptable {
       // scene all the same, with no name.
       sample.scene = engine::ScenePlaying(3000);
       if (sample.scene == 0)
-        sample.scene = 1;
+        sample.scene = scene::kUnnamedScene;
     }
     const auto before = story.Stage().On() ? story.Stage().Play() : 0u;
+    const auto named = story.Stage().On() ? story.Stage().State().scene : 0u;
     for (auto &message : story.Stage().Update(sample, Runtime::Get().HostNowUs())) {
       if (const auto *state = std::get_if<proto::SceneState>(&message)) {
         if (state->scene == 0)
@@ -981,6 +982,8 @@ struct TandemStory : Red::IScriptable {
         else if (state->play != before)
           log::Info("scene: {:#x} plays (play {}, tier {})", state->scene, state->play,
                     state->tier);
+        else if (state->scene != named)
+          log::Info("scene: play {} is {:#x}", state->play, state->scene);
       } else if (const auto *cast = std::get_if<proto::SceneCast>(&message))
         log::Info("scene: play {} has {} actor(s)", cast->play, cast->actors.size());
       else if (const auto *prop = std::get_if<proto::SceneProp>(&message))

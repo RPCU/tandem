@@ -153,8 +153,15 @@ public class TandemTestReset {
     let onFoot = !GameInstance.GetMountingFacility(this.m_game).IsMountedToAnything(player.GetEntityID());
     if IsDefined(psm) {
       let defs = GetAllBlackboardDefs();
-      if psm.GetInt(defs.PlayerStateMachine.HighLevel) >= 1 && psm.GetInt(defs.PlayerStateMachine.HighLevel) <= 5 {
-        ArrayPush(this.m_left, s"in a scene (tier \(psm.GetInt(defs.PlayerStateMachine.HighLevel)))");
+      // HighLevel 1 is exploration, free play (docs/research/coop-scenes.md
+      // §1); a scene holds V from tier 2. At tier 1 the scene system may
+      // still count V in a quest's background scene: said apart.
+      let level = psm.GetInt(defs.PlayerStateMachine.HighLevel);
+      let scenes = GameInstance.GetSceneSystem(this.m_game).GetScriptInterface();
+      if level >= 2 && level <= 5 {
+        ArrayPush(this.m_left, s"in a scene (tier \(level))");
+      } else if IsDefined(scenes) && scenes.IsEntityInScene(player.GetEntityID()) {
+        ArrayPush(this.m_left, s"in a background scene (tier \(level))");
       }
       if psm.GetInt(defs.PlayerStateMachine.Combat) == 1 {
         ArrayPush(this.m_left, "in combat");

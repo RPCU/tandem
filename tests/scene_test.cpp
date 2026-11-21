@@ -159,6 +159,64 @@ TEST_CASE(
   CHECK(Find<proto::SceneCast>(out)->play == 3);
 }
 
+TEST_CASE("the host's stage: a tier 1 scene with nobody to show is not announced; a play keeps "
+          "its name") {
+  scene::Stage stage;
+  scene::Replay replay;
+  // Full gameplay, V counted in a quest's background scene, no actor: nothing.
+  scene::HostSample background{.scene = scene::kUnnamedScene, .tier = 1, .host = {10.f, 10.f, 5.f}};
+  CHECK(stage.Update(background, kT0).empty());
+  CHECK_FALSE(stage.On());
+  CHECK(stage.Play() == 0);
+
+  // An actor comes into it (the test scene, a walk-and-talk): a play, unnamed.
+  auto walk = Talk(scene::kUnnamedScene);
+  walk.tier = 1;
+  auto out = stage.Update(walk, kT0 + kSecond);
+  REQUIRE(Find<proto::SceneState>(out));
+  CHECK(Find<proto::SceneState>(out)->play == 1);
+  CHECK(Find<proto::SceneState>(out)->scene == scene::kUnnamedScene);
+  std::size_t begins = 0;
+  for (const auto &message : out)
+    begins += Count(replay.Note(message, kT0 + kSecond), Kind::Begin);
+  CHECK(begins == 1);
+
+  // Its node is seen: the same play takes the name, for a guest a change.
+  walk.scene = kScene;
+  out = stage.Update(walk, kT0 + 2 * kSecond);
+  REQUIRE(out.size() == 1);
+  CHECK(Find<proto::SceneState>(out)->play == 1);
+  CHECK(Find<proto::SceneState>(out)->scene == kScene);
+  const auto cues = replay.Note(out[0], kT0 + 2 * kSecond);
+  CHECK(Count(cues, Kind::Change) == 1);
+  CHECK(Count(cues, Kind::Begin) == 0);
+  CHECK(Count(cues, Kind::End) == 0);
+
+  // The node is older than the plugin looks back: the play goes on, named.
+  walk.scene = scene::kUnnamedScene;
+  CHECK(stage.Update(walk, kT0 + 6 * kSecond).empty());
+  CHECK(stage.State().scene == kScene);
+  CHECK(stage.Play() == 1);
+
+  // Another scene's node: another play.
+  walk.scene = kScene + 1;
+  out = stage.Update(walk, kT0 + 7 * kSecond);
+  CHECK(Find<proto::SceneState>(out)->play == 2);
+
+  // Its actors leave, V still in it at tier 1: over for the guests.
+  out = stage.Update(background, kT0 + 8 * kSecond);
+  REQUIRE(out.size() == 1);
+  CHECK(Find<proto::SceneState>(out)->scene == 0);
+  CHECK(Find<proto::SceneState>(out)->play == 2);
+  CHECK(stage.Update(background, kT0 + 9 * kSecond).empty());
+
+  // A scene that holds V (tier 2 and up) is announced with nobody in it.
+  background.tier = 2;
+  out = stage.Update(background, kT0 + 10 * kSecond);
+  REQUIRE(Find<proto::SceneState>(out));
+  CHECK(Find<proto::SceneState>(out)->play == 3);
+}
+
 TEST_CASE("the host's stage: lines carry their start, a hide before the end is a cut, an end "
           "mid-line an interruption") {
   scene::Stage stage;

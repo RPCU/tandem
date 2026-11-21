@@ -53,8 +53,9 @@ deletes the tests' NPCs (`Tandem.Test`, `npc hostile`, `proxy test`,
 player's; once nobody sits in them); then teleports V to the test field
 (-915.0 1879.5 36.19) and waits until it has stood still there for 1.5 s
 (3 s at least: the world streams in). It logs `test reset: ready (on
-foot, at the test field, …)` listing what it could not clear (a scene,
-combat, a grapple, a body carried, police heat, a menu or the phone open,
+foot, at the test field, …)` listing what it could not clear (a scene
+of tier 2 and up, a background scene the scene system counts V in at
+tier 1, combat, a grapple, a body carried, police heat, a menu or the phone open,
 time dilated, health), or `test reset: failed (…)`, which fails the
 scenario. A scenario that needs another spot teleports after it.
 
