@@ -50,6 +50,7 @@ public class TandemTestReset {
     }
     // Story: no test private scene, no test quest freeze.
     TandemStorySystem.Get(this.m_game).Command("story private off");
+    TandemStorySystem.Get(this.m_game).Command("story hub off");
     TandemStorySystem.Get(this.m_game).Command("quest freeze off");
     // No test of interiors we cannot load (story spectate missing on).
     let spectate = TandemStorySystem.Get(this.m_game).Spectate();
