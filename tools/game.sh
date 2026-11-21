@@ -373,9 +373,10 @@ cmd() {
   }
   # One at a time: wait until tandem took the previous one (and this one;
   # up to 30 s, as a command that starts a loading screen is taken only once
-  # the world runs again).
+  # the world runs again). Written aside and renamed: tandem polls the file
+  # and took one created but not yet written as an empty command.
   printf '%s\n' "$*" | remote "f='$dir/red4ext/plugins/tandem/tandem.cmd'; \
-    for i in \$(seq 1 20); do [ -e \"\$f\" ] || break; sleep 0.25; done; cat > \"\$f\"; \
+    for i in \$(seq 1 20); do [ -e \"\$f\" ] || break; sleep 0.25; done; cat > \"\$f.new\" && mv -f \"\$f.new\" \"\$f\"; \
     for i in \$(seq 1 120); do [ -e \"\$f\" ] || exit 0; sleep 0.25; done; echo 'not taken (in a game?)' >&2; exit 1"
   echo "sent: $*"
 }
