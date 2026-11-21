@@ -933,6 +933,9 @@ public class TandemTime {
       GameInstance.GetTimeSystem(this.m_game).UnsetTimeDilation(this.m_testReason, n"None");
       TandemNative.Log("time: test dilation off (test reset)");
     }
+    // The slowed-down notice may be shown again (a scenario reads it; the
+    // session keeps the flag).
+    this.m_cueNoticed = false;
   }
 
   public func Stop() -> Void {
