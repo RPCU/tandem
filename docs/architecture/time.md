@@ -415,9 +415,12 @@ slow-motion cue on (…)`, `time: the slow-motion cue off`. Tested in
     `ShouldBeHit`'s terms): a puppet is no player to the game, which gave
     it no group coefficient (several shooters hit one V less often each),
     no cover coefficient and an NPC record's base coefficient and
-    difficulty package; here they are the host's V's, logged once.
-    Scenarios `npcs-shoot-guest` (the mock host lets every other one land)
-    and `npcs-shoot-puppet`; not yet passed in game;
+    difficulty package; here they are the host's V's, logged once. A
+    smart gun's round the host's AI tracks (`shouldTrackTarget`, v13
+    `kShotAtTracked`) is fired guided from the proxy, homing on one of the
+    guest's V's targeting components. Scenarios `npcs-shoot-guest` (the
+    mock host lets every other one land), `npcs-shoot-guest-smart` and
+    `npcs-shoot-puppet`; not yet passed in game;
   - a guest's lethal hit kills the proxy at once, so kill extensions fire
     as in single player; the host's word reconciles;
   - an enemy answering with its own Sandevistan is left out of bubbles

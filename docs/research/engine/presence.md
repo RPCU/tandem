@@ -323,3 +323,44 @@ there, its launch with it: tandem waits for `IsSlotSpawningItem` false
 
 - `RemoveItemFromSlot`'s native reads `shouldDestroyEntity` into a buffer
   that starts at 1 (`0x14063cec4`): left out, it is true _(inferred)_.
+
+### 13.133 Tracers, ricochets, a charge's glow, an NPC's guided round (2026-11-21, read in final.reds, not run)
+
+- **A trail by hand.** `WeaponItem_Record.FxPackage()` (`:18405`) is a
+  `WeaponFxPackage_Record` (`:236645`) whose `NPC_vfx_hitscan_trail()` (and
+  `_thermal`, `_electric`, `_chemical`) and `Vfx_hitscan_trail_ricochet()`
+  are `ResRef`s. An `FxResource` takes one through Codeware's field
+  (`FxResource.effect`, `ResourceAsyncRef.SetPath`); `FxSystem.SpawnEffect(
+resource, WorldTransform)` (`:111944`) and `FxInstance.UpdateTargetPosition`
+  (`:111961`) place it. Whether those trails stretch to their target
+  position or fly along their orientation is not in scripts. An effect has
+  no collision: nothing is hit. [2.5-untested] [to-see]
+- **A ricochet tells scripts only its hit.** A bounced bullet's hit carries
+  `AttackData.GetNumRicochetBounces() > 0` (`:52513`, read by
+  `DamageSystem.ProcessRicochet`, `:86287`); no event names the bounce point
+  or a bounce that hit nothing (the hitscan's `gameEffectExecutor_Ricochet`,
+  `:525264`, only outlines its target). The first bounce is where the
+  crosshair's ray ended (13.35, Bullets). [2.5-untested]
+- **The player's charge** is its weapon blackboard's `Weapon.ChargeStep`
+  (`WeaponDataDef`, `:173674`, a `gamedataChargeStep` variant): `ChargeEvents`
+  sets Charging, `ChargeReadyEvents` Charged, `ChargeMaxEvents` Overcharging,
+  `DischargeEvents` Discharging (`:554387`-`:554752`), every other ranged
+  state Idle (`OnEnterNonChargeState`, `:287713`). The 2.50 bundle has no
+  `PlayerStateMachineDef.Weapon`, though the dump shows one (scc: member not
+  found). How charged: `WeaponObject.GetWeaponChargeNormalized` (`:54483`).
+  [2.5-untested]
+- **The glow** is the weapon's own `charge` effect, started with a
+  `worldEffectBlackboard` whose `chargeValue` follows the pool
+  (`WeaponObject.OnUpdateWeaponCharge`, `:55087`); never stopped there, it
+  fades with the value. An NPC's charge adds `TriggerWeaponEffects(
+EnterCharge)`, `charging_tpp`, `AI_PlayChargeStartedSound`
+  (`AIWeapon.StartCharging`, `:172812`), and at its end `charging_tpp`
+  killed, the `charged` loop broken, `discharge_tpp` when it was not full
+  (`OnStopShooting`, `:173113`). [2.5-untested] [to-see]
+- **An NPC's guided round**: `AIWeapon.Fire` with `shouldTrackTarget`
+  (`:173148`) aims at `GetBestComponentOnTargetObject(…, Shooting)` and sets
+  `smartGunAccuracy` 1, `smartGunIsProjectileGuided`, `trackedTargetComponent`;
+  a round the time between hits says misses ignores the target's collision.
+  `shouldTrackTarget` is the AI's (`ShouldTrackTarget`, `:450386`): a smart
+  weapon locked on (`IsTargetLocked`) and not jammed, or a missile rain.
+  [2.5-untested]

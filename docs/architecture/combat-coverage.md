@@ -47,8 +47,8 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 <!-- prettier-ignore -->
 | Way of fighting | Host V → host NPC | Host V → guest V | Host V → own V | Guest V → host NPC | Guest V → host V | Guest V → own V | Seen on the other game |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Power weapons (pistols, revolvers, rifles, SMGs, shotguns, LMG/HMG, precision, snipers; ricochets) | W vanilla | W off / U on (`AreaHit`) | W vanilla (ricochets) | W gun hits and deaths (`npcs-hit`, 2026-11-18); U the whole outcome (`outcomes-*`) | W off / U on | W vanilla | W muzzle flash, shells, report, reload (28 shots, 2026-11-18); D no tracer or bullet |
-| Tech weapons (charge, piercing walls and cover) | W vanilla | W off / U on | – | U the charged shot pierces on the guest's own copy of the static geometry and strikes the proxy behind it (`WeaponFullyCharged` set in its pipeline); D a door open on one game and shut on the other (devices) | W off / U on | – | D the shot, not the charge glow |
+| Power weapons (pistols, revolvers, rifles, SMGs, shotguns, LMG/HMG, precision, snipers; ricochets) | W vanilla | W off / U on (`AreaHit`) | W vanilla (ricochets) | W gun hits and deaths (`npcs-hit`, 2026-11-18); U the whole outcome (`outcomes-*`) | W off / U on | W vanilla | W muzzle flash, shells, report, reload (28 shots, 2026-11-18); U the tracer: the weapon's hitscan trail from the puppet's muzzle to where the shot ended, beside the drawn bullet (impact, decal), and a ricochet's leg on to what it hit (`Cue` Trace and Ricochet, `presence-ricochet`; not yet run in game; **was D**: no tracer or bullet) |
+| Tech weapons (charge, piercing walls and cover) | W vanilla | W off / U on | – | U the charged shot pierces on the guest's own copy of the static geometry and strikes the proxy behind it (`WeaponFullyCharged` set in its pipeline); D a door open on one game and shut on the other (devices) | W off / U on | – | U the shot, and the charge on the puppet's copy of the weapon: its glow at the shooter's charge, the NPC charge effects and sound, released or discharged (`Cue` Charge, `presence-charge`; not yet run in game; **was D**: the shot, not the charge glow) |
 | Smart weapons (lock-on, guided rounds) | W vanilla | W off / U on | – | U locks on proxies (the host's record, its targeting components, the host's attitudes copied), the rounds home on the guest's game | W off / U on | – | U the round homes on its lock from the puppet (`Throw` Smart, scenario `combat-throw-guest`); U with no lock the others know, a plain round to where it was aimed (`Cue` Trace) |
 | Melee weapons: blades, blunt, fists | W vanilla | W off / U on | – | W punch (`npcs-punch`, 2026-11-18); U blade wounds and the limb cut by the host's hit reaction (`outcomes-blade`), U non-lethal knock-out (`outcomes-knockout`), U poise and the finisher it opens (`outcomes-poise`) | W off / U on | – | U swing sound (`AI_PlayMeleeAttackSound`), the swing in the pose stream |
 | Arm cyberware: mantis blades, gorilla arms, monowire | W vanilla | W off / U on | – | U as melee; D gorilla arms' one-punch slow motion goes to the host's V (`NPCPuppet.OnStatusEffectApplied` → `GetPlayer`, coop-perks §5.3); U monowire's upload through the quickhack path | W off / U on | – | U arms look (appearance sync) |
@@ -83,7 +83,7 @@ Counts at the end. Evidence names a scenario, a code path or a dated check.
 | --- | --- | --- | --- |
 | Choosing whom to attack (threat weights) | W vanilla | U the guest's puppet weighed as a player (the player's base and terms, `BlockTargetingPlayer` honoured: `Threats.reds`, `npcs-target-guest`; not yet run in game; **was D**: weighed as an NPC, 0.01 against V's 1.0) | U the proxy's target (`NpcAnims`) |
 | Gunfire | W vanilla | U fired from the proxy and applied on the guest's game, whether it may land the host's time between hits on the puppet (`npcs-shoot-guest`; **was B** too: every shot missed, the proxy's line of sight reads 0), by a player's rules: the group and cover coefficients and a V's base, which the game gives no NPC target (`TandemShouldHitAsPlayer`, `npcs-shoot-puppet`; not yet run in game); **was B**: those hits were dropped as a proxy's own (`IsProxyComputed`), fixed here (`TandemShots.IsSimulatedHit`) | U the shot on the proxy (`NpcShot`) |
-| Smart weapons | W vanilla | D the proxy fires plain rounds (no lock), the hit is still the guest's | U |
+| Smart weapons | W vanilla | U the proxy fires the guided round the host's AI tracks (`NpcShotAt` `kShotAtTracked`: its smart weapon locked on the puppet), homing on the guest's V; a round its time between hits says misses flies past; the hit is still the guest's (`npcs-shoot-guest-smart`; not yet run in game; **was D**: plain rounds, no lock) | U |
 | Melee | W vanilla | U the host's hit is held until the proxy's swing lands on the guest's screen, then run on its V (`TandemFight.MeleeHold`, `combat-melee-guest`) | U the NPC's animation (`NpcAnims`) |
 | Blocking an NPC's melee | W vanilla | U on the guest's game (`ProcessDefensiveState`), and the host's NPC recoils (`Defended`, `combat-defend`) | U |
 | Deflect and parry | W vanilla | U as blocking; the parry's stagger on the host's NPC | U |
@@ -128,11 +128,11 @@ then W; "W off / U on" counts as the default, W; "was B" is history),
 <!-- prettier-ignore -->
 | Table | Cells | W | D | B | U | – |
 | --- | --- | --- | --- | --- | --- | --- |
-| The Vs attacking (28 rows × 7) | 196 | 69 | 17 | 1 | 34 | 75 |
-| The host's NPCs attacking (11 × 3) | 33 | 11 | 2 | 0 | 20 | 0 |
+| The Vs attacking (28 rows × 7) | 196 | 69 | 15 | 1 | 36 | 75 |
+| The host's NPCs attacking (11 × 3) | 33 | 11 | 1 | 0 | 21 | 0 |
 | Companions and allies | 5 | 1 | 1 | 0 | 2 | 1 |
 | Healing and consumables | 5 | 1 | 1 | 0 | 2 | 1 |
-| All | 239 | 82 | 21 | 1 | 58 | 77 |
+| All | 239 | 82 | 18 | 1 | 61 | 77 |
 
 Before this change three of today's U were B (NPC gunfire on a guest, NPC
 grenades and every V's thrown object unseen on the other game) and the
@@ -265,8 +265,8 @@ the guest's game, as shots were (time.md), was weighed and not done:
 - Gorilla arms' one-punch slow motion and System Collapse's buffs on the
   host for a guest's hit (coop-perks §5.3, §6.2); Breach Protocol in game
   (`breach-guest`, `breach-host`; built, not run);
-  smart-weapon NPCs firing guided rounds at a guest; NPC knives and
-  launchers shown on guests; tracers for the Vs' shots.
+  NPC knives and launchers shown on guests. Run `npcs-shoot-guest-smart`,
+  `presence-ricochet` and `presence-charge` (built 2026-11-21).
 - A grenade's copy put back on its path: whether the new parabola starts
   from the place given (engine/presence.md §13.93), to see in
   `combat-throw-bounce`.
