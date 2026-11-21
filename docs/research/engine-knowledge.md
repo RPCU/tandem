@@ -135,6 +135,7 @@ found through this table, each number once.
 | 13.123 | What vanilla reads to treat an object as a player | `multiplayer-leftovers.md` |
 | 13.124 | The Muppet, the multiplayer's remote character | `multiplayer-leftovers.md` |
 | 13.125 | Smaller leftovers checked | `multiplayer-leftovers.md` |
+| 13.130 | The campaign's quest ids, as the 2.50 scripts name them | `story.md` |
 
 ## Top traps (one line each)
 

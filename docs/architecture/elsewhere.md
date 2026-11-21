@@ -51,5 +51,5 @@
     `tools/game.sh cmd elsewhere test PLACE|off` and a teleport). Open: the
     signals of the Phantom Liberty Blackwall and Songbird sequences, and of
     Mikoshi (§13.18), the guest following a host's dive (built: it
-    watches through the host's camera, `story.md`, "Spectating", reason b), Johnny's look on the puppet, a fade on the
+    watches through the host's camera, `story.md`, "Spectating", reason b, with no notice of its own: this one says it), Johnny's look on the puppet, a fade on the
     puppet instead of a cut.
