@@ -2879,6 +2879,29 @@ struct NpcDeath { // Event channel
   friend bool operator==(const NpcDeath &, const NpcDeath &) = default;
 };
 
+// Some float tracks of one rig of one of the host's NPCs (a face's:
+// wrinkles, pupils, blinks, lipsync envelopes), in the rig's track order:
+// the tracks that moved since the host last said them, and a few in turn so
+// that a lost frame heals. Entries of four bytes, tracks in order: the track
+// (uint16), its value (int16 of kRigTrackStep). A track stays as last said;
+// one said at the rig's reference value lets the receiver's own animation
+// show again. `rig` and `tracks` name the rig's tracks (rig::RigHash of
+// their names, their count): a receiver whose rig has others takes nothing.
+// State channel, host only, paced with the scene's streams.
+inline constexpr std::size_t kMaxRigTracks = 1024;
+inline constexpr std::size_t kRigTrackEntryBytes = 4;
+inline constexpr float kRigTrackStep = 1.f / 4096.f; // values within ±8
+struct RigTracks {
+  NpcId npc{};
+  std::uint8_t part{}; // kRig*
+  std::uint32_t seq{};
+  std::uint64_t timeUs{};
+  std::uint32_t rig{};    // hash of the rig's track names (rig::RigHash)
+  std::uint16_t tracks{}; // how many float tracks the rig has
+  std::vector<std::uint8_t> data;
+  friend bool operator==(const RigTracks &, const RigTracks &) = default;
+};
+
 // The alternatives, in id order. Code uses Message (below).
 using MessageVariant = std::variant<
     Hello, Welcome, Refused, Ping, Pong, Roster, PlayerState, Bye, PoseState, Appearance, Held,
@@ -2899,7 +2922,7 @@ using MessageVariant = std::variant<
     Chase, StoryRestrictions, PoseFrame, NpcMotion, PlayerMotion, VehicleMotion, NpcScale, Breach,
     BreachResult, NpcVendor, StatusVisuals, ModList, Substitutes, TrafficOwnership, TrafficHandover,
     TrafficHandoverState, TrafficHandoverDone, QuestInteract, ActorFrame, RigPose, SceneCamera,
-    SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath>;
+    SceneProp, Fracture, DeviceFire, ThrowPath, NpcPlaced, NpcDeath, RigTracks>;
 
 // A message: MessageVariant, its copies, moves and conversions compiled in
 // message.cpp only (tandem/closed_variant.hpp). std::visit, std::get_if,

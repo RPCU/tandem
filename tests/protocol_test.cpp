@@ -961,6 +961,36 @@ TEST_CASE("scene replay, second part: props, the camera, rig poses and actor fra
   broken = RigPose{.npc = 0, .bones = 4};
   CHECK_FALSE(Decode(Encode(broken)).has_value());
 
+  // A rig's float tracks: track 2 at 0.5, track 40 at -1.
+  RigTracks tracks{
+      .npc = 12, .part = kRigFace, .seq = 6, .timeUs = 78, .rig = 0x1234, .tracks = 41};
+  const auto track = [&](std::uint16_t index, std::int16_t steps) {
+    tracks.data.push_back(static_cast<std::uint8_t>(index & 0xFF));
+    tracks.data.push_back(static_cast<std::uint8_t>(index >> 8));
+    const auto bits = static_cast<std::uint16_t>(steps);
+    tracks.data.push_back(static_cast<std::uint8_t>(bits & 0xFF));
+    tracks.data.push_back(static_cast<std::uint8_t>(bits >> 8));
+  };
+  track(2, 2048);
+  track(40, -4096);
+  RoundTrips(tracks);
+  CHECK(ChannelOf(tracks) == Channel::State);
+  CHECK(std::string(NameOf(RigTracks{})) == "RigTracks");
+  auto badTracks = tracks;
+  badTracks.data.pop_back(); // an entry cut short
+  CHECK_FALSE(Decode(Encode(badTracks)).has_value());
+  badTracks = tracks;
+  badTracks.tracks = 40; // a track the rig does not have
+  CHECK_FALSE(Decode(Encode(badTracks)).has_value());
+  badTracks = tracks;
+  badTracks.part = 2;
+  CHECK_FALSE(Decode(Encode(badTracks)).has_value());
+  badTracks = tracks;
+  badTracks.npc = 0;
+  CHECK_FALSE(Decode(Encode(badTracks)).has_value());
+  track(1, 0); // out of order
+  CHECK_FALSE(Decode(Encode(tracks)).has_value());
+
   // An actor's frame is a pose frame with the NPC's name: the same rules.
   ActorFrame actor{.npc = 12};
   actor.frame.seq = 9;

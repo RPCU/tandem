@@ -218,6 +218,8 @@ void Endpoint::ForgetNpc(proto::NpcId npc) {
   m_actorEncoders.erase(npc);
   m_rigStreams.erase(scene::StreamOf(npc, proto::kRigBody));
   m_rigStreams.erase(scene::StreamOf(npc, proto::kRigFace));
+  m_trackStreams.erase(scene::TracksOf(npc, proto::kRigBody));
+  m_trackStreams.erase(scene::TracksOf(npc, proto::kRigFace));
   m_actorDecoders.erase(npc);
   m_npcHealth.erase(npc);
   m_npcHolds.erase(npc);

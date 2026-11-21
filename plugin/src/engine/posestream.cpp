@@ -20,7 +20,9 @@
 //     +0x20 bone names (CName), +0x60 signature (changes on rebuild).
 //   pose: +0x00 transforms (48 bytes: translation, rotation, scale).
 //   graph instance: +0x40 its anim::Rig.
-//   sampled pose: +0x00 bone count, +0x30 transforms.
+//   sampled pose: +0x00 bone count, +0x30 transforms; +0x0C float track
+//     count, +0x38 float tracks (read from the code: a face's tracks are
+//     used only once the first sampled face passes its check, FaceTracksOk).
 // Both functions run on animation job threads: nothing here touches the
 // engine beyond these buffers, and every read of them is guarded.
 //
@@ -85,6 +87,7 @@ constexpr std::size_t kSkeletonReference = 0x00, kSkeletonCount = 0x08, kSkeleto
                       kSkeletonSignature = 0x60;
 constexpr std::size_t kInstanceRig = 0x40;
 constexpr std::size_t kSampledCount = 0x00, kSampledBones = 0x30;
+constexpr std::size_t kSampledTrackCount = 0x0C, kSampledTracks = 0x38;
 constexpr std::uint32_t kMaxBones = 1024;
 constexpr auto kSendInterval = std::chrono::microseconds(33'333); // 30 Hz
 
@@ -495,6 +498,11 @@ struct RigSlot {
   std::vector<std::uint8_t> skip; // Root, Trajectory: the entity is placed by its NPC states
   std::vector<rig::Bone> scratch;
   std::chrono::steady_clock::time_point lastRead{};
+  // Its float tracks (a face's): the rig's track names' hash and reference
+  // values; none when the rig has none.
+  std::uint32_t trackHash = 0;
+  std::shared_ptr<const std::vector<float>> trackReference;
+  std::vector<float> trackScratch;
 };
 std::array<RigSlot, kMaxRigs> g_rigSlots;
 std::atomic_int g_rigCount{0}; // 0: the commit detour looks at no table
@@ -528,7 +536,63 @@ bool MapRig(std::uintptr_t rigAddress, RigSlot &slot) {
   }
   slot.hash = rig::RigHash(hashes);
   slot.reference = std::move(reference);
+  slot.trackHash = 0;
+  slot.trackReference.reset();
+  const auto &trackNames = resource->trackNames;
+  const auto &trackValues = resource->referenceTracks;
+  if (trackNames.Size() > 0 && trackNames.Size() <= proto::kMaxRigTracks &&
+      trackValues.Size() == trackNames.Size()) {
+    std::vector<std::uint64_t> trackHashes(trackNames.Size());
+    auto values = std::make_shared<std::vector<float>>(trackNames.Size());
+    for (std::uint32_t i = 0; i < trackNames.Size(); ++i) {
+      trackHashes[i] = trackNames[i].hash;
+      (*values)[i] = trackValues[i];
+    }
+    slot.trackHash = rig::RigHash(trackHashes);
+    slot.trackReference = std::move(values);
+  }
   return true;
+}
+
+// A face's float tracks at the commit: 0 not checked yet, 1 used, 2 off (the
+// first sampled face did not match its rig: logged once).
+std::atomic_int g_faceTracks{0};
+std::atomic_uint64_t g_trackReads{0}, g_trackWrites{0};
+
+// The first full sampled face decides: its track count is its rig's, the
+// pointer is one, and every value is a number of a track's size.
+bool FaceTracksOk(const RigSlot &slot, std::uintptr_t tracks, std::uint32_t count) {
+  const auto expected = slot.trackReference->size();
+  std::vector<float> values(expected);
+  bool ok = count == expected && tracks >= 0x10000 && (tracks & 0x3) == 0 &&
+            CopyOut(reinterpret_cast<const void *>(tracks), values.data(), expected * 4);
+  for (std::size_t i = 0; ok && i < expected; ++i)
+    ok = std::isfinite(values[i]) && std::abs(values[i]) < 64.f;
+  log::Info("pose stream: a sampled face has {} float tracks at {:#x} (its rig {}): {}", count,
+            tracks, expected, ok ? "face tracks on" : "NOT the measured layout, face tracks off");
+  return ok;
+}
+
+// The float tracks of a slot's sampled face, when they are its rig's.
+float *FaceTracks(RigSlot &slot, void *sampled) {
+  if (slot.part.load(std::memory_order_acquire) != proto::kRigFace || !slot.trackReference ||
+      g_faceTracks.load(std::memory_order_acquire) == 2)
+    return nullptr;
+  std::uint32_t count = 0;
+  std::uintptr_t tracks = 0;
+  const auto base = reinterpret_cast<std::uintptr_t>(sampled);
+  if (!ReadAt(base + kSampledTrackCount, count) || !ReadAt(base + kSampledTracks, tracks))
+    return nullptr;
+  if (g_faceTracks.load(std::memory_order_acquire) == 0) {
+    int unchecked = 0;
+    if (g_faceTracks.compare_exchange_strong(unchecked, 3)) { // 3: this thread checks
+      g_faceTracks.store(FaceTracksOk(slot, tracks, count) ? 1 : 2, std::memory_order_release);
+    }
+  }
+  if (g_faceTracks.load(std::memory_order_acquire) != 1 || count != slot.trackReference->size() ||
+      tracks < 0x10000 || (tracks & 0x3) != 0)
+    return nullptr;
+  return reinterpret_cast<float *>(tracks);
 }
 
 // The sampled pose of a slot's instance: its bones, when it is the whole rig.
@@ -582,7 +646,17 @@ void ReadRig(RigSlot &slot, std::uintptr_t instance, void *sampled) {
                   : rig::Bone{{raw[i].translation[0], raw[i].translation[1], raw[i].translation[2]},
                               {raw[i].rotation[0], raw[i].rotation[1], raw[i].rotation[2],
                                raw[i].rotation[3]}};
-  Runtime::Get().SubmitRigPose({npc, part, slot.hash, slot.reference, std::move(pose)});
+  Runtime::RigSample sample{npc, part, slot.hash, slot.reference, std::move(pose)};
+  if (const auto *tracks = FaceTracks(slot, sampled)) {
+    std::vector<float> values(slot.trackReference->size());
+    if (CopyOut(tracks, values.data(), values.size() * sizeof(float))) {
+      sample.trackHash = slot.trackHash;
+      sample.trackReference = slot.trackReference;
+      sample.tracks = std::move(values);
+      g_trackReads.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
+  Runtime::Get().SubmitRigPose(std::move(sample));
   g_rigReads.fetch_add(1, std::memory_order_relaxed);
 }
 
@@ -603,10 +677,22 @@ bool WriteRig(RigSlot &slot, std::uintptr_t instance, void *sampled) {
     slot.scratch[i] = {
         {bones[i].translation[0], bones[i].translation[1], bones[i].translation[2]},
         {bones[i].rotation[0], bones[i].rotation[1], bones[i].rotation[2], bones[i].rotation[3]}};
+  // Its float tracks first: the face may solve its joints from them.
+  bool tracksWritten = false;
+  if (auto *tracks = FaceTracks(slot, sampled)) {
+    slot.trackScratch.resize(slot.trackReference->size());
+    if (CopyOut(tracks, slot.trackScratch.data(), slot.trackScratch.size() * sizeof(float)) &&
+        Runtime::Get().ApplyRigTracks(npc, slot.part.load(), slot.trackHash, *slot.trackReference,
+                                      slot.trackScratch) > 0 &&
+        CopyOut(slot.trackScratch.data(), tracks, slot.trackScratch.size() * sizeof(float))) {
+      tracksWritten = true;
+      g_trackWrites.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
   const auto written =
       Runtime::Get().ApplyRigPose(npc, slot.part.load(), slot.hash, *slot.reference, slot.scratch);
   if (written == 0)
-    return false;
+    return tracksWritten;
   for (std::uint32_t i = 0; i < count; ++i) {
     if (slot.skip[i])
       continue;
@@ -874,6 +960,8 @@ void BindPoseRig(std::uint32_t npc, std::uint8_t part, bool source,
     slot->mapped = 0;
     slot->usable = false;
     slot->reference.reset();
+    slot->trackHash = 0;
+    slot->trackReference.reset();
     slot->lastRead = {};
   }
   if (instance != 0) {
@@ -909,10 +997,14 @@ std::string PoseActorsReport() {
   return std::format(
       "{} actor(s) read ({} poses, {} skipped), {} proxy(ies) posed ({} writes, {} "
       "without a pose), {} poses heard; {} other rig(s) bound ({} reads, {} writes "
-      "of {} bones, {} rig poses heard)",
+      "of {} bones, {} rig poses heard); face tracks {} ({} reads, {} writes)",
       sources, g_actorReads.exchange(0), g_actorSkips.exchange(0), bound, g_actorWrites.exchange(0),
       g_actorMisses.exchange(0), Runtime::Get().ActorPosesReceived(), rigs, g_rigReads.exchange(0),
-      g_rigWrites.exchange(0), g_rigBones.exchange(0), Runtime::Get().RigPosesReceived());
+      g_rigWrites.exchange(0), g_rigBones.exchange(0), Runtime::Get().RigPosesReceived(),
+      g_faceTracks.load() == 1   ? "on"
+      : g_faceTracks.load() == 2 ? "off"
+                                 : "not checked",
+      g_trackReads.exchange(0), g_trackWrites.exchange(0));
 }
 
 void PoseStreamReport() {
