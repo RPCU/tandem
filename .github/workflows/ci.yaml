@@ -297,6 +297,10 @@ jobs:
       - name: Player-facing strings
         run: python3 tools/check-strings.py
 
+      # task menu:check
+      - name: Co-op menu texts and settings
+        run: python3 tools/menu-check.py
+
       # task threads:check
       - name: Script hooks that may run on job threads
         run: python3 tools/scripts-threads.py

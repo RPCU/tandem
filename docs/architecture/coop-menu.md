@@ -60,9 +60,31 @@
 
 ### Settings
 
+- **The pages' entries** (`TandemCoopMenu.Build`): main menu Co-op → Host a
+  game, Join a game, Join by address, Play solo (once one is chosen), Write
+  a bug report, Co-op settings, Back; pause menu Co-op → Host this game,
+  Join a game, Join by address, or in a session Invite and New join code
+  (host), Partners' mods, Leave session; then Write a bug report, Co-op
+  settings, Back. No entry reads as one of the game's own or another mod's
+  ("Settings", "Mods", "Mod Settings": `Menu-Settings` is "Co-op settings", not the game's `UI-Labels-Settings`,
+  `Menu-Mods` "Partners' mods"). On every page but the root the list holds
+  our items alone (`TandemCoopMenu.Tidy`, at each page and clock tick):
+  the Mod Settings mod appends its entry wherever the game's Mods entry is
+  missing, and `ShowActionsList` its Close game.
 - **The page** (`scripts/tandem/Settings.reds`, both menus' Co-op page →
-  Settings, the game's own `UI-Labels-Settings`): one item per setting,
-  "Name: V". Picking an on/off or a choice moves to the next value; a
+  Co-op settings): one item per setting, "Name: V"; the status panel shows
+  what the row under the cursor (hovered, else selected) does
+  (`Settings-About-*`, `TandemSettings.About`). Its arrays (`Keys`,
+  `Labels`, `Abouts`, `Kinds`, `Whens`) have one entry per setting in the
+  page's order: name, friendly_fire, enemy_scaling, notices, markers,
+  nameplates, party_hud, link, pings, recorder, relay, code, direct, story,
+  quest_freeze, scene_privacy, time_host. `tools/menu-check.py`
+  (`task menu:check`, run by `scripts:check` and CI) checks them aligned,
+  each key taken by `ApplySetting` and `settings::IsEditable`, every label,
+  description and choice text in English and French, no two entries
+  reading the same, nothing registered with Mod Settings, and no value
+  read straight from an array a call returned (`Labels()[i]` gave an empty
+  String in game: every row read ": V", 2026-11-20). Picking an on/off or a choice moves to the next value; a
   typed one (name, relay, relay host token: never shown, "set" or "not
   set") opens the message popup with Codeware's text field. Each change
   goes through `TandemNative.SetSetting(key, value)`: the plugin checks it
@@ -117,7 +139,7 @@
 
 ### Mods
 
-- In a session the pause menu's Co-op page has **Mods**
+- In a session the pause menu's Co-op page has **Partners' mods**
   (`TandemCoopAction.Mods`, [`mod-compat.md`](mod-compat.md)): a popup
   with each player's mods against ours in words, their names once asked
   (opening it asks; they arrive as a notice, shown the next time), and
