@@ -367,6 +367,10 @@ public:
     std::uint32_t hash{}; // rig::RigHash of its bone names
     std::shared_ptr<const std::vector<rig::Bone>> reference;
     std::vector<rig::Bone> pose;
+    // Its float tracks (a face's), when the layout check let them be read.
+    std::uint32_t trackHash{}; // rig::RigHash of its track names
+    std::shared_ptr<const std::vector<float>> trackReference;
+    std::vector<float> tracks;
   };
   void SubmitRigPose(RigSample sample);
   std::vector<RigSample> TakeRigPoses();
@@ -374,6 +378,10 @@ public:
   std::size_t ApplyRigPose(proto::NpcId npc, std::uint8_t part, std::uint32_t rigHash,
                            std::span<const rig::Bone> reference, std::span<rig::Bone> pose);
   std::uint32_t RigPosesReceived();
+  // The same for a rig's float tracks (RigTracks).
+  void PushRigTracks(const proto::RigTracks &tracks);
+  std::size_t ApplyRigTracks(proto::NpcId npc, std::uint8_t part, std::uint32_t trackHash,
+                             std::span<const float> reference, std::span<float> values);
 
   // Game thread -> net thread: our V's look, newest only (the endpoint keeps it
   // and sends it again to whoever joins).
@@ -854,6 +862,7 @@ private:
   std::map<std::uint64_t, RigSample> m_rigOut;          // m_posesLock, by npc and part
   std::map<std::uint64_t, rig::Track> m_rigTracks;      // m_posesLock
   std::uint32_t m_rigPosesIn{};                         // m_posesLock
+  std::map<std::uint64_t, rig::TrackSet> m_trackSets;   // m_posesLock
 
   mutable std::mutex m_reachLock;
   lagcomp::Book m_reach; // m_reachLock: guests' Vs by player id, our NPCs by kNpcPuppetBase + id

@@ -1718,6 +1718,13 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             if (m_npcs.contains(pose.npc))
               out.push_back(events::Story{pose});
           },
+          [&](const proto::RigTracks &tracks) {
+            // Its float tracks: the same.
+            if (m_firstNpcSeq != 0 && static_cast<std::int32_t>(tracks.seq - m_firstNpcSeq) < 0)
+              return;
+            if (m_npcs.contains(tracks.npc))
+              out.push_back(events::Story{tracks});
+          },
           [&](const proto::SceneCamera &camera) {
             // The host's view of its cutscene: for the story's side of our game.
             out.push_back(events::Story{camera});
@@ -2329,6 +2336,36 @@ void Endpoint::SendRigPose(proto::NpcId npc, std::uint8_t part, std::uint32_t ri
                       .rig = rigHash,
                       .bones = static_cast<std::uint16_t>(reference.size()),
                       .data = state.encoder.Encode(pose, cap)};
+  if (said.data.empty())
+    return;
+  said.seq = ++m_npcSeq;
+  said.timeUs = HostNowUs();
+  const proto::Message message = std::move(said);
+  m_scenePacer.Sent(stream, proto::Encode(message).size(), now);
+  ShareNpc(message, m_you);
+}
+
+void Endpoint::SendRigTracks(proto::NpcId npc, std::uint8_t part, std::uint32_t rigHash,
+                             std::span<const float> reference, std::span<const float> values) {
+  if (!IsHost() || m_ended || !OwnsNpc(npc) || part > proto::kRigFace || reference.empty() ||
+      reference.size() != values.size() || values.size() > proto::kMaxRigTracks)
+    return;
+  const auto now = net::NowUs();
+  const auto stream = scene::TracksOf(npc, part);
+  if (!m_scenePacer.Due(stream, scene::kTracksWeight, now))
+    return;
+  auto &state = m_trackStreams[stream];
+  if (state.hash != rigHash || state.encoder.Tracks() != reference.size()) {
+    state.hash = rigHash;
+    state.encoder.Reset(reference);
+  }
+  const auto cap =
+      static_cast<std::size_t>(std::clamp(m_scenePacer.Share(stream) / 10.f, 40.f, 240.f));
+  proto::RigTracks said{.npc = npc,
+                        .part = part,
+                        .rig = rigHash,
+                        .tracks = static_cast<std::uint16_t>(reference.size()),
+                        .data = state.encoder.Encode(values, cap)};
   if (said.data.empty())
     return;
   said.seq = ++m_npcSeq;

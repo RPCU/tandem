@@ -219,6 +219,9 @@ animSets } +0x58 }` (`.lipmap`), by scene path and the actor's voicetag;
   game solves them from the tracks after the commit, is [unknown]: if
   after, the float tracks at `[sampled+0x38]` ([2.5-static]: read from the
   code, never checked in memory) are what to copy. [inferred; nothing run]
+  tandem copies both, the tracks only once the first sampled face passes a
+  check against its rig's `trackNames` and `referenceTracks`
+  (`engine/posestream.cpp`, `FaceTracksOk`).
 
 ## 5. Body animation
 

@@ -690,6 +690,13 @@ public:
   // guest hears the RigPose as events::Story (it is not kept).
   void SendRigPose(proto::NpcId npc, std::uint8_t part, std::uint32_t rigHash,
                    std::span<const rig::Bone> reference, std::span<const rig::Bone> pose);
+  // Host: the float tracks of that rig (a face's wrinkles, pupils, blinks):
+  // `values` and the rig's `reference` values in its track order, `rigHash`
+  // the hash of their names. Paced as a stream of its own, half a face's
+  // weight; what goes is the tracks that moved (rig::TrackEncoder,
+  // RigTracks), heard by a guest as events::Story.
+  void SendRigTracks(proto::NpcId npc, std::uint8_t part, std::uint32_t rigHash,
+                     std::span<const float> reference, std::span<const float> values);
   // Host: the view of its game's camera in a cutscene (play, position,
   // orientation, fov, kCameraCut), as often as its game has one: paced
   // here (scene::Pacer), numbered and stamped, to every guest. A guest hears
@@ -1432,7 +1439,12 @@ private:
     rig::Encoder encoder;
     std::uint32_t hash{};
   };
-  std::map<std::uint64_t, RigStream> m_rigStreams;           // host, by scene::StreamOf
+  std::map<std::uint64_t, RigStream> m_rigStreams; // host, by scene::StreamOf
+  struct TrackStream {
+    rig::TrackEncoder encoder;
+    std::uint32_t hash{};
+  };
+  std::map<std::uint64_t, TrackStream> m_trackStreams;       // host, by scene::TracksOf
   std::map<proto::NpcId, pose::PoseEncoder> m_actorEncoders; // host
   std::map<proto::NpcId, pose::PoseDecoder> m_actorDecoders; // guest
   // How much an actor's body matters: by how far the nearest other V is.

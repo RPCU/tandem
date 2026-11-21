@@ -64,6 +64,21 @@ bool Fits(const PoseFrame &frame) {
   return frame.rotations.size() == bytes;
 }
 
+// A rig's float tracks: each track at most once, in order, four bytes each.
+bool Fits(const RigTracks &tracks) {
+  if (tracks.part > kRigFace || tracks.tracks == 0 || tracks.tracks > kMaxRigTracks ||
+      tracks.data.size() > kMaxRigBytes || tracks.data.size() % kRigTrackEntryBytes != 0)
+    return false;
+  int last = -1;
+  for (std::size_t at = 0; at < tracks.data.size(); at += kRigTrackEntryBytes) {
+    const int track = tracks.data[at] | tracks.data[at + 1] << 8;
+    if (track <= last || track >= tracks.tracks)
+      return false;
+    last = track;
+  }
+  return true;
+}
+
 // A rig pose's entries: each bone of the rig at most once, in order, each
 // with the bytes of its form and nothing after the last.
 bool Fits(const RigPose &pose) {
@@ -179,6 +194,9 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
       actor && (actor->npc == 0 || !Fits(actor->frame)))
     return std::nullopt;
   if (const auto *rig = std::get_if<RigPose>(&message); rig && (rig->npc == 0 || !Fits(*rig)))
+    return std::nullopt;
+  if (const auto *tracks = std::get_if<RigTracks>(&message);
+      tracks && (tracks->npc == 0 || !Fits(*tracks)))
     return std::nullopt;
   // A view no camera has, or one that is not a number.
   if (const auto *camera = std::get_if<SceneCamera>(&message);
@@ -397,6 +415,7 @@ Channel ChannelOf(const Message &message) {
                  std::holds_alternative<ActorPose>(message) ||
                  std::holds_alternative<ActorFrame>(message) ||
                  std::holds_alternative<RigPose>(message) ||
+                 std::holds_alternative<RigTracks>(message) ||
                  std::holds_alternative<SceneCamera>(message) ||
                  std::holds_alternative<PoseFrame>(message) ||
                  std::holds_alternative<NpcMotion>(message) ||
@@ -599,7 +618,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "DeviceFire",
                                    "ThrowPath",
                                    "NpcPlaced",
-                                   "NpcDeath"};
+                                   "NpcDeath",
+                                   "RigTracks"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

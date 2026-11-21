@@ -1992,6 +1992,7 @@ void Runtime::ForgetActorPoses() {
   m_actorOut.clear();
   m_rigOut.clear();
   m_rigTracks.clear();
+  m_trackSets.clear();
 }
 
 void Runtime::SubmitRigPose(RigSample sample) {
@@ -2028,6 +2029,23 @@ std::size_t Runtime::ApplyRigPose(proto::NpcId npc, std::uint8_t part, std::uint
   if (it == m_rigTracks.end() || now > it->second.NewestUs() + 2 * kActorPoseStaleUs)
     return 0;
   return it->second.Apply(now, rigHash, reference, pose);
+}
+
+void Runtime::PushRigTracks(const proto::RigTracks &tracks) {
+  const auto key = std::uint64_t{tracks.npc} << 8 | tracks.part;
+  std::lock_guard _(m_posesLock);
+  m_trackSets[key].Push(tracks);
+}
+
+std::size_t Runtime::ApplyRigTracks(proto::NpcId npc, std::uint8_t part, std::uint32_t trackHash,
+                                    std::span<const float> reference, std::span<float> values) {
+  const auto key = std::uint64_t{npc} << 8 | part;
+  const auto now = HostNowUs();
+  std::lock_guard _(m_posesLock);
+  const auto it = m_trackSets.find(key);
+  if (it == m_trackSets.end() || now > it->second.NewestUs() + 2 * kActorPoseStaleUs)
+    return 0;
+  return it->second.Apply(now, trackHash, reference, values);
 }
 
 std::uint32_t Runtime::RigPosesReceived() {
