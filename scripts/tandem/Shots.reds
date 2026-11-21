@@ -37,11 +37,12 @@ public class TandemShots {
   private let m_boostFactor: array<Float>;
   private let m_logged: array<CName>;
   private let m_handed: Bool;
-  // The proxy last given the shot's weapon, and when: given once, then its
-  // spawn is waited for (giving again every frame removed the one still
-  // spawning: RemoveItemFromSlot destroys a pending spawn).
-  private let m_givenTo: EntityID;
-  private let m_givenAt: Float;
+  // The proxies given the shot's weapon, and when: each given once, then
+  // its spawn is waited for (giving again every frame removed the one still
+  // spawning: RemoveItemFromSlot destroys a pending spawn). Per proxy: two
+  // empty-handed ones firing at us each get theirs.
+  private let m_givenTo: array<EntityID>;
+  private let m_givenAt: array<Float>;
   // Guest: why the last shot is still waiting, and the shots fired.
   private let m_waitingFor: String;
   private let m_fired: Int32;
@@ -55,8 +56,6 @@ public class TandemShots {
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
-    this.m_givenTo = EntityID.FromHash(0ul);
-    this.m_givenAt = 0.0;
   }
 
   public static func Of(game: GameInstance) -> ref<TandemShots> {
@@ -124,15 +123,20 @@ public class TandemShots {
     // puppet, from the NPC's real line of sight (the guest's proxy has no
     // senses: there it reads 0, and every shot missed). 0 lets it land on
     // the guest's game, any other value has it aimed to miss there.
+    // By a player's rules, as it would be at our own V: a puppet is no
+    // player to the game's own (TandemShouldHitAsPlayer, below).
     let decided = MaxF(tbh, 1.0);
     let component = target.GetTargetShootComponent();
-    if IsDefined(component) {
-      let aim = target.GetWorldPosition();
-      aim.Z += 1.45;
-      let miss = false;
-      component.HandleBeingShot(owner, weapon, aim, 0.0, tbh, miss);
-      if !miss {
+    let host = GetPlayer(this.m_game);
+    if IsDefined(component) && IsDefined(host) {
+      let group = 1.0;
+      let cover = 1.0;
+      if component.TandemShouldHitAsPlayer(owner, weapon, tbh, host, group, cover) {
         decided = 0.0;
+      }
+      this.Once(n"asPlayer", s"shots: shots at guests land by a V's time between hits (base \(TandemShots.Base(host)) for the puppet's \(TandemShots.Base(target)), with the group and cover coefficients)");
+      if group != 1.0 || cover != 1.0 {
+        this.Once(n"asPlayerFactors", s"shots: a shot at player \(guest): group x\(group), cover x\(cover) (a puppet had neither)");
       }
     } else {
       this.Once(n"noTbh", s"shots: player \(guest)'s puppet has no target shoot component: its game aims every shot to miss");
@@ -142,6 +146,11 @@ public class TandemShots {
     ArrayPush(this.m_announcedAt, guest);
     ArrayPush(this.m_announcedTime, this.Now());
     this.Once(n"announce", s"shots: npc \(npc)'s shots at player \(guest) are fired and decided on their game (first at speed \(factor))");
+  }
+
+  // The time between hits' base coefficient of a target (TBHsBaseCoefficient).
+  public static func Base(target: ref<GameObject>) -> Float {
+    return GameInstance.GetStatsSystem(target.GetGame()).GetStatValue(Cast<StatsObjectID>(target.GetEntityID()), gamedataStatType.TBHsBaseCoefficient);
   }
 
   // A hit on a guest's puppet from a shot that guest's game simulates: not
@@ -249,6 +258,16 @@ public class TandemShots {
       }
       i += 1;
     }
+    // Weapons given a while ago: long in the proxy's hand, or it is gone.
+    let g = 0;
+    while g < ArraySize(this.m_givenAt) {
+      if now - this.m_givenAt[g] > 10.0 || now < this.m_givenAt[g] {
+        ArrayErase(this.m_givenTo, g);
+        ArrayErase(this.m_givenAt, g);
+      } else {
+        g += 1;
+      }
+    }
     // Fired just now: their projectiles have been set up.
     while ArraySize(this.m_firedTime) > 0 && now - this.m_firedTime[0] > 0.5 {
       ArrayErase(this.m_firedBy, 0);
@@ -287,9 +306,14 @@ public class TandemShots {
         this.m_handed = true;
         TandemNative.LogDebug(s"shots: npc \(shot.npc)'s proxy has nothing in its hand: given \(TDBID.ToStringDEBUG(shot.weapon))");
       }
-      if proxy.GetEntityID() != this.m_givenTo || now - this.m_givenAt > 2.0 || now < this.m_givenAt {
-        this.m_givenTo = proxy.GetEntityID();
-        this.m_givenAt = now;
+      let given = ArrayFindFirst(this.m_givenTo, proxy.GetEntityID());
+      if given < 0 || now - this.m_givenAt[given] > 2.0 || now < this.m_givenAt[given] {
+        if given < 0 {
+          ArrayPush(this.m_givenTo, proxy.GetEntityID());
+          ArrayPush(this.m_givenAt, now);
+        } else {
+          this.m_givenAt[given] = now;
+        }
         TandemWeapons.Hold(proxy, slot, shot.weapon);
       }
       this.m_waitingFor = "an empty hand";
@@ -489,5 +513,86 @@ public class TandemShots {
     ArrayClear(this.m_boostFactor);
     ArrayClear(this.m_recentBy);
     ArrayClear(this.m_recentAt);
+    ArrayClear(this.m_givenTo);
+    ArrayClear(this.m_givenAt);
   }
+}
+
+// The host's call on whether its NPC's shot at a guest's puppet may land,
+// by the game's rules for a shot at a player (TargetShootComponent
+// .ShouldBeHit, final.reds:174004). A puppet is no player there: the group
+// coefficient (several shooters at one V each hit it less often, from the
+// recent hitters only a player's component records) and the cover one (a V
+// behind cover is hit less) were 1, and the base coefficient and the
+// difficulty's multiplier were the puppet's NPC record's. Here they are a
+// player's: the host's own V's stats and package stand for the guest's
+// (the same player record). Out: the group and cover coefficients used.
+@addMethod(TargetShootComponent)
+public final func TandemShouldHitAsPlayer(weaponOwner: ref<GameObject>, weapon: ref<WeaponObject>, coefficient: Float, player: ref<GameObject>, out group: Float, out cover: Float) -> Bool {
+  let target = this.GetGameObject();
+  let game = target.GetGame();
+  let stats = GameInstance.GetStatsSystem(game);
+  let source = weaponOwner.GetSourceShootComponent();
+  group = 1.0;
+  cover = 1.0;
+  if !IsDefined(source) {
+    return true;
+  }
+  let weaponId = ItemID.GetTDBID(weapon.GetItemID());
+  if this.m_weaponTDBID != weaponId {
+    this.m_weaponRecord = TweakDBInterface.GetWeaponItemRecord(weaponId);
+    this.m_weaponTDBID = weaponId;
+  }
+  let puppet = weaponOwner as ScriptedPuppet;
+  if IsDefined(puppet) && RPGManager.IsTechPierceEnabled(game, weaponOwner, weapon.GetItemID()) {
+    let blocked = puppet.GetSenses().GetVisibilityTraceEndToAgentDist(target);
+    if blocked > 0.0 && blocked < 1000000000.0 {
+      return false;
+    }
+  }
+  let visibility = this.GetVisibilityCoefficient(weaponOwner, weapon, target, coefficient);
+  if coefficient > 0.0 && visibility <= 0.0 {
+    return false;
+  }
+  let accuracy = stats.GetStatValue(Cast<StatsObjectID>(weaponOwner.GetEntityID()), gamedataStatType.Accuracy);
+  let distance = this.GetDistanceCoefficient(weapon, target.GetWorldPosition());
+  if accuracy == 0.0 || distance == 0.0 {
+    return false;
+  }
+  let own = player.GetTargetShootComponent();
+  let pack = IsDefined(own) ? own.GetPackageName() : this.GetPackageName();
+  group = this.GetGroupCoefficient(weaponOwner);
+  if Equals(RPGManager.GetItemType(weapon.GetItemID()), gamedataItemType.Wea_HeavyMachineGun) {
+    group = LerpF(TweakDBInterface.GetFloat(TDBID.Create(pack + ".HMGGroupMultiplier"), 1.0), 1.0, group);
+  }
+  if !source.CanSeeSecondaryPointOfTarget(target) {
+    let smart = IsDefined(this.m_weaponRecord) && IsDefined(this.m_weaponRecord.Evolution()) && Equals(this.m_weaponRecord.Evolution().Type(), gamedataWeaponEvolution.Smart);
+    cover = TweakDBInterface.GetFloat(TDBID.Create(pack + (smart ? ".coverVsSmartWeaponsMultiplier" : ".coverVsNormalWeaponsMultiplier")), 1.0);
+  }
+  let field = ".normalModeMultiplier";
+  switch GameInstance.GetStatsDataSystem(game).GetDifficulty() {
+    case gameDifficulty.Story:
+      field = ".storyModeMultiplier";
+      break;
+    case gameDifficulty.Easy:
+      field = ".easyModeMultiplier";
+      break;
+    case gameDifficulty.VeryHard:
+      field = ".hardModeMultiplier";
+      break;
+    default:
+      break;
+  }
+  let between = TweakDBInterface.GetFloat(TDBID.Create(pack + field), 1.0)
+    * stats.GetStatValue(Cast<StatsObjectID>(player.GetEntityID()), gamedataStatType.TBHsBaseCoefficient)
+    * stats.GetStatValue(Cast<StatsObjectID>(weaponOwner.GetEntityID()), gamedataStatType.TBHsBaseSourceMultiplierCoefficient)
+    * (1.0 / accuracy) * distance * visibility * group * cover
+    * source.GetLineOfSightTBHModifier(target);
+  let now = EngineTime.ToFloat(GameInstance.GetSimTime(game));
+  if now - this.GetLastHitTime() < between {
+    return false;
+  }
+  this.SetLastHitTime(now);
+  this.InsertRecentHitter(weaponOwner);
+  return true;
 }
