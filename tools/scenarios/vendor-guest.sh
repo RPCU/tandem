@@ -6,6 +6,18 @@
 ensure join
 at "${VENDOR_AT:-vik-clinic}"
 cmd vendor near
+expect 'vendor: (near|no vendor of our own world) ' 10
+if since | grep -qa 'vendor: no vendor of our own world'; then
+  # Ours hidden in an earlier session (behind its owner's proxy, or dead
+  # there: this scenario's own end, ledger-guest's Viktor, 2026-11-21) is
+  # hidden until it streams out: away (VENDOR_AWAY, far enough for that) and
+  # back, once. What the spot had instead is noted.
+  while read -r lacking; do note "$lacking"; done < <(since | grep -aoE 'vendor:   ?[0-9r].*' | tail -12)
+  at "${VENDOR_AWAY:-kabuki-market}"
+  at "${VENDOR_AT:-vik-clinic}"
+  mark
+  cmd vendor near
+fi
 expect 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' 10
 line=$(since | grep -oE 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' | tail -1)
 note "$line"

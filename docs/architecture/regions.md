@@ -749,6 +749,7 @@ vanishes, an heir's kill), `tests/referee_test.cpp` (the ledger's rules),
 `tandem-peer --mode region --region-placed HEX --region-kill-at S`).
 In the game: `tools/game.sh cmd ledger`; `ledger near` / `ledger goto`
 (the nearest placed, alive, non-quest NPC of our own world within 200 m,
+a vendor only when no other is there: ours stays hidden after the test,
 with how many NPCs and placed ones are there: `ledger-guest`'s; none
 placed: how many are not the crowd's, how many vendors, and the nearest
 of the former with its id; kabuki-market had 46 NPCs, none static,
