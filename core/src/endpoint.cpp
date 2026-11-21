@@ -4227,13 +4227,14 @@ void Endpoint::UpdateSessionLevel(std::vector<SessionEvent> &out) {
     return;
   if (m_localLevel)
     m_levels[m_you] = *m_localLevel;
-  // A player that has not said its level yet is left out of the mean.
+  // A player that has not said its level yet is left out of the mean (and
+  // of the lowest, for level_gap).
   std::vector<std::uint8_t> levels;
   for (const auto &[player, level] : m_levels)
     levels.push_back(level);
   if (levels.empty())
     return;
-  const proto::SessionLevel session{.level = progress::MeanLevel(levels),
+  const proto::SessionLevel session{.level = progress::SessionLevelOf(levels, m_levelGap),
                                     .players = static_cast<std::uint8_t>(levels.size())};
   if (m_sessionLevel == session)
     return;

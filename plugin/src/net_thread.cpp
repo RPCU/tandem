@@ -317,6 +317,8 @@ struct NetThread::Impl {
       Tap(*endpoint);
     if (runtime.config.sceneKbps != 0)
       endpoint->SetSceneBudget(runtime.config.sceneKbps * 125);
+    // The host's level_gap (progress::SessionLevelOf), as this session began.
+    endpoint->SetLevelGap(config.levelGap);
     // The recorder (recording.hpp): everything this endpoint says. Before
     // the repeats below, so a segment starts with our V's look and seat.
     if (Recording::Get().Enabled())

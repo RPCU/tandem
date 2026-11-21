@@ -801,6 +801,9 @@ public:
   // The level the host scales its NPCs to (none: not said yet), and the
   // host's level for each NPC it shares.
   const std::optional<proto::SessionLevel> &SessionLevel() const { return m_sessionLevel; }
+  // Host: tandem.ini `level_gap` (progress::SessionLevelOf; 0, the default
+  // here: the plain mean), taken at the next change of anyone's level.
+  void SetLevelGap(std::uint8_t gap) { m_levelGap = gap; }
   const std::map<proto::NpcId, proto::NpcLevel> &NpcLevels() const { return m_npcLevels; }
   // How many players each NPC we know of is scaled for, as its owner said.
   const std::map<proto::NpcId, proto::NpcScale> &NpcScales() const { return m_npcScale; }
@@ -1725,6 +1728,7 @@ private:
   std::optional<std::uint8_t> m_localLevel;
   std::map<proto::PlayerId, std::uint8_t> m_levels;
   std::optional<proto::SessionLevel> m_sessionLevel;
+  std::uint8_t m_levelGap{0};
   std::map<proto::NpcId, proto::NpcLevel> m_npcLevels;
   // Host: levels said of NPCs whose spawn has not been sent yet.
   std::map<proto::NpcId, proto::NpcLevel> m_npcLevelsEarly;

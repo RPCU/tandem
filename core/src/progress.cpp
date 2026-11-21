@@ -13,6 +13,14 @@ std::uint8_t MeanLevel(std::span<const std::uint8_t> levels) {
   return static_cast<std::uint8_t>((2 * sum + count) / (2 * count));
 }
 
+std::uint8_t SessionLevelOf(std::span<const std::uint8_t> levels, std::uint8_t gap) {
+  const auto mean = MeanLevel(levels);
+  if (levels.empty() || gap == 0)
+    return mean;
+  const auto lowest = *std::ranges::min_element(levels);
+  return static_cast<std::uint8_t>(std::min<unsigned>(mean, unsigned{lowest} + gap));
+}
+
 float NpcShift(const NpcScale &npc) {
   if (npc.sessionLevel <= 0.f || npc.hostLevel <= 0.f || npc.fixed)
     return 0.f;

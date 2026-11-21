@@ -25,6 +25,18 @@ TEST_CASE("the session's level is the mean of its players' levels, rounded") {
   CHECK(MeanLevel(std::vector<std::uint8_t>{100, 100, 100, 100}) == 100);
 }
 
+TEST_CASE("level_gap keeps the session's level within reach of its lowest player") {
+  CHECK(SessionLevelOf({}, 8) == 0);
+  // A new V beside a veteran: never more than the gap above the new one.
+  CHECK(SessionLevelOf(std::vector<std::uint8_t>{40, 1}, 8) == 9);
+  CHECK(SessionLevelOf(std::vector<std::uint8_t>{40, 1}, 0) == 21); // off: the mean
+  // Close levels: the mean, untouched.
+  CHECK(SessionLevelOf(std::vector<std::uint8_t>{12, 8}, 8) == 10);
+  CHECK(SessionLevelOf(std::vector<std::uint8_t>{60, 1, 1}, 5) == 6);
+  CHECK(SessionLevelOf(std::vector<std::uint8_t>{37}, 8) == 37);
+  CHECK(SessionLevelOf(std::vector<std::uint8_t>{100, 100}, kMaxLevelGap) == 100);
+}
+
 TEST_CASE("a host NPC is moved from the host's level to the session's") {
   // No curve read: by the difference of the two levels.
   CHECK(NpcShift({.level = 50.f, .hostLevel = 50.f, .sessionLevel = 30.f}) == -20.f);
@@ -499,6 +511,32 @@ TEST_CASE("the session's level follows who is in it: joins, level-ups, leaves, v
   }));
   CHECK(host->SessionLevel()->level == 50);
   CHECK(heard.Sessions(0).back() == proto::SessionLevel{.level = 50, .players = 1});
+}
+
+TEST_CASE("the host's level_gap caps the session's level for a new V") {
+  const auto port = NextPort();
+  std::string error;
+  auto host = Endpoint::Host({"host"}, port, error, kFast);
+  REQUIRE_MESSAGE(host, error);
+  host->SetLevelGap(8);
+  Heard heard;
+  CHECK(host->SendCombat(proto::PlayerLevel{.player = 1, .level = 40}));
+  auto a = Endpoint::Join({"a"}, "127.0.0.1", port, error, kFast);
+  REQUIRE_MESSAGE(a, error);
+  CHECK_FALSE(a->SendCombat(proto::PlayerLevel{.level = 1}));
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return a->SessionLevel() && a->SessionLevel()->players == 2;
+  }));
+  // The mean would be 21 (40 and 1): 1 + 8.
+  CHECK(*a->SessionLevel() == proto::SessionLevel{.level = 9, .players = 2});
+  CHECK(heard.Sessions(0).back().level == 9);
+  // The new V levels up: the cap moves with it, up to the mean.
+  CHECK(a->SendCombat(proto::PlayerLevel{.level = 30}));
+  REQUIRE(Pump({host.get(), a.get()}, [&](std::size_t i, const auto &events) {
+    heard(i, events);
+    return a->SessionLevel()->level == 35;
+  }));
 }
 
 TEST_CASE("an NPC's level reaches every guest once, late joiners too, and goes with the NPC") {
