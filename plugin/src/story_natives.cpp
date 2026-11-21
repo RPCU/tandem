@@ -760,10 +760,10 @@ struct TandemStory : Red::IScriptable {
   // the reasons (story::kMoment*) in `reasons` of the last call, and whether
   // the moment is on (held 1.5 s after its reasons go).
   static bool SpectateMoment(std::int32_t tier, bool isPrivate, bool restricted, bool questMount,
-                             bool mode, bool elsewhere) {
+                             bool mode, bool camera, bool elsewhere) {
     auto &kept = Story::Get();
     const auto reasons = static_cast<std::uint8_t>(
-        SpectateReasons(tier, isPrivate, restricted, questMount, mode, elsewhere));
+        SpectateReasons(tier, isPrivate, restricted, questMount, mode, camera, elsewhere));
     if (isPrivate || !SpectateOn()) {
       kept.Moment().Clear();
       return false;
@@ -771,26 +771,38 @@ struct TandemStory : Red::IScriptable {
     return kept.Moment().Update(reasons, Runtime::Get().HostNowUs());
   }
   static std::int32_t SpectateReasons(std::int32_t tier, bool isPrivate, bool restricted,
-                                      bool questMount, bool mode, bool elsewhere) {
+                                      bool questMount, bool mode, bool camera, bool elsewhere) {
     return story::MomentReasons({.tier = Byte(tier),
                                  .isPrivate = isPrivate,
                                  .restricted = restricted,
                                  .questMount = questMount,
                                  .mode = mode,
+                                 .camera = camera,
                                  .elsewhere = elsewhere,
                                  .test = Story::Get().TestMoment()});
   }
+  // Host: our moment is one only our view shows (kStoryWatch).
+  static bool SpectateHostWatch() {
+    return Story::Get().Moment().On() && Story::Get().Moment().Watch();
+  }
   // Guest, four times a second: 0 not watching, 1 watching, 2 starts
-  // watching now, 3 stops now (story::Spectator).
-  static std::int32_t SpectateUpdate(bool hostMoment, bool hostPrivate, bool grouped, bool ourAway,
+  // watching now, 3 stops now (story::Spectator); why: SpectateWhy.
+  static std::int32_t SpectateUpdate(bool hostMoment, bool hostWatch, bool hostPrivate,
+                                     bool grouped, bool ourAway, bool hostElsewhere,
+                                     std::int32_t hostTier, bool hostRiding, bool inVehicle,
                                      bool hostKnown, float hostX, float hostY, float hostZ, float x,
                                      float y, float z) {
     auto &spectator = Story::Get().Spectator();
     const auto change = spectator.Update({.on = SpectateOn(),
                                           .hostMoment = hostMoment,
+                                          .hostWatch = hostWatch,
                                           .hostPrivate = hostPrivate,
                                           .grouped = grouped,
                                           .ourAway = ourAway,
+                                          .hostElsewhere = hostElsewhere,
+                                          .hostTier = Byte(hostTier),
+                                          .hostRiding = hostRiding,
+                                          .inVehicle = inVehicle,
                                           .hostKnown = hostKnown,
                                           .host = {hostX, hostY, hostZ},
                                           .guest = {x, y, z}});
@@ -800,6 +812,13 @@ struct TandemStory : Red::IScriptable {
       return 3;
     return spectator.Watching() ? 1 : 0;
   }
+  // Guest: why we watch (story::Spectator::Why: 0 we do not, 1 a cutscene,
+  // 2 another world, 3 the host's V beyond our reach, 4 the quest's camera).
+  static std::int32_t SpectateWhy() {
+    return static_cast<std::int32_t>(Story::Get().Spectator().Reason());
+  }
+  // Guest: we stood in the host's moment once (played or watched).
+  static bool SpectateShared() { return Story::Get().Spectator().Shared(); }
   // Guest: the player pressed "Stop watching" (true: we were watching).
   static bool SpectateLeave() {
     return Story::Get().Spectator().Leave() == story::Spectator::Change::Stop;
@@ -1316,6 +1335,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SpectateMoment);
   RTTI_METHOD(SpectateReasons);
   RTTI_METHOD(SpectateUpdate);
+  RTTI_METHOD(SpectateHostWatch);
+  RTTI_METHOD(SpectateWhy);
+  RTTI_METHOD(SpectateShared);
   RTTI_METHOD(SpectateLeave);
   RTTI_METHOD(SpectateLift);
   RTTI_METHOD(SpectateWatching);

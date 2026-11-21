@@ -274,6 +274,23 @@ TEST_CASE("referee: a scripted moment is the host's V's, spectating a guest's") 
   guest.Received(1, proto::StoryState{.player = 1, .tier = 1, .flags = proto::kStorySpectating},
                  kSecond);
   CHECK(Rules(guest) == std::vector<std::string>{"authority.host-only", "value.range"});
+
+  // A moment to watch is the host's word too, and always a moment.
+  auto watch = Guest();
+  watch.Received(
+      1,
+      proto::StoryState{.player = 1, .tier = 5, .flags = proto::kStoryMoment | proto::kStoryWatch},
+      kSecond);
+  CHECK(Rules(watch).empty());
+  watch.Received(1, proto::StoryState{.player = 1, .tier = 5, .flags = proto::kStoryWatch},
+                 kSecond);
+  CHECK(Rules(watch) == std::vector<std::string>{"value.range"});
+  auto told = Host();
+  told.Received(
+      2,
+      proto::StoryState{.player = 2, .tier = 5, .flags = proto::kStoryMoment | proto::kStoryWatch},
+      kSecond);
+  CHECK(Rules(told) == std::vector<std::string>{"authority.host-only"});
 }
 
 TEST_CASE("referee: the host may not say what only a guest asks") {

@@ -365,55 +365,135 @@ TEST_CASE("the host's scripted moment: read from its own game, held across short
   CHECK(MomentReasons({}) == 0); // free roam, a fight, its own driving
   CHECK(MomentReasons({.tier = 1}) == 0);
   CHECK(MomentReasons({.tier = 2}) == story::kMomentScene);
+  CHECK(MomentReasons({.tier = 5}) == (story::kMomentScene | story::kMomentCutscene));
   CHECK(MomentReasons({.restricted = true, .questMount = true}) ==
         (story::kMomentRestricted | story::kMomentMounted));
   CHECK(MomentReasons({.mode = true}) == story::kMomentMode);
+  CHECK(MomentReasons({.camera = true}) == story::kMomentCamera);
   CHECK(MomentReasons({.elsewhere = true}) == story::kMomentElsewhere);
   CHECK(MomentReasons({.test = true}) == story::kMomentTest);
   // A private scene is never watched, whatever else holds the V.
   CHECK(MomentReasons({.tier = 4, .isPrivate = true, .restricted = true}) == 0);
+  // Played from the guests' own V: a scene of tier 2 to 4, restrictions, a
+  // quest ride, a body mode. Only the host's view shows the rest.
+  for (const auto played :
+       {story::kMomentScene, story::kMomentRestricted, story::kMomentMounted, story::kMomentMode})
+    CHECK((played & story::kMomentWatch) == 0);
+  for (const auto watched :
+       {story::kMomentCutscene, story::kMomentElsewhere, story::kMomentCamera, story::kMomentTest})
+    CHECK((watched & story::kMomentWatch) != 0);
 
   story::HostMoment moment;
   CHECK_FALSE(moment.Update(0, 1'000'000));
   CHECK(moment.Update(story::kMomentScene, 2'000'000));
+  CHECK_FALSE(moment.Watch());
   // Between two sections: still on, then off once the hold is over.
   CHECK(moment.Update(0, 2'000'000 + story::kMomentHoldUs - 1));
   CHECK(moment.Update(story::kMomentMounted, 3'000'000));
   CHECK(moment.Update(0, 3'000'000 + story::kMomentHoldUs - 1));
   CHECK_FALSE(moment.Update(0, 3'000'000 + story::kMomentHoldUs));
   CHECK(moment.Update(story::kMomentMode, 9'000'000));
+  // A cutscene in it: to watch, held alike; the moment goes on after it.
+  CHECK(moment.Update(story::kMomentScene | story::kMomentCutscene, 10'000'000));
+  CHECK(moment.Watch());
+  CHECK(moment.Update(story::kMomentScene, 10'000'000 + story::kMomentHoldUs - 1));
+  CHECK(moment.Watch());
+  CHECK(moment.Update(story::kMomentScene, 10'000'000 + story::kMomentHoldUs));
+  CHECK_FALSE(moment.Watch());
   moment.Clear();
   CHECK_FALSE(moment.On());
 }
 
-TEST_CASE("a guest spectates the host's moment from beside it, and follows it anywhere") {
+TEST_CASE("a guest plays the host's moment from its own V, watches only what it cannot join") {
   using Change = story::Spectator::Change;
+  using Why = story::Spectator::Why;
   story::SpectateInput in{.on = true,
                           .hostMoment = true,
                           .grouped = true,
+                          .hostTier = 2,
                           .hostKnown = true,
                           .host = {0.f, 0.f, 0.f},
-                          .guest = {story::kMomentNear + 5.f, 0.f, 0.f}};
+                          .guest = {10.f, 0.f, 0.f}};
   story::Spectator spectator;
-  // Too far when it begins: not ours to watch.
+  // A dialogue, a walk and talk, restrictions, a ride along: played.
   CHECK(spectator.Update(in) == Change::None);
-  in.guest = {10.f, 0.f, 0.f};
-  CHECK(spectator.Update(in) == Change::Start);
-  CHECK(spectator.Watching());
-  // A quest teleport, a ride: the host's V is a kilometre away, we follow.
-  in.host = {1000.f, 0.f, 0.f};
-  CHECK(spectator.Update(in) == Change::None);
-  in.hostKnown = false; // its puppet is still streaming in
-  CHECK(spectator.Update(in) == Change::None);
-  CHECK(spectator.Watching());
-  // The moment is over.
-  in.hostMoment = false;
-  CHECK(spectator.Update(in) == Change::Stop);
+  CHECK(spectator.Shared());
   CHECK_FALSE(spectator.Watching());
+  in.hostRiding = true;
+  in.inVehicle = true; // seated in the copy, or carried along
+  in.host = {1000.f, 0.f, 0.f};
+  in.guest = {1000.f, 1.f, 0.f};
+  CHECK(spectator.Update(in) == Change::None);
+
+  // (a) a cutscene: watched, wherever we are; over, we play again at once,
+  // the moment going on.
+  in.hostWatch = true;
+  in.hostTier = 5;
+  CHECK(spectator.Update(in) == Change::Start);
+  CHECK(spectator.Reason() == Why::Cutscene);
+  in.hostWatch = false;
+  in.hostTier = 3;
+  CHECK(spectator.Update(in) == Change::Stop);
+  CHECK(spectator.Reason() == Why::None);
+  // (b) the host's V in another world, (d) the quest's camera.
+  in.hostWatch = true;
+  in.hostElsewhere = true;
+  CHECK(spectator.Update(in) == Change::Start);
+  CHECK(spectator.Reason() == Why::Elsewhere);
+  in.hostElsewhere = false;
+  CHECK(spectator.Update(in) == Change::None);
+  CHECK(spectator.Reason() == Why::View);
+  in.hostWatch = false;
+  CHECK(spectator.Update(in) == Change::Stop);
+  // A cutscene over while the host rides on and we were carried in its
+  // copy (riding nothing ourselves): watched on until the ride ends.
+  in.inVehicle = false;
+  in.hostWatch = true;
+  in.hostTier = 5;
+  CHECK(spectator.Update(in) == Change::Start);
+  in.hostWatch = false;
+  in.hostTier = 3;
+  CHECK(spectator.Update(in) == Change::None);
+  CHECK(spectator.Reason() == Why::Taken);
+  in.hostRiding = false;
+  CHECK(spectator.Update(in) == Change::Stop);
+  in.hostRiding = true;
+
+  // (c) taken beyond our reach while we ride nothing: watched, carried in
+  // its copy until its ride ends, then in reach: played again.
+  in.inVehicle = false;
+  in.guest = {1000.f - story::kSpectateReach - 5.f, 0.f, 0.f};
+  CHECK(spectator.Update(in) == Change::Start);
+  CHECK(spectator.Reason() == Why::Taken);
+  in.guest = {1000.f, 1.f, 0.f}; // carried in the copy
+  CHECK(spectator.Update(in) == Change::None);
+  in.hostRiding = false;
+  CHECK(spectator.Update(in) == Change::Stop);
+  // On foot: beyond reach, then carried back to it.
+  in.guest = {1000.f + story::kSpectateReach + 5.f, 0.f, 0.f};
+  CHECK(spectator.Update(in) == Change::Start);
+  in.guest = {1000.f + story::kSpectateReachBack + 5.f, 0.f, 0.f};
+  CHECK(spectator.Update(in) == Change::None);
+  in.guest = {1003.f, 0.f, 0.f};
+  CHECK(spectator.Update(in) == Change::Stop);
+  // Driving after it in a car of our own: played, however far.
+  in.inVehicle = true;
+  in.guest = {0.f, 0.f, 0.f};
+  CHECK(spectator.Update(in) == Change::None);
+
+  // The moment is over: a guest that never stood in the next one does not
+  // watch its cutscene.
+  in.hostMoment = false;
+  CHECK(spectator.Update(in) == Change::None);
+  CHECK_FALSE(spectator.Shared());
+  in.hostMoment = true;
+  in.hostWatch = true;
+  in.hostTier = 5;
+  in.guest = {1000.f + story::kMomentNear + 5.f, 0.f, 0.f};
+  CHECK(spectator.Update(in) == Change::None);
 
   // A private scene, our own other world, apart, switched off: none.
-  in = {
-      .on = true, .hostMoment = true, .grouped = true, .hostKnown = true, .guest = {5.f, 0.f, 0.f}};
+  in.guest = {1005.f, 0.f, 0.f};
   for (auto change : {&story::SpectateInput::hostPrivate, &story::SpectateInput::ourAway}) {
     auto other = in;
     other.*change = true;
@@ -432,15 +512,16 @@ TEST_CASE("a guest spectates the host's moment from beside it, and follows it an
   turned.hostPrivate = true;
   CHECK(spectator.Update(turned) == Change::Stop);
 
-  // The player leaves: not again in this moment, again in the next one.
+  // The player leaves: not again for this reason, again for the next one.
   REQUIRE(spectator.Update(in) == Change::Start);
   CHECK(spectator.Leave() == Change::Stop);
   CHECK(spectator.Leave() == Change::None);
   CHECK(spectator.Update(in) == Change::None);
   CHECK(spectator.Declined());
   auto over = in;
-  over.hostMoment = false;
+  over.hostWatch = false;
   CHECK(spectator.Update(over) == Change::None);
+  CHECK_FALSE(spectator.Declined());
   CHECK(spectator.Update(in) == Change::Start);
 
   // The session ends, or the host vanishes.

@@ -686,6 +686,7 @@ TEST_CASE("story messages survive encoding") {
   // Spectating: the host's moment, a guest watching it (free bits of flags).
   RoundTrips(StoryState{.player = 1, .tier = 2, .flags = kStoryMoment | kStoryReplacer});
   RoundTrips(StoryState{.player = 2, .tier = 1, .flags = kStorySpectating});
+  RoundTrips(StoryState{.player = 1, .tier = 5, .flags = kStoryMoment | kStoryWatch});
   RoundTrips(QuestReward{.reward = 0x15e213846eULL, .quest = 0x77});
 }
 

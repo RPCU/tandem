@@ -140,60 +140,86 @@ bool InMoment(const MomentInput &in, bool was);
 // ---- Spectating (docs/architecture/story.md, "Spectating") ----
 //
 // A scripted moment of the host's V, read from its own game, no quest list:
-// what it is in now (MomentReasons). A guest beside the host when one
-// begins watches it through the host's camera, its own V parked, until it
-// is over (Spectator).
+// what it is in now (MomentReasons). Spectating is the last resort: a guest
+// that shared the moment plays it from its own V (scene replay, the
+// restrictions, the ride along) and watches through the host's camera, its
+// own V parked, only while it cannot take part from its own body
+// (Spectator's reasons).
 struct MomentSignals {
   std::uint8_t tier{}; // the host's scene tier (GameplayTier 1..5)
   bool isPrivate{};    // in a private scene: never watched
   bool restricted{};   // quest restrictions on how it moves (not only weapons away)
   bool questMount{};   // mounted by its scene or quest (transit kind Scene)
   bool mode{};         // a scripted body or camera mode (NoMovement, ForceCrouch...)
+  bool camera{};       // the quest's camera animation holds the host's view
   bool elsewhere{};    // cyberspace, a braindance, playing as Johnny
   bool test{};         // cmd story spectate on (the host's test moment)
 };
 inline constexpr std::uint8_t kMomentScene = 1, kMomentRestricted = 2, kMomentMounted = 4,
-                              kMomentMode = 8, kMomentElsewhere = 16, kMomentTest = 32;
+                              kMomentMode = 8, kMomentElsewhere = 16, kMomentTest = 32,
+                              kMomentCutscene = 64, kMomentCamera = 128;
+// The reasons only the host's view shows (kStoryWatch): a cutscene (tier 5),
+// another world, the quest's camera, the test moment. The others (a scene of
+// tier 2 to 4, restrictions, a quest ride, a body mode) are played.
+inline constexpr std::uint8_t kMomentWatch =
+    kMomentCutscene | kMomentElsewhere | kMomentCamera | kMomentTest;
 // The reasons the host's V is in a moment now (0: none; always 0 in a
 // private scene). A fight or the player's own driving is none of them.
 std::uint8_t MomentReasons(const MomentSignals &signals);
 
 // The host's moment, held kMomentHoldUs after its reasons go, so that a
 // scene's sections, a loading screen or a mount between two rides do not
-// end it and start another.
+// end it and start another; its watch reasons (kMomentWatch) held alike.
 inline constexpr std::uint64_t kMomentHoldUs = 1'500'000;
 class HostMoment {
 public:
   // True while the moment is on.
   bool Update(std::uint8_t reasons, std::uint64_t nowUs);
   bool On() const { return m_on; }
+  // A watch reason is on (kStoryWatch).
+  bool Watch() const { return m_watch; }
   // A private scene, or the session's end: off at once.
   void Clear();
 
 private:
-  bool m_on{};
-  std::uint64_t m_lastUs{};
+  bool m_on{}, m_watch{};
+  std::uint64_t m_lastUs{}, m_watchLastUs{};
 };
 
+// How far the host's V may be taken from ours before we cannot follow it
+// from our own body (the NPC links' reach, regions.md); back in reach at
+// kSpectateReachBack.
+inline constexpr float kSpectateReach = 150.f;
+inline constexpr float kSpectateReachBack = 120.f;
+
 struct SpectateInput {
-  bool on{};          // tandem.ini spectate, and not turned off for the session
-  bool hostMoment{};  // the host says its V is in a moment (kStoryMoment)
-  bool hostPrivate{}; // the host is in a private scene (kStoryPrivate)
-  bool grouped{};     // the host's world is ours
-  bool ourAway{};     // our own V is in another world
+  bool on{};            // tandem.ini spectate, and not turned off for the session
+  bool hostMoment{};    // the host says its V is in a moment (kStoryMoment)
+  bool hostWatch{};     // ... one only its view shows (kStoryWatch)
+  bool hostPrivate{};   // the host is in a private scene (kStoryPrivate)
+  bool grouped{};       // the host's world is ours
+  bool ourAway{};       // our own V is in another world
+  bool hostElsewhere{}; // the host's V is in another world (Elsewhere)
+  std::uint8_t hostTier{};
+  bool hostRiding{}; // the host's V is in a vehicle (its copy here)
+  bool inVehicle{};  // our V rides (along with the host, or a car of its own)
   bool hostKnown{};
   proto::Vec3 host; // the host's V
   proto::Vec3 guest;
 };
-// A guest's rule. It starts watching when the host's moment is on and our V
-// shares it (InMoment's: grouped, in this world, within kMomentNear); from
-// then on it follows the host's V wherever the moment takes it (a quest
-// teleport, a ride, another world), however far, until the moment ends, the
-// player leaves it (not offered again in that moment), we leave the
-// host's world, or the session ends.
+// A guest's rule. It shares the host's moment when it stands in it once
+// (InMoment's: grouped, in this world, within kMomentNear), and from then
+// on, until the moment ends, watches only while one of these holds:
+// (a) a cutscene, (b) the host's V in another world, (d) the quest's camera
+// (the host's kStoryWatch: tier 5, Elsewhere, else d), or (c) the host's V
+// taken beyond our reach (more than kSpectateReach away while we ride
+// nothing; in reach again at kSpectateReachBack; watching while it rides,
+// carried in its copy, it stays (c) until its ride ends). The reason gone,
+// it plays again at once. "Stop watching" declines until the reason ends.
 class Spectator {
 public:
   enum class Change : std::uint8_t { None = 0, Start = 1, Stop = 2 };
+  enum class Why : std::uint8_t { None = 0, Cutscene = 1, Elsewhere = 2, Taken = 3, View = 4 };
   Change Update(const SpectateInput &in);
   // The player pressed "Stop watching".
   Change Leave();
@@ -201,10 +227,15 @@ public:
   Change Lift();
   bool Watching() const { return m_watching; }
   bool Declined() const { return m_declined; }
+  bool Shared() const { return m_shared; }
+  // Why we watch (None: we do not).
+  Why Reason() const { return m_why; }
 
 private:
   bool m_watching{};
-  bool m_declined{}; // left this moment: until it ends
+  bool m_declined{}; // left: until the reason ends
+  bool m_shared{};   // stood in this moment once
+  Why m_why{};
 };
 
 // A guest's restrictions: what its own V has from the host's moment and the
