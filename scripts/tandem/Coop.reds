@@ -3,7 +3,7 @@
 // Main menu (SingleplayerMenuGameController): a "Co-op" entry. Its pages
 // live in the menu's own list, the way the menu shows its items:
 //   Co-op   -> Host a game | Join a game | Join by address | Play solo (once
-//              one is chosen) | Settings | Write a bug report | Back
+//              one is chosen) | Write a bug report | Co-op settings | Back
 //   Settings -> one item per setting (Settings.reds): picking it switches or
 //              cycles it, or asks for a text; saved to tandem.ini at once
 //   Host    -> Continue | Load game | Back      (the game's own load list)
@@ -18,7 +18,8 @@
 // role = join with that address would, without the relay.
 //
 // Pause menu (PauseMenuGameController): "Co-op" -> Host this game | Join a
-// game | Join by address, or, in a session, Invite | Leave session; Settings. These start and stop the
+// game | Join by address, or, in a session, Invite | Partners' mods | Leave
+// session; Co-op settings. These start and stop the
 // session at once (TandemSystem.CoopHost / CoopJoin / CoopLeave).
 //
 // Compatibility (tandem/compat.hpp): when the plugin's startup check found
@@ -440,6 +441,8 @@ public class TandemCoopMenu {
   public let nameFor: TandemCoopAction;
   // A popup closed with Esc: the menu still gets its release (clock ticks).
   public let swallowBack: Int32;
+  // The description of the setting under the cursor (the Settings page).
+  public let about: String;
 
   public static func Create(inGame: Bool) -> ref<TandemCoopMenu> {
     TandemCoop.ReportExpansion();
@@ -563,9 +566,10 @@ public class TandemCoopMenu {
       }
       this.Add("", TandemCoopAction.LoadGame, TandemText.Vanilla("UI-ScriptExports-LoadGame0"));
     }
-    // The settings (the recorder among them), the game's own word for it.
+    // The settings (the recorder among them): "Co-op settings", not the
+    // game's own word, which its Settings entry already uses.
     if Equals(this.page, TandemCoopPage.Coop) {
-      this.Add("Menu-Settings", TandemCoopAction.Settings, TandemText.Vanilla("UI-Labels-Settings"));
+      this.Add("Menu-Settings", TandemCoopAction.Settings);
     }
     this.Add("Menu-Back", TandemCoopAction.Back);
   }
@@ -579,6 +583,47 @@ public class TandemCoopMenu {
       }
     }
     return null;
+  }
+
+  // On our pages the list holds our items alone. Other wraps of
+  // PopulateMenuItemList add theirs after ours (the Mod Settings mod appends
+  // its entry when the game's Mods entry is missing, as on our pages), and
+  // ShowActionsList its Close game: dropped here. True: the list was rebuilt.
+  public func Tidy(list: wref<ListController>) -> Bool {
+    if !IsDefined(list) || Equals(this.page, TandemCoopPage.Root) {
+      this.about = "";
+      return false;
+    }
+    let rebuilt = false;
+    if list.Size() != ArraySize(this.items) {
+      list.Clear();
+      for item in this.items {
+        list.PushData(item);
+      }
+      list.Refresh();
+      rebuilt = true;
+    }
+    this.about = "";
+    if Equals(this.page, TandemCoopPage.Settings) {
+      this.about = TandemSettings.About(this.Pointed(list));
+    }
+    return rebuilt;
+  }
+
+  // The setting key of the row under the mouse, else of the selected one.
+  private func Pointed(list: wref<ListController>) -> String {
+    let i = 0;
+    while i < list.Size() {
+      let widget = list.GetItemAt(i);
+      let row = IsDefined(widget) ? widget.GetController() as ListItemController : null;
+      if IsDefined(row) && Equals(row.GetState(), inkEButtonState.Hover) {
+        let data = row.GetData() as TandemMenuItem;
+        return IsDefined(data) ? data.target : "";
+      }
+      i += 1;
+    }
+    let selected = list.HasValidSelection() ? list.GetSelectedIndex() : -1;
+    return selected >= 0 && selected < ArraySize(this.items) ? this.items[selected].target : "";
   }
 
   public func ItemsText() -> String {
@@ -710,6 +755,9 @@ public class TandemCoopMenu {
         ArrayPush(lines, TandemText.Get("Status-PickHost"));
       } else if Equals(this.page, TandemCoopPage.Settings) {
         ArrayPush(lines, TandemText.Get("Settings-Saved"));
+        if StrLen(this.about) > 0 {
+          ArrayPush(lines, this.about);
+        }
       } else if this.inGame && status.role == 1 && status.state == 3 {
         ArrayPush(lines, TandemCoop.InviteText());
       }
@@ -829,9 +877,19 @@ private func TandemGo(page: TandemCoopPage) -> Void {
   }
 }
 
+// Only our items on our pages (TandemCoopMenu.Tidy), the cursor back on
+// the first when the list was rebuilt.
+@addMethod(SingleplayerMenuGameController)
+private func TandemTidy() -> Void {
+  if this.m_tandem.Tidy(this.m_menuListController) {
+    this.SetCursorOverWidget(inkCompoundRef.GetWidgetByIndex(this.m_menuList, 0));
+  }
+}
+
 @addMethod(SingleplayerMenuGameController)
 private func TandemShowPage() -> Void {
   this.ShowActionsList();
+  this.TandemTidy();
   this.m_tandem.Refresh();
   TandemNative.Log(s"coop: main menu page \(TandemCoopMenu.PageName(this.m_tandem.page)):\(this.m_tandem.ItemsText())");
 }
@@ -849,6 +907,7 @@ protected cb func OnTandemTick(proxy: ref<inkAnimProxy>) -> Bool {
   if !IsDefined(this.m_tandem) {
     return false;
   }
+  this.TandemTidy();
   this.m_tandem.Refresh();
   let command = TandemNative.TakeCommand();
   if StrBeginsWith(command, "coop") {
@@ -1222,9 +1281,19 @@ private func TandemGo(page: TandemCoopPage) -> Void {
   }
 }
 
+// Only our items on our pages (TandemCoopMenu.Tidy), the cursor back on
+// the first when the list was rebuilt.
+@addMethod(PauseMenuGameController)
+private func TandemTidy() -> Void {
+  if this.m_tandem.Tidy(this.m_menuListController) {
+    this.SetCursorOverWidget(inkCompoundRef.GetWidgetByIndex(this.m_menuList, 0));
+  }
+}
+
 @addMethod(PauseMenuGameController)
 private func TandemShowPage() -> Void {
   this.ShowActionsList();
+  this.TandemTidy();
   this.m_tandem.Refresh();
   TandemNative.Log(s"coop: pause menu page \(TandemCoopMenu.PageName(this.m_tandem.page)):\(this.m_tandem.ItemsText())");
 }
@@ -1242,6 +1311,7 @@ protected cb func OnTandemTick(proxy: ref<inkAnimProxy>) -> Bool {
   if !IsDefined(this.m_tandem) {
     return false;
   }
+  this.TandemTidy();
   this.m_tandem.Refresh();
   // The world is paused, and our system's tick with it: its commands too.
   let command = TandemNative.TakeCommand();
