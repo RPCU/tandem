@@ -506,7 +506,7 @@ public class TandemTraffic {
       TandemNative.Log(s"street: player \(event.player) had vehicle \(car.id) first: our V is out of it");
     }
     if car.mine && IsDefined(body) {
-      this.Evict(body);
+      this.Evict(body, system);
     }
     if car.held && IsDefined(body) {
       body.TandemHold(false);
@@ -519,25 +519,50 @@ public class TandemTraffic {
   }
 
   // Owner: whoever sat in a vehicle a player took is out of it, beside its
-  // door, with the game's own reaction to a hijack.
-  private func Evict(body: ref<VehicleObject>) -> Void {
-    let passengers: array<wref<GameObject>>;
-    VehicleComponent.GetAllPassengers(this.m_game, body.GetEntityID(), false, passengers);
+  // door, with the game's own reaction to a hijack. Each seat is read as the
+  // seat check reads it (VehicleComponent.IsSlotOccupied: the mounting
+  // facility's child of that slot), not through GetAllPassengers
+  // (final.reds:89773, which decompiles to a read of the first mounting
+  // only) and without skipping DES-managed NPCs (a driver tandem spawned):
+  // the old way put no one out of a car whose seat a player's puppet then
+  // found taken (traffic-host, 2026-11-21). Players' Vs and
+  // puppets stay, and an NPC another game runs (our proxy of it) is its
+  // owner's to move.
+  private func Evict(body: ref<VehicleObject>, system: ref<TandemSystem>) -> Void {
+    let seats: array<wref<VehicleSeat_Record>>;
+    VehicleComponent.GetSeats(this.m_game, body, seats);
+    let npcs = IsDefined(system) ? system.Npcs() : null;
+    let mounting = GameInstance.GetMountingFacility(this.m_game);
     let side = 0.0;
-    for passenger in passengers {
-      let npc = passenger as ScriptedPuppet;
-      if IsDefined(npc) && !npc.IsPlayer() && !GameInstance.GetDynamicEntitySystem().IsManaged(npc.GetEntityID()) {
-        let slot = n"None";
-        VehicleComponent.GetMountedSlotName(this.m_game, npc, slot);
-        TandemVehicles.Unseat(this.m_game, npc, body.GetEntityID(), slot);
-        side += 1.0;
-        let out = body.GetWorldPosition() - body.GetWorldRight() * (1.6 + 0.6 * side);
-        GameInstance.GetTeleportationFacility(this.m_game).Teleport(npc, out, Quaternion.ToEulerAngles(body.GetWorldOrientation()));
-        let hijack = new VehicleHijackEvent();
-        hijack.driverAllowedToGetAggressive = Equals(slot, n"seat_front_left");
-        npc.QueueEvent(hijack);
-        TandemNative.Log(s"street: \(TDBID.ToStringDEBUG(npc.GetRecordID())) put out of \(NameToString(slot))");
+    let evicted = 0;
+    for seat in seats {
+      let slot = seat.SeatName();
+      let slotId: MountingSlotId;
+      slotId.id = slot;
+      // (child, parent, slot): no child, this vehicle's slot.
+      let info = mounting.GetMountingInfoSingleWithIds(EntityID.FromHash(0ul), body.GetEntityID(), slotId);
+      let npc = EntityID.IsDefined(info.childId) ? GameInstance.FindEntityByID(this.m_game, info.childId) as ScriptedPuppet : null;
+      if IsDefined(npc) {
+        let shared = IsDefined(npcs) ? npcs.NpcOf(npc.GetEntityID()) : 0u;
+        if npc.IsPlayer() || (IsDefined(system) && system.PlayerOfPuppet(npc.GetEntityID()) != 0u) {
+          TandemNative.Log(s"street: a player stays in \(NameToString(slot))");
+        } else if shared != 0u && !npcs.Owns(shared) {
+          TandemNative.Log(s"street: npc \(shared) in \(NameToString(slot)) is another game's: left to its owner");
+        } else {
+          TandemVehicles.Unseat(this.m_game, npc, body.GetEntityID(), slot);
+          side += 1.0;
+          let spot = body.GetWorldPosition() - body.GetWorldRight() * (1.6 + 0.6 * side);
+          GameInstance.GetTeleportationFacility(this.m_game).Teleport(npc, spot, Quaternion.ToEulerAngles(body.GetWorldOrientation()));
+          let hijack = new VehicleHijackEvent();
+          hijack.driverAllowedToGetAggressive = VehicleComponent.IsDriverSlot(slot);
+          npc.QueueEvent(hijack);
+          evicted += 1;
+          TandemNative.Log(s"street: \(TDBID.ToStringDEBUG(npc.GetRecordID())) put out of \(NameToString(slot))");
+        }
       }
+    }
+    if evicted == 0 {
+      TandemNative.Log(s"street: nobody to put out of the vehicle taken (\(ArraySize(seats)) seats)");
     }
     body.QueueEvent(new StealVehicleEvent());
   }

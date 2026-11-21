@@ -490,6 +490,7 @@ struct Options {
   // Guest: quickhack the nearest shared vehicle this long in, once (-1: never).
   int hackTrafficAtSeconds{-1};
   int stealAtSeconds{-1};
+  bool stealDriven{}; // --steal-at takes the nearest car with a driver (not parked)
   // Police (docs/architecture/police.md): "our V" is wanted at this level
   // (0: never) from heatAt for heatFor seconds; host: tell the guest's game
   // its V was seen committing a crime this long in (-1: never).
@@ -925,6 +926,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     session, once (brakes for 8 s: TrafficHack)\n"
          "  --steal-at N       join: N seconds in, get into the nearest shared vehicle and sit\n"
          "                     at its wheel for --drive-seconds (default 15): it is ours\n"
+         "  --steal-driven     --steal-at takes the nearest car with a driver, not a parked\n"
+         "                     one (its game puts the driver out)\n"
          "  --heat N           our V is wanted at N stars (police heat is per player)\n"
          "  --heat-at N        ...from N seconds in (default 5)\n"
          "  --heat-for N       ...for N seconds, the last 5 unseen (default 20)\n"
@@ -1348,6 +1351,10 @@ Options Parse(int argc, char **argv) {
     }
     if (flag == "--ricochet") {
       options.ricochet = true;
+      continue;
+    }
+    if (flag == "--steal-driven") {
+      options.stealDriven = true;
       continue;
     }
     if (i + 1 >= args.size())
@@ -7503,19 +7510,28 @@ int main(int argc, char **argv) {
     }
     // --steal-at: into the nearest shared vehicle, at its wheel.
     if (options.stealAtSeconds >= 0 && !options.host && shared >= options.stealAtSeconds) {
-      if (stealStep == 0 && !sharedCars.empty()) {
-        // The nearest one that still drives: nobody gets into a wreck.
+      const bool candidate =
+          !options.stealDriven || std::ranges::any_of(sharedCars, [](const auto &entry) {
+            return !(entry.second.flags & tandem::proto::kTrafficParked);
+          });
+      if (stealStep == 0 && !sharedCars.empty() && candidate) {
+        // The nearest one that still drives: nobody gets into a wreck (with
+        // --steal-driven, nor into a parked car: one with a driver).
         const Vec3 from = lastState ? lastState->position : Vec3{};
         const auto nearest = std::ranges::min_element(sharedCars, {}, [&](const auto &entry) {
           const auto &p = entry.second.position;
-          const float wreck = entry.second.flags & tandem::proto::kTrafficDestroyed ? 1e12f : 0.f;
-          return wreck + (p.x - from.x) * (p.x - from.x) + (p.y - from.y) * (p.y - from.y);
+          const auto flags = entry.second.flags;
+          const bool skip = (flags & tandem::proto::kTrafficDestroyed) ||
+                            (options.stealDriven && (flags & tandem::proto::kTrafficParked));
+          return (skip ? 1e12f : 0.f) + (p.x - from.x) * (p.x - from.x) +
+                 (p.y - from.y) * (p.y - from.y);
         });
         stolen = nearest->second;
         endpoint->ClaimTraffic(stolen->id, CName("seat_front_left"));
         stealStep = 1;
         stolenAt = shared;
-        Log("street: getting into vehicle {:#x}", stolen->id);
+        Log("street: getting into vehicle {:#x}{}", stolen->id,
+            stolen->flags & tandem::proto::kTrafficParked ? " (parked)" : " (driven)");
       } else if (stealStep == 1 && !sharedCars.contains(stolen->id)) {
         // The claim came back (TrafficLeft above said whose it is): if it
         // is ours, we sit at its wheel where it stands.

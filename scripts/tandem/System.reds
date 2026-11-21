@@ -3386,10 +3386,12 @@ public class TandemSystem extends ScriptableSystem {
     }
     // A vehicle it took from the street is its car: the body we have of
     // it (the real one when we own the area, our proxy otherwise).
+    let adopted = false;
     if owner == puppet.player && !EntityID.IsDefined(puppet.car) && IsDefined(this.m_traffic) {
       let taken = this.m_traffic.TakeAdopted(puppet.player);
       if EntityID.IsDefined(taken) && IsDefined(TandemTraffic.Body(game, taken)) {
         puppet.car = taken;
+        adopted = true;
         TandemNative.Log(s"player \(puppet.player): drives the vehicle it took from the street");
       }
     }
@@ -3404,6 +3406,11 @@ public class TandemSystem extends ScriptableSystem {
     }
     puppet.seatedSlot = TandemNative.RemoteSeatSlot(puppet.player);
     puppet.wantsSeat = true;
+    if adopted {
+      // Its driver was put out this frame (TandemTraffic.Evict): the unmount
+      // lands first, or the puppet finds the seat taken and sits beside it.
+      puppet.seatRetryAt = this.Now() + 0.5;
+    }
   }
 
   // Mounts the puppet once its vehicle exists: their own car's copy, our
