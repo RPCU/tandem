@@ -24,7 +24,10 @@
   behind them, facing their way. The game's fast travel locks (combat, a
   vehicle, quests) block joining too. The regroup action: a player's marker
   on the world map, held like a fast travel point ("Join NAME"), joins them
-  the same way. API for the story work:
+  the same way; so does the player's "Join NAME" row in the game's phone,
+  and its "Ask NAME to join you" is an offer of reason 1 (asked) to that
+  player alone ([`comms.md`](comms.md), "The phone"; scenario
+  `phone-regroup`, not run in game yet). API for the story work:
   `TandemTravel.OfferRegroup(game, player, reason, label)` (reason 2: a
   story scene; `label` its title) and
   `TandemTravel.RegroupTo(game, player)`. Every fast travel tandem starts
