@@ -130,7 +130,7 @@ until the survey has run in game.
 | `vik-clinic` | -1546.73 1227.39 11.52 0 | §13.110 (Viktor's clinic, revive.md) | Viktor, a vendor (ripperdoc): the survey found no vendor at the market | `vendor-guest` |
 | `h11-basement` | -1390.79 1963.74 -25.02 0 | journal `#lch_01_tr_main_computer_room_001` (gig "Catch a Tyger's Toe"); walkthroughs (Fandom, Fextralife, GameClubz) | Tyger Claws server room, floor -05: 2–4 cameras, a laptop with network access, the lift; hostile unless the gig is done | `breach-guest`, `breach-host`, `comms-network`, `devices-camera`, `devices-camera-friendly` |
 | `arasaka-park` | -209.26 -1454.22 7.60 0 | journal `#q112_mp_truck_drive_inside` ("Drive into Arasaka Industrial Park"); players' reports (perimeter turrets, cameras; hostile, empty after "Gimme Danger") | hostile turrets that are on | `turret-guest`, `turret-hands`, `turret-hands-busy`, `turret-host` |
-| `drake-ave` | -1608.11 1772.70 18.38 0 | `wat_lch_dataterm_02` (tracker) | an avenue with traffic for police pursuit points (the test field found 0) | `police-host-cars`, `turret-friendly` |
+| `drake-ave` | -1608.11 1772.70 18.38 0 | `wat_lch_dataterm_02` (tracker) | an avenue with traffic for police pursuit points (the test field found 0) | `police-host-cars`, `police-spare-host`, `turret-friendly` |
 | `niwaki-plaza` | -230.49 306.01 29.55 0 | `wbr_hil_dataterm_01`, Gold Niwaki Plaza (tracker) | open plaza ground for `street.pilot` (14 m ahead, 8 m aside) | `pilot-street` |
 
 Sources: the journal's quest map pins (`journal-quest-data.json`, the RED
