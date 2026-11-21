@@ -78,6 +78,19 @@ public abstract class TandemWeapons {
   // Puts `record` in `slot` on the puppet in place of what was there.
   public static func Hold(puppet: ref<GameObject>, slot: TweakDBID, record: TweakDBID) -> Bool {
     let transactions = GameInstance.GetTransactionSystem(puppet.GetGame());
+    // Already in that hand, or still spawning there: nothing to do. Asked
+    // again meanwhile, the removal below destroyed the item still spawning
+    // (RemoveItemFromSlot destroys a pending spawn: engine/presence.md) and
+    // the hand stayed empty (a puppet re-armed twice at its spawn).
+    if TDBID.IsValid(record) {
+      let held = transactions.GetItemInSlot(puppet, slot);
+      if IsDefined(held) && ItemID.GetTDBID(held.GetItemID()) == record {
+        return true;
+      }
+      if transactions.IsSlotSpawningItem(puppet, slot, ItemID.FromTDBID(record)) {
+        return true;
+      }
+    }
     transactions.RemoveItemFromSlot(puppet, slot);
     if !TDBID.IsValid(record) {
       return true;
