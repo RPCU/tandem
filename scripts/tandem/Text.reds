@@ -185,7 +185,7 @@ public class TandemText {
       return 2;
     }
     // A record shown otherwise (Mods.reds): never only in the log.
-    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Checkpoint-") || StrBeginsWith(key, "Revive-") || StrBeginsWith(key, "Mods-") || StrBeginsWith(key, "World-") || StrBeginsWith(key, "Time-Mod") ? 1 : 0;
+    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Checkpoint-") || StrBeginsWith(key, "Revive-") || StrBeginsWith(key, "Mods-") || StrBeginsWith(key, "World-") || StrBeginsWith(key, "Time-Mod") || StrBeginsWith(key, "Spectate-") ? 1 : 0;
   }
 
   // An input hint in the HUD's hint bar: the game draws the key or button
@@ -376,6 +376,8 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Scene-Watch", "Watch the scene");
     this.Text("Tandem-Scene-LeaveCamera", "Leave the camera");
     this.Text("Tandem-Spectate-Watching", "Watching through {1}'s eyes.");
+    this.Text("Tandem-Spectate-Taken", "Watching {1}: the story takes them somewhere you can't follow.");
+    this.Text("Tandem-Spectate-Missing", "Watching {1}: their story is somewhere your game can't show.");
     this.Text("Tandem-Spectate-Leave", "Stop watching");
     // Quest prefabs and story gates (StoryWorld.reds).
     this.Text("Tandem-Prefabs-Missing", "{1}'s quest is somewhere your game cannot load: follow them, or watch through their eyes when the story allows.");
@@ -847,6 +849,8 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Scene-Watch", "Regarder la scène");
     this.Text("Tandem-Scene-LeaveCamera", "Quitter la caméra");
     this.Text("Tandem-Spectate-Watching", "Vous regardez par les yeux de {1}.");
+    this.Text("Tandem-Spectate-Taken", "Vous suivez {1} : l'histoire l'emmène là où vous ne pouvez pas aller.");
+    this.Text("Tandem-Spectate-Missing", "Vous suivez {1} : son histoire se passe dans un lieu que votre jeu ne peut pas afficher.");
     this.Text("Tandem-Spectate-Leave", "Arrêter de regarder");
     this.Text("Tandem-Prefabs-Missing", "La quête de {1} se passe dans un lieu que votre jeu ne peut pas charger : suivez {1}, ou regardez par ses yeux quand l'histoire le permet.");
     this.Text("Tandem-Gates-WatsonBehind", "L'histoire de {1} a levé le confinement de Watson, pas la vôtre : vous ne pouvez pas quitter Watson à pied. Montez dans la voiture de {1} pour l'accompagner.");

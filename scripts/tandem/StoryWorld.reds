@@ -30,6 +30,9 @@ public class TandemStoryWorld {
   private let m_hostPrefabs: Int32;
   private let m_missingTold: Bool;
   private let m_unavailableLogged: Bool;
+  // Our game cannot load quest prefabs (the layout check failed), as of the
+  // last check.
+  private let m_unavailable: Bool;
   // Story gates: ours as last read (-1: not yet), the players whose join
   // notes were said this session.
   private let m_ourGates: Int32;
@@ -57,6 +60,7 @@ public class TandemStoryWorld {
 
   private func Prefabs(isHost: Bool, grouped: Bool) -> Void {
     let count = TandemStory.PrefabsTick(isHost, grouped);
+    this.m_unavailable = count < 0;
     if count < 0 {
       if !this.m_unavailableLogged {
         this.m_unavailableLogged = true;
@@ -64,8 +68,10 @@ public class TandemStoryWorld {
       }
       // The fallback: the host's quest has an interior we cannot load and
       // we are near it (the NPC links' reach), once per set the host says.
+      // Spectating on, we watch it instead (Spectate.reds, reason e) and
+      // its own notice says so: one notice, not two.
       let distance = this.m_story.DistanceToHost();
-      if !isHost && grouped && this.m_hostPrefabs > 0 && !this.m_missingTold && distance >= 0.0 && distance < 150.0 {
+      if !isHost && grouped && !TandemStory.SpectateOn() && this.m_hostPrefabs > 0 && !this.m_missingTold && distance >= 0.0 && distance < 150.0 {
         this.m_missingTold = true;
         this.m_story.Notice("Prefabs-Missing", this.m_story.NameOf(this.m_story.HostPlayer()));
         TandemNative.Log(s"prefabs: the host's quests have \(this.m_hostPrefabs) on, we cannot load them: told");
@@ -85,7 +91,34 @@ public class TandemStoryWorld {
     this.m_missingTold = false;
   }
 
+  // The host's quests have interiors on that our game cannot load (its
+  // layout check failed here): a guest watches them (Spectate.reds, (e)).
+  public func CannotLoad() -> Bool {
+    return this.m_unavailable && this.m_hostPrefabs > 0;
+  }
+
   // ---- story gates ----
+
+  // A gate our own story keeps closed lies between our V and the host's:
+  // the Watson lockdown (one of us in Watson, the other not) or Dogtown's
+  // gate (one of us inside). Spectating never carries our V across it, nor
+  // joins the host there by a loading screen; a quest taking the host from
+  // beside us is not followed either. The in-play notice says how: in the
+  // host's car (Gates).
+  public func GateBetween() -> Bool {
+    if this.m_ourGates < 0 {
+      return false;
+    }
+    let host = TandemStory.GatesOf(this.m_story.HostPlayer());
+    if host < 0 {
+      return false;
+    }
+    let behind = TandemStory.GatesBehind(host, this.m_ourGates);
+    if (behind & 1) != 0 && (host & 4) != (this.m_ourGates & 4) {
+      return true;
+    }
+    return (behind & 2) != 0 && (host & 8) != (this.m_ourGates & 8);
+  }
 
   // Where our own story lets our V go, and where it is (StoryGates' bits).
   public func OurGates() -> Int32 {
@@ -233,6 +266,7 @@ public class TandemStoryWorld {
     this.m_ours = 0;
     this.m_hostPrefabs = 0;
     this.m_missingTold = false;
+    this.m_unavailable = false;
     this.m_ourGates = -1;
     ArrayClear(this.m_noted);
     ArrayClear(this.m_heard);

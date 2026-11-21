@@ -153,6 +153,8 @@ tasks:
       - rsync --protect-args -t build/windows/plugin/tandem.dll build/windows/plugin/tandem.pdb "{{.GAME_HOST}}:{{.PLUGIN_DIR}}/"
       # Never overwrite a tandem.ini already there: it is the player's.
       - rsync --protect-args -t --ignore-existing dist/tandem.ini "{{.GAME_HOST}}:{{.PLUGIN_DIR}}/"
+      # The moment list is ours (the player's own marks go in tandem.ini).
+      - rsync --protect-args -t dist/moments.txt "{{.GAME_HOST}}:{{.PLUGIN_DIR}}/"
       - rsync --protect-args -rt --delete scripts/tandem/ "{{.GAME_HOST}}:{{.SCRIPTS_DIR}}/"
       - rsync --protect-args -rt --delete tweaks/tandem/ "{{.GAME_HOST}}:{{.TWEAKS_DIR}}/"
 
