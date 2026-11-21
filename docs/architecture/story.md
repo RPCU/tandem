@@ -76,8 +76,31 @@
   - _Dialogue_ (`Dialogue.reds`): the host's subtitles and its active choice
     hub reach guests within 25 m (holocall lines and phone hubs: everyone),
     drawn by the guest's own subtitle and hub widgets (a stand-in hub). A
-    guest moves its own cursor and can suggest; the host sees the
-    suggestion; the host's pick closes every hub. No story voice yet.
+    guest moves its own cursor and can suggest; the host's pick closes
+    every hub. No story voice yet.
+  - _Choices together_ (2026-11-21, **not yet run in game**): each
+    player's cursor is marked on the others' hubs, on the option it is on:
+    a chip and the player's name in their colour (`TandemMarkers.ColorOf`),
+    "NAME suggests" once they suggest it. On the host's hub, every guest's;
+    on a guest's, the host's and the other guests'. Live: a cursor move is
+    a `ChoiceCursor` (`kCursorHover`), already sent both ways and relayed by
+    the host (no protocol change); each game also says where its cursor
+    starts when a hub opens (the host its `SelectedIndex`, a guest 0). The
+    host still decides alone, nothing waits. The suggestion's notice
+    ("NAME suggests: OPTION", `Dialogue-Suggests`) is shown only when the
+    host's hub is not on screen (a menu, the HUD hidden). How: no wrap; the
+    story tick (10 per second) finds the game's `dialogWidgetGameController`
+    on the HUD layer and gives each option's `DialogChoiceLogicController`
+    its markers (a panel of ours put in the row that holds the option's
+    text, else at the option's right edge), redrawn only when they change,
+    again after the game respawns a hub's options. To see in game: where
+    the panel sits in the option's row, the font size against the game's,
+    the options of a timed hub. Test: `tandem-peer join --hover N` (the
+    mock's cursor on option N of every hub), the story verb `hover ID
+INDEX` (the mock host's). Scenarios (not run yet):
+    `dialogue-marks-host` (the mock guest's cursor marked on our hub;
+    `story-host` its suggestion's, without the notice), `dialogue-marks-guest` (the mock host's cursor
+    marked on ours, following it).
   - _Scenes_: each game sends its V's scene tier (`StoryState`). A guest
     within 30 m of the host in a tier 3+ scene has its weapons lowered, tier
     4+ also invulnerable; a guest further than 100 m from a tier 4+ scene
@@ -551,7 +574,8 @@ test watch|play|off`.
     `story-gigs-apart`, `story-restrict-guest`, `story-restrict-host`,
     `spectate-guest`, `spectate-leave`, `spectate-host`, `spectate-ride`,
     `spectate-missing`, `interact-guest-pickup`, `interact-guest-hostonly`, `interact-apart-own-gig`,
-    `prefabs-guest`, `prefabs-host`, `gates-guest`.
+    `prefabs-guest`, `prefabs-host`, `gates-guest`, `dialogue-marks-host`,
+    `dialogue-marks-guest`.
 
 ## Open problems
 

@@ -23,7 +23,8 @@ expect_peer 'line: type 1 from player 1: Hello from the host' 10
 cmd story hub
 expect 'choice: our hub 4242 sent \(2 options\)' 10
 expect_peer "hub: 4242 'Test' with 2 options" 10
-expect 'choice: player [0-9]+ suggests 1' 10
+expect 'choice: player [0-9]+ suggests 1 \(marked on the hub\)' 10
+expect 'choice: marks on hub 4242: tandem-peer on 1 \(suggests\)' 5
 cmd story hub close
 expect_peer 'hub: 4242 closed' 10
 cmd story reward QuestRewards.MinigameMoney
