@@ -108,7 +108,8 @@ teleport has a loading screen), then 3 s. Our V's position is set before
 a loading screen ends: when one came (the watchdog's `silent` line), `at`
 also waits for its `back` line (90 s at most) and 5 s of streaming, then
 marks the log past it (three spots surveyed empty, each shot the loading
-screen, 2026-11-21). Each scenario's `*_AT` variable takes a name
+screen, 2026-11-21; the watchdog's state outlives a session, so a guest
+whose join times out during the loading screen still says `back`). Each scenario's `*_AT` variable takes a name
 or coordinates (default below). `cmd fixture check [M]`
 (`scripts/tandem/Fixtures.reds`, solo too) logs `fixture: …` lines: our V's
 spot, the devices within M m (60) by class, the nearest door, lift,
@@ -526,7 +527,7 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
   `skip-wheel`, `skip-asked`, `busy-puppet`, `look-mirror`,
   `apartment-shower`, `apartment-bed`, `apartment-tour`.
 - **Comms** (any mode, `comms.md`): `--link auto|ask|off` (its consent;
-  ask: every request accepted), `--link-at N` (asks everyone N s in),
+  ask: every request accepted), `--link-at N` (asks everyone N s in), `--link-answer-after N` (ask: accepts N s after the request, a call ringing),
   `--unlink-at N` (breaks every link N s in: the party HUD's entry goes,
   scenario `hud-linked`),
   `--ping N` (every N s: a spot before the other V, the nearest shared NPC
