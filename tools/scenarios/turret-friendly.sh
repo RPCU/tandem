@@ -8,6 +8,10 @@
 # colour, "Hacked by NAME", over it while it lasts.
 ensure host
 at "${TURRET_AT:-arasaka-park}"
+# Beside it first: the sentry stands 49 m from the spot, the commands reach 40 m.
+cmd device goto sentry
+expect 'devices: at sentry [0-9a-f]+ SecurityTurretControllerPS: ' 10
+pause 2
 # A run before may have left it friendly: hostile, and on, before the guest
 # joins.
 cmd device hostile sentry
