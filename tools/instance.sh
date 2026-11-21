@@ -148,6 +148,12 @@ fi
 appid=1091500
 game=${GAME_DIR:-/data/Steam/steamapps/common/Cyberpunk 2077}
 game=${game%/}
+# The harness exports GAME_DIR as the game it tests: an instance's own game
+# folder is not the player's install (taken for it, the sandbox bound the
+# instance's game read only and RED4ext could not write its log).
+case $game in
+*/tandem-instances/*/game | "${TANDEM_INSTANCES:-/nonexistent}"/*/game) game='/data/Steam/steamapps/common/Cyberpunk 2077' ;;
+esac
 library=$(dirname "$(dirname "$(dirname "$game")")")
 root=${TANDEM_INSTANCES:-$library/tandem-instances}
 user_prefix=${USER_COMPATDATA:-$library/steamapps/compatdata/$appid}
