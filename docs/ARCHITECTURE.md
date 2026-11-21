@@ -137,6 +137,7 @@ The owner simulates; everyone else displays.
 | a V: level, XP, perks, inventory, money | that player's game (save) | not shared: each player keeps their own level |
 | a shop: a vendor's stock, prices, sold items (vendors, ripperdocs, vending machines) | each player's game (save) | the vendor NPC is the world's; beside a partner's vendor, our own game's vendor of the same placed NPC opens; one killed in the session is hidden everywhere (`architecture/progression.md`) |
 | a vehicle someone drives | the driver's game | puppet vehicle, passengers mounted |
+| a car's custom paint (CrystalCoat, TwinTone) | the car's owner's game | every copy of that car painted as said, late joiners too (`architecture/vehicles.md`, Paint) |
 | a player's garage (owned cars, unlocks) | that player's game (save) | a partner may drive one by its owner's word (`lend`); the garage stays the owner's (`architecture/garage.md`) |
 | a vehicle a V rides that its game moves (cab, quest car, AV) | that player's game | copy, riders and NPCs seated; host's scene: a seat or a ride along |
 | an NCART train (scripted transit) | each rider's own game | never shared: puppet in a train of ours, else hidden |
@@ -298,7 +299,7 @@ plugin") and its open problems.
 - `netcode.md`: bandwidth (traffic counters, the 64 kbit/s budget and its table, compact wire forms, relevance and still rates, coalescing), smoothness metrics on shaped links, lag-compensated reach, frame-cost profiling (`cmd perf`), log levels, large reliable messages and outages. For anything that sends at a rate, draws remote motion, or logs.
 - `consistency.md`: digests, resync, idempotent application, epochs, the audit of every synced state with its guard, unplanned disconnects. For any new or changed state message.
 - `players.md`: body poses, weapons, looks, player markers; open: linking up, every way a V moves, cyberware and perks.
-- `vehicles.md`: driven vehicles, seats, the radio; open: getting in and out, combat in vehicles.
+- `vehicles.md`: driven vehicles, seats, the radio, a car's custom paint; open: getting in and out, combat in vehicles.
 - `transit.md`: rides a game runs (cabs, AVs, quest vehicles), the NCART metro.
 - `traffic.md`: traffic, parked cars and wrecks shared by the owner of their area (untested in game): the budget, collisions, a car a player takes, occupants, explosions; who owns an area (`AreaOwner`); several owners (a guest's street), hand-overs when players meet and part.
 - `police.md`: police heat per player (untested in game): how a crime finds its V, a wanted V in an area another game owns, what a follower no longer spawns.

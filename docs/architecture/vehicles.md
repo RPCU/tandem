@@ -55,6 +55,42 @@
   `RadioStationDataProvider.GetStationsCount`) is sent as off by the driver
   and taken as off by a passenger, with a notice (`TandemRadio.IsVanilla`,
   [`mod-compat.md`](mod-compat.md)).
+- **Paint** (`scripts/tandem/Paint.reds`, engine-knowledge §13.150; not run
+  in game yet): a car's custom paint (CrystalCoat / TwinTone: two colours
+  and a lights' hue, or a unique pattern scanned from another vehicle) is
+  its owner's game's to say. Four times a second our game reads the paint
+  its own car shows (the car our V sits in, or last sat in, that is no
+  partner's copy: `VehicleComponentPS`' template while it is active and no
+  damage blocks it) and says it when it changes: `CarPaint` (appended,
+  protocol 15; the car's record, flags, two RGB colours, the hue, or the
+  unique template's record and model; flags 0: stock). It travels as
+  `CarLend` does (`Endpoint::SendCombat`): the host stamps who, tells every
+  other game and keeps each painted car's for late joiners and resyncs; a
+  repeat is applied nowhere; stock paint is kept nowhere; it goes with its
+  player. Every other game paints its copy of that car (the copy the
+  owner's puppet sits in, by the record its `Seat` names; it stays that
+  car's when parked) when the paint changes and when the copy spawns:
+  the template into the copy's own state, then
+  `VehicleComponent.ApplyVehicleVisualCustomizationTemplate` and the
+  lights' own event, never the game's request events (they refuse on a game
+  that has not unlocked CrystalCoat, start a cooldown on our V and store
+  the template in our garage). A first paint on a copy is instant; a
+  change takes the old one off and puts the next on 0.6 s later with the
+  game's transition, as the game does. Our own game takes a paint off a
+  copy our V rode in and walked away from (5.7 m), or one that lost a part
+  here, and writes our garage's template into a copy our V mounts: every
+  2 s the copy's state is compared with its owner's word and put back
+  (`paint: … put back`, debug). Limits: the paint follows the owner, so a
+  partner at the wheel of a lent car cannot repaint it for the others; a
+  unique template a game's TweakDB lacks (a mod's) leaves stock paint
+  there, said in the log; a stand-in copy of a modded car
+  ([`mod-compat.md`](mod-compat.md)) is not painted; the game switches
+  CrystalCoat off when its owner walks away from the car, so a car left
+  parked turns stock everywhere, as in its owner's game. Mock player:
+  `--paint RRGGBB[,RRGGBB][@HUE]`, `--paint-off-at S`; scenario `paint`;
+  `test query paint [puppet]`; `cmd paint` (what we say and show),
+  `cmd paint car R,G,B [R,G,B] | off` (a test's paint on our own car: it
+  is written into the car's saved state).
 - **A car our game lacks** ([`mod-compat.md`](mod-compat.md), not run in
   game yet): `Seat::hint` carries the vehicle's type and seats
   (`TandemMods.VehicleHint`); a record our TweakDB does not have is
