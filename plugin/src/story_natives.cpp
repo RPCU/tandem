@@ -9,6 +9,7 @@
 #include "config.hpp"
 #include "engine/casts.hpp"
 #include "engine/posestream.hpp"
+#include "engine/prefabs.hpp"
 #include "engine/quests.hpp"
 #include "engine/scenes.hpp"
 #include "log.hpp"
@@ -102,6 +103,8 @@ enum Kind : std::int32_t {
   kEffect = 42,
   kVehicle = 43,
   kRestrictions = 44,
+  kPrefabs = 45,
+  kGates = 46,
   kSceneBegin = 50,
   kSceneChange = 51,
   kSceneEnd = 52,
@@ -321,6 +324,16 @@ void Flatten(const StoryInbound &in, Red::DynArray<TandemStoryEvent> &out) {
                                      .x = qi->position.x,
                                      .y = qi->position.y,
                                      .z = qi->position.z});
+  } else if (const auto *prefabs = std::get_if<proto::WorldPrefabs>(&m)) {
+    // The host's set, kept here for PrefabsTick; the script hears how many.
+    Story::Get().Prefabs().Host(*prefabs);
+    out.EmplaceBack(TandemStoryEvent{.kind = kPrefabs,
+                                     .player = prefabs->player,
+                                     .index = static_cast<std::int32_t>(prefabs->prefabs.size())});
+  } else if (const auto *gates = std::get_if<proto::StoryGates>(&m)) {
+    Story::Get().GatesOf()[gates->player] = gates->flags;
+    out.EmplaceBack(
+        TandemStoryEvent{.kind = kGates, .player = gates->player, .flags = gates->flags});
   } else if (const auto *restrictions = std::get_if<proto::StoryRestrictions>(&m)) {
     // The host's set, kept here for RestrictUpdate; the script hears how
     // many (and acts on its next check).
@@ -340,6 +353,29 @@ Red::DynArray<Red::TweakDBID> Ids(const std::vector<std::uint64_t> &effects) {
 }
 
 std::uint8_t Byte(std::int32_t value) { return static_cast<std::uint8_t>(value); }
+
+// A prefab in our own game, for the guest's mirror (unavailable: as if off
+// and nobody's, which the mirror never turns on: the caller checked first).
+prefabs::Local PrefabHere(std::uint64_t prefab) {
+  const auto here = engine::QuestPrefabState(prefab);
+  return here ? prefabs::Local{.on = here->on, .held = here->held} : prefabs::Local{};
+}
+
+// The mirror's steps made in our world, logged; answers how many of ours
+// are on now.
+std::int32_t ApplyPrefabs(const std::vector<prefabs::Step> &steps, const char *why) {
+  std::size_t on = 0, off = 0;
+  for (const auto &step : steps)
+    if (engine::SetQuestPrefab(step.prefab, step.on)) {
+      ++(step.on ? on : off);
+      log::Debug("prefabs: {:#x} {} ({})", step.prefab, step.on ? "on" : "off", why);
+    }
+  auto &mirror = Story::Get().Prefabs();
+  if (on + off > 0)
+    log::Info("prefabs: {} of the host's on, {} off ({}): {} of ours on, the host has {}", on, off,
+              why, mirror.Ours().size(), mirror.HostSet().size());
+  return static_cast<std::int32_t>(mirror.Ours().size());
+}
 } // namespace
 
 struct TandemStory : Red::IScriptable {
@@ -585,6 +621,94 @@ struct TandemStory : Red::IScriptable {
     story.Sent() = set;
     Story::Get().Send(proto::StoryRestrictions{.effects = std::move(set)});
     return true;
+  }
+
+  // ---- quest prefabs (docs/architecture/story.md, "Quest prefabs") ----
+
+  // Once a second. Host: our quests' prefabs now, sent when they changed;
+  // answers how many are on. Guest: the host's set made true in our world
+  // while `grouped` (tandem.ini quest_prefabs), what we turned on put back
+  // when not; answers how many of ours are on. -1: unavailable (the layout
+  // check failed: said once in the log), nothing done.
+  static std::int32_t PrefabsTick(bool host, bool grouped) {
+    auto &story = Story::Get();
+    if (host) {
+      std::vector<std::uint64_t> on;
+      if (!engine::QuestPrefabsOn(on))
+        return -1;
+      if (on.size() > proto::kMaxWorldPrefabs)
+        on.resize(proto::kMaxWorldPrefabs);
+      if (!story.PrefabsSaid() || on != story.PrefabsSent()) {
+        log::Info("prefabs: our quests have {} prefab(s) on, said to the guests", on.size());
+        story.PrefabsSent() = on;
+        story.PrefabsSaid() = true;
+        story.Send(proto::WorldPrefabs{.prefabs = on});
+      }
+      return static_cast<std::int32_t>(on.size());
+    }
+    if (!engine::QuestPrefabsAvailable())
+      return -1;
+    const bool wanted = grouped && Runtime::Get().config.questPrefabs;
+    return ApplyPrefabs(story.Prefabs().Update(wanted, PrefabHere), wanted ? "grouped" : "apart");
+  }
+
+  // Guest: the session is over (we leave, or the host vanished): what we
+  // turned on, off again (one our own quest asked for meanwhile stays).
+  // Answers how many went off; -1: unavailable.
+  static std::int32_t PrefabsLift() {
+    if (!engine::QuestPrefabsAvailable()) {
+      Story::Get().Prefabs().Lift([](std::uint64_t) { return prefabs::Local{}; });
+      return -1;
+    }
+    const auto steps = Story::Get().Prefabs().Lift(PrefabHere);
+    ApplyPrefabs(steps, "leave");
+    return static_cast<std::int32_t>(
+        std::ranges::count_if(steps, [](const prefabs::Step &step) { return !step.on; }));
+  }
+
+  // `cmd story prefabs`: the handler's counts, the host's set, ours.
+  static Red::CString PrefabsReport() {
+    auto &mirror = Story::Get().Prefabs();
+    const auto line = std::format("{}; the host's set {}, {} of them ours, {} put on again",
+                                  engine::QuestPrefabsReport(), mirror.HostSet().size(),
+                                  mirror.Ours().size(), mirror.Reapplied());
+    return Red::CString(line.c_str());
+  }
+
+  // ---- story gates (docs/architecture/story.md, "Story gates") ----
+
+  // Our story gates (proto::kGate* bits) as our game has them now: sent
+  // when they changed; true then.
+  static bool SendGates(std::int32_t flags) {
+    auto &story = Story::Get();
+    const auto mine = static_cast<std::int32_t>(flags & proto::kGateFlags);
+    if (mine == story.GatesSent())
+      return false;
+    story.GatesSent() = mine;
+    story.Send(proto::StoryGates{.flags = static_cast<std::uint8_t>(mine)});
+    return true;
+  }
+  // A player's story gates as last heard (-1: never).
+  static std::int32_t GatesOf(std::uint32_t player) {
+    const auto &gates = Story::Get().GatesOf();
+    const auto it = gates.find(player);
+    return it == gates.end() ? -1 : it->second;
+  }
+  // The gates the host's story has open and the guest's keeps closed (bits:
+  // 1 the Watson lockdown, 2 Dogtown's gate).
+  static std::int32_t GatesBehind(std::int32_t host, std::int32_t guest) {
+    std::int32_t out = 0;
+    for (const auto gate : gates::Behind(Byte(host), Byte(guest)))
+      out |= 1 << static_cast<int>(gate);
+    return out;
+  }
+  // Guest, each check: the gate whose closed side we stand at with the host
+  // past it, once per crossing (1 Watson, 2 Dogtown; 0: none). `distance`:
+  // to the host's V (-1: not drawn).
+  static std::int32_t GateMet(std::int32_t host, std::int32_t ours, float distance) {
+    const auto met =
+        Story::Get().GateWatcher().Update(Byte(host), Byte(ours), distance >= 0.f, distance);
+    return met ? 1 << static_cast<int>(*met) : 0;
   }
 
   // ---- quest interactions (docs/architecture/story.md, "Quest interactions") ----
@@ -1298,6 +1422,13 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(CarryReport);
   RTTI_METHOD(SendEffect);
   RTTI_METHOD(SendRestrictions);
+  RTTI_METHOD(PrefabsTick);
+  RTTI_METHOD(PrefabsLift);
+  RTTI_METHOD(PrefabsReport);
+  RTTI_METHOD(SendGates);
+  RTTI_METHOD(GatesOf);
+  RTTI_METHOD(GatesBehind);
+  RTTI_METHOD(GateMet);
   RTTI_METHOD(InteractOn);
   RTTI_METHOD(NameKey);
   RTTI_METHOD(SendInteract);

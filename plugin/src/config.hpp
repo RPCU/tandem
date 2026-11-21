@@ -37,6 +37,8 @@
 //                        ; the host's cutscenes (no watch camera)
 //   scene_rigs = on      ; with scene_replay = on: on: a speaking actor's face and
 //                        ; the bodies of drones and robots are streamed too
+//   quest_prefabs = on   ; guest: off: the host's quest interiors (prefabs its
+//                        ; quests loaded) are not loaded in your world
 //   spectate = on        ; guest: off: in the host's scripted moments (scenes,
 //                        ; quest rides, set pieces) you keep playing your own V
 //                        ; instead of watching through the host's camera
@@ -183,6 +185,10 @@ struct Config {
   // A guest in the host's scripted moment watches it through the host's
   // camera, its own V parked (docs/architecture/story.md, "Spectating").
   bool spectate{true};
+  // A guest grouped with the host loads the quest prefabs the host's quests
+  // have on (docs/architecture/story.md, "Quest prefabs"); the host sends
+  // them whatever this says.
+  bool questPrefabs{true};
   // With sceneReplay and scenePoses: speakers' faces and the bodies of
   // actors on other rigs than the humanoid one (engine/posestream.cpp,
   // "Other rigs"): never run in game, so off unless asked for.

@@ -58,6 +58,7 @@ add_library(tandem SHARED
   src/engine/posescan.cpp
   src/engine/posestream.cpp
   src/engine/quests.cpp
+  src/engine/prefabs.cpp
   src/engine/scenes.cpp
   src/engine/physics.cpp
   src/engine/casts.cpp)
