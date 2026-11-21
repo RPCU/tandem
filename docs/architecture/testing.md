@@ -439,8 +439,8 @@ on` its camera's views go out, scene or not, for a guest to spectate
   the nearest proxy), `hack car`, and `npc weakspot [N]` (our V's hit of
   N, default 40, on the nearest proxy's first whole weak spot that is not
   shut, flagged `WeakspotHit` as a shot's; it has no hit shapes and took
-  nothing of a spot, 2026-11-21), `npc weakspot draw` (V draws its last
-  weapon) and `npc weakspot shot` (a real bullet of that gun at each open
+  nothing of a spot, 2026-11-21), `npc weakspot draw` (V draws its last or first
+  ranged weapon, else the game's stand-in pistol, `Items.Preset_V_Unity_Cutscene`) and `npc weakspot shot` (a real bullet of that gun at each open
   weak spot: `npcs-weakspot`).
 - `--region-immortal said|silent` (`--mode region`): the mock's own NPCs
   cannot die (health floors at 1 %); `said` tells the others with

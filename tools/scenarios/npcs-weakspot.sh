@@ -4,7 +4,8 @@
 # Character.main_boss_adam_smasher; its proxy, brain off, stands 20 m off).
 # The hits are real bullets of the gun V draws (`npc weakspot shot`, one at
 # each open weak spot: a built hit has no hit shapes and took nothing of
-# one). V's save needs a gun in a weapon slot.
+# one). The gun: V's last or first ranged weapon, else the game's stand-in
+# pistol (a save whose last weapon was no gun drew none, 2026-11-21).
 # To look at: V draws, tracers go to the boss's weak spots, which show
 # their damage.
 ensure join

@@ -520,15 +520,30 @@ public abstract class TandemWeakSpots {
     }
     if IsDefined(player) && Equals(how, "draw") {
       let held = GameObject.GetActiveWeapon(player);
-      if IsDefined(held) {
+      if IsDefined(held) && !held.IsMelee() {
         TandemNative.Log(s"npc weakspot: our V holds \(TDBID.ToStringDEBUG(ItemID.GetTDBID(held.GetItemID())))");
         return;
       }
-      let request = new EquipmentSystemWeaponManipulationRequest();
-      request.owner = player;
-      request.requestType = EquipmentManipulationAction.RequestLastUsedOrFirstAvailableWeapon;
-      GameInstance.GetScriptableSystemsContainer(game).Get(n"EquipmentSystem").QueueRequest(request);
-      TandemNative.Log("npc weakspot: our V draws its weapon");
+      // A gun, whatever the save holds: its last or first ranged weapon,
+      // else the game's stand-in pistol, as a forced combat in a vehicle
+      // draws it (EnteringCombatEvents, final.reds:549571-549597). The last
+      // weapon of any kind was a blade or none (npcs-weakspot, 2026-11-21:
+      // "no gun in our V's hands" 5 s after the draw).
+      let equipment = GameInstance.GetScriptableSystemsContainer(game).Get(n"EquipmentSystem") as EquipmentSystem;
+      let data = EquipmentSystem.GetData(player);
+      let own = IsDefined(data) ? data.GetLastUsedOrFirstAvailableRangedWeapon() : ItemID.None();
+      if ItemID.IsValid(own) {
+        let request = new EquipmentSystemWeaponManipulationRequest();
+        request.owner = player;
+        request.requestType = EquipmentManipulationAction.RequestLastUsedOrFirstAvailableRangedWeapon;
+        equipment.QueueRequest(request);
+      } else {
+        let draw = new DrawItemRequest();
+        draw.owner = player;
+        draw.itemID = ItemID.CreateQuery(t"Items.Preset_V_Unity_Cutscene");
+        equipment.QueueRequest(draw);
+      }
+      TandemNative.Log(s"npc weakspot: our V draws its weapon (\(ItemID.IsValid(own) ? TDBID.ToStringDEBUG(ItemID.GetTDBID(own)) : "the stand-in pistol"); held before: \(IsDefined(held) ? TDBID.ToStringDEBUG(ItemID.GetTDBID(held.GetItemID())) : "nothing"))");
       return;
     }
     if !IsDefined(player) || !IsDefined(target) {
@@ -538,7 +553,7 @@ public abstract class TandemWeakSpots {
     if Equals(how, "shot") {
       let gun = GameObject.GetActiveWeapon(player);
       if !IsDefined(gun) || !gun.IsAttached() || gun.IsMelee() {
-        TandemNative.Log("npc weakspot: no gun in our V's hands (npc weakspot draw)");
+        TandemNative.Log(s"npc weakspot: no gun in our V's hands (npc weakspot draw): \(!IsDefined(gun) ? "nothing held" : (gun.IsMelee() ? "a melee weapon, " : "not attached yet, ") + TDBID.ToStringDEBUG(ItemID.GetTDBID(gun.GetItemID())))");
         return;
       }
       for spot in open {
