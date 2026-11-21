@@ -151,6 +151,46 @@ private:
   std::vector<Held> m_holds;
 };
 
+// ---- A turret in a player's hands (devices.md) ----
+//
+// Host: who holds each turret, first come. A player's word (TurretHands)
+// makes it the holder of a turret nobody holds; it holds it until its let-go
+// or until unheard of for kTurretHandsHoldS. Another player's word on it
+// meanwhile is not passed on: a claim is refused (its game is told who
+// holds it, at most once per kTurretHandsHoldS while it keeps claiming), a
+// let-go is dropped (it would free the holder's copies).
+inline constexpr std::uint64_t kTurretHoldUs =
+    static_cast<std::uint64_t>(proto::kTurretHandsHoldS * 1'000'000.f);
+class TurretHolds {
+public:
+  enum class Verdict : std::uint8_t {
+    Pass,   // passed on: the holder's word, or a turret nobody holds
+    Refuse, // a claim on another's turret: its game is told (`holder`)
+    Drop,   // not passed on, nobody told
+  };
+  struct Answer {
+    Verdict verdict{};
+    proto::PlayerId holder{}; // Refuse: who holds it
+    friend bool operator==(const Answer &, const Answer &) = default;
+  };
+  Answer On(proto::PlayerId player, const proto::TurretHands &hands, std::uint64_t nowUs);
+  // Who holds a turret now (kNoPlayer: nobody).
+  proto::PlayerId Holder(std::uint64_t entity, std::uint64_t nowUs) const;
+  // A player left: what it held is free.
+  void Forget(proto::PlayerId player);
+  std::uint64_t Refused() const { return m_refused; }
+
+private:
+  struct Hold {
+    proto::PlayerId player{};
+    std::uint64_t heardUs{};
+  };
+  std::map<std::uint64_t, Hold> m_holds;
+  // When each (player, turret) claim was last refused.
+  std::map<std::pair<proto::PlayerId, std::uint64_t>, std::uint64_t> m_refusedUs;
+  std::uint64_t m_refused{};
+};
+
 // ---- Glass and breakable scenery (devices.md) ----
 //
 // A break is told by the game that saw it and replayed by the others.

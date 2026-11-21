@@ -666,7 +666,8 @@ const char *NameOfKind(std::size_t kind) {
                                    "WorldPrefabs",
                                    "StoryGates",
                                    "WeakSpotHit",
-                                   "HackTraced"};
+                                   "HackTraced",
+                                   "TurretBusy"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }

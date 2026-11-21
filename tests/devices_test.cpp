@@ -639,6 +639,109 @@ TEST_CASE("a turret in a player's hands: shown to the others in its name, never 
   CHECK(held[2].size() == 2);
 }
 
+TEST_CASE("a turret's holds: first come; a second claim refused once a second; a let-go or a "
+          "silence frees it") {
+  using Verdict = devices::TurretHolds::Verdict;
+  devices::TurretHolds holds;
+  constexpr std::uint64_t kTurret = 0x55;
+  const proto::TurretHands claim{.entity = kTurret};
+  const proto::TurretHands letGo{.entity = kTurret, .flags = proto::kHandsLetGo};
+  CHECK(holds.On(2, claim, 1'000'000).verdict == Verdict::Pass);
+  CHECK(holds.Holder(kTurret, 1'000'000) == 2);
+  // Player 3 claims it: refused, told who holds it; again within the second,
+  // nobody told; a second later, told again.
+  CHECK(holds.On(3, claim, 1'100'000) == devices::TurretHolds::Answer{Verdict::Refuse, 2});
+  CHECK(holds.On(3, claim, 1'300'000).verdict == Verdict::Drop);
+  CHECK(holds.On(2, claim, 1'900'000).verdict == Verdict::Pass);
+  CHECK(holds.On(3, claim, 2'200'000) == devices::TurretHolds::Answer{Verdict::Refuse, 2});
+  // 3's let-go would free the holder's copies: dropped.
+  CHECK(holds.On(3, letGo, 2'300'000).verdict == Verdict::Drop);
+  CHECK(holds.Refused() == 2);
+  // The holder lets go: 3's claim takes it.
+  CHECK(holds.On(2, letGo, 2'400'000).verdict == Verdict::Pass);
+  CHECK(holds.Holder(kTurret, 2'400'000) == proto::kNoPlayer);
+  CHECK(holds.On(3, claim, 2'500'000).verdict == Verdict::Pass);
+  CHECK(holds.Holder(kTurret, 2'500'000) == 3);
+  // 3 falls silent for longer than kTurretHoldUs: 2's claim takes it.
+  CHECK(holds.Holder(kTurret, 2'500'000 + devices::kTurretHoldUs + 1) == proto::kNoPlayer);
+  CHECK(holds.On(2, claim, 2'500'000 + devices::kTurretHoldUs + 1).verdict == Verdict::Pass);
+  // Its holder leaves: free.
+  holds.Forget(2);
+  CHECK(holds.On(3, claim, 3'600'000).verdict == Verdict::Pass);
+  // A let-go of a turret nobody holds is passed on (harmless).
+  CHECK(holds.On(2, proto::TurretHands{.entity = 0x66, .flags = proto::kHandsLetGo}, 3'700'000)
+            .verdict == Verdict::Pass);
+}
+
+TEST_CASE("a turret in a player's hands is that player's alone: the host refuses another's claim, "
+          "its own too, until a let-go or a silence") {
+  auto s = Start(true);
+  std::vector<proto::TurretHands> held[3];
+  std::vector<proto::TurretBusy> refused[3];
+  const auto run = [&](const std::function<bool()> &done, std::chrono::milliseconds limit = 3s) {
+    return Pump(
+        s.All(),
+        [&](std::size_t i, const auto &events) {
+          for (const auto &event : events)
+            if (const auto *hands = std::get_if<events::TurretHeld>(&event))
+              held[i].push_back(hands->hands);
+            else if (const auto *busy = std::get_if<events::TurretRefused>(&event))
+              refused[i].push_back(busy->busy);
+          return done();
+        },
+        limit);
+  };
+  constexpr std::uint64_t kTurret = 0x55;
+  const auto a = s.a->You(), b = s.b->You();
+  // a holds it (again: each word keeps the hold a second, whatever the
+  // machine's pace), heard by the host.
+  const auto aHolds = [&] {
+    const auto before = held[0].size();
+    s.a->SendTurretHands({.entity = kTurret, .at = {1.f, 2.f, 3.f}});
+    return run([&] { return held[0].size() > before; });
+  };
+  REQUIRE(aHolds());
+  REQUIRE(run([&] { return !held[2].empty(); }));
+  CHECK(s.host->TurretHolder(kTurret) == a);
+  // b's claim: not passed on; b is told a holds it.
+  REQUIRE(aHolds());
+  s.b->SendTurretHands({.entity = kTurret, .at = {9.f, 9.f, 9.f}, .flags = proto::kHandsFiring});
+  REQUIRE(run([&] { return refused[2].size() == 1; }));
+  CHECK(refused[2][0] == proto::TurretBusy{.entity = kTurret, .holder = a});
+  // The host's own claim too, from its endpoint at once.
+  REQUIRE(aHolds());
+  s.host->SendTurretHands({.entity = kTurret, .at = {5.f, 5.f, 5.f}});
+  REQUIRE(run([&] { return refused[0].size() == 1; }));
+  CHECK(refused[0][0] == proto::TurretBusy{.entity = kTurret, .holder = a});
+  // b's let-go is dropped: a's copies stay a's.
+  REQUIRE(aHolds());
+  s.b->SendTurretHands({.entity = kTurret, .flags = proto::kHandsLetGo});
+  run([] { return false; }, 300ms);
+  for (const auto &hands : held[0]) {
+    CHECK(hands.player == a);
+    CHECK(hands.flags == 0);
+  }
+  CHECK(held[1].empty());
+  CHECK(refused[1].empty());
+  // a lets go: b's next claim takes it, for everyone else.
+  s.a->SendTurretHands({.entity = kTurret, .flags = proto::kHandsLetGo});
+  REQUIRE(run([&] { return held[0].back().flags == proto::kHandsLetGo; }));
+  CHECK(s.host->TurretHolder(kTurret) == proto::kNoPlayer);
+  s.b->SendTurretHands({.entity = kTurret, .at = {4.f, 4.f, 4.f}});
+  REQUIRE(run([&] { return held[0].back().player == b && held[1].size() == 1; }));
+  CHECK(held[1][0].player == b);
+  CHECK(s.host->TurretHolder(kTurret) == b);
+  // b falls silent: after a second the turret is free, and a's claim is
+  // passed on with no refusal.
+  run([] { return false; }, std::chrono::milliseconds(devices::kTurretHoldUs / 1000 + 300));
+  CHECK(s.host->TurretHolder(kTurret) == proto::kNoPlayer);
+  REQUIRE(aHolds());
+  CHECK(held[0].back().player == a);
+  CHECK(s.host->TurretHolder(kTurret) == a);
+  CHECK(refused[1].empty());
+  CHECK(s.host->TurretsRefused() == 2);
+}
+
 TEST_CASE("a device's fire: the host's turret's aim and shots reach every guest; what a copy "
           "sees, the host alone") {
   using Kind = proto::DeviceFireKind;

@@ -175,6 +175,44 @@ std::vector<BreachHolds::Decision> BreachHolds::End() {
   return out;
 }
 
+TurretHolds::Answer TurretHolds::On(proto::PlayerId player, const proto::TurretHands &hands,
+                                    std::uint64_t nowUs) {
+  const bool letGo = (hands.flags & proto::kHandsLetGo) != 0;
+  const auto holder = Holder(hands.entity, nowUs);
+  if (holder != proto::kNoPlayer && holder != player) {
+    if (letGo)
+      return {Verdict::Drop};
+    // Refusals nobody claimed again for a while are forgotten.
+    if (m_refusedUs.size() > 64)
+      std::erase_if(m_refusedUs,
+                    [&](const auto &refused) { return nowUs >= refused.second + kTurretHoldUs; });
+    const auto [it, fresh] = m_refusedUs.try_emplace(std::pair{player, hands.entity}, nowUs);
+    if (!fresh && nowUs < it->second + kTurretHoldUs)
+      return {Verdict::Drop};
+    it->second = nowUs;
+    ++m_refused;
+    return {Verdict::Refuse, holder};
+  }
+  m_refusedUs.erase(std::pair{player, hands.entity});
+  if (letGo)
+    m_holds.erase(hands.entity);
+  else
+    m_holds[hands.entity] = {player, nowUs};
+  return {Verdict::Pass};
+}
+
+proto::PlayerId TurretHolds::Holder(std::uint64_t entity, std::uint64_t nowUs) const {
+  const auto it = m_holds.find(entity);
+  if (it == m_holds.end() || nowUs > it->second.heardUs + kTurretHoldUs)
+    return proto::kNoPlayer;
+  return it->second.player;
+}
+
+void TurretHolds::Forget(proto::PlayerId player) {
+  std::erase_if(m_holds, [&](const auto &hold) { return hold.second.player == player; });
+  std::erase_if(m_refusedUs, [&](const auto &refused) { return refused.first.first == player; });
+}
+
 namespace {
 float Distance(const proto::Vec3 &a, const proto::Vec3 &b) {
   return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) +

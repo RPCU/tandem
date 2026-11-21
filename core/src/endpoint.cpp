@@ -858,11 +858,14 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
             },
             [&](const proto::DeviceFire &fire) { OnDeviceSeen(player, fire, out); },
             [&](const proto::TurretHands &hands) {
-              // A turret in that guest's hands: for who sees its world.
+              // A turret in that guest's hands: for who sees its world,
+              // unless another player holds it.
               if (hands.entity == 0)
                 return;
               auto relayed = hands;
               relayed.player = player;
+              if (!HoldTurret(relayed, event.peer))
+                return;
               ShareNpc(relayed, player, event.peer);
               if (Sees(m_you, player))
                 out.push_back(events::TurretHeld{relayed});
@@ -970,6 +973,7 @@ void Endpoint::RemovePlayer(net::PeerId peer, std::vector<SessionEvent> &out) {
   // The turrets that had its V have nobody there any more.
   ForgetDevicesSeeing(player, out);
   m_fractureRate.erase(player);
+  m_turretHolds.Forget(player);
   // Gone while in the pause menu: no longer pausing anyone.
   if (NotePaused(player, false)) {
     Broadcast(proto::Pause{player, false});
@@ -2028,6 +2032,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           [&](const proto::TurretHands &hands) {
             if (hands.player != m_you && hands.entity != 0)
               out.push_back(events::TurretHeld{hands});
+          },
+          [&](const proto::TurretBusy &busy) {
+            if (busy.entity != 0 && busy.holder != m_you)
+              out.push_back(events::TurretRefused{busy});
           },
           [&](const proto::DeviceFire &fire) {
             // The host's turret's doing only (what a copy sees is a guest's
@@ -3783,10 +3791,29 @@ void Endpoint::SendTurretHands(proto::TurretHands hands) {
   if (!IsJoined() || m_ended || hands.entity == 0)
     return;
   hands.player = m_you;
-  if (IsHost())
-    ShareNpc(hands, m_you);
-  else
+  if (IsHost()) {
+    if (HoldTurret(hands, std::nullopt))
+      ShareNpc(hands, m_you);
+  } else {
     Send(m_hostPeer, hands);
+  }
+}
+
+bool Endpoint::HoldTurret(const proto::TurretHands &hands, std::optional<net::PeerId> peer) {
+  using Verdict = devices::TurretHolds::Verdict;
+  const auto answer = m_turretHolds.On(hands.player, hands, net::NowUs());
+  if (answer.verdict == Verdict::Refuse) {
+    const proto::TurretBusy busy{.entity = hands.entity, .holder = answer.holder};
+    if (peer)
+      Send(*peer, busy);
+    else
+      m_pending.push_back(events::TurretRefused{busy});
+  }
+  return answer.verdict == Verdict::Pass;
+}
+
+proto::PlayerId Endpoint::TurretHolder(std::uint64_t entity) const {
+  return m_turretHolds.Holder(entity, net::NowUs());
 }
 
 void Endpoint::SendDeviceFire(proto::DeviceFire fire) {
