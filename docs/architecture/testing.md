@@ -219,7 +219,7 @@ read):
 <!-- prettier-ignore -->
 | Query | Value |
 | --- | --- |
-| `health` | our V's health, percent (`StatPoolsSystem`, 2 decimals); starts the watch `health low` reads |
+| `health [points]` | our V's health, percent (`StatPoolsSystem`, 2 decimals); `points`: in health points; the percent starts the watch `health low` reads |
 | `health low` | the lowest our V's health went since the last `health`, read every tick: a hit's dip that regeneration fills within a second (a 10-physical hit is ~1 point through armour) |
 | `item RECORD` | its count in our inventory, every stack (`TransactionSystem`) |
 | `money` | our eddies |
