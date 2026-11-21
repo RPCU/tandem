@@ -62,6 +62,12 @@ public class TandemShots {
     return GameInstance.GetScriptableSystemsContainer(this.m_game).Get(n"TandemSystem") as TandemSystem;
   }
 
+  // test reset: each once-only line may be said again (a scenario reads
+  // it, the session keeps the list).
+  public func ResayForTests() -> Void {
+    ArrayClear(this.m_logged);
+  }
+
   private func Once(key: CName, text: String) -> Void {
     if !ArrayContains(this.m_logged, key) {
       ArrayPush(this.m_logged, key);
