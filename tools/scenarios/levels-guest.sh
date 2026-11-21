@@ -11,12 +11,12 @@ expect 'puppet 6[0-9]{4}: controller handed to the engine' 30
 # level differs: our game made it for our V's level).
 expect 'levels: proxy [0-9]+ level [0-9.]+ -> 31(\.0+)? \((the host|its owner).s 31' 30
 cmd progress
-expect 'levels: ours [0-9]+, session [0-9]+ \(2 players\), 0 NPCs moved; .* [1-9][0-9]* host levels known' 10
+expect 'levels: ours [0-9]+, session [0-9]+ \(2 players\), 0 NPCs moved; .* [1-9][0-9]* owners. levels known' 10
 shot levels-guest
 # The host goes: nothing of its levels is kept.
 pkill -x tandem-peer
 expect 'session ended' 60
 pause 3
 cmd progress
-expect 'levels: ours 0, session 0 \(0 players\), 0 NPCs moved; .* 0 host levels known' 10
+expect 'levels: ours 0, session 0 \(0 players\), 0 NPCs moved; .* 0 owners. levels known' 10
 reject 'watchdog: game thread silent'

@@ -11,7 +11,7 @@ expect 'wheels: our car is ' 30
 expect_peer 'shot player 1.s car for 150' 30
 expect 'wheels: player [0-9]+ hit vehicle 1 for 150' 10
 expect_peer 'vehicle 0x1 \(of player 1\): health 0\.[0-9]+' 10
-expect 'wheels: player [0-9]+ hit vehicle 1 for 150 \(flags 4, tyre 1\)' 20
+expect 'wheels: player [0-9]+ hit vehicle 1 for 150(\.0+)? \(flags 4, tyre 1\)' 20
 shot wheels-host-tyre
 # It asks for our gun: ours to give, its aim and shots come to us.
 expect_peer 'gunner: the seat is ours' 30
