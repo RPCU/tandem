@@ -591,7 +591,7 @@ public class TandemTraffic {
       }
       return;
     }
-    GameInstance.GetDynamicEntitySystem().DeleteEntity(car.body);
+    TandemEntities.Delete(car.body);
   }
 
   private func OnStatus(event: TandemStreetEvent) -> Void {

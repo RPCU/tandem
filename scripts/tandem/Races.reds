@@ -1457,7 +1457,7 @@ public class TandemRaces {
       return;
     }
     if this.m_now - this.m_carDropAt > 5.0 || this.m_now < this.m_carDropAt {
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(this.m_ourCar);
+      TandemEntities.Delete(this.m_ourCar);
       TandemNative.Log("races: our race car is gone");
       this.m_ourCar = EntityID.FromHash(0ul);
     }

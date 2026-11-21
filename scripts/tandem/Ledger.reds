@@ -216,7 +216,7 @@ public class TandemLedger {
       if still {
         ArrayPush(kept, body);
       } else {
-        GameInstance.GetDynamicEntitySystem().DeleteEntity(body.id);
+        TandemEntities.Delete(body.id);
       }
     }
     this.m_bodies = kept;
@@ -278,7 +278,7 @@ public class TandemLedger {
 
   private func Clear() -> Void {
     for body in this.m_bodies {
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(body.id);
+      TandemEntities.Delete(body.id);
     }
     ArrayClear(this.m_bodies);
   }

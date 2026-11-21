@@ -112,7 +112,7 @@ public class TandemDeleteLater extends DelayCallback {
   public let id: EntityID;
 
   public func Call() -> Void {
-    GameInstance.GetDynamicEntitySystem().DeleteEntity(this.id);
+    TandemEntities.Delete(this.id);
   }
 }
 

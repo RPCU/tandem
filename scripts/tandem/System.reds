@@ -118,6 +118,9 @@ public class TandemSystem extends ScriptableSystem {
   private let m_gates: ref<TandemGates>;
   private let m_vehicleProbe: ref<TandemVehicleProbe>;
   private let m_leaving: array<ref<TandemLeaving>>;
+  // Bodies to delete once they exist (Entities.reds).
+  private let m_deleting: array<ref<TandemDeleting>>;
+  private let m_deletingSaid: Bool;
   private let m_rideCar: EntityID;
   private let m_rideSlot: CName;
   // (test) "ride npc": the NPC to seat in our vehicle once it exists.
@@ -424,6 +427,8 @@ public class TandemSystem extends ScriptableSystem {
 
   private final func OnPlayerDetach(request: ref<PlayerDetachRequest>) -> Void {
     this.m_attached = false;
+    // The world goes, and Codeware's bodies with it.
+    ArrayClear(this.m_deleting);
     this.m_tickGen += 1;
     if IsDefined(this.m_saves) {
       this.m_saves.Stop();
@@ -1046,6 +1051,7 @@ public class TandemSystem extends ScriptableSystem {
     // What the world streamed in and out since, session or not (queued by
     // wraps that may run on job threads: StreamingNatives.reds).
     this.DrainStreamed();
+    this.TickDeleting();
     if !this.m_inGame {
       // No session: bodies of the last one on their way out, commands
       // (tools/game.sh cmd coop ...), and the recorder's senders, every
@@ -1539,7 +1545,7 @@ public class TandemSystem extends ScriptableSystem {
       }
     } else if Equals(command, "proxy clear") {
       for test in this.m_proxyTests {
-        GameInstance.GetDynamicEntitySystem().DeleteEntity(test.id);
+        TandemEntities.Delete(test.id);
       }
       ArrayClear(this.m_proxyTests);
     } else if StrBeginsWith(command, "proxy test") {
@@ -1634,7 +1640,7 @@ public class TandemSystem extends ScriptableSystem {
       TandemNative.Log(s"npc hostile: \(record) spawning (\(EntityID.IsDefined(id)))");
     } else if Equals(command, "npc hostile clear") {
       for id in this.m_testNpcs {
-        GameInstance.GetDynamicEntitySystem().DeleteEntity(id);
+        TandemEntities.Delete(id);
       }
       ArrayClear(this.m_testNpcs);
       ArrayClear(this.m_testHostile);
@@ -1753,7 +1759,7 @@ public class TandemSystem extends ScriptableSystem {
       // (engine-knowledge §13.6); run tools/game.sh bt if it does again.
       for car in this.m_parked {
         TandemNative.Log(s"vehicle clear: deleting \(EntityID.ToDebugStringDecimal(car))");
-        GameInstance.GetDynamicEntitySystem().DeleteEntity(car);
+        TandemEntities.Delete(car);
       }
       ArrayClear(this.m_parked);
       ArrayClear(this.m_parkedOwner);
@@ -2335,21 +2341,21 @@ public class TandemSystem extends ScriptableSystem {
       this.RunCommand("vehicle probe stop");
     }
     for id in this.m_testNpcs {
-      entities.DeleteEntity(id);
+      TandemEntities.Delete(id);
     }
     ArrayClear(this.m_testNpcs);
     ArrayClear(this.m_testHostile);
     this.m_hostileReports = 0;
     for test in this.m_proxyTests {
-      entities.DeleteEntity(test.id);
+      TandemEntities.Delete(test.id);
     }
     ArrayClear(this.m_proxyTests);
     if EntityID.IsDefined(this.m_rideNpc) {
-      entities.DeleteEntity(this.m_rideNpc);
+      TandemEntities.Delete(this.m_rideNpc);
       this.m_rideNpc = EntityID.FromHash(0ul);
     }
     // "npc spawn" gangers and "npc hostile" NPCs.
-    entities.DeleteTagged(n"Tandem.Test");
+    TandemEntities.DeleteTagged(n"Tandem.Test");
     this.m_recordOverride = "";
     this.m_puppetGroup = n"None";
     TandemNative.Log("test reset: test NPCs, worlds, abilities and revive state cleared");
@@ -2369,7 +2375,7 @@ public class TandemSystem extends ScriptableSystem {
         }
       }
       if this.CarOwner(id) == 0u && !leaving {
-        entities.DeleteEntity(id);
+        TandemEntities.Delete(id);
         deleted += 1;
       }
     }
@@ -3768,6 +3774,46 @@ public class TandemSystem extends ScriptableSystem {
     TandemNative.Log(s"player \(puppet.player): leaving (seated \(EntityID.IsDefined(puppet.seatedIn)), car \(EntityID.IsDefined(puppet.car)))");
   }
 
+  // TandemEntities.Delete of a body that does not exist yet: kept until it
+  // does (Entities.reds).
+  public func DeleteLater(id: EntityID) -> Void {
+    for waiting in this.m_deleting {
+      if waiting.id == id {
+        return;
+      }
+    }
+    let deleting = new TandemDeleting();
+    deleting.id = id;
+    deleting.since = this.Now();
+    ArrayPush(this.m_deleting, deleting);
+    if !this.m_deletingSaid {
+      this.m_deletingSaid = true;
+      TandemNative.Log(s"entities: body \(EntityID.ToDebugString(id)) deleted before it exists: deleted when it does (said once; the others in debug)");
+    } else {
+      TandemNative.LogDebug(s"entities: body \(EntityID.ToDebugString(id)) deleted before it exists: deleted when it does");
+    }
+  }
+
+  private func TickDeleting() -> Void {
+    if ArraySize(this.m_deleting) == 0 {
+      return;
+    }
+    let entities = GameInstance.GetDynamicEntitySystem();
+    let now = this.Now();
+    let kept: array<ref<TandemDeleting>>;
+    for deleting in this.m_deleting {
+      if !entities.IsManaged(deleting.id) {
+        TandemNative.LogDebug(s"entities: body \(EntityID.ToDebugString(deleting.id)) never came (no stub)");
+      } else if entities.IsSpawned(deleting.id) || now - deleting.since > TandemEntities.WaitLimit() {
+        TandemNative.LogDebug(s"entities: body \(EntityID.ToDebugString(deleting.id)) deleted \(now - deleting.since) s after it was asked");
+        entities.DeleteEntity(deleting.id);
+      } else {
+        ArrayPush(kept, deleting);
+      }
+    }
+    this.m_deleting = kept;
+  }
+
   // One step per frame: the body when it is no longer mounted (or after
   // 2 s), then, the next frame, its car, once nobody else sits in it.
   private func ProcessLeaving() -> Void {
@@ -3783,7 +3829,7 @@ public class TandemSystem extends ScriptableSystem {
           ArrayPush(kept, leaving);
         } else {
           TandemNative.Log(s"player \(leaving.player): deleting the body");
-          entities.DeleteEntity(leaving.id);
+          TandemEntities.Delete(leaving.id);
           leaving.bodyGone = true;
           ArrayPush(kept, leaving);
         }
