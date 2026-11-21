@@ -496,6 +496,8 @@ public native class TandemNative extends IScriptable {
   public static native func SendPaused(paused: Bool)
   public static native func PausedPlayers() -> array<Uint32>
   public static native func PausedChanges() -> Int32
+  public static native func PhysicsBacklog() -> Int32
+  public static native func PhysicsBacklogLimit() -> Int32
   public static native func PlayerName(player: Uint32) -> String
   public static native func SendTimeEffect(abilities: Int32, scale: Float)
   public static native func TimeChanges() -> Int32

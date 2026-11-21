@@ -23,6 +23,17 @@ public class TandemPause {
   private let m_paused: array<Uint32>;
   private let m_seen: Int32;
   private let m_handler: wref<inkISystemRequestsHandler>;
+  // The physics watch (research/engine/time.md §13.100): while the world is
+  // paused, writes to physics bodies queue up undrained, and past the queue's
+  // room the engine overwrites its own heap. The backlog is logged as it
+  // grows; near the limit the pause is lifted for a frame or a few so the
+  // physics update drains it. Frames paused, the backlog's peak, the last
+  // 4096-entry step logged, frames left lifted (0: not lifting), lifts.
+  private let m_pausedFrames: Int32;
+  private let m_backlogPeak: Int32;
+  private let m_backlogLogged: Int32;
+  private let m_lifting: Int32;
+  private let m_lifts: Int32;
 
   public func Start(game: GameInstance) -> Void {
     this.m_game = game;
@@ -37,6 +48,11 @@ public class TandemPause {
     this.Release();
     this.m_ready = false;
     ArrayClear(this.m_paused);
+    this.m_lifting = 0;
+    this.m_pausedFrames = 0;
+    this.m_backlogPeak = 0;
+    this.m_backlogLogged = 0;
+    this.m_lifts = 0;
   }
 
   public static func Of(game: GameInstance) -> ref<TandemPause> {
@@ -126,6 +142,10 @@ public class TandemPause {
     if !IsDefined(handler) {
       return;
     }
+    if this.m_lifting > 0 {
+      this.Lifting(handler);
+      return;
+    }
     let wanted = ArraySize(this.m_paused) > 0;
     if wanted && !this.m_holding {
       handler.PauseGame();
@@ -139,6 +159,62 @@ public class TandemPause {
       this.Release();
       TandemNative.Log("pause: world resumed");
     }
+    if handler.IsGamePaused() && (this.m_holding || this.m_menuOpen) {
+      this.Watch(handler);
+    } else if this.m_pausedFrames > 0 {
+      this.WatchOver();
+    }
+  }
+
+  // Every frame of a co-op pause (ours to hold, or our menu's in a session).
+  private func Watch(handler: wref<inkISystemRequestsHandler>) -> Void {
+    this.m_pausedFrames += 1;
+    let backlog = TandemNative.PhysicsBacklog();
+    if backlog < 0 {
+      return; // the watch is off (the plugin logged why)
+    }
+    if backlog > this.m_backlogPeak {
+      this.m_backlogPeak = backlog;
+    }
+    let limit = TandemNative.PhysicsBacklogLimit();
+    let step = backlog / 4096;
+    if step > this.m_backlogLogged {
+      this.m_backlogLogged = step;
+      TandemNative.Log(s"pause: physics backlog \(backlog) of \(limit) entries after \(this.m_pausedFrames) paused frames");
+    }
+    if backlog >= limit / 4 * 3 {
+      handler.UnpauseGame();
+      this.m_lifting = 10;
+      this.m_lifts += 1;
+      TandemNative.Log(s"pause: physics backlog \(backlog) of \(limit): the pause lifted for the physics to drain");
+    }
+  }
+
+  // The world runs for the physics to drain its queue; paused again once it
+  // has (or after 10 frames), if still wanted.
+  private func Lifting(handler: wref<inkISystemRequestsHandler>) -> Void {
+    this.m_lifting -= 1;
+    let backlog = TandemNative.PhysicsBacklog();
+    if backlog >= 1024 && this.m_lifting > 0 {
+      return;
+    }
+    this.m_lifting = 0;
+    let again = (this.m_holding && ArraySize(this.m_paused) > 0) || this.m_menuOpen;
+    if again && !handler.IsGamePaused() {
+      handler.PauseGame();
+    }
+    this.m_backlogLogged = backlog / 4096;
+    let what = again ? "paused again" : "not paused any more";
+    TandemNative.Log(s"pause: physics backlog \(backlog) after the lift, \(what)");
+  }
+
+  // A co-op pause is over: what the physics queue did during it.
+  private func WatchOver() -> Void {
+    TandemNative.Log(s"pause: over after \(this.m_pausedFrames) frames, physics backlog peaked at \(this.m_backlogPeak), \(this.m_lifts) lift(s)");
+    this.m_pausedFrames = 0;
+    this.m_backlogPeak = 0;
+    this.m_backlogLogged = 0;
+    this.m_lifts = 0;
   }
 
   private func Release() -> Void {
