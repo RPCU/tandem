@@ -872,6 +872,15 @@ public class TandemSpectate {
 
   // ---- commands (tools/game.sh cmd story spectate …) ----
 
+  // (test reset) the test switch off: a failed spectate-missing left it on
+  // for the next scenario (spectate-ride watched for its reason, 2026-11-21).
+  public func ClearTest() -> Void {
+    if this.m_testMissing {
+      this.m_testMissing = false;
+      TandemNative.Log("spectate: test: the host's interiors as they are here (test reset)");
+    }
+  }
+
   public func Command(command: String) -> Void {
     let host = TandemNative.IsHost();
     if Equals(command, "story spectate on") || Equals(command, "story spectate off") {
