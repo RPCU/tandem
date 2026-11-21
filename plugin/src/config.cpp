@@ -213,6 +213,13 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.sceneCamera = false;
     else
       return Bad("scene_camera is on or off");
+  } else if (key == "quest_prefabs") {
+    if (value == "on" || value == "true")
+      config.questPrefabs = true;
+    else if (value == "off" || value == "false")
+      config.questPrefabs = false;
+    else
+      return Bad("quest_prefabs is on or off");
   } else if (key == "spectate") {
     if (value == "on" || value == "true")
       config.spectate = true;

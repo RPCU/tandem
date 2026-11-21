@@ -5,6 +5,7 @@
 // apart from Runtime: the story has its own messages and its own script.
 
 #include "tandem/interact.hpp"
+#include "tandem/prefabs.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/scene.hpp"
 #include "tandem/story.hpp"
@@ -113,6 +114,19 @@ public:
   // Host: the backstop on a guest's acts on the scene's actors.
   story::Backstop &Backstop() { return m_backstop; }
 
+  // Quest prefabs (docs/architecture/story.md, "Quest prefabs"), game
+  // thread. Host: the set last sent. Guest: the host's set and what we
+  // turned on of it.
+  std::vector<std::uint64_t> &PrefabsSent() { return m_prefabsSent; }
+  bool &PrefabsSaid() { return m_prefabsSaid; }
+  prefabs::Mirror &Prefabs() { return m_prefabs; }
+  // Story gates (docs/architecture/story.md, "Story gates"), game thread:
+  // ours as last sent (-1: never), every other player's as heard, and the
+  // guest's watch on the host's barriers.
+  std::int32_t &GatesSent() { return m_gatesSent; }
+  std::map<proto::PlayerId, std::uint8_t> &GatesOf() { return m_gates; }
+  gates::Watcher &GateWatcher() { return m_gateWatcher; }
+
   // Quest interactions (docs/architecture/story.md, "Quest interactions"),
   // game thread. Guest: what the host answered of each object's choices
   // (a known host-only prompt is greyed before it is pressed), our count of
@@ -146,6 +160,12 @@ private:
   std::vector<std::uint64_t> m_removals;
   std::vector<std::uint64_t> m_sent;
   story::Backstop m_backstop;
+  std::vector<std::uint64_t> m_prefabsSent;
+  bool m_prefabsSaid{};
+  prefabs::Mirror m_prefabs;
+  std::int32_t m_gatesSent{-1};
+  std::map<proto::PlayerId, std::uint8_t> m_gates;
+  gates::Watcher m_gateWatcher;
   story::HostMoment m_moment;
   story::Spectator m_spectator;
   bool m_spectateOff{};

@@ -100,6 +100,13 @@ void Story::Note(const StoryInbound &inbound) {
     // The next session's host starts from no restriction. A guest's own
     // (what its V holds) stay for its script's leave (RestrictLift).
     m_sent.clear();
+    // The next session's host sends its prefabs and everyone its gates
+    // afresh. A guest's own prefabs stay for its script's leave (PrefabsLift).
+    m_prefabsSent.clear();
+    m_prefabsSaid = false;
+    m_gatesSent = -1;
+    m_gates.clear();
+    m_gateWatcher.Clear();
     // Nobody's moment outlives the session (a guest's watching stops in its
     // script's leave, SpectateLift).
     m_moment.Clear();
@@ -120,6 +127,7 @@ void Story::Note(const StoryInbound &inbound) {
   case StoryInbound::Kind::Left:
     m_others.erase(inbound.player);
     m_participation.Forget(inbound.player);
+    m_gates.erase(inbound.player);
     // Its questions are void (the endpoint sends no answer to them).
     std::erase_if(m_interactAsks,
                   [&](const auto &entry) { return entry.first.first == inbound.player; });
