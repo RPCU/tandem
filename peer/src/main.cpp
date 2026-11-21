@@ -262,6 +262,9 @@ struct Options {
   std::string hackEffect{"BaseStatusEffect.Blind"};
   int hackPlayerSeconds{0};
   std::string npcHack{"AIQuickHack.HackRevealPosition"};
+  // --hack-player: its netrunner is interrupted this long after each hack
+  // (AIQuickHackStatusEffect.HackingInterrupted on it for 2 s; -1: never).
+  double hackInterruptSeconds{-1.0};
   int hackCarSeconds{0};
   std::string storyFile;         // host: a scripted story (tools/scenarios/story-host.story)
   std::string restrictions;      // host: story restrictions on its V (REC[,REC]), as steps
@@ -400,6 +403,10 @@ struct Options {
   // long in, by our own V (-1: never): the session's ledger remembers it.
   std::uint64_t regionPlaced{};
   int regionKillAtSeconds{-1};
+  // region: our NPCs cannot die (a quest's immortal): their health floors
+  // at 1 %, and "said" tells the others so (NpcHealth kNpcProtected),
+  // "silent" does not ("": mortal).
+  std::string regionImmortal;
   bool regionDriver{};
   bool regionChase{};
   bool check{}; // parse the options, then exit
@@ -583,6 +590,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     entity ids HEX, HEX+1... (NpcPlaced): twins by identity, and\n"
          "                     their deaths go into the session's ledger (NpcDeath)\n"
          "  --region-kill-at S region: our first NPC dies S seconds in, by our own V\n"
+         "  --region-immortal said|silent region: our NPCs cannot die (health floors at 1 %);\n"
+         "                     said: NpcHealth says so (kNpcProtected); silent: it does not,\n"
+         "                     and a hit at the floor sends nothing\n"
          "  --region-driver    region: our last NPC drives our first car (NpcSeat)\n"
          "  --region-chase     region: our first car chases the first player we meet\n"
          "  --name NAME        player name (default tandem-peer)\n"
@@ -700,6 +710,8 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     seconds\n"
          "  --npc-hack REC     --hack-player: the NPC's hack (default\n"
          "                     AIQuickHack.HackRevealPosition, a trace)\n"
+         "  --hack-interrupt S --hack-player: its netrunner is interrupted S seconds after\n"
+         "                     each hack (HackingInterrupted on it for 2 s, NpcStatus)\n"
          "  --hack-car N       hack the car another player drives (brakes, 3 s) every N\n"
          "                     seconds\n"
          "  --story FILE       host: play a scripted story (journal, calls, lines, hubs,\n"
@@ -1341,6 +1353,8 @@ Options Parse(int argc, char **argv) {
       options.hackEffect = std::string(value);
     else if (flag == "--hack-player")
       options.hackPlayerSeconds = Number<int>(value);
+    else if (flag == "--hack-interrupt")
+      options.hackInterruptSeconds = Number<double>(value);
     else if (flag == "--npc-hack")
       options.npcHack = std::string(value);
     else if (flag == "--hack-car")
@@ -1565,7 +1579,11 @@ Options Parse(int argc, char **argv) {
         Usage(std::format("--region-placed: {} is not an entity id in hex", entity));
     } else if (flag == "--region-kill-at")
       options.regionKillAtSeconds = Number<int>(value);
-    else if (flag == "--detect-at")
+    else if (flag == "--region-immortal") {
+      if (value != "said" && value != "silent")
+        Usage(std::format("--region-immortal: said or silent, not {}", value));
+      options.regionImmortal = std::string(value);
+    } else if (flag == "--detect-at")
       options.detectAtSeconds = Number<int>(value);
     else if (flag == "--detect-for")
       options.detectForSeconds = Number<int>(value);
@@ -2903,7 +2921,7 @@ public:
         endpoint.SendNpcSpawn({.npc = id,
                                .record = TweakDBID(m_options.regionRecord),
                                .position = m_npcs[id].position});
-        endpoint.SendNpcHealth({.npc = id, .health = 1.f});
+        endpoint.SendNpcHealth({.npc = id, .health = 1.f, .flags = ProtectedFlag()});
         if (m_options.regionPlaced != 0)
           endpoint.SendCombat(proto::NpcPlaced{
               .npc = id, .entity = m_options.regionPlaced + static_cast<std::uint64_t>(i)});
@@ -3116,6 +3134,16 @@ public:
     const auto it = m_npcs.find(hit);
     if (hit == 0 || it == m_npcs.end())
       return false;
+    if (!m_options.regionImmortal.empty()) {
+      // --region-immortal: at 1 % it stays; silent, a hit there says nothing.
+      const auto was = it->second.health;
+      it->second.health = std::max(0.01f, it->second.health - damage / 100.f);
+      Log("region: player {} hit our npc {}: {:.0f} damage, health {:.2f}, it cannot die ({})", by,
+          hit, damage, it->second.health, m_options.regionImmortal);
+      if (ProtectedFlag() != 0 || it->second.health != was)
+        endpoint.SendNpcHealth({.npc = hit, .health = it->second.health, .flags = ProtectedFlag()});
+      return true;
+    }
     it->second.health = std::max(0.f, it->second.health - damage / 100.f);
     Log("region: player {} hit our npc {}: {:.0f} damage, health {:.2f}", by, hit, damage,
         it->second.health);
@@ -3130,6 +3158,10 @@ public:
   }
 
   std::size_t Running() const { return m_npcs.size(); }
+
+  std::uint8_t ProtectedFlag() const {
+    return m_options.regionImmortal == "said" ? tandem::proto::kNpcProtected : std::uint8_t{0};
+  }
 
 private:
   struct Npc {
@@ -3728,6 +3760,12 @@ std::string DescribeCombat(const tandem::proto::Message &message) {
   if (const auto *d = std::get_if<proto::Defended>(&message))
     return std::format("player {} {} npc {}'s attack", d->player,
                        d->how == proto::DefendKind::Parried ? "parried" : "blocked", d->npc);
+  if (const auto *w = std::get_if<proto::WeakSpotHit>(&message))
+    return std::format("player {}'s fire took {:.0f}% of weak spot {} ({:#x}) of npc {}", w->player,
+                       w->drain, w->index, w->record, w->npc);
+  if (const auto *t = std::get_if<proto::HackTraced>(&message))
+    return std::format("npc {}'s trace of player {} ran to its end: its squad is set on them",
+                       t->npc, t->player);
   if (const auto *s = std::get_if<proto::SessionLevel>(&message))
     return std::format("the session's level is {} ({} players)", s->level, s->players);
   if (const auto *n = std::get_if<proto::NpcLevel>(&message))
@@ -4296,6 +4334,10 @@ int main(int argc, char **argv) {
   std::map<tandem::proto::PlayerId, bool> driving;
   auto nextHack = std::chrono::steady_clock::now() + 5s;
   auto nextPlayerHack = std::chrono::steady_clock::now() + 5s;
+  // --hack-interrupt: the netrunner whose hack is to be cut, and when its
+  // interruption comes and goes (nullopt: none pending).
+  tandem::proto::NpcId interruptNpc = 0;
+  std::optional<std::chrono::steady_clock::time_point> interruptAt, interruptEnd;
   auto nextCarHack = std::chrono::steady_clock::now() + 5s;
   std::vector<Recording::Entry> replay;
   std::size_t replayNext = 0;
@@ -4998,8 +5040,8 @@ int main(int argc, char **argv) {
             } else if constexpr (std::is_same_v<E, tandem::events::HostNpcCue>) {
               Log("npc {}: cue {} for us", e.cue.npc, static_cast<int>(e.cue.cue));
             } else if constexpr (std::is_same_v<E, tandem::events::ShotAtUs>) {
-              Log("npc {} fires at us (weapon {:#x}, speed {:.2f})", e.shot.npc, e.shot.weapon,
-                  e.shot.factor);
+              Log("npc {} fires at us (weapon {:#x}, speed {:.2f}{})", e.shot.npc, e.shot.weapon,
+                  e.shot.factor, e.shot.tbh == 0.f ? ", may land" : "");
             } else if constexpr (std::is_same_v<E, tandem::events::ShotHitBy>) {
               Log("player {} reports npc {}'s shot hit their V", e.hit.player, e.hit.npc);
             } else if constexpr (std::is_same_v<E, tandem::events::HitByNpc>) {
@@ -7138,8 +7180,28 @@ int main(int argc, char **argv) {
                .action = TweakDBID(options.npcHack),
                .flags = trace ? tandem::proto::kPlayerHackReveal : std::uint8_t{0}});
           Log("npc {} hacks player {} with {}", npc, id, options.npcHack);
+          if (options.hackInterruptSeconds >= 0.0) {
+            interruptNpc = npc;
+            interruptAt = now + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                                    std::chrono::duration<double>(options.hackInterruptSeconds));
+          }
           break;
         }
+    }
+    // --hack-interrupt: what stops its upload, on the netrunner (its owner's word).
+    if (interruptAt && now >= *interruptAt) {
+      interruptAt.reset();
+      interruptEnd = now + 2s;
+      endpoint->SendNpcStatus({.npc = interruptNpc,
+                               .effect = TweakDBID("AIQuickHackStatusEffect.HackingInterrupted"),
+                               .applied = true});
+      Log("npc {}'s hack interrupted (AIQuickHackStatusEffect.HackingInterrupted)", interruptNpc);
+    }
+    if (interruptEnd && now >= *interruptEnd) {
+      interruptEnd.reset();
+      endpoint->SendNpcStatus({.npc = interruptNpc,
+                               .effect = TweakDBID("AIQuickHackStatusEffect.HackingInterrupted"),
+                               .applied = false});
     }
     // --hack-car: brake the car someone else drives.
     if (options.hackCarSeconds && endpoint->IsJoined() && now >= nextCarHack) {

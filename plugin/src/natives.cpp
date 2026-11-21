@@ -1261,9 +1261,13 @@ struct TandemNative : Red::IScriptable {
     Runtime::Get().SubmitNpcStates(states);
   }
 
-  // Host: an NPC's health (fraction 0..1) changed.
-  static void SendNpcHealth(std::uint32_t npc, float health) {
-    Runtime::Get().SubmitNpcHealth({.npc = npc, .health = health});
+  // Host: an NPC's health (fraction 0..1) or its protection
+  // (proto::kNpcProtected) changed.
+  static void SendNpcHealth(std::uint32_t npc, float health, std::int32_t flags) {
+    Runtime::Get().SubmitNpcHealth(
+        {.npc = npc,
+         .health = health,
+         .flags = static_cast<std::uint8_t>(flags & proto::kNpcHealthFlags)});
   }
   // Guest: we hit the host's NPC (its proxy) for `damage` health points.
   static void SendNpcHit(std::uint32_t npc, float damage, std::int32_t flags, Red::Vector4 position,

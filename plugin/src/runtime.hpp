@@ -51,7 +51,7 @@ struct NpcEvent {
   std::uint8_t reason{};
   proto::PlayerId player{}; // Hit, Effect: who; Gone: the killer
   float amount{};           // Hit: damage (health points); Health: fraction 0..1
-  std::uint8_t flags{};     // Hit: proto::kHit*
+  std::uint8_t flags{};     // Hit: proto::kHit*; Health: proto::kNpcProtected
   proto::Vec3 direction;    // Hit: its way (spawn.position: where it landed)
 };
 

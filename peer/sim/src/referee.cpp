@@ -204,6 +204,9 @@ TANDEM_SAID_BY(Either, StoryGates)
 // A street race: a player's word in its own name; what describes the race,
 // seats, orders and pays is its starter's alone (CheckValues).
 TANDEM_SAID_BY(Either, Race)
+// What a proxy cannot do, asked of the NPC's owner (AsksOwner).
+TANDEM_SAID_BY(Either, WeakSpotHit)
+TANDEM_SAID_BY(Either, HackTraced)
 #undef TANDEM_SAID_BY
 
 // A new message without its SaidBy line above fails here ("incomplete type").
@@ -280,7 +283,7 @@ std::optional<p::TrafficId> TrafficAsked(const p::Message &m) {
 // A request to an NPC's owner (through the host, which stamps the sender).
 bool AsksOwner(const p::Message &m) {
   return IsAny<p::NpcHit, p::NpcStrike, p::NpcEffect, p::NpcHack, p::NpcAction, p::ShotHit,
-               p::Defended>(m);
+               p::Defended, p::WeakSpotHit, p::HackTraced>(m);
 }
 p::NpcId NpcOf(const p::Message &m) {
   return std::visit(
@@ -338,7 +341,8 @@ p::PlayerId *SenderOf(p::Message &message) {
                            std::is_same_v<M, p::QuestInteract> || std::is_same_v<M, p::Fracture> ||
                            std::is_same_v<M, p::DeviceFire> || std::is_same_v<M, p::ThrowPath> ||
                            std::is_same_v<M, p::TurretHands> || std::is_same_v<M, p::Race> ||
-                           std::is_same_v<M, p::StoryGates>)
+                           std::is_same_v<M, p::StoryGates> ||
+                           std::is_same_v<M, p::WeakSpotHit> || std::is_same_v<M, p::HackTraced>)
           return &m.player;
         else
           return nullptr;
@@ -735,7 +739,12 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
                                 m.chemical >= 0.f);
         } else if constexpr (std::is_same_v<M, p::NpcHealth>) {
           finite = std::isfinite(m.health);
-          inRange = !finite || (m.health >= 0.f && m.health <= 1.001f);
+          inRange = (!finite || (m.health >= 0.f && m.health <= 1.001f)) &&
+                    (m.flags & ~p::kNpcHealthFlags) == 0;
+        } else if constexpr (std::is_same_v<M, p::WeakSpotHit>) {
+          // A share of a named weak spot's health, never nothing.
+          finite = std::isfinite(m.drain);
+          inRange = m.record != 0 && (!finite || (m.drain > 0.f && m.drain <= 100.001f));
         } else if constexpr (std::is_same_v<M, p::NpcPoise>) {
           finite = std::isfinite(m.poise);
           inRange = !finite || (m.poise >= 0.f && m.poise <= 1.001f);

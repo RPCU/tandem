@@ -169,6 +169,12 @@ public class TandemOutcomes {
         case 13:
           this.Throws().OnPath(event);
           break;
+        case 14:
+          TandemWeakSpots.Take(this.m_game, event, npcs);
+          break;
+        case 15:
+          TandemHacks.Traced(this.m_game, event.npc, event.player, npcs);
+          break;
         default:
           break;
       }

@@ -78,6 +78,8 @@ bool AimsAtWorld(const proto::Message &message) {
          std::holds_alternative<proto::TrafficHit>(message) ||
          std::holds_alternative<proto::TrafficClaim>(message) ||
          std::holds_alternative<proto::Defended>(message) ||
+         std::holds_alternative<proto::WeakSpotHit>(message) ||
+         std::holds_alternative<proto::HackTraced>(message) ||
          std::holds_alternative<proto::Noise>(message) ||
          std::holds_alternative<proto::VehicleHit>(message) ||
          std::holds_alternative<proto::NpcRam>(message) ||
@@ -1435,6 +1437,16 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
     }
     if (const auto *defended = std::get_if<proto::Defended>(&message)) {
       if (OwnsNpc(defended->npc) && defended->player != m_you)
+        out.push_back(events::Combat{message});
+      return;
+    }
+    if (const auto *weak = std::get_if<proto::WeakSpotHit>(&message)) {
+      if (OwnsNpc(weak->npc) && weak->player != m_you)
+        out.push_back(events::Combat{message});
+      return;
+    }
+    if (const auto *traced = std::get_if<proto::HackTraced>(&message)) {
+      if (OwnsNpc(traced->npc) && traced->player != m_you)
         out.push_back(events::Combat{message});
       return;
     }
@@ -4049,6 +4061,18 @@ void Endpoint::OnGuestCombat(proto::PlayerId player, const proto::Message &messa
     mine.player = player;
     if (RouteToOwner(mine.npc, mine, player))
       out.push_back(events::Combat{mine});
+  } else if (const auto *weak = std::get_if<proto::WeakSpotHit>(&message)) {
+    // For the weak spot's NPC's owner: our game, or passed on.
+    auto stamped = *weak;
+    stamped.player = player;
+    if (RouteToOwner(stamped.npc, stamped, player))
+      out.push_back(events::Combat{stamped});
+  } else if (const auto *traced = std::get_if<proto::HackTraced>(&message)) {
+    // For the netrunner's owner: our game, or passed on.
+    auto stamped = *traced;
+    stamped.player = player;
+    if (RouteToOwner(stamped.npc, stamped, player))
+      out.push_back(events::Combat{stamped});
   } else if (const auto *npcLevel = std::get_if<proto::NpcLevel>(&message)) {
     // A guest owner's word on its NPC's level: kept (late joiners), for who
     // sees it.
@@ -4326,6 +4350,22 @@ bool Endpoint::SendCombat(proto::Message message) {
     RouteToOwner(defended->npc, message, m_you);
     return true;
   }
+  // What a proxy cannot do (npcs.md): for the NPC's owner, as Defended.
+  const auto toOwner = [&](proto::PlayerId &player, proto::NpcId npc) {
+    if (npc == 0 || OwnsNpc(npc) || NpcOwnerOrAnnouncer(npc) == m_you)
+      return false;
+    player = m_you;
+    if (!IsHost()) {
+      Send(m_hostPeer, message);
+      return true;
+    }
+    RouteToOwner(npc, message, m_you);
+    return true;
+  };
+  if (auto *weak = std::get_if<proto::WeakSpotHit>(&message))
+    return toOwner(weak->player, weak->npc);
+  if (auto *traced = std::get_if<proto::HackTraced>(&message))
+    return toOwner(traced->player, traced->npc);
   if (const auto *level = std::get_if<proto::NpcLevel>(&message)) {
     // An owner's word on its NPC (the host's, or a guest's own: regions.md),
     // only when it changes. One we are about to share (its spawn is on its

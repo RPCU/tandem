@@ -117,8 +117,10 @@
   explosions' fixed share, grenades) then read the host's; `PlayerHit`
   also carries the attack's `IgnoreDifficulty` and `CannotKillPlayer`
   flags. Not yet verified in game (scenarios `outcomes-knockout`,
-  `outcomes-blade`, `outcomes-poise`, `outcomes-guest`). Open: a guest's
-  own prediction of the kill for on-kill perks (coop-perks.md §2.3), the
+  `outcomes-blade`, `outcomes-poise`, `outcomes-guest`). A guest's own
+  prediction of the kill (on-kill perks, coop-perks.md §2.3) is never made
+  on an NPC its owner cannot kill now, and undone when no death follows
+  (npcs.md, "A kill seen first"). Open: the
   finisher offered to the host's V for a guard a guest broke
   (`NPCPoiseListener` reads the local player), NPCs beyond the guest's 60 m
   out of its area effects, a guest's save made at the host's difficulty.

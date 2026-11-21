@@ -362,6 +362,42 @@ TEST_CASE("referee: the host may not say what only a guest asks") {
   CHECK(Broke(referee, "oneshot.welcome-twice"));
 }
 
+TEST_CASE("referee: a weak spot's share and a trace's end go to the NPC's owner, sane") {
+  auto host = Host();
+  host.Sent(0, proto::NpcSpawn{.npc = 1, .record = 1}, kSecond);
+  host.Received(2, proto::WeakSpotHit{.player = 2, .npc = 1, .record = 9, .drain = 30.f}, kSecond);
+  host.Received(2, proto::HackTraced{.player = 2, .npc = 1}, kSecond);
+  CHECK(Rules(host).empty());
+  // In nobody else's name; a named weak spot, a share of its health.
+  host.Received(2, proto::HackTraced{.player = 3, .npc = 1}, kSecond);
+  host.Received(2, proto::WeakSpotHit{.player = 2, .npc = 1, .drain = 30.f}, kSecond);
+  host.Received(2, proto::WeakSpotHit{.player = 2, .npc = 1, .record = 9, .drain = 0.f}, kSecond);
+  host.Received(
+      2,
+      proto::WeakSpotHit{
+          .player = 2, .npc = 1, .record = 9, .drain = std::numeric_limits<float>::quiet_NaN()},
+      kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.not-yours", "value.range", "value.range",
+                                                "value.not-finite"});
+  // Passed to a guest only for an NPC its game runs.
+  auto guest = Guest();
+  guest.Received(1, proto::HackTraced{.player = 3, .npc = 1}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.not-owner"});
+  guest.Sent(1, proto::NpcSpawn{.npc = regions::MakeNpcId(2, 1)}, kSecond);
+  guest.Received(
+      1,
+      proto::WeakSpotHit{.player = 3, .npc = regions::MakeNpcId(2, 1), .record = 9, .drain = 5.f},
+      kSecond);
+  CHECK(Rules(guest).empty());
+  // An owner's health of an NPC with a flag this version does not know.
+  guest.Received(1, proto::NpcSpawn{.npc = 1}, kSecond);
+  guest.Received(1, proto::NpcHealth{.npc = 1, .health = 0.5f, .flags = proto::kNpcProtected},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::NpcHealth{.npc = 1, .health = 0.5f, .flags = 2}, kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"value.range"});
+}
+
 TEST_CASE("referee: ids nobody announced, ids used twice") {
   SUBCASE("a guest names an NPC the host never shared") {
     auto referee = Host();

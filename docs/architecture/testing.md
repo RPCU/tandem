@@ -364,9 +364,16 @@ on` its camera's views go out, scene or not, for a guest to spectate
 - **quickhacks**: `join --hack-npcs N` uploads `--hack-action` on one of
   the host's NPCs every N s (1.5 s) and then lands `--hack-effect`;
   `host --replay FILE --hack-player N` has a replayed NPC hack the guest's
-  V with `--npc-hack` (default the trace); `--hack-car N` brakes the car
-  another player drives. The game side's test commands: `tools/game.sh cmd
-hack npc [RECORD]` (our V quickhacks the nearest proxy) and `hack car`.
+  V with `--npc-hack` (default the trace), interrupted `--hack-interrupt S`
+  seconds after each (`HackingInterrupted` on the netrunner for 2 s);
+  `--hack-car N` brakes the car another player drives. The game side's
+  test commands: `tools/game.sh cmd hack npc [RECORD]` (our V quickhacks
+  the nearest proxy), `hack car`, and `npc weakspot [N]` (our V's hit of
+  N, default 40, on the nearest proxy's first whole weak spot).
+- `--region-immortal said|silent` (`--mode region`): the mock's own NPCs
+  cannot die (health floors at 1 %); `said` tells the others with
+  `NpcHealth`'s `kNpcProtected`, `silent` does not (scenario
+  `npcs-protected`).
 - `--drop P`, `--dup P` (any mode): a share P of what the peer sends never
   leaves, reliable messages too (as a bug would lose them), and a share of
   its state goes twice: the game must converge anyway (Consistency;

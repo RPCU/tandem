@@ -401,6 +401,9 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
   if (const auto *hands = std::get_if<TurretHands>(&message);
       hands && (hands->flags & ~kHandsFlags) != 0)
     return std::nullopt;
+  if (const auto *health = std::get_if<NpcHealth>(&message);
+      health && (health->flags & ~kNpcHealthFlags) != 0)
+    return std::nullopt;
   return read;
 }
 
@@ -480,7 +483,8 @@ bool IsCombat(const Message &message) {
          std::holds_alternative<CarLend>(message) || std::holds_alternative<NpcScale>(message) ||
          std::holds_alternative<NpcVendor>(message) || std::holds_alternative<ThrowPath>(message) ||
          std::holds_alternative<NpcPlaced>(message) || std::holds_alternative<NpcDeath>(message) ||
-         std::holds_alternative<Race>(message);
+         std::holds_alternative<Race>(message) || std::holds_alternative<WeakSpotHit>(message) ||
+         std::holds_alternative<HackTraced>(message);
 }
 
 bool IsTrade(const Message &message) {
@@ -660,7 +664,9 @@ const char *NameOfKind(std::size_t kind) {
                                    "ScenePlace",
                                    "LinkDecline",
                                    "WorldPrefabs",
-                                   "StoryGates"};
+                                   "StoryGates",
+                                   "WeakSpotHit",
+                                   "HackTraced"};
   static_assert(std::size(names) == std::variant_size_v<Message>);
   return kind < std::size(names) ? names[kind] : "?";
 }
