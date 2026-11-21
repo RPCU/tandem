@@ -137,6 +137,7 @@ found through this table, each number once.
 | 13.125 | Smaller leftovers checked | `multiplayer-leftovers.md` |
 | 13.130 | A new game from the main menu, and a fresh V's first moments | `ui.md` |
 | 13.131 | The campaign's quest ids, as the 2.50 scripts name them | `story.md` |
+| 13.132 | Whether the game lets V fast travel now | `story.md` |
 
 ## Top traps (one line each)
 
