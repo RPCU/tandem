@@ -235,9 +235,15 @@ without the game); the script applies them (`Scenes.reds`):
   not shown. Whichever way the engine behaves, a line is on screen once,
   and the guest's own language wins when the game provides it.
 - A V's line (`speakerPlayer`) is queued on that player's puppet with
-  `isPlayer`. Which of the two recordings plays (the host's V may be of
-  the other body) is not controlled yet: research file §3, the `gender`
-  field.
+  `isPlayer`, in the recording of that V's body: the speaker's body as the
+  session's roster has it (1 female, 2 male; no new message) is written
+  into the event's `audioDialogLineEventData.gender` (`TandemStory.VoiceGender`: the Int32
+  Codeware adds to the RTTI, found by name and type; absent, the game
+  picks, logged once). Its values are taken to be `locVoiceTagGender`'s
+  (male 1, female 2) [inferred]; `scene_voice_gender = swapped` flips them,
+  `off` leaves the game's pick. Limit: a V's voice tone is chosen apart
+  from its body (`IsBrainGenderMale`, only reflected on the character
+  creation state); the body is what is sent.
 
 ### Faces, and bodies on other rigs
 
@@ -415,7 +421,9 @@ they change too often, and a wrong one heals with the next change.
 - **Config** (`tandem.ini`): `scene_replay = on | noposes | off` (on by default);
   `scene_camera = on | off` (the watch camera); `scene_rigs = off | on`
   (faces, bodies on other rigs); `scene_kbps` (host: what a
-  scene's streams may take on a guest's link, 22 by default, 8 to 2000).
+  scene's streams may take on a guest's link, 22 by default, 8 to 2000);
+  `scene_voice_gender = on | swapped | off` (guest: a V's line in its
+  body's voice, §5).
 
 Engine access, by the rules: scripts and RTTI names (Codeware's imports);
 the two functions by address-library hash that the pose stream already
@@ -527,7 +535,14 @@ speaks` and `face rig …: N bones, mapped`; `cmd story scene report` on
    the float tracks are the lever (§12). A drone or a robot in a scene:
    `not a body the stream knows` then `body rig …: mapped` on the host,
    `writes` on the guest, and the proxy moves as the host's.
-10. The earlier story scenarios still pass (`story-guest`, `story-host`,
+10. V's voice: `tools/game.sh cmd story scene voice STRINGID female`, then
+    `… male`, with the string id of a V line: the log says `body 1` /
+    `body 2`, and one listening hears the female then the male V. The other
+    way round: `scene_voice_gender = swapped` in `tandem.ini`, and the tag
+    in research file §3 becomes `[verified-2.5]` with the right values;
+    the same recording both times: the field does nothing outside a scene
+    (`off`).
+11. The earlier story scenarios still pass (`story-guest`, `story-host`,
     `story-johnny`, `story-private`): the subtitle path changed (stand-in
     ids).
 
@@ -552,12 +567,11 @@ speaks` and `face rig …: N bones, mapped`; `cmd story scene report` on
 - **The scene's section and its true clock**: `SceneState.section` is 0.
   A guest follows the host by what the host shows, so it is not needed
   for (b); it would be for (a).
-- **Whose voice V has** on another game: `audioDialogLineEventData.gender`
-  (Int32 at +0xC) is in the RTTI only through Codeware
-  (`CW/src/App/Audio/audioDialogLineEventData.hpp`), not in its script
-  import, and its values are unknown. One try in game decides (a script
-  field added to the struct, 0 and 1 with `isPlayer` on a puppet of the
-  other body); until then the game picks.
+- **A V's voice tone apart from its body**: the guest plays the recording
+  of the speaker's body (§5). The tone chosen at character creation is
+  read only from the creation state (`gameuiICharacterCustomizationState.IsBrainGenderMale`,
+  the save's `brainGender` string): a V of one body with the other voice
+  is heard in its body's.
 - **Approach (a)**, as a spike only, for scenes with no V in them.
 
 ## 13. Risks

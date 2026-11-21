@@ -213,6 +213,15 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.sceneCamera = false;
     else
       return Bad("scene_camera is on or off");
+  } else if (key == "scene_voice_gender") {
+    if (value == "on" || value == "true")
+      config.sceneVoiceGender = 1;
+    else if (value == "swapped")
+      config.sceneVoiceGender = 2;
+    else if (value == "off" || value == "false")
+      config.sceneVoiceGender = 0;
+    else
+      return Bad("scene_voice_gender is on, swapped or off");
   } else if (key == "scene_kbps") {
     // What a scene's streams may take on a guest's link (8 to 2000 kbit/s).
     int kbps = 0;
