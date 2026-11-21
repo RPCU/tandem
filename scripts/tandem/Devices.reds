@@ -41,7 +41,7 @@
 // it so: tandem-peer --device-answer then knows it) |
 // device open|close|lock|unlock|on|off|explode|distract|friendly|hostile
 // [KIND] | device floor N|other | device station N
-// KIND: door lift camera turret barrel ap radio any. near and goto look
+// KIND: door lift camera turret barrel (whole) ap radio any. near and goto look
 // 200 m around our V (goto puts it beside the device), the rest 40 m.
 
 public class TandemDevice {
@@ -1111,8 +1111,11 @@ public class TandemDevices extends ScriptableSystem {
     if Equals(kind, "turret") {
       return IsDefined(ps as SecurityTurretControllerPS);
     }
+    // One still whole: a barrel that went up (an earlier test, a fight)
+    // stays exploded for the rest of the game.
     if Equals(kind, "barrel") {
-      return IsDefined(ps as ExplosiveDeviceControllerPS) && !IsDefined(ps as SensorDeviceControllerPS);
+      let explosive = ps as ExplosiveDeviceControllerPS;
+      return IsDefined(explosive) && !IsDefined(ps as SensorDeviceControllerPS) && !explosive.IsExploded();
     }
     if Equals(kind, "ap") {
       return IsDefined(ps as AccessPointControllerPS);

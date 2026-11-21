@@ -431,7 +431,8 @@ npc=N[@S] --programs LIST [--breach-failed]`: two guests and a late
 - In game: `tools/game.sh cmd device` (counts), `device near|goto|tell
 [KIND]`, `device open|close|lock|unlock|on|off|explode|distract|friendly|
 hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
-  device of a kind (door lift camera turret barrel ap radio any) around V.
+  device of a kind (door lift camera turret barrel ap radio any; a barrel
+  still whole) around V.
 - Breach Protocol in game: `tools/game.sh cmd breach` (counts),
   `breach ap [PROGRAMS]`, `breach fail ap`, `breach npc [PROGRAMS]` (the
   nearest access point or proxy, its outcome faked as AccessPointSkip
