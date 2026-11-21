@@ -201,6 +201,50 @@ public class TandemLedger {
     ArrayClear(this.m_witnessed);
   }
 
+  // (test, tools/game.sh cmd "ledger near" | "ledger goto") the nearest
+  // placed NPC of our own world within 200 m that the ledger could keep out
+  // (static, alive, not a quest's, not a proxy; ledger-guest's stand-in for
+  // "a placed NPC"); goto: our V before it, facing it.
+  public func Command(command: String, npcs: ref<TandemNpcs>) -> Void {
+    let player = GetPlayer(this.m_game);
+    if !IsDefined(player) {
+      TandemNative.Log("ledger: no V");
+      return;
+    }
+    let here = player.GetWorldPosition();
+    let best: ref<NPCPuppet>;
+    let bestAt = 200.0;
+    let seen = 0;
+    let placed = 0;
+    for body in player.GetNPCsAroundObject(200.0) {
+      if IsDefined(body) && !body.IsDead() {
+        seen += 1;
+        let id = body.GetEntityID();
+        if EntityID.IsStatic(id) && !(IsDefined(npcs) && npcs.IsProxyEntity(id)) {
+          placed += 1;
+          let far = Vector4.Distance(here, body.GetWorldPosition());
+          if far <= bestAt && !TandemLedger.QuestNpc(body) {
+            best = body;
+            bestAt = far;
+          }
+        }
+      }
+    }
+    if !IsDefined(best) {
+      TandemNative.Log(s"ledger: no placed npc of our own world within 200 m (\(seen) npcs, \(placed) placed)");
+      return;
+    }
+    let at = best.GetWorldPosition();
+    if StrContains(command, "goto") {
+      let ahead = best.GetWorldForward();
+      ahead.Z = 0.0;
+      let to = at + Vector4.Normalize(ahead) * 1.5;
+      to.W = 1.0;
+      GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, Vector4.ToRotation(at - to));
+    }
+    TandemNative.Log(s"ledger: near placed npc record \(TDBID.ToStringDEBUG(best.GetRecordID())) entity \(TandemNative.EntityHex(best.GetEntityID())) at \(at.X) \(at.Y) \(at.Z) (\(bestAt) m; \(seen) npcs, \(placed) placed)");
+  }
+
   // (test, tools/game.sh cmd ledger)
   public func Report() -> String {
     let player = GetPlayer(this.m_game);
