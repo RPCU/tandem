@@ -731,16 +731,23 @@ test_reset() {
 # ChoiceApply (F, key code 33, the same on AZERTY) picks the first option,
 # until none is up, 6 at most. In memory only: the tests write no save.
 skip_choices() {
-  local i before n
-  for i in 1 2 3 4 5 6; do
+  local i before n answer
+  for i in $(seq 1 20); do
     before=$(remote "cd '$dir'; grep -c 'test choice: ' \"\$(ls -t red4ext/logs/tandem-*.log | head -1)\"" || true)
     cmd test choice >/dev/null
-    n=$(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); for i in \$(seq 1 10); do \
+    answer=$(remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); for i in \$(seq 1 10); do \
       if [ \"\$(grep -c 'test choice: ' \"\$f\")\" -gt ${before:-0} ]; then \
-      grep -o 'test choice: [0-9]*' \"\$f\" | tail -1 | grep -o '[0-9]*\$'; exit 0; fi; sleep 0.5; done; echo 0") || n=0
-    [ "${n:-0}" -gt 0 ] || return 0
-    echo "test reset: a dialogue choice is up: ChoiceApply ($i)"
-    keys 33
+      grep -o 'test choice: .*' \"\$f\" | tail -1; exit 0; fi; sleep 0.5; done; echo 'test choice: 0 hub(s) up, no call'") ||
+      answer='test choice: 0 hub(s) up, no call'
+    n=$(echo "$answer" | grep -o '[0-9]*' | head -1)
+    if [ "${n:-0}" -gt 0 ]; then
+      echo "test reset: a dialogue choice is up: ChoiceApply ($i)"
+      keys 33
+    elif [[ $answer == *'a call up'* ]]; then
+      echo "test reset: a call is up: waiting for its end ($i)"
+    else
+      return 0
+    fi
     sleep 3
   done
 }

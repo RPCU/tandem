@@ -1321,7 +1321,17 @@ public class TandemSystem extends ScriptableSystem {
           count = ArraySize(hubs.choiceHubs);
         }
       }
-      TandemNative.Log(s"test choice: \(count) hub(s) up");
+      // And a call still up (its quest holds the save until it ends).
+      let call = false;
+      let phone = GameInstance.GetBlackboardSystem(this.GetGameInstance()).Get(GetAllBlackboardDefs().UI_ComDevice);
+      if IsDefined(phone) {
+        let info = phone.GetVariant(GetAllBlackboardDefs().UI_ComDevice.PhoneCallInformation);
+        if IsDefined(info) {
+          let phase = FromVariant<PhoneCallInformation>(info);
+          call = Equals(phase.callPhase, questPhoneCallPhase.IncomingCall) || Equals(phase.callPhase, questPhoneCallPhase.StartCall);
+        }
+      }
+      TandemNative.Log(s"test choice: \(count) hub(s) up, \(call ? "a call up" : "no call")");
     } else if StrBeginsWith(command, "test query") {
       // (test) the game's own state for a scenario's checks, solo too (TestQuery.reds).
       TandemTestQuery.Run(this.GetGameInstance(), this, command);

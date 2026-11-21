@@ -33,4 +33,8 @@ expect_peer 'player 1 is on the way' 10
 expect 'travel: arrived next to tandem-peer' 60
 expect 'travel: screen restored' 5
 shot phone-regroup-arrived
+# The join's loading screen stalls the game thread (the watchdog says so):
+# only what comes after the arrival.
+mark
+pause 3
 reject 'watchdog: game thread silent'

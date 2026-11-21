@@ -74,8 +74,8 @@ tier 1, combat, a grapple, a body carried, police heat, a menu or the phone open
 time dilated, health), or `test reset: failed (…)`, which fails the
 scenario. Ready, `test-reset` asks `test choice` and, while a dialogue's
 choices are up (the save may load on a call waiting for one, its quest
-holding the save), presses ChoiceApply (F), 6 times at most: the first
-option, in memory only (the tests write no save). A scenario that needs
+holding the save), presses ChoiceApply (F) and waits for the call to end,
+60 s at most: the first option, in memory only (the tests write no save). A scenario that needs
 another spot teleports after it.
 
 Before that reset, `tools/scenario.sh`'s `run`:
