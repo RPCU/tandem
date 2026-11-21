@@ -699,9 +699,13 @@ map and comes by an hour later. Built and tested without the game.
   the ledger names is taken out of the shared world if we had announced it
   and hidden (`Bury`: brain off, `HideIrreversibly`), unless it lies there
   itself (dead, unconscious, defeated) or is one of ours in a fight. A
-  quest NPC of our own world (`IsQuest()`) is only hidden for a death in
-  the host's game: a gig of ours may still need the one a partner killed
-  in its own world. Never killed: nothing reaches a save.
+  quest NPC of our own world is only hidden for a death in the host's
+  game: a gig of ours may still need the one a partner killed in its own
+  world. A quest NPC is one whose character record has a quest affiliation
+  (`Character_Record.Quest()`, anything but `General`: there from the
+  start) or that a quest marked (`IsQuest()`, which can come after the NPC
+  first streams in, when it was buried already; `TandemLedger.QuestNpc`,
+  2026-11-21, not yet run in game). Never killed: nothing reaches a save.
 - **The body** (`death_bodies = on`): for a death less than 10 minutes old
   (`ledger::kBodyForUs`) in another game, within 70 m of our V (100 m to
   drop it, 8 at a time, the nearest), a copy of the NPC is spawned where it
