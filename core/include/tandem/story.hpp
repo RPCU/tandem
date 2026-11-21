@@ -136,6 +136,76 @@ struct MomentInput {
 // `was`: our V was in the moment at the last check (hysteresis).
 bool InMoment(const MomentInput &in, bool was);
 
+// ---- Spectating (docs/architecture/story.md, "Spectating") ----
+//
+// A scripted moment of the host's V, read from its own game, no quest list:
+// what it is in now (MomentReasons). A guest beside the host when one
+// begins watches it through the host's camera, its own V parked, until it
+// is over (Spectator).
+struct MomentSignals {
+  std::uint8_t tier{}; // the host's scene tier (GameplayTier 1..5)
+  bool isPrivate{};    // in a private scene: never watched
+  bool restricted{};   // quest restrictions on how it moves (not only weapons away)
+  bool questMount{};   // mounted by its scene or quest (transit kind Scene)
+  bool mode{};         // a scripted body or camera mode (NoMovement, ForceCrouch...)
+  bool elsewhere{};    // cyberspace, a braindance, playing as Johnny
+  bool test{};         // cmd story spectate on (the host's test moment)
+};
+inline constexpr std::uint8_t kMomentScene = 1, kMomentRestricted = 2, kMomentMounted = 4,
+                              kMomentMode = 8, kMomentElsewhere = 16, kMomentTest = 32;
+// The reasons the host's V is in a moment now (0: none; always 0 in a
+// private scene). A fight or the player's own driving is none of them.
+std::uint8_t MomentReasons(const MomentSignals &signals);
+
+// The host's moment, held kMomentHoldUs after its reasons go, so that a
+// scene's sections, a loading screen or a mount between two rides do not
+// end it and start another.
+inline constexpr std::uint64_t kMomentHoldUs = 1'500'000;
+class HostMoment {
+public:
+  // True while the moment is on.
+  bool Update(std::uint8_t reasons, std::uint64_t nowUs);
+  bool On() const { return m_on; }
+  // A private scene, or the session's end: off at once.
+  void Clear();
+
+private:
+  bool m_on{};
+  std::uint64_t m_lastUs{};
+};
+
+struct SpectateInput {
+  bool on{};          // tandem.ini spectate, and not turned off for the session
+  bool hostMoment{};  // the host says its V is in a moment (kStoryMoment)
+  bool hostPrivate{}; // the host is in a private scene (kStoryPrivate)
+  bool grouped{};     // the host's world is ours
+  bool ourAway{};     // our own V is in another world
+  bool hostKnown{};
+  proto::Vec3 host; // the host's V
+  proto::Vec3 guest;
+};
+// A guest's rule. It starts watching when the host's moment is on and our V
+// shares it (InMoment's: grouped, in this world, within kMomentNear); from
+// then on it follows the host's V wherever the moment takes it (a quest
+// teleport, a ride, another world), however far, until the moment ends, the
+// player leaves it (not offered again in that moment), we leave the
+// host's world, or the session ends.
+class Spectator {
+public:
+  enum class Change : std::uint8_t { None = 0, Start = 1, Stop = 2 };
+  Change Update(const SpectateInput &in);
+  // The player pressed "Stop watching".
+  Change Leave();
+  // The session is over or the host vanished.
+  Change Lift();
+  bool Watching() const { return m_watching; }
+  bool Declined() const { return m_declined; }
+
+private:
+  bool m_watching{};
+  bool m_declined{}; // left this moment: until it ends
+};
+
 // A guest's restrictions: what its own V has from the host's moment and the
 // session's scene holds, so that only what tandem put on comes off. An
 // effect our V already had (its own game's: a zone of its own world, its

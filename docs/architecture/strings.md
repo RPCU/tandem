@@ -311,6 +311,8 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Scene-InScene` | {1} is in a scene | {1} est dans une scène | Scenes.reds, Text.reds |
 | `Scene-Watch` | Watch the scene | Regarder la scène | Scenes.reds |
 | `Scene-LeaveCamera` | Leave the camera | Quitter la caméra | Scenes.reds |
+| `Spectate-Watching` | Watching through {1}'s eyes. | Vous regardez par les yeux de {1}. | Spectate.reds |
+| `Spectate-Leave` | Stop watching | Arrêter de regarder | Spectate.reds |
 
 ### Loot
 

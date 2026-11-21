@@ -37,6 +37,9 @@
 //                        ; the host's cutscenes (no watch camera)
 //   scene_rigs = on      ; with scene_replay = on: on: a speaking actor's face and
 //                        ; the bodies of drones and robots are streamed too
+//   spectate = on        ; guest: off: in the host's scripted moments (scenes,
+//                        ; quest rides, set pieces) you keep playing your own V
+//                        ; instead of watching through the host's camera
 //   scene_kbps = 22      ; with scene_replay, host: what a scene's streams (bodies,
 //                        ; the camera) may take on a guest's link, 8 to 2000
 //   scene_voice_gender = on ; with scene_replay, guest: a V's line plays the
@@ -172,6 +175,9 @@ struct Config {
   // the host's camera; what the scene's streams may take on a link (0: the
   // default, scene::kSceneBytesPerSecond).
   bool sceneCamera{true};
+  // A guest in the host's scripted moment watches it through the host's
+  // camera, its own V parked (docs/architecture/story.md, "Spectating").
+  bool spectate{true};
   // With sceneReplay and scenePoses: speakers' faces and the bodies of
   // actors on other rigs than the humanoid one (engine/posestream.cpp,
   // "Other rigs"): never run in game, so off unless asked for.

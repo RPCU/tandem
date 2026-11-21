@@ -744,6 +744,11 @@ public class TandemSystem extends ScriptableSystem {
     return this.m_visibility;
   }
 
+  // Scripted transit and quest vehicles (Transit.reds): our V's ride.
+  public func Transit() -> ref<TandemTransit> {
+    return this.m_transit;
+  }
+
   // Slowed time (Time.reds), driven by Tick.
   public func TimeSync() -> ref<TandemTime> {
     return this.m_time;

@@ -163,6 +163,18 @@ public native class TandemStory extends IScriptable {
   public static native func PausePose(player: Uint32, paused: Bool) -> Void;
   public static native func SceneReplay() -> Int32;
   public static native func SceneActor(npc: Uint32, x: Float, y: Float, z: Float, flags: Int32) -> Void;
+  public static native func SpectateOn() -> Bool;
+  public static native func SpectateAllow(allow: Bool) -> Void;
+  public static native func SpectateTest(on: Bool) -> Void;
+  public static native func SpectateTestOn() -> Bool;
+  public static native func SpectateMoment(tier: Int32, isPrivate: Bool, restricted: Bool, questMount: Bool, mode: Bool, elsewhere: Bool) -> Bool;
+  public static native func SpectateReasons(tier: Int32, isPrivate: Bool, restricted: Bool, questMount: Bool, mode: Bool, elsewhere: Bool) -> Int32;
+  public static native func SpectateUpdate(hostMoment: Bool, hostPrivate: Bool, grouped: Bool, ourAway: Bool, hostKnown: Bool, hostX: Float, hostY: Float, hostZ: Float, x: Float, y: Float, z: Float) -> Int32;
+  public static native func SpectateLeave() -> Bool;
+  public static native func SpectateLift() -> Bool;
+  public static native func SpectateWatching() -> Bool;
+  public static native func MomentCameraSample(x: Float, y: Float, z: Float, i: Float, j: Float, k: Float, r: Float, fov: Float) -> Void;
+  public static native func SpectateView() -> TandemSceneView;
   public static native func SceneCameraOn() -> Bool;
   public static native func SceneCameraSample(x: Float, y: Float, z: Float, i: Float, j: Float, k: Float, r: Float, fov: Float) -> Void;
   public static native func SceneView() -> TandemSceneView;

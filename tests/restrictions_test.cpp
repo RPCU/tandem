@@ -359,3 +359,92 @@ TEST_CASE("a guest that missed the lift is freed by the story resync") {
   atA.Tick(true);
   CHECK(atA.v.empty());
 }
+
+TEST_CASE("the host's scripted moment: read from its own game, held across short gaps") {
+  using story::MomentReasons;
+  CHECK(MomentReasons({}) == 0); // free roam, a fight, its own driving
+  CHECK(MomentReasons({.tier = 1}) == 0);
+  CHECK(MomentReasons({.tier = 2}) == story::kMomentScene);
+  CHECK(MomentReasons({.restricted = true, .questMount = true}) ==
+        (story::kMomentRestricted | story::kMomentMounted));
+  CHECK(MomentReasons({.mode = true}) == story::kMomentMode);
+  CHECK(MomentReasons({.elsewhere = true}) == story::kMomentElsewhere);
+  CHECK(MomentReasons({.test = true}) == story::kMomentTest);
+  // A private scene is never watched, whatever else holds the V.
+  CHECK(MomentReasons({.tier = 4, .isPrivate = true, .restricted = true}) == 0);
+
+  story::HostMoment moment;
+  CHECK_FALSE(moment.Update(0, 1'000'000));
+  CHECK(moment.Update(story::kMomentScene, 2'000'000));
+  // Between two sections: still on, then off once the hold is over.
+  CHECK(moment.Update(0, 2'000'000 + story::kMomentHoldUs - 1));
+  CHECK(moment.Update(story::kMomentMounted, 3'000'000));
+  CHECK(moment.Update(0, 3'000'000 + story::kMomentHoldUs - 1));
+  CHECK_FALSE(moment.Update(0, 3'000'000 + story::kMomentHoldUs));
+  CHECK(moment.Update(story::kMomentMode, 9'000'000));
+  moment.Clear();
+  CHECK_FALSE(moment.On());
+}
+
+TEST_CASE("a guest spectates the host's moment from beside it, and follows it anywhere") {
+  using Change = story::Spectator::Change;
+  story::SpectateInput in{.on = true,
+                          .hostMoment = true,
+                          .grouped = true,
+                          .hostKnown = true,
+                          .host = {0.f, 0.f, 0.f},
+                          .guest = {story::kMomentNear + 5.f, 0.f, 0.f}};
+  story::Spectator spectator;
+  // Too far when it begins: not ours to watch.
+  CHECK(spectator.Update(in) == Change::None);
+  in.guest = {10.f, 0.f, 0.f};
+  CHECK(spectator.Update(in) == Change::Start);
+  CHECK(spectator.Watching());
+  // A quest teleport, a ride: the host's V is a kilometre away, we follow.
+  in.host = {1000.f, 0.f, 0.f};
+  CHECK(spectator.Update(in) == Change::None);
+  in.hostKnown = false; // its puppet is still streaming in
+  CHECK(spectator.Update(in) == Change::None);
+  CHECK(spectator.Watching());
+  // The moment is over.
+  in.hostMoment = false;
+  CHECK(spectator.Update(in) == Change::Stop);
+  CHECK_FALSE(spectator.Watching());
+
+  // A private scene, our own other world, apart, switched off: none.
+  in = {
+      .on = true, .hostMoment = true, .grouped = true, .hostKnown = true, .guest = {5.f, 0.f, 0.f}};
+  for (auto change : {&story::SpectateInput::hostPrivate, &story::SpectateInput::ourAway}) {
+    auto other = in;
+    other.*change = true;
+    CHECK(story::Spectator{}.Update(other) == Change::None);
+  }
+  auto apart = in;
+  apart.grouped = false;
+  CHECK(story::Spectator{}.Update(apart) == Change::None);
+  auto off = in;
+  off.on = false;
+  CHECK(story::Spectator{}.Update(off) == Change::None);
+
+  // Watching, then the host's scene turns private: we stop.
+  REQUIRE(spectator.Update(in) == Change::Start);
+  auto turned = in;
+  turned.hostPrivate = true;
+  CHECK(spectator.Update(turned) == Change::Stop);
+
+  // The player leaves: not again in this moment, again in the next one.
+  REQUIRE(spectator.Update(in) == Change::Start);
+  CHECK(spectator.Leave() == Change::Stop);
+  CHECK(spectator.Leave() == Change::None);
+  CHECK(spectator.Update(in) == Change::None);
+  CHECK(spectator.Declined());
+  auto over = in;
+  over.hostMoment = false;
+  CHECK(spectator.Update(over) == Change::None);
+  CHECK(spectator.Update(in) == Change::Start);
+
+  // The session ends, or the host vanishes.
+  CHECK(spectator.Lift() == Change::Stop);
+  CHECK_FALSE(spectator.Watching());
+  CHECK(spectator.Lift() == Change::None);
+}

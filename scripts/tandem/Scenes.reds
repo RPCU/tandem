@@ -689,7 +689,8 @@ public class TandemScenes {
     }
     // Out of earshot: the voice would be silent anyway, and its subtitle is
     // not shown either (Dialogue.reds).
-    if !holocall && Vector4.Distance(speaker.GetWorldPosition(), player.GetWorldPosition()) > 40.0 {
+    // A spectator hears from the host's camera, wherever the moment went.
+    if !holocall && !TandemStory.SpectateWatching() && Vector4.Distance(speaker.GetWorldPosition(), player.GetWorldPosition()) > 40.0 {
       TandemNative.Log("scene: line not voiced (out of earshot)");
       return;
     }
@@ -786,7 +787,8 @@ public class TandemScenes {
   private func UpdateWatch() -> Void {
     let player = GetPlayer(this.m_game);
     let anchor = TandemStory.SceneAnchor();
-    let offer = this.m_on && this.m_tier >= 3 && anchor.W >= 0.0 && IsDefined(player);
+    // Not while we watch the host's moment through its camera (Spectate.reds).
+    let offer = this.m_on && this.m_tier >= 3 && anchor.W >= 0.0 && IsDefined(player) && !TandemStory.SpectateWatching();
     if offer {
       let distance = Vector4.Distance2D(anchor, player.GetWorldPosition());
       offer = distance > anchor.W + 4.0 && distance < 60.0;

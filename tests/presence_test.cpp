@@ -348,6 +348,8 @@ TEST_SUITE("presence") {
     CHECK(presence::StatusOf(Life::Up, Place::City, 1, 0, true, 0) == Status::Menu);
     CHECK(presence::StatusOf(Life::Up, Place::City, 3, 0, true, 0) == Status::Scene);
     CHECK(presence::StatusOf(Life::Up, Place::City, 2, 0, false, 0) == Status::Up);
+    CHECK(presence::StatusOf(Life::Up, Place::City, 1, proto::kStorySpectating, false, 0) ==
+          Status::Scene);
     CHECK(presence::StatusOf(Life::Up, Place::Cyberspace, 4, 0, false, 0) == Status::Elsewhere);
     CHECK(presence::StatusOf(Life::Up, Place::City, 1, proto::kStoryBraindance, false, 0) ==
           Status::Elsewhere);

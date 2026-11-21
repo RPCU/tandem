@@ -146,6 +146,7 @@ The owner simulates; everyone else displays.
 | spawns: crowds, encounters | each game around its own V | held back only where a higher-ranked linked player's region covers it |
 | quests: facts, journal, phases, scenes | host | followed, never run on their own |
 | the story's gameplay restrictions (no weapons, no sprint… during the host's scene) | host (its V's, reported) | worn on its own V by a guest in the host's story moment, taken off when it leaves it (`architecture/story.md`) |
+| the host's scripted moment (a scene, a quest ride, a set piece, another world) | host (read from its V, reported) | a guest beside it when it begins watches through the host's camera, its own V parked and unseen, until it ends (`architecture/story.md`, "Spectating") |
 | time of day, weather | host | applied |
 | a V's police heat: score, wanted level, stars | that player's game | told; the owner of the area sends police after that V alone (`architecture/police.md`) |
 | the clock: time skips (wheel, bed) | host's clock, asked of every other player | each agrees or not; applied in every game; the host's story only says so (`architecture/activities.md`) |
@@ -312,6 +313,7 @@ plugin") and its open problems.
 - `devices.md`: doors, lifts, cameras, turrets, the alarm, access points, computers, barrels, media and other devices: the host's word, a guest's own copy first, revisions, digest, a guest's world put back after; glass and breakable scenery (a break told and replayed), a turret's fire (the host's turret's aim and shots drawn on every copy).
 - `revive.md`: down, revive, respawn, shared game over.
 - `story.md`: quest freeze, journal, calls, texts, dialogue, scenes, the story's restrictions on a guest in the host's moment, rewards; open: scenes for guests, story decisions, quests together.
+- `scripted-moments.md`: the audit of spectating (a guest watching the host's scripted moments through its camera, `story.md`): each base-game and Phantom Liberty moment, caught or missed by the generic detection, the gaps and the in-game checklist.
 - `scene-replay.md`: a guest watches the host's scenes: the stage, the cast, lines and actor poses (`scene_replay`, on by default).
 - `progression.md`: levels (enemies scaled to the mean of the players' levels), XP rules, economy (vendors, crafting, stash, garage, apartments), a guest's saves (the leave steps, crashes, what is never saved), decisions.
 - `garage.md`: owned vehicles: each player's garage, driving a partner's car, vehicles earned together (credited, or kept with `vehicle_rewards = keep`), purchases, PL deliveries, decisions.

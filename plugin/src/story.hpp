@@ -83,6 +83,9 @@ public:
   std::optional<proto::SceneCamera> TakeCamera();
   void PushCamera(const proto::SceneCamera &camera);
   bool CameraAt(std::uint64_t hostNowUs, std::uint32_t play, scene::CameraView &out);
+  // Guest, spectating: the host's view now, whatever play it is of (a scene
+  // or a moment outside one).
+  bool CameraNow(std::uint64_t hostNowUs, scene::CameraView &out);
   void ClearCamera();
   std::uint32_t CameraReceived();
   // Host, game thread: the last view sampled and when (cuts are told from it).
@@ -97,6 +100,14 @@ public:
   bool &InMoment() { return m_inMoment; }
   std::vector<std::uint64_t> &Removals() { return m_removals; }
   std::vector<std::uint64_t> &Sent() { return m_sent; }
+  // Spectating (docs/architecture/story.md, "Spectating"), game thread.
+  // Host: its V's scripted moment. Guest: whether it watches it; whether
+  // the player turned it off for the session (cmd story spectate off).
+  story::HostMoment &Moment() { return m_moment; }
+  story::Spectator &Spectator() { return m_spectator; }
+  bool &SpectateOff() { return m_spectateOff; }
+  // Host: cmd story spectate on: a test moment.
+  bool &TestMoment() { return m_testMoment; }
   // Host: the backstop on a guest's acts on the scene's actors.
   story::Backstop &Backstop() { return m_backstop; }
 
@@ -132,6 +143,10 @@ private:
   std::vector<std::uint64_t> m_removals;
   std::vector<std::uint64_t> m_sent;
   story::Backstop m_backstop;
+  story::HostMoment m_moment;
+  story::Spectator m_spectator;
+  bool m_spectateOff{};
+  bool m_testMoment{};
 
   std::atomic_bool m_private{false};
   std::optional<proto::PlayerState> m_held; // net thread

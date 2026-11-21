@@ -2223,6 +2223,10 @@ private:
 //   face NPC on|off              that actor speaks: its face (a 40-joint
 //                                stand-in whose jaw opens and closes) is sent
 //                                as rig poses (RigPose) while it lasts
+//   moment on|off                the host's V is in a scripted moment (its
+//                                StoryState says kStoryMoment): a guest beside
+//                                it watches through its camera (camera on
+//                                sends the views, scene or not)
 //   camera on [FOV]|cut|off      the host is in a cutscene: its camera's view
 //                                (behind and above the mock player) is sent
 //                                every frame (SceneCamera); cut: the next
@@ -2314,6 +2318,9 @@ struct SceneScript {
   std::vector<tandem::proto::NpcId> faces;
   bool camera{}, cameraCut{}, cameraSide{};
   float cameraFov{50.f};
+  // moment on: the host's V in a scripted moment (kStoryMoment); its camera
+  // views go out with camera on, scene or not (story.md, "Spectating").
+  bool moment{};
 };
 
 // A scene step (scene, cast, skip, voice, cut): what the host sends for it.
@@ -2374,6 +2381,14 @@ SceneMessages(const StoryStep &step, SceneScript &script, const tandem::proto::V
       if (a[1] == "on")
         script.faces.push_back(npc);
       return std::vector<proto::Message>{};
+    }
+    if (step.verb == "moment" && !a.empty()) {
+      script.moment = a[0] == "on";
+      std::vector<proto::Message> out;
+      out.push_back(
+          proto::StoryState{.tier = static_cast<std::uint8_t>(script.stage.On() ? 2 : 1),
+                            .flags = script.moment ? proto::kStoryMoment : std::uint8_t{0}});
+      return out;
     }
     if (step.verb == "camera" && !a.empty()) {
       if (a[0] == "cut") {
@@ -5721,14 +5736,16 @@ int main(int argc, char **argv) {
       }
       // camera on: the host's view of its cutscene, from behind and above
       // its V, on one side or the other.
-      if (options.host && sceneScript.stage.On() && sceneScript.camera && state) {
+      if (options.host && (sceneScript.stage.On() || sceneScript.moment) && sceneScript.camera &&
+          state) {
         const float side = sceneScript.cameraSide ? -2.f : 2.f;
         const tandem::scene::CameraView view{
             {state->position.x + side, state->position.y - 3.f, state->position.z + 1.8f},
             state->orientation,
             sceneScript.cameraFov};
-        endpoint->SendSceneCamera(tandem::scene::PackCamera(
-            sceneScript.stage.Play(), view, std::exchange(sceneScript.cameraCut, false)));
+        endpoint->SendSceneCamera(
+            tandem::scene::PackCamera(std::max<std::uint32_t>(1, sceneScript.stage.Play()), view,
+                                      std::exchange(sceneScript.cameraCut, false)));
       }
       if (auto pose = puppeteer.NextPose(tandem::net::NowUs(), poseClip)) {
         endpoint->SendLocalPose(*pose);

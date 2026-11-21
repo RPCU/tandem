@@ -684,7 +684,9 @@ struct TandemStory : Red::IScriptable {
                           .anchor = scene.anchor,
                           .radius = staged ? scene.radius : -1.f};
     const bool was = kept.InMoment();
-    kept.InMoment() = story::InMoment(in, was);
+    // A spectator wears none of the host's set: its V is parked, held by
+    // the spectating holds alone (story.md, "Spectating").
+    kept.InMoment() = story::InMoment(in, was) && !kept.Spectator().Watching();
     if (kept.InMoment() != was)
       log::Info("story: {} the host's story moment (tier {}, {} restriction(s))",
                 kept.InMoment() ? "in" : "out of", tier, kept.Restrictions().HostSet().size());
@@ -724,6 +726,106 @@ struct TandemStory : Red::IScriptable {
   static bool RestrictInMoment() { return Story::Get().InMoment(); }
   static Red::DynArray<Red::TweakDBID> RestrictHostSet() {
     return Ids(Story::Get().Restrictions().HostSet());
+  }
+
+  // ---- spectating (docs/architecture/story.md, "Spectating") ----
+
+  // tandem.ini spectate, and not turned off for this session.
+  static bool SpectateOn() { return Runtime::Get().config.spectate && !Story::Get().SpectateOff(); }
+  // Guest: cmd story spectate off|on: no watching for the rest of the session, or again.
+  static void SpectateAllow(bool allow) { Story::Get().SpectateOff() = !allow; }
+  // Host: cmd story spectate on|off: a test moment, as if our V were in one.
+  static void SpectateTest(bool on) { Story::Get().TestMoment() = on; }
+  static bool SpectateTestOn() { return Story::Get().TestMoment(); }
+  // Host, four times a second: what our V is in now (story::MomentSignals),
+  // the reasons (story::kMoment*) in `reasons` of the last call, and whether
+  // the moment is on (held 1.5 s after its reasons go).
+  static bool SpectateMoment(std::int32_t tier, bool isPrivate, bool restricted, bool questMount,
+                             bool mode, bool elsewhere) {
+    auto &kept = Story::Get();
+    const auto reasons = static_cast<std::uint8_t>(
+        SpectateReasons(tier, isPrivate, restricted, questMount, mode, elsewhere));
+    if (isPrivate || !SpectateOn()) {
+      kept.Moment().Clear();
+      return false;
+    }
+    return kept.Moment().Update(reasons, Runtime::Get().HostNowUs());
+  }
+  static std::int32_t SpectateReasons(std::int32_t tier, bool isPrivate, bool restricted,
+                                      bool questMount, bool mode, bool elsewhere) {
+    return story::MomentReasons({.tier = Byte(tier),
+                                 .isPrivate = isPrivate,
+                                 .restricted = restricted,
+                                 .questMount = questMount,
+                                 .mode = mode,
+                                 .elsewhere = elsewhere,
+                                 .test = Story::Get().TestMoment()});
+  }
+  // Guest, four times a second: 0 not watching, 1 watching, 2 starts
+  // watching now, 3 stops now (story::Spectator).
+  static std::int32_t SpectateUpdate(bool hostMoment, bool hostPrivate, bool grouped, bool ourAway,
+                                     bool hostKnown, float hostX, float hostY, float hostZ, float x,
+                                     float y, float z) {
+    auto &spectator = Story::Get().Spectator();
+    const auto change = spectator.Update({.on = SpectateOn(),
+                                          .hostMoment = hostMoment,
+                                          .hostPrivate = hostPrivate,
+                                          .grouped = grouped,
+                                          .ourAway = ourAway,
+                                          .hostKnown = hostKnown,
+                                          .host = {hostX, hostY, hostZ},
+                                          .guest = {x, y, z}});
+    if (change == story::Spectator::Change::Start)
+      return 2;
+    if (change == story::Spectator::Change::Stop)
+      return 3;
+    return spectator.Watching() ? 1 : 0;
+  }
+  // Guest: the player pressed "Stop watching" (true: we were watching).
+  static bool SpectateLeave() {
+    return Story::Get().Spectator().Leave() == story::Spectator::Change::Stop;
+  }
+  // Guest: the session is over or the host vanished (true: we were watching).
+  static bool SpectateLift() {
+    return Story::Get().Spectator().Lift() == story::Spectator::Change::Stop;
+  }
+  static bool SpectateWatching() { return Story::Get().Spectator().Watching(); }
+  // Host, every frame of our moment: our game's active camera (as
+  // SceneCameraSample), numbered as the scene we announce, else as the last
+  // one (1 before any), so a guest's track takes it in order. Nothing in a
+  // private scene, nor while no moment is on.
+  static void MomentCameraSample(float x, float y, float z, float i, float j, float k, float r,
+                                 float fov) {
+    auto &story = Story::Get();
+    if (!SpectateOn() || !story.Moment().On() || story.Private())
+      return;
+    const auto now = Runtime::Get().HostNowUs();
+    const scene::CameraView view{{x, y, z}, {i, j, k, r}, fov};
+    const bool first =
+        story.LastViewUs() == 0 || now < story.LastViewUs() || now - story.LastViewUs() > 1'000'000;
+    const bool cut = first || scene::IsCut(story.LastView(), view,
+                                           static_cast<float>(now - story.LastViewUs()) / 1e6f);
+    story.LastView() = view;
+    story.LastViewUs() = now;
+    story.SubmitCamera(
+        scene::PackCamera(std::max<std::uint32_t>(1, story.Stage().Play()), view, cut));
+  }
+  // Guest, every frame while watching: the host's view to show now.
+  static TandemSceneView SpectateView() {
+    TandemSceneView out;
+    scene::CameraView view;
+    if (Story::Get().CameraNow(Runtime::Get().HostNowUs(), view)) {
+      out.on = true;
+      out.x = view.position.x;
+      out.y = view.position.y;
+      out.z = view.position.z;
+      out.i = view.orientation.i;
+      out.j = view.orientation.j;
+      out.k = view.orientation.k;
+      out.r = view.orientation.r;
+      out.fov = view.fov;
+    }
+    return out;
   }
 
   // The scene our game plays now (its node ran in the last 3 s): 0 none or
@@ -1138,6 +1240,18 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SceneSample);
   RTTI_METHOD(SceneVoice);
   RTTI_METHOD(SceneVoiceHide);
+  RTTI_METHOD(SpectateOn);
+  RTTI_METHOD(SpectateAllow);
+  RTTI_METHOD(SpectateTest);
+  RTTI_METHOD(SpectateTestOn);
+  RTTI_METHOD(SpectateMoment);
+  RTTI_METHOD(SpectateReasons);
+  RTTI_METHOD(SpectateUpdate);
+  RTTI_METHOD(SpectateLeave);
+  RTTI_METHOD(SpectateLift);
+  RTTI_METHOD(SpectateWatching);
+  RTTI_METHOD(MomentCameraSample);
+  RTTI_METHOD(SpectateView);
   RTTI_METHOD(SceneCameraOn);
   RTTI_METHOD(SceneCameraSample);
   RTTI_METHOD(SceneView);

@@ -683,6 +683,9 @@ TEST_CASE("story messages survive encoding") {
   RoundTrips(ChoiceHub{.hub = 77});
   RoundTrips(ChoiceCursor{.player = 2, .hub = 77, .index = -1, .kind = kCursorSuggest});
   RoundTrips(StoryState{.player = 1, .tier = 4, .flags = kStoryInCall});
+  // Spectating: the host's moment, a guest watching it (free bits of flags).
+  RoundTrips(StoryState{.player = 1, .tier = 2, .flags = kStoryMoment | kStoryReplacer});
+  RoundTrips(StoryState{.player = 2, .tier = 1, .flags = kStorySpectating});
   RoundTrips(QuestReward{.reward = 0x15e213846eULL, .quest = 0x77});
 }
 

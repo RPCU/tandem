@@ -254,6 +254,28 @@ TEST_CASE("referee: a turret in a player's hands is that player's word") {
   CHECK(Rules(guest) == std::vector<std::string>{"authority.own-state-back"});
 }
 
+TEST_CASE("referee: a scripted moment is the host's V's, spectating a guest's") {
+  auto host = Host();
+  host.Received(2, proto::StoryState{.player = 2, .tier = 1, .flags = proto::kStorySpectating},
+                kSecond);
+  CHECK(Rules(host).empty());
+  host.Received(2, proto::StoryState{.player = 2, .tier = 2, .flags = proto::kStoryMoment},
+                kSecond);
+  CHECK(Rules(host) == std::vector<std::string>{"authority.host-only"});
+
+  auto guest = Guest();
+  guest.Received(1, proto::StoryState{.player = 1, .tier = 2, .flags = proto::kStoryMoment},
+                 kSecond);
+  guest.Received(1, proto::StoryState{.player = 3, .tier = 1, .flags = proto::kStorySpectating},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+  guest.Received(1, proto::StoryState{.player = 3, .tier = 2, .flags = proto::kStoryMoment},
+                 kSecond);
+  guest.Received(1, proto::StoryState{.player = 1, .tier = 1, .flags = proto::kStorySpectating},
+                 kSecond);
+  CHECK(Rules(guest) == std::vector<std::string>{"authority.host-only", "value.range"});
+}
+
 TEST_CASE("referee: the host may not say what only a guest asks") {
   auto referee = Guest();
   referee.Received(1, proto::ResyncRequest{1}, kSecond);
