@@ -252,7 +252,7 @@ on_game_thread() {
   names=$(since | sed -n 's/.*threads: hook \([^ ]*\) ran off the game thread.*/\1/p' | sort -u | tr '\n' ' ' || true)
   [ -n "$names" ] || names=$(since | sed -n 's/.*threads: [1-9][0-9]* hooks off-thread: //p' | tail -1 || true)
   [ -n "$names" ] || return 0
-  if remote "grep -qE 'threads: the script tick (moved from thread|runs on thread [0-9]+, the frame update on [0-9]+: not the same)' '$mark_file'"; then
+  if remote "cd '$dir'; grep -qE 'threads: the script tick (moved from thread|runs on thread [0-9]+, the frame update on [0-9]+: not the same)' '$mark_file'"; then
     note "thread probe (the script tick runs on the job workers, nothing judged): $names"
     return 0
   fi
