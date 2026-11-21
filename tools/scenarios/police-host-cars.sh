@@ -1,0 +1,41 @@
+# As host: a wanted guest is chased by a police car of ours with its crew (at five stars, the MaxTac AV too), hostile to its puppet and not to our V; they stand down with its stars
+# shellcheck shell=bash disable=SC2317
+# Needs roads near V that the spawn system can bring a car on: from the
+# test field there may be none (then "no road" or "no place for a car" in
+# the log and units on foot only). POLICE_AT="X Y Z [YAW]" teleports our V
+# to a street first.
+ensure host
+if [ -n "${POLICE_AT:-}" ]; then
+  cmd teleport "$POLICE_AT"
+  pause 5
+fi
+peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female --heat 3 --heat-at 8 --heat-for 80
+expect 'joined \(player [0-9]+' 20
+expect 'police: player [0-9]+ wanted level 0 -> 3' 30
+# A place on the roads around the puppet, out of its sight; the game's own
+# chase vehicle with its crew, sent after the puppet.
+expect 'police: a place for a car asked for player [0-9]+' 30
+expect 'police: car .* asked for player [0-9]+' 40
+expect 'police: car .* chasing player [0-9]+' 30
+cmd police report
+expect 'police report: our wanted level 0 .* [1-9] car\(s\)' 10
+shot police-host-car
+# Our own V is still clean.
+pause 15
+reject 'police: our wanted level [1-5] '
+shot police-host-car-arrived
+# The guest's stars go: the car drives off and is taken away.
+expect 'player [0-9]+: wanted level 0 ' 90
+expect 'police: car for player [0-9]+ stands down' 10
+expect 'police: car .* for player [0-9]+ (taken away|gone|destroyed)' 40
+# Five stars: the MaxTac AV, one for that V, near its body.
+mark
+peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female --heat 5 --heat-at 5 --heat-for 70
+expect 'police: player [0-9]+ wanted level 0 -> 5' 40
+expect 'police: AV .* asked for player [0-9]+' 30
+expect 'police: AV .* out for player [0-9]+' 60
+shot police-host-av
+expect 'player [0-9]+: wanted level 0 ' 90
+expect 'police: AV for player [0-9]+ stands down' 10
+reject 'police: our wanted level [1-5] '
+reject 'watchdog: game thread silent'
