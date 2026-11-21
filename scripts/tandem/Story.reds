@@ -1139,7 +1139,8 @@ public class TandemStorySystem extends ScriptableSystem {
     if !IsDefined(record) {
       return false;
     }
-    if ArrayContains(record.GameplayTags(), n"JohnnySickness") {
+    let tags = record.GameplayTags();
+    if ArrayContains(tags, n"JohnnySickness") {
       return true;
     }
     let name = TDBID.ToStringDEBUG(record.GetID());

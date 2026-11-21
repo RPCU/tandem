@@ -305,6 +305,11 @@ jobs:
       - name: Script hooks that may run on job threads
         run: python3 tools/scripts-threads.py
 
+      # part of task scripts:check (without the vanilla dump here: our own
+      # structs and the math ones)
+      - name: No array intrinsic or struct field on a call's result
+        run: python3 tools/scripts-temporaries.py
+
       # task refs:check (scc, task scripts:check, cannot run here)
       - name: Script calls and TweakDB records of ours exist
         run: python3 tools/scripts-refs.py

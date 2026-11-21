@@ -26,6 +26,9 @@ python3 "$root/tools/scripts-duplicates.py" "$ours"
 # And what it lets through and the game misreads: a value-type local read
 # before it was ever set (the VM does not clear it).
 python3 "$root/tools/scripts-uninitialized.py" "$ours"
+# And an array intrinsic or a struct field on a call's result: the VM reads
+# some other variable.
+python3 "$root/tools/scripts-temporaries.py" "$ours"
 # And a player-facing text that is not in Text.reds (docs/architecture/strings.md).
 python3 "$root/tools/check-strings.py" "$ours"
 # And a co-op menu row that shows the wrong text, or a duplicate entry.

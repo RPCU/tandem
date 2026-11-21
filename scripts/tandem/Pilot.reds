@@ -838,7 +838,8 @@ public class TandemPilot {
       return "fail:no_lift_in_view";
     }
     let state = seen.GetDevicePS();
-    let floors = ArraySize(state.GetFloors());
+    let floorList = state.GetFloors();
+    let floors = ArraySize(floorList);
     let floor = StringToInt(floorText, -1);
     if floor < 0 || floor >= floors {
       return s"fail:floors_0_to_\(floors - 1)_now_\(state.GetActiveFloor())";

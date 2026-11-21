@@ -658,10 +658,12 @@ public class TandemTransit {
   // In the copy's cabin, behind the seats; turned with the car since last.
   private func Place(player: ref<PlayerPuppet>, car: ref<VehicleObject>) -> Void {
     this.m_carryPlacedAt = this.m_now;
-    let carYaw = Quaternion.ToEulerAngles(car.GetWorldOrientation()).Yaw;
+    let carAngles = Quaternion.ToEulerAngles(car.GetWorldOrientation());
+    let carYaw = carAngles.Yaw;
     let turn = this.m_carryFallback ? carYaw - this.m_carYaw : 0.0;
     this.m_carYaw = carYaw;
-    let yaw = this.m_carryFallback ? Quaternion.ToEulerAngles(player.GetWorldOrientation()).Yaw + turn : carYaw;
+    let ourAngles = Quaternion.ToEulerAngles(player.GetWorldOrientation());
+    let yaw = this.m_carryFallback ? ourAngles.Yaw + turn : carYaw;
     let forward = car.GetWorldForward();
     let at = car.GetWorldPosition();
     at.X -= forward.X * 0.45;
@@ -686,7 +688,8 @@ public class TandemTransit {
       TandemTransit.Restrict(player, false);
       TandemTransit.Hide(player, false);
       if placeOut && IsDefined(car) {
-        let yaw = Quaternion.ToEulerAngles(car.GetWorldOrientation()).Yaw;
+        let angles = Quaternion.ToEulerAngles(car.GetWorldOrientation());
+        let yaw = angles.Yaw;
         let right = car.GetWorldRight();
         let at = car.GetWorldPosition();
         at.X += right.X * 2.5;

@@ -144,7 +144,8 @@ public class TandemGarage {
         kept += 1;
       }
     }
-    TandemNative.Log(s"garage: \(ArraySize(TandemGarage.Unlocked(this.m_game))) vehicles in our garage, summon \(restricted ? "restricted" : "allowed"); earned in co-op \(ArraySize(earned)) (\(kept) kept in our garage; vehicle_rewards = \(TandemStory.VehicleRewardsKept() ? "keep" : "credit"))");
+    let unlocked = TandemGarage.Unlocked(this.m_game);
+    TandemNative.Log(s"garage: \(ArraySize(unlocked)) vehicles in our garage, summon \(restricted ? "restricted" : "allowed"); earned in co-op \(ArraySize(earned)) (\(kept) kept in our garage; vehicle_rewards = \(TandemStory.VehicleRewardsKept() ? "keep" : "credit"))");
   }
 }
 

@@ -429,7 +429,8 @@ public class TandemRevive {
     if this.m_lost {
       // Guest: the host reloaded and we are back in its session: up beside
       // the host's V once it is up and seen.
-      if this.m_backInSession && TandemNative.RemoteLife(1u) == 0 && TandemNative.RemotePosition(1u).W > 0.0 {
+      let hostAt = TandemNative.RemotePosition(1u);
+      if this.m_backInSession && TandemNative.RemoteLife(1u) == 0 && hostAt.W > 0.0 {
         this.Respawn(player, 1u, "the host reloaded");
       }
       return;
