@@ -199,8 +199,11 @@
   copy but sent (`VehicleHack`, through the host) to the driver's game,
   which applies them to its car (`ForceBrakesUntilStoppedOrFor`,
   `ActivateNetrunnerQuickhack`); taking control of such a car is refused
-  for now (it needs the car handed over to the hacker). Not yet verified
-  in game (scenarios `hacks-upload`, `hacks-guest`, `hacks-car`).
+  for now (it needs the car handed over to the hacker). One on a shared
+  vehicle no V drives goes to every game (`TrafficHack`): its owner applies
+  it, the others mark it (`devices.md`, "A partner's hack, marked"). Not
+  yet verified in game (scenarios `hacks-upload`, `hacks-guest`,
+  `hacks-car`, `traffic-hack`).
   **Breach Protocol** (`scripts/tandem/Breach.reds`, devices.md "Breach
   Protocol"; built as planned, `Breach{access point, programs}` to the
   host, not yet run in game): the minigame is the breacher's, with its

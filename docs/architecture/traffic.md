@@ -127,20 +127,21 @@ cost one message each until someone moves them.
 
 Appended to the protocol (`protocol.hpp`); no existing message changed.
 
-| Message                | Channel         | From → to                              | What                                                                       |
-| ---------------------- | --------------- | -------------------------------------- | -------------------------------------------------------------------------- |
-| `TrafficSpawn`         | Event           | owner → all (kept)                     | id, record, appearance, static entity id or 0, transform, flags            |
-| `TrafficStates`        | State, 10 Hz    | owner → all                            | the vehicles that move: id, position, rotation, velocity (28 bytes)        |
-| `TrafficStatus`        | Event           | owner → all (kept)                     | health 0..1 and the lasting flags (wreck, siren, parked, panic…)           |
-| `TrafficGone`          | Event           | owner → all                            | out of range, removed, or **taken** by a player                            |
-| `TrafficHit`           | Event, one-shot | a player's game → owner                | damage and, for a ram, the push given                                      |
-| `TrafficClaim`         | Event, one-shot | a player's game → owner                | "my V is getting into this one"                                            |
-| `TrafficSet`           | Event           | host → one guest; a guest owner → host | opens a resync: every vehicle shown to it now; from a guest, its whole set |
-| `NpcSeat`              | (existing)      | owner → all (kept)                     | `owner` with the top bit set names a shared vehicle, not a player          |
-| `TrafficOwnership`     | Event           | host → all who see it (kept)           | who runs a vehicle now (absent: its announcer)                             |
-| `TrafficHandover`      | Event, one-shot | host → owner                           | give it to `to`                                                            |
-| `TrafficHandoverState` | Event, one-shot | giver → host → receiver                | place, orientation, velocity, health, flags (inherited: the host's record) |
-| `TrafficHandoverDone`  | Event, one-shot | receiver or giver → host               | runs it now (or cannot: it goes); a giver's refusal                        |
+| Message                | Channel         | From → to                                   | What                                                                                                                                                 |
+| ---------------------- | --------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TrafficSpawn`         | Event           | owner → all (kept)                          | id, record, appearance, static entity id or 0, transform, flags                                                                                      |
+| `TrafficStates`        | State, 10 Hz    | owner → all                                 | the vehicles that move: id, position, rotation, velocity (28 bytes)                                                                                  |
+| `TrafficStatus`        | Event           | owner → all (kept)                          | health 0..1 and the lasting flags (wreck, siren, parked, panic…)                                                                                     |
+| `TrafficGone`          | Event           | owner → all                                 | out of range, removed, or **taken** by a player                                                                                                      |
+| `TrafficHit`           | Event, one-shot | a player's game → owner                     | damage and, for a ram, the push given                                                                                                                |
+| `TrafficHack`          | Event, one-shot | a player's game → host → every other player | a vehicle quickhack (brakes, explode, accelerate) and its length: the owner applies it, everyone marks it (`devices.md`, "A partner's hack, marked") |
+| `TrafficClaim`         | Event, one-shot | a player's game → owner                     | "my V is getting into this one"                                                                                                                      |
+| `TrafficSet`           | Event           | host → one guest; a guest owner → host      | opens a resync: every vehicle shown to it now; from a guest, its whole set                                                                           |
+| `NpcSeat`              | (existing)      | owner → all (kept)                          | `owner` with the top bit set names a shared vehicle, not a player                                                                                    |
+| `TrafficOwnership`     | Event           | host → all who see it (kept)                | who runs a vehicle now (absent: its announcer)                                                                                                       |
+| `TrafficHandover`      | Event, one-shot | host → owner                                | give it to `to`                                                                                                                                      |
+| `TrafficHandoverState` | Event, one-shot | giver → host → receiver                     | place, orientation, velocity, health, flags (inherited: the host's record)                                                                           |
+| `TrafficHandoverDone`  | Event, one-shot | receiver or giver → host                    | runs it now (or cannot: it goes); a giver's refusal                                                                                                  |
 
 "Owner → all" reads "owner → the players linked with it, through the host".
 
