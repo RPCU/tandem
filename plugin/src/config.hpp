@@ -98,6 +98,8 @@
 //                        ; (docs/architecture/progression.md): stay goes on in
 //                        ; place; save also makes one quick save; reload then
 //                        ; loads that save (only when you chose to leave)
+//   checkpoint = 0       ; a guest in a session: every N minutes, at a safe
+//                        ; moment, leave, save and join again (0: off; ini only)
 //   trade = off          ; on: trade items and eddies with the player beside you
 //                        ; (docs/architecture/trade.md); off: requests are refused
 //   link = auto          ; who sees your scanner tags and Ping reveals
@@ -228,6 +230,9 @@ struct Config {
   std::filesystem::path file;
   // What a guest's game does once it is out of a session (Saves.reds).
   progress::LeaveMode leave{progress::LeaveMode::Stay};
+  // A guest's checkpoint (Saves.reds): every this many minutes in a session,
+  // at a safe moment, leave, save and join again. 0: off.
+  std::uint32_t checkpointMinutes{0};
   // Trade between players (Trade.reds): off until checked in game.
   bool trade{false};
   // A vehicle a host's quest gave while we took part (Garage.reds): credited

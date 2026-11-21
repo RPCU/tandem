@@ -19,9 +19,19 @@
 //                from our own save. Only when we chose to leave, and only
 //                with the game's word that the save was written.
 //
+// Two more ways out want the save whatever `leave` says, and never a load:
+//   - the pause menu's Exit (to the main menu or the desktop), held by its
+//     wrap (Coop.reds) and taken here on the tick: the leave steps, the
+//     save, then the exit. Out of a session that still owes its save
+//     (`stay` wrote nothing), the save alone, then the exit;
+//   - the checkpoint (tandem.ini `checkpoint`, minutes; off by default):
+//     at a safe moment, the leave steps, the save, then the same session
+//     joined again.
+//
 // The steps are core/progress.hpp's (tested there); this file feeds them
-// and does what they ask. Nothing here runs in a scenario with its default
-// (stay): tests never write the player's saves.
+// and does what they ask. Nothing here writes a save in a scenario: `leave`
+// stays `stay`, and the exits and checkpoints scenarios ask for are dry (the
+// save counted as written, the exit only logged).
 
 public class TandemSaves {
   private let m_game: GameInstance;
@@ -39,6 +49,19 @@ public class TandemSaves {
   // way out).
   private let m_left: Int32;
   private let m_saidLeft: Bool;
+  // The pause menu's Exit waiting for our save: 0 none, 1 to the main menu,
+  // 2 to the desktop.
+  private let m_exit: Int32;
+  // A checkpoint's leave is under way: the session is joined again after
+  // its save.
+  private let m_checkpoint: Bool;
+  // When this session began, or its last checkpoint ended.
+  private let m_checkpointAt: Float;
+  // Why no checkpoint can be made in this session, said once.
+  private let m_checkpointSaid: Bool;
+  // A test's exit or checkpoint (tools/game.sh cmd exit … dry): no save
+  // written (counted as written), no exit made.
+  private let m_dry: Bool;
 
   public func Start(game: GameInstance, system: ref<TandemSystem>) -> Void {
     this.m_game = game;
@@ -46,6 +69,9 @@ public class TandemSaves {
     // A world was loaded: what a session left in the last one is gone.
     TandemProgress.LeaveReset();
     this.m_locked = false;
+    this.m_exit = 0;
+    this.m_checkpoint = false;
+    this.m_dry = false;
   }
 
   public func Locked() -> Bool {
@@ -57,6 +83,75 @@ public class TandemSaves {
     this.m_chosen = true;
   }
 
+  // Our V's session gains are not on disk: a guest in a session, the leave
+  // steps under way, or a session that ended and wrote nothing since. The
+  // pause menu's Exit saves first then (Coop.reds).
+  public func ExitOwes() -> Bool {
+    if !IsDefined(this.m_system) {
+      return false;
+    }
+    let step = TandemProgress.LeaveStep();
+    let guest = this.m_system.You() != 0u && !TandemNative.IsHost();
+    return guest || step == 2 || step == 3 || step == 4 || step == 6 || TandemProgress.LeaveOwed();
+  }
+
+  // The pause menu's Exit (taken on the tick) or `cmd exit`: the leave
+  // steps and the save first, then the exit (1 the main menu, 2 the
+  // desktop). The pause menu asked the player already when no save could
+  // be made (TandemSystem.SaveBlocker).
+  public func BeginExit(exit: Int32, dry: Bool) -> Void {
+    if !IsDefined(this.m_system) || exit == 0 {
+      return;
+    }
+    let name = TandemSaves.ExitName(exit);
+    if !this.ExitOwes() {
+      TandemNative.Log(s"exit: \(name): nothing of a session to save");
+      this.m_dry = dry;
+      this.Exit(exit);
+      this.m_dry = false;
+      return;
+    }
+    if TandemProgress.LeaveStep() == 6 {
+      // Co-op state stayed: no save can be made until a load.
+      TandemNative.Log(s"exit: \(name): no save can be made (co-op state stayed): not exiting");
+      TandemCoop.Notice(this.m_game, "Exit-NotSaved");
+      return;
+    }
+    this.m_exit = exit;
+    this.m_dry = dry;
+    this.m_checkpoint = false;
+    TandemNative.Log(s"exit: \(name) held: our V is saved first\(dry ? " (dry)" : "")");
+    if this.m_system.You() != 0u && !TandemNative.IsHost() {
+      this.m_system.CoopLeaveSaying("Exit-Saving");
+    } else {
+      TandemCoop.Notice(this.m_game, "Exit-Saving");
+    }
+  }
+
+  // A checkpoint now (the timer, or `cmd checkpoint`). False: none (not a
+  // guest in a session, or not a session we can join again).
+  public func BeginCheckpoint(dry: Bool) -> Bool {
+    if !IsDefined(this.m_system) || this.m_exit != 0 || this.m_checkpoint {
+      return false;
+    }
+    if this.m_system.You() == 0u || TandemNative.IsHost() {
+      TandemNative.Log("checkpoint: not a guest in a session");
+      return false;
+    }
+    if !TandemProgress.KeepRejoin() {
+      if !this.m_checkpointSaid {
+        this.m_checkpointSaid = true;
+        TandemNative.Log("checkpoint: this session was not joined by a choice we can make again: none");
+      }
+      return false;
+    }
+    this.m_checkpoint = true;
+    this.m_dry = dry;
+    TandemNative.Log(s"checkpoint: leaving to save our V, then joining again\(dry ? " (dry)" : "")");
+    this.m_system.CoopLeaveSaying("Checkpoint-Saving");
+    return true;
+  }
+
   // Four times a second, in a session or not (TandemSystem.OnTick).
   public func Tick() -> Void {
     let now = EngineTime.ToFloat(GameInstance.GetEngineTime(this.m_game));
@@ -64,15 +159,31 @@ public class TandemSaves {
       return;
     }
     this.m_lastTick = now;
+    // The pause menu's Exit, held for the tick (Coop.reds).
+    let asked = TandemProgress.TakeExit();
+    if asked != 0 {
+      this.BeginExit(asked, false);
+    }
+    this.CheckpointTick(now);
     let guest = this.m_system.You() != 0u && !TandemNative.IsHost();
     let step = TandemProgress.LeaveStep();
     if guest {
       this.m_saidLeft = false;
       if step != 1 {
-        // A session (again): its end has not been chosen yet.
+        // A session (again): its end has not been chosen yet, its first
+        // checkpoint is a whole period away, and what was under way of an
+        // exit or a checkpoint is dropped.
         this.m_chosen = false;
+        this.m_checkpointAt = now;
+        this.m_checkpointSaid = false;
+        if this.m_exit != 0 || this.m_checkpoint {
+          TandemNative.Log("save: in a session again: the exit or checkpoint under way is dropped");
+          this.m_exit = 0;
+          this.m_checkpoint = false;
+          this.m_dry = false;
+        }
       }
-    } else if step == 0 || step == 5 || step == 6 {
+    } else if (step == 0 || step == 5 || step == 6) && this.m_exit == 0 {
       // Nothing under way.
       return;
     }
@@ -91,11 +202,12 @@ public class TandemSaves {
       }
     }
     this.m_left = left;
-    let action = TandemProgress.LeaveTick(now, guest, this.m_chosen, left, blocked, this.m_asked ? this.m_saved : 0);
+    let wanted = this.m_exit != 0 || this.m_checkpoint;
+    let action = TandemProgress.LeaveTick(now, guest, this.m_chosen, left, blocked, this.m_asked ? this.m_saved : 0, wanted);
     this.m_locked = TandemProgress.LeaveLocked();
     switch action {
       case 1:
-        TandemNative.Log(s"save: back from co-op: our own world is back, saving unlocked (leave = \(TandemSaves.ModeName()))");
+        TandemNative.Log(s"save: back from co-op: our own world is back, saving unlocked (leave = \(TandemSaves.ModeName())\(wanted ? ", a save wanted" : ""))");
         break;
       case 2:
         this.Save();
@@ -103,6 +215,7 @@ public class TandemSaves {
       case 3:
         this.m_asked = false;
         TandemNative.Log("save: back from co-op: saved");
+        this.AfterSave(true);
         break;
       case 4:
         this.m_asked = false;
@@ -112,11 +225,17 @@ public class TandemSaves {
       case 5:
         this.m_asked = false;
         TandemNative.Log(s"save: back from co-op: the save \(this.m_saved < 0 ? "failed" : "was not confirmed"): nothing is loaded");
-        TandemCoop.Notice(this.m_game, "Saves-Failed");
+        if !wanted {
+          TandemCoop.Notice(this.m_game, "Saves-Failed");
+        }
+        this.AfterSave(false);
         break;
       case 6:
-        TandemNative.Log("save: back from co-op: the game allowed no save for two minutes: left to the player");
-        TandemCoop.Notice(this.m_game, "Saves-WhenYouCan");
+        TandemNative.Log(s"save: back from co-op: the game allowed no save for \(wanted ? "15 seconds" : "two minutes"): left to the player");
+        if !wanted {
+          TandemCoop.Notice(this.m_game, "Saves-WhenYouCan");
+        }
+        this.AfterSave(false);
         break;
       case 7:
         TandemNative.Log(s"save: stays locked: \(TandemProgress.LeftNames(left)) left of the session: load your last save");
@@ -124,22 +243,103 @@ public class TandemSaves {
         if left != 1 {
           TandemCoop.Notice(this.m_game, "Saves-NotRestored");
         }
+        this.AfterSave(false);
         break;
       default:
         break;
     }
   }
 
+  // Every `checkpoint` minutes in a session, at a safe moment
+  // (TandemSystem.CheckpointBlocker).
+  private func CheckpointTick(now: Float) -> Void {
+    let minutes = TandemProgress.CheckpointMinutes();
+    if minutes <= 0 || this.m_exit != 0 || this.m_checkpoint || TandemProgress.LeaveStep() != 1 {
+      return;
+    }
+    if this.m_system.You() == 0u || TandemNative.IsHost() {
+      return;
+    }
+    if now - this.m_checkpointAt < Cast<Float>(minutes) * 60.0 {
+      return;
+    }
+    if StrLen(this.m_system.CheckpointBlocker()) > 0 {
+      return;
+    }
+    if !this.BeginCheckpoint(false) {
+      // Not this session: the next period may be another one.
+      this.m_checkpointAt = now;
+    }
+  }
+
+  // The save an exit or a checkpoint waited for is written (or not).
+  private func AfterSave(saved: Bool) -> Void {
+    if this.m_exit != 0 {
+      let exit = this.m_exit;
+      this.m_exit = 0;
+      if saved {
+        this.Exit(exit);
+      } else {
+        TandemNative.Log(s"exit: \(TandemSaves.ExitName(exit)): our V could not be saved: not exiting (exit again to quit without it)");
+        TandemCoop.Notice(this.m_game, "Exit-NotSaved");
+      }
+    }
+    if this.m_checkpoint {
+      this.m_checkpoint = false;
+      this.m_checkpointAt = EngineTime.ToFloat(GameInstance.GetEngineTime(this.m_game));
+      TandemNative.Log(s"checkpoint: \(saved ? "saved" : "not saved"): joining the session again");
+      if saved {
+        TandemCoop.Notice(this.m_game, "Checkpoint-Saved");
+      } else {
+        TandemCoop.Notice(this.m_game, "Checkpoint-Failed");
+      }
+      if !this.m_system.CoopRejoin() {
+        TandemNative.Log("checkpoint: the session could not be chosen again");
+      }
+    }
+    this.m_dry = false;
+  }
+
+  // The exit the player asked for, now (1 the main menu, 2 the desktop):
+  // the game's own, through the system requests handler (the pause menu
+  // that asked is closed).
+  private func Exit(exit: Int32) -> Void {
+    if this.m_dry {
+      TandemNative.Log(s"exit: dry: would go to \(TandemSaves.ExitName(exit)) now");
+      return;
+    }
+    TandemNative.Log(s"exit: to \(TandemSaves.ExitName(exit))");
+    let handler = GameInstance.GetSystemRequestsHandler();
+    if exit == 2 {
+      handler.ExitGame();
+    } else {
+      // A co-op choice made in game was for this game (as the pause menu's
+      // own Exit to the main menu does, Coop.reds).
+      TandemNative.ResetChoice();
+      handler.GotoMainMenu();
+    }
+  }
+
+  public static func ExitName(exit: Int32) -> String {
+    return exit == 2 ? "the desktop" : "the main menu";
+  }
+
   // One quick save, the game's own (the pause menu's: final.reds:340447),
   // with its "game saved" notification; its outcome comes to OnSavingComplete.
   private func Save() -> Void {
+    this.m_saved = 0;
+    this.m_asked = true;
+    if this.m_dry {
+      // A test: nothing of it reaches the player's saves.
+      TandemNative.Log("save: back from co-op: dry: no save written, counted as written");
+      this.m_saved = 1;
+      return;
+    }
     let handler = GameInstance.GetSystemRequestsHandler();
     if !this.m_listening {
       handler.RegisterToCallback(n"OnSavingComplete", this, n"OnSavingComplete");
       this.m_listening = true;
     }
-    this.m_saved = 0;
-    this.m_asked = true;
     TandemNative.Log("save: back from co-op: quick save asked");
     handler.QuickSave();
   }
@@ -159,6 +359,8 @@ public class TandemSaves {
       this.m_listening = false;
     }
     this.m_asked = false;
+    this.m_exit = 0;
+    this.m_checkpoint = false;
   }
 
   public static func ModeName() -> String {
@@ -172,6 +374,7 @@ public class TandemSaves {
     let left = IsDefined(this.m_system) ? this.m_system.LeftOver() : 0;
     let locks: array<gameSaveLock>;
     let blocked = GameInstance.IsSavingLocked(this.m_game, locks);
-    return s"saves: leave = \(TandemSaves.ModeName()), step \(names[step]), our lock \(this.m_locked), the game's locks \(blocked) (\(ArraySize(locks))), left of a session: \(left == 0 ? "nothing" : TandemProgress.LeftNames(left))";
+    let exit = this.m_exit == 0 ? "none" : TandemSaves.ExitName(this.m_exit);
+    return s"saves: leave = \(TandemSaves.ModeName()), step \(names[step]), our lock \(this.m_locked), the game's locks \(blocked) (\(ArraySize(locks))), left of a session: \(left == 0 ? "nothing" : TandemProgress.LeftNames(left)), owed \(TandemProgress.LeaveOwed()), exit \(exit), checkpoint every \(TandemProgress.CheckpointMinutes()) min\(this.m_checkpoint ? " (under way)" : "")";
   }
 }

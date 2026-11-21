@@ -176,7 +176,8 @@ public class TandemText {
       "Travel-Taken", "Travel-Asks", "Travel-Blocked", "Revive-Down", "Revive-DownAlone",
       "Revive-Out", "Revive-AllDown", "Revive-WaitHost", "Activities-AsksSleep", "Activities-AsksWait",
       "Activities-CannotSkip", "Trade-Asks", "Comms-LinkAsked", "Saves-Failed", "Saves-WhenYouCan",
-      "Saves-NotRestored", "Mods-Replaced-Item", "Trade-Unknown",
+      "Saves-NotRestored", "Mods-Replaced-Item", "Trade-Unknown", "Exit-Saving", "Exit-NotSaved",
+      "Checkpoint-Saving", "Checkpoint-Failed",
       "Interact-HostOnly", "Interact-Taken", "Interact-TooFar",
       "Interact-Missing", "Interact-Busy", "Trade-NotNow", "Phone-Unreachable"
     ];
@@ -184,7 +185,7 @@ public class TandemText {
       return 2;
     }
     // A record shown otherwise (Mods.reds): never only in the log.
-    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Revive-") || StrBeginsWith(key, "Mods-") || StrBeginsWith(key, "World-") || StrBeginsWith(key, "Time-Mod") ? 1 : 0;
+    return StrBeginsWith(key, "Session-") || StrBeginsWith(key, "Checkpoint-") || StrBeginsWith(key, "Revive-") || StrBeginsWith(key, "Mods-") || StrBeginsWith(key, "World-") || StrBeginsWith(key, "Time-Mod") ? 1 : 0;
   }
 
   // An input hint in the HUD's hint bar: the game draws the key or button
@@ -568,6 +569,18 @@ public class TandemTextEnglish extends ModLocalizationPackage {
     this.Text("Tandem-Saves-Failed", "Co-op: the game could not be saved. Save it yourself to keep what your V earned.");
     this.Text("Tandem-Saves-WhenYouCan", "Co-op: save your game when you can, to keep what your V earned.");
     this.Text("Tandem-Saves-NotRestored", "Co-op: your game could not be put back as it was. Load your last save.");
+    this.Text("Tandem-Exit-Saving", "Co-op: saving your V before exiting...");
+    this.Text("Tandem-Exit-NotSaved", "Co-op: your V could not be saved, so the game did not exit. You are out of the session: save when you can, or exit again to quit without saving.");
+    this.Text("Tandem-Exit-Title", "Exit without saving your V?");
+    this.Text("Tandem-Exit-CannotSave", "Your V cannot be saved right now ({1}). Exiting now loses what it earned in this co-op session: XP, loot, rewards. Exit anyway, or stay and exit once it can be saved?");
+    this.Text("Tandem-Exit-Why-Combat", "you are in combat");
+    this.Text("Tandem-Exit-Why-Scene", "a scene or a quest holds the save");
+    this.Text("Tandem-Exit-Why-Down", "your V is down");
+    this.Text("Tandem-Exit-Why-Dirty", "your game could not be put back as it was after the session");
+    this.Text("Tandem-Exit-Why-Other", "the game does not allow a save here");
+    this.Text("Tandem-Checkpoint-Saving", "Co-op checkpoint: saving your V, back in the session in a moment");
+    this.Text("Tandem-Checkpoint-Saved", "Co-op checkpoint: your V is saved");
+    this.Text("Tandem-Checkpoint-Failed", "Co-op checkpoint: your V could not be saved this time");
     this.Text("Tandem-Comms-Enemy", "Enemy");
     this.Text("Tandem-Comms-Device", "Device");
     this.Text("Tandem-Comms-Loot", "Loot");
@@ -1007,6 +1020,18 @@ public class TandemTextFrench extends ModLocalizationPackage {
     this.Text("Tandem-Saves-Failed", "Coop : la partie n'a pas pu être sauvegardée. Sauvegardez vous-même pour garder ce que votre V a gagné.");
     this.Text("Tandem-Saves-WhenYouCan", "Coop : sauvegardez dès que possible, pour garder ce que votre V a gagné.");
     this.Text("Tandem-Saves-NotRestored", "Coop : votre partie n'a pas pu être remise comme avant. Chargez votre dernière sauvegarde.");
+    this.Text("Tandem-Exit-Saving", "Coop : sauvegarde de votre V avant de quitter...");
+    this.Text("Tandem-Exit-NotSaved", "Coop : votre V n'a pas pu être sauvegardé, le jeu n'a donc pas quitté. Vous êtes hors de la session : sauvegardez dès que possible, ou quittez à nouveau pour partir sans sauvegarder.");
+    this.Text("Tandem-Exit-Title", "Quitter sans sauvegarder votre V ?");
+    this.Text("Tandem-Exit-CannotSave", "Votre V ne peut pas être sauvegardé pour l'instant ({1}). Quitter maintenant perd ce qu'il a gagné dans cette session coop : XP, butin, récompenses. Quitter quand même, ou rester et quitter dès qu'il pourra être sauvegardé ?");
+    this.Text("Tandem-Exit-Why-Combat", "vous êtes en combat");
+    this.Text("Tandem-Exit-Why-Scene", "une scène ou une quête bloque la sauvegarde");
+    this.Text("Tandem-Exit-Why-Down", "votre V est à terre");
+    this.Text("Tandem-Exit-Why-Dirty", "votre partie n'a pas pu être remise comme avant après la session");
+    this.Text("Tandem-Exit-Why-Other", "le jeu n'autorise pas de sauvegarde ici");
+    this.Text("Tandem-Checkpoint-Saving", "Point de sauvegarde coop : sauvegarde de votre V, retour dans la session dans un instant");
+    this.Text("Tandem-Checkpoint-Saved", "Point de sauvegarde coop : votre V est sauvegardé");
+    this.Text("Tandem-Checkpoint-Failed", "Point de sauvegarde coop : votre V n'a pas pu être sauvegardé cette fois");
     this.Text("Tandem-Comms-Enemy", "Ennemi");
     this.Text("Tandem-Comms-Device", "Appareil");
     this.Text("Tandem-Comms-Loot", "Butin");
