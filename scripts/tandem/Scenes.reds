@@ -676,7 +676,7 @@ public class TandemScenes {
     let kept: array<ref<TandemScenePlaced>>;
     for placed in this.m_placed {
       if placed.prop == prop {
-        GameInstance.GetDynamicEntitySystem().DeleteEntity(placed.id);
+        TandemEntities.Delete(placed.id);
         TandemNative.Log(s"scene: prop \(prop) taken away");
       } else {
         ArrayPush(kept, placed);
@@ -728,7 +728,7 @@ public class TandemScenes {
     }
     ArrayClear(this.m_held);
     for placed in this.m_placed {
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(placed.id);
+      TandemEntities.Delete(placed.id);
     }
     ArrayClear(this.m_placed);
     this.ReleaseCamera();
@@ -1178,7 +1178,7 @@ public class TandemScenes {
     }
     if this.m_cameraAsked {
       this.m_cameraAsked = false;
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(this.m_camera);
+      TandemEntities.Delete(this.m_camera);
     }
   }
 

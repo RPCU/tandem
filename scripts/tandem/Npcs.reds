@@ -336,7 +336,7 @@ public class TandemNpcs {
         ArrayPush(this.m_hiddenIds, proxy.id);
       }
     } else {
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
+      TandemEntities.Delete(proxy.id);
     }
   }
 
@@ -480,11 +480,11 @@ public class TandemNpcs {
           TandemProxies.Wake(own);
         }
       } else {
-        GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
+        TandemEntities.Delete(proxy.id);
       }
     }
     for leaving in this.m_leaving {
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(leaving.id);
+      TandemEntities.Delete(leaving.id);
     }
     ArrayClear(this.m_leaving);
     ArrayClear(this.m_proxies);
@@ -1008,7 +1008,7 @@ public class TandemNpcs {
           // A proxy we took over is one of our spawned entities: the game
           // would never stream it out.
           if known.managed {
-            entities.DeleteEntity(known.id);
+            TandemEntities.Delete(known.id);
           }
           // No longer shared: scaled to our V again, for one player.
           this.m_levels.Release(known, known.id);
@@ -1445,7 +1445,7 @@ public class TandemNpcs {
     let kept: array<ref<TandemNpcLeaving>>;
     for leaving in this.m_leaving {
       if now - leaving.at >= 0.5 || (now - leaving.at >= 0.1 && !GameInstance.GetMountingFacility(this.m_game).IsMountedToAnything(leaving.id)) {
-        GameInstance.GetDynamicEntitySystem().DeleteEntity(leaving.id);
+        TandemEntities.Delete(leaving.id);
       } else {
         ArrayPush(kept, leaving);
       }
@@ -1875,7 +1875,7 @@ public class TandemNpcs {
           ArrayPush(this.m_leaving, leaving);
         } else if !proxy.dead || !TandemLoot.LeaveCorpse(this.m_game, proxy.id) {
           // A corpse leaves what it still holds as a loot bag (Loot.reds).
-          GameInstance.GetDynamicEntitySystem().DeleteEntity(proxy.id);
+          TandemEntities.Delete(proxy.id);
         }
       } else {
         ArrayPush(kept, proxy);
@@ -2158,7 +2158,7 @@ public class TandemNpcs {
     for known in this.m_known {
       let announcer = known.npc / 16777216u + 1u;
       if this.m_you != 0u && announcer != this.m_you && EntityID.IsDefined(known.id) {
-        entities.DeleteEntity(known.id);
+        TandemEntities.Delete(known.id);
         deleted += 1;
       }
     }
@@ -2288,7 +2288,7 @@ public class TandemNpcs {
     spec.spawnInView = true;
     spec.active = true;
     ArrayPush(spec.tags, n"Tandem.Adopted");
-    entities.DeleteEntity(known.id);
+    TandemEntities.Delete(known.id);
     known.id = entities.CreateEntity(spec);
     known.pendingUntil = this.m_now + 3.0;
     known.health = health / 100.0;

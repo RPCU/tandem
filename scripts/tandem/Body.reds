@@ -141,7 +141,7 @@ public class TandemBodies {
   private func DeleteDonor(donor: ref<TandemDonor>) -> Void {
     if IsDefined(donor) && !donor.deleted && EntityID.IsDefined(donor.id) {
       donor.deleted = true;
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(donor.id);
+      TandemEntities.Delete(donor.id);
     }
   }
 

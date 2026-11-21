@@ -798,7 +798,7 @@ public class TandemSpectate {
     }
     if this.m_cameraAsked {
       this.m_cameraAsked = false;
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(this.m_camera);
+      TandemEntities.Delete(this.m_camera);
     }
   }
 

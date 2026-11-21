@@ -46,7 +46,7 @@ public class TandemVehicleProbe {
 
   public func Stop() -> Void {
     if EntityID.IsDefined(this.m_id) {
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(this.m_id);
+      TandemEntities.Delete(this.m_id);
     }
     TandemNative.Log("vehicle probe: stopped");
   }

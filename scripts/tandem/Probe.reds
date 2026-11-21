@@ -118,7 +118,7 @@ public class TandemProbe {
     // (callbacks stay registered: see TandemBodies.m_active)
     this.m_stopped = true;
     for body in this.m_bodies {
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(body.id);
+      TandemEntities.Delete(body.id);
     }
     ArrayClear(this.m_bodies);
   }
@@ -438,7 +438,7 @@ public class TandemGates {
 
   public func Clear() -> Void {
     for id in this.m_ids {
-      GameInstance.GetDynamicEntitySystem().DeleteEntity(id);
+      TandemEntities.Delete(id);
     }
     ArrayClear(this.m_ids);
   }
