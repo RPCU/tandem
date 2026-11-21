@@ -705,6 +705,7 @@ deploy() {
 # The game runs and its game thread ticks (no watchdog line since the last
 # "back", see plugin/src/runtime.hpp).
 healthy() {
+  running || return 1
   remote "cd '$dir'; f=\$(ls -t red4ext/logs/tandem-*.log | head -1); \
     last=\$(grep -n 'watchdog:' \"\$f\" | tail -1); \
     case \"\$last\" in *silent*) exit 1 ;; esac; grep -q 'script. playing' \"\$f\""
