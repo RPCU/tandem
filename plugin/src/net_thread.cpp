@@ -53,6 +53,8 @@ struct NetThread::Impl {
   // session (a guest joining again) starts from them.
   std::optional<proto::Appearance> lastAppearance;
   std::optional<proto::Held> lastHeld;
+  // Who may drive our cars (said once by the scripts): again for each session.
+  std::optional<proto::CarLend> lastLend;
   std::optional<proto::Seat> lastSeat;
   std::optional<proto::VehicleRadio> lastRadio;
   std::optional<proto::Stealth> lastStealth;
@@ -322,6 +324,8 @@ struct NetThread::Impl {
       endpoint->SetLocalAppearance(*lastAppearance);
     if (lastHeld)
       endpoint->SetLocalHeld(*lastHeld);
+    if (lastLend)
+      endpoint->SendCombat(*lastLend);
     if (lastSeat)
       endpoint->SetLocalSeat(*lastSeat);
     if (lastRadio)
@@ -1408,11 +1412,14 @@ struct NetThread::Impl {
         PublishLives(*endpoint);
       for (auto &message : TradeLink::Get().TakeOutbound())
         endpoint->SendTrade(message);
-      for (auto &message : Combat::Get().TakeOutbound())
+      for (auto &message : Combat::Get().TakeOutbound()) {
+        if (const auto *lend = std::get_if<proto::CarLend>(&message))
+          lastLend = *lend;
         if (!endpoint->SendCombat(message))
           if (const auto *area = std::get_if<proto::AreaHit>(&message))
             log::Info("hit on player {} dropped: not in the session, or friendly fire is off",
                       area->player);
+      }
       Combat::Get().SetRules(endpoint->Rules());
 
       stall::NetBeat(stall::kReport);
