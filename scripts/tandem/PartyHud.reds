@@ -588,6 +588,13 @@ public class TandemPartyHud {
     this.m_listWhy = "-";
     this.m_modulesLogged = -1;
     this.m_why = "-";
+    // The test commands' forced cases back to the game's word (a failed
+    // hud-layout left a holocall and a choice hub forced up).
+    let i = 0;
+    while i < ArraySize(this.m_force) {
+      this.m_force[i] = -1;
+      i += 1;
+    }
   }
 
   public func Tick(now: Float, system: ref<TandemSystem>, you: Uint32) -> Void {
