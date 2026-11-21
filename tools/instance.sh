@@ -29,7 +29,10 @@
 #   stop NAME            kill this instance's processes, and only those
 #   destroy NAME         stop it and delete its directory
 #   status               the instances, what runs, the memory left
-#   dir NAME             its game folder, for the other tools:
+#   who                  each running game and whose it is: "ours (steam,
+#                        started by game.sh)", "ours (instance a)" or "the
+#                        player's" (changes nothing)
+#   dir NAME            its game folder, for the other tools:
 #                        GAME_DIR="$(tools/instance.sh dir b)" task deploy:files
 #   cmd NAME TEXT...     a tandem command for it (its own tandem.cmd)
 #   log NAME [N]         the last N lines of its tandem log (default 40)
@@ -50,10 +53,14 @@
 # anya) it sends itself there over ssh; GAME_HOST=local runs it here.
 #
 # What it promises:
-# - It changes nothing while a game it did not start runs (the player's,
-#   or one from tools/game.sh through Steam): every verb but status, dir,
-#   log and stop refuses (stop only frees the machine for that game).
-#   INSTANCE_ALLOW_FOREIGN=1 says that game is our own.
+# - It changes nothing while the player's game runs: create, sync, role,
+#   settings, start, cmd and destroy refuse (stop only frees the machine for
+#   that game). The player's is any game that carries no instance's mark and
+#   is not the Steam game tools/game.sh started and recorded (its pid and
+#   start time in ~/.cache/tandem/pilot/main/game.owner), nor a launcher or
+#   child of that one; a game under a minute old is waited for (a minute at
+#   most) until it is recorded. INSTANCE_ALLOW_FOREIGN=1, by hand only, says
+#   any running game is our own.
 # - It writes only under the instance's directory, TANDEM_INSTANCES/NAME
 #   (checked before every write); the player's install and prefix are read.
 # - It never kills by name: only processes carrying this instance's mark
@@ -116,7 +123,7 @@ while [ $# -gt 0 ]; do
 done
 verb=${1:-}
 [ -n "$verb" ] || {
-  sed -n '9,35p' "$0" >&2
+  sed -n '11,45p' "$0" >&2
   exit 2
 }
 shift
@@ -232,26 +239,126 @@ tool() {
 
 # --- whose game is running ---------------------------------------------------
 
+# A game (or a launcher naming it) is ours when it carries an instance's
+# mark, or when it is the Steam game tools/game.sh started: the pid in its
+# record, whose kernel start time is the one written beside it (a pid reused
+# since does not match), with the launchers above it (Steam's reaper,
+# Proton) and what it started. Every other one is the player's.
+steam_record=$HOME/.cache/tandem/pilot/main/game.owner
+
 # The instance a process belongs to ("" for a game we did not start).
 mark_of() { tr '\0' '\n' <"/proc/$1/environ" 2>/dev/null | sed -n 's/^TANDEM_INSTANCE_ID=//p' | head -1; }
 
-# Games (and their launchers) that carry no instance mark: the player's.
+# /proc/PID/stat's field N past "PID (comm)": 2 the parent, 20 the start
+# time (clock ticks since boot).
+stat_field() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk -v n="$2" '{ print $n }'; }
+
+# The game's own process (Wine's "Z:\...\Cyberpunk2077.exe" as its first
+# argument), not a launcher that names it further on.
+is_game() {
+  local first='' re='^[a-z]:.*\\cyberpunk2077\.exe$'
+  IFS= read -r -d '' first 2>/dev/null <"/proc/$1/cmdline" || [ -n "$first" ] || return 1
+  first=${first,,}
+  [[ $first =~ $re ]]
+}
+
+# The Steam game tools/game.sh recorded, while it runs: its pid, or nothing.
+steam_game() {
+  local pid='' start=''
+  [ -r "$steam_record" ] || return 0
+  read -r pid start <"$steam_record" || true
+  [[ $pid =~ ^[0-9]+$ ]] && [ -n "$start" ] && [ "$(stat_field "$pid" 20)" = "$start" ] && echo "$pid"
+  return 0
+}
+
+# under PID ANCESTOR: ANCESTOR is PID or one of its parents.
+under() {
+  local p=$1
+  while [ -n "$p" ] && [ "$p" -gt 1 ]; do
+    [ "$p" = "$2" ] && return 0
+    p=$(stat_field "$p" 2)
+  done
+  return 1
+}
+
+# whose PID STEAM (steam_game's answer): "instance NAME", "steam" or nothing
+# (the player's).
+whose() {
+  local mark
+  mark=$(mark_of "$1")
+  if [ -n "$mark" ]; then
+    echo "instance ${mark##*/}"
+  elif [ -n "$2" ] && { under "$1" "$2" || under "$2" "$1"; }; then
+    echo steam
+  fi
+  return 0
+}
+
+# Games (and their launchers) that are not ours: the player's.
 foreign() {
-  local pid
+  local pid steam
+  steam=$(steam_game)
   for pid in $(pgrep -f '[C]yberpunk2077\.exe' || true); do
-    [ -n "$(mark_of "$pid")" ] || echo "$pid"
+    [ -e "/proc/$pid" ] || continue
+    [ -n "$(whose "$pid" "$steam")" ] || echo "$pid"
   done
 }
 
+# Seconds since a process started.
+age_of() {
+  local ticks
+  ticks=$(stat_field "$1" 20)
+  awk -v t="${ticks:-0}" -v hz="$(getconf CLK_TCK)" '{ print int($1 - t / hz) }' /proc/uptime
+}
+
+# A game started less than a minute ago may be a Steam game tools/game.sh
+# has not recorded yet (it does once the game's own process exists, within
+# seconds): waited for, a minute at most, then judged.
 refuse_if_foreign() {
-  local pids
-  pids=$(foreign | tr '\n' ' ')
-  [ -n "$pids" ] || return 0
+  local pids pid young waited=0
+  while :; do
+    pids=$(foreign | tr '\n' ' ')
+    pids=${pids% }
+    [ -n "$pids" ] || return 0
+    young=''
+    for pid in $pids; do
+      [ "$(age_of "$pid")" -ge 60 ] || young=1
+    done
+    [ -n "$young" ] && [ "$waited" -lt 60 ] || break
+    [ "$waited" -gt 0 ] || note "a game started under a minute ago (pid $pids): waiting to see whose it is"
+    sleep 2
+    waited=$((waited + 2))
+  done
   if [ "${INSTANCE_ALLOW_FOREIGN:-0}" = 1 ]; then
     note "a game we did not start runs (pid $pids): allowed by INSTANCE_ALLOW_FOREIGN"
     return 0
   fi
-  die "a game we did not start is running (pid $pids): the player's. Nothing done."
+  die "a game we did not start is running (pid $pids): the player's (tools/instance.sh who). Nothing done."
+}
+
+# Every running game and whose it is; changes nothing. The launchers of our
+# games are left out, the player's are named.
+who() {
+  local pid steam owner any=''
+  steam=$(steam_game)
+  for pid in $(pgrep -f '[C]yberpunk2077\.exe' || true); do
+    [ -e "/proc/$pid" ] || continue
+    owner=$(whose "$pid" "$steam")
+    case $owner in
+    steam) owner="ours (steam, started by game.sh)" ;;
+    instance*) owner="ours ($owner)" ;;
+    *) owner="the player's" ;;
+    esac
+    if is_game "$pid"; then
+      echo "pid $pid: $owner"
+    elif [ "$owner" = "the player's" ]; then
+      echo "pid $pid (a launcher): $owner"
+    else
+      continue
+    fi
+    any=1
+  done
+  [ -n "$any" ] || echo "no game running"
 }
 
 # This instance's processes: the exact mark in their environment.
@@ -739,9 +846,11 @@ destroy() {
 # --- look --------------------------------------------------------------------
 
 status() {
-  local dir other
+  local dir other steam
   other=$(foreign | tr '\n' ' ')
+  steam=$(steam_game)
   echo "the player's game (or one we did not start): ${other:-not running}"
+  echo "the Steam game tools/game.sh started: $([ -n "$steam" ] && echo "pid $steam" || echo "not running")"
   echo "memory available: $(awk '/^MemAvailable:/ { print int($2 / 1024) }' /proc/meminfo) MB"
   echo "instances in $root:"
   for dir in "$root"/*/; do
@@ -944,6 +1053,7 @@ shot() {
 
 case $verb in
 status) status ;;
+who) who ;;
 create | sync | role | settings | start | load | stop | destroy | dir | cmd | log | stats | bt | xdo | shot)
   instance "${1:-}"
   shift
@@ -984,7 +1094,7 @@ create | sync | role | settings | start | load | stop | destroy | dir | cmd | lo
   esac
   ;;
 *)
-  echo "instance: no verb $verb (create, sync, role, settings, start, load, stop, destroy, status, dir, cmd, log, stats, bt, xdo, shot)" >&2
+  echo "instance: no verb $verb (create, sync, role, settings, start, load, stop, destroy, status, who, dir, cmd, log, stats, bt, xdo, shot)" >&2
   exit 2
   ;;
 esac

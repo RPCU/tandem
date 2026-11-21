@@ -398,7 +398,8 @@ else
   # Beside each other (docs/architecture/two-instances.md, "Sweeps on two
   # games"): the Steam game as instance 0, port 27450; instance k on port
   # 27450 + 100 k, headless unless INSTANCE_DISPLAY says otherwise, started
-  # beside the Steam game (INSTANCE_ALLOW_FOREIGN: it is a test game here);
+  # beside the Steam game (a test game: tools/game.sh records the one it
+  # starts, and tools/instance.sh takes only that one for ours);
   # every game stops only its own mock players, starts and deploys one at a
   # time (TANDEM_PARALLEL).
   for g in "${games[@]:1}"; do
@@ -419,7 +420,7 @@ else
       unset TANDEM_INSTANCE PILOT_INSTANCE TANDEM_GAME_PORT
       if [ "$k" -gt 0 ]; then
         unset GAME_DIR
-        export TANDEM_INSTANCE=${games[k]} TANDEM_GAME_PORT=$((27450 + 100 * k)) INSTANCE_ALLOW_FOREIGN=1
+        export TANDEM_INSTANCE=${games[k]} TANDEM_GAME_PORT=$((27450 + 100 * k))
         export INSTANCE_DISPLAY=${INSTANCE_DISPLAY:-headless}
       fi
       sweep_slice "$out/results-${games[k]}.txt" "${games[k]} " "${mine[@]}"
