@@ -139,9 +139,16 @@ reliable and ordered.
 `scene::Stage` (`core/src/scene.cpp`):
 
 - **A scene plays** when the host's V is in one (`IsEntityInScene` on V,
-  or tier 3 and up). Which one: the scene whose quest node ran in the last
-  3 s (the hook scene privacy already uses, `engine/scenes.cpp`); a scene
-  with no node seen is announced all the same, with no name.
+  or tier 3 and up) and it holds V (tier 2 and up) or has an actor: at
+  tier 1 (free play) the scene system counts V in many a quest's
+  background scene (the test save's field: for minutes), with nobody to
+  replay (`scene::Stage`; the test scene too needs an actor at tier 1).
+  Which one: the scene whose quest node ran in the last 3 s (the hook
+  scene privacy already uses, `engine/scenes.cpp`); a scene with no node
+  seen is announced all the same, with no name (`kUnnamedScene`, 0x1).
+  The name stays the play's: a sample with none goes on with it, a play
+  with none takes the first one seen (a change, same play); only another
+  name is another play.
 - **Private scenes are never announced**: when the story script holds the
   scene private (`kStoryPrivate`), or its class says so at any tier
   (`TandemStory.SceneClass() >= 2`), the stage gets `isPrivate`: no state,

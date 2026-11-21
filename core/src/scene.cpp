@@ -33,6 +33,15 @@ float PlaceTurn(const proto::Quat &a, const proto::Quat &b) {
 bool IsScenes(const proto::SceneLine &line) {
   return (line.flags & (proto::kVoiceOverhead | proto::kVoiceHolocall)) == 0;
 }
+
+// A scene the guests are told of: one that holds the host's V (tier 2 and
+// up), or one with an actor to show. At tier 1 the scene system counts V in
+// a scene for many a quest's background scene (the test save's field: for
+// minutes on end), with nobody in it to replay.
+bool Shows(const HostSample &sample) {
+  return sample.tier >= 2 ||
+         std::ranges::any_of(sample.actors, [](const auto &actor) { return actor.npc != 0; });
+}
 } // namespace
 
 // ---- host ----
@@ -50,7 +59,7 @@ bool Stage::Speaking(std::uint64_t hostNowUs) const {
 std::vector<proto::Message> Stage::Update(const HostSample &sample, std::uint64_t hostNowUs) {
   std::vector<proto::Message> out;
   m_private = sample.scene != 0 && sample.isPrivate;
-  if (sample.scene == 0 || sample.isPrivate) {
+  if (sample.scene == 0 || sample.isPrivate || !Shows(sample)) {
     if (On()) {
       // Over; before its end if someone was still speaking.
       out.push_back(proto::SceneState{.play = m_play,
@@ -66,11 +75,15 @@ std::vector<proto::Message> Stage::Update(const HostSample &sample, std::uint64_
     return out;
   }
 
-  const bool begin = !On() || m_state.scene != sample.scene;
+  // The name is the scene whose node ran last, for a few seconds only: a
+  // sample with none goes on with the play's, and a play with none takes the
+  // first one seen. Only another name is another scene.
+  const bool named = sample.scene != kUnnamedScene;
+  const bool begin =
+      !On() || (named && m_state.scene != kUnnamedScene && m_state.scene != sample.scene);
   auto next = m_state;
   if (begin) {
     next = {};
-    next.scene = sample.scene;
     next.play = ++m_play;
     next.startUs = hostNowUs;
     m_lines.clear();
@@ -78,6 +91,8 @@ std::vector<proto::Message> Stage::Update(const HostSample &sample, std::uint64_
     m_placed.clear();
     m_propCount = 0;
   }
+  if (begin || named)
+    next.scene = sample.scene;
   next.tier = sample.tier;
   next.rate = sample.held ? 0.f : std::clamp(sample.rate, 0.f, proto::kMaxSceneRate);
   next.flags &= proto::kSceneStaged;

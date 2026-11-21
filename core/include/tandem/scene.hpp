@@ -47,9 +47,14 @@ struct PlaceSample {
   proto::Quat orientation;
 };
 
+// A scene with no name: the host's V is in one, but no quest node of a
+// scene ran lately (the hook is out, the scene is not a quest's, or its node
+// ran longer ago than the plugin looks back).
+inline constexpr std::uint64_t kUnnamedScene = 1;
+
 // What the host's game knows now (sampled a few times a second).
 struct HostSample {
-  std::uint64_t scene{}; // the scene resource playing (0: none)
+  std::uint64_t scene{}; // the scene resource playing (0: none; kUnnamedScene)
   bool isPrivate{};      // a private scene: never announced
   std::uint8_t tier{};   // the host V's GameplayTier
   float rate{1.f};       // the scene's time against the clock (fast-forward: > 1)
@@ -77,7 +82,10 @@ inline constexpr std::uint64_t kSpeakerTailUs = 500'000;
 class Stage {
 public:
   // What to send for this sample (SceneState, SceneCast, SceneProp,
-  // ScenePlace), in order.
+  // ScenePlace), in order. A scene is announced at tier 2 and up, or with an
+  // actor: at tier 1 (full gameplay) with nobody to show there is nothing to
+  // replay. An unnamed sample keeps the play's name; a play with no name
+  // takes the first one seen; another name is another play.
   std::vector<proto::Message> Update(const HostSample &sample, std::uint64_t hostNowUs);
   // A voiced line begins. Nothing while no scene is announced and the line
   // is the scene's (a private scene's lines are its own); barks
