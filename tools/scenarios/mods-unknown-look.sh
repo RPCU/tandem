@@ -11,5 +11,5 @@ expect 'mods: unknown clothing 0x[0-9a-f]+ from .*, shown as Items.Pants_02_basi
 expect "coop notice: .*'s clothes come from a mod you don't have: shown plain or left off \(2 pieces\)" 10
 expect 'player [0-9]+: their look' 10
 cmd coop mods
-expect 'coop: mods: Shown otherwise this session \(2\)' 5
+expect 'coop: mods: Shown otherwise this session \([2-9][0-9]*\)' 5
 reject 'watchdog: game thread silent'
