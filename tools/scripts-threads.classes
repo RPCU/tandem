@@ -4,6 +4,7 @@
 # with `tools/scripts-threads.py --classes VANILLA.reds` when a class is wrapped
 # for the first time, or add its line by hand (a class the decompiled scripts
 # do not declare: its name alone).
+AIActionTarget < IScriptable
 AIDeathReactionsTask < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 AIHitReactionTask < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 AISubActionApplyTimeDilation_Record_Implementation < IScriptable
@@ -86,6 +87,7 @@ ScriptedPuppet < gamePuppet < gamePuppetBase < TimeDilatable < GameObject < Game
 SecurityTurret < SensorDevice < ExplosiveDevice < BasicDistractionDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 SensorDevice < ExplosiveDevice < BasicDistractionDevice < InteractiveDevice < Device < DeviceBase < GameObject < GameEntity < Entity < IScriptable
 SetTimeDilationEffector < Effector < IScriptable
+SetTopThreatToCombatTarget < AIbehaviortaskScript < AIBehaviorScriptBase < IScriptable
 ShardNotificationController < inkGameController < worlduiIGameController < inkIGameController < IScriptable
 ShootEvents < WeaponEventsTransition < WeaponTransition < DefaultTransition < StateFunctor < IScriptable
 SingleplayerMenuGameController < MainMenuGameController < gameuiMenuItemListGameController < gameuiSaveHandlingController < gameuiMenuGameController < inkGameController < worlduiIGameController < inkIGameController < IScriptable

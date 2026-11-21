@@ -167,6 +167,9 @@ public class TandemSystem extends ScriptableSystem {
   // (test) "npc hostile": its attitude to our V (hostile unless "npc hostile puppets").
   private let m_hostileToV: Bool;
   private let m_hostileReports: Int32;
+  // (test) "npc threats npc": our NPCs weigh puppets as vanilla weighs an
+  // NPC, not as players (Threats.reds; read from the AI's job threads).
+  private let m_threatsAsNpcs: Bool;
   // Car copies their drivers left (kept: see ProcessLeaving), and whose car
   // each is (0: no one's, its owner left the session).
   private let m_parked: array<EntityID>;
@@ -1469,6 +1472,10 @@ public class TandemSystem extends ScriptableSystem {
       } else {
         TandemNative.Log("scaling: no NPCs (not in a world)");
       }
+    } else if StrBeginsWith(command, "npc threats") {
+      // (test) whom our NPCs attack (Threats.reds): "npc threats",
+      // "npc threats npc|player", "npc threats spawn".
+      TandemThreats.Command(this.GetGameInstance(), this, command);
     } else if Equals(command, "npc anims") {
       TandemNative.Log(s"npc \(IsDefined(this.m_npcs) ? this.m_npcs.AnimsReport() : "anims: no session")");
     } else if StrBeginsWith(command, "npc seek") {
@@ -1568,20 +1575,10 @@ public class TandemSystem extends ScriptableSystem {
       let record = StrLen(command) > 12 && this.m_hostileToV ? StrAfterFirst(command, "hostile ") : "Character.kab_tyger_claws_biker1_ranged1_saratoga_ma";
       let player = GetPlayer(this.GetGameInstance());
       let forward = player.GetWorldForward();
-      let spec = new DynamicEntitySpec();
-      spec.recordID = TDBID.Create(record);
-      spec.position = player.GetWorldPosition();
-      spec.position.X += forward.X * 12.0;
-      spec.position.Y += forward.Y * 12.0;
-      spec.orientation = player.GetWorldOrientation();
-      spec.alwaysSpawned = true;
-      spec.persistState = false;
-      spec.persistSpawn = false;
-      spec.spawnInView = true;
-      spec.active = true;
-      ArrayPush(spec.tags, n"Tandem.Test");
-      let id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
-      ArrayPush(this.m_testNpcs, id);
+      let at = player.GetWorldPosition();
+      at.X += forward.X * 12.0;
+      at.Y += forward.Y * 12.0;
+      let id = this.SpawnTestHostile(TDBID.Create(record), at, player.GetWorldOrientation(), this.m_hostileToV);
       TandemNative.Log(s"npc hostile: \(record) spawning (\(EntityID.IsDefined(id)))");
     } else if Equals(command, "npc hostile clear") {
       for id in this.m_testNpcs {
@@ -2127,6 +2124,35 @@ public class TandemSystem extends ScriptableSystem {
     return 0u;
   }
 
+  // (test, Threats.reds) puppets weighed as NPCs ("npc threats npc").
+  public func ThreatsAsNpcs() -> Bool {
+    return this.m_threatsAsNpcs;
+  }
+
+  public func SetThreatsAsNpcs(asNpcs: Bool) -> Void {
+    this.m_threatsAsNpcs = asNpcs;
+  }
+
+  // (test) a hostile NPC spawned there, brain on, made hostile to every
+  // puppet (and to our V if hostileToV) by TickHostileTests: "npc hostile",
+  // "npc threats spawn".
+  public func SpawnTestHostile(record: TweakDBID, at: Vector4, facing: Quaternion, hostileToV: Bool) -> EntityID {
+    this.m_hostileToV = hostileToV;
+    let spec = new DynamicEntitySpec();
+    spec.recordID = record;
+    spec.position = at;
+    spec.orientation = facing;
+    spec.alwaysSpawned = true;
+    spec.persistState = false;
+    spec.persistSpawn = false;
+    spec.spawnInView = true;
+    spec.active = true;
+    ArrayPush(spec.tags, n"Tandem.Test");
+    let id = GameInstance.GetDynamicEntitySystem().CreateEntity(spec);
+    ArrayPush(this.m_testNpcs, id);
+    return id;
+  }
+
   // Hit outcomes (Outcomes.reds), and the session's NPCs for them.
   public func Outcomes() -> ref<TandemOutcomes> {
     return this.m_outcomes;
@@ -2232,6 +2258,8 @@ public class TandemSystem extends ScriptableSystem {
     if IsDefined(reactions) {
       reactions.ResayForTests();
     }
+    // Puppets weighed as players again ("npc threats npc" of a failed one).
+    this.m_threatsAsNpcs = false;
     let entities = GameInstance.GetDynamicEntitySystem();
     if IsDefined(this.m_time) {
       this.m_time.ResetTest();

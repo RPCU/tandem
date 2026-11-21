@@ -17,6 +17,8 @@
 //                         in: RECORD SLOT ENTITYHASH
 //   npc ID health         a shared NPC's health, percent: our own NPC or
 //                         our proxy of it
+//   threat puppet         the largest threat value an NPC we run near our V
+//                         holds on the first remote player's puppet
 public class TandemTestQuery {
   public static func Run(game: GameInstance, system: ref<TandemSystem>, command: String) -> Void {
     let words = StrSplit(command, " ");
@@ -77,11 +79,13 @@ public class TandemTestQuery {
           value = TandemTestQuery.Health(game, npc);
         }
       }
+    } else if Equals(what, "threat") && Equals(arg, "puppet") {
+      value = TandemThreats.PuppetThreat(game, system);
     } else {
       value = "unknown";
     }
     if Equals(value, "unknown") {
-      TandemNative.Log(s"test query: unknown: \(asked) (health, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health)");
+      TandemNative.Log(s"test query: unknown: \(asked) (health, item RECORD, money, fact NAME, journal PATH, position, mounted [player N | puppet], npc ID health, threat puppet)");
       return;
     }
     TandemNative.Log(s"test query: \(asked) = \(value)");
