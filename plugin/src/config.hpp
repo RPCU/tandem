@@ -39,6 +39,10 @@
 //                        ; the bodies of drones and robots are streamed too
 //   scene_kbps = 22      ; with scene_replay, host: what a scene's streams (bodies,
 //                        ; the camera) may take on a guest's link, 8 to 2000
+//   scene_voice_gender = on ; with scene_replay, guest: a V's line plays the
+//                        ; recording of that V's body (on: the line's gender
+//                        ; field as locVoiceTagGender, male 1, female 2;
+//                        ; swapped: female 1, male 2; off: the game picks)
 //   private_actors = judy, panam, river, kerry, meredith  ; romance partners
 //   private_scenes = , public_scenes =  ; scene resource paths, comma-separated
 //   quest_freeze_gigs =  ; gig phase resources: they wait only while grouped
@@ -173,6 +177,8 @@ struct Config {
   // "Other rigs"): never run in game, so off unless asked for.
   bool sceneRigs{true};
   std::uint32_t sceneKbps{0};
+  // A V's line on a guest: 0 the game picks, 1 locVoiceTagGender, 2 swapped.
+  std::uint8_t sceneVoiceGender{1};
   std::vector<std::string> privateActors{"judy", "panam", "river", "kerry", "meredith"};
   std::vector<std::string> privateScenes, publicScenes;
   // How the host's own time dilations are played (Time.reds): its world in

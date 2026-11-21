@@ -147,8 +147,15 @@ audioDialogLineEventData`), `gameaudioeventsStopDialogLine`,
 - Codeware adds a field the reflection data hides: `gender: Int32 +0xC`
   (`CW/src/App/Audio/audioDialogLineEventData.hpp`): which of the two
   recordings (`femaleResPath`, `maleResPath`) plays. Its values are
-  [unknown]; without it the game decides (for V: the local V's voice,
-  [inferred]).
+  [unknown]: the one gender enum of the `loc` namespace is
+  `locVoiceTagGender` (Undefined 0, Male 1, Female 2), which tandem uses
+  (`scene_voice_gender = swapped` for the other way); without it the game
+  decides (for V: the local V's voice, [inferred]). A scene line's
+  `scnDialogLineVoParams.alwaysUseBrainGender +0x13` says V's voice tone
+  (brain gender) is apart from its body; scripts read it only on the
+  character creation state (`gameuiICharacterCustomizationState.IsBrainGenderMale`)
+  and a save's metadata (`brainGender` +0x218)
+  (`SDK/scn/DialogLineVoParams.hpp`, `SDK/save/GameMetadata.hpp`). [2.5-rtti]
 - **No vanilla script creates the event, and no native takes a line id**
   (grep of `reds` and `natives`). What vanilla scripts can play is a
   voiceset bark by name, the engine picking the variation:
