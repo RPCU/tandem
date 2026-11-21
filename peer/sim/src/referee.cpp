@@ -794,6 +794,10 @@ void Referee::CheckValues(const p::Message &message, std::uint64_t hostUs) {
         } else if constexpr (std::is_same_v<M, p::NpcReaction>) {
           finite = std::isfinite(m.angle) && Finite(m.way);
           inRange = m.type <= p::kReactionMax;
+        } else if constexpr (std::is_same_v<M, p::Waypoint>) {
+          // A place on the map, of a kind this version knows (Objective: v9).
+          finite = Finite(m.position);
+          inRange = m.kind <= p::WaypointKind::Objective;
         } else if constexpr (std::is_same_v<M, p::Fracture>) {
           finite = Finite(m.at);
         } else if constexpr (std::is_same_v<M, p::DeviceFire>) {

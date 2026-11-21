@@ -373,6 +373,11 @@ TEST_CASE("a waypoint is sent again when it changes kind or moves past a metre")
   CHECK(comms::Moved(pin, {.kind = WaypointKind::Point, .position = {0, 0, 0}}));
   CHECK(comms::Moved(pin, {}));
   CHECK_FALSE(comms::Moved({}, {.position = {50, 0, 0}}));
+  // The tracked objective is one more kind: the pin placed on it is news.
+  const proto::Waypoint objective{.kind = WaypointKind::Objective, .position = {0, 0, 0}};
+  CHECK(comms::Moved(objective, pin));
+  CHECK_FALSE(comms::Moved(objective, {.kind = WaypointKind::Objective, .position = {0, 0.9f, 0}}));
+  CHECK(comms::Moved(objective, {.kind = WaypointKind::Objective, .position = {0, 0, 1.5f}}));
 }
 
 namespace {

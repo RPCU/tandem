@@ -549,6 +549,33 @@ TEST_CASE("referee: a V's noises and its throws' paths: in its own name, sane, n
   CHECK(Rules(referee) == std::vector<std::string>{"rate.over-budget"});
 }
 
+TEST_CASE("referee: a waypoint, a tracked objective included, is its player's, a real place") {
+  using Kind = proto::WaypointKind;
+  auto host = Host();
+  host.Received(2, proto::Waypoint{.player = 2, .kind = Kind::Objective, .position = {1, 2, 3}},
+                kSecond);
+  host.Received(3, proto::Waypoint{.kind = Kind::Pin, .position = {4, 5, 6}}, kSecond);
+  host.Received(3, proto::Waypoint{.player = 3}, kSecond);
+  CHECK(Rules(host).empty());
+  // Not in another's name, a kind this version knows, a place that is one.
+  host.Received(2, proto::Waypoint{.player = 3, .kind = Kind::Objective}, kSecond);
+  host.Received(2, proto::Waypoint{.kind = static_cast<Kind>(4)}, kSecond);
+  host.Received(2,
+                proto::Waypoint{.kind = Kind::Objective,
+                                .position = {std::numeric_limits<float>::quiet_NaN(), 0.f, 0.f}},
+                kSecond);
+  CHECK(Rules(host) ==
+        std::vector<std::string>{"authority.not-yours", "value.range", "value.not-finite"});
+
+  // The host's own objective and a guest's, relayed: anyone's may be shared.
+  auto guest = Guest();
+  guest.Received(1, proto::Waypoint{.player = 1, .kind = Kind::Objective, .position = {1, 2, 3}},
+                 kSecond);
+  guest.Received(1, proto::Waypoint{.player = 3, .kind = Kind::Objective, .position = {7, 8, 9}},
+                 kSecond);
+  CHECK(Rules(guest).empty());
+}
+
 TEST_CASE("referee: states held and never released") {
   auto guest = Guest();
   guest.Received(1, proto::NpcSpawn{.npc = 1}, kSecond);

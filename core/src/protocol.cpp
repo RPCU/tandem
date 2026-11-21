@@ -355,7 +355,7 @@ std::optional<Message> Decode(std::span<const std::byte> bytes) {
       link && (link->mode > LinkMode::Everyone || link->players.size() > kMaxLinkPlayers))
     return std::nullopt;
   if (const auto *waypoint = std::get_if<Waypoint>(&message);
-      waypoint && waypoint->kind > WaypointKind::Point)
+      waypoint && waypoint->kind > WaypointKind::Objective)
     return std::nullopt;
   if (const auto *damage = std::get_if<VehicleDamage>(&message);
       damage && damage->parts.size() > kMaxDetachedParts)

@@ -1436,6 +1436,10 @@ TEST_CASE("comms: pings, tags, links and waypoints survive encoding, small, reli
   RoundTrips(Link{.player = 1, .mode = LinkMode::Listed, .players = {2, 3, 4}});
   RoundTrips(Waypoint{
       .player = 2, .revision = 9, .kind = WaypointKind::Pin, .position = {10.f, -20.f, 3.f}});
+  RoundTrips(Waypoint{.player = 1,
+                      .revision = 2,
+                      .kind = WaypointKind::Objective,
+                      .position = {-1200.f, 1850.f, 40.f}});
   for (const Message message :
        {Message{Mark{}}, Message{Tag{}}, Message{Link{}}, Message{Waypoint{}}}) {
     CHECK(ChannelOf(message) == Channel::Event);
@@ -1450,6 +1454,7 @@ TEST_CASE("comms: pings, tags, links and waypoints survive encoding, small, reli
   // A ping is one small reliable packet; a squad's reveal fits in one too.
   CHECK(Encode(Mark{}).size() < 40);
   CHECK(Encode(Waypoint{}).size() < 32);
+  CHECK(Encode(Waypoint{.kind = WaypointKind::Objective}).size() < 32);
   Tag squad{.targets = std::vector<TargetRef>(kMaxTagTargets, {TargetKind::Npc, 1})};
   CHECK(Encode(squad).size() < 200);
 
@@ -1464,7 +1469,7 @@ TEST_CASE("comms: pings, tags, links and waypoints survive encoding, small, reli
   CHECK_FALSE(Decode(Encode(Link{.mode = static_cast<LinkMode>(3)})).has_value());
   CHECK_FALSE(
       Decode(Encode(Link{.players = std::vector<PlayerId>(kMaxLinkPlayers + 1, 2)})).has_value());
-  CHECK_FALSE(Decode(Encode(Waypoint{.kind = static_cast<WaypointKind>(3)})).has_value());
+  CHECK_FALSE(Decode(Encode(Waypoint{.kind = static_cast<WaypointKind>(4)})).has_value());
 }
 
 TEST_CASE("enemy scaling: NpcScale survives encoding, is small and reliable, counts checked") {
