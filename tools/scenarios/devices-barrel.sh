@@ -12,8 +12,10 @@ cmd teleport "${DEVICES_AT:-home}"
 pause 4
 cmd device
 expect 'devices: [0-9]+ followed, [1-9][0-9]* in our world' 10
+# (The nearest one still whole: one that went up earlier in this game stays so.)
 cmd device near barrel
 expect 'devices: nearest barrel [0-9a-f]+ [A-Za-z]+ at ' 10
+barrel=$(since | grep -oE 'nearest barrel [0-9a-f]+' | tail -1 | cut -d' ' -f3)
 shot devices-barrel-before
 mark
 # V points it out (the session learns of it), the other player shoots it.
@@ -28,7 +30,11 @@ shot devices-barrel-blast
 # It went up in our game (its state says so, from its own explosion).
 expect 'devices: [0-9a-f]+ [A-Za-z]+ (is now|after player [0-9]+.s request:) [a-z]+, [a-z+]*exploded' 10
 expect_peer 'device [0-9a-f]+ \(0x[0-9a-f]+\): [a-z]+, [a-z+]*exploded[a-z+]*, value -?[0-9]+ by player [0-9]+, played' 10
-# And stays gone: asked again, it is still exploded.
+reject 'watchdog: game thread silent'
+# And stays gone: asked again, it is no whole barrel any more.
+mark
 cmd device near barrel
+expect 'devices: (nearest barrel [0-9a-f]+ |no barrel within)' 10
+reject "nearest barrel $barrel "
 shot devices-barrel-after
 reject 'watchdog: game thread silent'
