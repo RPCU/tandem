@@ -38,6 +38,35 @@ public native struct TandemSkipEvent {
   native let toSeconds: Int32;
 }
 
+// A street race's note (Races.reds): 1 heard from the session (a head,
+// part 0, then part 1 per checkpoint point, part 2 per standings entry),
+// 2 our race HUD's mode (arg: vehicleRaceUI; checkpoint: its maxPosition,
+// checkpoints: its maxCheckpoints), 3 a reward our V got (record). `ago`:
+// seconds before now on the host clock (-1: none).
+public native struct TandemRaceEvent {
+  native let kind: Int32;
+  native let part: Int32;
+  native let player: Uint32;
+  native let starter: Uint32;
+  native let to: Uint32;
+  native let race: Uint32;
+  native let raceKind: Int32;
+  native let arg: Int32;
+  native let checkpoint: Int32;
+  native let checkpoints: Int32;
+  native let metres: Float;
+  native let heading: Float;
+  native let ago: Float;
+  native let record: TweakDBID;
+  native let questHash: Uint32;
+  native let x: Float;
+  native let y: Float;
+  native let z: Float;
+  native let who: Uint32;
+  native let place: Int32;
+  native let flags: Int32;
+}
+
 public native class TandemActivity extends IScriptable {
   public static native func SetOurs(kind: Int32, flags: Int32, device: Uint64, workspot: Uint64, entry: Int32, anim: CName, position: Vector4, orientation: Quaternion) -> Void;
   public static native func Others() -> array<TandemBusyState>;
@@ -46,6 +75,14 @@ public native class TandemActivity extends IScriptable {
   public static native func AnswerSkip(asker: Uint32, request: Uint32, accepted: Bool, why: Int32) -> Void;
   public static native func WithdrawSkip() -> Void;
   public static native func TakeSkips() -> array<TandemSkipEvent>;
+  // Street races: our word (proto::Race), what was said and seen.
+  // (the lists first, staged for the next SendRace)
+  public static native func StageRacePoints(points: array<Vector4>) -> Void;
+  public static native func StageRaceStandings(who: array<Uint32>, passed: array<Int32>, places: array<Int32>, flags: array<Int32>, agos: array<Float>) -> Void;
+  public static native func SendRace(kind: Int32, starter: Uint32, to: Uint32, race: Uint32, arg: Int32, checkpoint: Int32, checkpoints: Int32, metres: Float, heading: Float, ago: Float, record: TweakDBID, questHash: Uint32, at: Vector4) -> Void;
+  public static native func TakeRaces() -> array<TandemRaceEvent>;
+  public static native func QueueRaceUi(mode: Int32, maxPosition: Int32, maxCheckpoints: Int32) -> Void;
+  public static native func QueueRaceReward(reward: TweakDBID) -> Void;
   // The scene our game plays now (its resource path hash; 0: none), and
   // whether it is one of V's homes' interactions (the shower, the bed...).
   public static native func OurScene() -> Uint64;

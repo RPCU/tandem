@@ -649,6 +649,24 @@ Competition_scope`, `:71882`). [2.5-untested]
   CountdownStart 1, RaceStart 2, RaceEnd 3, Disable 4; `:94639`); the quest
   fact `sq024_current_race_checkpoint_fact_add` forwards checkpoints
   (`:94632`). [2.5-untested]
+- **The race HUD, for co-op races** (2026-11-21, read in final.reds, not
+  run): the car's `VehicleRaceQuestEvent` becomes a
+  `ForwardVehicleRaceUIEvent` (mode, `maxPosition`, `maxCheckpoints`) queued
+  to the UI system (`:97148`), heard by `hudCarRaceController`
+  (`OnForwardVehicleRaceUIEvent`, `:415728`): every race's HUD, so its
+  modes and counts are every race's. The checkpoint count it shows is that
+  same `sq024_…_fact_add` fact (`:415807`, read as `fact/maxCheckpoints`);
+  the place is the native's blackboard `UI_ActiveVehicleData.PositionInRace`
+  (`:415830`, out of `maxPosition`: the race's NPCs and V), which the clock
+  tick writes back as the fact `sq024_current_race_player_position`
+  (`:415839`). The clock tick is the car's own (`ToggleRaceClock`,
+  `:94649`), from the quest's RaceStart. So the vanilla HUD takes one place
+  and one count, no extra racers; driving it on another game would write
+  that game's `sq024` facts. The NPC racers are cars the racing system
+  registered (`IsAIVehicleRegistered`), driven by `AIVehicleRacingCommand`
+  along a spline (`:294569`). A car's engine can be held by the quest's own
+  `VehicleQuestToggleEngineEvent` (`toggle`, `lockState` Lock 1 / Unlock 2;
+  `:94690`). [2.5-untested]
 - So a contest is told with no list of quests: the restriction (or tag) on
   our V, or the racing system's word. Arcade machines are minigames, a
   cyberpsycho is a fight like any other, rides are workspots or vehicle

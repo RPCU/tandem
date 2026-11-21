@@ -1726,7 +1726,7 @@ public class TandemSystem extends ScriptableSystem {
       }
     } else if (StrBeginsWith(command, "skip ") || StrBeginsWith(command, "busy") || StrBeginsWith(command, "apartment") || StrBeginsWith(command, "contest")) && IsDefined(this.m_activities) {
       // Activities.reds: skip ask HOURS | skip accept | skip decline | busy KIND|off | busy report
-      // | apartment report | contest duel|race|range|off|report.
+      // | apartment report | contest duel|race|range|off|report|races|join|leave.
       this.m_activities.Command(command);
     } else if StrBeginsWith(command, "elsewhere") && IsDefined(this.m_elsewhere) {
       // Elsewhere.reds: elsewhere test PLACE|off, elsewhere state.

@@ -318,7 +318,9 @@ bool IsOneShot(const proto::Message &message) {
          // Presence: a cue is of the moment, a reaction is played once.
          std::holds_alternative<Cue>(message) || std::holds_alternative<NpcReaction>(message) ||
          std::holds_alternative<Throw>(message) || std::holds_alternative<ThrowEnd>(message) ||
-         std::holds_alternative<Defended>(message) || std::holds_alternative<TimeSkip>(message) ||
+         // A race's join, seat, reward: each acted on once (activities.md, "Races").
+         std::holds_alternative<Race>(message) || std::holds_alternative<Defended>(message) ||
+         std::holds_alternative<TimeSkip>(message) ||
          std::holds_alternative<TimeSkipVote>(message) ||
          std::holds_alternative<TimeSkipResult>(message) || IsTrade(message) ||
          std::holds_alternative<Mark>(message) || std::holds_alternative<Tag>(message) ||

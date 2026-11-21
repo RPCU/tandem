@@ -769,8 +769,9 @@ public:
   // tells all. NpcVendor: an owner's word that one of its NPCs is a placed vendor, to the players
   // linked with it, kept with the NPC's records until it goes (one whose spawn is still on its way
   // is said right after it); never a dead one (the host derives those from the owner's NpcGone,
-  // tells everyone and keeps them for the session). False when nothing was sent (not ours to say,
-  // nobody to send to, refused by the rules).
+  // tells everyone and keeps them for the session). Race: our word on a street race, in our name,
+  // to every other game (the host stamps a guest's and relays it). False when nothing was sent (not
+  // ours to say, nobody to send to, refused by the rules).
   bool SendCombat(proto::Message message);
   // The session's rules as this game knows them (the host's own; a guest's,
   // what the host said; none yet: every flag off).
