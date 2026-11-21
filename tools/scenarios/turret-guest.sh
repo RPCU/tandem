@@ -1,14 +1,14 @@
 # As a guest: our copy of a turret never fires on its own; it draws the mock host's turret's aim and shots, and fires for real at our V only on the host's word
 # shellcheck shell=bash disable=SC2317
 # Where: TURRET_AT (a fixture or "X Y Z": V in sight of a hostile security
-# turret that is on, within 60 m; default arasaka-park, testing.md "Fixtures"). V is shot at: the
+# turret that is on, within 60 m; default drake-ave; arasaka-park's are the police's, not followed, testing.md "Fixtures"). V is shot at: the
 # test reset's god mode keeps it alive.
 # To look at: `turret shot` first: the copy turns to what V looks at and one
 # tracer leaves its barrels. Then the copy locks V, stays silent for half a
 # second (the host's word on its way), and fires ten shots at V with its
 # own tracers and sounds; V's health falls by our own game's hits.
 ensure join
-at "${TURRET_AT:-arasaka-park}"
+at "${TURRET_AT:-drake-ave}"
 peer host --mode idle --body female --turret-shots 10 --device-answer on
 expect 'in the session as player' 30
 mark
