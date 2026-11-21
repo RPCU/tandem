@@ -10,6 +10,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <format>
@@ -366,8 +367,8 @@ TEST_CASE("campaign: every player's copy reaches every other player, stamped by 
   // The host's before anyone is in; Judy's once she is.
   host->SetCampaign(hosted);
   std::map<std::string, std::vector<proto::Campaign>> heard;
-  const auto note = [&](const char *who, const std::vector<SessionEvent> &events) {
-    for (const auto &event : events)
+  const auto note = [&](const char *who, const std::vector<SessionEvent> &got) {
+    for (const auto &event : got)
       if (const auto *c = std::get_if<events::RemoteCampaign>(&event))
         heard[std::format("{} <- {}", who, c->name)].push_back(c->campaign);
   };
@@ -396,6 +397,25 @@ TEST_CASE("campaign: every player's copy reaches every other player, stamped by 
   CHECK(heard["Judy <- Vee"][0].player == host->You());
   CHECK(heard.contains("River <- Vee"));
   CHECK_FALSE(heard.contains("Judy <- Judy")); // never ours back
+  // River never had one: nothing said for it.
+  CHECK_FALSE(heard.contains("Vee <- River"));
+  // Taken back: everyone hears none.
+  judy->SetCampaign({});
+  bool hostNone = false, riverNone = false;
+  const auto until = std::chrono::steady_clock::now() + 3s;
+  const auto none = [](const std::vector<SessionEvent> &got) {
+    return std::ranges::any_of(got, [](const SessionEvent &event) {
+      const auto *c = std::get_if<events::RemoteCampaign>(&event);
+      return c && c->campaign.campaign == 0;
+    });
+  };
+  while (!(hostNone && riverNone) && std::chrono::steady_clock::now() < until) {
+    hostNone = none(host->Update(1ms)) || hostNone;
+    riverNone = none(river->Update(1ms)) || riverNone;
+    judy->Update(1ms);
+  }
+  CHECK(hostNone);
+  CHECK(riverNone);
   // And the verdict every game draws from them: Judy is ahead of the host.
   const campaign::Member group[] = {
       {.player = host->You(), .name = "Vee", .copy = campaign::FromWire(hosted)},

@@ -10,7 +10,8 @@
 namespace tandem {
 void Endpoint::SetCampaign(proto::Campaign ours) {
   ours.player = m_you;
-  if (m_campaign && *m_campaign == ours)
+  // A repeat, or none when we never had one: nothing to say.
+  if ((m_campaign && *m_campaign == ours) || (!m_campaign && ours.campaign == 0))
     return;
   m_campaign = ours;
   if (!IsJoined() || m_ended)
@@ -22,7 +23,7 @@ void Endpoint::SetCampaign(proto::Campaign ours) {
 }
 
 void Endpoint::SendCampaignsTo(net::PeerId peer, proto::PlayerId to) {
-  if (m_campaign) {
+  if (m_campaign && m_campaign->campaign != 0) {
     auto ours = *m_campaign;
     ours.player = m_you;
     Send(peer, ours);
@@ -41,10 +42,18 @@ void Endpoint::OnCampaign(proto::PlayerId player, proto::Campaign campaign,
     campaign.player = player;
   if (campaign.player == proto::kNoPlayer || campaign.player == m_you)
     return;
+  // A repeat changes nothing; none takes back a copy said before (and is
+  // nothing from a player that said none).
   const auto known = m_campaigns.find(campaign.player);
-  if (known != m_campaigns.end() && known->second == campaign)
-    return;
-  m_campaigns[campaign.player] = campaign;
+  if (campaign.campaign == 0) {
+    if (known == m_campaigns.end())
+      return;
+    m_campaigns.erase(known);
+  } else {
+    if (known != m_campaigns.end() && known->second == campaign)
+      return;
+    m_campaigns[campaign.player] = campaign;
+  }
   if (IsHost())
     if (const auto from = PeerOf(player))
       Broadcast(campaign, *from);
