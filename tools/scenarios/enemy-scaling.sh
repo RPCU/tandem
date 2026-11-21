@@ -12,7 +12,8 @@ expect 'peer-a joined \(player [0-9]+' 20
 expect_peer 'we stand by npc [0-9]+' 20
 peer2 join "$address:27450" --mode front --near-npc --body male --name peer-b
 expect 'peer-b joined \(player [0-9]+' 20
-expect "outcomes: the session's rules: friendly fire (on|off), enemy scaling on, health \+60 % per extra player" 30
+# The rules as a joiner hears them (the host logs its own once per session).
+expect_peer "the session's rules: friendly fire (on|off), enemy scaling on \(health \+60 % per extra player" 30
 # Our V and the two puppets within 100 m of it: three players.
 expect 'scaling: npc [0-9]+ .*-> 3 players, health x2\.2' 40
 expect_peer 'npc [0-9]+ is scaled for 3 players' 20
