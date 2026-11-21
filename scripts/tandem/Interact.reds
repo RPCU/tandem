@@ -83,8 +83,9 @@ public class TandemInteract {
     return IsDefined(story) ? story.Interact() : null;
   }
 
+  // Real time: a host's answer takes as long under our slow motion.
   private func Now() -> Float {
-    return EngineTime.ToFloat(GameInstance.GetSimTime(this.m_game));
+    return TandemClock.Real(this.m_game);
   }
 
   private static func Verdict(verdict: Int32) -> String {
