@@ -746,9 +746,11 @@ public class TandemTradeTable {
     if EquipmentSystem.GetInstance(player).IsEquipped(player, id) {
       return "Trade-Not-Equipped";
     }
-    // A plain stack is one instance with a quantity (single instance): the
-    // rule is for the others (refused 2 components, trade-peer 2026-11-21).
-    if RPGManager.IsItemBroken(strong) || (!plain && RPGManager.IsItemSingleInstance(data)) {
+    // (Single instance, the record's flag, is any stackable item, one
+    // instance with a quantity: not a reason. It refused every stack,
+    // trade-peer 2026-11-21.) Permanent food is eaten the moment it
+    // arrives (the game's rule for it).
+    if RPGManager.IsItemBroken(strong) || data.HasTag(n"PermanentFood") {
       return "Trade-Not-Single";
     }
     if Equals(type, gamedataItemType.Con_Skillbook) || Equals(type, gamedataItemType.Gen_Readable) || Equals(type, gamedataItemType.Gen_MoneyShard) || Equals(type, gamedataItemType.Gen_Keycard) {
