@@ -216,10 +216,25 @@ public class TandemLedger {
     let bestAt = 200.0;
     let seen = 0;
     let placed = 0;
+    // What the spot has instead, when it has none: the NPCs that are not
+    // the crowd's, the vendors, and the nearest of the former.
+    let posted = 0;
+    let vendors = 0;
+    let other: ref<NPCPuppet>;
+    let otherAt = 201.0;
     for body in player.GetNPCsAroundObject(200.0) {
       if IsDefined(body) && !body.IsDead() {
         seen += 1;
         let id = body.GetEntityID();
+        vendors += body.IsVendor() ? 1 : 0;
+        if !body.IsCrowd() {
+          posted += 1;
+          let off = Vector4.Distance(here, body.GetWorldPosition());
+          if off < otherAt {
+            other = body;
+            otherAt = off;
+          }
+        }
         if EntityID.IsStatic(id) && !(IsDefined(npcs) && npcs.IsProxyEntity(id)) {
           placed += 1;
           let far = Vector4.Distance(here, body.GetWorldPosition());
@@ -231,7 +246,8 @@ public class TandemLedger {
       }
     }
     if !IsDefined(best) {
-      TandemNative.Log(s"ledger: no placed npc of our own world within 200 m (\(seen) npcs, \(placed) placed)");
+      let nearest = IsDefined(other) ? s"record \(TDBID.ToStringDEBUG(other.GetRecordID())) entity \(TandemNative.EntityHex(other.GetEntityID())) at \(otherAt) m, static \(EntityID.IsStatic(other.GetEntityID())), a quest's \(TandemLedger.QuestNpc(other))" : "none";
+      TandemNative.Log(s"ledger: no placed npc of our own world within 200 m (\(seen) npcs, \(placed) placed; \(posted) not the crowd's, \(vendors) vendors; nearest not the crowd's: \(nearest))");
       return;
     }
     let at = best.GetWorldPosition();
