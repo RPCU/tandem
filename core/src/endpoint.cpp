@@ -847,6 +847,16 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
               RelayFracture(relayed, event.peer, &out);
             },
             [&](const proto::DeviceFire &fire) { OnDeviceSeen(player, fire, out); },
+            [&](const proto::TurretHands &hands) {
+              // A turret in that guest's hands: for who sees its world.
+              if (hands.entity == 0)
+                return;
+              auto relayed = hands;
+              relayed.player = player;
+              ShareNpc(relayed, player, event.peer);
+              if (Sees(m_you, player))
+                out.push_back(events::TurretHeld{relayed});
+            },
             [&](const proto::DeviceSet &) {
               // At most one per cooldown and guest, as for ResyncRequest.
               const auto now = net::NowUs();
@@ -1975,6 +1985,10 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
             m_fractureRecord.Note(fracture);
             if (fracture.player != m_you)
               out.push_back(events::Fractured{fracture});
+          },
+          [&](const proto::TurretHands &hands) {
+            if (hands.player != m_you && hands.entity != 0)
+              out.push_back(events::TurretHeld{hands});
           },
           [&](const proto::DeviceFire &fire) {
             // The host's turret's doing only (what a copy sees is a guest's
@@ -3621,6 +3635,17 @@ void Endpoint::RelayFracture(const proto::Fracture &fracture, net::PeerId from,
   ShareNpc(fracture, fracture.player, from);
   if (out && !ours && Sees(m_you, fracture.player))
     out->push_back(events::Fractured{fracture});
+}
+
+void Endpoint::SendTurretHands(proto::TurretHands hands) {
+  Record(hands);
+  if (!IsJoined() || m_ended || hands.entity == 0)
+    return;
+  hands.player = m_you;
+  if (IsHost())
+    ShareNpc(hands, m_you);
+  else
+    Send(m_hostPeer, hands);
 }
 
 void Endpoint::SendDeviceFire(proto::DeviceFire fire) {

@@ -84,6 +84,7 @@ file: the same in every game) and the class name of its state; its
 | `BreachResult` | host → the breacher | granted, or refused: breached first by whom |
 | `DeviceFire` | host → the guests linked with it | its turret turned to a target (said again every second), shot at it, or follows nobody. A shot at a V: Event channel (that V's game fires it for real); any other shot: State channel. At most 43 bytes |
 | `DeviceFire` | guest → host | "my copy of that turret has locked my V", "…lost it" (kept by the host: a repeat tells nothing, a vanished guest is let go) |
+| `TurretHands` | the controller's game → host → the linked | a turret in a player's hands: where it points, whether it fires (5 a second while held), let go. State channel, at most 32 bytes ("A turret in a player's hands") |
 | `Fracture` | any game → host → everyone (a piece new to the record) or the linked (another piece of a known one) | something broke: where, and the placed entity's destruction component when it is one. About 34 bytes; the host holds each guest to 48 then 24 a second. The record's entries again to a late joiner and in a world resync |
 
 Sending the _state the device should be in_, not the action that was
@@ -282,6 +283,13 @@ not run in game; engine facts §13.90. Code: `scripts/tandem/Turrets.reds`
   it, `RecognizeTarget(puppet, true)`), unless it is off, turned friendly
   or in a player's hands; `Lost` lets it go. The host's hits on the puppet
   are not forwarded (`ForwardsToPlayer`).
+- **Its look** (guest, linked with the host): the copy's laser mesh and
+  scan light show the host's turret, not the copy's own senses: laser on
+  and red at each aim (and at a shot when the last aim's hold lapsed),
+  laser off and yellow at "follows nobody" (green instead to a V it is
+  friendly to, the game's own choice). Held 1.5 s against the copy's own
+  changes (`DetermineLightScanRefs` wrapped; the laser is set again with
+  each aim, said every second).
 - **A turret the host's game does not run** (not in its world, or the
   guest is not linked with the host): after 1.5 s without a word of it
   from the host, the guest's copy fires on its own, as before; the host
@@ -295,6 +303,34 @@ not run in game; engine facts §13.90. Code: `scripts/tandem/Turrets.reds`
   `--turret-seen ENTITY[@S]` (guest) and `--turret-shots N` (host: a burst
   at whoever a copy has); in game `tools/game.sh cmd turret`, `turret aim`,
   `turret shot`, `turret engage`; scenarios `turret-host`, `turret-guest`.
+
+## A turret in a player's hands
+
+"A turret a player controls (the takeover quickhack, a device's control)
+shows its aim and shots on the others' copies; damage as today." Built
+2026-11-21, not run in game; engine facts §13.90. Code: `Turrets.reds`
+(`PollOurHands`, `OnHands`, `UpdateHands`), `Endpoint::SendTurretHands`.
+
+- **The controller's game** (host or guest): the turret the takeover
+  system holds (`TakeOverControlSystem.GetControlledObject`, a placed
+  `SecurityTurret`, not the police's) is said 5 times a second
+  (`TurretHands`): where it points (40 m along the active camera, the
+  turret's while it is held) and whether it fires (its anim feature's
+  `Shoot`); once more when V lets go. Its shots stay its own: what they
+  hit is decided there, as for V's weapon (hits on proxies and puppets go
+  the usual ways, `combat.md`).
+- **Every other game linked with it**: its copy turns there (`TandemAim`
+  on the place, held 1 s), fires nothing of its own (`ShootStart` and a
+  stray `AIWeapon.Fire` of it dropped while held), and while the
+  controller fires draws its fire every 0.12 s from its own weapon
+  (`TandemPresenceSync.Bullet`, the weapon's effects, the barrels spinning):
+  nobody is hurt by it. The host's `DeviceFire` words are not said for, and
+  not applied to, a copy in a player's hands, nor to the turret in our own.
+- **Let go**, or silent for 1 s (the controller vanished, unlinked): the
+  copy is its game's again.
+- Tests: `tests/devices_test.cpp` ("a turret in a player's hands"),
+  `tests/protocol_test.cpp`, `tests/referee_test.cpp`; the mock player's
+  `--turret-hands E[:X,Y,Z][@S]`; scenario `turret-hands`.
 
 ## Glass and breakable scenery
 
@@ -424,10 +460,11 @@ hostile [KIND]`, `device floor N|other`, `device station N` — the nearest
   destruction persistency system has no script side, so a guest's own
   save's breaks and the host's from before the session are not shared.
 - **A device's fire, not run in game**: the list is §13.90, "To verify in
-  game". Known gaps: a turret a player controls is not drawn for the
-  others; the laser mesh and the scan light of a copy stay its own; a
-  guest apart from the host with another guest near: each of their copies
-  fires at its own V.
+  game". Known gap: a guest apart from the host with another guest near:
+  each of their copies fires at its own V. A turret in a player's hands:
+  its camera's aim point is 40 m out (a target nearer or farther is drawn
+  along the same line), its drawn rate is not the weapon's own, and the
+  copy's own vision cone and lights are not changed while it is held.
 - **Detection by NPCs after a camera's alarm** uses the puppet's position
   at the moment of the alarm; the camera feeding the security system
   continuously for a guest is not done.

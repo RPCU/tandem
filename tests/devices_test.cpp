@@ -601,6 +601,38 @@ TEST_CASE("glass: what broke before a player joined is broken for it, and every 
   CHECK(s.b->Fractures().Digest() == s.host->Fractures().Digest());
 }
 
+TEST_CASE("a turret in a player's hands: shown to the others in its name, never to itself") {
+  auto s = Start(true);
+  std::vector<proto::TurretHands> held[3];
+  const auto run = [&](const std::function<bool()> &done) {
+    return Pump(
+        s.All(),
+        [&](std::size_t i, const auto &events) {
+          for (const auto &event : events)
+            if (const auto *hands = std::get_if<events::TurretHeld>(&event))
+              held[i].push_back(hands->hands);
+          return done();
+        },
+        3s);
+  };
+  s.a->SendTurretHands({.entity = 0x55, .at = {1.f, 2.f, 3.f}, .flags = proto::kHandsFiring});
+  REQUIRE(run([&] { return held[0].size() == 1 && held[2].size() == 1; }));
+  CHECK(held[0][0] == proto::TurretHands{.player = s.a->You(),
+                                         .entity = 0x55,
+                                         .at = {1.f, 2.f, 3.f},
+                                         .flags = proto::kHandsFiring});
+  CHECK(held[2][0] == held[0][0]);
+  s.host->SendTurretHands({.entity = 0x66, .flags = proto::kHandsLetGo});
+  REQUIRE(run([&] { return held[1].size() == 1 && held[2].size() == 2; }));
+  CHECK(held[1][0].player == s.host->You());
+  // Nobody hears its own; an unnamed turret goes nowhere.
+  s.b->SendTurretHands({.at = {1.f, 1.f, 1.f}});
+  run([] { return false; });
+  CHECK(held[0].size() == 1);
+  CHECK(held[1].size() == 1);
+  CHECK(held[2].size() == 2);
+}
+
 TEST_CASE("a device's fire: the host's turret's aim and shots reach every guest; what a copy "
           "sees, the host alone") {
   using Kind = proto::DeviceFireKind;

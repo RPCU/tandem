@@ -51,6 +51,8 @@ public:
     // A V's noises (each kind gated by its game, footsteps to 4 a second)
     // and its thrown objects' paths (4 a second an object in flight).
     float noiseHz{40.f}, throwPathHz{24.f};
+    // A turret in a player's hands (5 a second while held).
+    float turretHandsHz{12.f};
     float eventsHz{400.f};      // every reliable message together (hint)
     float bytesPerSecond{2e5f}; // everything together (hint)
     // At the game's digests (3 s); Attach raises it for an endpoint whose
