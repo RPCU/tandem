@@ -105,6 +105,24 @@ func TestPadThatDoesNotReachTheGame(t *testing.T) {
 	fails(t, result, 1, "did not turn the view")
 }
 
+// A new pad the game reads only after its first input: a press straight
+// away is lost (stealth's crouch, 2026-11-21) unless the pilot wakes the
+// pad first.
+func TestPadReadLate(t *testing.T) {
+	late := func(w *sim.Sim) { w.PadLate = true }
+	crouch := "press b\nuntil crouch == 1 timeout 3\n"
+	result, _, _ := play(t, crouch, late, routine.Options{})
+	fails(t, result, 2, "crouch is 0")
+	result, _, lines := play(t, crouch, late, routine.Options{WakePad: true})
+	passes(t, result)
+	if !strings.Contains(strings.Join(lines, "\n"), "the game reads the pad") {
+		t.Errorf("no wake in the log")
+	}
+	dead := func(w *sim.Sim) { w.PadLate, w.PadDead = true, true }
+	result, _, _ = play(t, crouch, dead, routine.Options{WakePad: true})
+	fails(t, result, 1, "the game never took the pad's input")
+}
+
 func TestCalibrateLearnsAnInvertedCamera(t *testing.T) {
 	text := "cmd npc hostile\nuntil hostile > 0\nact target hostile\ncalibrate look\nstick right 0.8 0.5 0.7\nface target tolerance 2\n"
 	result, world, _ := play(t, text, func(w *sim.Sim) { w.InvertLook = true }, routine.Options{})
@@ -313,6 +331,10 @@ func TestShippedRoutines(t *testing.T) {
 				t.Fatal(err)
 			}
 			result, _, _ := play(t, string(text), nil, routine.Options{})
+			passes(t, result)
+			// And with a pad the game reads late, woken first.
+			late := func(w *sim.Sim) { w.PadLate = true }
+			result, _, _ = play(t, string(text), late, routine.Options{WakePad: true})
 			passes(t, result)
 		})
 	}

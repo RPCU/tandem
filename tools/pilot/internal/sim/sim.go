@@ -37,7 +37,11 @@ type Sim struct {
 	Echo io.Writer
 
 	// Knobs for tests.
-	PadDead    bool // the game does not read the pad
+	PadDead bool // the game does not read the pad
+	// PadLate: the game reads a new pad only a moment after its first
+	// input; what came before is lost (a press right after the pad
+	// appeared did nothing in game, 2026-11-21).
+	PadLate    bool
 	InvertLook bool // the camera's y axis is inverted
 	Frozen     bool // the game stopped writing its state
 	// Wall blocks walking through this box (min x, min y, max x, max y); a
@@ -60,6 +64,7 @@ type Sim struct {
 	saveLock bool
 
 	buttons  [12]bool
+	padUsed  time.Time // the pad's first input (zero: none yet)
 	sticks   [2][2]float64
 	triggers [2]float64
 
@@ -242,7 +247,7 @@ func (s *Sim) step(dt float64) {
 	}
 	left, right := s.sticks[pad.LeftStick], s.sticks[pad.RightStick]
 	gas, brake := s.triggers[pad.RT], s.triggers[pad.LT]
-	if s.PadDead || s.down {
+	if !s.reads() || s.down {
 		left, right, gas, brake = [2]float64{}, [2]float64{}, 0, 0
 	}
 	// The view.
@@ -312,6 +317,21 @@ func (s *Sim) hurt(n *NPC, amount float64) {
 
 // ---- the pad ----
 
+// used notes the pad's first input.
+func (s *Sim) used() {
+	if s.padUsed.IsZero() {
+		s.padUsed = s.now
+	}
+}
+
+// reads: the game takes the pad's input now.
+func (s *Sim) reads() bool {
+	if s.PadDead {
+		return false
+	}
+	return !s.PadLate || (!s.padUsed.IsZero() && s.now.Sub(s.padUsed) >= 300*time.Millisecond)
+}
+
 // Button takes a press or a release.
 func (s *Sim) Button(b pad.Button, down bool) error {
 	if down {
@@ -321,7 +341,10 @@ func (s *Sim) Button(b pad.Button, down bool) error {
 	}
 	was := s.buttons[b]
 	s.buttons[b] = down
-	if !down || was || s.PadDead {
+	if down {
+		s.used()
+	}
+	if !down || was || !s.reads() {
 		return nil
 	}
 	switch b {
@@ -360,6 +383,9 @@ func (s *Sim) Button(b pad.Button, down bool) error {
 func (s *Sim) Stick(st pad.Stick, x, y float64) error {
 	s.echo("pad: %s stick %+.2f %+.2f", st, x, y)
 	s.sticks[st] = [2]float64{x, y}
+	if x != 0 || y != 0 {
+		s.used()
+	}
 	return nil
 }
 
@@ -367,7 +393,10 @@ func (s *Sim) Stick(st pad.Stick, x, y float64) error {
 func (s *Sim) Trigger(t pad.Trigger, value float64) error {
 	s.echo("pad: %s %.2f", t, value)
 	s.triggers[t] = value
-	if t == pad.RT && !s.inCar && !s.PadDead && value > 0.5 && s.weapon {
+	if value > 0 {
+		s.used()
+	}
+	if t == pad.RT && !s.inCar && s.reads() && value > 0.5 && s.weapon {
 		s.fireTo = s.now.Add(200 * time.Millisecond)
 	}
 	return nil
@@ -405,7 +434,7 @@ func (s *Sim) State() (state.State, bool) {
 	hx, hy, speed, seat := fx, fy, 0.0, "none"
 	if s.inCar {
 		hx, hy, speed, seat = -math.Sin(s.carYaw), math.Cos(s.carYaw), s.carSpeed, "driver"
-	} else if size := math.Hypot(s.sticks[0][0], s.sticks[0][1]); size > 0.1 && !s.PadDead {
+	} else if size := math.Hypot(s.sticks[0][0], s.sticks[0][1]); size > 0.1 && s.reads() {
 		speed = 3.5
 		if s.sprint {
 			speed = 6.5
@@ -444,6 +473,7 @@ func (s *Sim) State() (state.State, bool) {
 		"savelock": b01(s.saveLock), "session": b01(s.session), "role": role, "car": car,
 		"npcs": strconv.Itoa(alive), "hostile": strconv.Itoa(hostile), "tid": "0",
 		"door": b01(s.doorOpen), "floor": strconv.Itoa(s.floor),
+		"pad": b01(s.reads() && !s.padUsed.IsZero()),
 	}
 	if s.target != nil {
 		aim := aimPoint(s.target)

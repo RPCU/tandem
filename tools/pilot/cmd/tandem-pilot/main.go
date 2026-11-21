@@ -352,9 +352,11 @@ func dry(paths []string) (int, error) {
 		}
 		world := sim.New()
 		world.Echo = os.Stdout
+		// As the game: a new pad is read a moment after its first input.
+		world.PadLate = true
 		guarded := pad.NewGuarded(world, 500*time.Millisecond, world.Now(), logf)
 		logf("dry run of %s on the simulator", path)
-		result := routine.Run(r, world, guarded, world, routine.Options{Logf: logf})
+		result := routine.Run(r, world, guarded, world, routine.Options{Logf: logf, WakePad: true})
 		logf("%s: %s", path, result)
 		if !result.Passed {
 			failed++
@@ -541,8 +543,9 @@ func play(f *flags, path string, shared *pad.Guarded, out io.Writer, stop <-chan
 	logf("playing %s on the game (pid %d, instance %s, pad %s, log %s)", path, process.PID, f.instance, f.padKind, game.LogPath())
 	guarded.Feed(time.Now())
 	result := routine.Run(r, game, guarded, realClock{}, routine.Options{
-		Logf: logf,
-		Stop: stop,
+		Logf:    logf,
+		Stop:    stop,
+		WakePad: f.padKind == "uinput",
 		Guard: func() error {
 			// Still the game we were allowed to drive, and still in front.
 			if _, err := f.checkGame(); err != nil {

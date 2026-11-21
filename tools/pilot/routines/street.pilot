@@ -14,8 +14,20 @@ walk ~0 ~14 pace sprint
 walk ~0 ~0 pace sprint
 # Crouched for a few metres.
 press b
+optional until crouch == 1 timeout 1.5
+# A tap the game did not take as ToggleCrouch's: its hold toggles crouch
+# too (IsActionJustHeld, final.reds:282129).
+if crouch == 0
+  press b 0.5
+end
 until crouch == 1 timeout 3
 walk ~4 ~4 pace walk
 press b
+optional until crouch == 0 timeout 1.5
+# A tap the game did not take as ToggleCrouch's: its hold toggles crouch
+# too (IsActionJustHeld, final.reds:282129).
+if crouch == 1
+  press b 0.5
+end
 until crouch == 0 timeout 3
 walk ~0 ~0

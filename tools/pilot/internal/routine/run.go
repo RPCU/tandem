@@ -41,6 +41,12 @@ type Options struct {
 	// Guard is asked every second whether the pilot may still act (the game
 	// is ours and has the focus); an error ends the run.
 	Guard func() error
+	// WakePad: before the first step that uses the pad, nudge the view
+	// until the game says its last input came from a pad (the state's
+	// `pad`). The game reads a new pad only after its first input: a press
+	// before that is lost (stealth's crouch did nothing, 2026-11-21). For a
+	// uinput pad; keys and mouse never make `pad` 1.
+	WakePad bool
 }
 
 // Result is how a run ended.
@@ -89,6 +95,8 @@ type runner struct {
 	moveSign  [2]float64
 	lookSign  [2]float64
 	steerSign float64
+
+	padAwake bool // the game took the pad's input (WakePad)
 }
 
 // Run plays a routine. It always leaves the pad at rest and the plugin's
@@ -302,7 +310,62 @@ type nestedError struct {
 
 func (e *nestedError) Error() string { return e.err.Error() }
 
+// usesPad: the step sends the pad something.
+func usesPad(kind Kind) bool {
+	switch kind {
+	case Press, Hold, StickStep, Trigger, Walk, Drive, Face, Choose, Calibrate:
+		return true
+	}
+	return false
+}
+
+// wake nudges the view right, then back, until the nudge turns it and the
+// game says its last input came from a pad (`pad` 1; a plugin without the
+// field: the turn alone), for at most 5 s. The pad's own last-used flag can
+// be left over from an earlier pad: the turn says this one is read.
+func (r *runner) wake() error {
+	if r.padAwake || !r.opt.WakePad {
+		return nil
+	}
+	limit := r.clock.Now().Add(5 * time.Second)
+	for nudges := 1; ; nudges++ {
+		fx, fy, ok := r.forward()
+		if err := r.pad.Stick(pad.RightStick, 0.35, 0); err != nil {
+			return err
+		}
+		err := r.sleep(0.15)
+		gx, gy, _ := r.forward()
+		if err == nil {
+			err = r.pad.Stick(pad.RightStick, -0.35, 0)
+		}
+		if err == nil {
+			err = r.sleep(0.15)
+		}
+		_ = r.pad.Stick(pad.RightStick, 0, 0)
+		if err != nil {
+			return err
+		}
+		turned := ok && math.Abs(leftOf(fx, fy, gx, gy)) > 0.2*math.Pi/180
+		if turned && (!r.last.Has("pad") || r.last.N("pad") == 1) {
+			r.padAwake = true
+			r.logf("the game reads the pad (after %d nudge(s) of the view)", nudges)
+			return nil
+		}
+		if r.clock.Now().After(limit) {
+			return fmt.Errorf("the game never took the pad's input in 5 s (%d nudges: view turned %t, pad %s): Steam Input, or the pad not seen (autopilot.md, step 6)", nudges, turned, r.last.Str("pad"))
+		}
+		if err := r.sleep(0.4); err != nil {
+			return err
+		}
+	}
+}
+
 func (r *runner) step(step *Step) (string, error) {
+	if usesPad(step.Kind) {
+		if err := r.wake(); err != nil {
+			return "", err
+		}
+	}
 	switch step.Kind {
 	case Cmd:
 		if err := r.game.Command(step.Text); err != nil {
