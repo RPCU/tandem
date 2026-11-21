@@ -25,4 +25,8 @@ cmd revive nospot off
 expect 'revive nospot: the real spots' 5
 reject 'at its last spot on foot'
 reject 'no end of the loading screen'
+# The respawn's loading screen stalls the game thread (the watchdog says so,
+# then that it is back): only what comes after it.
+mark
+pause 3
 reject 'watchdog: game thread silent'
