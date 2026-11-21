@@ -434,7 +434,7 @@ report` (state: the host's reasons and whether to watch, whether we
     geometry the guest's world lacked.
     - _The host_ reads once a second which prefabs its quests have on (the
       quests system's prefab handler: mode ForceLoad) and sends the set
-      when it changes, as `WorldPrefabs` (appended; their world node refs,
+      when it changes, as `WorldPrefabs` (appended, protocol 10; their world node refs,
       sorted, 256 at most; a story message: kept for late joiners, in the
       story digest, an explicit "none" in a story resync). Its own copy is
       never changed.
@@ -470,7 +470,7 @@ report` (state: the host's reasons and whether to watch, whether we
     the Watson lockdown (Act 1 and Playing for Time: fact `q101_done`) and
     Dogtown's gate (fact `ep1_side_content`). Each game sends its own gates
     and which side its V is on (its district: in Watson, in Dogtown) as
-    `StoryGates` (appended; on every change; the host stamps a guest's,
+    `StoryGates` (appended, protocol 10; on every change; the host stamps a guest's,
     passes it on and keeps every player's for late joiners).
     - _At the join_ (`gates::Behind`), both players are told in words what
       the host's story has open and the guest's keeps closed, the lockdown
