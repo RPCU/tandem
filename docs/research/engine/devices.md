@@ -265,6 +265,9 @@ Tags as in §13.30. Line numbers: the 2.50 `final.reds`.
      comes back (`objects: … echo(es)`).
   5. That an NPC or V beside a replayed break takes no damage and is not
      staggered.
+  6. A waited break (scenario `glass-latecomer`): the impulse 120 m from V
+     right after a teleport shatters a pane (its physics streamed in), and
+     `FindEntityByID` finds a placed entity's part within 60 m.
 
 #### A turret's fire
 

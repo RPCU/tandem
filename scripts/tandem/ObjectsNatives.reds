@@ -30,6 +30,9 @@ public native class TandemObjects extends IScriptable {
   // (entity and name), or a piece of the world at a place. True: the others
   // are told (false: the echo of a break we replayed, or told already).
   public static native func Broke(entity: EntityID, name: CName, position: Vector4, level: Int32) -> Bool
+  // Another game's break that waited for our V, replayed now: its echo is
+  // not told.
+  public static native func Replaying(entity: EntityID, name: CName, position: Vector4)
   // A device's fire. Host: our turret turned to a target (kind 1), shot at
   // it (2), follows nobody (0); the target a shared NPC, a player, a placed
   // entity, else the place. Guest: our copy locked our own V (3), lost it (4).

@@ -355,6 +355,19 @@ proto::DeviceDigest Endpoint::DeviceDigestNow() const {
   return {.count = static_cast<std::uint32_t>(m_devices.Size()), .hash = m_devices.Digest()};
 }
 
+std::uint32_t Endpoint::WorldDigestNow() const {
+  const auto world = consistency::WorldDigest(m_world, m_difficulty, m_rules);
+  if (m_deaths.Empty() && m_fractureRecord.Empty())
+    return world;
+  consistency::Hasher hash;
+  hash.Add(std::uint64_t{world});
+  if (!m_deaths.Empty())
+    hash.Add(std::uint64_t{m_deaths.Digest()});
+  if (!m_fractureRecord.Empty())
+    hash.Add(std::uint64_t{m_fractureRecord.Digest()});
+  return hash.Value();
+}
+
 proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
   // The NPCs `self` shows as proxies: those of the owners it is linked with
   // (a guest's record holds only those, and its own).
@@ -369,14 +382,9 @@ proto::Digest Endpoint::DigestFor(proto::PlayerId self) const {
   return {
       .epoch = host ? m_epoch : m_hostEpoch,
       .seq = m_digestSeq,
-      // The world, and the dead of the session (the ledger, regions.md §14).
-      .world =
-          m_deaths.Empty()
-              ? consistency::WorldDigest(m_world, m_difficulty, m_rules)
-              : consistency::Hasher{}
-                    .Add(std::uint64_t{consistency::WorldDigest(m_world, m_difficulty, m_rules)})
-                    .Add(std::uint64_t{m_deaths.Digest()})
-                    .Value(),
+      // The world, the dead of the session (the ledger, regions.md §14) and
+      // what broke in it (devices.md, "Glass and breakable scenery").
+      .world = WorldDigestNow(),
       // One domain: the shared vehicles are resynced with the NPCs.
       .npcs = consistency::Hasher{}
                   .Add(std::uint64_t{npcs})
@@ -836,10 +844,7 @@ void Endpoint::OnHostEvent(const net::Event &event, std::vector<SessionEvent> &o
                 ++m_fracturesDropped;
                 return;
               }
-              // Where it broke is in the world of the players linked with it.
-              ShareNpc(relayed, player, event.peer);
-              if (Sees(m_you, player))
-                out.push_back(events::Fractured{relayed});
+              RelayFracture(relayed, event.peer, &out);
             },
             [&](const proto::DeviceFire &fire) { OnDeviceSeen(player, fire, out); },
             [&](const proto::DeviceSet &) {
@@ -1223,6 +1228,9 @@ void Endpoint::SendDomainsTo(net::PeerId peer, std::uint8_t domains, bool resync
     // that was lost.
     for (const auto &death : m_deaths.InOrder())
       Send(peer, death);
+    // What broke in the session: broken for who was not there.
+    for (const auto &fracture : m_fractureRecord.InOrder())
+      Send(peer, fracture);
     // What lies in the world (its taken stacks at quantity 0). Loot is not
     // in the digests: the host arbitrates each claim (ClaimWorldItem).
     if (!resync)
@@ -1969,6 +1977,9 @@ void Endpoint::OnGuestMessage(const proto::Message &message, std::vector<Session
           },
           [&](const proto::BreachResult &result) { out.push_back(events::BreachAnswered{result}); },
           [&](const proto::Fracture &fracture) {
+            // Kept as the host sent it (our own back too: the record is
+            // the session's); played unless it is our own.
+            m_fractureRecord.Note(fracture);
             if (fracture.player != m_you)
               out.push_back(events::Fractured{fracture});
           },
@@ -3621,9 +3632,32 @@ void Endpoint::SendFracture(proto::Fracture fracture) {
     return;
   fracture.player = m_you;
   if (IsHost())
-    ShareNpc(fracture, m_you);
+    RelayFracture(fracture, 0, nullptr);
   else
     Send(m_hostPeer, fracture);
+}
+
+void Endpoint::RelayFracture(const proto::Fracture &fracture, net::PeerId from,
+                             std::vector<SessionEvent> *out) {
+  const bool ours = fracture.player == m_you;
+  if (m_fractureRecord.Note(fracture)) {
+    // A piece new to the session: every player's (its teller's too, for
+    // its record), linked or not: one away from it breaks it on its way.
+    Broadcast(fracture);
+    if (out && !ours)
+      out->push_back(events::Fractured{fracture});
+    return;
+  }
+  if (!m_fractureRecord.Has(fracture)) {
+    // The record is full: a guest's could not follow it.
+    ++m_fracturesDropped;
+    return;
+  }
+  // Another piece of one the session knows: where it broke is in the world
+  // of the players linked with its teller.
+  ShareNpc(fracture, fracture.player, from);
+  if (out && !ours && Sees(m_you, fracture.player))
+    out->push_back(events::Fractured{fracture});
 }
 
 void Endpoint::SendDeviceFire(proto::DeviceFire fire) {

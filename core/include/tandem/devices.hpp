@@ -178,6 +178,11 @@ public:
   // Another game's break. True: ours to replay (not one that broke here
   // already, by our own doing or an earlier word).
   bool Theirs(const proto::Fracture &fracture, std::uint64_t nowUs);
+  // Another game's break that waited (our V far, its entity not streamed
+  // in) replayed only now: what our game sees of it from now is its echo.
+  void Replaying(const proto::Fracture &fracture, std::uint64_t nowUs) {
+    Note(fracture, nowUs, false);
+  }
   // A new session: nothing is remembered.
   void Clear();
   std::uint64_t Told() const { return m_told; }
@@ -203,6 +208,36 @@ private:
   std::map<Part, bool> m_parts;
   comms::Limiter m_rate{kFractureBurst, kFracturesPerSecond};
   std::uint64_t m_told{}, m_replayed{}, m_echoes{}, m_repeats{}, m_held{};
+};
+
+// What broke in the session, for who was not there (devices.md, "Glass and
+// breakable scenery"): one entry per piece, a named part by its entity and
+// component, a nameless piece by the metre cell it broke in. The host keeps
+// every break it relays, a guest every break the host sent it (its own
+// back too), so the two match and the world digest covers them. Full: a
+// new piece is neither kept nor relayed (a guest's record could not follow).
+inline constexpr std::size_t kMaxFractureRecord = 2048;
+inline constexpr float kFractureCell = 1.f;
+
+class FractureRecord {
+public:
+  // True: a piece new to the record, kept (oldest first in InOrder).
+  bool Note(const proto::Fracture &fracture);
+  bool Has(const proto::Fracture &fracture) const { return m_keys.contains(KeyOf(fracture)); }
+  bool Full() const { return m_keys.size() >= kMaxFractureRecord; }
+  bool Empty() const { return m_keys.empty(); }
+  std::size_t Size() const { return m_keys.size(); }
+  // The same on the host and on a guest that heard everything, whatever
+  // the order it heard it in.
+  std::uint32_t Digest() const;
+  const std::vector<proto::Fracture> &InOrder() const { return m_order; }
+
+private:
+  using Piece = std::pair<std::uint64_t, std::uint64_t>; // entity, component (or cell)
+  static Piece KeyOf(const proto::Fracture &fracture);
+  std::set<Piece> m_keys;
+  std::vector<proto::Fracture> m_order;
+  std::uint32_t m_sum{};
 };
 
 // Guest: when to ask for the record again. As for the other domains

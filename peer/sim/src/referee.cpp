@@ -1125,8 +1125,10 @@ void Referee::FromHost(const p::Message &message, const p::Digest *ours) {
                               first->second));
           }
         } else if constexpr (std::is_same_v<M, p::Fracture>) {
-          // What broke in another player's game; never our own back.
-          notOurs(m.player);
+          // What broke in a player's game, stamped by the host. Not checked:
+          // our own comes back for the session's record, and a late joiner
+          // hears breaks by players who left before it came (devices.md,
+          // "Glass and breakable scenery").
         } else if constexpr (std::is_same_v<M, p::DeviceFire>) {
           // The host's turret's target: a player of the session (an NPC's
           // shot may overtake its spawn on the State channel: not checked).
