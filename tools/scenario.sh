@@ -56,7 +56,7 @@
 # player's log, a screenshot and, when the game thread went silent, every
 # thread's backtrace (tools/game.sh bt).
 #
-# The game restarts only when the build or the role changed (scripts would
+# The game restarts only when the build or the role changed (scripts
 # are hot-reloaded: RedHotTools is installed on anya). Never run this while
 # someone plays (AGENTS.md).
 # shellcheck disable=SC2029,SC2034 # (SC2034: $played is read by the scenarios it sources)
