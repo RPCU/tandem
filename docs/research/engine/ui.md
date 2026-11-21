@@ -382,8 +382,9 @@ entityID, isActive}` (`:203110`). The only script caller is the drop
   `:130212`); `GetOrAddVendor` (`:130292`) adds one for any object whose
   record has a vendor id (`AddVendor`, `:130308`: `SetPersistentID` of the
   object). `OnRestored` (`:130234`) maps each back by the entity of its
-  persistent id. So a placed vendor (a static entity id, the same in every
-  game) is one vendor in each game's own save, and opening the screen on
+  persistent id. So a vendor of the world (the same NPC in every game,
+  under an entity id of its own in each on 2.50: `TandemVendors.IdOf`,
+  `progression.md`) is one vendor in each game's own save, and opening the screen on
   **our own** entity of that id is our own stock, prices and sold items.
   `Vendor.OnVendorMenuOpen` (`:130818`) counts a first ripperdoc visit (the
   fact `number_of_ripperdocs_visited`, in our own quest system), fills the

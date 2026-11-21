@@ -376,11 +376,13 @@ struct Options {
   int lend{-1};
   std::string unlockVehicle;
   // Vendors (docs/architecture/progression.md): (host) one vendor NPC of
-  // this record standing there, announced with that placed entity (0: none),
+  // this record standing there, announced with that vendor's id (0: none),
+  // whether it is a placed NPC too (a stall's seller is the crowd's: not),
   // and when it dies after a guest is there (-1: never).
   std::string vendorRecord;
   Vec3 vendorAt{};
   std::uint64_t vendorEntity{};
+  bool vendorPlaced{true};
   int vendorDiesSeconds{-1};
   // Trade (docs/architecture/trade.md): ask the first other player (again
   // every 20 s until one trade is done); accept whoever asks; what we put
@@ -881,6 +883,9 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "  --vendor REC@X,Y,Z#ENTITY host: a vendor NPC of REC standing at X,Y,Z, said to be\n"
          "                     the placed vendor ENTITY (hex, as `vendor near` logs it):\n"
          "                     a guest opens its own game's vendor of it (NpcVendor)\n"
+         "  --vendor-crowd     host, --vendor: the vendor is the crowd's, not a placed NPC\n"
+         "                     (no NpcPlaced: its twin is known by record and place,\n"
+         "                     its death is not the ledger's)\n"
          "  --vendor-dies N    host, --vendor: it dies N s after a guest is there (every\n"
          "                     game hears that vendor died)\n"
          "  --trade-offer      ask the first other player to trade, every 20 s until one\n"
@@ -1299,6 +1304,10 @@ Options Parse(int argc, char **argv) {
     }
     if (flag == "--near-npc") {
       options.nearNpc = true;
+      continue;
+    }
+    if (flag == "--vendor-crowd") {
+      options.vendorPlaced = false;
       continue;
     }
     if (flag == "--trade-offer") {
@@ -7047,12 +7056,15 @@ int main(int argc, char **argv) {
                                 .position = options.vendorAt});
         vendorShared = endpoint->SendCombat(
             proto::NpcVendor{.npc = kVendorNpc, .entity = options.vendorEntity});
-        // A vendor is a placed NPC: its twin in the other games is known by
-        // its entity, and its death is the ledger's too (regions.md §14).
-        endpoint->SendCombat(proto::NpcPlaced{.npc = kVendorNpc, .entity = options.vendorEntity});
-        Log("vendor npc {}: {} at {:.1f} {:.1f} {:.1f}, the placed vendor {:x}{}", kVendorNpc,
+        // A placed vendor: its twin in the other games is known by its
+        // entity, and its death is the ledger's too (regions.md §14). The
+        // crowd's (--vendor-crowd): by record and place, as the game says it.
+        if (options.vendorPlaced)
+          endpoint->SendCombat(proto::NpcPlaced{.npc = kVendorNpc, .entity = options.vendorEntity});
+        Log("vendor npc {}: {} at {:.1f} {:.1f} {:.1f}, the {} vendor {:x}{}", kVendorNpc,
             options.vendorRecord, options.vendorAt.x, options.vendorAt.y, options.vendorAt.z,
-            options.vendorEntity, vendorShared ? "" : " (not said: nobody to tell)");
+            options.vendorPlaced ? "placed" : "crowd's", options.vendorEntity,
+            vendorShared ? "" : " (not said: nobody to tell)");
         vendorShared = true;
       }
       if (now >= nextVendorState) {

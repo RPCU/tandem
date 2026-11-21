@@ -1,34 +1,48 @@
-# As a guest, a vendor the host runs is a proxy here: beside it we open our own game's vendor of the same placed NPC (our stock, our money), the puppet shows us busy in a shop; when the host's vendor dies, ours is hidden and the shop stays shut
+# As a guest, a vendor the host runs is a proxy here: beside it we open our own game's vendor of the same NPC (our stock, our money), the puppet shows us busy in a shop; when the host's vendor dies, ours is hidden and the shop stays shut
 # shellcheck shell=bash disable=SC2317
-# Where: VENDOR_AT (a fixture or "X Y Z", default vik-clinic: Viktor is a vendor, a ripperdoc; testing.md
-# "Fixtures": a vendor of our own world within 200 m of it). The mock host stands in front of us, so its region
-# covers ours; its vendor is our own nearest one, by record, place and entity.
+# Where: VENDOR_AT (a fixture or "X Y Z"; testing.md "Fixtures": a vendor of
+# our own world within 200 m of it, the nearest is taken), then VENDOR_AWAY
+# (kabuki-market), then VENDOR_AT again: the first spot with one. Default:
+# vik-clinic (Viktor, a ripperdoc; a food stall 37 m off), kabuki-market,
+# vik-clinic. Each spot's NPCs with a vendor id are noted, with what each
+# lacks. Ours hidden in an earlier session (behind its owner's proxy, or
+# dead there: this scenario's own end, ledger-guest's Viktor, 2026-11-21) is
+# on no list: the way to the next spot and back is what brings it back, if
+# anything does. The mock host stands in front of us, so its region covers
+# ours; its vendor is our own, by record, place and id (TandemVendors.IdOf).
 ensure join
-at "${VENDOR_AT:-vik-clinic}"
-cmd vendor near
-expect 'vendor: (near|no vendor of our own world) ' 10
-if since | grep -qa 'vendor: no vendor of our own world'; then
-  # Ours hidden in an earlier session (behind its owner's proxy, or dead
-  # there: this scenario's own end, ledger-guest's Viktor, 2026-11-21) is
-  # hidden until it streams out: away (VENDOR_AWAY, far enough for that) and
-  # back, once. What the spot had instead is noted.
-  while read -r lacking; do note "$lacking"; done < <(since | grep -aoE 'vendor:   ?[0-9r].*' | tail -12)
-  at "${VENDOR_AWAY:-kabuki-market}"
-  at "${VENDOR_AT:-vik-clinic}"
+spots=("${VENDOR_AT:-vik-clinic}" "${VENDOR_AWAY:-kabuki-market}" "${VENDOR_AT:-vik-clinic}")
+for where in "${spots[@]}"; do
+  at "$where"
   mark
   cmd vendor near
-fi
-expect 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' 10
-line=$(since | grep -oE 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+' | tail -1)
+  expect 'vendor: (near|no vendor of our own world) ' 10
+  pause 1
+  note "$where: $(since | grep -aoE 'vendor: [0-9]+ npcs within .*' | tail -1)"
+  while read -r listed; do note "$listed"; done < <(since | grep -aoE 'vendor:   record .*' | tail -17)
+  if since | grep -qa 'vendor: near '; then
+    break
+  fi
+done
+expect 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at -?[0-9.]+ -?[0-9.]+ -?[0-9.]+ \(.* placed (true|false),' 2
+line=$(since | grep -aE 'vendor: near .* record [^ ]+ entity [0-9a-f]+ at ' | tail -1 | grep -aoE 'vendor: near .*')
 note "$line"
 record=$(sed -E 's/.* record ([^ ]+) entity .*/\1/' <<<"$line")
 entity=$(sed -E 's/.* entity ([0-9a-f]+) at .*/\1/' <<<"$line")
-read -r x y z <<<"$(sed -E 's/.* at (-?[0-9.]+) (-?[0-9.]+) (-?[0-9.]+)$/\1 \2 \3/' <<<"$line")"
-cmd vendor goto
-expect 'vendor: near ' 10
+read -r x y z <<<"$(sed -E 's/.* at (-?[0-9.]+) (-?[0-9.]+) (-?[0-9.]+) \(.*/\1 \2 \3/' <<<"$line")"
+# A stall's seller is the crowd's: its twin is known by record and place and
+# its death is not the ledger's, so the mock host says no NpcPlaced of it.
+placed=$(sed -E 's/.* placed (true|false),.*/\1/' <<<"$line")
+crowd=()
+[ "$placed" = true ] || crowd=(--vendor-crowd)
+# Up to it (as far as 200 m, out of a basement: maybe a loading screen), and
+# it is the one beside us now.
+moved vendor goto
+cmd vendor near
+expect "vendor: near .* entity $entity at [-0-9. ]+ \([0-9]\.[0-9]+ m," 10
 # The host's copy of that vendor, standing where ours stands; it dies 60 s
 # after we are in.
-peer host --mode front --body female --vendor "$record@$x,$y,$z#$entity" --vendor-dies 60
+peer host --mode front --body female --vendor "$record@$x,$y,$z#$entity" "${crowd[@]}" --vendor-dies 60
 expect 'in the session as player' 30
 expect_peer "vendor npc [0-9]+: $record at" 20
 # Our own vendor gives way to the host's (a twin, or a spawn inside its
@@ -55,9 +69,11 @@ expect_peer 'player [0-9]+ is free again' 15
 # The host's vendor dies: every game hears it; ours stays hidden and shut.
 expect_peer 'vendor npc [0-9]+ died' 70
 expect "vendor: $entity died in the session" 15
-# ...and it is in the session's ledger (regions.md §14); we saw it die, so
-# no other body is laid.
-expect "ledger: placed npc .* died in player 1's game" 15
+# ...and a placed one is in the session's ledger (regions.md §14); we saw it
+# die, so no other body is laid.
+if [ "$placed" = true ]; then
+  expect "ledger: placed npc .* died in player 1's game" 15
+fi
 reject 'ledger: a body for placed npc'
 cmd vendor open
 expect 'vendor: no vendor.s proxy within 6 m|stays shut: dead' 10

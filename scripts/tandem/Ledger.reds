@@ -65,18 +65,22 @@ public abstract class TandemPlaced {
     if !IsDefined(npc) {
       return "no npc";
     }
+    // The crowd's: by its record, or by its crowd member component (what
+    // its stub says is logged all the same: a stall's seller is the crowd's).
+    let crowd = "";
     if npc.IsCrowd() {
-      return "the crowd's";
+      let record = npc.GetRecord();
+      crowd = IsDefined(record) && record.IsCrowd() ? "the crowd's (its record), " : "the crowd's (in the crowd), ";
     }
     if EntityID.IsStatic(npc.GetEntityID()) {
-      return "its own static id";
+      return s"\(crowd)its own static id";
     }
     let stub = TandemPlaced.StubOf(npc);
     if !IsDefined(stub) {
-      return "no entity stub";
+      return s"\(crowd)no entity stub";
     }
     let spawner = stub.GetSpawnerID();
-    return s"community \(TandemNative.EntityHex(spawner)) (static \(EntityID.IsStatic(spawner))) entry \(NameToString(stub.GetOwnerCommunityEntryName()))";
+    return s"\(crowd)community \(TandemNative.EntityHex(spawner)) (static \(EntityID.IsStatic(spawner))) entry \(NameToString(stub.GetOwnerCommunityEntryName()))";
   }
 }
 
