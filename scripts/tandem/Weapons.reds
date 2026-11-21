@@ -87,7 +87,9 @@ public abstract class TandemWeapons {
       if IsDefined(held) && ItemID.GetTDBID(held.GetItemID()) == record {
         return true;
       }
-      if transactions.IsSlotSpawningItem(puppet, slot, ItemID.FromTDBID(record)) {
+      // Any item: a weapon given is a unique item (its own seed), so a query
+      // made from the record never names the one spawning.
+      if transactions.IsSlotSpawningAnyItem(puppet, slot) {
         return true;
       }
     }
