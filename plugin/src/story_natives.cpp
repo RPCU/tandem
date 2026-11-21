@@ -19,12 +19,18 @@
 
 #include "tandem/carryover.hpp"
 #include "tandem/interact.hpp"
+#include "tandem/moments.hpp"
 
+#include <RED4ext/ResourcePath.hpp>
 #include <RedLib.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <format>
+#include <fstream>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace Red {
@@ -32,6 +38,41 @@ RTTI_MAP_TYPE_NAME(CRUID, "CRUID");
 }
 
 namespace tandem::plugin {
+void LoadMoments(const std::filesystem::path &file) {
+  const auto hash = [](std::string_view path) -> std::uint64_t {
+    return RED4ext::ResourcePath(std::string(path).c_str()).hash;
+  };
+  auto &list = Story::Get().Moments();
+  list.Clear();
+  std::size_t fromFile = 0;
+  if (std::ifstream in(file); in) {
+    std::string line, error;
+    for (int number = 1; std::getline(in, line); ++number) {
+      if (auto entry = moments::ParseLine(line, hash, error)) {
+        list.Add(std::move(*entry));
+        ++fromFile;
+      } else if (!error.empty()) {
+        log::Warn("moments: {} line {}: {}", file.filename().string(), number, error);
+      }
+    }
+  }
+  const auto &config = Runtime::Get().config;
+  for (const auto *keys : {&config.momentWatch, &config.momentPlay})
+    for (const auto &key : *keys) {
+      std::string error;
+      const auto verdict =
+          keys == &config.momentWatch ? moments::Verdict::Watch : moments::Verdict::Play;
+      if (auto entry = moments::ParseKey(key, verdict, hash, error))
+        list.Add(std::move(*entry));
+      else
+        log::Warn("moments: tandem.ini {}: {}", key, error);
+    }
+  engine::SetPhaseNotes(list.HasPhases());
+  log::Info("moments: {} marked moment(s) ({} from {}, {} from tandem.ini){}", list.Size(),
+            fromFile, file.filename().string(), list.Size() - fromFile,
+            list.HasPhases() ? "; quest phases noted as they run" : "");
+}
+
 // One thing the session told the story script (kinds in StoryNatives.reds).
 // Plain fields only (the script VM aligns struct locals to 8).
 struct TandemStoryEvent {
@@ -886,7 +927,7 @@ struct TandemStory : Red::IScriptable {
   static bool SpectateMoment(std::int32_t tier, bool isPrivate, bool restricted, bool questMount,
                              bool mode, bool camera, bool elsewhere) {
     auto &kept = Story::Get();
-    const auto reasons = static_cast<std::uint8_t>(
+    const auto reasons = static_cast<std::uint16_t>(
         SpectateReasons(tier, isPrivate, restricted, questMount, mode, camera, elsewhere));
     if (isPrivate || !SpectateOn()) {
       kept.Moment().Clear();
@@ -903,7 +944,65 @@ struct TandemStory : Red::IScriptable {
                                  .mode = mode,
                                  .camera = camera,
                                  .elsewhere = elsewhere,
-                                 .test = Story::Get().TestMoment()});
+                                 .test = Story::Get().TestMoment(),
+                                 .listed = Story::Get().Listed()});
+  }
+  // Host, four times a second before SpectateMoment: what the moment list
+  // (moments.txt, tandem.ini moment_watch / moment_play) says of our V now,
+  // from the scene it plays, the quest phases that ran lately and `quest`,
+  // its tracked journal entry's path (0 none, 1 watch, 2 play). Kept for
+  // SpectateReasons; a change is logged with the entry that decided.
+  static std::int32_t MomentListed(Red::CString quest) {
+    auto &kept = Story::Get();
+    const moments::Entry *entry = nullptr;
+    auto verdict = moments::Verdict::None;
+    std::string by;
+    if (kept.ListedTest()) {
+      verdict = *kept.ListedTest();
+      by = "the test command";
+    } else if (kept.Moments().Size() > 0) {
+      verdict = kept.Moments().Of({.scene = engine::ScenePlaying(3000),
+                                   .phases = engine::RecentPhases(3000),
+                                   .quest = quest.c_str()},
+                                  &entry);
+      if (entry)
+        by = std::format("{}:{}{}{}",
+                         entry->kind == moments::Kind::Scene   ? "scene"
+                         : entry->kind == moments::Kind::Phase ? "phase"
+                                                               : "quest",
+                         entry->text, entry->note.empty() ? "" : " # ", entry->note);
+    }
+    if (verdict != kept.Listed() || by != kept.ListedBy()) {
+      if (verdict == moments::Verdict::None)
+        log::Info("moments: our V is in no listed moment now");
+      else
+        log::Info("moments: our V's moment is marked {} by {}", moments::NameOf(verdict), by);
+    }
+    kept.Listed() = verdict;
+    kept.ListedBy() = by;
+    return static_cast<std::int32_t>(verdict);
+  }
+  // cmd story moments test watch|play|off: as if the list said so (off: the
+  // list's own word again).
+  static void MomentsTest(std::int32_t verdict) {
+    auto &test = Story::Get().ListedTest();
+    if (verdict == 1 || verdict == 2)
+      test = static_cast<moments::Verdict>(verdict);
+    else
+      test.reset();
+  }
+  // cmd story moments: what the list is read against now, to mark a moment.
+  static Red::CString MomentsReport(Red::CString quest) {
+    auto &kept = Story::Get();
+    std::string phases;
+    for (const auto phase : engine::RecentPhases(3000))
+      phases += std::format(" {:#x}", phase);
+    const auto text = std::format(
+        "{} entries; now: scene {:#x}, phases{}, quest {}; verdict {}{}{}", kept.Moments().Size(),
+        engine::ScenePlaying(3000), phases.empty() ? " none" : phases,
+        quest.Length() > 0 ? quest.c_str() : "none", moments::NameOf(kept.Listed()),
+        kept.ListedBy().empty() ? "" : " by ", kept.ListedBy());
+    return Red::CString(text.c_str());
   }
   // Host: our moment is one only our view shows (kStoryWatch).
   static bool SpectateHostWatch() {
@@ -914,8 +1013,8 @@ struct TandemStory : Red::IScriptable {
   static std::int32_t SpectateUpdate(bool hostMoment, bool hostWatch, bool hostPrivate,
                                      bool grouped, bool ourAway, bool hostElsewhere,
                                      std::int32_t hostTier, bool hostRiding, bool inVehicle,
-                                     bool hostKnown, float hostX, float hostY, float hostZ, float x,
-                                     float y, float z) {
+                                     bool cannotLoad, bool hostKnown, float hostX, float hostY,
+                                     float hostZ, float x, float y, float z) {
     auto &spectator = Story::Get().Spectator();
     const auto change = spectator.Update({.on = SpectateOn(),
                                           .hostMoment = hostMoment,
@@ -927,6 +1026,7 @@ struct TandemStory : Red::IScriptable {
                                           .hostTier = Byte(hostTier),
                                           .hostRiding = hostRiding,
                                           .inVehicle = inVehicle,
+                                          .cannotLoad = cannotLoad,
                                           .hostKnown = hostKnown,
                                           .host = {hostX, hostY, hostZ},
                                           .guest = {x, y, z}});
@@ -937,7 +1037,9 @@ struct TandemStory : Red::IScriptable {
     return spectator.Watching() ? 1 : 0;
   }
   // Guest: why we watch (story::Spectator::Why: 0 we do not, 1 a cutscene,
-  // 2 another world, 3 the host's V beyond our reach, 4 the quest's camera).
+  // 2 another world, 3 the host's V beyond our reach, 4 only the host's view
+  // shows it (the quest's camera, a moment the list marks watch, a test),
+  // 5 quest interiors our game does not load).
   static std::int32_t SpectateWhy() {
     return static_cast<std::int32_t>(Story::Get().Spectator().Reason());
   }
@@ -959,7 +1061,7 @@ struct TandemStory : Red::IScriptable {
   static void MomentCameraSample(float x, float y, float z, float i, float j, float k, float r,
                                  float fov) {
     auto &story = Story::Get();
-    if (!SpectateOn() || !story.Moment().On() || story.Private())
+    if (!SpectateOn() || !(story.Moment().On() || story.ViewWanted()) || story.Private())
       return;
     const auto now = Runtime::Get().HostNowUs();
     const scene::CameraView view{{x, y, z}, {i, j, k, r}, fov};
@@ -972,6 +1074,8 @@ struct TandemStory : Red::IScriptable {
     story.SubmitCamera(
         scene::PackCamera(std::max<std::uint32_t>(1, story.Stage().Play()), view, cut));
   }
+  // Host: some guest watches through our eyes now (its story flags).
+  static void SpectateViewWanted(bool wanted) { Story::Get().ViewWanted() = wanted; }
   // Guest, every frame while watching: the host's view to show now.
   static TandemSceneView SpectateView() {
     TandemSceneView out;
@@ -1468,6 +1572,9 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SpectateTestOn);
   RTTI_METHOD(SpectateMoment);
   RTTI_METHOD(SpectateReasons);
+  RTTI_METHOD(MomentListed);
+  RTTI_METHOD(MomentsTest);
+  RTTI_METHOD(MomentsReport);
   RTTI_METHOD(SpectateUpdate);
   RTTI_METHOD(SpectateHostWatch);
   RTTI_METHOD(SpectateWhy);
@@ -1476,6 +1583,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemStory, "TandemStory", {
   RTTI_METHOD(SpectateLift);
   RTTI_METHOD(SpectateWatching);
   RTTI_METHOD(MomentCameraSample);
+  RTTI_METHOD(SpectateViewWanted);
   RTTI_METHOD(SpectateView);
   RTTI_METHOD(SceneCameraOn);
   RTTI_METHOD(SceneCameraSample);

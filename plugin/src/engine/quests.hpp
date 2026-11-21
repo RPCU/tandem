@@ -45,6 +45,13 @@ bool QuestGrouped();
 // Spike C2: log every phase met (its chain of resources) and every journal
 // node in it (the journal entry it names), once each.
 void SetQuestTrace(bool on);
+// The moment list (tandem/moments.hpp) has phase entries: note the
+// resource of every phase that runs a node (and of its ancestors on the
+// context's stack), whatever the role. Any thread.
+void SetPhaseNotes(bool on);
+// The phase resources (path hashes) that ran a node within the last
+// `maxAgeMs` (a scene's node runs again and again while it plays). Any thread.
+std::vector<std::uint64_t> RecentPhases(std::uint32_t maxAgeMs);
 // How many signals are held now, and whether more came than could be held
 // (then the guest's own story lost some: its leave must reload a save).
 std::uint32_t QuestFreezeHeld();

@@ -42,6 +42,10 @@
 //   spectate = on        ; guest: off: in the host's scripted moments (scenes,
 //                        ; quest rides, set pieces) you keep playing your own V
 //                        ; instead of watching through the host's camera
+//   moment_watch = , moment_play =  ; host: scripted moments marked by hand
+//                        ; (comma-separated keys scene:PATH, phase:PATH or
+//                        ; quest:TEXT; docs/architecture/scripted-moments.md,
+//                        ; "The moment list"), added to moments.txt's
 //   scene_kbps = 22      ; with scene_replay, host: what a scene's streams (bodies,
 //                        ; the camera) may take on a guest's link, 8 to 2000
 //   scene_voice_gender = on ; with scene_replay, guest: a V's line plays the
@@ -185,6 +189,8 @@ struct Config {
   // A guest in the host's scripted moment watches it through the host's
   // camera, its own V parked (docs/architecture/story.md, "Spectating").
   bool spectate{true};
+  // The moment list's keys from tandem.ini (moments.txt has the rest).
+  std::vector<std::string> momentWatch, momentPlay;
   // A guest grouped with the host loads the quest prefabs the host's quests
   // have on (docs/architecture/story.md, "Quest prefabs"); the host sends
   // them whatever this says.

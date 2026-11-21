@@ -5,6 +5,7 @@
 // apart from Runtime: the story has its own messages and its own script.
 
 #include "tandem/interact.hpp"
+#include "tandem/moments.hpp"
 #include "tandem/prefabs.hpp"
 #include "tandem/protocol.hpp"
 #include "tandem/scene.hpp"
@@ -13,14 +14,20 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
 #include <map>
 #include <mutex>
 #include <optional>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
 namespace tandem::plugin {
+// Plugin load: the moment list from `file` (moments.txt next to the DLL)
+// and tandem.ini's moment_watch / moment_play (story_natives.cpp).
+void LoadMoments(const std::filesystem::path &file);
+
 // What the net thread tells the story script.
 struct StoryInbound {
   enum class Kind { InSession, Ended, Joined, Left, Message };
@@ -111,6 +118,16 @@ public:
   bool &SpectateOff() { return m_spectateOff; }
   // Host: cmd story spectate on: a test moment.
   bool &TestMoment() { return m_testMoment; }
+  // Host: a guest watches through our eyes (its kStorySpectating), moment
+  // or not (reason e is no moment of ours): our view goes out meanwhile.
+  bool &ViewWanted() { return m_viewWanted; }
+  // Host: the moment list (moments.txt and tandem.ini, read at load), what
+  // it says of our V now (MomentListed, four times a second), the entry that
+  // said it, and cmd story moments test's override (None: the list's word).
+  moments::List &Moments() { return m_moments; }
+  moments::Verdict &Listed() { return m_listed; }
+  std::string &ListedBy() { return m_listedBy; }
+  std::optional<moments::Verdict> &ListedTest() { return m_listedTest; }
   // Host: the backstop on a guest's acts on the scene's actors.
   story::Backstop &Backstop() { return m_backstop; }
 
@@ -170,6 +187,11 @@ private:
   story::Spectator m_spectator;
   bool m_spectateOff{};
   bool m_testMoment{};
+  bool m_viewWanted{};
+  moments::List m_moments;
+  moments::Verdict m_listed{};
+  std::string m_listedBy;
+  std::optional<moments::Verdict> m_listedTest;
 
   std::atomic_bool m_private{false};
   std::optional<proto::PlayerState> m_held; // net thread
