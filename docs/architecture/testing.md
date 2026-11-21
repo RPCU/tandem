@@ -424,7 +424,8 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
   `--ping N` (every N s: a spot before the other V, the nearest shared NPC
   as an enemy and at once again as a danger, then taken back), `--tag N`
   (scan tag on and off of the nearest shared NPC), `--reveal N` (up to 4
-  shared NPCs for 10 s, as the Ping quickhack), `--waypoint X,Y,Z` and
+  shared NPCs for 10 s, as the Ping quickhack), `--waypoint X,Y,Z`,
+  `--waypoint-kind pin|point|objective` and
   `--waypoint-clear N`, `--mark-target ID|nearest` (a team target, as the
   "Mark target" quickhack), `--hack-npc ID|nearest` (host: our V uploads
   `--hack-action` on that NPC for 3 s, then `--hack-effect` is on it for
