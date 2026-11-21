@@ -67,3 +67,42 @@ n"dying")` (106053) ends it by hand. [2.5-untested]
 - `BaseStatusEffect.PlayerInvulnerable` is what Bloodswell puts on V
   (307839). `PlayerPuppet.SetInvisible` (43505) toggles V's visible object
   (what NPC senses see). [2.5-untested]
+
+Read 2026-11-21 for a V down in a car, in water, and the respawn spot
+(`Revive.reds`); every line [2.5-untested]:
+
+- **Seated.** The death state runs beside the vehicle state machine: its
+  death type is Ground in a seat (`GetDeathType` 283737: falling, else
+  `LocomotionSwimming`, else Ground) and `SetDeathCameraParameters`
+  (283749) also sets `VehicleCameraParams` when the `Vehicle` machine is
+  active, so vanilla's V dies in its seat. The only death exit,
+  `DeathExitingDecisions` (551187), is for a bike (`vehClass` 1) and a V
+  that `IsDead()`, which a V held at tandem's Immortal floor never is: a
+  downed V stays seated. `ResurrectEvents` has no vehicle check (the
+  Second Heart stand-up in a seat). [2.5-untested]
+- **The game's forced exit**: `ImmediateExitWithForceEvents.Unmount`
+  (550633) is a `MountingFacility.Unmount` of an `UnmountingRequest` with
+  only `childId` and `isInstant`; `ExitingDecisions.EnterCondition`
+  (550593) leaves the seat when such an unmount is pending (`IsExitForced`).
+  Where V stands on getting out: `VehicleObject.CanUnmount(isPlayer,
+  object, opt direction)` (87761) → `vehicleUnmountPosition{direction,
+  position}` (288051, `vehicleExitDirection` 7842: 0 none … 5 top).
+  Wrecked: `VehicleObject.IsDestroyed` (87959); upside down:
+  `IsVehicleUpsideDown` (88944, from `VehicleFlippedOverEvent`) or
+  `ComputeIsVehicleUpsideDown` (world up below the horizon). A stop:
+  `VehicleObject.ForceBrakesUntilStoppedOrFor(seconds)` (87873).
+  [2.5-untested]
+- **Water.** `AIScriptUtils.GetWaterLevel(game, Vector3, out level)`
+  (158907) answers true only for a point under water (`HasHeadUnderwater`
+  21360); the state machine's own `GetWaterLevel(from, to, out level)`
+  (247454) is only inside a state. Vanilla swims at 1.2 m + 0.1 over the
+  feet (`SwimmingDecisions`, 525631) and finds the floor with a raycast down
+  from the surface. `SwimmingDecisions.ToDeath` (525674) leaves for the
+  death state only at the health minimum; the death type is then Swimming.
+  No script query returns "the nearest shore": the nearest navmesh point
+  in a sphere is `AINavigationSystem.FindPointInSphereForCharacter`, and
+  `gamePuppet.GetLastValidNavmeshPoint()` (19442) the last navmesh point
+  a puppet stood on (whether the engine updates it for the player is
+  unknown). Static raycasts: `SpatialQueriesSystem.
+SyncRaycastByCollisionGroup(from, to, n"Static", out TraceResult, true,
+false)` (177828). [2.5-untested]
