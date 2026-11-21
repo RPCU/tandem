@@ -572,7 +572,8 @@ decline`, `busy KIND|off`, `busy report`, `apartment report`. Scenarios
   operates a device by id (a guest asks the host; a host says its own is
   that, and takes a guest's request as said: it has no world);
   `--device-answer WORDS --device-after N` changes back every device
-  another player just changed, N s later. Every device it hears of is
+  another player just changed, N s later (not what the host says of it
+  within 5 s of that answer: its reply). Every device it hears of is
   logged as the game logs it. `tests/peer_devices.sh`; scenarios
   `devices-door`, `devices-lift`, `devices-camera`, `devices-barrel`,
   `devices-guest` (`architecture/devices.md`, Testing).

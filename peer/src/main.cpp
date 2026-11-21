@@ -80,7 +80,10 @@
 // Devices (docs/architecture/devices.md): --device ENTITY:CLASS:WORDS[@S]
 // operates one by its id (a guest asks the host; a host says what its own
 // is), --device-answer WORDS changes back, --device-after seconds later,
-// every device another player just changed. A host has no world of its
+// every device another player just changed; not what the host made it
+// right after our answer (a door answered "friendly", which it cannot be:
+// h11's two doors went back and forth, devices-camera, 2026-11-21). A host
+// has no world of its
 // own: a guest's request is taken as said. What it hears is logged.
 // Breach Protocol (devices.md, "Breach Protocol"): --breach SPEC breaches
 // an access point (ENTITY[:CLASS]) or an NPC (npc=N) with --programs, as a
@@ -808,7 +811,7 @@ template <class... Args> void Log(std::format_string<Args...> format, Args &&...
          "                     glitching value=N floor=N station=N; SECONDS into the session\n"
          "                     (5). A guest asks the host; a host says its own device is that\n"
          "  --device-answer W  every device another player changes is made WORDS (as above)\n"
-         "                     --device-after seconds later\n"
+         "                     --device-after seconds later (not the host's reply to it)\n"
          "  --device-after N   see --device-answer (3)\n"
          "  --fracture SPEC    something breaks in our game (glass, breakable scenery), SPEC =\n"
          "                     [ENTITY:COMPONENT:]X,Y,Z[@SECONDS]: where, and for a part of a\n"
@@ -4583,6 +4586,10 @@ int main(int argc, char **argv) {
   std::map<tandem::devices::Key,
            std::pair<std::chrono::steady_clock::time_point, tandem::devices::What>>
       deviceAnswers;
+  // When we last answered each device: what the host says of it within
+  // kDeviceReply after is its reply, not a change to answer.
+  std::map<tandem::devices::Key, std::chrono::steady_clock::time_point> deviceAnsweredAt;
+  constexpr auto kDeviceReply = std::chrono::seconds(5);
   // "device 1a2b (0x3c4d): on, open+hacked, value -1", as the game's log has it.
   const auto describeDevice = [](const tandem::devices::Key &key,
                                  const tandem::devices::What &what) {
@@ -4624,6 +4631,10 @@ int main(int argc, char **argv) {
   };
   const auto answerDevice = [&](const tandem::devices::Key &key, tandem::devices::What what) {
     if (options.deviceAnswer.empty() || !DeviceWords(options.deviceAnswer, what))
+      return;
+    const auto now = std::chrono::steady_clock::now();
+    if (const auto last = deviceAnsweredAt.find(key);
+        last != deviceAnsweredAt.end() && now < last->second + kDeviceReply)
       return;
     deviceAnswers[key] = {
         std::chrono::steady_clock::now() + std::chrono::seconds(options.deviceAfterSeconds), what};
@@ -6706,6 +6717,7 @@ int main(int argc, char **argv) {
         continue;
       }
       operateDevice(it->first, it->second.second, "--device-answer");
+      deviceAnsweredAt[it->first] = now;
       it = deviceAnswers.erase(it);
     }
     // --drop-item: one world item 1.5 m in front of the other V, once.
