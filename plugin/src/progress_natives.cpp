@@ -21,8 +21,10 @@
 #include <RedLib.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <mutex>
+#include <optional>
 #include <vector>
 
 namespace tandem::plugin {
@@ -33,6 +35,19 @@ namespace {
 progress::Leave &TheLeave() {
   static progress::Leave leave;
   return leave;
+}
+
+// The pause menu's Exit, held (Coop.reds): its wrap is a UI callback that
+// may run beside the script tick, so it only stores the action here and
+// Saves.reds takes it on the tick. 0: none, 1 to the main menu, 2 to the
+// desktop.
+std::atomic<std::int32_t> g_exit{0};
+
+// The session a checkpoint left, to join again after its save (game thread
+// only: Saves.reds on the tick).
+std::optional<SessionChoice> &TheRejoin() {
+  static std::optional<SessionChoice> rejoin;
+  return rejoin;
 }
 
 // Enemy scaling: who counts for each NPC our game runs (tandem/scaling.hpp).
@@ -224,14 +239,17 @@ struct TandemProgress : Red::IScriptable {
   // One step of our way out of a session. Returns a progress::LeaveAction:
   // 0 none, 1 clean (saving unlocks), 2 save now, 3 saved, 4 load now,
   // 5 the save failed, 6 gave up (the game never allowed one), 7 dirty.
+  // save: a save is wanted whatever `leave` says, and no load (the pause
+  // menu's Exit, a checkpoint).
   static std::int32_t LeaveTick(float now, bool session, bool chosen, std::int32_t left,
-                                bool blocked, std::int32_t saved) {
+                                bool blocked, std::int32_t saved, bool save) {
     auto &leave = TheLeave();
     leave.SetMode(Runtime::Get().config.leave);
     const auto before = leave.Step();
     const auto action = leave.Tick({.now = now,
                                     .session = session,
                                     .chosen = chosen,
+                                    .save = save,
                                     .left = static_cast<std::uint32_t>(left),
                                     .blocked = blocked,
                                     .saved = static_cast<std::int8_t>(std::clamp(saved, -1, 1))});
@@ -246,7 +264,44 @@ struct TandemProgress : Red::IScriptable {
   static bool LeaveLocked() { return TheLeave().Locked(); }
   static std::int32_t LeaveStep() { return static_cast<std::int32_t>(TheLeave().Step()); }
   // A world loaded: what the old one left is gone with it.
-  static void LeaveReset() { TheLeave().Reset(); }
+  static void LeaveReset() {
+    TheLeave().Reset();
+    TheRejoin().reset();
+    g_exit.store(0);
+  }
+  // A session ended in this world and no save of ours was written since.
+  static bool LeaveOwed() { return TheLeave().Owed(); }
+  // From any thread: hold the pause menu's Exit (1 to the main menu, 2 to
+  // the desktop) for the tick.
+  static void AskExit(std::int32_t action) { g_exit.store(std::clamp(action, 0, 2)); }
+  // Game thread: the held Exit, once (0: none).
+  static std::int32_t TakeExit() { return g_exit.exchange(0); }
+  // tandem.ini `checkpoint`: minutes between a guest's checkpoints (0: off).
+  static std::int32_t CheckpointMinutes() {
+    return static_cast<std::int32_t>(Runtime::Get().config.checkpointMinutes);
+  }
+  // Game thread, before a checkpoint leaves: keep the session's choice to
+  // join it again. False: we did not join one (a host, solo).
+  static bool KeepRejoin() {
+    auto choice = Runtime::Get().Choice();
+    if (choice.role != Config::Role::Join) {
+      TheRejoin().reset();
+      return false;
+    }
+    TheRejoin() = std::move(choice);
+    return true;
+  }
+  // Game thread: choose the kept session again (TandemSystem.BeginSession
+  // starts it). False: none kept.
+  static bool Rejoin() {
+    auto &kept = TheRejoin();
+    if (!kept)
+      return false;
+    auto choice = std::move(*kept);
+    kept.reset();
+    Runtime::Get().Choose(std::move(choice));
+    return true;
+  }
   // "story, bodies": what a `left` mask names.
   static Red::CString LeftNames(std::int32_t left) {
     return Red::CString(progress::LeftNames(static_cast<std::uint32_t>(left)).c_str());
@@ -290,5 +345,11 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemProgress, "TandemProgress", {
   RTTI_METHOD(LeaveLocked);
   RTTI_METHOD(LeaveStep);
   RTTI_METHOD(LeaveReset);
+  RTTI_METHOD(LeaveOwed);
+  RTTI_METHOD(AskExit);
+  RTTI_METHOD(TakeExit);
+  RTTI_METHOD(CheckpointMinutes);
+  RTTI_METHOD(KeepRejoin);
+  RTTI_METHOD(Rejoin);
   RTTI_METHOD(LeftNames);
 });

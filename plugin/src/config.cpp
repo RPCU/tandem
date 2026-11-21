@@ -275,6 +275,12 @@ bool ApplySetting(Config &config, const std::string &key, const std::string &val
       config.leave = progress::LeaveMode::Reload;
     else
       return Bad("leave is stay, save or reload");
+  } else if (key == "checkpoint") {
+    std::uint32_t minutes{};
+    auto [end, ec] = std::from_chars(value.data(), value.data() + value.size(), minutes);
+    if (ec != std::errc{} || end != value.data() + value.size() || minutes > 240)
+      return Bad("checkpoint is minutes between a guest's saves, 0 (off) to 240, not {}", value);
+    config.checkpointMinutes = minutes;
   } else if (key == "link") {
     if (value == "auto")
       config.link = Config::Link::Auto;

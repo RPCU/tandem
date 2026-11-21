@@ -64,11 +64,27 @@ public native class TandemProgress extends IScriptable {
   // game's own save locks; saved: since we asked for the save, 0 no word,
   // 1 written, -1 failed. Returns 0 none, 1 clean (saving unlocks), 2 save
   // now, 3 saved, 4 load now, 5 the save failed, 6 gave up, 7 dirty.
-  public static native func LeaveTick(now: Float, session: Bool, chosen: Bool, left: Int32, blocked: Bool, saved: Int32) -> Int32
+  // save: a save is wanted whatever `leave` says, and no load (the pause
+  // menu's Exit, a checkpoint).
+  public static native func LeaveTick(now: Float, session: Bool, chosen: Bool, left: Int32, blocked: Bool, saved: Int32, save: Bool) -> Int32
   public static native func LeaveLocked() -> Bool
   // 0 solo, 1 session, 2 cleaning, 3 waiting, 4 saving, 5 loading, 6 dirty.
   public static native func LeaveStep() -> Int32
   // A world loaded: what the old one left is gone with it.
   public static native func LeaveReset()
+  // A session ended in this world and no save of ours was written since.
+  public static native func LeaveOwed() -> Bool
+  // From any thread: hold the pause menu's Exit (1 to the main menu, 2 to
+  // the desktop) for the tick.
+  public static native func AskExit(action: Int32)
+  // Game thread: the held Exit, once (0: none).
+  public static native func TakeExit() -> Int32
+  // tandem.ini `checkpoint`: minutes between a guest's checkpoints (0: off).
+  public static native func CheckpointMinutes() -> Int32
+  // Game thread, before a checkpoint leaves: keep the session's choice to
+  // join it again. False: we did not join one.
+  public static native func KeepRejoin() -> Bool
+  // Game thread: choose the kept session again (BeginSession starts it).
+  public static native func Rejoin() -> Bool
   public static native func LeftNames(left: Int32) -> String
 }

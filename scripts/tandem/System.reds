@@ -656,12 +656,124 @@ public class TandemSystem extends ScriptableSystem {
   // V that is down or out when it leaves dies the game's way (EndSession):
   // leaving is no way out of being down.
   public func CoopLeave() -> Void {
+    this.CoopLeaveSaying("Session-YouLeft");
+  }
+
+  // The same, with the notice of the way out (the pause menu's Exit, a
+  // checkpoint: Saves.reds).
+  public func CoopLeaveSaying(notice: String) -> Void {
     if IsDefined(this.m_saves) {
       this.m_saves.Chosen();
     }
     this.EndSession(true);
     TandemNative.Leave();
-    TandemCoop.Notice(this.GetGameInstance(), "Session-YouLeft");
+    TandemCoop.Notice(this.GetGameInstance(), notice);
+  }
+
+  // A checkpoint's save is made (Saves.reds): the session it left, joined
+  // again. False: none was kept.
+  public func CoopRejoin() -> Bool {
+    if !TandemProgress.Rejoin() {
+      return false;
+    }
+    this.BeginSession();
+    return this.m_inGame;
+  }
+
+  // The pause menu's Exit saves our V first (Saves.reds): a guest in a
+  // session, or a session's gains not on disk yet. Reads only.
+  public func ExitOwes() -> Bool {
+    return IsDefined(this.m_saves) && this.m_saves.ExitOwes();
+  }
+
+  // Why our V cannot be saved now, once out of the session: a key of
+  // Text.reds ("Exit-Why-*"), "" when it can. Reads only (the pause menu's
+  // wrap asks it). Our own locks (a session's, scripts': reason Script) are
+  // not counted: the leave steps take them off.
+  public func SaveBlocker() -> String {
+    if TandemProgress.LeaveStep() == 6 {
+      return "Exit-Why-Dirty";
+    }
+    if this.m_leftDown || (IsDefined(this.m_revive) && this.m_revive.IsDown()) {
+      return "Exit-Why-Down";
+    }
+    if TandemPilotNative.SavesLocked() {
+      return "Exit-Why-Other";
+    }
+    let locks: array<gameSaveLock>;
+    GameInstance.IsSavingLocked(this.GetGameInstance(), locks);
+    let why = "";
+    for lock in locks {
+      if Equals(lock.reason, gameSaveLockReason.Combat) {
+        return "Exit-Why-Combat";
+      }
+      if Equals(lock.reason, gameSaveLockReason.Scene) || Equals(lock.reason, gameSaveLockReason.Quest) || Equals(lock.reason, gameSaveLockReason.Tier) {
+        why = "Exit-Why-Scene";
+      } else if NotEquals(lock.reason, gameSaveLockReason.Script) && NotEquals(lock.reason, gameSaveLockReason.Nothing) && StrLen(why) == 0 {
+        why = "Exit-Why-Other";
+      }
+    }
+    return why;
+  }
+
+  // The game's save locks, named (for the log: `cmd exit check`).
+  public func SaveLockNames() -> String {
+    let locks: array<gameSaveLock>;
+    GameInstance.IsSavingLocked(this.GetGameInstance(), locks);
+    let names = "";
+    for lock in locks {
+      names += s"\(StrLen(names) > 0 ? ", " : "")\(EnumValueToString("gameSaveLockReason", Cast<Int64>(EnumInt(lock.reason))))";
+    }
+    return StrLen(names) > 0 ? names : "none";
+  }
+
+  // A checkpoint may begin now (Saves.reds): "" yes, else why not (for the
+  // log). Not while the world is loading, our V in a vehicle (a ride ends
+  // with the session) or when no save could be made.
+  public func CheckpointBlocker() -> String {
+    if !this.m_playing {
+      return "not playing yet";
+    }
+    let player = GetPlayer(this.GetGameInstance());
+    if !IsDefined(player) {
+      return "no V";
+    }
+    if VehicleComponent.IsMountedToVehicle(this.GetGameInstance(), player) {
+      return "in a vehicle";
+    }
+    let why = this.SaveBlocker();
+    return StrLen(why) > 0 ? TandemText.English(why) : "";
+  }
+
+  // tools/game.sh cmd exit check | exit menu|desktop [dry] | checkpoint [dry]
+  // (Saves.reds): what the pause menu's Exit would do, or a checkpoint now.
+  private func SavesCommand(command: String) -> Void {
+    if !IsDefined(this.m_saves) {
+      TandemNative.Log("saves: no world");
+      return;
+    }
+    let dry = StrEndsWith(command, " dry");
+    if StrBeginsWith(command, "checkpoint") {
+      let why = this.CheckpointBlocker();
+      if StrLen(why) > 0 {
+        TandemNative.Log(s"checkpoint: not now: \(why)");
+      } else {
+        this.m_saves.BeginCheckpoint(dry);
+      }
+      return;
+    }
+    let blocker = this.SaveBlocker();
+    TandemNative.Log(s"exit: owes a save \(this.ExitOwes()), blocked by \(StrLen(blocker) > 0 ? TandemText.English(blocker) : "nothing"), the game's locks: \(this.SaveLockNames())");
+    if Equals(command, "exit check") {
+      return;
+    }
+    let exit = StrBeginsWith(command, "exit desktop") ? 2 : 1;
+    if this.ExitOwes() && StrLen(blocker) > 0 {
+      // The pause menu would ask the player (Coop.reds); a command does not.
+      TandemNative.Log("exit: the pause menu would ask: exit anyway or stay");
+      return;
+    }
+    this.m_saves.BeginExit(exit, dry);
   }
 
   // ---- the recorder, solo (plugin/src/recording.hpp) ----
@@ -1143,6 +1255,10 @@ public class TandemSystem extends ScriptableSystem {
       if IsDefined(this.m_time) {
         this.m_time.Command(command);
       }
+      return;
+    }
+    if StrBeginsWith(command, "exit ") || StrBeginsWith(command, "checkpoint") {
+      this.SavesCommand(command);
       return;
     }
     if Equals(command, "progress") {

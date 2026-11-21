@@ -1236,13 +1236,34 @@ private func PopulateMenuItemList() -> Void {
   }
 }
 
+// The pause menu's Exit as a guest (progression.md, decision 7): held here,
+// re-run once our V is saved (Saves.reds), or at once when the player says
+// to exit without the save. The popup's token, and the item to re-run.
+@addField(PauseMenuGameController)
+private let m_tandemExitToken: ref<inkGameNotificationToken>;
+
+@addField(PauseMenuGameController)
+private let m_tandemExitIndex: Int32;
+
+@addField(PauseMenuGameController)
+private let m_tandemExitTarget: ref<ListItemController>;
+
+// The re-run's pass through to the game's own Exit.
+@addField(PauseMenuGameController)
+private let m_tandemExitPass: Bool;
+
 @wrapMethod(PauseMenuGameController)
 protected cb func OnMenuItemActivated(index: Int32, target: ref<ListItemController>) -> Bool {
   TandemNative.HookRan(n"Coop.PauseMenuGameController.OnMenuItemActivated");
   let item = target.GetData() as TandemMenuItem;
   if !IsDefined(item) {
-    // Back to the main menu: a co-op choice made in game was for this game.
     let data = target.GetData() as PauseMenuListItemData;
+    let exiting = IsDefined(data) && (Equals(data.action, PauseMenuAction.ExitToMainMenu) || Equals(data.action, PauseMenuAction.ExitGame));
+    if exiting && !this.m_tandemExitPass && this.TandemHoldExit(data.action, index, target) {
+      return true;
+    }
+    this.m_tandemExitPass = false;
+    // Back to the main menu: a co-op choice made in game was for this game.
     if IsDefined(data) && Equals(data.action, PauseMenuAction.ExitToMainMenu) {
       TandemNative.ResetChoice();
     }
@@ -1267,6 +1288,58 @@ protected cb func OnGlobalRelease(e: ref<inkPointerEvent>) -> Bool {
     }
   }
   return wrappedMethod(e);
+}
+
+// Exit (to the main menu, to the desktop) while our V's session gains are
+// not on disk: held (true), or false for the game's own Exit. This runs in
+// the wrap above, a UI callback not proven to run on the game thread: it
+// reads, opens a popup, and leaves what changes state to the tick (the
+// held exit goes through TandemProgress.AskExit, a native that only
+// stores it; Saves.reds takes it). The menu closes so that the world, and
+// with it our tick, runs again for the leave steps.
+@addMethod(PauseMenuGameController)
+private func TandemHoldExit(action: PauseMenuAction, index: Int32, target: ref<ListItemController>) -> Bool {
+  let system = this.CoopSystem();
+  if !IsDefined(system) || !system.ExitOwes() {
+    return false;
+  }
+  let exit = Equals(action, PauseMenuAction.ExitGame) ? 2 : 1;
+  let why = system.SaveBlocker();
+  this.PlaySound(n"Button", n"OnPress");
+  if StrLen(why) > 0 {
+    // No save can be made now: the player chooses, exit anyway or stay.
+    TandemNative.Log(s"exit: \(TandemSaves.ExitName(exit)): our V cannot be saved now (\(TandemText.English(why)); the game's locks: \(system.SaveLockNames())): asking");
+    this.m_tandemExitIndex = index;
+    this.m_tandemExitTarget = target;
+    this.m_tandemExitToken = GenericMessageNotification.Show(this, TandemText.Get("Exit-Title"), TandemText.F("Exit-CannotSave", TandemText.Get(why)), GenericMessageNotificationType.YesNo);
+    this.m_tandemExitToken.RegisterListener(this, n"OnTandemExitAnswer");
+    return true;
+  }
+  TandemNative.Log(s"exit: \(TandemSaves.ExitName(exit)): held until our V is saved");
+  TandemProgress.AskExit(exit);
+  this.m_menuEventDispatcher.SpawnEvent(n"OnClosePauseMenu");
+  return true;
+}
+
+// The answer: Yes exits without the save (the game's own Exit, re-run),
+// anything else stays in the game.
+@addMethod(PauseMenuGameController)
+protected cb func OnTandemExitAnswer(data: ref<inkGameNotificationData>) -> Bool {
+  this.m_tandemExitToken = null;
+  let close = data as GenericMessageNotificationCloseData;
+  let target = this.m_tandemExitTarget;
+  this.m_tandemExitTarget = null;
+  if !IsDefined(close) || NotEquals(close.result, GenericMessageNotificationResult.Yes) || !IsDefined(target) {
+    TandemNative.Log("exit: the player stays");
+    if IsDefined(this.m_tandem) {
+      this.m_tandem.swallowBack = 2;
+    }
+    return true;
+  }
+  TandemNative.Log("exit: the player exits without the save");
+  this.m_tandemExitPass = true;
+  this.OnMenuItemActivated(this.m_tandemExitIndex, target);
+  return true;
 }
 
 @addMethod(PauseMenuGameController)
