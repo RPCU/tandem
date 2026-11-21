@@ -1277,6 +1277,15 @@ Options Parse(int argc, char **argv) {
       options.playLoop = true;
       continue;
     }
+    // (No value: they used to take the next argument as theirs.)
+    if (flag == "--throw-bounce") {
+      options.throwBounce = true;
+      continue;
+    }
+    if (flag == "--footsteps") {
+      options.footsteps = true;
+      continue;
+    }
     if (i + 1 >= args.size())
       Usage(std::format("{} needs a value", flag));
     const auto value = args[++i];
@@ -1483,10 +1492,6 @@ Options Parse(int argc, char **argv) {
       options.throwSeconds = Number<int>(value);
     else if (flag == "--throw-item")
       options.throwItem = std::string(value);
-    else if (flag == "--throw-bounce")
-      options.throwBounce = true;
-    else if (flag == "--footsteps")
-      options.footsteps = true;
     else if (flag == "--smart")
       options.smartSeconds = Number<int>(value);
     else if (flag == "--defend")
