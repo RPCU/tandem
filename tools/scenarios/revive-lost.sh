@@ -1,6 +1,6 @@
 # As host: the mock player is down and our V goes down too: nobody is up, the session is lost and our game shows the death screen
 # runs last
-# shellcheck shell=bash disable=SC2317
+# shellcheck shell=bash disable=SC2317,SC2154
 # Leaves the game on its death screen: run it last, then load a save.
 ensure host
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body female --go-down 10
@@ -11,3 +11,6 @@ expect 'revive: our V died with nobody up: the session is lost' 10
 expect 'session lost: no V is up' 5
 expect_peer 'session lost: no V is up' 5
 reject 'revive: our V is down'
+# The death screen stays until a save loads: the game is stopped, and the
+# next scenario's ensure starts it again (any order, not only last).
+$game stop >/dev/null
