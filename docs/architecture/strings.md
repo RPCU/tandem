@@ -30,7 +30,8 @@ places) and what comes from another game are data, not text.
   the game draws the key or button the player bound to it, for the device
   in their hands. Never a key name in a text. In use: a ride's question
   (`PhoneInteract` press: ride along, `PhoneReject` hold: follow), a regroup
-  offer (`PhoneInteract`), the world map's Join (`world_map_menu_fast_travel`
+  offer (`PhoneInteract`), a link request (`PhoneInteract` press: link,
+  `PhoneReject` hold: decline), the world map's Join (`world_map_menu_fast_travel`
   hold, `WorldMapInputHints`), the host's scene offer and the scene replay's
   watch offer (`Choice1`, which also takes them). The revive prompt is the game's interaction hub
   (`InteractionChoiceHub`, `Choice1` held), which draws its own binding.
@@ -472,12 +473,33 @@ there, as the plugin's reasons). `{1}`, `{2}`: names, places, numbers.
 | `Comms-Linked` | Linked with {1}: scans and pings are shared | Lié à {1} : analyses et signaux partagés | Comms.reds |
 | `Comms-LinkBroken` | Link with {1} broken | Lien avec {1} rompu | Comms.reds |
 | `Comms-LinkSent` | Link request sent to {1} | Demande de lien envoyée à {1} | Comms.reds |
-| `Comms-LinkAsked` | {1} asks to link: share scans and pings | {1} demande un lien : partager analyses et signaux | Comms.reds |
+| `Comms-LinkAsked` | {1} is calling: link to share scans and pings | {1} vous appelle : se lier pour partager analyses et signaux | Comms.reds |
 | `Comms-LinkWith` | Link with {1} | Se lier à {1} | Comms.reds |
 | `Comms-WaypointOf` | {1}'s waypoint | Point de passage de {1} | Comms.reds |
 | `Comms-PinPlaced` | The map pin {1} placed | Le repère placé par {1} | Comms.reds |
 | `Comms-PlaceTracked` | The place {1} tracks | Le lieu que suit {1} | Comms.reds |
 | `Comms-WaypointSet` | {1} set a waypoint | {1} a placé un point de passage | Comms.reds |
+| `Comms-Decline` | Decline | Refuser | Comms.reds |
+| `Phone-NotLinked` | Not linked | Pas de lien | PhoneContacts.reds |
+| `Phone-Calling` | Calling... | Appel en cours... | PhoneContacts.reds |
+| `Phone-CallingYou` | Calling you | Vous appelle | PhoneContacts.reds |
+| `Phone-Linked` | Linked | Lien actif | PhoneContacts.reds |
+| `Phone-Call` | Call | Appeler | PhoneContacts.reds |
+| `Phone-CallAbout` | Ask {1} to link: share scans, pings and health | Demander un lien à {1} : partager analyses, signaux et santé | PhoneContacts.reds |
+| `Phone-Answer` | Answer | Répondre | PhoneContacts.reds |
+| `Phone-AnswerAbout` | {1} is calling: link up | {1} vous appelle : se lier | PhoneContacts.reds |
+| `Phone-Cancel` | Cancel the call | Annuler l'appel | PhoneContacts.reds |
+| `Phone-CancelAbout` | Calling {1}... | Appel à {1} en cours... | PhoneContacts.reds |
+| `Phone-HangUp` | Hang up | Raccrocher | PhoneContacts.reds |
+| `Phone-HangUpAbout` | Break the link with {1} | Rompre le lien avec {1} | PhoneContacts.reds |
+| `Phone-TradeAbout` | Give, swap or sell items and eddies, wherever you both are | Donner, échanger ou vendre objets et eddies, où que vous soyez | PhoneContacts.reds |
+| `Phone-JoinAbout` | Fast travel to {1} | Voyage rapide jusqu'à {1} | PhoneContacts.reds |
+| `Phone-Invite` | Ask {1} to join you | Proposer à {1} de vous rejoindre | PhoneContacts.reds |
+| `Phone-InviteAbout` | {1} is offered a fast travel to you | {1} se voit proposer un voyage rapide jusqu'à vous | PhoneContacts.reds |
+| `Phone-Cancelled` | Call to {1} cancelled | Appel à {1} annulé | Comms.reds |
+| `Phone-Invited` | Asked {1} to join you | Proposé à {1} de vous rejoindre | PhoneContacts.reds |
+| `Phone-Unreachable` | {1} can't be reached right now | {1} est injoignable pour l'instant | Trade.reds |
+| `Trade-NotNow` | You can't trade right now | Échange impossible pour l'instant | Trade.reds |
 | `Story-RestrictHolstered` | {1}'s scene: weapons away. | Scène de {1} : armes rangées. | Restrictions.reds |
 | `Story-RestrictSlow` | {1}'s scene: take it slow. | Scène de {1} : doucement. | Restrictions.reds |
 | `Travel-Blocked` | You can't fast travel right now | Voyage rapide impossible pour l'instant | Text.reds, Travel.reds |
