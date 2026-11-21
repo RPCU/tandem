@@ -98,12 +98,13 @@ it does not (a proxy that does not count as a civilian there, research §13.34 q
    through the existing path (`NpcShotAt`: the target's game simulates the
    shot). A car's crew counts among them: units on foot fill in for the
    cars that could not come.
-4. **Cars from two stars** (one, two from four), **off by default** until
-   proven in game (`police cars on|off`, a test command; `police-host-cars`
-   turns it on): asking roads for three strategies of seven crashed a job
-   thread (2026-11-21, police-host; all seven now, as the game does:
-   [`§13.102`](../research/engine/traffic-police.md)); the AV of item 5 is
-   behind the same switch.
+4. **Cars from two stars** (one, two from four), **on by default** since
+   2026-11-21: a car chased the guest's puppet in game (`police-host-cars`:
+   "car … chasing player 6 (2 aboard)") with no crash. `police cars on|off`
+   stays as a test command, the AV of item 5 behind the same switch. (Off
+   for a day: asking roads for three strategies of seven crashed a job
+   thread, police-host; all seven now, as the game does:
+   [`§13.102`](../research/engine/traffic-police.md).)
    The owner finds a place on
    the roads around the puppet (`FindPursuitPointsRangeAsync` with
    `NavGenAgentSize` 1, vehicle, at the level's vehicle spawn range; none

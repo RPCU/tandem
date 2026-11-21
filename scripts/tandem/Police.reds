@@ -55,8 +55,8 @@ public class TandemPoliceCar {
 
 public class TandemPolice {
   private let m_game: GameInstance;
-  // (test) Police cars and the AV for a remote V: off by default.
-  private let m_carsOn: Bool;
+  // Police cars and the AV for a remote V (`police cars off`: a test's switch).
+  private let m_carsOn: Bool = true;
   private let m_now: Float;
   private let m_you: Uint32;
   // Our V's level and star state as last sent (-1: not yet).

@@ -7,17 +7,17 @@
 # puppet in front of V and fires at neither; a marker in the other player's
 # colour, "Hacked by NAME", over it while it lasts.
 ensure host
-at "${TURRET_AT:-drake-ave}"
+at "${TURRET_AT:-arasaka-park}"
 # A run before may have left it friendly: hostile, and on, before the guest
 # joins.
-cmd device hostile turret
+cmd device hostile sentry
 pause 2
 mark
-cmd device near turret
-expect 'devices: nearest turret [0-9a-f]+ SecurityTurretControllerPS at ' 10
-turret=$(since | grep -oE 'devices: nearest turret [0-9a-f]+' | tail -1 | awk '{ print $4 }')
+cmd device near sentry
+expect 'devices: nearest sentry [0-9a-f]+ SecurityTurretControllerPS at ' 10
+turret=$(since | grep -oE 'devices: nearest sentry [0-9a-f]+' | tail -1 | awk '{ print $4 }')
 note "turret $turret"
-cmd device on turret
+cmd device on sentry
 expect 'devices: on [0-9a-f]+ SecurityTurretControllerPS at ' 10
 peer join "$(getent ahostsv4 "${GAME_HOST:-anya}" | awk 'NR == 1 { print $1 }')":27450 --mode front --body male \
   --device "$turret:SecurityTurretControllerPS:friendly,hacked@3" \
@@ -30,15 +30,15 @@ expect "devices: $turret SecurityTurretControllerPS turned for every V here: " 1
 expect_peer "turret $turret: our copy has our V \(--turret-seen\)" 30
 expect "turrets: player [0-9]+'s copy of $turret has its V: our turret takes its puppet \(false\)" 10
 pause 5
-query attitude device turret attitude
+query attitude device sentry attitude
 expect_value "$attitude" = friendly
-query puppet device turret puppet
+query puppet device sentry puppet
 expect_value "$puppet" != hostile
-query target device turret target
+query target device sentry target
 expect_value "$target" '~' '^(none|other)$'
 shot turret-friendly
 # The guest turns it back: its own side again.
 expect "devices: $turret SecurityTurretControllerPS back to its own attitude for every V here" 40
-query attitude_back device turret attitude
+query attitude_back device sentry attitude
 expect_value "$attitude_back" != friendly
 reject 'watchdog: game thread silent'

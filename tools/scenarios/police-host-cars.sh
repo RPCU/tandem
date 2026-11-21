@@ -39,11 +39,10 @@ expect 'police: AV .* asked for player [0-9]+' 30
 expect 'police: AV .* out for player [0-9]+' 60
 shot police-host-av
 expect 'player [0-9]+: wanted level 0 ' 90
-expect 'police: AV for player [0-9]+ stands down' 10
+expect 'police: AV (for player [0-9]+ stands down|[^ ]+ for player [0-9]+ gone)' 10
 reject 'police: our wanted level [1-5] '
 # Units, cars and MaxTac hunted the guest: not one hit on our V.
 query low health low
 expect_changed "$before" "$low" same
 reject 'police: our V attacked a unit'
 reject 'watchdog: game thread silent'
-cmd police cars off
