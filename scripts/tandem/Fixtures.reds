@@ -55,7 +55,7 @@ public class TandemFixtures {
         if inside {
           near += 1;
         }
-        if EntityID.IsStatic(npc.GetEntityID()) && npc.IsVendor() {
+        if npc.IsVendor() && EntityID.IsDefined(TandemPlaced.IdOf(npc)) {
           if inside {
             vendors += 1;
           }

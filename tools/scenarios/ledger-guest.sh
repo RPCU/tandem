@@ -2,9 +2,10 @@
 # shellcheck shell=bash disable=SC2317
 # Where: LEDGER_AT (a fixture or "X Y Z", testing.md "Fixtures": the
 # nearest placed NPC of our own world within 200 m of it, not a quest's,
-# stands for "a placed NPC": `ledger near`). Default: the first of
-# kabuki-market, vik-clinic and h11-basement that has one (the market had
-# 46 NPCs and none placed, 2026-11-21; each spot's count is noted). The mock host stands
+# stands for "a placed NPC": `ledger near`; its entity is the id every game
+# gives it, TandemPlaced.IdOf: no NPC there had a static id of its own,
+# 2026-11-21). Default: the first of vik-clinic, kabuki-market and
+# h11-basement that has one (each spot's count is noted). The mock host stands
 # 300 m east of it (unlinked: it never sees ours, we never see its own) with
 # an NPC of that record and entity, and kills it. LEDGER_AWAY ("X Y Z", a
 # spot our V can stand on, 200 m or more from that NPC): the host stands
@@ -13,7 +14,7 @@ ensure join
 if [ -n "${LEDGER_AT:-}" ]; then
   spots=("$LEDGER_AT")
 else
-  spots=(kabuki-market vik-clinic h11-basement)
+  spots=(vik-clinic kabuki-market h11-basement)
 fi
 for where in "${spots[@]}"; do
   at "$where"

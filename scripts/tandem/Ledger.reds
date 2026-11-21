@@ -20,6 +20,66 @@ public class TandemLedgerBody {
   public let laid: Bool;
 }
 
+// A placed NPC's id, the same in every game (undefined: not placed, the
+// random crowd): its entity's own static id, or, for a community's NPC,
+// one made of what its entity stub says of it, its community's entity (the
+// spawner, a static id) and its entry's name, as the game itself tells "that
+// NPC" (NPCPuppet.CheckStubData, final.reds:125987). On 2.50 a community's
+// NPC has a dynamic entity id of its own (Viktor: 895e01; 126 NPCs at
+// kabuki-market and vik-clinic, none static, 2026-11-21). The NPCs of one
+// entry share an id.
+public abstract class TandemPlaced {
+  public static func IdOf(npc: ref<ScriptedPuppet>) -> EntityID {
+    let none = EntityID.FromHash(0ul);
+    if !IsDefined(npc) || npc.IsCrowd() {
+      return none;
+    }
+    let id = npc.GetEntityID();
+    if EntityID.IsStatic(id) {
+      return id;
+    }
+    let stub = TandemPlaced.StubOf(npc);
+    if !IsDefined(stub) {
+      return none;
+    }
+    let spawner = stub.GetSpawnerID();
+    let entry = stub.GetOwnerCommunityEntryName();
+    if !EntityID.IsDefined(spawner) || !EntityID.IsStatic(spawner) || !IsNameValid(entry) {
+      return none;
+    }
+    let hash = EntityID.ToHash(spawner) * 31ul + TDBID.ToNumber(TDBID.Create(NameToString(entry)));
+    // Never in the range of the ids the game hands out as it spawns.
+    if hash < 4294967296ul {
+      hash += 330712481792ul;
+    }
+    return EntityID.FromHash(hash);
+  }
+
+  private static func StubOf(npc: ref<ScriptedPuppet>) -> ref<gameEntityStubComponentPS> {
+    let id = CreatePersistentID(npc.GetEntityID(), gameEntityStubComponentPS.GetPSComponentName());
+    return GameInstance.GetPersistencySystem(npc.GetGame()).GetConstAccessToPSObject(id, n"gameEntityStubComponentPS") as gameEntityStubComponentPS;
+  }
+
+  // (test) What IdOf went by, for the logs.
+  public static func Why(npc: ref<ScriptedPuppet>) -> String {
+    if !IsDefined(npc) {
+      return "no npc";
+    }
+    if npc.IsCrowd() {
+      return "the crowd's";
+    }
+    if EntityID.IsStatic(npc.GetEntityID()) {
+      return "its own static id";
+    }
+    let stub = TandemPlaced.StubOf(npc);
+    if !IsDefined(stub) {
+      return "no entity stub";
+    }
+    let spawner = stub.GetSpawnerID();
+    return s"community \(TandemNative.EntityHex(spawner)) (static \(EntityID.IsStatic(spawner))) entry \(NameToString(stub.GetOwnerCommunityEntryName()))";
+  }
+}
+
 public class TandemLedger {
   private let m_game: GameInstance;
   private let m_on: Bool;
@@ -29,6 +89,9 @@ public class TandemLedger {
   // The placed NPCs we saw die as proxies: their corpse is here already.
   private let m_witnessed: array<EntityID>;
   private let m_buried: Int32;
+  // The placed NPCs we keep out, and which of ours stands for each.
+  private let m_keptIds: array<EntityID>;
+  private let m_keptOwn: array<EntityID>;
   private let m_laid: Int32;
 
   public func Start(game: GameInstance) -> Void {
@@ -47,13 +110,25 @@ public class TandemLedger {
   // host's game killed it (the story is the host's; a gig of ours may still
   // need the one a partner killed in its own world).
   public func Buries(npc: ref<ScriptedPuppet>) -> Bool {
-    let id = npc.GetEntityID();
-    if !this.m_on || !EntityID.IsStatic(id) {
+    if !this.m_on {
+      return false;
+    }
+    let id = TandemPlaced.IdOf(npc);
+    if !EntityID.IsDefined(id) {
       return false;
     }
     let by = TandemRegions.DiedBy(id);
     if by == 0u {
       return false;
+    }
+    // One death, one of ours: a community's entry may post several NPCs
+    // under one name, and the others of it live on.
+    let i = 0;
+    while i < ArraySize(this.m_keptIds) {
+      if this.m_keptIds[i] == id && this.m_keptOwn[i] != npc.GetEntityID() && IsDefined(GameInstance.FindEntityByID(this.m_game, this.m_keptOwn[i])) {
+        return false;
+      }
+      i += 1;
     }
     return by == 1u || !TandemLedger.QuestNpc(npc);
   }
@@ -74,7 +149,21 @@ public class TandemLedger {
     return NotEquals(affiliation, gamedataNPCQuestAffiliation.General) && NotEquals(affiliation, gamedataNPCQuestAffiliation.Invalid) && NotEquals(affiliation, gamedataNPCQuestAffiliation.Count);
   }
 
-  public func NoteBuried(id: EntityID, by: Uint32) -> Void {
+  public func NoteBuried(id: EntityID, own: EntityID, by: Uint32) -> Void {
+    let i = 0;
+    while i < ArraySize(this.m_keptIds) && this.m_keptIds[i] != id {
+      i += 1;
+    }
+    if i < ArraySize(this.m_keptIds) {
+      this.m_keptOwn[i] = own;
+    } else {
+      if ArraySize(this.m_keptIds) >= 256 {
+        ArrayErase(this.m_keptIds, 0);
+        ArrayErase(this.m_keptOwn, 0);
+      }
+      ArrayPush(this.m_keptIds, id);
+      ArrayPush(this.m_keptOwn, own);
+    }
     this.m_buried += 1;
     TandemNative.Log(s"ledger: placed npc \(EntityID.ToDebugString(id)) died in player \(by)'s game: our copy is kept out of our world");
   }
@@ -203,8 +292,9 @@ public class TandemLedger {
 
   // (test, tools/game.sh cmd "ledger near" | "ledger goto") the nearest
   // placed NPC of our own world within 200 m that the ledger could keep out
-  // (static, alive, not a quest's, not a proxy; ledger-guest's stand-in for
-  // "a placed NPC"); goto: our V before it, facing it.
+  // (placed: TandemPlaced.IdOf; alive, not a quest's, not a proxy;
+  // ledger-guest's stand-in for "a placed NPC"); goto: our V before it,
+  // facing it. `entity` is the id every game knows it by.
   public func Command(command: String, npcs: ref<TandemNpcs>) -> Void {
     let player = GetPlayer(this.m_game);
     if !IsDefined(player) {
@@ -235,7 +325,7 @@ public class TandemLedger {
             otherAt = off;
           }
         }
-        if EntityID.IsStatic(id) && !(IsDefined(npcs) && npcs.IsProxyEntity(id)) {
+        if EntityID.IsDefined(TandemPlaced.IdOf(body)) && !(IsDefined(npcs) && npcs.IsProxyEntity(id)) {
           placed += 1;
           let far = Vector4.Distance(here, body.GetWorldPosition());
           if far <= bestAt && !TandemLedger.QuestNpc(body) {
@@ -246,7 +336,7 @@ public class TandemLedger {
       }
     }
     if !IsDefined(best) {
-      let nearest = IsDefined(other) ? s"record \(TDBID.ToStringDEBUG(other.GetRecordID())) entity \(TandemNative.EntityHex(other.GetEntityID())) at \(otherAt) m, static \(EntityID.IsStatic(other.GetEntityID())), a quest's \(TandemLedger.QuestNpc(other))" : "none";
+      let nearest = IsDefined(other) ? s"record \(TDBID.ToStringDEBUG(other.GetRecordID())) entity \(TandemNative.EntityHex(other.GetEntityID())) at \(otherAt) m, static \(EntityID.IsStatic(other.GetEntityID())), \(TandemPlaced.Why(other)), a quest's \(TandemLedger.QuestNpc(other))" : "none";
       TandemNative.Log(s"ledger: no placed npc of our own world within 200 m (\(seen) npcs, \(placed) placed; \(posted) not the crowd's, \(vendors) vendors; nearest not the crowd's: \(nearest))");
       return;
     }
@@ -258,7 +348,7 @@ public class TandemLedger {
       to.W = 1.0;
       GameInstance.GetTeleportationFacility(this.m_game).Teleport(player, to, Vector4.ToRotation(at - to));
     }
-    TandemNative.Log(s"ledger: near placed npc record \(TDBID.ToStringDEBUG(best.GetRecordID())) entity \(TandemNative.EntityHex(best.GetEntityID())) at \(at.X) \(at.Y) \(at.Z) (\(bestAt) m; \(seen) npcs, \(placed) placed)");
+    TandemNative.Log(s"ledger: near placed npc record \(TDBID.ToStringDEBUG(best.GetRecordID())) entity \(TandemNative.EntityHex(TandemPlaced.IdOf(best))) at \(at.X) \(at.Y) \(at.Z) (\(bestAt) m; \(seen) npcs, \(placed) placed; \(TandemPlaced.Why(best)))");
   }
 
   // (test, tools/game.sh cmd ledger)
