@@ -40,7 +40,7 @@ public final static func Fire(
   if IsDefined(weaponOwner) && IsDefined(target) && TandemNative.IsStarted() && TandemOwn.Entity(weaponOwner.GetGame(), weaponOwner.GetEntityID()) {
     let shots = TandemShots.Of(weaponOwner.GetGame());
     if IsDefined(shots) {
-      shots.Announce(weaponOwner, weapon, target, tbhCoefficient, requestedTriggerMode, rangedAttack);
+      shots.Announce(weaponOwner, weapon, target, tbhCoefficient, requestedTriggerMode, rangedAttack, shouldTrackTarget);
     }
   }
   // A placed turret's shot (Turrets.reds). Host: queued for the guests, who

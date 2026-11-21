@@ -173,6 +173,7 @@ struct TandemShotAt {
   float factor{};
   float boost{};
   float boostSeconds{};
+  std::int32_t flags{}; // proto::kShotAt*
 };
 static_assert(alignof(TandemShotAt) <= 8, "the script VM aligns struct locals to 8");
 // Host: a guest's game says a shot it simulated hit its V (proto::ShotHit).
@@ -1327,7 +1328,8 @@ struct TandemNative : Red::IScriptable {
   // Host: our NPC `npc` fires at `player`'s V. That player's game fires it
   // from its proxy and decides the hit (proto::NpcShotAt).
   static void SendShotAt(std::uint32_t player, std::uint32_t npc, Red::TweakDBID attack,
-                         Red::TweakDBID weapon, float tbh, std::int32_t trigger, float factor) {
+                         Red::TweakDBID weapon, float tbh, std::int32_t trigger, float factor,
+                         std::int32_t flags) {
     Runtime::Get().SubmitShotAt({.player = player,
                                  .npc = npc,
                                  .timeUs = Runtime::Get().HostNowUs(),
@@ -1335,7 +1337,8 @@ struct TandemNative : Red::IScriptable {
                                  .weapon = weapon.value,
                                  .tbh = tbh,
                                  .trigger = static_cast<std::uint8_t>(trigger),
-                                 .factor = factor});
+                                 .factor = factor,
+                                 .flags = static_cast<std::uint8_t>(flags & proto::kShotAtFlags)});
   }
   // Guest: the host's NPCs' shots at our V since the last call.
   static Red::DynArray<TandemShotAt> TakeShotsAt() {
@@ -1345,7 +1348,7 @@ struct TandemNative : Red::IScriptable {
       const auto catchUp = sync::TimeBubbles::ShotCatchUp(shot.timeUs, now);
       out.EmplaceBack(TandemShotAt{shot.npc, Red::TweakDBID(shot.attack),
                                    Red::TweakDBID(shot.weapon), shot.tbh, shot.trigger, shot.factor,
-                                   catchUp.boost, catchUp.seconds});
+                                   catchUp.boost, catchUp.seconds, shot.flags});
     }
     return out;
   }
@@ -2086,6 +2089,7 @@ RTTI_DEFINE_CLASS(tandem::plugin::TandemShotAt, "TandemShotAt", {
   RTTI_PROPERTY(factor);
   RTTI_PROPERTY(boost);
   RTTI_PROPERTY(boostSeconds);
+  RTTI_PROPERTY(flags);
 });
 
 RTTI_DEFINE_CLASS(tandem::plugin::TandemShotHit, "TandemShotHit", {

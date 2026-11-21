@@ -46,6 +46,8 @@ public class TandemShots {
   // Guest: why the last shot is still waiting, and the shots fired.
   private let m_waitingFor: String;
   private let m_fired: Int32;
+  // Of those, the smart guns' guided rounds (kShotAtTracked).
+  private let m_guided: Int32;
   // Of those, the ones our game's time between hits let land (the rest
   // are aimed to miss).
   private let m_decidedHits: Int32;
@@ -100,7 +102,10 @@ public class TandemShots {
   // guest's puppet, the shot goes to that guest's game instead of deciding
   // the hit here. The host still fires it, for its own view (the flash, the
   // sound, the NPC's ammo and timing): its hit on the puppet is dropped.
-  public func Announce(owner: wref<GameObject>, weapon: wref<WeaponObject>, target: ref<GameObject>, tbh: Float, trigger: gamedataTriggerMode, attack: TweakDBID) -> Void {
+  // `tracked`: the AI fires a guided round (AIWeapon.Fire's
+  // shouldTrackTarget: a smart weapon locked on the puppet, a missile rain):
+  // the guest's proxy fires it guided at its V too.
+  public func Announce(owner: wref<GameObject>, weapon: wref<WeaponObject>, target: ref<GameObject>, tbh: Float, trigger: gamedataTriggerMode, attack: TweakDBID, tracked: Bool) -> Void {
     if !IsDefined(owner) || !IsDefined(weapon) || !IsDefined(target) || !TandemOwn.Entity(this.m_game, owner.GetEntityID()) {
       return;
     }
@@ -141,7 +146,16 @@ public class TandemShots {
     } else {
       this.Once(n"noTbh", s"shots: player \(guest)'s puppet has no target shoot component: its game aims every shot to miss");
     }
-    TandemNative.SendShotAt(guest, npc, attack, ItemID.GetTDBID(weapon.GetItemID()), decided, EnumInt(trigger), factor);
+    // proto::kShotAt*: 1 a smart weapon (its record's evolution), 2 guided.
+    let flags = 0;
+    if Equals(RPGManager.GetWeaponEvolution(weapon.GetItemID()), gamedataWeaponEvolution.Smart) {
+      flags += 1;
+    }
+    if tracked {
+      flags += 2;
+      this.Once(n"announceGuided", s"shots: npc \(npc)'s smart rounds at player \(guest) are guided on their game (the host's AI tracks the target)");
+    }
+    TandemNative.SendShotAt(guest, npc, attack, ItemID.GetTDBID(weapon.GetItemID()), decided, EnumInt(trigger), factor, flags);
     ArrayPush(this.m_announcedBy, owner.GetEntityID());
     ArrayPush(this.m_announcedAt, guest);
     ArrayPush(this.m_announcedTime, this.Now());
@@ -333,8 +347,19 @@ public class TandemShots {
     if IsDefined(agent) && IsDefined(player.GetAttitudeAgent()) && NotEquals(agent.GetAttitudeTowards(player.GetAttitudeAgent()), EAIAttitude.AIA_Hostile) {
       agent.SetAttitudeTowards(player.GetAttitudeAgent(), EAIAttitude.AIA_Hostile);
     }
+    // A smart gun's round the host's AI tracks (kShotAtTracked): aimed at
+    // the best of our V's targeting components and guided onto it, as
+    // AIWeapon.Fire fires one with shouldTrackTarget (final.reds:173200).
+    let component: wref<TargetingComponent>;
+    if (shot.flags & 2) != 0 {
+      component = GameInstance.GetTargetingSystem(this.m_game).GetBestComponentOnTargetObject(weapon.GetWorldPosition(), weapon.GetWorldForward(), player, TargetComponentFilterType.Shooting);
+      if !IsDefined(component) {
+        this.Once(n"guidedNoComponent", s"shots: npc \(shot.npc)'s guided round has no targeting component of our V to home on: fired plain");
+      }
+    }
+    let guided = IsDefined(component);
     let aim = new Vector4(0.0, 0.0, 0.0, 0.0);
-    let head = IPositionProvider.CreateSlotPositionProvider(player, n"Head");
+    let head = guided ? IPositionProvider.CreatePlacedComponentPositionProvider(component) : IPositionProvider.CreateSlotPositionProvider(player, n"Head");
     if !IsDefined(head) || !head.CalculatePosition(aim) {
       aim = player.GetWorldPosition();
       aim.Z += 1.6;
@@ -355,6 +380,17 @@ public class TandemShots {
     let params: gameprojectileWeaponParams;
     params.hitPlaneOffset = offset;
     params.shootingOffset = stats.GetStatValue(weaponStats, gamedataStatType.ShootingOffsetAI);
+    // A native struct local is not cleared by the script VM: the smart
+    // fields are set on both paths.
+    params.smartGunSpreadOnHitPlane = new Vector3(0.0, 0.0, 0.0);
+    params.smartGunAccuracy = guided ? 1.0 : 0.0;
+    params.smartGunIsProjectileGuided = guided;
+    params.trackedTargetComponent = component;
+    // A guided round the time between hits says must miss flies past our
+    // V instead of homing into it (as AIWeapon.Fire has it).
+    if guided && miss {
+      gameprojectileWeaponParams.AddObjectToIgnoreCollisionWith(params, player.GetEntityID());
+    }
     // Aimed at our V: the other Vs' puppets here do not catch it (on the
     // host's game the NPC's shot at us passed them by too).
     for other in system.PuppetPlayers() {
@@ -380,13 +416,23 @@ public class TandemShots {
     }
     // The attack it fires: the host's, as a slowed one is (Time.reds).
     AIWeapon.SetAttackBasedOnTimeDilation(proxy, weapon, shot.attack);
-    weapon.AI_ShootAt(IPositionProvider.CreateStaticPositionProvider(at), null, proxy, Cast<Uint16>(0), params, Cast<Uint8>(Max(perShot, 1)), 0.0, maxSpread);
+    if guided {
+      // From the component it homes on, the miss offset kept.
+      let tracked = IPositionProvider.CreatePlacedComponentPositionProvider(component);
+      tracked.SetWorldOffset(offset);
+      params.targetPosition = aim + offset;
+      weapon.AI_ShootAt(tracked, player, proxy, Cast<Uint16>(0), params, Cast<Uint8>(Max(perShot, 1)), 0.0, maxSpread);
+      this.m_guided += 1;
+      this.Once(n"guided", s"shots: npc \(shot.npc)'s guided round at us fired from its proxy (homing on our V's \(NameToString(component.GetName())), to land: \(!miss))");
+    } else {
+      weapon.AI_ShootAt(IPositionProvider.CreateStaticPositionProvider(at), null, proxy, Cast<Uint16>(0), params, Cast<Uint8>(Max(perShot, 1)), 0.0, maxSpread);
+    }
     WeaponObject.TriggerWeaponEffects(weapon, gamedataFxAction.Shoot);
     AnimationControllerComponent.PushEventToReplicate(weapon, n"Shoot");
     this.m_fired += 1;
     // The first five of each session, then every tenth.
     if this.m_fired <= 5 || this.m_fired % 10 == 0 {
-      TandemNative.LogDebug(s"shots: npc \(shot.npc)'s shot at us fired from its proxy (\(this.m_fired) so far, \(this.m_decidedHits) let land by the time between hits, tbh \(shot.tbh); speed \(shot.factor), catching up x\(shot.boost) for \(shot.boostSeconds) s)");
+      TandemNative.LogDebug(s"shots: npc \(shot.npc)'s shot at us fired from its proxy (\(this.m_fired) so far, \(this.m_guided) guided, \(this.m_decidedHits) let land by the time between hits, tbh \(shot.tbh); speed \(shot.factor), catching up x\(shot.boost) for \(shot.boostSeconds) s)");
     }
     return true;
   }
@@ -498,6 +544,7 @@ public class TandemShots {
     ArrayClear(this.m_logged);
     this.m_handed = false;
     this.m_fired = 0;
+    this.m_guided = 0;
     ArrayClear(this.m_announcedBy);
     ArrayClear(this.m_announcedAt);
     ArrayClear(this.m_announcedTime);
